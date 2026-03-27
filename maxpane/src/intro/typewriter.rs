@@ -27,7 +27,7 @@ const LINES: &[&str] = &[
     "Wake up, Anon...",
     "The Ether has you...",
     "Follow the white rabbit.",
-    "Knock, Knock, Anon.",
+    "Lock in, Anon.",
 ];
 
 /// Cursor character: LEFT HALF BLOCK (U+258C).
@@ -372,7 +372,7 @@ mod tests {
         let tw = TypewriterState::new(&default_config(), &default_theme(), LayoutMode::Full);
         assert_eq!(tw.lines.len(), 4);
         assert_eq!(tw.lines[0], "Wake up, Anon...");
-        assert_eq!(tw.lines[3], "Knock, Knock, Anon.");
+        assert_eq!(tw.lines[3], "Lock in, Anon.");
     }
 
     #[test]
