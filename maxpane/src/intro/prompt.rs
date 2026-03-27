@@ -26,7 +26,7 @@ use crate::theme::IntroTheme;
 const QUESTION_TEXT: &str = "> Do you want to enter the Ether?";
 const INPUT_PREFIX: &str = "> [Y/N]: ";
 
-const RESPONSE_YES: &str = "JACKING IN...";
+const RESPONSE_YES: &str = "LOCKING IN...";
 const RESPONSE_NO: &str = "Maybe next time, anon.";
 const RESPONSE_DEFAULT: &str = "There is no spoon. Try again.";
 

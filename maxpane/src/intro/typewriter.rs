@@ -26,7 +26,7 @@ use super::IntroAction;
 const LINES: &[&str] = &[
     "Wake up, Anon...",
     "The Ether has you...",
-    "Follow the white rabbit.",
+    "Follow the white frog.",
     "Lock in, Anon.",
 ];
 
