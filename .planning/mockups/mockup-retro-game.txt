@@ -1,0 +1,58 @@
+╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║  ▄▀▄ █ █ ▀█▀ ▄▀▄ █▀▄ █ █ █   █       ██▀ ▄▀▄ █▄▀ ██▀ █▀▄ ▀▄▀   █   █ ▄▀▄ █▀▄ ▄▀▀       Season 3 // 13d left ║
+║  █▀█ ▀▄█  █  ▀▄▀ █▀  ▀▄█ █▄▄ █▄▄     █▄▄ █▀█ █ █ █▄▄ █▀▄  █    ▀▄▀▄▀ █▀█ █▀▄ ▄██       Prize: 2.83 ETH     ║
+╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════╦══════════════════════════════════════════════════════════════╗
+║        [CYN] COOKIE WARS LEADERBOARD [CYN]           ║          [AMB] LIVE ACTION FEED [AMB]                        ║
+╠═══╦═══════════════════════╦════════╦════════╦════╦════╬══════════════════════════════════════════════════════════════╣
+║ # ║ BAKERY NAME           ║COOKIES ║BAKE SPD║CREW║GAP ║                                                              ║
+╠═══╬═══════════════════════╬════════╬════════╬════╬════╣  [RED] >> Boredbull RUGGED Cockring Cakehouse!               ║
+║   ║                       ║        ║        ║    ║    ║     <<<CRITICAL HIT>>> -3,200 cookies!                        ║
+║[CROWN]Cockring Cakehouse  ║ 139.3K ║+5.8K/hr║ 254║ -- ║                                                              ║
+║   ║  [GRN] BOUNTY: $22.98 ║        ║        ║    ║    ║  [RED] >> Boredbull tried to rug Cockring... MISS!           ║
+╠═══╬═══════════════════════╬════════╬════════╬════╬════╣                                                              ║
+║[SWORD]cygaar's patisserie ║  44.7K ║+1.9K/hr║ 182║-95K║  [RED] >> Boredbull tried to rug Cockring... MISS!           ║
+║   ║  [GRN] BOUNTY: $32.08 ║        ║        ║    ║    ║                                                              ║
+╠═══╬═══════════════════════╬════════╬════════╬════╬════╣  [AMB] >> Ely cast AD CAMPAIGN... IT FAILED!                 ║
+║[SHIELD]Abstract Asia      ║  34.2K ║+1.4K/hr║  60║-105K                                                              ║
+║   ║  [GRN] BOUNTY: $97.30 ║        ║        ║    ║    ║  [GRN] >> NFDee cast AD CAMPAIGN... POWER UP! +1.25x        ║
+╠═══╬═══════════════════════╬════════╬════════╬════╬════╣                                                              ║
+║ 4 ║Abstract FANs          ║  23.3K ║ +970/hr║  20║-116K  [CYN] >> okokok joined Cockring Cakehouse (+1 crew)        ║
+║   ║  [GRN] BOUNTY: $291.90║        ║        ║    ║    ║                                                              ║
+╠═══╬═══════════════════════╬════════╬════════╬════╬════╣  [GRN] >> untamed cast MOTIVATIONAL SPEECH... POWER UP!      ║
+║ 5 ║Pengu Pastries         ║  18.1K ║ +740/hr║  15║-121K     +1.5x production for 8 hours!                            ║
+║ 6 ║Based Bread Co         ║  12.4K ║ +510/hr║  11║-127K                                                              ║
+║ 7 ║ZK Sourdough           ║   8.7K ║ +360/hr║   8║-131K  [CYN] >> Abstract_Mike joined cygaar's patisserie (+1)     ║
+║ 8 ║GM Muffin House        ║   5.2K ║ +210/hr║   5║-134K                                                              ║
+╠═══╩═══════════════════════╩════════╩════════╩════╩════╣  [RED] >> Kitchen Fire at ZK Sourdough! -100% for 2hr!       ║
+║  [AMB] Entries: 8 total bakeries   Refresh: LIVE     ║                                                              ║
+╠═══════════════════════════════════════════════════════╣  [AMB] >> Based Bread Co cast SECRET RECIPE... MISS!         ║
+║                                                       ║                                                              ║
+║        [CYN] POWER LEVELS [CYN]                       ║  [GRN] >> Pengu Pastries leveled up! Now LV.18              ║
+║                                                       ║                                                              ║
+║  Cockring  LV.99 [GRN]██████████████████████████████░░║  [CYN] >> 3 new bakers joined this hour                     ║
+║                         139.3K cookies  [+5.8K/hr]    ║                                                              ║
+║  cygaar's  LV.45 [AMB]████████████░░░░░░░░░░░░░░░░░░░╠══════════════════════════════════════════════════════════════╣
+║                          44.7K cookies  [+1.9K/hr]    ║        [AMB] SPELL BOOK (Boost/Attack EV) [AMB]             ║
+║  Asia      LV.34 [AMB]█████████░░░░░░░░░░░░░░░░░░░░░░║                                                              ║
+║                          34.2K cookies  [+1.4K/hr]    ║  ══════════ BUFFS ══════════                                 ║
+║  FANs      LV.23 [RED]██████░░░░░░░░░░░░░░░░░░░░░░░░░║  Chef's Help    ★★★★★  +22,750 EV  [50% hit]  2x PWR  8hr  ║
+║                          23.3K cookies   [+970/hr]    ║  Secret Recipe  ★★★★   +7,870 EV   [35% hit]  1.5x    8hr  ║
+║  Pengu     LV.18 [RED]████░░░░░░░░░░░░░░░░░░░░░░░░░░░║  Ad Campaign    ★★★    +3,360 EV   [60% hit]  1.25x   4hr  ║
+║                          18.1K cookies   [+740/hr]    ║  Motiv. Speech  ★★★    +2,100 EV   [55% hit]  1.5x    4hr  ║
+║                                                       ║                                                              ║
+║  --- Cookie Accumulation (30min) ---                  ║  ══════════ HEXES ══════════                                 ║
+║  140K┤                                         ╭──    ║  Fake Partner.  ★★★★★  32.8x eff   [35% hit]  -25%    4hr  ║
+║  130K┤                                    ╭────╯      ║  Recipe Sabo.   ★★★★   28.0x eff   [60% hit]  -25%    4hr  ║
+║  120K┤                              ╭─────╯           ║  Kitchen Fire   ★★     6.3x eff    [20% hit]  -100%   2hr  ║
+║  110K┤                        ╭─────╯                 ║  Health Insp.   ★★     4.1x eff    [25% hit]  -50%    2hr  ║
+║  100K┤                  ╭─────╯                       ╠══════════════════════════════════════════════════════════════╣
+║   90K┤            ╭─────╯                             ║        [CYN] QUEST STATUS [CYN]                             ║
+║   80K┤      ╭─────╯                                  ║                                                              ║
+║   70K┤──────╯                                        ║  >> LATE-JOIN BOUNTY: $19.29 (15.7% conf)    [GRN][SAFE BET]║
+║      └──────────────────────────────────── 30m        ║  >> GAP TRACKER: Leader pulling away -2,100/hr [RED][DANGER]║
+║  [GRN] Cockring   [AMB] cygaar's   [RED] Asia        ║  >> DOMINANCE: 3.1x lead -- BOSS LEVEL      [AMB][WARNING] ║
+║                                                       ║  >> ADVISOR SAYS: "Join the winners.                        ║
+║                                                       ║     Resistance is futile."               [CYN][ORACLE]      ║
+╚═══════════════════════════════════════════════════════╩══════════════════════════════════════════════════════════════╝
+ [Q]uit  [R]efresh  [UP/DN]Scroll  [T]heme  ── Abstract Chain 2741 ── Poll: 30s ── Updated: 3s ago ── Errors: 0

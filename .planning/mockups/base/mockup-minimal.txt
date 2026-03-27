@@ -1,0 +1,45 @@
+
+                                                  maxpane
+
+ +-----------------------------------+ +----------------------------------+ +-------------------------------+
+ |                                   | |                                  | |                               |
+ |  ETH / USD          ● [grn]live   | |  GAS / BLOCK                    | |  TOP MOVER            24h     |
+ |                                   | |                                  | |                               |
+ |       $2,062.18                   | |    0.006 gwei                    | |    BASEGUARD                  |
+ |       ▲ +1.2%          [grn]      | |    Block 24,801,337              | |    ▲ +124.8%          [grn]   |
+ |                                   | |                                  | |                               |
+ +-----------------------------------+ +----------------------------------+ +-------------------------------+
+
+ TRENDING                                                              SPARKLINES (5m)
+
+ #   Token      Price       5m     1h    24h    Volume   MCap          GIZA   ▁▂▃▃▅▆▇█▇▆▅▆▇█ [grn]
+ 1   GIZA     $0.0187   +12.8%  +8.4%  +31.2%   $1.2M  $18.7M        ODAI   ▁▁▂▃▅▆▇█▇█▇█▇█ [grn]
+ 2   ODAI    $0.0₄5.6   +18.9% +14.1%  +42.7%   $890K   $5.6M        TIBBIR ▃▃▄▄▄▅▅▄▄▅▅▄▅▅ [grn]
+ 3   TIBBIR   $0.1218    +2.1%  +1.8%   +5.4%   $2.1M $121.8M        HYDX   ▇▆▅▅▄▃▃▂▂▁▁▂▁▁ [red]
+ 4   HYDX     $0.0866   -14.2%  -8.6%  -22.1%   $445K   $8.6M        AERO   ▃▃▄▃▄▄▃▄▄▃▄▃▄▄ [grn]
+ 5   AERO     $0.3329    +1.1%  +0.8%   +3.2%   $3.8M $332.9M
+ 6   VRTX     $0.0412    +6.3%  +4.2%  +11.8%   $670K  $41.2M        MOVERS
+ 7   WELL     $0.0284    -3.7%  -2.1%   -8.4%   $520K  $28.4M
+ 8   MORPHO   $0.8814    +0.4%  +0.2%   +1.1%   $1.6M $881.4M        ▲ BASEGUARD +124.8% $2.4M [grn]
+ 9   DEGEN    $0.0031    +9.2%  +5.8%  +18.6%   $780K   $3.1M        ▲ ODAI       +42.7% $890K [grn]
+ 10  BRETT    $0.0218    -1.4%  -0.6%   -3.8%   $1.4M  $21.8M        ▲ GIZA       +31.2% $1.2M [grn]
+                                                                       ▼ HYDX       -22.1% $445K [red]
+ TRENDING POOLS            source: geckoterminal                       ▼ WELL        -8.4% $520K [red]
+
+ Pool            DEX         TVL    APR   Vol 24h       VOLUME (24h)
+ GIZA/WETH   Uniswap V3   $840K 128.4%  $1.1M          AERO   ████████████████████ $3.8M
+ AERO/USDbC  Aerodrome    $2.1M  32.6%  $2.8M          TIBBIR ████████████████████ $2.1M
+ ODAI/WETH   Uniswap V3   $320K 214.8%  $640K          MORPHO █████████████████    $1.6M
+ BRETT/WETH  BaseSwap     $580K  18.2%  $920K          BRETT  ███████████████      $1.4M
+ DEGEN/WETH  Uniswap V3   $410K  86.4%  $680K          GIZA   █████████████        $1.2M
+ MORPHO/WETH Aerodrome    $1.4M  14.2%  $1.2M          ODAI   ██████████           $890K
+ VRTX/USDbC  Uniswap V3   $290K  64.8%  $480K          DEGEN  █████████            $780K
+ WELL/WETH   Moonwell     $1.8M   8.6%  $380K          VRTX   ████████             $670K
+                                                         WELL   ██████               $520K
+
+ q quit · r refresh · t theme · tab game · 1-5 view · 30s poll · updated 3s ago · base:8453     maxpane v0.1
+
+
+
+
+

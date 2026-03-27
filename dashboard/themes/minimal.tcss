@@ -1,0 +1,1051 @@
+/* MaxPane Theme
+ * Uses CSS variables so all themes work with one stylesheet.
+ */
+
+Screen {
+    background: $background;
+    color: $text;
+}
+
+/* ── Title bar ────────────────────────────────────────────────────────── */
+
+#title-bar {
+    width: 100%;
+    height: 1;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    color: $text-muted;
+    text-style: bold;
+    padding: 0 2;
+}
+
+/* ── Hero metric boxes ────────────────────────────────────────────────── */
+
+HeroMetrics {
+    height: 7;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+HeroBox {
+    width: 1fr;
+    height: 7;
+    border: solid $panel;
+    padding: 1 2;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    margin: 0 1;
+}
+
+/* ── Middle section: leaderboard + right column ───────────────────────── */
+
+#middle-row {
+    height: 1fr;
+    padding: 0 0;
+    margin: 1 0 0 0;
+}
+
+Leaderboard {
+    width: 3fr;
+    padding: 0 1;
+}
+
+Leaderboard > Static {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+Leaderboard DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+DataTable > .datatable--header {
+    background: $surface;
+    color: $text-muted;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: $panel;
+    color: $text;
+}
+
+DataTable > .datatable--even-row {
+    background: $background;
+}
+
+DataTable > .datatable--odd-row {
+    background: $surface;
+}
+
+#right-col {
+    width: 2fr;
+    padding: 0 1;
+}
+
+CookieChart {
+    height: auto;
+    padding: 0 1;
+    content-align: center top;
+}
+
+CookieChart > .chart-title {
+    color: $text-muted;
+}
+
+SignalsPanel {
+    height: 1fr;
+    padding: 0 1;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+SignalsPanel > .signals-title {
+    color: $text-muted;
+}
+
+/* ── Dashed separator ─────────────────────────────────────────────────── */
+
+#separator {
+    width: 100%;
+    height: 1;
+    color: $panel;
+    padding: 0 2;
+    margin: 0 0;
+}
+
+/* ── Bottom section: activity + EV table ──────────────────────────────── */
+
+#bottom-row {
+    height: 1fr;
+    padding: 0 0;
+    margin: 0 0 1 0;
+}
+
+ActivityFeed {
+    width: 3fr;
+    padding: 0 1;
+}
+
+ActivityFeed > .feed-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+ActivityFeed RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+EVTable {
+    width: 2fr;
+    padding: 0 1;
+    content-align: center top;
+}
+
+EVTable > .ev-title {
+    color: $text-muted;
+}
+
+/* ── Status bar ───────────────────────────────────────────────────────── */
+
+StatusBar {
+    background: $surface;
+    color: $text-muted;
+    height: 1;
+    dock: bottom;
+}
+
+/* ── Base Terminal screen ────────────────────────────────────────────── */
+
+#bt-title {
+    width: 100%;
+    height: 1;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    color: $text-muted;
+    text-style: bold;
+    padding: 0 2;
+}
+
+#bt-view-selector {
+    width: 100%;
+    height: 1;
+    content-align: center middle;
+    text-align: center;
+    background: $panel;
+    color: $text;
+    padding: 0 2;
+    margin: 0 0 1 0;
+}
+
+/* ── Base Terminal trending layout (3 rows) ─────────────────────────── */
+
+#bt-trending-top {
+    height: 1fr;
+    width: 100%;
+    padding: 0 0;
+}
+
+#bt-trending-table {
+    width: 100%;
+    height: 2fr;
+}
+
+#bt-trending-sep1, #bt-trending-sep2 {
+    width: 100%;
+    height: 1;
+    color: $panel;
+    padding: 0 2;
+    margin: 0 0;
+}
+
+#bt-trending-bottom {
+    height: 1fr;
+    width: 100%;
+    padding: 0 0;
+}
+
+/* ── Base Terminal widgets ──────────────────────────────────────────── */
+
+TrendingTable {
+    width: 1fr;
+    padding: 0 1;
+}
+
+TrendingTable > Static {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+TrendingTable DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+PriceSparklines {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 1;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+VolumeSparklines {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 1;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+VolumeSparklines > .volspark-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+PriceSparklines > .spark-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+TopMovers {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 1;
+    content-align: center top;
+}
+
+TopMovers > .movers-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+TopMovers DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+VolumeBars {
+    height: 1fr;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+VolumeBars > Static {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+VolumeBars DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+
+
+GeckoPools {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 1;
+    content-align: center top;
+}
+
+GeckoPools > .gecko-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+GeckoPools DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+/* ── Base Terminal launch radar layout ──────────────────────────────── */
+
+#bt-launch-row {
+    height: 1fr;
+    width: 100%;
+    padding: 0 0;
+}
+
+#bt-launch-feed {
+    width: 3fr;
+}
+
+#bt-launch-right {
+    width: 2fr;
+    padding: 0 0;
+}
+
+/* ── Base Terminal launch radar widgets ────────────────────────────── */
+
+LaunchFeed {
+    width: 1fr;
+    padding: 0 1;
+}
+
+LaunchFeed > .launch-feed-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+LaunchFeed DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+LaunchStats {
+    width: 1fr;
+    padding: 0 1;
+    height: auto;
+    content-align: center top;
+}
+
+LaunchStats > .launch-stats-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+GraduatedTokens {
+    width: 1fr;
+    padding: 0 1;
+    height: auto;
+    margin: 1 0 0 0;
+    content-align: center top;
+}
+
+GraduatedTokens > .graduated-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+GraduatedTokens DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+/* ── Base Terminal Token Detail layout ────────────────────────────────── */
+
+#bt-token-header {
+    width: 100%;
+    height: 1;
+    color: $text-muted;
+    padding: 0 2;
+    margin: 0 0 1 0;
+}
+
+#bt-token-top {
+    height: auto;
+    width: 100%;
+    padding: 0 0;
+}
+
+#bt-token-sep {
+    width: 100%;
+    height: 1;
+    color: $panel;
+    padding: 0 2;
+    margin: 0 0;
+}
+
+#bt-token-bottom {
+    height: 1fr;
+    width: 100%;
+    padding: 0 0;
+}
+
+#bt-token-left {
+    width: 1fr;
+    padding: 0 0;
+}
+
+/* ── Base Terminal Token Detail widgets ──────────────────────────────── */
+
+TokenPrice {
+    width: 1fr;
+    padding: 0 1;
+    height: auto;
+}
+
+TokenPrice > .tp-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+TokenPrice > .tp-body {
+    border: solid $panel;
+    background: $surface;
+}
+
+TokenChart {
+    width: 2fr;
+    padding: 0 1;
+    height: auto;
+}
+
+TokenChart > .tc-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+TokenChart > .tc-body {
+    border: solid $panel;
+    background: $surface;
+}
+
+PoolInfo {
+    width: 1fr;
+    padding: 0 1;
+    height: auto;
+}
+
+PoolInfo > .pi-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+TradeFeed {
+    width: 1fr;
+    padding: 0 1;
+}
+
+TradeFeed > .tf-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+TradeFeed RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+TokenSignals {
+    width: 1fr;
+    padding: 0 1;
+    height: 1fr;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+TokenSignals > .ts-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+/* ── Base Terminal Overview layout ──────────────────────────────────── */
+
+OverviewPanel {
+    width: 100%;
+    height: 1fr;
+    padding: 0 0;
+}
+
+OverviewPanel {
+    width: 100%;
+    height: 1fr;
+}
+
+OverviewPanel > .ov-section {
+    width: 100%;
+    padding: 0 1;
+}
+
+#ov-hero-row {
+    width: 100%;
+    height: auto;
+}
+
+OverviewHero _HeroCard {
+    width: 1fr;
+    height: 5;
+    border: solid $panel;
+    padding: 0 1;
+    content-align: center middle;
+}
+
+#ov-sparklines {
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+    content-align: center top;
+}
+
+#ov-sep {
+    width: 100%;
+    height: 1;
+    color: $panel;
+    padding: 0 1;
+}
+
+#ov-bottom {
+    width: 100%;
+    height: 1fr;
+    padding: 0 0;
+}
+
+#ov-left {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 1;
+    overflow-y: auto;
+}
+
+#ov-right {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 1;
+    overflow-y: auto;
+}
+
+OverviewPanel .ov-sub-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+OverviewPanel DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+/* ── Base Terminal Fee Monitor layout ───────────────────────────────── */
+
+#bt-fee-header {
+    width: 100%;
+    height: 1;
+    color: $text-muted;
+    padding: 0 2;
+    margin: 0 0 1 0;
+}
+
+#bt-fee-top {
+    height: 1fr;
+    width: 100%;
+    padding: 0 0;
+}
+
+#bt-fee-sep {
+    width: 100%;
+    height: 1;
+    color: $panel;
+    padding: 0 2;
+    margin: 0 0;
+}
+
+#bt-fee-bottom {
+    height: 1fr;
+    width: 100%;
+    padding: 0 0;
+}
+
+#bt-fee-alerts {
+    width: 1fr;
+    padding: 0 1;
+    height: 1fr;
+    overflow-y: auto;
+}
+
+#bt-fee-alerts-title {
+    color: $text-muted;
+    padding: 0 1;
+    text-style: bold;
+    margin: 0 0 1 0;
+}
+
+#bt-fee-alerts-body {
+    padding: 0 1;
+}
+
+/* ── Base Terminal Fee Monitor widgets ──────────────────────────────── */
+
+FeeClaims {
+    width: 2fr;
+    padding: 0 1;
+}
+
+FeeClaims > .fc-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+FeeClaims RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+FeeLeaderboard {
+    width: 1fr;
+    padding: 0 1;
+    height: 1fr;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+FeeLeaderboard > .fl-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+FeeLeaderboard DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+FeeStats {
+    width: 1fr;
+    padding: 0 1;
+    height: 1fr;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+FeeStats > .fs-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+/* ── FrenPet screen ──────────────────────────────────────────────────── */
+
+#fp-title {
+    width: 100%;
+    height: 1;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    color: $text-muted;
+    text-style: bold;
+    padding: 0 2;
+}
+
+#fp-view-selector {
+    width: 100%;
+    height: 1;
+    content-align: center middle;
+    text-align: center;
+    background: $panel;
+    color: $text;
+    padding: 0 2;
+    margin: 0 0 1 0;
+}
+
+ContentSwitcher {
+    height: 1fr;
+    padding: 0 1;
+}
+
+ContentSwitcher > Vertical {
+    height: 1fr;
+    width: 100%;
+}
+
+/* ── FrenPet General View ────────────────────────────────────────────── */
+
+#fp-top-row {
+    height: auto;
+    width: 100%;
+    padding: 0 0;
+    margin: 0 0 1 0;
+}
+
+#fp-middle-row {
+    height: 1fr;
+    width: 100%;
+    padding: 0 0;
+}
+
+#fp-separator {
+    width: 100%;
+    height: 1;
+    color: $panel;
+    padding: 0 2;
+    margin: 0 0;
+}
+
+#fp-bottom-row {
+    height: 1fr;
+    width: 100%;
+    padding: 0 0;
+}
+
+#fp-right-bottom {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 0;
+}
+
+/* Population panel */
+Population {
+    width: 1fr;
+    padding: 0 1;
+    height: auto;
+    content-align: center top;
+}
+
+Population > .pop-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+/* Score distribution panel */
+ScoreDistribution {
+    width: 2fr;
+    padding: 0 1;
+    height: auto;
+}
+
+ScoreDistribution > Static {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+ScoreDistribution DataTable {
+    height: auto;
+    max-height: 10;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+/* Top leaderboard */
+TopLeaderboard {
+    width: 3fr;
+    padding: 0 1;
+}
+
+TopLeaderboard > .lb-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+TopLeaderboard DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+/* Battle feed */
+BattleFeed {
+    width: 2fr;
+    padding: 0 1;
+}
+
+BattleFeed > .battle-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+BattleFeed RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+BattleFeed > .battle-footer {
+    height: 1;
+    margin: 1 0 0 0;
+}
+
+/* Game stats */
+GameStats {
+    width: 1fr;
+    padding: 0 1;
+    height: 1fr;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+GameStats > .gs-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+/* Pets in context */
+PetsInContext {
+    width: 1fr;
+    padding: 0 1;
+    height: auto;
+    content-align: center top;
+}
+
+PetsInContext > .pic-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+PetsInContext DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+/* Sniper queue */
+SniperQueue {
+    width: 1fr;
+    padding: 0 1;
+    height: auto;
+    content-align: center top;
+}
+
+SniperQueue > .sq-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+SniperQueue DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+/* Pet stats */
+PetStats {
+    width: 1fr;
+    padding: 0 1;
+    height: auto;
+    content-align: center top;
+}
+
+PetStats > .ps-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+PetStats > .ps-row {
+    padding: 0 1;
+    width: 100%;
+}
+
+/* Pet signals */
+PetSignals > .psig-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+PetSignals > .psig-row {
+    padding: 0 1;
+    width: 100%;
+}
+
+/* Market conditions */
+MarketConditions {
+    width: 1fr;
+    padding: 0 1;
+    height: 1fr;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+MarketConditions > .mc-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+/* ── FrenPet Overview (Bakery-style layout) ─────────────────────────── */
+
+#fpo-title {
+    width: 100%;
+    height: 1;
+    content-align: center middle;
+    text-align: center;
+    color: $text-muted;
+    text-style: bold;
+    padding: 0 2;
+}
+
+FPOverviewHero {
+    height: 7;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+FPHeroBox {
+    width: 1fr;
+    height: 7;
+    border: solid $panel;
+    padding: 1 2;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    margin: 0 1;
+}
+
+#fpo-middle-row {
+    height: 1fr;
+    padding: 0 0;
+    margin: 1 0 0 0;
+}
+
+FPOverviewLeaderboard {
+    width: 3fr;
+    padding: 0 1;
+}
+
+FPOverviewLeaderboard > .fpo-lb-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+FPOverviewLeaderboard DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+#fpo-right-col {
+    width: 2fr;
+    padding: 0 1;
+}
+
+FPScoreTrends {
+    height: auto;
+    padding: 0 1;
+    content-align: center top;
+}
+
+FPScoreTrends > .fpo-chart-title {
+    color: $text-muted;
+}
+
+FPGameSignals {
+    height: 1fr;
+    padding: 0 1;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+FPGameSignals > .fpo-sig-title {
+    color: $text-muted;
+}
+
+#fpo-separator {
+    width: 100%;
+    height: 1;
+    color: $panel;
+    padding: 0 2;
+    margin: 0 0;
+}
+
+#fpo-bottom-row {
+    height: 1fr;
+    padding: 0 0;
+    margin: 0 0 1 0;
+}
+
+FPBattleActivity {
+    width: 3fr;
+    padding: 0 1;
+}
+
+FPBattleActivity > .fpo-feed-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+FPBattleActivity RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+FPBestPlays {
+    width: 2fr;
+    padding: 0 1;
+    content-align: center top;
+}
+
+FPBestPlays > .fpo-bp-title {
+    color: $text-muted;
+}
