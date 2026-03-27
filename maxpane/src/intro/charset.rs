@@ -19,6 +19,8 @@ pub const RAIN_CHARS: &[char] = &[
     // Digits + symbols
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
     ':', '.', '"', '=', '*', '+', '-', '<', '>', '¦',
+    // Hidden in plain sight
+    'Ξ', '₿',
 ];
 
 /// Single-width rain characters only (no Katakana).
@@ -34,6 +36,8 @@ pub const RAIN_CHARS_SINGLE_WIDTH: &[char] = &[
     // Digits + symbols
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
     ':', '.', '"', '=', '*', '+', '-', '<', '>', '¦',
+    // Hidden in plain sight
+    'Ξ', '₿',
 ];
 
 /// Returns a random character from the full rain set (including Katakana).
@@ -50,10 +54,10 @@ pub fn random_rain_char_single_width(rng: &mut fastrand::Rng) -> char {
 mod tests {
     use super::*;
 
-    // 11 box-drawing + 8 block + 38 katakana + 10 digits + 10 symbols = 77
-    const EXPECTED_RAIN_CHARS_LEN: usize = 77;
-    // 11 box-drawing + 8 block + 10 digits + 10 symbols = 39
-    const EXPECTED_SINGLE_WIDTH_LEN: usize = 39;
+    // 11 box-drawing + 8 block + 38 katakana + 10 digits + 10 symbols + 2 crypto = 79
+    const EXPECTED_RAIN_CHARS_LEN: usize = 79;
+    // 11 box-drawing + 8 block + 10 digits + 10 symbols + 2 crypto = 41
+    const EXPECTED_SINGLE_WIDTH_LEN: usize = 41;
 
     #[test]
     fn rain_chars_has_expected_length() {
