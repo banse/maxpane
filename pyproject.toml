@@ -1,7 +1,44 @@
 [project]
 name = "maxpane"
-version = "0.1.0"
+version = "0.1.1"
+description = "Terminal dashboard for onchain games — RugPull Bakery, FrenPet, Cat Town, OCM, DOTA, and more"
 requires-python = ">=3.11"
+license = "MIT"
+readme = "README.md"
+keywords = ["blockchain", "dashboard", "terminal", "tui", "onchain", "gaming"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment",
+]
+dependencies = [
+    "textual>=0.80",
+    "httpx>=0.27",
+    "pydantic>=2.0",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+maxpane = "dashboard.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/banse/maxpane"
+Repository = "https://github.com/banse/maxpane"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+include = ["dashboard/"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["dashboard"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
