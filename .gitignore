@@ -1,10 +1,36 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
+dist/
+build/
+
+# Rust
+maxpane/target/
+
+# Data & secrets
+/data/
+*.db
+.env
+*.keystore
+
+# Internal planning & tooling
+.planning/
+.superpowers/
+.claude/
+.playwright-mcp/
+
+# Media (screenshots, videos)
 *.png
 *.jpg
-.playwright-mcp/
-data/
-*.db
-.claude/
-maxpane/target/
+*.mov
+*.mp4
+
+# macOS
+.DS_Store
+
+# Docs (internal screenshots & planning - not for public)
+docs/screenshots/
+docs/mockups/
+docs/superpowers/
