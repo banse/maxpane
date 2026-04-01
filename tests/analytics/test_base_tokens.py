@@ -2,7 +2,7 @@
 
 import pytest
 
-from dashboard.analytics.base_tokens import (
+from maxpane_dashboard.analytics.base_tokens import (
     calculate_momentum_score,
     classify_token_status,
     format_change,

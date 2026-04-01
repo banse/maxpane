@@ -2,7 +2,7 @@
 
 import pytest
 
-from dashboard.analytics.ev import (
+from maxpane_dashboard.analytics.ev import (
     BOOST_CATALOG,
     calculate_attack_ev,
     calculate_boost_ev,
@@ -33,7 +33,7 @@ class TestBoostCatalog:
 
     def test_catalog_is_importable(self) -> None:
         """BOOST_CATALOG should be importable for use by EV table widget."""
-        from dashboard.analytics.ev import BOOST_CATALOG as imported
+        from maxpane_dashboard.analytics.ev import BOOST_CATALOG as imported
 
         assert imported is BOOST_CATALOG
 

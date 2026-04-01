@@ -2,7 +2,7 @@
 
 import pytest
 
-from dashboard.analytics.production import (
+from maxpane_dashboard.analytics.production import (
     calculate_production_rate,
     classify_trend,
     format_rate,

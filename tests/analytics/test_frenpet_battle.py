@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from dashboard.analytics.frenpet_battle import (
+from maxpane_dashboard.analytics.frenpet_battle import (
     SCORE_DECIMALS,
     calculate_loss,
     calculate_reward,

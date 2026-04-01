@@ -2,7 +2,7 @@
 
 import pytest
 
-from dashboard.analytics.leaderboard import (
+from maxpane_dashboard.analytics.leaderboard import (
     calculate_prize_per_member,
     format_cookies,
     format_gap,

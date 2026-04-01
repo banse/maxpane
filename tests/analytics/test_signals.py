@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from dashboard.analytics.signals import (
+from maxpane_dashboard.analytics.signals import (
     calculate_gap_analysis,
     calculate_late_join_ev,
     calculate_leader_dominance,

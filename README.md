@@ -1,8 +1,8 @@
 # MaxPane
 
-Terminal dashboard for onchain games.
+Terminal dashboard for blockchain games on Base, Abstract, and Ethereum.
 
-Track leaderboards, signals, and analytics for RugPull Bakery, FrenPet, Cat Town, OCM, DOTA, and more — all from your terminal.
+Track leaderboards, signals, and analytics for RugPull Bakery, FrenPet, Cat Town, OCM, DOTA, and Base token trading — all from your terminal.
 
 ## Install
 
@@ -43,14 +43,14 @@ alias maxpane='~/path/to/maxpane/maxpane/target/release/maxpane && command maxpa
 ```bash
 maxpane                        # launch dashboard (default: bakery)
 maxpane --game frenpet         # start on FrenPet view
-maxpane --game cattown         # start on Cat Town view
+maxpane --game base            # start on Base trading view
 maxpane --theme minimal        # use minimal theme
 maxpane --poll-interval 60     # poll every 60s instead of 30s
 ```
 
 ### Available games
 
-`bakery` `frenpet` `cattown` `ocm` `dota` `base`
+`bakery` `frenpet` `base` `cattown` `ocm` `dota`
 
 ### Available themes
 

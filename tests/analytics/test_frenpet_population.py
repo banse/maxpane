@@ -2,7 +2,7 @@
 
 import pytest
 
-from dashboard.analytics.frenpet_population import (
+from maxpane_dashboard.analytics.frenpet_population import (
     calculate_market_conditions,
     calculate_population_stats,
     calculate_score_distribution,

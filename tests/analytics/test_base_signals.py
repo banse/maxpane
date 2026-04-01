@@ -2,7 +2,7 @@
 
 import pytest
 
-from dashboard.analytics.base_signals import (
+from maxpane_dashboard.analytics.base_signals import (
     calculate_liquidity_ratio,
     detect_volume_spike,
     generate_token_signal,

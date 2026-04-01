@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from dashboard.analytics.frenpet_signals import (
+from maxpane_dashboard.analytics.frenpet_signals import (
     calculate_battle_efficiency,
     calculate_rank,
     calculate_tod_status,
@@ -147,7 +147,7 @@ class TestCalculateTodStatus:
     def test_safe_status(self) -> None:
         # 72 hours from now
         future = time.time() + 72 * 3600
-        with patch("dashboard.analytics.frenpet_signals.time") as mock_time:
+        with patch("maxpane_dashboard.analytics.frenpet_signals.time") as mock_time:
             mock_time.time.return_value = time.time()
             result = calculate_tod_status(int(future))
         assert result["status"] == "safe"
@@ -157,7 +157,7 @@ class TestCalculateTodStatus:
     def test_warning_status(self) -> None:
         now = time.time()
         future = now + 24 * 3600  # 24 hours
-        with patch("dashboard.analytics.frenpet_signals.time") as mock_time:
+        with patch("maxpane_dashboard.analytics.frenpet_signals.time") as mock_time:
             mock_time.time.return_value = now
             result = calculate_tod_status(int(future))
         assert result["status"] == "warning"
@@ -167,7 +167,7 @@ class TestCalculateTodStatus:
     def test_critical_status(self) -> None:
         now = time.time()
         future = now + 3 * 3600  # 3 hours
-        with patch("dashboard.analytics.frenpet_signals.time") as mock_time:
+        with patch("maxpane_dashboard.analytics.frenpet_signals.time") as mock_time:
             mock_time.time.return_value = now
             result = calculate_tod_status(int(future))
         assert result["status"] == "critical"
@@ -177,7 +177,7 @@ class TestCalculateTodStatus:
     def test_past_timestamp_clamped_to_zero(self) -> None:
         now = time.time()
         past = now - 3600  # 1 hour ago
-        with patch("dashboard.analytics.frenpet_signals.time") as mock_time:
+        with patch("maxpane_dashboard.analytics.frenpet_signals.time") as mock_time:
             mock_time.time.return_value = now
             result = calculate_tod_status(int(past))
         assert result["hours_remaining"] == 0.0
@@ -186,7 +186,7 @@ class TestCalculateTodStatus:
     def test_boundary_48_hours(self) -> None:
         now = time.time()
         exactly_48 = now + 48 * 3600
-        with patch("dashboard.analytics.frenpet_signals.time") as mock_time:
+        with patch("maxpane_dashboard.analytics.frenpet_signals.time") as mock_time:
             mock_time.time.return_value = now
             result = calculate_tod_status(int(exactly_48))
         # 48h is in warning range (6-48h boundary is inclusive)
@@ -196,7 +196,7 @@ class TestCalculateTodStatus:
         # Use integer now to avoid int() truncation shifting below boundary
         now = 1700000000.0
         exactly_6 = now + 6 * 3600
-        with patch("dashboard.analytics.frenpet_signals.time") as mock_time:
+        with patch("maxpane_dashboard.analytics.frenpet_signals.time") as mock_time:
             mock_time.time.return_value = now
             result = calculate_tod_status(int(exactly_6))
         assert result["status"] == "warning"
