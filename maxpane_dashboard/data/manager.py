@@ -137,8 +137,8 @@ class DataManager:
             bakeries[1].name if len(bakeries) > 1 else "", 0.0
         )
         gap_to_leader = calculate_gap_analysis(
-            target_cookies=leader_cookies,
-            target_rate=leader_rate,
+            leader_cookies=leader_cookies,
+            leader_rate=leader_rate,
             your_cookies=your_cookies,
             your_rate=your_rate,
             hours_remaining=hours_remaining,
@@ -152,8 +152,8 @@ class DataManager:
             bakeries[2].name if len(bakeries) > 2 else "", 0.0
         )
         gap_to_third = calculate_gap_analysis(
-            target_cookies=third_cookies,
-            target_rate=third_rate,
+            leader_cookies=third_cookies,
+            leader_rate=third_rate,
             your_cookies=fourth_cookies,
             your_rate=fourth_rate,
             hours_remaining=hours_remaining,
