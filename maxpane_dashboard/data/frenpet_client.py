@@ -231,7 +231,7 @@ class FrenPetClient:
         """
         score_filter = str(min_score)
         query = """
-        query($limit: Int!, $score_filter: String!) {
+        query($limit: Int!, $score_filter: BigInt!) {
             pets(
                 limit: $limit,
                 orderBy: "score",
