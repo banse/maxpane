@@ -124,7 +124,7 @@ class DataManager:
             eth_price_usd=eth_price,
             member_count=member_count,
             buy_in_eth=buy_in_eth,
-            top3_probability=top3_probability,
+            win_probability=top3_probability,
         )
 
         # Top-3 cookie values for gap analysis
