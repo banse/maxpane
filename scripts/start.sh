@@ -54,4 +54,4 @@ fi
 printf '\e[3J\e[H\e[2J'
 
 echo $$ > "$PIDFILE"
-exec python -m dashboard "$@"
+exec python -m maxpane_dashboard "$@"

@@ -10,7 +10,7 @@ PIDFILE="data/maxpane.pid"
 if [ ! -f "$PIDFILE" ]; then
     echo "No PID file found. MaxPane may not be running."
     # Try to find and kill any orphaned process
-    PIDS=$(pgrep -f "python -m dashboard" 2>/dev/null || true)
+    PIDS=$(pgrep -f "python -m maxpane_dashboard" 2>/dev/null || true)
     if [ -n "$PIDS" ]; then
         echo "Found orphaned dashboard process(es): $PIDS"
         echo "$PIDS" | xargs kill 2>/dev/null || true

@@ -31,4 +31,4 @@ printf '\e[3J\e[H\e[2J'
 
 # Launch the Textual dashboard directly (skip Rust intro)
 echo $$ > "$PIDFILE"
-exec python -m dashboard "$@"
+exec python -m maxpane_dashboard "$@"
