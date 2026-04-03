@@ -59,7 +59,7 @@ class MaxPaneApp(App):
             poll_interval=poll_interval,
             wallet_address=wallet_address,
         )
-        self._base_manager = BaseManager()
+        self._base_manager = BaseManager(remote_only=True)
         self._cattown_manager = CatTownManager(poll_interval=poll_interval)
         self._ocm_manager = OCMManager(poll_interval=poll_interval)
         self._dota_manager = DOTAManager(poll_interval=poll_interval)
