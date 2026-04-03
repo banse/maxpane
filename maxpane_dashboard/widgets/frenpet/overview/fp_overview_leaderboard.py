@@ -32,7 +32,7 @@ class FPOverviewLeaderboard(Vertical):
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_column("#", width=4)
-        table.add_column("Pet ID", width=10)
+        table.add_column("Name", width=16)
         table.add_column("Score", width=12)
         table.add_column("ATK/DEF", width=12)
         table.add_column("Status", width=10)
@@ -48,10 +48,11 @@ class FPOverviewLeaderboard(Vertical):
 
         for idx, pet in enumerate(top_pets[:10], start=1):
             pet_id = getattr(pet, "id", "?")
+            pet_name = getattr(pet, "name", "") or f"#{pet_id}"
             score = float(getattr(pet, "score", 0))
             atk = getattr(pet, "attack_points", 0)
             defense = getattr(pet, "defense_points", 0)
-            status = getattr(pet, "status", 1)
+            status = getattr(pet, "status", 0)
 
             # Format score
             if score >= 1_000_000_000:
@@ -65,22 +66,24 @@ class FPOverviewLeaderboard(Vertical):
 
             atk_def_str = f"{atk}/{defense}"
 
-            # Status: 1 = active, 0 or other = hibernated
-            if status == 1:
+            # Status: 0 = Active, 2 = Hibernated
+            if status == 0:
                 status_str = "[green]Active[/]"
-            else:
+            elif status == 2:
                 status_str = "[red]Hibernated[/]"
+            else:
+                status_str = f"[yellow]{status}[/]"
 
             # Highlight the leader row
             if idx == 1:
-                id_str = f"[bold]#{pet_id}[/]"
+                name_str = f"[bold]{pet_name}[/]"
                 score_str = f"[bold]{score_str}[/]"
             else:
-                id_str = f"#{pet_id}"
+                name_str = pet_name
 
             table.add_row(
                 str(idx),
-                id_str,
+                name_str,
                 score_str,
                 atk_def_str,
                 status_str,

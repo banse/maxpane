@@ -41,6 +41,9 @@ class FPOverviewHero(Horizontal):
             id="fpo-hero-leader",
         )
 
+    # FrenPet launched on Base in August 2023
+    _GAME_START_TIMESTAMP = 1691452800  # 2023-08-08 00:00:00 UTC
+
     def update_data(
         self,
         fp_reward_pool: float | int,
@@ -60,14 +63,14 @@ class FPOverviewHero(Horizontal):
         # -- Playing Since --
         since_box = self.query_one("#fpo-hero-since", FPHeroBox)
         now = time.time()
-        elapsed = max(0, now - game_start_timestamp)
+        elapsed = max(0, now - self._GAME_START_TIMESTAMP)
         years = int(elapsed // (365.25 * 86400))
         months = int((elapsed % (365.25 * 86400)) // (30.44 * 86400))
         since_str = f"{years}y {months}m"
         since_box.update(
             f"[dim]PLAYING SINCE[/]\n\n"
             f"[bold white]{since_str}[/]\n"
-            f"[dim]Base L2[/]"
+            f"[dim]Base[/]"
         )
 
         # -- Leader --

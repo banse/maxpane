@@ -1,4 +1,4 @@
-"""Pet score trend sparklines for the FrenPet Overview view."""
+"""Population-level trend sparklines for the FrenPet Overview view."""
 
 from __future__ import annotations
 
@@ -10,17 +10,14 @@ _SPARK_CHARS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
 _SPARK_WIDTH = 30
 
 
-def _build_sparkline(points: list[tuple[float, float]], width: int = _SPARK_WIDTH) -> str:
-    """Convert time-series points into a sparkline string.
+def _build_sparkline(values: list[float], width: int = _SPARK_WIDTH) -> str:
+    """Convert a list of float values into a sparkline string.
 
-    Each point is ``(timestamp, value)``.  The Y axis is scaled
-    relative to the pet's own min/max range so short-range
-    movements are still visible.
+    The Y axis is scaled relative to the series min/max range so
+    short-range movements are still visible.
     """
-    if len(points) < 2:
+    if len(values) < 2:
         return "\u2581" * width
-
-    values = [p[1] for p in points]
 
     # Take the last `width` values if we have more
     if len(values) > width:
@@ -46,19 +43,28 @@ def _build_sparkline(points: list[tuple[float, float]], width: int = _SPARK_WIDT
     return "".join(chars)
 
 
-def _format_score(score: float) -> str:
-    """Format a score with M/B/K suffix."""
-    if score >= 1_000_000_000:
-        return f"{score / 1_000_000_000:.1f}B"
-    elif score >= 1_000_000:
-        return f"{score / 1_000_000:.1f}M"
-    elif score >= 1_000:
-        return f"{score / 1_000:.1f}K"
-    return f"{score:,.0f}"
+def _format_value(value: float, suffix: str = "") -> str:
+    """Format a value with K/M/B suffix."""
+    if value >= 1_000_000_000:
+        return f"{value / 1_000_000_000:.1f}B{suffix}"
+    elif value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M{suffix}"
+    elif value >= 1_000:
+        return f"{value / 1_000:.1f}K{suffix}"
+    return f"{value:,.0f}{suffix}"
+
+
+def _trend_arrow(values: list[float]) -> str:
+    """Return a trend arrow based on the last two values."""
+    if len(values) >= 2 and values[-1] > values[-2]:
+        return "[green]\u25b2[/]"
+    elif len(values) >= 2 and values[-1] < values[-2]:
+        return "[red]\u25bc[/]"
+    return "[dim]\u25cf[/]"
 
 
 class FPScoreTrends(Vertical):
-    """ASCII sparkline chart showing pet score trends."""
+    """Population-level sparklines: Active pets, Total score, Battle rate."""
 
     DEFAULT_CSS = """
     FPScoreTrends > .fpo-chart-title {
@@ -74,65 +80,44 @@ class FPScoreTrends(Vertical):
     """
 
     def compose(self) -> ComposeResult:
-        yield Static("PET TRENDS", classes="fpo-chart-title")
+        yield Static("POPULATION TRENDS", classes="fpo-chart-title")
         yield Static("", classes="fpo-chart-line", id="fpo-chart-spacer")
-        yield Static("[dim]Loading...[/]", classes="fpo-chart-line", id="fpo-chart-line-0")
-        yield Static("", classes="fpo-chart-line", id="fpo-chart-line-1")
-        yield Static("", classes="fpo-chart-line", id="fpo-chart-line-2")
-        yield Static("", classes="fpo-chart-line", id="fpo-chart-line-3")
-        yield Static("", classes="fpo-chart-line", id="fpo-chart-line-4")
+        yield Static("[dim]Loading...[/]", classes="fpo-chart-line", id="fpo-chart-active")
+        yield Static("", classes="fpo-chart-line", id="fpo-chart-score")
+        yield Static("", classes="fpo-chart-line", id="fpo-chart-battles")
 
     def update_data(
         self,
         top_pets: list,
         score_histories: dict,
+        active_pets_history: list[tuple[float, float]] | None = None,
+        total_score_history: list[tuple[float, float]] | None = None,
+        battle_rate_history: list[tuple[float, float]] | None = None,
     ) -> None:
-        """Render sparklines for the top 3-5 pets."""
-        # Build ordered list of (pet_id, points) from top_pets that have histories
-        entries: list[tuple[int, list[tuple[float, float]]]] = []
-        for pet in top_pets[:5]:
-            pet_id = getattr(pet, "id", None)
-            if pet_id is None:
-                continue
-            points = score_histories.get(pet_id, [])
-            entries.append((pet_id, points))
-
-        line_ids = [
-            "fpo-chart-line-0",
-            "fpo-chart-line-1",
-            "fpo-chart-line-2",
-            "fpo-chart-line-3",
-            "fpo-chart-line-4",
+        """Render population-level sparklines."""
+        metrics = [
+            ("fpo-chart-active", "Active Pets", active_pets_history or [], ""),
+            ("fpo-chart-score", "Total Score", total_score_history or [], ""),
+            ("fpo-chart-battles", "Battle Rate", battle_rate_history or [], "/h"),
         ]
 
-        colors = ["green", "cyan", "yellow", "magenta", "blue"]
+        colors = ["green", "cyan", "yellow"]
 
-        for i, line_id in enumerate(line_ids):
-            widget = self.query_one(f"#{line_id}", Static)
-            if i >= len(entries):
-                widget.update("")
+        for (widget_id, label, history, suffix), color in zip(metrics, colors):
+            widget = self.query_one(f"#{widget_id}", Static)
+
+            if not history:
+                widget.update(f"  [dim]{label:<14}[/]  [dim]no data[/]")
                 continue
 
-            pet_id, points = entries[i]
-            sparkline = _build_sparkline(points)
+            values = [p[1] for p in history]
+            sparkline = _build_sparkline(values)
+            current = values[-1] if values else 0.0
+            current_str = _format_value(current, suffix)
+            arrow = _trend_arrow(values)
 
-            # Current value from last point
-            current = points[-1][1] if points else 0.0
-            current_str = _format_score(current)
-
-            # Determine trend arrow
-            if len(points) >= 2 and points[-1][1] > points[-2][1]:
-                arrow = "[green]\u25b2[/]"
-            elif len(points) >= 2 and points[-1][1] < points[-2][1]:
-                arrow = "[red]\u25bc[/]"
-            else:
-                arrow = "[dim]\u25cf[/]"
-
-            # Format pet ID label, pad to 8 chars
-            label = f"#{pet_id}"[:8].ljust(8)
-            color = colors[i]
-
+            padded_label = label[:14].ljust(14)
             widget.update(
-                f"  [dim]{label}[/]  [{color}]{sparkline}[/]  "
+                f"  [dim]{padded_label}[/]  [{color}]{sparkline}[/]  "
                 f"[bold]{current_str}[/] {arrow}"
             )

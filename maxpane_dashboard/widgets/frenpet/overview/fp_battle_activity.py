@@ -19,20 +19,34 @@ def _format_time(timestamp) -> str:
         return "??:??"
 
 
-def _attack_to_markup(attack: dict) -> str:
+def _attack_to_markup(attack: dict, pet_names: dict[int, str] | None = None) -> str:
     """Convert an attack dict into a Rich-markup formatted line."""
     ts = _format_time(attack.get("timestamp", 0))
-    attacker = attack.get("attacker_id", "?")
-    defender = attack.get("defender_id", "?")
+    attacker_id = attack.get("attacker_id", "?")
+    defender_id = attack.get("defender_id", "?")
     won = attack.get("attacker_won", False)
-    points = attack.get("points_delta", 0)
+
+    # Points delta from `won` field (raw value in 1e12 units)
+    won_raw = attack.get("won", 0)
+    try:
+        points = int(won_raw) / 1e12
+    except (ValueError, TypeError):
+        points = 0.0
+
+    # Resolve pet names
+    names = pet_names or {}
+    attacker_name = names.get(int(attacker_id), f"#{attacker_id}") if attacker_id != "?" else "?"
+    defender_name = names.get(int(defender_id), f"#{defender_id}") if defender_id != "?" else "?"
 
     result_str = "[green]Won[/]" if won else "[red]Lost[/]"
-    pts_str = f"[green]+{points:,}[/]" if points >= 0 else f"[red]{points:,}[/]"
+    if points >= 0:
+        pts_str = f"[green]+{points:,.0f}[/]"
+    else:
+        pts_str = f"[red]{points:,.0f}[/]"
 
     return (
         f"  [dim]{ts}[/]  "
-        f"[cyan]#{attacker}[/] \u2192 [cyan]#{defender}[/]  "
+        f"[cyan]{attacker_name}[/] \u2192 [cyan]{defender_name}[/]  "
         f"{result_str}  {pts_str}"
     )
 
@@ -62,7 +76,11 @@ class FPBattleActivity(Vertical):
         yield Static("ACTIVITY", classes="fpo-feed-title")
         yield RichLog(id="fpo-activity-log", wrap=True, highlight=True, markup=True)
 
-    def update_data(self, recent_attacks: list[dict]) -> None:
+    def update_data(
+        self,
+        recent_attacks: list[dict],
+        pet_names: dict[int, str] | None = None,
+    ) -> None:
         """Rewrite the log with newest attacks on top."""
         log = self.query_one("#fpo-activity-log", RichLog)
 
@@ -86,7 +104,7 @@ class FPBattleActivity(Vertical):
         log.clear()
         log.auto_scroll = False
         for attack in recent_attacks:
-            log.write(_attack_to_markup(attack))
+            log.write(_attack_to_markup(attack, pet_names=pet_names))
 
         # Scroll to top after render
         self.call_after_refresh(log.scroll_home, animate=False)

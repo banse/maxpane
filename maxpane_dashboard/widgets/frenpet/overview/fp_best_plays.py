@@ -1,10 +1,12 @@
-"""Top earners and rising stars tables for the FrenPet Overview view."""
+"""Top fighters and most active tables for the FrenPet Overview view."""
 
 from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+
+_NUM_ROWS = 10
 
 
 def _truncate(name: str, width: int = 15) -> str:
@@ -15,7 +17,7 @@ def _truncate(name: str, width: int = 15) -> str:
 
 
 class FPBestPlays(Vertical):
-    """Side-by-side tables showing top earners and rising stars."""
+    """Side-by-side tables showing top fighters (by win rate) and most active (by battles)."""
 
     DEFAULT_CSS = """
     FPBestPlays > .fpo-bp-title {
@@ -34,25 +36,25 @@ class FPBestPlays(Vertical):
         yield Static("BEST PLAYS", classes="fpo-bp-title")
         yield Static("", classes="fpo-bp-body")
         yield Static(
-            f"  {'Top Earners':<14} {'Score':>10}    {'Rising Stars':<14} {'ATK+DEF':>8}",
+            f"  {'Top Fighters':<14} {'Win %':>10}    {'Most Active':<14} {'Battles':>8}",
             classes="fpo-bp-body",
             id="fpo-bp-header",
         )
         yield Static("", classes="fpo-bp-body")
-        yield Static("[dim]  Loading...[/]", classes="fpo-bp-body", id="fpo-bp-row-0")
-        yield Static("", classes="fpo-bp-body", id="fpo-bp-row-1")
-        yield Static("", classes="fpo-bp-body", id="fpo-bp-row-2")
+        for i in range(_NUM_ROWS):
+            default_text = "[dim]  Loading...[/]" if i == 0 else ""
+            yield Static(default_text, classes="fpo-bp-body", id=f"fpo-bp-row-{i}")
 
     def update_data(
         self,
         top_earners: list[tuple[str, str]],
         rising_stars: list[tuple[str, str]],
     ) -> None:
-        """Show top 3 earners by score and top 3 rising stars by ATK+DEF."""
-        for i in range(3):
+        """Show top 10 fighters by win rate and top 10 most active by battle count."""
+        for i in range(_NUM_ROWS):
             widget = self.query_one(f"#fpo-bp-row-{i}", Static)
 
-            # Earner side
+            # Fighter side (top_earners = by win rate, min 10 battles)
             if i < len(top_earners):
                 e_name, e_value = top_earners[i]
                 star = "[yellow]\u2605[/] " if i == 0 else "  "
@@ -63,7 +65,7 @@ class FPBestPlays(Vertical):
                 e_name_str = " " * 14
                 e_value_str = " " * 10
 
-            # Rising star side
+            # Most active side (rising_stars = by battle count)
             if i < len(rising_stars):
                 r_name, r_value = rising_stars[i]
                 r_star = "[yellow]\u2605[/] " if i == 0 else "  "
