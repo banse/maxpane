@@ -40,6 +40,7 @@ class MaxPaneApp(App):
         Binding("q", "quit", "Quit", show=False),
         Binding("t", "cycle_theme", "Theme", show=False),
         Binding("tab", "switch_game", "Switch Game", show=False),
+        Binding("m", "show_menu", "Menu", show=False),
     ]
 
     def __init__(
@@ -176,8 +177,13 @@ class MaxPaneApp(App):
         else:
             self.switch_screen(game_id)
 
+    def action_show_menu(self) -> None:
+        """Return to the game selection screen."""
+        self.pop_screen()
+        self.push_screen(GameSelectScreen(), callback=self._on_game_selected)
+
     def action_switch_game(self) -> None:
-        """Tab cycles through Bakery -> FrenPet -> Base -> Bakery."""
+        """Tab cycles through games."""
         current_idx = (
             self._GAME_CYCLE.index(self._current_game)
             if self._current_game in self._GAME_CYCLE
