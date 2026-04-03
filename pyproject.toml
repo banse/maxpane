@@ -1,6 +1,6 @@
 [project]
 name = "maxpane"
-version = "0.2.3"
+version = "0.3.0"
 description = "Terminal dashboard for onchain games — RugPull Bakery, FrenPet, Cat Town, OCM, DOTA, and more"
 requires-python = ">=3.11"
 license = "MIT"
