@@ -1,4 +1,13 @@
-"""Expected-value tables for boosts and attacks."""
+"""Two-column table template -- copy and adapt for new game dashboards.
+
+Pattern: Vertical container with side-by-side data displayed using
+Static widgets (not two DataTables).  A header row labels both columns,
+then N data rows each show left-side and right-side entries inline.
+
+Reference implementations:
+  - maxpane_dashboard/widgets/frenpet/overview/fp_best_plays.py
+  - maxpane_dashboard/widgets/cattown/ct_best_plays.py
+"""
 
 from __future__ import annotations
 
@@ -6,19 +15,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
-
-def _fmt_ev(value: float) -> str:
-    """Format an EV value with color and sign."""
-    if value >= 0:
-        return f"[green]+{value:,.0f}[/]"
-    return f"[red]{value:,.0f}[/]"
-
-
-def _fmt_ratio(value: float) -> str:
-    """Format a gap-closure ratio with color."""
-    if value > 0:
-        return f"[green]{value:.1f}x[/]"
-    return f"[dim]0.0x[/]"
+_NUM_ROWS = 5
 
 
 def _truncate(name: str, width: int = 15) -> str:
@@ -28,17 +25,21 @@ def _truncate(name: str, width: int = 15) -> str:
     return name.ljust(width)
 
 
-class EVTable(Vertical):
-    """Side-by-side tables showing best boost and attack plays."""
+class GameBestPlays(Vertical):
+    """Side-by-side tables showing two ranked lists.
+
+    Rename for your game, e.g. ``CTBestPlays``, ``DOTABestPlays``.
+    Adjust the header labels, row count, and update_data() parameters.
+    """
 
     DEFAULT_CSS = """
-    EVTable > .ev-title {
+    GameBestPlays > .ev-title {
         width: 100%;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
     }
-    EVTable > .ev-body {
+    GameBestPlays > .ev-body {
         padding: 0 1;
         width: 100%;
     }
@@ -48,48 +49,53 @@ class EVTable(Vertical):
         yield Static("BEST PLAYS", classes="ev-title")
         yield Static("", classes="ev-body")
         yield Static(
-            f"  {'Boosts':<14} {'EV':>10}    {'Attacks':<14} {'Gap':>8}",
+            f"  {'Left Column':<14} {'Value':>10}    {'Right Column':<14} {'Value':>8}",
             classes="ev-body",
-            id="ev-header",
+            id="game-bp-header",
         )
         yield Static("", classes="ev-body")
-        yield Static("[dim]  Loading...[/]", classes="ev-body", id="ev-row-0")
-        yield Static("", classes="ev-body", id="ev-row-1")
-        yield Static("", classes="ev-body", id="ev-row-2")
+        for i in range(_NUM_ROWS):
+            default_text = "[dim]  Loading...[/]" if i == 0 else ""
+            yield Static(default_text, classes="ev-body", id=f"game-bp-row-{i}")
 
     def update_data(
         self,
-        boost_rankings: list[tuple[str, float]],
-        attack_rankings: list[tuple[str, float]],
+        left_entries: list[tuple[str, str]] | None = None,
+        right_entries: list[tuple[str, str]] | None = None,
     ) -> None:
-        """Show top 3 boosts by EV and top 3 attacks by gap-closure ratio."""
-        for i in range(3):
-            widget = self.query_one(f"#ev-row-{i}", Static)
+        """Show ranked entries in two columns.
 
-            # Boost side
-            if i < len(boost_rankings):
-                b_name, b_ev = boost_rankings[i]
+        Each entry is ``(name, formatted_value)``.
+        Adapt column semantics to your game.
+        """
+        left = left_entries or []
+        right = right_entries or []
+
+        for i in range(_NUM_ROWS):
+            widget = self.query_one(f"#game-bp-row-{i}", Static)
+
+            # Left side
+            if i < len(left):
+                l_name, l_value = left[i]
                 star = "[yellow]\u2605[/] " if i == 0 else "  "
-                b_name_str = _truncate(b_name, 14)
-                b_ev_raw = f"+{b_ev:,.0f}" if b_ev >= 0 else f"{b_ev:,.0f}"
-                b_ev_str = f"[green]{b_ev_raw:>10}[/]" if b_ev >= 0 else f"[red]{b_ev_raw:>10}[/]"
+                l_name_str = _truncate(l_name, 14)
+                l_value_str = f"[green]{l_value:>10}[/]"
             else:
                 star = "  "
-                b_name_str = " " * 14
-                b_ev_str = " " * 10
+                l_name_str = " " * 14
+                l_value_str = " " * 10
 
-            # Attack side
-            if i < len(attack_rankings):
-                a_name, a_ratio = attack_rankings[i]
-                a_star = "[yellow]\u2605[/] " if i == 0 else "  "
-                a_name_str = _truncate(a_name, 14)
-                a_ratio_raw = f"{a_ratio:.1f}x"
-                a_ratio_str = f"[green]{a_ratio_raw:>8}[/]" if a_ratio > 0 else f"[dim]{a_ratio_raw:>8}[/]"
+            # Right side
+            if i < len(right):
+                r_name, r_value = right[i]
+                r_star = "[yellow]\u2605[/] " if i == 0 else "  "
+                r_name_str = _truncate(r_name, 14)
+                r_value_str = f"[green]{r_value:>8}[/]"
             else:
-                a_star = "  "
-                a_name_str = ""
-                a_ratio_str = ""
+                r_star = "  "
+                r_name_str = ""
+                r_value_str = ""
 
             widget.update(
-                f"{star}{b_name_str} {b_ev_str}  {a_star}{a_name_str} {a_ratio_str}"
+                f"{star}{l_name_str} {l_value_str}  {r_star}{r_name_str} {r_value_str}"
             )

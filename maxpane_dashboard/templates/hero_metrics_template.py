@@ -1,4 +1,13 @@
-"""Hero metric boxes displayed across the top of the dashboard."""
+"""Hero metrics template -- copy and adapt for new game dashboards.
+
+Pattern: Horizontal row of three hero boxes (Static widgets) displaying
+key top-level metrics.  Each box has a dim label, bold value, and dim
+subtitle.
+
+Reference implementations:
+  - maxpane_dashboard/widgets/frenpet/overview/fp_hero_metrics.py
+  - maxpane_dashboard/widgets/cattown/ct_hero_metrics.py
+"""
 
 from __future__ import annotations
 
@@ -6,97 +15,87 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
 
-from maxpane_dashboard.analytics.leaderboard import format_cookies
-from maxpane_dashboard.analytics.production import format_rate
 
+class GameHeroBox(Static):
+    """A single hero metric box with label and value.
 
-class HeroBox(Static):
-    """A single hero metric box with label and value."""
+    Rename for your game, e.g. ``CTHeroBox``, ``DOTAHeroBox``.
+    """
 
     DEFAULT_CSS = ""
 
 
-class HeroMetrics(Horizontal):
-    """Row of three hero metric boxes: Prize Pool, Season Countdown, Leader."""
+class GameHeroMetrics(Horizontal):
+    """Row of three hero metric boxes.
+
+    Rename for your game, e.g. ``CTHeroMetrics``, ``DOTAHeroMetrics``.
+    Update compose() box IDs and update_data() parameters.
+    """
 
     DEFAULT_CSS = """
-    HeroMetrics > HeroBox {
+    GameHeroMetrics > GameHeroBox {
         margin: 0 1;
     }
     """
 
     def compose(self) -> ComposeResult:
-        yield HeroBox(
-            "[dim]PRIZE POOL[/]\n\n"
+        yield GameHeroBox(
+            "[dim]METRIC ONE[/]\n\n"
             "[dim]Loading...[/]",
-            id="hero-prize",
+            id="game-hero-one",
         )
-        yield HeroBox(
-            "[dim]SEASON COUNTDOWN[/]\n\n"
+        yield GameHeroBox(
+            "[dim]METRIC TWO[/]\n\n"
             "[dim]Loading...[/]",
-            id="hero-countdown",
+            id="game-hero-two",
         )
-        yield HeroBox(
+        yield GameHeroBox(
             "[dim]LEADER[/]\n\n"
             "[dim]Loading...[/]",
-            id="hero-leader",
+            id="game-hero-leader",
         )
 
     def update_data(
         self,
-        prize_pool_eth: float,
-        prize_pool_usd: float,
-        hours_remaining: float,
-        season_id: int,
-        season_active: bool,
-        leader_name: str,
-        leader_cookies: float,
-        leader_rate: float,
+        metric_one_value: str = "",
+        metric_one_subtitle: str = "",
+        metric_two_value: str = "",
+        metric_two_subtitle: str = "",
+        leader_name: str = "",
+        leader_subtitle: str = "",
     ) -> None:
-        """Refresh all three hero boxes with live values."""
-        # -- Prize Pool --
-        prize_box = self.query_one("#hero-prize", HeroBox)
-        prize_box.update(
-            f"[dim]PRIZE POOL[/]\n\n"
-            f"[bold white]{prize_pool_eth:.2f} ETH[/]\n"
-            f"[dim]${prize_pool_usd:,.0f}[/]"
-        )
+        """Refresh all three hero boxes with live values.
 
-        # -- Season Countdown --
-        countdown_box = self.query_one("#hero-countdown", HeroBox)
-        if not season_active:
-            countdown_box.update(
-                f"[dim]SEASON {season_id}[/]\n\n"
-                f"[bold yellow]Season Ended[/]"
+        Adapt parameters to your game's key metrics.
+        """
+        # -- Metric One --
+        box1 = self.query_one("#game-hero-one", GameHeroBox)
+        if metric_one_value:
+            box1.update(
+                f"[dim]METRIC ONE[/]\n\n"
+                f"[bold white]{metric_one_value}[/]\n"
+                f"[dim]{metric_one_subtitle}[/]"
             )
-        else:
-            total_seconds = int(hours_remaining * 3600)
-            days = total_seconds // 86400
-            hours = (total_seconds % 86400) // 3600
-            minutes = (total_seconds % 3600) // 60
-            countdown_str = f"{days}d {hours}h {minutes}m"
 
-            # Progress bar (assume ~30-day seasons)
-            total_season_hours = 30 * 24
-            elapsed_fraction = max(
-                0.0, min(1.0, 1.0 - hours_remaining / total_season_hours)
-            )
-            filled = int(elapsed_fraction * 12)
-            bar = "\u2588" * filled + "\u2591" * (12 - filled)
-            pct = int(elapsed_fraction * 100)
-
-            countdown_box.update(
-                f"[dim]SEASON COUNTDOWN[/]\n\n"
-                f"[bold white]{countdown_str}[/]\n"
-                f"[dim]{bar} {pct}%[/]"
+        # -- Metric Two --
+        box2 = self.query_one("#game-hero-two", GameHeroBox)
+        if metric_two_value:
+            box2.update(
+                f"[dim]METRIC TWO[/]\n\n"
+                f"[bold white]{metric_two_value}[/]\n"
+                f"[dim]{metric_two_subtitle}[/]"
             )
 
         # -- Leader --
-        leader_box = self.query_one("#hero-leader", HeroBox)
-        cookies_str = format_cookies(leader_cookies)
-        rate_str = format_rate(leader_rate)
-        leader_box.update(
-            f"[dim]LEADER[/]\n\n"
-            f"[bold white]{cookies_str} cookies[/]\n"
-            f"[dim]{leader_name}  {rate_str}[/]"
-        )
+        box3 = self.query_one("#game-hero-leader", GameHeroBox)
+        if leader_name:
+            box3.update(
+                f"[dim]LEADER[/]\n\n"
+                f"[bold white]{leader_name}[/]\n"
+                f"[dim]{leader_subtitle}[/]"
+            )
+        else:
+            box3.update(
+                "[dim]LEADER[/]\n\n"
+                "[dim]No data[/]"
+            )

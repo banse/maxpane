@@ -1,4 +1,13 @@
-"""Cookie trend sparkline charts."""
+"""Sparkline chart template -- copy and adapt for new game dashboards.
+
+Pattern: Vertical container with a title Static and per-metric lines.
+Each line shows: label, sparkline using block chars, current value,
+and a trend arrow.
+
+Reference implementations:
+  - maxpane_dashboard/widgets/frenpet/overview/fp_score_trends.py
+  - maxpane_dashboard/widgets/cattown/ct_sparklines.py
+"""
 
 from __future__ import annotations
 
@@ -6,25 +15,20 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
-from maxpane_dashboard.analytics.leaderboard import format_cookies
-
 _SPARK_CHARS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
-_SPARK_WIDTH = 30
+_SPARK_WIDTH = 22
 
 
 def _build_sparkline(points: list[tuple[float, float]], width: int = _SPARK_WIDTH) -> str:
-    """Convert time-series points into a sparkline string.
+    """Convert time-series points ``(timestamp, value)`` into a sparkline string.
 
-    Each point is ``(timestamp, value)``.  The Y axis is scaled
-    relative to the bakery's own min/max range so short-range
-    movements are still visible.
+    The Y axis is scaled relative to the series min/max range so
+    short-range movements are still visible.
     """
     if len(points) < 2:
-        return "\u2581" * width
+        return _SPARK_CHARS[0] * width
 
     values = [p[1] for p in points]
-
-    # Take the last `width` values if we have more
     if len(values) > width:
         values = values[-width:]
 
@@ -48,66 +52,89 @@ def _build_sparkline(points: list[tuple[float, float]], width: int = _SPARK_WIDT
     return "".join(chars)
 
 
-class CookieChart(Vertical):
-    """ASCII sparkline chart showing cookie production trends."""
+def _trend_arrow(points: list[tuple[float, float]]) -> str:
+    """Return a colored trend arrow based on the last two points."""
+    if len(points) >= 2 and points[-1][1] > points[-2][1]:
+        return "[green]\u25b2[/]"
+    elif len(points) >= 2 and points[-1][1] < points[-2][1]:
+        return "[red]\u25bc[/]"
+    return "[dim]\u25cf[/]"
+
+
+def _fmt_value(value: float, unit: str = "") -> str:
+    """Format a numeric value with K/M/B suffix."""
+    if value >= 1_000_000_000:
+        return f"{value / 1_000_000_000:.1f}B{unit}"
+    elif value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M{unit}"
+    elif value >= 1_000:
+        return f"{value / 1_000:.1f}K{unit}"
+    elif value >= 1:
+        return f"{value:.1f}{unit}"
+    return f"{value:.0f}{unit}"
+
+
+class GameSparklines(Vertical):
+    """ASCII sparkline charts for game metrics.
+
+    Rename for your game, e.g. ``CTSparklines``, ``DOTASparklines``.
+    Adjust compose() widget IDs and update_data() parameters.
+    """
 
     DEFAULT_CSS = """
-    CookieChart > .chart-title {
+    GameSparklines > .chart-title {
         width: 100%;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
     }
-    CookieChart > .chart-line {
+    GameSparklines > .chart-line {
         padding: 0 1;
         width: 100%;
     }
     """
 
     def compose(self) -> ComposeResult:
-        yield Static("COOKIE TRENDS (30m)", classes="chart-title")
-        yield Static("", classes="chart-line", id="chart-spacer")
-        yield Static("[dim]Loading...[/]", classes="chart-line", id="chart-line-0")
-        yield Static("", classes="chart-line", id="chart-line-1")
-        yield Static("", classes="chart-line", id="chart-line-2")
+        yield Static("TRENDS", classes="chart-title")
+        yield Static("", classes="chart-line", id="game-chart-spacer")
+        yield Static("[dim]Loading...[/]", classes="chart-line", id="game-chart-line-0")
+        yield Static("", classes="chart-line", id="game-chart-line-1")
+        yield Static("", classes="chart-line", id="game-chart-line-2")
 
     def update_data(
         self,
-        histories: dict[str, list[tuple[float, float]]],
+        series_0: list[tuple[float, float]] | None = None,
+        series_1: list[tuple[float, float]] | None = None,
+        series_2: list[tuple[float, float]] | None = None,
+        **_kwargs,
     ) -> None:
-        """Render sparklines for the top 3 bakeries."""
-        names = list(histories.keys())[:3]
-        line_ids = ["chart-line-0", "chart-line-1", "chart-line-2"]
+        """Render sparklines for up to three time-series.
 
-        colors = ["green", "cyan", "yellow"]
+        Each series is a list of ``(timestamp, value)`` tuples.
+        Adapt the series names and labels to your game.
+        """
+        series = [
+            ("Metric 1", series_0, "green", ""),
+            ("Metric 2", series_1, "cyan", ""),
+            ("Metric 3", series_2, "yellow", ""),
+        ]
 
-        for i, line_id in enumerate(line_ids):
-            widget = self.query_one(f"#{line_id}", Static)
-            if i >= len(names):
+        line_ids = ["game-chart-line-0", "game-chart-line-1", "game-chart-line-2"]
+
+        for i, (label, points, color, unit) in enumerate(series):
+            widget = self.query_one(f"#{line_ids[i]}", Static)
+
+            if not points or len(points) < 1:
                 widget.update("")
                 continue
 
-            name = names[i]
-            points = histories[name]
             sparkline = _build_sparkline(points)
-
-            # Current value from last point
             current = points[-1][1] if points else 0.0
-            current_str = format_cookies(current)
+            current_str = _fmt_value(current, unit)
+            arrow = _trend_arrow(points)
 
-            # Determine trend arrow
-            if len(points) >= 2 and points[-1][1] > points[-2][1]:
-                arrow = f"[green]\u25b2[/]"
-            elif len(points) >= 2 and points[-1][1] < points[-2][1]:
-                arrow = f"[red]\u25bc[/]"
-            else:
-                arrow = "[dim]\u25cf[/]"
-
-            # Truncate display name to 8 chars, pad to 8
-            short_name = name[:8].ljust(8)
-            color = colors[i]
-
+            padded_label = label[:8].ljust(8)
             widget.update(
-                f"  [dim]{short_name}[/]  [{color}]{sparkline}[/]  "
+                f"  [dim]{padded_label}[/]  [{color}]{sparkline}[/]  "
                 f"[bold]{current_str}[/] {arrow}"
             )

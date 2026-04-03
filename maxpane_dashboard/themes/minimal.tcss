@@ -1049,3 +1049,273 @@ FPBestPlays {
 FPBestPlays > .fpo-bp-title {
     color: $text-muted;
 }
+
+/* ── Cat Town screen ───────────────────────────────────────────────── */
+
+CTHeroMetrics {
+    height: 7;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+CTHeroBox {
+    width: 1fr;
+    height: 7;
+    border: solid $panel;
+    padding: 1 2;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    margin: 0 1;
+}
+
+CTLeaderboard {
+    width: 3fr;
+    padding: 0 1;
+}
+
+CTLeaderboard > Static {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+CTLeaderboard DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+CTSparklines {
+    height: auto;
+    padding: 0 1;
+    content-align: center top;
+}
+
+CTSparklines > .chart-title {
+    color: $text-muted;
+}
+
+CTSignals {
+    height: 1fr;
+    padding: 0 1;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+CTSignals > .signals-title {
+    color: $text-muted;
+}
+
+CTActivityFeed {
+    width: 3fr;
+    padding: 0 1;
+}
+
+CTActivityFeed > .feed-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+CTActivityFeed RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+CTBestPlays {
+    width: 2fr;
+    padding: 0 1;
+    content-align: center top;
+}
+
+CTBestPlays > .ev-title {
+    color: $text-muted;
+}
+
+/* ── DOTA screen ───────────────────────────────────────────────────── */
+
+#dota-middle-row {
+    height: 1fr;
+    padding: 0 0;
+    margin: 1 0 0 0;
+}
+
+#dota-right-col {
+    width: 2fr;
+    padding: 0 1;
+}
+
+#dota-separator {
+    width: 100%;
+    height: 1;
+    color: $panel;
+    padding: 0 2;
+    margin: 0 0;
+}
+
+#dota-bottom-row {
+    height: 1fr;
+    padding: 0 0;
+    margin: 0 0 1 0;
+}
+
+DOTAHeroMetrics {
+    height: 7;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+DOTAHeroBox {
+    width: 1fr;
+    height: 7;
+    border: solid $panel;
+    padding: 1 2;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    margin: 0 1;
+}
+
+DOTALeaderboard {
+    width: 3fr;
+    padding: 0 1;
+}
+
+DOTALeaderboard > .dota-lb-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+DOTALeaderboard DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+DOTASparklines {
+    height: auto;
+    padding: 0 1;
+    content-align: center top;
+}
+
+DOTASparklines > .dota-chart-title {
+    color: $text-muted;
+}
+
+DOTASignals {
+    height: 1fr;
+    padding: 0 1;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+DOTASignals > .dota-sig-title {
+    color: $text-muted;
+}
+
+DOTAActivityFeed {
+    width: 3fr;
+    padding: 0 1;
+}
+
+DOTAActivityFeed > .dota-feed-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+DOTAActivityFeed RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+DOTABestPlays {
+    width: 2fr;
+    padding: 0 1;
+    content-align: center top;
+}
+
+DOTABestPlays > .dota-bp-title {
+    color: $text-muted;
+}
+
+/* ── OCM screen ────────────────────────────────────────────────────── */
+
+OCMHeroMetrics {
+    height: 7;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+OCMHeroBox {
+    width: 1fr;
+    height: 7;
+    border: solid $panel;
+    padding: 1 2;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    margin: 0 1;
+}
+
+OCMStakingOverview {
+    width: 3fr;
+    padding: 0 1;
+}
+
+OCMStakingOverview > .overview-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+OCMSparklines {
+    height: auto;
+    padding: 0 1;
+    content-align: center top;
+}
+
+OCMSparklines > .chart-title {
+    color: $text-muted;
+}
+
+OCMSignals {
+    height: 1fr;
+    padding: 0 1;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+OCMSignals > .signals-title {
+    color: $text-muted;
+}
+
+OCMActivityFeed {
+    width: 3fr;
+    padding: 0 1;
+}
+
+OCMActivityFeed > .feed-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+OCMActivityFeed RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+OCMSupplyBreakdown {
+    width: 2fr;
+    padding: 0 1;
+    content-align: center top;
+}
+
+OCMSupplyBreakdown > .breakdown-title {
+    color: $text-muted;
+}
