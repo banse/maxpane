@@ -80,7 +80,7 @@ class FPScoreTrends(Vertical):
     """
 
     def compose(self) -> ComposeResult:
-        yield Static("POPULATION TRENDS", classes="fpo-chart-title")
+        yield Static("TRENDS", classes="fpo-chart-title")
         yield Static("", classes="fpo-chart-line", id="fpo-chart-spacer")
         yield Static("[dim]Loading...[/]", classes="fpo-chart-line", id="fpo-chart-active")
         yield Static("", classes="fpo-chart-line", id="fpo-chart-score")
@@ -96,9 +96,9 @@ class FPScoreTrends(Vertical):
     ) -> None:
         """Render population-level sparklines."""
         metrics = [
-            ("fpo-chart-active", "Active Pets", active_pets_history or [], ""),
-            ("fpo-chart-score", "Total Score", total_score_history or [], ""),
-            ("fpo-chart-battles", "Battle Rate", battle_rate_history or [], "/h"),
+            ("fpo-chart-active", "Active", active_pets_history or [], ""),
+            ("fpo-chart-score", "Score", total_score_history or [], ""),
+            ("fpo-chart-battles", "Battles", battle_rate_history or [], "/h"),
         ]
 
         colors = ["green", "cyan", "yellow"]

@@ -51,7 +51,6 @@ class FPGameSignals(Vertical):
         yield Static("", id="fpo-sig-spacer")
         yield Static("[dim]  Loading...[/]", classes="fpo-sig-body", id="fpo-sig-battle-rate")
         yield Static("", classes="fpo-sig-body", id="fpo-sig-win-rate")
-        yield Static("", classes="fpo-sig-body", id="fpo-sig-hibernation")
         yield Static("", classes="fpo-sig-body", id="fpo-sig-dominance")
         yield Static("", id="fpo-sig-spacer-2")
         yield Static("", classes="fpo-sig-rec", id="fpo-sig-recommendation")
@@ -60,9 +59,9 @@ class FPGameSignals(Vertical):
         self,
         battle_rate: float,
         win_rate: float,
-        hibernation_rate: float,
-        dominance: float,
-        recommendation: str,
+        hibernation_rate: float = 0.0,
+        dominance: float = 0.0,
+        recommendation: str = "",
     ) -> None:
         """Update all signal lines with computed analytics."""
         # Battle Rate
@@ -80,14 +79,6 @@ class FPGameSignals(Vertical):
             f"  [dim]{'Win Rate':<20}[/]"
             f"[bold white]{'{:.1f}%'.format(win_rate):>12}[/]"
             f"  [{wr_color}]\u25cf {wr_label:<10}[/]"
-        )
-
-        # Hibernation Rate
-        hib_label, hib_color = _rate_indicator(hibernation_rate, 40.0, 10.0)
-        self.query_one("#fpo-sig-hibernation", Static).update(
-            f"  [dim]{'Hibernation':<20}[/]"
-            f"[bold white]{'{:.1f}%'.format(hibernation_rate):>12}[/]"
-            f"  [{hib_color}]\u25cf {hib_label:<10}[/]"
         )
 
         # Top Dominance

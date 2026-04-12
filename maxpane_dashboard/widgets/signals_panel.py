@@ -60,7 +60,6 @@ class SignalsPanel(Vertical):
         yield Static("SIGNALS", classes="signals-title")
         yield Static("", id="sig-spacer")
         yield Static("[dim]  Loading...[/]", classes="signals-body", id="sig-late-join")
-        yield Static("", classes="signals-body", id="sig-breakeven")
         yield Static("", classes="signals-body", id="sig-gap-trend")
         yield Static("", classes="signals-body", id="sig-dominance")
         yield Static("", id="sig-spacer-2")
@@ -92,13 +91,6 @@ class SignalsPanel(Vertical):
             f"  [dim]{'Late-Join EV':<20}[/]"
             f"[bold white]{'${:,.2f}'.format(ev_usd):>12}[/]"
             f"  [{ev_col}]\u25cf {ev_ind:<10}[/]"
-        )
-
-        # Breakeven probability
-        bp = late_join_ev.get("breakeven_probability", 0.0) * 100
-        self.query_one("#sig-breakeven", Static).update(
-            f"  [dim]{'Breakeven Prob.':<20}[/]"
-            f"[bold white]{'{:.1f}%'.format(bp):>12}[/]"
         )
 
         # Gap trend

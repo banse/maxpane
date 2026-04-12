@@ -49,7 +49,6 @@ class FPOverviewLeaderboard(Vertical):
         table.add_column("Name", width=16)
         table.add_column("Score", width=12)
         table.add_column("ATK/DEF", width=12)
-        table.add_column("Status", width=10)
 
     def update_data(self, top_pets: list) -> None:
         """Clear and repopulate the leaderboard table with live data."""
@@ -57,7 +56,7 @@ class FPOverviewLeaderboard(Vertical):
         table.clear()
 
         if not top_pets:
-            table.add_row("--", "No data", "--", "--", "--")
+            table.add_row("--", "No data", "--", "--")
             return
 
         for idx, pet in enumerate(top_pets[:10], start=1):
@@ -67,7 +66,6 @@ class FPOverviewLeaderboard(Vertical):
             score = float(getattr(pet, "score", 0))
             atk = getattr(pet, "attack_points", 0)
             defense = getattr(pet, "defense_points", 0)
-            status = getattr(pet, "status", 0)
 
             # Format score
             if score >= 1_000_000_000:
@@ -81,25 +79,18 @@ class FPOverviewLeaderboard(Vertical):
 
             atk_def_str = f"{atk}/{defense}"
 
-            # Status: 0,1 = Active, 2 = Hibernated
-            if status in (0, 1):
-                status_str = "[green]Active[/]"
-            elif status == 2:
-                status_str = "[red]Hibernated[/]"
-            else:
-                status_str = f"[yellow]{status}[/]"
-
-            # Highlight the leader row
+            # Star marker + bold for leader
             if idx == 1:
+                rank_str = "\u2605"
                 name_str = f"[bold]{pet_name}[/]"
                 score_str = f"[bold]{score_str}[/]"
             else:
+                rank_str = str(idx)
                 name_str = pet_name
 
             table.add_row(
-                str(idx),
+                rank_str,
                 name_str,
                 score_str,
                 atk_def_str,
-                status_str,
             )
