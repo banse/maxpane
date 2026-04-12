@@ -9,12 +9,12 @@ from textual.widgets import Static
 
 
 GAMES = [
-    ("1", "base", "Base Trading", "Trending tokens, launches, fees on Base L2"),
-    ("2", "frenpet", "FrenPet", "Pet battles, staking, sniper queue on Base L2"),
-    ("3", "cattown", "Cat Town", "Fishing game analytics on Base L2"),
-    ("4", "ocm", "OCM", "Onchain Monsters collection analytics on Ethereum"),
-    ("5", "dota", "DOTA", "Defense of the Agents idle MOBA on Base L2"),
-    ("6", "bakery", "Rugpull Bakery", "Bake cookies, boost, attack on Abstract"),
+    ("1", "base", "Base Trading", "Trending tokens, volume, signals on Base"),
+    ("2", "frenpet", "FrenPet", "Pet battles, leaderboard, activity on Base"),
+    ("3", "cattown", "Cat Town", "Fishing competition, KIBBLE economy on Base"),
+    ("4", "dota", "DOTA", "Defense of the Agents idle MOBA on Base"),
+    ("5", "bakery", "Rugpull Bakery", "Bake cookies, boost, attack on Abstract"),
+    ("6", "ocm", "OCM", "Onchain Monsters staking, supply, burns on Ethereum"),
 ]
 
 

@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import re
 import time
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
+
+_EMOJI_RE = re.compile(
+    "[\U0001f300-\U0001f9ff\U00002702-\U000027b0\U0000fe00-\U0000fe0f\U0000200d\U000020e3]+",
+    flags=re.UNICODE,
+)
 
 
 class FPHeroBox(Static):
@@ -77,6 +83,8 @@ class FPOverviewHero(Horizontal):
         leader_box = self.query_one("#fpo-hero-leader", FPHeroBox)
         if top_pet is not None:
             pet_id = getattr(top_pet, "id", "?")
+            raw_name = getattr(top_pet, "name", "") or f"#{pet_id}"
+            pet_name = _EMOJI_RE.sub("", raw_name).strip() or f"#{pet_id}"
             score = float(getattr(top_pet, "score", 0))
             atk = getattr(top_pet, "attack_points", 0)
 
@@ -92,7 +100,7 @@ class FPOverviewHero(Horizontal):
 
             leader_box.update(
                 f"[dim]LEADER[/]\n\n"
-                f"[bold white]Pet #{pet_id}[/]\n"
+                f"[bold white]{pet_name}[/]\n"
                 f"[dim]{score_str} pts \u00b7 ATK {atk}[/]"
             )
         else:

@@ -2,9 +2,23 @@
 
 from __future__ import annotations
 
+import re
+
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+
+# Strip emoji and other non-BMP characters that cause terminal width issues
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001f300-\U0001f9ff"  # Misc symbols, emoticons, etc.
+    "\U00002702-\U000027b0"  # Dingbats
+    "\U0000fe00-\U0000fe0f"  # Variation selectors
+    "\U0000200d"             # Zero-width joiner
+    "\U000020e3"             # Combining enclosing keycap
+    "]+",
+    flags=re.UNICODE,
+)
 
 
 class FPOverviewLeaderboard(Vertical):
@@ -48,7 +62,8 @@ class FPOverviewLeaderboard(Vertical):
 
         for idx, pet in enumerate(top_pets[:10], start=1):
             pet_id = getattr(pet, "id", "?")
-            pet_name = getattr(pet, "name", "") or f"#{pet_id}"
+            raw_name = getattr(pet, "name", "") or f"#{pet_id}"
+            pet_name = _EMOJI_RE.sub("", raw_name).strip()
             score = float(getattr(pet, "score", 0))
             atk = getattr(pet, "attack_points", 0)
             defense = getattr(pet, "defense_points", 0)
@@ -66,8 +81,8 @@ class FPOverviewLeaderboard(Vertical):
 
             atk_def_str = f"{atk}/{defense}"
 
-            # Status: 0 = Active, 2 = Hibernated
-            if status == 0:
+            # Status: 0,1 = Active, 2 = Hibernated
+            if status in (0, 1):
                 status_str = "[green]Active[/]"
             elif status == 2:
                 status_str = "[red]Hibernated[/]"

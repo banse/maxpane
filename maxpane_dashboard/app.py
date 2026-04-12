@@ -125,7 +125,7 @@ class MaxPaneApp(App):
         self._current_game = game_id
         self._launch_game(game_id, first=True)
 
-    _GAME_CYCLE = ["base", "frenpet", "cattown", "ocm", "dota", "bakery"]
+    _GAME_CYCLE = ["base", "frenpet", "cattown", "dota", "bakery", "ocm"]
 
     def _launch_game(self, game_id: str, *, first: bool = False) -> None:
         """Install and switch to a game screen.

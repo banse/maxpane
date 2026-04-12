@@ -35,8 +35,9 @@ _REQUEST_TIMEOUT = 15.0
 # API endpoints
 # ---------------------------------------------------------------------------
 
-_GAME_STATE_URL = "https://www.defenseoftheagents.com/api/game/state"
-_LEADERBOARD_URL = "https://www.defenseoftheagents.com/api/leaderboard"
+_API_BASE = "https://wc2-agentic-dev-3o6un.ondigitalocean.app"
+_GAME_STATE_URL = f"{_API_BASE}/api/game/state"
+_LEADERBOARD_URL = f"{_API_BASE}/api/leaderboard"
 _TOKEN_ADDRESS = "0x5f09821cbb61e09d2a83124ae0b56aaa3ae85b07"
 _DEXSCREENER_URL = (
     f"https://api.dexscreener.com/latest/dex/tokens/{_TOKEN_ADDRESS}"
@@ -166,7 +167,7 @@ class DOTAClient:
         DOTAGameState
             Parsed game state with tick, lanes, heroes, towers, bases.
         """
-        url = f"{_GAME_STATE_URL}?game={game}"
+        url = _GAME_STATE_URL
         resp = await self._get_with_retry(url)
         data = resp.json()
         return DOTAGameState(**data)

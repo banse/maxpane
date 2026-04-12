@@ -7,7 +7,7 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 _SPARK_CHARS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
-_SPARK_WIDTH = 30
+_SPARK_WIDTH = 20
 
 
 def _build_sparkline(values: list[float], width: int = _SPARK_WIDTH) -> str:
@@ -117,7 +117,8 @@ class FPScoreTrends(Vertical):
             arrow = _trend_arrow(values)
 
             padded_label = label[:14].ljust(14)
+            padded_value = current_str.rjust(8)
             widget.update(
                 f"  [dim]{padded_label}[/]  [{color}]{sparkline}[/]  "
-                f"[bold]{current_str}[/] {arrow}"
+                f"[bold]{padded_value}[/] {arrow}"
             )

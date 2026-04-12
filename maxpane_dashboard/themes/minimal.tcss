@@ -1050,6 +1050,90 @@ FPBestPlays > .fpo-bp-title {
     color: $text-muted;
 }
 
+/* ── Base Trading Overview screen ──────────────────────────────────── */
+
+BTOverviewHero {
+    height: 7;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+BTHeroBox {
+    width: 1fr;
+    height: 7;
+    border: solid $panel;
+    padding: 1 2;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    margin: 0 1;
+}
+
+BTOverviewLeaderboard {
+    width: 3fr;
+    padding: 0 1;
+}
+
+BTOverviewLeaderboard > .bto-lb-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+BTOverviewLeaderboard DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+BTSparklines {
+    height: auto;
+    padding: 0 1;
+    content-align: center top;
+}
+
+BTSparklines > .bto-chart-title {
+    color: $text-muted;
+}
+
+BTSignals {
+    height: 1fr;
+    padding: 0 1;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+BTSignals > .bto-sig-title {
+    color: $text-muted;
+}
+
+BTActivityFeed {
+    width: 3fr;
+    padding: 0 1;
+}
+
+BTActivityFeed > .bto-feed-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+BTActivityFeed RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+BTBestPlays {
+    width: 2fr;
+    padding: 0 1;
+    content-align: center top;
+}
+
+BTBestPlays > .bto-bp-title {
+    color: $text-muted;
+}
+
 /* ── Cat Town screen ───────────────────────────────────────────────── */
 
 CTHeroMetrics {

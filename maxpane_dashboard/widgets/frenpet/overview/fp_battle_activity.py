@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
+import re
 import time
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001f300-\U0001f9ff"
+    "\U00002702-\U000027b0"
+    "\U0000fe00-\U0000fe0f"
+    "\U0000200d"
+    "\U000020e3"
+    "]+",
+    flags=re.UNICODE,
+)
 
 
 def _format_time(timestamp) -> str:
@@ -26,23 +38,22 @@ def _attack_to_markup(attack: dict, pet_names: dict[int, str] | None = None) -> 
     defender_id = attack.get("defender_id", "?")
     won = attack.get("attacker_won", False)
 
-    # Points delta from `won` field (raw value in 1e12 units)
-    won_raw = attack.get("won", 0)
+    # Points delta
     try:
-        points = int(won_raw) / 1e12
+        points = int(attack.get("points_delta", 0))
     except (ValueError, TypeError):
-        points = 0.0
+        points = 0
 
     # Resolve pet names
     names = pet_names or {}
-    attacker_name = names.get(int(attacker_id), f"#{attacker_id}") if attacker_id != "?" else "?"
-    defender_name = names.get(int(defender_id), f"#{defender_id}") if defender_id != "?" else "?"
+    attacker_name = _EMOJI_RE.sub("", names.get(int(attacker_id), f"#{attacker_id}")).strip() if attacker_id != "?" else "?"
+    defender_name = _EMOJI_RE.sub("", names.get(int(defender_id), f"#{defender_id}")).strip() if defender_id != "?" else "?"
 
     result_str = "[green]Won[/]" if won else "[red]Lost[/]"
     if points >= 0:
-        pts_str = f"[green]+{points:,.0f}[/]"
+        pts_str = f"[green]+{points:,}[/]"
     else:
-        pts_str = f"[red]{points:,.0f}[/]"
+        pts_str = f"[red]{points:,}[/]"
 
     return (
         f"  [dim]{ts}[/]  "
