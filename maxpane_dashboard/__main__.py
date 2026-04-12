@@ -1,7 +1,10 @@
-"""Launch the MaxPane dashboard: python -m dashboard"""
+"""Launch the MaxPane dashboard: python -m maxpane_dashboard"""
 import argparse
 import logging
 import os
+import warnings
+
+warnings.filterwarnings("ignore")
 
 from maxpane_dashboard.app import MaxPaneApp
 
@@ -39,10 +42,19 @@ def main():
     )
     args = parser.parse_args()
 
+    # Log to file to prevent warnings from bleeding into the TUI
+    log_file = os.path.join(os.path.expanduser("~"), ".maxpane", "maxpane.log")
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
     logging.basicConfig(
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        filename=log_file,
+        filemode="w",
     )
+    # Suppress noisy third-party loggers
+    logging.getLogger("httpx").setLevel(logging.ERROR)
+    logging.getLogger("httpcore").setLevel(logging.ERROR)
+    logging.getLogger("pydantic").setLevel(logging.ERROR)
 
     app = MaxPaneApp(
         poll_interval=args.poll_interval,
