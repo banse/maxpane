@@ -2,11 +2,34 @@
 
 Terminal dashboard for blockchain games on Base, Abstract, and Ethereum.
 
-Track leaderboards, signals, and analytics for RugPull Bakery, FrenPet, Cat Town, OCM, DOTA, and Base token trading — all from your terminal.
+Track leaderboards, signals, trends, and analytics for 6 onchain games — all from your terminal.
+
+## Dashboards
+
+| Game | Chain | What you see |
+|------|-------|-------------|
+| **Base Trading** | Base | Trending tokens, volume, ETH price, signals |
+| **FrenPet** | Base | Pet battles, leaderboard, activity, trends |
+| **Cat Town** | Base | Fishing competition, KIBBLE economy, catches |
+| **DOTA** | Base | Defense of the Agents idle MOBA, heroes, lanes |
+| **Rugpull Bakery** | Abstract | Bake cookies, boost/attack, season prizes |
+| **OCM** | Ethereum | Onchain Monsters staking, supply, burns |
 
 ## Install
 
-### Quick install (dashboard only)
+### pipx (recommended)
+
+```bash
+pipx install maxpane
+```
+
+### uv
+
+```bash
+uv tool install maxpane
+```
+
+### pip
 
 ```bash
 pip install maxpane
@@ -44,13 +67,22 @@ alias maxpane='~/path/to/maxpane/maxpane/target/release/maxpane && command maxpa
 maxpane                        # launch dashboard (default: bakery)
 maxpane --game frenpet         # start on FrenPet view
 maxpane --game base            # start on Base trading view
+maxpane --game cattown         # start on Cat Town view
+maxpane --game dota            # start on DOTA view
+maxpane --game ocm             # start on OCM view
 maxpane --theme minimal        # use minimal theme
 maxpane --poll-interval 60     # poll every 60s instead of 30s
 ```
 
-### Available games
+### Keyboard shortcuts
 
-`bakery` `frenpet` `base` `cattown` `ocm` `dota`
+| Key | Action |
+|-----|--------|
+| `m` | Return to game selection menu |
+| `tab` | Cycle to next game |
+| `r` | Refresh data |
+| `t` | Cycle theme |
+| `q` | Quit |
 
 ### Available themes
 
