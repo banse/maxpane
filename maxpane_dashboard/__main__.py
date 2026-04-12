@@ -2,11 +2,39 @@
 import argparse
 import logging
 import os
+import sys
 import warnings
 
 warnings.filterwarnings("ignore")
 
 from maxpane_dashboard.app import MaxPaneApp
+
+
+_DEFAULT_FONT_SIZE = 17
+
+
+def _maximize_terminal() -> None:
+    """Maximize the terminal window and set font size before launching the TUI."""
+    term = os.environ.get("TERM_PROGRAM", "")
+    if term == "iTerm.app":
+        # Set font size via iTerm2 proprietary escape sequence
+        sys.stdout.write(f"\033]1337;SetFontSize={_DEFAULT_FONT_SIZE}\a")
+        sys.stdout.write("\033]1337;SetFullscreen=true\a")
+        sys.stdout.flush()
+    elif term == "Apple_Terminal":
+        # Terminal.app: use AppleScript to set font size and maximize
+        import subprocess
+        subprocess.run(
+            ["osascript", "-e",
+             f'tell application "Terminal" to set font size of front window to {_DEFAULT_FONT_SIZE}'],
+            capture_output=True,
+        )
+        sys.stdout.write("\033[9;1t")
+        sys.stdout.flush()
+    else:
+        # Generic: just maximize
+        sys.stdout.write("\033[9;1t")
+        sys.stdout.flush()
 
 
 def main():
@@ -55,6 +83,8 @@ def main():
     logging.getLogger("httpx").setLevel(logging.ERROR)
     logging.getLogger("httpcore").setLevel(logging.ERROR)
     logging.getLogger("pydantic").setLevel(logging.ERROR)
+
+    _maximize_terminal()
 
     app = MaxPaneApp(
         poll_interval=args.poll_interval,

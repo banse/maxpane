@@ -48,6 +48,7 @@ class StatusBar(Horizontal):
         yield Static(
             "[dim]q[/] quit [dim]\u00b7[/] [dim]r[/] refresh [dim]\u00b7[/] "
             "[dim]t[/] theme [dim]\u00b7[/] [dim]tab[/] switch [dim]\u00b7[/] "
+            "[dim]m[/] menu [dim]\u00b7[/] "
             "connecting...",
             classes="status-left",
             id="status-left",
