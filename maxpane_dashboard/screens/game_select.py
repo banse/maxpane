@@ -11,10 +11,13 @@ from textual.widgets import Static
 GAMES = [
     ("1", "base", "Base Trading", "Trending tokens, volume, signals on Base"),
     ("2", "frenpet", "FrenPet", "Pet battles, leaderboard, activity on Base"),
-    ("3", "cattown", "Cat Town", "Fishing competition, KIBBLE economy on Base"),
-    ("4", "dota", "DOTA", "Defense of the Agents idle MOBA on Base"),
-    ("5", "bakery", "Rugpull Bakery", "Bake cookies, boost, attack on Abstract"),
-    ("6", "ocm", "OCM", "Onchain Monsters staking, supply, burns on Ethereum"),
+    ("3", "frenpet_full", "FrenPet Full", "General, Wallet, Pet views on Base"),
+    ("4", "frenpet_wallet", "FrenPet Wallet", "ETH rewards, pool share, APR on Base"),
+    ("5", "frenpet_perf", "FrenPet Performance", "Pet comparison, velocity, win rates on Base"),
+    ("6", "cattown", "Cat Town", "Fishing competition, KIBBLE economy on Base"),
+    ("7", "dota", "DOTA", "Defense of the Agents idle MOBA on Base"),
+    ("8", "bakery", "Rugpull Bakery", "Bake cookies, boost, attack on Abstract"),
+    ("9", "ocm", "OCM", "Onchain Monsters staking, supply, burns on Ethereum"),
 ]
 
 

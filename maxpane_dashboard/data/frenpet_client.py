@@ -276,7 +276,7 @@ class FrenPetClient:
         owner_address:
             Ethereum address (hex string, case-insensitive).
         """
-        addr = owner_address.lower()
+        addr = owner_address
         query = """
         query($owner: String!) {
             pets(
@@ -436,6 +436,58 @@ class FrenPetClient:
             if chunk:
                 values.append(int(chunk, 16))
         return values
+
+    # ------------------------------------------------------------------
+    # Public API: wallet reward reads (Diamond contract)
+    # ------------------------------------------------------------------
+
+    async def get_pending_eth(self, pet_id: int) -> int:
+        """Call pendingEth(uint256) -> uint256 (wei)."""
+        selector = "0xccc73973"  # keccak256("pendingEth(uint256)")[:4]
+        data = selector + hex(pet_id)[2:].zfill(64)
+        result = await self._eth_call(self.DIAMOND, data)
+        return int(result, 16)
+
+    async def get_eth_owed(self, pet_id: int) -> int:
+        """Call ethOwed(uint256) -> uint256 (wei)."""
+        selector = "0xb835613c"  # keccak256("ethOwed(uint256)")[:4]
+        data = selector + hex(pet_id)[2:].zfill(64)
+        result = await self._eth_call(self.DIAMOND, data)
+        return int(result, 16)
+
+    async def get_fp_owed(self, pet_id: int) -> int:
+        """Call fpOwed(uint256) -> uint256 (wei)."""
+        selector = "0x5142a32d"  # keccak256("fpOwed(uint256)")[:4]
+        data = selector + hex(pet_id)[2:].zfill(64)
+        result = await self._eth_call(self.DIAMOND, data)
+        return int(result, 16)
+
+    async def get_fp_per_second(self, pet_id: int) -> int:
+        """Call calculateFpPerSecond(uint256) -> uint256."""
+        selector = "0xa4af7db8"  # keccak256("calculateFpPerSecond(uint256)")[:4]
+        data = selector + hex(pet_id)[2:].zfill(64)
+        result = await self._eth_call(self.DIAMOND, data)
+        return int(result, 16)
+
+    async def get_user_shares(self, address: str) -> int:
+        """Call userShares(address) -> uint256."""
+        selector = "0xde69b3aa"  # keccak256("userShares(address)")[:4]
+        addr_padded = address.lower().replace("0x", "").zfill(64)
+        data = selector + addr_padded
+        result = await self._eth_call(self.DIAMOND, data)
+        return int(result, 16)
+
+    async def get_total_shares(self) -> int:
+        """Call totalShares() -> uint256."""
+        selector = "0x3a98ef39"  # keccak256("totalShares()")[:4]
+        result = await self._eth_call(self.DIAMOND, selector)
+        return int(result, 16)
+
+    async def get_total_fp_in_pool(self) -> int:
+        """Call totalFpInPool() -> uint256."""
+        selector = "0x6845b28e"  # keccak256("totalFpInPool()")[:4]
+        result = await self._eth_call(self.DIAMOND, selector)
+        return int(result, 16)
 
     # ------------------------------------------------------------------
     # Public API: FP reward pool

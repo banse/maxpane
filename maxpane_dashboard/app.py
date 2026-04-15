@@ -19,7 +19,12 @@ from maxpane_dashboard.screens.base_terminal import BaseTerminalScreen
 from maxpane_dashboard.screens.cattown import CatTownScreen
 from maxpane_dashboard.screens.dota import DOTAScreen
 from maxpane_dashboard.screens.frenpet import FrenPetScreen
+from maxpane_dashboard.screens.frenpet_full import FrenPetFullScreen
+from maxpane_dashboard.screens.frenpet_perf import FrenPetPerfScreen
+from maxpane_dashboard.screens.frenpet_wallet import FrenPetWalletScreen
 from maxpane_dashboard.screens.game_select import GameSelectScreen
+from maxpane_dashboard.screens.wallet_input import WalletInputScreen
+from maxpane_dashboard.config import get_wallet
 from maxpane_dashboard.screens.ocm import OCMScreen
 from maxpane_dashboard.screens.splash import SplashScreen
 from maxpane_dashboard.themes import THEMES, THEME_NAMES
@@ -60,6 +65,18 @@ class MaxPaneApp(App):
             poll_interval=poll_interval,
             wallet_address=wallet_address,
         )
+        self._frenpet_full_manager = FrenPetManager(
+            poll_interval=poll_interval,
+            wallet_address=wallet_address,
+        )
+        self._frenpet_wallet_manager = FrenPetManager(
+            poll_interval=poll_interval,
+            wallet_address=wallet_address,
+        )
+        self._frenpet_perf_manager = FrenPetManager(
+            poll_interval=poll_interval,
+            wallet_address=wallet_address,
+        )
         self._base_manager = BaseManager(remote_only=True)
         self._cattown_manager = CatTownManager(poll_interval=poll_interval)
         self._ocm_manager = OCMManager(poll_interval=poll_interval)
@@ -83,6 +100,24 @@ class MaxPaneApp(App):
         elif self._initial_game == "frenpet":
             self.run_worker(
                 self._frenpet_manager.fetch_and_compute(),
+                exclusive=True,
+                name="prefetch",
+            )
+        elif self._initial_game == "frenpet_full":
+            self.run_worker(
+                self._frenpet_full_manager.fetch_and_compute(),
+                exclusive=True,
+                name="prefetch",
+            )
+        elif self._initial_game == "frenpet_wallet":
+            self.run_worker(
+                self._frenpet_wallet_manager.fetch_and_compute(),
+                exclusive=True,
+                name="prefetch",
+            )
+        elif self._initial_game == "frenpet_perf":
+            self.run_worker(
+                self._frenpet_perf_manager.fetch_and_compute(),
                 exclusive=True,
                 name="prefetch",
             )
@@ -125,7 +160,7 @@ class MaxPaneApp(App):
         self._current_game = game_id
         self._launch_game(game_id, first=True)
 
-    _GAME_CYCLE = ["base", "frenpet", "cattown", "dota", "bakery", "ocm"]
+    _GAME_CYCLE = ["base", "frenpet", "frenpet_full", "frenpet_wallet", "frenpet_perf", "cattown", "dota", "bakery", "ocm"]
 
     def _launch_game(self, game_id: str, *, first: bool = False) -> None:
         """Install and switch to a game screen.
@@ -145,6 +180,33 @@ class MaxPaneApp(App):
                     FrenPetScreen(self._frenpet_manager, self.poll_interval, name="frenpet"),
                     name="frenpet",
                 )
+        elif game_id == "frenpet_full":
+            wallet = get_wallet()
+            if not wallet:
+                self.push_screen(
+                    WalletInputScreen(),
+                    callback=self._on_wallet_entered,
+                )
+                return
+            self._ensure_frenpet_full_screen(wallet)
+        elif game_id == "frenpet_wallet":
+            wallet = get_wallet()
+            if not wallet:
+                self.push_screen(
+                    WalletInputScreen(),
+                    callback=self._on_wallet_entered,
+                )
+                return
+            self._ensure_frenpet_wallet_screen(wallet)
+        elif game_id == "frenpet_perf":
+            wallet = get_wallet()
+            if not wallet:
+                self.push_screen(
+                    WalletInputScreen(),
+                    callback=self._on_wallet_entered,
+                )
+                return
+            self._ensure_frenpet_perf_screen(wallet)
         elif game_id == "base":
             if not self.is_screen_installed("base"):
                 self.install_screen(
@@ -176,6 +238,48 @@ class MaxPaneApp(App):
             self.push_screen(game_id)
         else:
             self.switch_screen(game_id)
+
+    def _on_wallet_entered(self, address: str | None) -> None:
+        """Callback after the wallet input screen is dismissed."""
+        if not address:
+            return
+        if self._current_game == "frenpet_wallet":
+            self._frenpet_wallet_manager._wallet_address = address
+            self._launch_game("frenpet_wallet", first=True)
+        elif self._current_game == "frenpet_perf":
+            self._frenpet_perf_manager._wallet_address = address
+            self._launch_game("frenpet_perf", first=True)
+        else:
+            self._frenpet_full_manager._wallet_address = address
+            self._current_game = "frenpet_full"
+            self._launch_game("frenpet_full", first=True)
+
+    def _ensure_frenpet_full_screen(self, wallet: str) -> None:
+        """Install the FrenPet Full screen if not already installed."""
+        if not self.is_screen_installed("frenpet_full"):
+            self._frenpet_full_manager._wallet_address = wallet
+            self.install_screen(
+                FrenPetFullScreen(self._frenpet_full_manager, self.poll_interval, name="frenpet_full"),
+                name="frenpet_full",
+            )
+
+    def _ensure_frenpet_wallet_screen(self, wallet: str) -> None:
+        """Install the FrenPet Wallet screen if not already installed."""
+        if not self.is_screen_installed("frenpet_wallet"):
+            self._frenpet_wallet_manager._wallet_address = wallet
+            self.install_screen(
+                FrenPetWalletScreen(self._frenpet_wallet_manager, self.poll_interval, name="frenpet_wallet"),
+                name="frenpet_wallet",
+            )
+
+    def _ensure_frenpet_perf_screen(self, wallet: str) -> None:
+        """Install the FrenPet Performance screen if not already installed."""
+        if not self.is_screen_installed("frenpet_perf"):
+            self._frenpet_perf_manager._wallet_address = wallet
+            self.install_screen(
+                FrenPetPerfScreen(self._frenpet_perf_manager, self.poll_interval, name="frenpet_perf"),
+                name="frenpet_perf",
+            )
 
     def action_show_menu(self) -> None:
         """Return to the game selection screen."""
@@ -220,6 +324,18 @@ class MaxPaneApp(App):
             await self._frenpet_manager.close()
         except Exception as exc:
             logger.warning("Error during frenpet shutdown: %s", exc)
+        try:
+            await self._frenpet_full_manager.close()
+        except Exception as exc:
+            logger.warning("Error during frenpet_full shutdown: %s", exc)
+        try:
+            await self._frenpet_wallet_manager.close()
+        except Exception as exc:
+            logger.warning("Error during frenpet_wallet shutdown: %s", exc)
+        try:
+            await self._frenpet_perf_manager.close()
+        except Exception as exc:
+            logger.warning("Error during frenpet_perf shutdown: %s", exc)
         try:
             await self._base_manager.close()
         except Exception as exc:

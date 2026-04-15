@@ -8,6 +8,7 @@ ready for widget consumption.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from pathlib import Path
@@ -30,6 +31,7 @@ from maxpane_dashboard.analytics.frenpet_signals import (
 from maxpane_dashboard.data.frenpet_cache import FrenPetCache
 from maxpane_dashboard.data.frenpet_client import FrenPetClient
 from maxpane_dashboard.data.frenpet_models import FrenPet, FrenPetSnapshot
+from maxpane_dashboard.data.price import PriceClient
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,7 @@ class FrenPetManager:
     ) -> None:
         self.client = FrenPetClient()
         self.cache = FrenPetCache(max_history=120)
+        self._price_client = PriceClient()
         self._poll_interval = poll_interval
         self._wallet_address = wallet_address
         self._error_count = 0
@@ -268,6 +271,16 @@ class FrenPetManager:
             (combined_wins / combined_total * 100.0) if combined_total > 0 else 0.0
         )
 
+        # -- Wallet rewards (on-chain ETH/FP data) -----------------------
+        wallet_rewards: dict[str, Any] | None = None
+        if self._wallet_address and managed_pets:
+            try:
+                wallet_rewards = await self._fetch_wallet_rewards(
+                    managed_pets, self._wallet_address,
+                )
+            except Exception as exc:
+                logger.warning("Wallet rewards fetch failed: %s", exc)
+
         # -- Market conditions --------------------------------------------
         market_conditions = _safe_call(
             calculate_market_conditions, all_pet_dicts, ref_atk, ref_def,
@@ -403,10 +416,86 @@ class FrenPetManager:
             "battle_rate_history": list(self.cache.battle_rate_history),
             # Name lookup
             "pet_names": pet_names,
+            # Wallet rewards (on-chain)
+            "wallet_rewards": wallet_rewards,
             # Meta
             "error_count": self._error_count,
             "last_updated_seconds_ago": last_updated_seconds_ago,
             "poll_interval": self._poll_interval,
+        }
+
+    async def _fetch_wallet_rewards(
+        self,
+        pets: list[FrenPet],
+        wallet_address: str,
+    ) -> dict[str, Any]:
+        """Fetch on-chain reward data for all managed pets and the wallet.
+
+        Serializes RPC calls with 100ms delays to avoid Base public RPC
+        rate limits.  Returns a dict matching the ``wallet_rewards`` shape
+        described in the implementation plan.
+        """
+        _RPC_DELAY = 0.1  # 100ms between calls
+
+        pet_rewards: dict[int, dict[str, Any]] = {}
+        total_pending_eth = 0
+        total_eth_owed = 0
+        total_fp_per_second = 0
+
+        for pet in pets:
+            pid = pet.id
+            try:
+                pending = await self.client.get_pending_eth(pid)
+                await asyncio.sleep(_RPC_DELAY)
+                owed = await self.client.get_eth_owed(pid)
+                await asyncio.sleep(_RPC_DELAY)
+                fps = await self.client.get_fp_per_second(pid)
+                await asyncio.sleep(_RPC_DELAY)
+            except Exception as exc:
+                logger.warning("RPC reward read failed for pet %d: %s", pid, exc)
+                pending, owed, fps = 0, 0, 0
+
+            pet_rewards[pid] = {
+                "pending_eth_wei": pending,
+                "eth_owed_wei": owed,
+                "fp_per_second": fps,
+            }
+            total_pending_eth += pending
+            total_eth_owed += owed
+            total_fp_per_second += fps
+
+        # Global staking pool reads
+        try:
+            user_shares = await self.client.get_user_shares(wallet_address)
+            await asyncio.sleep(_RPC_DELAY)
+            total_shares = await self.client.get_total_shares()
+            await asyncio.sleep(_RPC_DELAY)
+            total_fp_in_pool = await self.client.get_total_fp_in_pool()
+        except Exception as exc:
+            logger.warning("RPC pool read failed: %s", exc)
+            user_shares, total_shares, total_fp_in_pool = 0, 0, 0
+
+        # Pool share percentage
+        pool_share_pct = (
+            (user_shares / total_shares * 100.0) if total_shares > 0 else 0.0
+        )
+
+        # ETH price for USD conversion
+        eth_price_usd = await self._price_client.get_eth_usd()
+
+        total_eth_wei = total_pending_eth + total_eth_owed
+
+        return {
+            "pet_rewards": pet_rewards,
+            "total_pending_eth_wei": total_pending_eth,
+            "total_eth_owed_wei": total_eth_owed,
+            "total_eth_wei": total_eth_wei,
+            "total_fp_per_second": total_fp_per_second,
+            "user_shares": user_shares,
+            "total_shares": total_shares,
+            "total_fp_in_pool": total_fp_in_pool,
+            "pool_share_pct": pool_share_pct,
+            "eth_price_usd": eth_price_usd,
         }
 
     def save_cache(self) -> None:
@@ -417,6 +506,7 @@ class FrenPetManager:
         """Shut down the HTTP client and persist cache."""
         self.save_cache()
         await self.client.close()
+        await self._price_client.close()
 
 
 # ---------------------------------------------------------------------------

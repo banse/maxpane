@@ -1403,3 +1403,231 @@ OCMSupplyBreakdown {
 OCMSupplyBreakdown > .breakdown-title {
     color: $text-muted;
 }
+
+/* ── FrenPet Wallet screen ─────────────────────────────────────────── */
+
+#fpw-title {
+    width: 100%;
+    height: 1;
+    content-align: center middle;
+    text-align: center;
+    color: $text-muted;
+    text-style: bold;
+    padding: 0 2;
+}
+
+FPWalletHero {
+    height: 7;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+FPWHeroBox {
+    width: 1fr;
+    height: 7;
+    border: solid $panel;
+    padding: 1 2;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    margin: 0 1;
+}
+
+#fpw-middle-row {
+    height: 1fr;
+    padding: 0 0;
+    margin: 1 0 0 0;
+}
+
+FPWalletPets {
+    width: 3fr;
+    padding: 0 1;
+}
+
+FPWalletPets > .fpw-pets-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+FPWalletPets DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+#fpw-right-col {
+    width: 2fr;
+    padding: 0 1;
+}
+
+FPWalletTrends {
+    height: auto;
+    padding: 0 1;
+    content-align: center top;
+}
+
+FPWalletTrends > .fpw-chart-title {
+    color: $text-muted;
+}
+
+FPWalletSignals {
+    height: 1fr;
+    padding: 0 1;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+FPWalletSignals > .fpw-sig-title {
+    color: $text-muted;
+}
+
+#fpw-separator {
+    width: 100%;
+    height: 1;
+    color: $panel;
+    padding: 0 2;
+    margin: 0 0;
+}
+
+#fpw-bottom-row {
+    height: 1fr;
+    padding: 0 0;
+    margin: 0 0 1 0;
+}
+
+FPWalletActivity {
+    width: 3fr;
+    padding: 0 1;
+}
+
+FPWalletActivity > .fpw-feed-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+FPWalletActivity RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+FPWalletBestPlays {
+    width: 2fr;
+    padding: 0 1;
+    content-align: center top;
+}
+
+FPWalletBestPlays > .fpw-bp-title {
+    color: $text-muted;
+}
+
+/* -- FrenPet Performance screen */
+
+FPPerfHero {
+    height: 7;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+FPPHeroBox {
+    width: 1fr;
+    height: 7;
+    border: solid $panel;
+    padding: 1 2;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    margin: 0 1;
+}
+
+#fpp-middle-row {
+    height: 1fr;
+    padding: 0 0;
+    margin: 1 0 0 0;
+}
+
+FPPerfPets {
+    width: 3fr;
+    padding: 0 1;
+}
+
+FPPerfPets > .fpp-pets-title {
+    color: $text-muted;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+FPPerfPets DataTable {
+    height: 1fr;
+    padding: 0 0;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+#fpp-right-col {
+    width: 2fr;
+    padding: 0 1;
+}
+
+FPPerfTrends {
+    height: auto;
+    padding: 0 1;
+    content-align: center top;
+}
+
+FPPerfTrends > .fpp-chart-title {
+    color: $text-muted;
+}
+
+FPPerfSignals {
+    height: 1fr;
+    padding: 0 1;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+FPPerfSignals > .fpp-sig-title {
+    color: $text-muted;
+}
+
+#fpp-separator {
+    width: 100%;
+    height: 1;
+    color: $panel;
+    padding: 0 2;
+    margin: 0 0;
+}
+
+#fpp-bottom-row {
+    height: 1fr;
+    padding: 0 0;
+    margin: 0 0 1 0;
+}
+
+FPPerfActivity {
+    width: 3fr;
+    padding: 0 1;
+}
+
+FPPerfActivity > .fpp-feed-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+FPPerfActivity RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+FPPerfVelocity {
+    width: 2fr;
+    padding: 0 1;
+    content-align: center top;
+}
+
+FPPerfVelocity > .fpp-vel-title {
+    color: $text-muted;
+}

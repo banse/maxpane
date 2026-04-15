@@ -53,12 +53,12 @@ def main():
     parser.add_argument(
         "--game",
         default="bakery",
-        choices=["bakery", "frenpet", "base", "cattown", "ocm", "dota"],
+        choices=["bakery", "frenpet", "frenpet_full", "frenpet_wallet", "frenpet_perf", "base", "cattown", "ocm", "dota"],
         help="Which game dashboard to show first (default: bakery)",
     )
     parser.add_argument(
         "--wallet",
-        default=os.environ.get("MAXPANE_WALLET", ""),
+        default=None,
         help="Wallet address for FrenPet pet view",
         # TODO: make configurable via settings screen or config file
     )
@@ -86,11 +86,15 @@ def main():
 
     _maximize_terminal()
 
+    # Wallet: CLI flag > env var > saved config
+    from maxpane_dashboard.config import get_wallet
+    wallet = args.wallet or get_wallet()
+
     app = MaxPaneApp(
         poll_interval=args.poll_interval,
         theme=args.theme,
         initial_game=args.game,
-        wallet_address=args.wallet,
+        wallet_address=wallet,
     )
     app.run()
 
