@@ -43,6 +43,7 @@ class StatusBar(Horizontal):
         super().__init__(**kwargs)
         self._theme_name = "minimal"
         self._game_name = ""
+        self._active_view: str = ""
 
     def compose(self) -> ComposeResult:
         yield Static(
@@ -68,12 +69,26 @@ class StatusBar(Horizontal):
         self._theme_name = name
         self._update_right()
 
+    def set_active_view(self, view: str) -> None:
+        """Update an optional 'active view' marker shown in the right label.
+
+        Screens that toggle between sub-views (e.g. TTT's Fees/Claims) call this
+        so the bar surfaces the current state. Screens without a sub-view leave
+        this empty and nothing is rendered.
+        """
+        self._active_view = view or ""
+        self._update_right()
+
     def _update_right(self) -> None:
         """Refresh the right-side label."""
         try:
             game_part = f" \u00b7 {self._game_name}" if self._game_name else ""
+            view_part = (
+                f" \u00b7 view: {self._active_view}" if self._active_view else ""
+            )
             self.query_one("#status-right", Static).update(
-                f"[dim]maxpane v{__version__} \u00b7 {self._theme_name}{game_part}[/]"
+                f"[dim]maxpane v{__version__} \u00b7 "
+                f"{self._theme_name}{game_part}{view_part}[/]"
             )
         except Exception:
             pass

@@ -18,6 +18,7 @@ GAMES = [
     ("7", "dota", "DOTA", "Defense of the Agents idle MOBA on Base"),
     ("8", "bakery", "Rugpull Bakery", "Bake cookies, boost, attack on Abstract"),
     ("9", "ocm", "OCM", "Onchain Monsters staking, supply, burns on Ethereum"),
+    ("0", "ttt", "Ten Thousand Tokens", "NFT collection w/ UniV4 burn-to-launch on Ethereum"),
 ]
 
 

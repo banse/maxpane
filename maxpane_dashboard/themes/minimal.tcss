@@ -1631,3 +1631,85 @@ FPPerfVelocity {
 FPPerfVelocity > .fpp-vel-title {
     color: $text-muted;
 }
+
+/* ── Ten Thousand Tokens screen ─────────────────────────────────────── */
+
+TTTHeroMetrics {
+    height: 7;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+TTTHeroBox {
+    width: 1fr;
+    height: 7;
+    border: solid $panel;
+    padding: 1 2;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    margin: 0 1;
+}
+
+TTTLeaderboard {
+    width: 3fr;
+    padding: 0 1;
+}
+
+TTTLeaderboard > .leaderboard-title {
+    color: $text-muted;
+    padding: 0 1;
+    text-style: bold;
+    margin: 0 0 1 0;
+}
+
+TTTSparkline {
+    height: auto;
+    padding: 0 1;
+    content-align: center top;
+}
+
+TTTSparkline > .chart-title {
+    color: $text-muted;
+}
+
+TTTSignals {
+    height: 1fr;
+    padding: 0 1;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+TTTSignals > .signals-title {
+    color: $text-muted;
+}
+
+TTTActivityFeed {
+    width: 3fr;
+    padding: 0 1;
+}
+
+TTTActivityFeed > .feed-title {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+TTTActivityFeed RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+TTTFeesTable, TTTClaimsTable {
+    width: 2fr;
+    padding: 0 1;
+    content-align: center top;
+}
+
+TTTFeesTable > .fees-title,
+TTTClaimsTable > .claims-title {
+    color: $text-muted;
+    padding: 0 1;
+    text-style: bold;
+    margin: 0 0 1 0;
+}
