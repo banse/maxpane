@@ -1,0 +1,101 @@
+[
+  {
+    "inputs": [],
+    "name": "symbol",
+    "outputs": [{"internalType": "string", "name": "", "type": "string"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "name",
+    "outputs": [{"internalType": "string", "name": "", "type": "string"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "decimals",
+    "outputs": [{"internalType": "uint8", "name": "", "type": "uint8"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalSupply",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "launcher",
+    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "hookAddress",
+    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "lastBuybackBlock",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "TWAP_INCREMENT",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "CALLER_REWARD_BPS",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "BUYBACK_DELAY_BLOCKS",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,  "internalType": "address", "name": "caller",       "type": "address"},
+      {"indexed": false, "internalType": "uint256", "name": "ethSpent",     "type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "amountBought", "type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "callerReward", "type": "uint256"}
+    ],
+    "name": "Bought",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,  "internalType": "address", "name": "launcher", "type": "address"}
+    ],
+    "name": "LauncherSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": false, "internalType": "string", "name": "newName",     "type": "string"},
+      {"indexed": false, "internalType": "string", "name": "newSymbol",   "type": "string"},
+      {"indexed": false, "internalType": "string", "name": "newImageURI", "type": "string"}
+    ],
+    "name": "MetadataUpdated",
+    "type": "event"
+  }
+]

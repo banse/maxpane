@@ -1,0 +1,92 @@
+[
+  {
+    "inputs": [],
+    "name": "accETHPerShare",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "SCALE",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "activeShares",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "burnCount",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_SUPPLY",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "nft",
+    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
+    "name": "pending",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
+    "name": "rewardDebt",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,  "internalType": "address", "name": "token",            "type": "address"},
+      {"indexed": true,  "internalType": "address", "name": "sender",           "type": "address"},
+      {"indexed": false, "internalType": "uint256", "name": "total",            "type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "launcherShare",    "type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "tokenWorksShare",  "type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "punkStrategyShare","type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "holderShare",      "type": "uint256"}
+    ],
+    "name": "Deposited",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,  "internalType": "uint256", "name": "tokenId", "type": "uint256"},
+      {"indexed": true,  "internalType": "address", "name": "owner",   "type": "address"},
+      {"indexed": false, "internalType": "uint256", "name": "paid",    "type": "uint256"}
+    ],
+    "name": "Burned",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,  "internalType": "address",   "name": "claimer",  "type": "address"},
+      {"indexed": false, "internalType": "uint256",   "name": "amount",   "type": "uint256"},
+      {"indexed": false, "internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]"}
+    ],
+    "name": "Claimed",
+    "type": "event"
+  }
+]

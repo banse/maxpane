@@ -1,0 +1,86 @@
+[
+  {
+    "inputs": [],
+    "name": "MAX_SUPPLY",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalMinted",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "hook",
+    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "feeSplitter",
+    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "renderer",
+    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "mintStart",
+    "outputs": [{"internalType": "uint64", "name": "", "type": "uint64"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "mintEnd",
+    "outputs": [{"internalType": "uint64", "name": "", "type": "uint64"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "launchesPaused",
+    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
+    "name": "tokenContract",
+    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,  "internalType": "uint256", "name": "tokenId",  "type": "uint256"},
+      {"indexed": true,  "internalType": "address", "name": "token",    "type": "address"},
+      {"indexed": true,  "internalType": "address", "name": "launcher", "type": "address"},
+      {"indexed": false, "internalType": "string",  "name": "imageURI", "type": "string"}
+    ],
+    "name": "Launched",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,  "internalType": "uint256", "name": "tokenId", "type": "uint256"},
+      {"indexed": true,  "internalType": "address", "name": "token",   "type": "address"},
+      {"indexed": true,  "internalType": "address", "name": "holder",  "type": "address"}
+    ],
+    "name": "TokenDeployed",
+    "type": "event"
+  }
+]
