@@ -45,15 +45,16 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-_PRIMARY_RPC = "https://eth.llamarpc.com"
+_PRIMARY_RPC = "https://cloudflare-eth.com"
 _FALLBACK_RPCS = [
-    "https://ethereum.publicnode.com",
-    "https://cloudflare-eth.com",
+    "https://eth.drpc.org",
+    "https://rpc.ankr.com/eth",
+    "https://eth.llamarpc.com",
 ]
-_MAX_RETRIES = 3
-_BACKOFF_SECONDS = (2.0, 4.0, 8.0)
-_REQUEST_TIMEOUT = 15.0
-_INTER_CALL_DELAY = 0.3  # seconds between consecutive RPC calls
+_MAX_RETRIES = 2
+_BACKOFF_SECONDS = (0.5, 1.5)
+_REQUEST_TIMEOUT = 10.0
+_INTER_CALL_DELAY = 0.05  # seconds between consecutive RPC calls
 
 _DEXSCREENER_BATCH_URL = "https://api.dexscreener.com/tokens/v1/ethereum/{addresses}"
 _DEXSCREENER_MAX_BATCH = 30
@@ -482,10 +483,20 @@ class TTTClient:
         }
         endpoints = [self._primary_rpc, *self._fallback_rpcs]
         last_err: BaseException | None = None
+        # Status codes meaning "the endpoint itself is broken or blocking us"
+        # rather than transient; don't waste retries on them.
+        _ENDPOINT_DEAD_CODES = {403, 451, 521, 522, 523, 524, 525, 526}
         for url in endpoints:
             for attempt in range(_MAX_RETRIES):
                 try:
                     resp = await self._client.post(url, json=payload)
+                    if resp.status_code in _ENDPOINT_DEAD_CODES:
+                        # Endpoint-level failure: skip to next endpoint immediately.
+                        last_err = httpx.HTTPStatusError(
+                            f"RPC {url} returned {resp.status_code}",
+                            request=resp.request, response=resp,
+                        )
+                        break
                     if resp.status_code == 429 or resp.status_code >= 500:
                         raise httpx.HTTPStatusError(
                             f"RPC {url} returned {resp.status_code}",
@@ -495,9 +506,18 @@ class TTTClient:
                     resp.raise_for_status()
                     body = resp.json()
                     if "error" in body:
-                        # JSON-RPC error -- don't try other endpoints, it's
-                        # the request that's wrong, not the endpoint.
-                        raise RuntimeError(f"RPC error: {body['error']}")
+                        err = body["error"]
+                        code = err.get("code") if isinstance(err, dict) else None
+                        # JSON-RPC codes -32600/-32601/-32602/-32604 are "your
+                        # request is malformed" -- those are genuinely caller
+                        # errors that won't be fixed by trying another endpoint.
+                        # Everything else (Internal error -32603, server-defined
+                        # codes like -32046 "Cannot fulfill request") is the
+                        # endpoint refusing to handle this call; fall over.
+                        if code in {-32600, -32601, -32602, -32604}:
+                            raise RuntimeError(f"RPC error: {err}")
+                        last_err = RuntimeError(f"RPC {url} error: {err}")
+                        break  # try next endpoint
                     return body.get("result", "0x")
                 except (httpx.HTTPError, httpx.StreamError) as exc:
                     last_err = exc

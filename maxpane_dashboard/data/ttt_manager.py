@@ -117,9 +117,13 @@ class TTTManager:
         now = time.time()
         self._cycle_count += 1
 
-        # -- 1) Factory + FeeSplitter state -------------------------------
+        # -- 1) Factory + FeeSplitter state and block number in parallel --
+        # These have no inter-dependency; run them concurrently so we don't
+        # serialize three independent RPCs through _INTER_CALL_DELAY.
+        factory_task = asyncio.create_task(self.client.fetch_factory_state())
+        block_task = asyncio.create_task(self.client.fetch_block_number())
         try:
-            factory = await self.client.fetch_factory_state()
+            factory = await factory_task
         except Exception as exc:
             self._error_count += 1
             logger.warning("factory state fetch failed: %s", exc)
@@ -130,9 +134,8 @@ class TTTManager:
                 "active_shares": 10_000,
                 "acc_eth_per_share": 0,
             }
-
         try:
-            current_block = await self.client.fetch_block_number()
+            current_block = await block_task
         except Exception as exc:
             logger.debug("block number fetch failed: %s", exc)
             current_block = 0
@@ -146,16 +149,38 @@ class TTTManager:
         # -- 4) Reservoirs (per-token ETH balance) ------------------------
         await self._refresh_reservoirs()
 
-        # -- 5) Market data (DexScreener) ---------------------------------
-        await self._refresh_market_data()
+        # -- 5+6+10) Market data + NFT floor + ETH/USD in parallel --------
+        # DexScreener, Reservoir, and CoinGecko are independent HTTP origins;
+        # run them concurrently to cut total wall time.
+        do_floor = (
+            self._cycle_count % _RESERVOIR_REFRESH_EVERY_N_CYCLES == 1
+        )
+        market_task = asyncio.create_task(self._refresh_market_data())
+        floor_task = (
+            asyncio.create_task(self.client.fetch_nft_floor()) if do_floor else None
+        )
+        eth_usd_task = asyncio.create_task(self.price_client.get_eth_usd())
 
-        # -- 6) NFT floor (every 2nd cycle) -------------------------------
-        if self._cycle_count % _RESERVOIR_REFRESH_EVERY_N_CYCLES == 1:
-            floor = await self.client.fetch_nft_floor()
-            if floor is not None:
-                self._last_floor_eth = floor.get("floor_eth")
-                self._last_floor_usd = floor.get("floor_usd")
-                self._last_sales_24h = floor.get("sales_24h")
+        try:
+            await market_task
+        except Exception as exc:
+            logger.debug("market data fetch failed: %s", exc)
+
+        if floor_task is not None:
+            try:
+                floor = await floor_task
+                if floor is not None:
+                    self._last_floor_eth = floor.get("floor_eth")
+                    self._last_floor_usd = floor.get("floor_usd")
+                    self._last_sales_24h = floor.get("sales_24h")
+            except Exception as exc:
+                logger.debug("floor fetch failed: %s", exc)
+
+        try:
+            eth_usd = await eth_usd_task
+        except Exception as exc:
+            logger.debug("ETH price fetch failed: %s", exc)
+            eth_usd = 0.0
 
         # -- 7) Sample hourly buckets ------------------------------------
         self.cache.sample_burns_and_floor(
@@ -170,13 +195,6 @@ class TTTManager:
         for addr in list(self.cache.tokens.keys()):
             fees_24h, fees_total = self.cache.per_token_fees(addr, now)
             self.cache.update_token_fees(addr, fees_24h, fees_total)
-
-        # -- 10) ETH/USD ---------------------------------------------------
-        try:
-            eth_usd = await self.price_client.get_eth_usd()
-        except Exception as exc:
-            logger.debug("ETH price fetch failed: %s", exc)
-            eth_usd = 0.0
 
         # -- 11) Analytics ------------------------------------------------
         tokens_list = list(self.cache.tokens.values())
