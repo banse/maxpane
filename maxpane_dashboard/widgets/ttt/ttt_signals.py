@@ -83,6 +83,9 @@ class TTTSignals(Vertical):
             classes="ttt-signals-body",
             id="ttt-sig-decay",
         )
+        # Blank-line separator between the two activity dots (buybacks /
+        # decay) and the informational concentration row.
+        yield Static("", classes="ttt-signals-body", id="ttt-sig-sep")
         yield Static(
             "",
             classes="ttt-signals-body",
