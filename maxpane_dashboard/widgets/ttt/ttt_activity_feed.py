@@ -212,6 +212,7 @@ class TTTActivityFeed(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("ACTIVITY", classes="ttt-feed-title")
+        yield Static(" ", classes="ttt-feed-spacer")
         yield RichLog(
             id="ttt-activity-log",
             wrap=False,

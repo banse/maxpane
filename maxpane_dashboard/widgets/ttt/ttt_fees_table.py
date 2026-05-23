@@ -28,7 +28,7 @@ def _fmt_eth(value, digits: int = 4) -> str:
     if value is None:
         return _DASH
     try:
-        return f"{float(value):.{digits}f}"
+        return f"{float(value):.{digits}f} Ξ"
     except (TypeError, ValueError):
         return _DASH
 
@@ -74,6 +74,7 @@ class TTTFeesTable(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("α TOP FEE ENGINES (24h)", classes="ttt-fees-title")
+        yield Static(" ", classes="ttt-fees-spacer")
         table = DataTable(id="ttt-fees-table", classes="ttt-fees-table")
         yield table
 

@@ -179,8 +179,9 @@ class TTTScreen(Screen):
                 launches_24h=data.get("launches_24h"),
                 holder_pool_eth_total=data.get("holder_pool_eth_total"),
                 holder_pool_eth_24h=data.get("holder_pool_eth_24h"),
-                floor_eth=data.get("floor_eth"),
-                floor_usd=data.get("floor_usd"),
+                total_mcap_usd=data.get("total_mcap_usd"),
+                total_mcap_eth=data.get("total_mcap_eth"),
+                total_mcap_token_count=data.get("total_mcap_token_count"),
             )
         except Exception as exc:
             logger.debug("Failed to update TTTHeroMetrics: %s", exc)
@@ -197,7 +198,7 @@ class TTTScreen(Screen):
         try:
             self.query_one(TTTSparkline).update_data(
                 burns_history=data.get("burns_history"),
-                floor_history=data.get("floor_history"),
+                volume_history=data.get("volume_history", []),
             )
         except Exception as exc:
             logger.debug("Failed to update TTTSparkline: %s", exc)

@@ -31,19 +31,19 @@ def _fmt_signal(sig: dict | None) -> str:
 
     Returns an empty string when ``sig`` is ``None`` so callers can hide
     the row entirely (used for the optional ``fresh_launch`` slot).
+
+    The label prefix is intentionally dropped (CR6) -- the value string
+    already restates the concept (e.g. "0 buybacks ready"), so dropping
+    the redundant label gives the value more horizontal room.
     """
     if not sig:
         return ""
     if not isinstance(sig, dict):
         return ""
-    label = sig.get("label") or ""
     value = sig.get("value_str") or "--"
     color = sig.get("color") or "dim"
     indicator = sig.get("indicator") or "●"
-    return (
-        f"  [{color}]{indicator}[/] {label:<22} "
-        f"[{color}]{value}[/]"
-    )
+    return f"  [{color}]{indicator}[/] [{color}]{value}[/]"
 
 
 class TTTSignals(Vertical):
@@ -107,14 +107,14 @@ class TTTSignals(Vertical):
         # Buybacks ready
         bb_widget = self.query_one("#ttt-sig-buybacks", Static)
         bb_widget.update(_fmt_signal(buybacks_ready_signal) or
-                         _fmt_signal({"label": "Buybacks ready", "value_str": "--"}))
+                         _fmt_signal({"value_str": "--"}))
 
         # Decay window
         decay_widget = self.query_one("#ttt-sig-decay", Static)
         decay_widget.update(_fmt_signal(decay_window_signal) or
-                            _fmt_signal({"label": "Decay window", "value_str": "--"}))
+                            _fmt_signal({"value_str": "--"}))
 
         # Concentration
         conc_widget = self.query_one("#ttt-sig-concentration", Static)
         conc_widget.update(_fmt_signal(concentration_signal) or
-                           _fmt_signal({"label": "Concentration", "value_str": "--"}))
+                           _fmt_signal({"value_str": "--"}))

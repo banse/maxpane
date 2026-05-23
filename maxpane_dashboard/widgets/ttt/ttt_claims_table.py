@@ -4,10 +4,12 @@ Renders six static scenario rows from
 ``analytics.ttt_signals.claim_math_scenarios``.  Each row models what
 the per-NFT 24h holder claim would look like at a given burn level:
 
-| SCENARIO     | UNBURNED | SHARE / DEPOSIT | 24h PROJECTION | × TODAY |
+| SCENARIO     | UNBURNED | SHARE / DEPOSIT | 24h PROJECTION |
 
 The "Today" row -- always row 1 -- is rendered bold so the user has a
-visual anchor for the multiplier column.
+visual anchor.  (Previously a ``× TODAY`` multiplier column lived to the
+right of ``24h PROJECTION`` but was dropped in CR7 because the cell got
+clipped by the scrollbar at common terminal widths.)
 
 Like ``TTTFeesTable`` this widget is a sibling under the screen; the
 screen toggles ``display`` between the two on the ``c`` keybinding.
@@ -79,6 +81,7 @@ class TTTClaimsTable(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("γ HOLDER CLAIM MATH", classes="ttt-claims-title")
+        yield Static(" ", classes="ttt-claims-spacer")
         table = DataTable(id="ttt-claims-table", classes="ttt-claims-table")
         yield table
 
@@ -90,8 +93,7 @@ class TTTClaimsTable(Vertical):
         table.add_column("UNBURNED", width=10)
         table.add_column("SHARE / DEPOSIT", width=16)
         table.add_column("24h PROJECTION", width=14)
-        table.add_column("× TODAY", width=8)
-        table.add_row(_DASH, _DASH, "Loading...", _DASH, _DASH)
+        table.add_row(_DASH, _DASH, "Loading...", _DASH)
 
     def update_data(
         self,
@@ -104,7 +106,7 @@ class TTTClaimsTable(Vertical):
 
         scenarios = claim_math_scenarios or []
         if not scenarios:
-            table.add_row(_DASH, _DASH, "No data", _DASH, _DASH)
+            table.add_row(_DASH, _DASH, "No data", _DASH)
             return
 
         for idx, row in enumerate(scenarios[:6]):
@@ -114,7 +116,6 @@ class TTTClaimsTable(Vertical):
             unburned = _fmt_int(row.get("unburned"))
             share = _fmt_share(row.get("share_pct"))
             projected = _fmt_eth(row.get("projected_24h_eth"))
-            multiplier = _fmt_multiplier(row.get("multiplier_vs_today"))
 
             # Highlight the "Today" row (always the first scenario)
             is_today = (
@@ -125,6 +126,5 @@ class TTTClaimsTable(Vertical):
                 unburned = f"[bold]{unburned}[/]"
                 share = f"[bold]{share}[/]"
                 projected = f"[bold]{projected}[/]"
-                multiplier = f"[bold]{multiplier}[/]"
 
-            table.add_row(scenario, unburned, share, projected, multiplier)
+            table.add_row(scenario, unburned, share, projected)

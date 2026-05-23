@@ -16,23 +16,56 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 _DASH = "--"
+_SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉"
 
 
 # -- format helpers ----------------------------------------------------
 
 
-def _fmt_price(p) -> str:
+def _format_price(p) -> str:
+    """Render a USD price with DexScreener-style subscript-zero for sub-cent values.
+
+    Examples:
+        12.345     -> "$12.3450"
+        0.0312     -> "$0.0312"
+        0.000123   -> "$0.0₃123"   # 3 leading zeros after the decimal
+        0.0000012  -> "$0.0₆12"
+        2.7e-9     -> "$0.0₉27"    # 9 leading zeros
+    """
     if p is None:
         return _DASH
     try:
         v = float(p)
     except (TypeError, ValueError):
         return _DASH
-    if v >= 0.01:
-        return f"${v:.4f}"
     if v <= 0:
         return _DASH
-    return f"${v:.2e}"
+    if v >= 0.01:
+        return f"${v:.4f}"
+    # Sub-cent: count leading zeros after the decimal point.
+    # Build a fixed-precision string with lots of digits to find the zero run.
+    s = f"{v:.18f}"            # "0.000001234567000000"
+    # Drop "0." prefix
+    frac = s.split(".", 1)[1]
+    # Count leading zeros in frac
+    zeros = 0
+    for ch in frac:
+        if ch == "0":
+            zeros += 1
+        else:
+            break
+    # Take the next 3 significant digits after the zero run
+    sig = frac[zeros:zeros + 3].rstrip("0") or "0"
+    # If zeros < 4 we don't need subscript; just render plainly.
+    if zeros < 4:
+        return f"${v:.6f}".rstrip("0").rstrip(".")
+    subscript = "".join(_SUBSCRIPT[int(d)] for d in str(zeros))
+    return f"$0.0{subscript}{sig}"
+
+
+def _fmt_price(p) -> str:
+    """Backwards-compatible alias for :func:`_format_price`."""
+    return _format_price(p)
 
 
 def _fmt_change(c) -> str:
@@ -106,6 +139,7 @@ class TTTLeaderboard(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("TOP TOKENS BY VOLUME", classes="ttt-leaderboard-title")
+        yield Static(" ", classes="ttt-leaderboard-spacer")
         table = DataTable(id="ttt-leaderboard-table", classes="ttt-leaderboard-table")
         yield table
 
