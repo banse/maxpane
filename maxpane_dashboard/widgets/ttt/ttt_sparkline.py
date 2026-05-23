@@ -3,7 +3,7 @@
 Renders two parallel ASCII sparklines sharing a single time axis:
 
 * **BURNS** -- cumulative burn count over the last 168 hours (orange).
-* **FLOOR Ξ** -- NFT floor in ETH over the last 168 hours (cyan).
+* **VOLUME $** -- total 24h USD volume across all tokens, sampled hourly (cyan).
 
 Each input is a list of ``(unix_timestamp, value)`` tuples (or 2-element
 lists -- some serializers degrade tuples to lists).  When a series has
@@ -12,7 +12,7 @@ empty bar, so the user sees the dashboard is alive but the series isn't
 ready yet.
 
 Inspired by ``maxpane_dashboard/widgets/ocm/ocm_sparklines.py`` but
-adapted for two heterogeneous series (integer burn counts vs float ETH).
+adapted for two heterogeneous series (integer burn counts vs USD volume).
 """
 
 from __future__ import annotations
@@ -87,11 +87,19 @@ def _fmt_burns(value: float) -> str:
         return "--"
 
 
-def _fmt_floor_eth(value: float) -> str:
+def _fmt_volume_usd(value: float) -> str:
+    """Format USD volume with K/M/B suffix."""
     try:
-        return f"{float(value):.4f}"
+        v = float(value)
     except (TypeError, ValueError):
         return "--"
+    if v >= 1_000_000_000:
+        return f"${v / 1_000_000_000:.2f}B"
+    if v >= 1_000_000:
+        return f"${v / 1_000_000:.2f}M"
+    if v >= 1_000:
+        return f"${v / 1_000:.2f}K"
+    return f"${v:.0f}"
 
 
 class TTTSparkline(Vertical):
@@ -112,6 +120,9 @@ class TTTSparkline(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("TRENDS (7d)", classes="ttt-spark-title")
+        # Blank spacer between the title and the first sparkline row,
+        # mirroring the pattern used in OCMSparklines (#ocm-chart-spacer).
+        yield Static("", classes="ttt-spark-line", id="ttt-spark-spacer")
         yield Static(
             _WAITING,
             classes="ttt-spark-line",
@@ -120,14 +131,14 @@ class TTTSparkline(Vertical):
         yield Static(
             _WAITING,
             classes="ttt-spark-line",
-            id="ttt-spark-floor",
+            id="ttt-spark-volume",
         )
 
     def update_data(
         self,
-        burns_history=None,
-        floor_history=None,
-        **_kwargs,
+        burns_history: list[tuple[float, float]] | None = None,
+        volume_history: list[tuple[float, float]] | None = None,
+        **_kwargs,  # tolerate stale floor_history kwarg from screen until B3 lands
     ) -> None:
         """Refresh both rows.
 
@@ -139,22 +150,22 @@ class TTTSparkline(Vertical):
         burns_widget = self.query_one("#ttt-spark-burns", Static)
         burns_pts = _coerce_points(burns_history)
         if len(burns_pts) < 2:
-            burns_widget.update(f"  [dim]BURNS  [/]  {_WAITING}")
+            burns_widget.update(f"  [dim]BURNS   [/]  {_WAITING}")
         else:
             spark = _build_sparkline([v for _, v in burns_pts])
             current = _fmt_burns(burns_pts[-1][1])
             burns_widget.update(
-                f"  [dim]BURNS  [/]  [#ffa500]{spark}[/]  [bold]{current}[/]"
+                f"  [dim]BURNS   [/]  [#ffa500]{spark}[/]  [bold]{current}[/]"
             )
 
-        # FLOOR Ξ (cyan)
-        floor_widget = self.query_one("#ttt-spark-floor", Static)
-        floor_pts = _coerce_points(floor_history)
-        if len(floor_pts) < 2:
-            floor_widget.update(f"  [dim]FLOOR Ξ[/]  {_WAITING}")
+        # VOLUME $ (cyan)
+        volume_widget = self.query_one("#ttt-spark-volume", Static)
+        volume_pts = _coerce_points(volume_history)
+        if len(volume_pts) < 2:
+            volume_widget.update(f"  [dim]VOLUME $[/]  {_WAITING}")
         else:
-            spark = _build_sparkline([v for _, v in floor_pts])
-            current = _fmt_floor_eth(floor_pts[-1][1])
-            floor_widget.update(
-                f"  [dim]FLOOR Ξ[/]  [cyan]{spark}[/]  [bold]{current} Ξ[/]"
+            spark = _build_sparkline([v for _, v in volume_pts])
+            current = _fmt_volume_usd(volume_pts[-1][1])
+            volume_widget.update(
+                f"  [dim]VOLUME $[/]  [cyan]{spark}[/]  [bold]{current}[/]"
             )
