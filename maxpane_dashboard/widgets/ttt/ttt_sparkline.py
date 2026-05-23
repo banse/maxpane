@@ -3,7 +3,7 @@
 Renders two parallel ASCII sparklines sharing a single time axis:
 
 * **BURNS** -- cumulative burn count over the last 168 hours (orange).
-* **VOLUME $** -- total 24h USD volume across all tokens, sampled hourly (cyan).
+* **24H VOLUME $** -- total 24h USD volume across all tokens, sampled hourly (cyan).
 
 Each input is a list of ``(unix_timestamp, value)`` tuples (or 2-element
 lists -- some serializers degrade tuples to lists).  When a series has
@@ -150,22 +150,22 @@ class TTTSparkline(Vertical):
         burns_widget = self.query_one("#ttt-spark-burns", Static)
         burns_pts = _coerce_points(burns_history)
         if len(burns_pts) < 2:
-            burns_widget.update(f"  [dim]BURNS   [/]  {_WAITING}")
+            burns_widget.update(f"  [dim]BURNS       [/]  {_WAITING}")
         else:
             spark = _build_sparkline([v for _, v in burns_pts])
             current = _fmt_burns(burns_pts[-1][1])
             burns_widget.update(
-                f"  [dim]BURNS   [/]  [#ffa500]{spark}[/]  [bold]{current}[/]"
+                f"  [dim]BURNS       [/]  [#ffa500]{spark}[/]  [bold]{current}[/]"
             )
 
-        # VOLUME $ (cyan)
+        # 24H VOLUME $ (cyan)
         volume_widget = self.query_one("#ttt-spark-volume", Static)
         volume_pts = _coerce_points(volume_history)
         if len(volume_pts) < 2:
-            volume_widget.update(f"  [dim]VOLUME $[/]  {_WAITING}")
+            volume_widget.update(f"  [dim]24H VOLUME $[/]  {_WAITING}")
         else:
             spark = _build_sparkline([v for _, v in volume_pts])
             current = _fmt_volume_usd(volume_pts[-1][1])
             volume_widget.update(
-                f"  [dim]VOLUME $[/]  [cyan]{spark}[/]  [bold]{current}[/]"
+                f"  [dim]24H VOLUME $[/]  [cyan]{spark}[/]  [bold]{current}[/]"
             )
