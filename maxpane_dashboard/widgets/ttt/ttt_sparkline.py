@@ -22,7 +22,7 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 _SPARK_CHARS = "▁▂▃▄▅▆▇█"
-_SPARK_WIDTH = 40
+_SPARK_WIDTH = 22
 _WAITING = "[dim]waiting for data...[/]"
 
 

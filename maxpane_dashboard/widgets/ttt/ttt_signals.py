@@ -64,9 +64,12 @@ class TTTSignals(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("SIGNALS", classes="ttt-signals-title")
-        yield Static("", classes="ttt-signals-body", id="ttt-sig-spacer")
+        # The fresh-launch row doubles as the title spacer: when there is
+        # no fresh launch, _fmt_signal(None) returns "" and this Static
+        # renders as a single blank line (CR2.2 — was previously a
+        # dedicated spacer + always-empty fresh row → 2 blank lines).
         yield Static(
-            "[dim]  Loading...[/]",
+            "",
             classes="ttt-signals-body",
             id="ttt-sig-fresh",
         )

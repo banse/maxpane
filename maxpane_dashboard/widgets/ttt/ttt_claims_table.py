@@ -4,7 +4,7 @@ Renders six static scenario rows from
 ``analytics.ttt_signals.claim_math_scenarios``.  Each row models what
 the per-NFT 24h holder claim would look like at a given burn level:
 
-| SCENARIO     | UNBURNED | SHARE / DEPOSIT | 24h PROJECTION |
+| SCENARIO     | UNBURNED | SHARE/DEPOSIT | 24h PROJECTION |
 
 The "Today" row -- always row 1 -- is rendered bold so the user has a
 visual anchor.  (Previously a ``× TODAY`` multiplier column lived to the
@@ -91,7 +91,7 @@ class TTTClaimsTable(Vertical):
         table.zebra_stripes = True
         table.add_column("SCENARIO", width=14)
         table.add_column("UNBURNED", width=10)
-        table.add_column("SHARE / DEPOSIT", width=16)
+        table.add_column("SHARE/DEPOSIT", width=14)
         table.add_column("24h PROJECTION", width=14)
         table.add_row(_DASH, _DASH, "Loading...", _DASH)
 
