@@ -71,6 +71,10 @@ class TTTCache:
         self.floor_hourly: deque[tuple[float, float]] = deque(
             maxlen=_HOURLY_HISTORY_HOURS
         )
+        # Total volume across all tokens (USD), hourly bucketed, 7d deep.
+        self.volume_hourly: deque[tuple[float, float]] = deque(
+            maxlen=_HOURLY_HISTORY_HOURS
+        )
 
         # Activity ring buffer, newest events first.
         self.activity_log: deque[TTTActivityEvent] = deque(
@@ -312,6 +316,49 @@ class TTTCache:
             else:
                 self.floor_hourly.append((bucket, float(floor_eth)))
 
+    def sample_volume(self, now_ts: float, total_volume_usd: float) -> None:
+        """Append the current total volume (USD) to the hourly deque.
+
+        Mirrors the ``sample_burns_and_floor`` dedupe pattern: if the most-
+        recent bucket is already at the current hour, overwrite it instead
+        of appending a duplicate.
+        """
+        bucket = _hour_bucket(now_ts)
+        try:
+            val = float(total_volume_usd)
+        except (TypeError, ValueError):
+            return
+        if self.volume_hourly and self.volume_hourly[-1][0] == bucket:
+            self.volume_hourly[-1] = (bucket, val)
+        else:
+            self.volume_hourly.append((bucket, val))
+
+    # ------------------------------------------------------------------
+    # Activity log read helpers
+    # ------------------------------------------------------------------
+
+    def get_activity_for_display(
+        self, limit: int = 25
+    ) -> list[TTTActivityEvent]:
+        """Return the most recent ``limit`` activity events sorted by block desc.
+
+        Multi-day event scans land in the activity_log in scan order, not
+        chronological order. We sort by ``block_number`` descending at read
+        time so the display always shows the freshest blocks first. The
+        ``activity_log`` insertion path is intentionally left alone.
+
+        Ties on block_number (multiple events in the same block) are broken
+        by ``timestamp`` desc as a stable secondary key.
+        """
+        events = list(self.activity_log)
+        events.sort(
+            key=lambda e: (int(e.block_number or 0), int(e.timestamp or 0)),
+            reverse=True,
+        )
+        if limit is None or limit < 0:
+            return events
+        return events[:limit]
+
     # ------------------------------------------------------------------
     # Pruning and aggregation
     # ------------------------------------------------------------------
@@ -376,6 +423,7 @@ class TTTCache:
             },
             "burns_hourly": [[float(ts), int(v)] for (ts, v) in self.burns_hourly],
             "floor_hourly": [[float(ts), float(v)] for (ts, v) in self.floor_hourly],
+            "volume_hourly": [[float(ts), float(v)] for (ts, v) in self.volume_hourly],
             "activity_log": [e.model_dump() for e in self.activity_log],
             "last_seen_block": dict(self.last_seen_block),
             "launches_24h": int(self.launches_24h),
@@ -444,6 +492,13 @@ class TTTCache:
             for pt in payload.get("floor_hourly") or []:
                 if isinstance(pt, (list, tuple)) and len(pt) >= 2:
                     self.floor_hourly.append((float(pt[0]), float(pt[1])))
+            self.volume_hourly.clear()
+            for pt in payload.get("volume_hourly") or []:
+                if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                    try:
+                        self.volume_hourly.append((float(pt[0]), float(pt[1])))
+                    except (TypeError, ValueError):
+                        continue
         except Exception as exc:
             logger.warning("hourly history bad: %s", exc)
 

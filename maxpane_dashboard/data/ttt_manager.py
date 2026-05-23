@@ -186,6 +186,28 @@ class TTTManager:
         self.cache.sample_burns_and_floor(
             now, factory["burn_count"], self._last_floor_eth
         )
+        # Total 24h volume across all tokens with market data; mirrors the
+        # burns/floor sampling pattern so the sparkline widget has a uniform
+        # source.
+        total_volume_usd = sum(
+            float(t.volume_usd_h24 or 0.0)
+            for t in self.cache.tokens.values()
+        )
+        self.cache.sample_volume(now, total_volume_usd)
+
+        # Aggregate total market cap (USD + ETH) across tokens with market
+        # data. Computed AFTER eth_usd is available so the ETH-denominated
+        # value is meaningful. CR1.
+        mcap_contributors = [
+            float(t.market_cap_usd)
+            for t in self.cache.tokens.values()
+            if t.market_cap_usd is not None
+        ]
+        total_mcap_usd = sum(mcap_contributors) if mcap_contributors else 0.0
+        total_mcap_token_count = len(mcap_contributors)
+        total_mcap_eth: float | None = (
+            (total_mcap_usd / eth_usd) if (eth_usd and eth_usd > 0) else None
+        )
 
         # -- 8) Prune old + recompute rolling 24h counters ---------------
         self.cache.prune_old(now)
@@ -292,13 +314,20 @@ class TTTManager:
             for i, t in enumerate(top_fees)
         ]
 
-        # -- 13) Activity feed (last 25 as dicts) ------------------------
-        activity = [e.model_dump() for e in list(self.cache.activity_log)[:25]]
+        # -- 13) Activity feed (last 25 as dicts, sorted by block desc) ----
+        # CR3: sort at read time by block_number desc so multi-day scans
+        # display in correct chronological order regardless of insertion
+        # order. The activity_log insertion path is unchanged.
+        activity = [
+            e.model_dump()
+            for e in self.cache.get_activity_for_display(limit=25)
+        ]
 
         last_updated_seconds_ago = max(0.0, time.time() - now)
 
         burns_history = [list(pt) for pt in self.cache.burns_hourly]
         floor_history = [list(pt) for pt in self.cache.floor_hourly]
+        volume_history = [list(pt) for pt in self.cache.volume_hourly]
 
         def _sig_dump(s: Any) -> dict | None:
             if s is None:
@@ -326,9 +355,14 @@ class TTTManager:
             "floor_usd": self._last_floor_usd,
             # Leaderboard
             "top_tokens_by_volume": top_tokens_by_volume,
+            # Aggregate market cap (CR1)
+            "total_mcap_usd": total_mcap_usd,
+            "total_mcap_eth": total_mcap_eth,
+            "total_mcap_token_count": total_mcap_token_count,
             # Sparkline
             "burns_history": burns_history,
             "floor_history": floor_history,
+            "volume_history": volume_history,
             # Signals
             "fresh_launch_signal": _sig_dump(fresh),
             "buybacks_ready_signal": _sig_dump(br) or {
