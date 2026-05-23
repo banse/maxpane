@@ -91,7 +91,7 @@ class TTTClaimsTable(Vertical):
         table.zebra_stripes = True
         table.add_column("SCENARIO", width=14)
         table.add_column("UNBURNED", width=9)
-        table.add_column("SHARE/DEPOSIT", width=14)
+        table.add_column("SHARE/DEPOSIT", width=13)
         table.add_column("24h PROJECTION", width=14)
         table.add_row(_DASH, _DASH, "Loading...", _DASH)
 
