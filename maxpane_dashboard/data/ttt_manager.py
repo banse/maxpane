@@ -524,15 +524,30 @@ class TTTManager:
                 self.cache.update_token_reservoir(addr, wei)
 
     async def _refresh_market_data(self) -> None:
+        """Pull per-token market data; falls back through 2 sources.
+
+        Primary: tenthousandtokens.net SSR HTML scrape -- 100% coverage of
+        launched tokens (vs DexScreener's partial indexing) and includes
+        every token the site shows. Fallback: DexScreener batch (used when
+        the site is unreachable or its HTML structure changes).
+        """
         addresses = list(self.cache.tokens.keys())
         if not addresses:
             return
+        # Site scrape first.
+        site_market: dict[str, dict] = {}
         try:
-            market = await self.client.fetch_market_data(addresses)
+            site_market = await self.client.fetch_site_market_data()
         except Exception as exc:
-            logger.debug("market data batch failed: %s", exc)
-            return
-        for addr, md in market.items():
+            logger.debug("site market data fetch failed: %s", exc)
+        # If the site returned nothing usable, fall back to DexScreener.
+        if not site_market:
+            try:
+                site_market = await self.client.fetch_market_data(addresses)
+            except Exception as exc:
+                logger.debug("DexScreener fallback failed: %s", exc)
+                return
+        for addr, md in site_market.items():
             self.cache.update_token_market(
                 addr,
                 price_usd=md.get("price_usd"),

@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -59,6 +60,10 @@ _INTER_CALL_DELAY = 0.05  # seconds between consecutive RPC calls
 _DEXSCREENER_BATCH_URL = "https://api.dexscreener.com/tokens/v1/ethereum/{addresses}"
 _DEXSCREENER_MAX_BATCH = 30
 _RESERVOIR_FLOOR_URL = "https://api.reservoir.tools/collections/v7?contract={contract}"
+# tenthousandtokens.net Next.js SSR homepage embeds the full per-token state
+# (price, mcap, volume24h, ...) as escaped JSON. Scraping it gives us 100%
+# coverage of launched tokens (vs DexScreener's partial indexing).
+_TTT_SITE_URL = "https://www.tenthousandtokens.net/"
 
 _MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"
 _FACTORY = "0x26d7ad0e930b54b84c00daad077ee31ba9e2fb2e"
@@ -846,6 +851,38 @@ class TTTClient:
                         )
         return out
 
+    async def fetch_site_market_data(self) -> dict[str, dict[str, Any]]:
+        """Scrape per-token market data from tenthousandtokens.net SSR HTML.
+
+        The site's homepage embeds the full state of every launched token
+        (price, marketCap, volume24h, change, holders count, last trade, etc.)
+        as escaped JSON inside the React-Server-Components flight payload.
+        Returns ``{lower_addr: {price_usd, change_h24, volume_h24, mcap}}`` --
+        same shape as :meth:`fetch_market_data` so the manager can swap
+        sources without touching the cache schema. Returns ``{}`` on any
+        network or parse failure (manager keeps last-known values).
+        """
+        for attempt in range(_MAX_RETRIES):
+            try:
+                resp = await self._client.get(
+                    _TTT_SITE_URL,
+                    headers={"Accept": "text/html", "User-Agent": "maxpane-dashboard"},
+                )
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    raise httpx.HTTPStatusError(
+                        f"tenthousandtokens.net {resp.status_code}",
+                        request=resp.request,
+                        response=resp,
+                    )
+                resp.raise_for_status()
+                return _parse_site_market_data(resp.text)
+            except (httpx.HTTPError, ValueError) as exc:
+                if attempt < _MAX_RETRIES - 1:
+                    await asyncio.sleep(_BACKOFF_SECONDS[attempt])
+                else:
+                    logger.debug("site market data fetch failed: %s", exc)
+        return {}
+
     async def fetch_nft_floor(self) -> dict[str, Any] | None:
         """Get current floor + 24h sales from Reservoir's keyless tier.
 
@@ -923,6 +960,61 @@ def _safe_float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+_SITE_TOKEN_RE = re.compile(
+    r'\{"id":\d+,"address":"0x[a-f0-9]{40}".*?"refundable":(?:true|false)\}'
+)
+
+
+def _parse_site_market_data(html: str) -> dict[str, dict[str, Any]]:
+    """Extract per-token market data from tenthousandtokens.net SSR HTML.
+
+    The site embeds the React-Server-Components payload as escaped JSON
+    inside <script> tags. We unescape and use a regex to pull out each
+    token's full object (every token entry ends with ``"refundable":bool``
+    which is a stable terminator). Returns the same shape as DexScreener's
+    :meth:`fetch_market_data`: ``{lower_addr: {price_usd, change_h24,
+    volume_h24, mcap}}``.
+    """
+    # The RSC flight payload escapes quotes once (\") and backslashes once
+    # (\\). Reverse both so the regex can match plain JSON objects.
+    text = html.replace('\\"', '"').replace('\\\\', '\\')
+    out: dict[str, dict[str, Any]] = {}
+    for match in _SITE_TOKEN_RE.finditer(text):
+        try:
+            obj = json.loads(match.group(0))
+        except (json.JSONDecodeError, ValueError):
+            continue
+        addr = (obj.get("address") or "").lower()
+        if not addr:
+            continue
+        # change_h24 can be a number, a string like "$-0", or absent.
+        # The container is usually a dict but the site occasionally ships
+        # it as a placeholder string (e.g. "$11"); guard with isinstance.
+        change_container = obj.get("priceChangePercentByTimeframe")
+        raw_change = (
+            change_container.get("24h") if isinstance(change_container, dict) else None
+        )
+        change_h24: float | None
+        if isinstance(raw_change, (int, float)):
+            change_h24 = float(raw_change)
+        elif isinstance(raw_change, str):
+            # Strip "$" / "%" / whitespace and try float.
+            cleaned = raw_change.replace("$", "").replace("%", "").strip()
+            try:
+                change_h24 = float(cleaned)
+            except ValueError:
+                change_h24 = None
+        else:
+            change_h24 = None
+        out[addr] = {
+            "price_usd": _safe_float(obj.get("price")),
+            "change_h24": change_h24,
+            "volume_h24": _safe_float(obj.get("volume24h")),
+            "mcap": _safe_float(obj.get("marketCap")),
+        }
+    return out
 
 
 # Public re-exports the manager / cache use.
