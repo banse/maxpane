@@ -74,6 +74,16 @@ def test_apply_operation_dedupe():
     assert len(c.activity_log) == 1
 
 
+def test_apply_operation_same_tx_multiple_ops_not_collapsed():
+    # two same-type ops in one tx on the same source token but distinct
+    # result_ids must both count (collision-proof dedupe key)
+    c = TalismansCache()
+    c.apply_operation(_ev(op_type="cut", tx_hash="0xbatch", token_id_a=10, result_id=2001))
+    c.apply_operation(_ev(op_type="cut", tx_hash="0xbatch", token_id_a=10, result_id=2002))
+    assert c.operations_total == 2
+    assert len(c.activity_log) == 2
+
+
 def test_apply_operation_bond_increments_mythics():
     c = TalismansCache()
     c.apply_operation(_ev(op_type="bond", tx_hash="0x1", token_id_a=1))

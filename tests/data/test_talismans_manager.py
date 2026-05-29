@@ -112,6 +112,18 @@ async def test_mythic_count_and_pct(manager):
 
 
 @pytest.mark.asyncio
+async def test_second_cycle_does_not_double_count(manager):
+    # the fake client re-returns the same bond op every cycle; dedupe must keep
+    # the cumulative counters stable across cycles (no drift on re-scan)
+    first = await manager.fetch_and_compute()
+    second = await manager.fetch_and_compute()
+    assert first["operations_total"] == 1
+    assert second["operations_total"] == 1
+    assert second["mythics_ever_forged"] == 1
+    assert len(second["activity_events"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_collections_well_formed(manager):
     data = await manager.fetch_and_compute()
     tc = data["top_collectors"]

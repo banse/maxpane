@@ -45,7 +45,6 @@ from maxpane_dashboard.analytics.talismans_signals import (
 from maxpane_dashboard.data.talismans_cache import TalismansCache
 from maxpane_dashboard.data.talismans_client import (
     _DEFAULT_LOG_LOOKBACK_BLOCKS,
-    _INCREMENTAL_LOG_LOOKBACK,
     TalismansClient,
 )
 from maxpane_dashboard.data.talismans_materials import essence_of, tier_name
@@ -201,7 +200,7 @@ class TalismansManager:
             "last_updated_seconds_ago": 0,
             "error_count": self._error_count,
             "poll_interval": self.poll_interval,
-            "active_view": "matrix",
+            "active_view": "matrix",  # default; the screen owns view toggling (WP5)
             "bond_cleave_enabled": flags["bond_cleave_enabled"],
             "cut_merge_enabled": flags["cut_merge_enabled"],
         }

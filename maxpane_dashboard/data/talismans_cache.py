@@ -121,16 +121,23 @@ class TalismansCache:
 
     @staticmethod
     def _dedupe_key(event: TalismanActivityEvent) -> str:
-        return f"{event.tx_hash}:{event.op_type}:{event.token_id_a}"
+        # result_id is the unique id created by the op (bondedId / lithicId /
+        # headId / mergedId), so it distinguishes multiple same-type ops sharing
+        # a tx and source token — making the key collision-proof.
+        return f"{event.tx_hash}:{event.op_type}:{event.token_id_a}:{event.result_id}"
 
     def apply_operation(self, event: TalismanActivityEvent) -> None:
-        """Record an operation event, deduping by (tx_hash, op_type, token_id_a).
+        """Record an operation event, deduping by (tx_hash, op_type, token_id_a, result_id).
 
         On a genuinely new event: prepend to the activity log, bump the total
         operation count, increment ``mythics_ever_forged`` for bond ops, and
         bucket the event into ``ops_hourly`` (per-hour count). Re-applying an
         already-seen event is a no-op (so overlapping re-scans never double
         count).
+
+        Every bond fuses a matter + event token into a Mythic (see
+        ``docs/talismans_game_mechanics.md``), so counting bonds == counting
+        Mythic forges; ``mythics_ever_forged`` is therefore exact.
         """
         key = self._dedupe_key(event)
         if key in self.seen_tx_ops:
