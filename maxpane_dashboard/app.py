@@ -14,6 +14,7 @@ from maxpane_dashboard.data.dota_manager import DOTAManager
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
 from maxpane_dashboard.data.manager import DataManager
 from maxpane_dashboard.data.ocm_manager import OCMManager
+from maxpane_dashboard.data.talismans_manager import TalismansManager
 from maxpane_dashboard.data.ttt_manager import TTTManager
 from maxpane_dashboard.screens.bakery import BakeryScreen
 from maxpane_dashboard.screens.base_terminal import BaseTerminalScreen
@@ -28,6 +29,7 @@ from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 from maxpane_dashboard.config import get_wallet
 from maxpane_dashboard.screens.ocm import OCMScreen
 from maxpane_dashboard.screens.splash import SplashScreen
+from maxpane_dashboard.screens.talismans import TalismansScreen
 from maxpane_dashboard.screens.ttt import TTTScreen
 from maxpane_dashboard.themes import THEMES, THEME_NAMES
 from maxpane_dashboard.widgets.status_bar import StatusBar
@@ -84,6 +86,7 @@ class MaxPaneApp(App):
         self._ocm_manager = OCMManager(poll_interval=poll_interval)
         self._dota_manager = DOTAManager(poll_interval=poll_interval)
         self._ttt_manager = TTTManager(poll_interval=poll_interval)
+        self._talismans_manager = TalismansManager(poll_interval=poll_interval)
         self._current_game = initial_game
 
     def on_mount(self) -> None:
@@ -154,6 +157,12 @@ class MaxPaneApp(App):
                 exclusive=True,
                 name="prefetch",
             )
+        elif self._initial_game == "talismans":
+            self.run_worker(
+                self._talismans_manager.fetch_and_compute(),
+                exclusive=True,
+                name="prefetch",
+            )
 
         # Show splash screen → game select → dashboard
         self.push_screen(SplashScreen(), callback=self._on_splash_dismissed)
@@ -171,7 +180,7 @@ class MaxPaneApp(App):
 
     # FrenPet variants ("frenpet_full", "frenpet_wallet", "frenpet_perf") are
     # temporarily hidden from cycling — code intact, restore by re-adding them.
-    _GAME_CYCLE = ["base", "frenpet", "cattown", "dota", "bakery", "ocm", "ttt"]
+    _GAME_CYCLE = ["base", "frenpet", "cattown", "dota", "bakery", "ocm", "ttt", "talismans"]
 
     def _launch_game(self, game_id: str, *, first: bool = False) -> None:
         """Install and switch to a game screen.
@@ -247,6 +256,16 @@ class MaxPaneApp(App):
                 self.install_screen(
                     TTTScreen(self._ttt_manager, self.poll_interval, name="ttt"),
                     name="ttt",
+                )
+        elif game_id == "talismans":
+            if not self.is_screen_installed("talismans"):
+                self.install_screen(
+                    TalismansScreen(
+                        self._talismans_manager,
+                        self.poll_interval,
+                        name="talismans",
+                    ),
+                    name="talismans",
                 )
         else:
             return
@@ -373,4 +392,8 @@ class MaxPaneApp(App):
             await self._ttt_manager.close()
         except Exception as exc:
             logger.warning("Error during ttt shutdown: %s", exc)
+        try:
+            await self._talismans_manager.close()
+        except Exception as exc:
+            logger.warning("Error during talismans shutdown: %s", exc)
         self.exit()

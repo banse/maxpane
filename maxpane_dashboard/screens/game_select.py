@@ -20,6 +20,7 @@ GAMES = [
     ("5", "bakery", "Rugpull Bakery", "Bake cookies, boost, attack on Abstract"),
     ("6", "ocm", "OCM", "Onchain Monsters staking, supply, burns on Ethereum"),
     ("7", "ttt", "Ten Thousand Tokens", "NFT collection w/ UniV4 burn-to-launch on Ethereum"),
+    ("8", "talismans", "Talismans", "Core-conservation NFT collection on Ethereum"),
 ]
 
 
