@@ -99,10 +99,6 @@ def _strip0x(hex_str: str) -> str:
     return hex_str[2:] if hex_str.startswith("0x") else hex_str
 
 
-def _to_hex(b: bytes) -> str:
-    return "0x" + b.hex()
-
-
 def _pad_left(hex_no_0x: str, width: int = 64) -> str:
     """Left-pad a hex string with zeros to *width* characters."""
     return hex_no_0x.lower().rjust(width, "0")
@@ -274,7 +270,7 @@ def _decode_bonded_log(log: dict) -> dict | None:
             "operator": _decode_address(log.get("data", "0x"), 0),
             "block_number": int(log.get("blockNumber", "0x0"), 16),
             "tx_hash": log.get("transactionHash", "0x"),
-            "timestamp": 0,
+            "timestamp": 0,  # placeholder — manager fills via block-number approximation
         }
     except Exception as exc:
         logger.debug("Bonded decode failed: %s", exc)
@@ -300,7 +296,7 @@ def _decode_cleaved_log(log: dict) -> dict | None:
             "operator": _decode_address(log.get("data", "0x"), 0),
             "block_number": int(log.get("blockNumber", "0x0"), 16),
             "tx_hash": log.get("transactionHash", "0x"),
-            "timestamp": 0,
+            "timestamp": 0,  # placeholder — manager fills via block-number approximation
         }
     except Exception as exc:
         logger.debug("Cleaved decode failed: %s", exc)
@@ -326,7 +322,7 @@ def _decode_cut_log(log: dict) -> dict | None:
             "operator": _decode_address(log.get("data", "0x"), 1),
             "block_number": int(log.get("blockNumber", "0x0"), 16),
             "tx_hash": log.get("transactionHash", "0x"),
-            "timestamp": 0,
+            "timestamp": 0,  # placeholder — manager fills via block-number approximation
         }
     except Exception as exc:
         logger.debug("Cut decode failed: %s", exc)
@@ -347,7 +343,7 @@ def _decode_merged_log(log: dict) -> dict | None:
             "operator": _decode_address(log.get("data", "0x"), 0),
             "block_number": int(log.get("blockNumber", "0x0"), 16),
             "tx_hash": log.get("transactionHash", "0x"),
-            "timestamp": 0,
+            "timestamp": 0,  # placeholder — manager fills via block-number approximation
         }
     except Exception as exc:
         logger.debug("Merged decode failed: %s", exc)
