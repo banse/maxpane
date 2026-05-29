@@ -466,6 +466,20 @@ class TestConservationSignal:
         sig = conservation_signal(90, 100)
         assert "-10" in sig.value_str
 
+    def test_unset_baseline_is_syncing(self) -> None:
+        # baseline not yet established -> neutral, not a false drift
+        sig = conservation_signal(3114, 0)
+        fields = _signal_fields(sig)
+        assert fields["value_str"] == "SYNCING"
+        assert fields["color"] == "dim"
+
+    def test_incomplete_scan_is_syncing(self) -> None:
+        # a partial enumeration must not claim drift against the baseline
+        sig = conservation_signal(2000, 3114, complete=False)
+        fields = _signal_fields(sig)
+        assert fields["value_str"] == "SYNCING"
+        assert fields["color"] == "dim"
+
     def test_valid_color(self) -> None:
         for total, baseline in [(100, 100), (105, 100), (95, 100)]:
             sig = conservation_signal(total, baseline)

@@ -220,23 +220,30 @@ def _decode_aggregate3_result(hex_data: str) -> list[tuple[bool, str]]:
 def _decode_token_data(hex_data: str) -> tuple[list[int], int, int, int, int]:
     """Decode ``tokenData`` return ``(uint256[] cores, uint8 materialId, uint8 form, uint8 coreCount, uint16 seed)``.
 
-    The first head word is the byte-offset to the dynamic ``cores`` array; the
-    next 4 head words are materialId / form / coreCount / seed; at ``offset/32``
-    we read the array length then that many core words.
+    The return is a single *dynamic* tuple (it contains a dynamic ``uint256[]``),
+    so ABI-encoding wraps it behind a leading head offset word (typically
+    ``0x20``).  We dereference that to find the tuple start, then read the
+    tuple's own head: word 0 = byte-offset to the ``cores`` array (relative to
+    the tuple start), words 1-4 = materialId / form / coreCount / seed; at
+    ``tuple_start + cores_offset`` we read the array length then the core words.
 
     On empty / reverted input returns the graceful empty ``([], 0, 0, 0, 0)``.
     """
     raw = _strip0x(hex_data)
-    if not raw or len(raw) < 5 * 64:
+    # leading tuple offset word + 5 tuple head words = 6 words minimum
+    if not raw or len(raw) < 6 * 64:
         return ([], 0, 0, 0, 0)
     try:
-        cores_offset_bytes = int(raw[0:64], 16)
-        material_id = int(raw[64:128], 16)
-        form = int(raw[128:192], 16)
-        core_count = int(raw[192:256], 16)
-        seed = int(raw[256:320], 16)
+        tuple_offset_bytes = int(raw[0:64], 16)
+        ts = tuple_offset_bytes * 2  # char index of the tuple start
 
-        base = cores_offset_bytes * 2  # char index of the cores length word
+        cores_offset_bytes = int(raw[ts : ts + 64], 16)
+        material_id = int(raw[ts + 64 : ts + 128], 16)
+        form = int(raw[ts + 128 : ts + 192], 16)
+        core_count = int(raw[ts + 192 : ts + 256], 16)
+        seed = int(raw[ts + 256 : ts + 320], 16)
+
+        base = ts + cores_offset_bytes * 2  # char index of the cores length word
         length = int(raw[base : base + 64], 16)
         cores: list[int] = []
         for i in range(length):

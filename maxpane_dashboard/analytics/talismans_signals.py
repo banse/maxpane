@@ -188,12 +188,25 @@ def count_operations(
 # ---------------------------------------------------------------------------
 
 
-def conservation_signal(total: int, baseline: int) -> TalismanSignal:
+def conservation_signal(total: int, baseline: int, complete: bool = True) -> TalismanSignal:
     """Signal for the core conservation invariant.
 
+    The invariant (total cores never change) can only be asserted from a
+    *complete* enumeration of the collection. Until a baseline is established
+    from such a scan, or when the current scan is incomplete, we report a
+    neutral SYNCING state rather than a misleading DRIFT.
+
+    * baseline unset (0) or ``complete`` is False → SYNCING, dim.
     * ``total == baseline`` → INTACT, green.
-    * Otherwise → ``DRIFT Δ{delta:+d}``, red.
+    * Otherwise → ``DRIFT Δ{delta:+d}``, red (a genuine anomaly).
     """
+    if baseline <= 0 or not complete:
+        return TalismanSignal(
+            label="CONSERVATION",
+            value_str="SYNCING",
+            indicator="●",
+            color="dim",
+        )
     if total == baseline:
         return TalismanSignal(
             label="CONSERVATION",

@@ -131,10 +131,16 @@ class TalismansManager:
         # -- 4) Aggregates + conservation baseline -----------------------
         live_token_list = list(self.cache.tokens.values())
         tcores = total_cores(live_token_list)
-        self.cache.set_invariant_baseline_if_unset(tcores)
+        live = flags["total_supply"]  # authoritative live count
+        # Enumeration is complete when our per-token set matches the contract's
+        # authoritative supply. Only lock in the conservation baseline (and only
+        # assert the invariant) from a complete scan — a partial scan would
+        # otherwise poison the baseline with a too-low total.
+        enumeration_complete = live > 0 and len(live_token_list) == live
+        if enumeration_complete:
+            self.cache.set_invariant_baseline_if_unset(tcores)
 
         mcount = mythic_count(live_token_list)
-        live = flags["total_supply"]  # authoritative live count
 
         # -- 5) Sample hourly distribution -------------------------------
         self.cache.sample_distribution(now_ts, mcount, live)
@@ -144,8 +150,9 @@ class TalismansManager:
             list(self.cache.activity_log), now_ts=int(now_ts)
         )
 
+        baseline = self.cache.cores_invariant_baseline
         conservation = _safe_call(
-            conservation_signal, tcores, self.cache.cores_invariant_baseline
+            conservation_signal, tcores, baseline, enumeration_complete
         )
         cutmerge = _safe_call(cutmerge_signal, flags["cut_merge_enabled"])
         forge = _safe_call(
@@ -173,7 +180,9 @@ class TalismansManager:
             "mythics_ever_forged": self.cache.mythics_ever_forged,
             "total_cores": tcores,
             "cores_invariant_intact": (
-                tcores == self.cache.cores_invariant_baseline
+                enumeration_complete
+                and baseline > 0
+                and tcores == baseline
             ),
             "operations_24h": operations_24h,
             "operations_total": self.cache.operations_total,

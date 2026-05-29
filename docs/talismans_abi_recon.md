@@ -265,6 +265,17 @@ coreRarityWeights()             -> uint256[]  (pure; [40,30,20,10] -> Raw/Cut/Fi
 folded materialId + form + coreCount + seed. Layout decoded live for token #1:
 `cores=[0xce1880,0x54e880], materialId=0, form=2, coreCount=2, seed=0x26bc`.
 
+**ABI-encoding gotcha (load-bearing for the decoder):** because the returned
+tuple contains a dynamic `uint256[]`, the *whole tuple is dynamic*, so the
+return is wrapped behind a **leading head offset word** (`0x20`). The real
+on-chain bytes for `tokenData(1)` are:
+`word0=0x20` (tuple offset) · `word1=0xa0` (cores[] offset, relative to the
+tuple start at word1) · `word2=materialId` · `word3=form` · `word4=coreCount`
+· `word5=seed` · `word6=cores length` · `word7..=cores`. A decoder MUST
+dereference word0 first and read the tuple head starting at word1 — reading
+materialId/coreCount from words 1-4 directly (skipping the wrapper) yields
+garbage (materialId=0xa0, inflated coreCount).
+
 `ShapeForm` enum (index -> name): `0 Brilliant, 1 Cushion, 2 Pendant, 3 Block,
 4 Dome, 5 Shard, 6 Jagged, 7 Orb, 8 Dagger, 9 Teardrop, 10 Cluster, 11 Geode,
 ...` (enum continues; first 12 confirmed from source).
