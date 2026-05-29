@@ -1713,3 +1713,57 @@ TTTClaimsTable > .claims-title {
     text-style: bold;
     margin: 0 0 1 0;
 }
+
+/* ── Talismans screen ─────────────────────────────────────────── */
+
+TalismansHeroMetrics {
+    height: 7;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+TalismansHeroBox {
+    width: 1fr;
+    height: 7;
+    border: solid $panel;
+    padding: 1 2;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    margin: 0 1;
+}
+
+TalismansLeaderboard {
+    width: 3fr;
+    padding: 0 1;
+}
+
+TalismansSparkline {
+    height: auto;
+    padding: 0 1;
+    content-align: center top;
+}
+
+TalismansSignals {
+    height: 1fr;
+    padding: 0 1;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+TalismansActivityFeed {
+    width: 3fr;
+    padding: 0 1;
+}
+
+TalismansActivityFeed RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+TalismansMatrixTable, TalismansMaterialsTable {
+    width: 2fr;
+    padding: 0 1;
+    content-align: center top;
+}

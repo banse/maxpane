@@ -128,4 +128,19 @@ THEMES["base"] = Theme(
     dark=True,
 )
 
+# 9. Talismans -- alchemical: antique gold + violet on near-black
+THEMES["talismans"] = Theme(
+    name="talismans",
+    primary="#b8860b",
+    secondary="#8a6fd6",
+    background="#0c0a12",
+    surface="#16121f",
+    panel="#241c33",
+    accent="#d4af37",
+    warning="#f59e0b",
+    error="#ef4444",
+    success="#22c55e",
+    dark=True,
+)
+
 THEME_NAMES: list[str] = list(THEMES.keys())
