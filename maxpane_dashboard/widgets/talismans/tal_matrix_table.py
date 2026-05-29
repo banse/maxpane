@@ -46,11 +46,11 @@ class TalismansMatrixTable(Vertical):
     def compose(self) -> ComposeResult:
         yield Static("ESSENCE × TIER MATRIX", classes="tal-matrix-title")
         yield Static(" ", classes="tal-matrix-spacer")
-        table = DataTable(id="tal-matrix-table", classes="tal-matrix-table")
+        table = DataTable(id="tal-matrix-dt", classes="tal-matrix-table")
         yield table
 
     def on_mount(self) -> None:
-        table = self.query_one("#tal-matrix-table", DataTable)
+        table = self.query_one("#tal-matrix-dt", DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_column("ESSENCE", width=9)
@@ -68,7 +68,7 @@ class TalismansMatrixTable(Vertical):
         **_kwargs,
     ) -> None:
         """Refresh the matrix rows plus the bold totals row."""
-        table = self.query_one("#tal-matrix-table", DataTable)
+        table = self.query_one("#tal-matrix-dt", DataTable)
         table.clear()
 
         matrix = essence_tier_matrix or {}

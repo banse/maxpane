@@ -3,7 +3,7 @@
 Renders up to four analytical signal rows:
 
 1. **Conservation**    -- whether the core-conservation invariant holds.
-2. **Cut/Merge**       -- net cut-vs-merge flow signal.
+2. **Cut/Merge**       -- whether the cut/merge layer is LIVE or LOCKED.
 3. **Forge momentum**  -- recent Mythic forge momentum.
 4. **Mythic scarcity** -- how scarce Mythics currently are.
 

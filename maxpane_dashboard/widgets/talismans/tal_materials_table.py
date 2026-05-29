@@ -55,12 +55,12 @@ class TalismansMaterialsTable(Vertical):
         yield Static("MATERIALS LEDGER", classes="tal-materials-title")
         yield Static(" ", classes="tal-materials-spacer")
         table = DataTable(
-            id="tal-materials-table", classes="tal-materials-table"
+            id="tal-materials-dt", classes="tal-materials-table"
         )
         yield table
 
     def on_mount(self) -> None:
-        table = self.query_one("#tal-materials-table", DataTable)
+        table = self.query_one("#tal-materials-dt", DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_column("#", width=3)
@@ -76,7 +76,7 @@ class TalismansMaterialsTable(Vertical):
         **_kwargs,
     ) -> None:
         """Refresh the table with the ranked materials ledger."""
-        table = self.query_one("#tal-materials-table", DataTable)
+        table = self.query_one("#tal-materials-dt", DataTable)
         table.clear()
 
         ledger = materials_ledger or []

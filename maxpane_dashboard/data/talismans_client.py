@@ -55,7 +55,6 @@ _MULTICALL3 = "0xca11bde05977b3631167028862be2a173976ca11"
 
 _LOG_RANGE_PER_CALL = 50_000  # publicnode hard cap (-32701 if exceeded)
 _DEFAULT_LOG_LOOKBACK_BLOCKS = 250_000
-_INCREMENTAL_LOG_LOOKBACK = 10_000
 
 # Multicall3 chunk size for the token-state sweep (2 calls per id).
 _TOKEN_STATE_CHUNK = 150
@@ -696,7 +695,6 @@ __all__ = [
     "_CONTRACT",
     "_MULTICALL3",
     "_DEFAULT_LOG_LOOKBACK_BLOCKS",
-    "_INCREMENTAL_LOG_LOOKBACK",
     "_LOG_RANGE_PER_CALL",
     "_TOPIC_BONDED",
     "_TOPIC_CLEAVED",
