@@ -169,7 +169,9 @@ class MaxPaneApp(App):
         self._current_game = game_id
         self._launch_game(game_id, first=True)
 
-    _GAME_CYCLE = ["base", "frenpet", "frenpet_full", "frenpet_wallet", "frenpet_perf", "cattown", "dota", "bakery", "ocm", "ttt"]
+    # FrenPet variants ("frenpet_full", "frenpet_wallet", "frenpet_perf") are
+    # temporarily hidden from cycling — code intact, restore by re-adding them.
+    _GAME_CYCLE = ["base", "frenpet", "cattown", "dota", "bakery", "ocm", "ttt"]
 
     def _launch_game(self, game_id: str, *, first: bool = False) -> None:
         """Install and switch to a game screen.
