@@ -4,19 +4,26 @@ These are the internal data shapes the Talismans dashboard manipulates between
 the data layer (WP3) and the widgets/screen (WP4/WP5).  All models are frozen
 so they can be safely shared across the snapshot pipeline.
 
-Naming notes (see ``docs/talismans_recon.md``):
+Naming notes (see ``docs/talismans_abi_recon.md``):
 
-* ``core_count`` is the number of cores fused into a talisman (1 = Raw, 2 = Cut,
+* ``core_count`` is the number of cores in a talisman (1 = Raw, 2 = Cut,
   3 = Fine, 4 = Prime, 5–8 = Bonded).
 * ``materialId`` is the on-chain integer mapped to (name, essence) via
   ``talismans_materials.MATERIALS``.
 * ``form`` is the on-chain shape index (0–N), purely cosmetic.
 * ``seed`` is the on-chain randomness seed used for visual generation.
 * Genesis talismans (``is_genesis=True``) are the 1 536 original mints;
-  all subsequent tokens are produced via bonding/merging operations.
+  all subsequent tokens are produced via transformation operations.
 * ``cores_invariant_baseline`` in ``TalismanCollectionState`` captures the
   total core count at a reference snapshot — used to verify the conservation
-  invariant (total cores never increase; cleave reduces them).
+  invariant: operations only *rearrange* cores between tokens, so the total
+  core count never changes (only the token count fluctuates).
+
+``essence`` and ``tier`` on ``TalismanToken`` are denormalized for display
+(matching the TTT model pattern).  The data layer (WP3) is the single populator
+and derives them via ``talismans_materials.essence_of`` / ``tier_name``, so they
+are consistent with ``material_id`` / ``core_count`` by construction; the model
+does not re-validate them.
 """
 
 from __future__ import annotations
@@ -50,14 +57,14 @@ class TalismanToken(BaseModel):
 class TalismanActivityEvent(BaseModel):
     """Single event for the Talismans activity feed.
 
-    ``op_type`` is one of:
-    * ``"bond"``   — two talismans bonded together (core count added)
-    * ``"cleave"`` — talisman split (core count decremented)
-    * ``"cut"``    — core added from raw material
-    * ``"merge"``  — genesis-only deep fusion
+    ``op_type`` is one of (see ``docs/talismans_abi_recon.md``):
+    * ``"bond"``   — fuse a matter + event token into a Mythic (−1 token)
+    * ``"cleave"`` — split a Mythic back into a Lithic + a Lumic (+1 token)
+    * ``"cut"``    — split a token into two of the same material (+1 token)
+    * ``"merge"``  — recombine two same-material tokens into one (−1 token)
 
     ``token_id_a`` / ``token_id_b`` are the input token IDs (b is None for
-    single-token ops).  ``result_id`` is the surviving or newly minted token.
+    single-input ops).  ``result_id`` is the surviving or newly minted token.
     """
 
     model_config = ConfigDict(frozen=True)

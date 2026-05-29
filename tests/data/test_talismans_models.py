@@ -33,6 +33,15 @@ def test_tier_name_by_core_count():
     assert tier_name(0) == "--"
 
 
+def test_helpers_fallback_on_unknown_ids():
+    # bad/out-of-range contract data must degrade gracefully, never raise
+    assert essence_of(99) == "--"
+    assert essence_of(-1) == "--"
+    assert material_name(99) == "Unknown"
+    assert tier_name(9) == "--"
+    assert tier_name(-1) == "--"
+
+
 def test_token_is_frozen_and_classifies():
     t = TalismanToken(token_id=1, owner="0xabc", core_count=2, material_id=0,
                       essence="Lumic", form=2, seed=0x26bc, tier="Cut", is_genesis=True)
