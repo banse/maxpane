@@ -31,8 +31,9 @@ from textual.widgets import Static
 def _fmt_signal(sig: dict | None) -> str:
     """Render one signal row using Textual markup.
 
-    Returns an empty string when ``sig`` is ``None`` so callers can hide
-    the row entirely.
+    Returns an empty string when ``sig`` is ``None`` / not a dict; in practice
+    callers pass ``{"value_str": "--"}`` rather than ``None`` so each of the
+    four rows always renders.
 
     The label prefix is intentionally dropped -- the value string already
     restates the concept, so dropping the redundant label gives the value
