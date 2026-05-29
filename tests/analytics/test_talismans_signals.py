@@ -227,6 +227,16 @@ class TestEssenceTierMatrix:
         assert rows["Lumic"]["cut"] == 1
         assert rows["Lumic"]["raw"] == 0
 
+    def test_unknown_essence_is_ignored(self) -> None:
+        # defensive: a malformed essence must not raise and must not land in any row
+        tokens = [_tok(essence="Weird", tier="Raw"), _tok(essence="Lithic", tier="Raw")]
+        result = essence_tier_matrix(tokens)
+        rows = {r["essence"]: r for r in result["rows"]}
+        assert set(rows) == {"Lithic", "Lumic", "Mythic"}
+        assert rows["Lithic"]["total"] == 1
+        # the "Weird" token is dropped from per-essence rows
+        assert sum(r["total"] for r in result["rows"]) == 1
+
     def test_totals_sum_across_rows(self) -> None:
         tokens = [
             _tok(essence="Lithic", tier="Raw"),
@@ -407,7 +417,7 @@ class TestCountOperations:
         assert count_operations(events, window_sec=86400, now_ts=now) == 3
 
     def test_none_now_anchors_to_max_timestamp(self) -> None:
-        # Anchor = 1_000_000, window = 3600 → cutoff = 999_996_400
+        # Anchor = 1_000_000, window = 3600 → cutoff = 996_400
         # Only events at timestamps >= cutoff counted
         anchor = 1_000_000
         events = [
@@ -473,26 +483,26 @@ class TestConservationSignal:
 
 class TestCutmergeSignal:
     def test_live(self) -> None:
-        sig = cutmerge_signal(bond_cleave=True, cut_merge=True)
+        sig = cutmerge_signal(cut_merge=True)
         assert sig.label == "CUT/MERGE"
         assert sig.value_str == "LIVE"
         assert sig.color == "green"
         assert sig.indicator == "●"
 
     def test_locked(self) -> None:
-        sig = cutmerge_signal(bond_cleave=True, cut_merge=False)
+        sig = cutmerge_signal(cut_merge=False)
         assert sig.value_str == "LOCKED"
         assert sig.color == "yellow"
         assert sig.indicator == "●"
 
     def test_valid_color_live(self) -> None:
-        assert cutmerge_signal(False, True).color in VALID_COLORS
+        assert cutmerge_signal(True).color in VALID_COLORS
 
     def test_valid_color_locked(self) -> None:
-        assert cutmerge_signal(False, False).color in VALID_COLORS
+        assert cutmerge_signal(False).color in VALID_COLORS
 
     def test_all_fields_present(self) -> None:
-        sig = cutmerge_signal(True, False)
+        sig = cutmerge_signal(False)
         for field in ("label", "value_str", "indicator", "color"):
             assert getattr(sig, field) is not None
 

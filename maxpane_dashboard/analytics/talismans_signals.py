@@ -210,11 +210,14 @@ def conservation_signal(total: int, baseline: int) -> TalismanSignal:
     )
 
 
-def cutmerge_signal(bond_cleave: bool, cut_merge: bool) -> TalismanSignal:
-    """Signal for whether cut/merge operations are enabled.
+def cutmerge_signal(cut_merge: bool) -> TalismanSignal:
+    """Signal for whether the cut/merge tier-mobility layer is enabled.
 
     * ``cut_merge`` True → LIVE, green.
     * ``cut_merge`` False → LOCKED, yellow.
+
+    (Bond/cleave is live at launch and reported via the activity feed, so this
+    signal tracks only the later-rolling-out cut/merge toggle.)
     """
     if cut_merge:
         return TalismanSignal(
@@ -232,7 +235,7 @@ def cutmerge_signal(bond_cleave: bool, cut_merge: bool) -> TalismanSignal:
 
 
 def forge_momentum_signal(
-    token_count_history: list[tuple[float, float]],
+    token_count_history: list[tuple[float, int]],  # (timestamp, token_count)
 ) -> TalismanSignal:
     """Signal derived from the trend of total token count over time.
 
