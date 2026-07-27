@@ -1,0 +1,237 @@
+{
+  "_meta": {
+    "chain_id": 1,
+    "network": "ethereum-mainnet",
+    "captured_at": "2026-07-27T02:19:41Z",
+    "keyless": true,
+    "source": "live capture",
+    "source_url": "https://gateway.tenderly.co/public/mainnet",
+    "endpoint_note": "tenderly public gateway; publicnode refuses archive reads keylessly",
+    "method": "eth_call / eth_getBalance",
+    "blocks": [
+      25612655,
+      25612701
+    ],
+    "findings_ref": "docs/fwa_technical_findings.md \u00a76.1, \u00a76.4",
+    "note": "Two pinned blocks ~46 blocks apart. Every value below was re-read live from archive state and reproduces the findings \u00a76.1 numbers bit-for-bit."
+  },
+  "README": {
+    "purpose": "Assertion targets for WP-4 (EV & pricing math) so the numbers never have to be re-derived from prose. Every integer here is exact; use integer arithmetic.",
+    "block_25612655": {
+      "totalWeight": 31280618816683353089152,
+      "weightedBackingTotal": 3890999999999999999275601332649457427323,
+      "acquisitionFee": 136829134522020108,
+      "activeListingCount": 3891,
+      "nextListingId": 56616,
+      "feeShareTotal": 3891,
+      "topListingId": 56508,
+      "topListingPot": 101923971003523883,
+      "fwa_core_eth_balance_wei": 2549365836102183987091,
+      "derived": {
+        "harmonic_mean_backing_wei": 124390122292745553,
+        "harmonic_mean_backing_eth": 0.12439012229274556,
+        "acquisitionFee_recomputed_wei": 136829134522020108,
+        "acquisitionFee_formula": "(weightedBackingTotal // totalWeight) * 11000 // 10000  -- TWO floor divisions, in this order",
+        "surcharge_bps": 1000,
+        "weightedBackingTotal_over_1e36": 3890.9999999999995,
+        "weightedBackingTotal_is_not_wei": true,
+        "tvl_source_of_truth_wei": 2549365836102183987091,
+        "tvl_source_of_truth_eth": 2549.3658361021844,
+        "feeShareTotal_equals_activeListingCount": true
+      }
+    },
+    "block_25612701": {
+      "totalWeight": 31217322873711845581134,
+      "weightedBackingTotal": 3866999999999999999373145521289217360095,
+      "acquisitionFee": 136260883651302691,
+      "activeListingCount": 3867,
+      "nextListingId": 56711,
+      "feeShareTotal": 3867,
+      "topListingId": 56508,
+      "topListingPot": 265330886575910371,
+      "fwa_core_eth_balance_wei": 2340905117595043174540,
+      "derived": {
+        "harmonic_mean_backing_wei": 123873530592093356,
+        "harmonic_mean_backing_eth": 0.12387353059209336,
+        "acquisitionFee_recomputed_wei": 136260883651302691,
+        "acquisitionFee_formula": "(weightedBackingTotal // totalWeight) * 11000 // 10000  -- TWO floor divisions, in this order",
+        "surcharge_bps": 1000,
+        "weightedBackingTotal_over_1e36": 3867.0,
+        "weightedBackingTotal_is_not_wei": true,
+        "tvl_source_of_truth_wei": 2340905117595043174540,
+        "tvl_source_of_truth_eth": 2340.905117595043,
+        "feeShareTotal_equals_activeListingCount": true
+      },
+      "enumeration_invariants_verified": {
+        "note": "Recomputed from all 3,867 enumerated positions at this block; all three matched onchain bit-for-bit. See backing_distribution.json.",
+        "sum_1e36_floordiv_value_equals_totalWeight": true,
+        "sum_weight_times_value_equals_weightedBackingTotal": true,
+        "harmonic_mean_times_11000_floordiv_10000_equals_acquisitionFee": true,
+        "all_rows_status_1_active": true
+      }
+    },
+    "invariants_that_must_hold_at_any_block": [
+      "feeShareTotal() == activeListingCount()   (feeShare is 1 per listing)",
+      "weight_i == 10**36 // value_i             (inverse weighting)",
+      "sum(weight_i) == totalWeight()",
+      "sum(weight_i * value_i) == weightedBackingTotal()",
+      "(weightedBackingTotal // totalWeight) * 11000 // 10000 == acquisitionFee()",
+      "weightedBackingTotal ~= activeListingCount * 1e36  (NOT wei, NOT ETH, NOT TVL)"
+    ],
+    "traps": {
+      "weightedBackingTotal": "Unitless. At block 25612701 it reads 3.867e39 against exactly 3,867 active listings. Rendering it as '3,867 ETH TVL' is a factual error. Use eth_getBalance(FWA core) instead.",
+      "acquisitionFee": "TWO floor divisions in sequence. Computing it as wbt * 11000 // (tw * 10000) gives a different integer.",
+      "topListingShareBps": "Live value is 100 (1%), not the documented 500 -- changed by the owner via ConfigSet(key=15, value=100) at block 25592190."
+    }
+  },
+  "blocks": {
+    "25612655": {
+      "block_number": 25612655,
+      "block_number_hex": "0x186d16f",
+      "raw_eth_call_returns": {
+        "totalWeight": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0x96c82e57",
+          "result": "0x00000000000000000000000000000000000000000000069fb9ca59f3bb18a480"
+        },
+        "weightedBackingTotal": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0xd6eb0dbd",
+          "result": "0x0000000000000000000000000000000b6f4357637076aeace1559242c48d237b"
+        },
+        "acquisitionFee": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0x38f5f005",
+          "result": "0x00000000000000000000000000000000000000000000000001e61d5f761bf10c"
+        },
+        "activeListingCount": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0x4681a7c6",
+          "result": "0x0000000000000000000000000000000000000000000000000000000000000f33"
+        },
+        "nextListingId": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0xaaccf1ec",
+          "result": "0x000000000000000000000000000000000000000000000000000000000000dd28"
+        },
+        "feeShareTotal": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0x4c68b3b9",
+          "result": "0x0000000000000000000000000000000000000000000000000000000000000f33"
+        },
+        "topListingId": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0xee35bc33",
+          "result": "0x000000000000000000000000000000000000000000000000000000000000dcbc"
+        },
+        "topListingPot": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0xba20687b",
+          "result": "0x000000000000000000000000000000000000000000000000016a1b4fc5c3232b"
+        }
+      },
+      "eth_getBalance_fwa_core": {
+        "request": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "eth_getBalance",
+          "params": [
+            "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "0x186d16f"
+          ]
+        },
+        "result": "0x8a338ee0d0db64a793",
+        "wei": 2549365836102183987091,
+        "eth": 2549.3658361021844
+      },
+      "expected_decoded": {
+        "totalWeight": 31280618816683353089152,
+        "weightedBackingTotal": 3890999999999999999275601332649457427323,
+        "acquisitionFee": 136829134522020108,
+        "activeListingCount": 3891,
+        "nextListingId": 56616,
+        "feeShareTotal": 3891,
+        "topListingId": 56508,
+        "topListingPot": 101923971003523883
+      }
+    },
+    "25612701": {
+      "block_number": 25612701,
+      "block_number_hex": "0x186d19d",
+      "raw_eth_call_returns": {
+        "totalWeight": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0x96c82e57",
+          "result": "0x00000000000000000000000000000000000000000000069c4b61fd2cff02214e"
+        },
+        "weightedBackingTotal": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0xd6eb0dbd",
+          "result": "0x0000000000000000000000000000000b5d351c07d59e04a95bf13b847522c0df"
+        },
+        "acquisitionFee": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0x38f5f005",
+          "result": "0x00000000000000000000000000000000000000000000000001e4188d3ed11523"
+        },
+        "activeListingCount": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0x4681a7c6",
+          "result": "0x0000000000000000000000000000000000000000000000000000000000000f1b"
+        },
+        "nextListingId": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0xaaccf1ec",
+          "result": "0x000000000000000000000000000000000000000000000000000000000000dd87"
+        },
+        "feeShareTotal": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0x4c68b3b9",
+          "result": "0x0000000000000000000000000000000000000000000000000000000000000f1b"
+        },
+        "topListingId": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0xee35bc33",
+          "result": "0x000000000000000000000000000000000000000000000000000000000000dcbc"
+        },
+        "topListingPot": {
+          "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+          "data": "0xba20687b",
+          "result": "0x00000000000000000000000000000000000000000000000003aea5091a4bede3"
+        }
+      },
+      "eth_getBalance_fwa_core": {
+        "request": {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "eth_getBalance",
+          "params": [
+            "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "0x186d19d"
+          ]
+        },
+        "result": "0x7ee695a1ce4a91188c",
+        "wei": 2340905117595043174540,
+        "eth": 2340.905117595043
+      },
+      "expected_decoded": {
+        "totalWeight": 31217322873711845581134,
+        "weightedBackingTotal": 3866999999999999999373145521289217360095,
+        "acquisitionFee": 136260883651302691,
+        "activeListingCount": 3867,
+        "nextListingId": 56711,
+        "feeShareTotal": 3867,
+        "topListingId": 56508,
+        "topListingPot": 265330886575910371
+      }
+    }
+  },
+  "delta_25612655_to_25612701": {
+    "blocks_elapsed": 46,
+    "activeListingCount": -24,
+    "nextListingId": 95,
+    "acquisitionFee_wei": -568250870717417,
+    "topListingPot_wei": 163406915572386488,
+    "note": "46 blocks (~9 min) moved 24 listings and 95 new listing ids. This is why \u00a76.3 TRAP 2 requires pinning blockTag across a whole sweep."
+  }
+}

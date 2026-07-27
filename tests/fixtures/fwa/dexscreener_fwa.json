@@ -1,0 +1,92 @@
+{
+  "_meta": {
+    "captured_at": "2026-07-27T02:25:11Z",
+    "keyless": true,
+    "source": "live capture",
+    "source_url": "https://api.dexscreener.com/latest/dex/tokens/0xa0Df17B5aC76ABaBA36E1450E2cbCd18A620C845",
+    "api": "DexScreener token pairs",
+    "method": "GET",
+    "params": {
+      "tokenAddress": "0xa0Df17B5aC76ABaBA36E1450E2cbCd18A620C845"
+    },
+    "http_status": 200,
+    "findings_ref": "docs/fwa_technical_findings.md \u00a79.2",
+    "note": "Returns exactly one pair: the $FWA/ETH Uniswap v4 pool. pairAddress is a v4 POOL ID, not a deployed contract address -- do not eth_getCode it. Nonzero buy counts despite externalBuysEnabled == false are FWARewards-routed protocol buys, which needs a UI footnote or it reads as a contradiction."
+  },
+  "response": {
+    "request_url": "https://api.dexscreener.com/latest/dex/tokens/0xa0Df17B5aC76ABaBA36E1450E2cbCd18A620C845",
+    "http_status": 200,
+    "response_headers": {
+      "content-type": "application/json; charset=utf-8",
+      "date": "Mon, 27 Jul 2026 02:25:13 GMT"
+    },
+    "raw_body": "{\"schemaVersion\":\"1.0.0\",\"pairs\":[{\"chainId\":\"ethereum\",\"dexId\":\"uniswap\",\"url\":\"https://dexscreener.com/ethereum/0x230ecd3c25b44af30db59c15f70df7794eb13f67a200f230b7400daa96fe804d\",\"pairAddress\":\"0x230ecd3c25b44af30db59c15f70df7794eb13f67a200f230b7400daa96fe804d\",\"labels\":[\"v4\"],\"baseToken\":{\"address\":\"0xa0Df17B5aC76ABaBA36E1450E2cbCd18A620C845\",\"name\":\"Fake World Assets\",\"symbol\":\"FWA\"},\"quoteToken\":{\"address\":\"0x0000000000000000000000000000000000000000\",\"name\":\"Ether\",\"symbol\":\"ETH\"},\"priceNative\":\"0.00001416\",\"priceUsd\":\"0.02754\",\"txns\":{\"m5\":{\"buys\":6,\"sells\":9},\"h1\":{\"buys\":156,\"sells\":186},\"h6\":{\"buys\":2059,\"sells\":2335},\"h24\":{\"buys\":7830,\"sells\":8888}},\"volume\":{\"h24\":2922297.67,\"h6\":672624.52,\"h1\":64382.23,\"m5\":7478.65},\"priceChange\":{\"m5\":-1.53,\"h1\":-3.66,\"h6\":13.46,\"h24\":-16.81},\"liquidity\":{\"usd\":1134884.41,\"base\":20845066,\"quote\":288.2708},\"fdv\":27549985,\"marketCap\":27549985,\"pairCreatedAt\":1784223815000,\"info\":{\"imageUrl\":\"https://cdn.dexscreener.com/cms/images/YEFggtEx_Tq-hpge?width=800&height=800&quality=95&format=auto\",\"header\":\"https://cdn.dexscreener.com/cms/images/DXCRV6F3y9KfT5n-?width=1500&height=500&quality=95&format=auto\",\"openGraph\":\"https://cdn.dexscreener.com/token-images/og/ethereum/0xa0df17b5ac76ababa36e1450e2cbcd18a620c845?timestamp=1785119100000\",\"websites\":[{\"url\":\"https://fwa.fun\",\"label\":\"Website\"},{\"url\":\"https://fwa.fun/docs\",\"label\":\"Docs\"}],\"socials\":[{\"url\":\"https://x.com/token_works\",\"type\":\"twitter\"}]}}]}",
+    "body_bytes": 1470
+  },
+  "expected_decoded": {
+    "_note": "Assertion targets. Market data moves; assert on SHAPE, not on these numbers.",
+    "pair_count": 1,
+    "chainId": "ethereum",
+    "dexId": "uniswap",
+    "labels": [
+      "v4"
+    ],
+    "pairAddress": "0x230ecd3c25b44af30db59c15f70df7794eb13f67a200f230b7400daa96fe804d",
+    "pairAddress_is_v4_pool_id": true,
+    "baseToken_address": "0xa0Df17B5aC76ABaBA36E1450E2cbCd18A620C845",
+    "quoteToken_symbol": "ETH",
+    "priceUsd": "0.02754",
+    "priceNative": "0.00001416",
+    "fdv": 27549985,
+    "marketCap": 27549985,
+    "liquidity": {
+      "usd": 1134884.41,
+      "base": 20845066,
+      "quote": 288.2708
+    },
+    "volume": {
+      "h24": 2922297.67,
+      "h6": 672624.52,
+      "h1": 64382.23,
+      "m5": 7478.65
+    },
+    "txns": {
+      "m5": {
+        "buys": 6,
+        "sells": 9
+      },
+      "h1": {
+        "buys": 156,
+        "sells": 186
+      },
+      "h6": {
+        "buys": 2059,
+        "sells": 2335
+      },
+      "h24": {
+        "buys": 7830,
+        "sells": 8888
+      }
+    },
+    "priceChange": {
+      "m5": -1.53,
+      "h1": -3.66,
+      "h6": 13.46,
+      "h24": -16.81
+    },
+    "pairCreatedAt": 1784223815000,
+    "required_keys": [
+      "chainId",
+      "dexId",
+      "pairAddress",
+      "baseToken",
+      "quoteToken",
+      "priceUsd",
+      "priceNative",
+      "fdv",
+      "liquidity",
+      "volume",
+      "txns"
+    ]
+  }
+}

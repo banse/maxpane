@@ -1,0 +1,462 @@
+{
+  "_meta": {
+    "captured_at": "2026-07-27T02:28:49Z",
+    "keyless": true,
+    "source": "live capture except where an entry's own _meta says otherwise",
+    "findings_ref": "docs/fwa_technical_findings.md \u00a73, \u00a76.5, \u00a77, \u00a711",
+    "purpose": "Every recorded failure mode the FWA data layer must survive offline. Each entry carries the verbatim body, not a paraphrase.",
+    "entry_count": 10,
+    "live_captured": [
+      "ankr_now_keyed",
+      "drpc_block_range_cap",
+      "eth_call_gasprice_without_gas_bound",
+      "llamarpc_dead",
+      "multicall3_invalid_hex_callData",
+      "onerpc_rate_limit_429",
+      "publicnode_archive_refusal",
+      "publicnode_eth_getLogs_refusal",
+      "publicnode_rate_limit_429",
+      "tenderly_result_count_cap"
+    ],
+    "reconstructed": [],
+    "endpoints_covered": [
+      "https://1rpc.io/eth",
+      "https://eth.drpc.org",
+      "https://eth.llamarpc.com",
+      "https://ethereum-rpc.publicnode.com",
+      "https://gateway.tenderly.co/public/mainnet",
+      "https://rpc.ankr.com/eth"
+    ],
+    "head_block_at_capture": 25621159,
+    "warning": "Several of these errors arrive inside an HTTP 200 (tenderly result cap, ankr auth, multicall unmarshal). A client that branches on HTTP status alone will mis-handle them. Always check for a JSON-RPC 'error' member."
+  },
+  "errors": {
+    "publicnode_eth_getLogs_refusal": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://ethereum-rpc.publicnode.com",
+        "captured_at": "2026-07-27T02:28:49Z",
+        "method": "eth_getLogs",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a73, \u00a711",
+        "requested_range": [
+          25612655,
+          25612701
+        ],
+        "blocks_behind_head_at_capture": 8458,
+        "measured_retention_boundary_blocks": 128,
+        "boundary_probe": "same call at head-64 succeeds; at head-128 it is refused",
+        "contrast_probe": {
+          "params": [
+            {
+              "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+              "topics": [
+                "0xf23e34f4aa4a06ecddd309d9692e7b7ca45b76fd0d5f4ce4f7fbf29731d9abd6"
+              ],
+              "fromBlock": "0x186f267",
+              "toBlock": "0x186f269"
+            }
+          ],
+          "http_status": 200,
+          "raw_body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":[{\"address\":\"0xb276f62db0ce8ca2ca5bc522695be604521eac1c\",\"topics\":[\"0xf23e34f4aa4a06ecddd309d9692e7b7ca45b76fd0d5f4ce4f7fbf29731d9abd6\",\"0x69eaaf486ce09253c5065e4795e0ce6308023187941015679d4af27007a36815\",\"0x000000000000000000000000f5d4a3b9fb77d1d5600a10e0e1c4efd12f9be751\"],\"data\":\"0x000000000000000000000000000000000000000000000000019f3c7586e4f33a000000000000000000000000000000000000000000000bce685e7a2f21145b0c\",\"blockNumber\":\"0x186f267\",\"transactionHash\":\"0x264bb94ca3fec66cea234bd28c64d104881c16e558edea35ea8d481690d87c10\",\"transactionIndex\":\"0x81\",\"blockHash\":\"0x720a007fe540edefeeafdfb1d2fc4901ad9ed9f81db36c19a3e89c4b1bab63c4\",\"logIndex\":\"0x1e6\",\"removed\":false,\"blockTimestamp\":\"0x6a66bf47\"},{\"address\":\"0xb276f62db0ce8ca2ca5bc522695be604521eac1c\",\"topics\":[\"0xf23e34f4aa4a06ecddd309d9692e7b7ca45b76fd0d5f4ce4f7fbf29731d9abd6\",\"0x09ce7dd4f36c4051f8f6adbd69815c4a2dc71b4168e1289ef25bcf5f304ad1fb\",\"0x000000000000000000000000e52b19b64ee4d8ee79103af8d0439873595efdb4\"],\"data\":\"0x000000000000000000000000000000000000000000000000019ef1c17ed47ebd000000000000000000000000000000000000000000000bd2934eec7a9d042404\",\"blockNumber\":\"0x186f269\",\"transactionHash\":\"0x67b1069e1455f1c252c54045f0bb48e88528c136d53d4f5a4276b1b576643fe0\",\"transactionIndex\":\"0x60\",\"blockHash\":\"0x4dcb2b4af83540ed121a636d1b97891cb57ec8c6488c2ae400ca76619fafb431\",\"logIndex\":\"0x1e0\",\"removed\":false,\"blockTimestamp\":\"0x6a66bf5f\"},{\"address\":\"0xb276f62db0ce8ca2ca5bc522695be604521eac1c\",\"topics\":[\"0xf23e34f4aa4a06ecddd309d9692e7b7ca45b76fd0d5f4ce4f7fbf29731d9abd6\",\"0x61c6b1bb4e99c242c656f2f2c9bce1c353958b32d5c0eae69c2b411e15ca1743\",\"0x000000000000000000000000e52b19b64ee4d8ee79103af8d0439873595efdb4\"],\"data\":\"0x000000000000000000000000000000000000000000000000019ef1c17ed47ebd000000000000000000000000000000000000000000000bd2934eec7a9d042404\",\"blockNumber\":\"0x186f269\",\"transactionHash\":\"0x67b1069e1455f1c252c54045f0bb48e88528c136d53d4f5a4276b1b576643fe0\",\"transactionIndex\":\"0x60\",\"blockHash\":\"0x4dcb2b4af83540ed121a636d1b97891cb57ec8c6488c2ae400ca76619fafb431\",\"logIndex\":\"0x1e4\",\"removed\":false,\"blockTimestamp\":\"0x6a66bf5f\"}]}"
+        }
+      },
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getLogs",
+        "params": [
+          {
+            "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "topics": [
+              "0xf23e34f4aa4a06ecddd309d9692e7b7ca45b76fd0d5f4ce4f7fbf29731d9abd6"
+            ],
+            "fromBlock": "0x186d16f",
+            "toBlock": "0x186d19d"
+          }
+        ]
+      },
+      "http_status": 403,
+      "response_headers": {
+        "Date": "Mon, 27 Jul 2026 02:28:49 GMT",
+        "Content-Type": "application/json"
+      },
+      "raw_body": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32602,\"message\":\"Archive requests require a personal token. Get one at: https://www.allnodes.com/publicnode\"},\"id\":1}\n",
+      "parsed": {
+        "jsonrpc": "2.0",
+        "error": {
+          "code": -32602,
+          "message": "Archive requests require a personal token. Get one at: https://www.allnodes.com/publicnode"
+        },
+        "id": 1
+      },
+      "note": "publicnode is the best keyless BATCHER for eth_call but is unusable as a log source. CORRECTION to findings \u00a73, which records this as a flat 'eth_getLogs not supported': the method is in fact served, but ONLY inside geth's ~128-block state-retention window. Anything older is refused by the archive gate with the message below. Since every FWA backfill and every event tail older than ~25 minutes crosses that line, the practical guidance in \u00a73 is correct -- but a client that probes publicnode with a 5-block range at startup will conclude, wrongly, that logs work.",
+      "expected_client_behaviour": "Route ALL log queries to gateway.tenderly.co/public/mainnet, fallback eth.drpc.org. Never capability-probe an endpoint with a narrow recent range and generalise the result."
+    },
+    "drpc_block_range_cap": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://eth.drpc.org",
+        "captured_at": "2026-07-27T02:28:49Z",
+        "method": "eth_getLogs",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a73, \u00a711",
+        "requested_range_blocks": 65923,
+        "cap_blocks": 10000
+      },
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getLogs",
+        "params": [
+          {
+            "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "topics": [
+              "0x150110afd46e9924086bf85c855aae25722518b293155bf0ae689dd99a2e88cc"
+            ],
+            "fromBlock": "0x185d029",
+            "toBlock": "0x186d1ac"
+          }
+        ]
+      },
+      "http_status": 400,
+      "response_headers": {
+        "Date": "Mon, 27 Jul 2026 02:28:49 GMT",
+        "Content-Type": "application/json"
+      },
+      "raw_body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"ranges over 10000 blocks are not supported on free plan\",\"code\":35}}",
+      "parsed": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "error": {
+          "message": "ranges over 10000 blocks are not supported on free plan",
+          "code": 35
+        }
+      },
+      "note": "eth.drpc.org caps eth_getLogs at 10,000 blocks per request on the free plan. FWA protocol history is ~66,000 blocks, so a naive full backfill fails on its first request. Tenderly has no block cap, which is why it is the primary log source and drpc only the fallback.",
+      "expected_client_behaviour": "Paginate at <= 10,000 blocks whenever the drpc fallback is active. The page size is a property of the endpoint, not of the query -- carry it alongside the URL."
+    },
+    "tenderly_result_count_cap": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://gateway.tenderly.co/public/mainnet",
+        "captured_at": "2026-07-27T02:28:51Z",
+        "method": "eth_getLogs",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a78 (58,006 all-time)",
+        "result_cap": 50000
+      },
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getLogs",
+        "params": [
+          {
+            "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "topics": [
+              "0xf23e34f4aa4a06ecddd309d9692e7b7ca45b76fd0d5f4ce4f7fbf29731d9abd6"
+            ],
+            "fromBlock": "0x185d029",
+            "toBlock": "0x186d1ac"
+          }
+        ]
+      },
+      "http_status": 200,
+      "response_headers": {
+        "content-type": "application/json; charset=utf-8",
+        "date": "Mon, 27 Jul 2026 02:28:51 GMT"
+      },
+      "raw_body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32602,\"message\":\"invalid params\",\"data\":\"Query returned more than 50000 results. Try with this block range [0x185d029, 0x186c47d].\"}}",
+      "parsed": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "error": {
+          "code": -32602,
+          "message": "invalid params",
+          "data": "Query returned more than 50000 results. Try with this block range [0x185d029, 0x186c47d]."
+        }
+      },
+      "note": "Tenderly has no BLOCK-range cap but does enforce a 50,000-RESULT cap, and it returns the error inside an HTTP 200. AcquisitionRequested has 58,006 instances all-time, so the one event type that most wants a single-shot backfill is exactly the one that trips this.",
+      "expected_client_behaviour": "Paginate high-frequency events by block window regardless of endpoint. The error data field names a narrower range to retry -- parse it, or halve the window and retry."
+    },
+    "publicnode_archive_refusal": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://ethereum-rpc.publicnode.com",
+        "captured_at": "2026-07-27T02:28:51Z",
+        "method": "eth_call",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a73, \u00a76.3",
+        "requested_block": 25612701,
+        "blocks_behind_head_at_capture": 8458
+      },
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_call",
+        "params": [
+          {
+            "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "data": "0x38f5f005"
+          },
+          "0x186d19d"
+        ]
+      },
+      "http_status": 403,
+      "response_headers": {
+        "Date": "Mon, 27 Jul 2026 02:28:51 GMT",
+        "Content-Type": "application/json"
+      },
+      "raw_body": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32602,\"message\":\"Archive requests require a personal token. Get one at: https://www.allnodes.com/publicnode\"},\"id\":1}\n",
+      "parsed": {
+        "jsonrpc": "2.0",
+        "error": {
+          "code": -32602,
+          "message": "Archive requests require a personal token. Get one at: https://www.allnodes.com/publicnode"
+        },
+        "id": 1
+      },
+      "note": "The same archive gate, hit through eth_call. publicnode serves only ~128 blocks of state. \u00a76.3 requires pinning blockTag across a whole position sweep -- that is fine at head, but reproducing a fixture or backfilling an older block must go to tenderly or drpc.",
+      "expected_client_behaviour": "Pin blockTag to a block obtained from eth_blockNumber at sweep start and finish the sweep within the retention window. For historical pinned reads use gateway.tenderly.co."
+    },
+    "multicall3_invalid_hex_callData": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://ethereum-rpc.publicnode.com",
+        "captured_at": "2026-07-27T02:28:51Z",
+        "method": "eth_call",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a76.5",
+        "embedded_0x_at_index": 458,
+        "malformed_data_prefix": "0x82ad56cb00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000",
+        "correct_data_prefix": "0x82ad56cb00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000",
+        "other_endpoints_same_payload": {
+          "gateway.tenderly.co": "{\"error\":{\"code\":-32602,\"message\":\"invalid params\"}}",
+          "eth.drpc.org": "{\"error\":{\"code\":-32602,\"message\":\"Invalid params\",\"data\":\"invalid value: string ...\"}}",
+          "cloudflare-eth.com": "{\"error\":{\"code\":-32603,\"message\":\"Internal error\"}}"
+        }
+      },
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_call",
+        "params": [
+          {
+            "to": "0xcA11bde05977b3631167028862bE2a173976CA11",
+            "data": "0x82ad56cb000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000b276f62db0ce8ca2ca5bc522695be604521eac1c0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000250xe2881eb70000000000000000000000000000000000000000000000000000000000000001"
+          },
+          "latest"
+        ]
+      },
+      "http_status": 200,
+      "response_headers": {
+        "Date": "Mon, 27 Jul 2026 02:28:51 GMT",
+        "Content-Type": "application/json"
+      },
+      "raw_body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"invalid argument 0: json: cannot unmarshal invalid hex string into Go struct field TransactionArgs.data of type hexutil.Bytes\"}}\n",
+      "parsed": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal invalid hex string into Go struct field TransactionArgs.data of type hexutil.Bytes"
+        }
+      },
+      "note": "TRAP 4 (\u00a76.5). When hand-encoding Call3(address,bool,bytes), the inner callData must be appended WITHOUT its '0x' prefix. Leaving it on embeds the literal characters '0x' in the middle of the outer data string; the node rejects the entire payload before executing anything. The failure is total and misdirecting -- every call in the batch vanishes and the message blames TransactionArgs.data, not the encoder. Captured against publicnode (go-ethereum), which produces the exact documented wording; tenderly and drpc reject the same payload with vaguer messages, so a client must not string-match on this text.",
+      "expected_client_behaviour": "Strip the 0x prefix from every inner callData when assembling aggregate3 calldata, and assert the finished data string contains '0x' exactly once, at index 0."
+    },
+    "eth_call_gasprice_without_gas_bound": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://gateway.tenderly.co/public/mainnet",
+        "captured_at": "2026-07-27T02:28:51Z",
+        "method": "eth_call",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a77",
+        "reproduced": false,
+        "expected_per_findings": "insufficient funds for gas * price"
+      },
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_call",
+        "params": [
+          {
+            "to": "0xa084c33Fb7a467307452898b8D58165ebd2E5D9f",
+            "data": "0xeb2e578b",
+            "gasPrice": "0xba43b7400"
+          },
+          "0x186d19d"
+        ]
+      },
+      "http_status": 200,
+      "response_headers": {
+        "content-type": "application/json; charset=utf-8",
+        "date": "Mon, 27 Jul 2026 02:28:51 GMT"
+      },
+      "raw_body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"result\":\"0x00000000000000000000000000000000000000000000000000b8bdb978520000\"}",
+      "parsed": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x00000000000000000000000000000000000000000000000000b8bdb978520000"
+      },
+      "note": "NEGATIVE RESULT, recorded deliberately. Findings \u00a77 states that passing gasPrice without also bounding gas makes the node reject the call with 'insufficient funds for gas * price'. That did NOT reproduce here -- tenderly answered successfully. The behaviour is node-specific, so the \u00a77 advice ('pass both gasPrice AND a bounded gas') remains the safe form, but a test must not assert that omitting gas raises.",
+      "expected_client_behaviour": "Always send BOTH gasPrice and a bounded gas (0x200000) when quoting quoteAcquisitionPrice() / requestFee() / vrfServiceFee(). Do not depend on the error."
+    },
+    "publicnode_rate_limit_429": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://ethereum-rpc.publicnode.com",
+        "captured_at": "2026-07-27T02:29:06Z",
+        "method": null,
+        "findings_ref": "docs/fwa_technical_findings.md \u00a73, \u00a711",
+        "batch_size": 300,
+        "concurrency": 12
+      },
+      "request": {
+        "_note": "12 concurrent 300-element JSON-RPC batches, repeated",
+        "batch_size": 300,
+        "concurrency": 12,
+        "example_element": {
+          "jsonrpc": "2.0",
+          "id": 0,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+              "data": "0x38f5f005"
+            },
+            "latest"
+          ]
+        }
+      },
+      "http_status": 429,
+      "response_headers": {
+        "Date": "Mon, 27 Jul 2026 02:29:06 GMT",
+        "Content-Type": "application/json"
+      },
+      "raw_body": "[{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32005, \"message\": \"Rate limit exceeded. To obtain higher limits, please request a personal token or a dedicated node: https://www.allnodes.com/publicnode\"}, \"id\": 0}, {\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32005, \"message\": \"Rate limit exceeded. To obtain higher limits, please request a personal token or a dedicated node: https://www.allnodes.com/publicnode\"}, \"id\": 1}, {\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32005, \"message\": \"Rate limit exceeded. To obtain higher limits, please request a personal token or a dedicated node: https://www.allnodes.com/publicnode\"}, \"id\": 2}]",
+      "parsed": [
+        {
+          "jsonrpc": "2.0",
+          "error": {
+            "code": -32005,
+            "message": "Rate limit exceeded. To obtain higher limits, please request a personal token or a dedicated node: https://www.allnodes.com/publicnode"
+          },
+          "id": 0
+        },
+        {
+          "jsonrpc": "2.0",
+          "error": {
+            "code": -32005,
+            "message": "Rate limit exceeded. To obtain higher limits, please request a personal token or a dedicated node: https://www.allnodes.com/publicnode"
+          },
+          "id": 1
+        },
+        {
+          "jsonrpc": "2.0",
+          "error": {
+            "code": -32005,
+            "message": "Rate limit exceeded. To obtain higher limits, please request a personal token or a dedicated node: https://www.allnodes.com/publicnode"
+          },
+          "id": 2
+        }
+      ],
+      "note": "publicnode rate-limits under aggressive batching. Findings \u00a73/\u00a711: batch <= 60 elements with ~0.12 s spacing was stable; 150 rapid-fire failed. Multicall3 with <= 500 calls in ONE eth_call is the better shape -- it is a single JSON-RPC element.",
+      "expected_client_behaviour": "Prefer Multicall3 over JSON-RPC batching. If batching, cap at 60 elements and space requests. Treat 429 as retryable with backoff; do not fail the whole tick.",
+      "raw_body_full_bytes": 59291,
+      "raw_body_element_count": 300,
+      "raw_body_truncated": true,
+      "raw_body_truncation_note": "TRUNCATED FOR SIZE. The live body was a 300-element JSON array in which every element is the identical rate-limit error (one per batch element). The first 3 elements are kept verbatim below; nothing else differed. Full body was 59,291 bytes."
+    },
+    "llamarpc_dead": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://eth.llamarpc.com",
+        "captured_at": "2026-07-27T02:29:06Z",
+        "method": "eth_chainId",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a73"
+      },
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_chainId",
+        "params": []
+      },
+      "http_status": 521,
+      "response_headers": {
+        "Date": "Mon, 27 Jul 2026 02:29:06 GMT",
+        "Content-Type": "text/plain; charset=UTF-8"
+      },
+      "raw_body": "error code: 521\n",
+      "parsed": null,
+      "note": "DEAD -- HTTP 521 (Cloudflare: origin down). Still the PRIMARY endpoint in maxpane_dashboard/data/ttt_client.py, so the existing TTT dashboard is already broken.",
+      "expected_client_behaviour": "Do not use. Dead, keyed, or rate-limited to uselessness."
+    },
+    "ankr_now_keyed": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://rpc.ankr.com/eth",
+        "captured_at": "2026-07-27T02:29:06Z",
+        "method": "eth_chainId",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a73"
+      },
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_chainId",
+        "params": []
+      },
+      "http_status": 200,
+      "response_headers": {
+        "Date": "Mon, 27 Jul 2026 02:29:06 GMT",
+        "Content-Type": "application/json"
+      },
+      "raw_body": "{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32000, \"message\": \"Unauthorized: You must authenticate your request with an API key. Create an account on https://www.ankr.com/rpc/ and generate your personal API key for free.\"}, \"id\": null}",
+      "parsed": {
+        "jsonrpc": "2.0",
+        "error": {
+          "code": -32000,
+          "message": "Unauthorized: You must authenticate your request with an API key. Create an account on https://www.ankr.com/rpc/ and generate your personal API key for free."
+        },
+        "id": null
+      },
+      "note": "Now requires an API key -- forbidden by the keyless constraint. Still listed in ttt_client.py. Note the error arrives inside an HTTP 200.",
+      "expected_client_behaviour": "Do not use. Dead, keyed, or rate-limited to uselessness."
+    },
+    "onerpc_rate_limit_429": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://1rpc.io/eth",
+        "captured_at": "2026-07-27T02:29:06Z",
+        "method": "eth_getLogs",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a73"
+      },
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getLogs",
+        "params": [
+          {
+            "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "topics": [
+              "0xf23e34f4aa4a06ecddd309d9692e7b7ca45b76fd0d5f4ce4f7fbf29731d9abd6"
+            ],
+            "fromBlock": "0x186d16f",
+            "toBlock": "0x186d19d"
+          }
+        ]
+      },
+      "http_status": 429,
+      "response_headers": {
+        "Date": "Mon, 27 Jul 2026 02:29:07 GMT",
+        "Content-Type": "text/plain; charset=utf-8"
+      },
+      "raw_body": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32029,\"message\":\"Too Many Requests, Please apply an OnFinality API key or contact us to receive a higher rate limit\"},\"id\":1}",
+      "parsed": {
+        "jsonrpc": "2.0",
+        "error": {
+          "code": -32029,
+          "message": "Too Many Requests, Please apply an OnFinality API key or contact us to receive a higher rate limit"
+        },
+        "id": 1
+      },
+      "note": "1rpc.io refuses log queries with a rate-limit error. This is a REAL, live-captured 429 body from a keyless endpoint -- use it wherever a realistic 429 is needed.",
+      "expected_client_behaviour": "Do not use. Dead, keyed, or rate-limited to uselessness."
+    }
+  }
+}

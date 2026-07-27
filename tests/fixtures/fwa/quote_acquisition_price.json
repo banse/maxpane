@@ -1,0 +1,258 @@
+{
+  "_meta": {
+    "chain_id": 1,
+    "network": "ethereum-mainnet",
+    "captured_at": "2026-07-27T02:18:30Z",
+    "capture_tool": "tests/fixtures/fwa (WP-3 evidence collector), urllib + hand-rolled ABI codec",
+    "keyless": true,
+    "source": "live capture",
+    "source_url": "https://gateway.tenderly.co/public/mainnet",
+    "method": "eth_call",
+    "block_number": 25612701,
+    "block_number_hex": "0x186d19d",
+    "signature": "quoteAcquisitionPrice() returns (uint256 fee, uint256 vrf, uint256 total)",
+    "selector": "0x987df4cd",
+    "findings_ref": "docs/fwa_technical_findings.md \u00a77, \u00a712.2 Q1",
+    "note": "THE gas-price gotcha. requestFee() depends on tx.gasprice, so an eth_call with no gasPrice returns a different (usually 0) VRF component. Both gasPrice AND a bounded gas must be passed or the node answers 'insufficient funds for gas * price'. Every sample below is the SAME block with only gasPrice varied -- this fixture settles open question \u00a712.2 Q1 for the pinned block.",
+    "open_question": "\u00a712.2 Q1 -- is the VRF fee 0 because the subscription is over-funded, or was every measurement an unset-gasPrice artifact? See conclusion below."
+  },
+  "samples": [
+    {
+      "gasPrice_wei": null,
+      "gasPrice_label": "unset",
+      "gas": "0x200000",
+      "quoteAcquisitionPrice": {
+        "request_params": [
+          {
+            "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "data": "0x987df4cd",
+            "gas": "0x200000"
+          },
+          "0x186d19d"
+        ],
+        "raw_return_data": "0x00000000000000000000000000000000000000000000000001e4188d3ed11523000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001e4188d3ed11523",
+        "error": null
+      },
+      "vrfService_requestFee": {
+        "raw_return_data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "error": null
+      },
+      "fwa_vrfServiceFee": {
+        "raw_return_data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "error": null
+      },
+      "expected_decoded": {
+        "fee": 136260883651302691,
+        "vrf": 0,
+        "total": 136260883651302691
+      }
+    },
+    {
+      "gasPrice_wei": 0,
+      "gasPrice_label": "0",
+      "gas": "0x200000",
+      "quoteAcquisitionPrice": {
+        "request_params": [
+          {
+            "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "data": "0x987df4cd",
+            "gas": "0x200000",
+            "gasPrice": "0x0"
+          },
+          "0x186d19d"
+        ],
+        "raw_return_data": "0x00000000000000000000000000000000000000000000000001e4188d3ed11523000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001e4188d3ed11523",
+        "error": null
+      },
+      "vrfService_requestFee": {
+        "raw_return_data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "error": null
+      },
+      "fwa_vrfServiceFee": {
+        "raw_return_data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "error": null
+      },
+      "expected_decoded": {
+        "fee": 136260883651302691,
+        "vrf": 0,
+        "total": 136260883651302691
+      }
+    },
+    {
+      "gasPrice_wei": 100000000,
+      "gasPrice_label": "0.1 gwei",
+      "gas": "0x200000",
+      "quoteAcquisitionPrice": {
+        "request_params": [
+          {
+            "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "data": "0x987df4cd",
+            "gas": "0x200000",
+            "gasPrice": "0x5f5e100"
+          },
+          "0x186d19d"
+        ],
+        "raw_return_data": "0x00000000000000000000000000000000000000000000000001e4188d3ed1152300000000000000000000000000000000000000000000000000005e96630e800000000000000000000000000000000000000000000000000001e47723a1df9523",
+        "error": null
+      },
+      "vrfService_requestFee": {
+        "raw_return_data": "0x00000000000000000000000000000000000000000000000000005e96630e8000",
+        "error": null
+      },
+      "fwa_vrfServiceFee": {
+        "raw_return_data": "0x00000000000000000000000000000000000000000000000000005e96630e8000",
+        "error": null
+      },
+      "expected_decoded": {
+        "fee": 136260883651302691,
+        "vrf": 104000000000000,
+        "total": 136364883651302691
+      }
+    },
+    {
+      "gasPrice_wei": 500000000,
+      "gasPrice_label": "0.5 gwei",
+      "gas": "0x200000",
+      "quoteAcquisitionPrice": {
+        "request_params": [
+          {
+            "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "data": "0x987df4cd",
+            "gas": "0x200000",
+            "gasPrice": "0x1dcd6500"
+          },
+          "0x186d19d"
+        ],
+        "raw_return_data": "0x00000000000000000000000000000000000000000000000001e4188d3ed115230000000000000000000000000000000000000000000000000001d8efef48800000000000000000000000000000000000000000000000000001e5f17d2e199523",
+        "error": null
+      },
+      "vrfService_requestFee": {
+        "raw_return_data": "0x0000000000000000000000000000000000000000000000000001d8efef488000",
+        "error": null
+      },
+      "fwa_vrfServiceFee": {
+        "raw_return_data": "0x0000000000000000000000000000000000000000000000000001d8efef488000",
+        "error": null
+      },
+      "expected_decoded": {
+        "fee": 136260883651302691,
+        "vrf": 520000000000000,
+        "total": 136780883651302691
+      }
+    },
+    {
+      "gasPrice_wei": 1000000000,
+      "gasPrice_label": "1 gwei",
+      "gas": "0x200000",
+      "quoteAcquisitionPrice": {
+        "request_params": [
+          {
+            "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "data": "0x987df4cd",
+            "gas": "0x200000",
+            "gasPrice": "0x3b9aca00"
+          },
+          "0x186d19d"
+        ],
+        "raw_return_data": "0x00000000000000000000000000000000000000000000000001e4188d3ed115230000000000000000000000000000000000000000000000000003b1dfde91000000000000000000000000000000000000000000000000000001e7ca6d1d621523",
+        "error": null
+      },
+      "vrfService_requestFee": {
+        "raw_return_data": "0x0000000000000000000000000000000000000000000000000003b1dfde910000",
+        "error": null
+      },
+      "fwa_vrfServiceFee": {
+        "raw_return_data": "0x0000000000000000000000000000000000000000000000000003b1dfde910000",
+        "error": null
+      },
+      "expected_decoded": {
+        "fee": 136260883651302691,
+        "vrf": 1040000000000000,
+        "total": 137300883651302691
+      }
+    },
+    {
+      "gasPrice_wei": 10000000000,
+      "gasPrice_label": "10 gwei",
+      "gas": "0x200000",
+      "quoteAcquisitionPrice": {
+        "request_params": [
+          {
+            "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "data": "0x987df4cd",
+            "gas": "0x200000",
+            "gasPrice": "0x2540be400"
+          },
+          "0x186d19d"
+        ],
+        "raw_return_data": "0x00000000000000000000000000000000000000000000000001e4188d3ed115230000000000000000000000000000000000000000000000000024f2beb1aa000000000000000000000000000000000000000000000000000002090b4bf07b1523",
+        "error": null
+      },
+      "vrfService_requestFee": {
+        "raw_return_data": "0x0000000000000000000000000000000000000000000000000024f2beb1aa0000",
+        "error": null
+      },
+      "fwa_vrfServiceFee": {
+        "raw_return_data": "0x0000000000000000000000000000000000000000000000000024f2beb1aa0000",
+        "error": null
+      },
+      "expected_decoded": {
+        "fee": 136260883651302691,
+        "vrf": 10400000000000000,
+        "total": 146660883651302691
+      }
+    },
+    {
+      "gasPrice_wei": 50000000000,
+      "gasPrice_label": "50 gwei",
+      "gas": "0x200000",
+      "quoteAcquisitionPrice": {
+        "request_params": [
+          {
+            "to": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c",
+            "data": "0x987df4cd",
+            "gas": "0x200000",
+            "gasPrice": "0xba43b7400"
+          },
+          "0x186d19d"
+        ],
+        "raw_return_data": "0x00000000000000000000000000000000000000000000000001e4188d3ed1152300000000000000000000000000000000000000000000000000b8bdb978520000000000000000000000000000000000000000000000000000029cd646b7231523",
+        "error": null
+      },
+      "vrfService_requestFee": {
+        "raw_return_data": "0x00000000000000000000000000000000000000000000000000b8bdb978520000",
+        "error": null
+      },
+      "fwa_vrfServiceFee": {
+        "raw_return_data": "0x00000000000000000000000000000000000000000000000000b8bdb978520000",
+        "error": null
+      },
+      "expected_decoded": {
+        "fee": 136260883651302691,
+        "vrf": 52000000000000000,
+        "total": 188260883651302691
+      }
+    }
+  ],
+  "conclusion": {
+    "vrf_component_by_gas_price": {
+      "unset": 0,
+      "0": 0,
+      "0.1 gwei": 104000000000000,
+      "0.5 gwei": 520000000000000,
+      "1 gwei": 1040000000000000,
+      "10 gwei": 10400000000000000,
+      "50 gwei": 52000000000000000
+    },
+    "fee_component_by_gas_price": {
+      "unset": 136260883651302691,
+      "0": 136260883651302691,
+      "0.1 gwei": 136260883651302691,
+      "0.5 gwei": 136260883651302691,
+      "1 gwei": 136260883651302691,
+      "10 gwei": 136260883651302691,
+      "50 gwei": 136260883651302691
+    },
+    "acquisitionFee_onchain": 136260883651302691
+  }
+}

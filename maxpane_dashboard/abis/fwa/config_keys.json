@@ -1,0 +1,170 @@
+{
+  "1": {
+    "name": "CALLBACK_GAS_LIMIT",
+    "dispatcher": "constructor",
+    "value_type": "uint256",
+    "settable": false
+  },
+  "2": {
+    "name": "VRF_SUB_ID",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "7": {
+    "name": "REQUEST_CONFIRMATIONS",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "10": {
+    "name": "MAX_ACTIVATIONS_PER_ACQUISITION",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "11": {
+    "name": "SELECTION_TIMEOUT_BLOCKS",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "12": {
+    "name": "MAX_ACQUISITIONS_PER_TX",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "13": {
+    "name": "SURCHARGE_BPS",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "14": {
+    "name": "SELECTION_SLIPPAGE_BPS",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "15": {
+    "name": "TOP_LISTING_SHARE_BPS",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "16": {
+    "name": "TOP_THRESHOLD_BPS",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "17": {
+    "name": "SETTLEMENT_DISCOUNT_BPS",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "18": {
+    "name": "OWNER_ACQUISITION_FEE_BPS",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "19": {
+    "name": "OWNER_SETTLEMENT_FEE_BPS",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "20": {
+    "name": "SETTLEMENT_WINDOW",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "21": {
+    "name": "FINALIZE_WINDOW",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "22": {
+    "name": "MIN_BACKING",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "23": {
+    "name": "PROTOCOL_FEE_TO_TOKEN_BPS",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "24": {
+    "name": "VRF_KEY_HASH",
+    "dispatcher": "constructor",
+    "value_type": "bytes32",
+    "settable": false
+  },
+  "25": {
+    "name": "MAX_STAGED_LISTINGS",
+    "dispatcher": "setUint",
+    "value_type": "uint256",
+    "settable": true
+  },
+  "40": {
+    "name": "RETAINED_TO_PROTOCOL",
+    "dispatcher": "setBool",
+    "value_type": "bool",
+    "settable": true
+  },
+  "41": {
+    "name": "ACQUISITIONS_ENABLED",
+    "dispatcher": "setBool",
+    "value_type": "bool",
+    "settable": true
+  },
+  "42": {
+    "name": "WITHDRAW_ONLY",
+    "dispatcher": "setBool",
+    "value_type": "bool",
+    "settable": true
+  },
+  "43": {
+    "name": "WHITELIST_ENABLED",
+    "dispatcher": "setBool",
+    "value_type": "bool",
+    "settable": true
+  },
+  "44": {
+    "name": "ACCEPT_BID_AS_TOKENS_ENABLED",
+    "dispatcher": "setBool",
+    "value_type": "bool",
+    "settable": true
+  },
+  "60": {
+    "name": "VRF_COORDINATOR",
+    "dispatcher": "setAddr",
+    "value_type": "address",
+    "settable": true
+  },
+  "61": {
+    "name": "PAYOUT_ADDRESS",
+    "dispatcher": "setAddr",
+    "value_type": "address",
+    "settable": true
+  },
+  "62": {
+    "name": "WHITELIST_MANAGER",
+    "dispatcher": "setAddr",
+    "value_type": "address",
+    "settable": true
+  },
+  "63": {
+    "name": "VRF_SERVICE",
+    "dispatcher": "constructor",
+    "value_type": "address",
+    "settable": false
+  }
+}

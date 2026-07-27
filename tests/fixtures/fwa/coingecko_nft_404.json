@@ -1,0 +1,33 @@
+{
+  "_meta": {
+    "captured_at": "2026-07-27T02:25:11Z",
+    "keyless": true,
+    "source": "live capture",
+    "source_url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0x26D7Ad0E930b54b84C00DAad077Ee31Ba9e2Fb2E",
+    "api": "CoinGecko NFT per-contract",
+    "method": "GET",
+    "params": {
+      "asset_platform": "ethereum",
+      "contract_address": "0x26D7Ad0E930b54b84C00DAad077Ee31Ba9e2Fb2E"
+    },
+    "collection": "Ten Thousand Tokens (TTT)",
+    "http_status": 404,
+    "findings_ref": "docs/fwa_technical_findings.md \u00a710",
+    "note": "THE coverage-gap fixture. TTT is 1,732 positions and 49.083% of all FWA selection weight, and CoinGecko has no record of it at all. Together with Art Blocks Explorations (18.987%) that is ~68% of pool weight with no floor price. A backing-vs-floor widget must render this as an explicit coverage caveat, not as a zero and never as a pool-wide aggregate."
+  },
+  "response": {
+    "request_url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0x26D7Ad0E930b54b84C00DAad077Ee31Ba9e2Fb2E",
+    "http_status": 404,
+    "response_headers": {
+      "content-type": "application/json; charset=utf-8",
+      "date": "Mon, 27 Jul 2026 02:25:11 GMT"
+    },
+    "raw_body": "{\"error\":\"nft collection not found\"}",
+    "body_bytes": 36
+  },
+  "expected_decoded": {
+    "_note": "Assertion target: a hard 404 with a JSON error body, NOT a transport failure and NOT an empty 200. The client must classify this as 'no coverage' and cache the negative result, or it will re-request 16 collections every sweep.",
+    "http_status": 404,
+    "is_coverage_miss": true
+  }
+}

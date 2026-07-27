@@ -1,0 +1,404 @@
+{
+  "AcquisitionExpired": {
+    "topic0": "0x97639294216e9dc091da2646074b483c81c79f6b6143e69b244331ecded15b12",
+    "signature": "AcquisitionExpired(uint256,uint64,address,uint256)",
+    "indexed": [
+      "requestId",
+      "sequence",
+      "purchaser"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "AcquisitionProcessed": {
+    "topic0": "0x63edc6f178d7041b96c564ba33fde66b3f2f3b215be8b2d5a785fee5231fbd57",
+    "signature": "AcquisitionProcessed(uint256,uint64,uint8,address)",
+    "indexed": [
+      "requestId",
+      "sequence",
+      "processor"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "AcquisitionRefundWithdrawn": {
+    "topic0": "0x6aca4be863c6ba56d67031f0c6d7a0218f32deeef3c871fc620c14de691c2e49",
+    "signature": "AcquisitionRefundWithdrawn(address,uint256)",
+    "indexed": [
+      "purchaser"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "AcquisitionRefundedNoListing": {
+    "topic0": "0x4906638bdfd382f0f3258500c1e972e71b9b3cd95ceacd95ca188d493c8e0ee8",
+    "signature": "AcquisitionRefundedNoListing(uint256,address,uint256)",
+    "indexed": [
+      "requestId",
+      "purchaser"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "AcquisitionRefundedSlippage": {
+    "topic0": "0x6e0c967dcdde10dc8a73e11f39aac35df75b9647cd6db11c0918a0d49e98f22a",
+    "signature": "AcquisitionRefundedSlippage(uint256,address,uint256,uint256,uint256)",
+    "indexed": [
+      "requestId",
+      "purchaser"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "AcquisitionRequested": {
+    "topic0": "0xf23e34f4aa4a06ecddd309d9692e7b7ca45b76fd0d5f4ce4f7fbf29731d9abd6",
+    "signature": "AcquisitionRequested(uint256,address,uint256,uint256)",
+    "indexed": [
+      "requestId",
+      "purchaser"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "AcquisitionSequenced": {
+    "topic0": "0x3e5b01ceee4741bf17318a3f74c2fd1dbac13bba024b4f6b5bca0ca1851e3f70",
+    "signature": "AcquisitionSequenced(uint256,uint64,uint64,uint256)",
+    "indexed": [
+      "requestId",
+      "sequence"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "BackingUpdated": {
+    "topic0": "0x5c4c79e86213f723a47892346939f61e044f21669b282f71b022098eea2d136b",
+    "signature": "BackingUpdated(uint256,address,uint256,uint256,uint256)",
+    "indexed": [
+      "listingId",
+      "depositor"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "BurnedForWhitelist": {
+    "topic0": "0xd30a07cee97a3a7784f24041c8b883ff566cff4002daa9a76c901eef9a04d7a3",
+    "signature": "BurnedForWhitelist(address,address,uint256[])",
+    "indexed": [
+      "burner",
+      "collection"
+    ],
+    "contract": "fwa_whitelist",
+    "address": "0x854352b275cF6A0DfFCf2983C986FBe9345e17c3"
+  },
+  "CollectionWhitelistSet": {
+    "topic0": "0x4c4950b9ef6cb1bc030a44fd8dc97dd16083b2731fb3516ed4f0b9cdffcc9527",
+    "signature": "CollectionWhitelistSet(address,bool)",
+    "indexed": [
+      "collection"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "ConfigSet": {
+    "topic0": "0x150110afd46e9924086bf85c855aae25722518b293155bf0ae689dd99a2e88cc",
+    "signature": "ConfigSet(uint256,uint256)",
+    "indexed": [
+      "key"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "DepositorBidAccepted": {
+    "topic0": "0x88ebc94b0ff4693b3d25995dc7c5c4e5683a8ca7de00836773ca24c8b69d78e3",
+    "signature": "DepositorBidAccepted(uint256,address,address,uint256,uint256)",
+    "indexed": [
+      "listingId",
+      "purchaser",
+      "depositor"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "DepositorBidAcceptedAsTokens": {
+    "topic0": "0x819cd055ab6ba83877ab68882609b8d7aa75d4951f6d89fa99d3b59fa45f439f",
+    "signature": "DepositorBidAcceptedAsTokens(uint256,address,address,uint256,uint256,uint256)",
+    "indexed": [
+      "listingId",
+      "purchaser",
+      "depositor"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "EarningsAccrued": {
+    "topic0": "0x08a7f93e5890701e3c2c75cd8ded274c4726ccd6ae826b502ecc88f515b692ed",
+    "signature": "EarningsAccrued(address,uint256,uint256)",
+    "indexed": [
+      "depositor",
+      "listingId"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "EarningsWithdrawn": {
+    "topic0": "0x48dc35af7b45e2a81fffad55f6e2fafacdb1d3d0d50d24ebdc16324f5ba757f1",
+    "signature": "EarningsWithdrawn(address,uint256)",
+    "indexed": [
+      "depositor"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "ExternalBuysEnabledSet": {
+    "topic0": "0x35650707357c5c3e0b0ae8589019298a7cf1abeb35cf8567d459eb7312007132",
+    "signature": "ExternalBuysEnabledSet(bool)",
+    "indexed": [],
+    "contract": "fwa_token_hook",
+    "address": "0x2C67ebA8A50AF0dB5Fba55F725247a75CbDA6444"
+  },
+  "FeesPaidOut": {
+    "topic0": "0xcbe199cf5a1eb4e2f03e17cb7d09cad0b775715e745ccfe1e3fef26671433657",
+    "signature": "FeesPaidOut(address,uint256)",
+    "indexed": [
+      "to"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "FulfillmentIgnored": {
+    "topic0": "0x5049b1d65d5a3b89394dc478bf60e39b57c30e2533ff20d9a30ad64c91a54af6",
+    "signature": "FulfillmentIgnored(uint256,uint8)",
+    "indexed": [
+      "requestId"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "ListingRewardRepriced": {
+    "topic0": "0x016d7036b5ec790fb059010c18e8e9f105130567e580f1af3c55154243f398cf",
+    "signature": "ListingRewardRepriced(uint256,uint256,uint256)",
+    "indexed": [
+      "listingId"
+    ],
+    "contract": "fwa_rewards",
+    "address": "0x6a1a1C0CfB3D3C538e13D36d608a5bcaa992fc78"
+  },
+  "ListingStaged": {
+    "topic0": "0x8684098dea97bebc638de0445aee7a3cd3929bb89af1add56703b5b721273b4f",
+    "signature": "ListingStaged(uint256,address,address,uint256,uint256,uint256)",
+    "indexed": [
+      "listingId",
+      "depositor"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "ListingWithdrawn": {
+    "topic0": "0x155ad598d62a05a119f984c463f10d75b4fe9b0af1e0fbe0c2b2caaf8e4bdfda",
+    "signature": "ListingWithdrawn(uint256,address,uint256)",
+    "indexed": [
+      "listingId",
+      "depositor"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "NFTAllocated": {
+    "topic0": "0xaf0d8c007926747ede4270a56f69d2e872c3f0d7e1ef7bbc643b3185c50f6758",
+    "signature": "NFTAllocated(uint256,uint256,address,address,uint256,uint256)",
+    "indexed": [
+      "requestId",
+      "listingId",
+      "purchaser"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "NFTDeliveryFailed": {
+    "topic0": "0xb1be2a86e47b6e5052fdd7414928151684a30a17640d50390cd274f6df8e00ac",
+    "signature": "NFTDeliveryFailed(uint256,address,address,uint256)",
+    "indexed": [
+      "listingId",
+      "recipient"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "NFTKept": {
+    "topic0": "0xe71c2721f75bef3206b21176a6d26685852a16878249fc84d18f443f959bb8f5",
+    "signature": "NFTKept(uint256,address,address,uint256)",
+    "indexed": [
+      "listingId",
+      "purchaser",
+      "depositor"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "NFTListed": {
+    "topic0": "0x01c953cf171a8c32b553c5b7e0964bae6b2123db065615e54e8425fec3ec16cd",
+    "signature": "NFTListed(uint256,uint256,address,address,uint256,uint256,uint256)",
+    "indexed": [
+      "listingId",
+      "slot",
+      "depositor"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "NFTRelisted": {
+    "topic0": "0x5fa40266a1e401404f322db009d5f8631ed44abc96b84784d9f8f90a8846abd8",
+    "signature": "NFTRelisted(uint256,uint256,uint256)",
+    "indexed": [
+      "listingId",
+      "newListingId"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "OwnerFeesAccrued": {
+    "topic0": "0xb7aff4cad926d9c399913a8cf025d83e4d685182e56c15689031f5f2866e4697",
+    "signature": "OwnerFeesAccrued(uint256)",
+    "indexed": [],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "OwnershipHandoverCanceled": {
+    "topic0": "0xfa7b8eab7da67f412cc9575ed43464468f9bfbae89d1675917346ca6d8fe3c92",
+    "signature": "OwnershipHandoverCanceled(address)",
+    "indexed": [
+      "pendingOwner"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "OwnershipHandoverRequested": {
+    "topic0": "0xdbf36a107da19e49527a7176a1babf963b4b0ff8cde35ee35d6cd8f1f9ac7e1d",
+    "signature": "OwnershipHandoverRequested(address)",
+    "indexed": [
+      "pendingOwner"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "OwnershipTransferred": {
+    "topic0": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0",
+    "signature": "OwnershipTransferred(address,address)",
+    "indexed": [
+      "oldOwner",
+      "newOwner"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "ProtocolFeesToToken": {
+    "topic0": "0x3d57917d8969038abf6f87cc4bb9f0da5d628d359eaa624c852f0aac2a840bba",
+    "signature": "ProtocolFeesToToken(uint256)",
+    "indexed": [],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "RandomnessCached": {
+    "topic0": "0x98f19be7797a0d9a9520c633b7e2ac1fc1517fcb3a5185d16a8081572f15a992",
+    "signature": "RandomnessCached(uint256,uint64,uint256)",
+    "indexed": [
+      "requestId",
+      "sequence"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "RandomnessTimedOut": {
+    "topic0": "0xb6cbca0f3c364202e477b3951369e96c1c5c8423a8d578723e26f3ef9e24f751",
+    "signature": "RandomnessTimedOut(uint256,uint64,uint64,uint256)",
+    "indexed": [
+      "requestId",
+      "sequence"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "RewardsConfigured": {
+    "topic0": "0x3d3d959e38561e3bf73148f6a9048274ba5c2e1f2bc63227c3963a3edf187f3f",
+    "signature": "RewardsConfigured(address,address)",
+    "indexed": [
+      "rewards",
+      "token"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "StuckNFTRecovered": {
+    "topic0": "0xa92dbf0b2ad45a4269427142d1441737f15adf493da0b097a304f3a1dd71e664",
+    "signature": "StuckNFTRecovered(uint256,address)",
+    "indexed": [
+      "listingId",
+      "recipient"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "TTTAmountSet": {
+    "topic0": "0xda28e892ae4e738d98b53283274640ad0c0368ddf1f28065f82842b83c52f1f0",
+    "signature": "TTTAmountSet(uint256)",
+    "indexed": [],
+    "contract": "fwa_whitelist",
+    "address": "0x854352b275cF6A0DfFCf2983C986FBe9345e17c3"
+  },
+  "TopListingFunded": {
+    "topic0": "0x165c0e5f0e97dd3e3dfd3c8020ff4218886edff2d8f53afa95c0dcd41f4456e0",
+    "signature": "TopListingFunded(uint256,uint256,uint256)",
+    "indexed": [
+      "listingId"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "TopListingSet": {
+    "topic0": "0x24ace256adc6182b122f3aa90b19d20b6d637236a63154d9a6ceb9032b50b514",
+    "signature": "TopListingSet(uint256,address)",
+    "indexed": [
+      "listingId",
+      "depositor"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "TopListingSettled": {
+    "topic0": "0x72747a194a7ea234ca6c67bae23a563ff193d2efe4611bec783df82b40c47892",
+    "signature": "TopListingSettled(uint256,address,uint256)",
+    "indexed": [
+      "listingId",
+      "depositor"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "UnfulfilledVrfReconciled": {
+    "topic0": "0x4ef8a301eca750093a73da80d84fd2992bc4396be4ade4a813c7b32abaf3b10d",
+    "signature": "UnfulfilledVrfReconciled(uint256)",
+    "indexed": [],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "UnsettledFinalized": {
+    "topic0": "0x6f4528c508dc00c3d0fb4dcffe0346f48ae4332f18abe3d4eff0b27895997929",
+    "signature": "UnsettledFinalized(uint256,address,address)",
+    "indexed": [
+      "listingId",
+      "purchaser",
+      "depositor"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  },
+  "VrfServiceFeePaid": {
+    "topic0": "0xdb28a60cee2e8c31915c78f9bcac218bee7a8039e7507da768916fe4d080bd3a",
+    "signature": "VrfServiceFeePaid(address,uint256)",
+    "indexed": [
+      "purchaser"
+    ],
+    "contract": "fwa_core",
+    "address": "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
+  }
+}

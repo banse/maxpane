@@ -1,0 +1,94 @@
+{
+  "_meta": {
+    "captured_at": "2026-07-27T02:25:11Z",
+    "keyless": true,
+    "source": "live capture",
+    "source_url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0xED5AF388653567Af2F388E6224dC7C4b3241C544",
+    "api": "CoinGecko NFT per-contract",
+    "method": "GET",
+    "http_status": 429,
+    "findings_ref": "docs/fwa_technical_findings.md \u00a710, \u00a711",
+    "note": "Real 429, provoked by issuing back-to-back requests with no spacing (hit on attempt 10 of 24). Findings \u00a711 requires >= 2.5 s between CoinGecko calls and warns that 429s happen anyway; a 38-collection sweep took 203 s. The floor sweep must be a background job with a 15 min TTL and a persisted snapshot, never in the hot refresh path.",
+    "provocation": "24 rapid unspaced GETs against distinct NFT contracts"
+  },
+  "response": {
+    "request_url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0xED5AF388653567Af2F388E6224dC7C4b3241C544",
+    "http_status": 429,
+    "response_headers": {
+      "content-type": "application/json",
+      "date": "Mon, 27 Jul 2026 02:25:13 GMT",
+      "retry-after": "60"
+    },
+    "raw_body": "{\"status\":{\"error_code\":429,\"error_message\":\"You've exceeded the Rate Limit. Please visit https://www.coingecko.com/en/api/pricing to subscribe to our API plans for higher rate limits.\"}}",
+    "body_bytes": 187
+  },
+  "attempts": [
+    {
+      "attempt": 0,
+      "url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0x8fe1a377Bd6bd0Da5F5e7c0966D5a2A96c31473b",
+      "http_status": 404,
+      "body_prefix": "{\"error\":\"nft collection not found\"}"
+    },
+    {
+      "attempt": 1,
+      "url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0xED5AF388653567Af2F388E6224dC7C4b3241C544",
+      "http_status": 200,
+      "body_prefix": "{\"id\":\"azuki\",\"web_slug\":\"azuki\",\"contract_address\":\"0xed5af388653567af2f388e6224dc7c4b3241c544\",\"asset_platform_id\":\"ethereum\",\"name\":\"Azuki\",\"symbol\":\"AZUKI\",\"image\":{\"small\":\"https://coin-images.co"
+    },
+    {
+      "attempt": 2,
+      "url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0x60E4d786628Fea6478F785A6d7e704777c86a7c6",
+      "http_status": 200,
+      "body_prefix": "{\"id\":\"mutant-ape-yacht-club\",\"web_slug\":\"mutant-ape-yacht-club\",\"contract_address\":\"0x60e4d786628fea6478f785a6d7e704777c86a7c6\",\"asset_platform_id\":\"ethereum\",\"name\":\"Mutant Ape Yacht Club\",\"symbol\":"
+    },
+    {
+      "attempt": 3,
+      "url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0x49cF6f5d44E70224e2E23fDcdd2C053F30aDA28B",
+      "http_status": 200,
+      "body_prefix": "{\"id\":\"clonex\",\"web_slug\":\"clonex\",\"contract_address\":\"0x49cf6f5d44e70224e2e23fdcdd2c053f30ada28b\",\"asset_platform_id\":\"ethereum\",\"name\":\"Clone X\",\"symbol\":\"CloneX\",\"image\":{\"small\":\"https://coin-imag"
+    },
+    {
+      "attempt": 4,
+      "url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0x23581767a106ae21c074b2276D25e5C3e136a68b",
+      "http_status": 200,
+      "body_prefix": "{\"id\":\"moonbirds\",\"web_slug\":\"moonbirds\",\"contract_address\":\"0x23581767a106ae21c074b2276d25e5c3e136a68b\",\"asset_platform_id\":\"ethereum\",\"name\":\"Moonbirds\",\"symbol\":\"MOONBIRD\",\"image\":{\"small\":\"https:/"
+    },
+    {
+      "attempt": 5,
+      "url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0x1A92f7381B9F03921564a437210bB9396471050C",
+      "http_status": 200,
+      "body_prefix": "{\"id\":\"cool-cats\",\"web_slug\":\"cool-cats\",\"contract_address\":\"0x1a92f7381b9f03921564a437210bb9396471050c\",\"asset_platform_id\":\"ethereum\",\"name\":\"Cool Cats\",\"symbol\":\"COOL\",\"image\":{\"small\":\"https://coi"
+    },
+    {
+      "attempt": 6,
+      "url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0x769272677faB02575E84945F03Eca517ACc544Cc",
+      "http_status": 200,
+      "body_prefix": "{\"id\":\"the-captainz\",\"web_slug\":\"the-captainz\",\"contract_address\":\"0x769272677fab02575e84945f03eca517acc544cc\",\"asset_platform_id\":\"ethereum\",\"name\":\"Captainz\",\"symbol\":\"Captainz\",\"image\":{\"small\":\"ht"
+    },
+    {
+      "attempt": 7,
+      "url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e",
+      "http_status": 200,
+      "body_prefix": "{\"id\":\"doodles-official\",\"web_slug\":\"doodles-official\",\"contract_address\":\"0x8a90cab2b38dba80c64b7734e58ee1db38b8992e\",\"asset_platform_id\":\"ethereum\",\"name\":\"Doodles\",\"symbol\":\"DOODLE\",\"image\":{\"small"
+    },
+    {
+      "attempt": 8,
+      "url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0x8fe1a377Bd6bd0Da5F5e7c0966D5a2A96c31473b",
+      "http_status": 404,
+      "body_prefix": "{\"error\":\"nft collection not found\"}"
+    },
+    {
+      "attempt": 9,
+      "url": "https://api.coingecko.com/api/v3/nfts/ethereum/contract/0xED5AF388653567Af2F388E6224dC7C4b3241C544",
+      "http_status": 429,
+      "body_prefix": "{\"status\":{\"error_code\":429,\"error_message\":\"You've exceeded the Rate Limit. Please visit https://www.coingecko.com/en/api/pricing to subscribe to our API plans for higher rate limits.\"}}"
+    }
+  ],
+  "expected_decoded": {
+    "_note": "Assertion target: 429 must be treated as RETRYABLE and must NOT poison the cache with a negative result the way a 404 does.",
+    "http_status": 429,
+    "is_retryable": true,
+    "is_coverage_miss": false,
+    "retry_after_header": "60"
+  }
+}
