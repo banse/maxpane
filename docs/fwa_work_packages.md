@@ -1430,6 +1430,31 @@ wave (WP-10, WP-11, WP-13 are complete).
 
 ## WP-20 — Full-suite integration and regression triage
 
+> **Carried into WP-20 from WP-18/WP-15 — decide, then close:**
+>
+> 1. **`sqrtBackingTotal()` is a dead read.** `data/fwa_client.py:678` puts `sqrt_backing_total`
+>    in `HOT_VIEWS`, so every 15 s tick spends a Multicall3 slot on it. Nothing consumes the
+>    value anywhere in the repo. Harmless to correctness (rule 5's guard forbids it entering the
+>    maths) but it is a live RPC cost for nothing. Removing it means updating WP-6's
+>    `FWA_HOT_KEYS` assertions.
+> 2. **`ev_available` with zero coverage.** With the market pool dead, an EV number renders
+>    beside `0/3 · 0.0% of weight priced`. Arguably honest — the badge is inseparable and the
+>    figure is still the meaningful sell-back-minus-fee expectation — but it is the one place a
+>    number appears with nothing priced behind it. Also cosmetic: a dead chain renders
+>    `0/0 · 0.0% of weight priced`.
+> 3. **Three guards are only partly mechanical** and say so in their own docstrings: rule 6 (a
+>    *new* parameter with a hardcoded default slips past until the guard is extended), rule 8
+>    (staleness is temporal — the machinery is provable, prompt invalidation in a live deployment
+>    is not), and §13's coverage rule (guarded for `FWAHeroMetrics` only; a new floor-rendering
+>    widget needs its own assertion).
+> 4. **`grep -r "etherscan" maxpane_dashboard/` is not empty** — three prose hits
+>    (`fwa_market.py:94`, `fwa_enums.py:6`, and pre-existing non-FWA `ocm_client.py:61`). No code
+>    path touches Etherscan; the guard scans code with docstrings stripped. If the literal grep
+>    must be empty, `fwa_enums.py`'s provenance paragraph is the only one that reads as
+>    load-bearing and would need rewording.
+
+
+
 **Agent:** Test Results Analyzer
 *Why:* the closing job is reading ~930 test outcomes across 21 work packages, separating genuine FWA
 defects from cross-WP interface drift from pre-existing failures, and routing each.

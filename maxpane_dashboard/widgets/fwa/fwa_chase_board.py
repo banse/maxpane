@@ -47,6 +47,8 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
+from .fwa_hero_metrics import CROWN_GOLD
+
 _DASH = "--"
 
 #: Rows rendered, matching the ``tal_materials_table.py`` budget.
@@ -54,6 +56,12 @@ _MAX_ROWS = 12
 
 #: Marker for the row that is also the crown position.
 CROWN_GLYPH = "♛"
+
+#: The crown colour, imported rather than restated. This module used to
+#: carry its own ``#d4af37`` while the hero tile used ``#f0c040`` -- one
+#: semantic with two values that were free to drift apart. Both passed
+#: contrast; only one is the colour the ``fwa`` theme declares (WP-19).
+_GOLD = CROWN_GOLD
 
 
 def _fmt_text(value, width: int | None = None) -> str:
@@ -431,7 +439,7 @@ class FWAChaseBoard(Vertical):
 
         if crown_rank is not None:
             note = (
-                f"  [#d4af37]{CROWN_GLYPH}[/] {crown_id} · crown and chase "
+                f"  [{_GOLD}]{CROWN_GLYPH}[/] {crown_id} · crown and chase "
                 f"#{crown_rank}"
             )
             # The full sentence only when the slot can hold it on one line.

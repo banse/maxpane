@@ -20,6 +20,7 @@ import json
 import pytest
 
 from maxpane_dashboard.analytics import fwa_ev
+from maxpane_dashboard.analytics.fwa_signals import SIGNAL_BAD
 from maxpane_dashboard.data import fwa_logs as fl
 from maxpane_dashboard.data.fwa_cache import (
     TIER_FAST,
@@ -1023,7 +1024,7 @@ async def test_a_failed_read_is_none_not_zero(tmp_path):
     # ... and a genuine false is loud, not silent
     manager2 = _manager(tmp_path, state=FakeStateClient())
     data2 = await manager2.fetch_and_compute()
-    assert data2["buy_gate_signal"]["color"] == "red"
+    assert data2["buy_gate_signal"]["color"] == SIGNAL_BAD
     assert "GATED" in data2["buy_gate_signal"]["value_str"]
     await _drain(manager2)
 

@@ -52,7 +52,10 @@ import pytest
 from textual.app import App
 
 from maxpane_dashboard.analytics import fwa_ev
-from maxpane_dashboard.analytics.fwa_signals import DOCUMENTED_EMISSION_STOP
+from maxpane_dashboard.analytics.fwa_signals import (
+    DOCUMENTED_EMISSION_STOP,
+    SIGNAL_BAD,
+)
 from maxpane_dashboard.data import fwa_logs as fl
 from maxpane_dashboard.data.fwa_cache import FWACache
 from maxpane_dashboard.data.fwa_client import FWA_HOT_KEYS
@@ -1251,7 +1254,7 @@ async def test_a_failed_read_is_none_never_a_closed_buy_gate(tmp_path):
     manager2 = _manager(tmp_path, state=FakeStateClient())
     async with _on_screen(manager2) as session:
         data = await session.refresh()
-        assert data["buy_gate_signal"]["color"] == "red"
+        assert data["buy_gate_signal"]["color"] == SIGNAL_BAD
         assert "GATED — no outside buys" in session.text
 
 

@@ -361,7 +361,9 @@ class FWASettlementTable(Vertical):
 
         text = base
         if show_suffix:
-            text += f"  [dim]{suffix}[/]"
+            # Unstyled: `#fwa-settle-title` is already `$text-muted`, and
+            # `[dim]` on top of that measured 3.71:1 under `fwa` (WP-19).
+            text += f"  {suffix}"
         if hint:
             text += f"  [yellow]{hint}[/]"
         self.query_one("#fwa-settle-title", Static).update(text)
@@ -425,9 +427,31 @@ class FWASettlementTable(Vertical):
         as_of = self._payload["as_of"]
 
         if not self._payload["available"]:
+            # Two different markup dialects on two adjacent lines, and they do
+            # not accept the same tokens (WP-19):
+            #
+            #   * the note is a `Static`, i.e. Textual *Content* markup. Colour
+            #     names there resolve through the CSS name table, where `red`
+            #     is #ff0000 -- 3.25-4.72 across the ten themes, below AA in
+            #     seven. `$error` is better but still 3.81-4.43 under matrix,
+            #     minimal, bakery and frenpet. `$warning` is the one required
+            #     Theme field clearing 4.5:1 under all ten (4.59-11.16).
+            #   * the table cell is `DataTable`, i.e. *Rich* markup, which does
+            #     not know `$`-variables at all -- `[$warning]` there raises
+            #     MarkupError. Its `yellow` is the ANSI #fd971f (5.30-7.81
+            #     across the ten), so the cell spells the colour and the note
+            #     names the variable, and both land on a passing yellow.
+            #
+            # A dead source is a warning rather than an error anyway, which is
+            # what FWAChaseBoard and FWAOddsBoard already use. The glyph and
+            # the word carry the state; colour is redundant either way.
             self._set_title("· unavailable")
-            self._set_note(f"[red]  ⚠ {UNAVAILABLE_TEXT} — settlement mix paused[/]")
-            table.add_row(*_cells({"label": f"[red]⚠ {UNAVAILABLE_TEXT}[/]"}, columns))
+            self._set_note(
+                f"[$warning]  ⚠ {UNAVAILABLE_TEXT} — settlement mix paused[/]"
+            )
+            table.add_row(
+                *_cells({"label": f"[yellow]⚠ {UNAVAILABLE_TEXT}[/]"}, columns)
+            )
             table.add_row(*_cells({"label": "[dim]crown history[/]"}, columns))
             return
 

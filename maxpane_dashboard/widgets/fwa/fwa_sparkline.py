@@ -146,7 +146,14 @@ def _fmt_price(value) -> str:
 
 
 def _fmt_change(value) -> str:
-    """Signed 24h change -- glyph carries the sign, colour is redundant."""
+    """Signed 24h change -- glyph carries the sign, colour is redundant.
+
+    ``$success``/``$error``, never ``green``/``red``: content markup resolves
+    colour *names* through Textual's CSS name table, where ``green`` is
+    ``#008000`` -- 3.52:1 on the ``fwa`` surface and 4.09:1 at its best against
+    pure black, so it fails WCAG AA under every theme. The theme variables are
+    required ``Theme`` fields and measure 10.39 / 6.78 under ``fwa`` (WP-19).
+    """
     try:
         v = float(value)
     except (TypeError, ValueError):
@@ -154,9 +161,9 @@ def _fmt_change(value) -> str:
     if v != v:
         return f"[dim]{_DASH} 24h[/]"
     if v > 0:
-        return f"[green]▲ {v:+.2f}%[/] [dim]24h[/]"
+        return f"[$success]▲ {v:+.2f}%[/] [dim]24h[/]"
     if v < 0:
-        return f"[red]▼ {v:+.2f}%[/] [dim]24h[/]"
+        return f"[$error]▼ {v:+.2f}%[/] [dim]24h[/]"
     return f"[dim]● {v:+.2f}% 24h[/]"
 
 

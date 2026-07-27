@@ -79,7 +79,7 @@ def test_emissions_elapsed_never_negative():
     assert "-" not in row.value_str
     assert "−" not in row.value_str
     assert "21d" in row.value_str
-    assert row.color == "dim"
+    assert row.color == sig.SIGNAL_MUTED
 
 
 @pytest.mark.parametrize("offset", [0, 1, 60, 86_400, 400 * 86_400])
@@ -115,7 +115,7 @@ def test_emissions_counting_down():
     assert "emissions live" in row.value_str
     assert "8d 4h left" in row.value_str
     assert "epoch 7" in row.value_str
-    assert row.color == "yellow"
+    assert row.color == sig.SIGNAL_WARN
 
 
 @pytest.mark.parametrize(
@@ -136,7 +136,7 @@ def test_emissions_live_countdown_across_the_whole_window(remaining: int, expect
         emission_duration=EMISSION_DURATION,
     )
     assert row.value_str == f"emissions live · {expected} left"
-    assert row.color == "yellow"
+    assert row.color == sig.SIGNAL_WARN
     assert "ended" not in row.value_str
     assert not re.search(r"[-−]\s*\d", row.value_str)
 
@@ -194,7 +194,7 @@ def test_emissions_suite_is_independent_of_the_wall_clock():
 def test_emissions_unavailable_inputs_degrade_not_raise(kwargs: dict):
     row = sig.emissions_signal(**kwargs)
     assert row.value_str == "emissions status unavailable"
-    assert row.color == "dim"
+    assert row.color == sig.SIGNAL_MUTED
 
 
 def test_emissions_never_falls_back_to_documented_constants():
@@ -216,7 +216,7 @@ def test_pool_temp_hot():
         seconds_since_last_request=12, token_share_bps=0, hot_gap=60, cold_gap=3_600
     )
     assert row.value_str == "HOT 12s · surcharge → depositors"
-    assert row.color == "dim"
+    assert row.color == sig.SIGNAL_MUTED
 
 
 def test_pool_temp_cold():
@@ -228,7 +228,7 @@ def test_pool_temp_cold():
         cold_gap=3_600,
     )
     assert row.value_str == "COLD 1h 6m · surcharge → YOU (100%)"
-    assert row.color == "green"
+    assert row.color == sig.SIGNAL_GOOD
 
 
 def test_pool_temp_midband():
@@ -239,7 +239,7 @@ def test_pool_temp_midband():
         cold_gap=3_600,
     )
     assert row.value_str == "WARM 30m · surcharge → YOU 50%"
-    assert row.color == "yellow"
+    assert row.color == sig.SIGNAL_WARN
     assert "est" not in row.value_str
 
 
@@ -266,7 +266,7 @@ def test_pool_temp_estimated_fallback():
     assert temp.token_share_bps == 5_000
     row = sig.pool_temp_signal_for(temp)
     assert row.value_str == "WARM 30m · surcharge → YOU ~50% est"
-    assert row.color == "yellow"
+    assert row.color == sig.SIGNAL_WARN
 
 
 def test_pool_temp_estimated_endpoints_default_to_documented_ramp():
@@ -290,7 +290,7 @@ def test_pool_temp_forced_override():
         forced_bps=3_400,
     )
     assert row.value_str == "OVERRIDE 12m · surcharge → YOU 34% (dial pinned)"
-    assert row.color == "yellow"
+    assert row.color == sig.SIGNAL_WARN
 
 
 def test_pool_temp_dynamic_is_not_an_override():
@@ -317,13 +317,13 @@ def test_pool_temp_unavailable(temp):
         temp = temp.model_copy(update={"token_share_bps": None})
     row = sig.pool_temp_signal_for(temp)
     assert row.value_str == "pool temp unavailable"
-    assert row.color == "dim"
+    assert row.color == sig.SIGNAL_MUTED
 
 
 def test_pool_temp_signal_without_any_reads_is_unavailable():
     row = sig.pool_temp_signal()
     assert row.value_str == "pool temp unavailable"
-    assert row.color == "dim"
+    assert row.color == sig.SIGNAL_MUTED
     assert sig.resolve_pool_temp(None) is None
 
 
@@ -341,7 +341,7 @@ def test_pool_temp_negative_gap_is_clamped():
 
 def test_buy_gate_red_when_false():
     row = sig.buy_gate_signal(False)
-    assert row.color == "red"
+    assert row.color == sig.SIGNAL_BAD
     assert "GATED" in row.value_str
 
 
@@ -354,14 +354,14 @@ def test_buy_gate_footnote_present():
 
 def test_buy_gate_green_when_true():
     row = sig.buy_gate_signal(True)
-    assert row.color == "green"
+    assert row.color == sig.SIGNAL_GOOD
     assert "OPEN" in row.value_str
 
 
 def test_buy_gate_unavailable():
     row = sig.buy_gate_signal(None)
     assert row.value_str == "buy gate unavailable"
-    assert row.color == "dim"
+    assert row.color == sig.SIGNAL_MUTED
 
 
 # ---------------------------------------------------------------------------
@@ -380,7 +380,7 @@ def test_vrf_queue_depth_arithmetic():
         minimum_buffer=35 * 10**16,
     )
     assert row.value_str == "depth 15 · 3 open · 18 unsettled · 2 vrf out"
-    assert row.color == "green"
+    assert row.color == sig.SIGNAL_GOOD
 
 
 def test_vrf_queue_red_on_low_subscription():
@@ -391,7 +391,7 @@ def test_vrf_queue_red_on_low_subscription():
         subscription_balance=2 * 10**17,
         minimum_buffer=35 * 10**16,
     )
-    assert row.color == "red"
+    assert row.color == sig.SIGNAL_BAD
     assert "SUBSCRIPTION LOW" in row.value_str
     assert "0.20" in row.value_str and "0.35" in row.value_str
     assert "stall" in row.value_str
@@ -404,16 +404,16 @@ def test_vrf_queue_deep_is_yellow():
         pending=8,
         selection_timeout_blocks=30,
     )
-    assert row.color == "yellow"
+    assert row.color == sig.SIGNAL_WARN
     assert "depth 100" in row.value_str
     assert "stall after 30 blk" in row.value_str
 
 
 def test_vrf_queue_boundary_depth_is_still_green():
     row = sig.vrf_queue_signal(last_issued=sig.QUEUE_DEPTH_OK, next_to_process=0)
-    assert row.color == "green"
+    assert row.color == sig.SIGNAL_GOOD
     row = sig.vrf_queue_signal(last_issued=sig.QUEUE_DEPTH_OK + 1, next_to_process=0)
-    assert row.color == "yellow"
+    assert row.color == sig.SIGNAL_WARN
 
 
 @pytest.mark.parametrize(
@@ -428,7 +428,7 @@ def test_vrf_queue_boundary_depth_is_still_green():
 def test_vrf_queue_unavailable_inputs(kwargs: dict):
     row = sig.vrf_queue_signal(**kwargs)
     assert row.value_str == "VRF queue unavailable"
-    assert row.color == "dim"
+    assert row.color == sig.SIGNAL_MUTED
 
 
 def test_vrf_queue_healthy_subscription_is_not_red():
@@ -438,7 +438,7 @@ def test_vrf_queue_healthy_subscription_is_not_red():
         subscription_balance=3138 * 10**16,
         minimum_buffer=35 * 10**16,
     )
-    assert row.color == "green"
+    assert row.color == sig.SIGNAL_GOOD
 
 
 # ---------------------------------------------------------------------------
@@ -480,7 +480,7 @@ def test_param_drift_launch_block_can_be_pinned(config_events):
 
 def test_param_drift_detects_tithe_change(config_events):
     row = sig.param_drift_signal(config_events)
-    assert row.color == "yellow"
+    assert row.color == sig.SIGNAL_WARN
     assert row.value_str == "6 changes · crown tithe 500→100"
     assert "21" not in row.value_str  # the launch write never leaks into the count
 
@@ -490,20 +490,20 @@ def test_param_drift_nominal(launch_only):
     assert len(launch_only) == 21
     row = sig.param_drift_signal(launch_only)
     assert row.value_str == "params nominal"
-    assert row.color == "green"
+    assert row.color == sig.SIGNAL_GOOD
 
 
 def test_param_drift_unavailable():
     for events in (None, [], [{"nonsense": 1}]):
         row = sig.param_drift_signal(events)
         assert row.value_str == "config history unavailable"
-        assert row.color == "dim"
+        assert row.color == sig.SIGNAL_MUTED
 
 
 def test_param_drift_live_mismatch_is_red(config_events):
     """Live state disagreeing with the last ConfigSet is an anomaly, not drift."""
     row = sig.param_drift_signal(config_events, live_params={15: 250})
-    assert row.color == "red"
+    assert row.color == sig.SIGNAL_BAD
     assert "live ≠ onchain history" in row.value_str
     assert "crown tithe" in row.value_str
 
@@ -511,7 +511,7 @@ def test_param_drift_live_mismatch_is_red(config_events):
 def test_param_drift_live_agreement_reports_history_only(config_events):
     """Live matching the last ConfigSet is not a mismatch — 6 changes still shown."""
     row = sig.param_drift_signal(config_events, live_params={15: 100, 13: 1_000})
-    assert row.color == "yellow"
+    assert row.color == sig.SIGNAL_WARN
     assert row.value_str == "6 changes · crown tithe 500→100"
 
 
@@ -519,7 +519,7 @@ def test_param_drift_missing_live_params_is_not_a_false_alarm(config_events):
     """Talismans posture: nothing to compare means quiet, never a red alarm."""
     for live in (None, {}, []):
         row = sig.param_drift_signal(config_events, live_params=live)
-        assert row.color == "yellow"
+        assert row.color == sig.SIGNAL_WARN
 
 
 def test_param_drift_never_implies_constructor_only_keys_are_settable(config_events):
@@ -542,7 +542,7 @@ def test_param_drift_accepts_hex_and_snake_case_logs():
     ]
     row = sig.param_drift_signal(events)
     assert row.value_str == "1 change · crown tithe 500→100"
-    assert row.color == "yellow"
+    assert row.color == sig.SIGNAL_WARN
 
 
 def test_param_drift_renders_bools_as_words():
@@ -609,9 +609,26 @@ def test_all_signals_return_four_keys():
 
 
 def test_all_colors_in_allowed_set():
-    assert sig.SIGNAL_COLORS == {"green", "yellow", "red", "dim"}
+    assert sig.SIGNAL_COLORS == {"$success", "$warning", "$error", "dim"}
     for row in _every_signal():
         assert row.color in sig.SIGNAL_COLORS
+
+
+def test_no_signal_uses_a_css_colour_name():
+    """The regression WP-19 fixed: CSS names, not theme variables.
+
+    ``Static``/``Content`` markup resolves ``[green]`` through Textual's CSS
+    name table to ``#008000``, whose contrast peaks at 4.09:1 against pure
+    black — it fails WCAG AA on every background there is, so no palette can
+    rescue it.  ``$success``/``$warning``/``$error`` resolve per theme and are
+    required ``Theme`` fields, hence defined under all ten registered themes.
+    """
+    banned = {"green", "yellow", "red", "cyan", "magenta", "blue", "white"}
+    assert not (sig.SIGNAL_COLORS & banned)
+    for colour in sig.SIGNAL_COLORS:
+        assert colour.startswith("$") or colour == sig.SIGNAL_MUTED
+    for row in _every_signal():
+        assert row.color not in banned
 
 
 def test_every_builder_tolerates_all_none():
@@ -625,7 +642,7 @@ def test_every_builder_tolerates_all_none():
     ]
     for row in rows:
         assert "unavailable" in row.value_str
-        assert row.color == "dim"
+        assert row.color == sig.SIGNAL_MUTED
 
 
 def test_value_strings_fit_the_signals_panel():

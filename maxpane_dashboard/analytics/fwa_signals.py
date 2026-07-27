@@ -3,9 +3,14 @@
 Five signal rows, five builders, one contract.  Every builder returns an
 :class:`~maxpane_dashboard.data.fwa_models.FWASignal` — ``label``,
 ``value_str``, ``indicator``, ``color`` — with ``color`` restricted to
-``"green" | "yellow" | "red" | "dim"``.  Colour is never the sole carrier of
-meaning: each ``value_str`` spells the state out in words, so the panel survives
-greyscale and colour-blind viewing (PRD §11).
+:data:`SIGNAL_COLORS`, i.e. the **theme variables** ``$success | $warning |
+$error`` plus the ``dim`` style.  Never the CSS colour names ``green`` /
+``yellow`` / ``red``: Textual resolves content markup through the CSS name
+table, where ``green`` is ``#008000`` — 3.52:1 on the ``fwa`` surface and only
+4.09:1 against pure black, so it fails WCAG AA on *every* possible background
+and no palette can rescue it (WP-19).  Colour is never the sole carrier of
+meaning either: each ``value_str`` spells the state out in words, so the panel
+survives greyscale and colour-blind viewing (PRD §11).
 
 Everything here is pure.  No network, no clients, no cache, no Textual.  The one
 file this module touches is the vendored ``abis/fwa/config_keys.json`` key map,
@@ -77,6 +82,10 @@ from maxpane_dashboard.data.fwa_models import ConfigParam, FWASignal, PoolTemp
 __all__ = [
     # constants
     "SIGNAL_COLORS",
+    "SIGNAL_GOOD",
+    "SIGNAL_WARN",
+    "SIGNAL_BAD",
+    "SIGNAL_MUTED",
     "INDICATOR",
     "BUY_GATE_FOOTNOTE",
     "QUEUE_DEPTH_OK",
@@ -112,8 +121,29 @@ __all__ = [
 # Presentation constants
 # ---------------------------------------------------------------------------
 
+#: Good / neutral-warning / bad / muted, as Textual **theme variables**.
+#:
+#: These are markup tokens, and which table Textual resolves them through
+#: matters more than it looks.  ``Static``/``Content`` markup resolves colour
+#: *names* through the CSS name table — ``green`` is ``#008000``, whose contrast
+#: peaks at 4.09:1 against pure black, so it fails WCAG AA 4.5:1 on every
+#: background that exists and no theme palette can fix it.  ``$success`` /
+#: ``$warning`` / ``$error`` are resolved per theme instead, are required
+#: ``Theme`` fields (so they are defined under all ten registered themes), and
+#: measure 10.39 / 6.97 / 6.78 under ``fwa`` against ``green`` / ``yellow`` /
+#: ``red``'s 3.52 / 16.85 / 4.53.  Measured off ``_compositor.render_strips()``,
+#: not off the source markup (WP-19).
+SIGNAL_GOOD = "$success"
+SIGNAL_WARN = "$warning"
+SIGNAL_BAD = "$error"
+#: Degraded, not invisible: ``dim`` is a style rather than a colour, so it
+#: tracks the theme foreground instead of pinning a hex value.
+SIGNAL_MUTED = "dim"
+
 #: The only colours an :class:`FWASignal` may carry.
-SIGNAL_COLORS: frozenset[str] = frozenset({"green", "yellow", "red", "dim"})
+SIGNAL_COLORS: frozenset[str] = frozenset(
+    {SIGNAL_GOOD, SIGNAL_WARN, SIGNAL_BAD, SIGNAL_MUTED}
+)
 
 #: Every FWA signal row uses the same dot, per the Talismans panel convention.
 INDICATOR = "●"
@@ -173,7 +203,7 @@ def _unavailable(label: str, what: str) -> FWASignal:
     Dim, and it says the word "unavailable".  A dead source is never allowed to
     look like a value (PRD §9).
     """
-    return _signal(label, f"{what} unavailable", "dim")
+    return _signal(label, f"{what} unavailable", SIGNAL_MUTED)
 
 
 def _as_int(value: Any) -> int | None:
@@ -653,17 +683,17 @@ def pool_temp_signal_for(temp: PoolTemp | None) -> FWASignal:
 
     if share_bps <= 0:
         direction = "surcharge → depositors"
-        color = "dim"
+        color = SIGNAL_MUTED
     elif share_bps >= fwa_ev.BPS:
         direction = "surcharge → YOU (100%)"
-        color = "green"
+        color = SIGNAL_GOOD
     else:
         marker = "~" if temp.share_estimated else ""
         direction = f"surcharge → YOU {marker}{_fmt_bps(share_bps)}"
-        color = "yellow"
+        color = SIGNAL_WARN
 
     if overridden:
-        color = "yellow"  # the dial is pinned; that is worth noticing either way
+        color = SIGNAL_WARN  # the dial is pinned; that is worth noticing either way
 
     value = f"{word} {_fmt_duration(gap)} · {direction}"
     if temp.share_estimated:
@@ -720,8 +750,8 @@ def buy_gate_signal(external_buys_enabled: bool | None = None) -> FWASignal:
     if external_buys_enabled is None:
         return _unavailable(label, "buy gate")
     if external_buys_enabled:
-        return _signal(label, "OPEN — outside buys enabled", "green")
-    return _signal(label, f"GATED — no outside buys · {BUY_GATE_FOOTNOTE}", "red")
+        return _signal(label, "OPEN — outside buys enabled", SIGNAL_GOOD)
+    return _signal(label, f"GATED — no outside buys · {BUY_GATE_FOOTNOTE}", SIGNAL_BAD)
 
 
 # ---------------------------------------------------------------------------
@@ -776,10 +806,10 @@ def emissions_signal(
 
     # PRIMARY: the window has closed.
     if now >= stop:
-        return _signal(label, f"emissions ended · {_fmt_duration(now - stop)} ago{suffix}", "dim")
+        return _signal(label, f"emissions ended · {_fmt_duration(now - stop)} ago{suffix}", SIGNAL_MUTED)
 
     # SECONDARY / legacy: still running.  `stop - now` is strictly positive here.
-    return _signal(label, f"emissions live · {_fmt_duration(stop - now)} left{suffix}", "yellow")
+    return _signal(label, f"emissions live · {_fmt_duration(stop - now)} left{suffix}", SIGNAL_WARN)
 
 
 # ---------------------------------------------------------------------------
@@ -824,7 +854,7 @@ def vrf_queue_signal(
             label,
             f"SUBSCRIPTION LOW {_fmt_eth(balance)} < {_fmt_eth(buffer_)} Ξ "
             "— acquisitions stall",
-            "red",
+            SIGNAL_BAD,
         )
 
     issued = _as_int(last_issued)
@@ -847,9 +877,9 @@ def vrf_queue_signal(
         parts.append(f"{outstanding} vrf out")
 
     if depth <= QUEUE_DEPTH_OK:
-        color = "green"
+        color = SIGNAL_GOOD
     else:
-        color = "yellow"
+        color = SIGNAL_WARN
         timeout = _as_int(selection_timeout_blocks)
         if timeout:
             parts.append(f"stall after {timeout} blk")
@@ -927,17 +957,17 @@ def param_drift_signal(
         return _signal(
             label,
             f"live ≠ onchain history · {names}{more} ({len(mismatched)} key{plural})",
-            "red",
+            SIGNAL_BAD,
         )
 
     if not post_launch:
-        return _signal(label, "params nominal", "green")
+        return _signal(label, "params nominal", SIGNAL_GOOD)
 
     highlight = _pick_highlight(post_launch)
     count = len(post_launch)
     plural = "" if count == 1 else "s"
     detail = _describe_change(highlight, launch_values, post_launch)
-    return _signal(label, f"{count} change{plural} · {detail}", "yellow")
+    return _signal(label, f"{count} change{plural} · {detail}", SIGNAL_WARN)
 
 
 def _pick_highlight(changes: Sequence[_ConfigChange]) -> _ConfigChange:

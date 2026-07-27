@@ -204,7 +204,7 @@ class FWAOddsBoard(Vertical):
 
         rows = [r for r in (collection_odds or []) if isinstance(r, dict)]
         if not rows:
-            meta.update("[dim]no collections[/]")
+            meta.update("no collections")
             table.add_row(_DASH, "No data", _DASH, _DASH, _DASH, _EMDASH, _EMDASH)
             return
 
@@ -243,12 +243,15 @@ class FWAOddsBoard(Vertical):
     @staticmethod
     def _meta_line(count: int, block, stale, suppressed_note: str) -> str:
         block_str = _fmt_int(block) if block is not None else _DASH
-        parts = [f"[dim]{count} collections · block {block_str}[/]"]
+        # The enclosing Static is already `color: $text-muted`; a `[dim]`
+        # on top of it compounds to 3.71:1 under `fwa` and 3.64 under
+        # bakery, below WCAG 1.4.3, for no visual gain (WP-19).
+        parts = [f"{count} collections · block {block_str}"]
         if stale:
             parts.append("[yellow]STALE — last good sweep[/]")
         if suppressed_note:
             note = suppressed_note
             if len(note) > _NOTE_WIDTH:
                 note = note[: _NOTE_WIDTH - 1] + "…"
-            parts.append(f"[dim]* {note}[/]")
+            parts.append(f"* {note}")
         return " · ".join(parts)

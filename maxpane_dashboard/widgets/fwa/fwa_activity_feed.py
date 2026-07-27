@@ -326,7 +326,9 @@ class FWAActivityFeed(Vertical):
         text = base
         used = len(base)
         if suffix:
-            text += f"  [dim]{suffix}[/]"
+            # Unstyled: `#fwa-feed-title` is already `$text-muted`, and
+            # `[dim]` on top of that measured 3.71:1 under `fwa` (WP-19).
+            text += f"  {suffix}"
             used += 2 + len(suffix)
         if hint and (not width or used + 2 + len(hint) <= width):
             text += f"  [yellow]{hint}[/]"
@@ -422,7 +424,14 @@ class FWAActivityFeed(Vertical):
         else:
             self._set_title("· unavailable")
 
-        log.write(f"[red]⚠ {UNAVAILABLE_LINE}[/]")
+        # This is a RichLog, so markup resolves through the *ANSI* theme, not
+        # the CSS name table and not the Textual theme -- `[$error]` raises
+        # MarkupError here, and `[red]` lands on #f4005f, which measures
+        # 2.76-4.07 across the ten themes and so fails WCAG AA everywhere.
+        # ANSI yellow is #fd971f: 5.30-7.81 across the same ten, and it matches
+        # what FWAChaseBoard and FWAOddsBoard already use for "unavailable".
+        # The warning glyph and the word carry the state; colour is redundant.
+        log.write(f"[yellow]⚠ {UNAVAILABLE_LINE}[/]")
         if reason:
             log.write(f"[dim]  {reason}[/]")
 

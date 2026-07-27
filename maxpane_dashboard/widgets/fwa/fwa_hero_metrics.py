@@ -46,7 +46,20 @@ _DASH = "--"
 _EMDASH = "—"
 
 # Gold is reserved for the crown and is used nowhere else in the app (PRD §11).
-_GOLD = "#f0c040"
+#
+# One semantic, one value. This is the same literal as the `fwa` theme's
+# `fwa-crown-gold` variable, and `FWAChaseBoard` imports it rather than keeping
+# a second gold: the chase board used to render its own `#d4af37`, so "the
+# crown colour" had two definitions that no longer had to agree. Both pass
+# contrast (10.62 vs 8.61 on the `fwa` surface, and 7.62-11.08 vs 6.18-8.98
+# across all ten themes), so this is a coherence fix, not a contrast one --
+# `#f0c040` wins because the theme already declares it (WP-19).
+#
+# It stays a literal rather than becoming `[$fwa-crown-gold]` markup because
+# that variable exists only in the `fwa` theme; under the other nine the token
+# would not resolve.
+CROWN_GOLD = "#f0c040"
+_GOLD = CROWN_GOLD
 
 _GAP_BAR_WIDTH = 8
 _GAP_FILLED = "█"
