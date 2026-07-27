@@ -31,13 +31,15 @@ Four traps these builders encode
 --------------------------------
 
 1. **The post-emissions state is the PRIMARY case, not the exception.**  The
-   hard stop is ``1785870083`` = 2026-08-04T19:01:23Z — it lands *during* this
-   build, so both branches are real: the countdown is what renders today, and
-   the ended state is what the dashboard will spend virtually all of its life
-   in.  :func:`emissions_signal` is written ended-first and can never render a
-   negative countdown, and it takes its clock as an argument so neither branch
-   depends on when the process happens to run.  The row is called *emissions
-   status*, not *emissions countdown*, for that reason (PRD §8, §12.6).
+   hard stop is ``1785870083`` = 2026-08-04T19:01:23Z — it falls close enough to
+   this build that both branches are real, and the ended state is the one the
+   dashboard will spend virtually all of its life in.  Nothing in this module
+   decides which side of that timestamp it is on by reading the wall clock:
+   :func:`emissions_signal` is written ended-first, can never render a negative
+   countdown, and **takes its clock as an argument**, so both branches are
+   reachable from fixed fixtures and neither depends on when the process happens
+   to run.  The row is called *emissions status*, not *emissions countdown*, for
+   that reason (PRD §8, §12.6).
 
 2. **The live ``tokenShareBps`` always wins over the ramp.**  The documented
    ramp — 100% to depositors at ≤60 s since the last request, 100% to the

@@ -20,11 +20,17 @@ and nothing else.
 Traps this module exists to contain
 -----------------------------------
 
-1. **Floor coverage is partial and that fact is the product.**  CoinGecko covers
-   only ~22 of the 38 collections with live positions, and the two largest
-   weight buckets (Ten Thousand Tokens 49.08 %, Art Blocks Explorations
-   18.99 % — ~68 % of pool weight combined) are **not** among them.  An unpriced
-   collection is marked unpriced (:attr:`FloorQuote.floor_eth` is ``None``,
+1. **Floor coverage is partial and that fact is the product.**  A live sweep at
+   the corrected 6 s spacing priced **26 of the 38** collections with live
+   positions (findings §13.14, superseding §10's 22) — but the count is the
+   flattering half of the story.  The two largest weight buckets (Ten Thousand
+   Tokens 49.08 %, Art Blocks Explorations 18.99 %) are **not** among them, and
+   with the smaller 404s counted the unpriced side is **~79.6 % of pool weight**,
+   not §10's ~68 %.  Coverage is therefore reported as *both* a collection count
+   and a weight share by :func:`coverage_summary`, and both are computed from the
+   sweep — never hardcoded, since the pool grows and the endpoint's answers
+   change.  An unpriced collection is marked unpriced
+   (:attr:`FloorQuote.floor_eth` is ``None``,
    :attr:`FloorQuote.source` says why); it is never defaulted to ``0`` and never
    dropped from the result.  Both of those would turn the Pull EV *band* into a
    confident lie — see :func:`maxpane_dashboard.analytics.fwa_ev.pull_ev_band`,
@@ -49,10 +55,17 @@ Traps this module exists to contain
    with ``floor_eth = None`` and :data:`ART_BLOCKS_NOTE`.
 
 4. **CoinGecko must never touch the fast path.**  ``fetch_nft_floors()`` paces
-   itself at :data:`COINGECKO_MIN_SPACING` seconds per call — a full 38-collection
-   sweep takes ~100 s — and is a background job on a 15-minute cadence.  Hot-tier
-   code calls :meth:`FWAMarketClient.cached_floors`, which performs no I/O
-   whatsoever.
+   itself at :data:`COINGECKO_MIN_SPACING` seconds per call and is a background
+   job on a 15-minute cadence.  Hot-tier code calls
+   :meth:`FWAMarketClient.cached_floors`, which performs no I/O whatsoever.
+
+   The module default stays at the spec value of 2.5 s (~100 s for 38
+   collections), but **2.5 s does not survive contact with the live endpoint**:
+   a real sweep at that spacing drew 26 consecutive 429s out of 36 calls and
+   priced 6 collections (findings §13.14).  The spacing is constructor-injectable
+   for exactly that reason, and :class:`~maxpane_dashboard.data.fwa_manager.FWAManager`
+   constructs this client at **6.0 s** — ~4 minutes for a full sweep, which is
+   why the sweep is detached and never awaited by a refresh cycle.
 
 5. **GeckoTerminal's ``market_cap_usd`` is the string ``"0.0"``** on this pool
    and is unusable.  Use DexScreener's ``fdv``.  :func:`parse_pool_stats` drops
@@ -72,7 +85,9 @@ Traps this module exists to contain
    series is normal, not a failure.
 
 References: ``docs/fwa_technical_findings.md`` §9 (payload shapes), §10 (the
-floor coverage table), §11 (rate limits and TTLs), §12.2 item 11 (OpenSea).
+floor coverage table — **superseded** by §13.14, which corrects both the count
+and the weight share and rules 2.5 s spacing unsurvivable), §11 (rate limits and
+TTLs), §12.2 item 11 (OpenSea).  §13 corrections win over §§1-12 throughout.
 """
 
 from __future__ import annotations
@@ -917,10 +932,11 @@ class FWAMarketClient:
     ) -> tuple[dict[str, FloorQuote], bool]:
         """Background floor sweep over the live collection set.
 
-        **Never call this from a fast tier.**  It paces itself at
-        :data:`COINGECKO_MIN_SPACING` per collection (~100 s for 38) and is meant
-        to run every 15 minutes with its results persisted.  Hot code reads
-        :meth:`cached_floors`.
+        **Never call this from a fast tier.**  It paces itself at whatever
+        spacing the constructor was given per collection — ~100 s for 38 at the
+        2.5 s module default, ~4 minutes at the 6.0 s the manager actually uses —
+        and is meant to run every 15 minutes with its results persisted.  Hot
+        code reads :meth:`cached_floors`.
 
         Outcome per collection:
 

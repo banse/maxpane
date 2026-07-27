@@ -29,23 +29,45 @@ that is not there.
 What cannot be guarded mechanically
 -----------------------------------
 
-Three of the stated rules are only partly mechanical, and the residue is
-review, not code:
+WP-20 reviewed the three gaps WP-18 disclosed here and closed two of them by
+making the guard *closed-world*: pin the inventory, so growth is what turns the
+test red. That does not make either rule fully mechanical, but it removes the
+silence, which was the actual problem -- both gaps were of the form "a new X
+slips past until someone remembers to add it here", and an inventory is what
+stops depending on remembering.
 
 * **Rule 6 (read every parameter live).** A scan can prove the *documented*
   values are absent as literals (crown tithe 500) and that live values are
   threaded as parameters. It cannot prove a future getter is read live rather
-  than defaulted -- only that today's are. :func:`test_rule_6_...` pins the
-  known documented/live divergences; a *new* parameter added with a hardcoded
-  default would slip past until someone adds it here.
+  than defaulted -- only that today's are. **Closed-world half (WP-20):** the
+  set of ``DEFAULT_*`` protocol fallbacks in ``analytics/fwa_ev.py`` is pinned
+  and no other FWA module may declare one, so a new parameter given a hardcoded
+  default cannot arrive quietly. *Residue:* that the new default is genuinely
+  displaced by a live read is still review.
 * **Rule 8 (backing is mutable).** Staleness is a temporal property. The guards
   below prove the machinery exists (``BackingUpdated`` is decoded, positions
   are frozen, sweeps are block-pinned and reported with a block number) but not
-  that a live deployment invalidates promptly.
+  that a live deployment invalidates promptly. **This one WP-20 left alone** --
+  proving prompt invalidation needs a live chain and a clock, which is a
+  monitoring job, not a test. Nothing cheap would bite.
 * **§13 "no floor-dependent figure without its coverage".** Guarded for the one
   surface that renders it (:class:`FWAHeroMetrics`, PRD §3's flagship) by
-  driving the real widget. A *new* widget rendering a floor-derived number
-  would need its own assertion here.
+  driving the real widget. **Closed-world half (WP-20):**
+  :func:`test_the_floor_dependent_surface_inventory_is_closed` pins *which*
+  surfaces carry a floor-derived field at all, so a third one is red on arrival
+  and must declare whether it uses the coverage badge or per-row provenance.
+  *Residue:* a floor-derived quantity under an unrelated name is still invisible
+  to the pattern -- ``eth_per_odds_point`` is inventoried because a human put it
+  there.
+
+And one gap WP-20 added a guard for, having found three live instances of it:
+
+* **A fixture the product cannot emit.** Three work packages independently
+  hand-wrote widget payloads carrying values the shipped code cannot produce --
+  signal colours outside ``SIGNAL_COLORS``, an indicator that is not ``●``, and
+  four EV kwargs under names ``FWAHeroMetrics`` does not accept (silently eaten
+  by ``**_kwargs``). Every one passed green while measuring itself. See
+  :func:`test_no_named_fixture_carries_a_field_the_product_cannot_emit`.
 """
 
 from __future__ import annotations
@@ -156,6 +178,13 @@ def _string_literals(path: Path) -> list[str]:
             if id(node) not in docstrings:
                 out.append(node.value)
     return out
+
+
+def _row_keys() -> dict[str, tuple[str, ...]]:
+    """``FWA_ROW_KEYS`` — the vocabulary of the ``list[dict]`` payloads."""
+    from maxpane_dashboard.data.fwa_models import FWA_ROW_KEYS
+
+    return {k: tuple(v) for k, v in FWA_ROW_KEYS.items()}
 
 
 def _fwa_test_files() -> tuple[Path, ...]:
@@ -455,6 +484,44 @@ def test_rule_6_no_documented_parameter_is_hardcoded_as_truth():
     )
     assert crown.threshold_bps == 0
     assert crown.vacant is True
+
+    # -- closed-world half (WP-20) -------------------------------------------
+    # The open end of this rule was that a *new* parameter given a hardcoded
+    # default slips past a scan that only knows today's parameters. It cannot
+    # slip past an inventory: the set of protocol-parameter fallbacks is pinned
+    # here, so adding one turns this red and forces the same conversation the
+    # crown tithe forced (documented 500, live 100). This does not prove a new
+    # getter is read live — nothing static can — but it removes the silence.
+    declared = {
+        name
+        for name in dir(fwa_ev)
+        if name.startswith("DEFAULT_") and isinstance(getattr(fwa_ev, name), int)
+    }
+    assert declared == {
+        "DEFAULT_SURCHARGE_BPS",
+        "DEFAULT_PURCHASER_PAYOUT_BPS",
+        "DEFAULT_TOP_THRESHOLD_BPS",
+    }, (
+        "PRD §7 rule 6: the set of protocol-parameter FALLBACKS in "
+        f"analytics/fwa_ev.py changed to {sorted(declared)}. Every one of these "
+        "is a documented value standing in for a live read, and the crown tithe "
+        "is the proof that documented and live diverge. A new entry needs: a "
+        "live read that displaces it, a keyword parameter so a caller can thread "
+        "that read through, and an assertion above. Removing one is fine — "
+        "update this set."
+    )
+    # …and no *other* FWA module may grow one, which is how a default escapes
+    # review: it is easy to argue about a constant in the maths module and easy
+    # to miss one that appeared in a client or a widget.
+    hits = _scan(
+        r"^DEFAULT_[A-Z_]*(?:BPS|SHARE|TITHE|FEE|THRESHOLD|GAP)\b\s*[:=]",
+        tuple(p for p in FWA_MODULES if p.name != "fwa_ev.py"),
+        re.MULTILINE,
+    )
+    assert not hits, (
+        "PRD §7 rule 6: protocol-parameter fallbacks belong in "
+        f"analytics/fwa_ev.py where they are inventoried, not here: {hits}"
+    )
 
 
 def test_rule_7_allowlist_is_derived_from_collection_whitelist_set_logs():
@@ -904,6 +971,83 @@ async def test_suppression_6_no_floor_dependent_figure_renders_without_coverage(
                 "ON SCREEN — the hero card lost a line to padding. An EV number "
                 "without its coverage is the one thing PRD §3 forbids outright."
             )
+
+
+def test_the_floor_dependent_surface_inventory_is_closed():
+    """§13's coverage rule, made closed-world (WP-20).
+
+    The assertion above drives ``FWAHeroMetrics``, the one surface PRD §3 names.
+    Its stated gap was that *a new widget rendering a floor-derived number would
+    need its own assertion* — i.e. the guard was silent about growth, which is
+    the only direction the risk comes from.
+
+    So the inventory is pinned instead. Today exactly two surfaces carry a
+    floor-derived figure, and each carries its own provenance next to it:
+
+    * ``FWAHeroMetrics`` — the EV band, with the ``priced/total · weight%``
+      coverage badge (driven for real above).
+    * ``collection_odds`` rows — ``floor_eth`` and ``eth_per_odds_point``, with
+      per-row ``floor_source`` and ``floor_note``. Row-level provenance is the
+      row-level equivalent of the badge: every floor on screen says where it
+      came from, and an unpriced one says so rather than reading 0.
+
+    A third surface makes this red and has to declare which of the two shapes it
+    is using. What this still cannot do is recognise a floor-derived quantity
+    given an unrelated name — ``eth_per_odds_point`` is in the list because
+    someone put it there, not because a scan inferred it. That residue is real
+    and stays review.
+    """
+    floor_words = re.compile(r"floor|odds_point", re.IGNORECASE)
+
+    carriers = {
+        widget: sorted(k for k in kwargs if floor_words.search(k))
+        for widget, kwargs in FWA_WIDGET_SIGNATURES.items()
+    }
+    carriers.update(
+        {
+            f"{row_group} rows": sorted(k for k in keys if floor_words.search(k))
+            for row_group, keys in _row_keys().items()
+        }
+    )
+    populated = {name: fields for name, fields in carriers.items() if fields}
+
+    assert populated == {
+        "collection_odds rows": [
+            "eth_per_odds_point",
+            "floor_eth",
+            "floor_note",
+            "floor_source",
+        ],
+    }, (
+        "PRD §13: the set of surfaces carrying a floor-derived figure changed to "
+        f"{populated}. Every floor number a user reads must arrive with its own "
+        "provenance — the EV band with its coverage badge (asserted by driving "
+        "the widget in test_suppression_6_*), an odds row with floor_source and "
+        "floor_note. A new entry here needs one of those two, plus an assertion "
+        "that it reaches pixels."
+    )
+
+    # The EV band is the other carrier; it is named through pull_ev_*/ev_* and
+    # is inventoried separately so the two shapes stay distinguishable.
+    hero = set(FWA_WIDGET_SIGNATURES["FWAHeroMetrics"])
+    assert {"ev_collections_priced", "ev_collections_total", "ev_weight_priced_pct"} <= hero, (
+        "PRD §3: the coverage badge's three inputs must stay in the hero "
+        f"signature: {sorted(hero)}"
+    )
+    ev_carriers = {
+        widget
+        for widget, kwargs in FWA_WIDGET_SIGNATURES.items()
+        if any(k.startswith(("pull_ev_", "ev_")) for k in kwargs)
+    }
+    assert ev_carriers == {"FWAHeroMetrics"}, (
+        "PRD §3: the EV band is rendered by FWAHeroMetrics alone, because that "
+        "is the widget whose coverage badge is asserted to reach the screen. "
+        f"Now also: {sorted(ev_carriers - {'FWAHeroMetrics'})}"
+    )
+
+    # And the odds row's provenance really is populated, not merely declared.
+    assert CollectionOdds.model_fields["floor_source"].default == "missing"
+    assert CollectionOdds.model_fields["floor_eth"].default is None
 
 
 # ===========================================================================
@@ -1366,6 +1510,177 @@ def test_fwa_code_is_read_only_no_signing_no_sending():
     )
 
 
+def test_the_unconsumed_sqrt_backing_read_is_free_and_stays_out_of_the_maths():
+    """WP-20's ruling on ``sqrtBackingTotal()``: keep it, and pin why.
+
+    It was carried forward as a *dead read* -- in ``HOT_VIEWS``, consumed by
+    nothing, therefore "a live RPC cost for nothing" every 15 s tick. Measured,
+    the cost is not there: ``HOT_VIEWS`` is dispatched through Multicall3
+    ``aggregate3`` in chunks of :data:`MULTICALL_MAX_CALLS`, and the whole table
+    fits in **one** chunk with an order of magnitude to spare. Dropping one view
+    removes ~100 bytes of calldata from a request that still happens. It is not
+    a round trip, so the premise for removing it was wrong.
+
+    What it *is* worth is what rule 5's guard already says: the FWA source
+    carries a stale struct comment claiming fees are split by ``sqrt(backing)``,
+    and ``abis/fwa/`` really does expose ``sqrtBackingTotal()``. The materials to
+    "fix" the code into being wrong are sitting right there. Reading the value as
+    a plain observation, while the guard forbids it entering the maths, keeps the
+    trap concrete rather than abstract.
+
+    This test is the ruling's expiry condition. If ``HOT_VIEWS`` ever grows past
+    a chunk boundary such that this view genuinely costs a second round trip, the
+    arithmetic below goes red and the decision is reopened with real evidence
+    instead of an assumption.
+    """
+    import math
+
+    keys = [v.key for v in fwa_client.HOT_VIEWS]
+    assert "sqrt_backing_total" in keys
+    assert "sqrt_backing_total" in fwa_client.FWA_HOT_KEYS
+
+    total = len(fwa_client.HOT_VIEWS)
+    limit = fwa_client.MULTICALL_MAX_CALLS
+    with_it = math.ceil(total / limit)
+    without_it = math.ceil((total - 1) / limit)
+    assert with_it == without_it, (
+        f"sqrtBackingTotal() now costs a whole extra multicall round trip "
+        f"({with_it} chunks vs {without_it} without it, {total} views at "
+        f"{limit} per chunk). WP-20 kept this unconsumed read on the measured "
+        "grounds that it was free. It is no longer free — either drop it from "
+        "HOT_VIEWS or raise MULTICALL_MAX_CALLS."
+    )
+    assert total < limit, (
+        f"HOT_VIEWS ({total}) is at the chunk limit ({limit}); the next view "
+        "added is a second round trip for every tick"
+    )
+
+    # The other half of the bargain: observed, never used. Rule 5's scan covers
+    # analytics and the render modules; this pins the flat-dict boundary too, so
+    # the value cannot reach a widget by being added to the payload.
+    from maxpane_dashboard.data.fwa_models import FWA_ROW_KEYS
+
+    assert not [k for k in FWA_DATA_KEYS if "sqrt" in k.lower()]
+    for group, row in FWA_ROW_KEYS.items():
+        assert not [k for k in row if "sqrt" in k.lower()], group
+    for widget, kwargs in FWA_WIDGET_SIGNATURES.items():
+        assert not [k for k in kwargs if "sqrt" in k.lower()], widget
+
+
+def test_no_named_fixture_carries_a_field_the_product_cannot_emit():
+    """A fixture the product cannot produce measures itself, not the product.
+
+    Added by WP-20 after three separate instances of the same defect shipped
+    through three different work packages:
+
+    * ``tests/screens/test_fwa_screen.py`` built five signal rows by hand with
+      ``"color": "cyan" | "green" | "red"`` and ``"indicator": "▲"``. The
+      analytics vocabulary is ``$success | $warning | $error | dim`` and the
+      indicator is always ``●`` -- WP-19 moved the colours to theme variables
+      precisely because the CSS name ``green`` is ``#008000``, which fails AA
+      against every possible background. So the screen test was rendering a
+      palette the product had been changed to never emit.
+    * ``tests/widgets/test_fwa_widgets_b.py`` carried the same thing, plus an
+      ``"■"`` indicator.
+    * ``tests/widgets/test_fwa_accessibility.py``'s ``_HERO`` passed
+      ``pull_ev_available`` / ``priced_collections`` / ``total_collections`` /
+      ``priced_weight_pct``. ``FWAHeroMetrics.update_data`` accepts none of
+      those -- the real names are ``ev_available`` / ``ev_collections_*`` /
+      ``ev_weight_priced_pct`` -- so all four were swallowed by ``**_kwargs``
+      and the accessibility audit measured the coverage badge as
+      ``--/-- · --%``. The audit's *conclusions* survived the correction, but
+      it had been aimed slightly beside the target.
+
+    The ``**_kwargs`` on every widget is deliberate (it lets ``FWA_DATA_KEYS``
+    grow without breaking a widget mid-wave), which is exactly why a misspelled
+    kwarg is silent and needs a guard rather than a type.
+
+    **Scope: module-level *named* fixtures only.** A dict literal passed inline
+    to a formatter is usually an adversarial input -- ``_fmt_pool_temp({...
+    "color": "#f59e0b"})`` deliberately feeds an unrenderable colour to prove
+    the textual fallback fires -- and those must stay free. A fixture with a
+    name is a claim about what the product emits.
+    """
+    from maxpane_dashboard.analytics.fwa_signals import INDICATOR, SIGNAL_COLORS
+
+    known_kwargs = set(FWA_DATA_KEYS)
+    for kwargs in FWA_WIDGET_SIGNATURES.values():
+        known_kwargs |= set(kwargs)
+
+    def _const_dict(node: ast.Dict) -> dict:
+        return {
+            k.value: v.value
+            for k, v in zip(node.keys, node.values)
+            if isinstance(k, ast.Constant)
+            and isinstance(k.value, str)
+            and isinstance(v, ast.Constant)
+        }
+
+    def _check_signal(where: str, node: ast.Dict) -> None:
+        const = _const_dict(node)
+        if "value_str" not in const or "color" not in const:
+            return
+        assert const["color"] in SIGNAL_COLORS, (
+            f"{where} declares color={const['color']!r}. "
+            f"analytics/fwa_signals.py can only emit {sorted(SIGNAL_COLORS)} — "
+            "a fixture outside that vocabulary tests the fixture, not the panel"
+        )
+        assert const.get("indicator", INDICATOR) == INDICATOR, (
+            f"{where} declares indicator={const['indicator']!r}; every FWASignal "
+            f"carries {INDICATOR!r}"
+        )
+
+    checked_signals = 0
+    checked_payloads = 0
+    for path in _fwa_test_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for stmt in tree.body:  # module level only — see the docstring
+            if not isinstance(stmt, ast.Assign):
+                continue
+            name = (
+                stmt.targets[0].id
+                if isinstance(stmt.targets[0], ast.Name)
+                else "<fixture>"
+            )
+            candidates = []
+            if isinstance(stmt.value, ast.Dict):
+                candidates.append(stmt.value)
+            elif isinstance(stmt.value, (ast.List, ast.Tuple)):
+                candidates += [e for e in stmt.value.elts if isinstance(e, ast.Dict)]
+
+            for node in candidates:
+                where = f"{_rel(path)}:{node.lineno} ({name})"
+                _check_signal(where, node)
+                checked_signals += 1
+                # Nested signal rows, e.g. a payload's five ``*_signal`` values.
+                for value in node.values:
+                    if isinstance(value, ast.Dict):
+                        _check_signal(f"{_rel(path)}:{value.lineno} ({name})", value)
+
+                keys = {
+                    k.value
+                    for k in node.keys
+                    if isinstance(k, ast.Constant) and isinstance(k.value, str)
+                }
+                # A dict that is mostly widget kwargs is a widget payload; a
+                # stray key in one is a silently-swallowed misspelling.
+                if len(keys & known_kwargs) >= 3:
+                    checked_payloads += 1
+                    unknown = sorted(keys - known_kwargs)
+                    assert not unknown, (
+                        f"{where} passes {unknown} — not in FWA_DATA_KEYS and not "
+                        "a kwarg of any widget in FWA_WIDGET_SIGNATURES. Every "
+                        "widget ends its signature with **_kwargs, so this is "
+                        "accepted silently and rendered as missing data. The "
+                        "assertions around it are then measuring nothing."
+                    )
+
+    assert checked_payloads >= 3 and checked_signals >= 3, (
+        "this guard found no fixtures to check — the discovery walk has drifted "
+        f"(payloads={checked_payloads}, dicts={checked_signals})"
+    )
+
+
 def test_every_prd_rule_has_a_guard_in_this_module():
     """Traceability: no rule may lose its guard without this test noticing.
 
@@ -1391,6 +1706,9 @@ def test_every_prd_rule_has_a_guard_in_this_module():
         "test_no_network_in_any_fwa_test",
         "test_no_etherscan_no_keyed_endpoint_and_no_import_of_scripts",
         "test_fwa_code_is_read_only_no_signing_no_sending",
+        "test_no_named_fixture_carries_a_field_the_product_cannot_emit",
+        "test_the_floor_dependent_surface_inventory_is_closed",
+        "test_the_unconsumed_sqrt_backing_read_is_free_and_stays_out_of_the_maths",
     ):
         assert re.search(rf"^(async )?def {name}\(", source, re.MULTILINE), (
             f"the build-earned guard {name} was removed"

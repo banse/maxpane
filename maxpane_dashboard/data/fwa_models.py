@@ -66,9 +66,10 @@ The four traps this contract encodes
 The EV band is structural, not a convention
 -------------------------------------------
 
-Keyless floor prices cover only 22 of the 38 collections that hold live positions,
-and the two largest weight buckets are unpriced. A single confident EV number
-would therefore be a lie that costs someone ETH.
+Keyless floor prices reach 26 of the 38 collections that hold live positions, but
+the two largest weight buckets are unpriced, so those 26 carry only ~20% of the
+draw weight (findings §13.14). A single confident EV number would therefore be a
+lie that costs someone ETH. Both counters are measured per sweep, never assumed.
 
 :class:`PullEV` has ``lower_eth`` and ``best_eth`` as *required* fields and, thanks
 to ``extra="forbid"``, **cannot be given a ``point_eth`` / ``value_eth`` /
@@ -405,21 +406,37 @@ class SettlementMix(BaseModel):
 class FWASignal(BaseModel):
     """One row of the Signals panel.
 
-    Identical contract to ``TalismanSignal`` / ``TTTSignal`` so the shared
-    ``_fmt_signal`` widget helper works unchanged.
+    Identical *shape* to ``TalismanSignal`` / ``TTTSignal`` so the shared
+    ``_fmt_signal`` widget helper works unchanged -- but **not** the same colour
+    vocabulary.
 
-    ``color`` is restricted to ``"green" | "yellow" | "red" | "dim"``. Colour is
-    never the sole carrier of meaning: ``value_str`` must also spell the state out
-    in words or a glyph, so every row survives greyscale and colour-blind viewing
-    (PRD §11).
+    ``color`` is restricted to :data:`~maxpane_dashboard.analytics.fwa_signals.SIGNAL_COLORS`
+    = ``"$success" | "$warning" | "$error" | "dim"``: the **theme variables**,
+    never the CSS colour names ``green`` / ``yellow`` / ``red``. Textual resolves
+    content markup through the CSS name table, where ``green`` is ``#008000`` --
+    4.09:1 against pure black, so it fails WCAG AA against *every* possible
+    background and no palette can rescue it. The ``$`` forms resolve per theme
+    and measure 10.39:1 and 6.82:1 under ``fwa``.
+
+    This paragraph used to say ``"green" | "yellow" | "red" | "dim"``, which was
+    true until WP-19 moved the vocabulary and stale afterwards. Three separate
+    work packages then hand-wrote signal fixtures in the old vocabulary and went
+    green while testing values the product cannot emit; the frozen contract
+    saying so was how they got there. ``tests/test_fwa_guardrails.py::
+    test_no_named_fixture_carries_a_field_the_product_cannot_emit`` now catches
+    the fixture, and this docstring is the other half of the fix.
+
+    Colour is never the sole carrier of meaning: ``value_str`` must also spell the
+    state out in words or a glyph, so every row survives greyscale and
+    colour-blind viewing (PRD §11).
     """
 
     model_config = _FROZEN
 
     label: str
     value_str: str
-    indicator: str                     # colored dot or symbol (e.g. "●", "►")
-    color: str                         # "green" | "yellow" | "red" | "dim"
+    indicator: str                     # always "●" — see analytics.fwa_signals.INDICATOR
+    color: str                         # "$success" | "$warning" | "$error" | "dim"
 
 
 class DrawEvent(BaseModel):
@@ -533,9 +550,9 @@ FWA_DATA_KEYS: tuple[str, ...] = (
     "vrf_fee_eth",                 # float | None — as returned; never a computed guess
     "quote_total_eth",             # float | None — the returned tuple, never a sum
     "price_available",             # bool
-    "harmonic_mean_eth",           # float | None — what a pull costs you (0.1247)
-    "arithmetic_mean_eth",         # float | None — what the pool holds (0.5002)
-    "hm_am_gap_x",                 # float | None — 4.0
+    "harmonic_mean_eth",           # float | None — what a pull costs you
+    "arithmetic_mean_eth",         # float | None — what the pool holds
+    "hm_am_gap_x",                 # float | None — a LIVE ratio, never a constant
     # CROWN card — gold is used here and nowhere else
     "crown_pot_eth",               # float | None
     "crown_pot_usd",               # float | None — None when no USD source

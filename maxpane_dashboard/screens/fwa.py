@@ -36,6 +36,25 @@ Three things about this screen are deliberate rather than incidental:
    somewhere permanent. If ``StatusBar`` ever grows a ``set_degraded()``, this
    is the line to move.
 
+Minimum terminal width: ~200 columns
+------------------------------------
+
+The 3fr/2fr/2fr bottom row is the binding constraint. At **200 columns** the
+three slots measure ~81 / ~55 / ~56 rendered columns, which is exactly what the
+activity feed (79), the chase board (54) and the settlement table (55) need to
+show every field. At 140 columns they measure ~56 / ~38 / ~38 and each widget
+sheds columns.
+
+That is a documented, tested behaviour rather than a defect, because **no widget
+drops a column silently**: each one announces the loss in its own title with a
+``‹ widen`` marker naming what went (``‹ widen: TOKEN/BACKING``,
+``‹ widen: COUNT``, ``‹ widen for amounts``). The chase board's ``ODDS`` and
+``JACKPOT`` and the settlement table's ``SHARE`` are the last columns to be
+dropped, because they carry those widgets' entire point. A narrow terminal
+therefore costs *fields*, never correctness — every number still on screen is
+the same number it would be at 200 columns. The mandated 3fr/2fr/2fr ratio was
+kept rather than reinvented per widget (findings §13.16).
+
 The screen is clock-free: every time-derived string (the emissions countdown,
 the feed's "as of HH:MM", staleness) arrives already rendered in the payload.
 Nothing here consults the wall clock, which is why the 2026-08-04T19:01:23Z

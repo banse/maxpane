@@ -272,6 +272,55 @@ async def test_hero_never_shows_ev_without_coverage_badge():
         assert "—" in text
 
 
+async def test_hero_coverage_badge_reads_zero_coverage_and_no_pool_differently():
+    """Zero coverage is a fact; a zero total is a missing reading (WP-20).
+
+    Two states that used to render as confident zeros:
+
+    * **Zero coverage, live pool** -- ``0/3 · 0.0% of weight priced``. This is
+      correct and stays. The keyless floor sources cover none of the three
+      collections, and the EV beside it is still meaningful: at zero coverage
+      ``best_eth`` degrades to the sell-back-minus-fee expectation, which is
+      computed entirely from on-chain backing and does not depend on a floor at
+      all. The badge is the disclosure that makes it readable, so the number
+      keeps its place.
+    * **Zero total, dead chain** -- ``0/0 · 0.0%`` claimed that none of a pool's
+      weight was priced when no pool had been read. That now renders as dashes,
+      the same as any other missing reading.
+    """
+    widget = FWAHeroMetrics()
+    async with _Harness(widget).run_test():
+        # Live pool, nothing priced: real denominator, real 0.0%.
+        widget.update_data(
+            **{
+                **_FULL_HERO,
+                "ev_collections_priced": 0,
+                "ev_collections_total": 3,
+                "ev_weight_priced_pct": 0.0,
+            }
+        )
+        text = _plain(widget, "#fwa-hero-ev")
+        assert "0/3 · 0.0% of weight priced" in text, text
+        assert "-0.0243" in text, "the sell-back expectation still renders"
+
+        # Dead chain: no pool was read, so there is no coverage to report.
+        widget.update_data(
+            **{
+                **_FULL_HERO,
+                "ev_available": False,
+                "ev_collections_priced": 0,
+                "ev_collections_total": 0,
+                "ev_weight_priced_pct": 0.0,
+            }
+        )
+        text = _plain(widget, "#fwa-hero-ev")
+        assert "0/0" not in text, (
+            "a zero total is a missing reading, not a priced-nothing pool: " + text
+        )
+        assert "--/-- · --% of weight priced" in text, text
+        assert "of weight priced" in text, "the badge is never dropped (PRD §3)"
+
+
 async def test_hero_coverage_badge_is_visible_on_screen():
     """The badge must survive layout, not just live in the content string.
 

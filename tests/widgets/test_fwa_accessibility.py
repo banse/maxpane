@@ -127,10 +127,16 @@ def composited(app, needle: str) -> tuple[str, str] | None:
 _HERO = {
     "pull_ev_best_eth": -0.0243,
     "pull_ev_lower_eth": -0.0410,
-    "pull_ev_available": True,
-    "priced_collections": 22,
-    "total_collections": 38,
-    "priced_weight_pct": 61.3,
+    # WP-20: these four were ``pull_ev_available`` / ``priced_collections`` /
+    # ``total_collections`` / ``priced_weight_pct`` -- none of which
+    # ``FWAHeroMetrics.update_data`` accepts, so all four were swallowed by
+    # ``**_kwargs`` and the coverage badge was measured as ``--/-- · --%``
+    # rather than as the real ``22/38 · 61.3%``. Names taken from
+    # ``FWA_WIDGET_SIGNATURES["FWAHeroMetrics"]``.
+    "ev_available": True,
+    "ev_collections_priced": 22,
+    "ev_collections_total": 38,
+    "ev_weight_priced_pct": 61.3,
     "acquisition_fee_eth": 0.037,
     "vrf_fee_eth": 0.0006,
     "quote_total_eth": 0.0376,

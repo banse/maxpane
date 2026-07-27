@@ -4,10 +4,12 @@ Three boxes laid out horizontally:
 
 * **PULL EV** -- the flagship metric, rendered as a *band* and never as a
   point: best estimate, lower bound, and a coverage badge.  Keyless floor
-  prices cover only 22 of 38 collections holding live positions, so a
-  single confident number here would be a lie that costs someone ETH.
-  The coverage badge is therefore rendered *whenever an EV number is on
-  screen* -- the two are inseparable (PRD §3).
+  prices reach 26 of 38 collections holding live positions but only ~20%
+  of the draw weight (findings §13.14), so a single confident number here
+  would be a lie that costs someone ETH.  The coverage badge is therefore
+  rendered *whenever an EV number is on screen* -- the two are
+  inseparable (PRD §3).  The badge renders the counts the payload carries;
+  no coverage figure is hardcoded in this file.
 * **PRICE** -- the live ``acquisitionFee()`` quote, the harmonic-vs-
   arithmetic gap bar, and the VRF leg *only when the returned tuple says
   it is nonzero* (findings §13.9 -- never a computed guess).
@@ -168,7 +170,24 @@ def _gap_bar(gap, width: int = _GAP_BAR_WIDTH) -> str:
 
 
 def _coverage_badge(priced, total, weight_pct) -> str:
-    """``22/38 · 61.3% of weight priced`` -- never omitted next to a number."""
+    """``22/38 · 61.3% of weight priced`` -- never omitted next to a number.
+
+    A **zero total is unknown, not zero** (WP-20).  ``total`` counts the
+    collections holding live positions, so a live pool always has at least one.
+    Zero means the sweep returned nothing -- a dead chain -- and the manager
+    collapses ``pull_ev is None`` onto ``0 / 0 / 0.0`` when it builds the
+    payload.  Rendering that literally gives ``0/0 · 0.0% of weight priced``,
+    which reads as the confident claim "none of the pool's weight is priced"
+    about a pool nobody managed to read.  Dashes are the honest rendering of a
+    missing reading, and they are what the all-``None`` payload already
+    produces, so the two indistinguishable states now look indistinguishable.
+
+    The badge itself is never dropped: PRD §3 makes it inseparable from the EV
+    number, and ``--/-- · --%`` still says the thing that matters.
+    """
+    t_val = _as_float(total)
+    if t_val is None or t_val <= 0:
+        priced = total = weight_pct = None
     p = _fmt_int(priced)
     t = _fmt_int(total)
     w = _as_float(weight_pct)

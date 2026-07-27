@@ -268,8 +268,9 @@ class FWACache:
         self.last_good: dict[str, LastGood] = {}
 
         # Floors are per collection with per-collection timestamps: the CoinGecko
-        # sweep is spaced >=2.5 s and covers only 22 of 38 collections, so the
-        # entries genuinely age at different rates.
+        # sweep is spaced seconds apart (6 s as the manager builds it) and reaches
+        # only some of the collections, so the entries genuinely age at different
+        # rates.
         self.floors: dict[str, LastGood] = {}
 
         # Hourly series, 7d deep: name -> deque[(hour_ts, value)].
@@ -593,8 +594,10 @@ class FWACache:
     ) -> LastGood:
         """Store one collection's last-good floor, with its own timestamp.
 
-        Floors arrive one collection at a time (>=2.5 s apart, 22 of 38 covered),
-        so each entry ages independently. ``floor_eth=None`` with a ``source`` of
+        Floors arrive one collection at a time, seconds apart, and only some of
+        the collections are ever priced — 26 of 38 on the last live sweep, and
+        that is a measurement, not a constant. Each entry therefore ages
+        independently. ``floor_eth=None`` with a ``source`` of
         ``"missing"`` or ``"suppressed"`` is a legitimate cached answer: it records
         that the floor is *known to be unavailable*, which is not the same as never
         having asked.

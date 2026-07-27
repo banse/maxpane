@@ -10,8 +10,13 @@ collection floor happens to be.  That post-draw choice is a real option, and it
 is why the pull EV is an expectation over ``max(sell_back, floor)`` rather than
 over either leg alone.
 
-Roughly a third of pool weight sits in collections with no keyless floor price,
-so the flagship number is returned as a **band** — see :func:`pull_ev_band`.
+Keyless floor prices reach 26 of the 38 collections holding live positions, but
+those 26 carry only about a fifth of the draw weight: roughly **79.6% of pool
+weight has no keyless floor** (findings §13.14).  The flagship number is
+therefore returned as a **band**, never a point — see :func:`pull_ev_band`.
+Both figures are live measurements, not constants; nothing here hardcodes
+either, and the coverage counters are computed from whatever the floor sweep
+actually returned.
 
 Everything here is pure: stdlib only, no I/O, no network, no models, no
 Textual.  Wei-valued functions return ``int`` and use integer floor division
@@ -320,10 +325,10 @@ def pull_ev_band(
              + rebateShare * surcharge
 
     The purchaser chooses *after* the draw, so each position is worth the
-    better of its two exits.  Keyless floors cover only about 22 of 38 live
-    collections and the two largest weight buckets are unpriced, so a single
-    number here would be a lie dressed as precision.  Two bounds are returned
-    instead:
+    better of its two exits.  Keyless floors reach 26 of 38 live collections
+    but only ~20% of the draw weight — the two largest weight buckets are
+    unpriced — so a single number here would be a lie dressed as precision.
+    Two bounds are returned instead:
 
     * ``lower_eth`` — a position in an **unpriced** collection contributes
       **zero**.  Strictly pessimistic: it counts only value that can actually

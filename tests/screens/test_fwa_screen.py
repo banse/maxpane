@@ -28,6 +28,7 @@ from pathlib import Path
 
 from textual.app import App
 
+from maxpane_dashboard.analytics import fwa_signals as _signals
 from maxpane_dashboard.data.fwa_models import (
     FWA_DATA_KEYS,
     FWA_WIDGET_SIGNATURES,
@@ -82,18 +83,25 @@ _BLOCK = 25_612_701
 
 #: The emissions hard stop, as the two states the signal can be in. The ended
 #: state is primary: it is what the dashboard will spend its life showing.
-EMISSIONS_ENDED_SIGNAL = {
-    "label": "Emissions",
-    "value_str": "emissions ended",
-    "indicator": "●",
-    "color": "dim",
-}
-EMISSIONS_LIVE_SIGNAL = {
-    "label": "Emissions",
-    "value_str": "8d 04h to hard stop",
-    "indicator": "▲",
-    "color": "green",
-}
+#:
+#: Both are built by calling the **real** builder with a pinned clock rather
+#: than hand-written (WP-20). The hand-written versions carried
+#: ``"color": "green"`` and ``"indicator": "▲"`` -- neither of which
+#: ``analytics/fwa_signals.py`` can emit: the colour vocabulary is
+#: ``$success | $warning | $error | dim`` and the indicator is always ``●``.
+#: A screen test whose payload the product cannot produce measures the fixture,
+#: not the screen. The clock is injected on both sides of 2026-08-04T19:01:23Z,
+#: so these still read identically before and after that instant.
+_EMISSION_START = 1_784_574_083
+_EMISSION_DURATION = 1_785_870_083 - _EMISSION_START  # stops 2026-08-04T19:01:23Z
+_EMISSION_STOP = _EMISSION_START + _EMISSION_DURATION
+
+EMISSIONS_ENDED_SIGNAL = _signals.emissions_signal(
+    _EMISSION_STOP + 21 * 86_400, _EMISSION_START, _EMISSION_DURATION, 3
+).model_dump()
+EMISSIONS_LIVE_SIGNAL = _signals.emissions_signal(
+    _EMISSION_STOP - (8 * 86_400 + 4 * 3_600), _EMISSION_START, _EMISSION_DURATION, 3
+).model_dump()
 
 
 def _sample_data() -> dict:
@@ -176,31 +184,29 @@ def _sample_data() -> dict:
         "fwa_price_change_24h": -3.42,
         "spark_available": True,
         # -- signals ---------------------------------------------------------
-        "pool_temp_signal": {
-            "label": "Pool temp",
-            "value_str": "cold · surcharge → depositors",
-            "indicator": "●",
-            "color": "cyan",
-        },
-        "buy_gate_signal": {
-            "label": "Buy gate",
-            "value_str": "external buys closed",
-            "indicator": "●",
-            "color": "red",
-        },
+        # Built by the real builders, not by hand -- see EMISSIONS_*_SIGNAL
+        # above. Every field here is one the product can actually emit.
+        "pool_temp_signal": _signals.pool_temp_signal(
+            seconds_since_last_request=4_000,
+            token_share_bps=0,
+            hot_gap=60,
+            cold_gap=3_600,
+        ).model_dump(),
+        "buy_gate_signal": _signals.buy_gate_signal(False).model_dump(),
         "emissions_signal": EMISSIONS_ENDED_SIGNAL,
-        "vrf_queue_signal": {
-            "label": "VRF queue",
-            "value_str": "0 pending",
-            "indicator": "●",
-            "color": "green",
-        },
-        "param_drift_signal": {
-            "label": "Params",
-            "value_str": "no drift",
-            "indicator": "●",
-            "color": "green",
-        },
+        "vrf_queue_signal": _signals.vrf_queue_signal(
+            last_issued=100,
+            next_to_process=100,
+            pending=0,
+            unsettled=0,
+            unfulfilled_vrf=0,
+            subscription_balance=10**18,
+            minimum_buffer=10**17,
+        ).model_dump(),
+        "param_drift_signal": _signals.param_drift_signal(
+            [{"key": 15, "value": 100, "block_number": 25_592_190, "ts": _TS}],
+            {},
+        ).model_dump(),
         # -- activity feed -----------------------------------------------------
         "draw_events": [
             {
@@ -649,8 +655,8 @@ async def test_degraded_sources_and_invariant_break_reach_the_title_bar():
 async def test_emissions_state_is_data_driven_not_wall_clock():
     """Both sides of 2026-08-04T19:01:23Z, neither derived from ``now``."""
     for signal, expected in (
-        (EMISSIONS_ENDED_SIGNAL, "emissions ended"),   # the primary case
-        (EMISSIONS_LIVE_SIGNAL, "8d 04h to hard stop"),
+        (EMISSIONS_ENDED_SIGNAL, "emissions ended · 21d ago"),  # the primary case
+        (EMISSIONS_LIVE_SIGNAL, "emissions live · 8d 4h left"),
     ):
         manager = _FakeManager(payload=_frozen_payload(emissions_signal=signal))
         screen = FWAScreen(manager, poll_interval=30, name="fwa")

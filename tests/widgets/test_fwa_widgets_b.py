@@ -27,6 +27,7 @@ import pytest
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable, RichLog, Static
 
+from maxpane_dashboard.analytics import fwa_signals as _signals
 from maxpane_dashboard.data.fwa_models import FWA_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.fwa.fwa_activity_feed import (
     UNAVAILABLE_LINE,
@@ -95,37 +96,45 @@ def _none_payload(widget_name: str) -> dict:
 
 # -- fixtures ----------------------------------------------------------
 
+#: The five signal rows, built by the **real** builders with pinned inputs
+#: (WP-20).  These were hand-written and carried ``"color": "green"`` /
+#: ``"red"`` and ``"indicator": "■"`` -- none of which
+#: ``analytics/fwa_signals.py`` can emit.  Its vocabulary is
+#: ``$success | $warning | $error | dim`` and its indicator is always ``●``
+#: (WP-19 moved the colours to theme variables because the CSS name ``green``
+#: is ``#008000``, which fails AA against every possible background).  A panel
+#: test fed colours the product cannot produce measures the fixture, not the
+#: panel.  Clocks are injected, so this reads the same on both sides of the
+#: 2026-08-04 emissions stop.
+_EMISSION_START = 1_784_574_083
+_EMISSION_DURATION = 1_785_870_083 - _EMISSION_START
+
 _SIGNAL_PAYLOAD = {
-    "pool_temp_signal": {
-        "label": "pool temp",
-        "value_str": "COLD 41m · surcharge → YOU (100%)",
-        "indicator": "●",
-        "color": "green",
-    },
-    "buy_gate_signal": {
-        "label": "buy gate",
-        "value_str": "CLOSED · outside buys blocked",
-        "indicator": "■",
-        "color": "red",
-    },
-    "emissions_signal": {
-        "label": "emissions",
-        "value_str": EMISSIONS_ENDED,
-        "indicator": "●",
-        "color": "dim",
-    },
-    "vrf_queue_signal": {
-        "label": "vrf queue",
-        "value_str": "0 pending requests",
-        "indicator": "●",
-        "color": "green",
-    },
-    "param_drift_signal": {
-        "label": "param drift",
-        "value_str": "no drift · 9 params live",
-        "indicator": "●",
-        "color": "green",
-    },
+    "pool_temp_signal": _signals.pool_temp_signal(
+        seconds_since_last_request=4_000,
+        token_share_bps=10_000,
+        hot_gap=60,
+        cold_gap=3_600,
+    ).model_dump(),
+    "buy_gate_signal": _signals.buy_gate_signal(False).model_dump(),
+    "emissions_signal": _signals.emissions_signal(
+        _EMISSION_START + _EMISSION_DURATION + 21 * 86_400,
+        _EMISSION_START,
+        _EMISSION_DURATION,
+    ).model_dump(),
+    "vrf_queue_signal": _signals.vrf_queue_signal(
+        last_issued=100,
+        next_to_process=100,
+        pending=0,
+        unsettled=0,
+        unfulfilled_vrf=0,
+        subscription_balance=10**18,
+        minimum_buffer=10**17,
+    ).model_dump(),
+    "param_drift_signal": _signals.param_drift_signal(
+        [{"key": 15, "value": 100, "block_number": 25_592_190, "ts": 1_784_900_000}],
+        {},
+    ).model_dump(),
 }
 
 _DRAW_EVENTS = [

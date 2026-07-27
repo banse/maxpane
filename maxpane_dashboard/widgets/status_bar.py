@@ -10,12 +10,25 @@ from maxpane_dashboard import __version__
 
 
 def _staleness_color(seconds: float) -> str:
-    """Return a color name based on data freshness."""
+    """Return a theme colour variable based on data freshness.
+
+    Theme variables, not CSS colour names.  Textual resolves content markup
+    through the CSS name table, where ``green`` is ``#008000`` -- whose
+    contrast peaks at 4.09:1 against pure black, so it fails WCAG AA on
+    *every* background and no theme can rescue it.  This bar is shared by all
+    nine dashboards, and ``updated Ns ago`` measured 2.53-3.68 across all ten
+    themes: the worst text in the app.  ``$success``/``$warning``/``$error``
+    are required ``Theme`` fields, so they resolve per theme everywhere.
+
+    This is a ``Static``/Content surface, which does resolve ``$`` variables.
+    ``RichLog`` and ``DataTable`` cells parse *Rich* markup and would raise
+    ``MarkupError`` on the same string -- three dialects, not two.
+    """
     if seconds < 30:
-        return "green"
+        return "$success"
     elif seconds < 60:
-        return "yellow"
-    return "red"
+        return "$warning"
+    return "$error"
 
 
 class StatusBar(Horizontal):
