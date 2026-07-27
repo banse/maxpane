@@ -8,6 +8,8 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+
 
 _EMOJI_RE = re.compile(
     "[\U0001f300-\U0001f9ff\U00002702-\U000027b0\U0000fe00-\U0000fe0f\U0000200d\U000020e3]+",
@@ -84,7 +86,7 @@ class FPOverviewHero(Horizontal):
         if top_pet is not None:
             pet_id = getattr(top_pet, "id", "?")
             raw_name = getattr(top_pet, "name", "") or f"#{pet_id}"
-            pet_name = _EMOJI_RE.sub("", raw_name).strip() or f"#{pet_id}"
+            pet_name = safe_markup(_EMOJI_RE.sub("", raw_name).strip()) or f"#{pet_id}"
             score = float(getattr(top_pet, "score", 0))
             atk = getattr(top_pet, "attack_points", 0)
 

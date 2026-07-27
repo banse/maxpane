@@ -7,6 +7,7 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 def _format_volume(value: float) -> str:
@@ -36,7 +37,7 @@ def _format_count(value: int) -> str:
 
 def _token_to_markup(token: dict) -> str:
     """Convert a token volume entry into a Rich-markup formatted line."""
-    symbol = _strip_non_ascii(token.get("symbol", "???"))[:8]
+    symbol = safe_markup(f'{_strip_non_ascii(token.get("symbol", "???"))[:8]:<8}')
     vol = _format_volume(token.get("volume_24h", 0))
     liq = _format_volume(token.get("liquidity", 0))
     buys = token.get("buys_24h", 0)
@@ -68,7 +69,7 @@ def _token_to_markup(token: dict) -> str:
 
     return (
         f"  {pressure}  "
-        f"[cyan]{symbol:<8}[/]  "
+        f"[cyan]{symbol}[/]  "
         f"{vol:>8}  "
         f"{change_str}  "
         f"[dim]{liq:>8}[/]  "

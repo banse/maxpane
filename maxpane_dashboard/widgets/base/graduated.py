@@ -7,6 +7,7 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.analytics.base_tokens import format_change, format_price
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 class GraduatedTokens(Vertical):
@@ -54,7 +55,7 @@ class GraduatedTokens(Vertical):
             symbol = token.get("symbol", "???")
             if not symbol.startswith("$"):
                 symbol = f"${symbol}"
-            symbol = symbol[:10]
+            symbol = safe_markup(symbol[:10])
 
             price = token.get("price_usd", 0)
             price_str = format_price(price) if price else "--"

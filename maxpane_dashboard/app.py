@@ -50,7 +50,10 @@ class MaxPaneApp(App):
     BINDINGS = [
         Binding("q", "quit", "Quit", show=False),
         Binding("t", "cycle_theme", "Theme", show=False),
-        Binding("tab", "switch_game", "Switch Game", show=False),
+        # priority=True: without it textual's built-in Screen binding
+        # tab -> app.focus_next sits earlier in the binding chain and this
+        # never fires (see check_action for where it is stood down again).
+        Binding("tab", "switch_game", "Switch Game", show=False, priority=True),
         Binding("m", "show_menu", "Menu", show=False),
     ]
 
@@ -92,6 +95,20 @@ class MaxPaneApp(App):
         # FWAManager builds its own market client with coingecko_min_spacing=6.0
         # (COINGECKO_MIN_SPACING); do not pass one in here.
         self._fwa_manager = FWAManager(poll_interval=poll_interval)
+        # All four FrenPet managers persist to the same
+        # ~/.maxpane/frenpet_cache.json and FrenPetCache.save_to_file is a
+        # full overwrite invoked from close(), so on quit the three managers
+        # whose screens never polled used to rewrite the file with their
+        # construction-time snapshot — discarding the score history the active
+        # manager had just saved.  One shared cache means every writer holds
+        # the same live state, whichever of them writes last.
+        _shared_frenpet_cache = self._frenpet_manager.cache
+        for _frenpet_variant in (
+            self._frenpet_full_manager,
+            self._frenpet_wallet_manager,
+            self._frenpet_perf_manager,
+        ):
+            _frenpet_variant.cache = _shared_frenpet_cache
         self._current_game = initial_game
 
     def on_mount(self) -> None:
@@ -102,81 +119,57 @@ class MaxPaneApp(App):
         self.theme = self._initial_theme
 
         # Start fetching data in background while splash is showing
-        if self._initial_game == "bakery":
+        manager = self._prefetch_manager(self._initial_game)
+        if manager is not None:
             self.run_worker(
-                self._bakery_manager.fetch_and_compute(),
+                self._prefetch(manager, self._initial_game),
                 exclusive=True,
                 name="prefetch",
-            )
-        elif self._initial_game == "frenpet":
-            self.run_worker(
-                self._frenpet_manager.fetch_and_compute(),
-                exclusive=True,
-                name="prefetch",
-            )
-        elif self._initial_game == "frenpet_full":
-            self.run_worker(
-                self._frenpet_full_manager.fetch_and_compute(),
-                exclusive=True,
-                name="prefetch",
-            )
-        elif self._initial_game == "frenpet_wallet":
-            self.run_worker(
-                self._frenpet_wallet_manager.fetch_and_compute(),
-                exclusive=True,
-                name="prefetch",
-            )
-        elif self._initial_game == "frenpet_perf":
-            self.run_worker(
-                self._frenpet_perf_manager.fetch_and_compute(),
-                exclusive=True,
-                name="prefetch",
-            )
-        elif self._initial_game == "base":
-            self.run_worker(
-                self._base_manager.fetch_and_compute(),
-                exclusive=True,
-                name="prefetch",
-            )
-        elif self._initial_game == "cattown":
-            self.run_worker(
-                self._cattown_manager.fetch_and_compute(),
-                exclusive=True,
-                name="prefetch",
-            )
-        elif self._initial_game == "ocm":
-            self.run_worker(
-                self._ocm_manager.fetch_and_compute(),
-                exclusive=True,
-                name="prefetch",
-            )
-        elif self._initial_game == "dota":
-            self.run_worker(
-                self._dota_manager.fetch_and_compute(),
-                exclusive=True,
-                name="prefetch",
-            )
-        elif self._initial_game == "ttt":
-            self.run_worker(
-                self._ttt_manager.fetch_and_compute(),
-                exclusive=True,
-                name="prefetch",
-            )
-        elif self._initial_game == "talismans":
-            self.run_worker(
-                self._talismans_manager.fetch_and_compute(),
-                exclusive=True,
-                name="prefetch",
-            )
-        elif self._initial_game == "fwa":
-            self.run_worker(
-                self._fwa_manager.fetch_and_compute(),
-                exclusive=True,
-                name="prefetch",
+                exit_on_error=False,
             )
 
         # Show splash screen → game select → dashboard
         self.push_screen(SplashScreen(), callback=self._on_splash_dismissed)
+
+    def _prefetch_manager(self, game_id: str):
+        """Return the manager that warms the cache for *game_id*, if any.
+
+        A single mapping instead of a branch per game: a new dashboard that
+        forgets to add itself here simply gets no prefetch (the screen fetches
+        on mount anyway) rather than a hand-copied ``run_worker`` call that
+        may forget the error guard below.
+        """
+        return {
+            "bakery": self._bakery_manager,
+            "frenpet": self._frenpet_manager,
+            "frenpet_full": self._frenpet_full_manager,
+            "frenpet_wallet": self._frenpet_wallet_manager,
+            "frenpet_perf": self._frenpet_perf_manager,
+            "base": self._base_manager,
+            "cattown": self._cattown_manager,
+            "ocm": self._ocm_manager,
+            "dota": self._dota_manager,
+            "ttt": self._ttt_manager,
+            "talismans": self._talismans_manager,
+            "fwa": self._fwa_manager,
+        }.get(game_id)
+
+    async def _prefetch(self, manager, game_id: str) -> None:
+        """Warm *manager*'s cache while the splash is showing.
+
+        Never propagates.  Managers whose ``fetch_and_compute`` re-raises
+        (bakery, frenpet, ocm, ...) would otherwise fail this worker, and a
+        failed worker panics Textual with ``WorkerFailed`` and exits the
+        process with return code 1 — so launching with no network, a DNS
+        failure or a game API 5xx killed the app instead of showing the
+        dashboard.  Every screen's own ``_do_refresh`` already swallows and
+        surfaces fetch errors in the status bar; the prefetch does the same,
+        and ``exit_on_error=False`` on the worker is the second belt.
+        """
+        try:
+            await manager.fetch_and_compute()
+        except Exception as exc:
+            logger.error("Startup prefetch for %s failed: %s", game_id, exc)
 
     def _on_splash_dismissed(self, _result=None) -> None:
         """After splash, show the game selection screen."""
@@ -337,6 +330,24 @@ class MaxPaneApp(App):
                 FrenPetPerfScreen(self._frenpet_perf_manager, self.poll_interval, name="frenpet_perf"),
                 name="frenpet_perf",
             )
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Stand the priority ``tab`` binding down outside game dashboards.
+
+        ``switch_game`` is bound with ``priority=True`` so it beats Screen's
+        built-in ``tab -> focus_next``.  Returning False here makes
+        ``run_action`` skip it and the key falls through to the normal binding
+        chain, so Tab still moves focus on the splash, the game-select screen
+        and the wallet-input form (where stealing Tab from an Input would be
+        actively hostile).
+        """
+        if action == "switch_game":
+            try:
+                screen_name = self.screen.name
+            except Exception:  # no screen on the stack yet
+                return False
+            return screen_name in self._GAME_CYCLE
+        return True
 
     def action_show_menu(self) -> None:
         """Return to the game selection screen."""

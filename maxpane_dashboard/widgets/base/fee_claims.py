@@ -7,6 +7,7 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 def _format_time(timestamp: float | int | str | None) -> str:
@@ -83,6 +84,7 @@ class FeeClaims(Vertical):
             token = claim.get("token", "???")
             if not token.startswith("$"):
                 token = f"${token}"
+            token = safe_markup(f"{token:<12}")
 
             amount = claim.get("amount_eth", 0)
             try:
@@ -102,7 +104,7 @@ class FeeClaims(Vertical):
                 marker = ""
 
             line = (
-                f"  [dim]{time_str}[/]  {token:<12} {amount_str:>10}  "
+                f"  [dim]{time_str}[/]  {token} {amount_str:>10}  "
                 f"[dim]{tx_short}[/]{marker}"
             )
             log.write(line)

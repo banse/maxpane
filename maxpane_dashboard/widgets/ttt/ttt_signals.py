@@ -24,6 +24,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 def _fmt_signal(sig: dict | None) -> str:
@@ -40,7 +41,7 @@ def _fmt_signal(sig: dict | None) -> str:
         return ""
     if not isinstance(sig, dict):
         return ""
-    value = sig.get("value_str") or "--"
+    value = safe_markup(sig.get("value_str") or "--")
     color = sig.get("color") or "dim"
     indicator = sig.get("indicator") or "●"
     return f"  [{color}]{indicator}[/] [{color}]{value}[/]"

@@ -35,6 +35,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _DASH = "--"
 _EMDASH = "—"
@@ -214,7 +215,7 @@ class FWAOddsBoard(Vertical):
         for idx, row in enumerate(rows, start=1):
             rank = row.get("rank")
             rank_str = _fmt_int(rank) if rank is not None else str(idx)
-            name = _fmt_name(row.get("name"), row.get("address"))
+            name = safe_markup(_fmt_name(row.get("name"), row.get("address")))
             positions = _fmt_int(row.get("positions"))
             share = _fmt_pct(row.get("weight_share_pct"))
             backed = _fmt_eth(row.get("eth_backed"))
@@ -223,7 +224,7 @@ class FWAOddsBoard(Vertical):
 
             if floor == "n/a*" and not suppressed_note:
                 note = str(row.get("floor_note") or "").strip()
-                suppressed_note = note or "floor suppressed — not meaningful"
+                suppressed_note = safe_markup(note) or "floor suppressed — not meaningful"
 
             if idx == 1:
                 rank_str = f"[bold]{rank_str}[/]"

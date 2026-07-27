@@ -7,6 +7,7 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 def _short_addr(address: str) -> str:
@@ -145,7 +146,7 @@ class CTHeroMetrics(Horizontal):
         if top_fisher:
             display_name = top_fisher.get("display_name", "")
             addr = _short_addr(top_fisher.get("address", ""))
-            name_str = display_name if display_name else addr
+            name_str = safe_markup(display_name if display_name else addr)
             weight = top_fisher.get("weight_kg", 0.0)
             fisher_box.update(
                 f"[dim]LEADER[/]\n\n"

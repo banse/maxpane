@@ -17,16 +17,20 @@ class _FakeClient:
     async def fetch_block_number(self):
         return 1_000_000
 
+    #: post-genesis allocator value; 1538 means exactly one transform id (1537)
+    next_transform_id = 1538
+
     async def fetch_collection_flags(self):
         return {
             "total_supply": 3,
             "genesis_minted": 1536,
             "bond_cleave_enabled": True,
             "cut_merge_enabled": False,
+            "next_transform_id": self.next_transform_id,
         }
 
     async def fetch_operation_logs(self, from_block, to_block):
-        return [
+        ops = [
             {
                 "op_type": "bond",
                 "token_id_a": 1,
@@ -38,6 +42,7 @@ class _FakeClient:
                 "timestamp": 0,
             }
         ]
+        return ops, to_block
 
     async def fetch_token_states(self, token_ids):
         return {
@@ -157,3 +162,186 @@ async def test_close_saves_and_closes(manager):
     await manager.fetch_and_compute()
     await manager.close()
     assert manager.client.closed is True
+
+
+# ---------------------------------------------------------------------------
+# HIGH-4: enumeration must not depend on the log lookback
+# ---------------------------------------------------------------------------
+
+
+class _NoLogsClient(_FakeClient):
+    """A fresh install whose log scan finds nothing.
+
+    This is the real-world case, not a contrived one: no keyless endpoint
+    serves eth_getLogs back to the deploy block, so post-genesis ids created
+    before the lookback window are invisible to the log scan forever.
+    """
+
+    #: 1537..1755 allocated; the fixture below makes 1537 and 1600 live.
+    next_transform_id = 1756
+
+    async def fetch_operation_logs(self, from_block, to_block):
+        return [], to_block
+
+    async def fetch_token_states(self, token_ids):
+        ids = set(token_ids)
+        out = {}
+        for tid, mat in ((1, 16), (2, 3), (1537, 32), (1600, 32)):
+            if tid in ids:
+                out[tid] = {
+                    "core_count": 6 if mat == 32 else 1,
+                    "material_id": mat,
+                    "form": 0,
+                    "seed": tid,
+                    "owner": "0x" + "a" * 40,
+                }
+        return out
+
+    async def fetch_collection_flags(self):
+        flags = await super().fetch_collection_flags()
+        flags["total_supply"] = 4  # what the contract reports
+        return flags
+
+
+@pytest.fixture
+def nolog_manager(tmp_path, monkeypatch):
+    monkeypatch.setattr(tm_mod, "_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(tm_mod, "_CACHE_FILE", tmp_path / "c.json")
+    m = TalismansManager(poll_interval=30)
+    m.client = _NoLogsClient()
+    return m
+
+
+@pytest.mark.asyncio
+async def test_transform_ids_seeded_without_any_logs(nolog_manager):
+    """The whole of HIGH-4: ids come from nextTransformId, not from logs."""
+    await nolog_manager.fetch_and_compute()
+    known = nolog_manager.cache.known_ids
+    assert 1537 in known and 1755 in known
+    assert 1756 not in known, "nextTransformId itself is not yet allocated"
+    assert 1536 in known, "genesis seeding still applies"
+
+
+@pytest.mark.asyncio
+async def test_enumeration_completes_and_sets_conservation_baseline(nolog_manager):
+    """Fresh install: CONSERVATION must reach INTACT, not stick on SYNCING.
+
+    Before the fix the sweep only ever saw genesis ids, so len(tokens) never
+    reached totalSupply, the baseline was never set, and the hero cores box
+    rendered a permanent false yellow DRIFT.
+    """
+    data = await nolog_manager.fetch_and_compute()
+    assert len(nolog_manager.cache.tokens) == data["live_tokens"] == 4
+    assert nolog_manager.cache.cores_invariant_baseline == data["total_cores"]
+    assert data["cores_invariant_intact"] is True
+    assert data["conservation_signal"]["value_str"] != "SYNCING"
+
+
+@pytest.mark.asyncio
+async def test_post_genesis_mythics_are_counted(nolog_manager):
+    """Mythics live almost entirely in the post-genesis id range."""
+    data = await nolog_manager.fetch_and_compute()
+    assert data["mythic_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_seed_transform_ids_ignores_unusable_values(nolog_manager):
+    """A failed read (0) must not be mistaken for 'no tokens'."""
+    before = set(nolog_manager.cache.known_ids)
+    nolog_manager._seed_transform_ids(0)
+    nolog_manager._seed_transform_ids(1536)
+    nolog_manager._seed_transform_ids(1537)  # allocator at the first id => none minted
+    assert nolog_manager.cache.known_ids == before
+
+
+# ---------------------------------------------------------------------------
+# HIGH-5: the watermark follows the scan, not the head block
+# ---------------------------------------------------------------------------
+
+
+class _PartialScanClient(_FakeClient):
+    """Client whose log scan only ever completes part of the requested range."""
+
+    def __init__(self, scanned_to):
+        super().__init__()
+        self._scanned_to = scanned_to
+        self.requested: list[tuple[int, int]] = []
+
+    async def fetch_operation_logs(self, from_block, to_block):
+        self.requested.append((from_block, to_block))
+        return [], self._scanned_to
+
+
+@pytest.mark.asyncio
+async def test_watermark_stops_at_last_complete_block(tmp_path, monkeypatch):
+    """A dropped page must be re-scanned next cycle, not skipped forever."""
+    monkeypatch.setattr(tm_mod, "_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(tm_mod, "_CACHE_FILE", tmp_path / "c.json")
+    m = TalismansManager(poll_interval=30)
+    m.client = _PartialScanClient(scanned_to=999_500)
+
+    await m.fetch_and_compute()
+    assert m.cache.last_seen_block["ops"] == 999_500
+    assert m.cache.last_seen_block["ops"] != 1_000_000, "must not jump to head"
+
+    # Next cycle resumes immediately after the last completed block.
+    await m.fetch_and_compute()
+    assert m.client.requested[-1][0] == 999_501
+
+
+@pytest.mark.asyncio
+async def test_watermark_held_when_no_page_completes(tmp_path, monkeypatch):
+    monkeypatch.setattr(tm_mod, "_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(tm_mod, "_CACHE_FILE", tmp_path / "c.json")
+    m = TalismansManager(poll_interval=30)
+    m.cache.last_seen_block["ops"] = 900_000
+    # from_block will be 900_001; a scanned_to below that means "no progress".
+    m.client = _PartialScanClient(scanned_to=900_000)
+
+    await m.fetch_and_compute()
+    assert m.cache.last_seen_block["ops"] == 900_000
+    assert m._error_count >= 1, "an incomplete scan must be visible, not silent"
+
+    await m.fetch_and_compute()
+    # The same range is retried rather than abandoned.
+    assert m.client.requested[0] == m.client.requested[1] == (900_001, 1_000_000)
+
+
+@pytest.mark.asyncio
+async def test_full_scan_advances_watermark_to_head(manager):
+    await manager.fetch_and_compute()
+    assert manager.cache.last_seen_block["ops"] == 1_000_000
+
+
+@pytest.mark.asyncio
+async def test_raising_client_leaves_watermark_untouched(tmp_path, monkeypatch):
+    monkeypatch.setattr(tm_mod, "_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(tm_mod, "_CACHE_FILE", tmp_path / "c.json")
+    m = TalismansManager(poll_interval=30)
+
+    class _Boom(_FakeClient):
+        async def fetch_operation_logs(self, from_block, to_block):
+            raise RuntimeError("all endpoints down")
+
+    m.client = _Boom()
+    m.cache.last_seen_block["ops"] = 777
+    await m.fetch_and_compute()
+    assert m.cache.last_seen_block["ops"] == 777
+
+
+@pytest.mark.asyncio
+async def test_caught_up_scan_is_not_counted_as_a_failure(tmp_path, monkeypatch):
+    """No new blocks since the last cycle is success, not an incomplete scan.
+
+    from_block would be head+1, which _get_logs answers with an empty list and
+    to_block — a value below from_block that must not read as 'no progress'.
+    """
+    monkeypatch.setattr(tm_mod, "_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(tm_mod, "_CACHE_FILE", tmp_path / "c.json")
+    m = TalismansManager(poll_interval=30)
+    m.client = _FakeClient()
+    m.cache.last_seen_block["ops"] = 1_000_000  # already at head
+
+    await m.fetch_and_compute()
+    assert m._error_count == 0
+    assert m.cache.last_seen_block["ops"] == 1_000_000

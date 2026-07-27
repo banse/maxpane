@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 def _truncate(name: str, width: int = 15) -> str:
@@ -75,7 +76,7 @@ class FPWalletBestPlays(Vertical):
         # -- Top Earner --
         earner_detail = self.query_one("#fpw-bp-earner-detail", Static)
         if top_earner:
-            name = _truncate(top_earner.get("name", "Unknown"), 15)
+            name = safe_markup(_truncate(top_earner.get("name", "Unknown"), 15))
             score = top_earner.get("score", 0)
             wins = top_earner.get("wins", 0)
             losses = top_earner.get("losses", 0)
@@ -93,7 +94,7 @@ class FPWalletBestPlays(Vertical):
         # -- Most Efficient --
         efficient_detail = self.query_one("#fpw-bp-efficient-detail", Static)
         if most_efficient:
-            name = _truncate(most_efficient.get("name", "Unknown"), 15)
+            name = safe_markup(_truncate(most_efficient.get("name", "Unknown"), 15))
             win_rate = most_efficient.get("win_rate", 0.0)
             wins = most_efficient.get("wins", 0)
             losses = most_efficient.get("losses", 0)

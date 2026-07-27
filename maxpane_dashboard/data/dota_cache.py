@@ -17,6 +17,7 @@ from collections import deque
 from typing import Any
 
 from maxpane_dashboard.data.dota_models import DOTASnapshot
+from maxpane_dashboard.data.series_points import coerce_points
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,13 @@ class DOTACache:
 
         Silently does nothing if the file is missing or corrupted.
         Existing in-memory data is replaced on successful load.
+
+        Individual points are validated: anything unusable (``null``, a
+        string, ``NaN``, a wrong-length entry, a negative value, a
+        future-dated timestamp) is dropped and counted rather than
+        raising, because every manager loads its cache in ``__init__``
+        and one bad value used to abort MaxPane startup for every
+        dashboard.
         """
         try:
             with open(path) as f:
@@ -156,6 +164,8 @@ class DOTACache:
             return
 
         loaded = 0
+        skipped = 0
+        now = time.time()
         for key, deque_ref in [
             ("top_history", self.top_history),
             ("mid_history", self.mid_history),
@@ -164,12 +174,18 @@ class DOTACache:
             points = payload.get(key, [])
             if not isinstance(points, list):
                 continue
+            good, dropped = coerce_points(points, now=now)
+            skipped += dropped
             deque_ref.clear()
-            for pt in points:
-                if isinstance(pt, (list, tuple)) and len(pt) == 2:
-                    deque_ref.append((float(pt[0]), float(pt[1])))
+            deque_ref.extend(good)
             loaded += len(deque_ref)
 
+        if skipped:
+            logger.warning(
+                "Skipped %d unusable point(s) while loading DOTA cache %s",
+                skipped,
+                path,
+            )
         logger.info(
             "Loaded DOTA cache from %s: %d total points",
             path,

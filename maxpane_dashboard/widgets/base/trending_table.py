@@ -13,6 +13,7 @@ from maxpane_dashboard.analytics.base_tokens import (
     format_volume,
 )
 from maxpane_dashboard.data.base_models import BaseToken
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 class TrendingTable(Vertical):
@@ -69,7 +70,7 @@ class TrendingTable(Vertical):
             mcap_str = format_market_cap(token.market_cap)
             liq_str = format_market_cap(token.liquidity)
 
-            symbol = token.symbol[:10]
+            symbol = safe_markup(token.symbol[:10])
 
             # Highlight top 3
             if idx <= 3:

@@ -38,19 +38,31 @@ class OCMManager:
     ----------
     poll_interval:
         Seconds between automatic refreshes (used for status display).
+    client:
+        Optional pre-built ``OCMClient`` (dependency injection for tests).
+    cache_file:
+        Optional path for the persisted history.  Defaults to
+        ``~/.maxpane/ocm_cache.json``.
     """
 
-    def __init__(self, poll_interval: int = 60) -> None:
-        self.client = OCMClient()
+    def __init__(
+        self,
+        poll_interval: int = 60,
+        *,
+        client: OCMClient | None = None,
+        cache_file: Path | None = None,
+    ) -> None:
+        self.client = client or OCMClient()
         self.cache = OCMCache(max_history=120)
         self._poll_interval = poll_interval
         self._error_count = 0
+        self._cache_file = Path(cache_file) if cache_file else _CACHE_FILE
 
         # Ensure cache directory exists
-        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self._cache_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Attempt to load persisted history on construction
-        self.cache.load_from_file(str(_CACHE_FILE))
+        self.cache.load_from_file(str(self._cache_file))
 
     # ------------------------------------------------------------------
     # Public API
@@ -84,6 +96,11 @@ class OCMManager:
         Meta:
             ``error_count``, ``last_updated_seconds_ago``,
             ``poll_interval``.
+
+        If the client reports failed core reads, the zeros it returns are
+        neither persisted nor displayed: the last good snapshot is served
+        instead (so ``last_updated_seconds_ago`` grows, showing the data is
+        stale) and ``error_count`` is incremented.
         """
         try:
             snapshot = await self.client.fetch_snapshot()
@@ -92,7 +109,22 @@ class OCMManager:
             raise
 
         # -- Update cache with latest snapshot --------------------------------
-        self.cache.update(snapshot)
+        # A snapshot with failed core reads carries 0 placeholders.  Appending
+        # those to the histories poisons every rate signal (a 0 followed by a
+        # real value looks like thousands of mints) and is persisted to disk,
+        # so degrade to the last good snapshot instead and surface the outage.
+        if snapshot.read_failures:
+            self._error_count += 1
+            logger.warning(
+                "OCM snapshot had %d failed core read(s); serving last good "
+                "data and skipping history append",
+                snapshot.read_failures,
+            )
+            last_good = self.cache.get_latest()
+            if last_good is not None:
+                snapshot = last_good
+        else:
+            self.cache.update(snapshot)
 
         # -- Derived values ---------------------------------------------------
         # Use cached holder_count if snapshot reports 0 (holder scan is expensive)
@@ -105,6 +137,7 @@ class OCMManager:
         supply_history = self.cache.get_supply_history()
         staked_history = self.cache.get_staked_history()
         ocmd_supply_history = self.cache.get_ocmd_supply_history()
+        burn_history = self.cache.get_burn_history()
 
         # -- Signals (3 signals + recommendation) -----------------------------
         _sig_default = {"label": "", "value_str": "--", "indicator": "", "color": "dim"}
@@ -123,8 +156,12 @@ class OCMManager:
             default=_sig_default,
         )
 
+        # Burns are transfers to 0xdead and never reduce totalSupply, so the
+        # burn rate must come from the cumulative-burn series (balanceOf of the
+        # burn address over time), never from supply_history -- that series
+        # only grows, with mints.
         burn_rate = _safe_call(
-            compute_burn_rate, supply_history,
+            compute_burn_rate, burn_history, OCMCache.BURN_WINDOW_SECONDS,
             default=0.0,
         )
         burn_rate_signal = _safe_call(
@@ -223,7 +260,7 @@ class OCMManager:
 
     def save_cache(self) -> None:
         """Persist cache to disk."""
-        self.cache.save_to_file(str(_CACHE_FILE))
+        self.cache.save_to_file(str(self._cache_file))
 
     async def close(self) -> None:
         """Shut down the HTTP client and persist cache."""

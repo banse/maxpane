@@ -476,6 +476,12 @@ class BoostCatalogItem(BaseModel):
     """Effect duration in seconds as a string."""
     is_shield: bool
     active: bool
+    player_purchasable: bool = True
+    """False for items the player cannot buy (e.g. random events)."""
+    is_countermeasure: bool = False
+    """True for defensive items such as Cleanup Crew."""
+    is_random_event: bool = False
+    """True for game-triggered events (type ``randomEvent``)."""
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> BoostCatalogItem:
@@ -490,6 +496,9 @@ class BoostCatalogItem(BaseModel):
             duration_seconds=data["durationSeconds"],
             is_shield=data["isShield"],
             active=data["active"],
+            player_purchasable=data.get("playerPurchasable", True),
+            is_countermeasure=data.get("isCountermeasure", False),
+            is_random_event=data.get("isRandomEvent", False),
         )
 
 

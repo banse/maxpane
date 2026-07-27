@@ -7,6 +7,8 @@ import re
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+
 
 # Strip emoji and other non-BMP characters that cause terminal width issues
 _EMOJI_RE = re.compile(
@@ -98,7 +100,7 @@ class FPPerfPets(Vertical):
 
         for idx, pet in enumerate(sorted_pets, start=1):
             raw_name = pet.get("name", "") or f"#{pet.get('id', '?')}"
-            pet_name = _EMOJI_RE.sub("", raw_name).strip()
+            pet_name = safe_markup(_EMOJI_RE.sub("", raw_name).strip())
             if not pet_name:
                 pet_name = f"#{pet.get('id', '?')}"
 

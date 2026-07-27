@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 _FACTION_COLORS = {
@@ -26,7 +27,7 @@ def _truncate_name(name: str, width: int = _NAME_WIDTH) -> str:
 
 def _hero_to_markup(hero: dict) -> str:
     """Convert a hero dict into a Rich-markup formatted line."""
-    name = _truncate_name(hero.get("name", "Unknown"))
+    name = safe_markup(_truncate_name(hero.get("name", "Unknown")))
     faction = hero.get("faction", "")
     hero_class = hero.get("hero_class", "")
     lane = hero.get("lane", "")

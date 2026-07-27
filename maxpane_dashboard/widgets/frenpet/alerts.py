@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 # Severity-to-markup mapping.
@@ -59,7 +60,7 @@ class AlertsPanel(Vertical):
         for alert in alerts:
             severity = alert.get("severity", "info")
             color, dot = _SEVERITY_STYLE.get(severity, ("dim", "\u25cb"))
-            message = alert.get("message", "")
+            message = safe_markup(alert.get("message", ""))
             lines.append(f"  [{color}]{dot}[/{color}] {message}")
 
         self.query_one("#alert-content", Static).update("\n".join(lines))

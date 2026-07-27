@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _NUM_ROWS = 10
 
@@ -58,7 +59,7 @@ class FPBestPlays(Vertical):
             if i < len(top_earners):
                 e_name, e_value = top_earners[i]
                 star = "[yellow]\u2605[/] " if i == 0 else "  "
-                e_name_str = _truncate(e_name, 14)
+                e_name_str = safe_markup(_truncate(e_name, 14))
                 e_value_str = f"[green]{e_value:>10}[/]"
             else:
                 star = "  "
@@ -69,7 +70,7 @@ class FPBestPlays(Vertical):
             if i < len(rising_stars):
                 r_name, r_value = rising_stars[i]
                 r_star = "[yellow]\u2605[/] " if i == 0 else "  "
-                r_name_str = _truncate(r_name, 14)
+                r_name_str = safe_markup(_truncate(r_name, 14))
                 r_value_str = f"[green]{r_value:>8}[/]"
             else:
                 r_star = "  "

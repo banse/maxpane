@@ -39,6 +39,7 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _DASH = "--"
 _EMDASH = "—"
@@ -531,7 +532,7 @@ class FWASettlementTable(Vertical):
             table.add_row(
                 *_cells(
                     {
-                        "label": _fit_label(label, outcome, label_width),
+                        "label": safe_markup(_fit_label(label, outcome, label_width)),
                         "count": _fmt_int(count),
                         "share": _fmt_pct(share),
                         "eth": _EMDASH,

@@ -10,6 +10,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
+from maxpane_dashboard.analytics.ev import CATALOG_SOURCE_LIVE
 from maxpane_dashboard.data.manager import DataManager
 from maxpane_dashboard.widgets.hero_metrics import HeroMetrics
 from maxpane_dashboard.widgets.leaderboard import Leaderboard
@@ -176,6 +177,7 @@ class BakeryScreen(Screen):
             self.query_one(EVTable).update_data(
                 boost_rankings=data["boost_rankings"],
                 attack_rankings=data["attack_rankings"],
+                catalog_source=data.get("ev_catalog_source", CATALOG_SOURCE_LIVE),
             )
         except Exception as exc:
             logger.warning("Failed to update EVTable: %s", exc)

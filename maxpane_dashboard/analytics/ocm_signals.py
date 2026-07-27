@@ -104,18 +104,35 @@ def compute_mint_velocity(supply_history: list[tuple[float, float]]) -> float:
     return max(delta / elapsed_days, 0.0)
 
 
-def compute_burn_rate(burn_counts: list[tuple[float, int]]) -> float:
+def compute_burn_rate(
+    burn_counts: list[tuple[float, float]],
+    min_elapsed_seconds: float = 0.0,
+) -> float:
     """Compute burns per week from (timestamp, cumulative_burned) pairs.
 
+    ``burn_counts`` MUST be a cumulative-burn series -- for Onchain
+    Monsters that is ``balanceOf(0xdead)`` over time
+    (``OCMCache.get_burn_history()``).  It must NOT be the total-supply
+    series: OCM burns are transfers to ``0xdead`` and never reduce
+    ``totalSupply``, so a supply series measures *mints* and would report
+    mint activity as burn pressure.
+
     Timestamps are unix seconds. Returns 0.0 if fewer than 2 data points.
+
+    ``min_elapsed_seconds`` floors the observation window used for the
+    extrapolation.  Passing the full retention window (7 days) makes the
+    result "burns seen in the trailing week", which under-reports while
+    history is still filling instead of extrapolating one burn observed
+    over two hours into a false ~84/week alarm.
     """
     if len(burn_counts) < 2:
         return 0.0
     burn_counts = sorted(burn_counts, key=lambda p: p[0])
     t0, b0 = burn_counts[0]
     t1, b1 = burn_counts[-1]
-    elapsed_weeks = (t1 - t0) / 604800
-    if elapsed_weeks <= 0:
+    elapsed = t1 - t0
+    if elapsed <= 0:
         return 0.0
+    elapsed_weeks = max(elapsed, min_elapsed_seconds) / 604800
     delta = b1 - b0
     return max(delta / elapsed_weeks, 0.0)

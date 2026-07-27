@@ -20,6 +20,7 @@ from maxpane_dashboard.analytics.base_tokens import (
     format_volume,
 )
 from maxpane_dashboard.data.base_models import BaseToken, TokenLaunch, TrendingPool
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 # ---------------------------------------------------------------------------
 # Sparkline rendering
@@ -284,7 +285,7 @@ class OverviewPanel(Vertical):
             change_str = format_change(change_24h)
             price_str = format_price(token.price_usd)
             mcap_str = format_market_cap(token.market_cap) + " mcap"
-            symbol = token.symbol[:8].ljust(8)
+            symbol = safe_markup(token.symbol[:8].ljust(8))
 
             if change_24h is not None and change_24h > 0:
                 spark_colour = "green"
@@ -332,7 +333,7 @@ class OverviewPanel(Vertical):
             for token in vol_display:
                 vol = token.volume_24h
                 vol_str = format_volume(vol)
-                symbol = token.symbol[:8]
+                symbol = safe_markup(token.symbol[:8])
                 bar_len = max(1, int(vol / max_vol * _MAX_BAR_WIDTH)) if max_vol > 0 else 1
                 bar = f"[cyan]{_BAR_CHAR * bar_len}[/]"
                 vol_table.add_row(
@@ -353,8 +354,8 @@ class OverviewPanel(Vertical):
             for launch in launch_display:
                 age = _format_age(launch.created_at)
                 launch_table.add_row(
-                    launch.name[:20],
-                    launch.deployer,
+                    safe_markup(launch.name[:20]),
+                    safe_markup(launch.deployer),
                     age,
                 )
 
@@ -372,7 +373,7 @@ class OverviewPanel(Vertical):
         for token in top_gainers[:_MAX_MOVERS]:
             change = token.price_change_24h
             pct = f"+{change:.1f}%" if change is not None else "+?%"
-            symbol = token.symbol[:10]
+            symbol = safe_markup(token.symbol[:10])
             status = classify_token_status(token)
             dot = _status_dot(status)
             movers_table.add_row(
@@ -386,7 +387,7 @@ class OverviewPanel(Vertical):
         for token in top_losers[:_MAX_MOVERS]:
             change = token.price_change_24h
             pct = f"{change:.1f}%" if change is not None else "-?%"
-            symbol = token.symbol[:10]
+            symbol = safe_markup(token.symbol[:10])
             status = classify_token_status(token)
             dot = _status_dot(status)
             movers_table.add_row(
@@ -411,7 +412,7 @@ class OverviewPanel(Vertical):
         else:
             for pool in pool_display:
                 pair = f"{pool.token_symbol}/WETH"
-                pair_str = pair[:14]
+                pair_str = safe_markup(pair[:14])
                 vol_str = format_volume(pool.volume_24h)
                 change_str = format_change(pool.price_change_24h)
                 pools_table.add_row(

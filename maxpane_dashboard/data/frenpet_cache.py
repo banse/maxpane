@@ -18,6 +18,7 @@ from collections import deque
 from typing import Any
 
 from maxpane_dashboard.data.frenpet_models import FrenPetSnapshot
+from maxpane_dashboard.data.series_points import coerce_points
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +177,13 @@ class FrenPetCache:
 
         Silently does nothing if the file is missing or corrupted.
         Existing in-memory data is replaced on successful load.
+
+        Individual points are validated: anything unusable (``null``, a
+        string, ``NaN``, a wrong-length entry, a negative score, a
+        future-dated timestamp) is dropped and counted rather than
+        raising, because every manager loads its cache in ``__init__``
+        and one bad value used to abort MaxPane startup for every
+        dashboard.
         """
         try:
             with open(path) as f:
@@ -192,6 +200,8 @@ class FrenPetCache:
             return
 
         loaded = 0
+        skipped = 0
+        now = time.time()
         for pid_str, points in histories.items():
             if not isinstance(points, list):
                 continue
@@ -199,13 +209,18 @@ class FrenPetCache:
                 pid = int(pid_str)
             except (ValueError, TypeError):
                 continue
-            dq: deque[TimeSeriesPoint] = deque(maxlen=self._max_history)
-            for pt in points:
-                if isinstance(pt, (list, tuple)) and len(pt) == 2:
-                    dq.append((float(pt[0]), float(pt[1])))
+            good, dropped = coerce_points(points, now=now)
+            skipped += dropped
+            dq: deque[TimeSeriesPoint] = deque(good, maxlen=self._max_history)
             self._pet_histories[pid] = dq
             loaded += 1
 
+        if skipped:
+            logger.warning(
+                "Skipped %d unusable point(s) while loading FrenPet cache %s",
+                skipped,
+                path,
+            )
         logger.info(
             "Loaded FrenPet cache from %s: %d pets, up to %d points each",
             path,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 class FeeLeaderboard(Vertical):
@@ -49,7 +50,7 @@ class FeeLeaderboard(Vertical):
             return
 
         for idx, entry in enumerate(leaderboard[:10], start=1):
-            token = entry.get("token", "???")
+            token = safe_markup(entry.get("token", "???"))
             total = entry.get("total_claimed_eth", 0)
             try:
                 total_val = float(total)

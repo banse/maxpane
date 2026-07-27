@@ -275,41 +275,64 @@ class OCMClient:
         """
         now = time.time()
 
+        # Core reads use standard ERC-721/ERC-20 selectors and always return
+        # data on a healthy endpoint; a None here means the RPC failed, not
+        # that the value is zero.  Failures are counted so the manager can
+        # refuse to persist the resulting zeros (see OCMSnapshot.read_failures).
+        read_failures = 0
+
         # 1. NFT totalSupply
-        total_supply = await self._safe_read_uint(
+        total_supply_opt = await self._read_uint(
             _NFT_ADDRESS, _SEL_TOTAL_SUPPLY, "NFT totalSupply"
         )
+        if total_supply_opt is None:
+            read_failures += 1
+        total_supply = total_supply_opt or 0
 
-        # 2. NFT currentMintingCost (raw wei of OCMD)
-        current_minting_cost = await self._safe_read_uint(
-            _NFT_ADDRESS, _SEL_CURRENT_MINTING_COST, "currentMintingCost"
+        # 2. NFT currentMintingCost (raw wei of OCMD).  Non-core: affects one
+        # displayed metric only, and its selector is less certain, so a
+        # failure falls back to 0 without flagging the whole snapshot.
+        current_minting_cost = (
+            await self._read_uint(
+                _NFT_ADDRESS, _SEL_CURRENT_MINTING_COST, "currentMintingCost"
+            )
+            or 0
         )
 
         # 3. OCMD totalSupply (wei -> float)
-        ocmd_total_supply_wei = await self._safe_read_uint(
+        ocmd_total_supply_opt = await self._read_uint(
             _OCMD_ADDRESS, _SEL_TOTAL_SUPPLY, "OCMD totalSupply"
         )
-        ocmd_total_supply = ocmd_total_supply_wei / _WEI
+        if ocmd_total_supply_opt is None:
+            read_failures += 1
+        ocmd_total_supply = (ocmd_total_supply_opt or 0) / _WEI
 
         # 4. NFTs held by OCMD contract = staked count
-        total_staked = await self._safe_read_uint(
+        total_staked_opt = await self._read_uint(
             _NFT_ADDRESS,
             f"{_SEL_BALANCE_OF}{_pad_address(_OCMD_ADDRESS)}",
             "NFT balanceOf(OCMD)",
         )
+        if total_staked_opt is None:
+            read_failures += 1
+        total_staked = total_staked_opt or 0
 
-        # 5. Faucet isClosed
-        faucet_closed_raw = await self._safe_read_uint(
+        # 5. Faucet isClosed -- non-core, unreadable means "assume open"
+        faucet_closed_raw = await self._read_uint(
             _FAUCET_ADDRESS, _SEL_IS_CLOSED, "isClosed"
         )
-        faucet_open = faucet_closed_raw == 0
+        faucet_open = not faucet_closed_raw
 
-        # 6. NFTs held by burn address = total burned count
-        total_burned = await self._safe_read_uint(
+        # 6. NFTs held by burn address = total burned count.  Core: this is
+        # the sole input to the burn-rate signal.
+        total_burned_opt = await self._read_uint(
             _NFT_ADDRESS,
             f"{_SEL_BALANCE_OF}{_pad_address(_BURN_ADDRESS)}",
             "NFT balanceOf(burn address)",
         )
+        if total_burned_opt is None:
+            read_failures += 1
+        total_burned = total_burned_opt or 0
 
         # 7. Get current block number
         try:
@@ -321,7 +344,7 @@ class OCMClient:
         # 7-9. Scan recent blocks for Transfer events and classify
         recent_events: list[OCMActivityEvent] = []
         if current_block > 0:
-            recent_events, _recent_burns = await self._scan_recent_activity(
+            recent_events = await self._scan_recent_activity(
                 current_block, block_range=500
             )
 
@@ -364,6 +387,13 @@ class OCMClient:
         # this with caching.
         holder_count = 0
 
+        if read_failures:
+            logger.warning(
+                "OCM snapshot has %d failed core read(s); values default to 0 "
+                "and must not be persisted as history",
+                read_failures,
+            )
+
         return OCMSnapshot(
             fetched_at=now,
             collection=collection,
@@ -371,22 +401,39 @@ class OCMClient:
             holder_count=holder_count,
             faucet_open=faucet_open,
             recent_events=recent_events,
+            read_failures=read_failures,
         )
 
     # ------------------------------------------------------------------
-    # Internal: safe uint256 reader
+    # Internal: uint256 reader
     # ------------------------------------------------------------------
 
-    async def _safe_read_uint(
+    async def _read_uint(
         self, contract: str, calldata: str, label: str
-    ) -> int:
-        """Read a single uint256 from a contract, returning 0 on failure."""
+    ) -> int | None:
+        """Read a single uint256 from a contract.
+
+        Returns ``None`` -- never ``0`` -- when the call fails or comes
+        back with no return data (a revert, or a wrong selector).  A
+        0-on-failure sentinel is indistinguishable from a genuine zero and
+        gets rendered and persisted as real data; callers must decide what
+        a missing read means for them.
+        """
         try:
             raw = await self._eth_call(contract, calldata)
-            return _decode_uint256(raw)
         except Exception as exc:
             logger.debug("Failed to read %s: %s", label, exc)
-            return 0
+            return None
+
+        if not isinstance(raw, str) or raw in ("", "0x", "0X"):
+            logger.debug("Empty return data reading %s: %r", label, raw)
+            return None
+
+        try:
+            return _decode_uint256(raw)
+        except ValueError as exc:
+            logger.debug("Undecodable return data for %s: %s", label, exc)
+            return None
 
     # ------------------------------------------------------------------
     # Internal: recent activity scanning
@@ -394,10 +441,14 @@ class OCMClient:
 
     async def _scan_recent_activity(
         self, current_block: int, block_range: int = 500
-    ) -> tuple[list[OCMActivityEvent], int]:
+    ) -> list[OCMActivityEvent]:
         """Scan recent blocks for NFT Transfer events and classify them.
 
-        Returns (events, burned_count_in_range).
+        Returns the classified events.  It deliberately does NOT return a
+        burn tally: the authoritative cumulative burn count is
+        ``balanceOf(0xdead)``, read every poll, and a per-window tally
+        derived from logs was never consumed by anything.  Burns inside the
+        window are still visible via ``event_type == "burn"``.
 
         Classification rules based on ERC-721 Transfer(from, to, tokenId):
         - from == 0x0  -> mint
@@ -415,11 +466,10 @@ class OCMClient:
             )
         except Exception as exc:
             logger.debug("Failed to fetch Transfer logs: %s", exc)
-            return [], 0
+            return []
 
         # First pass: classify each log entry
         raw_events: list[dict[str, Any]] = []
-        burned_count = 0
 
         for log in logs:
             try:
@@ -444,7 +494,6 @@ class OCMClient:
                 elif to_topic == _ZERO_ADDR_TOPIC or to_topic == _BURN_ADDR_TOPIC:
                     event_type = "burn"
                     actor = from_addr
-                    burned_count += 1
                 elif to_topic == _OCMD_ADDR_TOPIC:
                     event_type = "stake"
                     actor = from_addr
@@ -535,4 +584,4 @@ class OCMClient:
         # Sort by block number descending (newest first)
         events.sort(key=lambda e: e.block_number, reverse=True)
 
-        return events, burned_count
+        return events

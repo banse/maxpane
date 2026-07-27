@@ -7,6 +7,7 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 _RARITY_COLORS = {
@@ -39,8 +40,8 @@ def _catch_to_markup(catch: dict) -> str:
     """Convert a catch dict into a Rich-markup formatted line."""
     ts = _format_event_time(catch.get("timestamp", 0))
     display_name = catch.get("display_name", "")
-    fisher = display_name if display_name else _short_addr(catch.get("fisher_address", ""))
-    species = catch.get("species", "Unknown")
+    fisher = safe_markup(display_name if display_name else _short_addr(catch.get("fisher_address", "")))
+    species = safe_markup(catch.get("species", "Unknown"))
     weight = catch.get("weight_kg", 0.0)
     event_type = catch.get("rarity", "fish")
 

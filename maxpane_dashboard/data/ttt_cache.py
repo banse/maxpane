@@ -9,11 +9,26 @@ Tracks:
 * A ring buffer of the most recent 200 activity events for the activity feed.
 * Per-event-type incremental scan watermarks (last seen block per topic).
 * Rolling 24h counters for launches and ETH-to-holders flow.
+* A bounded ring of already-applied event keys, so re-scanning a block range
+  (which the reorg margin does on purpose, every cycle) can never double-count.
 
 Persistence: serialised to ``~/.maxpane/ttt_cache.json`` (fail-soft on missing
 / corrupt file). Follows the patterns in :mod:`maxpane_dashboard.data.ocm_cache`
 for save/load and in :mod:`maxpane_dashboard.data.base_cache` for hourly bucket
 aggregation.
+
+Schema versioning
+-----------------
+``schema_version`` 1 files were written by builds that carried the
+``min()``/``max()`` inversion in ``TTTManager._scan_events`` (CRIT-1): every
+30s cycle re-applied ~16.7h of Deposited/Launched/Bought events through
+applicators that were not idempotent, so the accumulating fields on disk are
+inflated by an unknown factor. On load we therefore *drop* exactly the
+accumulators (``fees_by_token``, ``activity_log``, the two 24h counters and
+the scan watermarks) from a pre-v2 file, while keeping the state that was
+never accumulated and is expensive to rebuild (the token registry and the
+7-day hourly sparklines, both of which are written by overwrite-by-bucket /
+insert-if-absent paths).
 """
 
 from __future__ import annotations
@@ -40,12 +55,52 @@ _ACTIVITY_RING_BUFFER = 200
 _FEE_BUCKET_RETENTION_SEC = 25 * 3600  # keep 24h+1h of fee history
 _HOURLY_RETENTION_SEC = (_HOURLY_HISTORY_HOURS + 1) * 3600
 
+# On-disk schema version. Bumped to 2 when the applicators became idempotent;
+# see the module docstring for what a pre-v2 load discards and why.
+_CACHE_SCHEMA_VERSION = 2
+
+# How many already-applied event keys we remember. Only has to cover the
+# overlap between two consecutive scans (the reorg margin, ~12 blocks), so
+# this is orders of magnitude more than needed.
+_SEEN_EVENT_RING = 5_000
+# How many of those we write to disk, so a restart doesn't re-apply the
+# events inside the reorg margin.
+_SEEN_EVENT_PERSIST = 2_000
+
 _WEI = 10**18
 
 
 def _hour_bucket(ts: float) -> float:
     """Floor a timestamp to the start of its hour."""
     return float(int(ts // 3600) * 3600)
+
+
+def _event_key(
+    *,
+    tx_hash: str,
+    event_type: str,
+    token: str | None,
+    block_number: int,
+    log_index: int | None = None,
+) -> str:
+    """Identity of one on-chain event, for de-duplication.
+
+    ``(tx_hash, event_type, token, block_number)`` is the identity the review
+    asked for; ``log_index`` is appended as a refinement so two genuinely
+    distinct logs of the same type for the same token in the same transaction
+    (e.g. two ``Deposited`` in one multi-hop swap) are not collapsed into one.
+    Callers that have no log index pass ``None`` and get the plain 4-tuple
+    behaviour.
+    """
+    return "|".join(
+        (
+            str(tx_hash).lower(),
+            str(event_type),
+            (token or "").lower(),
+            str(int(block_number or 0)),
+            "" if log_index is None else str(int(log_index)),
+        )
+    )
 
 
 class TTTCache:
@@ -88,6 +143,32 @@ class TTTCache:
         # here so the manager doesn't have to scan every time).
         self.launches_24h: int = 0
         self.eth_to_holders_24h_wei: int = 0
+
+        # Already-applied event identities (bounded ring). The set is the
+        # membership test; the deque preserves insertion order for eviction.
+        self._seen_events: set[str] = set()
+        self._seen_order: deque[str] = deque()
+
+    # ------------------------------------------------------------------
+    # Idempotency
+    # ------------------------------------------------------------------
+
+    def mark_event_seen(self, key: str) -> bool:
+        """Record *key* as applied. Returns ``True`` only the first time.
+
+        Every ``apply_*`` method funnels through this, which is what makes
+        them idempotent: re-scanning a block range (the reorg margin does so
+        deliberately on every cycle) re-delivers events that were already
+        folded into the fee buckets and the activity feed, and those must not
+        be counted twice.
+        """
+        if key in self._seen_events:
+            return False
+        self._seen_events.add(key)
+        self._seen_order.append(key)
+        while len(self._seen_order) > _SEEN_EVENT_RING:
+            self._seen_events.discard(self._seen_order.popleft())
+        return True
 
     # ------------------------------------------------------------------
     # Token registry
@@ -192,11 +273,19 @@ class TTTCache:
         timestamp: int,
         tx_hash: str,
         symbol: str | None = None,
+        log_index: int | None = None,
     ) -> None:
         """Record a burn-and-launch event (factory.Launched).
 
         Registers the token (no-op if already known) and appends a ``burn``
-        activity event for the feed.
+        activity event for the feed. Idempotent: applying the same log twice
+        appends one activity row, not two.
+
+        Registration runs *before* the de-dup check on purpose. It is already
+        insert-if-absent, so replaying costs nothing, and this way a token can
+        still be (re-)registered from a replayed launch if the registry and
+        the seen-ring ever disagree -- e.g. a cache file whose ``tokens``
+        block failed validation on load while ``seen_events`` survived.
         """
         self.register_token(
             token_id=token_id,
@@ -205,6 +294,16 @@ class TTTCache:
             launch_block=block_number,
             symbol=symbol,
         )
+        if not self.mark_event_seen(
+            _event_key(
+                tx_hash=tx_hash,
+                event_type="burn",
+                token=address,
+                block_number=block_number,
+                log_index=log_index,
+            )
+        ):
+            return
         self.activity_log.appendleft(
             TTTActivityEvent(
                 tx_hash=tx_hash,
@@ -230,12 +329,27 @@ class TTTCache:
         block_number: int,
         timestamp: int,
         tx_hash: str,
+        log_index: int | None = None,
     ) -> None:
         """Bucket a FeeSplitter.Deposited event into per-token hourly fees.
 
         The 30%-bucket is taken DIRECTLY from ``holder_share_wei`` -- no
         recomputation; the event already emits pre-split shares inline.
+
+        Idempotent: applying the same log twice adds ``holder_share_wei`` to
+        the hourly bucket exactly once. Without that guard a re-scanned block
+        range inflates ``eth_to_holders_24h_wei`` (CRIT-1).
         """
+        if not self.mark_event_seen(
+            _event_key(
+                tx_hash=tx_hash,
+                event_type="fee",
+                token=token,
+                block_number=block_number,
+                log_index=log_index,
+            )
+        ):
+            return
         addr = token.lower()
         bucket = _hour_bucket(timestamp)
         token_buckets = self.fees_by_token.setdefault(addr, [])
@@ -275,8 +389,19 @@ class TTTCache:
         block_number: int,
         timestamp: int,
         tx_hash: str,
+        log_index: int | None = None,
     ) -> None:
-        """Append a TTT.Bought event to the activity feed."""
+        """Append a TTT.Bought event to the activity feed (idempotent)."""
+        if not self.mark_event_seen(
+            _event_key(
+                tx_hash=tx_hash,
+                event_type="buyback",
+                token=token,
+                block_number=block_number,
+                log_index=log_index,
+            )
+        ):
+            return
         addr = token.lower()
         sym = self.tokens.get(addr).symbol if addr in self.tokens else None
         tid = self.tokens.get(addr).token_id if addr in self.tokens else None
@@ -415,6 +540,7 @@ class TTTCache:
     def save_to_file(self, path: str) -> None:
         """Persist cache to disk via atomic temp-then-rename."""
         payload = {
+            "schema_version": _CACHE_SCHEMA_VERSION,
             "saved_at": time.time(),
             "tokens": {addr: t.model_dump() for addr, t in self.tokens.items()},
             "fees_by_token": {
@@ -428,6 +554,9 @@ class TTTCache:
             "last_seen_block": dict(self.last_seen_block),
             "launches_24h": int(self.launches_24h),
             "eth_to_holders_24h_wei": int(self.eth_to_holders_24h_wei),
+            # Only the tail matters: it exists so the reorg-margin overlap
+            # isn't re-applied across a restart.
+            "seen_events": list(self._seen_order)[-_SEEN_EVENT_PERSIST:],
         }
         tmp = path + ".tmp"
         try:
@@ -448,6 +577,51 @@ class TTTCache:
             except OSError:
                 pass
 
+    @staticmethod
+    def _migrate_legacy_payload(
+        payload: dict, path: str, version: int
+    ) -> dict:
+        """Strip the fields a pre-v2 file cannot be trusted to hold.
+
+        Any cache written before the CRIT-1 fix accumulated the same events
+        once per 30s poll for as long as they stayed inside the 5,000-block
+        rescan window, so every *accumulating* field on disk is inflated by an
+        unknown factor and there is no way to deflate it after the fact. We
+        drop those and let them rebuild from chain:
+
+        * ``fees_by_token`` -- summed per hourly bucket, inflated.
+        * ``activity_log`` -- append-per-sighting, full of duplicate rows that
+          evicted real history out of the 200-item ring.
+        * ``launches_24h`` / ``eth_to_holders_24h_wei`` -- derived from both.
+        * ``last_seen_block`` -- cleared so the next run does the same
+          150k-block backfill a fresh install does, rebuilding real history
+          instead of starting blind at the current block.
+
+        Kept, because neither path ever accumulated: ``tokens`` (registry,
+        insert-if-absent) and the hourly sparkline series (overwrite-by-bucket).
+        """
+        dropped = {
+            k: len(payload.get(k) or [])
+            for k in ("fees_by_token", "activity_log", "last_seen_block")
+        }
+        logger.warning(
+            "TTT cache %s is schema v%d (pre-idempotency); discarding "
+            "inflated fee/activity state (%s) and rescanning from chain. "
+            "Token registry (%d) and sparkline history are kept.",
+            path,
+            version,
+            dropped,
+            len(payload.get("tokens") or {}),
+        )
+        cleaned = dict(payload)
+        cleaned["fees_by_token"] = {}
+        cleaned["activity_log"] = []
+        cleaned["last_seen_block"] = {}
+        cleaned["launches_24h"] = 0
+        cleaned["eth_to_holders_24h_wei"] = 0
+        cleaned["seen_events"] = []
+        return cleaned
+
     def load_from_file(self, path: str) -> None:
         """Load saved state from disk. Silent no-op on missing / corrupt file."""
         try:
@@ -459,6 +633,13 @@ class TTTCache:
         if not isinstance(payload, dict):
             logger.warning("TTT cache %s has unexpected shape, skipping", path)
             return
+
+        try:
+            version = int(payload.get("schema_version") or 1)
+        except (TypeError, ValueError):
+            version = 1
+        if version < _CACHE_SCHEMA_VERSION:
+            payload = self._migrate_legacy_payload(payload, path, version)
 
         # Tokens
         try:
@@ -521,6 +702,17 @@ class TTTCache:
             pass
         self.launches_24h = int(payload.get("launches_24h") or 0)
         self.eth_to_holders_24h_wei = int(payload.get("eth_to_holders_24h_wei") or 0)
+
+        # Applied-event ring
+        try:
+            self._seen_events.clear()
+            self._seen_order.clear()
+            for key in (payload.get("seen_events") or [])[-_SEEN_EVENT_RING:]:
+                if isinstance(key, str) and key not in self._seen_events:
+                    self._seen_events.add(key)
+                    self._seen_order.append(key)
+        except Exception as exc:
+            logger.warning("seen_events block bad: %s", exc)
 
         logger.info(
             "Loaded TTT cache from %s: %d tokens, %d activity, %d hourly points",

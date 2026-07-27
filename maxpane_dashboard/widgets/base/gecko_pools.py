@@ -8,6 +8,7 @@ from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.analytics.base_tokens import format_change, format_volume
 from maxpane_dashboard.data.base_models import TrendingPool
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _MAX_POOLS = 5
 
@@ -53,7 +54,7 @@ class GeckoPools(Vertical):
 
         for pool in display:
             pair = f"{pool.token_symbol}/WETH"
-            pair_str = pair[:16]
+            pair_str = safe_markup(pair[:16])
             vol_str = format_volume(pool.volume_24h)
             change_str = format_change(pool.price_change_24h)
 

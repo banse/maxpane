@@ -8,6 +8,7 @@ from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.analytics.base_tokens import format_market_cap
 from maxpane_dashboard.data.base_models import BaseToken
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 class TopMovers(Vertical):
@@ -61,7 +62,7 @@ class TopMovers(Vertical):
             change = token.price_change_24h
             pct = f"+{change:.0f}%" if change is not None else "+?%"
             mcap = format_market_cap(token.market_cap)
-            symbol = token.symbol[:10]
+            symbol = safe_markup(token.symbol[:10])
             table.add_row(
                 "[green]\u25b2[/]",
                 f"[bold]{symbol}[/]",
@@ -73,7 +74,7 @@ class TopMovers(Vertical):
             change = token.price_change_24h
             pct = f"{change:.0f}%" if change is not None else "-?%"
             mcap = format_market_cap(token.market_cap)
-            symbol = token.symbol[:10]
+            symbol = safe_markup(token.symbol[:10])
             table.add_row(
                 "[red]\u25bc[/]",
                 f"[bold]{symbol}[/]",

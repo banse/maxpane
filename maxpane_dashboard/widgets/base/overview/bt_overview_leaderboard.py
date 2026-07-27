@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 class BTOverviewLeaderboard(Vertical):
@@ -50,13 +51,13 @@ class BTOverviewLeaderboard(Vertical):
         for idx, token in enumerate(trending_tokens[:15], start=1):
             # Support both dict and object access
             if isinstance(token, dict):
-                symbol = token.get("symbol", "???")[:10]
+                symbol = safe_markup(token.get("symbol", "???")[:10])
                 price = token.get("price_usd", 0)
                 change = token.get("price_change_24h")
                 volume = token.get("volume_24h", 0)
                 mcap = token.get("market_cap", 0)
             else:
-                symbol = getattr(token, "symbol", "???")[:10]
+                symbol = safe_markup(getattr(token, "symbol", "???")[:10])
                 price = getattr(token, "price_usd", 0)
                 change = getattr(token, "price_change_24h", None)
                 volume = getattr(token, "volume_24h", 0)

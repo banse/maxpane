@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from maxpane_dashboard.analytics.ev import rank_attacks, rank_boosts
+from maxpane_dashboard.analytics.ev import rank_attacks, rank_boosts, resolve_catalog
 from maxpane_dashboard.analytics.production import calculate_production_rate
 from maxpane_dashboard.analytics.signals import (
     calculate_gap_analysis,
@@ -108,8 +108,15 @@ class DataManager:
         leader_rate = production_rates.get(leader_name, 0.0)
 
         # ── EV rankings ──────────────────────────────────────────────
-        boost_rankings = rank_boosts(leader_rate)
-        attack_rankings = rank_attacks(leader_rate)
+        # Rank from the catalog the game publishes in agent.json.  Costs,
+        # success chances and durations are re-tuned every season, so the
+        # hardcoded table is a fallback only -- and when it is used, the
+        # ``ev_catalog_source`` key below tells the UI to say so.
+        ev_catalog = resolve_catalog(
+            getattr(agent_config.live_state, "active_boost_catalog", ())
+        )
+        boost_rankings = rank_boosts(leader_rate, catalog=ev_catalog)
+        attack_rankings = rank_attacks(leader_rate, catalog=ev_catalog)
 
         # ── Signals ──────────────────────────────────────────────────
         buy_in_eth = float(agent_config.live_state.buy_in_eth)
@@ -203,6 +210,7 @@ class DataManager:
             # ev_table
             "boost_rankings": boost_rankings,
             "attack_rankings": attack_rankings,
+            "ev_catalog_source": ev_catalog.source,
             # status_bar
             "last_updated_seconds_ago": last_updated_seconds_ago,
             "error_count": self._error_count,

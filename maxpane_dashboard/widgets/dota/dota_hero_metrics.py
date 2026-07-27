@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 class DOTAHeroBox(Static):
@@ -128,7 +129,7 @@ class DOTAHeroMetrics(Horizontal):
         if top_player_name:
             top_box.update(
                 f"[dim]TOP PLAYER[/]\n\n"
-                f"[bold white]{top_player_name}[/]\n"
+                f"[bold white]{safe_markup(top_player_name)}[/]\n"
                 f"[dim]{top_player_wins}W \u00b7 {top_player_win_rate:.0f}% WR[/]"
             )
         else:

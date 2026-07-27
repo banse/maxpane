@@ -14,6 +14,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _DASH = "--"
 _SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉"
@@ -116,7 +117,7 @@ def _safe_symbol(sym) -> str:
     cleaned = cleaned.strip()
     if not cleaned:
         return _DASH
-    return cleaned[:8]
+    return safe_markup(cleaned[:8])
 
 
 # -- widget ------------------------------------------------------------

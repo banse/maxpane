@@ -20,6 +20,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _DASH = "--"
 
@@ -54,7 +55,7 @@ def _safe_symbol(sym) -> str:
     except Exception:
         return _DASH
     cleaned = cleaned.strip()
-    return cleaned[:8] if cleaned else _DASH
+    return safe_markup(cleaned[:8]) if cleaned else _DASH
 
 
 class TTTFeesTable(Vertical):

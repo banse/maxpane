@@ -8,6 +8,7 @@ from textual.widgets import Static
 
 from maxpane_dashboard.analytics.base_tokens import format_price
 from maxpane_dashboard.data.base_models import BaseToken
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _SPARK_CHARS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
 _SPARK_WIDTH = 12
@@ -97,7 +98,7 @@ class PriceSparklines(Vertical):
                 arrow = "[dim]\u25cf[/]"
                 color = "dim"
 
-            symbol = token.symbol[:8].ljust(8)
+            symbol = safe_markup(token.symbol[:8].ljust(8))
 
             widget.update(
                 f"  [dim]{symbol}[/] [{color}]{sparkline}[/]  "

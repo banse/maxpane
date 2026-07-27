@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 class FPPerfSignals(Vertical):
@@ -73,7 +74,7 @@ class FPPerfSignals(Vertical):
         )
 
         # Weakest Pet
-        weak_str = f"{weakest_name} {weakest_wr:.0f}%"
+        weak_str = f"{safe_markup(weakest_name)} {weakest_wr:.0f}%"
         self.query_one("#fpp-sig-weakest", Static).update(
             f"  [dim]{'Weakest Pet':<20}[/]"
             f"[bold white]{weak_str:>12}[/]"

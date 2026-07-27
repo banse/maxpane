@@ -9,6 +9,7 @@ from textual.widgets import DataTable, Static
 from maxpane_dashboard.analytics.leaderboard import format_cookies, format_gap
 from maxpane_dashboard.analytics.production import format_rate
 from maxpane_dashboard.data.models import BakerySummary
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 class Leaderboard(Vertical):
@@ -66,13 +67,16 @@ class Leaderboard(Vertical):
             rate_str = format_rate(rate)
             gap_str = format_gap(cookies, leader_cookies)
 
+            # Player-chosen name: escape before it reaches markup rendering.
+            safe_name = safe_markup(bakery.name)
+
             # Highlight the leader row
             if idx == 1:
-                name_str = f"[bold]{bakery.name}[/]"
+                name_str = f"[bold]{safe_name}[/]"
                 cookies_str = f"[bold]{cookies_str}[/]"
                 rate_str = f"[green]{rate_str}[/]"
             else:
-                name_str = bakery.name
+                name_str = safe_name
 
             table.add_row(
                 str(idx),

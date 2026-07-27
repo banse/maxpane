@@ -7,6 +7,7 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 from maxpane_dashboard.analytics.leaderboard import format_cookies
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _SPARK_CHARS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
 _SPARK_WIDTH = 30
@@ -104,7 +105,8 @@ class CookieChart(Vertical):
                 arrow = "[dim]\u25cf[/]"
 
             # Truncate display name to 8 chars, pad to 8
-            short_name = name[:8].ljust(8)
+            # Bakery name is player-chosen: escape before it reaches markup.
+            short_name = safe_markup(name[:8].ljust(8))
             color = colors[i]
 
             widget.update(

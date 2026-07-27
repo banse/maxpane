@@ -15,6 +15,8 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+
 
 def _short_addr(address: str) -> str:
     """Shorten a wallet address to 0xABCD..1234 format."""
@@ -87,9 +89,17 @@ class GameLeaderboard(Vertical):
             else:
                 score_str = f"{score_f:,.0f}"
 
+            # Every value below came from an API / another player, so it must
+            # be escaped before it reaches Rich markup rendering. DataTable
+            # defers Text.from_markup to its idle handler, so an unescaped
+            # "[/x]" in a name crashes the app from inside the message pump.
+            name = safe_markup(name)
+            detail = safe_markup(detail)
+            status = safe_markup(status)
+
             # Highlight the leader row
             if idx == 1:
                 name = f"[bold]{name}[/]"
                 score_str = f"[bold]{score_str}[/]"
 
-            table.add_row(str(idx), name, score_str, str(detail), str(status))
+            table.add_row(str(idx), name, score_str, detail, status)

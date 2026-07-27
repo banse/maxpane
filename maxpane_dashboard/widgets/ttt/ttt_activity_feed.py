@@ -25,6 +25,7 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _WEI = 10**18
 _DASH = "--"
@@ -59,7 +60,7 @@ def _sym(symbol) -> str:
     if symbol is None:
         return _DASH
     s = str(symbol).strip()
-    return s if s else _DASH
+    return safe_markup(s) if s else _DASH
 
 
 def _wei_to_eth(wei) -> float | None:

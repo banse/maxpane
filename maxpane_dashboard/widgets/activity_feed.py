@@ -9,6 +9,7 @@ from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.data.models import ActivityEvent
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 def _format_event_time(timestamp_str: str) -> str:
@@ -31,28 +32,35 @@ def _short_addr(address: str) -> str:
 def _event_to_markup(event: ActivityEvent) -> str:
     """Convert an ActivityEvent into a Rich-markup formatted line."""
     ts = _format_event_time(event.timestamp)
-    who = _short_addr(event.launcher)
+    who = safe_markup(_short_addr(event.launcher))
+
+    # title / description / linked_bakery_name are all API-sourced and can
+    # contain player-chosen bakery names. RichLog(markup=True) defers
+    # Text.from_markup to on_resize, so unescaped markup here crashes the app
+    # from inside the message pump, not at the write() call site.
+    title = safe_markup(event.title)
+    description = safe_markup(event.description)
 
     if event.type == "simple":
         # Join/leave — title has the action, description is empty
-        return f"  [dim]{ts}[/]  [cyan]{who} {event.title}[/]"
+        return f"  [dim]{ts}[/]  [cyan]{who} {title}[/]"
     elif event.type == "rug":
         # Attack/boost — combine title (boost name) + description + linked bakery
-        target = event.linked_bakery_name or ""
+        target = safe_markup(event.linked_bakery_name or "")
         if event.success:
             if event.is_outgoing:
-                desc = f"{event.title}: {event.description} {target}"
+                desc = f"{title}: {description} {target}"
             else:
-                desc = f"{event.title}: {event.description} {target}"
+                desc = f"{title}: {description} {target}"
             return f"  [dim]{ts}[/]  {desc}  [green]\u2713[/]"
         else:
             if event.is_outgoing:
-                desc = f"{event.title}: Failed on {target}"
+                desc = f"{title}: Failed on {target}"
             else:
-                desc = f"{event.title}: {event.description} {target}"
+                desc = f"{title}: {description} {target}"
             return f"  [dim]{ts}[/]  {desc}  [red]\u2717[/]"
     else:
-        return f"  [dim]{ts}[/]  {who} {event.title or event.description}"
+        return f"  [dim]{ts}[/]  {who} {title or description}"
 
 
 class ActivityFeed(Vertical):

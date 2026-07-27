@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 class PoolInfo(Vertical):
@@ -39,9 +40,9 @@ class PoolInfo(Vertical):
             body.update("[dim]  --[/]")
             return
 
-        pair = detail.get("pair_name", "--")
-        dex = detail.get("dex", "--")
-        fee = detail.get("fee_tier", "--")
+        pair = safe_markup(detail.get("pair_name", "--"))
+        dex = safe_markup(detail.get("dex", "--"))
+        fee = safe_markup(detail.get("fee_tier", "--"))
         buys_24h = detail.get("buys_24h", 0)
         sells_24h = detail.get("sells_24h", 0)
         buys_1h = detail.get("buys_1h", 0)

@@ -15,6 +15,7 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 def _format_event_time(timestamp: float | int | str) -> str:
@@ -40,9 +41,9 @@ def _event_to_markup(event: dict) -> str:
     Adapt the dict keys and formatting to your game's event schema.
     """
     ts = _format_event_time(event.get("timestamp", 0))
-    who = event.get("display_name", "") or _short_addr(event.get("address", ""))
-    action = event.get("action", "")
-    detail = event.get("detail", "")
+    who = safe_markup(event.get("display_name", "") or _short_addr(event.get("address", "")))
+    action = safe_markup(event.get("action", ""))
+    detail = safe_markup(event.get("detail", ""))
     success = event.get("success", True)
 
     result_icon = "[green]\u2713[/]" if success else "[red]\u2717[/]"

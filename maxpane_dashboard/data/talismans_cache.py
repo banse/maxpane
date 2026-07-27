@@ -28,6 +28,7 @@ import os
 import time
 from collections import deque
 
+from maxpane_dashboard.data.series_points import coerce_points
 from maxpane_dashboard.data.talismans_models import (
     TalismanActivityEvent,
     TalismanToken,
@@ -283,14 +284,26 @@ class TalismansCache:
         except Exception as exc:
             logger.warning("activity_log block bad: %s", exc)
 
-        # Hourly deques
+        # Hourly deques.
+        #
+        # Per-point validation via the shared helper (MEDI-14).  The previous
+        # loop wrapped the whole series in one try/except, so a single bad
+        # point abandoned every *remaining* point in that series -- silent
+        # truncation rather than a crash.  It also accepted ``len(pt) >= 2``,
+        # so a 3-element entry became a point.  ``coerce_points`` never
+        # raises, drops only the offending entries, and reports the count.
         for attr in ("mythic_hourly", "tokencount_hourly", "ops_hourly"):
             try:
                 deq: deque = getattr(self, attr)
                 deq.clear()
-                for pt in payload.get(attr) or []:
-                    if isinstance(pt, (list, tuple)) and len(pt) >= 2:
-                        deq.append((float(pt[0]), float(pt[1])))
+                good, dropped = coerce_points(payload.get(attr))
+                deq.extend(good)
+                if dropped:
+                    logger.warning(
+                        "Skipped %d unusable point(s) in Talismans %s",
+                        dropped,
+                        attr,
+                    )
             except Exception as exc:
                 logger.warning("%s block bad: %s", attr, exc)
 

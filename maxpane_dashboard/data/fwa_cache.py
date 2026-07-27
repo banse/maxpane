@@ -80,6 +80,7 @@ from pathlib import Path
 from typing import Any
 
 from maxpane_dashboard.data.fwa_models import Position
+from maxpane_dashboard.data.series_points import coerce_points
 
 logger = logging.getLogger(__name__)
 
@@ -784,6 +785,11 @@ class FWACache:
 
         Per-section ``try``/``except``: one bad block never costs the others, and
         nothing here ever raises into the manager's constructor.
+
+        Series points are validated one by one, so a ``null``, a string, a
+        ``NaN``, a negative value or a future-dated timestamp costs only
+        that sample instead of the whole series -- and the drop is logged
+        rather than swallowed.
         """
         try:
             with open(path) as f:
@@ -836,17 +842,22 @@ class FWACache:
 
         # Hourly series.
         try:
+            now = self._now()
+            skipped = 0
             for name, points in (payload.get("series") or {}).items():
                 deq = self.series.get(str(name))
                 if deq is None:
                     continue
+                good, dropped = coerce_points(points, now=now)
+                skipped += dropped
                 deq.clear()
-                for pt in points or []:
-                    if isinstance(pt, (list, tuple)) and len(pt) >= 2:
-                        try:
-                            deq.append((float(pt[0]), float(pt[1])))
-                        except (TypeError, ValueError):
-                            continue
+                deq.extend(good)
+            if skipped:
+                logger.warning(
+                    "Skipped %d unusable point(s) while loading FWA cache %s",
+                    skipped,
+                    path,
+                )
         except Exception as exc:
             logger.warning("series block bad: %s", exc)
 

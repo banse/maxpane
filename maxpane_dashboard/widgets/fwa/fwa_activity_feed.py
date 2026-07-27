@@ -39,6 +39,7 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _DASH = "--"
 
@@ -244,23 +245,23 @@ def _event_to_markup(event, tier: str = "full", width: int = 0) -> str | None:
 
         if tier == "minimal":
             budget = max(width - _FIXED_MINIMAL, _LABEL_BUDGET_MIN) if width else 14
-            label = _label_for(event, outcome, budget)
+            label = safe_markup(_label_for(event, outcome, budget))
             return f"{ts}  {wallet:<12}  [{color}]→ {label}[/]"
 
         if tier == "compact":
-            what = _what_for(event, _WHAT_BUDGET_COMPACT)
+            what = safe_markup(_what_for(event, _WHAT_BUDGET_COMPACT))
             budget = max(width - _FIXED_COMPACT, _LABEL_BUDGET_MIN) if width else 14
-            label = _label_for(event, outcome, budget)
+            label = safe_markup(_label_for(event, outcome, budget))
             return (
                 f"{ts}  {wallet:<12}  {what:<{_WHAT_BUDGET_COMPACT}}"
                 f"  [{color}]→ {label}[/]"
             )
 
-        what = _what_for(event, _WHAT_BUDGET_FULL)
+        what = safe_markup(_what_for(event, _WHAT_BUDGET_FULL))
         budget = (
             max(width - _FIXED_FULL, _LABEL_BUDGET_MIN) if width else _LABEL_BUDGET_FULL
         )
-        label = _label_for(event, outcome, budget)
+        label = safe_markup(_label_for(event, outcome, budget))
         amount = _amount_label(event.get("amount_eth"))
         return (
             f"{ts}  {wallet:<12}  drew {what:<20}"

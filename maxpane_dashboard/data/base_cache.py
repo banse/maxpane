@@ -18,6 +18,7 @@ from collections import deque
 from typing import Any
 
 from maxpane_dashboard.data.base_models import BaseSnapshot, BaseToken
+from maxpane_dashboard.data.series_points import coerce_points
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +194,13 @@ class BaseTokenCache:
 
         Silently does nothing if the file is missing or corrupted.
         Existing in-memory data is replaced on successful load.
+
+        Individual points are validated: anything unusable (``null``, a
+        string, ``NaN``, a wrong-length entry, a negative price, a
+        future-dated timestamp) is dropped and counted rather than
+        raising, because every manager loads its cache in ``__init__``
+        and one bad value used to abort MaxPane startup for every
+        dashboard.
         """
         try:
             with open(path) as f:
@@ -209,13 +217,14 @@ class BaseTokenCache:
             return
 
         loaded = 0
+        skipped = 0
+        now = time.time()
         for addr, points in histories.items():
             if not isinstance(points, list):
                 continue
-            dq: deque[TimeSeriesPoint] = deque(maxlen=self._max_history)
-            for pt in points:
-                if isinstance(pt, (list, tuple)) and len(pt) == 2:
-                    dq.append((float(pt[0]), float(pt[1])))
+            good, dropped = coerce_points(points, now=now)
+            skipped += dropped
+            dq: deque[TimeSeriesPoint] = deque(good, maxlen=self._max_history)
             self._price_histories[addr.lower()] = dq
             loaded += 1
 
@@ -227,10 +236,17 @@ class BaseTokenCache:
         ]:
             series = payload.get(key, [])
             if isinstance(series, list):
-                for pt in series:
-                    if isinstance(pt, (list, tuple)) and len(pt) == 2:
-                        target_deque.append((float(pt[0]), float(pt[1])))
+                good, dropped = coerce_points(series, now=now)
+                skipped += dropped
+                target_deque.extend(good)
 
+        if skipped:
+            logger.warning(
+                "Skipped %d unusable point(s) while loading Base token "
+                "cache %s",
+                skipped,
+                path,
+            )
         logger.info(
             "Loaded Base token cache from %s: %d tokens, up to %d points each",
             path,

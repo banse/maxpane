@@ -14,6 +14,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _NUM_ROWS = 5
 
@@ -78,7 +79,7 @@ class GameBestPlays(Vertical):
             if i < len(left):
                 l_name, l_value = left[i]
                 star = "[yellow]\u2605[/] " if i == 0 else "  "
-                l_name_str = _truncate(l_name, 14)
+                l_name_str = safe_markup(_truncate(l_name, 14))
                 l_value_str = f"[green]{l_value:>10}[/]"
             else:
                 star = "  "
@@ -89,7 +90,7 @@ class GameBestPlays(Vertical):
             if i < len(right):
                 r_name, r_value = right[i]
                 r_star = "[yellow]\u2605[/] " if i == 0 else "  "
-                r_name_str = _truncate(r_name, 14)
+                r_name_str = safe_markup(_truncate(r_name, 14))
                 r_value_str = f"[green]{r_value:>8}[/]"
             else:
                 r_star = "  "

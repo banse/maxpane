@@ -8,6 +8,7 @@ from textual.widgets import Static
 
 from maxpane_dashboard.analytics.base_tokens import format_volume
 from maxpane_dashboard.data.base_models import BaseToken
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _SPARK_CHARS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
 _SPARK_WIDTH = 35
@@ -59,7 +60,7 @@ class VolumeSparklines(Vertical):
             vol_values = [p[1] for p in history] if history else []
             sparkline = _build_sparkline(vol_values)
             vol_str = format_volume(token.volume_24h)
-            symbol = token.symbol[:8].ljust(8)
+            symbol = safe_markup(token.symbol[:8].ljust(8))
 
             # Color by volume relative to top token
             if display and token.volume_24h >= display[0].volume_24h * 0.5:

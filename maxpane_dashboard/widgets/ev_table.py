@@ -6,6 +6,9 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
+from maxpane_dashboard.analytics.ev import CATALOG_SOURCE_LIVE
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+
 
 def _fmt_ev(value: float) -> str:
     """Format an EV value with color and sign."""
@@ -45,7 +48,7 @@ class EVTable(Vertical):
     """
 
     def compose(self) -> ComposeResult:
-        yield Static("BEST PLAYS", classes="ev-title")
+        yield Static("BEST PLAYS", classes="ev-title", id="ev-title")
         yield Static("", classes="ev-body")
         yield Static(
             f"  {'Boosts':<14} {'EV':>10}    {'Attacks':<14} {'Gap':>8}",
@@ -61,8 +64,21 @@ class EVTable(Vertical):
         self,
         boost_rankings: list[tuple[str, float]],
         attack_rankings: list[tuple[str, float]],
+        catalog_source: str = CATALOG_SOURCE_LIVE,
     ) -> None:
-        """Show top 3 boosts by EV and top 3 attacks by gap-closure ratio."""
+        """Show top 3 boosts by EV and top 3 attacks by gap-closure ratio.
+
+        ``catalog_source`` says where the boost/attack parameters came from.
+        Anything other than ``"live"`` means the ranking was computed from the
+        hardcoded fallback table, whose costs/durations are season-old -- that
+        is labelled in the title rather than passed off as current data.
+        """
+        title = self.query_one("#ev-title", Static)
+        if catalog_source == CATALOG_SOURCE_LIVE:
+            title.update("BEST PLAYS")
+        else:
+            title.update("BEST PLAYS  [yellow]⚠ STALE CATALOG (live fetch failed)[/]")
+
         for i in range(3):
             widget = self.query_one(f"#ev-row-{i}", Static)
 
@@ -70,7 +86,7 @@ class EVTable(Vertical):
             if i < len(boost_rankings):
                 b_name, b_ev = boost_rankings[i]
                 star = "[yellow]\u2605[/] " if i == 0 else "  "
-                b_name_str = _truncate(b_name, 14)
+                b_name_str = safe_markup(_truncate(b_name, 14))
                 b_ev_raw = f"+{b_ev:,.0f}" if b_ev >= 0 else f"{b_ev:,.0f}"
                 b_ev_str = f"[green]{b_ev_raw:>10}[/]" if b_ev >= 0 else f"[red]{b_ev_raw:>10}[/]"
             else:
@@ -82,7 +98,7 @@ class EVTable(Vertical):
             if i < len(attack_rankings):
                 a_name, a_ratio = attack_rankings[i]
                 a_star = "[yellow]\u2605[/] " if i == 0 else "  "
-                a_name_str = _truncate(a_name, 14)
+                a_name_str = safe_markup(_truncate(a_name, 14))
                 a_ratio_raw = f"{a_ratio:.1f}x"
                 a_ratio_str = f"[green]{a_ratio_raw:>8}[/]" if a_ratio > 0 else f"[dim]{a_ratio_raw:>8}[/]"
             else:

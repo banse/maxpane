@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 _RARITY_COLORS = {
@@ -68,8 +69,8 @@ class CTLeaderboard(Vertical):
         for entry in competition_entries[:10]:
             rank = str(entry.get("rank", "?"))
             display_name = entry.get("display_name", "")
-            fisher = display_name if display_name else _short_addr(entry.get("fisher_address", ""))
-            species = entry.get("fish_species", "")
+            fisher = safe_markup(display_name if display_name else _short_addr(entry.get("fisher_address", "")))
+            species = safe_markup(entry.get("fish_species", ""))
             weight = entry.get("fish_weight_kg", 0.0)
             rarity = entry.get("rarity", "Common")
 

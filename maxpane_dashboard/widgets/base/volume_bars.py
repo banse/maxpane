@@ -8,6 +8,7 @@ from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.analytics.base_tokens import format_volume
 from maxpane_dashboard.data.base_models import BaseToken
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _MAX_BAR_WIDTH = 20
 _MAX_TOKENS = 5
@@ -56,7 +57,7 @@ class VolumeBars(Vertical):
 
         for token in display:
             vol = token.volume_24h
-            symbol = token.symbol[:8]
+            symbol = safe_markup(token.symbol[:8])
 
             if max_vol > 0:
                 bar_len = max(1, int(vol / max_vol * _MAX_BAR_WIDTH))

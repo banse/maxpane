@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 class BTHeroBox(Static):
@@ -117,7 +118,7 @@ class BTOverviewHero(Horizontal):
                 pct_str = str(top_gainer_pct) if top_gainer_pct else "?"
             gainer_box.update(
                 f"[dim]TOP GAINER[/]\n\n"
-                f"[bold white]{top_gainer_name}[/]\n"
+                f"[bold white]{safe_markup(top_gainer_name)}[/]\n"
                 f"[green]{pct_str}[/]"
             )
         else:

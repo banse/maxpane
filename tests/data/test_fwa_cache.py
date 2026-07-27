@@ -633,8 +633,12 @@ def test_module_imports_nothing_but_stdlib_and_fwa_models():
         for line in src.splitlines()
         if line.strip().startswith(("import maxpane", "from maxpane"))
     ]
+    # series_points is a dependency-free leaf (stdlib only) holding the
+    # shared persisted-point validation; it carries none of the coupling
+    # this guardrail exists to prevent.
     assert project_imports == [
-        "from maxpane_dashboard.data.fwa_models import Position"
+        "from maxpane_dashboard.data.fwa_models import Position",
+        "from maxpane_dashboard.data.series_points import coerce_points",
     ]
     for banned in (
         "requests",

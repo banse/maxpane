@@ -14,12 +14,17 @@ Cycle behaviour (each refresh):
 3. For any new tokens, batch-fetch symbol / decimals (once-only).
 4. Batch-fetch each launched token's ETH balance (reservoir) via Multicall3.
 5. Batch DexScreener for per-token market data.
-6. Sample burns + floor into the hourly deques.
+6. Sample burns into the hourly deques.
 7. Compute 24h rolling counters and run signal analytics.
 8. Return a flat dict.
 
-The Reservoir floor call is throttled to every second cycle (~60s) and the
-ETH/USD price uses the existing :class:`PriceClient` TTL cache (300s).
+The ETH/USD price uses the existing :class:`PriceClient` TTL cache (300s).
+
+The NFT floor metric is **unavailable**: its only source (Reservoir) was
+sunset and no keyless replacement covers this collection. The ``floor_eth`` /
+``floor_usd`` / ``sales_24h`` keys are still emitted, pinned to ``None`` and
+accompanied by ``floor_unavailable_reason``, so a consumer renders an explicit
+"unavailable" rather than a fabricated zero. See ``ttt_client.FLOOR_SOURCE``.
 """
 
 from __future__ import annotations
@@ -43,9 +48,11 @@ from maxpane_dashboard.data.price import PriceClient
 from maxpane_dashboard.data.ttt_cache import TTTCache
 from maxpane_dashboard.data.ttt_client import (
     _DEFAULT_LOG_LOOKBACK_BLOCKS,
+    _FACTORY_DEPLOY_BLOCK,
     _INCREMENTAL_LOG_LOOKBACK,
     _SCALE,
     _WEI,
+    FLOOR_UNAVAILABLE_REASON,
     TTTClient,
 )
 
@@ -54,7 +61,11 @@ logger = logging.getLogger(__name__)
 _CACHE_DIR = Path.home() / ".maxpane"
 _CACHE_FILE = _CACHE_DIR / "ttt_cache.json"
 
-_RESERVOIR_REFRESH_EVERY_N_CYCLES = 2  # ~60s when poll_interval=30
+# Blocks of deliberate overlap on every incremental scan, so a shallow L1
+# reorg between two polls can't drop an event permanently. The re-delivered
+# events are suppressed by TTTCache's idempotency guard, so the overlap costs
+# nothing but is the reason that guard has to exist.
+_REORG_MARGIN_BLOCKS = 12
 
 
 def _safe_call(fn: Any, *args: Any, default: Any = None) -> Any:
@@ -149,32 +160,17 @@ class TTTManager:
         # -- 4) Reservoirs (per-token ETH balance) ------------------------
         await self._refresh_reservoirs()
 
-        # -- 5+6+10) Market data + NFT floor + ETH/USD in parallel --------
-        # DexScreener, Reservoir, and CoinGecko are independent HTTP origins;
-        # run them concurrently to cut total wall time.
-        do_floor = (
-            self._cycle_count % _RESERVOIR_REFRESH_EVERY_N_CYCLES == 1
-        )
+        # -- 5+10) Market data + ETH/USD in parallel ----------------------
+        # DexScreener and CoinGecko are independent HTTP origins; run them
+        # concurrently to cut total wall time. There is no floor fetch: its
+        # source is gone (see the module docstring).
         market_task = asyncio.create_task(self._refresh_market_data())
-        floor_task = (
-            asyncio.create_task(self.client.fetch_nft_floor()) if do_floor else None
-        )
         eth_usd_task = asyncio.create_task(self.price_client.get_eth_usd())
 
         try:
             await market_task
         except Exception as exc:
             logger.debug("market data fetch failed: %s", exc)
-
-        if floor_task is not None:
-            try:
-                floor = await floor_task
-                if floor is not None:
-                    self._last_floor_eth = floor.get("floor_eth")
-                    self._last_floor_usd = floor.get("floor_usd")
-                    self._last_sales_24h = floor.get("sales_24h")
-            except Exception as exc:
-                logger.debug("floor fetch failed: %s", exc)
 
         try:
             eth_usd = await eth_usd_task
@@ -183,6 +179,7 @@ class TTTManager:
             eth_usd = 0.0
 
         # -- 7) Sample hourly buckets ------------------------------------
+        # floor is always None now; sample_burns_and_floor ignores None.
         self.cache.sample_burns_and_floor(
             now, factory["burn_count"], self._last_floor_eth
         )
@@ -351,8 +348,11 @@ class TTTManager:
                 else 0.0
             ),
             "holder_pool_eth_24h": eth_to_holders_24h,
+            # Always None -- metric dropped, reason carried alongside so a
+            # consumer can render "unavailable" instead of a blank or a zero.
             "floor_eth": self._last_floor_eth,
             "floor_usd": self._last_floor_usd,
+            "floor_unavailable_reason": FLOOR_UNAVAILABLE_REASON,
             # Leaderboard
             "top_tokens_by_volume": top_tokens_by_volume,
             # Aggregate market cap (CR1)
@@ -422,10 +422,35 @@ class TTTManager:
         # which would be many minutes of RPC traffic). Subsequent runs use the
         # tighter incremental window from cache.
         def _from(topic_name: str, default_lookback: int) -> int:
+            """First block of this cycle's scan for *topic_name*.
+
+            Steady state starts just after the watermark, minus a small reorg
+            margin -- NOT at ``current_block - _INCREMENTAL_LOG_LOOKBACK``.
+            This used to be a ``min()`` (CRIT-1), which pinned every scan to
+            the full 5,000-block window and re-applied ~16.7h of events on
+            every 30s poll.
+
+            ``_INCREMENTAL_LOG_LOOKBACK`` is the *floor*: after a long
+            downtime we scan at most that many blocks rather than paging
+            through the whole gap, which is what the constant was always
+            documented to mean.
+            """
             last = self.cache.last_seen_block.get(topic_name, 0)
             if last <= 0:
-                return max(0, current_block - default_lookback)
-            return max(0, min(last + 1, current_block - _INCREMENTAL_LOG_LOOKBACK))
+                # First run: start at the factory's deploy block, not at a
+                # rolling offset from head. The launch history is finite and
+                # already ~500k blocks old, so a rolling window misses it
+                # entirely and the watermark then advances past it forever.
+                return max(
+                    0,
+                    _FACTORY_DEPLOY_BLOCK,
+                    current_block - default_lookback,
+                )
+            return max(
+                0,
+                last + 1 - _REORG_MARGIN_BLOCKS,
+                current_block - _INCREMENTAL_LOG_LOOKBACK,
+            )
 
         # Launched (factory)
         try:
@@ -440,6 +465,7 @@ class TTTManager:
                     block_number=ev["block_number"],
                     timestamp=ts,
                     tx_hash=ev["tx_hash"],
+                    log_index=ev.get("log_index"),
                 )
             self.cache.last_seen_block["Launched"] = current_block
         except Exception as exc:
@@ -459,6 +485,7 @@ class TTTManager:
                     block_number=ev["block_number"],
                     timestamp=ts,
                     tx_hash=ev["tx_hash"],
+                    log_index=ev.get("log_index"),
                 )
             self.cache.last_seen_block["Deposited"] = current_block
         except Exception as exc:
@@ -485,6 +512,7 @@ class TTTManager:
                         block_number=ev["block_number"],
                         timestamp=ts,
                         tx_hash=ev["tx_hash"],
+                        log_index=ev.get("log_index"),
                     )
                 self.cache.last_seen_block["Bought"] = current_block
             except Exception as exc:

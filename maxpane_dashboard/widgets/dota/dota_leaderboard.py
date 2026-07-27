@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 class DOTALeaderboard(Vertical):
@@ -52,11 +53,11 @@ class DOTALeaderboard(Vertical):
 
         for entry in leaderboard[:20]:
             rank = str(entry.get("rank", "?"))
-            name = entry.get("name", "Unknown")
+            name = safe_markup(entry.get("name", "Unknown"))
             wins = str(entry.get("wins", 0))
             games = str(entry.get("games", 0))
             win_rate = entry.get("win_rate", 0.0)
-            player_type = entry.get("player_type", "")
+            player_type = safe_markup(entry.get("player_type", ""))
 
             wr_str = f"{win_rate:.0f}%"
 

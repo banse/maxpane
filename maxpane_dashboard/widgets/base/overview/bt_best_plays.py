@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _NUM_ROWS = 10
 _NAME_WIDTH = 14
@@ -78,7 +79,7 @@ class BTBestPlays(Vertical):
                     pct = getattr(g, "price_change_24h", 0)
                     g_value = f"+{float(pct):.1f}%" if pct is not None else "?"
                 star = "[yellow]*[/] " if i == 0 else "  "
-                g_name_str = _truncate(g_name, _NAME_WIDTH)
+                g_name_str = safe_markup(_truncate(g_name, _NAME_WIDTH))
                 g_value_str = f"[green]{g_value:>10}[/]"
             else:
                 star = "  "
@@ -99,7 +100,7 @@ class BTBestPlays(Vertical):
                     pct = getattr(lo, "price_change_24h", 0)
                     l_value = f"{float(pct):.1f}%" if pct is not None else "?"
                 l_star = "[yellow]*[/] " if i == 0 else "  "
-                l_name_str = _truncate(l_name, _NAME_WIDTH)
+                l_name_str = safe_markup(_truncate(l_name, _NAME_WIDTH))
                 l_value_str = f"[red]{l_value:>10}[/]"
             else:
                 l_star = "  "

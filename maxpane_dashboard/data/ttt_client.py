@@ -1,13 +1,19 @@
 """Async HTTP/RPC client for Ten Thousand Tokens (TTT) data on Ethereum mainnet.
 
-Three data sources, all keyless:
+Two data sources, all keyless:
 
-* Ethereum mainnet JSON-RPC (LlamaRPC + fallbacks): factory + FeeSplitter views,
-  event logs, ETH balances.
+* Ethereum mainnet JSON-RPC: factory + FeeSplitter views, event logs, ETH
+  balances. Split across **two endpoint pools** -- see the Endpoints section
+  below; the hosts that batch Multicall3 well are exactly the ones that refuse
+  ``eth_getLogs``.
 * DexScreener public API: per-token price / volume / market cap, batched up to
   30 addresses per call.
-* Reservoir public NFT API (keyless tier): collection floor price and 24h sales
-  count.
+
+The NFT collection floor price used to be a fourth source (Reservoir) and is
+now **dropped**: Reservoir was sunset (its host no longer resolves) and no
+keyless replacement covers this collection. See :data:`TTTClient.FLOOR_SOURCE`
+for the probe record and :data:`FLOOR_UNAVAILABLE_REASON` for what the manager
+reports instead.
 
 Critical contract semantics (see ``docs/tenthousandtokens_abi_recon.md``):
 
@@ -37,6 +43,7 @@ import logging
 import re
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -46,20 +53,106 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-_PRIMARY_RPC = "https://cloudflare-eth.com"
+# ---------------------------------------------------------------------------
+# Endpoints
+#
+# State reads and log reads MUST use different pools: the endpoints that batch
+# Multicall3 well are exactly the ones that refuse ``eth_getLogs``. This is a
+# structural requirement, not a preference.
+#
+# Verified live against mainnet on the date below by probing what this client
+# actually does, at the depth it actually does it (aggregate3 over the factory
+# + FeeSplitter, and a 10k-block ``eth_getLogs`` page at head-150k, which is
+# ``_DEFAULT_LOG_LOOKBACK_BLOCKS`` deep). A narrow *recent* log probe is
+# misleading -- publicnode answers those and then 403s on the backfill.
+# ---------------------------------------------------------------------------
+
+#: Date the endpoint sets below were last probed against mainnet. Bump it (and
+#: re-probe) whenever the lists change -- ``test_ttt_client`` asserts the lists
+#: match this record so silent rot shows up as a failing test, not as a dead
+#: dashboard. Live results are recorded in ``_ENDPOINT_PROBE``.
+ENDPOINTS_VERIFIED_ON = "2026-07-28"
+
+#: Pool A -- state / views. publicnode is the strongest keyless batcher.
+_PRIMARY_RPC = "https://ethereum-rpc.publicnode.com"
 _FALLBACK_RPCS = [
+    "https://gateway.tenderly.co/public/mainnet",
     "https://eth.drpc.org",
-    "https://rpc.ankr.com/eth",
-    "https://eth.llamarpc.com",
+    "https://1rpc.io/eth",
 ]
+
+#: Pool B -- ``eth_getLogs`` only. Every Pool A primary refuses archive log
+#: ranges, so this pool is separate and deliberately short.
+_LOG_RPCS = [
+    "https://gateway.tenderly.co/public/mainnet",  # no block-range cap
+    "https://eth.drpc.org",  # hard 10k-block cap == _LOG_RANGE_PER_CALL
+]
+
+#: What each host actually did on ``ENDPOINTS_VERIFIED_ON``. Kept in code
+#: rather than only in docs because the previous set rotted silently: three of
+#: the four configured hosts had died and nothing failed loudly.
+_ENDPOINT_PROBE: dict[str, str] = {
+    # -- in use --------------------------------------------------------------
+    "ethereum-rpc.publicnode.com": (
+        "state OK (aggregate3 over 5 views); eth_getLogs HTTP 403 at both "
+        "recent and archive depth -- state pool only"
+    ),
+    "gateway.tenderly.co": (
+        "state OK; eth_getLogs OK at head-10k and head-150k, no range cap -- "
+        "both pools"
+    ),
+    "eth.drpc.org": (
+        "state OK; eth_getLogs OK at both depths, hard 10k-block page cap -- "
+        "both pools"
+    ),
+    "1rpc.io": (
+        "state OK; eth_getLogs refused with -32602 'eth_getLogs is limited to "
+        "0 - 50 blocks range' -- state pool only, and the reason error codes "
+        "cannot be trusted (see _looks_like_endpoint_limitation)"
+    ),
+    # -- rejected ------------------------------------------------------------
+    "cloudflare-eth.com": (
+        "DEAD: eth_blockNumber -> -32046 'Cannot fulfill request', "
+        "eth_call -> -32603 'Internal error'. Was this client's primary."
+    ),
+    "rpc.ankr.com": "DEAD: -32000 'Unauthorized: You must authenticate...' (now keyed)",
+    "eth.llamarpc.com": "DEAD: HTTP 521, origin down",
+    "eth.merkle.io": "REJECTED: eth_getLogs HTTP 400/429, eth_getBalance 429",
+    "rpc.flashbots.net": "REJECTED: eth_call HTTP 403, logs 504 (tx-relay, not a data RPC)",
+    "api.reservoir.tools": "DEAD: DNS failure, API sunset (see the floor-price note)",
+}
+
+#: Hosts that are dead, now keyed, or useless for this workload. Configuring
+#: one is a programming error, so the constructor raises rather than silently
+#: degrading to a dashboard that shows zeros. Mirrors ``fwa_client``.
+_BANNED_RPC_HOSTS = frozenset(
+    {
+        "cloudflare-eth.com",  # -32046 / -32603 on every call
+        "rpc.ankr.com",  # now requires an API key
+        "eth.llamarpc.com",  # HTTP 521, origin down
+        "eth-mainnet.g.alchemy.com",  # keyed
+        "mainnet.infura.io",  # keyed
+        "api.reservoir.tools",  # sunset
+        "api.opensea.io",  # keyed
+    }
+)
+
 _MAX_RETRIES = 2
 _BACKOFF_SECONDS = (0.5, 1.5)
-_REQUEST_TIMEOUT = 10.0
-_INTER_CALL_DELAY = 0.05  # seconds between consecutive RPC calls
+_REQUEST_TIMEOUT = 15.0
+#: publicnode 429s under aggressive batching; ~0.12s spacing was the stable
+#: figure measured for the same host in ``fwa_client``.
+_INTER_CALL_DELAY = 0.12
 
 _DEXSCREENER_BATCH_URL = "https://api.dexscreener.com/tokens/v1/ethereum/{addresses}"
 _DEXSCREENER_MAX_BATCH = 30
-_RESERVOIR_FLOOR_URL = "https://api.reservoir.tools/collections/v7?contract={contract}"
+
+#: Why the NFT floor metric is absent. Surfaced by the manager next to the
+#: ``None`` floor keys so the reason is legible instead of the metric simply
+#: rendering blank. See :data:`TTTClient.FLOOR_SOURCE` for the full probe.
+FLOOR_UNAVAILABLE_REASON = (
+    "no keyless source (Reservoir sunset; collection absent from CoinGecko)"
+)
 # tenthousandtokens.net Next.js SSR homepage embeds the full per-token state
 # (price, mcap, volume24h, ...) as escaped JSON. Scraping it gives us 100%
 # coverage of launched tokens (vs DexScreener's partial indexing).
@@ -73,10 +166,24 @@ _LOG_RANGE_PER_CALL = 10_000  # blocks per eth_getLogs call
 _SCALE = 10**30  # FeeSplitter SCALE constant (NOT 1e18)
 _WEI = 10**18
 
-# Approximate deploy block of the factory. We use this as a lower bound when
-# we have nothing in the cache yet. (The factory was deployed in May 2026 --
-# we cap the lookback to roughly the most recent ~150_000 blocks ≈ 3 weeks.)
-_DEFAULT_LOG_LOOKBACK_BLOCKS = 150_000
+#: Block the factory's code first appears at, found by binary search on
+#: ``eth_getCode`` (2026-07-28); the FeeSplitter follows three blocks later.
+#: First-run scans start here rather than at a rolling offset from head.
+#:
+#: This replaces a 150,000-block rolling lookback that had silently gone stale:
+#: all 121 ``Launched`` events sit in blocks 25,130,773..25,216,572, which by
+#: 2026-07-28 was 410k-496k blocks behind head -- entirely outside the window.
+#: A fresh install therefore discovered **zero** tokens, advanced its watermark
+#: past them, and could never find them again, leaving the leaderboard, market
+#: data, reservoirs and per-token fees permanently empty. A rolling window
+#: cannot be used for discovery of a finite, historical event set: it rots as
+#: the chain advances. An absolute floor does not.
+_FACTORY_DEPLOY_BLOCK = 25_093_598
+
+#: Retained for callers that still want a bounded first-run window; the scan
+#: floor is ``max(_FACTORY_DEPLOY_BLOCK, head - this)``, so it only bites if
+#: the factory is ever older than this many blocks.
+_DEFAULT_LOG_LOOKBACK_BLOCKS = 1_000_000
 # On steady-state polls we look back this far for incremental scans -- much
 # smaller and bounded by `_LOG_RANGE_PER_CALL`.
 _INCREMENTAL_LOG_LOOKBACK = 5_000
@@ -125,6 +232,60 @@ _TOPIC_BOUGHT = (
 # ---------------------------------------------------------------------------
 # Minimal ABI encode/decode helpers (pure-stdlib, no eth_abi dep)
 # ---------------------------------------------------------------------------
+
+
+#: Message fragments that mean "*this endpoint* will not serve this request" --
+#: capability caps, archive gates, auth walls, plan limits. Providers ship
+#: these under codes that also mean "your request is malformed": 1rpc's
+#: 50-block log cap arrives as **-32602**, the same code as genuine bad input,
+#: and publicnode's archive gate is a plain-language message too. Classifying
+#: on the code alone therefore aborts the whole fallback chain at the first
+#: endpoint that simply cannot do the job. Match on the message instead.
+#: (Fragments below were taken from live responses, see ``_ENDPOINT_PROBE``.)
+_ENDPOINT_LIMITATION_PATTERNS = (
+    "limited to",
+    "block range",
+    "range is too large",
+    "ranges over",
+    "exceeds",
+    "too large",
+    "too many",
+    "archive",
+    "personal token",
+    "api key",
+    "unauthorized",
+    "authenticate",
+    "free plan",
+    "upgrade",
+    "not supported",
+    "unsupported",
+    "capacity",
+    "rate limit",
+    "timeout",
+    "try again",
+    "cannot fulfill",
+)
+
+#: JSON-RPC codes whose *conventional* meaning is "the caller's request is
+#: malformed". Only consulted once the message has been cleared of endpoint
+#: limitation language above.
+_MALFORMED_REQUEST_CODES = {-32600, -32601, -32602, -32604, -32700}
+
+
+def _looks_like_endpoint_limitation(err: Any) -> bool:
+    """True if *err* reads as "this endpoint can't", not "this request is bad".
+
+    Errs toward ``True`` on purpose: falling over to the next endpoint after a
+    genuine caller bug costs a few wasted requests and reaches the same final
+    failure, whereas treating a capability limit as terminal takes the whole
+    dashboard offline while healthy endpoints sit unused.
+    """
+    if not isinstance(err, dict):
+        return True
+    message = str(err.get("message") or "").lower()
+    if any(frag in message for frag in _ENDPOINT_LIMITATION_PATTERNS):
+        return True
+    return err.get("code") not in _MALFORMED_REQUEST_CODES
 
 
 def _strip0x(hex_str: str) -> str:
@@ -305,6 +466,22 @@ def _decode_aggregate3_result(hex_data: str) -> list[tuple[bool, str]]:
         return []
 
 
+def _decode_log_index(log: dict) -> int | None:
+    """Position of a log within its block, or ``None`` if the node omits it.
+
+    Carried through every decoder so the cache can tell two genuinely
+    distinct logs of the same type, for the same token, in the same
+    transaction apart when de-duplicating.
+    """
+    raw = log.get("logIndex")
+    if raw is None:
+        return None
+    try:
+        return int(raw, 16) if isinstance(raw, str) else int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _decode_deposited_log(log: dict) -> dict | None:
     """Decode one ``Deposited(token, sender, total, launcher, tokenWorks, punkStrategy, holder)`` log.
 
@@ -333,6 +510,7 @@ def _decode_deposited_log(log: dict) -> dict | None:
             "punkstrategy_share": punkstrategy_share,
             "holder_share": holder_share,
             "block_number": int(log.get("blockNumber", "0x0"), 16),
+            "log_index": _decode_log_index(log),
             "tx_hash": log.get("transactionHash", "0x"),
         }
     except Exception as exc:
@@ -354,6 +532,7 @@ def _decode_launched_log(log: dict) -> dict | None:
             "erc20_address": erc20_addr,
             "launcher": launcher,
             "block_number": int(log.get("blockNumber", "0x0"), 16),
+            "log_index": _decode_log_index(log),
             "tx_hash": log.get("transactionHash", "0x"),
         }
     except Exception as exc:
@@ -375,6 +554,7 @@ def _decode_token_deployed_log(log: dict) -> dict | None:
             "erc20_address": erc20_addr,
             "holder": holder,
             "block_number": int(log.get("blockNumber", "0x0"), 16),
+            "log_index": _decode_log_index(log),
             "tx_hash": log.get("transactionHash", "0x"),
         }
     except Exception as exc:
@@ -400,6 +580,7 @@ def _decode_bought_log(log: dict) -> dict | None:
             "amount_bought": amount_bought,
             "caller_reward": caller_reward,
             "block_number": int(log.get("blockNumber", "0x0"), 16),
+            "log_index": _decode_log_index(log),
             "tx_hash": log.get("transactionHash", "0x"),
         }
     except Exception as exc:
@@ -415,16 +596,21 @@ def _decode_bought_log(log: dict) -> dict | None:
 class TTTClient:
     """Async client for TTT data sources.
 
-    Fetches state from Ethereum mainnet RPC, DexScreener, and Reservoir. All
-    methods are exception-safe: network failures bubble up as ``None`` /
-    empty-list returns rather than raising, so the manager's refresh cycle
-    is never killed by a single bad upstream.
+    Fetches state from Ethereum mainnet RPC and DexScreener. All methods are
+    exception-safe: network failures bubble up as ``None`` / empty-list
+    returns rather than raising, so the manager's refresh cycle is never
+    killed by a single bad upstream.
 
     Parameters
     ----------
     primary_rpc, fallback_rpcs:
-        Ethereum mainnet JSON-RPC endpoints. If ``primary_rpc`` returns a
-        429 or 5xx, the client retries on each of the fallbacks in order.
+        Pool A -- state / view endpoints. If one fails, the client rotates
+        through the rest in order. A banned host (dead, keyed, or useless for
+        this workload -- see :data:`_BANNED_RPC_HOSTS`) raises ``ValueError``
+        at construction rather than silently degrading to a zeroed dashboard.
+    log_rpcs:
+        Pool B -- endpoints used for ``eth_getLogs`` only. Kept separate
+        because the best state batchers refuse archive log ranges.
     http_client:
         Optional pre-configured ``httpx.AsyncClient``. If not provided one
         is created internally and closed on ``close()``.
@@ -435,10 +621,23 @@ class TTTClient:
         primary_rpc: str = _PRIMARY_RPC,
         fallback_rpcs: list[str] | None = None,
         *,
+        log_rpcs: list[str] | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._primary_rpc = primary_rpc
-        self._fallback_rpcs = list(fallback_rpcs or _FALLBACK_RPCS)
+        self._fallback_rpcs = list(
+            _FALLBACK_RPCS if fallback_rpcs is None else fallback_rpcs
+        )
+        self._log_rpcs = list(_LOG_RPCS if log_rpcs is None else log_rpcs)
+        for url in [primary_rpc, *self._fallback_rpcs, *self._log_rpcs]:
+            host = urlparse(url).hostname or ""
+            if host in _BANNED_RPC_HOSTS:
+                raise ValueError(
+                    f"{url} is a banned RPC host (dead, keyed, or useless for "
+                    f"this workload) -- see ttt_client._BANNED_RPC_HOSTS and "
+                    f"_ENDPOINT_PROBE. Probed {ENDPOINTS_VERIFIED_ON}: "
+                    f"{_ENDPOINT_PROBE.get(host, 'no probe record')}"
+                )
         self._client = http_client or httpx.AsyncClient(
             timeout=httpx.Timeout(_REQUEST_TIMEOUT),
             follow_redirects=True,
@@ -466,11 +665,16 @@ class TTTClient:
     # Internal: RPC plumbing with retry + fallback
     # ------------------------------------------------------------------
 
-    async def _rpc(self, method: str, params: list) -> Any:
-        """Send a JSON-RPC call with retry + RPC fallback.
+    async def _rpc(
+        self, method: str, params: list, *, endpoints: list[str] | None = None
+    ) -> Any:
+        """Send a JSON-RPC call with retry + endpoint rotation.
 
         Returns the ``result`` field on success. Raises ``RuntimeError`` if
         every endpoint fails after every retry.
+
+        *endpoints* selects the pool; it defaults to Pool A (state). Log reads
+        pass Pool B, because the Pool A hosts refuse archive ``eth_getLogs``.
         """
         # Throttle inter-call latency on a per-instance basis so the same
         # client doesn't hammer a public endpoint within one refresh cycle.
@@ -486,12 +690,16 @@ class TTTClient:
             "method": method,
             "params": params,
         }
-        endpoints = [self._primary_rpc, *self._fallback_rpcs]
+        pool = (
+            list(endpoints)
+            if endpoints is not None
+            else [self._primary_rpc, *self._fallback_rpcs]
+        )
         last_err: BaseException | None = None
         # Status codes meaning "the endpoint itself is broken or blocking us"
         # rather than transient; don't waste retries on them.
-        _ENDPOINT_DEAD_CODES = {403, 451, 521, 522, 523, 524, 525, 526}
-        for url in endpoints:
+        _ENDPOINT_DEAD_CODES = {401, 402, 403, 451, 521, 522, 523, 524, 525, 526}
+        for url in pool:
             for attempt in range(_MAX_RETRIES):
                 try:
                     resp = await self._client.post(url, json=payload)
@@ -509,20 +717,34 @@ class TTTClient:
                             response=resp,
                         )
                     resp.raise_for_status()
-                    body = resp.json()
+                    try:
+                        body = resp.json()
+                    except ValueError as exc:
+                        # HTTP 200 carrying an HTML challenge / proxy error
+                        # page. This used to escape ``_rpc`` uncaught, so the
+                        # first bad endpoint failed the call outright while
+                        # healthy fallbacks went untried.
+                        last_err = RuntimeError(
+                            f"RPC {url} returned a non-JSON body: {exc}"
+                        )
+                        break  # try next endpoint
+                    if not isinstance(body, dict):
+                        last_err = RuntimeError(
+                            f"RPC {url} returned a non-object body: {type(body).__name__}"
+                        )
+                        break
                     if "error" in body:
                         err = body["error"]
-                        code = err.get("code") if isinstance(err, dict) else None
-                        # JSON-RPC codes -32600/-32601/-32602/-32604 are "your
-                        # request is malformed" -- those are genuinely caller
-                        # errors that won't be fixed by trying another endpoint.
-                        # Everything else (Internal error -32603, server-defined
-                        # codes like -32046 "Cannot fulfill request") is the
-                        # endpoint refusing to handle this call; fall over.
-                        if code in {-32600, -32601, -32602, -32604}:
-                            raise RuntimeError(f"RPC error: {err}")
-                        last_err = RuntimeError(f"RPC {url} error: {err}")
-                        break  # try next endpoint
+                        # Classify on the MESSAGE, not the code. Providers reuse
+                        # codes for unrelated meanings -- 1rpc reports its
+                        # 50-block eth_getLogs cap as -32602, the same code as
+                        # genuine malformed input, and treating that as terminal
+                        # aborted the whole fallback chain before any healthy
+                        # endpoint was tried.
+                        if _looks_like_endpoint_limitation(err):
+                            last_err = RuntimeError(f"RPC {url} error: {err}")
+                            break  # try next endpoint
+                        raise RuntimeError(f"RPC error: {err}")
                     return body.get("result", "0x")
                 except (httpx.HTTPError, httpx.StreamError) as exc:
                     last_err = exc
@@ -585,7 +807,11 @@ class TTTClient:
                 "toBlock": hex(chunk_end),
             }
             try:
-                logs = await self._rpc("eth_getLogs", [params])
+                # Pool B: the Pool A hosts refuse archive log ranges
+                # (publicnode 403s, 1rpc caps at 50 blocks).
+                logs = await self._rpc(
+                    "eth_getLogs", [params], endpoints=self._log_rpcs
+                )
             except Exception as exc:
                 logger.debug(
                     "eth_getLogs [%d..%d] failed: %s", cursor, chunk_end, exc
@@ -883,68 +1109,24 @@ class TTTClient:
                     logger.debug("site market data fetch failed: %s", exc)
         return {}
 
-    async def fetch_nft_floor(self) -> dict[str, Any] | None:
-        """Get current floor + 24h sales from Reservoir's keyless tier.
-
-        Returns ``{floor_eth, floor_usd, sales_24h}`` or ``None`` if
-        Reservoir is unreachable / rate-limited.
-        """
-        url = _RESERVOIR_FLOOR_URL.format(contract=_FACTORY)
-        for attempt in range(_MAX_RETRIES):
-            try:
-                resp = await self._client.get(
-                    url, headers={"Accept": "*/*"}
-                )
-                if resp.status_code in (401, 403):
-                    logger.debug(
-                        "Reservoir floor returned %d (keyless rate-limit)",
-                        resp.status_code,
-                    )
-                    return None
-                if resp.status_code == 429 or resp.status_code >= 500:
-                    raise httpx.HTTPStatusError(
-                        f"Reservoir {resp.status_code}",
-                        request=resp.request,
-                        response=resp,
-                    )
-                resp.raise_for_status()
-                payload = resp.json()
-                collections = payload.get("collections") or []
-                if not collections:
-                    return None
-                c0 = collections[0]
-                floor_ask = c0.get("floorAsk") or {}
-                price = floor_ask.get("price") or {}
-                amount = price.get("amount") or {}
-                floor_eth = _safe_float(amount.get("native"))
-                floor_usd = _safe_float(amount.get("usd"))
-                volume = c0.get("volume") or {}
-                sales_24h_raw = (
-                    (c0.get("salesCount") or {}).get("1day")
-                    if isinstance(c0.get("salesCount"), dict)
-                    else None
-                )
-                if sales_24h_raw is None:
-                    daily_vol = volume.get("1day")
-                    sales_24h_raw = None if daily_vol is None else None
-                sales_24h: int | None
-                try:
-                    sales_24h = (
-                        int(sales_24h_raw) if sales_24h_raw is not None else None
-                    )
-                except (TypeError, ValueError):
-                    sales_24h = None
-                return {
-                    "floor_eth": floor_eth if floor_eth > 0 else None,
-                    "floor_usd": floor_usd if floor_usd > 0 else None,
-                    "sales_24h": sales_24h,
-                }
-            except (httpx.HTTPError, json.JSONDecodeError, ValueError, KeyError) as exc:
-                if attempt < _MAX_RETRIES - 1:
-                    await asyncio.sleep(_BACKOFF_SECONDS[attempt])
-                else:
-                    logger.debug("Reservoir floor failed: %s", exc)
-        return None
+    #: The NFT floor price has NO keyless source. Probed 2026-07-28:
+    #:
+    #: * ``api.reservoir.tools`` -- DNS failure, the API was sunset. This is
+    #:   what the method used to call, on a 2-retry loop, every other cycle.
+    #: * CoinGecko ``/nfts/ethereum/contract/{factory}`` -- HTTP 404 "nft
+    #:   collection not found"; the collection is absent from CoinGecko search
+    #:   entirely, so FWA's replacement source does not cover TTT.
+    #: * ``tenthousandtokens.net`` -- the SSR payload carries 40 per-token
+    #:   fields but no collection floor; the page only links out to OpenSea.
+    #: * OpenSea's API requires a key, which this project forbids.
+    #:
+    #: The metric is therefore DROPPED rather than left calling a dead host.
+    #: Nothing rendered it in any case: no screen or widget reads ``floor_eth``,
+    #: ``floor_usd``, ``sales_24h`` or ``floor_history``. The manager keeps the
+    #: keys, pinned to ``None`` with :data:`FLOOR_UNAVAILABLE_REASON` alongside,
+    #: so a future widget shows an explicit "unavailable" rather than a
+    #: fabricated 0.0 -- and so re-adding a source is a one-method change.
+    FLOOR_SOURCE = None
 
 
 # ---------------------------------------------------------------------------
@@ -1020,7 +1202,10 @@ def _parse_site_market_data(html: str) -> dict[str, dict[str, Any]]:
 # Public re-exports the manager / cache use.
 __all__ = [
     "TTTClient",
+    "ENDPOINTS_VERIFIED_ON",
+    "FLOOR_UNAVAILABLE_REASON",
     "_DEFAULT_LOG_LOOKBACK_BLOCKS",
+    "_FACTORY_DEPLOY_BLOCK",
     "_INCREMENTAL_LOG_LOOKBACK",
     "_SCALE",
     "_WEI",

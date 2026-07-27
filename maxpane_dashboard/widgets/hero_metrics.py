@@ -6,6 +6,8 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
 
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+
 from maxpane_dashboard.analytics.leaderboard import format_cookies
 from maxpane_dashboard.analytics.production import format_rate
 
@@ -98,5 +100,5 @@ class HeroMetrics(Horizontal):
         leader_box.update(
             f"[dim]LEADER[/]\n\n"
             f"[bold white]{cookies_str} cookies[/]\n"
-            f"[dim]{leader_name}  {rate_str}[/]"
+            f"[dim]{safe_markup(leader_name)}  {rate_str}[/]"
         )

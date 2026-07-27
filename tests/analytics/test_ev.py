@@ -4,11 +4,31 @@ import pytest
 
 from maxpane_dashboard.analytics.ev import (
     BOOST_CATALOG,
+    CATALOG_SOURCE_FALLBACK,
+    CATALOG_SOURCE_LIVE,
+    FALLBACK_CATALOG,
+    CatalogEntry,
+    EVCatalog,
+    build_live_catalog,
     calculate_attack_ev,
     calculate_boost_ev,
     rank_attacks,
     rank_boosts,
 )
+
+
+def _entry(**overrides) -> CatalogEntry:
+    defaults = dict(
+        id="1",
+        name="Test Boost",
+        type="boost",
+        success_rate=0.5,
+        cookie_cost=100.0,
+        multiplier_bps=12000,
+        duration_seconds=3600,
+    )
+    defaults.update(overrides)
+    return CatalogEntry(**defaults)  # type: ignore[arg-type]
 
 
 class TestBoostCatalog:
@@ -166,3 +186,58 @@ class TestRankAttacks:
         ranked = rank_attacks(target_production_rate=0.0)
         for _, ratio in ranked:
             assert ratio == 0.0
+
+
+class TestCatalogPrimitives:
+    """The catalog type is what makes provenance visible -- test it directly."""
+
+    def test_hardcoded_table_is_tagged_as_fallback(self) -> None:
+        assert FALLBACK_CATALOG.source == CATALOG_SOURCE_FALLBACK
+        assert FALLBACK_CATALOG.is_live is False
+
+    def test_default_argument_is_the_fallback_catalog(self) -> None:
+        """Ranking without an explicit catalog must never claim to be live."""
+        assert rank_boosts(1000.0) == rank_boosts(1000.0, catalog=FALLBACK_CATALOG)
+
+    def test_lookup_accepts_int_and_str_ids(self) -> None:
+        assert FALLBACK_CATALOG.get(1).name == FALLBACK_CATALOG.get("1").name
+
+    def test_lookup_of_unknown_id_raises_keyerror(self) -> None:
+        with pytest.raises(KeyError, match="Unknown boost/attack ID"):
+            FALLBACK_CATALOG.get("nope")
+
+    def test_zero_multiplier_means_no_production_effect_not_minus_100pct(self) -> None:
+        """Live 'Cleanup Crew' has multiplierBps=0: a countermeasure, not a
+        production halving. Its EV is exactly its cost, never a huge negative."""
+        catalog = EVCatalog(
+            entries=(_entry(id="9", name="Cleanup Crew", multiplier_bps=0,
+                            duration_seconds=7200, cookie_cost=6000.0),),
+            source=CATALOG_SOURCE_LIVE,
+        )
+        assert calculate_boost_ev("9", 1000.0, catalog) == pytest.approx(-6000.0)
+
+    def test_live_catalog_is_tagged_live(self) -> None:
+        class _Item:
+            id = "1"
+            name = "Ad Campaign"
+            type = "boost"
+            active = True
+            player_purchasable = True
+            success_chance_bps = 8500
+            cost = "2800"
+            multiplier_bps = 12500
+            duration_seconds = "1500"
+
+        catalog = build_live_catalog([_Item()])
+        assert catalog.source == CATALOG_SOURCE_LIVE
+        assert catalog.is_live is True
+        assert catalog.get("1").cookie_cost == 2800.0
+        # and it disagrees with the hardcoded entry of the same id
+        assert catalog.get("1").cookie_cost != FALLBACK_CATALOG.get("1").cookie_cost
+
+    def test_build_live_catalog_of_nothing_is_empty_not_fallback(self) -> None:
+        """``build_live_catalog`` never substitutes stale data on its own --
+        that decision belongs to ``resolve_catalog``."""
+        catalog = build_live_catalog([])
+        assert catalog.entries == ()
+        assert catalog.source == CATALOG_SOURCE_LIVE

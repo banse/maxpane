@@ -9,6 +9,7 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.analytics.base_tokens import format_change, format_price, format_volume
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 def _format_age(timestamp: float | int | None) -> str:
@@ -87,7 +88,7 @@ class LaunchFeed(Vertical):
             symbol = launch.get("symbol", "???")
             if not symbol.startswith("$"):
                 symbol = f"${symbol}"
-            symbol = symbol[:10]
+            symbol = safe_markup(symbol[:10])
 
             deployer = launch.get("deployer", "--")[:10]
             price = launch.get("price_usd", 0)

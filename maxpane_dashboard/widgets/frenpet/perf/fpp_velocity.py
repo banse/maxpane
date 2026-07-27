@@ -7,6 +7,8 @@ import re
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+
 
 _EMOJI_RE = re.compile(
     "["
@@ -122,7 +124,7 @@ class FPPerfVelocity(Vertical):
 
         lines: list[str] = []
         for pet_name, velocity, score_values in entries:
-            name_str = _truncate(pet_name, 10)
+            name_str = safe_markup(_truncate(pet_name, 10))
             sparkline = _build_sparkline(score_values)
             color = _velocity_color(velocity)
 

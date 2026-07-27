@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 # Layout widths (plain text characters)
@@ -17,7 +18,7 @@ _R_VAL_W = 6     # abilities value column
 
 
 def _level_entry(name: str, level: int, is_top: bool) -> str:
-    name = name[:_L_NAME_W]
+    name = safe_markup(name[:_L_NAME_W])
     star = "\u2605 " if is_top else "  "
     val = f"Lv{level}"
     color = "yellow" if level >= 5 else "white" if level >= 3 else "dim"
@@ -25,7 +26,7 @@ def _level_entry(name: str, level: int, is_top: bool) -> str:
 
 
 def _ability_entry(name: str, count: int, is_top: bool) -> str:
-    name = name[:_R_NAME_W]
+    name = safe_markup(name[:_R_NAME_W])
     star = "\u2605 " if is_top else "  "
     val = f"{count} abl"
     color = "cyan" if count >= 4 else "white" if count >= 2 else "dim"

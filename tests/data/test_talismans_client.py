@@ -10,10 +10,16 @@ from typing import Any
 
 import pytest
 
+import httpx
+
 from maxpane_dashboard.data.talismans_client import (
     TalismansClient,
+    TalismansRpcError,
+    _LOG_RANGE_PER_CALL,
+    _SEL_NEXT_TRANSFORM_ID,
     _SEL_OWNER_OF,
     _SEL_TOKEN_DATA,
+    _classify_rpc_error,
     _decode_bonded_log,
     _decode_cleaved_log,
     _decode_cut_log,
@@ -21,6 +27,7 @@ from maxpane_dashboard.data.talismans_client import (
     _decode_token_data,
     _decode_transfer_log,
     _encode_uint,
+    _parse_suggested_to,
 )
 
 
@@ -243,7 +250,7 @@ def _aggregate3_return(results: list[tuple[bool, str]]) -> str:
 async def test_fetch_block_number(monkeypatch):
     client = TalismansClient()
 
-    async def fake_rpc(method, params):
+    async def fake_rpc(method, params, endpoints=None):
         assert method == "eth_blockNumber"
         return "0x1234"
 
@@ -262,10 +269,11 @@ async def test_fetch_collection_flags(monkeypatch):
             (True, "0x" + _encode_uint(1536)),  # genesisMinted
             (True, "0x" + _encode_uint(1)),  # bondAndCleaveEnabled = true
             (True, "0x" + _encode_uint(0)),  # cutAndMergeEnabled = false
+            (True, "0x" + _encode_uint(1757)),  # nextTransformId
         ]
     )
 
-    async def fake_rpc(method, params):
+    async def fake_rpc(method, params, endpoints=None):
         assert method == "eth_call"
         return blob
 
@@ -276,6 +284,7 @@ async def test_fetch_collection_flags(monkeypatch):
         "genesis_minted": 1536,
         "bond_cleave_enabled": True,
         "cut_merge_enabled": False,
+        "next_transform_id": 1757,
     }
     await client.close()
 
@@ -302,7 +311,7 @@ async def test_fetch_token_states_skips_reverted(monkeypatch):
 
     captured = {}
 
-    async def fake_rpc(method, params):
+    async def fake_rpc(method, params, endpoints=None):
         # capture the aggregate3 calldata for the assertion
         captured["data"] = params[0]["data"]
         return _aggregate3_return(
@@ -346,7 +355,7 @@ async def test_fetch_token_states_skips_zero_core_count(monkeypatch):
     )
     owner = "0x" + _OPERATOR_WORD
 
-    async def fake_rpc(method, params):
+    async def fake_rpc(method, params, endpoints=None):
         return _aggregate3_return([(True, dead_data), (True, owner)])
 
     monkeypatch.setattr(client, "_rpc", fake_rpc)
@@ -382,7 +391,7 @@ async def test_fetch_operation_logs_merges(monkeypatch):
         "transactionHash": "0xb",
     }
 
-    async def fake_rpc(method, params):
+    async def fake_rpc(method, params, endpoints=None):
         assert method == "eth_getLogs"
         # topics filter must be the 4-way OR
         topics = params[0]["topics"]
@@ -390,7 +399,8 @@ async def test_fetch_operation_logs_merges(monkeypatch):
         return [bonded_log, cleaved_log]
 
     monkeypatch.setattr(client, "_rpc", fake_rpc)
-    ops = await client.fetch_operation_logs(100, 200)
+    ops, scanned_to = await client.fetch_operation_logs(100, 200)
+    assert scanned_to == 200
     assert len(ops) == 2
     assert {o["op_type"] for o in ops} == {"bond", "cleave"}
     await client.close()
@@ -402,7 +412,7 @@ async def test_fetch_operation_logs_paging(monkeypatch):
     client = TalismansClient()
     calls: list[tuple[int, int]] = []
 
-    async def fake_rpc(method, params):
+    async def fake_rpc(method, params, endpoints=None):
         assert method == "eth_getLogs"
         calls.append(
             (int(params[0]["fromBlock"], 16), int(params[0]["toBlock"], 16))
@@ -434,7 +444,7 @@ async def test_fetch_transfer_logs(monkeypatch):
         "transactionHash": "0x333",
     }
 
-    async def fake_rpc(method, params):
+    async def fake_rpc(method, params, endpoints=None):
         assert method == "eth_getLogs"
         assert params[0]["topics"] == [
             "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
@@ -442,8 +452,543 @@ async def test_fetch_transfer_logs(monkeypatch):
         return [transfer_log]
 
     monkeypatch.setattr(client, "_rpc", fake_rpc)
-    out = await client.fetch_transfer_logs(1, 100)
+    out, scanned_to = await client.fetch_transfer_logs(1, 100)
+    assert scanned_to == 100
     assert len(out) == 1
     assert out[0]["token_id"] == 255
     assert out[0]["to"] == _OPERATOR
+    await client.close()
+
+
+# ---------------------------------------------------------------------------
+# HIGH-5: JSON-RPC error classification
+#
+# Every ``error`` payload below was captured from the live endpoint named in
+# its comment on 2026-07-27. They are the reason classification keys on the
+# message text and not the code: four different conditions share -32602/-32600.
+# ---------------------------------------------------------------------------
+
+_LIVE_ERRORS = {
+    "publicnode_archive_gate": (
+        {
+            "code": -32602,
+            "message": (
+                "Archive requests require a personal token. "
+                "Get one at: https://www.allnodes.com/publicnode"
+            ),
+        },
+        "archive",
+    ),
+    "drpc_range_cap": (
+        {"code": 35, "message": "ranges over 10000 blocks are not supported on free plan"},
+        "range_cap",
+    ),
+    "onerpc_range_cap": (
+        {"code": -32602, "message": "eth_getLogs is limited to 0 - 50 blocks range"},
+        "range_cap",
+    ),
+    "blastapi_range_cap": (
+        {
+            "code": -32600,
+            "message": (
+                "You can make eth_getLogs requests with up to a 10 block range. "
+                "Based on your parameters, this block range should work: "
+                "[0x18708eb, 0x18708f4]"
+            ),
+        },
+        "range_cap",
+    ),
+    "flashbots_head_range": (
+        {"code": -32602, "message": "block range extends beyond current head block"},
+        "range_cap",
+    ),
+    "ankr_needs_key": (
+        {
+            "code": -32000,
+            "message": (
+                "Unauthorized: You must authenticate your request with an API key."
+            ),
+        },
+        "dead",
+    ),
+    "merkle_no_method": ({"code": -32601, "message": "Method not found"}, "dead"),
+    "cloudflare_internal": ({"code": -32603, "message": "Internal error"}, "rpc"),
+    "geth_result_cap": (
+        {"code": -32005, "message": "query returned more than 10000 results"},
+        "result_cap",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("name", "payload", "expected"),
+    [(k, v[0], v[1]) for k, v in _LIVE_ERRORS.items()],
+)
+def test_classify_live_rpc_errors(name, payload, expected):
+    assert _classify_rpc_error(payload).kind == expected, name
+
+
+def test_archive_gate_is_not_shrinkable():
+    """publicnode gates on *depth*, not width — narrowing cannot help.
+
+    Classifying it as a range cap would make _get_logs burn its whole shrink
+    budget on a window that is refused identically at every size.
+    """
+    from maxpane_dashboard.data.talismans_client import _SHRINKABLE
+
+    err = _classify_rpc_error(_LIVE_ERRORS["publicnode_archive_gate"][0])
+    assert err.kind not in _SHRINKABLE
+
+
+def test_rate_limit_text_wins_over_archive_wording():
+    """A 429 body advertising a 'personal token' must not read as an archive gate.
+
+    Same shape as publicnode's archive message; opposite meaning (transient vs
+    permanent), so the rate-limit test has to run first.
+    """
+    err = _classify_rpc_error(
+        {
+            "code": -32005,
+            "message": "Rate limit exceeded. To obtain higher limits, "
+            "please request a personal token from the archive team.",
+        }
+    )
+    assert err.kind == "rate_limit"
+
+
+def test_result_cap_beats_rate_limit_code():
+    """-32005 is a rate-limit code for some providers and a result cap for others."""
+    err = _classify_rpc_error(_LIVE_ERRORS["geth_result_cap"][0])
+    assert err.kind == "result_cap"
+
+
+def test_parse_suggested_to_hex_and_decimal():
+    assert _parse_suggested_to("should work: [0x18708eb, 0x18708f4]") == 0x18708F4
+    assert _parse_suggested_to("retry with the range 25583616-25585541") == 25585541
+    # A bare result count must not be mistaken for a block range.
+    assert _parse_suggested_to("narrow your filter: 20000") is None
+    assert _parse_suggested_to("no numbers here") is None
+
+
+def test_suggestion_is_ignored_unless_it_shrinks_materially():
+    """blastapi suggests a window pinned to the END of the request.
+
+    Its ``to`` is effectively the ``to`` we already asked for, so following it
+    verbatim would not narrow anything and would loop until the shrink budget
+    ran out. A non-material suggestion must degrade to a clean halving.
+    """
+    # Suggestion equal to the current end: no shrink at all -> halve instead.
+    # span is 50_001 blocks, so a halving lands on 1_000 + 25_000 - 1.
+    assert TalismansClient._shrunk_end(1_000, 51_000, 50_999) == 25_999
+    # Honest suggestion inside the window and materially smaller -> honoured.
+    assert TalismansClient._shrunk_end(1_000, 51_000, 11_000) == 11_000
+    # No suggestion -> halve.
+    assert TalismansClient._shrunk_end(0, 99, None) == 49
+
+
+# ---------------------------------------------------------------------------
+# HIGH-5: _rpc must fail over, never short-circuit
+# ---------------------------------------------------------------------------
+
+
+def _transport(handler):
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+@pytest.mark.asyncio
+async def test_minus_32602_falls_through_to_next_endpoint():
+    """The regression that produced the review's phantom '0 events in window'.
+
+    publicnode answers every archive-depth eth_getLogs with -32602. That code
+    used to be treated as a terminal protocol error and re-raised immediately,
+    so the three healthy fallbacks were never tried and the whole scan came
+    back empty. It must now be a per-endpoint failure.
+    """
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if "publicnode" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "error": _LIVE_ERRORS["publicnode_archive_gate"][0],
+                },
+            )
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": "0xbeef"})
+
+    client = TalismansClient(
+        primary_rpc="https://ethereum.publicnode.com",
+        fallback_rpcs=["https://good.example"],
+        http_client=_transport(handler),
+    )
+    assert await client._rpc("eth_call", [{}]) == "0xbeef"
+    assert len(seen) == 2 and "good.example" in seen[1]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_rpc_raises_classified_error_when_all_endpoints_fail():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": _LIVE_ERRORS["drpc_range_cap"][0],
+            },
+        )
+
+    client = TalismansClient(
+        primary_rpc="https://a.example",
+        fallback_rpcs=["https://b.example"],
+        http_client=_transport(handler),
+    )
+    with pytest.raises(TalismansRpcError) as excinfo:
+        await client._rpc("eth_getLogs", [{}])
+    assert excinfo.value.kind == "range_cap"
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_rpc_prefers_shrinkable_diagnosis_over_last_error():
+    """A later endpoint's unrelated failure must not mask 'narrowing would help'."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = (
+            _LIVE_ERRORS["drpc_range_cap"][0]
+            if "a.example" in str(request.url)
+            else _LIVE_ERRORS["merkle_no_method"][0]
+        )
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "error": payload})
+
+    client = TalismansClient(
+        primary_rpc="https://a.example",
+        fallback_rpcs=["https://z.example"],
+        http_client=_transport(handler),
+    )
+    with pytest.raises(TalismansRpcError) as excinfo:
+        await client._rpc("eth_getLogs", [{}])
+    assert excinfo.value.kind == "range_cap"
+    await client.close()
+
+
+# ---------------------------------------------------------------------------
+# HIGH-5: _get_logs reports how far it actually got
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_logs_stops_at_last_complete_block(monkeypatch):
+    """A refused page must stop the scan, not be skipped over.
+
+    The old code logged the failure at debug and jumped to the next page, so
+    the caller advanced its watermark past events it never read.
+    """
+    client = TalismansClient()
+    calls: list[tuple[int, int]] = []
+
+    async def fake_rpc(method, params, endpoints=None):
+        lo = int(params[0]["fromBlock"], 16)
+        hi = int(params[0]["toBlock"], 16)
+        calls.append((lo, hi))
+        if lo >= 50_000:  # second page is refused outright
+            raise TalismansRpcError("dead", "endpoint gone")
+        return [{"blockNumber": "0x1"}]
+
+    monkeypatch.setattr(client, "_rpc", fake_rpc)
+    logs, scanned_to = await client._get_logs("0xa", [], 0, 149_999)
+    assert scanned_to == 49_999, "watermark must not pass the refused page"
+    assert len(logs) == 1
+    # The scan stopped; it did not carry on to the third page.
+    assert calls == [(0, 49_999), (50_000, 99_999)]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_logs_reports_no_progress_on_first_page_failure(monkeypatch):
+    client = TalismansClient()
+
+    async def fake_rpc(method, params, endpoints=None):
+        raise TalismansRpcError("archive", "archive gate")
+
+    monkeypatch.setattr(client, "_rpc", fake_rpc)
+    logs, scanned_to = await client._get_logs("0xa", [], 1_000, 60_000)
+    assert logs == []
+    assert scanned_to == 999, "from_block - 1 means 'nothing was scanned'"
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_logs_shrinks_on_range_cap_and_completes(monkeypatch):
+    """drpc's 10k cap must be learned, not fatal — and learned only once."""
+    client = TalismansClient()
+    attempts: list[tuple[int, int]] = []
+
+    async def fake_rpc(method, params, endpoints=None):
+        lo = int(params[0]["fromBlock"], 16)
+        hi = int(params[0]["toBlock"], 16)
+        attempts.append((lo, hi))
+        if hi - lo + 1 > 10_000:
+            raise TalismansRpcError(
+                "range_cap", "ranges over 10000 blocks are not supported on free plan"
+            )
+        return []
+
+    monkeypatch.setattr(client, "_rpc", fake_rpc)
+    logs, scanned_to = await client._get_logs("0xa", [], 0, 29_999)
+    assert scanned_to == 29_999, "the full range must still be covered"
+    assert logs == []
+    # Pages are contiguous with no gaps: every block is covered exactly once.
+    accepted = [(lo, hi) for (lo, hi) in attempts if hi - lo + 1 <= 10_000]
+    assert accepted[0][0] == 0
+    for prev, nxt in zip(accepted, accepted[1:]):
+        assert nxt[0] == prev[1] + 1
+    assert accepted[-1][1] == 29_999
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_logs_non_shrinkable_error_is_not_retried(monkeypatch):
+    """An archive gate must fail the page immediately, not shrink 8 times."""
+    client = TalismansClient()
+    attempts = 0
+
+    async def fake_rpc(method, params, endpoints=None):
+        nonlocal attempts
+        attempts += 1
+        raise TalismansRpcError("archive", "Archive requests require a personal token")
+
+    monkeypatch.setattr(client, "_rpc", fake_rpc)
+    _, scanned_to = await client._get_logs("0xa", [], 0, 200_000)
+    assert attempts == 1
+    assert scanned_to == -1
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_logs_empty_range_returns_to_block():
+    client = TalismansClient()
+    assert await client._get_logs("0xa", [], 500, 400) == ([], 400)
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_logs_uses_the_log_endpoint_pool(monkeypatch):
+    """Log scans must target the log pool, not the state-read pool."""
+    from maxpane_dashboard.data.talismans_client import _LOG_RPCS
+
+    client = TalismansClient()
+    used: list[Any] = []
+
+    async def fake_rpc(method, params, endpoints=None):
+        used.append(endpoints)
+        return []
+
+    monkeypatch.setattr(client, "_rpc", fake_rpc)
+    await client._get_logs("0xa", [], 0, 10)
+    assert used == [_LOG_RPCS]
+    await client.close()
+
+
+def test_log_pool_excludes_nothing_that_cannot_serve_logs():
+    """Probed live: merkle has no eth_getLogs, ankr/cloudflare are unusable."""
+    from maxpane_dashboard.data.talismans_client import _LOG_RPCS
+
+    for dead in ("merkle.io", "rpc.ankr.com", "cloudflare-eth.com", "llamarpc"):
+        assert not any(dead in url for url in _LOG_RPCS), dead
+    assert any("tenderly" in url for url in _LOG_RPCS), "need an archive log source"
+
+
+# ---------------------------------------------------------------------------
+# HIGH-4: nextTransformId is read alongside the other collection flags
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_collection_flags_request_includes_next_transform_id(monkeypatch):
+    client = TalismansClient()
+    captured: dict[str, Any] = {}
+
+    async def fake_rpc(method, params, endpoints=None):
+        captured["data"] = params[0]["data"]
+        return _aggregate3_return(
+            [
+                (True, "0x" + _encode_uint(1354)),
+                (True, "0x" + _encode_uint(1536)),
+                (True, "0x" + _encode_uint(1)),
+                (True, "0x" + _encode_uint(0)),
+                (True, "0x" + _encode_uint(1757)),
+            ]
+        )
+
+    monkeypatch.setattr(client, "_rpc", fake_rpc)
+    flags = await client.fetch_collection_flags()
+    assert _SEL_NEXT_TRANSFORM_ID[2:] in captured["data"]
+    assert flags["next_transform_id"] == 1757
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_collection_flags_next_transform_id_zero_when_call_fails(monkeypatch):
+    """A failed read must report 0 so the manager can tell it apart from a real value."""
+    client = TalismansClient()
+
+    async def fake_rpc(method, params, endpoints=None):
+        return _aggregate3_return(
+            [
+                (True, "0x" + _encode_uint(1354)),
+                (True, "0x" + _encode_uint(1536)),
+                (True, "0x" + _encode_uint(1)),
+                (True, "0x" + _encode_uint(0)),
+                (False, "0x"),
+            ]
+        )
+
+    monkeypatch.setattr(client, "_rpc", fake_rpc)
+    flags = await client.fetch_collection_flags()
+    assert flags["next_transform_id"] == 0
+    await client.close()
+
+
+def test_default_log_page_size_is_sane():
+    assert _LOG_RANGE_PER_CALL == 50_000
+
+
+# ---------------------------------------------------------------------------
+# HIGH-5: the HTTP status carries no information about which error it is
+#
+# Live, on one and the same over-long eth_getLogs range:
+#   eth.drpc.org  HTTP 400 + range cap   <- the only SHRINKABLE one
+#   publicnode    HTTP 403 + archive gate
+#   1rpc.io/eth   HTTP 200 + range cap
+# Classifying on status would demote the single most recoverable error to an
+# opaque transport failure. A live drpc-only backfill is how that was caught.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_shrinkable_error_inside_an_http_400_is_still_classified():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={
+                "id": 1,
+                "jsonrpc": "2.0",
+                "error": _LIVE_ERRORS["drpc_range_cap"][0],
+            },
+        )
+
+    client = TalismansClient(
+        primary_rpc="https://drpc.example",
+        fallback_rpcs=[],
+        http_client=_transport(handler),
+    )
+    with pytest.raises(TalismansRpcError) as excinfo:
+        await client._rpc("eth_getLogs", [{}])
+    assert excinfo.value.kind == "range_cap", "must not degrade to 'transport'"
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_archive_gate_inside_an_http_403_is_classified_from_the_body():
+    """403 is in the dead-code set, but the body says precisely why."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": _LIVE_ERRORS["publicnode_archive_gate"][0],
+            },
+        )
+
+    client = TalismansClient(
+        primary_rpc="https://publicnode.example",
+        fallback_rpcs=[],
+        http_client=_transport(handler),
+    )
+    with pytest.raises(TalismansRpcError) as excinfo:
+        await client._rpc("eth_getLogs", [{}])
+    assert excinfo.value.kind == "archive"
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_http_400_range_cap_drives_a_real_shrink_to_completion(monkeypatch):
+    """End-to-end of the live drpc case: 400 -> shrink -> full coverage."""
+    monkeypatch.setattr(
+        "maxpane_dashboard.data.talismans_client._BACKOFF_SECONDS", (0, 0)
+    )
+    served: list[tuple[int, int]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        params = _json.loads(request.content)["params"][0]
+        lo, hi = int(params["fromBlock"], 16), int(params["toBlock"], 16)
+        if hi - lo + 1 > 10_000:
+            return httpx.Response(
+                400,
+                json={
+                    "id": 1,
+                    "jsonrpc": "2.0",
+                    "error": _LIVE_ERRORS["drpc_range_cap"][0],
+                },
+            )
+        served.append((lo, hi))
+        return httpx.Response(200, json={"id": 1, "jsonrpc": "2.0", "result": []})
+
+    client = TalismansClient(
+        primary_rpc="https://drpc.example",
+        fallback_rpcs=[],
+        http_client=_transport(handler),
+    )
+    logs, scanned_to = await client._get_logs("0xa", [], 0, 59_999)
+    assert scanned_to == 59_999, "a 10k-capped provider must still complete"
+    assert logs == []
+    assert served[0][0] == 0 and served[-1][1] == 59_999
+    for prev, nxt in zip(served, served[1:]):
+        assert nxt[0] == prev[1] + 1, "no gaps between accepted pages"
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_5xx_is_retried_before_failing_the_endpoint(monkeypatch):
+    """A server blip deserves a backoff retry, whatever the body says."""
+    monkeypatch.setattr(
+        "maxpane_dashboard.data.talismans_client._BACKOFF_SECONDS", (0, 0)
+    )
+    hits = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hits["n"] += 1
+        if hits["n"] == 1:
+            return httpx.Response(502, json={"error": {"code": -1, "message": "bad gw"}})
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"})
+
+    client = TalismansClient(
+        primary_rpc="https://flaky.example",
+        fallback_rpcs=[],
+        http_client=_transport(handler),
+    )
+    assert await client._rpc("eth_call", [{}]) == "0x2a"
+    assert hits["n"] == 2
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_non_json_body_does_not_crash_the_client():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(521, text="error code: 521")  # llamarpc, live
+
+    client = TalismansClient(
+        primary_rpc="https://down.example",
+        fallback_rpcs=[],
+        http_client=_transport(handler),
+    )
+    with pytest.raises(TalismansRpcError) as excinfo:
+        await client._rpc("eth_call", [{}])
+    assert excinfo.value.kind == "dead"
     await client.close()

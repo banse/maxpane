@@ -11,6 +11,8 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+
 
 _EMOJI_RE = re.compile(
     "["
@@ -50,11 +52,11 @@ def _attack_to_markup(attack: dict, pet_names: dict[int, str] | None = None) -> 
     # Resolve pet names
     names = pet_names or {}
     attacker_name = (
-        _EMOJI_RE.sub("", names.get(int(attacker_id), f"#{attacker_id}")).strip()
+        safe_markup(_EMOJI_RE.sub("", names.get(int(attacker_id), f"#{attacker_id}")).strip())
         if attacker_id != "?" else "?"
     )
     defender_name = (
-        _EMOJI_RE.sub("", names.get(int(defender_id), f"#{defender_id}")).strip()
+        safe_markup(_EMOJI_RE.sub("", names.get(int(defender_id), f"#{defender_id}")).strip())
         if defender_id != "?" else "?"
     )
 

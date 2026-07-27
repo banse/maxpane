@@ -7,6 +7,7 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 def _format_time(timestamp: float | int | str | None) -> str:
@@ -86,7 +87,7 @@ class TradeFeed(Vertical):
             time_str = _format_time(ts)
             trade_type = trade.get("type", "buy").lower()
             amount = _format_amount(trade.get("amount"))
-            symbol = trade.get("symbol", "???")
+            symbol = safe_markup(f'{trade.get("symbol", "???"):<8}')
             eth_amount = trade.get("eth_amount")
             price = trade.get("price")
 
@@ -102,7 +103,7 @@ class TradeFeed(Vertical):
 
             line = (
                 f"  [dim]{time_str}[/]  [{color}]{label}[/]  "
-                f"{amount:>8} {symbol:<8}  {eth_str:>10}  {price_str}"
+                f"{amount:>8} {symbol}  {eth_str:>10}  {price_str}"
             )
             log.write(line)
 

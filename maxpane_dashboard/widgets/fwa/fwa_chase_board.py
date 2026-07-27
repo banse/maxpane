@@ -46,6 +46,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 from .fwa_hero_metrics import CROWN_GOLD
 
@@ -89,7 +90,7 @@ def _short_addr(value) -> str:
 def _collection_label(row: dict, width: int = 12) -> str:
     name = row.get("collection_name")
     if name and str(name).strip():
-        return _fmt_text(name, width)
+        return safe_markup(_fmt_text(name, width))
     return _short_addr(row.get("collection"))
 
 

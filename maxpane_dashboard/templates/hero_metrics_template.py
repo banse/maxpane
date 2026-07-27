@@ -14,6 +14,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 class GameHeroBox(Static):
@@ -91,7 +92,7 @@ class GameHeroMetrics(Horizontal):
         if leader_name:
             box3.update(
                 f"[dim]LEADER[/]\n\n"
-                f"[bold white]{leader_name}[/]\n"
+                f"[bold white]{safe_markup(leader_name)}[/]\n"
                 f"[dim]{leader_subtitle}[/]"
             )
         else:

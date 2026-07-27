@@ -7,6 +7,7 @@ import re
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
 def _strip_non_ascii(text: str) -> str:
@@ -97,7 +98,7 @@ class BTOverviewLeaderboard(Vertical):
                 volume = float(getattr(token, "volume_24h", 0))
                 liquidity = float(getattr(token, "liquidity_usd", 0))
 
-            name = _strip_non_ascii(name)
+            name = safe_markup(_strip_non_ascii(name))
             price_str = _format_price(price)
             vol_str = _format_usd(volume)
             liq_str = _format_usd(liquidity)

@@ -58,3 +58,8 @@ class OCMSnapshot(BaseModel):
     holder_count: int
     faucet_open: bool = True
     recent_events: list[OCMActivityEvent] = []
+
+    #: Number of core contract reads that failed this cycle.  Non-zero means
+    #: the numeric fields above contain 0 placeholders rather than measured
+    #: values, and the snapshot must not be appended to any history series.
+    read_failures: int = 0

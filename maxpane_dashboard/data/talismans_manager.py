@@ -9,8 +9,12 @@ widget layer.
 Cycle behaviour (each refresh):
 
 1. Pull collection flags + block number in parallel.
-2. Incremental operation-log scan (Bonded / Cleaved / Cut / Merged) since
-   ``cache.last_seen_block["ops"]``; register output ids and apply each op.
+2. Seed ``known_ids`` with every id the contract's ``nextTransformId()``
+   allocator has handed out, then run an incremental operation-log scan
+   (Bonded / Cleaved / Cut / Merged) since ``cache.last_seen_block["ops"]``,
+   registering output ids and applying each op. The seeding is what makes
+   enumeration complete; the log scan supplies the activity feed and the
+   cumulative operation counters.
 3. Batch-read every known token's live state via Multicall3; rebuild the live
    token registry.
 4. Compute the core-conservation baseline (once) and the live aggregates.
@@ -120,9 +124,13 @@ class TalismansManager:
                 "genesis_minted": _GENESIS_MAX_ID,
                 "bond_cleave_enabled": False,
                 "cut_merge_enabled": False,
+                "next_transform_id": 0,
             }
 
-        # -- 2) Incremental operation-log scan ---------------------------
+        # -- 2a) Seed post-genesis ids from the contract's own allocator --
+        self._seed_transform_ids(flags.get("next_transform_id", 0))
+
+        # -- 2b) Incremental operation-log scan --------------------------
         await self._scan_operations(current_block, now_ts)
 
         # -- 3) Live token state -----------------------------------------
@@ -229,8 +237,40 @@ class TalismansManager:
     # Internals
     # ------------------------------------------------------------------
 
+    def _seed_transform_ids(self, next_transform_id: int) -> None:
+        """Add every allocated post-genesis id to ``known_ids``.
+
+        Token ids cannot be enumerated from the contract (there is no
+        ``ERC721Enumerable.tokenByIndex``) and they cannot be recovered from
+        logs either: no keyless endpoint serves ``eth_getLogs`` back to the
+        deploy block, so a log lookback only ever sees a recent slice. Every id
+        created before that slice used to be undiscoverable, which left a fresh
+        install permanently short of the real collection — measured live at
+        1,172 of 1,354 tokens and 0 of 93 Mythics.
+
+        ``nextTransformId()`` closes that gap exactly, because it is the
+        allocator itself: every post-genesis token ever minted has an id in
+        ``[genesisMinted + 1, nextTransformId)``. Ids that have since been
+        consumed by a bond/merge are not filtered here — the ``tokenData`` /
+        ``ownerOf`` sweep in :meth:`_refresh_token_states` already drops any id
+        whose ``coreCount`` is 0 or whose ``ownerOf`` reverts. Verified live at
+        block 25,626,959: seeding 1537..1756 and sweeping yields exactly 1,354
+        live tokens, matching ``totalSupply()`` on the nose.
+        """
+        if next_transform_id <= _GENESIS_MAX_ID + 1:
+            return  # 0 == read failed; <= first id == nothing minted yet
+        self.cache.known_ids.update(
+            range(_GENESIS_MAX_ID + 1, int(next_transform_id))
+        )
+
     async def _scan_operations(self, current_block: int, now_ts: float) -> None:
-        """Incrementally fetch + apply Bonded / Cleaved / Cut / Merged ops."""
+        """Incrementally fetch + apply Bonded / Cleaved / Cut / Merged ops.
+
+        The scan watermark advances only to the last block the client actually
+        finished scanning, never to ``current_block``. Advancing past a refused
+        log page would drop its events permanently: the next cycle starts after
+        the gap and nothing ever re-reads it.
+        """
         if current_block <= 0:
             return
         last = self.cache.last_seen_block.get("ops")
@@ -240,11 +280,18 @@ class TalismansManager:
             from_block = max(0, current_block - _DEFAULT_LOG_LOOKBACK_BLOCKS)
         from_block = max(0, from_block)
 
+        if from_block > current_block:
+            # Already scanned through the head block; no new blocks yet. This
+            # is a complete scan of an empty range, not a failed one.
+            return
+
         try:
-            ops = await self.client.fetch_operation_logs(from_block, current_block)
+            ops, scanned_to = await self.client.fetch_operation_logs(
+                from_block, current_block
+            )
         except Exception as exc:
             self._error_count += 1
-            logger.debug("operation log scan failed: %s", exc)
+            logger.warning("operation log scan failed: %s", exc)
             return
 
         for op in ops:
@@ -267,7 +314,28 @@ class TalismansManager:
                 continue
             self.cache.apply_operation(event)
 
-        self.cache.last_seen_block["ops"] = current_block
+        if scanned_to < from_block:
+            # Not one page completed — leave the watermark alone so the very
+            # same range is retried next cycle.
+            self._error_count += 1
+            logger.warning(
+                "operation log scan made no progress from block %d; "
+                "watermark held at %s",
+                from_block,
+                self.cache.last_seen_block.get("ops"),
+            )
+            return
+
+        self.cache.last_seen_block["ops"] = scanned_to
+        if scanned_to < current_block:
+            # Partial progress is persisted and the remainder retried next
+            # cycle, so no block is ever skipped over.
+            self._error_count += 1
+            logger.warning(
+                "operation log scan incomplete: reached %d of %d",
+                scanned_to,
+                current_block,
+            )
 
     async def _refresh_token_states(
         self, current_block: int, now_ts: float

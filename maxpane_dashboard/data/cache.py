@@ -17,6 +17,7 @@ import time
 from collections import deque
 from typing import Any
 
+from maxpane_dashboard.data.series_points import coerce_points
 from maxpane_dashboard.data.snapshot import GameSnapshot
 
 logger = logging.getLogger(__name__)
@@ -141,6 +142,13 @@ class DataCache:
 
         Silently does nothing if the file is missing or corrupted.
         Existing in-memory data is replaced on successful load.
+
+        Individual points are validated: anything unusable (``null``, a
+        string, ``NaN``, a wrong-length entry, a negative value, a
+        future-dated timestamp) is dropped and counted rather than
+        raising, because every manager loads its cache in ``__init__``
+        and one bad value used to abort MaxPane startup for every
+        dashboard.
         """
         try:
             with open(path) as f:
@@ -155,16 +163,22 @@ class DataCache:
             return
 
         loaded = 0
+        skipped = 0
+        now = time.time()
         for name, points in histories.items():
             if not isinstance(points, list):
                 continue
-            dq: deque[TimeSeriesPoint] = deque(maxlen=self._max_history)
-            for pt in points:
-                if isinstance(pt, (list, tuple)) and len(pt) == 2:
-                    dq.append((float(pt[0]), float(pt[1])))
-            self._history[name] = dq
+            good, dropped = coerce_points(points, now=now)
+            skipped += dropped
+            self._history[name] = deque(good, maxlen=self._max_history)
             loaded += 1
 
+        if skipped:
+            logger.warning(
+                "Skipped %d unusable point(s) while loading cache %s",
+                skipped,
+                path,
+            )
         logger.info(
             "Loaded cache history from %s: %d bakeries, up to %d points each",
             path,
