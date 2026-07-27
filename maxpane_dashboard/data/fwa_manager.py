@@ -99,6 +99,36 @@ Nine things that are easy to get wrong here, and are not
    dimensionless, and reads like a count of ETH.  It has no data key and is used
    here only inside the invariant check.
 
+What is persisted, and what is bounded
+--------------------------------------
+
+Two files, two policies.
+
+``~/.maxpane/fwa_cache.json`` holds the **aggregates and display payloads** —
+settlement mix, crown history, the last 50 draws, config history, the allowlist —
+always, unbounded in time and tiny in bytes.  They are the whole Pool B
+degradation story: when the log endpoint dies these are what render, behind an
+honest ``as of HH:MM``.
+
+``~/.maxpane/fwa_log_state.json`` holds the **raw decoded events**, so the
+one-time full-history backfill stays one-time.  Unbounded, that file is tens of
+MB on the live chain and grows forever, so it is bounded three ways:
+
+1. High-volume events are kept for :data:`LOG_RAW_WINDOW_BLOCKS` back from the
+   watermark — a *block* window, so the bound does not move with activity.
+2. :data:`LOG_ALLTIME_EVENTS` are kept whole (~130 logs all-time). The
+   aggregates they drive — crown reigns, parameter drift, the allowlist — are
+   all-time by definition and windowing them would silently rewrite history.
+3. A hard :data:`LOG_STATE_MAX_BYTES` ceiling, enforced by shrinking the window
+   and finally by dropping the windowed events outright.
+
+The one aggregate a window would corrupt is the settlement mix, which WP-7
+derives from ``len(store[event])``.  The export therefore carries an **all-time
+count baseline**, and :meth:`FWAManager._correct_windowed_aggregates` recomputes
+the mix from it, so 73.92% of 51,522 never quietly becomes 71% of the last four
+hours.  Every trim is logged: a bound that discards data silently reads as "we
+have full history" when we do not.
+
 USD figures appear only where a USD source exists.  The ETH/USD rate is *derived*
 from the one DexScreener pair (``price_usd / price_native_eth``) and is ``None``
 when either leg is missing — no rate is ever invented, and a missing rate renders
@@ -137,7 +167,12 @@ from maxpane_dashboard.data.fwa_cache import (
     FWACache,
 )
 from maxpane_dashboard.data.fwa_client import FWAClient
-from maxpane_dashboard.data.fwa_logs import REASON_UNAVAILABLE, FWALogClient
+from maxpane_dashboard.data.fwa_logs import (
+    REASON_UNAVAILABLE,
+    SETTLEMENT_EVENTS,
+    FWALogClient,
+    settlement_mix_rows,
+)
 from maxpane_dashboard.data.fwa_market import FWAMarketClient, floors_for_ev
 from maxpane_dashboard.data.fwa_models import (
     FWA_DATA_KEYS,
@@ -157,15 +192,91 @@ _CACHE_DIR = Path(DEFAULT_CACHE_PATH).parent
 
 #: Raw decoded log store, persisted beside the tiered cache.
 #:
-#: ``FWACache`` deliberately persists only the *aggregates* (the last-good
-#: display payload), which is what the degraded path renders.  This sidecar holds
-#: :meth:`FWALogClient.export_state` so the one-time full-history backfill stays
-#: one-time across restarts instead of costing a fresh archive scan on every
-#: launch.  It is large (tens of MB once the 58k ``AcquisitionRequested`` logs are
-#: in it), written only after a backfill and on shutdown, and entirely optional:
-#: with ``persist_log_state=False`` the dashboard still renders from the cached
-#: aggregates while a new backfill runs.
+#: ``FWACache`` persists the *aggregates* (the last-good display payload), which
+#: is what the degraded path renders.  This sidecar holds the raw events, so the
+#: one-time full-history backfill stays one-time across restarts instead of
+#: costing a fresh archive scan on every launch.
+#:
+#: It is **bounded** — see :data:`LOG_RAW_WINDOW_BLOCKS` and
+#: :data:`LOG_STATE_MAX_BYTES`.  An unbounded export of the live chain is tens of
+#: MB and grows forever, which is not something to leave in ``~/.maxpane`` for a
+#: tool people install with pipx.
 _LOG_STATE_PATH = str(_CACHE_DIR / "fwa_log_state.json")
+
+#: Sidecar schema version.  Bumped when the retention shape changes so an old
+#: unbounded file is re-trimmed on the next write rather than read as authoritative.
+LOG_STATE_VERSION = 2
+
+#: How far back the **high-volume** raw events are persisted, in blocks
+#: (~4 hours at 12 s/block).
+#:
+#: A *block* window rather than an event count, so the bound is predictable
+#: regardless of protocol activity.  Sized from what the raw events are actually
+#: for after a restart:
+#:
+#: * the activity feed renders 25 rows off a 50-row payload, and the busiest
+#:   window on record ran 1,327 ``AcquisitionRequested`` per 500 blocks (findings
+#:   §5) — 2.65/block, so 1,200 blocks is ~3,200 draws, 60x the feed depth.  On
+#:   the all-time average of 0.88/block it is still ~1,000 draws, 20x;
+#: * the tail scan needs **no** retained events to resume — it resumes from the
+#:   persisted ``last_seen_block`` watermark.  The overlap only has to cover the
+#:   boundary block's identity dedupe, which one block would do.
+#:
+#: Everything the settlement table and crown history need is retained
+#: independently and exactly: see :data:`LOG_ALLTIME_EVENTS` and the all-time
+#: count baseline.
+#:
+#: Measured on the real full-history dump: 300 blocks retains 631 allocations,
+#: 12x the feed depth, for 1.5 MiB. See :data:`LOG_STATE_MAX_BYTES`.
+LOG_RAW_WINDOW_BLOCKS = 300
+
+#: Rows retained per high-volume event type **regardless of the block window**.
+#:
+#: The block window bounds the maximum; this bounds the minimum.  Without it a
+#: quiet chain would leave the window nearly empty and the activity feed short
+#: after a restart — the window is sized against *today's* ~2 draws per block,
+#: and nothing guarantees that rate holds.  On a busy chain this is a no-op
+#: because the window already exceeds it.
+LOG_RAW_MIN_ROWS = 200
+
+#: Hard ceiling on the sidecar.  Enforced by shrinking the window and, if that is
+#: still not enough, dropping the windowed events entirely — the all-time events
+#: and the count baseline always survive, so the aggregates stay exact.
+LOG_STATE_MAX_BYTES = 4 * 1024 * 1024
+
+#: Number of window shrinks attempted before the raw events are dropped outright.
+LOG_STATE_SHRINK_ATTEMPTS = 3
+
+#: How far behind the head a restored watermark may be before the catch-up scan
+#: is abandoned in favour of a fresh full backfill (~7 days at 12 s/block).
+#:
+#: Below this the tail closes the gap and every aggregate stays exact.  Above it
+#: the single catch-up window gets long enough that re-deriving from scratch is
+#: both cheaper to reason about and the only way to keep the settlement counts
+#: and crown history honest.
+LOG_CATCHUP_MAX_BLOCKS = 50_000
+
+#: Event types persisted **all-time**.  ~130 logs across the protocol's entire
+#: history (33 ``TopListingSet``, 12 ``TopListingSettled``, 27 ``ConfigSet``,
+#: 51 ``CollectionWhitelistSet``), and the aggregates they drive — crown reigns
+#: and payouts, parameter drift, the allowlist — are all-time *by definition*.
+#: Windowing them would silently turn "17 reigns" into "reigns since Tuesday".
+LOG_ALLTIME_EVENTS: frozenset[str] = frozenset(
+    {
+        "ConfigSet",
+        "CollectionWhitelistSet",
+        "TopListingSet",
+        "TopListingFunded",
+        "TopListingSettled",
+    }
+)
+
+#: In-memory only: listing id -> ``{collection, token_id}``, accumulated from the
+#: position sweeps so the activity feed can name the collection behind a draw
+#: even when the listing's ``NFTListed`` log predates the retained window.
+#: ``NFTAllocated`` carries no collection address, so without this a truncated
+#: store would render the zero address.  FIFO-evicted; never persisted.
+LISTING_INDEX_MAX = 20_000
 
 #: FWA core's first config write — findings §2, "Protocol deploy block".  A scan
 #: floor, never a rendered value: starting the backfill at 0 costs the paging
@@ -345,8 +456,12 @@ class FWAManager:
         constructed — the market client always with
         ``coingecko_min_spacing=`` :data:`COINGECKO_MIN_SPACING`.
     persist_log_state:
-        Write :meth:`FWALogClient.export_state` to *log_state_path* so the
-        full-history backfill is a one-time cost.  See :data:`_LOG_STATE_PATH`.
+        Write the (bounded) raw event store to *log_state_path* so the
+        full-history backfill is a one-time cost.  The escape hatch: with it off
+        the dashboard still renders from the persisted aggregates while a fresh
+        backfill runs.  See :data:`_LOG_STATE_PATH`.
+    log_raw_window_blocks / log_state_max_bytes:
+        Retention window and hard file ceiling.  See the class docstring.
     """
 
     def __init__(
@@ -361,6 +476,8 @@ class FWAManager:
         market_client: Any = None,
         cache: Any = None,
         persist_log_state: bool = True,
+        log_raw_window_blocks: int = LOG_RAW_WINDOW_BLOCKS,
+        log_state_max_bytes: int = LOG_STATE_MAX_BYTES,
         feed_limit: int = FEED_LIMIT,
         chase_rows: int = CHASE_ROWS,
     ) -> None:
@@ -371,6 +488,8 @@ class FWAManager:
             _LOG_STATE_PATH if log_state_path is None else log_state_path
         )
         self._persist_log_state = persist_log_state
+        self._log_raw_window_blocks = max(0, int(log_raw_window_blocks))
+        self._log_state_max_bytes = max(1024, int(log_state_max_bytes))
         self._feed_limit = feed_limit
         self._chase_row_limit = chase_rows
 
@@ -403,6 +522,21 @@ class FWAManager:
         self.config_params: tuple = ()
 
         self._log_backfill_done = False
+        self._catchup_done = False
+        self._restored_last_seen = 0
+
+        # All-time per-event counts as of ``_event_baseline_block``.  Empty means
+        # "the in-memory store *is* all-time", which is true after a full backfill
+        # and false after a windowed restore.  This is what keeps the settlement
+        # mix reporting 73.92% of 51,522 rather than 71% of the last four hours.
+        self._event_baseline: dict[str, int] = {}
+        self._event_baseline_block = 0
+        self._all_time_counts: dict[str, int] | None = None
+
+        # Memory-only listing index accumulated from the sweeps (see
+        # :data:`LISTING_INDEX_MAX`).
+        self._listing_index: dict[int, dict[str, Any]] = {}
+
         self._invariants_ok = True
         self._core_balance_wei: int | None = None
         self._collection_addresses: tuple[str, ...] = ()
@@ -461,13 +595,28 @@ class FWAManager:
         except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             logger.debug("No FWA log state to load (%s): %s", self._log_state_path, exc)
             return
-        if self.logs.import_state(state):
-            self._log_backfill_done = True
-            logger.info(
-                "Restored FWA log state from %s (last seen block %s)",
-                self._log_state_path,
-                state.get("last_seen_block"),
-            )
+        if not self.logs.import_state(state):
+            return
+        self._log_backfill_done = True
+        self._restored_last_seen = _opt_int(state.get("last_seen_block")) or 0
+        try:
+            self._event_baseline = {
+                str(name): int(count)
+                for name, count in (state.get("event_baseline") or {}).items()
+            }
+            self._event_baseline_block = _opt_int(state.get("event_baseline_block")) or 0
+        except (TypeError, ValueError) as exc:
+            logger.warning("FWA log count baseline unreadable, dropping it: %s", exc)
+            self._event_baseline = {}
+            self._event_baseline_block = 0
+        logger.info(
+            "Restored FWA log state from %s: watermark block %d, raw events from "
+            "block %s, all-time counts %s",
+            self._log_state_path,
+            self._restored_last_seen,
+            state.get("raw_from_block", "(unbounded)"),
+            "restored" if self._event_baseline else "recomputed from the store",
+        )
 
     def save_cache(self) -> None:
         """Persist the tiered cache.  Never raises."""
@@ -476,21 +625,192 @@ class FWAManager:
         except Exception as exc:  # noqa: BLE001
             logger.warning("FWA cache save failed: %s", exc)
 
-    def _save_log_state(self) -> None:
-        """Persist the raw log store via atomic temp-then-rename.  Never raises."""
-        if not self._persist_log_state:
-            return
+    # -- bounded raw-event retention ---------------------------------------
+
+    def _all_time_event_counts(self) -> dict[str, int]:
+        """All-time per-event counts, correct across a windowed restore.
+
+        With no baseline the in-memory store *is* all-time and its own counts are
+        the answer.  With one, the answer is the baseline plus everything ingested
+        **after** the baseline block — strictly after, because WP-7's tail resumes
+        *at* ``last_seen_block`` and re-reads that block's logs.
+        """
+        try:
+            live = self.logs.event_counts()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("event_counts unavailable: %s", exc)
+            return dict(self._event_baseline)
+        if not self._event_baseline:
+            return {str(name): int(count) for name, count in live.items()}
+
+        counts = dict(self._event_baseline)
+        floor = self._event_baseline_block
+        for name in live:
+            try:
+                fresh = sum(
+                    1
+                    for row in self.logs.entries(name)
+                    if int(row.get("block_number") or 0) > floor
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("counting %s beyond block %d failed: %s", name, floor, exc)
+                continue
+            counts[str(name)] = counts.get(str(name), 0) + fresh
+        return counts
+
+    def _windowed_log_state(self, window_blocks: int) -> tuple[dict, dict[str, int]]:
+        """Export the log store with the high-volume events bounded by block window.
+
+        Returns ``(state, dropped)``.  Three retention rules, in order:
+
+        1. :data:`LOG_ALLTIME_EVENTS` are kept whole — ~130 logs all-time, and the
+           crown / drift / allowlist aggregates they drive are all-time by
+           definition.
+        2. Everything else is kept at or after ``head - window_blocks``, **or** as
+           the newest :data:`LOG_RAW_MIN_ROWS` rows, whichever is more. The window
+           bounds the maximum; the row floor bounds the minimum, so a quiet chain
+           cannot leave the feed empty.
+        3. ``NFTListed`` additionally keeps any row a *retained* draw or settlement
+           refers to, whatever its block.  ``NFTAllocated`` carries no collection
+           address, so dropping the listing that a retained draw points at would
+           render the zero address in the feed.
+
+        The state also carries the all-time count baseline, so a windowed restore
+        still reports the all-time settlement mix rather than a window of it.
+        """
         try:
             state = self.logs.export_state()
         except Exception as exc:  # noqa: BLE001
             logger.warning("FWA log state export failed: %s", exc)
+            return {}, {}
+
+        counts = self._all_time_event_counts()
+        head = _opt_int(state.get("last_seen_block")) or 0
+        state["version"] = LOG_STATE_VERSION
+        state["event_baseline"] = counts
+        state["event_baseline_block"] = head
+
+        events = state.get("events")
+        if not isinstance(events, dict) or not head:
+            state["raw_from_block"] = 0
+            state["raw_window_blocks"] = None
+            return state, {}
+
+        floor = max(0, head - int(window_blocks))
+        min_rows = LOG_RAW_MIN_ROWS if window_blocks > 0 else 0
+        kept: dict[str, list] = {}
+        dropped: dict[str, int] = {}
+        referenced: set[int] = set()
+
+        def _window(rows: list) -> list:
+            """In-window rows, or the newest ``min_rows``, whichever is more."""
+            keep = [r for r in rows if int(r.get("block_number") or 0) >= floor]
+            if len(keep) >= min_rows or len(rows) <= min_rows:
+                return keep if len(keep) >= min_rows else list(rows)
+            newest = sorted(rows, key=lambda r: int(r.get("block_number") or 0))
+            return newest[-min_rows:]
+
+        for name, rows in events.items():
+            rows = list(rows or [])
+            if name in LOG_ALLTIME_EVENTS:
+                kept[name] = rows
+                continue
+            if name == "NFTListed":
+                continue  # handled after the referenced ids are known
+            keep = _window(rows)
+            if len(keep) != len(rows):
+                dropped[name] = len(rows) - len(keep)
+            kept[name] = keep
+            if name == "NFTAllocated" or name in SETTLEMENT_EVENTS:
+                referenced.update(int(r.get("listing_id") or 0) for r in keep)
+
+        listed = list(events.get("NFTListed") or [])
+        keep_listed = [
+            r
+            for r in listed
+            if int(r.get("block_number") or 0) >= floor
+            or int(r.get("listing_id") or 0) in referenced
+        ]
+        if len(keep_listed) != len(listed):
+            dropped["NFTListed"] = len(listed) - len(keep_listed)
+        kept["NFTListed"] = keep_listed
+
+        state["events"] = kept
+        state["raw_from_block"] = floor
+        state["raw_window_blocks"] = int(window_blocks)
+        return state, dropped
+
+    def _save_log_state(self) -> None:
+        """Persist a bounded raw log store via atomic temp-then-rename.
+
+        Never raises.  The window is shrunk up to
+        :data:`LOG_STATE_SHRINK_ATTEMPTS` times if the serialised state exceeds
+        :data:`LOG_STATE_MAX_BYTES`, and if that is still not enough the windowed
+        events are dropped outright — the all-time events and the count baseline
+        survive either way, so the aggregates stay exact.
+
+        Every trim is logged.  A bound that quietly discards data reads as "we
+        have full history" when we do not.
+        """
+        if not self._persist_log_state:
             return
+
+        window = self._log_raw_window_blocks
+        blob: str | None = None
+        for attempt in range(LOG_STATE_SHRINK_ATTEMPTS + 1):
+            state, dropped = self._windowed_log_state(window)
+            if not state:
+                return
+            candidate = json.dumps(state)
+            size = len(candidate.encode("utf-8"))
+            if dropped:
+                logger.debug(
+                    "FWA log state trimmed to the last %d blocks (from block %s): "
+                    "dropped %s; all-time counts and %s kept whole",
+                    window,
+                    state.get("raw_from_block"),
+                    ", ".join(f"{n} x{c}" for n, c in sorted(dropped.items())),
+                    "/".join(sorted(LOG_ALLTIME_EVENTS)),
+                )
+            if size <= self._log_state_max_bytes:
+                blob = candidate
+                break
+            if attempt == LOG_STATE_SHRINK_ATTEMPTS:
+                logger.debug(
+                    "FWA log state still %d bytes over the %d byte ceiling after "
+                    "%d shrinks — dropping the windowed raw events entirely; the "
+                    "aggregates and the all-time counts are unaffected",
+                    size - self._log_state_max_bytes,
+                    self._log_state_max_bytes,
+                    LOG_STATE_SHRINK_ATTEMPTS,
+                )
+                state, _dropped = self._windowed_log_state(0)
+                blob = json.dumps(state)
+                break
+            window = max(1, window // 4)
+            logger.debug(
+                "FWA log state is %d bytes, over the %d byte ceiling — shrinking "
+                "the retention window to %d blocks",
+                size,
+                self._log_state_max_bytes,
+                window,
+            )
+
+        if blob is None:  # pragma: no cover — the loop always sets it
+            return
+
         tmp = self._log_state_path + ".tmp"
         try:
             os.makedirs(os.path.dirname(self._log_state_path) or ".", exist_ok=True)
             with open(tmp, "w") as handle:
-                json.dump(state, handle)
+                handle.write(blob)
             os.replace(tmp, self._log_state_path)
+            logger.debug(
+                "FWA log state written to %s (%d bytes, ceiling %d)",
+                self._log_state_path,
+                len(blob.encode("utf-8")),
+                self._log_state_max_bytes,
+            )
         except (OSError, TypeError, ValueError) as exc:
             logger.warning("FWA log state save failed: %s", exc)
             try:
@@ -815,26 +1135,13 @@ class FWAManager:
             "once_done": self._log_backfill_done,
         }
 
-        scanned = False
-        if TIER_ONCE in tiers and not self._log_backfill_done:
-            head = await self._head_block()
-            result = {}
-            if head > 0:
-                result = await self.logs.backfill(FWA_DEPLOY_BLOCK, head)
-                scanned = True
-            if result.get("available"):
-                self._log_backfill_done = True
-                out["once_done"] = True
-                self._save_log_state()
-            else:
-                # The once tier has no TTL, so without an explicit backoff a
-                # failing backfill would be retried on every 15 s tick.
-                self.cache.mark_failed(TIER_ONCE, now)
-        elif TIER_TAIL in tiers:
-            await self.logs.tail()
-            scanned = True
+        scanned, once_done = await self._scan_logs(tiers, now)
+        out["once_done"] = out["once_done"] or once_done
+        if scanned:
+            self._all_time_counts = self._all_time_event_counts()
 
         snap = self.logs.snapshot(feed_limit=self._feed_limit)
+        self._correct_windowed_aggregates(snap)
         live = bool(snap.get("available"))
         out["live"] = live
         out["reason"] = None if live else (snap.get("reason") or REASON_UNAVAILABLE)
@@ -869,6 +1176,120 @@ class FWAManager:
         out["allowed_collections"] = list(payload.get("allowed_collections") or [])
         out["config_events"] = self._config_events(payload)
         return out
+
+    async def _scan_logs(self, tiers: set[str], now: float) -> tuple[bool, bool]:
+        """Decide between a full backfill, a bounded catch-up and a tail.
+
+        Returns ``(scanned, once_done)``.  Three cases, cheapest first:
+
+        * **Restored watermark, recent** — the common case.  A tail from
+          ``last_seen_block``, bounded by however long the app was closed.  The
+          raw retention window having aged out costs nothing here: the tail
+          resumes from the *watermark*, not from the retained events.
+        * **Restored watermark, stale beyond** :data:`LOG_CATCHUP_MAX_BLOCKS` — a
+          fresh full backfill.  Scanning the gap would still work, but at that
+          distance re-deriving is the only way to keep the settlement counts and
+          crown history exact rather than exact-plus-a-hole.
+        * **Nothing restored** — first install: the full history, once.
+        """
+        if TIER_ONCE in tiers and not self._log_backfill_done:
+            head = await self._head_block()
+            result = await self._full_backfill(head) if head > 0 else {}
+            if result.get("available"):
+                return True, True
+            # The once tier has no TTL, so without an explicit backoff a failing
+            # backfill would be retried on every 15 s tick.
+            self.cache.mark_failed(TIER_ONCE, now)
+            return head > 0, False
+
+        if TIER_ONCE in tiers and not self._catchup_done:
+            self._catchup_done = True
+            head = await self._head_block()
+            gap = head - self._restored_last_seen if head > 0 else 0
+            if head > 0 and gap > LOG_CATCHUP_MAX_BLOCKS:
+                logger.info(
+                    "FWA log state is %d blocks behind the head (cap %d) — running a "
+                    "full backfill instead of a catch-up so the settlement mix and "
+                    "crown history stay exact",
+                    gap,
+                    LOG_CATCHUP_MAX_BLOCKS,
+                )
+                result = await self._full_backfill(head)
+                return True, bool(result.get("available"))
+            await self.logs.tail()
+            return True, True
+
+        if TIER_TAIL in tiers:
+            await self.logs.tail()
+            return True, False
+
+        return False, False
+
+    async def _full_backfill(self, head: int) -> dict:
+        """Scan the whole history and reset the count baseline.
+
+        After this the in-memory store *is* all-time, so the baseline is dropped:
+        keeping it would double-count everything before the old baseline block.
+        """
+        result = await self.logs.backfill(FWA_DEPLOY_BLOCK, head)
+        if result.get("available"):
+            self._log_backfill_done = True
+            self._catchup_done = True
+            self._event_baseline = {}
+            self._event_baseline_block = 0
+            self._all_time_counts = None
+            self._save_log_state()
+        return result
+
+    def _correct_windowed_aggregates(self, snap: dict[str, Any]) -> None:
+        """Repair the two aggregates a windowed raw store would understate.
+
+        Only reached after a windowed restore (``_event_baseline`` non-empty).
+
+        * **Settlement mix** — WP-7 derives it from ``len(store[event])``, which
+          after a windowed restore is a window, not the all-time 51,522.  The
+          all-time counts are recomputed from the persisted baseline and handed
+          to the same pure ``settlement_mix_rows`` the client would have used.
+        * **Draw events** — ``NFTAllocated`` carries no collection address, so a
+          draw whose ``NFTListed`` log predates the window would render the zero
+          address.  The sweep-derived listing index is merged in on top of the
+          log-derived one, which covers every listing that was live recently.
+
+        Crown history, crown totals, parameter drift and the allowlist need no
+        repair: their events are retained all-time (:data:`LOG_ALLTIME_EVENTS`).
+        """
+        if not self._event_baseline:
+            return
+
+        counts = self._all_time_counts or self._all_time_event_counts()
+        rows = _safe_call(
+            settlement_mix_rows, {name: counts.get(name, 0) for name in SETTLEMENT_EVENTS}
+        )
+        if rows:
+            snap["settlement_mix"] = rows
+        snap["event_counts"] = dict(counts)
+
+        if not self._listing_index:
+            return
+        try:
+            merged = {**self.logs.listing_index(), **self._listing_index}
+            draws = self.logs.draw_events(self._feed_limit, merged)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("re-resolving draw collections failed: %s", exc)
+            return
+        snap["draw_events"] = [row.model_dump() for row in draws]
+
+    def _remember_listings(self, positions: tuple[Position, ...]) -> None:
+        """Accumulate the sweep's listing index, FIFO-bounded, memory only."""
+        for position in positions:
+            self._listing_index[position.listing_id] = {
+                "collection": str(position.collection).lower(),
+                "token_id": position.token_id,
+            }
+        overflow = len(self._listing_index) - LISTING_INDEX_MAX
+        if overflow > 0:
+            for key in list(self._listing_index)[:overflow]:
+                self._listing_index.pop(key, None)
 
     async def _head_block(self) -> int:
         try:
@@ -1013,6 +1434,7 @@ class FWAManager:
         report: dict[str, Any] = state.get("sweep_report") or {}
         floors = market.get("floors") or {}
 
+        self._remember_listings(positions)
         odds_stale = bool(state.get("sweep_stale")) or not self._invariants_ok
         names = {
             str(addr).lower(): (getattr(quote, "name", None) or None)

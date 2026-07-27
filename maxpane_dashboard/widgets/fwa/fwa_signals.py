@@ -30,6 +30,17 @@ Two rows get extra rendering rules, because colour alone may not carry meaning
 
 Row budget: title + spacer + 5 rows = 7 lines, matching ``tal_signals.py``.
 
+Width behaviour
+---------------
+
+The panel measures 78 columns in the 2fr right column at a 200-column terminal
+and 54 at 140; the longest realistic row (``COLD 41m · surcharge → YOU (100%)``)
+needs 37, so the rows normally fit with room to spare. When a row does not fit,
+wrapping is the wrong answer here: the panel is 9 lines tall and already uses 7,
+so a wrapped row would silently push the last signal off the bottom. Rows are
+therefore ``nowrap`` + ``ellipsis`` and the title grows a ``‹ widen`` marker, so
+a clipped row is always announced rather than quietly shortened.
+
 Primitives only -- this module imports nothing from ``fwa_models``.
 """
 
@@ -43,6 +54,12 @@ from textual.widgets import Static
 
 _DASH = "--"
 
+#: Marker appended to the title when a row had to be clipped.
+WIDEN_HINT = "‹ widen"
+
+#: Strips Textual markup so a row can be measured as the user sees it.
+_MARKUP = re.compile(r"\[/?[^\[\]]*\]")
+
 #: Rewritten value for an elapsed emissions window (PRD §8, the primary case).
 EMISSIONS_ENDED = "emissions ended"
 
@@ -54,6 +71,11 @@ _GATE_WORDS = ("open", "closed", "enabled", "disabled", "blocked", "live")
 
 #: A signed countdown component, e.g. ``-2d`` / ``−13h`` / ``-41s``.
 _NEGATIVE_COUNTDOWN = re.compile(r"[-−]\s*\d")
+
+
+def _visible_len(markup: str) -> int:
+    """Length of ``markup`` as rendered, i.e. with the tags removed."""
+    return len(_MARKUP.sub("", markup or ""))
 
 
 def _fmt_signal(sig: dict | None) -> str:
@@ -132,11 +154,17 @@ class FWASignals(Vertical):
     FWASignals > .fwa-signals-body {
         padding: 0 1;
         width: 100%;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
     }
     """
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._payload: dict = {}
+
     def compose(self) -> ComposeResult:
-        yield Static("SIGNALS", classes="fwa-signals-title")
+        yield Static("SIGNALS", classes="fwa-signals-title", id="fwa-sig-title")
         # Blank line below the title (doubles as the title spacer).
         yield Static("", classes="fwa-signals-body", id="fwa-sig-spacer")
         yield Static("", classes="fwa-signals-body", id="fwa-sig-pool-temp")
@@ -159,14 +187,48 @@ class FWASignals(Vertical):
         Every kwarg matches ``FWA_WIDGET_SIGNATURES["FWASignals"]``. No args,
         all-``None`` and a full payload all render without raising.
         """
+        self._payload = {
+            "pool_temp_signal": pool_temp_signal,
+            "buy_gate_signal": buy_gate_signal,
+            "emissions_signal": emissions_signal,
+            "vrf_queue_signal": vrf_queue_signal,
+            "param_drift_signal": param_drift_signal,
+        }
+        self._render_view()
+
+    def on_resize(self, _event=None) -> None:
+        """Re-render on resize so the clipped-row marker tracks the width."""
+        self._render_view()
+
+    # -- rendering -----------------------------------------------------
+
+    def _render_view(self) -> None:
+        payload = self._payload
         blank = _fmt_signal({"value_str": _DASH})
 
         rows = (
-            ("#fwa-sig-pool-temp", _fmt_pool_temp(pool_temp_signal)),
-            ("#fwa-sig-buy-gate", _fmt_buy_gate(buy_gate_signal)),
-            ("#fwa-sig-emissions", _fmt_emissions(emissions_signal)),
-            ("#fwa-sig-vrf", _fmt_signal(vrf_queue_signal)),
-            ("#fwa-sig-drift", _fmt_signal(param_drift_signal)),
+            ("#fwa-sig-pool-temp", _fmt_pool_temp(payload.get("pool_temp_signal"))),
+            ("#fwa-sig-buy-gate", _fmt_buy_gate(payload.get("buy_gate_signal"))),
+            ("#fwa-sig-emissions", _fmt_emissions(payload.get("emissions_signal"))),
+            ("#fwa-sig-vrf", _fmt_signal(payload.get("vrf_queue_signal"))),
+            ("#fwa-sig-drift", _fmt_signal(payload.get("param_drift_signal"))),
         )
+
+        # ``padding: 0 1`` on the body rows costs two columns.
+        available = max(self.content_size.width - 2, 0)
+        clipped = False
+
         for selector, markup in rows:
-            self.query_one(selector, Static).update(markup or blank)
+            text = markup or blank
+            if available and _visible_len(text) > available:
+                clipped = True
+            try:
+                self.query_one(selector, Static).update(text)
+            except Exception:  # not composed yet
+                return
+
+        try:
+            title = self.query_one("#fwa-sig-title", Static)
+        except Exception:
+            return
+        title.update(f"SIGNALS  [yellow]{WIDEN_HINT}[/]" if clipped else "SIGNALS")

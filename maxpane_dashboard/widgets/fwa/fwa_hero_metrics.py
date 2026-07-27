@@ -120,14 +120,22 @@ def _ev_sign(value) -> tuple[str, str]:
 
     The glyph carries the sign on its own; the colour is redundant by
     design so the metric survives greyscale (PRD §11).
+
+    Colours are the theme variables ``$success``/``$error``, never the CSS
+    names ``green``/``red``.  Textual resolves content markup through the CSS
+    name table, where ``green`` is ``#008000`` -- whose contrast tops out at
+    **4.09:1 against pure black**, so it fails WCAG AA on *every* possible
+    background and no theme can rescue it.  ``$success``/``$error`` are
+    required ``Theme`` fields, resolve per theme, and measure 10.39:1 and
+    6.82:1 under ``fwa``.  Verified by WP-16's contrast audit.
     """
     v = _as_float(value)
     if v is None:
         return "", "dim"
     if v > 0:
-        return "▲", "green"
+        return "▲", "$success"
     if v < 0:
-        return "▼", "red"
+        return "▼", "$error"
     return "●", "dim"
 
 

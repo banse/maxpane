@@ -33,6 +33,7 @@ Primitives only -- this module imports nothing from ``fwa_models``.
 
 from __future__ import annotations
 
+import re
 import time
 
 from textual.app import ComposeResult
@@ -50,6 +51,133 @@ UNAVAILABLE_TEXT = "logs unavailable"
 
 #: Outcomes that mean "sold straight back", for the headline share.
 _SELLBACK_OUTCOMES = ("bid_fwa", "bid_eth")
+
+#: Strips Textual markup so a line can be measured as the user sees it.
+_MARKUP = re.compile(r"\[/?[^\[\]]*\]")
+
+#: Short wordings used when the payload's own label does not fit the column.
+#: ``accept bid · $FWA`` cut to 16 gives ``accept bid · $FW``, which reads as a
+#: different token; the abbreviation says the same thing in fewer columns.
+_OUTCOME_SHORT = {
+    "bid_fwa": "bid · $FWA",
+    "bid_eth": "bid · ETH",
+    "relist": "relist",
+    "kept": "keep NFT",
+    "forced": "forced",
+}
+
+
+def _fit_label(label: str, outcome: str, width: int) -> str:
+    """``label`` inside ``width`` columns, abbreviated rather than cut."""
+    if len(label) <= width:
+        return label
+    short = _OUTCOME_SHORT.get(outcome)
+    if short and len(short) <= width:
+        return short
+    return label[: max(width - 1, 1)] + "…"
+
+#: Column layouts, widest first: ``(name, cost, columns, hint)`` where a
+#: column is ``(key, header, width)`` and ``cost`` is ``sum(width) + 2`` per
+#: column (DataTable pads each cell by one column on each side).
+#:
+#: =========  ====  ==================================
+#: Tier       Cost  Columns
+#: =========  ====  ==================================
+#: full        55   OUTCOME/HOLDER COUNT SHARE ETH
+#: compact     43   OUTCOME/HOLDER SHARE ETH
+#: minimal     37   OUTCOME SHARE ETH   (narrower cells)
+#: tiny        25   OUTCOME SHARE
+#: =========  ====  ==================================
+#:
+#: The slot is 56 columns at a 200-column terminal and 38 at 140. ``SHARE`` is
+#: never dropped: the outcome mix *is* the share column. ``COUNT`` goes first
+#: because the share already carries the shape of the distribution.
+_TIERS: tuple[tuple[str, int, tuple[tuple[str, str, int], ...], str], ...] = (
+    (
+        "full",
+        55,
+        (
+            ("label", "OUTCOME / HOLDER", 22),
+            ("count", "COUNT", 8),
+            ("share", "SHARE", 8),
+            ("eth", "ETH", 9),
+        ),
+        "",
+    ),
+    (
+        "compact",
+        43,
+        (
+            ("label", "OUTCOME / HOLDER", 21),
+            ("share", "SHARE", 8),
+            ("eth", "ETH", 8),
+        ),
+        "‹ widen: COUNT",
+    ),
+    (
+        "minimal",
+        37,
+        (
+            ("label", "OUTCOME", 16),
+            ("share", "SHARE", 7),
+            ("eth", "ETH", 8),
+        ),
+        "‹ widen: COUNT",
+    ),
+    (
+        "tiny",
+        25,
+        (
+            ("label", "OUTCOME", 14),
+            ("share", "SHARE", 7),
+        ),
+        "‹ widen: COUNT + ETH",
+    ),
+)
+
+
+def _tier_for(width: int) -> tuple[str, tuple[tuple[str, str, int], ...], str]:
+    """``(name, columns, hint)`` -- the widest layout that fits ``width``."""
+    for name, cost, columns, hint in _TIERS:
+        if width <= 0 or width >= cost:
+            return name, columns, hint
+    name, _cost, columns, hint = _TIERS[-1]
+    return name, columns, hint
+
+
+def _cells(values: dict, columns: tuple, default: str = _DASH) -> list:
+    """Project ``values`` onto the active columns."""
+    return [values.get(key, default) for key, _header, _width in columns]
+
+
+def _has(columns: tuple, key: str) -> bool:
+    return any(col_key == key for col_key, _header, _width in columns)
+
+
+def _width_of(columns: tuple, key: str, fallback: int) -> int:
+    for col_key, _header, width in columns:
+        if col_key == key:
+            return width
+    return fallback
+
+
+def _grow_label(columns: tuple, width: int, cap: int = 30) -> tuple:
+    """Spend leftover columns on the label, which is the one that truncates.
+
+    A tier is chosen by the widest layout that *fits*, so there is usually
+    slack between the layout's cost and the real width. Handing it to the
+    outcome/holder column is what turns ``accept bid · $FW`` back into
+    ``accept bid · $FWA``.
+    """
+    if width <= 0:
+        return columns
+    spare = width - (sum(w for _k, _h, w in columns) + 2 * len(columns))
+    if spare <= 0:
+        return columns
+    return tuple(
+        (key, header, min(w + spare, cap) if key == "label" else w)
+        for key, header, w in columns
+    )
 
 
 def _fmt_int(value) -> str:
@@ -108,8 +236,16 @@ def _hhmm(timestamp) -> str:
         return "??:??"
 
 
-def _headline(mix_rows: list) -> str:
-    """``87.76% sell straight back · 4.60% keep the NFT`` -- computed, not fixed."""
+def _visible_len(markup: str) -> int:
+    """Length of ``markup`` as rendered, i.e. with the tags removed."""
+    return len(_MARKUP.sub("", markup or ""))
+
+
+def _headline(mix_rows: list, short: bool = False) -> str:
+    """``87.76% sell straight back · 4.60% keep the NFT`` -- computed, not fixed.
+
+    ``short=True`` drops the keep share for narrow slots.
+    """
     sellback = 0.0
     kept = None
     seen = False
@@ -127,7 +263,9 @@ def _headline(mix_rows: list) -> str:
             kept = share
     if not seen:
         return ""
-    text = f"  [bold]{sellback:.2f}%[/] sell straight back"
+    if short:
+        return f"[bold]{sellback:.2f}%[/] sold back"
+    text = f"[bold]{sellback:.2f}%[/] sell straight back"
     if kept is not None:
         text += f" · [dim]{kept:.2f}% keep the NFT[/]"
     return text
@@ -152,6 +290,11 @@ class FWASettlementTable(Vertical):
     }
     """
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._payload: dict = {}
+        self._tier: tuple = ()
+
     def compose(self) -> ComposeResult:
         yield Static(
             "SETTLEMENT & CROWN",
@@ -165,19 +308,64 @@ class FWASettlementTable(Vertical):
         table = self.query_one("#fwa-settle-dt", DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = True
-        table.add_column("OUTCOME / HOLDER", width=22)
-        table.add_column("COUNT", width=8)
-        table.add_column("SHARE", width=8)
-        table.add_column("ETH", width=9)
-        table.add_row("Loading...", _DASH, _DASH, _DASH)
+        columns = self._apply_columns(table)
+        table.add_row(*_cells({"label": "Loading..."}, columns))
+
+    def on_resize(self, _event=None) -> None:
+        """Re-render: the column set is a function of the width."""
+        if self._payload:
+            self._render_view()
+
+    # -- layout --------------------------------------------------------
+
+    def _table_width(self, table: DataTable) -> int:
+        width = table.content_size.width
+        if width <= 0:
+            width = self.content_size.width
+        return width
+
+    def _apply_columns(self, table: DataTable) -> tuple:
+        """Install the column set for the current width; return it."""
+        table_width = self._table_width(table)
+        name, columns, hint = _tier_for(table_width)
+        columns = _grow_label(columns, table_width)
+        if columns != self._tier:
+            table.clear(columns=True)
+            for _key, header, width in columns:
+                table.add_column(header, width=width)
+            self._tier = columns
+        else:
+            table.clear()
+        self._hint = hint
+        return columns
 
     # -- helpers -------------------------------------------------------
 
     def _set_title(self, suffix: str = "") -> None:
-        title = self.query_one("#fwa-settle-title", Static)
-        title.update(
-            f"SETTLEMENT & CROWN  [dim]{suffix}[/]" if suffix else "SETTLEMENT & CROWN"
+        """Title, staleness and the widen marker -- inside the width we have.
+
+        Priority when they do not all fit: the widen marker outranks the
+        ``as of HH:MM`` stamp, because a hidden column is a correctness problem
+        and the stamp has somewhere else to go (the note line, see
+        :meth:`_note_text`). The title itself is never abbreviated -- WP-13's
+        screen test looks for it, and so does a user scanning the row.
+        """
+        hint = getattr(self, "_hint", "")
+        base = "SETTLEMENT & CROWN"
+        width = max(self.content_size.width - 2, 0)
+
+        used = len(base) + (2 + len(hint) if hint else 0)
+        show_suffix = bool(suffix) and (
+            not width or used + 2 + len(suffix) <= width
         )
+
+        text = base
+        if show_suffix:
+            text += f"  [dim]{suffix}[/]"
+        if hint:
+            text += f"  [yellow]{hint}[/]"
+        self.query_one("#fwa-settle-title", Static).update(text)
+        self._title_suffix_shown = show_suffix
 
     def _set_note(self, text: str) -> None:
         self.query_one("#fwa-settle-note", Static).update(text)
@@ -200,52 +388,113 @@ class FWASettlementTable(Vertical):
         Every kwarg matches ``FWA_WIDGET_SIGNATURES["FWASettlementTable"]``. No
         args, all-``None`` and a full payload all render without raising.
         """
-        table = self.query_one("#fwa-settle-dt", DataTable)
-        table.clear()
-
         try:
-            mix_rows = list(settlement_mix or [])
+            mix_rows = [r for r in list(settlement_mix or []) if isinstance(r, dict)]
         except TypeError:
             mix_rows = []
         try:
-            crown_rows = list(crown_history or [])
+            crown_rows = [r for r in list(crown_history or []) if isinstance(r, dict)]
         except TypeError:
             crown_rows = []
 
         has_data = bool(mix_rows or crown_rows)
-        available = has_data if settle_available is None else bool(settle_available)
+        self._payload = {
+            "mix": mix_rows,
+            "crown": crown_rows,
+            "sets_total": crown_sets_total,
+            "payouts_total": crown_payouts_total,
+            "paid_eth": crown_paid_eth,
+            "available": (
+                has_data if settle_available is None else bool(settle_available)
+            ),
+            "as_of": settle_as_of_ts,
+        }
+        self._render_view()
 
-        if not available:
+    def _render_view(self) -> None:
+        try:
+            table = self.query_one("#fwa-settle-dt", DataTable)
+        except Exception:  # not composed yet
+            return
+        if not self._payload:
+            return
+
+        columns = self._apply_columns(table)
+        mix_rows = self._payload["mix"]
+        crown_rows = self._payload["crown"]
+        as_of = self._payload["as_of"]
+
+        if not self._payload["available"]:
             self._set_title("· unavailable")
             self._set_note(f"[red]  ⚠ {UNAVAILABLE_TEXT} — settlement mix paused[/]")
-            table.add_row(
-                f"[red]⚠ {UNAVAILABLE_TEXT}[/]", _EMDASH, _EMDASH, _EMDASH
-            )
-            table.add_row("[dim]crown history[/]", _EMDASH, _EMDASH, _EMDASH)
+            table.add_row(*_cells({"label": f"[red]⚠ {UNAVAILABLE_TEXT}[/]"}, columns))
+            table.add_row(*_cells({"label": "[dim]crown history[/]"}, columns))
             return
 
-        self._set_title(
-            f"· as of {_hhmm(settle_as_of_ts)}" if settle_as_of_ts else ""
-        )
-        self._set_note(_headline(mix_rows))
+        self._set_title(f"· as of {_hhmm(as_of)}" if as_of else "")
+        self._set_note(self._note_text(mix_rows, as_of))
 
-        if not has_data:
-            table.add_row("[dim]No data[/]", _DASH, _DASH, _DASH)
+        if not (mix_rows or crown_rows):
+            table.add_row(*_cells({"label": "[dim]No data[/]"}, columns))
             return
 
-        self._render_mix(table, mix_rows)
+        self._render_mix(table, columns, mix_rows)
         self._render_crown(
-            table, crown_rows, crown_sets_total, crown_payouts_total, crown_paid_eth
+            table,
+            columns,
+            crown_rows,
+            self._payload["sets_total"],
+            self._payload["payouts_total"],
+            self._payload["paid_eth"],
         )
 
-    def _render_mix(self, table: DataTable, mix_rows: list) -> None:
+    def _note_text(self, mix_rows: list, as_of) -> str:
+        """Headline stat, plus the staleness stamp when the title lost it.
+
+        Both shrink together: the long form states the sell-back and keep
+        shares, the short form keeps only the sell-back number, which is the
+        one that reframes the protocol.
+        """
+        width = max(self.content_size.width - 2, 0)
+        stamp = ""
+        if as_of and not getattr(self, "_title_suffix_shown", True):
+            stamp = f"as of {_hhmm(as_of)}"
+
+        long_headline = _headline(mix_rows)
+        parts = [p for p in (stamp, long_headline.strip()) if p]
+        if not parts:
+            return ""
+        long_text = "  " + " · ".join(parts)
+        if not width or _visible_len(long_text) <= width:
+            return long_text
+
+        short = _headline(mix_rows, short=True).strip()
+        parts = [p for p in (stamp, short) if p]
+        return "  " + " · ".join(parts)
+
+    def _crown_rows_shown(self, table: DataTable, wanted: int) -> int:
+        """How many holder rows fit under the mix without pushing TOTAL out.
+
+        The crown TOTAL row carries the only sets/payouts/ETH figures there
+        are; losing it to a scroll would be losing data, so the holder list is
+        capped to whatever is left instead.
+        """
+        wanted = min(wanted, _MAX_CROWN_ROWS)
+        height = table.content_size.height
+        if height <= 0:
+            return wanted
+        mix_count = len(self._payload.get("mix") or [])
+        # column header + mix rows + mix TOTAL + blank + crown header + TOTAL
+        overhead = 1 + mix_count + (1 if mix_count else 0) + 3
+        return max(min(wanted, height - overhead), 1 if wanted else 0)
+
+    def _render_mix(self, table: DataTable, columns: tuple, mix_rows: list) -> None:
+        label_width = _width_of(columns, "label", 22)
         total_count = 0
         total_share = 0.0
         any_share = False
 
         for row in mix_rows:
-            if not isinstance(row, dict):
-                continue
             label = str(row.get("label") or row.get("outcome") or _DASH)
             count = row.get("count")
             share = _as_float(row.get("share_pct"))
@@ -254,50 +503,122 @@ class FWASettlementTable(Vertical):
             if share is not None:
                 total_share += share
                 any_share = True
-            table.add_row(label[:22], _fmt_int(count), _fmt_pct(share), _EMDASH)
+            outcome = str(row.get("outcome") or "").strip().lower()
+            table.add_row(
+                *_cells(
+                    {
+                        "label": _fit_label(label, outcome, label_width),
+                        "count": _fmt_int(count),
+                        "share": _fmt_pct(share),
+                        "eth": _EMDASH,
+                    },
+                    columns,
+                )
+            )
 
         if mix_rows:
             table.add_row(
-                "[bold]TOTAL[/]",
-                f"[bold]{_fmt_int(total_count)}[/]",
-                f"[bold]{_fmt_pct(total_share) if any_share else _DASH}[/]",
-                _EMDASH,
+                *_cells(
+                    {
+                        "label": "[bold]TOTAL[/]",
+                        "count": f"[bold]{_fmt_int(total_count)}[/]",
+                        "share": (
+                            f"[bold]{_fmt_pct(total_share) if any_share else _DASH}[/]"
+                        ),
+                        "eth": _EMDASH,
+                    },
+                    columns,
+                )
             )
 
     def _render_crown(
         self,
         table: DataTable,
+        columns: tuple,
         crown_rows: list,
         sets_total,
         payouts_total,
         paid_eth,
     ) -> None:
-        table.add_row("", "", "", "")
-        table.add_row("[bold]CROWN HISTORY[/]", "[dim]REIGNS[/]", "", "[dim]PAID[/]")
+        has_count = _has(columns, "count")
+        has_eth = _has(columns, "eth")
+        # Reigns live in COUNT when it exists and in SHARE when it does not --
+        # SHARE is meaningless for a crown row, so nothing is displaced.
+        reign_key = "count" if has_count else "share"
+
+        # Vertical budget: the crown section shares one table with the five
+        # outcome rows and both TOTAL rows, so the holder list -- not the
+        # totals -- is what yields when the box is short. A shortened list says
+        # so in its header rather than just ending.
+        shown = self._crown_rows_shown(table, len(crown_rows))
+        label_width = _width_of(columns, "label", 22)
+        header = "CROWN HISTORY"
+        if 0 < shown < len(crown_rows):
+            # The "top N" qualifier is what makes the short list honest, so it
+            # is fitted to the column rather than allowed to clip.
+            for candidate in (
+                f"CROWN HISTORY (top {shown})",
+                f"CROWN · top {shown}",
+                f"CROWN top {shown}",
+            ):
+                if len(candidate) <= label_width:
+                    header = candidate
+                    break
+            else:
+                header = f"CROWN {shown}"
+
+        table.add_row(*_cells({}, columns, default=""))
+        table.add_row(
+            *_cells(
+                {
+                    "label": f"[bold]{header}[/]",
+                    reign_key: "[dim]REIGNS[/]",
+                    "eth": "[dim]PAID[/]",
+                },
+                columns,
+                default="",
+            )
+        )
 
         if not crown_rows:
-            table.add_row("[dim]no reigns recorded[/]", _EMDASH, _EMDASH, _EMDASH)
-        for idx, row in enumerate(crown_rows[:_MAX_CROWN_ROWS], start=1):
-            if not isinstance(row, dict):
-                continue
+            table.add_row(*_cells({"label": "[dim]no reigns recorded[/]"}, columns))
+        for idx, row in enumerate(crown_rows[:shown], start=1):
             rank = row.get("rank", idx)
-            holder = _short_addr(row.get("holder"))
-            reigns = _fmt_int(row.get("reigns"))
-            payout = _fmt_eth(row.get("payout_eth"))
-            table.add_row(f"{rank}. {holder}", reigns, _EMDASH, payout)
-
-        if sets_total is not None or payouts_total is not None or paid_eth is not None:
-            sets_str = (
-                f"{_fmt_int(sets_total)} sets" if sets_total is not None else _EMDASH
-            )
-            payouts_str = (
-                f"{_fmt_int(payouts_total)} paid"
-                if payouts_total is not None
-                else _EMDASH
-            )
             table.add_row(
-                "[bold]TOTAL[/]",
-                f"[bold]{sets_str}[/]",
-                f"[bold]{payouts_str}[/]",
-                f"[bold]{_fmt_eth(paid_eth)}[/]",
+                *_cells(
+                    {
+                        "label": f"{rank}. {_short_addr(row.get('holder'))}",
+                        reign_key: _fmt_int(row.get("reigns")),
+                        "eth": _fmt_eth(row.get("payout_eth")),
+                    },
+                    columns,
+                    default=_EMDASH,
+                )
             )
+
+        if sets_total is None and payouts_total is None and paid_eth is None:
+            return
+
+        sets_str = f"{_fmt_int(sets_total)} sets" if sets_total is not None else _EMDASH
+        payouts_str = (
+            f"{_fmt_int(payouts_total)} paid" if payouts_total is not None else _EMDASH
+        )
+        if has_count:
+            totals = {
+                "label": "[bold]TOTAL[/]",
+                "count": f"[bold]{sets_str}[/]",
+                "share": f"[bold]{payouts_str}[/]",
+                "eth": f"[bold]{_fmt_eth(paid_eth)}[/]",
+            }
+        else:
+            # No COUNT column: fold the set total into the label so all three
+            # crown numbers survive.
+            totals = {
+                "label": f"[bold]TOTAL {sets_str}[/]",
+                "share": f"[bold]{payouts_str}[/]",
+                "eth": f"[bold]{_fmt_eth(paid_eth)}[/]",
+            }
+        if not has_eth:
+            totals["share"] = f"[bold]{sets_str}[/]"
+            totals["label"] = f"[bold]TOTAL {payouts_str}[/]"
+        table.add_row(*_cells(totals, columns, default=_EMDASH))

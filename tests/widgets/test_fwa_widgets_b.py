@@ -39,10 +39,14 @@ from maxpane_dashboard.widgets.fwa.fwa_settlement_table import (
 )
 from maxpane_dashboard.widgets.fwa.fwa_signals import (
     EMISSIONS_ENDED,
+    WIDEN_HINT,
     FWASignals,
     _fmt_emissions,
     _fmt_pool_temp,
+    _visible_len,
 )
+
+_plain_len = _visible_len
 
 
 class _Harness(App):
@@ -54,6 +58,25 @@ class _Harness(App):
 
     def compose(self) -> ComposeResult:
         yield self._widget
+
+
+# -- measured slot widths ----------------------------------------------
+#
+# A widget mounted alone in ``_Harness`` fills the terminal, so running the
+# harness at these sizes reproduces the width each widget actually gets from
+# ``#bottom-row``'s 3fr/2fr/2fr split. Measured against the real
+# ``minimal.tcss`` at 200- and 140-column terminals (WP-13's screen sizes):
+#
+#   terminal   feed   chase   settlement
+#   200         83      55        56
+#   140         58      38        38
+#
+# The feed numbers are the *container*; its RichLog has ``padding: 0 1`` and so
+# renders two columns narrower (81 / 56).
+WIDE_FEED = (83, 24)
+NARROW_FEED = (58, 24)
+WIDE_TABLE = (55, 24)
+NARROW_TABLE = (38, 24)
 
 
 def _static_text(widget: Static) -> str:
@@ -142,6 +165,18 @@ _DRAW_EVENTS = [
         "outcome_label": "relisted",
         "amount_eth": 1.5,
     },
+]
+
+#: The manager's real wording is long -- WP-13's screen fixture carries
+#: ``accepted bid · paid in $FWA`` (27 chars), which no narrow line can hold.
+#: This is the payload that used to produce the ``→ a`` clip.
+_LONG_LABEL_EVENTS = [
+    {
+        **event,
+        "outcome_label": "accepted bid · paid in $FWA",
+        "collection_name": "Ten Thousand Tokens",
+    }
+    for event in _DRAW_EVENTS
 ]
 
 _CHASE_POSITIONS = [
@@ -492,6 +527,210 @@ async def test_settlement_table_unavailable_renders_explicit_state():
         assert UNAVAILABLE_TEXT in _static_text(
             widget.query_one("#fwa-settle-note", Static)
         )
+
+
+# -- responsive layout -------------------------------------------------
+#
+# WP-13 found the real defect these cover: at 140 columns the chase board lost
+# ODDS and JACKPOT -- the two columns that carry its meaning -- and still
+# looked complete. Every one of these asserts both halves: the narrow layout
+# says what it dropped, and the wide layout says nothing because it dropped
+# nothing.
+
+
+@pytest.mark.asyncio
+async def test_chase_board_keeps_odds_and_jackpot_when_narrow():
+    widget = FWAChaseBoard()
+    app = _Harness(widget)
+    async with app.run_test(size=NARROW_TABLE):
+        widget.update_data(chase_positions=_CHASE_POSITIONS, chase_available=True)
+        table = widget.query_one("#fwa-chase-dt", DataTable)
+        headers = [str(col.label) for col in table.columns.values()]
+        assert "ODDS" in headers
+        assert "JACKPOT" in headers
+        assert "TOKEN" not in headers  # dropped first, by design
+        row = " ".join(str(c) for c in table.get_row_at(0))
+        assert "0.000%" in row and "1,378×" in row
+
+
+@pytest.mark.asyncio
+async def test_chase_board_narrow_announces_dropped_columns():
+    widget = FWAChaseBoard()
+    app = _Harness(widget)
+    async with app.run_test(size=NARROW_TABLE):
+        widget.update_data(chase_positions=_CHASE_POSITIONS, chase_available=True)
+        title = _static_text(widget.query_one("#fwa-chase-title", Static))
+        assert "widen" in title
+        assert "TOKEN" in title and "BACKING" in title
+        # The marker must fit the slot, or it cannot be read.
+        assert _plain_len(title) <= NARROW_TABLE[0] - 2
+
+
+@pytest.mark.asyncio
+async def test_chase_board_wide_shows_every_column_and_no_hint():
+    widget = FWAChaseBoard()
+    app = _Harness(widget)
+    async with app.run_test(size=WIDE_TABLE):
+        widget.update_data(chase_positions=_CHASE_POSITIONS, chase_available=True)
+        table = widget.query_one("#fwa-chase-dt", DataTable)
+        headers = [str(col.label) for col in table.columns.values()]
+        assert headers == ["#", "COLLECTION", "TOKEN", "BACKING", "ODDS", "JACKPOT"]
+        title = _static_text(widget.query_one("#fwa-chase-title", Static))
+        assert "widen" not in title
+        row = " ".join(str(c) for c in table.get_row_at(0))
+        # _CHASE_POSITIONS[0] is CryptoPunks #3100 -- the token id the narrow
+        # layout drops and this one must therefore show.
+        assert "3100" in row and "221.00" in row
+
+
+@pytest.mark.asyncio
+async def test_settlement_narrow_drops_count_and_says_so():
+    widget = FWASettlementTable()
+    app = _Harness(widget)
+    async with app.run_test(size=NARROW_TABLE):
+        widget.update_data(
+            settlement_mix=_SETTLEMENT_MIX,
+            crown_history=_CROWN_HISTORY,
+            crown_sets_total=33,
+            crown_payouts_total=12,
+            crown_paid_eth=91.096,
+            settle_available=True,
+            settle_as_of_ts=1784900000,
+        )
+        table = widget.query_one("#fwa-settle-dt", DataTable)
+        headers = [str(col.label) for col in table.columns.values()]
+        assert "SHARE" in headers  # the mix *is* the share column
+        assert "COUNT" not in headers
+        title = _static_text(widget.query_one("#fwa-settle-title", Static))
+        assert "widen" in title and "COUNT" in title
+        assert _plain_len(title) <= NARROW_TABLE[0] - 2
+        # The staleness stamp moves to the note rather than being dropped.
+        note = _static_text(widget.query_one("#fwa-settle-note", Static))
+        assert "as of" in note
+        assert _plain_len(note) <= NARROW_TABLE[0] - 2
+        joined = " ".join(
+            " ".join(str(c) for c in table.get_row_at(i))
+            for i in range(table.row_count)
+        )
+        assert "100.00%" in joined
+        # Labels are abbreviated, never cut into a different meaning.
+        assert "$FW " not in joined and "$FW…" not in joined
+
+
+@pytest.mark.asyncio
+async def test_settlement_wide_keeps_count_and_stamps_the_title():
+    widget = FWASettlementTable()
+    app = _Harness(widget)
+    async with app.run_test(size=WIDE_TABLE):
+        widget.update_data(
+            settlement_mix=_SETTLEMENT_MIX,
+            crown_history=_CROWN_HISTORY,
+            crown_sets_total=33,
+            crown_payouts_total=12,
+            crown_paid_eth=91.096,
+            settle_available=True,
+            settle_as_of_ts=1784900000,
+        )
+        table = widget.query_one("#fwa-settle-dt", DataTable)
+        headers = [str(col.label) for col in table.columns.values()]
+        assert "COUNT" in headers and "ETH" in headers
+        title = _static_text(widget.query_one("#fwa-settle-title", Static))
+        assert "widen" not in title
+        assert "as of" in title
+
+
+@pytest.mark.asyncio
+async def test_settlement_crown_totals_survive_a_short_box():
+    """The crown TOTAL row carries figures that exist nowhere else."""
+    widget = FWASettlementTable()
+    app = _Harness(widget)
+    async with app.run_test(size=(56, 16)):
+        widget.update_data(
+            settlement_mix=_SETTLEMENT_MIX,
+            crown_history=_CROWN_HISTORY * 3,  # more holders than rows
+            crown_sets_total=33,
+            crown_payouts_total=12,
+            crown_paid_eth=91.096,
+            settle_available=True,
+        )
+        table = widget.query_one("#fwa-settle-dt", DataTable)
+        rows = [
+            " ".join(str(c) for c in table.get_row_at(i))
+            for i in range(table.row_count)
+        ]
+        joined = "\n".join(rows)
+        assert "33 sets" in joined and "91.096" in joined
+        # A shortened holder list says that it is shortened.
+        assert "top" in joined.lower()
+
+
+@pytest.mark.asyncio
+async def test_activity_feed_narrow_abbreviates_outcome_never_truncates_it():
+    widget = FWAActivityFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=NARROW_FEED):
+        widget.update_data(draw_events=_LONG_LABEL_EVENTS, feed_available=True)
+        log = widget.query_one("#fwa-activity-log", RichLog)
+        text = _log_text(log)
+        assert len(log.lines) == len(_LONG_LABEL_EVENTS)  # not vacuous
+        # The full label does not fit; the short *word* form is used instead of
+        # a cut like "→ a".
+        assert "sold ($FWA)" in text
+        assert "accepted bid · pai" not in text
+        for line in text.splitlines():
+            assert len(line) <= NARROW_FEED[0] - 2
+        title = _static_text(widget.query_one("#fwa-feed-title", Static))
+        assert "widen" in title
+
+
+@pytest.mark.asyncio
+async def test_activity_feed_wide_keeps_collection_and_amount():
+    widget = FWAActivityFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=WIDE_FEED):
+        widget.update_data(draw_events=_DRAW_EVENTS, feed_available=True)
+        log = widget.query_one("#fwa-activity-log", RichLog)
+        text = _log_text(log)
+        assert "drew Nakamigos #4471" in text
+        assert "0.118 ETH" in text
+        title = _static_text(widget.query_one("#fwa-feed-title", Static))
+        assert "widen" not in title
+
+
+@pytest.mark.asyncio
+async def test_activity_feed_narrow_keeps_the_as_of_stamp():
+    """Stale-presented-as-live is the one thing narrowness may not cause."""
+    widget = FWAActivityFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=NARROW_FEED):
+        widget.update_data(draw_events=_DRAW_EVENTS, feed_available=True)
+        widget.update_data(
+            draw_events=None,
+            feed_available=False,
+            feed_unavailable_reason="logs down",
+            feed_as_of_ts=1784900000,
+        )
+        title = _static_text(widget.query_one("#fwa-feed-title", Static))
+        assert "as of" in title
+        assert UNAVAILABLE_LINE in _log_text(
+            widget.query_one("#fwa-activity-log", RichLog)
+        )
+
+
+@pytest.mark.asyncio
+async def test_signals_clipped_row_is_announced():
+    widget = FWASignals()
+    app = _Harness(widget)
+    async with app.run_test(size=(30, 12)):
+        widget.update_data(**_SIGNAL_PAYLOAD)
+        title = _static_text(widget.query_one("#fwa-sig-title", Static))
+        assert WIDEN_HINT in title
+    widget = FWASignals()
+    app = _Harness(widget)
+    async with app.run_test(size=(78, 12)):
+        widget.update_data(**_SIGNAL_PAYLOAD)
+        title = _static_text(widget.query_one("#fwa-sig-title", Static))
+        assert WIDEN_HINT not in title
 
 
 # -- frozen contract ---------------------------------------------------

@@ -1767,3 +1767,124 @@ TalismansMatrixTable, TalismansMaterialsTable {
     padding: 0 1;
     content-align: center top;
 }
+
+/* ── FWA screen ───────────────────────────────────────────────────────── */
+
+/* Structure only. Every rule below restates something FWAScreen.DEFAULT_CSS
+ * already says, because an app stylesheet always outranks DEFAULT_CSS in
+ * Textual -- whatever this block leaves out is not "inherited from the
+ * screen", it is silently replaced by whatever this file happens to say for
+ * the shared ids (#middle-row, #right-col, #bottom-row, #separator,
+ * #title-bar, lines 12-130), which is exactly how TTT and Talismans work.
+ *
+ * The colour work for this screen lives in the `fwa` Theme
+ * (themes/__init__.py), not here: this stylesheet is shared by all ten themes,
+ * so it may only name universal variables. Referencing a theme-specific
+ * variable such as `$fwa-crown-gold` here would raise a parse error under the
+ * other nine.
+ */
+
+FWAHeroMetrics {
+    height: 7;
+    padding: 0 1;
+    margin: 1 0 0 0;
+}
+
+/* padding is `0 2` and MUST stay `0 2`.
+ *
+ * The box is `height: 7` with a solid border, i.e. five interior rows, and the
+ * hero cards compose four lines: title, big number, second line, coverage
+ * badge. `padding: 1 2` -- what TalismansHeroBox above uses, and what an early
+ * draft of this block called for -- spends two of those rows on whitespace and
+ * clips the fourth line. On the PULL EV card the clipped line is the coverage
+ * badge, which would leave a confident-looking EV number with its uncertainty
+ * removed: precisely what PRD §3 forbids.
+ *
+ * tests/screens/test_fwa_screen.py::test_ev_coverage_badge_survives_the_real_stylesheet
+ * mounts this file and asserts the badge reaches the compositor, so this is
+ * enforced rather than merely documented. Do not "tidy" it to match the
+ * Talismans block. (TalismansHeroBox loses its own subtitle this way today --
+ * a separate, known defect, deliberately not fixed here.)
+ */
+FWAHeroBox {
+    width: 1fr;
+    height: 7;
+    border: solid $panel;
+    padding: 0 2;
+    content-align: center middle;
+    text-align: center;
+    background: $surface;
+    margin: 0 1;
+}
+
+FWAOddsBoard {
+    width: 3fr;
+    padding: 0 1;
+}
+
+FWAOddsBoard > .fwa-odds-title {
+    color: $text-muted;
+}
+
+FWAOddsBoard DataTable {
+    height: 1fr;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+FWASparkline {
+    height: auto;
+    padding: 0 1;
+    content-align: center top;
+}
+
+FWASparkline > .fwa-spark-title {
+    color: $text-muted;
+}
+
+FWASignals {
+    height: 1fr;
+    padding: 0 1;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    content-align: center top;
+}
+
+FWASignals > .fwa-signals-title {
+    color: $text-muted;
+}
+
+FWAActivityFeed {
+    width: 3fr;
+    padding: 0 1;
+}
+
+FWAActivityFeed > .fwa-feed-title {
+    color: $text-muted;
+}
+
+FWAActivityFeed RichLog {
+    background: $background;
+    scrollbar-size: 1 1;
+}
+
+/* Both bottom-right panes, sized by class rather than by content: the column
+ * set inside them is responsive, so nothing here may depend on how many
+ * columns survive at a given width. */
+FWAChaseBoard, FWASettlementTable {
+    width: 2fr;
+    padding: 0 1;
+    content-align: center top;
+}
+
+FWAChaseBoard > .fwa-chase-title,
+FWASettlementTable > .fwa-settle-title {
+    color: $text-muted;
+}
+
+FWAChaseBoard DataTable,
+FWASettlementTable DataTable {
+    height: 1fr;
+    background: $background;
+    scrollbar-size: 1 1;
+}

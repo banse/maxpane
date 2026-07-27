@@ -1,7 +1,10 @@
 """WP-12 — orchestration, tiering and degradation tests for :class:`FWAManager`.
 
-Zero network: all three clients are doubles, the clock is a fake, and both
-persistence paths point at ``tmp_path``.  Nothing here sleeps.
+Zero network: the clock is a fake and both persistence paths point at
+``tmp_path``.  Nothing here sleeps.  The three clients are doubles, except in the
+retention section, which drives a **real** :class:`FWALogClient` populated offline
+through its own decoders — the point there is that ``export_state`` /
+``import_state`` really do round-trip, so a double would be testing itself.
 
 The centre of gravity is degradation, because that is the deliverable: the manager
 must return exactly ``FWA_DATA_KEYS`` under **every** combination of pool failures,
@@ -17,13 +20,21 @@ import json
 import pytest
 
 from maxpane_dashboard.analytics import fwa_ev
+from maxpane_dashboard.data import fwa_logs as fl
 from maxpane_dashboard.data.fwa_cache import (
     TIER_FAST,
     TIER_MEDIUM,
     FWACache,
 )
 from maxpane_dashboard.data.fwa_client import FWA_HOT_KEYS
-from maxpane_dashboard.data.fwa_manager import COINGECKO_MIN_SPACING, FWAManager
+from maxpane_dashboard.data.fwa_manager import (
+    COINGECKO_MIN_SPACING,
+    FWA_DEPLOY_BLOCK,
+    LOG_ALLTIME_EVENTS,
+    LOG_CATCHUP_MAX_BLOCKS,
+    LOG_RAW_MIN_ROWS,
+    FWAManager,
+)
 from maxpane_dashboard.data.fwa_market import FloorQuote
 from maxpane_dashboard.data.fwa_models import FWA_DATA_KEYS, FWA_ROW_KEYS, Position
 
@@ -336,6 +347,7 @@ class FakeLogClient:
 
     def __init__(self, *, available: bool = True) -> None:
         self.available = available
+        self.head = BLOCK
         self.backfills = 0
         self.tails = 0
         self.closed = False
@@ -343,7 +355,7 @@ class FakeLogClient:
         self.raise_on_snapshot = False
 
     async def head_block(self):
-        return BLOCK
+        return self.head
 
     async def backfill(self, _from_block, _to_block, _events=None):
         self.backfills += 1
@@ -439,6 +451,78 @@ class FakeMarketClient:
 
     async def close(self):
         self.closed = True
+
+
+class DeadTransport:
+    """An httpx-shaped stand-in that proves no scan is attempted."""
+
+    async def aclose(self):
+        return None
+
+    async def post(self, *_a, **_k):  # pragma: no cover — must never be reached
+        raise AssertionError("the log retention tests must not touch the network")
+
+
+def _raw_log(event: str, block: int, seq: int, *, listing_id: int, words: int = 3,
+             topics: int = 3) -> dict:
+    """An RPC-shaped log the real ``fwa_logs`` decoders accept."""
+    extra = [f"0x{listing_id:064x}" for _ in range(topics)]
+    return {
+        "blockNumber": hex(block),
+        "logIndex": hex(seq % 8),
+        # Unique per log: identity is (block, log_index, tx_hash).
+        "transactionHash": "0x" + f"{seq:064x}",
+        "blockTimestamp": hex(1_785_000_000 + block),
+        "address": fl.FWA_CORE_ADDRESS.lower(),
+        "topics": [fl.topic0(event)] + extra,
+        "data": "0x" + "".join(f"{(10**17 + seq):064x}" for _ in range(words)),
+    }
+
+
+def _real_log_client(spec: dict[str, tuple[int, int, int]]):
+    """A real :class:`FWALogClient` populated offline.
+
+    *spec* maps event name -> ``(count, first_block, last_block)``.  Using the real
+    client (not a double) means the retention tests exercise the real decoders,
+    the real identity dedupe and the real ``export_state`` / ``import_state``.
+    """
+    client = fl.FWALogClient(http_client=DeadTransport())
+    seq = 0
+    head = 0
+    shapes = {
+        "NFTListed": (4, 3),
+        "NFTAllocated": (3, 3),
+        "AcquisitionRequested": (2, 2),
+        "TopListingSet": (2, 2),
+        "TopListingSettled": (2, 2),
+        "ConfigSet": (2, 1),
+        "CollectionWhitelistSet": (1, 2),
+    }
+    for event, (count, first, last) in spec.items():
+        words, topics = shapes.get(event, (3, 3))
+        logs = []
+        for i in range(count):
+            block = first + int(i * (last - first) / max(1, count - 1))
+            head = max(head, block)
+            logs.append(
+                _raw_log(event, block, seq, listing_id=1_000 + i, words=words,
+                         topics=topics)
+            )
+            seq += 1
+        client._ingest(logs)
+    client.last_seen_block = head
+    client._available = True
+    client._as_of_ts = 1_785_900_000.0
+    return client
+
+
+def _saved_state(tmp_path, log_client, **kwargs) -> dict:
+    """Run the real save path and return the parsed sidecar."""
+    manager = _manager(
+        tmp_path, logs=log_client, persist_log_state=True, **kwargs
+    )
+    manager._save_log_state()
+    return json.loads((tmp_path / "fwa_log_state.json").read_text())
 
 
 # ---------------------------------------------------------------------------
@@ -959,6 +1043,189 @@ async def test_odds_rows_withhold_eth_per_odds_point_when_unpriced(manager):
     # The inversion is the point: dust owns the draw, the chase item does not.
     assert priced["weight_share_pct"] > by_address[COLL_PUNKS]["weight_share_pct"]
     await _drain(manager)
+
+
+# ---------------------------------------------------------------------------
+# Bounded raw-event retention
+# ---------------------------------------------------------------------------
+
+
+def test_raw_events_are_bounded_by_a_block_window(tmp_path):
+    """A block window, so the bound does not move with protocol activity."""
+    head = BLOCK
+    logs = _real_log_client(
+        {"AcquisitionRequested": (2_000, head - 1_999, head)}  # 1 per block
+    )
+    state = _saved_state(tmp_path, logs, log_raw_window_blocks=300)
+
+    kept = state["events"]["AcquisitionRequested"]
+    assert state["raw_window_blocks"] == 300
+    assert state["raw_from_block"] == head - 300
+    # The window beats the row floor here, so the window is what bounds it.
+    assert LOG_RAW_MIN_ROWS < len(kept) < 2_000
+    assert min(r["block_number"] for r in kept) >= head - 300
+    assert max(r["block_number"] for r in kept) == head
+
+
+def test_row_floor_keeps_the_feed_usable_on_a_quiet_chain(tmp_path):
+    """The window bounds the maximum; the row floor bounds the minimum."""
+    head = BLOCK
+    # 500 events spread over 20,000 blocks: only ~8 land inside a 300-block window.
+    logs = _real_log_client({"NFTAllocated": (500, head - 19_999, head)})
+    state = _saved_state(tmp_path, logs, log_raw_window_blocks=300)
+
+    kept = state["events"]["NFTAllocated"]
+    assert len(kept) == LOG_RAW_MIN_ROWS
+    # and it is the *newest* rows that survived
+    assert max(r["block_number"] for r in kept) == head
+    assert min(r["block_number"] for r in kept) > head - 19_999
+
+
+def test_alltime_events_are_never_windowed(tmp_path):
+    """Crown reigns and ConfigSet history are all-time *by definition*."""
+    head = BLOCK
+    logs = _real_log_client(
+        {
+            "TopListingSet": (33, FWA_DEPLOY_BLOCK, head - 50_000),
+            "TopListingSettled": (12, FWA_DEPLOY_BLOCK, head - 50_000),
+            "ConfigSet": (6, FWA_DEPLOY_BLOCK, FWA_DEPLOY_BLOCK + 10),
+            "CollectionWhitelistSet": (51, FWA_DEPLOY_BLOCK, FWA_DEPLOY_BLOCK + 60),
+            "AcquisitionRequested": (2_000, head - 1_999, head),
+        }
+    )
+    state = _saved_state(tmp_path, logs, log_raw_window_blocks=300)
+
+    for event in ("TopListingSet", "TopListingSettled", "ConfigSet",
+                  "CollectionWhitelistSet"):
+        assert event in LOG_ALLTIME_EVENTS
+        assert len(state["events"][event]) == len(logs.entries(event)), event
+        assert min(r["block_number"] for r in state["events"][event]) < head - 50_000
+    # ... while the high-volume neighbour in the same file was trimmed
+    assert len(state["events"]["AcquisitionRequested"]) < 2_000
+
+
+def test_listings_referenced_by_a_retained_draw_survive_the_window(tmp_path):
+    """``NFTAllocated`` carries no collection — dropping its listing shows 0x0."""
+    head = BLOCK
+    logs = _real_log_client(
+        {
+            # Listings created long ago...
+            "NFTListed": (300, head - 40_000, head - 30_000),
+            # ...and drawn inside the retained window.
+            "NFTAllocated": (300, head - 200, head),
+        }
+    )
+    state = _saved_state(tmp_path, logs, log_raw_window_blocks=300)
+
+    drawn = {int(r["listing_id"]) for r in state["events"]["NFTAllocated"]}
+    listed = {int(r["listing_id"]) for r in state["events"]["NFTListed"]}
+    assert drawn, "the draws themselves must be retained"
+    assert drawn <= listed, (
+        "a retained draw whose NFTListed was dropped renders the zero address"
+    )
+    # and every retained NFTListed is out of window — kept purely by reference
+    assert all(r["block_number"] < head - 300 for r in state["events"]["NFTListed"])
+
+
+def test_size_ceiling_drops_raw_events_but_keeps_the_aggregates(tmp_path):
+    """Pathological activity cannot blow past the bound."""
+    head = BLOCK
+    logs = _real_log_client(
+        {
+            "AcquisitionRequested": (4_000, head - 299, head),
+            "TopListingSet": (33, FWA_DEPLOY_BLOCK, head),
+            "ConfigSet": (6, FWA_DEPLOY_BLOCK, FWA_DEPLOY_BLOCK + 10),
+        }
+    )
+    state = _saved_state(
+        tmp_path, logs, log_raw_window_blocks=300, log_state_max_bytes=20_000
+    )
+    path = tmp_path / "fwa_log_state.json"
+
+    assert path.stat().st_size <= 20_000
+    # the windowed events went ...
+    assert len(state["events"].get("AcquisitionRequested") or []) < 4_000
+    # ... the all-time events and the count baseline did not
+    assert len(state["events"]["TopListingSet"]) == 33
+    assert len(state["events"]["ConfigSet"]) == 6
+    assert state["event_baseline"]["AcquisitionRequested"] == 4_000
+
+
+def test_the_trim_is_logged_never_silent(tmp_path, caplog):
+    """A bound that discards data quietly reads as 'we have full history'."""
+    head = BLOCK
+    logs = _real_log_client({"AcquisitionRequested": (2_000, head - 1_999, head)})
+    with caplog.at_level("DEBUG", logger="maxpane_dashboard.data.fwa_manager"):
+        _saved_state(tmp_path, logs, log_raw_window_blocks=300)
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert "trimmed to the last 300 blocks" in messages
+    assert "AcquisitionRequested" in messages
+
+
+def test_settlement_mix_stays_all_time_across_a_windowed_restore(tmp_path):
+    """The one aggregate a window would corrupt, and the reason for the baseline."""
+    head = BLOCK
+    # The real all-time mix, at the documented counts (findings §8).
+    logs = _real_log_client(
+        {
+            "DepositorBidAcceptedAsTokens": (3_808, head - 60_000, head),
+            "DepositorBidAccepted": (713, head - 60_000, head),
+            "NFTRelisted": (393, head - 60_000, head),
+            "NFTKept": (237, head - 60_000, head),
+        }
+    )
+    full_mix = {row.outcome: row.share_pct for row in logs.settlement_mix()}
+    assert full_mix["bid_fwa"] == pytest.approx(73.9, abs=0.2)
+
+    state = _saved_state(tmp_path, logs, log_raw_window_blocks=300)
+    # The window really did truncate the store...
+    assert len(state["events"]["DepositorBidAcceptedAsTokens"]) < 3_808
+
+    # ...yet a manager restored from it reports the all-time mix, not a window.
+    restored_logs = _real_log_client({})
+    restored = _manager(tmp_path, logs=restored_logs, persist_log_state=False)
+    assert restored._event_baseline, "the count baseline must survive the restore"
+
+    snap = restored_logs.snapshot()
+    restored._correct_windowed_aggregates(snap)
+    mix = {row["outcome"]: row["share_pct"] for row in snap["settlement_mix"]}
+    for outcome, share in full_mix.items():
+        assert mix[outcome] == pytest.approx(share), outcome
+
+
+@pytest.mark.asyncio
+async def test_recent_watermark_tails_instead_of_backfilling(tmp_path):
+    """The common startup case must stay cheap."""
+    logs = FakeLogClient()
+    logs.head = BLOCK
+    manager = _manager(tmp_path, logs=logs)
+    manager._log_backfill_done = True
+    manager._restored_last_seen = BLOCK - 100
+
+    await manager.fetch_and_compute()
+    await _drain(manager)
+    assert (logs.backfills, logs.tails) == (0, 1)
+
+
+@pytest.mark.asyncio
+async def test_stale_watermark_re_backfills_rather_than_gapping(tmp_path):
+    """Past the catch-up cap, re-deriving is the only exact option."""
+    logs = FakeLogClient()
+    manager = _manager(tmp_path, logs=logs)
+    manager._log_backfill_done = True
+    manager._restored_last_seen = BLOCK - LOG_CATCHUP_MAX_BLOCKS - 1
+
+    await manager.fetch_and_compute()
+    await _drain(manager)
+    assert (logs.backfills, logs.tails) == (1, 0)
+
+
+def test_persist_log_state_false_is_a_real_escape_hatch(tmp_path):
+    head = BLOCK
+    logs = _real_log_client({"AcquisitionRequested": (100, head - 99, head)})
+    manager = _manager(tmp_path, logs=logs, persist_log_state=False)
+    manager._save_log_state()
+    assert not (tmp_path / "fwa_log_state.json").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -143,4 +143,63 @@ THEMES["talismans"] = Theme(
     dark=True,
 )
 
+# 10. FWA -- gacha terminal: cold chrome so the reserved warm semantics pop.
+#
+# The register PRD §11 asks for is "gachapon/casino", but almost every warm
+# colour on the FWA screen is already spoken for: green/red carry the EV sign,
+# amber carries a warning, and gold is reserved *exclusively* for the crown.
+# The design answer is therefore inversion rather than addition -- the chrome
+# (titles, borders, scrollbars, chart ink) goes cool and desaturated so that
+# the three semantic ramps below are the only saturated things on screen. The
+# numbers stay the content; the theme stays out of their way.
+#
+# Nothing here is gold: `accent`/`primary` are teal, and `warning` is pushed
+# orange (#f2842f, hue 26deg, lightness 57%) rather than amber, so the crown's
+# #f0c040 (hue 44deg, lightness 60%) owns both the yellow band of the spectrum
+# and the title of brightest warm thing on the screen.
+FWA_VARIABLES: dict[str, str] = {
+    # -- crown: gold, and nothing else on the screen may use it -----------
+    #    Must stay equal to ``_GOLD`` in widgets/fwa/fwa_hero_metrics.py.
+    "fwa-crown-gold": "#f0c040",
+    # -- EV sign ----------------------------------------------------------
+    #    Colour is *redundant* here by design: widgets/fwa/fwa_hero_metrics.py
+    #    pairs every EV figure with a `▲`/`▼` glyph and an explicit `+`/`-`
+    #    sign, so the metric survives greyscale and colour blindness. Do not
+    #    let the presence of these variables tempt anyone into dropping the
+    #    glyph -- the glyph is the carrier, the colour is the echo.
+    "fwa-ev-up": "#4ade80",
+    "fwa-ev-down": "#ff7085",
+    # -- pool temperature: cold -> hot ------------------------------------
+    #    analytics/fwa_signals.py:pool_temp_signal_for() paints the row by the
+    #    *share*, not the clock: COLD (surcharge 100% -> YOU) is green, WARM
+    #    (partial share, or the dial pinned) is amber, HOT (surcharge ->
+    #    depositors) is muted. Each state also names its direction in words,
+    #    so the ramp is never the only cue.
+    "fwa-pool-cold": "#4ade80",
+    "fwa-pool-warm": "#f2842f",
+    "fwa-pool-hot": "#8fa0b8",
+}
+
+THEMES["fwa"] = Theme(
+    name="fwa",
+    primary="#4fb3c4",
+    secondary="#8f86d6",
+    background="#0a0d13",
+    surface="#12161f",
+    panel="#1d2330",
+    accent="#66d3e0",
+    # `success`/`error`/`warning` are deliberately the *same* values as the
+    # ramps above, so the screen has exactly one green, one red and one amber
+    # rather than two vocabularies for the same three ideas. It also means a
+    # widget can move from the literal `[green]`/`[red]` to `[$success]`/
+    # `[$error]` -- which Textual content markup resolves per theme, and which
+    # every theme defines -- without any colour changing under `fwa`.
+    warning=FWA_VARIABLES["fwa-pool-warm"],
+    error=FWA_VARIABLES["fwa-ev-down"],
+    success=FWA_VARIABLES["fwa-ev-up"],
+    foreground="#ccd4e0",
+    dark=True,
+    variables=dict(FWA_VARIABLES),
+)
+
 THEME_NAMES: list[str] = list(THEMES.keys())
