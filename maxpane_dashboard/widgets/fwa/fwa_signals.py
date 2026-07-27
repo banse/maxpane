@@ -67,7 +67,11 @@ EMISSIONS_ENDED = "emissions ended"
 _DIRECTION_WORDS = ("you", "depositor", "purchaser")
 
 #: Words that prove the buy-gate row states its state in text.
-_GATE_WORDS = ("open", "closed", "enabled", "disabled", "blocked", "live")
+# "gated" was missing here, so a correctly-read *closed* gate
+# ("GATED — no outside buys ...") matched nothing and got "· state unknown"
+# appended — a known state rendered as unknown, and it also pushed the row to
+# 79 columns so the SIGNALS panel wore "‹ widen" during healthy operation.
+_GATE_WORDS = ("open", "closed", "gated", "enabled", "disabled", "blocked", "live")
 
 #: A signed countdown component, e.g. ``-2d`` / ``−13h`` / ``-41s``.
 _NEGATIVE_COUNTDOWN = re.compile(r"[-−]\s*\d")

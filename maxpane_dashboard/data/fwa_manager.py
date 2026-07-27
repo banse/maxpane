@@ -1019,8 +1019,15 @@ class FWAManager:
             block, positions, report = await self.client.sweep_positions()
         except Exception as exc:  # noqa: BLE001 — documented not to raise
             logger.warning("FWA position sweep raised: %s", exc)
+            # A sweep that never ran violated no invariant.  Flipping the flag
+            # here made a dead RPC render "invariant mismatch", naming the wrong
+            # cause on the single most common failure — and contradicting the
+            # note in _blank_payload that a *missing* sweep is reported through
+            # degraded_sources.  The chain pool is already marked degraded, so
+            # the honest render is "degraded: chain" alone.
             block, positions, report = 0, [], {
-                "invariants_ok": False,
+                "invariants_ok": True,
+                "sweep_failed": True,
                 "skipped": False,
                 "mismatches": (f"sweep raised: {exc}",),
             }

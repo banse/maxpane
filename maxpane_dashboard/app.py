@@ -12,6 +12,7 @@ from maxpane_dashboard.data.base_manager import BaseManager
 from maxpane_dashboard.data.cattown_manager import CatTownManager
 from maxpane_dashboard.data.dota_manager import DOTAManager
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
+from maxpane_dashboard.data.fwa_manager import FWAManager
 from maxpane_dashboard.data.manager import DataManager
 from maxpane_dashboard.data.ocm_manager import OCMManager
 from maxpane_dashboard.data.talismans_manager import TalismansManager
@@ -24,6 +25,7 @@ from maxpane_dashboard.screens.frenpet import FrenPetScreen
 from maxpane_dashboard.screens.frenpet_full import FrenPetFullScreen
 from maxpane_dashboard.screens.frenpet_perf import FrenPetPerfScreen
 from maxpane_dashboard.screens.frenpet_wallet import FrenPetWalletScreen
+from maxpane_dashboard.screens.fwa import FWAScreen
 from maxpane_dashboard.screens.game_select import GameSelectScreen
 from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 from maxpane_dashboard.config import get_wallet
@@ -87,6 +89,9 @@ class MaxPaneApp(App):
         self._dota_manager = DOTAManager(poll_interval=poll_interval)
         self._ttt_manager = TTTManager(poll_interval=poll_interval)
         self._talismans_manager = TalismansManager(poll_interval=poll_interval)
+        # FWAManager builds its own market client with coingecko_min_spacing=6.0
+        # (COINGECKO_MIN_SPACING); do not pass one in here.
+        self._fwa_manager = FWAManager(poll_interval=poll_interval)
         self._current_game = initial_game
 
     def on_mount(self) -> None:
@@ -163,6 +168,12 @@ class MaxPaneApp(App):
                 exclusive=True,
                 name="prefetch",
             )
+        elif self._initial_game == "fwa":
+            self.run_worker(
+                self._fwa_manager.fetch_and_compute(),
+                exclusive=True,
+                name="prefetch",
+            )
 
         # Show splash screen → game select → dashboard
         self.push_screen(SplashScreen(), callback=self._on_splash_dismissed)
@@ -180,7 +191,7 @@ class MaxPaneApp(App):
 
     # FrenPet variants ("frenpet_full", "frenpet_wallet", "frenpet_perf") are
     # temporarily hidden from cycling — code intact, restore by re-adding them.
-    _GAME_CYCLE = ["base", "frenpet", "cattown", "dota", "bakery", "ocm", "ttt", "talismans"]
+    _GAME_CYCLE = ["base", "frenpet", "cattown", "dota", "bakery", "ocm", "ttt", "talismans", "fwa"]
 
     def _launch_game(self, game_id: str, *, first: bool = False) -> None:
         """Install and switch to a game screen.
@@ -266,6 +277,16 @@ class MaxPaneApp(App):
                         name="talismans",
                     ),
                     name="talismans",
+                )
+        elif game_id == "fwa":
+            if not self.is_screen_installed("fwa"):
+                self.install_screen(
+                    FWAScreen(
+                        self._fwa_manager,
+                        self.poll_interval,
+                        name="fwa",
+                    ),
+                    name="fwa",
                 )
         else:
             return
@@ -396,4 +417,8 @@ class MaxPaneApp(App):
             await self._talismans_manager.close()
         except Exception as exc:
             logger.warning("Error during talismans shutdown: %s", exc)
+        try:
+            await self._fwa_manager.close()
+        except Exception as exc:
+            logger.warning("Error during fwa shutdown: %s", exc)
         self.exit()

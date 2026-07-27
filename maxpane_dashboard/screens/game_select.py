@@ -21,6 +21,7 @@ GAMES = [
     ("6", "ocm", "OCM", "Onchain Monsters staking, supply, burns on Ethereum"),
     ("7", "ttt", "Ten Thousand Tokens", "NFT collection w/ UniV4 burn-to-launch on Ethereum"),
     ("8", "talismans", "Talismans", "Core-conservation NFT collection on Ethereum"),
+    ("9", "fwa", "Fake World Assets", "NFT gacha pool w/ inverse-weighted VRF draws on Ethereum"),
 ]
 
 

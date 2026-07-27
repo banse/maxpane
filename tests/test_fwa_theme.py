@@ -403,3 +403,86 @@ def test_fwa_css_block_is_appended_at_eof(tcss_text: str):
 
 
 # ── WP-17 CLI selection tests below ──
+#
+# These drive the *real* ``maxpane_dashboard.__main__.main()`` argparse parser
+# rather than re-declaring the choice lists, because the failure mode being
+# guarded is a registration that was added to ``THEMES`` / ``_GAME_CYCLE`` but
+# never to the CLI. Asserting against a copied list would pass in exactly that
+# case. ``MaxPaneApp`` is stubbed out (no Textual app, no network, no manager
+# construction) and ``logging.basicConfig`` is neutered so a test run never
+# truncates the user's ~/.maxpane/maxpane.log.
+
+
+def _run_cli(monkeypatch, argv: list[str]) -> dict:
+    """Invoke ``__main__.main()`` with *argv*, returning the app's kwargs."""
+    import maxpane_dashboard.__main__ as cli
+
+    captured: dict = {}
+
+    class _StubApp:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def run(self):  # never starts a real TUI
+            captured["ran"] = True
+
+    monkeypatch.setattr(cli, "MaxPaneApp", _StubApp)
+    monkeypatch.setattr(cli, "_maximize_terminal", lambda: None)
+    monkeypatch.setattr(cli.logging, "basicConfig", lambda **kw: None)
+    monkeypatch.setattr(cli.sys, "argv", ["maxpane", *argv])
+    cli.main()
+    return captured
+
+
+def test_theme_cli_choice_includes_fwa(monkeypatch):
+    """``--theme fwa`` is an accepted choice and reaches the app.
+
+    Guards the ``--theme`` choices list in ``__main__.py``, which PRD §10 omits
+    and which an ``fwa`` Theme in ``THEMES`` makes mandatory.
+    """
+    captured = _run_cli(monkeypatch, ["--theme", "fwa"])
+    assert captured["theme"] == "fwa"
+    assert captured.get("ran") is True
+    # The theme must actually resolve, not just be spelled correctly.
+    assert "fwa" in THEMES
+
+    # And the list is still a closed set -- otherwise the assertion above would
+    # pass for any string.
+    with pytest.raises(SystemExit):
+        _run_cli(monkeypatch, ["--theme", "not-a-theme"])
+
+
+def test_game_cli_choice_includes_fwa(monkeypatch):
+    """``--game fwa`` is an accepted choice and reaches the app as initial_game."""
+    from maxpane_dashboard.app import MaxPaneApp
+    from maxpane_dashboard.screens.game_select import GAMES
+
+    captured = _run_cli(monkeypatch, ["--game", "fwa"])
+    assert captured["initial_game"] == "fwa"
+    assert captured.get("ran") is True
+
+    with pytest.raises(SystemExit):
+        _run_cli(monkeypatch, ["--game", "not-a-game"])
+
+    # The three registration sites must agree on the id.
+    assert "fwa" in MaxPaneApp._GAME_CYCLE
+    assert ("9", "fwa", "Fake World Assets",
+            "NFT gacha pool w/ inverse-weighted VRF draws on Ethereum") in GAMES
+
+
+def test_theme_cli_choices_match_theme_names(monkeypatch):
+    """Every ``--theme`` choice is a registered theme, and ``fwa`` is last.
+
+    CLI order must match ``THEME_NAMES`` so the ``t``-key cycle and the flag
+    present the same sequence.
+    """
+    import maxpane_dashboard.__main__ as cli
+
+    src = Path(cli.__file__).read_text(encoding="utf-8")
+    match = re.search(r'"--theme",\s*\n\s*default="[^"]*",\s*\n\s*choices=\[([^\]]*)\]', src)
+    assert match, "could not locate the --theme choices list in __main__.py"
+    choices = re.findall(r'"([^"]+)"', match.group(1))
+    assert choices[-1] == "fwa", "fwa must be appended last to match THEME_NAMES"
+    assert set(choices) <= set(THEME_NAMES), (
+        f"CLI offers themes that are not registered: {set(choices) - set(THEME_NAMES)}"
+    )

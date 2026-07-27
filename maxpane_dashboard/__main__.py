@@ -48,12 +48,12 @@ def main():
     parser.add_argument(
         "--theme",
         default="matrix",
-        choices=["matrix", "minimal", "bloomberg", "htop", "retro", "bakery", "frenpet", "base", "talismans"],
+        choices=["matrix", "minimal", "bloomberg", "htop", "retro", "bakery", "frenpet", "base", "talismans", "fwa"],
     )
     parser.add_argument(
         "--game",
         default="bakery",
-        choices=["bakery", "frenpet", "frenpet_full", "frenpet_wallet", "frenpet_perf", "base", "cattown", "ocm", "dota", "ttt", "talismans"],
+        choices=["bakery", "frenpet", "frenpet_full", "frenpet_wallet", "frenpet_perf", "base", "cattown", "ocm", "dota", "ttt", "talismans", "fwa"],
         help="Which game dashboard to show first (default: bakery)",
     )
     parser.add_argument(
