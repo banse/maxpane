@@ -1152,6 +1152,28 @@ the PRIMARY case, not an edge case, so it is written and passing before the othe
 
 ## WP-16 — Full `fwa` Theme + CSS + theme tests
 
+> ### ⚠ WP-16: `FWAHeroBox` MUST be `padding: 0 2`, never `1 2`
+>
+> An earlier draft of this brief said `padding: 1 2`. **That is wrong and it silently breaks the
+> flagship metric.** A `height: 7` box with vertical padding 1 leaves exactly 3 content rows for a
+> widget that composes title + value + subtitle + coverage badge. The clipped line is PULL EV's
+> **coverage badge** — leaving a confident-looking EV number with no coverage beside it, which is
+> precisely what PRD §3 forbids.
+>
+> This is not hypothetical. `TalismansHeroBox` ships with `height: 7; padding: 1 2` today and its
+> subtitle is genuinely missing from the screen — confirmed by headless render at 140 cols. WP-13
+> reproduced the FWA failure by adding exactly this rule and watched the badge vanish while the EV
+> number stayed.
+>
+> `FWAHeroBox.DEFAULT_CSS` sets `padding: 0 2` correctly, but **theme rules override
+> `DEFAULT_CSS`**, so the theme block must repeat it. `test_ev_coverage_badge_survives_the_real_stylesheet`
+> (WP-13) mounts the screen against the real `minimal.tcss` and asserts the badge in
+> `_compositor.render_strips()`, so getting this wrong fails the suite rather than shipping quietly.
+>
+> Fixing the Talismans padding is **out of scope** — log it, don't fix it here.
+
+
+
 **Agent:** UI Designer (sole owner of `minimal.tcss` and `themes/__init__.py`)
 *Why:* PRD §11 asks for a gachapon/casino register held inside the existing minimal aesthetic — a
 restraint problem, and now a palette-design problem too. Also the sole owner of two shared files, so
@@ -1188,7 +1210,8 @@ it is deliberately isolated.
 **Work**
 
 **Part A — CSS block.** Append a `/* ── FWA screen ─────────── */` block styling: `FWAHeroMetrics`
-(`height: 7`), `FWAHeroBox` (`width: 1fr; height: 7; border: solid $panel; padding: 1 2;
+(`height: 7`), `FWAHeroBox` (`width: 1fr; height: 7; border: solid $panel; **`padding: 0 2`** —
+NOT `1 2`, see the boxed warning below;
 content-align: center middle; background: $surface; margin: 0 1`), `FWAOddsBoard` (`width: 3fr`),
 `FWASparkline` (`height: auto`), `FWASignals` (`height: 1fr; overflow-y: auto`), `FWAActivityFeed`
 (`width: 3fr`) + its `RichLog` (`scrollbar-size: 1 1`), `FWAChaseBoard` and `FWASettlementTable`

@@ -95,8 +95,15 @@ Draft                        Final
 ===========================  =====================================================
 
 Added since the draft: ``crown_vacant``, ``ev_rebate_eth``, ``chase_available``,
-``feed_as_of_ts``, ``settle_as_of_ts``. Removed: nothing — plus
-``weighted_backing_total`` was never a key and must not become one (trap 3).
+``feed_as_of_ts``, ``settle_as_of_ts``, ``crown_listing_id``. Removed: nothing —
+plus ``weighted_backing_total`` was never a key and must not become one (trap 3).
+
+``crown_listing_id`` was added in wave 3: the crown and the max-backing position
+can be the same listing (they were at block 25612701), and ``FWAChaseBoard`` can
+only flag that coincidence if it is told which listing wears the crown. It is a
+data key but **not** a widget-signature kwarg — the board takes it as an optional
+extra, so the frozen two-kwarg payload still renders and the note stays dark
+without it.
 
 
 Settlement outcomes
@@ -566,6 +573,12 @@ FWA_DATA_KEYS: tuple[str, ...] = (
     # ---- chase board: FWAChaseBoard ------------------------------------------
     "chase_positions",             # list[dict] — FWA_ROW_KEYS["chase_positions"]
     "chase_available",             # bool
+    # The crown's listing id, so the board can flag the crown/jackpot
+    # coincidence (PRD §5). Deliberately *not* in FWA_WIDGET_SIGNATURES: it is an
+    # optional extra kwarg on ``FWAChaseBoard.update_data`` with a ``None``
+    # default, so the frozen two-kwarg payload still renders and the note simply
+    # stays dark. ``None`` when the crown is vacant or unreadable.
+    "crown_listing_id",            # int | None
 
     # ---- settlement table: FWASettlementTable --------------------------------
     "settlement_mix",              # list[dict] — FWA_ROW_KEYS["settlement_mix"]

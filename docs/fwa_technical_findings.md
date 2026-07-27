@@ -318,7 +318,10 @@ Toggle: `setExternalBuysEnabled(bool)`, event `ExternalBuysEnabledSet(bool)`.
 
 ## 6. Enumerating live positions — production recipe + three traps
 
-### 6.1 The recipe (measured: 3,867 positions in **3.3 seconds / 17 `eth_call`s**)
+### 6.1 The recipe (measured: 3,867 positions in **3.3 seconds / 18 `eth_call`s**)
+
+> Corrected 2026-07-27: this said 17, omitting the pinned aggregate read. WP-14 measured 18 and
+> derived the scaling law `1 + ceil(1.073N/500) + ceil(N/500)` ≈ **18 at 3,867 / 26 at 5,942 / 43 at 10,000** (findings §13.6, plan §16).
 
 ```
 1.  blockTag = eth_blockNumber()                          # PIN IT — the pool churns every few seconds
@@ -697,7 +700,7 @@ collections with different floors**. Any per-contract floor for `0x942BC2d3…` 
 |---|---|
 | **Public RPC batching** | publicnode 429s under aggressive batching. Batch **≤ 60 JSON-RPC elements** with ~0.12 s spacing, or use Multicall3 with **≤ 500 calls per `eth_call`** (which worked reliably). |
 | **`eth_getLogs`** | publicnode and 1rpc **refuse it**. Use `gateway.tenderly.co/public/mainnet` (no cap) or `eth.drpc.org` (**paginate at 10,000 blocks**). |
-| **Position sweep** | 3,867 positions = 17 `eth_call`s = **3.3 s**. Too heavy for a 15 s tick. Run on a **30–60 s** cadence, persist to a snapshot, and serve the hot tiles from cheap single reads (`acquisitionFee`, `activeListingCount`, `totalWeight`, `topListingId`, `topListingPot`). |
+| **Position sweep** | 3,867 positions = 18 `eth_call`s = **3.3 s** (26 at today's 5,942; see the scaling law in §6.1). Too heavy for a 15 s tick. Run on a **30–60 s** cadence, persist to a snapshot, and serve the hot tiles from cheap single reads (`acquisitionFee`, `activeListingCount`, `totalWeight`, `topListingId`, `topListingPot`). |
 | **Hot tiles** | one Multicall3 batch of ~30 views across all 8 contracts — cheap enough for a **15 s** TTL. |
 | **Event tail** | backfill once on first run (~58 s for the full history), then poll `lastSeen → latest` only. Persist by event topic, same pattern as `docs/tenthousandtokens_technical_findings.md`. |
 | **CoinGecko NFT floors** | ≥ **2.5 s between calls** and still expect 429s. Background sweep only, **15 min TTL**, persist. |
@@ -1000,3 +1003,28 @@ to prevent, and does so by making the floor look *better*, not worse.
 
 **Always feed the EV via `floors_for_ev(quotes)`, which omits unpriced collections entirely.**
 Never default a missing floor to zero anywhere in the pipeline.
+
+### 13.16 The bottom row needs ~200 columns — a real layout constraint, unresolved
+
+WP-13 measured the composited screen at 140 cols with the real stylesheet. The mandated 3fr/2fr/2fr
+ratio is correct; the absolute width is not there.
+
+| Bottom-row widget | Width at 140 cols | Width it needs |
+|---|---:|---:|
+| Activity feed | 58 | **81** (a feed line with a realistic 17-char `outcome_label`) |
+| Chase board | 38 | **57** (the widget's own documented budget) |
+| Settlement table | 38 | **55** (columns + cell padding) |
+
+Visible consequences at 140: the feed's outcome label truncates to `→ a`, and **the chase board
+loses its `ODDS` and `JACKPOT` columns — the two that carry its entire point.** At 200 cols
+everything renders. WP-13 kept the mandated ratio rather than inventing its own.
+
+**Unresolved — WP-16/WP-19 must rule.** The options are (a) narrower per-widget column budgets,
+(b) a documented minimum terminal width, or (c) responsive column dropping with an explicit
+"widen to see ODDS/JACKPOT" hint. Silently dropping the chase board's two most important columns
+is not acceptable, because the widget still looks complete when it is not.
+
+Related: `StatusBar` has no `degraded_sources` API. WP-13 put degradation on the **title bar**
+instead of abusing `set_active_view()` (which renders `view: …` and would be a lie), ordering
+warnings before the optional revenue/take figures so the tail is what clips on a narrow terminal.
+If `StatusBar` ever grows `set_degraded()`, `FWAScreen._title_line()` is the single place to change.
