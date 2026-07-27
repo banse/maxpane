@@ -831,8 +831,14 @@ The empirically observed 2/3/4 = Allocated/Withdrawn/Settled, matching the earli
 2026-07-25: **+53% in two days.** Consequences:
 
 - Every "3,867" in the PRD, plan and sections above is a *historical observation*, not a constant.
-- The Multicall3 sweep is ~12 batched calls at current size, not ~8. WP-14's refresh-budget
-  benchmark must size against the live count and headroom, not the research figure.
+- The Multicall3 sweep is **18 `eth_call`s at 3,867 positions** — measured by WP-6, not estimated:
+  1 aggregate read + 9 slot batches (4,500 slots at a 1.2x budget / 500) + 8 listing batches
+  (3,867 / 500). Findings §6.1's "17" and the plan's "~12" both undercount; the plan appears to
+  have counted only slot batches. At today's 5,942 positions that is roughly **25 round trips**.
+  WP-14 must size the refresh budget from 18-at-3.9k and scale, never from a fixed number.
+  Separately, `fetch_hot_batch` costs up to **3** `eth_call`s, not 1: `quoteAcquisitionPrice`
+  is deliberately kept out of the aggregate3 batch (bounding gas for one view is not the same
+  as bounding it for 48), and `tokenShareBps(gap)` needs an argument the batch itself reads.
 - All derived statistics (harmonic mean, arithmetic mean, the 4.0× gap, per-collection shares) have
   moved. Block-pinned fixtures remain valid for testing; live display must recompute.
 
@@ -946,3 +952,51 @@ The first `AcquisitionRequested` in block N carries `acquisitionFee`/`totalWeigh
 at the **end of block N-1** bit-for-bit (verified on 7 of 8 consecutive blocks; the exception had
 an earlier state-mutating tx in the same block). Comparing an event against the state at the end
 of *its own* block yields a 0.017% error that reads like a rounding bug. Pin to N-1.
+
+### 13.13 Fixture annotation bug — `listings_56508.json`
+
+The `cross_check_block_25612655` note claims "value/weight/slot unchanged, feeDebt drifts". The two
+captured payloads are **byte-identical** (`raw_return_data` 706 chars, equal at both blocks), so
+either the capture re-recorded one response or `feeDebt` simply did not move across those 46 blocks.
+The note is unsupported by the bytes it annotates.
+
+The block-pinning rule is unaffected — `pinned_aggregates.json` shows `acquisitionFee` moved
+-568,250,870,717,417 wei over the same span, so state genuinely does drift between these blocks.
+Only the per-field claim in that one annotation is wrong. Assert what the bytes say.
+
+### 13.14 Floor coverage is better than documented; the weight gap is worse — and 2.5 s is too fast
+
+WP-8 ran the finished client against the live endpoints twice, ordered by weight.
+
+| | documented (§10) | measured (run A / run B) |
+|---|---:|---:|
+| priced | 22 | **26 / 25** |
+| hard 404 (permanently absent) | 11 | **10** |
+| rate-limited (retryable) | 5 | 0 / 1 |
+| suppressed (Art Blocks, both contracts) | — | 2 |
+| **pool weight uncovered** | ~68% | **79.4% / 79.6%** |
+
+Three consequences:
+
+1. **The coverage badge should read 26 of 38, not 22.** §10's five "429" collections were never a
+   coverage gap — they were throttling misread as absence. That is exactly why `status`
+   (`ok|cached|missing|rate_limited|suppressed|error`) is tracked separately from `source`.
+2. **Any copy quoting "68% of pool weight uncovered" is wrong — it is ~79.6%.** §10 counted only
+   TTT (49.08%) and Art Blocks Explorations (18.99%); also 404 are `0x8fe1a377…` (6.97%),
+   `0xc7e67762…` (1.65%), `0x4024c208…` (1.51%), `0xbdde08bd…` (0.89%) and four dust collections.
+3. **`COINGECKO_MIN_SPACING = 2.5` is not survivable.** A live sweep at 2.5 s drew **26 consecutive
+   429s out of 36 calls** and priced only 6 collections; at 6 s it drew zero to one.
+   **WP-12 must construct the market client with `coingecko_min_spacing=6.0`.** The default stays
+   at the spec value and is constructor-injectable; a 429 arms a one-shot `Retry-After` gap (capped
+   60 s) and two consecutive 429s park the remainder as retryable instead of hammering.
+
+### 13.15 A `0.0` floor corrupts the EV band from the unexpected direction
+
+Verified against the real `pull_ev_band`: passing `0.0` for an unpriced collection does **not**
+dent the upper leg as intuition suggests. It **raises `lower_eth`** — `max(sellback, 0.0)` hands
+the position its full sell-back value inside the *pessimistic* bound — and inflates
+`collections_priced`. A zero therefore collapses the band toward the confident lie the band exists
+to prevent, and does so by making the floor look *better*, not worse.
+
+**Always feed the EV via `floors_for_ev(quotes)`, which omits unpriced collections entirely.**
+Never default a missing floor to zero anywhere in the pipeline.

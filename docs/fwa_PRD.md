@@ -104,7 +104,10 @@ Three components, each independently interesting:
 
 ### Rendered as a band, not a point
 
-Keyless floor prices (CoinGecko) cover **22 of 38** collections with live positions. The
+Keyless floor prices (CoinGecko) cover **26 of 38** collections with live positions — but those
+26 are only ~20% of pool *weight*, because TTT (49.08%) and Art Blocks (18.99%) are both
+unpriceable. **~79.6% of the draw weight has no floor**, which is why the band is not optional.
+(Measured 2026-07-27; findings §13.14 supersedes the earlier 22/38 and 68% figures.) The
 widget therefore shows:
 
 - **Lower bound** — an unpriced position contributes **zero**, not even its guaranteed
@@ -167,7 +170,7 @@ status bar
 | Signals | `FWASignals` | Pool temperature (s since last request → your surcharge share) · buy-gate badge · emissions countdown · VRF queue depth · parameter-drift alarm |
 | Activity feed | `FWAActivityFeed` | Live draws: wallet, collection drawn, and the settlement choice made |
 | Table A | `FWAChaseBoard` | Richest positions: backing, ~0% odds, **jackpot ratio** (max 221 ETH → 1,378×) |
-| Table B | `FWASettlementTable` | Settlement outcome mix + crown history (33 sets, 12 payouts, 91.096 ETH) |
+| Table B | `FWASettlementTable` | Settlement outcome mix + crown history (**17 deduped reigns** across 10 holders — 33 raw logs less 16 vacate shadows — 12 payouts, 91.096 ETH) |
 
 Row/line budgets must match the existing widgets — mirror the counts in
 `widgets/talismans/` and `widgets/ttt/` rather than inventing new sizes.

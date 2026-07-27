@@ -631,7 +631,10 @@ double-counting trap, and the plan's single genuine point of failure. Cleanly se
 - one decode test per event type from the recorded log fixtures
 - **`test_top_listing_set_dedupes_vacate_pair`**
 - `test_settlement_mix_shares_match_recorded_counts` (73.92 / 13.84 / 7.64 / 4.60 / 0.00)
-- `test_crown_history_counts` — 33 sets, 12 payouts, 91.096 ETH
+- `test_crown_history_counts` — **17** deduped reigns / **10** holder rows (33 raw `TopListingSet`
+  logs minus 16 vacate shadows), 12 payouts, 91.096 ETH. `crown_sets_total` is the **deduped**
+  count per WP-1's frozen interface; keep `raw_set_logs: 33` and `vacate_logs: 16` alongside so
+  the gap is inspectable. Resolved 2026-07-27 — the earlier "33 sets" was the raw log count.
 - `test_config_history_resolves_key_15_to_crown_tithe`
 - `test_collection_registry_has_51`
 - `test_price_history_reconstructed_from_acquisition_requested`
@@ -885,7 +888,8 @@ explicit degraded states.
    `Token`, `Backing ETH`, `Odds`, `Jackpot ×`. Renders the protocol's central absurdity: 221 ETH at
    `0.000%` odds for a `1,378×` jackpot ratio. Odds below 0.001% render `0.000%`, never `0`.
 4. **`FWASettlementTable`** — width `2fr`, two stacked sections in one widget: the outcome mix
-   (73.92 / 13.84 / 7.64 / 4.60 / 0.00 with counts) and crown history (33 sets, 12 payouts,
+   (73.92 / 13.84 / 7.64 / 4.60 / 0.00 with counts) and crown history (17 deduped reigns across
+   10 holders, 12 payouts,
    91.096 ETH). Both are log-derived, so both need the `as of HH:MM` staleness header and an
    `unavailable` state.
 
@@ -911,6 +915,16 @@ explicit degraded states.
 ---
 
 ## WP-12 — Manager: orchestration, tiering, degradation
+
+> **Interface gap found in wave 2 — WP-12/WP-13 must resolve.** `FWAChaseBoard` can flag the
+> crown/jackpot coincidence (PRD §5) only if it knows the crown's listing id, but
+> `crown_listing_id` is **not** in `FWA_DATA_KEYS` — the `Crown` model carries `listing_id`, the
+> flat dict never exposes it. WP-11 accepts `crown_listing_id=None` as an optional extra kwarg
+> and keeps the note dark when it is absent, so nothing is claimed falsely. **WP-12 should add
+> `crown_listing_id` to `FWA_DATA_KEYS` and dispatch it, and WP-13 should pass it**, otherwise
+> the coincidence note can never appear.
+
+
 
 **Agent:** Backend Architect
 *Why:* this is where three independently-failing pools, four refresh tiers and a frozen output
