@@ -139,6 +139,8 @@ __all__ = [
     "FWA_CORE_ADDRESS",
     "TENDERLY_GATEWAY",
     "DRPC_GATEWAY",
+    "MEVBLOCKER_GATEWAY",
+    "ONFINALITY_GATEWAY",
     "LOG_ENDPOINTS",
     "DRPC_BLOCK_PAGE",
     "ENDPOINT_BLOCK_PAGE",
@@ -185,16 +187,58 @@ FWA_CORE_ADDRESS = "0xB276F62DB0ce8CA2Ca5bc522695bE604521eAc1c"
 TENDERLY_GATEWAY = "https://gateway.tenderly.co/public/mainnet"
 DRPC_GATEWAY = "https://eth.drpc.org"
 
-LOG_ENDPOINTS: tuple[str, ...] = (TENDERLY_GATEWAY, DRPC_GATEWAY)
+# --- Last-resort tier -------------------------------------------------------
+# Both were found by probing 20 keyless endpoints for archive `eth_getLogs`;
+# 18 failed (method not supported, 10-to-250-block caps, dead hosts, or a
+# registration requirement). These two returned log counts **identical to
+# tenderly** on the same ranges, including the demanding 14-topic OR-filter.
+#
+# They are ordered last and carry caveats worth stating plainly:
+#
+# * ``rpc.mevblocker.io`` is primarily a MEV-protection *transaction relay*.
+#   Log serving is incidental to its purpose and could be withdrawn without
+#   notice. It was also the fastest endpoint measured (0.25 s for a
+#   10,000-block OR-filter window).
+# * ``eth.api.onfinality.io/public`` is operated by OnFinality — the same
+#   operator behind another keyless endpoint we have already seen refuse log
+#   queries outright with *"Please apply an OnFinality API key"* (recorded in
+#   rpc_errors.json). It may well start rate-limiting under sustained backfill
+#   load, and it measured ~10x slower than mevblocker.
+#
+# Neither has been soak-tested. They exist so that "both primaries down" —
+# the design's acknowledged single point of failure — degrades to a slower feed
+# rather than no feed. Failover is bounded and they are never reached while a
+# primary is answering.
+MEVBLOCKER_GATEWAY = "https://rpc.mevblocker.io"
+ONFINALITY_GATEWAY = "https://eth.api.onfinality.io/public"
+
+LOG_ENDPOINTS: tuple[str, ...] = (
+    TENDERLY_GATEWAY,
+    DRPC_GATEWAY,
+    MEVBLOCKER_GATEWAY,
+    ONFINALITY_GATEWAY,
+)
 """The complete set of endpoints this module will talk to. A whitelist, checked
-in ``__init__``; see the module docstring for why it is not a blacklist."""
+in ``__init__``; see the module docstring for why it is not a blacklist.
+
+Order is failover order: the two proven endpoints first, the two verified but
+un-soaked fallbacks after them."""
 
 DRPC_BLOCK_PAGE = 10_000
 """``eth.drpc.org`` free plan: *"ranges over 10000 blocks are not supported"*."""
 
+_FALLBACK_BLOCK_PAGE = 20_000
+"""Measured-safe starting window for the last-resort tier.
+
+Both fallbacks served a 20,000-block OR-filter window cleanly and failed above
+it — mevblocker with a 10,000-*result* cap, onfinality with a timeout. The
+adaptive window learner narrows further if a denser stretch needs it."""
+
 ENDPOINT_BLOCK_PAGE: dict[str, int | None] = {
     TENDERLY_GATEWAY: None,  # no block-range cap (a 50,000-RESULT cap still applies)
     DRPC_GATEWAY: DRPC_BLOCK_PAGE,
+    MEVBLOCKER_GATEWAY: _FALLBACK_BLOCK_PAGE,
+    ONFINALITY_GATEWAY: _FALLBACK_BLOCK_PAGE,
 }
 
 REASON_UNAVAILABLE = "logs endpoint unavailable"
@@ -207,6 +251,10 @@ _REQUEST_TIMEOUT = 20.0
 _INTER_CALL_DELAY = 0.05
 _MAX_SHRINKS_PER_WINDOW = 24
 _MIN_WINDOW_BLOCKS = 1
+_WINDOW_GROWTH_AFTER = 4
+"""Consecutive clean windows before the learned window size doubles again."""
+_MAX_LEARNED_WINDOW = 50_000
+"""Ceiling for the learned window on an endpoint with no documented block cap."""
 
 # HTTP statuses that mean "this endpoint is not going to work at all".
 _ENDPOINT_DEAD_CODES = {401, 402, 403, 451, 521, 522, 523, 524, 525, 526}
@@ -1191,19 +1239,81 @@ class LogEndpointError(RuntimeError):
 
 
 _SHRINKABLE = {"range_cap", "result_cap", "timeout"}
+"""Error kinds where **the same query over a smaller block window will work**.
 
-# "Try with this block range [0x185d029, 0x186c47d]." — tenderly names a
-# narrower range in the error's `data` field. Parsing it beats halving blindly.
+That is the entire admission test, and it is deliberately narrow. Everything
+else fails the endpoint over immediately:
+
+* ``rate_limit`` — a smaller window does not buy quota. Retrying harder is how
+  you get a keyless endpoint to start refusing you outright.
+* ``archive`` — the gate is on *depth*, not *width*. A narrower window at the
+  same depth is refused identically.
+* ``dead`` / ``rpc`` — unknown or terminal. Shrinking an error we do not
+  understand is how a client turns one failed request into twenty-four.
+
+Shrinking is bounded regardless: :data:`_MAX_SHRINKS_PER_WINDOW` per window and
+a floor of :data:`_MIN_WINDOW_BLOCKS`, so even a misclassification costs a
+bounded number of calls on one window before failover.
+"""
+
+_RESULT_CAP_MARKERS = (
+    # Every one of these was captured live from a Pool B endpoint (see
+    # tests/fixtures/fwa/rpc_errors.json). All arrive inside an HTTP 200.
+    "returned more than",        # geth/tenderly: "Query returned more than 50000 results"
+    "more than 50000 results",   # tenderly, belt and braces
+    "too many logs",             # drpc: "query returns too many logs, narrow your filter: 20000"
+    "exceeds max results",       # drpc: "query exceeds max results 20000, retry with the range A-B"
+    "narrow your filter",        # drpc, same family without a suggestion
+    "response size exceeded",    # the canonical form used by several other providers
+)
+"""Substrings that mean "too many results — narrow the block window".
+
+These are matched rather than the error *code* because the codes are worthless
+here: drpc returns ``-32602`` for its result cap, its block-range cap arrives as
+code ``35``, and tenderly uses ``-32602`` for a result cap too. The message is
+the only reliable discriminator, and each entry below was read off the wire
+rather than guessed."""
+
+_MIN_SUGGESTION_SHRINK = 0.9
+"""A provider's suggested retry range must remove at least 10% of the window.
+
+Tenderly's suggestion is **not trustworthy**: asked for
+``[0x185d029, 0x186d1ac]`` it suggests ``0x186c906``; asked for exactly that, it
+suggests ``0x186c905``; then ``…904``. It decrements by one block per round
+trip. Following it verbatim burns the whole shrink budget one block at a time
+and never converges — which is precisely how the live backfill was failing.
+Requiring a material shrink turns that pathological case into a halving while
+still using drpc's suggestions, which are honest and land in one step."""
+
+# Two live-observed shapes for "retry with a narrower range":
+#
+#   tenderly: "Try with this block range [0x185d029, 0x186c47d]."   bracketed hex
+#   drpc:     "retry with the range 25583616-25585541"              bare decimal
+#
+# The bare-decimal form must not match the bare result cap in
+# "narrow your filter: 20000" or "query exceeds max results 20000", so the
+# pattern requires TWO numbers joined by a dash and at least six digits each —
+# a block height, not a result count.
 _SUGGESTED_RANGE_RE = re.compile(
     r"\[\s*(0x[0-9a-fA-F]+|\d+)\s*,\s*(0x[0-9a-fA-F]+|\d+)\s*\]"
+    r"|(?<![\w.])(\d{6,})\s*-\s*(\d{6,})(?![\w.])"
 )
 
 
 def _parse_suggested_to(text: str) -> int | None:
+    """Upper bound of a provider-suggested retry range, or ``None``.
+
+    A suggestion is only ever a *hint*. :meth:`FWALogClient._scan_endpoint`
+    additionally requires it to shrink the window materially before using it —
+    see :data:`_MIN_SUGGESTION_SHRINK`, and the tenderly off-by-one it defends
+    against.
+    """
     match = _SUGGESTED_RANGE_RE.search(text or "")
     if not match:
         return None
-    raw = match.group(2)
+    raw = match.group(2) or match.group(4)
+    if not raw:
+        return None
     try:
         return int(raw, 16) if raw.lower().startswith("0x") else int(raw)
     except ValueError:
@@ -1226,17 +1336,36 @@ def _classify_rpc_error(error: Any) -> LogEndpointError:
     data = str(error.get("data", ""))
     blob = f"{message} {data}".lower()
 
-    if "archive request" in blob or "personal token" in blob:
+    # ORDER MATTERS, and every step below is here because a real endpoint
+    # violated the obvious ordering:
+    #
+    # 1. Rate limiting is matched on TEXT first, never on code alone. The
+    #    batching endpoint's 429 reads "Rate limit exceeded. To obtain higher
+    #    limits, please request a personal token ...", so an archive rule keyed
+    #    on "personal token" relabels a transient 429 as a permanent archive
+    #    gate — same shrink behaviour, completely wrong diagnosis.
+    # 2. Archive detection then requires the literal word "archive".
+    # 3. Result caps are matched BEFORE the code-based rate-limit check,
+    #    because one fallback returns its result cap as code -32005 — the same
+    #    code others use for rate limiting. Classifying by code first would
+    #    make that endpoint's perfectly narrowable error look unshrinkable.
+    if "rate limit" in blob or "too many requests" in blob:
+        return LogEndpointError("rate_limit", message or data)
+    if "archive" in blob:
         return LogEndpointError("archive", message or data)
     if "ranges over" in blob or ("block range" in blob and "not supported" in blob):
         return LogEndpointError("range_cap", message or data)
-    if "returned more than" in blob or "more than 50000 results" in blob:
+    if any(marker in blob for marker in _RESULT_CAP_MARKERS):
         return LogEndpointError(
-            "result_cap", message or data, suggested_to=_parse_suggested_to(data)
+            "result_cap",
+            message or data,
+            # drpc puts the suggestion in `message`, tenderly in `data`.
+            suggested_to=_parse_suggested_to(f"{data} {message}"),
         )
-    if "timeout" in blob:
+    # "timed out" and "timeout" are both live phrasings from different providers.
+    if "timeout" in blob or "timed out" in blob or code == 30:
         return LogEndpointError("timeout", message or data)
-    if code in (-32005, -32029) or "rate limit" in blob or "too many requests" in blob:
+    if code in (-32005, -32029):
         return LogEndpointError("rate_limit", message or data)
     if "api key" in blob or "unauthorized" in blob:
         return LogEndpointError("dead", message or data)
@@ -1269,6 +1398,10 @@ class FWALogClient:
         network.
     core_address:
         FWA core. ``CollectionWhitelistSet`` is emitted here (findings §13.1).
+    min_call_interval:
+        Minimum spacing between requests, in seconds. Keyless endpoints are a
+        shared resource and this is how the client stays a good citizen of them;
+        tests that issue a hundred scripted calls set it to ``0``.
     """
 
     def __init__(
@@ -1277,6 +1410,7 @@ class FWALogClient:
         *,
         http_client: httpx.AsyncClient | None = None,
         core_address: str = FWA_CORE_ADDRESS,
+        min_call_interval: float = _INTER_CALL_DELAY,
     ) -> None:
         chosen = tuple(endpoints) if endpoints else LOG_ENDPOINTS
         for url in chosen:
@@ -1302,7 +1436,16 @@ class FWALogClient:
         self._owns_client = http_client is None
         self._request_id = 0
         self._last_rpc_at = 0.0
+        self._min_call_interval = max(0.0, float(min_call_interval))
         self._scan_lock = asyncio.Lock()
+
+        # Learned block-window size per endpoint, and the run of clean windows
+        # at that size. Starts at the documented cap (``None`` == uncapped) and
+        # adapts to what the endpoint will actually serve for THIS filter, which
+        # depends on log density and so changes across the chain.
+        self._window: dict[str, int | None] = dict(ENDPOINT_BLOCK_PAGE)
+        self._window_streak: dict[str, int] = {}
+        self._window_ceiling: dict[str, int] = {}
 
         # Per-event store, keyed by log identity so overlapping pages collapse.
         self._store: dict[str, dict[tuple[int, int, str], dict]] = {
@@ -1376,9 +1519,10 @@ class FWALogClient:
 
     async def _post(self, url: str, payload: dict) -> Any:
         """One JSON-RPC round trip. Raises :class:`LogEndpointError` on failure."""
+        interval = self._min_call_interval
         elapsed = time.monotonic() - self._last_rpc_at
-        if self._last_rpc_at > 0 and elapsed < _INTER_CALL_DELAY:
-            await asyncio.sleep(_INTER_CALL_DELAY - elapsed)
+        if interval and self._last_rpc_at > 0 and elapsed < interval:
+            await asyncio.sleep(interval - elapsed)
         self._last_rpc_at = time.monotonic()
 
         last: LogEndpointError | None = None
@@ -1469,24 +1613,40 @@ class FWALogClient:
     ) -> list[dict]:
         """Scan one endpoint across ``[from_block, to_block]``.
 
-        The page size is the endpoint's *documented block cap* — uncapped on
-        tenderly, :data:`DRPC_BLOCK_PAGE` on drpc. On top of that, three error
-        classes shrink the current window and retry it: a block-range refusal, a
-        result-count cap (using the narrower range the error names, when it names
-        one), and a free-plan timeout. Everything else aborts this endpoint so
-        the caller can fail over.
+        The starting page size is the endpoint's *documented block cap* —
+        uncapped on tenderly, :data:`DRPC_BLOCK_PAGE` on drpc. Three error
+        classes then shrink the current window and retry it: a block-range
+        refusal, a result-count cap, and a free-plan timeout. Everything else
+        aborts this endpoint so the caller can fail over.
+
+        **The shrink budget is per window, not per scan.** It was briefly the
+        latter, and the arithmetic is unforgiving: a scan wide enough to need
+        shrinking in its first window arrives at the second window with the
+        budget already spent, and dies on a range it could have served. The
+        constant is named ``_MAX_SHRINKS_PER_WINDOW`` and now means it.
+
+        **A window size that worked is remembered.** Without that, every window
+        restarts at the full remaining range and re-discovers the cap from
+        scratch: 512 blocks against an 8-block cap cost 58 calls, because each
+        8-block chunk paid 7 calls to rediscover a limit the previous chunk had
+        just found. Carrying the learned size forward makes the same scan
+        roughly one call per chunk. The size grows back — doubling after
+        :data:`_WINDOW_GROWTH_AFTER` clean windows — so a dense stretch of
+        history cannot permanently pin the scanner to tiny windows once the
+        chain goes quiet again.
         """
-        page = ENDPOINT_BLOCK_PAGE.get(url)
         collected: list[dict] = []
         cursor = from_block
-        shrinks = 0
         while cursor <= to_block:
-            end = to_block if page is None else min(cursor + page - 1, to_block)
+            learned = self._window.get(url, ENDPOINT_BLOCK_PAGE.get(url))
+            end = to_block if learned is None else min(cursor + learned - 1, to_block)
+            shrinks = 0  # per WINDOW, as the constant's name promises
             while True:
                 try:
                     collected.extend(
                         await self._get_logs_window(url, topics, cursor, end)
                     )
+                    self._note_window_ok(url, end - cursor + 1)
                     break
                 except LogEndpointError as err:
                     if err.kind not in _SHRINKABLE:
@@ -1495,22 +1655,70 @@ class FWALogClient:
                     if span <= _MIN_WINDOW_BLOCKS or shrinks >= _MAX_SHRINKS_PER_WINDOW:
                         raise
                     shrinks += 1
+                    suggested = err.suggested_to
+                    # A suggestion is used only when it shrinks the window
+                    # materially. Tenderly's decrements by ONE block per round
+                    # trip, so trusting it verbatim never converges.
                     if (
-                        err.suggested_to is not None
-                        and cursor <= err.suggested_to < end
+                        suggested is not None
+                        and cursor <= suggested < end
+                        and (suggested - cursor + 1) <= span * _MIN_SUGGESTION_SHRINK
                     ):
-                        end = err.suggested_to
+                        end = suggested
                     else:
                         end = cursor + max(span // 2, 1) - 1
+                    self._note_window_shrunk(url, span, end - cursor + 1)
                     logger.debug(
-                        "%s: %s -> shrinking window to [%d..%d]",
+                        "%s: %s -> shrinking window to [%d..%d] (%d blocks)",
                         url,
                         err.kind,
                         cursor,
                         end,
+                        end - cursor + 1,
                     )
             cursor = end + 1
         return collected
+
+    def _note_window_shrunk(self, url: str, failed_span: int, span: int) -> None:
+        """Record that *failed_span* was refused and *span* is the new attempt.
+
+        ``_window_ceiling`` ratchets down to the smallest span ever refused on
+        this endpoint. That is what stops the growth path from re-probing a size
+        already known to fail — the difference between a 25% steady-state call
+        overhead and none.
+        """
+        previous = self._window_ceiling.get(url)
+        self._window_ceiling[url] = (
+            failed_span if previous is None else min(previous, failed_span)
+        )
+        self._window[url] = max(span, _MIN_WINDOW_BLOCKS)
+        self._window_streak[url] = 0
+
+    def _note_window_ok(self, url: str, span: int) -> None:
+        """Record a clean window and grow the learned size when it is safe.
+
+        Growth is lazy and never speculative past a known-bad size: it doubles
+        only after :data:`_WINDOW_GROWTH_AFTER` consecutive clean windows, and
+        only when the doubled size is still below the smallest span this
+        endpoint has ever refused. Log density varies enormously across the
+        chain, so a backfill that passed through one dense patch must be able to
+        open back up — but not by repeatedly re-asking a question it already
+        knows the answer to.
+        """
+        current = self._window.get(url, ENDPOINT_BLOCK_PAGE.get(url))
+        if current is None:
+            return  # never shrunk on this endpoint; the full range still works
+        streak = self._window_streak.get(url, 0) + 1
+        if streak < _WINDOW_GROWTH_AFTER:
+            self._window_streak[url] = streak
+            return
+        target = min(max(current, span) * 2, ENDPOINT_BLOCK_PAGE.get(url) or _MAX_LEARNED_WINDOW)
+        ceiling = self._window_ceiling.get(url)
+        if ceiling is not None and target >= ceiling:
+            self._window_streak[url] = 0
+            return  # that size is already known to fail; stay where we are
+        self._window[url] = target
+        self._window_streak[url] = 0
 
     async def get_logs(
         self, topics: list, from_block: int, to_block: int

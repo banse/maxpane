@@ -5,10 +5,13 @@
     "source": "live capture except where an entry's own _meta says otherwise",
     "findings_ref": "docs/fwa_technical_findings.md \u00a73, \u00a76.5, \u00a77, \u00a711",
     "purpose": "Every recorded failure mode the FWA data layer must survive offline. Each entry carries the verbatim body, not a paraphrase.",
-    "entry_count": 10,
+    "entry_count": 14,
     "live_captured": [
       "ankr_now_keyed",
       "drpc_block_range_cap",
+      "drpc_free_plan_timeout",
+      "drpc_result_cap_too_many_logs",
+      "drpc_result_cap_with_suggested_range",
       "eth_call_gasprice_without_gas_bound",
       "llamarpc_dead",
       "multicall3_invalid_hex_callData",
@@ -16,7 +19,8 @@
       "publicnode_archive_refusal",
       "publicnode_eth_getLogs_refusal",
       "publicnode_rate_limit_429",
-      "tenderly_result_count_cap"
+      "tenderly_result_count_cap",
+      "tenderly_suggested_range_off_by_one"
     ],
     "reconstructed": [],
     "endpoints_covered": [
@@ -28,7 +32,7 @@
       "https://rpc.ankr.com/eth"
     ],
     "head_block_at_capture": 25621159,
-    "warning": "Several of these errors arrive inside an HTTP 200 (tenderly result cap, ankr auth, multicall unmarshal). A client that branches on HTTP status alone will mis-handle them. Always check for a JSON-RPC 'error' member."
+    "warning": "Several of these errors arrive inside an HTTP 200 (tenderly result cap, ankr auth, multicall unmarshal). A client that branches on HTTP status alone will mis-handle them. Always check for a JSON-RPC 'error' member. Several providers return DIFFERENT messages for the same condition and reuse code -32602 across unrelated conditions, so classification must key on the message text, not the code. And a provider-suggested retry range may be wrong: tenderly's decrements by one block per call."
   },
   "errors": {
     "publicnode_eth_getLogs_refusal": {
@@ -457,6 +461,112 @@
       },
       "note": "1rpc.io refuses log queries with a rate-limit error. This is a REAL, live-captured 429 body from a keyless endpoint -- use it wherever a realistic 429 is needed.",
       "expected_client_behaviour": "Do not use. Dead, keyed, or rate-limited to uselessness."
+    },
+    "drpc_result_cap_too_many_logs": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://eth.drpc.org",
+        "captured_at": "2026-07-27T00:00:00Z",
+        "method": "eth_getLogs",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a73, \u00a711",
+        "requested_range": [
+          25604096,
+          25614095
+        ],
+        "window_blocks": 10000,
+        "filter": "the 14-topic0 OR-filter the FWA backfill sends"
+      },
+      "http_status": 200,
+      "raw_body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"query returns too many logs, narrow your filter: 20000\",\"code\":-32602}}",
+      "parsed": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "error": {
+          "message": "query returns too many logs, narrow your filter: 20000",
+          "code": -32602
+        }
+      },
+      "note": "drpc's RESULT cap, distinct from its 10,000-block RANGE cap. Arrives inside an HTTP 200 with code -32602 -- the same code tenderly uses for its own result cap, so the CODE is not a usable discriminator; the message is. The trailing '20000' is a result count, NOT a block number: a suggested-range parser must not read it as one. No retry range is offered, so the client must halve.",
+      "expected_client_behaviour": "Classify as result_cap (shrinkable) and halve the window. Classifying it as a generic rpc error fails the endpoint outright -- this was the live defect."
+    },
+    "drpc_result_cap_with_suggested_range": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://eth.drpc.org",
+        "captured_at": "2026-07-27T00:00:00Z",
+        "method": "eth_getLogs",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a73, \u00a711",
+        "requested_range": [
+          25583616,
+          25593615
+        ],
+        "window_blocks": 10000,
+        "suggested_range": [
+          25583616,
+          25585541
+        ]
+      },
+      "http_status": 200,
+      "raw_body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"query exceeds max results 20000, retry with the range 25583616-25585541\",\"code\":-32602}}",
+      "parsed": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "error": {
+          "message": "query exceeds max results 20000, retry with the range 25583616-25585541",
+          "code": -32602
+        }
+      },
+      "note": "The same result cap, other wording, and this one DOES name a retry range -- in DECIMAL, unbracketed, in `message` rather than `data`. Contrast tenderly, which brackets hex in `data`. Both forms must parse. drpc's suggestion is honest: the named range succeeds first try.",
+      "expected_client_behaviour": "Classify as result_cap and retry at the suggested upper bound; it converges in one step instead of ~3 halvings."
+    },
+    "drpc_free_plan_timeout": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://eth.drpc.org",
+        "captured_at": "2026-07-27T00:00:00Z",
+        "method": "eth_getLogs",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a73",
+        "requested_range": [
+          25595000,
+          25604999
+        ],
+        "window_blocks": 10000
+      },
+      "http_status": 200,
+      "raw_body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"Request timeout on the free plan, please upgrade to paid plan\",\"code\":30}}",
+      "parsed": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "error": {
+          "message": "Request timeout on the free plan, please upgrade to paid plan",
+          "code": 30
+        }
+      },
+      "note": "INTERMITTENT and load-dependent: the identical request succeeded on a later attempt, returning ~11 MB of logs. Code 30 is drpc-specific. Because it is load- rather than query-shaped, a smaller window genuinely does fix it.",
+      "expected_client_behaviour": "Classify as timeout (shrinkable) and retry a smaller window."
+    },
+    "tenderly_suggested_range_off_by_one": {
+      "_meta": {
+        "source": "live capture",
+        "source_url": "https://gateway.tenderly.co/public/mainnet",
+        "captured_at": "2026-07-27T00:00:00Z",
+        "method": "eth_getLogs",
+        "findings_ref": "docs/fwa_technical_findings.md \u00a73",
+        "probe": "asked for [0x185d029,0x186d1ac] -> suggested 0x186c906; asked for exactly that -> suggested 0x186c905; then 0x186c904; then 0x186c903"
+      },
+      "http_status": 200,
+      "raw_body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32602,\"message\":\"invalid params\",\"data\":\"Query returned more than 50000 results. Try with this block range [0x185d029, 0x186c905].\"}}",
+      "parsed": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "error": {
+          "code": -32602,
+          "message": "invalid params",
+          "data": "Query returned more than 50000 results. Try with this block range [0x185d029, 0x186c905]."
+        }
+      },
+      "note": "THE LIVELOCK. Tenderly's suggested range is not a range that works -- it is the previous request's upper bound MINUS ONE. Following it verbatim decrements one block per round trip and never converges, burning the entire shrink budget. Measured live over four consecutive round trips: 0x186c906 -> 0x186c905 -> 0x186c904 -> 0x186c903.",
+      "expected_client_behaviour": "Treat a suggested range as a HINT and use it only when it shrinks the window materially (>=10%). Otherwise halve. Never follow a suggestion verbatim."
     }
   }
 }

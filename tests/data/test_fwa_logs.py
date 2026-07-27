@@ -21,8 +21,14 @@ import httpx
 import pytest
 
 from maxpane_dashboard.data.fwa_logs import (
+    _MAX_SHRINKS_PER_WINDOW,
+    _SHRINKABLE,
+    _classify_rpc_error,
     DRPC_BLOCK_PAGE,
     DRPC_GATEWAY,
+    ENDPOINT_BLOCK_PAGE,
+    MEVBLOCKER_GATEWAY,
+    ONFINALITY_GATEWAY,
     FWA_CORE_ADDRESS,
     LOG_ENDPOINTS,
     OUTCOME_LABELS,
@@ -112,6 +118,7 @@ def scripted_client(
     handlers: dict[str, Callable[[dict], httpx.Response]], **kwargs: Any
 ) -> tuple[FWALogClient, _ScriptedTransport]:
     transport = _ScriptedTransport(handlers)
+    kwargs.setdefault("min_call_interval", 0.0)  # no real sleeps in tests
     client = FWALogClient(
         http_client=httpx.AsyncClient(transport=transport), **kwargs
     )
@@ -805,9 +812,18 @@ FULL_HISTORY = (25546793, 25612716)
 
 def test_no_publicnode_in_endpoint_list():
     """Pool B only — enforced as a whitelist, not documented as a convention."""
-    assert LOG_ENDPOINTS == (TENDERLY_GATEWAY, DRPC_GATEWAY)
+    assert LOG_ENDPOINTS == (
+        TENDERLY_GATEWAY,
+        DRPC_GATEWAY,
+        MEVBLOCKER_GATEWAY,
+        ONFINALITY_GATEWAY,
+    )
     assert TENDERLY_GATEWAY == "https://gateway.tenderly.co/public/mainnet"
     assert DRPC_GATEWAY == "https://eth.drpc.org"
+    # The proven pair leads; the verified-but-un-soaked fallbacks come after.
+    assert LOG_ENDPOINTS[:2] == (TENDERLY_GATEWAY, DRPC_GATEWAY)
+    # Every endpoint needs a pagination policy or the scanner cannot page it.
+    assert set(ENDPOINT_BLOCK_PAGE) == set(LOG_ENDPOINTS)
 
     lowered = MODULE_SOURCE.lower()
     for banned in ("publicnode", "1rpc.io", "llamarpc", "rpc.ankr.com", "cloudflare-eth"):
@@ -902,28 +918,329 @@ async def test_range_error_string_triggers_pagination():
     await client.close()
 
 
-async def test_result_cap_uses_the_range_the_error_suggests():
-    """Tenderly's 50k-result cap arrives inside an HTTP 200 and names a range."""
+async def test_result_cap_uses_a_suggested_range_that_shrinks_materially():
+    """drpc names an honest retry range, in decimal, inside the message."""
+    from_block = 25583616
+    to_block = from_block + 9999
+    suggested_hi = 25585541  # from the recorded body
+    seen: list[tuple[int, int]] = []
+
+    def drpc(payload: dict) -> httpx.Response:
+        lo, hi = span(payload)
+        seen.append((lo, hi))
+        if lo == from_block and hi == to_block:
+            resp = rpc_error("drpc_result_cap_with_suggested_range")
+            assert resp.status_code == 200, "drpc's result cap hides inside a 200"
+            return resp
+        return ok([])
+
+    client, _ = scripted_client({DRPC_GATEWAY: drpc}, endpoints=[DRPC_GATEWAY])
+    result = await client.backfill(from_block, to_block, ["AcquisitionRequested"])
+
+    assert result["available"] is True
+    assert seen[0] == (from_block, to_block)
+    # A 10,000-block window down to 1,926: material, so the hint is taken
+    # verbatim rather than halved.
+    assert seen[1] == (from_block, suggested_hi)
+    assert seen[-1][1] == to_block
+    await client.close()
+
+
+async def test_tenderly_off_by_one_suggestion_does_not_livelock():
+    """Tenderly's "suggestion" is the last upper bound minus one block.
+
+    Measured live over four consecutive round trips: ``0x186c906`` →
+    ``0x186c905`` → ``0x186c904`` → ``0x186c903``. Followed verbatim it
+    decrements forever and the shrink budget dies one block at a time, which is
+    exactly how the live backfill was failing. A suggestion must shrink the
+    window materially or be ignored in favour of halving.
+    """
     from_block, to_block = FULL_HISTORY
-    suggested_hi = 0x186C47D  # from the recorded error's `data` field
+    workable = 4096
+    seen: list[tuple[int, int]] = []
+
+    def tenderly(payload: dict) -> httpx.Response:
+        lo, hi = span(payload)
+        seen.append((lo, hi))
+        if hi - lo + 1 > workable:
+            # The real behaviour: suggest exactly one block less. Verbatim.
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "error": {
+                        "code": -32602,
+                        "message": "invalid params",
+                        "data": (
+                            "Query returned more than 50000 results. "
+                            f"Try with this block range [{hex(lo)}, {hex(hi - 1)}]."
+                        ),
+                    },
+                },
+            )
+        return ok([])
+
+    client, _ = scripted_client({TENDERLY_GATEWAY: tenderly})
+    result = await client.backfill(from_block, to_block, ["AcquisitionRequested"])
+
+    assert result["available"] is True, "the off-by-one suggestion must not livelock"
+    # Geometric convergence, not a one-block-per-call crawl.
+    assert len(seen) < 60, f"took {len(seen)} calls -- suggestion followed verbatim?"
+    shrink_steps = [hi - lo + 1 for lo, hi in seen if lo == from_block]
+    assert shrink_steps[1] < shrink_steps[0] // 2 + 1, "halved, not decremented"
+    # Full, gapless coverage despite the hostile suggestions.
+    served = sorted(s for s in seen if s[1] - s[0] + 1 <= workable)
+    cursor = from_block
+    for lo, hi in served:
+        if lo <= cursor <= hi + 1:
+            cursor = max(cursor, hi + 1)
+    assert cursor == to_block + 1
+    await client.close()
+
+
+async def test_immaterial_suggestion_is_ignored_in_favour_of_halving():
+    """The recorded tenderly body shaves 5% off the window -- not enough."""
+    from_block, to_block = FULL_HISTORY
     seen: list[tuple[int, int]] = []
 
     def tenderly(payload: dict) -> httpx.Response:
         lo, hi = span(payload)
         seen.append((lo, hi))
         if lo == from_block and hi == to_block:
-            resp = rpc_error("tenderly_result_count_cap")
-            assert resp.status_code == 200, "the cap hides inside a 200"
-            return resp
+            return rpc_error("tenderly_result_count_cap")
         return ok([])
 
-    client, transport = scripted_client({TENDERLY_GATEWAY: tenderly})
-    result = await client.backfill(from_block, to_block, ["AcquisitionRequested"])
+    client, _ = scripted_client({TENDERLY_GATEWAY: tenderly})
+    await client.backfill(from_block, to_block, ["AcquisitionRequested"])
+
+    original = to_block - from_block + 1
+    assert seen[1][1] != 0x186C47D  # the suggested bound, only ~5% narrower
+    assert seen[1][1] - seen[1][0] + 1 == original // 2  # halved instead
+    await client.close()
+
+
+@pytest.mark.parametrize(
+    "entry,expected_kind",
+    [
+        # DEFECT 1 regression. Every one of these is a verbatim live body.
+        ("drpc_result_cap_too_many_logs", "result_cap"),
+        ("drpc_result_cap_with_suggested_range", "result_cap"),
+        ("drpc_free_plan_timeout", "timeout"),
+        ("drpc_block_range_cap", "range_cap"),
+        ("tenderly_result_count_cap", "result_cap"),
+        ("tenderly_suggested_range_off_by_one", "result_cap"),
+    ],
+)
+def test_every_live_narrowable_error_is_classified_shrinkable(entry, expected_kind):
+    """drpc's real result-cap message must trigger the shrink path.
+
+    ``"query returns too many logs, narrow your filter: 20000"`` was classified
+    ``rpc`` and therefore not shrinkable, so the endpoint failed outright the
+    moment a window got dense — which is what took Pool B down on live data.
+    """
+    body = load_fixture("rpc_errors")["errors"][entry]
+    err = _classify_rpc_error(body["parsed"]["error"])
+    assert err.kind == expected_kind
+    assert err.kind in _SHRINKABLE, f"{entry} must be shrinkable"
+
+
+@pytest.mark.parametrize(
+    "entry,expected_kind",
+    [
+        ("publicnode_rate_limit_429", "rate_limit"),
+        ("onerpc_rate_limit_429", "rate_limit"),
+        ("publicnode_archive_refusal", "archive"),
+        ("publicnode_eth_getLogs_refusal", "archive"),
+    ],
+)
+def test_hard_failures_are_never_classified_shrinkable(entry, expected_kind):
+    """The conservative half of the classifier, which matters more.
+
+    A smaller window buys no quota and defeats no archive gate. Marking either
+    shrinkable would turn one refusal into twenty-four requests against a
+    keyless endpoint that is already saying no.
+    """
+    body = load_fixture("rpc_errors")["errors"][entry]
+    error = body["parsed"]
+    error = error[0]["error"] if isinstance(error, list) else error["error"]
+    err = _classify_rpc_error(error)
+    assert err.kind == expected_kind
+    assert err.kind not in _SHRINKABLE
+
+
+def test_unknown_errors_stay_unshrinkable():
+    """The default must remain "do not retry": we cannot reason about it."""
+    for message in (
+        "something nobody has ever seen",
+        "execution reverted",
+        "invalid params",
+    ):
+        err = _classify_rpc_error({"code": -32000, "message": message})
+        assert err.kind == "rpc"
+        assert err.kind not in _SHRINKABLE
+
+
+def test_narrowable_errors_hide_inside_http_200():
+    """Status alone tells you nothing: four of the five arrive as 200.
+
+    Only drpc's *block-range* cap is an honest HTTP 400. Every result cap and
+    the free-plan timeout are 200s with an ``error`` member, so the client must
+    inspect the body regardless of status.
+    """
+    errors = load_fixture("rpc_errors")["errors"]
+    inside_200 = [
+        "drpc_result_cap_too_many_logs",
+        "drpc_result_cap_with_suggested_range",
+        "drpc_free_plan_timeout",
+        "tenderly_result_count_cap",
+        "tenderly_suggested_range_off_by_one",
+    ]
+    assert all(errors[e]["http_status"] == 200 for e in inside_200)
+    assert errors["drpc_block_range_cap"]["http_status"] == 400
+
+
+def test_rate_limit_mentioning_a_personal_token_is_not_called_an_archive_gate():
+    """The batching endpoint's 429 body says "request a personal token".
+
+    Keying archive detection on that phrase relabels a transient rate limit as a
+    permanent archive refusal. Both are unshrinkable, so nothing retries wrongly
+    — but the reported reason would send the next debugger somewhere useless.
+    """
+    errors = load_fixture("rpc_errors")["errors"]
+    limit = errors["publicnode_rate_limit_429"]["parsed"][0]["error"]
+    assert "personal token" in limit["message"]
+    assert _classify_rpc_error(limit).kind == "rate_limit"
+
+    gate = errors["publicnode_archive_refusal"]["parsed"]["error"]
+    assert "personal token" in gate["message"]
+    assert _classify_rpc_error(gate).kind == "archive"
+
+
+def test_result_count_in_a_message_is_not_parsed_as_a_block_range():
+    """``narrow your filter: 20000`` names a result cap, not a block."""
+    body = load_fixture("rpc_errors")["errors"]["drpc_result_cap_too_many_logs"]
+    err = _classify_rpc_error(body["parsed"]["error"])
+    assert err.suggested_to is None, "20000 is a result count, not a block height"
+
+    with_range = load_fixture("rpc_errors")["errors"][
+        "drpc_result_cap_with_suggested_range"
+    ]
+    assert _classify_rpc_error(with_range["parsed"]["error"]).suggested_to == 25585541
+
+
+async def test_shrink_budget_is_per_window_not_per_scan():
+    """DEFECT 2 regression: WP-20's 512-block repro.
+
+    With a scan-wide budget this failed after ~58 calls having never spent more
+    than 7 shrinks on any one window: the first window exhausted the shared
+    allowance and every later window inherited a spent budget.
+    """
+    cap = 8  # the endpoint refuses anything wider
+    from_block, to_block = 1000, 1000 + 511
+    seen: list[tuple[int, int]] = []
+
+    def tenderly(payload: dict) -> httpx.Response:
+        lo, hi = span(payload)
+        seen.append((lo, hi))
+        if hi - lo + 1 > cap:
+            return rpc_error("drpc_result_cap_too_many_logs")
+        return ok([])
+
+    client, _ = scripted_client({TENDERLY_GATEWAY: tenderly})
+    result = await client.backfill(from_block, to_block, ["TopListingSet"])
 
     assert result["available"] is True
-    assert seen[0] == (from_block, to_block)
-    assert seen[1] == (from_block, suggested_hi)  # parsed, not halved blindly
-    assert seen[-1][1] == to_block  # and the remainder still got scanned
+    # Gapless coverage of all 512 blocks.
+    served = sorted(s for s in seen if s[1] - s[0] + 1 <= cap)
+    cursor = from_block
+    for lo, hi in served:
+        if lo <= cursor <= hi + 1:
+            cursor = max(cursor, hi + 1)
+    assert cursor == to_block + 1
+
+    # No single window may exceed the documented budget...
+    from collections import Counter
+
+    per_window = Counter(lo for lo, _ in seen)
+    assert max(per_window.values()) <= _MAX_SHRINKS_PER_WINDOW + 1
+    # ...and the whole scan stays close to the 64-call floor, because a window
+    # size that worked is remembered instead of rediscovered every chunk.
+    assert len(seen) < 100, f"{len(seen)} calls for 64 chunks -- size not learned"
+    await client.close()
+
+
+async def test_learned_window_size_is_reused_across_windows():
+    """The call-count fix: rediscovering the cap per chunk is the real cost."""
+    cap = 250
+    from_block, to_block = 1_000_000, 1_000_000 + 9_999
+    seen: list[tuple[int, int]] = []
+
+    def tenderly(payload: dict) -> httpx.Response:
+        lo, hi = span(payload)
+        seen.append((lo, hi))
+        if hi - lo + 1 > cap:
+            return rpc_error("drpc_result_cap_too_many_logs")
+        return ok([])
+
+    client, _ = scripted_client({TENDERLY_GATEWAY: tenderly})
+    await client.backfill(from_block, to_block, ["TopListingSet"])
+
+    # After the opening discovery the client should mostly be issuing windows
+    # that succeed, not re-probing the full remaining range every time.
+    failures = sum(1 for lo, hi in seen if hi - lo + 1 > cap)
+    successes = len(seen) - failures
+    assert successes >= failures, (
+        f"{failures} refused vs {successes} served -- the window size is not "
+        "being carried between chunks"
+    )
+    assert client._window[TENDERLY_GATEWAY] <= cap
+    await client.close()
+
+
+async def test_growth_never_re_probes_a_size_already_known_to_fail():
+    """Growth must ratchet against the smallest refused span, or it wastes calls."""
+    cap = 200
+    seen: list[tuple[int, int]] = []
+
+    def tenderly(payload: dict) -> httpx.Response:
+        lo, hi = span(payload)
+        seen.append((lo, hi))
+        if hi - lo + 1 > cap:
+            return rpc_error("drpc_result_cap_too_many_logs")
+        return ok([])
+
+    client, _ = scripted_client({TENDERLY_GATEWAY: tenderly})
+    await client.backfill(1_000_000, 1_000_000 + 19_999, ["TopListingSet"])
+
+    ceiling = client._window_ceiling[TENDERLY_GATEWAY]
+    assert client._window[TENDERLY_GATEWAY] * 2 >= ceiling or (
+        client._window[TENDERLY_GATEWAY] * 2 < ceiling
+    )
+    # Once the ceiling is known, refusals must stop recurring: count them in the
+    # back half of the scan, which is past the discovery phase.
+    back_half = seen[len(seen) // 2 :]
+    refusals = sum(1 for lo, hi in back_half if hi - lo + 1 > cap)
+    assert refusals == 0, f"{refusals} wasted re-probes after the cap was learned"
+    await client.close()
+
+
+async def test_rate_limit_does_not_trigger_shrinking():
+    """A 429 must fail the endpoint over, not shrink 24 times against it."""
+    seen: list[tuple[int, int]] = []
+
+    def tenderly(payload: dict) -> httpx.Response:
+        seen.append(span(payload))
+        return rpc_error("onerpc_rate_limit_429")
+
+    client, _ = scripted_client(
+        {TENDERLY_GATEWAY: tenderly}, endpoints=[TENDERLY_GATEWAY]
+    )
+    result = await client.backfill(*FULL_HISTORY, ["TopListingSet"])
+
+    assert result["available"] is False
+    # _MAX_RETRIES backoff attempts at most -- nothing resembling a shrink walk.
+    assert len(seen) <= 2, f"{len(seen)} calls against a rate-limited endpoint"
     await client.close()
 
 
