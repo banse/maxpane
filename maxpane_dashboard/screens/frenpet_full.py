@@ -12,12 +12,12 @@ from textual.widgets import ContentSwitcher, Static
 
 from maxpane_dashboard.analytics.frenpet_signals import (
     calculate_battle_efficiency,
-    calculate_rank,
     calculate_tod_status,
     determine_growth_phase,
     generate_pet_recommendation,
 )
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
+from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.frenpet import (
     ActionQueue,
     AggregateStats,
@@ -54,7 +54,7 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 logger = logging.getLogger(__name__)
 
 
-class FrenPetFullScreen(Screen):
+class FrenPetFullScreen(RefreshGuard, Screen):
     """FrenPet game dashboard with 4 views."""
 
     BINDINGS = [
@@ -66,6 +66,9 @@ class FrenPetFullScreen(Screen):
         Binding("right", "next_pet", "Next Pet", show=False),
         Binding("r", "refresh", "Refresh", show=False),
     ]
+
+    #: Worker name for the guarded refresh (see RefreshGuard).
+    REFRESH_WORKER_NAME = "frenpet-refresh"
 
     def __init__(
         self,
@@ -313,14 +316,6 @@ class FrenPetFullScreen(Screen):
             self._refresh_timer.stop()
             self._refresh_timer = None
 
-    def _do_initial_refresh(self) -> None:
-        """Trigger an immediate refresh when the screen appears."""
-        self.run_worker(self._do_refresh(), exclusive=True, name="frenpet-refresh")
-
-    def _schedule_refresh(self) -> None:
-        """Schedule a refresh via a worker so it runs async."""
-        self.run_worker(self._do_refresh(), exclusive=True, name="frenpet-refresh")
-
     async def _do_refresh(self) -> None:
         """Fetch data and update all widgets across all 3 views."""
         try:
@@ -371,10 +366,6 @@ class FrenPetFullScreen(Screen):
             )
         except Exception as exc:
             logger.warning("Failed to update StatusBar: %s", exc)
-
-    def action_refresh(self) -> None:
-        """Immediate refresh triggered by the 'r' keybinding."""
-        self.run_worker(self._do_refresh(), exclusive=True, name="frenpet-refresh")
 
     def action_show_general(self) -> None:
         self.query_one(ContentSwitcher).current = "general"
@@ -603,7 +594,10 @@ class FrenPetFullScreen(Screen):
         recent_attacks = data.get("recent_attacks", [])
         market_conditions = data.get("market_conditions", {})
         threat_levels = data.get("threat_levels", {})
-        all_scores = data.get("all_scores", [])
+        # Ranks are pre-computed by the manager against the whole
+        # population; recomputing them here from a raw score list would
+        # duplicate that work (and the key it used to read never existed).
+        pet_ranks = data.get("pet_ranks", {})
         population_pets = data.get("population_pets", [])
 
         header = self.query_one("#pet-header", Static)
@@ -682,11 +676,11 @@ class FrenPetFullScreen(Screen):
         threat_info = threat_levels.get(pet.id, {
             "threat_count": 0, "threat_level": "low",
         })
-        rank_info = {}
-        if all_scores:
-            rank_info = calculate_rank(float(pet.score), all_scores)
-        else:
-            rank_info = {"rank": 0, "total": 0, "distance_to_next": 0.0}
+        rank_info = pet_ranks.get(pet.id) or {
+            "rank": 0,
+            "total": 0,
+            "distance_to_next": 0.0,
+        }
 
         battle_efficiency = eval_data.get(
             "battle_efficiency",

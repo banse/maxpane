@@ -852,6 +852,85 @@ async def test_collection_flags_next_transform_id_zero_when_call_fails(monkeypat
     await client.close()
 
 
+# ---------------------------------------------------------------------------
+# MEDI-27 / MEDI-28: transport failure is not "everything reverted"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_collection_flags_raise_when_the_multicall_cannot_be_made(monkeypatch):
+    """An outage must not read as a collection with 0 tokens in it.
+
+    While ``_multicall`` swallowed this, ``fetch_collection_flags`` answered
+    ``total_supply=0`` and the manager's cached-flags fallback was unreachable
+    dead code: the dashboard showed 0 live tokens and ``forge_momentum_signal``
+    turned the resulting drop into a green "CONSOLIDATING" that no market event
+    had produced.
+    """
+    client = TalismansClient()
+
+    async def fake_rpc(method, params, endpoints=None):
+        raise RuntimeError("every endpoint exhausted")
+
+    monkeypatch.setattr(client, "_rpc", fake_rpc)
+    with pytest.raises(RuntimeError):
+        await client.fetch_collection_flags()
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_token_states_raise_when_a_chunk_cannot_be_fetched(monkeypatch):
+    """MEDI-27: a truncated sweep is not a shrunken collection.
+
+    ``TalismansManager`` rebuilds its whole registry from this dict, so a
+    partial return would delete every token in the chunks that failed.
+    """
+    client = TalismansClient()
+
+    async def fake_rpc(method, params, endpoints=None):
+        raise RuntimeError("multicall endpoint down")
+
+    monkeypatch.setattr(client, "_rpc", fake_rpc)
+    with pytest.raises(RuntimeError):
+        await client.fetch_token_states([1, 2, 3])
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_a_multicall_reply_with_the_wrong_arity_is_a_transport_failure(
+    monkeypatch,
+):
+    """A short ``Result[]`` cannot be mapped back onto the calls we made.
+
+    The old ``_u(idx)`` guard turned every unmatched index into 0, so a
+    truncated reply silently zeroed the tail of the batch.
+    """
+    client = TalismansClient()
+
+    async def fake_rpc(method, params, endpoints=None):
+        return _aggregate3_return([(True, "0x" + _encode_uint(1354))])
+
+    monkeypatch.setattr(client, "_rpc", fake_rpc)
+    with pytest.raises(RuntimeError, match="well-formed aggregate3"):
+        await client.fetch_collection_flags()
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_a_healthy_multicall_full_of_reverts_still_returns_zeros(monkeypatch):
+    """The other half of the contract: a revert is an answer, not an outage."""
+    client = TalismansClient()
+
+    async def fake_rpc(method, params, endpoints=None):
+        return _aggregate3_return([(False, "0x")] * 5)
+
+    monkeypatch.setattr(client, "_rpc", fake_rpc)
+    flags = await client.fetch_collection_flags()
+    assert flags["total_supply"] == 0
+    assert flags["bond_cleave_enabled"] is False
+    await client.close()
+
+
 def test_default_log_page_size_is_sane():
     assert _LOG_RANGE_PER_CALL == 50_000
 

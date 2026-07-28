@@ -20,7 +20,14 @@ def compute_avg_win_rate(pets: list) -> float:
 
 
 def compute_total_velocity(pet_velocities: dict[int, float]) -> float:
-    """Sum of per-pet velocities (pts/hr).
+    """Sum of per-pet velocities, in points per DAY.
+
+    The per-pet values come from
+    ``analytics.frenpet_signals.calculate_velocity``, whose linear
+    regression is expressed in points/day (it divides the timestamp
+    delta by 86400).  Summing them keeps that unit, so every consumer
+    must label the result ``/day`` -- labelling it ``/hr`` overstates
+    the figure 24x.
 
     Returns 0.0 if the dict is empty.
     """

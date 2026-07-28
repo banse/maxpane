@@ -18,9 +18,12 @@ missing hours read as missing), and a long series is bucket-averaged down
 to the bar width so the whole window is represented rather than the last
 22 hours only.  The candle count and day span are always printed.
 
-``_coerce_points`` is copied verbatim from
-``talismans/tal_sparkline.py``; ``_build_sparkline`` is the same function
-with an added ``pad`` switch for the degradation case described above.
+``_coerce_points`` and ``_build_sparkline`` are imported from
+``maxpane_dashboard/widgets/sparkline_common.py`` -- they used to be
+verbatim copies of the ``talismans/tal_sparkline.py`` versions (MEDI-36).
+The ``pad`` switch this widget needs for the degradation case described
+above lives in the shared ``build_sparkline`` and defaults to the house
+behaviour, so the other dashboards are unaffected.
 Anything shorter than two points renders ``waiting for data...``, and
 ``spark_available is False`` renders an explicit unavailable state
 (PRD §9).
@@ -34,78 +37,17 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
-_SPARK_CHARS = "▁▂▃▄▅▆▇█"
-_SPARK_WIDTH = 22
+from maxpane_dashboard.widgets.sparkline_common import (
+    SPARK_WIDTH as _SPARK_WIDTH,
+    build_sparkline as _build_sparkline,
+    coerce_points as _coerce_points,
+)
+
 _WAITING = "[dim]waiting for data...[/]"
 _UNAVAILABLE = "[yellow]price feed unavailable[/]"
 _DASH = "--"
 _LABEL = "$FWA / USD "
 _PAD = " " * len(_LABEL)
-
-
-def _coerce_points(points) -> list[tuple[float, float]]:
-    """Normalize input to a list of ``(ts, value)`` floats.
-
-    Tolerates ``None`` entries, malformed shapes, and ``None`` values
-    by skipping them.  Returns ``[]`` for any non-iterable input.
-    """
-    if not points:
-        return []
-    result: list[tuple[float, float]] = []
-    try:
-        iterator = list(points)
-    except TypeError:
-        return []
-    for pt in iterator:
-        if pt is None:
-            continue
-        try:
-            ts, val = pt[0], pt[1]
-        except (IndexError, TypeError, KeyError):
-            continue
-        if val is None:
-            continue
-        try:
-            result.append((float(ts), float(val)))
-        except (TypeError, ValueError):
-            continue
-    return result
-
-
-def _build_sparkline(
-    values: list[float],
-    width: int = _SPARK_WIDTH,
-    pad: bool = True,
-) -> str:
-    """Render a list of floats as a ``width``-wide block sparkline.
-
-    ``pad=True`` is the house behaviour (left-pad with the lowest block).
-    ``pad=False`` left-pads with spaces instead, for series that are
-    genuinely shorter than the window: a hour with no candle must not be
-    drawn as a low price.
-    """
-    if not values:
-        return _SPARK_CHARS[0] * width if pad else " " * width
-    sample = values[-width:] if len(values) > width else values
-
-    lo = min(sample)
-    hi = max(sample)
-    span = hi - lo
-
-    chars: list[str] = []
-    for v in sample:
-        if span == 0:
-            idx = 0
-        else:
-            idx = int((v - lo) / span * (len(_SPARK_CHARS) - 1))
-            idx = max(0, min(len(_SPARK_CHARS) - 1, idx))
-        chars.append(_SPARK_CHARS[idx])
-
-    # Short series stay right-aligned (newest candle at the right edge).
-    filler = _SPARK_CHARS[0] if pad else " "
-    while len(chars) < width:
-        chars.insert(0, filler)
-    return "".join(chars)
 
 
 def _downsample(values: list[float], width: int = _SPARK_WIDTH) -> list[float]:

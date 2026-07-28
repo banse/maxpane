@@ -11,7 +11,9 @@ some serializers degrade tuples to lists).  When a series has fewer than
 the user sees the dashboard is alive but the series isn't ready yet.
 
 Copied from ``ttt_sparkline.py`` and adapted to the Talismans data
-contract.
+contract.  The sparkline primitives are now imported from
+``maxpane_dashboard/widgets/sparkline_common.py`` rather than copied
+along with it (MEDI-36).
 """
 
 from __future__ import annotations
@@ -20,63 +22,12 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
-_SPARK_CHARS = "▁▂▃▄▅▆▇█"
-_SPARK_WIDTH = 22
+from maxpane_dashboard.widgets.sparkline_common import (
+    build_sparkline as _build_sparkline,
+    coerce_points as _coerce_points,
+)
+
 _WAITING = "[dim]waiting for data...[/]"
-
-
-def _coerce_points(points) -> list[tuple[float, float]]:
-    """Normalize input to a list of ``(ts, value)`` floats.
-
-    Tolerates ``None`` entries, malformed shapes, and ``None`` values
-    by skipping them.  Returns ``[]`` for any non-iterable input.
-    """
-    if not points:
-        return []
-    result: list[tuple[float, float]] = []
-    try:
-        iterator = list(points)
-    except TypeError:
-        return []
-    for pt in iterator:
-        if pt is None:
-            continue
-        try:
-            ts, val = pt[0], pt[1]
-        except (IndexError, TypeError, KeyError):
-            continue
-        if val is None:
-            continue
-        try:
-            result.append((float(ts), float(val)))
-        except (TypeError, ValueError):
-            continue
-    return result
-
-
-def _build_sparkline(values: list[float], width: int = _SPARK_WIDTH) -> str:
-    """Render a list of floats as a ``width``-wide block sparkline."""
-    if not values:
-        return _SPARK_CHARS[0] * width
-    sample = values[-width:] if len(values) > width else values
-
-    lo = min(sample)
-    hi = max(sample)
-    span = hi - lo
-
-    chars: list[str] = []
-    for v in sample:
-        if span == 0:
-            idx = 0
-        else:
-            idx = int((v - lo) / span * (len(_SPARK_CHARS) - 1))
-            idx = max(0, min(len(_SPARK_CHARS) - 1, idx))
-        chars.append(_SPARK_CHARS[idx])
-
-    # Left-pad with the lowest block so short series stay right-aligned.
-    while len(chars) < width:
-        chars.insert(0, _SPARK_CHARS[0])
-    return "".join(chars)
 
 
 def _fmt_count(value) -> str:

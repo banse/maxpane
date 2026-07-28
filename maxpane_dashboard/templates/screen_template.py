@@ -11,6 +11,7 @@ from textual.screen import Screen
 from textual.widgets import Static
 
 from maxpane_dashboard.data.manager import DataManager
+from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.hero_metrics import HeroMetrics
 from maxpane_dashboard.widgets.leaderboard import Leaderboard
 from maxpane_dashboard.widgets.cookie_chart import CookieChart
@@ -22,12 +23,15 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 logger = logging.getLogger(__name__)
 
 
-class BakeryScreen(Screen):
+class BakeryScreen(RefreshGuard, Screen):
     """RugPull Bakery game dashboard."""
 
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
     ]
+
+    #: Worker name for the guarded refresh (see RefreshGuard).
+    REFRESH_WORKER_NAME = "bakery-refresh"
 
     def __init__(self, data_manager: DataManager, poll_interval: int, **kwargs):
         super().__init__(**kwargs)
@@ -84,14 +88,6 @@ class BakeryScreen(Screen):
         if self._refresh_timer:
             self._refresh_timer.stop()
             self._refresh_timer = None
-
-    def _do_initial_refresh(self) -> None:
-        """Trigger an immediate refresh when the screen appears."""
-        self.run_worker(self._do_refresh(), exclusive=True, name="bakery-refresh")
-
-    def _schedule_refresh(self) -> None:
-        """Schedule a refresh via a worker so it runs async."""
-        self.run_worker(self._do_refresh(), exclusive=True, name="bakery-refresh")
 
     async def _do_refresh(self) -> None:
         """Fetch data and update all widgets."""
@@ -189,7 +185,3 @@ class BakeryScreen(Screen):
             )
         except Exception as exc:
             logger.warning("Failed to update StatusBar: %s", exc)
-
-    def action_refresh(self) -> None:
-        """Immediate refresh triggered by the 'r' keybinding."""
-        self.run_worker(self._do_refresh(), exclusive=True, name="bakery-refresh")

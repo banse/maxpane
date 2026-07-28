@@ -4,6 +4,15 @@ Pattern: Vertical container with a title Static and per-metric lines.
 Each line shows: label, sparkline using block chars, current value,
 and a trend arrow.
 
+**Copy the widget class, import the helpers.**  The sparkline primitives
+live in ``maxpane_dashboard/widgets/sparkline_common.py`` and this template
+imports them.  Keep the import when you copy this file -- do not paste the
+helper bodies into your new module.  Three dashboards (ttt, talismans, fwa)
+each carried a byte-identical copy of ``_coerce_points`` while three older
+ones (ocm, cattown, dota) carried a pre-hardening version that crashed on a
+``None`` sample, and a fix applied to any one of them reached none of the
+others (MEDI-36).  One import is the whole remedy.
+
 Reference implementations:
   - maxpane_dashboard/widgets/frenpet/overview/fp_score_trends.py
   - maxpane_dashboard/widgets/cattown/ct_sparklines.py
@@ -15,63 +24,12 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
-_SPARK_CHARS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
-_SPARK_WIDTH = 22
-
-
-def _build_sparkline(points: list[tuple[float, float]], width: int = _SPARK_WIDTH) -> str:
-    """Convert time-series points ``(timestamp, value)`` into a sparkline string.
-
-    The Y axis is scaled relative to the series min/max range so
-    short-range movements are still visible.
-    """
-    if len(points) < 2:
-        return _SPARK_CHARS[0] * width
-
-    values = [p[1] for p in points]
-    if len(values) > width:
-        values = values[-width:]
-
-    lo = min(values)
-    hi = max(values)
-    span = hi - lo
-
-    chars: list[str] = []
-    for v in values:
-        if span == 0:
-            idx = 0
-        else:
-            idx = int((v - lo) / span * (len(_SPARK_CHARS) - 1))
-            idx = max(0, min(len(_SPARK_CHARS) - 1, idx))
-        chars.append(_SPARK_CHARS[idx])
-
-    # Pad to width if fewer samples
-    while len(chars) < width:
-        chars.insert(0, _SPARK_CHARS[0])
-
-    return "".join(chars)
-
-
-def _trend_arrow(points: list[tuple[float, float]]) -> str:
-    """Return a colored trend arrow based on the last two points."""
-    if len(points) >= 2 and points[-1][1] > points[-2][1]:
-        return "[green]\u25b2[/]"
-    elif len(points) >= 2 and points[-1][1] < points[-2][1]:
-        return "[red]\u25bc[/]"
-    return "[dim]\u25cf[/]"
-
-
-def _fmt_value(value: float, unit: str = "") -> str:
-    """Format a numeric value with K/M/B suffix."""
-    if value >= 1_000_000_000:
-        return f"{value / 1_000_000_000:.1f}B{unit}"
-    elif value >= 1_000_000:
-        return f"{value / 1_000_000:.1f}M{unit}"
-    elif value >= 1_000:
-        return f"{value / 1_000:.1f}K{unit}"
-    elif value >= 1:
-        return f"{value:.1f}{unit}"
-    return f"{value:.0f}{unit}"
+from maxpane_dashboard.widgets.sparkline_common import (
+    build_sparkline_from_points as _build_sparkline,
+    coerce_points as _coerce_points,
+    fmt_compact as _fmt_value,
+    trend_arrow as _trend_arrow,
+)
 
 
 class GameSparklines(Vertical):
@@ -112,6 +70,10 @@ class GameSparklines(Vertical):
 
         Each series is a list of ``(timestamp, value)`` tuples.
         Adapt the series names and labels to your game.
+
+        Every series is coerced before use, so a cache that came back with
+        ``None`` entries or ragged rows renders an empty line instead of
+        raising inside Textual's message pump.
         """
         series = [
             ("Metric 1", series_0, "green", ""),
@@ -124,12 +86,13 @@ class GameSparklines(Vertical):
         for i, (label, points, color, unit) in enumerate(series):
             widget = self.query_one(f"#{line_ids[i]}", Static)
 
-            if not points or len(points) < 1:
+            points = _coerce_points(points)
+            if not points:
                 widget.update("")
                 continue
 
             sparkline = _build_sparkline(points)
-            current = points[-1][1] if points else 0.0
+            current = points[-1][1]
             current_str = _fmt_value(current, unit)
             arrow = _trend_arrow(points)
 

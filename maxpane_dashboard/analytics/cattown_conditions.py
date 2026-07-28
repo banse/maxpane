@@ -7,7 +7,7 @@ available based on in-game conditions.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 # ---------------------------------------------------------------------------
 # Time / Season helpers
@@ -205,21 +205,19 @@ def get_competition_timing() -> dict:
     now = datetime.now(timezone.utc)
     weekday = now.weekday()  # 0=Monday ... 6=Sunday
 
-    # Calculate start of this week's Saturday 00:00 UTC
-    days_until_saturday = (5 - weekday) % 7
-    saturday_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    if weekday <= 5:
-        saturday_start = saturday_start.replace(
-            day=now.day + days_until_saturday
-        )
-    else:
-        # It's Sunday -- Saturday was yesterday
-        saturday_start = saturday_start.replace(day=now.day - 1)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # End of Sunday 23:59:59
-    sunday_end = saturday_start.replace(
-        day=saturday_start.day + 1, hour=23, minute=59, second=59
-    )
+    # Saturday 00:00 UTC of the competition weekend we care about. Use
+    # timedelta, never datetime.replace(day=...): day arithmetic overflows the
+    # month (e.g. 29 + 5) and raises ValueError several days every month.
+    if weekday == 6:
+        # It's Sunday -- the weekend started yesterday.
+        saturday_start = midnight - timedelta(days=1)
+    else:
+        saturday_start = midnight + timedelta(days=5 - weekday)
+
+    # End of Sunday 23:59:59 == Saturday 00:00 + 2 days - 1 second.
+    sunday_end = saturday_start + timedelta(days=2, seconds=-1)
 
     is_active = weekday in (5, 6)
 

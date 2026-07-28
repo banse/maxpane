@@ -7,6 +7,7 @@ import re
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.frenpet.perf.velocity_format import format_velocity
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
@@ -122,7 +123,7 @@ class FPPerfPets(Vertical):
             wr_str = f"{win_rate:.1f}%"
             atk_def_str = f"{atk}/{defense}"
             vel_color = _velocity_color(velocity)
-            vel_str = f"[{vel_color}]+{velocity:,.0f}/hr[/]"
+            vel_str = f"[{vel_color}]{format_velocity(velocity, compact=False)}[/]"
 
             # Star marker + bold for top pet
             if idx == 1:

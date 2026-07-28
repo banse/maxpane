@@ -919,17 +919,34 @@ class TalismansClient:
         Each input tuple is ``(target_address, callData_hex)``. All calls run
         with ``allowFailure=True`` so one bad target doesn't kill the batch.
         Returns a list of ``(success, returnData)`` in the same order.
+
+        Raises ``TalismansRpcError`` / ``RuntimeError`` when the *transport*
+        failed -- every endpoint exhausted, or a reply that does not decode
+        into one ``Result`` per call. A per-call revert inside a healthy
+        multicall is still reported in-band as ``(False, "0x")``.
+
+        Keeping those two apart is what makes the callers' error handling real
+        (MEDI-27, MEDI-28). This used to catch everything and return
+        ``[(False, "0x")] * len(calls)``, so an RPC blip was indistinguishable
+        from "every call reverted": ``fetch_collection_flags`` answered
+        ``total_supply=0`` and ``fetch_token_states`` answered ``{}``, the
+        manager's ``except`` branches were unreachable dead code, and the
+        dashboard reported an empty collection -- persisting the zeros into the
+        hourly sparkline, where ``forge_momentum_signal`` read them as a
+        bullish green "CONSOLIDATING" that a network error had manufactured.
         """
         if not calls:
             return []
         payload_calls = [(t, cd, True) for (t, cd) in calls]
         data = _encode_aggregate3(payload_calls)
-        try:
-            raw = await self._eth_call(_MULTICALL3, data)
-        except Exception as exc:
-            logger.warning("multicall(%d calls) failed: %s", len(calls), exc)
-            return [(False, "0x") for _ in calls]
-        return _decode_aggregate3_result(raw)
+        raw = await self._eth_call(_MULTICALL3, data)
+        results = _decode_aggregate3_result(raw)
+        if len(results) != len(calls):
+            raise RuntimeError(
+                f"multicall({len(calls)} calls) returned {len(results)} "
+                f"results; the reply is not a well-formed aggregate3 Result[]"
+            )
+        return results
 
     # ------------------------------------------------------------------
     # Public API
@@ -947,8 +964,12 @@ class TalismansClient:
         """Read collection-level flags in one multicall.
 
         Returns ``{total_supply, genesis_minted, next_transform_id,
-        bond_cleave_enabled, cut_merge_enabled}``. Missing / failed reads are
-        reported as 0/False.
+        bond_cleave_enabled, cut_merge_enabled}``.
+
+        Raises if the multicall itself could not be made (MEDI-28), so the
+        manager falls back to its cached counts instead of reporting a
+        collection that has ceased to exist. An individual read that reverts on
+        a healthy node is still reported as 0/False.
 
         ``next_transform_id`` is the contract's id allocator for post-genesis
         tokens and is what makes enumeration complete on a fresh install — see
@@ -1031,7 +1052,14 @@ class TalismansClient:
         Calls run with ``allowFailure=True`` in chunks of ``_TOKEN_STATE_CHUNK``
         ids. Returns ``{id: {core_count, material_id, form, seed, owner}}`` for
         LIVE ids only -- ids are skipped when the ``tokenData`` call failed,
-        ``core_count == 0``, or ``ownerOf`` reverted.
+        ``core_count == 0``, or ``ownerOf`` reverted. Those three are real
+        answers about a token: burned, consumed by a bond/merge, or never
+        minted.
+
+        Raises if any chunk's multicall could not be made (MEDI-27). A
+        truncated sweep must not be mistaken for a shrunken collection: the
+        caller rebuilds its whole registry from this dict, so a partial return
+        would delete every token in the chunks that failed.
         """
         if not token_ids:
             return {}

@@ -36,6 +36,11 @@ _WEI = 10**18
 # Cookie scale: raw on-chain values are display_cookies * COOKIE_SCALE
 _COOKIE_SCALE = 10_000
 
+# Samples kept per bakery.  At the default 30s poll interval this is the
+# 60-minute sparkline window, and it doubles as the maximum age of a
+# persisted point worth restoring.
+_MAX_HISTORY = 120
+
 
 class DataManager:
     """Orchestrates data fetching, caching, and analytics computation.
@@ -48,13 +53,20 @@ class DataManager:
 
     def __init__(self, poll_interval: int = 30) -> None:
         self.client = GameDataClient()
-        self.cache = DataCache(max_history=120)
+        self.cache = DataCache(max_history=_MAX_HISTORY)
         self._poll_interval = poll_interval
         self._error_count = 0
         self._last_snapshot: GameSnapshot | None = None
 
-        # Attempt to load persisted history on construction
-        self.cache.load_from_file(str(_CACHE_FILE))
+        # Attempt to load persisted history on construction.  Only points
+        # inside the sparkline window are restored: production rates are a
+        # regression over the deque, so points from before a long idle gap
+        # (or from a previous season, which resets cookie counts under the
+        # same bakery name) would drag the rate toward a long-run average
+        # or a clamped 0 for the first hour after every restart.
+        self.cache.load_from_file(
+            str(_CACHE_FILE), max_age=_MAX_HISTORY * poll_interval
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -132,6 +144,7 @@ class DataManager:
             member_count=member_count,
             buy_in_eth=buy_in_eth,
             win_probability=top3_probability,
+            season_active=season_active,
         )
 
         # Top-3 cookie values for gap analysis

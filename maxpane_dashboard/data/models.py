@@ -298,16 +298,29 @@ class ActivityEvent(BaseModel):
     The ``type`` field discriminates between event kinds:
     - ``"simple"``  -- join/leave events (boost fields are null)
     - ``"rug"``     -- attack events (boost fields populated)
+
+    ``launcher``, ``title`` and ``description`` are nullable in the live
+    API even though they are populated for the ordinary player-triggered
+    events.  Random events (``isRandomEvent: true`` -- "Rush Order" and
+    friends) are fired by the game itself and carry ``launcher: null``.
+    Typing ``launcher`` as a required ``str`` made pydantic reject those
+    events, and because ``client.get_activity_feed`` builds its result
+    with a list comprehension, one such event discarded the *entire*
+    feed for that bakery -- which ``get_activity_feed_global`` then
+    dropped silently, leaving the ActivityFeed widget short by every
+    event of every bakery that had a random event (measured: 80 of 100
+    events returned).
     """
 
     model_config = ConfigDict(frozen=True)
 
     type: str
     """Event type discriminator: 'simple' or 'rug'."""
-    title: str
-    description: str
-    launcher: str
-    """Wallet address that triggered the event."""
+    title: str | None = None
+    description: str | None = None
+    launcher: str | None = None
+    """Wallet address that triggered the event, or ``None`` for
+    game-generated random events."""
     timestamp: str
     """Unix epoch seconds as a string."""
     boost_type_name: str | None
@@ -330,9 +343,9 @@ class ActivityEvent(BaseModel):
     def from_api(cls, data: dict[str, Any]) -> ActivityEvent:
         return cls(
             type=data["type"],
-            title=data["title"],
-            description=data["description"],
-            launcher=data["launcher"],
+            title=data.get("title"),
+            description=data.get("description"),
+            launcher=data.get("launcher"),
             timestamp=data["timestamp"],
             boost_type_name=data.get("boostTypeName"),
             boost_multiplier_bps=data.get("boostMultiplierBps"),

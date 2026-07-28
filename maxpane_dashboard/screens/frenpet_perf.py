@@ -21,6 +21,7 @@ from maxpane_dashboard.analytics.frenpet_perf_signals import (
     generate_perf_recommendation,
 )
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
+from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.frenpet.perf import (
     FPPerfActivity,
     FPPerfHero,
@@ -41,12 +42,15 @@ def _short_addr(address: str) -> str:
     return address
 
 
-class FrenPetPerfScreen(Screen):
+class FrenPetPerfScreen(RefreshGuard, Screen):
     """FrenPet performance dashboard: pet comparison, velocity, win rates."""
 
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
     ]
+
+    #: Worker name for the guarded refresh (see RefreshGuard).
+    REFRESH_WORKER_NAME = "fpp-refresh"
 
     def __init__(self, data_manager: FrenPetManager, poll_interval: int, **kwargs):
         super().__init__(**kwargs)
@@ -91,12 +95,6 @@ class FrenPetPerfScreen(Screen):
         if self._refresh_timer:
             self._refresh_timer.stop()
             self._refresh_timer = None
-
-    def _do_initial_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="fpp-refresh")
-
-    def _schedule_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="fpp-refresh")
 
     async def _do_refresh(self) -> None:
         try:
@@ -185,16 +183,19 @@ class FrenPetPerfScreen(Screen):
                                 total += hist[i][1]
                         score_history.append((ts, total))
 
-            # Velocity history: derive deltas from score history
+            # Velocity history: derive deltas from score history.
+            # Expressed in points per DAY so the sparkline matches the
+            # regression-based velocities shown elsewhere on this screen
+            # (and on the wallet/pet views) instead of being 24x smaller.
             velocity_history: list[tuple[float, float]] = []
             if len(score_history) >= 2:
                 for i in range(1, len(score_history)):
                     ts = score_history[i][0]
                     prev_ts = score_history[i - 1][0]
                     delta_score = score_history[i][1] - score_history[i - 1][1]
-                    delta_time_hr = (ts - prev_ts) / 3600.0
-                    if delta_time_hr > 0:
-                        velocity_history.append((ts, delta_score / delta_time_hr))
+                    delta_time_days = (ts - prev_ts) / 86400.0
+                    if delta_time_days > 0:
+                        velocity_history.append((ts, delta_score / delta_time_days))
 
             # Win rate history: single point (no historical W/L data)
             win_rate_history: list[tuple[float, float]] = []
@@ -287,6 +288,3 @@ class FrenPetPerfScreen(Screen):
             )
         except Exception as exc:
             logger.debug("Failed to update StatusBar: %s", exc)
-
-    def action_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="fpp-refresh")

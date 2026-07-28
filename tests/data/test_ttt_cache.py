@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import time
+from typing import Any
 
 import pytest
 
@@ -384,7 +385,7 @@ def test_save_load_roundtrip_preserves_every_field(tmp_path):
     src.save_to_file(path)
 
     dst = TTTCache()
-    dst.load_from_file(path)
+    dst.load_from_file(path, now=NOW)
 
     assert dst.tokens == src.tokens
     assert dst.fees_by_token == src.fees_by_token
@@ -417,7 +418,7 @@ def test_reloading_does_not_re_apply_events_across_a_restart(tmp_path):
     src.save_to_file(path)
 
     dst = TTTCache()
-    dst.load_from_file(path)
+    dst.load_from_file(path, now=NOW)
     deposit(dst, holder_share_wei=WEI)  # same log, re-scanned after restart
     dst.recompute_rolling_counters(NOW)
     assert dst.eth_to_holders_24h_wei == WEI
@@ -460,7 +461,7 @@ def test_save_to_an_unwritable_path_is_logged_not_raised(tmp_path):
 
 def test_load_missing_file_is_a_silent_no_op(tmp_path):
     cache = TTTCache()
-    cache.load_from_file(str(tmp_path / "nope.json"))
+    cache.load_from_file(str(tmp_path / "nope.json"), now=NOW)
     assert cache.tokens == {} and cache.last_seen_block == {}
 
 
@@ -473,7 +474,7 @@ def test_load_garbage_file_does_not_raise_and_leaves_the_cache_empty(
     path = tmp_path / "ttt_cache.json"
     path.write_text(content)
     cache = TTTCache()
-    cache.load_from_file(str(path))
+    cache.load_from_file(str(path), now=NOW)
     assert cache.tokens == {}
     assert cache.eth_to_holders_24h_wei == 0
 
@@ -486,7 +487,7 @@ def test_load_a_truncated_file_written_mid_save(tmp_path):
     blob = path.read_text()
     path.write_text(blob[: len(blob) // 2])
     cache = TTTCache()
-    cache.load_from_file(str(path))
+    cache.load_from_file(str(path), now=NOW)
     assert cache.tokens == {}
 
 
@@ -503,7 +504,7 @@ def test_load_keeps_the_good_rows_of_a_partially_bad_payload(tmp_path):
     path.write_text(json.dumps(payload))
 
     cache = TTTCache()
-    cache.load_from_file(str(path))
+    cache.load_from_file(str(path), now=NOW)
     assert TOKEN_A.lower() in cache.tokens
     assert "0xdeadbeef" not in cache.tokens
     assert all(hasattr(e, "event_type") for e in cache.activity_log)
@@ -524,10 +525,108 @@ def test_load_survives_wrong_types_in_scalar_fields(tmp_path):
         )
     )
     cache = TTTCache()
-    cache.load_from_file(str(path))
+    cache.load_from_file(str(path), now=NOW)
     assert cache.launches_24h == 0
     assert cache.eth_to_holders_24h_wei == 0
     assert cache.mark_event_seen("ok") is False   # the one valid key survived
+
+
+# ---------------------------------------------------------------------------
+# MEDI-14: the hourly loaders used to do a bare float(pt[1])
+# ---------------------------------------------------------------------------
+
+
+def _hourly_payload(**series: Any) -> dict:
+    return {"schema_version": _CACHE_SCHEMA_VERSION, **series}
+
+
+def _write(tmp_path, payload: dict) -> str:
+    path = tmp_path / "ttt_cache.json"
+    path.write_text(json.dumps(payload))
+    return str(path)
+
+
+@pytest.mark.parametrize(
+    "series", ["burns_hourly", "floor_hourly", "volume_hourly"]
+)
+def test_a_null_in_any_hourly_series_is_dropped_not_raised(tmp_path, series):
+    """One ``null`` used to abort MaxPane startup for *every* dashboard.
+
+    Managers load their cache in ``__init__`` and ``MaxPaneApp.__init__``
+    constructs all of them, so ``float(None)`` here took down the whole TUI —
+    for a user who had merely opened a different game.
+    """
+    hour = _hour_bucket(NOW)
+    path = _write(tmp_path, _hourly_payload(**{
+        series: [[hour, None], [hour - 3600, 5], [None, 7]]
+    }))
+    cache = TTTCache()
+    cache.load_from_file(path, now=NOW)     # must not raise
+    assert [ts for ts, _v in getattr(cache, series)] == [hour - 3600]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        ["not", "a", "point"],          # wrong arity
+        [float("nan"), 1.0],            # NaN timestamp
+        [1.8e9, float("inf")],          # infinite value
+        [0, 5.0],                       # non-positive timestamp
+        [1.8e9, -5.0],                  # negative count/price/volume
+        [1.8e9, True],                  # a bool is not a 1.0
+        "a string, not a point",
+    ],
+)
+def test_malformed_hourly_points_are_dropped(tmp_path, bad):
+    hour = _hour_bucket(NOW)
+    path = _write(tmp_path, _hourly_payload(volume_hourly=[bad, [hour, 42.0]]))
+    cache = TTTCache()
+    cache.load_from_file(path, now=NOW)
+    assert list(cache.volume_hourly) == [(hour, 42.0)]
+
+
+def test_a_future_dated_point_is_dropped_against_the_clock_we_pass(tmp_path):
+    """The loader judges "future" against its ``now`` argument, not the wall.
+
+    The whole file is a synthetic January-2027 chain (``NOW``). If
+    ``load_from_file`` reached for ``time.time()`` itself, every fixture point
+    in this module would read as future-dated and silently vanish — and in
+    production the same hidden dependency makes a cache load differently
+    depending on when you run it.
+    """
+    hour = _hour_bucket(NOW)
+    path = _write(tmp_path, _hourly_payload(
+        floor_hourly=[[hour, 0.05], [NOW + 7 * 86400, 0.09]]
+    ))
+
+    cache = TTTCache()
+    cache.load_from_file(path, now=NOW)
+    assert list(cache.floor_hourly) == [(hour, 0.05)]
+
+    # Rewind the clock behind the file and even the good point is in the future.
+    rewound = TTTCache()
+    rewound.load_from_file(path, now=NOW - 30 * 86400)
+    assert list(rewound.floor_hourly) == []
+
+
+def test_burn_counts_survive_the_round_trip_as_integers(tmp_path):
+    """burns_hourly is a count of NFTs; coercion must not float-ify it."""
+    hour = _hour_bucket(NOW)
+    path = _write(tmp_path, _hourly_payload(burns_hourly=[[hour, 1234]]))
+    cache = TTTCache()
+    cache.load_from_file(path, now=NOW)
+    assert list(cache.burns_hourly) == [(hour, 1234)]
+    assert isinstance(cache.burns_hourly[0][1], int)
+
+
+def test_load_without_a_clock_falls_back_to_the_wall(tmp_path):
+    """The ``now`` argument is optional; production passes one, callers needn't."""
+    real_now = time.time()
+    hour = _hour_bucket(real_now)
+    path = _write(tmp_path, _hourly_payload(volume_hourly=[[hour, 3.0]]))
+    cache = TTTCache()
+    cache.load_from_file(path)
+    assert list(cache.volume_hourly) == [(hour, 3.0)]
 
 
 # ===========================================================================
@@ -580,7 +679,7 @@ def test_legacy_cache_has_its_inflated_accumulators_discarded(tmp_path):
     path = tmp_path / "ttt_cache.json"
     path.write_text(json.dumps(_legacy_payload()))
     cache = TTTCache()
-    cache.load_from_file(str(path))
+    cache.load_from_file(str(path), now=NOW)
 
     # Everything that accumulated is gone rather than silently carried over.
     assert cache.fees_by_token == {}
@@ -595,7 +694,7 @@ def test_legacy_cache_keeps_the_state_that_never_accumulated(tmp_path):
     path = tmp_path / "ttt_cache.json"
     path.write_text(json.dumps(_legacy_payload()))
     cache = TTTCache()
-    cache.load_from_file(str(path))
+    cache.load_from_file(str(path), now=NOW)
 
     assert cache.tokens[TOKEN_A.lower()].symbol == "AAA"
     assert cache.tokens[TOKEN_A.lower()].reservoir_wei == 3 * WEI
@@ -610,7 +709,7 @@ def test_a_file_with_no_version_word_is_treated_as_legacy(tmp_path):
     path = tmp_path / "ttt_cache.json"
     path.write_text(json.dumps(payload))
     cache = TTTCache()
-    cache.load_from_file(str(path))
+    cache.load_from_file(str(path), now=NOW)
     assert cache.eth_to_holders_24h_wei == 0
 
 
@@ -621,7 +720,7 @@ def test_unparseable_version_words_fall_back_to_legacy_handling(tmp_path, versio
     path = tmp_path / "ttt_cache.json"
     path.write_text(json.dumps(payload))
     cache = TTTCache()
-    cache.load_from_file(str(path))
+    cache.load_from_file(str(path), now=NOW)
     assert cache.fees_by_token == {}
     assert cache.tokens                      # registry still kept
 
@@ -632,7 +731,7 @@ def test_a_current_version_file_is_loaded_untouched(tmp_path):
     path = tmp_path / "ttt_cache.json"
     path.write_text(json.dumps(payload))
     cache = TTTCache()
-    cache.load_from_file(str(path))
+    cache.load_from_file(str(path), now=NOW)
     assert cache.eth_to_holders_24h_wei == 120 * WEI
     assert cache.last_seen_block == {"Deposited": 23_000_100, "Launched": 23_000_100}
 
@@ -641,11 +740,11 @@ def test_migration_then_save_upgrades_the_file_on_disk(tmp_path):
     path = tmp_path / "ttt_cache.json"
     path.write_text(json.dumps(_legacy_payload()))
     cache = TTTCache()
-    cache.load_from_file(str(path))
+    cache.load_from_file(str(path), now=NOW)
     cache.save_to_file(str(path))
 
     reloaded = TTTCache()
-    reloaded.load_from_file(str(path))
+    reloaded.load_from_file(str(path), now=NOW)
     assert json.loads(path.read_text())["schema_version"] == _CACHE_SCHEMA_VERSION
     # Second load is a no-op migration: the fees stay empty, not re-dropped.
     assert reloaded.tokens[TOKEN_A.lower()].symbol == "AAA"
@@ -655,7 +754,7 @@ def test_migration_logs_a_warning_naming_the_file(tmp_path, caplog):
     path = tmp_path / "ttt_cache.json"
     path.write_text(json.dumps(_legacy_payload()))
     with caplog.at_level("WARNING"):
-        TTTCache().load_from_file(str(path))
+        TTTCache().load_from_file(str(path), now=NOW)
     messages = [r.getMessage() for r in caplog.records]
     assert any("schema v1" in m and str(path) in m for m in messages)
 
@@ -665,7 +764,7 @@ def test_a_rebuilt_cache_reports_the_true_number_after_migration(tmp_path):
     path = tmp_path / "ttt_cache.json"
     path.write_text(json.dumps(_legacy_payload()))
     cache = TTTCache()
-    cache.load_from_file(str(path))
+    cache.load_from_file(str(path), now=NOW)
     deposit(cache, holder_share_wei=WEI)   # what the rescan actually finds
     deposit(cache, holder_share_wei=WEI)   # ...re-delivered by the next poll
     cache.recompute_rolling_counters(NOW)

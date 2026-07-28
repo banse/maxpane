@@ -38,6 +38,11 @@ logger = logging.getLogger(__name__)
 _CACHE_DIR = Path.home() / ".maxpane"
 _CACHE_FILE = _CACHE_DIR / "base_cache.json"
 
+# How many poll intervals old the previous volume sample may be and still
+# be a meaningful comparison for the volume trend.  Three tolerates a
+# skipped cycle or two; it does not tolerate a point from last month.
+_VOLUME_TREND_MAX_AGE_INTERVALS = 3
+
 
 class BaseManager:
     """Orchestrates Base chain data fetching, caching, and analytics.
@@ -97,11 +102,14 @@ class BaseManager:
             ``price_histories``.
 
         Overview (only when ``remote_only=True``):
-            ``eth_price``, ``eth_change_24h``, ``gas_price``,
-            ``total_volume``, ``top_gainer_name``, ``top_gainer_pct``,
-            ``gainers``, ``losers``, ``buy_sell_signal``, ``volume_signal``,
+            ``top_gainer_name``, ``top_gainer_pct``, ``gainers``,
+            ``losers``, ``buy_sell_signal``, ``volume_signal``,
             ``whale_signal``, ``recommendation``, ``whale_trades``,
-            ``volume_history``, ``eth_price_history``, ``trade_count_history``.
+            ``volume_history``, ``eth_price_history``,
+            ``trade_count_history``; plus ``eth_price``,
+            ``eth_change_24h``, ``gas_price`` and ``total_volume``, each
+            **omitted** when its upstream read failed (see
+            :meth:`_compute_overview`).
 
         Meta:
             ``error_count``, ``last_updated_seconds_ago``, ``poll_interval``.
@@ -207,6 +215,15 @@ class BaseManager:
         Fetches ETH price and gas price, computes aggregate metrics from
         trending tokens, records time-series points, and runs overview
         signal computation.
+
+        A reading that failed is absent, never zero.  ``get_eth_price``
+        and ``get_base_gas_price`` return ``None`` on failure, and an
+        empty ``tokens`` list means the trending fetch failed rather than
+        that Base traded nothing -- in every such case the corresponding
+        key is omitted from the returned dict and no point is appended to
+        the persisted time-series.  Consumers already read these with
+        ``data.get(key, placeholder)`` and render the placeholder, which
+        is the honest display for "we could not read this".
         """
         import asyncio as _asyncio
 
@@ -217,9 +234,19 @@ class BaseManager:
         )
         eth_price, eth_change_24h = eth_result
 
-        # Aggregate metrics from trending tokens
-        total_volume = sum(t.volume_24h for t in tokens)
-        total_trades = sum(t.buys_24h + t.sells_24h for t in tokens)
+        # Aggregate metrics from trending tokens.  ``sum([])`` is 0.0, which
+        # is indistinguishable from a real zero, so an empty token list is
+        # carried as None instead.
+        if tokens:
+            total_volume: float | None = sum(t.volume_24h for t in tokens)
+            total_trades: int | None = sum(t.buys_24h + t.sells_24h for t in tokens)
+        else:
+            logger.warning(
+                "Base overview: trending fetch returned no tokens; "
+                "recording no volume/trade point this cycle"
+            )
+            total_volume = None
+            total_trades = None
 
         # Top gainer
         tokens_with_change = [
@@ -250,9 +277,11 @@ class BaseManager:
             if (t.price_change_24h or 0.0) < 0
         ][:10]
 
-        # Volume trend from cache (compare to previous point)
-        prev_volume_history = self.cache.get_volume_history()
-        prev_volume = prev_volume_history[-1][1] if prev_volume_history else 0.0
+        # Volume trend from cache (compare to previous point).  The history
+        # is restored from disk on construction, so without an age check the
+        # first cycle after a restart compares today's volume against a point
+        # that can be weeks old (41-day gaps observed in the real cache).
+        prev_volume = self._recent_prev_volume(fetched_at)
 
         # Record overview time-series point
         self.cache.record_overview_point(
@@ -287,29 +316,35 @@ class BaseManager:
             bs = compute_buy_sell_ratio(tokens)
             buy_sell_signal = bs.get("label", "Neutral")
 
-            vt = compute_volume_trend(total_volume, prev_volume)
-            volume_signal = vt.get("label", "Flat")
+            # A trend needs two real readings.  Without a current volume or
+            # a recent previous one there is no trend to report -- and
+            # compute_volume_trend(current, 0.0) answers "Rising", which is
+            # exactly the false signal this guard exists to stop.
+            if total_volume is None or prev_volume is None:
+                volume_signal = None
+            else:
+                vt = compute_volume_trend(total_volume, prev_volume)
+                volume_signal = vt.get("label", "Flat")
 
             # Whale activity: count tokens with >$100K individual volume
             whale_count = sum(1 for t in tokens if t.volume_24h >= 100_000)
             wa = compute_whale_activity(whale_count)
             whale_signal = wa.get("label", "Low")
 
-            recommendation = generate_recommendation(
-                buy_sell_signal, volume_signal, whale_signal,
-            )
+            if volume_signal is None:
+                recommendation = "Volume data unavailable -- signals incomplete"
+            else:
+                recommendation = generate_recommendation(
+                    buy_sell_signal, volume_signal, whale_signal,
+                )
         except Exception as exc:
             logger.warning("Overview signal computation failed: %s", exc)
             buy_sell_signal = "Neutral"
-            volume_signal = "Flat"
+            volume_signal = None
             whale_signal = "Low"
             recommendation = "Waiting for data..."
 
-        return {
-            "eth_price": eth_price,
-            "eth_change_24h": eth_change_24h,
-            "gas_price": gas_price,
-            "total_volume": total_volume,
+        overview: dict[str, Any] = {
             "top_gainer_name": top_gainer_name,
             "top_gainer_pct": top_gainer_pct,
             "gainers": gainers,
@@ -323,6 +358,45 @@ class BaseManager:
             "eth_price_history": self.cache.get_eth_price_history(),
             "trade_count_history": self.cache.get_trade_count_history(),
         }
+
+        # Failed reads are omitted rather than zero-filled.  The Base
+        # terminal reads these with ``data.get(key, "...")`` and the hero
+        # widget renders ``None`` as "...", so an absent key degrades to a
+        # visible placeholder instead of a fake "$ETH 0.00 / Gas 0.0".
+        if eth_price is not None:
+            overview["eth_price"] = eth_price
+        if eth_change_24h is not None:
+            overview["eth_change_24h"] = eth_change_24h
+        if gas_price is not None:
+            overview["gas_price"] = gas_price
+        if total_volume is not None:
+            overview["total_volume"] = total_volume
+
+        return overview
+
+    def _recent_prev_volume(self, now: float) -> float | None:
+        """Last recorded total volume, if it is recent enough to compare to.
+
+        Returns ``None`` when the newest persisted point is older than
+        :data:`_VOLUME_TREND_MAX_AGE_INTERVALS` poll intervals.  A trend
+        against a point from a previous session says nothing about the
+        current one, and the review found gaps of ~41 days in the real
+        ``~/.maxpane/base_cache.json``.
+        """
+        history = self.cache.get_volume_history()
+        if not history:
+            return None
+        ts, value = history[-1]
+        max_age = self._poll_interval * _VOLUME_TREND_MAX_AGE_INTERVALS
+        if now - ts > max_age:
+            logger.info(
+                "Base overview: newest persisted volume point is %.0fs old "
+                "(> %.0fs); skipping volume trend this cycle",
+                now - ts,
+                max_age,
+            )
+            return None
+        return value
 
     # ------------------------------------------------------------------
     # Token detail (on-demand, not part of poll cycle)

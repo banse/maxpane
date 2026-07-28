@@ -115,18 +115,29 @@ class BaseTokenCache:
     def record_overview_point(
         self,
         timestamp: float,
-        total_volume: float,
-        eth_price: float,
-        trade_count: int,
+        total_volume: float | None,
+        eth_price: float | None,
+        trade_count: int | None,
     ) -> None:
-        """Append a single overview data point to all three time-series.
+        """Append a single overview data point to the three time-series.
 
         Called once per poll cycle by the manager when running in overview
         mode.
+
+        Each series is recorded independently and ``None`` means "no
+        reading this cycle" -- the point is skipped, not zero-filled.
+        These deques are persisted to ``~/.maxpane/base_cache.json``, so a
+        sentinel written here outlives the outage that produced it: it
+        crushes the ETH sparkline's scale, and ``compute_volume_trend``
+        reads a zero previous volume as "Rising" on the next successful
+        cycle regardless of reality.
         """
-        self.volume_history.append((timestamp, total_volume))
-        self.eth_price_history.append((timestamp, eth_price))
-        self.trade_count_history.append((timestamp, float(trade_count)))
+        if total_volume is not None:
+            self.volume_history.append((timestamp, float(total_volume)))
+        if eth_price is not None:
+            self.eth_price_history.append((timestamp, float(eth_price)))
+        if trade_count is not None:
+            self.trade_count_history.append((timestamp, float(trade_count)))
 
     def get_volume_history(self) -> list[TimeSeriesPoint]:
         """Return accumulated total-volume time-series."""

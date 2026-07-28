@@ -50,11 +50,24 @@ def main():
         default="matrix",
         choices=["matrix", "minimal", "bloomberg", "htop", "retro", "bakery", "frenpet", "base", "talismans", "fwa"],
     )
+    # Only games that GameSelectScreen actually offers belong here. The three
+    # FrenPet variants (frenpet_full / frenpet_wallet / frenpet_perf) are
+    # commented out of screens/game_select.py's GAMES and out of
+    # MaxPaneApp._GAME_CYCLE, and the menu always dismisses with a concrete
+    # visible id -- so app.py's `if game_id is None: game_id = initial_game`
+    # fallback never fires and those dashboards cannot be reached. Accepting
+    # them here only bought a prefetch (including extra on-chain reward calls)
+    # whose results were never displayed (MEDI-5). Re-add them here when the
+    # views are re-enabled in GAMES.
     parser.add_argument(
         "--game",
         default="bakery",
-        choices=["bakery", "frenpet", "frenpet_full", "frenpet_wallet", "frenpet_perf", "base", "cattown", "ocm", "dota", "ttt", "talismans", "fwa"],
-        help="Which game dashboard to show first (default: bakery)",
+        choices=["bakery", "frenpet", "base", "cattown", "ocm", "dota", "ttt", "talismans", "fwa"],
+        help=(
+            "Which game dashboard to preload (default: bakery). The game "
+            "selection menu still appears at startup; this only warms that "
+            "game's data first."
+        ),
     )
     parser.add_argument(
         "--wallet",

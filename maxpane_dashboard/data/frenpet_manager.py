@@ -74,12 +74,14 @@ class FrenPetManager:
         self,
         poll_interval: int = 30,
         wallet_address: str | None = None,
+        fetch_rewards: bool = False,
     ) -> None:
         self.client = FrenPetClient()
         self.cache = FrenPetCache(max_history=120)
         self._price_client = PriceClient()
         self._poll_interval = poll_interval
         self._wallet_address = wallet_address
+        self._fetch_rewards = fetch_rewards
         self._error_count = 0
 
         # Attempt to load persisted history on construction
@@ -103,7 +105,8 @@ class FrenPetManager:
             ``pet_score_histories``, ``alerts``.
 
         Pet view (per managed pet):
-            ``pet_evaluations``, ``market_conditions``, ``threat_levels``.
+            ``pet_evaluations``, ``market_conditions``, ``threat_levels``,
+            ``population_pets``.
 
         Signals:
             ``pet_velocities``, ``pet_ranks``.
@@ -150,11 +153,7 @@ class FrenPetManager:
         global_battle_rate = 0.0
         try:
             recent_attacks = await self.client.get_recent_attacks(limit=50)
-            if recent_attacks and len(recent_attacks) >= 2:
-                first_ts = recent_attacks[-1].get("timestamp", 0)
-                last_ts = recent_attacks[0].get("timestamp", 0)
-                span_hours = max((last_ts - first_ts) / 3600.0, 0.001)
-                global_battle_rate = len(recent_attacks) / span_hours
+            global_battle_rate = _compute_battle_rate(recent_attacks)
         except Exception as exc:
             logger.warning("Failed to fetch recent attacks: %s", exc)
 
@@ -273,7 +272,7 @@ class FrenPetManager:
 
         # -- Wallet rewards (on-chain ETH/FP data) -----------------------
         wallet_rewards: dict[str, Any] | None = None
-        if self._wallet_address and managed_pets:
+        if self._fetch_rewards and self._wallet_address and managed_pets:
             try:
                 wallet_rewards = await self._fetch_wallet_rewards(
                     managed_pets, self._wallet_address,
@@ -393,6 +392,9 @@ class FrenPetManager:
             "pet_evaluations": pet_evaluations,
             "market_conditions": market_conditions,
             "threat_levels": threat_levels,
+            # Full population (FrenPet models) -- the sniper queue scans
+            # this for bonkable targets.
+            "population_pets": list(snapshot.population.pets),
             # Signals
             "pet_velocities": pet_velocities,
             "pet_ranks": pet_ranks,
@@ -499,7 +501,17 @@ class FrenPetManager:
         }
 
     def save_cache(self) -> None:
-        """Persist cache to disk."""
+        """Persist cache to disk.
+
+        Every FrenPet variant screen (overview / full / wallet / perf)
+        owns a manager and they all persist to this one path, so a
+        manager holding a *stale* cache used to revert the file to its
+        startup snapshot on quit.  ``app.py`` closes that hole by
+        handing all four variants a single shared ``FrenPetCache``
+        instance, which makes the sequential saves write identical,
+        current data (see
+        ``tests/test_app_startup.py::test_frenpet_managers_share_one_cache``).
+        """
         self.cache.save_to_file(str(_CACHE_FILE))
 
     async def close(self) -> None:
@@ -512,6 +524,42 @@ class FrenPetManager:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+#: Ignore battle-rate spans shorter than this.  A handful of events
+#: crammed into a few seconds says nothing about the hourly rate, and
+#: dividing by such a span used to manufacture rates of ~50,000/hr that
+#: were rendered as "high" and persisted into ``battle_rate_history``.
+_MIN_BATTLE_SPAN_HOURS = 1.0 / 60.0  # one minute
+
+
+def _compute_battle_rate(attacks: list[dict[str, Any]]) -> float:
+    """Battles per hour derived from attack-event timestamps.
+
+    The span is taken from the min/max timestamp rather than from the
+    first and last list elements, so the result does not depend on the
+    ordering of *attacks* (the Ponder path returns newest-first, the RPC
+    log fallback used to return ascending block order, which made the
+    span negative).  Non-positive, missing or implausibly short spans
+    yield ``0.0`` instead of a fabricated rate.
+    """
+    timestamps = [
+        float(a.get("timestamp") or 0)
+        for a in attacks
+        if isinstance(a.get("timestamp"), (int, float))
+    ]
+    timestamps = [ts for ts in timestamps if ts > 0]
+    if len(timestamps) < 2:
+        return 0.0
+
+    span_hours = (max(timestamps) - min(timestamps)) / 3600.0
+    if span_hours < _MIN_BATTLE_SPAN_HOURS:
+        logger.debug(
+            "Attack timestamps span only %.4fh -- battle rate suppressed",
+            span_hours,
+        )
+        return 0.0
+    return len(attacks) / span_hours
+
 
 def _generate_overview_recommendation(
     shield_rate: float,

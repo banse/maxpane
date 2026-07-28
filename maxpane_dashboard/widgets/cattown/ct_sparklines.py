@@ -1,4 +1,10 @@
-"""Sparkline charts for Cat Town dashboard."""
+"""Sparkline charts for Cat Town dashboard.
+
+The sparkline primitives come from
+``maxpane_dashboard/widgets/sparkline_common.py``.  This module used to
+carry its own pre-hardening copies, which raised ``TypeError`` on a
+``None`` entry or a ``None`` value in a cached history (MEDI-36).
+"""
 
 from __future__ import annotations
 
@@ -6,46 +12,11 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
-
-_SPARK_CHARS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
-_SPARK_WIDTH = 22
-
-
-def _build_sparkline(points: list[tuple[float, float]], width: int = _SPARK_WIDTH) -> str:
-    """Convert time-series points into a sparkline string."""
-    if len(points) < 2:
-        return "\u2581" * width
-
-    values = [p[1] for p in points]
-    if len(values) > width:
-        values = values[-width:]
-
-    lo = min(values)
-    hi = max(values)
-    span = hi - lo
-
-    chars: list[str] = []
-    for v in values:
-        if span == 0:
-            idx = 0
-        else:
-            idx = int((v - lo) / span * (len(_SPARK_CHARS) - 1))
-            idx = max(0, min(len(_SPARK_CHARS) - 1, idx))
-        chars.append(_SPARK_CHARS[idx])
-
-    while len(chars) < width:
-        chars.insert(0, _SPARK_CHARS[0])
-
-    return "".join(chars)
-
-
-def _trend_arrow(points: list[tuple[float, float]]) -> str:
-    """Return a colored trend arrow based on the last two points."""
-    if len(points) >= 2 and points[-1][1] > points[-2][1]:
-        return "[green]\u25b2[/]"
-    elif len(points) >= 2 and points[-1][1] < points[-2][1]:
-        return "[red]\u25bc[/]"
-    return "[dim]\u25cf[/]"
+from maxpane_dashboard.widgets.sparkline_common import (
+    build_sparkline_from_points as _build_sparkline,
+    coerce_points as _coerce_points,
+    trend_arrow as _trend_arrow,
+)
 
 
 def _fmt_value(value: float, unit: str = "") -> str:
@@ -101,7 +72,8 @@ class CTSparklines(Vertical):
         for i, (label, points, color, unit) in enumerate(series):
             widget = self.query_one(f"#{line_ids[i]}", Static)
 
-            if not points or len(points) < 1:
+            points = _coerce_points(points)
+            if not points:
                 widget.update("")
                 continue
 

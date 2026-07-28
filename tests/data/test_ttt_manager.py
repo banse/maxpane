@@ -71,19 +71,31 @@ class FakeClient:
     async def fetch_factory_state(self) -> dict:
         return dict(self.factory)
 
-    def _window(self, name: str, events: list[dict], fb: int, tb: int) -> list[dict]:
-        self.ranges[name].append((fb, tb))
-        return [e for e in events if fb <= e["block_number"] <= tb]
+    def _window(
+        self, name: str, events: list[dict], fb: int, tb: int
+    ) -> tuple[list[dict], int]:
+        """Serve a window and report it fully scanned.
 
-    async def fetch_launched_events(self, fb: int, tb: int) -> list[dict]:
+        The real client returns ``(events, last_complete_block)`` so a refused
+        log page can hold the caller's watermark (MEDI-29); a healthy fake
+        always completes the range it was asked for.
+        """
+        self.ranges[name].append((fb, tb))
+        return [e for e in events if fb <= e["block_number"] <= tb], tb
+
+    async def fetch_launched_events(
+        self, fb: int, tb: int
+    ) -> tuple[list[dict], int]:
         return self._window("Launched", self.launches, fb, tb)
 
-    async def fetch_deposit_events(self, fb: int, tb: int) -> list[dict]:
+    async def fetch_deposit_events(
+        self, fb: int, tb: int
+    ) -> tuple[list[dict], int]:
         return self._window("Deposited", self.deposits, fb, tb)
 
     async def fetch_buyback_events(
         self, addresses: list[str], fb: int, tb: int
-    ) -> list[dict]:
+    ) -> tuple[list[dict], int]:
         return self._window("Bought", self.buys, fb, tb)
 
     async def fetch_token_metadata(self, addrs: list[str]) -> dict:
@@ -128,6 +140,7 @@ def make_manager(client: FakeClient | None = None, **kw: Any) -> TTTManager:
     mgr._last_floor_eth = None
     mgr._last_floor_usd = None
     mgr._last_sales_24h = None
+    mgr._last_factory = None
     for k, v in kw.items():
         setattr(mgr, k, v)
     return mgr
@@ -729,3 +742,113 @@ async def test_no_floor_request_is_ever_issued():
     mgr = make_manager(FloorTrap())
     for _ in range(4):
         await mgr.fetch_and_compute()
+
+
+# ===========================================================================
+# 9. MEDI-29 / MEDI-31 — a failure must not look like a reading
+# ===========================================================================
+
+
+class PartialScanClient(FakeClient):
+    """A client whose log pool gives up part-way through the range."""
+
+    def __init__(self, *, stops_at: int, **kw: Any) -> None:
+        super().__init__(**kw)
+        self.stops_at = stops_at
+
+    def _window(self, name, events, fb, tb):
+        self.ranges[name].append((fb, tb))
+        reached = min(tb, self.stops_at)
+        return [e for e in events if fb <= e["block_number"] <= reached], reached
+
+
+async def test_a_partial_scan_advances_the_watermark_only_as_far_as_it_got():
+    """MEDI-29: the skipped range is re-read next cycle instead of lost.
+
+    Steady-state scans only look back ``_INCREMENTAL_LOG_LOOKBACK`` blocks, so
+    a watermark pushed to ``current_block`` over a refused page means those
+    blocks are never read again for the life of the cache. Any ``Launched``
+    token in them never enters ``cache.tokens`` at all — ``register_token`` is
+    only reachable via ``apply_launch`` — so it is missing from the
+    leaderboard, the fee table and every later metadata or buyback pass.
+    """
+    stop = HEAD - 4_000
+    client = PartialScanClient(stops_at=stop)
+    mgr = make_manager(client)
+
+    await mgr._scan_events(HEAD, NOW)
+
+    assert mgr.cache.last_seen_block["Launched"] == stop
+    assert mgr.cache.last_seen_block["Deposited"] == stop
+    assert mgr._error_count >= 1, "an incomplete scan must be visible"
+
+    # Next cycle picks the gap back up rather than starting past it.
+    client.ranges["Launched"].clear()
+    await mgr._scan_events(HEAD, NOW)
+    fb, _tb = client.ranges["Launched"][0]
+    assert fb <= stop + 1
+
+
+async def test_a_launch_inside_a_refused_page_is_still_found_next_cycle():
+    """The concrete loss MEDI-29 describes, end to end."""
+    stop = HEAD - 4_000
+    missed = launch_event(HEAD - 100, token_id=7, token=TOKEN_A)
+    client = PartialScanClient(stops_at=stop, launches=[missed])
+    mgr = make_manager(client)
+
+    await mgr._scan_events(HEAD, NOW)
+    assert TOKEN_A.lower() not in mgr.cache.tokens   # the page never landed
+
+    client.stops_at = HEAD                            # endpoint recovers
+    await mgr._scan_events(HEAD, NOW)
+    assert TOKEN_A.lower() in mgr.cache.tokens
+
+
+async def test_a_scan_that_makes_no_progress_holds_its_watermark():
+    class NoProgress(FakeClient):
+        def _window(self, name, events, fb, tb):
+            self.ranges[name].append((fb, tb))
+            return [], fb - 1
+
+    mgr = make_manager(NoProgress())
+    mgr.cache.last_seen_block["Deposited"] = HEAD - 10
+    await mgr._scan_events(HEAD, NOW)
+    assert mgr.cache.last_seen_block["Deposited"] == HEAD - 10
+    assert "Launched" not in mgr.cache.last_seen_block
+    assert mgr._error_count >= 1
+
+
+async def test_a_factory_outage_does_not_write_a_zero_into_the_sparkline():
+    """MEDI-31: the hourly bucket is persisted, so a false 0 outlives the cycle."""
+    class NoFactory(FakeClient):
+        async def fetch_factory_state(self):
+            raise RuntimeError("all endpoints down")
+
+    mgr = make_manager(NoFactory())
+    await mgr.fetch_and_compute()
+    assert list(mgr.cache.burns_hourly) == []
+
+
+async def test_a_factory_outage_shows_the_last_real_reading_not_a_zero():
+    """Stale-but-true next to a raised error_count; never a confident zero."""
+    class Flaky(FakeClient):
+        def __init__(self, **kw: Any) -> None:
+            super().__init__(**kw)
+            self.fail = False
+
+        async def fetch_factory_state(self):
+            if self.fail:
+                raise RuntimeError("all endpoints down")
+            return dict(self.factory)
+
+    client = Flaky()
+    mgr = make_manager(client)
+    good = await mgr.fetch_and_compute()
+    assert good["launches"] == 1_234
+
+    client.fail = True
+    degraded = await mgr.fetch_and_compute()
+    assert degraded["launches"] == 1_234, "an outage is not 'nothing burned'"
+    assert degraded["error_count"] >= 1
+    # And the good sample from cycle 1 is still the only thing in the history.
+    assert [v for _ts, v in mgr.cache.burns_hourly] == [1_234]

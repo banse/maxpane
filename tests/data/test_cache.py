@@ -9,6 +9,7 @@ import time
 
 import pytest
 
+from maxpane_dashboard.analytics.production import calculate_production_rate
 from maxpane_dashboard.data.cache import DataCache
 from maxpane_dashboard.data.snapshot import GameSnapshot
 from maxpane_dashboard.data.models import (
@@ -281,3 +282,152 @@ class TestDataCachePersistence:
             cache.update(snap)
             cache.save_to_file(path)
             assert os.path.exists(path)
+
+
+# ---------------------------------------------------------------------------
+# MEDI-22: stale persisted history poisons the production rate
+# ---------------------------------------------------------------------------
+
+class TestStaleHistoryIsNotRestored:
+    """``load_from_file`` used to restore every persisted point regardless
+    of age, and histories are keyed by bakery *name* with no season in the
+    key.  ``calculate_production_rate`` regresses over whatever is in the
+    deque, so for the first hour after a restart (until the 120-point deque
+    evicted them) a stale cluster produced either a long-run average rate
+    or -- across a season rollover, where the same name restarts near zero
+    -- a negative slope clamped to 0.  ``leader_rate=0`` makes every boost
+    EV negative and ``gap_analysis`` report ``gap_rate`` 0 with a wrong
+    "catchable" verdict.
+    """
+
+    def _write(self, path: str, histories: dict) -> None:
+        with open(path, "w") as f:
+            json.dump({"saved_at": time.time(), "histories": histories}, f)
+
+    def test_points_older_than_the_window_are_dropped(self) -> None:
+        now = time.time()
+        window = 3600.0
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "cache.json")
+            self._write(path, {
+                "Alpha": [
+                    # yesterday's session
+                    [now - 90_000, 500.0],
+                    [now - 89_000, 600.0],
+                    # this session
+                    [now - 120, 900.0],
+                    [now - 60, 910.0],
+                ],
+            })
+
+            cache = DataCache(max_history=120)
+            cache.load_from_file(path, max_age=window)
+
+            alpha = cache.get_cookie_history("Alpha")
+            assert len(alpha) == 2, "day-old points were restored"
+            assert all(ts >= now - window for ts, _ in alpha)
+
+    def test_a_fully_expired_bakery_is_not_tracked_at_all(self) -> None:
+        now = time.time()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "cache.json")
+            self._write(path, {"Ghost": [[now - 90_000, 500.0]]})
+
+            cache = DataCache(max_history=120)
+            cache.load_from_file(path, max_age=3600.0)
+
+            assert cache.get_cookie_history("Ghost") == []
+            assert cache.history_size == 0
+
+    def test_stale_cluster_no_longer_drags_the_rate_to_the_long_run_average(
+        self,
+    ) -> None:
+        """The failure the review describes, measured end to end."""
+        now = time.time()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "cache.json")
+            # A day-old, near-idle cluster; then a 24h gap; then a fresh
+            # cluster climbing a genuine 1000 cookies/hr.
+            self._write(path, {
+                "Alpha": [
+                    [now - 86_400, 20_000.0],
+                    [now - 86_100, 20_010.0],
+                    [now - 1800, 24_000.0],
+                    [now - 900, 24_250.0],
+                    [now, 24_500.0],
+                ],
+            })
+
+            unfiltered = DataCache(max_history=120)
+            unfiltered.load_from_file(path)
+            filtered = DataCache(max_history=120)
+            filtered.load_from_file(path, max_age=3600.0)
+
+            stale_rate = calculate_production_rate(
+                unfiltered.get_cookie_history("Alpha")
+            )
+            fresh_rate = calculate_production_rate(
+                filtered.get_cookie_history("Alpha")
+            )
+
+            # The fresh cluster really is climbing 1000/hr.
+            assert fresh_rate == pytest.approx(1000.0, rel=0.05)
+            # Regressing over the gap answers with the 24h average instead.
+            assert stale_rate < fresh_rate / 2
+
+    def test_max_age_none_keeps_the_old_behaviour(self) -> None:
+        now = time.time()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "cache.json")
+            self._write(path, {"Alpha": [[now - 90_000, 1.0], [now - 10, 2.0]]})
+
+            cache = DataCache(max_history=120)
+            cache.load_from_file(path)
+            assert len(cache.get_cookie_history("Alpha")) == 2
+
+
+class TestSeasonResetClearsHistory:
+    """A new season resets cookie counts to ~0 under the same bakery name.
+    Without detection the regression sees a cliff, returns a negative slope
+    that ``calculate_production_rate`` clamps to 0, and the leader looks
+    stalled for the next hour of polling.
+    """
+
+    def _snapshot(self, cookies: str, at: float) -> GameSnapshot:
+        return _make_snapshot(
+            bakeries=[_make_bakery("Alpha", cookies)], fetched_at=at
+        )
+
+    def test_collapse_to_near_zero_clears_the_bakery(self) -> None:
+        cache = DataCache(max_history=120)
+        base = time.time()
+        for i in range(5):
+            cache.update(self._snapshot(str(50_000_000 + i * 100_000), base + i))
+
+        # Season rollover: same name, counts back to ~0.
+        cache.update(self._snapshot("2000", base + 10))
+
+        history = cache.get_cookie_history("Alpha")
+        assert history == [(base + 10, 0.2)], (
+            "last season's multi-million points survived the rollover"
+        )
+        assert calculate_production_rate(history) == 0.0
+
+    def test_a_boost_expiring_does_not_clear_the_bakery(self) -> None:
+        """Counts fall when a boost lapses; multipliers are ~2-3x, so a
+        halving must be kept -- only a collapse reads as a reset."""
+        cache = DataCache(max_history=120)
+        base = time.time()
+        cache.update(self._snapshot("20000000", base))
+        cache.update(self._snapshot("20000000", base + 1))
+        # 2x boost expires: effective count halves.
+        cache.update(self._snapshot("10000000", base + 2))
+
+        assert len(cache.get_cookie_history("Alpha")) == 3
+
+    def test_ordinary_growth_is_untouched(self) -> None:
+        cache = DataCache(max_history=120)
+        base = time.time()
+        for i in range(4):
+            cache.update(self._snapshot(str(1_000_000 * (i + 1)), base + i))
+        assert len(cache.get_cookie_history("Alpha")) == 4

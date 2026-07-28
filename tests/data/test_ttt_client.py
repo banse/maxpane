@@ -663,19 +663,42 @@ async def test_fetch_factory_state_falls_back_to_10000_supply_when_call_reverts(
     assert state["burn_count"] == 1_234  # FeeSplitter still answered
 
 
-async def test_fetch_factory_state_is_zeroed_when_the_whole_rpc_is_down():
+async def test_fetch_factory_state_raises_when_the_whole_rpc_is_down():
+    """MEDI-31: an outage is not a chain where nothing has ever burned.
+
+    This used to return ``burn_count=0, active_shares=0`` — indistinguishable
+    from a real reading — so the manager's ``except`` branch never ran,
+    ``_error_count`` stayed 0, and the dashboard rendered '0/10,000 burned'
+    with a fresh, error-free status bar.
+    """
     def _boom(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"error": "down"})
 
     async with _client_on(httpx.MockTransport(_boom)) as client:
+        with pytest.raises(RuntimeError):
+            await client.fetch_factory_state()
+
+
+async def test_a_reverting_read_inside_a_healthy_multicall_is_still_zero():
+    """The other half of MEDI-31: a revert is a real answer, not an outage."""
+    chain = SimChain(reverting={_FEESPLITTER})
+    async with _client_on(chain.transport()) as client:
         state = await client.fetch_factory_state()
-    assert state == {
-        "max_supply": 10_000,
-        "total_minted": 0,
-        "burn_count": 0,
-        "active_shares": 0,
-        "acc_eth_per_share": 0,
-    }
+    assert state["total_minted"] == 10_000        # factory answered
+    assert state["burn_count"] == 0               # FeeSplitter reverted
+    assert state["active_shares"] == 0
+
+
+async def test_a_multicall_reply_with_the_wrong_arity_is_a_transport_failure():
+    """A truncated ``Result[]`` cannot be mapped back onto the calls we made."""
+    def handler(_url: str, payload: dict) -> httpx.Response:
+        # One Result for a five-call batch: silently dropping four reads would
+        # zero four of the five factory fields.
+        return _ok(payload, encode_aggregate3_result([(True, "0x" + _encode_uint(1))]))
+
+    async with _client_on(RecordingTransport(handler)) as client:
+        with pytest.raises(RuntimeError, match="well-formed aggregate3"):
+            await client.fetch_factory_state()
 
 
 async def test_fetch_token_reservoirs_pairs_every_balance_with_its_own_address():
@@ -762,16 +785,18 @@ async def test_fetch_deposit_events_filters_by_topic_and_decodes_each_log():
         ]
     )
     async with _client_on(chain.transport()) as client:
-        out = await client.fetch_deposit_events(23_000_000, 23_000_010)
+        out, scanned_to = await client.fetch_deposit_events(23_000_000, 23_000_010)
     assert [d["token"] for d in out] == [_TOKEN_A, _TOKEN_B]
     assert [d["block_number"] for d in out] == [23_000_001, 23_000_002]
+    assert scanned_to == 23_000_010
 
 
 async def test_fetch_launched_events_decodes_from_the_factory_topic():
     chain = SimChain(logs=[launched_log(token_id=1), launched_log(token_id=2)])
     async with _client_on(chain.transport()) as client:
-        out = await client.fetch_launched_events(22_999_999, 23_000_001)
+        out, scanned_to = await client.fetch_launched_events(22_999_999, 23_000_001)
     assert [d["token_id"] for d in out] == [1, 2]
+    assert scanned_to == 23_000_001
 
 
 async def test_fetch_buyback_events_queries_the_token_addresses():
@@ -779,22 +804,26 @@ async def test_fetch_buyback_events_queries_the_token_addresses():
         logs=[bought_log(token=_TOKEN_A), bought_log(token=_TOKEN_B, log_index=2)]
     )
     async with _client_on(chain.transport()) as client:
-        out = await client.fetch_buyback_events([_TOKEN_A], 23_000_000, 23_000_000)
+        out, _ = await client.fetch_buyback_events(
+            [_TOKEN_A], 23_000_000, 23_000_000
+        )
     assert [d["token"] for d in out] == [_TOKEN_A]
     assert chain.log_queries[0]["address"] == [_TOKEN_A]
 
 
 async def test_fetch_buyback_events_with_no_tokens_makes_no_request():
+    """Nothing to scan means the range is covered, not refused."""
     client = _offline_client()
-    assert await client.fetch_buyback_events([], 1, 2) == []
+    assert await client.fetch_buyback_events([], 1, 2) == ([], 2)
     await client.close()
 
 
 async def test_get_logs_paginates_at_10k_blocks_and_covers_the_range_exactly():
     chain = SimChain(logs=[deposited_log(block=23_015_000)])
     async with _client_on(chain.transport()) as client:
-        out = await client.fetch_deposit_events(23_000_000, 23_025_000)
+        out, scanned_to = await client.fetch_deposit_events(23_000_000, 23_025_000)
     assert len(out) == 1
+    assert scanned_to == 23_025_000
     windows = [
         (int(q["fromBlock"], 16), int(q["toBlock"], 16)) for q in chain.log_queries
     ]
@@ -807,7 +836,7 @@ async def test_get_logs_paginates_at_10k_blocks_and_covers_the_range_exactly():
 
 async def test_get_logs_with_inverted_range_makes_no_request():
     client = _offline_client()
-    assert await client.fetch_deposit_events(100, 99) == []
+    assert await client.fetch_deposit_events(100, 99) == ([], 99)
     await client.close()
 
 
@@ -894,34 +923,70 @@ async def test_rpc_shops_a_server_defined_error_to_the_next_endpoint():
     await client.close()
 
 
-async def test_multicall_reports_all_calls_failed_when_the_rpc_is_unreachable():
+async def test_multicall_raises_instead_of_reporting_zero_balances():
+    """An unreachable node must not read as 'every reservoir is empty'."""
     def _boom(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("no route to host")
 
     async with _client_on(httpx.MockTransport(_boom)) as client:
-        out = await client.fetch_token_reservoirs([_TOKEN_A, _TOKEN_B])
-    assert out == {_TOKEN_A.lower(): 0, _TOKEN_B.lower(): 0}
+        with pytest.raises(RuntimeError):
+            await client.fetch_token_reservoirs([_TOKEN_A, _TOKEN_B])
 
 
-async def test_get_logs_drops_a_failed_page_and_keeps_the_rest():
-    """Documented (lossy) behaviour — pinned so a change to it is deliberate."""
-    chain = SimChain(logs=[deposited_log(block=23_015_000)])
+async def test_get_logs_stops_at_the_last_page_it_completed():
+    """MEDI-29: a refused page ends the scan; it does not get skipped over.
+
+    The old behaviour logged the failure at ``debug``, advanced the cursor and
+    carried on, so the caller got a partial list that was indistinguishable
+    from a sparse range — and then advanced its watermark past the gap.
+    """
+    chain = SimChain(
+        logs=[deposited_log(block=23_005_000), deposited_log(block=23_015_000)]
+    )
     real = chain.rpc
     seen = {"n": 0}
 
     def flaky(payload: dict) -> Any:
         if payload["method"] == "eth_getLogs":
             seen["n"] += 1
-            if seen["n"] == 1:
-                raise httpx.ConnectError("page 1 died")
+            if seen["n"] > 1:          # first page fine, second page dies
+                raise httpx.ConnectError("page 2 died")
         return real(payload)
 
     def handler(_url: str, payload: dict) -> httpx.Response:
         return _ok(payload, flaky(payload))
 
     async with _client_on(RecordingTransport(handler)) as client:
-        out = await client.fetch_deposit_events(23_000_000, 23_019_999)
-    assert [d["block_number"] for d in out] == [23_015_000]
+        out, scanned_to = await client.fetch_deposit_events(
+            23_000_000, 23_019_999
+        )
+
+    # Page 1 [23_000_000..23_009_999] landed; page 2 did not, and we say so.
+    assert [d["block_number"] for d in out] == [23_005_000]
+    assert scanned_to == 23_009_999
+    assert scanned_to < 23_019_999
+
+
+async def test_get_logs_reports_no_progress_when_the_first_page_fails():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("all log endpoints down")
+
+    async with _client_on(httpx.MockTransport(handler)) as client:
+        out, scanned_to = await client.fetch_launched_events(
+            23_000_000, 23_009_999
+        )
+    assert out == []
+    assert scanned_to == 22_999_999, "from_block - 1 means 'nothing scanned'"
+
+
+async def test_a_non_list_log_reply_ends_the_scan_rather_than_counting_as_empty():
+    def handler(_url: str, payload: dict) -> httpx.Response:
+        return _ok(payload, {"unexpected": "object"})
+
+    async with _client_on(RecordingTransport(handler)) as client:
+        out, scanned_to = await client.fetch_launched_events(100, 200)
+    assert out == []
+    assert scanned_to == 99
 
 
 # ===========================================================================
@@ -1230,8 +1295,9 @@ async def test_a_range_cap_on_one_endpoint_does_not_abort_the_chain():
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         log_rpcs=["https://capped.invalid", "https://uncapped.invalid"],
     )
-    out = await client.fetch_deposit_events(23_000_000, 23_000_100)
+    out, scanned_to = await client.fetch_deposit_events(23_000_000, 23_000_100)
     assert out == []
+    assert scanned_to == 23_000_100, "the healthy endpoint completed the range"
     assert "uncapped.invalid" in tried, "the healthy log endpoint was never tried"
     await client.close()
 
@@ -1255,8 +1321,9 @@ async def test_an_archive_gate_falls_over_to_the_next_log_endpoint():
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         log_rpcs=["https://gated.invalid", "https://archive.invalid"],
     )
-    out = await client.fetch_launched_events(23_000_000, 23_000_010)
+    out, scanned_to = await client.fetch_launched_events(23_000_000, 23_000_010)
     assert [d["token_id"] for d in out] == [5]
+    assert scanned_to == 23_000_010
     await client.close()
 
 
@@ -1336,7 +1403,8 @@ async def test_a_dead_state_pool_does_not_stop_log_reads():
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
     assert await client.fetch_block_number() == 0        # state degraded
-    assert len(await client.fetch_deposit_events(1, 100)) == 1   # logs still fine
+    logs, scanned_to = await client.fetch_deposit_events(1, 100)
+    assert (len(logs), scanned_to) == (1, 100)   # logs still fine
     await client.close()
 
 

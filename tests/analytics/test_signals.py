@@ -13,20 +13,81 @@ from maxpane_dashboard.analytics.signals import (
 
 
 class TestCalculateLateJoinEv:
-    """Tests for calculate_late_join_ev."""
+    """Tests for calculate_late_join_ev.
+
+    MEDI-8: the payout leg used to be ``win_probability * whole_pool``,
+    ignoring both the confirmed 70/20/10 split and the ``member_count``
+    parameter it accepted but never read.  The SignalsPanel renders
+    ``ev_usd`` verbatim, so a 30-member leader was shown a figure ~90x too
+    large -- and against a *finalized* season (which still reports a pool)
+    it read "Positive EV -- consider joining" for a season nobody could
+    join.
+    """
 
     def test_positive_ev_scenario(self) -> None:
         result = calculate_late_join_ev(
             prize_pool_eth=10.0,
             eth_price_usd=3000.0,
-            member_count=20,
+            member_count=2,
             buy_in_eth=0.05,
             win_probability=0.10,
         )
-        # EV = 0.10 * 30000 - 150 = 3000 - 150 = 2850
-        assert result["ev_usd"] == 2850.0
-        assert result["breakeven_probability"] == pytest.approx(150.0 / 30000.0, abs=0.0001)
+        # pool = $30,000; mean top-3 share = 1/3; split across 2 members
+        # => $5,000 per member if the bakery places.
+        # EV = 0.10 * 5000 - 150 = 500 - 150 = 350
+        assert result["ev_usd"] == 350.0
+        assert result["breakeven_probability"] == pytest.approx(150.0 / 5000.0, abs=0.0001)
         assert "Positive EV" in result["recommendation"]
+
+    def test_payout_is_the_split_share_divided_among_members(self) -> None:
+        """The two corrections that MEDI-8 asked for, measured separately."""
+        pool_usd = 10.0 * 3000.0
+        common = dict(
+            prize_pool_eth=10.0,
+            eth_price_usd=3000.0,
+            buy_in_eth=0.0,  # isolate the payout leg
+            win_probability=1.0,
+        )
+
+        solo = calculate_late_join_ev(member_count=1, **common)
+        # Not the whole pool: the mean of the 70/20/10 split.
+        assert solo["ev_usd"] == pytest.approx(pool_usd / 3.0, abs=0.01)
+        assert solo["ev_usd"] != pytest.approx(pool_usd, abs=1.0)
+
+        # ...and that share is split among the bakery's members.
+        crowded = calculate_late_join_ev(member_count=30, **common)
+        assert crowded["ev_usd"] == pytest.approx(solo["ev_usd"] / 30.0, abs=0.01)
+
+    def test_thirty_member_leader_is_not_shown_a_five_figure_ev(self) -> None:
+        """Regression for the live reproduction in the review.
+
+        The reviewer observed ``ev_usd=9749.3`` for the season-10 leader.
+        With the same inputs the corrected formula must land roughly two
+        orders of magnitude lower.
+        """
+        old_style_ev = 0.3 * (10.0 * 3000.0)  # win_prob * whole pool
+        result = calculate_late_join_ev(
+            prize_pool_eth=10.0,
+            eth_price_usd=3000.0,
+            member_count=30,
+            buy_in_eth=0.05,
+            win_probability=0.3,
+        )
+        assert result["ev_usd"] < old_style_ev / 50
+
+    def test_ended_season_is_minus_the_buy_in_regardless_of_pool(self) -> None:
+        """A finalized season still reports a pool; it cannot be joined."""
+        result = calculate_late_join_ev(
+            prize_pool_eth=100.0,
+            eth_price_usd=3000.0,
+            member_count=2,
+            buy_in_eth=0.05,
+            win_probability=1.0,
+            season_active=False,
+        )
+        assert result["ev_usd"] == pytest.approx(-150.0)
+        assert "Positive EV" not in result["recommendation"]
+        assert "Season over" in result["recommendation"]
 
     def test_negative_ev_low_probability(self) -> None:
         result = calculate_late_join_ev(
@@ -47,9 +108,9 @@ class TestCalculateLateJoinEv:
             buy_in_eth=2.0,
             win_probability=0.20,
         )
-        # EV = 0.20 * 3000 - 6000 = 600 - 6000 = -5400
+        # payout_if_top3 = 3000/3/5 = 200; EV = 0.20 * 200 - 6000
         assert result["ev_usd"] < 0
-        # breakeven = 6000/3000 = 2.0 > 0.5
+        # breakeven = 6000/200 = 30 > 0.5
         assert result["breakeven_probability"] > 0.5
         assert "buy-in too high" in result["recommendation"]
 
@@ -63,6 +124,16 @@ class TestCalculateLateJoinEv:
         )
         assert result["ev_usd"] < 0
         assert result["breakeven_probability"] == 1.0
+
+    def test_zero_member_count_does_not_divide_by_zero(self) -> None:
+        result = calculate_late_join_ev(
+            prize_pool_eth=10.0,
+            eth_price_usd=3000.0,
+            member_count=0,
+            buy_in_eth=0.0,
+            win_probability=1.0,
+        )
+        assert result["ev_usd"] == pytest.approx(30000.0 / 3.0, abs=0.01)
 
     def test_returns_expected_keys(self) -> None:
         result = calculate_late_join_ev(1.0, 3000.0, 10, 0.05, 0.10)

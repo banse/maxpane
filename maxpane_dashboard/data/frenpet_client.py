@@ -54,6 +54,10 @@ _ATTACK_EVENT_TOPIC = (
     "5a08e83b"
 )
 
+# Base mainnet target block time, used to turn a block-number delta into
+# an approximate epoch timestamp for log-derived events.
+_BASE_BLOCK_SECONDS = 2
+
 
 class FrenPetClient:
     """Fetches FrenPet data from Ponder GraphQL and Base RPC.
@@ -363,13 +367,31 @@ class FrenPetClient:
 
         Scans the last 2000 blocks for Attack events on the Diamond
         contract and returns up to ``limit`` results.
+
+        The returned dicts match the Ponder path exactly: ``timestamp``
+        is epoch **seconds** (approximated from the head block's
+        timestamp and the ~2s Base block time) and the list is ordered
+        **newest first**.  Both properties are load-bearing -- consumers
+        derive the global battle rate from ``first``/``last`` timestamps
+        and render them as clock times, so returning block numbers in
+        ascending order (as this method used to) produced negative
+        spans, absurd battle rates and 1971-era timestamps.
         """
-        # Get current block number
+        # Head block: one call gives us both the number and its timestamp.
         block_resp = await self._post_with_retry(
             self._rpc_url,
-            {"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "eth_getBlockByNumber",
+                "params": ["latest", False],
+            },
         )
-        current_block = int(block_resp.json()["result"], 16)
+        head = block_resp.json().get("result") or {}
+        current_block = int(head.get("number", "0x0"), 16)
+        head_timestamp = int(head.get("timestamp", "0x0"), 16)
+        if head_timestamp <= 0:
+            head_timestamp = int(time.time())
         from_block = hex(max(0, current_block - 2000))
 
         # Fetch logs
@@ -389,8 +411,8 @@ class FrenPetClient:
         resp = await self._post_with_retry(self._rpc_url, log_payload)
         logs = resp.json().get("result", [])
 
-        attacks: list[dict[str, Any]] = []
-        for log in logs[-limit:]:
+        entries: list[tuple[int, dict[str, Any]]] = []
+        for log in logs:
             # Attack(uint256 attacker, uint256 defender, bool won)
             # Topics: [event_sig, attacker_id, defender_id]
             # Data: bool won encoded as uint256
@@ -400,18 +422,27 @@ class FrenPetClient:
                 attacker_id = int(topics[1], 16)
                 defender_id = int(topics[2], 16)
                 attacker_won = int(data_hex, 16) != 0 if data_hex != "0x" else False
-                # Estimate timestamp from block number (not exact, but acceptable)
+                # Approximate the block time from the head block; Base
+                # produces a block every ~2s, so this is accurate to a
+                # few seconds over a 2000-block window.
                 block_num = int(log.get("blockNumber", "0x0"), 16)
-                attacks.append(
-                    {
-                        "attacker_id": attacker_id,
-                        "defender_id": defender_id,
-                        "attacker_won": attacker_won,
-                        "timestamp": block_num,  # block number as proxy
-                    }
+                age_seconds = (current_block - block_num) * _BASE_BLOCK_SECONDS
+                timestamp = max(0, int(head_timestamp - age_seconds))
+                entries.append(
+                    (
+                        block_num,
+                        {
+                            "attacker_id": attacker_id,
+                            "defender_id": defender_id,
+                            "attacker_won": attacker_won,
+                            "timestamp": timestamp,
+                        },
+                    )
                 )
 
-        return attacks
+        # Newest first, matching the Ponder ordering.
+        entries.sort(key=lambda e: e[0], reverse=True)
+        return [entry for _block, entry in entries[:limit]]
 
     # ------------------------------------------------------------------
     # Public API: on-chain reads

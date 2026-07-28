@@ -114,11 +114,17 @@ class TalismansManager:
         except Exception as exc:
             logger.debug("block number fetch failed: %s", exc)
             current_block = 0
+        flags_ok = True
         try:
             flags = await flags_task
         except Exception as exc:
+            flags_ok = False
             self._error_count += 1
             logger.warning("collection flags fetch failed: %s", exc)
+            # Reachable again now that the client raises on transport failure
+            # (MEDI-28). While it swallowed the outage and answered zeros, this
+            # branch was dead code and the dashboard showed a collection that
+            # had apparently vanished.
             flags = {
                 "total_supply": len(self.cache.tokens),
                 "genesis_minted": _GENESIS_MAX_ID,
@@ -134,24 +140,35 @@ class TalismansManager:
         await self._scan_operations(current_block, now_ts)
 
         # -- 3) Live token state -----------------------------------------
-        await self._refresh_token_states(current_block, now_ts)
+        states_ok = await self._refresh_token_states(current_block, now_ts)
 
         # -- 4) Aggregates + conservation baseline -----------------------
         live_token_list = list(self.cache.tokens.values())
         tcores = total_cores(live_token_list)
         live = flags["total_supply"]  # authoritative live count
         # Enumeration is complete when our per-token set matches the contract's
-        # authoritative supply. Only lock in the conservation baseline (and only
-        # assert the invariant) from a complete scan — a partial scan would
-        # otherwise poison the baseline with a too-low total.
-        enumeration_complete = live > 0 and len(live_token_list) == live
+        # authoritative supply, and both halves of that comparison came from
+        # this cycle. A failed flags read makes ``live`` a cached number and a
+        # failed sweep makes the registry stale; either way the two can agree
+        # by coincidence, which would lock in a conservation baseline that was
+        # never actually observed.
+        cycle_ok = flags_ok and states_ok
+        enumeration_complete = (
+            cycle_ok and live > 0 and len(live_token_list) == live
+        )
         if enumeration_complete:
             self.cache.set_invariant_baseline_if_unset(tcores)
 
         mcount = mythic_count(live_token_list)
 
         # -- 5) Sample hourly distribution -------------------------------
-        self.cache.sample_distribution(now_ts, mcount, live)
+        # Only from a cycle that actually read the chain. These buckets are
+        # overwrite-by-hour and get persisted, so a sample taken during an
+        # outage survives in the 7-day sparkline unless a good cycle lands in
+        # the same hour -- and ``forge_momentum_signal`` reads the resulting
+        # dip as a real trend (MEDI-27, MEDI-28).
+        if cycle_ok:
+            self.cache.sample_distribution(now_ts, mcount, live)
 
         # -- 6) Analytics + assemble dict --------------------------------
         operations_24h = count_operations(
@@ -339,16 +356,24 @@ class TalismansManager:
 
     async def _refresh_token_states(
         self, current_block: int, now_ts: float
-    ) -> None:
-        """Batch-read live state for every known id; rebuild the registry."""
+    ) -> bool:
+        """Batch-read live state for every known id; rebuild the registry.
+
+        Returns whether the sweep succeeded. On failure the previous registry
+        is kept untouched (MEDI-27): ``set_token_states`` *replaces* the
+        registry wholesale, so writing a truncated sweep into it would empty
+        the title bar, the leaderboard and the matrix for that cycle, and the
+        caller would have no way to tell that from a collection that really had
+        shrunk to nothing.
+        """
         try:
             states = await self.client.fetch_token_states(
                 sorted(self.cache.known_ids)
             )
         except Exception as exc:
             self._error_count += 1
-            logger.debug("token-state fetch failed: %s", exc)
-            return
+            logger.warning("token-state fetch failed: %s", exc)
+            return False
 
         tokens: dict[int, TalismanToken] = {}
         for tid, st in states.items():
@@ -370,6 +395,7 @@ class TalismansManager:
             except Exception as exc:
                 logger.debug("could not build token %s: %s", tid, exc)
         self.cache.set_token_states(tokens)
+        return True
 
 
 __all__ = ["TalismansManager"]

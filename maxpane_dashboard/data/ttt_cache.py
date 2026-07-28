@@ -39,6 +39,7 @@ import os
 import time
 from collections import deque
 
+from maxpane_dashboard.data.series_points import coerce_points
 from maxpane_dashboard.data.ttt_models import (
     TTTActivityEvent,
     TTTLaunchedToken,
@@ -622,8 +623,27 @@ class TTTCache:
         cleaned["seen_events"] = []
         return cleaned
 
-    def load_from_file(self, path: str) -> None:
-        """Load saved state from disk. Silent no-op on missing / corrupt file."""
+    def load_from_file(self, path: str, *, now: float | None = None) -> None:
+        """Load saved state from disk. Silent no-op on missing / corrupt file.
+
+        Parameters
+        ----------
+        now:
+            Reference clock, in epoch seconds, used to validate the persisted
+            sparkline points (see :mod:`maxpane_dashboard.data.series_points`:
+            a point dated in the future is corruption, not history). Passing it
+            is what keeps this method a pure function of its inputs.
+
+            Every other method on this class already takes its ``now_ts`` from
+            the caller -- ``sample_burns_and_floor``, ``prune_old``,
+            ``recompute_rolling_counters``, ``per_token_fees``. A loader that
+            reached for ``time.time()`` on its own would be the one place where
+            the same file loads differently depending on when you run it, and
+            the only place a test could not pin. ``None`` falls back to the wall
+            clock for callers that genuinely mean "now"; ``TTTManager`` passes
+            an explicit one.
+        """
+        reference = time.time() if now is None else now
         try:
             with open(path) as f:
                 payload = json.load(f)
@@ -663,23 +683,35 @@ class TTTCache:
         except Exception as exc:
             logger.warning("fees_by_token block bad: %s", exc)
 
-        # Hourly
+        # Hourly sparklines. Validated through the shared helper (MEDI-14)
+        # rather than a bare ``float(pt[1])``, which raised TypeError straight
+        # out of the loader on a single ``null`` -- and since every manager
+        # loads its cache in ``__init__``, one bad value in one file aborted
+        # MaxPane startup for every dashboard, not just this one.
         try:
+            dropped_total = 0
             self.burns_hourly.clear()
-            for pt in payload.get("burns_hourly") or []:
-                if isinstance(pt, (list, tuple)) and len(pt) >= 2:
-                    self.burns_hourly.append((float(pt[0]), int(pt[1])))
+            good, dropped = coerce_points(payload.get("burns_hourly"), now=reference)
+            dropped_total += dropped
+            # burn_count is a count of NFTs; keep it integral.
+            self.burns_hourly.extend((ts, int(v)) for ts, v in good)
+
             self.floor_hourly.clear()
-            for pt in payload.get("floor_hourly") or []:
-                if isinstance(pt, (list, tuple)) and len(pt) >= 2:
-                    self.floor_hourly.append((float(pt[0]), float(pt[1])))
+            good, dropped = coerce_points(payload.get("floor_hourly"), now=reference)
+            dropped_total += dropped
+            self.floor_hourly.extend(good)
+
             self.volume_hourly.clear()
-            for pt in payload.get("volume_hourly") or []:
-                if isinstance(pt, (list, tuple)) and len(pt) >= 2:
-                    try:
-                        self.volume_hourly.append((float(pt[0]), float(pt[1])))
-                    except (TypeError, ValueError):
-                        continue
+            good, dropped = coerce_points(payload.get("volume_hourly"), now=reference)
+            dropped_total += dropped
+            self.volume_hourly.extend(good)
+
+            if dropped_total:
+                logger.warning(
+                    "Skipped %d unusable hourly point(s) while loading %s",
+                    dropped_total,
+                    path,
+                )
         except Exception as exc:
             logger.warning("hourly history bad: %s", exc)
 

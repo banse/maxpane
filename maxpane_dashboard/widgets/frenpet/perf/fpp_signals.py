@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+from maxpane_dashboard.widgets.frenpet.perf.velocity_format import format_velocity
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
@@ -63,10 +64,7 @@ class FPPerfSignals(Vertical):
         )
 
         # Score Velocity
-        if abs(total_velocity) >= 1_000:
-            vel_str = f"+{total_velocity / 1_000:.1f}K/hr"
-        else:
-            vel_str = f"+{total_velocity:,.0f}/hr"
+        vel_str = format_velocity(total_velocity, compact=False)
         self.query_one("#fpp-sig-velocity", Static).update(
             f"  [dim]{'Score Velocity':<20}[/]"
             f"[bold white]{vel_str:>12}[/]"

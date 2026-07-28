@@ -25,6 +25,22 @@ logger = logging.getLogger(__name__)
 # Type alias for a single time-series data point: (epoch_seconds, cookie_count)
 TimeSeriesPoint = tuple[float, float]
 
+# Fraction of the previous sample below which a new cookie count is read as
+# a season reset rather than a normal fluctuation.  Cookie counts only fall
+# when a boost expires, and boost multipliers top out around 2-3x, so an
+# expiry cannot cost 90% of the count.  A season rollover resets the same
+# bakery *name* to near zero, which regresses to a negative slope that
+# ``calculate_production_rate`` clamps to 0 -- making the leader look
+# stalled and every boost EV negative.
+SEASON_RESET_DROP_RATIO = 0.1
+
+
+def _is_season_reset(previous: float, current: float) -> bool:
+    """True when *current* is too far below *previous* to be a boost expiry."""
+    if previous <= 0:
+        return False
+    return current < previous * SEASON_RESET_DROP_RATIO
+
 
 class DataCache:
     """Caches API responses and accumulates time-series data.
@@ -53,18 +69,34 @@ class DataCache:
         ``cookie_scale`` to convert from raw on-chain values to display
         cookies, then recorded as a ``(timestamp, value)`` pair keyed by
         bakery name.
+
+        Histories are keyed by bakery *name*, which is not season-scoped:
+        the same bakery competing in the next season starts again from
+        near zero under the same key.  A collapse to below
+        ``SEASON_RESET_DROP_RATIO`` of the last sample is therefore taken
+        as a reset and the bakery's history is dropped, so the production
+        rate is regressed over the new season only.
         """
         self._latest = snapshot
         self._last_updated = snapshot.fetched_at
 
         for bakery in snapshot.bakeries:
             key = bakery.name
-            if key not in self._history:
-                self._history[key] = deque(maxlen=self._max_history)
             display_cookies = int(bakery.tx_count) / cookie_scale
-            self._history[key].append(
-                (snapshot.fetched_at, display_cookies)
-            )
+            dq = self._history.get(key)
+            if dq is None:
+                dq = deque(maxlen=self._max_history)
+                self._history[key] = dq
+            elif dq and _is_season_reset(dq[-1][1], display_cookies):
+                logger.info(
+                    "Cookie count for %s collapsed %.0f -> %.0f; "
+                    "treating as season reset and clearing its history",
+                    key,
+                    dq[-1][1],
+                    display_cookies,
+                )
+                dq.clear()
+            dq.append((snapshot.fetched_at, display_cookies))
 
     def get_latest(self) -> GameSnapshot | None:
         """Return the most recently stored snapshot, or ``None``."""
@@ -137,7 +169,7 @@ class DataCache:
             except OSError:
                 pass
 
-    def load_from_file(self, path: str) -> None:
+    def load_from_file(self, path: str, *, max_age: float | None = None) -> None:
         """Load previously saved history from a JSON file.
 
         Silently does nothing if the file is missing or corrupted.
@@ -149,6 +181,20 @@ class DataCache:
         raising, because every manager loads its cache in ``__init__``
         and one bad value used to abort MaxPane startup for every
         dashboard.
+
+        Parameters
+        ----------
+        max_age:
+            Drop points older than this many seconds.  Restoring the full
+            file regardless of age is what made production rates wrong for
+            the first hour after a restart: ``calculate_production_rate``
+            regresses over whatever is in the deque, so a day-old cluster
+            plus a fresh one yields the long-run average rate, and a
+            season's worth of stale points yields a negative slope clamped
+            to 0 (leader_rate=0, every boost EV negative, gap_analysis
+            reporting gap_rate 0).  Callers should pass the sparkline
+            window -- ``max_history * poll_interval``.  ``None`` keeps the
+            old load-everything behaviour.
         """
         try:
             with open(path) as f:
@@ -168,14 +214,18 @@ class DataCache:
         for name, points in histories.items():
             if not isinstance(points, list):
                 continue
-            good, dropped = coerce_points(points, now=now)
+            good, dropped = coerce_points(points, now=now, max_age=max_age)
             skipped += dropped
+            if not good:
+                # Every point aged out (or was unusable): leave the bakery
+                # untracked rather than seeding an empty deque.
+                continue
             self._history[name] = deque(good, maxlen=self._max_history)
             loaded += 1
 
         if skipped:
             logger.warning(
-                "Skipped %d unusable point(s) while loading cache %s",
+                "Skipped %d unusable or expired point(s) while loading cache %s",
                 skipped,
                 path,
             )

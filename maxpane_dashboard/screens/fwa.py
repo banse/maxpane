@@ -78,6 +78,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
+from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.fwa import (
     FWAActivityFeed,
     FWAChaseBoard,
@@ -191,7 +192,7 @@ def _title_line(data: dict) -> str:
     return line
 
 
-class FWAScreen(Screen):
+class FWAScreen(RefreshGuard, Screen):
     """Fake World Assets gacha-terminal dashboard.
 
     ``BINDINGS`` is ``r`` only: unlike Talismans/TTT there is no hidden second
@@ -201,6 +202,9 @@ class FWAScreen(Screen):
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
     ]
+
+    #: Worker name for the guarded refresh (see RefreshGuard).
+    REFRESH_WORKER_NAME = "fwa-refresh"
 
     # Structural fallback only. The registered ``fwa`` theme (WP-16) restates
     # these in ``themes/minimal.tcss`` and overrides them -- app stylesheet
@@ -309,9 +313,6 @@ class FWAScreen(Screen):
     # Actions / bindings
     # ------------------------------------------------------------------
 
-    def action_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="fwa-refresh")
-
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -335,12 +336,6 @@ class FWAScreen(Screen):
     # ------------------------------------------------------------------
     # Refresh flow
     # ------------------------------------------------------------------
-
-    def _do_initial_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="fwa-refresh")
-
-    def _schedule_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="fwa-refresh")
 
     async def _do_refresh(self) -> None:
         try:

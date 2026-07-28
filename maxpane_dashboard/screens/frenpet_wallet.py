@@ -22,6 +22,7 @@ from maxpane_dashboard.analytics.frenpet_wallet_signals import (
     generate_wallet_recommendation,
 )
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
+from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.frenpet.wallet import (
     FPWalletActivity,
     FPWalletBestPlays,
@@ -42,12 +43,15 @@ def _short_addr(address: str) -> str:
     return address
 
 
-class FrenPetWalletScreen(Screen):
+class FrenPetWalletScreen(RefreshGuard, Screen):
     """FrenPet wallet-level dashboard: ETH rewards, pool share, APR."""
 
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
     ]
+
+    #: Worker name for the guarded refresh (see RefreshGuard).
+    REFRESH_WORKER_NAME = "fpw-refresh"
 
     def __init__(self, data_manager: FrenPetManager, poll_interval: int, **kwargs):
         super().__init__(**kwargs)
@@ -93,12 +97,6 @@ class FrenPetWalletScreen(Screen):
             self._refresh_timer.stop()
             self._refresh_timer = None
 
-    def _do_initial_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="fpw-refresh")
-
-    def _schedule_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="fpw-refresh")
-
     async def _do_refresh(self) -> None:
         try:
             data = await self._data_manager.fetch_and_compute()
@@ -137,9 +135,15 @@ class FrenPetWalletScreen(Screen):
             if wallet_rewards:
                 total_eth_wei = wallet_rewards.get("total_eth_wei", 0)
                 eth_price_usd = wallet_rewards.get("eth_price_usd", 0.0)
-                user_shares = wallet_rewards.get("user_shares", 0)
+                # userShares() and totalFpInPool() are raw uint256 values
+                # with 18 decimals, exactly like the FP token itself.
+                # Scale them to display FP here (same as
+                # ``total_fp_per_second`` below) -- passing the raw
+                # integers made the hero read "of 37325669265659.0B FP
+                # pool" instead of "of 37.3K FP pool".
+                user_shares = wallet_rewards.get("user_shares", 0) / 1e18
                 total_shares = wallet_rewards.get("total_shares", 0)
-                total_fp_in_pool = wallet_rewards.get("total_fp_in_pool", 0)
+                total_fp_in_pool = wallet_rewards.get("total_fp_in_pool", 0) / 1e18
                 pool_share_pct = wallet_rewards.get("pool_share_pct", 0.0)
 
                 # Compute APR from wallet_rewards data
@@ -319,6 +323,3 @@ class FrenPetWalletScreen(Screen):
             )
         except Exception as exc:
             logger.debug("Failed to update StatusBar: %s", exc)
-
-    def action_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="fpw-refresh")

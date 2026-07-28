@@ -7,6 +7,12 @@ subtitle.
 Reference implementations:
   - maxpane_dashboard/widgets/frenpet/overview/fp_hero_metrics.py
   - maxpane_dashboard/widgets/cattown/ct_hero_metrics.py
+
+Keep the explicit unavailable state when you copy this (MEDI-38).  A box
+that is skipped when its value is missing does not go blank -- it keeps
+whatever it last showed, or "Loading..." forever if the first poll was the
+one that failed, and the user cannot tell a stale number from a live one.
+Values and subtitles are API-sourced, so they are escaped.
 """
 
 from __future__ import annotations
@@ -15,6 +21,9 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+
+#: Shown in place of a value the backend could not supply this poll.
+_UNAVAILABLE = "[yellow]unavailable[/]"
 
 
 class GameHeroBox(Static):
@@ -67,36 +76,36 @@ class GameHeroMetrics(Horizontal):
     ) -> None:
         """Refresh all three hero boxes with live values.
 
-        Adapt parameters to your game's key metrics.
+        Adapt parameters to your game's key metrics.  Every box is written
+        on every call: a missing value renders an explicit unavailable
+        marker rather than leaving the box on its previous contents.
         """
-        # -- Metric One --
-        box1 = self.query_one("#game-hero-one", GameHeroBox)
-        if metric_one_value:
-            box1.update(
-                f"[dim]METRIC ONE[/]\n\n"
-                f"[bold white]{metric_one_value}[/]\n"
-                f"[dim]{metric_one_subtitle}[/]"
-            )
+        self._render_box("#game-hero-one", "METRIC ONE",
+                         metric_one_value, metric_one_subtitle)
+        self._render_box("#game-hero-two", "METRIC TWO",
+                         metric_two_value, metric_two_subtitle)
+        self._render_box("#game-hero-leader", "LEADER",
+                         leader_name, leader_subtitle)
 
-        # -- Metric Two --
-        box2 = self.query_one("#game-hero-two", GameHeroBox)
-        if metric_two_value:
-            box2.update(
-                f"[dim]METRIC TWO[/]\n\n"
-                f"[bold white]{metric_two_value}[/]\n"
-                f"[dim]{metric_two_subtitle}[/]"
+    def _render_box(
+        self, selector: str, label: str, value: str, subtitle: str
+    ) -> None:
+        """Write one box, degrading to an explicit unavailable state."""
+        try:
+            box = self.query_one(selector, GameHeroBox)
+        except Exception:
+            return
+        try:
+            body = (
+                f"[bold white]{safe_markup(value)}[/]"
+                if value
+                else _UNAVAILABLE
             )
-
-        # -- Leader --
-        box3 = self.query_one("#game-hero-leader", GameHeroBox)
-        if leader_name:
-            box3.update(
-                f"[dim]LEADER[/]\n\n"
-                f"[bold white]{safe_markup(leader_name)}[/]\n"
-                f"[dim]{leader_subtitle}[/]"
+            box.update(
+                f"[dim]{label}[/]\n\n{body}\n[dim]{safe_markup(subtitle)}[/]"
             )
-        else:
-            box3.update(
-                "[dim]LEADER[/]\n\n"
-                "[dim]No data[/]"
-            )
+        except Exception:
+            try:
+                box.update(f"[dim]{label}[/]\n\n{_UNAVAILABLE}")
+            except Exception:
+                pass

@@ -11,6 +11,7 @@ from textual.screen import Screen
 from textual.widgets import Static
 
 from maxpane_dashboard.data.talismans_manager import TalismansManager
+from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.talismans import (
     TalismansActivityFeed,
@@ -25,7 +26,7 @@ from maxpane_dashboard.widgets.talismans import (
 logger = logging.getLogger(__name__)
 
 
-class TalismansScreen(Screen):
+class TalismansScreen(RefreshGuard, Screen):
     """Talismans core-conservation NFT dashboard.
 
     Mirrors the layout pattern used by :class:`TTTScreen` but adds a
@@ -37,6 +38,9 @@ class TalismansScreen(Screen):
         Binding("r", "refresh", "Refresh", show=False),
         Binding("c", "toggle_view", "Matrix/Materials", show=True),
     ]
+
+    #: Worker name for the guarded refresh (see RefreshGuard).
+    REFRESH_WORKER_NAME = "talismans-refresh"
 
     def __init__(
         self,
@@ -90,11 +94,6 @@ class TalismansScreen(Screen):
     # Actions / bindings
     # ------------------------------------------------------------------
 
-    def action_refresh(self) -> None:
-        self.run_worker(
-            self._do_refresh(), exclusive=True, name="talismans-refresh"
-        )
-
     def action_toggle_view(self) -> None:
         if self._active_view == "matrix":
             self._active_view = "materials"
@@ -139,16 +138,6 @@ class TalismansScreen(Screen):
     # ------------------------------------------------------------------
     # Refresh flow
     # ------------------------------------------------------------------
-
-    def _do_initial_refresh(self) -> None:
-        self.run_worker(
-            self._do_refresh(), exclusive=True, name="talismans-refresh"
-        )
-
-    def _schedule_refresh(self) -> None:
-        self.run_worker(
-            self._do_refresh(), exclusive=True, name="talismans-refresh"
-        )
 
     async def _do_refresh(self) -> None:
         try:

@@ -6,6 +6,8 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
+from maxpane_dashboard.widgets.frenpet.perf.velocity_format import format_velocity
+
 _SPARK_CHARS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
 _SPARK_WIDTH = 20
 
@@ -54,13 +56,8 @@ def _format_pct_value(value: float) -> str:
 
 
 def _format_velocity(value: float) -> str:
-    """Format velocity as +X/hr with K/M suffix."""
-    sign = "+" if value >= 0 else ""
-    if abs(value) >= 1_000_000:
-        return f"{sign}{value / 1_000_000:.1f}M/hr"
-    if abs(value) >= 1_000:
-        return f"{sign}{value / 1_000:.1f}K/hr"
-    return f"{sign}{value:,.0f}/hr"
+    """Format a points-per-day velocity as +X/day with K/M suffix."""
+    return format_velocity(value)
 
 
 def _trend_arrow(values: list[float]) -> str:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from unittest.mock import patch
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -153,3 +153,65 @@ class TestCompetitionTiming:
             result = get_competition_timing()
         assert result["is_active"] is False
         assert result["seconds_until_start"] > 0
+
+    # -- Month-boundary regressions (MEDI-6) ------------------------------
+    #
+    # The original implementation built the weekend window with
+    # datetime.replace(day=now.day +/- offset), which raises
+    # ValueError("day is out of range for month") whenever the arithmetic
+    # walks past the end of the month. The manager swallows that via
+    # _safe_call and substitutes zeroed countdowns, so the hero widget
+    # silently shows "Starts in 0m" on ~3 days every month.
+
+    @pytest.mark.parametrize(
+        ("when", "expect_active"),
+        [
+            # Monday 2026-06-29: day 29 + 5 == 34 -> overflowed.
+            (datetime(2026, 6, 29, 12, 0, 0, tzinfo=timezone.utc), False),
+            # Tuesday 2026-07-28: day 28 + 4 == 32 -> overflowed.
+            (datetime(2026, 7, 28, 12, 0, 0, tzinfo=timezone.utc), False),
+            # Saturday 2026-10-31: sunday_end day 31 + 1 == 32 -> overflowed
+            # ON a live competition day.
+            (datetime(2026, 10, 31, 12, 0, 0, tzinfo=timezone.utc), True),
+            # Sunday 2026-11-01: day 1 - 1 == 0 -> overflowed.
+            (datetime(2026, 11, 1, 12, 0, 0, tzinfo=timezone.utc), True),
+            # Thursday 2026-12-31: crosses a year boundary too.
+            (datetime(2026, 12, 31, 12, 0, 0, tzinfo=timezone.utc), False),
+        ],
+    )
+    def test_competition_timing_survives_month_boundaries(
+        self, when: datetime, expect_active: bool
+    ) -> None:
+        """No ValueError when the weekend window crosses a month/year edge."""
+        with patch("maxpane_dashboard.analytics.cattown_conditions.datetime") as mock_dt:
+            mock_dt.now.return_value = when
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = get_competition_timing()
+
+        assert result["is_active"] is expect_active
+        if expect_active:
+            assert result["seconds_until_start"] == 0
+            # Still inside the 48h window, so a real countdown -- not 0.
+            assert 0 < result["seconds_until_end"] <= 2 * 86400
+        else:
+            assert 0 < result["seconds_until_start"] <= 5 * 86400
+            assert result["seconds_until_end"] > result["seconds_until_start"]
+
+    def test_competition_timing_never_raises_over_a_full_year(self) -> None:
+        """Sweep 400 consecutive days: every one yields a sane countdown."""
+        start = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        for offset in range(400):
+            when = start + timedelta(days=offset)
+            with patch(
+                "maxpane_dashboard.analytics.cattown_conditions.datetime"
+            ) as mock_dt:
+                mock_dt.now.return_value = when
+                mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+                result = get_competition_timing()
+
+            assert result["is_active"] is (when.weekday() in (5, 6)), when
+            # The countdown fallback is only useful if it is non-zero.
+            if result["is_active"]:
+                assert result["seconds_until_end"] > 0, when
+            else:
+                assert result["seconds_until_start"] > 0, when

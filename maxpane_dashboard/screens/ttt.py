@@ -11,6 +11,7 @@ from textual.screen import Screen
 from textual.widgets import Static
 
 from maxpane_dashboard.data.ttt_manager import TTTManager
+from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.ttt import (
     TTTActivityFeed,
@@ -25,7 +26,7 @@ from maxpane_dashboard.widgets.ttt import (
 logger = logging.getLogger(__name__)
 
 
-class TTTScreen(Screen):
+class TTTScreen(RefreshGuard, Screen):
     """Ten Thousand Tokens dashboard.
 
     Mirrors the layout pattern used by :class:`OCMScreen` but adds a
@@ -37,6 +38,9 @@ class TTTScreen(Screen):
         Binding("r", "refresh", "Refresh", show=False),
         Binding("c", "toggle_view", "Toggle Fees/Claims", show=True),
     ]
+
+    #: Worker name for the guarded refresh (see RefreshGuard).
+    REFRESH_WORKER_NAME = "ttt-refresh"
 
     def __init__(
         self,
@@ -90,9 +94,6 @@ class TTTScreen(Screen):
     # Actions / bindings
     # ------------------------------------------------------------------
 
-    def action_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="ttt-refresh")
-
     def action_toggle_view(self) -> None:
         if self._active_view == "fees":
             self._active_view = "claims"
@@ -137,12 +138,6 @@ class TTTScreen(Screen):
     # ------------------------------------------------------------------
     # Refresh flow
     # ------------------------------------------------------------------
-
-    def _do_initial_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="ttt-refresh")
-
-    def _schedule_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="ttt-refresh")
 
     async def _do_refresh(self) -> None:
         try:

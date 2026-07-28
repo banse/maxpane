@@ -11,6 +11,7 @@ from textual.screen import Screen
 from textual.widgets import Static
 
 from maxpane_dashboard.data.dota_manager import DOTAManager
+from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.dota import (
     DOTAActivityFeed,
     DOTABestPlays,
@@ -24,12 +25,15 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 logger = logging.getLogger(__name__)
 
 
-class DOTAScreen(Screen):
+class DOTAScreen(RefreshGuard, Screen):
     """Defense of the Agents game dashboard."""
 
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
     ]
+
+    #: Worker name for the guarded refresh (see RefreshGuard).
+    REFRESH_WORKER_NAME = "dota-refresh"
 
     def __init__(self, manager: DOTAManager, poll_interval: int = 30, name: str = "dota", **kwargs):
         super().__init__(name=name, **kwargs)
@@ -74,12 +78,6 @@ class DOTAScreen(Screen):
         if self._refresh_timer:
             self._refresh_timer.stop()
             self._refresh_timer = None
-
-    def _do_initial_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="dota-refresh")
-
-    def _schedule_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="dota-refresh")
 
     async def _do_refresh(self) -> None:
         try:
@@ -186,6 +184,3 @@ class DOTAScreen(Screen):
             )
         except Exception as exc:
             logger.debug("Failed to update StatusBar: %s", exc)
-
-    def action_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="dota-refresh")

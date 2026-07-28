@@ -13,15 +13,19 @@ def _fmt_eth(wei: int) -> str:
     return f"{eth:.4f} ETH"
 
 
-def _fmt_fp(amount: int) -> str:
-    """Format FP amount with K/M/B suffix."""
+def _fmt_fp(amount: float) -> str:
+    """Format an FP amount (display units, not raw 18-decimal wei).
+
+    Callers must divide raw ``uint256`` reads by 1e18 first; this helper
+    has no way to tell 37,326 FP from 3.7e22 wei.
+    """
     if amount >= 1_000_000_000:
         return f"{amount / 1_000_000_000:.1f}B"
     if amount >= 1_000_000:
         return f"{amount / 1_000_000:.1f}M"
     if amount >= 1_000:
         return f"{amount / 1_000:.1f}K"
-    return f"{amount:,}"
+    return f"{amount:,.0f}"
 
 
 class FPWHeroBox(Static):
@@ -61,12 +65,17 @@ class FPWalletHero(Horizontal):
         total_eth_wei: int,
         eth_price_usd: float,
         pool_share_pct: float,
-        total_fp_in_pool: int,
+        total_fp_in_pool: float,
         apr: float,
-        user_shares: int,
+        user_shares: float,
         pet_count: int,
     ) -> None:
-        """Refresh all three hero boxes with live values."""
+        """Refresh all three hero boxes with live values.
+
+        ``total_eth_wei`` is raw wei; ``total_fp_in_pool`` and
+        ``user_shares`` are FP **display units** (already divided by
+        1e18 by the caller).
+        """
         # -- ETH Rewards --
         eth_box = self.query_one("#fpw-hero-eth", FPWHeroBox)
         eth_str = _fmt_eth(total_eth_wei)

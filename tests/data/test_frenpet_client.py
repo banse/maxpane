@@ -471,3 +471,124 @@ class TestFrenPetClientRetry:
 
         assert pet is not None
         assert call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Tests: RPC attack-log fallback (MEDI-19)
+# ---------------------------------------------------------------------------
+
+class TestFrenPetClientAttacksRpcFallback:
+    """The RPC fallback must be shape-compatible with the Ponder path.
+
+    Consumers derive the global battle rate from the timestamp span and
+    render the values as clock times, so the fallback has to emit epoch
+    seconds in newest-first order -- not ascending block numbers.
+    """
+
+    @staticmethod
+    def _log(block: int, attacker: int, defender: int, won: bool) -> dict:
+        return {
+            "blockNumber": hex(block),
+            "topics": [
+                "0x" + "cc" * 32,
+                hex(attacker),
+                hex(defender),
+            ],
+            "data": hex(1 if won else 0),
+        }
+
+    @staticmethod
+    def _responses(head_block: int, head_ts: int, logs: list[dict]):
+        head_resp = httpx.Response(
+            status_code=200,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "number": hex(head_block),
+                    "timestamp": hex(head_ts),
+                },
+            },
+            request=httpx.Request("POST", "https://mainnet.base.org"),
+        )
+        logs_resp = httpx.Response(
+            status_code=200,
+            json={"jsonrpc": "2.0", "id": 1, "result": logs},
+            request=httpx.Request("POST", "https://mainnet.base.org"),
+        )
+        return [head_resp, logs_resp]
+
+    @pytest.mark.asyncio
+    async def test_timestamps_are_epoch_seconds_newest_first(self):
+        head_block = 30_000_000
+        head_ts = 1_800_000_000
+        # Ascending block order, exactly as eth_getLogs returns them.
+        logs = [
+            self._log(head_block - 1800, 1, 2, True),
+            self._log(head_block - 900, 3, 4, False),
+            self._log(head_block - 100, 5, 6, True),
+        ]
+
+        async with FrenPetClient() as client:
+            client._client = AsyncMock(spec=httpx.AsyncClient)
+            client._client.post = AsyncMock(
+                side_effect=self._responses(head_block, head_ts, logs)
+            )
+            attacks = await client._get_attacks_rpc(limit=50)
+
+        assert [a["attacker_id"] for a in attacks] == [5, 3, 1]
+        # Newest first, and all within a sane epoch-second range.
+        timestamps = [a["timestamp"] for a in attacks]
+        assert timestamps == sorted(timestamps, reverse=True)
+        assert timestamps[0] == head_ts - 100 * 2
+        assert timestamps[-1] == head_ts - 1800 * 2
+        # ~2s blocks over a 1700-block gap => ~57 minutes of history.
+        span_hours = (timestamps[0] - timestamps[-1]) / 3600.0
+        assert 0.9 < span_hours < 1.0
+
+    @pytest.mark.asyncio
+    async def test_limit_keeps_the_newest_events(self):
+        head_block = 30_000_000
+        head_ts = 1_800_000_000
+        logs = [
+            self._log(head_block - (10 - i) * 10, i, i + 100, True)
+            for i in range(1, 11)
+        ]
+
+        async with FrenPetClient() as client:
+            client._client = AsyncMock(spec=httpx.AsyncClient)
+            client._client.post = AsyncMock(
+                side_effect=self._responses(head_block, head_ts, logs)
+            )
+            attacks = await client._get_attacks_rpc(limit=3)
+
+        assert len(attacks) == 3
+        assert [a["attacker_id"] for a in attacks] == [10, 9, 8]
+
+    @pytest.mark.asyncio
+    async def test_missing_head_timestamp_falls_back_to_wall_clock(self):
+        head_block = 30_000_000
+        logs = [self._log(head_block - 10, 1, 2, True)]
+        head_resp = httpx.Response(
+            status_code=200,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {"number": hex(head_block)},
+            },
+            request=httpx.Request("POST", "https://mainnet.base.org"),
+        )
+        logs_resp = httpx.Response(
+            status_code=200,
+            json={"jsonrpc": "2.0", "id": 1, "result": logs},
+            request=httpx.Request("POST", "https://mainnet.base.org"),
+        )
+
+        async with FrenPetClient() as client:
+            client._client = AsyncMock(spec=httpx.AsyncClient)
+            client._client.post = AsyncMock(side_effect=[head_resp, logs_resp])
+            attacks = await client._get_attacks_rpc(limit=50)
+
+        assert len(attacks) == 1
+        # Recent epoch seconds, not a block number.
+        assert abs(attacks[0]["timestamp"] - time.time()) < 120

@@ -11,6 +11,7 @@ from textual.screen import Screen
 from textual.widgets import Static
 
 from maxpane_dashboard.data.cattown_manager import CatTownManager
+from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.cattown import (
     CTActivityFeed,
     CTBestPlays,
@@ -24,12 +25,15 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 logger = logging.getLogger(__name__)
 
 
-class CatTownScreen(Screen):
+class CatTownScreen(RefreshGuard, Screen):
     """Cat Town Fishing game dashboard."""
 
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
     ]
+
+    #: Worker name for the guarded refresh (see RefreshGuard).
+    REFRESH_WORKER_NAME = "cattown-refresh"
 
     def __init__(self, data_manager: CatTownManager, poll_interval: int, **kwargs):
         super().__init__(**kwargs)
@@ -74,12 +78,6 @@ class CatTownScreen(Screen):
         if self._refresh_timer:
             self._refresh_timer.stop()
             self._refresh_timer = None
-
-    def _do_initial_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="cattown-refresh")
-
-    def _schedule_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="cattown-refresh")
 
     async def _do_refresh(self) -> None:
         try:
@@ -173,6 +171,3 @@ class CatTownScreen(Screen):
             )
         except Exception as exc:
             logger.debug("Failed to update StatusBar: %s", exc)
-
-    def action_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="cattown-refresh")

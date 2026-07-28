@@ -11,6 +11,7 @@ from textual.screen import Screen
 from textual.widgets import Static
 
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
+from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.frenpet.overview import (
     FPBattleActivity,
     FPBestPlays,
@@ -24,12 +25,15 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 logger = logging.getLogger(__name__)
 
 
-class FrenPetScreen(Screen):
+class FrenPetScreen(RefreshGuard, Screen):
     """FrenPet game dashboard (Overview only)."""
 
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
     ]
+
+    #: Worker name for the guarded refresh (see RefreshGuard).
+    REFRESH_WORKER_NAME = "frenpet-refresh"
 
     def __init__(
         self,
@@ -73,14 +77,6 @@ class FrenPetScreen(Screen):
         if self._refresh_timer:
             self._refresh_timer.stop()
             self._refresh_timer = None
-
-    def _do_initial_refresh(self) -> None:
-        """Trigger an immediate refresh when the screen appears."""
-        self.run_worker(self._do_refresh(), exclusive=True, name="frenpet-refresh")
-
-    def _schedule_refresh(self) -> None:
-        """Schedule a refresh via a worker so it runs async."""
-        self.run_worker(self._do_refresh(), exclusive=True, name="frenpet-refresh")
 
     async def _do_refresh(self) -> None:
         """Fetch data and update all overview widgets."""
@@ -186,7 +182,3 @@ class FrenPetScreen(Screen):
             )
         except Exception as exc:
             logger.warning("Failed to update StatusBar: %s", exc)
-
-    def action_refresh(self) -> None:
-        """Immediate refresh triggered by the 'r' keybinding."""
-        self.run_worker(self._do_refresh(), exclusive=True, name="frenpet-refresh")

@@ -596,10 +596,19 @@ def _decode_bought_log(log: dict) -> dict | None:
 class TTTClient:
     """Async client for TTT data sources.
 
-    Fetches state from Ethereum mainnet RPC and DexScreener. All methods are
-    exception-safe: network failures bubble up as ``None`` / empty-list
-    returns rather than raising, so the manager's refresh cycle is never
-    killed by a single bad upstream.
+    Fetches state from Ethereum mainnet RPC and DexScreener.
+
+    Failure contract -- a failed read is never a zero:
+
+    * The HTTP sources (DexScreener, the site scrape) degrade to ``None`` /
+      empty returns, because "no market data" is a real, common answer.
+    * The contract reads (:meth:`fetch_factory_state`,
+      :meth:`fetch_token_metadata`, :meth:`fetch_token_reservoirs`) **raise**
+      when the transport failed, so the manager can tell "RPC down" from
+      "the value is genuinely 0" and count it as an error. Per-call reverts
+      inside a healthy multicall are still reported in-band.
+    * The log scans return ``(events, last_complete_block)`` so a refused page
+      holds the caller's watermark instead of silently skipping its blocks.
 
     Parameters
     ----------
@@ -792,10 +801,27 @@ class TTTClient:
         topics: list,
         from_block: int,
         to_block: int,
-    ) -> list[dict]:
-        """Fetch event logs with auto-pagination at ``_LOG_RANGE_PER_CALL``."""
+    ) -> tuple[list[dict], int]:
+        """Fetch event logs, paged, reporting **how far the scan actually got**.
+
+        Returns ``(logs, last_complete_block)``: every block in
+        ``[from_block, last_complete_block]`` was successfully scanned. A total
+        failure of the very first page yields ``from_block - 1`` -- "no
+        progress" -- and callers must not advance a watermark past it.
+
+        The return shape is the fix for MEDI-29. This used to catch each page's
+        exception, log it at ``debug`` and skip to the next page, so a refused
+        chunk produced a *partial* list that looked exactly like a genuinely
+        sparse range. ``TTTManager._scan_events`` then set
+        ``last_seen_block[topic] = current_block`` and persisted it, and since
+        steady-state scans only look back ``_INCREMENTAL_LOG_LOOKBACK`` blocks,
+        the skipped range was never read again for the life of the cache. Any
+        ``Launched`` token in it never entered ``cache.tokens`` (``register_token``
+        is only reachable via ``apply_launch``), permanently missing from the
+        leaderboard, the fee table, metadata refresh and buyback scans.
+        """
         if from_block > to_block:
-            return []
+            return [], to_block
         all_logs: list[dict] = []
         cursor = from_block
         while cursor <= to_block:
@@ -813,15 +839,27 @@ class TTTClient:
                     "eth_getLogs", [params], endpoints=self._log_rpcs
                 )
             except Exception as exc:
-                logger.debug(
-                    "eth_getLogs [%d..%d] failed: %s", cursor, chunk_end, exc
+                logger.warning(
+                    "eth_getLogs [%d..%d] failed: %s; scan stops at %d",
+                    cursor,
+                    chunk_end,
+                    exc,
+                    cursor - 1,
                 )
-                cursor = chunk_end + 1
-                continue
-            if isinstance(logs, list):
-                all_logs.extend(logs)
+                return all_logs, cursor - 1
+            if not isinstance(logs, list):
+                logger.warning(
+                    "eth_getLogs [%d..%d] returned %s, not a list; "
+                    "scan stops at %d",
+                    cursor,
+                    chunk_end,
+                    type(logs).__name__,
+                    cursor - 1,
+                )
+                return all_logs, cursor - 1
+            all_logs.extend(logs)
             cursor = chunk_end + 1
-        return all_logs
+        return all_logs, to_block
 
     async def _multicall(self, calls: list[tuple[str, str]]) -> list[tuple[bool, str]]:
         """Batch many eth_calls into one Multicall3 ``aggregate3``.
@@ -829,17 +867,33 @@ class TTTClient:
         Each input tuple is ``(target_address, callData_hex)``. All calls run
         with ``allowFailure=True`` so one bad target doesn't kill the batch.
         Returns a list of ``(success, returnData)`` in the same order.
+
+        Raises ``RuntimeError`` when the *transport* failed -- every endpoint
+        exhausted, or a reply that does not decode into one ``Result`` per
+        call. This is deliberately different from a per-call revert, which is
+        reported in-band as ``(False, "0x")``.
+
+        The distinction is the whole point (MEDI-31). This used to swallow the
+        outage and return ``[(False, "0x")] * len(calls)``, which is
+        indistinguishable from "every contract reverted": callers turned it
+        into ``burn_count=0`` / ``active_shares=0`` / ``reservoir=0``, the
+        manager's ``except`` branch never fired, ``_error_count`` stayed 0, and
+        the dashboard rendered a confident, plausible, entirely false picture
+        of the chain -- then persisted a ``(hour, 0)`` point into the 7-day
+        sparkline, so one outage outlived itself.
         """
         if not calls:
             return []
         payload_calls = [(t, cd, True) for (t, cd) in calls]
         data = _encode_aggregate3(payload_calls)
-        try:
-            raw = await self._eth_call(_MULTICALL3, data)
-        except Exception as exc:
-            logger.warning("multicall(%d calls) failed: %s", len(calls), exc)
-            return [(False, "0x") for _ in calls]
-        return _decode_aggregate3_result(raw)
+        raw = await self._eth_call(_MULTICALL3, data)
+        results = _decode_aggregate3_result(raw)
+        if len(results) != len(calls):
+            raise RuntimeError(
+                f"multicall({len(calls)} calls) returned {len(results)} "
+                f"results; the reply is not a well-formed aggregate3 Result[]"
+            )
+        return results
 
     # ------------------------------------------------------------------
     # Public API
@@ -857,8 +911,13 @@ class TTTClient:
         """Read factory + FeeSplitter state in one multicall.
 
         Returns a flat dict with keys: ``max_supply``, ``total_minted``,
-        ``burn_count``, ``active_shares``, ``acc_eth_per_share``. Missing /
-        failed reads are reported as 0.
+        ``burn_count``, ``active_shares``, ``acc_eth_per_share``.
+
+        Raises ``RuntimeError`` if the multicall itself could not be made
+        (MEDI-31) -- an outage must not be rendered as a chain where nothing
+        has ever burned. An individual read that reverts on a healthy node is
+        still reported as 0, which is the only honest answer for a selector
+        the deployed contract does not implement.
         """
         calls = [
             (_FACTORY, _SEL_MAX_SUPPLY),
@@ -885,14 +944,14 @@ class TTTClient:
 
     async def fetch_token_deployed_events(
         self, from_block: int, to_block: int
-    ) -> list[dict]:
+    ) -> tuple[list[dict], int]:
         """Enumerate every NFT->ERC20 deployment in a block range.
 
-        Returns a list of ``{token_id, erc20_address, holder, block_number,
-        tx_hash}`` dicts. Use this at startup to discover all 10,000 token
-        contracts in one pass.
+        Returns ``(events, last_complete_block)``; each event is a
+        ``{token_id, erc20_address, holder, block_number, tx_hash}`` dict. See
+        :meth:`_get_logs` for the watermark contract.
         """
-        logs = await self._get_logs(
+        logs, scanned_to = await self._get_logs(
             _FACTORY, [_TOPIC_TOKEN_DEPLOYED], from_block, to_block
         )
         out: list[dict] = []
@@ -900,16 +959,17 @@ class TTTClient:
             decoded = _decode_token_deployed_log(log)
             if decoded is not None:
                 out.append(decoded)
-        return out
+        return out, scanned_to
 
     async def fetch_launched_events(
         self, from_block: int, to_block: int
-    ) -> list[dict]:
+    ) -> tuple[list[dict], int]:
         """Fetch burn-and-launch events from the factory's ``Launched`` topic.
 
-        Returns ``{token_id, erc20_address, launcher, block_number, tx_hash}``.
+        Returns ``([{token_id, erc20_address, launcher, block_number,
+        tx_hash}], last_complete_block)``. See :meth:`_get_logs`.
         """
-        logs = await self._get_logs(
+        logs, scanned_to = await self._get_logs(
             _FACTORY, [_TOPIC_LAUNCHED], from_block, to_block
         )
         out: list[dict] = []
@@ -917,13 +977,16 @@ class TTTClient:
             decoded = _decode_launched_log(log)
             if decoded is not None:
                 out.append(decoded)
-        return out
+        return out, scanned_to
 
     async def fetch_deposit_events(
         self, from_block: int, to_block: int
-    ) -> list[dict]:
-        """Fetch FeeSplitter ``Deposited`` events with full 7-field decode."""
-        logs = await self._get_logs(
+    ) -> tuple[list[dict], int]:
+        """Fetch FeeSplitter ``Deposited`` events with full 7-field decode.
+
+        Returns ``(events, last_complete_block)``. See :meth:`_get_logs`.
+        """
+        logs, scanned_to = await self._get_logs(
             _FEESPLITTER, [_TOPIC_DEPOSITED], from_block, to_block
         )
         out: list[dict] = []
@@ -931,24 +994,28 @@ class TTTClient:
             decoded = _decode_deposited_log(log)
             if decoded is not None:
                 out.append(decoded)
-        return out
+        return out, scanned_to
 
     async def fetch_buyback_events(
         self,
         token_addresses: list[str],
         from_block: int,
         to_block: int,
-    ) -> list[dict]:
+    ) -> tuple[list[dict], int]:
         """Fetch ``Bought`` events emitted by any of the given ERC20s.
 
-        Returns one dict per event with the source token, caller, eth spent,
-        tokens bought, and bounty reward.
+        Returns ``(events, last_complete_block)``; each event carries the
+        source token, caller, eth spent, tokens bought, and bounty reward. See
+        :meth:`_get_logs` for the watermark contract.
+
+        With no addresses there is nothing to scan, so the range counts as
+        fully covered: ``([], to_block)``.
         """
         if not token_addresses:
-            return []
+            return [], to_block
         addresses = [a.lower() for a in token_addresses]
         # Some RPCs reject array-form `address`; we paginate manually if needed.
-        logs = await self._get_logs(
+        logs, scanned_to = await self._get_logs(
             addresses, [_TOPIC_BOUGHT], from_block, to_block
         )
         out: list[dict] = []
@@ -956,7 +1023,7 @@ class TTTClient:
             decoded = _decode_bought_log(log)
             if decoded is not None:
                 out.append(decoded)
-        return out
+        return out, scanned_to
 
     async def fetch_token_metadata(
         self, addresses: list[str]

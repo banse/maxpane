@@ -11,6 +11,7 @@ from textual.screen import Screen
 from textual.widgets import Static
 
 from maxpane_dashboard.data.base_manager import BaseManager
+from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.base.overview import (
     BTOverviewHero,
     BTOverviewLeaderboard,
@@ -24,12 +25,15 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 logger = logging.getLogger(__name__)
 
 
-class BaseTerminalScreen(Screen):
+class BaseTerminalScreen(RefreshGuard, Screen):
     """Base chain overview dashboard."""
 
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
     ]
+
+    #: Worker name for the guarded refresh (see RefreshGuard).
+    REFRESH_WORKER_NAME = "base-refresh"
 
     def __init__(self, manager: BaseManager, poll_interval: int = 30, **kwargs):
         super().__init__(**kwargs)
@@ -74,12 +78,6 @@ class BaseTerminalScreen(Screen):
         if self._refresh_timer:
             self._refresh_timer.stop()
             self._refresh_timer = None
-
-    def _do_initial_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="base-refresh")
-
-    def _schedule_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="base-refresh")
 
     async def _do_refresh(self) -> None:
         try:
@@ -174,6 +172,3 @@ class BaseTerminalScreen(Screen):
             )
         except Exception as exc:
             logger.warning("Failed to update StatusBar: %s", exc)
-
-    def action_refresh(self) -> None:
-        self.run_worker(self._do_refresh(), exclusive=True, name="base-refresh")

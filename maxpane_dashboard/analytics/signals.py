@@ -1,5 +1,15 @@
 """Strategic signals for decision-making."""
 
+# Confirmed season payout split: the prize pool is shared 70/20/10 between
+# the #1, #2 and #3 bakeries.  Nobody outside the top three is paid.
+PRIZE_SPLIT: tuple[float, float, float] = (0.70, 0.20, 0.10)
+
+# ``calculate_late_join_ev`` is handed a *top-three* probability, not a
+# win-the-season probability.  Conditional on landing in the top three we
+# treat the three places as equally likely, so the bakery's expected share
+# of the pool is the mean of the split (1/3), not the whole pool.
+MEAN_TOP3_SHARE: float = sum(PRIZE_SPLIT) / len(PRIZE_SPLIT)
+
 
 def calculate_late_join_ev(
     prize_pool_eth: float,
@@ -7,25 +17,56 @@ def calculate_late_join_ev(
     member_count: int,
     buy_in_eth: float,
     win_probability: float,
+    season_active: bool = True,
 ) -> dict:
-    """Calculate expected value of joining a season late.
+    """Calculate expected value of joining a season late, per member.
+
+    The payout a *single* new member can expect is not the prize pool.  It
+    is the pool times the bakery's share of the 70/20/10 split, divided by
+    the number of members that share splits with them.  Multiplying the
+    top-three probability by the full pool -- as this function used to --
+    overstates the figure by roughly two orders of magnitude for a
+    30-member bakery, and the SignalsPanel renders that number verbatim.
+
+    Parameters
+    ----------
+    member_count:
+        Members of the bakery being joined; the bakery's share of the pool
+        is split among them.  Values below 1 are treated as 1 (you would
+        be the only member).
+    win_probability:
+        Probability the bakery finishes in the top three.
+    season_active:
+        ``False`` once the season has ended.  A finished season cannot be
+        joined, so the EV is exactly ``-buy_in`` regardless of the pool --
+        which matters because a *finalized* season still reports a
+        non-zero pool for a while.
 
     Returns a dict with:
         ev_usd: Expected value in USD (expected payout minus cost).
-        breakeven_probability: The win probability needed to break even.
+        breakeven_probability: Top-three probability needed to break even.
         recommendation: A human-readable recommendation string.
     """
     buy_in_usd = buy_in_eth * eth_price_usd
     prize_pool_usd = prize_pool_eth * eth_price_usd
+    members = max(int(member_count), 1)
 
-    # EV = win_probability * prize_share - buy_in cost
-    # Assume winner-take-all for simplicity; if you win, you get the full pool
-    expected_payout = win_probability * prize_pool_usd
+    # What one member collects if the bakery lands in the top three.
+    payout_if_top3 = MEAN_TOP3_SHARE * prize_pool_usd / members
+
+    if not season_active:
+        return {
+            "ev_usd": round(-buy_in_usd, 2),
+            "breakeven_probability": 1.0,
+            "recommendation": "Season over -- joining is no longer possible",
+        }
+
+    expected_payout = win_probability * payout_if_top3
     ev_usd = expected_payout - buy_in_usd
 
-    # Breakeven probability: prob * prize_pool_usd = buy_in_usd
-    if prize_pool_usd > 0:
-        breakeven_probability = buy_in_usd / prize_pool_usd
+    # Breakeven probability: prob * payout_if_top3 = buy_in_usd
+    if payout_if_top3 > 0:
+        breakeven_probability = buy_in_usd / payout_if_top3
     else:
         breakeven_probability = 1.0
 

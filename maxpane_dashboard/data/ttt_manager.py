@@ -109,9 +109,12 @@ class TTTManager:
         self._last_floor_eth: float | None = None
         self._last_floor_usd: float | None = None
         self._last_sales_24h: int | None = None
+        # Last factory read that actually came back from chain, so an outage
+        # can show stale-but-true numbers instead of a confident zero.
+        self._last_factory: dict[str, int] | None = None
 
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        self.cache.load_from_file(str(_CACHE_FILE))
+        self.cache.load_from_file(str(_CACHE_FILE), now=time.time())
 
     # ------------------------------------------------------------------
     # Public API
@@ -133,12 +136,19 @@ class TTTManager:
         # serialize three independent RPCs through _INTER_CALL_DELAY.
         factory_task = asyncio.create_task(self.client.fetch_factory_state())
         block_task = asyncio.create_task(self.client.fetch_block_number())
+        factory_ok = True
         try:
             factory = await factory_task
+            self._last_factory = dict(factory)
         except Exception as exc:
+            factory_ok = False
             self._error_count += 1
             logger.warning("factory state fetch failed: %s", exc)
-            factory = {
+            # Prefer the last reading we actually got from chain. A stale
+            # burn count next to a raised error_count is honest; a fresh-looking
+            # zero is not (MEDI-31). The all-zero dict is only for the case
+            # where we have never had a successful read at all.
+            factory = dict(self._last_factory) if self._last_factory else {
                 "max_supply": 10_000,
                 "total_minted": 0,
                 "burn_count": 0,
@@ -180,9 +190,14 @@ class TTTManager:
 
         # -- 7) Sample hourly buckets ------------------------------------
         # floor is always None now; sample_burns_and_floor ignores None.
-        self.cache.sample_burns_and_floor(
-            now, factory["burn_count"], self._last_floor_eth
-        )
+        # Only sample from a factory read that actually happened: the hourly
+        # bucket is overwrite-by-hour and gets persisted, so one sample taken
+        # during an outage can leave a permanent dip in the 7-day sparkline if
+        # no good cycle lands in the same hour (MEDI-31).
+        if factory_ok:
+            self.cache.sample_burns_and_floor(
+                now, factory["burn_count"], self._last_floor_eth
+            )
         # Total 24h volume across all tokens with market data; mirrors the
         # burns/floor sampling pattern so the sparkline widget has a uniform
         # source.
@@ -452,10 +467,42 @@ class TTTManager:
                 current_block - _INCREMENTAL_LOG_LOOKBACK,
             )
 
+        def _advance(topic_name: str, from_block: int, scanned_to: int) -> None:
+            """Move the watermark to the last block actually scanned.
+
+            Never to ``current_block`` (MEDI-29): the client stops at the first
+            page it could not fetch, and advancing over that page would drop
+            its events permanently -- the next cycle starts after the gap and
+            the ``_INCREMENTAL_LOG_LOOKBACK`` floor never reaches back into it.
+            """
+            if scanned_to < from_block:
+                self._error_count += 1
+                logger.warning(
+                    "%s scan made no progress from block %d; watermark held "
+                    "at %s",
+                    topic_name,
+                    from_block,
+                    self.cache.last_seen_block.get(topic_name),
+                )
+                return
+            self.cache.last_seen_block[topic_name] = scanned_to
+            if scanned_to < current_block:
+                # Partial progress is persisted and the remainder retried next
+                # cycle, so no block is ever skipped over.
+                self._error_count += 1
+                logger.warning(
+                    "%s scan incomplete: reached %d of %d",
+                    topic_name,
+                    scanned_to,
+                    current_block,
+                )
+
         # Launched (factory)
         try:
             fb = _from("Launched", _DEFAULT_LOG_LOOKBACK_BLOCKS)
-            launches = await self.client.fetch_launched_events(fb, current_block)
+            launches, scanned_to = await self.client.fetch_launched_events(
+                fb, current_block
+            )
             for ev in launches:
                 ts = await self._block_timestamp(ev["block_number"], now, current_block)
                 self.cache.apply_launch(
@@ -467,14 +514,17 @@ class TTTManager:
                     tx_hash=ev["tx_hash"],
                     log_index=ev.get("log_index"),
                 )
-            self.cache.last_seen_block["Launched"] = current_block
+            _advance("Launched", fb, scanned_to)
         except Exception as exc:
-            logger.debug("Launched scan failed: %s", exc)
+            self._error_count += 1
+            logger.warning("Launched scan failed: %s", exc)
 
         # Deposited (FeeSplitter)
         try:
             fb = _from("Deposited", _DEFAULT_LOG_LOOKBACK_BLOCKS)
-            deposits = await self.client.fetch_deposit_events(fb, current_block)
+            deposits, scanned_to = await self.client.fetch_deposit_events(
+                fb, current_block
+            )
             for ev in deposits:
                 ts = await self._block_timestamp(ev["block_number"], now, current_block)
                 self.cache.apply_deposit(
@@ -487,9 +537,10 @@ class TTTManager:
                     tx_hash=ev["tx_hash"],
                     log_index=ev.get("log_index"),
                 )
-            self.cache.last_seen_block["Deposited"] = current_block
+            _advance("Deposited", fb, scanned_to)
         except Exception as exc:
-            logger.debug("Deposited scan failed: %s", exc)
+            self._error_count += 1
+            logger.warning("Deposited scan failed: %s", exc)
 
         # Bought (per-ERC20). Only scan if we have known tokens.
         known = list(self.cache.tokens.keys())
@@ -497,7 +548,7 @@ class TTTManager:
             try:
                 fb = _from("Bought", _DEFAULT_LOG_LOOKBACK_BLOCKS)
                 # Cap the address list to a sane size to keep RPCs happy
-                buys = await self.client.fetch_buyback_events(
+                buys, scanned_to = await self.client.fetch_buyback_events(
                     known[:200], fb, current_block
                 )
                 for ev in buys:
@@ -514,9 +565,10 @@ class TTTManager:
                         tx_hash=ev["tx_hash"],
                         log_index=ev.get("log_index"),
                     )
-                self.cache.last_seen_block["Bought"] = current_block
+                _advance("Bought", fb, scanned_to)
             except Exception as exc:
-                logger.debug("Bought scan failed: %s", exc)
+                self._error_count += 1
+                logger.warning("Bought scan failed: %s", exc)
 
     async def _fill_missing_metadata(self) -> None:
         """Fetch symbol/decimals for any token that still has them None."""

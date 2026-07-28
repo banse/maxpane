@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any
 
@@ -33,6 +34,74 @@ _MAX_RETRIES = 3
 _BACKOFF_SECONDS = (1.0, 2.0, 4.0)
 _REQUEST_TIMEOUT = 15.0
 _WEI = 10**18
+
+#: Minimum gap between JSON-RPC calls from one client instance. Cat Town
+#: issues its reads serially, and unpaced bursts are what earn the 429s.
+_INTER_CALL_DELAY = 0.12
+
+#: Base produces a block every 2 seconds. Used only to estimate the wall-clock
+#: time of a block we could not fetch this cycle.
+_BASE_BLOCK_SECONDS = 2.0
+
+#: Per-refresh budget for eth_getBlockByNumber lookups, and the lifetime size
+#: of the block -> timestamp memo. The budget keeps a cold start well inside
+#: the 30s poll interval; the memo means later refreshes need almost none.
+_MAX_BLOCK_TS_LOOKUPS = 12
+_BLOCK_TS_CACHE_MAX = 2048
+
+#: Status codes that mean "this endpoint is broken or blocking us" rather than
+#: "try again". Rotate to the next endpoint instead of burning the retry
+#: ladder. Mirrors ttt_client._ENDPOINT_DEAD_CODES.
+_ENDPOINT_DEAD_CODES = frozenset({401, 402, 403, 451, 521, 522, 523, 524, 525, 526})
+
+#: JSON-RPC error-message fragments that mean "this endpoint won't serve this",
+#: not "this request is malformed". Matched on the message, never the code:
+#: providers reuse codes freely, so classifying on the code turns a per-host
+#: capability limit into a terminal failure and the fallback chain is skipped.
+_ENDPOINT_LIMITATION_PATTERNS = (
+    "rate limit",
+    "ratelimit",
+    "too many requests",
+    "exceeded",
+    "quota",
+    "capacity",
+    "throttl",
+    "block range",
+    "query returned more than",
+    "method not found",
+    "method not supported",
+    "unsupported method",
+    "not available",
+    "unauthorized",
+    "forbidden",
+)
+
+#: Public Base endpoints tried in order when the primary refuses. Keyless by
+#: policy -- every MaxPane dashboard must run without API keys. These are not
+#: probe-verified the way ttt_client's pool is (see its _ENDPOINT_PROBE); a
+#: dud simply costs one rotation step, so the pool is strictly better than the
+#: single hardcoded host it replaces. Probe and prune when convenient.
+_FALLBACK_RPCS = [
+    "https://base.llamarpc.com",
+    "https://base-rpc.publicnode.com",
+    "https://base.drpc.org",
+]
+
+
+class _EndpointDead(httpx.HTTPError):
+    """The endpoint is blocking or broken -- rotate, don't retry.
+
+    Subclasses ``httpx.HTTPError`` so any caller that only catches httpx
+    errors still degrades the way it always did.
+    """
+
+
+def _looks_like_endpoint_limitation(err: Any) -> bool:
+    """True if a JSON-RPC error body reads as "this endpoint can't"."""
+    if not isinstance(err, dict):
+        return False
+    message = str(err.get("message") or "").lower()
+    return any(frag in message for frag in _ENDPOINT_LIMITATION_PATTERNS)
 
 # ---------------------------------------------------------------------------
 # Function selectors (first 4 bytes of keccak256 hash)
@@ -92,13 +161,22 @@ class CatTownClient:
     Parameters
     ----------
     rpc_url:
-        Base mainnet JSON-RPC endpoint.
+        Primary Base mainnet JSON-RPC endpoint. Overridable per deployment
+        via the ``MAXPANE_BASE_RPC_URL`` environment variable.
+    fallback_rpcs:
+        Endpoints tried, in order, when the primary is down or blocking us.
+        Without these a single outage at ``mainnet.base.org`` bricked the
+        whole dashboard for the session.
+    inter_call_delay:
+        Minimum seconds between JSON-RPC calls from this instance. Cat Town's
+        reads are serial and unpaced bursts are what earn the 429s. Tests pass
+        ``0.0``.
     http_client:
         Optional pre-configured ``httpx.AsyncClient``.  If not provided
         one is created internally and closed on ``close()``.
     """
 
-    RPC_URL = "https://mainnet.base.org"
+    RPC_URL = os.environ.get("MAXPANE_BASE_RPC_URL", "https://mainnet.base.org")
 
     # Contract addresses
     KIBBLE_TOKEN = "0x64cc19A52f4D631eF5BE07947CABA14aE00c52Eb"
@@ -116,9 +194,18 @@ class CatTownClient:
         self,
         rpc_url: str = RPC_URL,
         *,
+        fallback_rpcs: list[str] | None = None,
+        inter_call_delay: float = _INTER_CALL_DELAY,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._rpc_url = rpc_url
+        self._fallback_rpcs = list(
+            _FALLBACK_RPCS if fallback_rpcs is None else fallback_rpcs
+        )
+        # Never try the primary twice in one rotation.
+        self._fallback_rpcs = [u for u in self._fallback_rpcs if u != rpc_url]
+        self._inter_call_delay = inter_call_delay
+        self._last_rpc_at: float = 0.0
         self._client = http_client or httpx.AsyncClient(
             timeout=httpx.Timeout(_REQUEST_TIMEOUT),
             follow_redirects=True,
@@ -126,6 +213,9 @@ class CatTownClient:
         )
         self._owns_client = http_client is None
         self._request_id = 0
+        #: block number -> unix timestamp. Blocks are immutable, so this is
+        #: valid for the lifetime of the client. See _resolve_block_timestamps.
+        self._block_ts_cache: dict[int, int] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -194,12 +284,19 @@ class CatTownClient:
     # ------------------------------------------------------------------
 
     async def _post_with_retry(self, url: str, json_body: dict[str, Any]) -> httpx.Response:
-        """POST with exponential-backoff retries on transient failures."""
+        """POST with exponential-backoff retries on transient failures.
+
+        Raises ``_EndpointDead`` -- not the underlying ``HTTPStatusError`` --
+        when the status says the host itself is blocking or broken, so the
+        caller rotates to the next endpoint instead of burning the ladder.
+        """
         last_exc: BaseException | None = None
         for attempt in range(_MAX_RETRIES):
             try:
                 resp = await self._client.post(url, json=json_body)
-                if resp.status_code >= 500:
+                if resp.status_code in _ENDPOINT_DEAD_CODES:
+                    raise _EndpointDead(f"{url} returned {resp.status_code}")
+                if resp.status_code == 429 or resp.status_code >= 500:
                     raise httpx.HTTPStatusError(
                         f"Server error {resp.status_code}",
                         request=resp.request,
@@ -207,6 +304,9 @@ class CatTownClient:
                     )
                 resp.raise_for_status()
                 return resp
+            except _EndpointDead:
+                # Not transient: retrying this host just wastes the ladder.
+                raise
             except (httpx.HTTPError, httpx.StreamError) as exc:
                 last_exc = exc
                 if attempt < _MAX_RETRIES - 1:
@@ -229,16 +329,30 @@ class CatTownClient:
                     )
         raise last_exc  # type: ignore[misc]
 
+    async def _throttle(self) -> None:
+        """Space consecutive JSON-RPC calls by ``_inter_call_delay``."""
+        if self._inter_call_delay <= 0:
+            return
+        elapsed = time.monotonic() - self._last_rpc_at
+        if self._last_rpc_at > 0 and elapsed < self._inter_call_delay:
+            await asyncio.sleep(self._inter_call_delay - elapsed)
+        self._last_rpc_at = time.monotonic()
+
     # ------------------------------------------------------------------
     # Internal: RPC primitives
     # ------------------------------------------------------------------
 
     async def _rpc(self, method: str, params: list) -> Any:
-        """Send a JSON-RPC request with retry.
+        """Send a JSON-RPC request with throttle, retry and endpoint rotation.
 
-        Returns the ``result`` field from the JSON-RPC response.
-        Raises ``RuntimeError`` on JSON-RPC error responses.
+        Returns the ``result`` field from the JSON-RPC response. Raises
+        ``RuntimeError`` if every endpoint fails, or immediately on a genuine
+        JSON-RPC error (a reverted call is the contract's answer, not the
+        endpoint's fault -- rotating on it would triple the request count for
+        no gain).
         """
+        await self._throttle()
+
         self._request_id += 1
         payload = {
             "jsonrpc": "2.0",
@@ -246,11 +360,42 @@ class CatTownClient:
             "method": method,
             "params": params,
         }
-        resp = await self._post_with_retry(self._rpc_url, payload)
-        body = resp.json()
-        if "error" in body:
-            raise RuntimeError(f"RPC error: {body['error']}")
-        return body.get("result", "0x")
+
+        last_err: BaseException | None = None
+        for url in [self._rpc_url, *self._fallback_rpcs]:
+            try:
+                resp = await self._post_with_retry(url, payload)
+            except _EndpointDead as exc:
+                last_err = exc
+                logger.debug("RPC endpoint %s is refusing us: %s", url, exc)
+                continue
+            except (httpx.HTTPError, httpx.StreamError) as exc:
+                last_err = exc
+                continue
+
+            try:
+                body = resp.json()
+            except ValueError as exc:
+                # HTTP 200 carrying an HTML challenge or proxy error page.
+                last_err = RuntimeError(f"RPC {url} returned a non-JSON body: {exc}")
+                continue
+            if not isinstance(body, dict):
+                last_err = RuntimeError(
+                    f"RPC {url} returned a non-object body: {type(body).__name__}"
+                )
+                continue
+            if "error" in body:
+                err = body["error"]
+                if _looks_like_endpoint_limitation(err):
+                    last_err = RuntimeError(f"RPC {url} error: {err}")
+                    continue
+                raise RuntimeError(f"RPC error: {err}")
+            return body.get("result", "0x")
+
+        raise RuntimeError(
+            f"{method} failed on all {1 + len(self._fallback_rpcs)} endpoint(s): "
+            f"{last_err}"
+        )
 
     async def _eth_call(self, to: str, data: str, block: str = "latest") -> str:
         """Execute a read-only ``eth_call`` via JSON-RPC.
@@ -268,6 +413,89 @@ class CatTownClient:
         """Get the timestamp of a block (unix seconds)."""
         result = await self._rpc("eth_getBlockByNumber", [hex(block_num), False])
         return int(result["timestamp"], 16)
+
+    def _estimate_block_timestamp(
+        self, block_num: int, current_block: int, now: float
+    ) -> int:
+        """Approximate a block's wall-clock time from Base's fixed block time.
+
+        Used only when the real timestamp is unavailable this cycle. Costs no
+        RPC call and lands within seconds of the truth, whereas the previous
+        fallback (timestamp = block number) rendered as a 1971 date.
+        """
+        behind = max(0, current_block - block_num)
+        return int(now - behind * _BASE_BLOCK_SECONDS)
+
+    async def _resolve_block_timestamps(
+        self,
+        block_numbers: set[int] | list[int],
+        *,
+        current_block: int,
+        now: float | None = None,
+    ) -> dict[int, int]:
+        """Map block number -> unix timestamp, memoized and budgeted.
+
+        Three properties matter here, all of them load-bearing for the 30s
+        refresh loop (the screen runs it with ``exclusive=True``, so a refresh
+        that outlives the poll interval is cancelled by the next tick and the
+        dashboard never updates again):
+
+        1. **Memoized across refreshes.** Blocks are immutable, so a resolved
+           timestamp is cached on the client for its lifetime. Steady-state
+           refreshes only look up blocks mined since the last poll.
+        2. **Budgeted.** At most ``_MAX_BLOCK_TS_LOOKUPS`` uncached blocks are
+           fetched per call, newest first. A cold start over a 5000-block
+           window sees dozens of unique blocks; serial lookups of all of them
+           against a rate-limited public RPC is exactly the freeze.
+        3. **Fails fast.** The first failed lookup abandons the rest of the
+           budget -- if the endpoint is refusing us, the remaining calls would
+           each burn the full retry ladder for nothing.
+
+        Anything left unresolved is estimated from the block height, never set
+        to the block number.
+        """
+        now = time.time() if now is None else now
+        requested = list(block_numbers)
+        resolved: dict[int, int] = {}
+        missing: list[int] = []
+
+        for bn in requested:
+            cached = self._block_ts_cache.get(bn)
+            if cached is not None:
+                resolved[bn] = cached
+            else:
+                missing.append(bn)
+
+        # Newest blocks first: those are the ones at the top of the feed.
+        for bn in sorted(set(missing), reverse=True)[:_MAX_BLOCK_TS_LOOKUPS]:
+            try:
+                ts = await self._eth_get_block_timestamp(bn)
+            except Exception as exc:
+                logger.debug(
+                    "Block timestamp lookup failed at block %d; estimating the "
+                    "rest of this cycle: %s",
+                    bn,
+                    exc,
+                )
+                break
+            self._block_ts_cache[bn] = ts
+            resolved[bn] = ts
+
+        self._trim_block_ts_cache()
+
+        for bn in requested:
+            if bn not in resolved:
+                resolved[bn] = self._estimate_block_timestamp(bn, current_block, now)
+        return resolved
+
+    def _trim_block_ts_cache(self) -> None:
+        """Bound the memo so a long-running session can't grow without limit."""
+        overflow = len(self._block_ts_cache) - _BLOCK_TS_CACHE_MAX
+        if overflow <= 0:
+            return
+        # Oldest blocks are the least likely to appear in a recent-events feed.
+        for bn in sorted(self._block_ts_cache)[:overflow]:
+            del self._block_ts_cache[bn]
 
     async def _eth_get_logs(
         self,
@@ -714,18 +942,16 @@ class CatTownClient:
             except (ValueError, IndexError, KeyError) as exc:
                 logger.debug("Skipping malformed TreasureFound log: %s", exc)
 
-        # Resolve block timestamps for all unique blocks
-        unique_blocks = {c.block_number for c in catches}
-        block_ts: dict[int, int] = {}
-        for bn in unique_blocks:
-            try:
-                block_ts[bn] = await self._eth_get_block_timestamp(bn)
-            except Exception:
-                block_ts[bn] = bn  # fallback to block number
+        # Resolve block timestamps for all unique blocks. Memoized and
+        # budgeted -- see _resolve_block_timestamps.
+        block_ts = await self._resolve_block_timestamps(
+            {c.block_number for c in catches},
+            current_block=current_block,
+        )
 
         # Rebuild with real timestamps (FishCatch is frozen)
         catches = [
-            c.model_copy(update={"timestamp": block_ts.get(c.block_number, c.block_number)})
+            c.model_copy(update={"timestamp": block_ts[c.block_number]})
             for c in catches
         ]
 

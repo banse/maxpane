@@ -345,3 +345,101 @@ async def test_caught_up_scan_is_not_counted_as_a_failure(tmp_path, monkeypatch)
     await m.fetch_and_compute()
     assert m._error_count == 0
     assert m.cache.last_seen_block["ops"] == 1_000_000
+
+
+# ---------------------------------------------------------------------------
+# MEDI-27 / MEDI-28: an RPC outage must not be rendered as an empty collection
+# ---------------------------------------------------------------------------
+
+
+def _manager_on(tmp_path, monkeypatch, client) -> TalismansManager:
+    monkeypatch.setattr(tm_mod, "_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(tm_mod, "_CACHE_FILE", tmp_path / "c.json")
+    m = TalismansManager(poll_interval=30)
+    m.client = client
+    return m
+
+
+class _NoTokenStates(_FakeClient):
+    async def fetch_token_states(self, token_ids):
+        raise RuntimeError("multicall endpoint down")
+
+
+class _NoFlags(_FakeClient):
+    async def fetch_collection_flags(self):
+        raise RuntimeError("multicall endpoint down")
+
+
+@pytest.mark.asyncio
+async def test_a_failed_sweep_keeps_the_previous_token_registry(
+    tmp_path, monkeypatch
+):
+    """MEDI-27: ``set_token_states`` replaces the registry wholesale.
+
+    Writing a truncated (or empty) sweep into it empties the title bar, the
+    leaderboard and the matrix — and looks exactly like a collection that
+    really has gone to zero.
+    """
+    m = _manager_on(tmp_path, monkeypatch, _FakeClient())
+    good = await m.fetch_and_compute()
+    assert good["total_cores"] > 0
+    registry = dict(m.cache.tokens)
+
+    m.client = _NoTokenStates()
+    degraded = await m.fetch_and_compute()
+
+    assert m.cache.tokens == registry, "the live registry was thrown away"
+    assert degraded["total_cores"] == good["total_cores"]
+    assert degraded["mythic_count"] == good["mythic_count"]
+    assert degraded["error_count"] >= 1, "the outage must be visible"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_sweep_does_not_persist_a_sample(tmp_path, monkeypatch):
+    """The hourly buckets are overwrite-by-hour and get written to disk.
+
+    A sample taken during an outage therefore outlives the outage: it stays in
+    the 7-day sparkline unless a good cycle happens to land in the same hour.
+    """
+    m = _manager_on(tmp_path, monkeypatch, _NoTokenStates())
+    await m.fetch_and_compute()
+    assert list(m.cache.mythic_hourly) == []
+    assert list(m.cache.tokencount_hourly) == []
+
+
+@pytest.mark.asyncio
+async def test_a_flags_outage_falls_back_to_cached_counts(tmp_path, monkeypatch):
+    """MEDI-28: the fallback branch was unreachable while the client swallowed.
+
+    With ``fetch_collection_flags`` answering zeros, the dashboard reported
+    ``live_tokens=0`` and sampled a 0 into ``tokencount_hourly``, which
+    ``forge_momentum_signal`` then read as a bullish green "CONSOLIDATING ▼" —
+    a signal manufactured entirely by a network error.
+    """
+    m = _manager_on(tmp_path, monkeypatch, _FakeClient())
+    await m.fetch_and_compute()
+    cached_live = len(m.cache.tokens)
+    samples = list(m.cache.tokencount_hourly)
+
+    m.client = _NoFlags()
+    out = await m.fetch_and_compute()
+
+    assert out["live_tokens"] == cached_live != 0
+    assert out["error_count"] >= 1
+    assert list(m.cache.tokencount_hourly) == samples, "a zero was persisted"
+
+
+@pytest.mark.asyncio
+async def test_a_degraded_cycle_never_locks_in_a_conservation_baseline(
+    tmp_path, monkeypatch
+):
+    """A stale registry and a cached supply can agree by coincidence.
+
+    The baseline is the collection's core-conservation invariant and is set
+    once, permanently; it must only ever come from a cycle that actually read
+    both halves of the comparison from chain.
+    """
+    m = _manager_on(tmp_path, monkeypatch, _NoFlags())
+    out = await m.fetch_and_compute()
+    assert m.cache.cores_invariant_baseline == 0
+    assert out["cores_invariant_intact"] is False

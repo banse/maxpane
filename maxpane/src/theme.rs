@@ -66,9 +66,14 @@ pub fn c64_theme() -> IntroTheme {
 ///
 /// Returns `None` when the input is not exactly 7 characters starting with `#`
 /// or contains non-hex digits.
+///
+/// This parses untrusted config input, so it must never panic: the ASCII check
+/// below is what keeps the fixed byte-offset slicing on char boundaries. A
+/// value like `"#€€"` is 6 *bytes* but 2 characters, and slicing it at `0..2`
+/// would land inside a multi-byte sequence.
 pub fn parse_hex_color(hex: &str) -> Option<Color> {
     let hex = hex.strip_prefix('#')?;
-    if hex.len() != 6 {
+    if hex.len() != 6 || !hex.is_ascii() {
         return None;
     }
     let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
@@ -296,5 +301,46 @@ mod tests {
         // All should be phosphor defaults since hex parsing fails
         assert_eq!(rgb(t.text), (51, 255, 51));
         assert_eq!(rgb(t.background), (0, 0, 0));
+    }
+
+    // -- Non-ASCII hex values (MEDI-4) ----------------------------------------
+
+    #[test]
+    fn parse_hex_multibyte_returns_none() {
+        // "€€" is 6 *bytes* but not 6 ASCII hex digits; slicing at byte
+        // offsets 0..2 would land mid-character and panic.
+        assert_eq!(parse_hex_color("#\u{20ac}\u{20ac}"), None);
+    }
+
+    #[test]
+    fn parse_hex_assorted_multibyte_values_return_none() {
+        for bad in [
+            "#\u{20ac}\u{20ac}",       // 2 x 3-byte
+            "#ff\u{20ac}0",            // multi-byte in the middle
+            "#\u{e9}\u{e9}\u{e9}",     // 3 x 2-byte = 6 bytes
+            "#\u{4e16}\u{754c}",       // CJK, 6 bytes
+            "#ffff\u{e9}",             // multi-byte at the tail
+        ] {
+            assert_eq!(parse_hex_color(bad), None, "expected None for {bad:?}");
+        }
+    }
+
+    #[test]
+    fn theme_from_config_falls_back_on_multibyte_custom_colors() {
+        // A hand-edited config.toml must degrade to the phosphor default,
+        // never abort startup.
+        let t = theme_from_config(
+            "custom",
+            Some("#\u{20ac}\u{20ac}"),
+            Some("#\u{4e16}\u{754c}"),
+            Some("#\u{e9}\u{e9}\u{e9}"),
+            Some("#ff\u{20ac}0"),
+            Some("#ffff\u{e9}"),
+        );
+        assert_eq!(rgb(t.text), (51, 255, 51));
+        assert_eq!(rgb(t.background), (0, 0, 0));
+        assert_eq!(rgb(t.rain_bright), (200, 255, 200));
+        assert_eq!(rgb(t.rain_dim), (0, 85, 0));
+        assert_eq!(rgb(t.logo_color), (51, 255, 51));
     }
 }

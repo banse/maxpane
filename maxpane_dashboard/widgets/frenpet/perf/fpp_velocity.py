@@ -7,6 +7,7 @@ import re
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+from maxpane_dashboard.widgets.frenpet.perf.velocity_format import format_velocity
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
@@ -128,10 +129,7 @@ class FPPerfVelocity(Vertical):
             sparkline = _build_sparkline(score_values)
             color = _velocity_color(velocity)
 
-            if abs(velocity) >= 1_000:
-                vel_str = f"+{velocity / 1_000:.1f}K/hr"
-            else:
-                vel_str = f"+{velocity:,.0f}/hr"
+            vel_str = format_velocity(velocity, compact=False)
 
             lines.append(
                 f"  [bold white]{name_str}[/]  [{color}]{sparkline}[/]  "

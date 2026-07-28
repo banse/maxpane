@@ -800,7 +800,7 @@ class BaseChainClient:
     # ETH price on Base (via WETH pair)
     # ------------------------------------------------------------------
 
-    async def get_eth_price(self) -> tuple[float, float]:
+    async def get_eth_price(self) -> tuple[float | None, float | None]:
         """Fetch current ETH price and 24h change from DexScreener.
 
         Queries the WETH token on Base (address ``0x4200...0006``) and
@@ -808,9 +808,12 @@ class BaseChainClient:
 
         Returns
         -------
-        tuple[float, float]
-            ``(price_usd, price_change_24h_pct)``.  Returns ``(0.0, 0.0)``
-            on failure.
+        tuple[float | None, float | None]
+            ``(price_usd, price_change_24h_pct)``, or ``(None, None)`` on
+            failure.  A failed read is ``None``, never ``0.0``: the caller
+            persists these into the ETH sparkline, and a zero that reads as
+            a real price crushes the chart's scale and survives the outage
+            in ``~/.maxpane/base_cache.json``.
         """
         await self._wait_dexscreener()
         try:
@@ -825,7 +828,8 @@ class BaseChainClient:
             )
 
             if not pair_list:
-                return (0.0, 0.0)
+                logger.error("ETH price fetch returned no WETH pairs")
+                return (None, None)
 
             # Pick highest-liquidity pair
             best_pair = max(
@@ -837,20 +841,29 @@ class BaseChainClient:
             price_change = best_pair.get("priceChange", {})
             change_24h = _safe_trade_float(price_change.get("h24"))
 
+            if price_usd <= 0:
+                # An unparseable priceUsd is a failed read, not free ETH.
+                logger.error(
+                    "ETH price fetch returned unusable priceUsd: %r",
+                    best_pair.get("priceUsd"),
+                )
+                return (None, None)
+
             return (price_usd, change_24h)
 
         except Exception as exc:
             logger.error("ETH price fetch failed: %s", exc)
-            return (0.0, 0.0)
+            return (None, None)
 
     # ------------------------------------------------------------------
     # Base chain gas price
     # ------------------------------------------------------------------
 
-    async def get_base_gas_price(self) -> float:
+    async def get_base_gas_price(self) -> float | None:
         """Fetch current gas price on Base via JSON-RPC ``eth_gasPrice``.
 
-        Returns gas price in **gwei**.  Returns ``0.0`` on failure.
+        Returns gas price in **gwei**, or ``None`` on failure -- "the RPC
+        did not answer" and "gas is free" are not the same reading.
         """
         try:
             resp = await self._request_with_retry(
@@ -864,13 +877,16 @@ class BaseChainClient:
                 },
             )
             data = resp.json()
-            hex_result = data.get("result", "0x0")
+            hex_result = data.get("result")
+            if not hex_result:
+                logger.error("Base gas price RPC returned no result: %r", data)
+                return None
             gas_wei = int(hex_result, 16)
             return gas_wei / 1e9  # Convert wei to gwei
 
         except Exception as exc:
             logger.error("Base gas price fetch failed: %s", exc)
-            return 0.0
+            return None
 
     # ------------------------------------------------------------------
     # Unified snapshot
