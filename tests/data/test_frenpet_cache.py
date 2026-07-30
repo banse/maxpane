@@ -292,3 +292,178 @@ class TestFrenPetCachePersistence:
             assert h[0][1] == 1005.0
         finally:
             os.unlink(path)
+
+
+# ---------------------------------------------------------------------------
+# Tests: population series persistence + schema migration (MEDI-21 remainder)
+#
+# ``active_pets_history`` / ``total_score_history`` / ``battle_rate_history``
+# are appended on every poll and drawn as the overview's Score Trends
+# sparklines, but schema v1 never wrote them: every restart began with three
+# flat lines.  Schema v2 persists them; a v1 file must load as "no population
+# history yet" without disturbing the per-pet histories it does contain.
+# ---------------------------------------------------------------------------
+
+class TestFrenPetCachePopulationPersistence:
+    @staticmethod
+    def _populated(max_history: int = 10) -> FrenPetCache:
+        cache = FrenPetCache(max_history=max_history)
+        for i in range(3):
+            snap = _make_snapshot(
+                managed_pets=[_make_pet(1, 10_000 + i)],
+                fetched_at=float(1_000 + i),
+            )
+            cache.update(snap, battle_rate=float(20 + i))
+        return cache
+
+    def test_population_series_survive_a_restart(self, tmp_path) -> None:
+        cache = self._populated()
+        expected = {
+            "active_pets_history": list(cache.active_pets_history),
+            "total_score_history": list(cache.total_score_history),
+            "battle_rate_history": list(cache.battle_rate_history),
+        }
+        assert all(len(v) == 3 for v in expected.values())
+
+        path = str(tmp_path / "frenpet_cache.json")
+        cache.save_to_file(path)
+
+        restarted = FrenPetCache(max_history=10)
+        restarted.load_from_file(path, now=2_000.0)
+
+        assert list(restarted.active_pets_history) == expected["active_pets_history"]
+        assert list(restarted.total_score_history) == expected["total_score_history"]
+        assert list(restarted.battle_rate_history) == expected["battle_rate_history"]
+        # The battle rate is the series MEDI-19 fixed; check the values, not
+        # just the length, so a silently zeroed round-trip fails here.
+        assert [v for _, v in restarted.battle_rate_history] == [20.0, 21.0, 22.0]
+        # And the pre-existing per-pet history still round-trips.
+        assert restarted.get_pet_score_history(1) == [
+            (1000.0, 10_000.0), (1001.0, 10_001.0), (1002.0, 10_002.0),
+        ]
+
+    def test_save_stamps_the_schema_version(self, tmp_path) -> None:
+        path = str(tmp_path / "frenpet_cache.json")
+        self._populated().save_to_file(path)
+        with open(path) as f:
+            payload = json.load(f)
+        assert payload["schema_version"] == 2
+        assert set(payload) >= {
+            "histories", "active_pets_history",
+            "total_score_history", "battle_rate_history",
+        }
+
+    def test_v1_file_keeps_pet_history_and_starts_population_empty(
+        self, tmp_path
+    ) -> None:
+        """The migration decision, pinned: additive, nothing discarded."""
+        path = tmp_path / "frenpet_cache.json"
+        # Exactly what a pre-v2 build wrote: no schema_version, no
+        # population keys.
+        path.write_text(json.dumps({
+            "saved_at": 1_500.0,
+            "max_history": 120,
+            "histories": {"7": [[1_000.0, 99.0], [1_001.0, 101.0]]},
+        }))
+
+        cache = FrenPetCache(max_history=120)
+        cache.load_from_file(str(path), now=2_000.0)  # must not raise
+
+        assert cache.get_pet_score_history(7) == [(1000.0, 99.0), (1001.0, 101.0)]
+        assert list(cache.active_pets_history) == []
+        assert list(cache.total_score_history) == []
+        assert list(cache.battle_rate_history) == []
+
+    def test_v1_file_upgrades_in_place_on_next_save(self, tmp_path) -> None:
+        """One session after the upgrade, the series are on disk."""
+        path = str(tmp_path / "frenpet_cache.json")
+        with open(path, "w") as f:
+            json.dump({"histories": {"7": [[1_000.0, 99.0]]}}, f)
+
+        cache = FrenPetCache(max_history=10)
+        cache.load_from_file(path, now=2_000.0)
+        cache.update(
+            _make_snapshot(managed_pets=[_make_pet(7, 120)], fetched_at=1_500.0),
+            battle_rate=42.0,
+        )
+        cache.save_to_file(path)
+
+        reloaded = FrenPetCache(max_history=10)
+        reloaded.load_from_file(path, now=2_000.0)
+        assert list(reloaded.battle_rate_history) == [(1500.0, 42.0)]
+        # The v1 point is still there, ahead of the new one.
+        assert reloaded.get_pet_score_history(7)[0] == (1000.0, 99.0)
+
+    def test_corrupt_population_points_are_dropped_not_fatal(
+        self, tmp_path
+    ) -> None:
+        path = tmp_path / "frenpet_cache.json"
+        path.write_text(json.dumps({
+            "schema_version": 2,
+            "histories": {},
+            "active_pets_history": [[1_000.0, 4.0], [1_001.0, None],
+                                    "junk", [1_002.0, 6.0]],
+            "total_score_history": None,
+            "battle_rate_history": [[1_000.0, -3.0], [1_001.0, 7.0]],
+        }))
+
+        cache = FrenPetCache(max_history=10)
+        cache.load_from_file(str(path), now=2_000.0)  # must not raise
+
+        assert list(cache.active_pets_history) == [(1000.0, 4.0), (1002.0, 6.0)]
+        assert list(cache.total_score_history) == []
+        # A negative battle rate is corruption, not history.
+        assert list(cache.battle_rate_history) == [(1001.0, 7.0)]
+
+    def test_load_validates_against_the_caller_s_clock(self, tmp_path) -> None:
+        """``now`` is a parameter, so the same file always loads the same way.
+
+        A loader calling ``time.time()`` itself makes a cache written by a
+        fast-clocked machine silently unloadable: every point it just saved
+        is "in the future" on the next boot.
+        """
+        path = tmp_path / "frenpet_cache.json"
+        path.write_text(json.dumps({
+            "schema_version": 2,
+            "histories": {"7": [[10_000.0, 5.0]]},
+            "active_pets_history": [[10_000.0, 4.0]],
+            "total_score_history": [],
+            "battle_rate_history": [],
+        }))
+
+        # Clock behind the file by more than the skew tolerance: the points
+        # are future-dated and dropped.
+        behind = FrenPetCache(max_history=10)
+        behind.load_from_file(str(path), now=1_000.0)
+        assert behind.get_pet_score_history(7) == []
+        assert list(behind.active_pets_history) == []
+
+        # Same file, a clock that has caught up: everything loads.
+        ahead = FrenPetCache(max_history=10)
+        ahead.load_from_file(str(path), now=20_000.0)
+        assert ahead.get_pet_score_history(7) == [(10_000.0, 5.0)]
+        assert list(ahead.active_pets_history) == [(10_000.0, 4.0)]
+
+    def test_now_defaults_to_wall_clock(self) -> None:
+        """Callers that genuinely mean "now" may still omit it."""
+        import inspect
+
+        sig = inspect.signature(FrenPetCache.load_from_file)
+        assert sig.parameters["now"].kind is inspect.Parameter.KEYWORD_ONLY
+        assert sig.parameters["now"].default is None
+
+    def test_manager_passes_an_explicit_clock(self, tmp_path, monkeypatch) -> None:
+        """FrenPetManager must not be the seventh implicit-clock loader."""
+        from maxpane_dashboard.data import frenpet_manager as fm
+
+        monkeypatch.setattr(fm, "_CACHE_FILE", tmp_path / "frenpet_cache.json")
+        seen: dict[str, object] = {}
+        original = FrenPetCache.load_from_file
+
+        def _spy(self, path, *, now=None):
+            seen["now"] = now
+            return original(self, path, now=now)
+
+        monkeypatch.setattr(FrenPetCache, "load_from_file", _spy)
+        fm.FrenPetManager(poll_interval=30)
+        assert isinstance(seen.get("now"), float)

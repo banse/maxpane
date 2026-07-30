@@ -9,18 +9,9 @@ ready for widget consumption.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from pathlib import Path
 from typing import Any
-
-from dotenv import load_dotenv
-
-# Load API keys from baseboard .env if available
-_BASEBOARD_ENV_PATH = os.getenv("MAXPANE_BASEBOARD_ENV", "")
-_BASEBOARD_ENV = Path(_BASEBOARD_ENV_PATH) if _BASEBOARD_ENV_PATH else None
-if _BASEBOARD_ENV is not None and _BASEBOARD_ENV.exists():
-    load_dotenv(str(_BASEBOARD_ENV), override=False)
 
 from maxpane_dashboard.analytics.base_signals import generate_token_signal
 from maxpane_dashboard.analytics.base_tokens import (
@@ -51,28 +42,22 @@ class BaseManager:
     ----------
     poll_interval:
         Seconds between automatic refreshes (used for status display).
-    bankr_api_key:
-        Optional Bankr API key.  Falls back to ``BANKR_API_KEY`` env var.
-    alchemy_api_key:
-        Optional Alchemy API key.  Falls back to ``ALCHEMY_API_KEY`` env var.
     remote_only:
-        When ``True``, the manager fetches data exclusively from DexScreener
-        (no Bankr, GeckoTerminal, or Clanker).  Used by the Base Trading
-        Overview dashboard.
+        When ``True``, the manager fetches data from the single
+        GeckoTerminal trending call only (no trending-pools fan-out or
+        Clanker).  Used by the Base Trading Overview dashboard.
+
+    Every upstream this manager touches is public and keyless; neither it
+    nor :class:`BaseChainClient` reads API keys or ``.env`` files.
     """
 
     def __init__(
         self,
         poll_interval: int = 30,
-        bankr_api_key: str | None = None,
-        alchemy_api_key: str | None = None,
         *,
         remote_only: bool = False,
     ) -> None:
-        self.client = BaseChainClient(
-            bankr_api_key=bankr_api_key,
-            alchemy_api_key=alchemy_api_key,
-        )
+        self.client = BaseChainClient()
         self.cache = BaseTokenCache(max_history=120)
         self._poll_interval = poll_interval
         self._error_count = 0

@@ -8,11 +8,17 @@ _WEI = 10**18
 
 
 class KibbleEconomy(BaseModel):
-    """KIBBLE token economy snapshot."""
+    """KIBBLE token economy snapshot.
+
+    ``price_eth`` is WETH per KIBBLE, read straight from the SushiSwap V2
+    pool reserves (~1e-7). There is no USD figure here: the Cat Town data
+    layer has no ETH/USD source, so a ``price_usd`` name would have been a
+    label for a number that was never in dollars. ``0.0`` means "unknown".
+    """
 
     model_config = ConfigDict(frozen=True)
 
-    price_usd: float
+    price_eth: float
     total_supply: float
     circulating: float
     burned: float
@@ -22,7 +28,7 @@ class KibbleEconomy(BaseModel):
     @classmethod
     def from_raw(
         cls,
-        price_usd: float,
+        price_eth: float,
         total_supply_wei: int,
         burned_wei: int,
         staked_wei: int,
@@ -32,7 +38,7 @@ class KibbleEconomy(BaseModel):
         burned = burned_wei / _WEI
         staked = staked_wei / _WEI
         return cls(
-            price_usd=price_usd,
+            price_eth=price_eth,
             total_supply=total,
             circulating=total - burned,
             burned=burned,

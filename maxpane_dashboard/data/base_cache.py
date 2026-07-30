@@ -14,7 +14,7 @@ import json
 import logging
 import os
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from typing import Any
 
 from maxpane_dashboard.data.base_models import BaseSnapshot, BaseToken
@@ -25,20 +25,70 @@ logger = logging.getLogger(__name__)
 # Type alias for a single time-series data point: (epoch_seconds, price_usd)
 TimeSeriesPoint = tuple[float, float]
 
+# Upper bound on distinct token addresses tracked at once.  The trending
+# response normally holds a few dozen tokens, but the upstream list is
+# attacker- (or bug-) controlled and every new address costs a 120-point
+# deque that is persisted to ``~/.maxpane/base_cache.json`` and reloaded
+# on every MaxPane startup, for every dashboard.  Beyond this many
+# addresses the least-recently-updated entry is evicted.
+_MAX_TRACKED_TOKENS = 500
+
+# Upper bound on tokens accepted from a single upstream snapshot.  Guards
+# the per-cycle blowup: one hostile response cannot allocate more than
+# this many deques before eviction kicks in.
+_MAX_TOKENS_PER_UPDATE = 100
+
+
+def _last_timestamp(points: Any) -> float:
+    """Best-effort epoch of a raw history's newest point, ``-inf`` if unknown.
+
+    Used only to rank persisted histories for the load-time cap, so it
+    never raises: an unparseable entry simply sorts oldest and is the
+    first to be dropped.
+    """
+    if not isinstance(points, list) or not points:
+        return float("-inf")
+    last = points[-1]
+    if not isinstance(last, (list, tuple)) or not last:
+        return float("-inf")
+    try:
+        return float(last[0])
+    except (TypeError, ValueError):
+        return float("-inf")
+
 
 class BaseTokenCache:
     """Caches Base chain token price histories for sparkline rendering.
+
+    The set of tracked token addresses is bounded: at most
+    ``max_tokens`` addresses are kept, evicting the least recently
+    updated one first (LRU).  The bound is enforced on ``update()``,
+    ``record_token()`` **and** ``load_from_file()``, so an already-bloated
+    cache file shrinks on load instead of re-bloating the process.
 
     Parameters
     ----------
     max_history:
         Maximum number of samples to keep per token.  At a 30-second
         poll interval, 120 samples covers 60 minutes.
+    max_tokens:
+        Maximum number of distinct token addresses tracked.
+    max_tokens_per_update:
+        Maximum number of tokens accepted from one upstream snapshot.
     """
 
-    def __init__(self, max_history: int = 120) -> None:
+    def __init__(
+        self,
+        max_history: int = 120,
+        *,
+        max_tokens: int = _MAX_TRACKED_TOKENS,
+        max_tokens_per_update: int = _MAX_TOKENS_PER_UPDATE,
+    ) -> None:
         self._max_history = max_history
-        self._price_histories: dict[str, deque[TimeSeriesPoint]] = {}
+        self._max_tokens = max(1, max_tokens)
+        self._max_tokens_per_update = max(1, max_tokens_per_update)
+        # OrderedDict, most-recently-updated address last.
+        self._price_histories: OrderedDict[str, deque[TimeSeriesPoint]] = OrderedDict()
         self._latest: BaseSnapshot | None = None
         self._last_updated: float | None = None
 
@@ -51,22 +101,55 @@ class BaseTokenCache:
     # Core operations
     # ------------------------------------------------------------------
 
+    def _touch(self, addr: str) -> deque[TimeSeriesPoint]:
+        """Return the history deque for ``addr``, creating and LRU-capping it.
+
+        Marks ``addr`` as most-recently-used and evicts the oldest entries
+        once the tracked-address budget is exceeded.
+        """
+        dq = self._price_histories.get(addr)
+        if dq is None:
+            dq = deque(maxlen=self._max_history)
+            self._price_histories[addr] = dq
+        else:
+            self._price_histories.move_to_end(addr)
+
+        evicted = 0
+        while len(self._price_histories) > self._max_tokens:
+            self._price_histories.popitem(last=False)
+            evicted += 1
+        if evicted:
+            logger.debug(
+                "Base token cache at capacity (%d); evicted %d "
+                "least-recently-updated token(s)",
+                self._max_tokens,
+                evicted,
+            )
+        return dq
+
     def update(self, snapshot: BaseSnapshot) -> None:
         """Store latest snapshot and append price points to per-token histories.
 
         Each token's ``price_usd`` is recorded as a ``(timestamp, price)``
-        pair keyed by lowercase token address.
+        pair keyed by lowercase token address.  At most
+        ``max_tokens_per_update`` tokens are taken from the snapshot, and
+        the total number of tracked addresses stays within ``max_tokens``.
         """
         self._latest = snapshot
         self._last_updated = snapshot.fetched_at
 
-        for token in snapshot.trending_tokens:
-            addr = token.address.lower()
-            if addr not in self._price_histories:
-                self._price_histories[addr] = deque(maxlen=self._max_history)
-            self._price_histories[addr].append(
-                (snapshot.fetched_at, token.price_usd)
+        tokens = snapshot.trending_tokens
+        if len(tokens) > self._max_tokens_per_update:
+            logger.warning(
+                "Upstream snapshot carried %d tokens; truncating to %d",
+                len(tokens),
+                self._max_tokens_per_update,
             )
+            tokens = tokens[: self._max_tokens_per_update]
+
+        for token in tokens:
+            addr = token.address.lower()
+            self._touch(addr).append((snapshot.fetched_at, token.price_usd))
 
     def record_token(self, token: BaseToken, timestamp: float | None = None) -> None:
         """Record a single token price point outside of a full snapshot update.
@@ -76,9 +159,7 @@ class BaseTokenCache:
         """
         ts = timestamp or time.time()
         addr = token.address.lower()
-        if addr not in self._price_histories:
-            self._price_histories[addr] = deque(maxlen=self._max_history)
-        self._price_histories[addr].append((ts, token.price_usd))
+        self._touch(addr).append((ts, token.price_usd))
 
     def get_price_history(self, token_address: str) -> list[TimeSeriesPoint]:
         """Return ``[(timestamp, price), ...]`` for a single token.
@@ -230,14 +311,46 @@ class BaseTokenCache:
         loaded = 0
         skipped = 0
         now = time.time()
-        for addr, points in histories.items():
-            if not isinstance(points, list):
-                continue
+
+        # Apply the tracked-address cap on load as well, otherwise a cache
+        # file that grew before the cap existed (or was tampered with)
+        # re-bloats the process on every startup.  Keep the addresses with
+        # the newest last sample and insert oldest-first so LRU order is
+        # preserved.
+        candidates = [
+            (addr, points)
+            for addr, points in histories.items()
+            if isinstance(points, list)
+        ]
+        dropped_addrs = 0
+        if len(candidates) > self._max_tokens:
+            candidates.sort(key=lambda item: _last_timestamp(item[1]))
+            dropped_addrs = len(candidates) - self._max_tokens
+            candidates = candidates[-self._max_tokens :]
+        else:
+            candidates.sort(key=lambda item: _last_timestamp(item[1]))
+
+        for addr, points in candidates:
             good, dropped = coerce_points(points, now=now)
             skipped += dropped
             dq: deque[TimeSeriesPoint] = deque(good, maxlen=self._max_history)
             self._price_histories[addr.lower()] = dq
+            self._price_histories.move_to_end(addr.lower())
             loaded += 1
+
+        # Guard against duplicate addresses differing only by case.
+        while len(self._price_histories) > self._max_tokens:
+            self._price_histories.popitem(last=False)
+            dropped_addrs += 1
+
+        if dropped_addrs:
+            logger.warning(
+                "Base token cache %s held more than %d tokens; dropped the "
+                "%d least-recently-updated",
+                path,
+                self._max_tokens,
+                dropped_addrs,
+            )
 
         # Load overview time-series if present
         for key, target_deque in [

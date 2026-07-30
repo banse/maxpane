@@ -5,9 +5,18 @@ Pure functions that return signal dicts with keys:
 """
 
 
-def generate_staking_signal(staking_ratio: float) -> dict:
-    """Staking health based on percentage of supply staked."""
-    pct = staking_ratio * 100 if staking_ratio <= 1.0 else staking_ratio
+def generate_staking_signal(staking_pct: float) -> dict:
+    """Staking health based on percentage of supply staked.
+
+    ``staking_pct`` is a **percentage**, not a fraction: the caller contract is
+    ``OCMStakingStats.staking_ratio``, which ``ocm_client`` already computes as
+    ``total_staked / net_supply * 100``. There used to be a unit-guessing
+    heuristic here (``* 100`` whenever the value was ``<= 1.0``) which inverted
+    exactly the readings that matter most -- a genuine 0.8% staked collection
+    rendered as a green "80% staked / healthy" and suppressed the low-staking
+    warning, and exactly 1.0% rendered as "100% staked" (LOW-4).
+    """
+    pct = staking_pct
     if pct > 40:
         color = "green"
         status = "healthy"
@@ -64,13 +73,16 @@ def generate_burn_rate_signal(burns_per_week: float) -> dict:
 
 
 def generate_recommendation(
-    staking_ratio: float,
+    staking_pct: float,
     mints_per_day: float,
     burns_per_week: float,
     supply_trend_up: bool,
 ) -> str:
-    """Generate a one-line strategic recommendation."""
-    pct = staking_ratio * 100 if staking_ratio <= 1.0 else staking_ratio
+    """Generate a one-line strategic recommendation.
+
+    ``staking_pct`` is a percentage (see :func:`generate_staking_signal`).
+    """
+    pct = staking_pct
 
     if pct < 20:
         return "Low staking activity -- holders may be disengaged"

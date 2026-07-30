@@ -2,7 +2,20 @@
 """Extract Cat Town contract ABIs from the frontend bundle at cat.town.
 
 Fetches the Next.js app, downloads JS chunks, scans for ABI-shaped JSON arrays,
-and saves candidates to dashboard/abis/cattown/.
+and writes them to ``build/cattown-abis/`` (gitignored) for human review.
+
+One-shot dev tooling: nothing in the package imports this, and the app never
+loads ABI JSON at runtime -- ``cattown_client`` decodes with hardcoded
+selectors. Run it after a cat.town contract upgrade, diff the output against
+the vendored reference ABIs in ``maxpane_dashboard/abis/cattown/``, and copy
+across deliberately.
+
+It writes to a staging directory rather than straight into the vendored
+directory on purpose: labelling here is heuristic (selector match, then
+function-name hints), and it also dumps every unlabelled candidate. Pointing
+it at ``maxpane_dashboard/abis/cattown/`` would let a bad scrape silently
+overwrite curated, committed ABIs and drop candidate JSON into the published
+wheel (pyproject ships all of ``maxpane_dashboard/``).
 """
 
 import json
@@ -15,8 +28,14 @@ from urllib.parse import urljoin
 import httpx
 
 ROOT = Path(__file__).resolve().parent.parent
-ABI_DIR = ROOT / "dashboard" / "abis" / "cattown"
-ABI_DIR.mkdir(parents=True, exist_ok=True)
+
+# Scrape output: gitignored staging area, reviewed by a human before it
+# becomes a reference ABI.
+ABI_DIR = ROOT / "build" / "cattown-abis"
+
+# Where the reviewed, committed reference ABIs live -- the copy target, and
+# what validate_cattown_abis.py checks against the chain.
+VENDORED_ABI_DIR = ROOT / "maxpane_dashboard" / "abis" / "cattown"
 
 BASE_URL = "https://cat.town"
 
@@ -351,6 +370,8 @@ def main():
     print("=" * 60)
     print("Cat Town ABI Extractor")
     print("=" * 60)
+    ABI_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Output directory: {ABI_DIR.relative_to(ROOT)}/")
 
     client = httpx.Client(
         timeout=30.0,
@@ -465,6 +486,19 @@ def main():
         print(f"\n  {len(missing)} contract ABI(s) still missing.")
         print("  Check candidates/ directory for unlabeled ABIs.")
         print("  You may also try fetching ABIs from BaseScan if contracts are verified.")
+
+    if saved:
+        print("\n  NOTHING IS INSTALLED YET -- labelling above is heuristic.")
+        print(f"  Diff against the vendored ABIs in {VENDORED_ABI_DIR.relative_to(ROOT)}/,")
+        print("  then copy across the ones you have checked, e.g.:")
+        for name in sorted(saved):
+            print(
+                f"    diff -u {(VENDORED_ABI_DIR / f'{name}.json').relative_to(ROOT)} "
+                f"{saved[name].relative_to(ROOT)}"
+            )
+        print(f"    cp {(ABI_DIR / '<name>.json').relative_to(ROOT)} "
+              f"{VENDORED_ABI_DIR.relative_to(ROOT)}/")
+        print("  Then re-run: python scripts/validate_cattown_abis.py")
 
     client.close()
     return len(missing) == 0

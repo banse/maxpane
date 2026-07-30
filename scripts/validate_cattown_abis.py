@@ -3,6 +3,12 @@
 
 For each ABI + contract address pair, attempts an eth_call to a simple read
 function and reports pass/fail.
+
+One-shot dev tooling, read-only against the repo: nothing imports it, and the
+app never loads these ABIs at runtime (``cattown_client`` decodes with
+hardcoded selectors). It is the only check that the vendored reference ABIs
+still describe the deployed contracts, so run it after a cat.town upgrade or
+an ``extract_cattown_abis.py`` refresh. Needs network.
 """
 
 import json
@@ -14,7 +20,12 @@ from pathlib import Path
 import httpx
 
 ROOT = Path(__file__).resolve().parent.parent
-ABI_DIR = ROOT / "dashboard" / "abis" / "cattown"
+
+# The vendored reference ABIs. This used to read a pre-rename
+# ``dashboard/abis/cattown`` path that has not existed since the package
+# rename, so every contract reported "ABI file not found" and the validator
+# exited 1 no matter how healthy the ABIs were.
+ABI_DIR = ROOT / "maxpane_dashboard" / "abis" / "cattown"
 
 BASE_RPC = "https://mainnet.base.org"
 
@@ -42,11 +53,14 @@ CONTRACTS = {
         "address": "0xE97B7ab01837A4CbF8C332181A2048EEE4033FB7",
         "abi_file": "kibble_oracle.json",
         "test_calls": [
-            # Custom KIBBLE oracle (1578 bytes) -- may use non-standard interface.
-            # The ABI was extracted from cat.town frontend bundle as a Chainlink-style
-            # feed (latestRoundData + decimals). If these revert, the contract may have
-            # been upgraded or uses a different oracle pattern. Code-exists check is
-            # the primary validation for this contract.
+            # Custom KIBBLE oracle (1578 bytes) -- NOT a Chainlink feed. The ABI was
+            # extracted from the cat.town frontend bundle as a Chainlink-style feed
+            # (latestRoundData + decimals), but both selectors revert on live Base
+            # (re-verified 2026-07-30), so the real interface is still unknown. These
+            # two calls are kept as the check that would tell us if that ever changes;
+            # code-exists is the primary validation for this contract. cattown_client
+            # therefore reads the KIBBLE price from the DEX pool only, with no oracle
+            # fallback.
             {"function": "latestRoundData()", "selector": "0xfeaf968c", "description": "Oracle latestRoundData"},
             {"function": "decimals()", "selector": "0x313ce567", "description": "Oracle decimals"},
             {"function": "owner()", "selector": "0x8da5cb5b", "description": "Ownable owner"},

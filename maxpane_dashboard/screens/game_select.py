@@ -79,9 +79,19 @@ class GameSelectScreen(Screen):
                 )
 
     def on_key(self, event) -> None:
+        """Select a game by number.
+
+        ``q`` is deliberately *not* handled here.  It used to call
+        ``self.app.exit()``, which tears the app down without running
+        ``MaxPaneApp.action_quit``: no manager's ``close()`` was awaited, so
+        every ``httpx.AsyncClient`` was abandoned at event-loop teardown and
+        ``save_cache()`` never ran -- quitting from the menu silently threw
+        away the session's history, while quitting from a dashboard (which
+        goes through the ``q`` binding) saved it.  Leaving the key unhandled
+        lets it bubble to ``MaxPaneApp``'s ``q -> quit`` binding, so both
+        quit paths run the same graceful shutdown (LOW-19).
+        """
         for key, game_id, _name, _desc in GAMES:
             if event.character == key:
                 self.dismiss(game_id)
                 return
-        if event.character == "q":
-            self.app.exit()

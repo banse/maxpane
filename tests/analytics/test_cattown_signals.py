@@ -66,15 +66,15 @@ class TestStakingSignal:
 
 class TestKibbleSignal:
     def test_kibble_signal_positive(self):
-        sig = generate_kibble_signal(price_usd=0.05, change_24h=5.0)
+        sig = generate_kibble_signal(price_eth=0.05, change_24h=5.0)
         assert sig["color"] == "green"
         assert "+5.0%" in sig["value_str"]
 
     def test_kibble_signal_negative(self):
-        sig = generate_kibble_signal(price_usd=0.05, change_24h=-3.0)
+        sig = generate_kibble_signal(price_eth=0.05, change_24h=-3.0)
         assert sig["color"] == "red"
         assert "-3.0%" in sig["value_str"]
 
     def test_kibble_signal_zero_change(self):
-        sig = generate_kibble_signal(price_usd=0.05, change_24h=0.0)
+        sig = generate_kibble_signal(price_eth=0.05, change_24h=0.0)
         assert sig["color"] == "white"

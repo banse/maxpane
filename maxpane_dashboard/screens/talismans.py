@@ -158,7 +158,12 @@ class TalismansScreen(RefreshGuard, Screen):
         try:
             live = data.get("live_tokens", 0) or 0
             mythic = data.get("mythic_count", 0) or 0
-            cores = data.get("total_cores", 0) or 0
+            # `total_cores` is None while enumeration is still syncing (LOW-12):
+            # an unfinished count is a failed read, and a failed read renders as
+            # "--", never as 0. Coercing it to 0 here showed "cores 0" on a cold
+            # start, which reads as a real -- and alarming -- measurement.
+            raw_cores = data.get("total_cores")
+            cores = "--" if raw_cores is None else f"{raw_cores}"
             self.query_one("#title-bar", Static).update(
                 f"TALISMANS · {live} live · {mythic} mythic · cores {cores}"
             )

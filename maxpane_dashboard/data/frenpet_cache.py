@@ -6,6 +6,29 @@ render sparklines and trend indicators.
 
 Thread safety: this module is designed for single-threaded asyncio use.
 No locking is performed.
+
+Schema versioning
+-----------------
+``schema_version`` 1 files hold only ``histories`` (the per-pet score
+series).  The three population-level series -- ``active_pets_history``,
+``total_score_history`` and ``battle_rate_history`` -- were accumulated
+on every poll and rendered as the Score Trends sparklines, but
+``save_to_file`` never wrote them, so they were rebuilt from zero on
+every restart and the overview's three trend lines were flat for the
+first few minutes of every session.
+
+Version 2 persists them.  The upgrade is purely additive, so a v1 file
+loads as "no population history yet":
+
+* **Kept in full** -- ``histories``.  Its on-disk shape is unchanged and
+  a v1 file's per-pet series is loaded exactly as before.
+* **Started empty** -- the three population series, because a v1 file
+  simply does not contain them.  A missing key is absence, not
+  corruption: it must not be logged as an error and must never be a
+  reason to drop the per-pet histories that *are* there.
+
+Nothing is discarded on upgrade.  There is no v2 -> v1 downgrade path;
+an older build reading a v2 file ignores the keys it does not know.
 """
 
 from __future__ import annotations
@@ -24,6 +47,19 @@ logger = logging.getLogger(__name__)
 
 # Type alias for a single time-series data point: (epoch_seconds, score)
 TimeSeriesPoint = tuple[float, float]
+
+# On-disk schema version.  Bumped to 2 when the population-level series
+# started being persisted; see the module docstring for what a pre-v2
+# load keeps and what it starts empty.
+_CACHE_SCHEMA_VERSION = 2
+
+#: Population-level series persisted from v2 on.  Attribute name doubles
+#: as the JSON key.
+_POPULATION_SERIES = (
+    "active_pets_history",
+    "total_score_history",
+    "battle_rate_history",
+)
 
 
 class FrenPetCache:
@@ -138,15 +174,24 @@ class FrenPetCache:
         File format::
 
             {
+                "schema_version": 2,
                 "saved_at": <float>,
                 "max_history": <int>,
                 "histories": {
                     "<pet_id>": [[ts, score], ...],
                     ...
-                }
+                },
+                "active_pets_history": [[ts, count], ...],
+                "total_score_history": [[ts, score], ...],
+                "battle_rate_history": [[ts, per_hour], ...]
             }
+
+        The three population series are what the overview's Score Trends
+        sparklines draw.  They were accumulated every poll and dropped on
+        exit until schema 2; see the module docstring.
         """
         payload: dict[str, Any] = {
+            "schema_version": _CACHE_SCHEMA_VERSION,
             "saved_at": time.time(),
             "max_history": self._max_history,
             "histories": {
@@ -154,6 +199,10 @@ class FrenPetCache:
                 for pid, dq in self._pet_histories.items()
             },
         }
+        for name in _POPULATION_SERIES:
+            payload[name] = [
+                [float(ts), float(val)] for (ts, val) in getattr(self, name)
+            ]
 
         # Atomic write: write to temp, then rename
         tmp_path = path + ".tmp"
@@ -163,7 +212,10 @@ class FrenPetCache:
                 json.dump(payload, f)
             os.replace(tmp_path, path)
             logger.info(
-                "FrenPet cache saved to %s (%d pets)", path, len(self._pet_histories)
+                "FrenPet cache saved to %s (%d pets, %d population points)",
+                path,
+                len(self._pet_histories),
+                sum(len(getattr(self, name)) for name in _POPULATION_SERIES),
             )
         except OSError as exc:
             logger.warning("Failed to save FrenPet cache: %s", exc)
@@ -172,7 +224,7 @@ class FrenPetCache:
             except OSError:
                 pass
 
-    def load_from_file(self, path: str) -> None:
+    def load_from_file(self, path: str, *, now: float | None = None) -> None:
         """Load previously saved history from a JSON file.
 
         Silently does nothing if the file is missing or corrupted.
@@ -184,13 +236,42 @@ class FrenPetCache:
         raising, because every manager loads its cache in ``__init__``
         and one bad value used to abort MaxPane startup for every
         dashboard.
+
+        A pre-v2 file has no population series; that is loaded as "no
+        history yet" and never as an error (see the module docstring).
+
+        Parameters
+        ----------
+        now:
+            Reference clock, in epoch seconds, used to validate the
+            persisted points -- a point dated in the future is
+            corruption, not history.  Passing it explicitly is what
+            keeps this method a pure function of its inputs: reaching
+            for ``time.time()`` internally makes the same file load
+            differently depending on when it is read, and on a machine
+            whose clock ran fast when the file was *written* it silently
+            empties the series it just saved.  ``None`` falls back to the
+            wall clock for callers that genuinely mean "now";
+            ``FrenPetManager`` passes an explicit one.
         """
+        reference = time.time() if now is None else now
         try:
             with open(path) as f:
                 payload = json.load(f)
         except (OSError, json.JSONDecodeError) as exc:
             logger.info("No FrenPet cache file to load (%s): %s", path, exc)
             return
+
+        if not isinstance(payload, dict):
+            logger.warning(
+                "FrenPet cache file %s has unexpected format, skipping", path
+            )
+            return
+
+        try:
+            version = int(payload.get("schema_version") or 1)
+        except (TypeError, ValueError):
+            version = 1
 
         histories = payload.get("histories", {})
         if not isinstance(histories, dict):
@@ -201,7 +282,6 @@ class FrenPetCache:
 
         loaded = 0
         skipped = 0
-        now = time.time()
         for pid_str, points in histories.items():
             if not isinstance(points, list):
                 continue
@@ -209,11 +289,34 @@ class FrenPetCache:
                 pid = int(pid_str)
             except (ValueError, TypeError):
                 continue
-            good, dropped = coerce_points(points, now=now)
+            good, dropped = coerce_points(points, now=reference)
             skipped += dropped
             dq: deque[TimeSeriesPoint] = deque(good, maxlen=self._max_history)
             self._pet_histories[pid] = dq
             loaded += 1
+
+        # Population-level series (schema 2+).  ``coerce_points`` maps a
+        # missing key -- every pre-v2 file -- to ``([], 0)``, so an
+        # upgrade starts these empty and keeps the per-pet histories
+        # above untouched.
+        population_loaded = 0
+        for name in _POPULATION_SERIES:
+            series: deque[TimeSeriesPoint] = getattr(self, name)
+            good, dropped = coerce_points(payload.get(name), now=reference)
+            skipped += dropped
+            series.clear()
+            series.extend(good)
+            population_loaded += len(series)
+
+        if version < _CACHE_SCHEMA_VERSION:
+            logger.info(
+                "FrenPet cache %s is schema v%d; per-pet history (%d pets) "
+                "kept in full, population trend series start empty because "
+                "that version never wrote them. Nothing discarded.",
+                path,
+                version,
+                loaded,
+            )
 
         if skipped:
             logger.warning(
@@ -222,8 +325,10 @@ class FrenPetCache:
                 path,
             )
         logger.info(
-            "Loaded FrenPet cache from %s: %d pets, up to %d points each",
+            "Loaded FrenPet cache from %s: %d pets, %d population points, "
+            "up to %d points each",
             path,
             loaded,
+            population_loaded,
             self._max_history,
         )

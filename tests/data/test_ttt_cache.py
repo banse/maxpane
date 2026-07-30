@@ -244,6 +244,55 @@ def test_per_token_fees_splits_24h_from_lifetime():
     assert cache.per_token_fees("0x" + "ff" * 20, NOW) == (0.0, 0.0)
 
 
+# ---------------------------------------------------------------------------
+# LOW-14: the LIFETIME column has to outlive the 25h bucket retention
+# ---------------------------------------------------------------------------
+
+
+def test_lifetime_fees_survive_the_prune_that_drops_their_buckets():
+    """LOW-14: `prune_old` runs immediately before `per_token_fees` every
+    cycle, so summing the buckets capped LIFETIME at ~25h -- a token earning
+    5 Ξ over a week reported the 0.3 Ξ of its last day, nearly identical to
+    the 24H column beside it."""
+    cache = TTTCache()
+    # A week of deposits, 1 Ξ each, spaced beyond the 25h retention so only
+    # the most recent bucket survives the prune.
+    for day in range(7):
+        deposit(
+            cache,
+            timestamp=int(NOW - (6 - day) * 2 * 86400),
+            tx_hash="0x" + f"{day:064x}",
+            holder_share_wei=WEI,
+        )
+    cache.prune_old(NOW)
+    # Only the most recent day's bucket survives the 25h window...
+    assert len(cache.fees_by_token[TOKEN_A.lower()]) == 1
+    fees_24h, lifetime = cache.per_token_fees(TOKEN_A, NOW)
+    # ...but LIFETIME still means lifetime.
+    assert fees_24h == 1.0
+    assert lifetime == 7.0
+
+
+def test_lifetime_fees_are_still_idempotent():
+    """The counter must sit behind the same seen-event guard as the buckets,
+    or CRIT-1's inflation comes back through a field prune_old can't reach."""
+    cache = TTTCache()
+    for _ in range(120):
+        deposit(cache, holder_share_wei=WEI)
+    assert cache.fees_lifetime_wei[TOKEN_A.lower()] == WEI
+    assert cache.per_token_fees(TOKEN_A, NOW)[1] == 1.0
+
+
+def test_lifetime_fees_are_tracked_per_token():
+    cache = TTTCache()
+    deposit(cache, token=TOKEN_A, holder_share_wei=2 * WEI,
+            tx_hash="0x" + "01" * 32)
+    deposit(cache, token=TOKEN_B, holder_share_wei=5 * WEI,
+            tx_hash="0x" + "02" * 32)
+    assert cache.per_token_fees(TOKEN_A, NOW)[1] == 2.0
+    assert cache.per_token_fees(TOKEN_B, NOW)[1] == 5.0
+
+
 def test_rolling_counters_respect_the_24h_cutoff():
     cache = TTTCache()
     launch(cache, timestamp=int(NOW - 25 * 3600), tx_hash="0x" + "01" * 32)
@@ -398,6 +447,101 @@ def test_save_load_roundtrip_preserves_every_field(tmp_path):
     assert dst.last_seen_block == {"Deposited": 23_000_100}
     assert dst.launches_24h == src.launches_24h
     assert dst.eth_to_holders_24h_wei == src.eth_to_holders_24h_wei
+    assert dst.fees_lifetime_wei == src.fees_lifetime_wei
+    assert dst.fees_lifetime_wei == {TOKEN_A.lower(): 2 * WEI}
+
+
+def test_lifetime_fees_persist_across_a_restart_that_prunes_the_buckets(tmp_path):
+    """LOW-14, end to end: the number a user watches for a week. Every bucket
+    behind it can age out and the process can restart; the total must not."""
+    path = str(tmp_path / "ttt_cache.json")
+    src = TTTCache()
+    for day in range(3):
+        # All older than the 25h bucket retention.
+        deposit(
+            src,
+            timestamp=int(NOW - (4 - day) * 86400),
+            tx_hash="0x" + f"{day:064x}",
+            holder_share_wei=WEI,
+        )
+    src.save_to_file(path)
+
+    dst = TTTCache()
+    dst.load_from_file(path, now=NOW)
+    dst.prune_old(NOW)          # what the manager does on every cycle
+    assert dst.fees_by_token[TOKEN_A.lower()] == []
+    assert dst.per_token_fees(TOKEN_A, NOW) == (0.0, 3.0)
+
+    # And a fourth deposit keeps accumulating on top of the restored total.
+    deposit(dst, timestamp=int(NOW), tx_hash="0x" + "ee" * 32,
+            holder_share_wei=WEI)
+    assert dst.per_token_fees(TOKEN_A, NOW) == (1.0, 4.0)
+
+
+def test_a_v2_file_without_lifetime_counters_seeds_them_from_its_buckets(tmp_path):
+    """`fees_lifetime_wei` was added inside schema v2, so an existing v2 file
+    has fee buckets and no counters. Seeding from the retained window
+    reproduces exactly what the previous build displayed -- a lower bound,
+    never an inflated one -- instead of resetting the column to zero."""
+    path = tmp_path / "ttt_cache.json"
+    src = TTTCache()
+    deposit(src, holder_share_wei=2 * WEI)
+    src.save_to_file(str(path))
+
+    payload = json.loads(path.read_text())
+    assert payload["schema_version"] == _CACHE_SCHEMA_VERSION
+    del payload["fees_lifetime_wei"]        # the pre-LOW-14 on-disk shape
+    path.write_text(json.dumps(payload))
+
+    cache = TTTCache()
+    cache.load_from_file(str(path), now=NOW)
+    assert cache.fees_lifetime_wei == {TOKEN_A.lower(): 2 * WEI}
+    assert cache.per_token_fees(TOKEN_A, NOW) == (2.0, 2.0)
+
+
+def test_seeding_does_not_double_count_a_redelivered_event(tmp_path):
+    """The seeded counter and the persisted seen-ring have to agree, or the
+    reorg-margin replay after a restart inflates the seeded total."""
+    path = tmp_path / "ttt_cache.json"
+    src = TTTCache()
+    deposit(src, holder_share_wei=2 * WEI)
+    src.save_to_file(str(path))
+    payload = json.loads(path.read_text())
+    del payload["fees_lifetime_wei"]
+    path.write_text(json.dumps(payload))
+
+    cache = TTTCache()
+    cache.load_from_file(str(path), now=NOW)
+    deposit(cache, holder_share_wei=2 * WEI)   # same log, re-scanned
+    assert cache.fees_lifetime_wei == {TOKEN_A.lower(): 2 * WEI}
+
+
+def test_a_v2_file_with_no_fee_history_seeds_nothing(tmp_path):
+    path = tmp_path / "ttt_cache.json"
+    src = TTTCache()
+    launch(src)
+    src.save_to_file(str(path))
+    payload = json.loads(path.read_text())
+    del payload["fees_lifetime_wei"]
+    path.write_text(json.dumps(payload))
+
+    cache = TTTCache()
+    cache.load_from_file(str(path), now=NOW)
+    assert cache.fees_lifetime_wei == {}
+
+
+def test_a_non_numeric_lifetime_counter_is_dropped_not_raised(tmp_path):
+    path = tmp_path / "ttt_cache.json"
+    src = TTTCache()
+    deposit(src, holder_share_wei=WEI)
+    src.save_to_file(str(path))
+    payload = json.loads(path.read_text())
+    payload["fees_lifetime_wei"] = {TOKEN_A.lower(): None, TOKEN_B.lower(): 5 * WEI}
+    path.write_text(json.dumps(payload))
+
+    cache = TTTCache()
+    cache.load_from_file(str(path), now=NOW)
+    assert cache.fees_lifetime_wei == {TOKEN_B.lower(): 5 * WEI}
 
 
 def test_save_writes_the_current_schema_version(tmp_path):
@@ -687,6 +831,9 @@ def test_legacy_cache_has_its_inflated_accumulators_discarded(tmp_path):
     assert cache.eth_to_holders_24h_wei == 0
     assert cache.launches_24h == 0
     assert cache.last_seen_block == {}
+    # Including the lifetime counters: a pre-v2 file has no trustworthy fee
+    # total to seed one from, so it must not inherit the 120x buckets either.
+    assert cache.fees_lifetime_wei == {}
 
 
 def test_legacy_cache_keeps_the_state_that_never_accumulated(tmp_path):

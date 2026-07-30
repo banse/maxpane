@@ -61,6 +61,10 @@ _CACHE_FILE = _CACHE_DIR / "talismans_cache.json"
 
 _GENESIS_MAX_ID = 1536
 
+# How often the cache is written to disk, in seconds. See
+# ``TalismansManager._maybe_save_cache`` (LOW-13).
+_SAVE_INTERVAL_SECONDS = 300.0
+
 
 def _safe_call(fn: Any, *args: Any, default: Any = None) -> Any:
     """Call *fn* with *args*, returning *default* on exception."""
@@ -92,6 +96,7 @@ class TalismansManager:
         self._cycle_count = 0
         self._error_count = 0
         self._last_fetch_ts: float = 0.0
+        self._last_save_ts: float = 0.0
 
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self.cache.load_from_file(str(_CACHE_FILE))
@@ -179,6 +184,27 @@ class TalismansManager:
         conservation = _safe_call(
             conservation_signal, tcores, baseline, enumeration_complete
         )
+
+        # Core conservation is a tri-state, not a bool (LOW-12). Collapsing
+        # "we have not finished counting yet" into the same False as "the
+        # invariant is broken" made every incomplete sweep -- a cold cache, a
+        # failed flags read, a partial multicall -- raise a DRIFT alarm about
+        # the dashboard's central invariant while the Signals panel correctly
+        # read SYNCING in the same frame.
+        #
+        # ``cores_invariant_state`` is the honest tri-state. The two legacy
+        # keys stay in the dict for the hero widget, which only knows the bool
+        # form; while syncing they are ``None`` -- an unfinished count is a
+        # failed read, and a failed read is None, never 0/False -- so the hero
+        # box renders its dim "--" placeholder instead of asserting a core
+        # total and a verdict about it that we cannot yet stand behind.
+        if not enumeration_complete or baseline <= 0:
+            cores_state = "syncing"
+        elif tcores == baseline:
+            cores_state = "intact"
+        else:
+            cores_state = "drift"
+        syncing = cores_state == "syncing"
         cutmerge = _safe_call(cutmerge_signal, flags["cut_merge_enabled"])
         forge = _safe_call(
             forge_momentum_signal,
@@ -203,12 +229,9 @@ class TalismansManager:
                 mythic_scarcity_pct, mcount, flags["total_supply"], default=0.0
             ),
             "mythics_ever_forged": self.cache.mythics_ever_forged,
-            "total_cores": tcores,
-            "cores_invariant_intact": (
-                enumeration_complete
-                and baseline > 0
-                and tcores == baseline
-            ),
+            "total_cores": None if syncing else tcores,
+            "cores_invariant_state": cores_state,
+            "cores_invariant_intact": None if syncing else cores_state == "intact",
             "operations_24h": operations_24h,
             "operations_total": self.cache.operations_total,
             "top_collectors": _safe_call(
@@ -239,12 +262,45 @@ class TalismansManager:
             "cut_merge_enabled": flags["cut_merge_enabled"],
         }
 
-        self.save_cache()
+        await self._maybe_save_cache(now_ts)
         self._cycle_count += 1
         return result
 
     def save_cache(self) -> None:
+        """Serialize + write the whole cache. Blocking -- never call directly
+        from the event loop; use :meth:`_maybe_save_cache`."""
         self.cache.save_to_file(str(_CACHE_FILE))
+
+    async def _maybe_save_cache(self, now_ts: float) -> None:
+        """Persist the cache without stalling the Textual event loop (LOW-13).
+
+        This used to be a bare ``self.save_cache()`` at the end of every 30 s
+        cycle: a synchronous ``model_dump`` of ~1,500 pydantic tokens plus a
+        JSON write of a few hundred KB, all on the event loop. That is CPU,
+        not disk, so it froze the whole TUI -- keys included, not just the
+        data refresh -- for ~12 ms a cycle, growing with the (then unbounded)
+        dedupe set. Two changes:
+
+        * throttle -- a full rewrite every cycle buys nothing, since a crash
+          only ever loses the cumulative counters since the last save;
+        * offload -- ``asyncio.to_thread`` so the serialization no longer
+          blocks the loop wholesale.
+
+        ``close()`` still saves synchronously, so quitting never drops the
+        last cycle's state.
+
+        The ``await`` is inline rather than a background task on purpose: the
+        cache is mutated only by ``fetch_and_compute``, so awaiting here keeps
+        the serializer from ever reading a half-updated registry, and there is
+        no second writer to tear the file.
+        """
+        if self._last_save_ts and (now_ts - self._last_save_ts) < _SAVE_INTERVAL_SECONDS:
+            return
+        self._last_save_ts = now_ts
+        try:
+            await asyncio.to_thread(self.save_cache)
+        except Exception as exc:  # never let persistence break a refresh
+            logger.warning("cache save failed: %s", exc)
 
     async def close(self) -> None:
         self.save_cache()

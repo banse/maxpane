@@ -85,9 +85,12 @@ class BaseTerminalScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.error("Base Terminal refresh failed: %s", exc)
             try:
+                # Report the manager's real error count -- it was just
+                # incremented by the failed fetch.  Hardcoding 0 here made
+                # the status bar claim "no errors" during an outage.
                 self.query_one(StatusBar).update_data(
                     last_updated_seconds_ago=999,
-                    error_count=0,
+                    error_count=getattr(self._manager, "_error_count", 0),
                     poll_interval=self._poll_interval,
                 )
             except Exception:

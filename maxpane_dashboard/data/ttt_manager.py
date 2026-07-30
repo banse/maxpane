@@ -67,6 +67,13 @@ _CACHE_FILE = _CACHE_DIR / "ttt_cache.json"
 # nothing but is the reason that guard has to exist.
 _REORG_MARGIN_BLOCKS = 12
 
+# Addresses per `eth_getLogs` call when scanning per-token `Bought` events.
+# Public RPCs are happy with an address array this size (the reservoir
+# multicall uses the same batch size), and every chunk is scanned each cycle,
+# so this bounds the size of one request -- it does not bound how many tokens
+# get scanned.
+_BOUGHT_ADDRESS_CHUNK = 200
+
 
 def _safe_call(fn: Any, *args: Any, default: Any = None) -> Any:
     """Call *fn* with *args*, returning *default* on exception."""
@@ -78,7 +85,15 @@ def _safe_call(fn: Any, *args: Any, default: Any = None) -> Any:
 
 
 def _age_str(launch_block: int, current_block: int) -> str:
-    """Human-readable age of a launch (block-delta -> "Nb" or rough time)."""
+    """Human-readable age of a launch (block-delta -> "Nb" or rough time).
+
+    Returns ``"?"`` when the head block is unknown (``current_block <= 0``,
+    which is what ``fetch_block_number`` returns on a failed read). The old
+    ``max(0, ...)`` clamp turned that into ``"0b"`` for every row at once, so
+    an RPC outage read as "the entire collection launched this block" (LOW-5).
+    """
+    if current_block <= 0:
+        return "?"
     blocks = max(0, current_block - launch_block)
     if blocks < 300:
         return f"{blocks}b"
@@ -269,13 +284,28 @@ class TTTManager:
 
         eth_to_holders_24h = self.cache.eth_to_holders_24h_wei / _WEI
 
+        # `fetch_block_number` reports a failed read as 0, which is not a block
+        # height -- it is "we don't know". Signals whose whole meaning is a
+        # distance from the head are therefore suppressed for the cycle rather
+        # than computed against a fictional head (LOW-5); the snapshot builder
+        # renders a `None` signal as a dim "--" row, which is the honest
+        # answer. Block-independent signals (buybacks-ready, concentration)
+        # are unaffected and keep updating.
+        block_known = current_block > 0
+
         if factory_state is not None:
-            fresh = _safe_call(
-                fresh_launch_alert, recent_events, current_block, now
+            fresh = (
+                _safe_call(fresh_launch_alert, recent_events, current_block, now)
+                if block_known
+                else None
             )
             br = _safe_call(buybacks_ready_signal, tokens_list, default=None)
-            dw = _safe_call(
-                decay_window_signal, tokens_list, current_block, default=None
+            dw = (
+                _safe_call(
+                    decay_window_signal, tokens_list, current_block, default=None
+                )
+                if block_known
+                else None
             )
             conc = _safe_call(
                 concentration_signal, factory_state, eth_to_holders_24h,
@@ -543,14 +573,36 @@ class TTTManager:
             logger.warning("Deposited scan failed: %s", exc)
 
         # Bought (per-ERC20). Only scan if we have known tokens.
+        #
+        # Every known token is scanned, in address-list chunks (LOW-16). This
+        # used to pass `known[:200]`, and since `cache.tokens` is insertion-
+        # ordered by launch and never re-sorted, that was the 200 *oldest*
+        # launches: past 200 tokens, buybacks on everything newer -- i.e. the
+        # most actively traded end of the collection -- were never requested.
+        # The omission was permanent, not just delayed, because the watermark
+        # below still advanced over those blocks.
+        #
+        # Picking a "better" 200 (newest, or richest reservoir) would only move
+        # the blind spot, so we cover the whole set instead. The watermark is
+        # advanced to the *minimum* progress across chunks, so one refused
+        # chunk holds the whole topic back; re-delivered events from the
+        # already-scanned chunks are absorbed by the cache's idempotency guard.
         known = list(self.cache.tokens.keys())
         if known:
             try:
                 fb = _from("Bought", _DEFAULT_LOG_LOOKBACK_BLOCKS)
-                # Cap the address list to a sane size to keep RPCs happy
-                buys, scanned_to = await self.client.fetch_buyback_events(
-                    known[:200], fb, current_block
-                )
+                chunks = [
+                    known[i : i + _BOUGHT_ADDRESS_CHUNK]
+                    for i in range(0, len(known), _BOUGHT_ADDRESS_CHUNK)
+                ]
+                buys: list[dict] = []
+                scanned_to = current_block
+                for chunk in chunks:
+                    chunk_buys, chunk_to = await self.client.fetch_buyback_events(
+                        chunk, fb, current_block
+                    )
+                    buys.extend(chunk_buys)
+                    scanned_to = min(scanned_to, chunk_to)
                 for ev in buys:
                     ts = await self._block_timestamp(
                         ev["block_number"], now, current_block

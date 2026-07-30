@@ -369,3 +369,132 @@ fn y_at_prompt_proceeds_to_rain() {
     // Rain and Logo remain.
     assert!(!seq.is_done());
 }
+
+// ---------------------------------------------------------------------------
+// 8. Ctrl+C interrupts the whole animation (LOW-1)
+// ---------------------------------------------------------------------------
+
+/// Ctrl+C as crossterm delivers it in raw mode (SIGINT is suppressed there,
+/// so the interrupt arrives as an ordinary key event).
+fn ctrl_c() -> KeyEvent {
+    KeyEvent {
+        code: KeyCode::Char('c'),
+        modifiers: KeyModifiers::CONTROL,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    }
+}
+
+/// A key release event, as reported by Windows Terminal and by terminals
+/// running the kitty keyboard protocol.
+fn key_release(code: KeyCode) -> KeyEvent {
+    KeyEvent {
+        code,
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Release,
+        state: KeyEventState::NONE,
+    }
+}
+
+#[test]
+fn ctrl_c_interrupts_from_any_screen() {
+    // Every screen of the sequence, under the strictest skip config.
+    for screens in 0..4 {
+        let mut seq = IntroSequence::new(no_skip_config(), phosphor_theme(), 120, 40);
+        for _ in 0..screens {
+            seq.advance();
+        }
+
+        let action = seq.handle_input(ctrl_c());
+
+        assert_eq!(
+            action,
+            IntroAction::Exit,
+            "Ctrl+C should interrupt on screen {screens}"
+        );
+        assert!(seq.is_done(), "Ctrl+C should end the sequence");
+        assert_eq!(seq.result(), IntroResult::Exit);
+    }
+}
+
+#[test]
+fn ctrl_c_exits_rather_than_skipping_into_dashboard() {
+    // With the default skip_key = "any", Ctrl+C must not be read as "skip",
+    // which would take the dashboard path — the opposite of the user's intent.
+    let mut seq = IntroSequence::new(IntroConfig::default(), phosphor_theme(), 120, 40);
+
+    assert_eq!(seq.handle_input(ctrl_c()), IntroAction::Exit);
+    assert_eq!(seq.result(), IntroResult::Exit);
+}
+
+#[test]
+fn ctrl_c_at_prompt_exits_without_typing_into_buffer() {
+    let mut seq = IntroSequence::new(no_skip_config(), phosphor_theme(), 120, 40);
+    advance_to_prompt_input(&mut seq);
+
+    assert_eq!(seq.handle_input(ctrl_c()), IntroAction::Exit);
+    assert_eq!(seq.result(), IntroResult::Exit);
+}
+
+// ---------------------------------------------------------------------------
+// 9. Key release events are not keystrokes (LOW-2)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn key_release_does_not_skip_the_intro() {
+    // Default skip_key = "any": the release of the Enter that launched the
+    // binary from the shell must not instantly skip the whole intro.
+    let mut seq = IntroSequence::new(IntroConfig::default(), phosphor_theme(), 120, 40);
+
+    assert_eq!(
+        seq.handle_input(key_release(KeyCode::Enter)),
+        IntroAction::Continue
+    );
+    assert!(!seq.is_done());
+
+    // A genuine press still skips.
+    assert_eq!(seq.handle_input(key(KeyCode::Enter)), IntroAction::Skip);
+}
+
+#[test]
+fn press_and_release_of_n_still_answers_no() {
+    // On a terminal reporting both halves of each keystroke, 'n' + Enter
+    // must buffer "n" (No -> Exit), not "nn" (unknown -> retry).
+    let mut seq = IntroSequence::new(no_skip_config(), phosphor_theme(), 120, 40);
+    advance_to_prompt_input(&mut seq);
+
+    seq.handle_input(key(KeyCode::Char('n')));
+    seq.handle_input(key_release(KeyCode::Char('n')));
+    seq.handle_input(key(KeyCode::Enter));
+    seq.handle_input(key_release(KeyCode::Enter));
+
+    let action = sleep_and_tick_past_response(&mut seq);
+
+    assert_eq!(
+        action,
+        Some(IntroAction::Exit),
+        "press+release of 'n' + Enter should answer No, not buffer \"nn\""
+    );
+}
+
+#[test]
+fn press_and_release_of_easter_egg_still_matches() {
+    // "gm" typed on a press+release terminal must not become "ggmm".
+    let mut seq = IntroSequence::new(no_skip_config(), phosphor_theme(), 120, 40);
+    advance_to_prompt_input(&mut seq);
+
+    for c in "gm".chars() {
+        seq.handle_input(key(KeyCode::Char(c)));
+        seq.handle_input(key_release(KeyCode::Char(c)));
+    }
+    seq.handle_input(key(KeyCode::Enter));
+    seq.handle_input(key_release(KeyCode::Enter));
+
+    let action = sleep_and_tick_past_response(&mut seq);
+
+    assert_eq!(
+        action,
+        Some(IntroAction::NextScreen),
+        "the 'gm' easter egg should still match when releases are reported"
+    );
+}

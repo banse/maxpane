@@ -145,7 +145,13 @@ impl LogoState {
         }
     }
 
-    pub fn handle_input(&mut self, _key: KeyEvent) -> IntroAction {
+    pub fn handle_input(&mut self, key: KeyEvent) -> IntroAction {
+        // "Press any key" means any key *press* — ignore Release and Repeat,
+        // which terminals running the kitty keyboard protocol also report.
+        if key.kind != crossterm::event::KeyEventKind::Press {
+            return IntroAction::Continue;
+        }
+
         match self.phase {
             LogoPhase::Hold => IntroAction::Continue,
             LogoPhase::Splash => IntroAction::NextScreen,
@@ -522,6 +528,23 @@ mod tests {
             state: KeyEventState::NONE,
         };
         assert_eq!(state.handle_input(key), IntroAction::NextScreen);
+    }
+
+    /// A key *release* is not a keypress: on terminals that report both
+    /// halves, the release would otherwise dismiss the splash a second time
+    /// and advance two phases from a single tap.
+    #[test]
+    fn handle_input_ignores_key_release_during_splash() {
+        use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
+        let mut state = LogoState::new(&default_config(), &phosphor_theme(), LayoutMode::Full);
+        state.phase = LogoPhase::Splash;
+        let key = KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Release,
+            state: KeyEventState::NONE,
+        };
+        assert_eq!(state.handle_input(key), IntroAction::Continue);
     }
 
     // -- Ambient drops initialized within expected bounds --

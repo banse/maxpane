@@ -13,7 +13,7 @@ pub mod rain;
 pub mod splash;
 pub mod typewriter;
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::config::IntroConfig;
 use crate::terminal::{detect_layout, LayoutMode};
@@ -112,13 +112,47 @@ impl IntroSequence {
         action
     }
 
-    /// Handle a key event. The global skip-key check runs first (respecting
-    /// `config.skip_key`), then delegates to the active screen's
-    /// `handle_input`.
+    /// Returns `true` for the universal terminal interrupt, Ctrl+C.
+    ///
+    /// Raw mode suppresses SIGINT, so crossterm hands us the interrupt as an
+    /// ordinary key event and it is on us to honour it. Some terminals report
+    /// Ctrl+Shift+C as CONTROL|SHIFT plus an uppercase 'C', so accept both
+    /// cases.
+    fn is_interrupt(key: &KeyEvent) -> bool {
+        key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
+    }
+
+    /// Handle a key event.
+    ///
+    /// Order of handling, and why:
+    /// 1. Non-press events (key release / auto-repeat) are dropped. Terminals
+    ///    that implement the kitty keyboard protocol — and Windows Terminal —
+    ///    report both press and release, which would otherwise make every
+    ///    keystroke count twice.
+    /// 2. Ctrl+C aborts, ahead of everything else, so the interrupt works on
+    ///    every screen of the animation and under every `skip_key` setting.
+    /// 3. The global skip-key check runs (respecting `config.skip_key`).
+    /// 4. Otherwise the event is delegated to the active screen.
     ///
     /// The Prompt screen is exempt from `skip_key = "any"` because it needs
     /// keyboard input for Y/N and easter eggs. ESC still works as skip there.
+    ///
+    /// This is the single choke point through which every key event reaches
+    /// every screen state, so filtering here covers the whole intro.
     pub fn handle_input(&mut self, key: KeyEvent) -> IntroAction {
+        // 1. Only key presses are input. Ignore Release and Repeat.
+        if key.kind != KeyEventKind::Press {
+            return IntroAction::Continue;
+        }
+
+        // 2. Ctrl+C interrupts the entire sequence, whatever the screen or
+        //    the skip_key config says.
+        if Self::is_interrupt(&key) {
+            self.state = IntroState::Exit;
+            return IntroAction::Exit;
+        }
+
         let needs_input = matches!(
             self.state,
             IntroState::Prompt(_) | IntroState::Logo(_)
@@ -236,6 +270,36 @@ mod tests {
             kind: KeyEventKind::Press,
             state: KeyEventState::NONE,
         }
+    }
+
+    /// Helper: Ctrl+C as crossterm delivers it in raw mode.
+    fn ctrl_c() -> KeyEvent {
+        KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    /// Helper: a key *release* event (emitted by Windows Terminal and by
+    /// terminals with the kitty keyboard protocol enabled).
+    fn key_release(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Release,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    /// Helper: build a sequence with an explicit skip_key setting.
+    fn seq_with_skip_key(skip_key: &str) -> IntroSequence {
+        let config = IntroConfig {
+            skip_key: skip_key.to_string(),
+            ..IntroConfig::default()
+        };
+        IntroSequence::new(config, crate::theme::phosphor_theme(), 120, 40)
     }
 
     // -- State transitions ------------------------------------------------
@@ -415,6 +479,139 @@ mod tests {
 
         let action = seq.handle_input(key(KeyCode::Char('y')));
         assert_eq!(action, IntroAction::Continue);
+    }
+
+    // -- Ctrl+C interrupt (LOW-1) -----------------------------------------
+
+    /// Ctrl+C must abort from every screen of the animation, not just one
+    /// phase. Raw mode suppresses SIGINT, so the sequence has to honour it.
+    #[test]
+    fn ctrl_c_exits_from_every_screen() {
+        for screens_to_advance in 0..4 {
+            let mut seq = seq_with_skip_key("none");
+            for _ in 0..screens_to_advance {
+                seq.advance();
+            }
+            let action = seq.handle_input(ctrl_c());
+            assert_eq!(
+                action,
+                IntroAction::Exit,
+                "Ctrl+C should exit after {screens_to_advance} advance(s)"
+            );
+            assert!(seq.is_done(), "Ctrl+C should end the sequence");
+            assert_eq!(seq.result(), IntroResult::Exit);
+        }
+    }
+
+    /// Ctrl+C must win over every skip_key setting — including the default
+    /// "any", where it would otherwise be read as "skip into the dashboard",
+    /// the opposite of the user's intent.
+    #[test]
+    fn ctrl_c_exits_under_every_skip_key_setting() {
+        for skip_key in ["any", "esc", "none", "bogus"] {
+            let mut seq = seq_with_skip_key(skip_key);
+            let action = seq.handle_input(ctrl_c());
+            assert_eq!(
+                action,
+                IntroAction::Exit,
+                "Ctrl+C should exit with skip_key = {skip_key:?}"
+            );
+            assert_eq!(seq.result(), IntroResult::Exit);
+        }
+    }
+
+    /// At the Y/N prompt Ctrl+C must abort rather than being typed into the
+    /// input buffer as a literal 'c'.
+    #[test]
+    fn ctrl_c_at_prompt_exits_instead_of_typing() {
+        let mut seq = seq_with_skip_key("none");
+        seq.advance(); // -> Prompt
+        seq.tick(); // ShowingQuestion -> WaitingForInput
+
+        assert_eq!(seq.handle_input(ctrl_c()), IntroAction::Exit);
+        assert!(seq.is_done());
+        assert_eq!(seq.result(), IntroResult::Exit);
+    }
+
+    /// Ctrl+Shift+C (reported as CONTROL|SHIFT + 'C' by some terminals) is
+    /// also an interrupt.
+    #[test]
+    fn ctrl_shift_c_also_exits() {
+        let mut seq = seq_with_skip_key("none");
+        let key = KeyEvent {
+            code: KeyCode::Char('C'),
+            modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert_eq!(seq.handle_input(key), IntroAction::Exit);
+    }
+
+    /// A plain 'c' (no CONTROL) must not be treated as an interrupt.
+    #[test]
+    fn plain_c_is_not_an_interrupt() {
+        let mut seq = seq_with_skip_key("none");
+        assert_eq!(seq.handle_input(key(KeyCode::Char('c'))), IntroAction::Continue);
+        assert!(!seq.is_done());
+    }
+
+    // -- Key release filtering (LOW-2) ------------------------------------
+
+    /// Terminals that report press *and* release must not have each keystroke
+    /// counted twice: a release event is not a keypress.
+    #[test]
+    fn key_release_does_not_trigger_skip() {
+        let mut seq = make_seq(); // default skip_key = "any"
+        let action = seq.handle_input(key_release(KeyCode::Enter));
+        assert_eq!(
+            action,
+            IntroAction::Continue,
+            "the release of the Enter that launched the binary must not skip the intro"
+        );
+        assert!(!seq.is_done());
+    }
+
+    /// Release events must not reach the prompt's input buffer either —
+    /// otherwise typing 'n' buffers "nn" and is not recognised as No.
+    #[test]
+    fn key_release_is_ignored_at_prompt() {
+        let mut seq = seq_with_skip_key("none");
+        seq.advance(); // -> Prompt
+        seq.tick(); // -> WaitingForInput
+
+        // 'n' press + release, then Enter press + release. With releases
+        // filtered the buffer holds "n" and the prompt answers No (Exit).
+        seq.handle_input(key(KeyCode::Char('n')));
+        seq.handle_input(key_release(KeyCode::Char('n')));
+        seq.handle_input(key(KeyCode::Enter));
+        seq.handle_input(key_release(KeyCode::Enter));
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let mut saw_exit = false;
+        for _ in 0..100 {
+            if seq.tick() == IntroAction::Exit {
+                saw_exit = true;
+                break;
+            }
+        }
+        assert!(
+            saw_exit,
+            "press+release of 'n' + Enter should answer No, not buffer \"nn\""
+        );
+    }
+
+    /// A release event of Ctrl+C is still just a release — it must not exit.
+    #[test]
+    fn ctrl_c_release_does_not_exit() {
+        let mut seq = seq_with_skip_key("none");
+        let key = KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Release,
+            state: KeyEventState::NONE,
+        };
+        assert_eq!(seq.handle_input(key), IntroAction::Continue);
+        assert!(!seq.is_done());
     }
 
     // -- is_done() --------------------------------------------------------

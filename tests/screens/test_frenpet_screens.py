@@ -9,7 +9,11 @@ assert the two defects these screens shipped with stay fixed:
   and "No viable targets" (MEDI-32);
 * ``frenpet_wallet`` passed raw 18-decimal ``uint256`` pool figures to a
   display formatter, printing garbage like "37325669265659.0B FP pool"
-  (MEDI-33).
+  (MEDI-33);
+* the ``frenpet`` overview title bar read ``population_stats["total_pets"]``
+  / ``["active_pets"]`` -- keys nothing in the repo produces -- so the
+  "X/Y active" counts never appeared however loaded the population was
+  (LOW-18).
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from textual.app import App
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.data.frenpet_models import FrenPet
+from maxpane_dashboard.screens.frenpet import FrenPetScreen
 from maxpane_dashboard.screens.frenpet_full import FrenPetFullScreen
 from maxpane_dashboard.screens.frenpet_wallet import FrenPetWalletScreen
 from maxpane_dashboard.widgets.frenpet import PetSignals, SniperQueue
@@ -228,3 +233,45 @@ async def test_wallet_hero_scales_pool_figures_from_wei() -> None:
         assert "B FP" not in pool_text
         assert "1.2K FP staked" in apr_text
         assert "B FP" not in apr_text
+
+
+# ---------------------------------------------------------------------------
+# frenpet overview title bar (LOW-18)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_overview_title_shows_population_counts() -> None:
+    manager = _FakeManager()
+    screen = FrenPetScreen(manager, poll_interval=30, name="frenpet")
+    app = _Harness(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        title = _text(screen, "#title-bar")
+        # population_stats carries "total"/"active" -- the keys
+        # calculate_population_stats actually returns.
+        assert "4/4 active" in title
+
+
+@pytest.mark.asyncio
+async def test_overview_title_falls_back_without_population() -> None:
+    """An empty population must not print "0/0 active"."""
+    manager = _FakeManager()
+    empty = _sample_data()
+    empty["population_stats"] = {"total": 0, "active": 0}
+    manager.fetch_and_compute = lambda: _async(empty)  # type: ignore[assignment]
+
+    screen = FrenPetScreen(manager, poll_interval=30, name="frenpet")
+    app = _Harness(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        assert _text(screen, "#title-bar").strip() == "FrenPet · Overview"
+
+
+async def _async(value):
+    return value

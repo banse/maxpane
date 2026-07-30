@@ -100,8 +100,13 @@ class FrenPetScreen(RefreshGuard, Screen):
         try:
             title = self.query_one("#title-bar", Static)
             population_stats = data.get("population_stats", {})
-            total = population_stats.get("total_pets", 0)
-            active = population_stats.get("active_pets", 0)
+            # Keys are "total"/"active": that is what
+            # calculate_population_stats returns and what the manager's
+            # _safe_call fallback defaults to.  Nothing in the repo ever
+            # produced "total_pets"/"active_pets", so this header used to
+            # be permanently stuck on the bare "FrenPet · Overview".
+            total = population_stats.get("total", 0)
+            active = population_stats.get("active", 0)
             if total:
                 title.update(
                     f"FrenPet \u00b7 Overview \u00b7 {active}/{total} active"

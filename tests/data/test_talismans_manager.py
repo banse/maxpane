@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 
+from maxpane_dashboard.analytics.talismans_signals import total_cores
+from maxpane_dashboard.data import talismans_cache as tc_mod
 from maxpane_dashboard.data import talismans_manager as tm_mod
+from maxpane_dashboard.data.talismans_cache import TalismansCache
 from maxpane_dashboard.data.talismans_manager import TalismansManager
 
 
@@ -71,7 +76,8 @@ def manager(tmp_path, monkeypatch):
 _REQUIRED_KEYS = {
     "live_tokens", "genesis_minted", "token_drift", "mythic_count",
     "mythic_pct", "mythics_ever_forged", "total_cores",
-    "cores_invariant_intact", "operations_24h", "operations_total",
+    "cores_invariant_intact", "cores_invariant_state",
+    "operations_24h", "operations_total",
     "top_collectors", "mythic_history", "operations_history",
     "conservation_signal", "cutmerge_signal", "forge_momentum_signal",
     "mythic_scarcity_signal", "activity_events", "essence_tier_matrix",
@@ -389,9 +395,14 @@ async def test_a_failed_sweep_keeps_the_previous_token_registry(
     degraded = await m.fetch_and_compute()
 
     assert m.cache.tokens == registry, "the live registry was thrown away"
-    assert degraded["total_cores"] == good["total_cores"]
+    assert total_cores(list(m.cache.tokens.values())) == good["total_cores"]
     assert degraded["mythic_count"] == good["mythic_count"]
     assert degraded["error_count"] >= 1, "the outage must be visible"
+    # The registry survived, but the sweep did not finish, so the emitted core
+    # total is the syncing placeholder rather than a number the hero box would
+    # have to label DRIFT (LOW-12).
+    assert degraded["cores_invariant_state"] == "syncing"
+    assert degraded["total_cores"] is None
 
 
 @pytest.mark.asyncio
@@ -442,4 +453,167 @@ async def test_a_degraded_cycle_never_locks_in_a_conservation_baseline(
     m = _manager_on(tmp_path, monkeypatch, _NoFlags())
     out = await m.fetch_and_compute()
     assert m.cache.cores_invariant_baseline == 0
+    # No baseline means the invariant is unknown, not broken (LOW-12): a
+    # failed read is None, never False.
+    assert out["cores_invariant_state"] == "syncing"
+    assert out["cores_invariant_intact"] is None
+
+
+# ---------------------------------------------------------------------------
+# LOW-12: core conservation is a tri-state, not a bool
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_syncing_is_not_reported_as_drift(tmp_path, monkeypatch):
+    """An unfinished count must never raise the DRIFT alarm.
+
+    The hero box renders ``cores_invariant_intact`` as a bool -- truthy is a
+    green "conserved", anything falsy is a yellow "DRIFT". Collapsing the
+    tri-state into that bool meant every cold cache and every partial sweep
+    accused the collection of breaking its central invariant, while the
+    Signals panel simultaneously and correctly showed CONSERVATION=SYNCING.
+    """
+    m = _manager_on(tmp_path, monkeypatch, _NoTokenStates())
+    out = await m.fetch_and_compute()
+
+    assert out["cores_invariant_state"] == "syncing"
+    # Neither of the two legacy keys may assert anything: None makes the hero
+    # box fall through to its dim "--" placeholder.
+    assert out["cores_invariant_intact"] is None
+    assert out["total_cores"] is None
+    # ...and the signal layer agrees, in the same frame.
+    assert out["conservation_signal"]["value_str"] == "SYNCING"
+
+
+@pytest.mark.asyncio
+async def test_complete_sweep_reports_intact(manager):
+    """A full, successful sweep still locks in and reports the invariant."""
+    out = await manager.fetch_and_compute()
+    assert out["cores_invariant_state"] == "intact"
+    assert out["cores_invariant_intact"] is True
+    assert out["total_cores"] == 5
+    assert out["conservation_signal"]["value_str"] == "INTACT"
+
+
+@pytest.mark.asyncio
+async def test_real_drift_is_still_reported(manager):
+    """A genuine invariant break must survive the tri-state (no false calm)."""
+    await manager.fetch_and_compute()
+    assert manager.cache.cores_invariant_baseline == 5
+
+    # Move the baseline: the next complete sweep now disagrees with it.
+    manager.cache.cores_invariant_baseline = 9
+    out = await manager.fetch_and_compute()
+
+    assert out["cores_invariant_state"] == "drift"
     assert out["cores_invariant_intact"] is False
+    assert out["total_cores"] == 5
+    assert out["conservation_signal"]["value_str"].startswith("DRIFT")
+
+
+# ---------------------------------------------------------------------------
+# LOW-13: the cache save must not block the event loop every cycle
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cycle_does_not_serialize_the_cache_on_the_event_loop(
+    tmp_path, monkeypatch
+):
+    """The per-cycle save was a ~12 ms CPU stall on the Textual event loop.
+
+    A blocked loop stops answering keypresses, not just data refreshes, so
+    this pins that ``fetch_and_compute`` never calls the blocking serializer
+    directly -- it must go through a worker thread.
+    """
+    m = _manager_on(tmp_path, monkeypatch, _FakeClient())
+
+    loop_thread = threading.get_ident()
+    save_threads: list[int] = []
+    real_save = m.cache.save_to_file
+
+    def _tracking_save(path):
+        save_threads.append(threading.get_ident())
+        return real_save(path)
+
+    monkeypatch.setattr(m.cache, "save_to_file", _tracking_save)
+
+    await m.fetch_and_compute()
+
+    assert save_threads, "the first cycle should still persist"
+    assert loop_thread not in save_threads, "cache serialized on the event loop"
+
+
+@pytest.mark.asyncio
+async def test_cache_save_is_throttled_across_cycles(tmp_path, monkeypatch):
+    """Rewriting hundreds of KB every 30 s buys nothing; a crash only ever
+    loses the counters accumulated since the last save."""
+    m = _manager_on(tmp_path, monkeypatch, _FakeClient())
+
+    saves = []
+    monkeypatch.setattr(m.cache, "save_to_file", lambda path: saves.append(path))
+
+    await m.fetch_and_compute()
+    assert len(saves) == 1, "the first cycle must persist"
+
+    for _ in range(5):
+        await m.fetch_and_compute()
+    assert len(saves) == 1, "every cycle re-serialized the whole cache"
+
+    # Once the interval has elapsed, the next cycle saves again.
+    m._last_save_ts -= tm_mod._SAVE_INTERVAL_SECONDS + 1
+    await m.fetch_and_compute()
+    assert len(saves) == 2
+
+
+@pytest.mark.asyncio
+async def test_close_still_persists_synchronously(tmp_path, monkeypatch):
+    """Throttling must not cost the last cycle's state on quit."""
+    m = _manager_on(tmp_path, monkeypatch, _FakeClient())
+    await m.fetch_and_compute()
+
+    saves = []
+    monkeypatch.setattr(m.cache, "save_to_file", lambda path: saves.append(path))
+    await m.close()
+    assert len(saves) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failed_save_does_not_break_the_refresh(tmp_path, monkeypatch):
+    """Persistence is a side effect; it must never fail a fetch cycle."""
+    m = _manager_on(tmp_path, monkeypatch, _FakeClient())
+
+    def _boom(path):
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(m.cache, "save_to_file", _boom)
+    out = await m.fetch_and_compute()
+    assert out["live_tokens"] == 3
+
+
+def test_seen_tx_ops_is_bounded():
+    """The dedupe window is persisted and reloaded -- unbounded growth made
+    every save slower forever, across sessions."""
+    c = TalismansCache()
+    for i in range(tc_mod._SEEN_TX_OPS_MAX + 500):
+        c._remember_tx_op(f"key-{i}")
+
+    assert len(c.seen_tx_ops) == tc_mod._SEEN_TX_OPS_MAX
+    # FIFO: the oldest keys go, the newest are still deduped.
+    assert "key-0" not in c.seen_tx_ops
+    assert f"key-{tc_mod._SEEN_TX_OPS_MAX + 499}" in c.seen_tx_ops
+
+
+def test_loading_an_oversized_dedupe_window_truncates(tmp_path):
+    """An over-cap file written by an older build must not survive reload."""
+    path = tmp_path / "c.json"
+    c = TalismansCache()
+    c.seen_tx_ops = {f"key-{i}": None for i in range(tc_mod._SEEN_TX_OPS_MAX + 300)}
+    c.save_to_file(str(path))
+
+    c2 = TalismansCache()
+    c2.load_from_file(str(path))
+    assert len(c2.seen_tx_ops) == tc_mod._SEEN_TX_OPS_MAX
+    assert "key-0" not in c2.seen_tx_ops, "oldest keys should be dropped"
+    assert f"key-{tc_mod._SEEN_TX_OPS_MAX + 299}" in c2.seen_tx_ops

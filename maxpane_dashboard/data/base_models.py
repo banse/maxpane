@@ -1,7 +1,9 @@
 """Pydantic v2 models for Base chain token and pool data.
 
-All models are frozen (immutable) and map to responses from Bankr,
-DexScreener, and GeckoTerminal APIs after normalisation.
+All models are frozen (immutable) and map to responses from the
+DexScreener, GeckoTerminal, and Clanker APIs after normalisation.
+(``'bankr'`` still appears below as a Clanker *deployer* label -- it is
+upstream data, not an integration.)
 """
 
 from __future__ import annotations

@@ -144,9 +144,22 @@ class TestDecodeHelpers:
 # Tests: KIBBLE price from DEX
 # ---------------------------------------------------------------------------
 
+def _posted_call_targets(mock_http) -> list[tuple[str, str]]:
+    """Extract ``(to, data)`` from every eth_call the mock received."""
+    targets = []
+    for call in mock_http.post.call_args_list:
+        payload = call.kwargs.get("json") or {}
+        if payload.get("method") != "eth_call":
+            continue
+        params = payload.get("params") or [{}]
+        first = params[0] if isinstance(params[0], dict) else {}
+        targets.append((str(first.get("to", "")).lower(), str(first.get("data", ""))))
+    return targets
+
+
 class TestGetKibblePrice:
     @pytest.mark.asyncio
-    async def test_get_kibble_price_from_dex(self, mock_client):
+    async def test_get_kibble_price_eth_from_dex(self, mock_client):
         client, mock_http = mock_client
         # 1 WETH = 1e18 wei, 100_000 KIBBLE = 100_000e18 wei
         weth = 1 * 10**18
@@ -155,25 +168,92 @@ class TestGetKibblePrice:
             _make_reserves_result(weth, kibble)
         )
 
-        price = await client.get_kibble_price()
-        # price = weth / kibble = 1e18 / 100_000e18 = 0.00001
+        price = await client.get_kibble_price_eth()
+        # price = weth / kibble = 1e18 / 100_000e18 = 0.00001 WETH per KIBBLE
         assert price == pytest.approx(1e-5)
+
+    @pytest.mark.asyncio
+    async def test_price_is_eth_denominated_not_usd(self, mock_client):
+        """The returned number is WETH-per-KIBBLE, at live-pool magnitude.
+
+        Pins the unit that the field name now advertises. Reserves are the
+        real ones read from the SushiSwap pair on Base (token0=WETH,
+        token1=KIBBLE): ~0.2 WETH against ~551k KIBBLE, which is ~3.7e-7
+        ETH each -- a number that would be absurd as a USD price and is
+        exactly why ``price_usd`` was the wrong name for it.
+        """
+        client, mock_http = mock_client
+        mock_http.post.return_value = _rpc_response(
+            _make_reserves_result(204_472_038_970_894_500, 550_925_976_699_960_300_000_000)
+        )
+
+        price = await client.get_kibble_price_eth()
+
+        assert price == pytest.approx(3.71e-7, rel=0.01)
 
     @pytest.mark.asyncio
     async def test_get_kibble_price_zero_reserve(self, mock_client):
         """Returns 0.0 when reserve1 is zero (empty pool)."""
         client, mock_http = mock_client
-        # Both reserves zero
         mock_http.post.return_value = _rpc_response(
             _make_reserves_result(0, 0)
         )
 
-        price = await client.get_kibble_price()
-        # Falls through DEX (reserve1==0), then oracle also fails -> 0.0
-        # Need to set up oracle fallback to also return something parseable
-        # Actually, since reserve1 == 0, DEX branch skips. Oracle call also uses mock.
-        # The mock will return same response for oracle calls, which won't parse.
+        price = await client.get_kibble_price_eth()
+
         assert price == 0.0
+
+    @pytest.mark.asyncio
+    async def test_dex_failure_returns_zero_and_warns(self, mock_client, caplog):
+        """A failed pool read yields 0.0 and says so at WARNING.
+
+        This is the path the deleted oracle fallback pretended to cover. It
+        is exercised here so the degraded behaviour is pinned: no price, a
+        loud log line, and no second guess at a different unit.
+        """
+        client, mock_http = mock_client
+        mock_http.post.return_value = _rpc_error_response("execution reverted")
+
+        with caplog.at_level("WARNING", logger="maxpane_dashboard.data.cattown_client"):
+            price = await client.get_kibble_price_eth()
+
+        assert price == 0.0
+        assert any(
+            "KIBBLE price unavailable" in rec.message for rec in caplog.records
+        ), caplog.text
+
+    @pytest.mark.asyncio
+    async def test_short_reserves_payload_returns_zero_and_warns(self, mock_client, caplog):
+        """A truncated getReserves result is 'unknown', not a decoded price."""
+        client, mock_http = mock_client
+        mock_http.post.return_value = _rpc_response("0x" + _encode_uint256(1))
+
+        with caplog.at_level("WARNING", logger="maxpane_dashboard.data.cattown_client"):
+            price = await client.get_kibble_price_eth()
+
+        assert price == 0.0
+        assert any("KIBBLE price unavailable" in rec.message for rec in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_no_oracle_fallback_is_attempted(self, mock_client):
+        """KIBBLE_ORACLE is never called, on the happy path or the sad one.
+
+        The oracle reverts on latestRoundData()/decimals() on live Base, so
+        the old fallback could only ever fail -- and had it worked it would
+        have returned a USD price where the DEX path returns ETH. Deleted;
+        this test keeps it deleted.
+        """
+        client, mock_http = mock_client
+        mock_http.post.return_value = _rpc_error_response("execution reverted")
+
+        await client.get_kibble_price_eth()
+
+        targets = _posted_call_targets(mock_http)
+        assert targets, "expected at least one eth_call"
+        assert all(to == client.DEX_POOL.lower() for to, _ in targets), targets
+        assert client.KIBBLE_ORACLE.lower() not in {to for to, _ in targets}
+        # The Chainlink selectors are gone from the module entirely.
+        assert not any(data.startswith(("0xfeaf968c", "0x313ce567")) for _, data in targets)
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +300,8 @@ class TestGetKibbleStats:
         assert stats.burned == pytest.approx(100_000_000.0)
         assert stats.circulating == pytest.approx(900_000_000.0)
         assert stats.staked_total == pytest.approx(50_000_000.0)
+        # 10 WETH / 1_000_000 KIBBLE = 1e-5 ETH each, carried on price_eth.
+        assert stats.price_eth == pytest.approx(1e-5)
 
 
 # ---------------------------------------------------------------------------

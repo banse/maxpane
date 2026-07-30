@@ -42,6 +42,10 @@ logger = logging.getLogger(__name__)
 
 _HOURLY_HISTORY_HOURS = 168          # 7 days
 _ACTIVITY_RING_BUFFER = 200
+# Cap on the persisted operation-dedupe window (LOW-13). Comfortably above any
+# realistic lifetime operation count for a 1,536-token collection, so eviction
+# is a worst-case backstop rather than something hit in normal use.
+_SEEN_TX_OPS_MAX = 20_000
 
 # Genesis token ids are deterministic 1..1536.
 _GENESIS_FIRST_ID = 1
@@ -93,7 +97,14 @@ class TalismansCache:
         self.cores_invariant_baseline: int = 0  # set once on first scan
 
         # Dedupe keys so re-scans don't double count operations.
-        self.seen_tx_ops: set[str] = set()
+        #
+        # Insertion-ordered (a dict used as an ordered set, not a set) and
+        # bounded: this is persisted and reloaded every launch, so an
+        # unbounded collection grows forever across sessions and drags out
+        # every save (LOW-13). Eviction is FIFO and safe -- re-scans only ever
+        # revisit blocks at or after ``last_seen_block["ops"]``, so the oldest
+        # keys are far behind the watermark and can never be seen again.
+        self.seen_tx_ops: dict[str, None] = {}
 
     # ------------------------------------------------------------------
     # Id registry
@@ -120,6 +131,14 @@ class TalismansCache:
     # Activity log
     # ------------------------------------------------------------------
 
+    def _remember_tx_op(self, key: str) -> None:
+        """Record a dedupe key, FIFO-evicting beyond ``_SEEN_TX_OPS_MAX``."""
+        self.seen_tx_ops[key] = None
+        overflow = len(self.seen_tx_ops) - _SEEN_TX_OPS_MAX
+        if overflow > 0:
+            for old in list(self.seen_tx_ops)[:overflow]:
+                del self.seen_tx_ops[old]
+
     @staticmethod
     def _dedupe_key(event: TalismanActivityEvent) -> str:
         # result_id is the unique id created by the op (bondedId / lithicId /
@@ -143,7 +162,7 @@ class TalismansCache:
         key = self._dedupe_key(event)
         if key in self.seen_tx_ops:
             return
-        self.seen_tx_ops.add(key)
+        self._remember_tx_op(key)
 
         self.activity_log.appendleft(event)
         self.operations_total += 1
@@ -326,10 +345,12 @@ class TalismansCache:
         except Exception as exc:
             logger.warning("counters block bad: %s", exc)
 
-        # Dedupe set
+        # Dedupe set -- saved oldest-first, so an over-cap file (written by an
+        # older build) is truncated from the front, keeping the newest keys.
         try:
-            for key in payload.get("seen_tx_ops") or []:
-                self.seen_tx_ops.add(str(key))
+            saved_keys = list(payload.get("seen_tx_ops") or [])
+            for key in saved_keys[-_SEEN_TX_OPS_MAX:]:
+                self._remember_tx_op(str(key))
         except Exception:
             pass
 

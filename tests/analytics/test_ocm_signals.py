@@ -38,10 +38,31 @@ def test_staking_signal_moderate_and_low():
     assert generate_staking_signal(5.0)["color"] == "red"
 
 
-def test_staking_signal_accepts_ratio_or_percentage():
-    # A ratio <= 1.0 is treated as a fraction, anything larger as a percentage.
-    assert generate_staking_signal(0.5)["value_str"] == "50% staked"
+def test_staking_signal_treats_input_as_percentage():
+    """LOW-4: no unit guessing -- the input is always already a percentage.
+
+    ``ocm_client`` computes ``staking_ratio = total_staked / net_supply * 100``,
+    so a sub-1% reading is a real, alarming sub-1% -- it must not be rescaled
+    into a healthy-looking double-digit number.
+    """
     assert generate_staking_signal(50.0)["value_str"] == "50% staked"
+    # 80 of 10,000 staked -> 0.8%, previously displayed as "80% staked" green.
+    sig = generate_staking_signal(0.8)
+    assert sig["value_str"] == "1% staked"  # 0.8 rounded by the :.0f format
+    assert sig["color"] == "red"
+    # Exactly 1.0% was the worst case: it rendered as "100% staked".
+    sig = generate_staking_signal(1.0)
+    assert sig["value_str"] == "1% staked"
+    assert sig["color"] == "red"
+    # Zero staked must stay red, not become a 0% green edge case.
+    assert generate_staking_signal(0.0)["color"] == "red"
+
+
+def test_recommendation_flags_sub_one_percent_staking():
+    """LOW-4: the low-staking warning must not be suppressed below 1%."""
+    assert "disengaged" in generate_recommendation(0.8, 10.0, 0.0, True)
+    assert "disengaged" in generate_recommendation(1.0, 10.0, 0.0, True)
+    assert "disengaged" in generate_recommendation(0.0, 10.0, 0.0, True)
 
 
 # ---------------------------------------------------------------------------

@@ -109,9 +109,25 @@ def count_buybacks_ready(tokens: list[TTTLaunchedToken]) -> tuple[int, int]:
 
 
 def count_decay_window(tokens: list[TTTLaunchedToken], current_block: int) -> int:
-    """Number of tokens still inside the 98-block buy-tax decay window."""
+    """Number of tokens still inside the 98-block buy-tax decay window.
+
+    A token counts only when its age is a *real, non-negative* block age:
+    ``0 <= current_block - launch_block < DECAY_BLOCKS``.
+
+    The lower bound is the fix for LOW-5. ``TTTClient.fetch_block_number``
+    reports a failed read as ``0``, so a single dead-RPC cycle used to make
+    every launch look brand new -- ``0 - 25_100_000`` is very much ``< 98`` --
+    and the Signals panel announced the entire collection as sitting in the
+    decay window. The same clamp also protects against a launch_block from a
+    block the node has not caught up to yet.
+
+    Callers that cannot establish the head block should skip this signal
+    entirely rather than pass ``0``; see ``TTTManager.fetch_and_compute``.
+    """
     return sum(
-        1 for t in tokens if (current_block - t.launch_block) < DECAY_BLOCKS
+        1
+        for t in tokens
+        if 0 <= (current_block - t.launch_block) < DECAY_BLOCKS
     )
 
 

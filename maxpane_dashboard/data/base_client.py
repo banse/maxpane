@@ -1,9 +1,16 @@
 """Async client for Base chain market data.
 
-Integrates three upstream APIs:
-- **Bankr** -- AI-powered trending token discovery (submit prompt, poll job)
+Integrates three upstream APIs, all of them public and keyless:
 - **DexScreener** -- token pair enrichment with market data
-- **GeckoTerminal** -- trending pools on Base network
+- **GeckoTerminal** -- trending pools and trades on Base network
+- **Clanker** -- recent token launches
+
+This client reads **no** API-key environment variables and sends no
+credentials.  MaxPane is a keyless tool: every data source must work with
+no API key of any kind (see ``CLAUDE.md``).  A keyed Bankr integration
+used to live here; it was removed, and
+``tests/data/test_base_client.py::TestKeylessConstraint`` guards against
+its return.
 
 Uses httpx for non-blocking HTTP with manual exponential backoff retries,
 following the same patterns as ``dashboard.data.client.GameDataClient``.
@@ -13,8 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import re
 import time
 from typing import Any
 
@@ -35,31 +40,6 @@ _REQUEST_TIMEOUT = 15.0
 _DEXSCREENER_BATCH_SIZE = 30
 _DEXSCREENER_MIN_DELAY = 0.9  # 900 ms between requests
 _GECKO_MIN_DELAY = 0.75  # 750 ms between requests
-
-# ---------------------------------------------------------------------------
-# Bankr API constants
-# ---------------------------------------------------------------------------
-
-_BANKR_API = "https://api.bankr.bot"
-_BANKR_POLL_INTERVAL = 2.0  # seconds
-_BANKR_MAX_POLLS = 60
-_BANKR_PROMPT = (
-    "List the top 20 trending tokens on Base chain right now. "
-    "For each token include: name, symbol, price in USD, "
-    "24h price change percent, 24h volume in USD, market cap in USD, "
-    "and contract address. Format each as a numbered list."
-)
-
-# ---------------------------------------------------------------------------
-# Address extraction regex (matches 0x followed by 40 hex chars)
-# ---------------------------------------------------------------------------
-
-_ADDRESS_RE = re.compile(r"(?:Contract(?:\s+Address)?|Address):\s*(0x[a-fA-F0-9]{40})", re.IGNORECASE)
-
-# Fallback: parse symbols from bullet-point format like "• giza (giza)" or "1. TokenName ($SYM)"
-_SYMBOL_RE = re.compile(r"[•\d]+\.?\s+.+?\((\$?[A-Za-z0-9_]+)\)")
-
-_DEXSCREENER_SEARCH_API = "https://api.dexscreener.com/latest/dex/search"
 
 # ---------------------------------------------------------------------------
 # Clanker API
@@ -88,16 +68,13 @@ def _safe_trade_float(value: Any) -> float:
 
 
 class BaseChainClient:
-    """Fetches Base chain market data from Bankr, DexScreener, and GeckoTerminal.
+    """Fetches Base chain market data from DexScreener, GeckoTerminal, Clanker.
+
+    All three upstreams are public and keyless.  This class must never
+    read an API key from the environment or send a credential header.
 
     Parameters
     ----------
-    bankr_api_key:
-        API key for the Bankr agent API.  Falls back to the ``BANKR_API_KEY``
-        environment variable if not supplied.
-    alchemy_api_key:
-        Optional Alchemy key for future RPC calls.  Falls back to
-        ``ALCHEMY_API_KEY`` env var.
     http_client:
         Optional shared ``httpx.AsyncClient``.  If not provided one is
         created internally and closed on ``close()``.
@@ -105,14 +82,9 @@ class BaseChainClient:
 
     def __init__(
         self,
-        bankr_api_key: str | None = None,
-        alchemy_api_key: str | None = None,
         *,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._bankr_api_key = bankr_api_key or os.getenv("BANKR_API_KEY", "")
-        self._alchemy_api_key = alchemy_api_key or os.getenv("ALCHEMY_API_KEY", "")
-
         self._client = http_client or httpx.AsyncClient(
             timeout=httpx.Timeout(_REQUEST_TIMEOUT),
             follow_redirects=True,
@@ -210,105 +182,6 @@ class BaseChainClient:
         if elapsed < _GECKO_MIN_DELAY:
             await asyncio.sleep(_GECKO_MIN_DELAY - elapsed)
         self._last_gecko_request = time.monotonic()
-
-    # ------------------------------------------------------------------
-    # Bankr: submit prompt and poll for result
-    # ------------------------------------------------------------------
-
-    async def _bankr_submit_prompt(self, prompt: str) -> str:
-        """Submit a prompt to Bankr and return the job ID."""
-        if not self._bankr_api_key:
-            raise RuntimeError("BANKR_API_KEY not configured")
-
-        resp = await self._request_with_retry(
-            "POST",
-            f"{_BANKR_API}/agent/prompt",
-            headers={
-                "x-api-key": self._bankr_api_key,
-                "Content-Type": "application/json",
-            },
-            json_body={"prompt": prompt},
-        )
-        data = resp.json()
-        if not data.get("success"):
-            raise RuntimeError(data.get("error", "Failed to submit Bankr prompt"))
-        return data["jobId"]
-
-    async def _bankr_poll_job(self, job_id: str) -> dict[str, Any]:
-        """Poll a Bankr job until completion, failure, or timeout."""
-        for _ in range(_BANKR_MAX_POLLS):
-            resp = await self._request_with_retry(
-                "GET",
-                f"{_BANKR_API}/agent/job/{job_id}",
-                headers={"x-api-key": self._bankr_api_key},
-            )
-            data = resp.json()
-            status = data.get("status", "")
-
-            if status == "completed":
-                return data
-            if status == "failed":
-                raise RuntimeError(data.get("error", "Bankr job failed"))
-            if status == "cancelled":
-                raise RuntimeError("Bankr job cancelled")
-
-            await asyncio.sleep(_BANKR_POLL_INTERVAL)
-
-        raise TimeoutError("Bankr job timed out after polling")
-
-    @staticmethod
-    def parse_addresses_from_response(text: str) -> list[str]:
-        """Extract unique token addresses from Bankr AI response text.
-
-        Tries ``Contract Address: 0x...`` patterns first. Falls back to
-        any raw ``0x`` + 40 hex char match.
-        """
-        seen: set[str] = set()
-        addresses: list[str] = []
-        for match in _ADDRESS_RE.finditer(text):
-            addr = match.group(1).lower()
-            if addr not in seen:
-                seen.add(addr)
-                addresses.append(addr)
-        if addresses:
-            return addresses
-
-        # Fallback: any 0x address in the text
-        for match in re.finditer(r"0x[a-fA-F0-9]{40}", text):
-            addr = match.group(0).lower()
-            if addr not in seen:
-                seen.add(addr)
-                addresses.append(addr)
-        return addresses
-
-    @staticmethod
-    def parse_symbols_from_response(text: str) -> list[str]:
-        """Extract token symbols from bullet-point Bankr response.
-
-        Matches patterns like ``• giza (giza)`` or ``1. TokenName ($SYM)``.
-        """
-        seen: set[str] = set()
-        symbols: list[str] = []
-        for match in _SYMBOL_RE.finditer(text):
-            sym = match.group(1).lstrip("$").upper()
-            if sym not in seen and sym not in ("WETH", "ETH", "USDC", "USDT"):
-                seen.add(sym)
-                symbols.append(sym)
-        return symbols
-
-    async def search_token_by_symbol(self, symbol: str) -> BaseToken | None:
-        """Search DexScreener for a token by symbol on Base chain."""
-        try:
-            resp = await self._request_with_retry("GET", f"{_DEXSCREENER_SEARCH_API}?q={symbol}")
-            data = resp.json()
-            pairs = data.get("pairs", [])
-            # Filter to Base chain pairs
-            for pair in pairs:
-                if pair.get("chainId") == "base":
-                    return BaseToken.from_dexscreener_pair(pair)
-        except Exception as exc:
-            logger.debug("DexScreener search for %s failed: %s", symbol, exc)
-        return None
 
     # ------------------------------------------------------------------
     # DexScreener: batch enrichment
@@ -520,15 +393,15 @@ class BaseChainClient:
             return []
 
     # ------------------------------------------------------------------
-    # Bankr + DexScreener: trending tokens
+    # GeckoTerminal + DexScreener: trending tokens
     # ------------------------------------------------------------------
 
     async def get_trending_tokens(self) -> list[BaseToken]:
-        """Fetch trending tokens — fast path via DexScreener/GeckoTerminal.
+        """Fetch trending tokens via GeckoTerminal + DexScreener.
 
         Uses GeckoTerminal trending pools to discover tokens, then
-        enriches via DexScreener for full market data. This is instant
-        (no polling). Bankr is NOT used here to avoid 60s+ delays.
+        enriches via DexScreener for full market data.  Both endpoints
+        are public and keyless.
         """
         try:
             # Get trending pool tokens from GeckoTerminal
@@ -554,40 +427,6 @@ class BaseChainClient:
 
         except Exception as exc:
             logger.error("Trending tokens failed: %s", exc)
-            return []
-
-    async def get_trending_tokens_bankr(self) -> list[BaseToken]:
-        """Fetch trending tokens via Bankr (SLOW — 30-90 seconds).
-
-        Use as background enrichment, NOT for primary dashboard data.
-        """
-        try:
-            job_id = await self._bankr_submit_prompt(_BANKR_PROMPT)
-            result = await self._bankr_poll_job(job_id)
-
-            response_text = result.get("response", "")
-            if not response_text:
-                return []
-
-            addresses = self.parse_addresses_from_response(response_text)
-            if addresses:
-                logger.info("Bankr: extracted %d addresses", len(addresses))
-                return await self.enrich_tokens(addresses)
-
-            symbols = self.parse_symbols_from_response(response_text)
-            if not symbols:
-                return []
-
-            tokens: list[BaseToken] = []
-            for sym in symbols[:20]:
-                await self._wait_dexscreener()
-                token = await self.search_token_by_symbol(sym)
-                if token:
-                    tokens.append(token)
-            return tokens
-
-        except Exception as exc:
-            logger.error("Bankr trending failed: %s", exc)
             return []
 
     # ------------------------------------------------------------------
@@ -898,11 +737,10 @@ class BaseChainClient:
         Parameters
         ----------
         remote_only:
-            When ``True``, skip Bankr/GeckoTerminal/Clanker flows and use
-            only DexScreener trending (boosted tokens).  Suitable for the
-            Base Trading Overview dashboard where speed matters and Bankr
-            polling is undesirable.  When ``False`` (default), existing
-            behaviour is preserved.
+            When ``True``, skip the trending-pools/Clanker fan-out and
+            use only the single GeckoTerminal trending call.  Suitable
+            for the Base Trading Overview dashboard where speed matters.
+            When ``False`` (default), existing behaviour is preserved.
 
         Runs data sources concurrently.  Each source degrades
         independently on failure.
@@ -925,7 +763,7 @@ class BaseChainClient:
                 fetched_at=time.time(),
             )
 
-        # Default path: full Bankr + GeckoTerminal + Clanker flow
+        # Default path: full GeckoTerminal + Clanker flow
         async def _safe_trending_tokens() -> list[BaseToken]:
             try:
                 return await self.get_trending_tokens()

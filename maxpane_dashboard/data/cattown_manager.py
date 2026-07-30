@@ -65,7 +65,8 @@ class CatTownManager:
         Returns a flat dict with keys organized by dashboard widget:
 
         Hero metrics:
-            ``kibble_price_usd``, ``kibble_change_24h``,
+            ``kibble_price_eth`` (WETH per KIBBLE, not USD -- there is no
+            ETH/USD source in this data layer), ``kibble_change_24h``,
             ``competition_state``, ``top_fisher``.
 
         Leaderboard:
@@ -264,7 +265,7 @@ class CatTownManager:
         # -- Assemble flat dict ------------------------------------------------
         return {
             # Hero metrics
-            "kibble_price_usd": snapshot.kibble.price_usd,
+            "kibble_price_eth": snapshot.kibble.price_eth,
             "kibble_change_24h": snapshot.kibble.price_change_24h,
             "competition_state": competition_state,
             "top_fisher": top_fisher,

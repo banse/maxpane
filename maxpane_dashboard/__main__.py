@@ -37,13 +37,52 @@ def _maximize_terminal() -> None:
         sys.stdout.flush()
 
 
+#: Smallest accepted ``--poll-interval``.  Below this the flag stops being a
+#: tuning knob and becomes a way to break the app (see :func:`_poll_interval`);
+#: it is also the floor at which polling every public API stays polite.
+_MIN_POLL_INTERVAL = 5
+
+
+def _poll_interval(value: str) -> int:
+    """Parse ``--poll-interval``, rejecting values that break the TUI.
+
+    Every screen passes this straight to Textual's ``set_interval``, and
+    non-positive intervals do not merely poll fast -- they break the timer:
+
+    * ``0`` -> ``Timer._run`` computes ``int((now - start) / _interval + 1)``
+      in its skip branch and raises ``ZeroDivisionError``.  The timer task
+      dies unobserved, so the dashboard silently stops auto-refreshing after
+      the initial fetch and the stored exception resurfaces as a traceback
+      on exit.
+    * negatives -> the same skip branch recomputes the identical count and
+      ``continue``s with no ``await``, starving the asyncio event loop and
+      freezing the whole UI.
+
+    Both reproduced against Textual 8.1.1 (LOW-3).  Rejecting at the parser
+    keeps the failure a one-line usage error instead of a frozen terminal.
+    """
+    try:
+        seconds = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"invalid int value: {value!r}"
+        ) from None
+    if seconds < _MIN_POLL_INTERVAL:
+        raise argparse.ArgumentTypeError(
+            f"must be at least {_MIN_POLL_INTERVAL} seconds (got {seconds}); "
+            "values below that stop the refresh timer instead of speeding "
+            "it up"
+        )
+    return seconds
+
+
 def main():
     parser = argparse.ArgumentParser(description="MaxPane Dashboard")
     parser.add_argument(
         "--poll-interval",
-        type=int,
+        type=_poll_interval,
         default=30,
-        help="Poll interval in seconds (default: 30)",
+        help=f"Poll interval in seconds (default: 30, minimum: {_MIN_POLL_INTERVAL})",
     )
     parser.add_argument(
         "--theme",

@@ -277,7 +277,7 @@ class TestTokenDetailModel:
 class TestGetTokenDetail:
     @pytest.mark.asyncio
     async def test_selects_highest_liquidity_base_pair(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             return_value=_make_response(DEXSCREENER_TOKEN_RESPONSE)
         )
@@ -296,7 +296,7 @@ class TestGetTokenDetail:
     @pytest.mark.asyncio
     async def test_filters_to_base_chain(self) -> None:
         """When multiple chains are present, only Base pairs are considered."""
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             return_value=_make_response(DEXSCREENER_MULTICHAIN_RESPONSE)
         )
@@ -311,7 +311,7 @@ class TestGetTokenDetail:
 
     @pytest.mark.asyncio
     async def test_returns_none_on_empty_pairs(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             return_value=_make_response({"pairs": []})
         )
@@ -323,7 +323,7 @@ class TestGetTokenDetail:
 
     @pytest.mark.asyncio
     async def test_returns_none_on_api_failure(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             side_effect=httpx.HTTPError("DexScreener down")
         )
@@ -341,7 +341,7 @@ class TestGetTokenDetail:
 class TestGetTokenTrades:
     @pytest.mark.asyncio
     async def test_parses_gecko_trades(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             return_value=_make_response(GECKO_TRADES_RESPONSE)
         )
@@ -363,7 +363,7 @@ class TestGetTokenTrades:
 
     @pytest.mark.asyncio
     async def test_respects_limit(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             return_value=_make_response(GECKO_TRADES_RESPONSE)
         )
@@ -376,7 +376,7 @@ class TestGetTokenTrades:
     @pytest.mark.asyncio
     async def test_returns_empty_on_failure(self) -> None:
         """Graceful degradation when GeckoTerminal fails."""
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             side_effect=httpx.HTTPError("GeckoTerminal down")
         )
@@ -388,7 +388,7 @@ class TestGetTokenTrades:
 
     @pytest.mark.asyncio
     async def test_handles_empty_response(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             return_value=_make_response({"data": []})
         )
@@ -408,10 +408,7 @@ class TestManagerTokenSelection:
         """Build a manager with stubbed-out cache and client."""
         with patch("maxpane_dashboard.data.base_manager.BaseTokenCache") as MockCache:
             MockCache.return_value.load_from_file.return_value = None
-            mgr = BaseManager(
-                poll_interval=30,
-                bankr_api_key="test_key",
-            )
+            mgr = BaseManager(poll_interval=30)
         return mgr
 
     def test_select_token(self) -> None:

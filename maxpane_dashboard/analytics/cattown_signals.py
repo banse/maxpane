@@ -165,8 +165,12 @@ def generate_staking_signal(apy: float, kibble_price_change: float) -> dict:
     }
 
 
-def generate_kibble_signal(price_usd: float, change_24h: float) -> dict:
-    """Price with green/red delta based on 24h change."""
+def generate_kibble_signal(price_eth: float, change_24h: float) -> dict:
+    """Price with green/red delta based on 24h change.
+
+    ``price_eth`` is WETH per KIBBLE (the value the DEX pool actually
+    reports); the rendered string is labelled ETH to match.
+    """
     if change_24h > 0:
         color = "green"
     elif change_24h < 0:
@@ -175,7 +179,7 @@ def generate_kibble_signal(price_usd: float, change_24h: float) -> dict:
         color = "white"
     return {
         "label": "KIBBLE",
-        "value_str": f"{price_usd:.8f} ETH ({change_24h:+.1f}%)",
+        "value_str": f"{price_eth:.8f} ETH ({change_24h:+.1f}%)",
         "indicator": "\u25cf",
         "color": color,
     }

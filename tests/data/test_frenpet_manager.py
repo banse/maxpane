@@ -591,3 +591,42 @@ class TestFrenPetManagerPopulationPets:
         # Real model instances, as the sniper queue expects.
         assert all(isinstance(p, FrenPet) for p in population_pets)
         assert {p.id for p in population_pets} == {1, 2, 3, 4, 5}
+
+
+# ---------------------------------------------------------------------------
+# Tests: _safe_call never raises out of its own handler (LOW-11)
+# ---------------------------------------------------------------------------
+
+class TestFrenPetManagerSafeCall:
+    def test_returns_default_and_logs_for_a_named_function(self, caplog) -> None:
+        from maxpane_dashboard.data.frenpet_manager import _safe_call
+
+        def boom(x):
+            raise ValueError("nope")
+
+        with caplog.at_level("WARNING"):
+            assert _safe_call(boom, 1, default={"ok": False}) == {"ok": False}
+        assert "boom" in caplog.text
+
+    def test_survives_a_callable_without_a_dunder_name(self) -> None:
+        """``fn.__name__`` in the handler used to raise AttributeError.
+
+        That exception escaped _safe_call and propagated into
+        fetch_and_compute, turning a degraded analytics call into a failed
+        refresh cycle -- the exact opposite of the helper's contract.
+        """
+        from functools import partial
+
+        from maxpane_dashboard.data.frenpet_manager import _safe_call
+
+        def boom(a, b):
+            raise ValueError("nope")
+
+        assert not hasattr(partial(boom, 1), "__name__")
+        assert _safe_call(partial(boom, 1), 2, default="fallback") == "fallback"
+
+        class Callable:
+            def __call__(self):
+                raise RuntimeError("nope")
+
+        assert _safe_call(Callable(), default="fallback") == "fallback"

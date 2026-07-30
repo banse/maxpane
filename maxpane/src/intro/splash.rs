@@ -74,8 +74,15 @@ impl SplashState {
         super::IntroAction::Continue
     }
 
-    pub fn handle_input(&mut self, _key: KeyEvent) -> super::IntroAction {
-        // Any key dismisses the splash
+    pub fn handle_input(&mut self, key: KeyEvent) -> super::IntroAction {
+        // Any key *press* dismisses the splash. Release and Repeat events —
+        // reported by Windows Terminal and by terminals running the kitty
+        // keyboard protocol — are not keypresses, and acting on them would
+        // consume a keystroke meant for the next screen.
+        if key.kind != crossterm::event::KeyEventKind::Press {
+            return super::IntroAction::Continue;
+        }
+
         super::IntroAction::NextScreen
     }
 
@@ -172,5 +179,54 @@ impl SplashState {
         let paragraph = Paragraph::new(Line::from(span));
         let rect = Rect::new(x, y, text_width.min(area.width), 1);
         frame.render_widget(paragraph, rect);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn make_splash() -> SplashState {
+        SplashState::new(
+            &IntroConfig::default(),
+            &crate::theme::phosphor_theme(),
+            LayoutMode::Full,
+        )
+    }
+
+    fn key(code: KeyCode, kind: KeyEventKind) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    /// "press any key" means any key *press*.
+    #[test]
+    fn handle_input_advances_on_key_press() {
+        let mut state = make_splash();
+        assert_eq!(
+            state.handle_input(key(KeyCode::Char(' '), KeyEventKind::Press)),
+            super::super::IntroAction::NextScreen
+        );
+    }
+
+    /// A key release is not a keypress: on terminals reporting both halves,
+    /// "press any key" would otherwise consume a keystroke meant for the
+    /// next screen.
+    #[test]
+    fn handle_input_ignores_key_release() {
+        let mut state = make_splash();
+        assert_eq!(
+            state.handle_input(key(KeyCode::Char(' '), KeyEventKind::Release)),
+            super::super::IntroAction::Continue
+        );
     }
 }

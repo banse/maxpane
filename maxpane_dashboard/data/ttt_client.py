@@ -1065,6 +1065,18 @@ class TTTClient:
 
         Uses Multicall3's ``getEthBalance(address)`` so we get all balances
         in one round-trip. Returns ``{lower_addr: wei}``.
+
+        An address whose sub-call did not succeed is **omitted** from the
+        result rather than reported as ``0`` (LOW-15), matching
+        :meth:`fetch_token_metadata`. Zero is a legitimate reservoir balance --
+        most freshly launched tokens have one -- so a failed read that renders
+        as zero is indistinguishable from a real empty reservoir, and
+        ``TTTCache.update_token_reservoir`` would overwrite the last known
+        balance with it. Omission means the caller simply keeps its cached
+        value, which is the documented contract for every other fetcher here.
+
+        A *transport* failure still raises out of ``_multicall`` (MEDI-31);
+        this only concerns per-call results inside a reply that did arrive.
         """
         if not addresses:
             return {}
@@ -1075,10 +1087,10 @@ class TTTClient:
         results = await self._multicall(calls)
         out: dict[str, int] = {}
         for addr, (ok, data) in zip(addresses, results):
-            if ok:
-                out[addr.lower()] = _decode_uint(data)
-            else:
-                out[addr.lower()] = 0
+            if not ok:
+                logger.debug("reservoir read failed for %s; omitting", addr)
+                continue
+            out[addr.lower()] = _decode_uint(data)
         return out
 
     async def fetch_market_data(

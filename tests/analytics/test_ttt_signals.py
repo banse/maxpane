@@ -242,6 +242,27 @@ class TestCountDecayWindow:
         count = count_decay_window([token_a, token_b], current_block=current_block)
         assert count == 1
 
+    def test_a_zero_head_block_counts_nothing(self) -> None:
+        """LOW-5: `fetch_block_number` returns 0 for a failed read, and every
+        `0 - launch_block` is hugely negative -- i.e. `< 98`. Without the lower
+        bound one dead-RPC cycle reported the entire collection as in-decay."""
+        tokens = [
+            _make_token(token_id=i, address=f"0x{i:02x}", launch_block=25_000_000 + i)
+            for i in range(5)
+        ]
+        assert count_decay_window(tokens, current_block=0) == 0
+
+    def test_a_launch_block_ahead_of_the_head_is_not_counted(self) -> None:
+        """A lagging node can report a head below a launch we already know
+        about; a negative age is not a fresh launch."""
+        token = _make_token(token_id=1, address="0x0a", launch_block=1_000_050)
+        assert count_decay_window([token], current_block=1_000_000) == 0
+
+    def test_age_zero_is_counted(self) -> None:
+        """The clamp must not exclude a token launched in the head block."""
+        token = _make_token(token_id=1, address="0x0a", launch_block=1_000_000)
+        assert count_decay_window([token], current_block=1_000_000) == 1
+
 
 # ---------------------------------------------------------------------------
 # fresh_launch_alert
@@ -326,6 +347,18 @@ class TestDecayWindowSignal:
         token = _make_token(launch_block=current_block - 50)
         sig = decay_window_signal([token], current_block=current_block)
         assert _signal_field(sig, "color") == "yellow"
+
+    def test_an_unknown_head_block_is_dim_and_reports_zero(self) -> None:
+        """LOW-5: the false yellow "N tokens in decay window" alarm. The
+        manager suppresses this signal entirely at `current_block == 0`, but
+        the function itself must not fabricate a count either."""
+        tokens = [
+            _make_token(token_id=i, address=f"0x{i:02x}", launch_block=25_000_000 + i)
+            for i in range(340)
+        ]
+        sig = decay_window_signal(tokens, current_block=0)
+        assert _signal_field(sig, "color") == "dim"
+        assert "0 tokens" in _signal_field(sig, "value_str")
 
 
 class TestConcentrationSignal:

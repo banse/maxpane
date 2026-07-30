@@ -114,10 +114,6 @@ _SEL_BALANCE_OF = "0x70a08231"
 # Sushi V2 Pair
 _SEL_GET_RESERVES = "0x0902f1ac"
 
-# Kibble Oracle (Chainlink-style)
-_SEL_LATEST_ROUND_DATA = "0xfeaf968c"
-_SEL_DECIMALS = "0x313ce567"
-
 # Competition contract (keccak256 selectors verified via web3_sha3)
 _SEL_CURRENT_COMPETITION = "0x0b34ec22"  # currentCompetition()
 _SEL_GET_CURRENT_COMPETITION = "0x37f0c78a"  # getCurrentCompetition()
@@ -180,6 +176,12 @@ class CatTownClient:
 
     # Contract addresses
     KIBBLE_TOKEN = "0x64cc19A52f4D631eF5BE07947CABA14aE00c52Eb"
+    # Deployed and referenced by the cat.town frontend, but NOT a Chainlink
+    # aggregator: live eth_call on Base returns "execution reverted" for both
+    # latestRoundData() (0xfeaf968c) and decimals() (0x313ce567), re-verified
+    # 2026-07-30. Nothing in this client reads it -- the KIBBLE price comes
+    # from DEX_POOL reserves. Do not wire it up as a price source without
+    # first establishing what its actual interface is.
     KIBBLE_ORACLE = "0xE97B7ab01837A4CbF8C332181A2048EEE4033FB7"
     FISHING_GAME = "0xC05Dde2e6E4c5E13E3f78B6Cb4436CFEf6d7AbD3"
     COMPETITION = "0x62a8F851AEB7d333e07445E59457eD150CEE2B7a"
@@ -516,17 +518,24 @@ class CatTownClient:
     # Public API: KIBBLE token reads
     # ------------------------------------------------------------------
 
-    async def get_kibble_price(self) -> float:
-        """Get KIBBLE price in ETH from DEX pool reserves.
+    async def get_kibble_price_eth(self) -> float:
+        """Get the KIBBLE price **denominated in ETH** from DEX pool reserves.
 
-        Calls ``getReserves()`` on the SushiSwap V2 pool.
-        token0 = WETH, token1 = KIBBLE.
-        Price in ETH = reserve0 / reserve1.
+        Calls ``getReserves()`` on the SushiSwap V2 pool. Verified on Base:
+        ``token0()`` is WETH (0x4200...0006) and ``token1()`` is KIBBLE, so
+        ``reserve0 / reserve1`` is WETH per KIBBLE -- an ETH price, on the
+        order of 1e-7. It is *not* USD, and no ETH/USD conversion happens
+        anywhere in the Cat Town data layer; every field carrying this value
+        is named ``*_eth`` for that reason.
 
-        Falls back to the KIBBLE oracle (Chainlink-style) if the DEX
-        call fails.
+        There is deliberately no oracle fallback. ``KIBBLE_ORACLE`` is not a
+        Chainlink aggregator (see the note on the constant), so the former
+        fallback could only ever raise, and it would have returned USD if it
+        had worked -- a silent unit switch on the degraded path.
+
+        Returns ``0.0`` when the pool read fails or the pool is empty.
+        Callers must treat ``0.0`` as "unknown", never as a real price.
         """
-        # Try DEX pool first
         try:
             hex_result = await self._eth_call(self.DEX_POOL, _SEL_GET_RESERVES)
             raw = hex_result[2:] if hex_result.startswith("0x") else hex_result
@@ -535,23 +544,13 @@ class CatTownClient:
                 reserve1 = int(raw[64:128], 16)  # KIBBLE (18 decimals)
                 if reserve1 > 0:
                     return reserve0 / reserve1
+            logger.warning(
+                "KIBBLE price unavailable: DEX pool returned no usable reserves "
+                "(%d hex chars); reporting 0.0",
+                len(raw),
+            )
         except Exception as exc:
-            logger.debug("DEX pool getReserves failed: %s", exc)
-
-        # Fallback: oracle latestRoundData
-        try:
-            hex_result = await self._eth_call(self.KIBBLE_ORACLE, _SEL_LATEST_ROUND_DATA)
-            raw = hex_result[2:] if hex_result.startswith("0x") else hex_result
-            if len(raw) >= 320:
-                # answer is the second uint256 (offset 64..128), signed int256
-                answer = int(raw[64:128], 16)
-                # Get oracle decimals
-                dec_result = await self._eth_call(self.KIBBLE_ORACLE, _SEL_DECIMALS)
-                dec_raw = dec_result[2:] if dec_result.startswith("0x") else dec_result
-                decimals = int(dec_raw[:64], 16) if dec_raw else 8
-                return answer / (10 ** decimals)
-        except Exception as exc:
-            logger.debug("KIBBLE oracle fallback failed: %s", exc)
+            logger.warning("KIBBLE price unavailable: DEX getReserves failed: %s", exc)
 
         return 0.0
 
@@ -583,12 +582,12 @@ class CatTownClient:
             staked_wei = 0
 
         try:
-            price = await self.get_kibble_price()
+            price_eth = await self.get_kibble_price_eth()
         except Exception:
-            price = 0.0
+            price_eth = 0.0
 
         return KibbleEconomy.from_raw(
-            price_usd=price,
+            price_eth=price_eth,
             total_supply_wei=total_supply_wei,
             burned_wei=burned_wei,
             staked_wei=staked_wei,
@@ -1027,7 +1026,7 @@ class CatTownClient:
         except Exception as exc:
             logger.debug("Failed to fetch kibble stats: %s", exc)
             return KibbleEconomy(
-                price_usd=0.0,
+                price_eth=0.0,
                 total_supply=0.0,
                 circulating=0.0,
                 burned=0.0,

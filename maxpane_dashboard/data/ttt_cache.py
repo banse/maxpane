@@ -3,7 +3,9 @@
 Tracks:
 
 * The 10,000 per-NFT ERC20 token contracts (address + metadata).
-* A 24h-window fee history per token (FeeSplitter.Deposited holderShare).
+* A 24h-window fee history per token (FeeSplitter.Deposited holderShare),
+  plus a monotonic per-token lifetime total of the same, which the 25h window
+  pruning deliberately does not touch.
 * Hourly burn-count + floor-price buckets, 168 hours (7 days) deep, for the
   sparkline widget.
 * A ring buffer of the most recent 200 activity events for the activity feed.
@@ -29,6 +31,15 @@ the scan watermarks) from a pre-v2 file, while keeping the state that was
 never accumulated and is expensive to rebuild (the token registry and the
 7-day hourly sparklines, both of which are written by overwrite-by-bucket /
 insert-if-absent paths).
+
+``fees_lifetime_wei`` was added inside schema v2 rather than as a v3, because
+the alternative -- bumping the version -- would route every existing v2 file
+through the pre-v2 migration and discard fee/activity history that v2 files
+are, by definition, entitled to keep. A v2 file that predates the key is
+handled explicitly in ``load_from_file``: the counters are seeded from the
+retained fee window, which reproduces the number the previous build displayed
+and is a strict lower bound on the true total. Nothing is silently
+reinterpreted.
 """
 
 from __future__ import annotations
@@ -118,7 +129,17 @@ class TTTCache:
 
         # Per-token fee buckets: list of (ts_hour, holder_share_wei).
         # Aggregated by hour so 24h windows are cheap to compute.
+        # NOTE: pruned to 25h by `prune_old`, so this is a *window*, never a
+        # lifetime -- see `fees_lifetime_wei` below.
         self.fees_by_token: dict[str, list[list[float]]] = {}
+
+        # Per-token monotonic lifetime total of holder-share fees, in wei.
+        # Deliberately a separate accumulator rather than a sum over
+        # `fees_by_token`: those buckets are pruned to 25h every cycle, so
+        # summing them made the fee table's LIFETIME column a second, noisier
+        # copy of its 24H column (LOW-14). Only `apply_deposit` writes here,
+        # behind the same idempotency guard, and `prune_old` never touches it.
+        self.fees_lifetime_wei: dict[str, int] = {}
 
         # Sparkline buckets, 7d deep.
         self.burns_hourly: deque[tuple[float, int]] = deque(
@@ -360,6 +381,12 @@ class TTTCache:
         else:
             token_buckets.append([bucket, int(holder_share_wei)])
 
+        # Monotonic lifetime total. Same event, same idempotency guard, but a
+        # counter `prune_old` cannot reach (LOW-14).
+        self.fees_lifetime_wei[addr] = (
+            self.fees_lifetime_wei.get(addr, 0) + int(holder_share_wei)
+        )
+
         sym = (self.tokens.get(addr) or TTTLaunchedToken(
             token_id=0, address=addr, deployer="0x" + "0" * 40,
             launch_block=0, symbol=None, decimals=18,
@@ -490,7 +517,13 @@ class TTTCache:
     # ------------------------------------------------------------------
 
     def prune_old(self, now_ts: float) -> None:
-        """Drop fee buckets older than 24h+1h."""
+        """Drop fee buckets older than 24h+1h.
+
+        Only the hourly *window* is pruned. ``fees_lifetime_wei`` is a
+        separate monotonic accumulator and is deliberately left alone, which
+        is what lets the fee table's LIFETIME column outlive the 25h retention
+        (LOW-14).
+        """
         cutoff = now_ts - _FEE_BUCKET_RETENTION_SEC
         for addr, buckets in list(self.fees_by_token.items()):
             kept = [b for b in buckets if b[0] >= cutoff]
@@ -522,17 +555,22 @@ class TTTCache:
     def per_token_fees(self, address: str, now_ts: float) -> tuple[float, float]:
         """Return ``(fees_eth_24h, fees_eth_lifetime)`` for one token.
 
-        ``lifetime`` here is "everything we've seen since the cache started" --
-        the absolute lifetime requires a one-time chain scan from genesis,
-        which we do NOT do per cycle.
+        ``fees_eth_24h`` is summed over the hourly buckets inside the trailing
+        24h. ``fees_eth_lifetime`` comes from the monotonic
+        ``fees_lifetime_wei`` counter, i.e. *everything this cache has ever
+        applied for the token*, across restarts -- it is not bounded by the
+        25h bucket retention (LOW-14).
+
+        Still not the absolute on-chain lifetime: that needs a one-time scan
+        from the factory deploy block, which we do not do per cycle. What it
+        does now honestly mean is "since this cache started".
         """
-        buckets = self.fees_by_token.get(address.lower(), [])
-        if not buckets:
-            return (0.0, 0.0)
+        addr = address.lower()
+        buckets = self.fees_by_token.get(addr, [])
         cutoff = now_ts - 86400
         sum_24h = sum(int(w) for (ts, w) in buckets if ts >= cutoff)
-        sum_total = sum(int(w) for (_, w) in buckets)
-        return (sum_24h / _WEI, sum_total / _WEI)
+        lifetime_wei = int(self.fees_lifetime_wei.get(addr, 0))
+        return (sum_24h / _WEI, lifetime_wei / _WEI)
 
     # ------------------------------------------------------------------
     # Persistence
@@ -547,6 +585,9 @@ class TTTCache:
             "fees_by_token": {
                 addr: [[float(ts), int(w)] for (ts, w) in buckets]
                 for addr, buckets in self.fees_by_token.items()
+            },
+            "fees_lifetime_wei": {
+                addr: int(w) for addr, w in self.fees_lifetime_wei.items()
             },
             "burns_hourly": [[float(ts), int(v)] for (ts, v) in self.burns_hourly],
             "floor_hourly": [[float(ts), float(v)] for (ts, v) in self.floor_hourly],
@@ -616,6 +657,10 @@ class TTTCache:
         )
         cleaned = dict(payload)
         cleaned["fees_by_token"] = {}
+        # Pre-v2 files predate this key entirely; cleared anyway so a
+        # hand-edited or forward-then-backward-migrated file cannot smuggle an
+        # inflated lifetime total past the migration (LOW-14).
+        cleaned["fees_lifetime_wei"] = {}
         cleaned["activity_log"] = []
         cleaned["last_seen_block"] = {}
         cleaned["launches_24h"] = 0
@@ -682,6 +727,41 @@ class TTTCache:
                 ]
         except Exception as exc:
             logger.warning("fees_by_token block bad: %s", exc)
+
+        # Lifetime fee counters.
+        #
+        # Compatibility (LOW-14): this key was added *after* schema v2 shipped,
+        # so a v2 file written by an earlier build has fee buckets but no
+        # counters. Rather than bump the schema -- which would send those files
+        # through `_migrate_legacy_payload` and throw away fee history that is
+        # perfectly trustworthy (v2 means the applicators were idempotent) --
+        # we seed each token's counter from its surviving buckets. That floor
+        # is exactly what the previous build reported as "lifetime", so nothing
+        # a user has already seen goes backwards, and the counter grows
+        # monotonically from there. It is a lower bound, never an inflated one.
+        try:
+            self.fees_lifetime_wei = {}
+            raw_lifetime = payload.get("fees_lifetime_wei")
+            if raw_lifetime:
+                for addr, wei in raw_lifetime.items():
+                    try:
+                        self.fees_lifetime_wei[addr.lower()] = int(wei)
+                    except (TypeError, ValueError):
+                        logger.debug("Skipping bad lifetime fee for %s", addr)
+            else:
+                for addr, buckets in self.fees_by_token.items():
+                    seeded = sum(int(w) for (_, w) in buckets)
+                    if seeded:
+                        self.fees_lifetime_wei[addr] = seeded
+                if self.fees_lifetime_wei:
+                    logger.info(
+                        "Seeded %d lifetime fee counter(s) from the retained "
+                        "fee window in %s (pre-LOW-14 cache file)",
+                        len(self.fees_lifetime_wei),
+                        path,
+                    )
+        except Exception as exc:
+            logger.warning("fees_lifetime_wei block bad: %s", exc)
 
         # Hourly sparklines. Validated through the shared helper (MEDI-14)
         # rather than a bare ``float(pt[1])``, which raised TypeError straight

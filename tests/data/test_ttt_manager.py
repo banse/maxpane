@@ -339,22 +339,100 @@ async def test_bought_is_not_scanned_before_any_token_is_known():
     assert "Bought" not in mgr.cache.last_seen_block
 
 
-async def test_bought_scan_is_capped_at_200_token_addresses():
-    seen: list[int] = []
+def _register_many(mgr: TTTManager, count: int) -> list[str]:
+    """Register *count* tokens in launch order, returning their addresses."""
+    addrs = []
+    for i in range(count):
+        addr = "0x" + f"{i:040x}"
+        mgr.cache.register_token(
+            token_id=i, address=addr, deployer=ACTOR, launch_block=1 + i
+        )
+        addrs.append(addr.lower())
+    return addrs
+
+
+async def test_bought_scan_chunks_the_address_list_at_200():
+    """LOW-16: chunk size bounds one request, not how many tokens are scanned."""
+    seen: list[list[str]] = []
 
     class CountingClient(FakeClient):
         async def fetch_buyback_events(self, addresses, fb, tb):
-            seen.append(len(addresses))
-            return []
+            seen.append(list(addresses))
+            return [], tb
 
     client = CountingClient()
     mgr = make_manager(client)
-    for i in range(250):
-        mgr.cache.register_token(
-            token_id=i, address="0x" + f"{i:040x}", deployer=ACTOR, launch_block=1
-        )
+    _register_many(mgr, 250)
     await mgr._scan_events(HEAD, NOW)
-    assert seen == [200]
+    assert [len(c) for c in seen] == [200, 50]
+
+
+async def test_bought_scan_covers_the_newest_launches_not_just_the_oldest_200():
+    """LOW-16: `cache.tokens` is launch-ordered, so `known[:200]` was the 200
+    *oldest*; a buyback on token #240 was never requested and -- because the
+    watermark still advanced -- never could be."""
+    seen: list[str] = []
+
+    class CountingClient(FakeClient):
+        async def fetch_buyback_events(self, addresses, fb, tb):
+            seen.extend(a.lower() for a in addresses)
+            return [], tb
+
+    client = CountingClient()
+    mgr = make_manager(client)
+    addrs = _register_many(mgr, 250)
+    await mgr._scan_events(HEAD, NOW)
+    assert set(seen) == set(addrs)
+    assert addrs[240] in seen
+
+
+async def test_a_refused_bought_chunk_holds_the_watermark_for_every_chunk():
+    """One chunk that stalls mid-range must not let the topic's single
+    watermark advance past it for the tokens that *did* scan cleanly."""
+    stalled_at = HEAD - 500
+
+    class PartialClient(FakeClient):
+        async def fetch_buyback_events(self, addresses, fb, tb):
+            # Second chunk only got partway through the range.
+            if addresses[0] == "0x" + f"{200:040x}":
+                return [], stalled_at
+            return [], tb
+
+    client = PartialClient()
+    mgr = make_manager(client)
+    _register_many(mgr, 250)
+    await mgr._scan_events(HEAD, NOW)
+    assert mgr.cache.last_seen_block["Bought"] == stalled_at
+    assert mgr._error_count > 0
+
+
+async def test_buyback_events_from_a_late_chunk_still_reach_the_feed():
+    """The events themselves, not just the address list, have to survive the
+    chunk loop -- a `buys` that gets reassigned per chunk drops all but one."""
+    late = "0x" + f"{230:040x}"
+
+    class ChunkedClient(FakeClient):
+        async def fetch_buyback_events(self, addresses, fb, tb):
+            if late in [a.lower() for a in addresses]:
+                return [
+                    {
+                        "token": late,
+                        "caller": ACTOR,
+                        "eth_spent": WEI,
+                        "caller_reward": WEI // 100,
+                        "block_number": HEAD - 5,
+                        "log_index": 2,
+                        "tx_hash": "0x" + "ab" * 32,
+                    }
+                ], tb
+            return [], tb
+
+    client = ChunkedClient()
+    mgr = make_manager(client)
+    _register_many(mgr, 250)
+    await mgr._scan_events(HEAD, NOW)
+    buybacks = [e for e in mgr.cache.activity_log if e.event_type == "buyback"]
+    assert [e.token_address for e in buybacks] == [late]
 
 
 async def test_a_zero_block_number_skips_scanning_entirely():
@@ -455,6 +533,47 @@ async def test_reservoirs_are_chunked_at_200_addresses():
     await mgr._refresh_reservoirs()
     assert [len(c) for c in client.reservoir_requests] == [200, 200, 50]
     assert all(t.reservoir_wei == 2 * WEI for t in mgr.cache.tokens.values())
+
+
+async def test_an_omitted_reservoir_keeps_its_cached_balance():
+    """LOW-15: the client omits addresses whose read failed rather than
+    reporting 0 wei, and the manager must therefore leave those tokens alone
+    instead of zeroing them for the cycle."""
+    class Partial(FakeClient):
+        async def fetch_token_reservoirs(self, addrs):
+            self.reservoir_requests.append(list(addrs))
+            return {TOKEN_A.lower(): 9 * WEI}   # TOKEN_B omitted
+
+    mgr = make_manager(Partial())
+    for addr in (TOKEN_A, TOKEN_B):
+        mgr.cache.register_token(
+            token_id=1, address=addr, deployer=ACTOR, launch_block=1
+        )
+        mgr.cache.update_token_reservoir(addr, 4 * WEI)
+
+    await mgr._refresh_reservoirs()
+    assert mgr.cache.tokens[TOKEN_A.lower()].reservoir_wei == 9 * WEI
+    assert mgr.cache.tokens[TOKEN_B.lower()].reservoir_wei == 4 * WEI
+
+
+async def test_an_omitted_reservoir_does_not_collapse_the_buybacks_signal():
+    """The user-visible symptom: 'N buybacks ready' dropping to 0 for one
+    cycle on a transient RPC hiccup, with nothing changed on-chain."""
+    class Partial(FakeClient):
+        async def fetch_token_reservoirs(self, addrs):
+            self.reservoir_requests.append(list(addrs))
+            return {}   # every read in the batch failed
+
+    mgr = make_manager(Partial())
+    for i in range(3):
+        addr = "0x" + f"{i:040x}"
+        mgr.cache.register_token(
+            token_id=i, address=addr, deployer=ACTOR, launch_block=1, symbol="S"
+        )
+        mgr.cache.update_token_reservoir(addr, 5 * WEI)
+
+    out = await mgr.fetch_and_compute()
+    assert "3 buybacks ready" in out["buybacks_ready_signal"]["value_str"]
 
 
 async def test_a_failed_reservoir_chunk_does_not_abort_the_others():
@@ -662,6 +781,49 @@ def test_age_str_buckets():
     assert _age_str(HEAD - 3000, HEAD) == "10h"
     assert _age_str(HEAD - 30_000, HEAD) == "4d"
     assert _age_str(HEAD + 5, HEAD) == "0b"     # future block clamps
+
+
+def test_age_str_says_unknown_when_the_head_block_is_unknown():
+    """LOW-5: `fetch_block_number` returns 0 on a failed read, and the old
+    `max(0, ...)` clamp rendered that as "0b" for every leaderboard row at
+    once -- an outage reading as "everything launched this block"."""
+    from maxpane_dashboard.data.ttt_manager import _age_str
+
+    assert _age_str(HEAD - 10, 0) == "?"
+    assert _age_str(HEAD - 30_000, 0) == "?"
+    assert _age_str(HEAD - 10, -1) == "?"
+
+
+async def test_an_unknown_head_block_suppresses_the_block_anchored_signals():
+    """LOW-5: with `current_block == 0` the decay-window panel used to claim
+    every cached token was inside the 98-block window, in yellow. Signals that
+    mean nothing without a head block go dim; the rest keep working."""
+    class NoBlock(FakeClient):
+        async def fetch_block_number(self):
+            return 0
+
+    client = NoBlock()
+    mgr = make_manager(client)
+    for i in range(340):
+        addr = "0x" + f"{i:040x}"
+        mgr.cache.register_token(
+            token_id=i, address=addr, deployer=ACTOR,
+            launch_block=HEAD - 500_000 - i, symbol="S",
+        )
+        mgr.cache.update_token_reservoir(addr, 5 * WEI)
+
+    out = await mgr.fetch_and_compute()
+
+    assert out["current_block"] == 0
+    assert out["decay_window_signal"]["value_str"] == "--"
+    assert out["decay_window_signal"]["color"] == "dim"
+    assert out["fresh_launch_signal"] is None
+    # Block-independent signals are unaffected: 340 reservoirs of 5 Ξ are
+    # still 340 ready buybacks.
+    assert "340 buybacks ready" in out["buybacks_ready_signal"]["value_str"]
+    assert out["buybacks_ready_signal"]["color"] == "green"
+    # And no leaderboard row claims to be zero blocks old.
+    assert {r["age_str"] for r in out["top_tokens_by_volume"]} == {"?"}
 
 
 # ===========================================================================

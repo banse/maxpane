@@ -84,8 +84,10 @@ class FrenPetManager:
         self._fetch_rewards = fetch_rewards
         self._error_count = 0
 
-        # Attempt to load persisted history on construction
-        self.cache.load_from_file(str(_CACHE_FILE))
+        # Attempt to load persisted history on construction.  The clock is
+        # passed in rather than read inside the loader so the same file
+        # always loads the same way (see ``FrenPetCache.load_from_file``).
+        self.cache.load_from_file(str(_CACHE_FILE), now=time.time())
 
     # ------------------------------------------------------------------
     # Public API
@@ -582,9 +584,19 @@ def _safe_call(fn: Any, *args: Any, default: Any = None) -> Any:
     """Call *fn* with *args*, returning *default* on any exception.
 
     Logs a warning so failures are visible but never crash the dashboard.
+
+    The name is read with ``getattr(fn, "__name__", fn)``: a bare
+    ``fn.__name__`` in the handler raises ``AttributeError`` for any
+    callable without one (a ``functools.partial``, a callable object),
+    and that exception escapes *this* function -- turning a
+    should-be-degraded analytics failure into a failed refresh cycle,
+    which is precisely what the helper exists to prevent (LOW-11).
+    ``ttt_manager`` and ``talismans_manager`` already do it this way.
     """
     try:
         return fn(*args)
     except Exception as exc:
-        logger.warning("Analytics call %s failed: %s", fn.__name__, exc)
+        logger.warning(
+            "Analytics call %s failed: %s", getattr(fn, "__name__", fn), exc
+        )
         return default

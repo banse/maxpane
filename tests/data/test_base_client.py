@@ -6,14 +6,19 @@ and full client methods with mocked HTTP responses.
 
 from __future__ import annotations
 
+import ast
 import asyncio
+import importlib
+import os
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
 from maxpane_dashboard.data.base_client import BaseChainClient
+from maxpane_dashboard.data.base_manager import BaseManager
 from maxpane_dashboard.data.base_models import BaseSnapshot, BaseToken, TokenLaunch, TrendingPool
 
 
@@ -39,30 +44,6 @@ DEXSCREENER_PAIR = {
 }
 
 DEXSCREENER_RESPONSE = {"pairs": [DEXSCREENER_PAIR]}
-
-BANKR_RESPONSE_TEXT = """Here are the top 20 trending tokens on Base:
-
-1. TestToken ($TEST)
-   - Price: $1.23
-   - 24h Change: -3.4%
-   - 24h Volume: $500,000
-   - Market Cap: $10,000,000
-   - Contract Address: 0xAbC1230000000000000000000000000000000001
-   - Note: Popular DeFi token on Base
-
-2. AnotherToken ($ANOT)
-   - Price: $0.05
-   - 24h Change: +12.5%
-   - 24h Volume: $250,000
-   - Market Cap: $5,000,000
-   - Contract Address: 0xDeF4560000000000000000000000000000000002
-   - Note: Meme token gaining traction
-
-3. DuplicateAddr ($DUP)
-   - Price: $0.01
-   - Contract: 0xAbC1230000000000000000000000000000000001
-   - Note: Should be deduplicated
-"""
 
 CLANKER_RESPONSE = {
     "data": [
@@ -374,7 +355,7 @@ class TestTokenLaunchModel:
 class TestClankerResponseParsing:
     @pytest.mark.asyncio
     async def test_parses_clanker_response(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
 
         # Mock both Clanker API and DexScreener calls
         call_count = 0
@@ -401,7 +382,7 @@ class TestClankerResponseParsing:
 
     @pytest.mark.asyncio
     async def test_clanker_api_failure_returns_empty(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             side_effect=httpx.HTTPError("Clanker down")
         )
@@ -413,7 +394,7 @@ class TestClankerResponseParsing:
     @pytest.mark.asyncio
     async def test_dexscreener_failure_still_returns_launches(self) -> None:
         """If DexScreener fails, launches are returned without market data."""
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
 
         call_count = 0
 
@@ -496,36 +477,6 @@ class TestLaunchStats:
 
 
 # ---------------------------------------------------------------------------
-# Bankr response parsing tests
-# ---------------------------------------------------------------------------
-
-class TestBankrParsing:
-    def test_parse_addresses_from_response(self) -> None:
-        addresses = BaseChainClient.parse_addresses_from_response(BANKR_RESPONSE_TEXT)
-        # Should extract 2 unique addresses (third is a duplicate)
-        assert len(addresses) == 2
-        assert addresses[0] == "0xabc1230000000000000000000000000000000001"
-        assert addresses[1] == "0xdef4560000000000000000000000000000000002"
-
-    def test_parse_addresses_empty_text(self) -> None:
-        addresses = BaseChainClient.parse_addresses_from_response("")
-        assert addresses == []
-
-    def test_parse_addresses_no_matches(self) -> None:
-        addresses = BaseChainClient.parse_addresses_from_response(
-            "No tokens found today, the market is quiet."
-        )
-        assert addresses == []
-
-    def test_parse_addresses_contract_without_address_word(self) -> None:
-        """Matches 'Contract: 0x...' in addition to 'Contract Address: 0x...'."""
-        text = "1. Token ($TKN)\n   - Contract: 0x1234567890abcdef1234567890abcdef12345678\n"
-        addresses = BaseChainClient.parse_addresses_from_response(text)
-        assert len(addresses) == 1
-        assert addresses[0] == "0x1234567890abcdef1234567890abcdef12345678"
-
-
-# ---------------------------------------------------------------------------
 # Client method tests (mocked HTTP)
 # ---------------------------------------------------------------------------
 
@@ -544,7 +495,7 @@ def _make_response(json_data: dict | list, status_code: int = 200) -> httpx.Resp
 class TestEnrichTokens:
     @pytest.mark.asyncio
     async def test_enrich_single_batch(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             return_value=_make_response(DEXSCREENER_RESPONSE)
         )
@@ -561,7 +512,7 @@ class TestEnrichTokens:
 
     @pytest.mark.asyncio
     async def test_enrich_empty_list(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         tokens = await client.enrich_tokens([])
         assert tokens == []
         await client.close()
@@ -569,7 +520,7 @@ class TestEnrichTokens:
     @pytest.mark.asyncio
     async def test_enrich_graceful_on_failure(self) -> None:
         """DexScreener failure returns empty list, not exception."""
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             side_effect=httpx.HTTPError("Connection refused")
         )
@@ -583,7 +534,7 @@ class TestEnrichTokens:
 class TestGetTrendingPools:
     @pytest.mark.asyncio
     async def test_parses_gecko_response(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             return_value=_make_response(GECKO_RESPONSE)
         )
@@ -599,7 +550,7 @@ class TestGetTrendingPools:
 
     @pytest.mark.asyncio
     async def test_graceful_on_failure(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client._request_with_retry = AsyncMock(  # type: ignore[method-assign]
             side_effect=httpx.HTTPError("timeout")
         )
@@ -614,7 +565,7 @@ class TestGetTrendingTokens:
     @pytest.mark.asyncio
     async def test_gecko_to_dexscreener_pipeline(self) -> None:
         """Trending tokens: GeckoTerminal pools → extract addresses → DexScreener enrichment."""
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
 
         # Build a mock GeckoTerminal pool with a token address
         token_map = {
@@ -638,7 +589,7 @@ class TestGetTrendingTokens:
 
     @pytest.mark.asyncio
     async def test_gecko_failure_returns_empty(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
         client.get_trending_pools = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
         tokens = await client.get_trending_tokens()
@@ -649,7 +600,7 @@ class TestGetTrendingTokens:
 class TestFetchSnapshot:
     @pytest.mark.asyncio
     async def test_concurrent_fetch(self) -> None:
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
 
         # Stub all three public methods
         client.get_trending_tokens = AsyncMock(return_value=[  # type: ignore[method-assign]
@@ -681,10 +632,10 @@ class TestFetchSnapshot:
     @pytest.mark.asyncio
     async def test_partial_failure(self) -> None:
         """If one source fails the others still populate."""
-        client = BaseChainClient(bankr_api_key="test_key")
+        client = BaseChainClient()
 
         client.get_trending_tokens = AsyncMock(  # type: ignore[method-assign]
-            side_effect=RuntimeError("bankr down")
+            side_effect=RuntimeError("gecko down")
         )
         client.get_trending_pools = AsyncMock(return_value=[])  # type: ignore[method-assign]
         client.get_clanker_launches = AsyncMock(  # type: ignore[method-assign]
@@ -703,13 +654,137 @@ class TestFetchSnapshot:
 class TestLifecycle:
     @pytest.mark.asyncio
     async def test_context_manager(self) -> None:
-        async with BaseChainClient(bankr_api_key="test") as client:
-            assert client._bankr_api_key == "test"
+        async with BaseChainClient() as client:
+            assert client._owns_client is True
 
     @pytest.mark.asyncio
-    async def test_env_fallback(self) -> None:
-        with patch.dict("os.environ", {"BANKR_API_KEY": "env_key", "ALCHEMY_API_KEY": "alch_key"}):
+    async def test_shared_http_client_not_closed(self) -> None:
+        shared = httpx.AsyncClient()
+        client = BaseChainClient(http_client=shared)
+        assert client._owns_client is False
+        await client.close()
+        assert shared.is_closed is False
+        await shared.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Keyless constraint (LOW-7)
+# ---------------------------------------------------------------------------
+
+_KEYLESS_MODULES = (
+    "maxpane_dashboard.data.base_client",
+    "maxpane_dashboard.data.base_manager",
+)
+
+# Env vars a keyed integration would plausibly reach for.  The values are
+# sentinels: if any of them ever surfaces on a constructed client, a key
+# read has come back.
+_SENTINEL_ENV = {
+    "BANKR_API_KEY": "sentinel-bankr-key",
+    "ALCHEMY_API_KEY": "sentinel-alchemy-key",
+    "API_KEY": "sentinel-generic-key",
+    "MAXPANE_BASEBOARD_ENV": "/nonexistent/should-never-be-read.env",
+}
+
+
+def _module_source(module_name: str) -> str:
+    module = importlib.import_module(module_name)
+    assert module.__file__ is not None
+    return Path(module.__file__).read_text()
+
+
+class TestKeylessConstraint:
+    """MaxPane is keyless: no data source may require an API key.
+
+    ``CLAUDE.md`` states the constraint -- every data source must work
+    with no API key of any kind, no Alchemy, no keyed endpoints.  The Base
+    client used to read ``BANKR_API_KEY``/``ALCHEMY_API_KEY`` from the
+    environment on every app launch and ship an ``x-api-key`` transmission
+    path to ``api.bankr.bot``; the manager additionally ran ``load_dotenv``
+    at import time on a file named by ``MAXPANE_BASEBOARD_ENV``.  These
+    tests exist so none of that can return unnoticed.
+    """
+
+    def test_client_reads_no_api_key_env_var(self) -> None:
+        """Constructing the client captures no secret from the environment."""
+        with patch.dict(os.environ, _SENTINEL_ENV):
             client = BaseChainClient()
-            assert client._bankr_api_key == "env_key"
-            assert client._alchemy_api_key == "alch_key"
-            await client.close()
+            captured = " ".join(str(v) for v in vars(client).values())
+            for name, value in _SENTINEL_ENV.items():
+                assert value not in captured, (
+                    f"BaseChainClient captured {name} from the environment"
+                )
+            assert not any(
+                "key" in attr.lower() for attr in vars(client)
+            ), f"key-shaped attribute on BaseChainClient: {sorted(vars(client))}"
+
+    def test_client_sends_no_credential_header(self) -> None:
+        with patch.dict(os.environ, _SENTINEL_ENV):
+            client = BaseChainClient()
+            headers = {k.lower(): v for k, v in client._client.headers.items()}
+        for banned in ("x-api-key", "authorization", "api-key", "x-auth-token"):
+            assert banned not in headers, f"credential header configured: {banned}"
+
+    def test_manager_construction_reads_no_api_key_env_var(self) -> None:
+        with patch.dict(os.environ, _SENTINEL_ENV):
+            with patch(
+                "maxpane_dashboard.data.base_manager.BaseTokenCache"
+            ) as mock_cache:
+                mock_cache.return_value.load_from_file.return_value = None
+                manager = BaseManager(poll_interval=30, remote_only=True)
+        captured = " ".join(str(v) for v in vars(manager.client).values())
+        for name, value in _SENTINEL_ENV.items():
+            assert value not in captured, f"BaseManager captured {name}"
+
+    @pytest.mark.parametrize("module_name", _KEYLESS_MODULES)
+    def test_module_does_not_read_environment(self, module_name: str) -> None:
+        """No env-var reads at all in the Base data layer -- import time or later."""
+        tree = ast.parse(_module_source(module_name))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "os"
+            ):
+                assert node.attr not in ("getenv", "environ"), (
+                    f"{module_name} reads os.{node.attr}; the Base data layer "
+                    "must not consult the environment"
+                )
+            if isinstance(node, ast.ImportFrom) and node.module == "os":
+                imported = {alias.name for alias in node.names}
+                assert not imported & {"getenv", "environ", "environb"}, (
+                    f"{module_name} imports an env-var reader from os"
+                )
+
+    @pytest.mark.parametrize("module_name", _KEYLESS_MODULES)
+    def test_module_does_not_load_dotenv(self, module_name: str) -> None:
+        """No .env loading -- it imported arbitrary vars from a foreign file."""
+        tree = ast.parse(_module_source(module_name))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert not alias.name.startswith("dotenv"), (
+                        f"{module_name} imports {alias.name}"
+                    )
+            if isinstance(node, ast.ImportFrom):
+                assert not (node.module or "").startswith("dotenv"), (
+                    f"{module_name} imports from {node.module}"
+                )
+
+    @pytest.mark.parametrize("module_name", _KEYLESS_MODULES)
+    def test_module_has_no_key_shaped_literals(self, module_name: str) -> None:
+        """No API-key names or credential headers survive in the source."""
+        tree = ast.parse(_module_source(module_name))
+        banned = ("api_key", "api-key", "apikey", "bearer ", "authorization")
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                lowered = node.value.lower()
+                # Docstrings may discuss the constraint in prose; only
+                # identifier-shaped literals matter.
+                if "\n" in node.value or len(node.value) > 60:
+                    continue
+                for token in banned:
+                    assert token not in lowered, (
+                        f"{module_name} contains key-shaped literal "
+                        f"{node.value!r}"
+                    )

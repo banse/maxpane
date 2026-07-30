@@ -211,6 +211,7 @@ class SimChain:
         symbols: dict[str, str] | None = None,
         decimals: dict[str, int] | None = None,
         reverting: set[str] | None = None,
+        balance_read_fails: set[str] | None = None,
         logs: list[dict] | None = None,
     ) -> None:
         self.block_number = block_number
@@ -223,6 +224,10 @@ class SimChain:
         self.symbols = {k.lower(): v for k, v in (symbols or {}).items()}
         self.decimals = {k.lower(): v for k, v in (decimals or {}).items()}
         self.reverting = {a.lower() for a in (reverting or set())}
+        # Addresses whose Multicall3.getEthBalance sub-call comes back
+        # ``(false, "0x")``. `reverting` can't express this: these calls target
+        # Multicall3 itself, not the token.
+        self.balance_read_fails = {a.lower() for a in (balance_read_fails or set())}
         self.logs = list(logs or [])
         self.log_queries: list[dict] = []
 
@@ -248,6 +253,8 @@ class SimChain:
                 return (True, "0x" + _encode_uint(self.acc_eth_per_share))
         if target == _MULTICALL3.lower() and sel == _SEL_GET_ETH_BALANCE:
             who = "0x" + arg[24:64]
+            if who in self.balance_read_fails:
+                return (False, "0x")
             return (True, "0x" + _encode_uint(self.balances.get(who, 0)))
         if sel == _SEL_SYMBOL:
             sym = self.symbols.get(target)
@@ -710,11 +717,42 @@ async def test_fetch_token_reservoirs_pairs_every_balance_with_its_own_address()
     assert out == {a.lower(): v for a, v in balances.items()}
 
 
-async def test_fetch_token_reservoirs_chunks_and_returns_zero_for_failures():
+async def test_fetch_token_reservoirs_reports_a_genuinely_empty_reservoir_as_zero():
+    """Zero is a real, common reading — most fresh launches have one — which
+    is exactly why a *failed* read must not also render as zero (LOW-15)."""
     chain = SimChain(balances={_TOKEN_A: 5 * WEI})
     async with _client_on(chain.transport()) as client:
         out = await client.fetch_token_reservoirs([_TOKEN_A, _TOKEN_B])
     assert out == {_TOKEN_A.lower(): 5 * WEI, _TOKEN_B.lower(): 0}
+
+
+async def test_fetch_token_reservoirs_omits_addresses_whose_read_failed():
+    """LOW-15: a failed sub-call used to be written out as 0 wei, which
+    `update_token_reservoir` then wrote over the last known balance — the
+    "Buybacks ready" signal collapsed to 0 for a cycle with nothing having
+    changed on-chain. Omission lets the caller keep its cached value, matching
+    `fetch_token_metadata`."""
+    chain = SimChain(
+        balances={_TOKEN_A: 5 * WEI, _TOKEN_B: 7 * WEI},
+        balance_read_fails={_TOKEN_B},
+    )
+    async with _client_on(chain.transport()) as client:
+        out = await client.fetch_token_reservoirs([_TOKEN_A, _TOKEN_B])
+    assert out == {_TOKEN_A.lower(): 5 * WEI}
+    assert _TOKEN_B.lower() not in out
+
+
+async def test_a_failed_reservoir_read_does_not_shift_the_survivors():
+    """The omission must drop the entry, not the slot: mispairing here
+    mis-prices every token after the failure (the HIGH-6 class of bug)."""
+    c_addr = "0x" + "cc" * 20
+    chain = SimChain(
+        balances={_TOKEN_A: 1 * WEI, _TOKEN_B: 2 * WEI, c_addr: 3 * WEI},
+        balance_read_fails={_TOKEN_B},
+    )
+    async with _client_on(chain.transport()) as client:
+        out = await client.fetch_token_reservoirs([_TOKEN_A, _TOKEN_B, c_addr])
+    assert out == {_TOKEN_A.lower(): 1 * WEI, c_addr.lower(): 3 * WEI}
 
 
 async def test_fetch_token_reservoirs_no_addresses_makes_no_request():

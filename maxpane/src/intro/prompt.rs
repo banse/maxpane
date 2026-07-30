@@ -7,7 +7,7 @@
 
 use std::time::{Duration, Instant};
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -191,6 +191,13 @@ impl PromptState {
     }
 
     pub fn handle_input(&mut self, key: KeyEvent) -> super::IntroAction {
+        // Only key presses are input. Terminals implementing the kitty
+        // keyboard protocol (and Windows Terminal) also report Release and
+        // Repeat, which would double every buffered character.
+        if key.kind != KeyEventKind::Press {
+            return super::IntroAction::Continue;
+        }
+
         // Only accept input during WaitingForInput.
         if !matches!(self.phase, Phase::WaitingForInput) {
             return super::IntroAction::Continue;
@@ -528,6 +535,17 @@ mod tests {
             code,
             modifiers: KeyModifiers::NONE,
             kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    /// A key *release* event, as reported by Windows Terminal and by
+    /// terminals running the kitty keyboard protocol.
+    fn key_release(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Release,
             state: KeyEventState::NONE,
         }
     }
@@ -1043,5 +1061,63 @@ mod tests {
         render_rows(&state, 80, 24);
         render_rows(&state, 12, 6);
         render_rows(&state, 2, 3);
+    }
+
+    // -- Key release filtering (LOW-2) ------------------------------------
+
+    /// Release events must not be buffered — on a terminal reporting both
+    /// halves of a keystroke, typing 'n' would otherwise buffer "nn" and
+    /// stop being recognised as No.
+    #[test]
+    fn key_release_is_not_buffered() {
+        let mut state = make_prompt();
+        state.phase = Phase::WaitingForInput;
+
+        state.handle_input(key(KeyCode::Char('n')));
+        state.handle_input(key_release(KeyCode::Char('n')));
+
+        assert_eq!(state.input_buffer, "n");
+    }
+
+    /// The release of an easter egg's characters must not double them up.
+    #[test]
+    fn key_release_does_not_double_easter_egg_input() {
+        let mut state = make_prompt();
+        state.phase = Phase::WaitingForInput;
+
+        for c in "gm".chars() {
+            state.handle_input(key(KeyCode::Char(c)));
+            state.handle_input(key_release(KeyCode::Char(c)));
+        }
+
+        assert_eq!(state.input_buffer, "gm");
+    }
+
+    /// A release of Backspace must not delete a second character.
+    #[test]
+    fn key_release_of_backspace_does_not_delete_twice() {
+        let mut state = make_prompt();
+        state.phase = Phase::WaitingForInput;
+
+        state.handle_input(key(KeyCode::Char('a')));
+        state.handle_input(key(KeyCode::Char('b')));
+        state.handle_input(key(KeyCode::Backspace));
+        state.handle_input(key_release(KeyCode::Backspace));
+
+        assert_eq!(state.input_buffer, "a");
+    }
+
+    /// A release of 'y' must not trigger the immediate-accept path.
+    #[test]
+    fn key_release_of_y_does_not_accept() {
+        let mut state = make_prompt();
+        state.phase = Phase::WaitingForInput;
+
+        state.handle_input(key_release(KeyCode::Char('y')));
+
+        assert!(
+            matches!(state.phase, Phase::WaitingForInput),
+            "a release of 'y' should not accept the prompt"
+        );
     }
 }
