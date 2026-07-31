@@ -1,7 +1,7 @@
 [project]
 name = "maxpane"
 version = "0.5.0"
-description = "Terminal dashboard for onchain games and DeFi — Ten Thousand Tokens, RugPull Bakery, FrenPet, Cat Town, OCM, DOTA, and more"
+description = "Terminal dashboards for onchain games, NFTs and trading — Fake World Assets, Talismans, Ten Thousand Tokens, RugPull Bakery, FrenPet, Cat Town, OCM and Base. Keyless and read-only."
 requires-python = ">=3.11"
 license = "MIT"
 readme = "README.md"
