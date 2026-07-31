@@ -81,6 +81,7 @@ class MaxPaneApp(App):
         self._frenpet_wallet_manager = FrenPetManager(
             poll_interval=poll_interval,
             wallet_address=wallet_address,
+            fetch_rewards=True,
         )
         self._frenpet_perf_manager = FrenPetManager(
             poll_interval=poll_interval,
