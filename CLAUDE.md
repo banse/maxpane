@@ -77,22 +77,22 @@ scripts/                    one-shot tooling (ABI vendoring etc). Imported by no
 (render primitives only). Widgets never import from `data/` or `analytics/`; they receive
 `str`/`int`/`float`/`bool`/`dict`/`list[dict]`.
 
-## The nine dashboards
+## The eight visible dashboards
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
 | 1 | `base` | Base | trending tokens, volume, signals |
 | 2 | `frenpet` | Base | pet battles, leaderboard, activity |
 | 3 | `cattown` | Base | fishing competition, KIBBLE economy |
-| 4 | `dota` | Base | Defense of the Agents idle MOBA |
-| 5 | `bakery` | Abstract | bake / boost / attack, season prizes |
-| 6 | `ocm` | Ethereum | Onchain Monsters staking, supply, burns |
-| 7 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
-| 8 | `talismans` | Ethereum | core-conservation NFT collection |
-| 9 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
+| 4 | `bakery` | Abstract | bake / boost / attack, season prizes |
+| 5 | `ocm` | Ethereum | Onchain Monsters staking, supply, burns |
+| 6 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
+| 7 | `talismans` | Ethereum | core-conservation NFT collection |
+| 8 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
 
-Three FrenPet variants (`frenpet_full`, `frenpet_wallet`, `frenpet_perf`) exist in code but are
-hidden from the selection pane. Ten themes are registered.
+Three FrenPet variants (`frenpet_full`, `frenpet_wallet`, `frenpet_perf`) and `dota` exist in
+code but are hidden from the selection pane — DOTA because its game backend is NXDOMAIN, so it
+could only ever render an unavailable state. Its code and 77 client tests are intact. Ten themes are registered.
 
 ## Build & run
 

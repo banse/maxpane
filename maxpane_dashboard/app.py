@@ -185,7 +185,9 @@ class MaxPaneApp(App):
 
     # FrenPet variants ("frenpet_full", "frenpet_wallet", "frenpet_perf") are
     # temporarily hidden from cycling — code intact, restore by re-adding them.
-    _GAME_CYCLE = ["base", "frenpet", "cattown", "dota", "bakery", "ocm", "ttt", "talismans", "fwa"]
+    # "dota" is omitted: its game backend is NXDOMAIN. The manager, screen and
+    # shutdown wiring below are intact so it can be restored by re-adding the id.
+    _GAME_CYCLE = ["base", "frenpet", "cattown", "bakery", "ocm", "ttt", "talismans", "fwa"]
 
     def _launch_game(self, game_id: str, *, first: bool = False) -> None:
         """Install and switch to a game screen.

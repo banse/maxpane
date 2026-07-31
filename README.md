@@ -14,7 +14,6 @@ kind, no wallet, no signing, no transactions.
 | **Base Trading** | Base | Trending tokens, volume, ETH price, signals |
 | **FrenPet** | Base | Pet battles, leaderboard, activity, trends |
 | **Cat Town** | Base | Fishing competition, KIBBLE economy, catches |
-| **DOTA** | Base | Defense of the Agents idle MOBA, heroes, lanes |
 | **Rugpull Bakery** | Abstract | Bake cookies, boost/attack, season prizes |
 | **OCM** | Ethereum | Onchain Monsters staking, supply, burns |
 | **Ten Thousand Tokens** | Ethereum | NFT burn-to-launch on UniV4, fee engines, holder claims |
@@ -92,7 +91,6 @@ maxpane                        # launch dashboard (default: bakery)
 maxpane --game frenpet         # start on FrenPet view
 maxpane --game base            # start on Base trading view
 maxpane --game cattown         # start on Cat Town view
-maxpane --game dota            # start on DOTA view
 maxpane --game ocm             # start on OCM view
 maxpane --game ttt             # start on Ten Thousand Tokens view
 maxpane --game talismans       # start on Talismans view

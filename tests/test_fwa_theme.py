@@ -466,8 +466,23 @@ def test_game_cli_choice_includes_fwa(monkeypatch):
 
     # The three registration sites must agree on the id.
     assert "fwa" in MaxPaneApp._GAME_CYCLE
-    assert ("9", "fwa", "Fake World Assets",
-            "NFT gacha pool w/ inverse-weighted VRF draws on Ethereum") in GAMES
+
+    # Assert on the *id*, not the hotkey. The hotkey is a menu position that
+    # legitimately moves whenever a dashboard above it is hidden (it went 9 -> 8
+    # when DOTA was hidden after its backend went NXDOMAIN); pinning it made this
+    # test fail for a change it was never meant to guard.
+    row = next((g for g in GAMES if g[1] == "fwa"), None)
+    assert row is not None, "fwa is not registered in GAMES"
+    assert row[2] == "Fake World Assets"
+    assert row[3] == "NFT gacha pool w/ inverse-weighted VRF draws on Ethereum"
+
+    # The hotkeys are what a user actually presses, so they must stay a
+    # contiguous 1..N with no gaps or duplicates -- which is the real invariant
+    # the hardcoded "9" was standing in for, and it survives future hiding.
+    keys = [g[0] for g in GAMES]
+    assert keys == [str(i) for i in range(1, len(GAMES) + 1)], (
+        f"game-select hotkeys must be contiguous 1..N, got {keys}"
+    )
 
 
 def test_theme_cli_choices_match_theme_names(monkeypatch):

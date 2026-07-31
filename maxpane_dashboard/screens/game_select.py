@@ -16,12 +16,17 @@ GAMES = [
     # ("4", "frenpet_wallet", "FrenPet Wallet", "ETH rewards, pool share, APR on Base"),
     # ("5", "frenpet_perf", "FrenPet Performance", "Pet comparison, velocity, win rates on Base"),
     ("3", "cattown", "Cat Town", "Fishing competition, KIBBLE economy on Base"),
-    ("4", "dota", "DOTA", "Defense of the Agents idle MOBA on Base"),
-    ("5", "bakery", "Rugpull Bakery", "Bake cookies, boost, attack on Abstract"),
-    ("6", "ocm", "OCM", "Onchain Monsters staking, supply, burns on Ethereum"),
-    ("7", "ttt", "Ten Thousand Tokens", "NFT collection w/ UniV4 burn-to-launch on Ethereum"),
-    ("8", "talismans", "Talismans", "Core-conservation NFT collection on Ethereum"),
-    ("9", "fwa", "Fake World Assets", "NFT gacha pool w/ inverse-weighted VRF draws on Ethereum"),
+    # Hidden — the game's backend is gone: wc2-agentic-dev-3o6un.ondigitalocean.app
+    # is NXDOMAIN, so every fetch fails and the dashboard can only ever render its
+    # unavailable state. Code and tests are intact (77 client tests); restore by
+    # uncommenting here and re-adding "dota" to _GAME_CYCLE in app.py and to the
+    # --game choices in __main__.py.
+    # ("4", "dota", "DOTA", "Defense of the Agents idle MOBA on Base"),
+    ("4", "bakery", "Rugpull Bakery", "Bake cookies, boost, attack on Abstract"),
+    ("5", "ocm", "OCM", "Onchain Monsters staking, supply, burns on Ethereum"),
+    ("6", "ttt", "Ten Thousand Tokens", "NFT collection w/ UniV4 burn-to-launch on Ethereum"),
+    ("7", "talismans", "Talismans", "Core-conservation NFT collection on Ethereum"),
+    ("8", "fwa", "Fake World Assets", "NFT gacha pool w/ inverse-weighted VRF draws on Ethereum"),
 ]
 
 

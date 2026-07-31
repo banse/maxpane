@@ -101,7 +101,7 @@ def main():
     parser.add_argument(
         "--game",
         default="bakery",
-        choices=["bakery", "frenpet", "base", "cattown", "ocm", "dota", "ttt", "talismans", "fwa"],
+        choices=["bakery", "frenpet", "base", "cattown", "ocm", "ttt", "talismans", "fwa"],
         help=(
             "Which game dashboard to preload (default: bakery). The game "
             "selection menu still appears at startup; this only warms that "
