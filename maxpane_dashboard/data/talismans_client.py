@@ -26,9 +26,13 @@ candidates; see :data:`_LOG_RPCS`): ``eth_call`` and ``eth_getLogs`` need
 *different* endpoint pools. The former works nearly everywhere; the latter is
 served keylessly by almost nobody.
 
-Structurally a clone of :mod:`maxpane_dashboard.data.ttt_client`: the
-``_rpc`` / ``_eth_call`` / ``_get_logs`` / ``_multicall`` machinery and the
-pure-stdlib ABI encode/decode helpers are reused verbatim.
+Structurally close to :mod:`maxpane_dashboard.data.ttt_client`. The
+pure-stdlib ABI encode/decode helpers are now *imported* from
+:mod:`maxpane_dashboard.data.evm_abi` rather than copied (MEDI-17); the
+``_rpc`` error policy stays here, because the classification it produces
+(``TalismansRpcError.kind`` / ``.suggested_to``) is what ``_get_logs`` reads
+to shrink its page window -- it is data this client acts on, not shared
+plumbing.
 """
 
 from __future__ import annotations
@@ -36,10 +40,26 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-import time
 from typing import Any
 
 import httpx
+
+from maxpane_dashboard.data.evm_abi import (
+    addr_from_topic as _addr_from_topic,
+    decode_address as _decode_address,
+    decode_aggregate3_result as _decode_aggregate3_result,
+    decode_uint as _decode_uint,
+    encode_aggregate3 as _encode_aggregate3,
+    encode_uint as _encode_uint,
+    pad_left as _pad_left,
+    strip0x as _strip0x,
+)
+from maxpane_dashboard.data.rpc_common import (
+    ENDPOINT_DEAD_CODES as _ENDPOINT_DEAD_CODES,
+    OwnedHttpClient,
+    jsonrpc_payload,
+    pace,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +109,6 @@ _MAX_RETRIES = 2
 _BACKOFF_SECONDS = (0.5, 1.5)
 _REQUEST_TIMEOUT = 10.0
 _INTER_CALL_DELAY = 0.05  # seconds between consecutive RPC calls
-_ENDPOINT_DEAD_CODES = {401, 402, 403, 451, 521, 522, 523, 524, 525, 526}
 
 _CONTRACT = "0x724d5beffe9a84a87ad1af83713f80600e5f5774"
 _MULTICALL3 = "0xca11bde05977b3631167028862be2a173976ca11"
@@ -116,7 +135,7 @@ _SEL_CUTMERGE_ENABLED = "0xdafa0f1a"  # cutAndMergeEnabled()
 _SEL_NEXT_TRANSFORM_ID = "0x98e1870d"  # nextTransformId() -> uint256
 _SEL_TOKEN_DATA = "0xb4b5b48f"  # tokenData(uint256) -> (uint256[],uint8,uint8,uint8,uint16)
 _SEL_OWNER_OF = "0x6352211e"  # ownerOf(uint256)
-_SEL_AGGREGATE3 = "0x82ad56cb"  # aggregate3(Call3[])
+# aggregate3(Call3[]) lives in evm_abi -- encode_aggregate3 prefixes it itself.
 
 # ---------------------------------------------------------------------------
 # Event topic0 hashes (from docs/talismans_abi_recon.md)
@@ -137,130 +156,9 @@ _OP_TOPICS = [_TOPIC_BONDED, _TOPIC_CLEAVED, _TOPIC_CUT, _TOPIC_MERGED]
 
 
 # ---------------------------------------------------------------------------
-# Minimal ABI encode/decode helpers (pure-stdlib, no eth_abi dep)
+# Talismans-specific ABI decoding. The generic hex/ABI primitives it builds on
+# live in :mod:`maxpane_dashboard.data.evm_abi` and are imported above.
 # ---------------------------------------------------------------------------
-
-
-def _strip0x(hex_str: str) -> str:
-    return hex_str[2:] if hex_str.startswith("0x") else hex_str
-
-
-def _pad_left(hex_no_0x: str, width: int = 64) -> str:
-    """Left-pad a hex string with zeros to *width* characters."""
-    return hex_no_0x.lower().rjust(width, "0")
-
-
-def _addr_from_topic(topic: str) -> str:
-    """Convert a 32-byte topic back to a 20-byte address (lowercase 0x...)."""
-    return "0x" + _strip0x(topic).lower()[-40:]
-
-
-def _decode_uint(hex_data: str, word_idx: int = 0) -> int:
-    """Decode a uint256 at word slot *word_idx* of a hex blob."""
-    raw = _strip0x(hex_data)
-    start = word_idx * 64
-    chunk = raw[start : start + 64]
-    if not chunk:
-        return 0
-    return int(chunk, 16)
-
-
-def _decode_address(hex_data: str, word_idx: int = 0) -> str:
-    """Decode an address at word slot *word_idx* (lower 20 bytes)."""
-    raw = _strip0x(hex_data)
-    start = word_idx * 64
-    chunk = raw[start : start + 64]
-    if not chunk:
-        return "0x" + "0" * 40
-    return "0x" + chunk[-40:].lower()
-
-
-def _encode_uint(value: int) -> str:
-    """Encode an integer as a 32-byte hex word (no 0x prefix)."""
-    if value < 0:
-        value &= (1 << 256) - 1
-    return _pad_left(hex(value)[2:], 64)
-
-
-def _encode_address(addr: str) -> str:
-    """Encode an address as a 32-byte hex word (no 0x prefix)."""
-    return _pad_left(_strip0x(addr).lower(), 64)
-
-
-def _encode_call3(target: str, call_data: str, allow_failure: bool = True) -> str:
-    """Encode a single Call3 struct (no 0x prefix).
-
-    A Call3 is dynamic because of the bytes field; the actual array encoding is
-    handled by :func:`_encode_aggregate3`.
-    """
-    cd = _strip0x(call_data)
-    head = (
-        _encode_address(target)
-        + _pad_left("01" if allow_failure else "00", 64)
-        + _pad_left("60", 64)
-    )
-    cd_len = len(cd) // 2
-    cd_padded = cd + "0" * ((64 - (len(cd) % 64)) % 64)
-    tail = _pad_left(hex(cd_len)[2:], 64) + cd_padded
-    return head + tail
-
-
-def _encode_aggregate3(calls: list[tuple[str, str, bool]]) -> str:
-    """Build calldata for ``aggregate3(Call3[])``.
-
-    Each input tuple is ``(target_address, callData_hex, allow_failure)``.
-    Returns a hex string prefixed with ``0x``.
-    """
-    selector = _SEL_AGGREGATE3
-    body = ""
-    body += _pad_left("20", 64)  # offset to dynamic array
-    body += _pad_left(hex(len(calls))[2:], 64)  # array length
-
-    encoded_tuples = [_encode_call3(t, cd, af) for (t, cd, af) in calls]
-    n = len(encoded_tuples)
-    offsets: list[int] = []
-    cursor = n * 32  # in bytes
-    for tup in encoded_tuples:
-        offsets.append(cursor)
-        cursor += len(tup) // 2
-    body += "".join(_pad_left(hex(o)[2:], 64) for o in offsets)
-    body += "".join(encoded_tuples)
-    return selector + body
-
-
-def _decode_aggregate3_result(hex_data: str) -> list[tuple[bool, str]]:
-    """Decode the return of ``aggregate3``: ``Result[] (bool success, bytes returnData)``.
-
-    Returns a list of ``(success, returnData_hex)`` tuples.
-    """
-    raw = _strip0x(hex_data)
-    if not raw:
-        return []
-    try:
-        array_offset_bytes = int(raw[0:64], 16)
-        base = array_offset_bytes * 2  # in chars
-        length = int(raw[base : base + 64], 16)
-        elements_base = base + 64
-
-        results: list[tuple[bool, str]] = []
-        for i in range(length):
-            elt_off_bytes = int(
-                raw[elements_base + i * 64 : elements_base + (i + 1) * 64],
-                16,
-            )
-            tup_start = elements_base + elt_off_bytes * 2
-            success = int(raw[tup_start : tup_start + 64], 16) != 0
-            bytes_off = int(raw[tup_start + 64 : tup_start + 128], 16)
-            bytes_chars_start = tup_start + bytes_off * 2
-            bytes_len = int(raw[bytes_chars_start : bytes_chars_start + 64], 16)
-            body = raw[
-                bytes_chars_start + 64 : bytes_chars_start + 64 + bytes_len * 2
-            ]
-            results.append((success, "0x" + body))
-        return results
-    except (ValueError, IndexError) as exc:
-        logger.warning("Failed to decode aggregate3 result: %s", exc)
-        return []
 
 
 def _decode_token_data(hex_data: str) -> tuple[list[int], int, int, int, int]:
@@ -588,7 +486,7 @@ def _classify_rpc_error(error: Any) -> TalismansRpcError:
 # ---------------------------------------------------------------------------
 
 
-class TalismansClient:
+class TalismansClient(OwnedHttpClient):
     """Async client for Talismans on-chain data.
 
     All methods are exception-safe: network failures bubble up as ``0`` /
@@ -627,19 +525,7 @@ class TalismansClient:
         self._log_window = _LOG_RANGE_PER_CALL
         self._log_window_ok = 0
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-
-    async def close(self) -> None:
-        if self._owns_client:
-            await self._client.aclose()
-
-    async def __aenter__(self) -> TalismansClient:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        await self.close()
+    # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
     # ------------------------------------------------------------------
     # Internal: RPC plumbing with retry + fallback
@@ -671,18 +557,10 @@ class TalismansClient:
         narrow its block window still learns that narrowing would help even if
         some later endpoint failed for an unrelated reason.
         """
-        elapsed = time.monotonic() - self._last_rpc_at
-        if self._last_rpc_at > 0 and elapsed < _INTER_CALL_DELAY:
-            await asyncio.sleep(_INTER_CALL_DELAY - elapsed)
-        self._last_rpc_at = time.monotonic()
+        self._last_rpc_at = await pace(self._last_rpc_at, _INTER_CALL_DELAY)
 
         self._request_id += 1
-        payload = {
-            "jsonrpc": "2.0",
-            "id": self._request_id,
-            "method": method,
-            "params": params,
-        }
+        payload = jsonrpc_payload(self._request_id, method, params)
         urls = list(endpoints) if endpoints else [
             self._primary_rpc,
             *self._fallback_rpcs,

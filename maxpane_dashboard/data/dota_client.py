@@ -20,6 +20,7 @@ from maxpane_dashboard.data.dota_models import (
     DOTALeaderboardEntry,
     DOTASnapshot,
 )
+from maxpane_dashboard.data.rpc_common import OwnedHttpClient
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ def _calc_win_rate(item: dict) -> float:
 # ---------------------------------------------------------------------------
 
 
-class DOTAClient:
+class DOTAClient(OwnedHttpClient):
     """Fetches Defense of the Agents data from REST APIs.
 
     Parameters
@@ -99,16 +100,7 @@ class DOTAClient:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def close(self) -> None:
-        """Close the underlying HTTP client if we own it."""
-        if self._owns_client:
-            await self._client.aclose()
-
-    async def __aenter__(self) -> DOTAClient:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        await self.close()
+    # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
     # ------------------------------------------------------------------
     # Internal: retry helper

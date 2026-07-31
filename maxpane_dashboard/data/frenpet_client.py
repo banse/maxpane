@@ -26,6 +26,7 @@ from maxpane_dashboard.data.frenpet_models import (
     FrenPetPopulation,
     FrenPetSnapshot,
 )
+from maxpane_dashboard.data.rpc_common import OwnedHttpClient
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ _ATTACK_EVENT_TOPIC = (
 _BASE_BLOCK_SECONDS = 2
 
 
-class FrenPetClient:
+class FrenPetClient(OwnedHttpClient):
     """Fetches FrenPet data from Ponder GraphQL and Base RPC.
 
     Parameters
@@ -103,16 +104,7 @@ class FrenPetClient:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def close(self) -> None:
-        """Close the underlying HTTP client if we own it."""
-        if self._owns_client:
-            await self._client.aclose()
-
-    async def __aenter__(self) -> FrenPetClient:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        await self.close()
+    # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
     # ------------------------------------------------------------------
     # Internal: retry helpers

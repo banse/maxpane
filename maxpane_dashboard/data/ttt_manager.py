@@ -45,6 +45,7 @@ from maxpane_dashboard.analytics.ttt_signals import (
     top_fee_engines,
 )
 from maxpane_dashboard.data.price import PriceClient
+from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 from maxpane_dashboard.data.ttt_cache import TTTCache
 from maxpane_dashboard.data.ttt_client import (
     _DEFAULT_LOG_LOOKBACK_BLOCKS,
@@ -73,15 +74,6 @@ _REORG_MARGIN_BLOCKS = 12
 # so this bounds the size of one request -- it does not bound how many tokens
 # get scanned.
 _BOUGHT_ADDRESS_CHUNK = 200
-
-
-def _safe_call(fn: Any, *args: Any, default: Any = None) -> Any:
-    """Call *fn* with *args*, returning *default* on exception."""
-    try:
-        return fn(*args)
-    except Exception as exc:
-        logger.debug("Analytics call %s failed: %s", getattr(fn, "__name__", fn), exc)
-        return default
 
 
 def _age_str(launch_block: int, current_block: int) -> str:

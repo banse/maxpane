@@ -49,8 +49,8 @@ the sweep report, for the invariant check.  The TVL source is
 **TRAP 4 — Multicall3 ``Call3.callData`` must carry no ``0x`` prefix.**  Leaving
 it on embeds the literal characters ``30 78`` in the bytes field and the node
 rejects the whole payload with *"cannot unmarshal invalid hex string"*.
-:func:`_encode_call3` strips it (copied verbatim from ``talismans_client``,
-where the trap was already solved) and
+:func:`maxpane_dashboard.data.evm_abi.encode_call3` strips it (the shared
+codec, where the trap was already solved) and
 ``tests/data/test_fwa_client.py::test_aggregate3_encoding_has_no_0x_in_calldata``
 pins that behaviour.
 
@@ -88,7 +88,25 @@ from urllib.parse import urlparse
 import httpx
 
 from maxpane_dashboard.analytics import fwa_ev
+from maxpane_dashboard.data.evm_abi import (
+    ZERO_ADDRESS as _ZERO_ADDRESS,
+    decode_address as _decode_address,
+    decode_aggregate3_result as _decode_aggregate3_result,
+    decode_uint as _decode_uint,
+    encode_address as _encode_address,
+    encode_aggregate3 as _encode_aggregate3,
+    encode_call3 as _encode_call3,
+    encode_uint as _encode_uint,
+    pad_left as _pad_left,
+    strip0x as _strip0x,
+)
 from maxpane_dashboard.data.fwa_models import Position
+from maxpane_dashboard.data.rpc_common import (
+    ENDPOINT_DEAD_CODES as _ENDPOINT_DEAD_CODES,
+    OwnedHttpClient,
+    jsonrpc_payload,
+    pace,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +140,6 @@ _BACKOFF_SECONDS = (0.5, 1.5)
 _REQUEST_TIMEOUT = 15.0
 #: publicnode 429s under aggressive batching; ~0.12 s spacing was stable (§11).
 _INTER_CALL_DELAY = 0.12
-_ENDPOINT_DEAD_CODES = {401, 402, 403, 451, 521, 522, 523, 524, 525, 526}
 
 #: Multicall3 tolerated 500 sub-calls per ``eth_call`` against publicnode (§6.5).
 MULTICALL_MAX_CALLS = 500
@@ -156,7 +173,8 @@ FWA_SPLITTER = "0x1c175b9f0e8c73ed3e677e1cbb1b5a2dd4373bfe"
 
 MULTICALL3 = "0xca11bde05977b3631167028862be2a173976ca11"
 
-ZERO_ADDRESS = "0x" + "0" * 40
+#: Re-exported from :mod:`evm_abi` (part of this module's public surface).
+ZERO_ADDRESS = _ZERO_ADDRESS
 
 FWA_CONTRACTS: dict[str, str] = {
     "FWA": FWA_CORE,
@@ -257,31 +275,14 @@ _SEL_COLLECTION_WHITELISTED = SELECTORS["collectionWhitelisted(address)"]
 
 
 # ---------------------------------------------------------------------------
-# Minimal ABI encode/decode helpers
+# FWA-specific ABI decoding.
 #
-# Copied verbatim from ``maxpane_dashboard/data/talismans_client.py`` (lines
-# 97-216).  ``_encode_call3`` already strips the ``0x`` from callData — that is
-# findings §6.5 TRAP 4, pre-solved; do not "clean it up".
+# The generic hex/ABI primitives these build on used to be copied verbatim from
+# ``talismans_client``; they now live in :mod:`maxpane_dashboard.data.evm_abi`
+# and are imported above (MEDI-17).  ``encode_call3`` there already strips the
+# ``0x`` from callData — that is findings §6.5 TRAP 4, pre-solved; do not
+# "clean it up".
 # ---------------------------------------------------------------------------
-
-
-def _strip0x(hex_str: str) -> str:
-    return hex_str[2:] if hex_str.startswith("0x") else hex_str
-
-
-def _pad_left(hex_no_0x: str, width: int = 64) -> str:
-    """Left-pad a hex string with zeros to *width* characters."""
-    return hex_no_0x.lower().rjust(width, "0")
-
-
-def _decode_uint(hex_data: str, word_idx: int = 0) -> int:
-    """Decode an **unsigned** uint256 at word slot *word_idx*."""
-    raw = _strip0x(hex_data)
-    start = word_idx * 64
-    chunk = raw[start : start + 64]
-    if not chunk:
-        return 0
-    return int(chunk, 16)
 
 
 def _decode_int(hex_data: str, word_idx: int = 0) -> int:
@@ -301,16 +302,6 @@ def _decode_bool(hex_data: str, word_idx: int = 0) -> bool:
     return _decode_uint(hex_data, word_idx) != 0
 
 
-def _decode_address(hex_data: str, word_idx: int = 0) -> str:
-    """Decode an address at word slot *word_idx* (lower 20 bytes)."""
-    raw = _strip0x(hex_data)
-    start = word_idx * 64
-    chunk = raw[start : start + 64]
-    if not chunk:
-        return ZERO_ADDRESS
-    return "0x" + chunk[-40:].lower()
-
-
 def _decode_string(hex_data: str) -> str:
     """Decode a dynamic ``string`` return (offset word, length word, bytes)."""
     raw = _strip0x(hex_data)
@@ -323,98 +314,6 @@ def _decode_string(hex_data: str) -> str:
         return bytes.fromhex(body).decode("utf-8", errors="replace")
     except (ValueError, IndexError):
         return ""
-
-
-def _encode_uint(value: int) -> str:
-    """Encode an integer as a 32-byte hex word (no 0x prefix)."""
-    if value < 0:
-        value &= (1 << 256) - 1
-    return _pad_left(hex(value)[2:], 64)
-
-
-def _encode_address(addr: str) -> str:
-    """Encode an address as a 32-byte hex word (no 0x prefix)."""
-    return _pad_left(_strip0x(addr).lower(), 64)
-
-
-def _encode_call3(target: str, call_data: str, allow_failure: bool = True) -> str:
-    """Encode a single ``Call3`` struct (no 0x prefix).
-
-    ``call_data`` is stripped of its ``0x`` prefix here — TRAP 4.  A Call3 is
-    dynamic because of the bytes field; the array encoding lives in
-    :func:`_encode_aggregate3`.
-    """
-    cd = _strip0x(call_data)
-    head = (
-        _encode_address(target)
-        + _pad_left("01" if allow_failure else "00", 64)
-        + _pad_left("60", 64)
-    )
-    cd_len = len(cd) // 2
-    cd_padded = cd + "0" * ((64 - (len(cd) % 64)) % 64)
-    tail = _pad_left(hex(cd_len)[2:], 64) + cd_padded
-    return head + tail
-
-
-def _encode_aggregate3(calls: list[tuple[str, str, bool]]) -> str:
-    """Build calldata for ``aggregate3(Call3[])``.
-
-    Each input tuple is ``(target_address, callData_hex, allow_failure)``.
-    Returns a hex string prefixed with ``0x`` — and containing ``"0x"`` exactly
-    once, at index 0 (TRAP 4's assertion).
-    """
-    body = ""
-    body += _pad_left("20", 64)  # offset to dynamic array
-    body += _pad_left(hex(len(calls))[2:], 64)  # array length
-
-    encoded_tuples = [_encode_call3(t, cd, af) for (t, cd, af) in calls]
-    n = len(encoded_tuples)
-    offsets: list[int] = []
-    cursor = n * 32  # in bytes
-    for tup in encoded_tuples:
-        offsets.append(cursor)
-        cursor += len(tup) // 2
-    body += "".join(_pad_left(hex(o)[2:], 64) for o in offsets)
-    body += "".join(encoded_tuples)
-    return _SEL_AGGREGATE3 + body
-
-
-def _decode_aggregate3_result(hex_data: str) -> list[tuple[bool, str]]:
-    """Decode ``aggregate3``'s ``Result[] (bool success, bytes returnData)``.
-
-    Returns ``(success, returnData_hex)`` per sub-call, in request order.  A
-    sub-call that reverted under ``allowFailure=true`` comes back as
-    ``(False, "0x")`` and **keeps its slot** — a decoder that drops failures
-    mis-aligns the whole batch.
-    """
-    raw = _strip0x(hex_data)
-    if not raw:
-        return []
-    try:
-        array_offset_bytes = int(raw[0:64], 16)
-        base = array_offset_bytes * 2  # in chars
-        length = int(raw[base : base + 64], 16)
-        elements_base = base + 64
-
-        results: list[tuple[bool, str]] = []
-        for i in range(length):
-            elt_off_bytes = int(
-                raw[elements_base + i * 64 : elements_base + (i + 1) * 64],
-                16,
-            )
-            tup_start = elements_base + elt_off_bytes * 2
-            success = int(raw[tup_start : tup_start + 64], 16) != 0
-            bytes_off = int(raw[tup_start + 64 : tup_start + 128], 16)
-            bytes_chars_start = tup_start + bytes_off * 2
-            bytes_len = int(raw[bytes_chars_start : bytes_chars_start + 64], 16)
-            body = raw[
-                bytes_chars_start + 64 : bytes_chars_start + 64 + bytes_len * 2
-            ]
-            results.append((success, "0x" + body))
-        return results
-    except (ValueError, IndexError) as exc:
-        logger.warning("Failed to decode aggregate3 result: %s", exc)
-        return []
 
 
 # ---------------------------------------------------------------------------
@@ -761,7 +660,7 @@ def decode_view_results(
 # ---------------------------------------------------------------------------
 
 
-class FWAClient:
+class FWAClient(OwnedHttpClient):
     """Async, keyless, state-only RPC client for the FWA protocol.
 
     Every public method is exception-safe: a network failure surfaces as an
@@ -818,19 +717,7 @@ class FWAClient:
         self._gas_price_wei: int = 0
         self._gas_price_at: float = 0.0
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-
-    async def close(self) -> None:
-        if self._owns_client:
-            await self._client.aclose()
-
-    async def __aenter__(self) -> FWAClient:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        await self.close()
+    # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
     @property
     def endpoints(self) -> list[str]:
@@ -852,19 +739,10 @@ class FWAClient:
         200 status, so branching on status alone mis-handles them
         (``rpc_errors.json`` warning).
         """
-        if self._inter_call_delay > 0:
-            elapsed = time.monotonic() - self._last_rpc_at
-            if self._last_rpc_at > 0 and elapsed < self._inter_call_delay:
-                await asyncio.sleep(self._inter_call_delay - elapsed)
-        self._last_rpc_at = time.monotonic()
+        self._last_rpc_at = await pace(self._last_rpc_at, self._inter_call_delay)
 
         self._request_id += 1
-        payload = {
-            "jsonrpc": "2.0",
-            "id": self._request_id,
-            "method": method,
-            "params": params,
-        }
+        payload = jsonrpc_payload(self._request_id, method, params)
         last_err: BaseException | None = None
         for url in self.endpoints:
             for attempt in range(_MAX_RETRIES):

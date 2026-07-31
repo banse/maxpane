@@ -181,6 +181,7 @@ from maxpane_dashboard.data.fwa_models import (
     Position,
     PullEV,
 )
+from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 
 logger = logging.getLogger(__name__)
 
@@ -351,18 +352,6 @@ _LIVE_PARAM_VIEWS: dict[int, str] = {
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
-
-
-def _safe_call(fn: Any, *args: Any, default: Any = None, **kwargs: Any) -> Any:
-    """Call *fn*, returning *default* on any exception.
-
-    An analytics bug must degrade one number, not the whole cycle.
-    """
-    try:
-        return fn(*args, **kwargs)
-    except Exception as exc:  # noqa: BLE001 — that is the entire point
-        logger.debug("FWA analytics call %s failed: %s", getattr(fn, "__name__", fn), exc)
-        return default
 
 
 def _wei_to_eth(value: Any) -> float | None:

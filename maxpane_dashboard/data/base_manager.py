@@ -23,6 +23,7 @@ from maxpane_dashboard.analytics.base_tokens import (
 from maxpane_dashboard.data.base_cache import BaseTokenCache
 from maxpane_dashboard.data.base_client import BaseChainClient
 from maxpane_dashboard.data.base_models import BaseToken, TokenDetail, TokenLaunch
+from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 
 logger = logging.getLogger(__name__)
 
@@ -447,19 +448,3 @@ class BaseManager:
         """Shut down the HTTP client and persist cache."""
         self.save_cache()
         await self.client.close()
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _safe_call(fn: Any, *args: Any, default: Any = None) -> Any:
-    """Call *fn* with *args*, returning *default* on any exception.
-
-    Logs a warning so failures are visible but never crash the dashboard.
-    """
-    try:
-        return fn(*args)
-    except Exception as exc:
-        logger.warning("Analytics call %s failed: %s", fn.__name__, exc)
-        return default

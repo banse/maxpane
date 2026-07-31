@@ -41,11 +41,33 @@ import asyncio
 import json
 import logging
 import re
-import time
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+
+# The shared ABI codec (MEDI-17), bound under the private names this module
+# has always used so every call site and every test that reaches for
+# ``ttt_client._decode_uint`` keeps working. ``_decode_address`` and
+# ``_encode_uint`` are re-exports: unused in this module, imported from it by
+# ``tests/data/test_ttt_client.py``.
+from maxpane_dashboard.data.evm_abi import (
+    addr_from_topic as _addr_from_topic,
+    decode_address as _decode_address,
+    decode_aggregate3_result as _decode_aggregate3_result,
+    decode_uint as _decode_uint,
+    encode_address as _encode_address,
+    encode_aggregate3 as _encode_aggregate3,
+    encode_uint as _encode_uint,
+    pad_left as _pad_left,
+    strip0x as _strip0x,
+)
+from maxpane_dashboard.data.rpc_common import (
+    ENDPOINT_DEAD_CODES,
+    OwnedHttpClient,
+    jsonrpc_payload,
+    pace,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +230,7 @@ _SEL_SYMBOL = "0x95d89b41"              # symbol()
 _SEL_DECIMALS = "0x313ce567"            # decimals()
 
 # Multicall3
-_SEL_AGGREGATE3 = "0x82ad56cb"          # aggregate3(Call3[])
+# aggregate3(Call3[]) lives in evm_abi -- encode_aggregate3 prefixes it itself.
 _SEL_GET_ETH_BALANCE = "0x4d2301cc"     # getEthBalance(address)
 
 # ---------------------------------------------------------------------------
@@ -230,7 +252,8 @@ _TOPIC_BOUGHT = (
 
 
 # ---------------------------------------------------------------------------
-# Minimal ABI encode/decode helpers (pure-stdlib, no eth_abi dep)
+# TTT-specific ABI decoding. The generic hex/ABI primitives it builds on live
+# in :mod:`maxpane_dashboard.data.evm_abi` and are imported above.
 # ---------------------------------------------------------------------------
 
 
@@ -288,47 +311,13 @@ def _looks_like_endpoint_limitation(err: Any) -> bool:
     return err.get("code") not in _MALFORMED_REQUEST_CODES
 
 
-def _strip0x(hex_str: str) -> str:
-    return hex_str[2:] if hex_str.startswith("0x") else hex_str
-
-
 def _to_hex(b: bytes) -> str:
     return "0x" + b.hex()
-
-
-def _pad_left(hex_no_0x: str, width: int = 64) -> str:
-    """Left-pad a hex string with zeros to *width* characters."""
-    return hex_no_0x.lower().rjust(width, "0")
 
 
 def _addr_to_topic(addr: str) -> str:
     """Convert an address to a 32-byte topic (left-zero-padded)."""
     return "0x" + _pad_left(_strip0x(addr).lower(), 64)
-
-
-def _addr_from_topic(topic: str) -> str:
-    """Convert a 32-byte topic back to a 20-byte address (lowercase 0x...)."""
-    return "0x" + _strip0x(topic).lower()[-40:]
-
-
-def _decode_uint(hex_data: str, word_idx: int = 0) -> int:
-    """Decode a uint256 at word slot *word_idx* of a hex blob."""
-    raw = _strip0x(hex_data)
-    start = word_idx * 64
-    chunk = raw[start : start + 64]
-    if not chunk:
-        return 0
-    return int(chunk, 16)
-
-
-def _decode_address(hex_data: str, word_idx: int = 0) -> str:
-    """Decode an address at word slot *word_idx* (lower 20 bytes)."""
-    raw = _strip0x(hex_data)
-    start = word_idx * 64
-    chunk = raw[start : start + 64]
-    if not chunk:
-        return "0x" + "0" * 40
-    return "0x" + chunk[-40:].lower()
 
 
 def _decode_string_dynamic(hex_data: str, offset_word: int) -> str:
@@ -354,116 +343,6 @@ def _decode_string_dynamic(hex_data: str, offset_word: int) -> str:
     except (ValueError, IndexError) as exc:
         logger.debug("string decode failed: %s", exc)
         return ""
-
-
-def _encode_uint(value: int) -> str:
-    """Encode an integer as a 32-byte hex word (no 0x prefix)."""
-    if value < 0:
-        # Two's complement for int256 (we only need positive here, but be safe)
-        value &= (1 << 256) - 1
-    return _pad_left(hex(value)[2:], 64)
-
-
-def _encode_address(addr: str) -> str:
-    """Encode an address as a 32-byte hex word (no 0x prefix)."""
-    return _pad_left(_strip0x(addr).lower(), 64)
-
-
-def _encode_call3(target: str, call_data: str, allow_failure: bool = True) -> str:
-    """Encode a single Call3 struct (no 0x prefix).
-
-    A Call3 is dynamic because of the bytes field, so this is just the
-    *inline* representation in head-of-tuple terms. The actual array
-    encoding is handled by ``_encode_aggregate3``.
-    """
-    cd = _strip0x(call_data)
-    # The dynamic field offset within this tuple is: 3 words (target + bool
-    # + offset header) -- i.e. 0x60.
-    head = (
-        _encode_address(target)
-        + _pad_left("01" if allow_failure else "00", 64)
-        + _pad_left("60", 64)
-    )
-    # Tail: length-prefixed bytes, padded to 32-byte boundary
-    cd_len = len(cd) // 2
-    cd_padded = cd + "0" * ((64 - (len(cd) % 64)) % 64)
-    tail = _pad_left(hex(cd_len)[2:], 64) + cd_padded
-    return head + tail
-
-
-def _encode_aggregate3(calls: list[tuple[str, str, bool]]) -> str:
-    """Build calldata for ``aggregate3(Call3[])``.
-
-    Each input tuple is ``(target_address, callData_hex, allow_failure)``.
-    Returns a hex string prefixed with ``0x``.
-    """
-    # Selector + offset to dynamic array
-    selector = _SEL_AGGREGATE3
-    body = ""
-    # The array param: head is just an offset (always 0x20 for one dynamic arg)
-    body += _pad_left("20", 64)
-    # Array length
-    body += _pad_left(hex(len(calls))[2:], 64)
-
-    # Encode each Call3 separately, then build head-of-tuple offsets pointing
-    # at each one. Since each Call3 is itself dynamic (it contains `bytes`),
-    # the array's element-encoding is: N offsets pointing inside the array's
-    # body, followed by the concatenated encoded tuples.
-    encoded_tuples = [_encode_call3(t, cd, af) for (t, cd, af) in calls]
-    n = len(encoded_tuples)
-    # First n words are offsets (in bytes) from the start of the array body
-    # (i.e. immediately after the length word).
-    offsets: list[int] = []
-    cursor = n * 32  # in bytes
-    for tup in encoded_tuples:
-        offsets.append(cursor)
-        cursor += len(tup) // 2
-    body += "".join(_pad_left(hex(o)[2:], 64) for o in offsets)
-    body += "".join(encoded_tuples)
-    return selector + body
-
-
-def _decode_aggregate3_result(hex_data: str) -> list[tuple[bool, str]]:
-    """Decode the return of ``aggregate3``: ``Result[] (bool success, bytes returnData)``.
-
-    Returns a list of ``(success, returnData_hex)`` tuples.
-    """
-    raw = _strip0x(hex_data)
-    if not raw:
-        return []
-    try:
-        # First word: offset to the dynamic array (typically 0x20)
-        # Next word: array length
-        # Then N offsets pointing to each Result tuple
-        # Then for each Result: success word + offset to bytes + length + data
-        array_offset_bytes = int(raw[0:64], 16)
-        base = array_offset_bytes * 2  # in chars
-        length = int(raw[base : base + 64], 16)
-        elements_base = base + 64
-
-        results: list[tuple[bool, str]] = []
-        for i in range(length):
-            elt_off_bytes = int(
-                raw[elements_base + i * 64 : elements_base + (i + 1) * 64],
-                16,
-            )
-            # Result tuple lives at elements_base + 2*elt_off_bytes
-            tup_start = elements_base + elt_off_bytes * 2
-            success = int(raw[tup_start : tup_start + 64], 16) != 0
-            # bytes offset inside the Result tuple (relative to tup_start)
-            bytes_off = int(raw[tup_start + 64 : tup_start + 128], 16)
-            bytes_chars_start = tup_start + bytes_off * 2
-            bytes_len = int(
-                raw[bytes_chars_start : bytes_chars_start + 64], 16
-            )
-            body = raw[
-                bytes_chars_start + 64 : bytes_chars_start + 64 + bytes_len * 2
-            ]
-            results.append((success, "0x" + body))
-        return results
-    except (ValueError, IndexError) as exc:
-        logger.warning("Failed to decode aggregate3 result: %s", exc)
-        return []
 
 
 def _decode_log_index(log: dict) -> int | None:
@@ -593,7 +472,7 @@ def _decode_bought_log(log: dict) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-class TTTClient:
+class TTTClient(OwnedHttpClient):
     """Async client for TTT data sources.
 
     Fetches state from Ethereum mainnet RPC and DexScreener.
@@ -656,19 +535,7 @@ class TTTClient:
         self._request_id = 0
         self._last_rpc_at: float = 0.0
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-
-    async def close(self) -> None:
-        if self._owns_client:
-            await self._client.aclose()
-
-    async def __aenter__(self) -> TTTClient:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        await self.close()
+    # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
     # ------------------------------------------------------------------
     # Internal: RPC plumbing with retry + fallback
@@ -687,32 +554,21 @@ class TTTClient:
         """
         # Throttle inter-call latency on a per-instance basis so the same
         # client doesn't hammer a public endpoint within one refresh cycle.
-        elapsed = time.monotonic() - self._last_rpc_at
-        if self._last_rpc_at > 0 and elapsed < _INTER_CALL_DELAY:
-            await asyncio.sleep(_INTER_CALL_DELAY - elapsed)
-        self._last_rpc_at = time.monotonic()
+        self._last_rpc_at = await pace(self._last_rpc_at, _INTER_CALL_DELAY)
 
         self._request_id += 1
-        payload = {
-            "jsonrpc": "2.0",
-            "id": self._request_id,
-            "method": method,
-            "params": params,
-        }
+        payload = jsonrpc_payload(self._request_id, method, params)
         pool = (
             list(endpoints)
             if endpoints is not None
             else [self._primary_rpc, *self._fallback_rpcs]
         )
         last_err: BaseException | None = None
-        # Status codes meaning "the endpoint itself is broken or blocking us"
-        # rather than transient; don't waste retries on them.
-        _ENDPOINT_DEAD_CODES = {401, 402, 403, 451, 521, 522, 523, 524, 525, 526}
         for url in pool:
             for attempt in range(_MAX_RETRIES):
                 try:
                     resp = await self._client.post(url, json=payload)
-                    if resp.status_code in _ENDPOINT_DEAD_CODES:
+                    if resp.status_code in ENDPOINT_DEAD_CODES:
                         # Endpoint-level failure: skip to next endpoint immediately.
                         last_err = httpx.HTTPStatusError(
                             f"RPC {url} returned {resp.status_code}",

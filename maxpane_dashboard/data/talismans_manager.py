@@ -46,6 +46,7 @@ from maxpane_dashboard.analytics.talismans_signals import (
     top_collectors,
     total_cores,
 )
+from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 from maxpane_dashboard.data.talismans_cache import TalismansCache
 from maxpane_dashboard.data.talismans_client import (
     _DEFAULT_LOG_LOOKBACK_BLOCKS,
@@ -64,15 +65,6 @@ _GENESIS_MAX_ID = 1536
 # How often the cache is written to disk, in seconds. See
 # ``TalismansManager._maybe_save_cache`` (LOW-13).
 _SAVE_INTERVAL_SECONDS = 300.0
-
-
-def _safe_call(fn: Any, *args: Any, default: Any = None) -> Any:
-    """Call *fn* with *args*, returning *default* on exception."""
-    try:
-        return fn(*args)
-    except Exception as exc:
-        logger.debug("Analytics call %s failed: %s", getattr(fn, "__name__", fn), exc)
-        return default
 
 
 def _block_timestamp(block_number: int, current_block: int, now_ts: float) -> int:

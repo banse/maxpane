@@ -32,6 +32,7 @@ from maxpane_dashboard.data.frenpet_cache import FrenPetCache
 from maxpane_dashboard.data.frenpet_client import FrenPetClient
 from maxpane_dashboard.data.frenpet_models import FrenPet, FrenPetSnapshot
 from maxpane_dashboard.data.price import PriceClient
+from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 
 logger = logging.getLogger(__name__)
 
@@ -578,25 +579,3 @@ def _generate_overview_recommendation(
     if global_battle_rate > 200.0:
         return "Active meta \u2014 battles frequent, train to compete"
     return "Meta is balanced \u2014 focus on training ATK/DEF"
-
-
-def _safe_call(fn: Any, *args: Any, default: Any = None) -> Any:
-    """Call *fn* with *args*, returning *default* on any exception.
-
-    Logs a warning so failures are visible but never crash the dashboard.
-
-    The name is read with ``getattr(fn, "__name__", fn)``: a bare
-    ``fn.__name__`` in the handler raises ``AttributeError`` for any
-    callable without one (a ``functools.partial``, a callable object),
-    and that exception escapes *this* function -- turning a
-    should-be-degraded analytics failure into a failed refresh cycle,
-    which is precisely what the helper exists to prevent (LOW-11).
-    ``ttt_manager`` and ``talismans_manager`` already do it this way.
-    """
-    try:
-        return fn(*args)
-    except Exception as exc:
-        logger.warning(
-            "Analytics call %s failed: %s", getattr(fn, "__name__", fn), exc
-        )
-        return default

@@ -23,6 +23,16 @@ from maxpane_dashboard.data.cattown_models import (
     KibbleEconomy,
     StakingState,
 )
+from maxpane_dashboard.data.evm_abi import (
+    decode_uint256 as _decode_uint256,
+    pad_address as _pad_address,
+)
+from maxpane_dashboard.data.rpc_common import (
+    ENDPOINT_DEAD_CODES as _ENDPOINT_DEAD_CODES,
+    OwnedHttpClient,
+    jsonrpc_payload,
+    pace,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +58,6 @@ _BASE_BLOCK_SECONDS = 2.0
 #: the 30s poll interval; the memo means later refreshes need almost none.
 _MAX_BLOCK_TS_LOOKUPS = 12
 _BLOCK_TS_CACHE_MAX = 2048
-
-#: Status codes that mean "this endpoint is broken or blocking us" rather than
-#: "try again". Rotate to the next endpoint instead of burning the retry
-#: ladder. Mirrors ttt_client._ENDPOINT_DEAD_CODES.
-_ENDPOINT_DEAD_CODES = frozenset({401, 402, 403, 451, 521, 522, 523, 524, 525, 526})
 
 #: JSON-RPC error-message fragments that mean "this endpoint won't serve this",
 #: not "this request is malformed". Matched on the message, never the code:
@@ -138,20 +143,7 @@ _TREASURE_FOUND_TOPIC = (
 )
 
 
-def _pad_address(addr: str) -> str:
-    """Zero-pad an address to 32 bytes for ABI encoding."""
-    return addr[2:].lower().zfill(64)
-
-
-def _decode_uint256(hex_str: str) -> int:
-    """Decode a single uint256 from a hex string (with or without 0x prefix)."""
-    raw = hex_str[2:] if hex_str.startswith("0x") else hex_str
-    if not raw:
-        return 0
-    return int(raw[:64], 16)
-
-
-class CatTownClient:
+class CatTownClient(OwnedHttpClient):
     """Fetches Cat Town Fishing data from Base chain RPC.
 
     Parameters
@@ -270,16 +262,7 @@ class CatTownClient:
                 result[addr.lower()] = None
         return result
 
-    async def close(self) -> None:
-        """Close the underlying HTTP client if we own it."""
-        if self._owns_client:
-            await self._client.aclose()
-
-    async def __aenter__(self) -> CatTownClient:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        await self.close()
+    # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
     # ------------------------------------------------------------------
     # Internal: retry helpers
@@ -335,10 +318,7 @@ class CatTownClient:
         """Space consecutive JSON-RPC calls by ``_inter_call_delay``."""
         if self._inter_call_delay <= 0:
             return
-        elapsed = time.monotonic() - self._last_rpc_at
-        if self._last_rpc_at > 0 and elapsed < self._inter_call_delay:
-            await asyncio.sleep(self._inter_call_delay - elapsed)
-        self._last_rpc_at = time.monotonic()
+        self._last_rpc_at = await pace(self._last_rpc_at, self._inter_call_delay)
 
     # ------------------------------------------------------------------
     # Internal: RPC primitives
@@ -356,12 +336,7 @@ class CatTownClient:
         await self._throttle()
 
         self._request_id += 1
-        payload = {
-            "jsonrpc": "2.0",
-            "id": self._request_id,
-            "method": method,
-            "params": params,
-        }
+        payload = jsonrpc_payload(self._request_id, method, params)
 
         last_err: BaseException | None = None
         for url in [self._rpc_url, *self._fallback_rpcs]:

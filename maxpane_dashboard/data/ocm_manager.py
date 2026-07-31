@@ -24,6 +24,7 @@ from maxpane_dashboard.analytics.ocm_signals import (
 from maxpane_dashboard.data.ocm_cache import OCMCache
 from maxpane_dashboard.data.ocm_client import OCMClient
 from maxpane_dashboard.data.ocm_models import OCMSnapshot
+from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 
 logger = logging.getLogger(__name__)
 
@@ -266,20 +267,3 @@ class OCMManager:
         """Shut down the HTTP client and persist cache."""
         self.save_cache()
         await self.client.close()
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _safe_call(fn: Any, *args: Any, default: Any = None) -> Any:
-    """Call *fn* with *args*, returning *default* on any exception.
-
-    Logs a warning so failures are visible but never crash the dashboard.
-    """
-    try:
-        return fn(*args)
-    except Exception as exc:
-        logger.debug("Analytics call %s failed: %s", fn.__name__, exc)
-        return default

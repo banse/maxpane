@@ -16,6 +16,7 @@ from typing import Any
 from maxpane_dashboard.data.dota_cache import DOTACache
 from maxpane_dashboard.data.dota_client import DOTAClient
 from maxpane_dashboard.data.dota_models import DOTASnapshot
+from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 
 logger = logging.getLogger(__name__)
 
@@ -319,20 +320,3 @@ class DOTAManager:
         """Shut down the HTTP client and persist cache."""
         self.save_cache()
         await self.client.close()
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _safe_call(fn: Any, *args: Any, default: Any = None) -> Any:
-    """Call *fn* with *args*, returning *default* on any exception.
-
-    Logs a warning so failures are visible but never crash the dashboard.
-    """
-    try:
-        return fn(*args)
-    except Exception as exc:
-        logger.debug("Analytics call %s failed: %s", fn.__name__, exc)
-        return default

@@ -26,6 +26,7 @@ from typing import Any
 import httpx
 
 from maxpane_dashboard.data.base_models import BaseSnapshot, BaseToken, TokenDetail, TokenLaunch, TrendingPool
+from maxpane_dashboard.data.rpc_common import OwnedHttpClient
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ def _safe_trade_float(value: Any) -> float:
         return 0.0
 
 
-class BaseChainClient:
+class BaseChainClient(OwnedHttpClient):
     """Fetches Base chain market data from DexScreener, GeckoTerminal, Clanker.
 
     All three upstreams are public and keyless.  This class must never
@@ -100,16 +101,7 @@ class BaseChainClient:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def close(self) -> None:
-        """Close the underlying HTTP client if we own it."""
-        if self._owns_client:
-            await self._client.aclose()
-
-    async def __aenter__(self) -> BaseChainClient:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        await self.close()
+    # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
     # ------------------------------------------------------------------
     # Internal: retry helper

@@ -17,12 +17,17 @@ from typing import Any
 
 import httpx
 
+from maxpane_dashboard.data.evm_abi import (
+    decode_uint256 as _decode_uint256,
+    pad_address as _pad_address,
+)
 from maxpane_dashboard.data.ocm_models import (
     OCMActivityEvent,
     OCMCollectionStats,
     OCMSnapshot,
     OCMStakingStats,
 )
+from maxpane_dashboard.data.rpc_common import OwnedHttpClient, jsonrpc_payload
 
 logger = logging.getLogger(__name__)
 
@@ -90,29 +95,15 @@ _BURN_ADDR_TOPIC = "0x" + _BURN_ADDR_PADDED
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _pad_address(addr: str) -> str:
-    """Zero-pad an address to 32 bytes for ABI encoding."""
-    return addr[2:].lower().zfill(64)
-
-
-def _decode_uint256(hex_str: str) -> int:
-    """Decode a single uint256 from a hex string (with or without 0x prefix)."""
-    raw = hex_str[2:] if hex_str.startswith("0x") else hex_str
-    if not raw:
-        return 0
-    return int(raw[:64], 16)
-
-
-# ---------------------------------------------------------------------------
 # Client
+#
+# The ABI helpers (``_pad_address`` / ``_decode_uint256``) are imported from
+# :mod:`maxpane_dashboard.data.evm_abi`; they were byte-identical to
+# ``cattown_client``'s copies (MEDI-17).
 # ---------------------------------------------------------------------------
 
 
-class OCMClient:
+class OCMClient(OwnedHttpClient):
     """Fetches Onchain Monsters data from Ethereum mainnet RPC.
 
     All public RPC calls are serialized (no concurrent requests) to
@@ -142,20 +133,7 @@ class OCMClient:
         self._owns_client = http_client is None
         self._request_id = 0
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-
-    async def close(self) -> None:
-        """Close the underlying HTTP client if we own it."""
-        if self._owns_client:
-            await self._client.aclose()
-
-    async def __aenter__(self) -> OCMClient:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        await self.close()
+    # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
     # ------------------------------------------------------------------
     # Internal: retry helpers
@@ -213,12 +191,7 @@ class OCMClient:
         if self._request_id > 0:
             await asyncio.sleep(_INTER_CALL_DELAY)
         self._request_id += 1
-        payload = {
-            "jsonrpc": "2.0",
-            "id": self._request_id,
-            "method": method,
-            "params": params,
-        }
+        payload = jsonrpc_payload(self._request_id, method, params)
         resp = await self._post_with_retry(self._rpc_url, payload)
         body = resp.json()
         if "error" in body:
