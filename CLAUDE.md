@@ -103,10 +103,21 @@ pip install -e .
 python -m maxpane_dashboard                      # splash → game select
 python -m maxpane_dashboard --game fwa           # straight to one dashboard
 python -m maxpane_dashboard --game ttt --theme fwa
+python -m maxpane_dashboard --version            # version + interpreter path
 ```
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`.
+
+**`__version__` comes from installed distribution metadata**, not from a
+constant — `maxpane_dashboard/__init__.py` reads it with
+`importlib.metadata.version`. An editable install writes that metadata **once,
+at install time**, so bumping `pyproject.toml` does not change what the status
+bar renders or what `--version` prints until you re-run `pip install -e .`.
+This is not hypothetical: this venv reported `0.3.2` for three months and four
+releases, so every dev-run status bar showed a version that shipped in April.
+Re-run the editable install after a version bump, and trust `--version` over
+memory when a bug report cites one.
 
 ## Tests
 

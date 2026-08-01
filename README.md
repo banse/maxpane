@@ -97,7 +97,32 @@ maxpane --game talismans       # start on Talismans view
 maxpane --game fwa             # start on Fake World Assets view
 maxpane --theme minimal        # use minimal theme
 maxpane --poll-interval 60     # poll every 60s instead of 30s
+maxpane --version              # which build is this, and which Python runs it
 ```
+
+### Checking your version
+
+```console
+$ maxpane --version
+maxpane 0.5.0
+Python 3.13.2 (/Users/you/.local/pipx/venvs/maxpane/bin/python)
+```
+
+The interpreter path is there for a reason. `pipx` and `uv` both put their
+shims in `~/.local/bin`, and neither will overwrite a `maxpane` it doesn't
+own — the second one you use prints a warning and declines:
+
+```
+⚠️  File exists at ~/.local/bin/maxpane and points to
+    ~/.local/share/uv/tools/maxpane/bin/maxpane, not
+    ~/.local/pipx/venvs/maxpane/bin/maxpane. Not modifying.
+```
+
+When that happens the install succeeds and reports the new version, but the
+*older* tool still answers to `maxpane`. If the version above isn't the one
+you just installed, that's the cause — uninstall the copy you don't want
+(`uv tool uninstall maxpane` or `pipx uninstall maxpane`) and reinstall with
+the other, so a single manager owns the command.
 
 ### Keyboard shortcuts
 

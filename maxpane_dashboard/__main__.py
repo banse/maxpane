@@ -2,11 +2,13 @@
 import argparse
 import logging
 import os
+import platform
 import sys
 import warnings
 
 warnings.filterwarnings("ignore")
 
+from maxpane_dashboard import __version__
 from maxpane_dashboard.app import MaxPaneApp
 
 
@@ -76,8 +78,68 @@ def _poll_interval(value: str) -> int:
     return seconds
 
 
+def _version_text() -> str:
+    """Build the ``--version`` banner.
+
+    The interpreter line is not decoration.  ``pipx`` and ``uv`` both expose
+    their shims from ``~/.local/bin`` and neither will overwrite a ``maxpane``
+    it does not own -- the second installer warns and declines.  Whichever
+    installed first therefore keeps the name, so a months-old build can go on
+    answering to ``maxpane`` while a freshly installed one sits unreachable.
+    That is indistinguishable from a broken release until you compare install
+    directories by hand.  Naming the interpreter that is actually running
+    makes it a one-command diagnosis.
+
+    The first line stays exactly ``maxpane <version>`` so ``--version | head -1``
+    remains machine-readable.
+    """
+    return (
+        f"maxpane {__version__}\n"
+        f"Python {platform.python_version()} ({sys.executable})"
+    )
+
+
+class _VersionAction(argparse.Action):
+    """Print :func:`_version_text` verbatim on stdout, then exit 0.
+
+    Not ``action="version"``: argparse runs that string through the help
+    formatter's ``_fill_text``, which is ``textwrap.fill`` -- it collapses the
+    newline and reflows both lines into one paragraph, so the interpreter path
+    ends up glued to the version number.  The documented workaround is to swap
+    the parser's ``formatter_class``, but that ties this flag's layout to how
+    ``--help`` wraps its description; a later formatting change would silently
+    re-break it.  Doing our own printing keeps the two independent.
+
+    ``parser.exit(message=...)`` is also avoided deliberately -- it writes to
+    *stderr*, which would break ``maxpane --version | head -1``.
+    """
+
+    def __init__(self, option_strings, dest=argparse.SUPPRESS,
+                 default=argparse.SUPPRESS, help=None):
+        super().__init__(
+            option_strings=option_strings, dest=dest, default=default,
+            nargs=0, help=help,
+        )
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print(_version_text())
+        parser.exit()
+
+
 def main():
     parser = argparse.ArgumentParser(description="MaxPane Dashboard")
+    # Declared first, and deliberately an ``action="version"``: argparse prints
+    # and exits from inside ``parse_args()``, which is *before* main() sets up
+    # logging.  That ordering matters -- ``logging.basicConfig`` below opens the
+    # log with ``filemode="w"``, so a --version that ran any later would
+    # silently truncate ~/.maxpane/maxpane.log every time someone checked which
+    # build they had installed.
+    parser.add_argument(
+        "-V",
+        "--version",
+        action=_VersionAction,
+        help="Show the version and the interpreter running it, then exit",
+    )
     parser.add_argument(
         "--poll-interval",
         type=_poll_interval,
