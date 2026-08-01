@@ -74,7 +74,7 @@ import math
 import os
 import time
 from collections import deque
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -273,6 +273,12 @@ class FWACache:
         # only some of the collections, so the entries genuinely age at different
         # rates.
         self.floors: dict[str, LastGood] = {}
+        #: address -> ERC-721 ``name()``.  Immutable per contract, never expires.
+        self.collection_names: dict[str, str] = {}
+        #: address -> (verified ENS name, verification timestamp).
+        self.ens_names: dict[str, tuple[str, float]] = {}
+        #: address -> when we last confirmed it has *no* ENS name.
+        self.ens_misses: dict[str, float] = {}
 
         # Hourly series, 7d deep: name -> deque[(hour_ts, value)].
         self.series: dict[str, deque[tuple[float, float]]] = {
@@ -632,6 +638,85 @@ class FWACache:
         return entry.age_seconds(self._now(now))
 
     # ------------------------------------------------------------------
+    # Display names — collection ``name()`` and verified ENS
+    # ------------------------------------------------------------------
+
+    def set_collection_names(self, names: Mapping[str, str]) -> None:
+        """Merge on-chain collection names into the cache.
+
+        A deployed ERC-721's ``name()`` is fixed for the life of the contract,
+        so these never expire and are merged, never replaced: a batch where a
+        few sub-calls failed must not delete the names we already had.
+        """
+        for addr, name in (names or {}).items():
+            key = str(addr).lower()
+            text = str(name or "").strip()
+            if key and text:
+                self.collection_names[key] = text
+
+    def get_collection_name(self, address: str) -> str | None:
+        return self.collection_names.get(str(address).lower())
+
+    def collection_names_snapshot(self) -> dict[str, str]:
+        return dict(self.collection_names)
+
+    def set_ens_names(
+        self, names: Mapping[str, str], *, ts: float | None = None
+    ) -> None:
+        """Store verified ENS names with the time they were verified.
+
+        Unlike collection names these *do* expire -- a name can be transferred
+        or allowed to lapse, and continuing to label an address with someone
+        else's former name is worse than showing the hex.  A resolution that
+        returns nothing for an address is not recorded, so an RPC failure never
+        erases a good name; :meth:`ens_names_fresh` ages entries out instead.
+        """
+        stamp = self._now(ts)
+        for addr, name in (names or {}).items():
+            key = str(addr).lower()
+            text = str(name or "").strip()
+            if key and text:
+                self.ens_names[key] = (text, stamp)
+
+    def ens_names_fresh(
+        self, ttl_seconds: float, now: float | None = None
+    ) -> dict[str, str]:
+        """Every cached ENS name still within *ttl_seconds*."""
+        cutoff = self._now(now) - float(ttl_seconds)
+        return {
+            addr: name
+            for addr, (name, ts) in self.ens_names.items()
+            if ts >= cutoff
+        }
+
+    def note_ens_misses(
+        self, addresses: Iterable[str], *, ts: float | None = None
+    ) -> None:
+        """Record addresses that resolved to no name.
+
+        Most wallets have no ENS record -- 36 of 50 in the live feed.  Without
+        this, every one of them is re-queried on every tick, because "absent
+        from the name map" and "never asked" look identical.  That is four
+        multicalls of pure waste per refresh against public endpoints, forever.
+
+        A miss is *not* stored as an empty name: an address that later
+        registers a name must be able to pick it up, so misses carry their own
+        shorter TTL and expire independently.
+        """
+        stamp = self._now(ts)
+        for addr in addresses or ():
+            key = str(addr or "").lower()
+            if key:
+                self.ens_misses[key] = stamp
+
+    def ens_misses_fresh(
+        self, ttl_seconds: float, now: float | None = None
+    ) -> set[str]:
+        """Addresses known to have no ENS name, still within *ttl_seconds*."""
+        cutoff = self._now(now) - float(ttl_seconds)
+        return {addr for addr, ts in self.ens_misses.items() if ts >= cutoff}
+
+    # ------------------------------------------------------------------
     # Last-good snapshots — once tier (params, allowlist, token metadata)
     # ------------------------------------------------------------------
 
@@ -749,6 +834,12 @@ class FWACache:
             "floors": {
                 addr: entry.to_dict() for addr, entry in self.floors.items()
             },
+            "collection_names": dict(self.collection_names),
+            "ens_names": {
+                addr: [name, float(ts)]
+                for addr, (name, ts) in self.ens_names.items()
+            },
+            "ens_misses": {a: float(t) for a, t in self.ens_misses.items()},
             "series": {
                 name: [[float(ts), float(v)] for (ts, v) in deq]
                 for name, deq in self.series.items()
@@ -839,6 +930,35 @@ class FWACache:
                     logger.debug("Skipping bad floor %s: %s", addr, exc)
         except Exception as exc:
             logger.warning("floors block bad: %s", exc)
+
+        # Display names.  Both blocks are per-entry guarded: one malformed row
+        # in a hand-edited or half-written cache must not cost every name.
+        try:
+            for addr, name in (payload.get("collection_names") or {}).items():
+                if isinstance(name, str) and name.strip():
+                    self.collection_names[str(addr).lower()] = name.strip()
+        except Exception as exc:
+            logger.warning("collection_names block bad: %s", exc)
+
+        try:
+            for addr, entry in (payload.get("ens_names") or {}).items():
+                try:
+                    name, ts = entry
+                    if isinstance(name, str) and name.strip():
+                        self.ens_names[str(addr).lower()] = (name.strip(), float(ts))
+                except Exception as exc:
+                    logger.debug("Skipping bad ENS entry %s: %s", addr, exc)
+        except Exception as exc:
+            logger.warning("ens_names block bad: %s", exc)
+
+        try:
+            for addr, ts in (payload.get("ens_misses") or {}).items():
+                try:
+                    self.ens_misses[str(addr).lower()] = float(ts)
+                except Exception:
+                    continue
+        except Exception as exc:
+            logger.warning("ens_misses block bad: %s", exc)
 
         # Hourly series.
         try:

@@ -44,6 +44,8 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
 
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+
 _DASH = "--"
 _EMDASH = "—"
 
@@ -271,6 +273,7 @@ class FWAHeroMetrics(Horizontal):
         crown_pot_usd=None,
         crown_seize_eth=None,
         crown_holder=None,
+        crown_holder_name=None,
         crown_vacant=None,
         crown_available=None,
         **_kwargs,
@@ -299,6 +302,7 @@ class FWAHeroMetrics(Horizontal):
             crown_pot_usd,
             crown_seize_eth,
             crown_holder,
+            crown_holder_name,
             crown_vacant,
             crown_available,
         )
@@ -405,6 +409,7 @@ class FWAHeroMetrics(Horizontal):
         pot_usd,
         seize_eth,
         holder,
+        holder_name,
         vacant,
         available,
     ) -> None:
@@ -443,7 +448,11 @@ class FWAHeroMetrics(Horizontal):
             big = f"[{_GOLD}]{_fmt_eth(pot, 3)}[/] [dim]ETH[/]"
 
         usd = _fmt_usd(pot_usd) if _as_float(pot_usd) is not None else "usd n/a"
-        second = f"{usd} · {_short_addr(holder)}"
+        # A verified ENS name where we have one. Escaped: unlike the address
+        # it replaces, this is third-party text going into markup.
+        name = str(holder_name or "").strip()
+        who = safe_markup(name[:20]) if name else _short_addr(holder)
+        second = f"{usd} · {who}"
 
         box.update(
             f"[dim]CROWN[/]\n{big}\n[dim]{second}[/]\n[dim]{seize_line}[/]"

@@ -383,6 +383,7 @@ class FWAScreen(RefreshGuard, Screen):
                 crown_pot_usd=data.get("crown_pot_usd"),
                 crown_seize_eth=data.get("crown_seize_eth"),
                 crown_holder=data.get("crown_holder"),
+                crown_holder_name=data.get("crown_holder_name"),
                 crown_vacant=data.get("crown_vacant"),
                 crown_available=data.get("crown_available"),
             )

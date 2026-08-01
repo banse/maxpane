@@ -898,6 +898,10 @@ def crown_history(
         {
             "rank": i,
             "holder": row["holder"],
+            # Always present, always None here: this module only sees logs.
+            # The manager fills it from the ENS cache, but the row shape is
+            # defined once in FWA_ROW_KEYS and every producer must match it.
+            "holder_name": None,
             "reigns": row["reigns"],
             "payout_eth": row["payout_wei"] / 1e18,
             "last_block": row["last_block"],

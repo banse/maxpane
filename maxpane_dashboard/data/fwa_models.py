@@ -459,6 +459,7 @@ class DrawEvent(BaseModel):
     block_number: int
     tx_hash: str
     purchaser: str                     # lowercased 0x address
+    purchaser_name: str | None = None  # forward-verified ENS; None == no name
     collection: str                    # lowercased 0x address
     collection_name: str | None = None
     token_id: int | None = None
@@ -558,6 +559,7 @@ FWA_DATA_KEYS: tuple[str, ...] = (
     "crown_pot_usd",               # float | None — None when no USD source
     "crown_seize_eth",             # float | None — 1.10 x incumbent backing
     "crown_holder",                # str | None
+    "crown_holder_name",           # str | None — forward-verified ENS, else None
     "crown_vacant",                # bool — render "vacant", never 0
     "crown_available",             # bool
 
@@ -649,6 +651,7 @@ FWA_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "crown_pot_usd",
         "crown_seize_eth",
         "crown_holder",
+        "crown_holder_name",
         "crown_vacant",
         "crown_available",
     ),
@@ -726,6 +729,7 @@ FWA_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "block_number",           # int
         "tx_hash",                # str
         "purchaser",              # str
+        "purchaser_name",         # str | None — forward-verified ENS, else None
         "collection",             # str — address
         "collection_name",        # str | None — display name
         "token_id",               # int | None
@@ -754,6 +758,7 @@ FWA_ROW_KEYS: dict[str, tuple[str, ...]] = {
     "crown_history": (
         "rank",                   # int, 1-based
         "holder",                 # str — one wallet currently holds 4 reigns
+        "holder_name",            # str | None — forward-verified ENS, else None
         "reigns",                 # int — deduped TopListingSet count for this holder
         "payout_eth",             # float — settled crown payouts
         "last_block",             # int | None

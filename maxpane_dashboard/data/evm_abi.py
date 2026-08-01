@@ -107,6 +107,72 @@ def decode_address(hex_data: str, word_idx: int = 0) -> str:
     return "0x" + chunk[-40:].lower()
 
 
+#: Longest string we will decode out of a contract return value.  A name is a
+#: label, and an unbounded one is a way to push megabytes of attacker-chosen
+#: text into a ``DataTable`` cell.
+MAX_DECODED_STRING = 128
+
+
+def decode_string(hex_data: str, max_len: int = MAX_DECODED_STRING) -> str | None:
+    """Decode an ABI-encoded ``string`` return value, or ``None``.
+
+    Returns ``None`` -- never ``""`` -- whenever the payload is missing,
+    truncated, mis-shaped or not valid UTF-8, so a caller can tell "this
+    contract has no name" apart from "the read failed" (the repo's
+    failed-read-is-None rule).
+
+    Two real-world shapes are accepted:
+
+    * the standard dynamic encoding, ``offset || length || data``;
+    * a bare ``bytes32``, which several pre-ERC-721 collections still return
+      from ``name()``.  These are detected by the payload being exactly one
+      word that does not look like a valid offset, and are read as
+      NUL-padded ASCII.
+
+    Everything is bounds-checked against the actual payload length: a hostile
+    contract can return a 4 GB length prefix with no data behind it, and
+    ``int(...)`` on that would otherwise drive a huge allocation.
+    """
+    raw = strip0x(hex_data or "").strip()
+    if not raw or len(raw) % 2:
+        return None
+    try:
+        payload = bytes.fromhex(raw)
+    except ValueError:
+        return None
+    if not payload:
+        return None
+
+    def _clean(text: str) -> str | None:
+        # Control characters would corrupt a TUI row regardless of markup
+        # escaping -- a lone \r rewrites the line.
+        text = "".join(ch for ch in text if ch.isprintable()).strip()
+        return text[:max_len] or None
+
+    # bytes32-style: exactly one word, and not a plausible offset.
+    if len(payload) == 32:
+        offset_guess = int.from_bytes(payload, "big")
+        if offset_guess != 32:
+            try:
+                return _clean(payload.rstrip(b"\x00").decode("utf-8"))
+            except UnicodeDecodeError:
+                return None
+
+    if len(payload) < 64:
+        return None
+    offset = int.from_bytes(payload[:32], "big")
+    if offset + 32 > len(payload):
+        return None
+    length = int.from_bytes(payload[offset : offset + 32], "big")
+    start = offset + 32
+    if length == 0 or start + length > len(payload):
+        return None
+    try:
+        return _clean(payload[start : start + length].decode("utf-8"))
+    except UnicodeDecodeError:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Encoding
 # ---------------------------------------------------------------------------
@@ -214,11 +280,13 @@ def decode_aggregate3_result(hex_data: str) -> list[tuple[bool, str]]:
 
 
 __all__ = [
+    "MAX_DECODED_STRING",
     "SEL_AGGREGATE3",
     "ZERO_ADDRESS",
     "addr_from_topic",
     "decode_address",
     "decode_aggregate3_result",
+    "decode_string",
     "decode_uint",
     "decode_uint256",
     "encode_address",

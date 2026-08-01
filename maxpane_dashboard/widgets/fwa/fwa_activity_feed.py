@@ -133,6 +133,19 @@ def _short_addr(value) -> str:
     return f"{s[:6]}..{s[-4:]}"
 
 
+def _wallet_label(event: dict, width: int = 12) -> str:
+    """Verified ENS name when the manager resolved one, else the short address.
+
+    Truncated to the same width the address occupied, so swapping a name in
+    cannot reflow the column -- the feed's layout budget is measured against
+    fixed-width cells.
+    """
+    name = str(event.get("purchaser_name") or "").strip()
+    if name:
+        return name if len(name) <= width else name[: width - 1] + "…"
+    return _short_addr(event.get("purchaser"))
+
+
 def _collection_label(event: dict) -> str:
     """Display name when we have one, else a shortened address."""
     name = event.get("collection_name")
@@ -239,7 +252,11 @@ def _event_to_markup(event, tier: str = "full", width: int = 0) -> str | None:
         return None
     try:
         ts = _hhmm(event.get("ts"))
-        wallet = _short_addr(event.get("purchaser"))
+        # Escaped because it is no longer necessarily a hex address: an ENS
+        # name is third-party text, and Textual defers `Text.from_markup` into
+        # the message pump, so a name containing `[/x]` would raise *outside*
+        # this try/except and take the app down.
+        wallet = safe_markup(_wallet_label(event))
         outcome = str(event.get("outcome") or "").strip().lower()
         color = _OUTCOME_COLORS.get(outcome, "dim")
 

@@ -82,16 +82,18 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Sequence
 from urllib.parse import urlparse
 
 import httpx
 
 from maxpane_dashboard.analytics import fwa_ev
+from maxpane_dashboard.data import ens
 from maxpane_dashboard.data.evm_abi import (
     ZERO_ADDRESS as _ZERO_ADDRESS,
     decode_address as _decode_address,
     decode_aggregate3_result as _decode_aggregate3_result,
+    decode_string,
     decode_uint as _decode_uint,
     encode_address as _encode_address,
     encode_aggregate3 as _encode_aggregate3,
@@ -264,6 +266,8 @@ SELECTORS: dict[str, str] = {
     "NFT_ADDRESS()": "0xb32c5c45",
     # -- FWAClaim
     "token()": "0xfc0c546a",
+    # -- ERC-721, read against arbitrary collection contracts
+    "name()": "0x06fdde03",
 }
 
 _SEL_AGGREGATE3 = SELECTORS["aggregate3((address,bool,bytes)[])"]
@@ -272,6 +276,9 @@ _SEL_SLOT_TO_LISTING = SELECTORS["slotToListing(uint256)"]
 _SEL_QUOTE = SELECTORS["quoteAcquisitionPrice()"]
 _SEL_TOKEN_SHARE_BPS = SELECTORS["tokenShareBps(uint256)"]
 _SEL_COLLECTION_WHITELISTED = SELECTORS["collectionWhitelisted(address)"]
+#: ERC-721 ``name()`` — read against arbitrary collection contracts, so it is
+#: only ever issued with ``allowFailure=True``.
+_SEL_ERC721_NAME = SELECTORS["name()"]
 
 
 # ---------------------------------------------------------------------------
@@ -1329,6 +1336,71 @@ class FWAClient(OwnedHttpClient):
             if position is not None:
                 positions.append(position)
         return positions
+
+    # ------------------------------------------------------------------
+    # Public: display names
+    # ------------------------------------------------------------------
+
+    async def fetch_collection_names(
+        self, addresses: Sequence[str]
+    ) -> dict[str, str]:
+        """Read ERC-721 ``name()`` for each collection address.
+
+        Returns only the addresses that answered with a usable string; the
+        caller keeps its short-address fallback for the rest.  Never raises.
+
+        This is the *authoritative* source for a collection's label and it is
+        free: one ``aggregate3`` covers the whole pool.  The odds board used to
+        take names from the marketplace floor lookup as a side effect, so a
+        collection was named only if it also happened to be priced -- 1 of 52
+        in practice, leaving the board a wall of hex.  ``name()`` answers for
+        all of them, including CryptoPunks via its 721 wrapper.
+
+        ``allowFailure`` is what makes this safe to point at arbitrary
+        addresses: a contract with no ``name()`` (or none at all) comes back as
+        a failed sub-call rather than reverting the batch.
+        """
+        wanted: list[str] = []
+        seen: set[str] = set()
+        for addr in addresses or ():
+            key = str(addr or "").lower()
+            if key.startswith("0x") and len(key) == 42 and key not in seen:
+                seen.add(key)
+                wanted.append(key)
+        if not wanted:
+            return {}
+
+        try:
+            results = await self._multicall([(a, _SEL_ERC721_NAME) for a in wanted])
+        except Exception as exc:  # noqa: BLE001 — cosmetic read, degrade quietly
+            logger.warning("collection name batch failed: %s", exc)
+            return {}
+
+        out: dict[str, str] = {}
+        for addr, (ok, data) in zip(wanted, results):
+            if not ok:
+                continue
+            name = decode_string(data)
+            if name:
+                out[addr] = name
+        logger.debug("resolved %d/%d collection names", len(out), len(wanted))
+        return out
+
+    async def fetch_ens_names(
+        self, addresses: Sequence[str], *, limit: int = ens.MAX_ADDRESSES
+    ) -> dict[str, str]:
+        """Reverse-resolve wallet addresses to **forward-verified** ENS names.
+
+        Thin pass-through to :func:`maxpane_dashboard.data.ens.resolve_names`
+        with this client's multicall, so ENS inherits the same endpoint pool
+        and failure handling as every other read.  See that module for why the
+        forward check is not optional.
+        """
+        try:
+            return await ens.resolve_names(addresses, self._multicall, limit=limit)
+        except Exception as exc:  # noqa: BLE001 — cosmetic read, degrade quietly
+            logger.warning("ENS batch failed: %s", exc)
+            return {}
 
 
 __all__ = [

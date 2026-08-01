@@ -143,9 +143,10 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from maxpane_dashboard.analytics import fwa_ev
+from maxpane_dashboard.data import ens
 from maxpane_dashboard.analytics.fwa_signals import (
     buy_gate_signal,
     emissions_signal,
@@ -297,6 +298,12 @@ CHASE_ROWS = 25
 
 #: Crown-history rows kept in the persisted last-good payload.
 CROWN_HISTORY_CAP = 25
+
+#: How long "this address has no ENS name" is believed before asking again.
+#: Shorter than the positive TTL on purpose: a wallet that registers a name
+#: should pick it up in an hour, while a name that *exists* is stable enough to
+#: cache for six.  Both are cheap to be wrong about in only one direction.
+ENS_MISS_TTL_SECONDS = 60 * 60
 
 #: Sparkline depth (hourly candles).
 OHLCV_LIMIT = 100
@@ -504,6 +511,8 @@ class FWAManager:
 
         # Detached background floor sweep (never awaited by a cycle).
         self._floor_task: asyncio.Task | None = None
+        # Detached background label sweep: collection name() and verified ENS.
+        self._name_task: asyncio.Task | None = None
 
         #: Live config parameters resolved against ``ConfigSet`` history. Not a
         #: data key — the flat contract has no parameter table — but the resolved
@@ -912,6 +921,12 @@ class FWAManager:
         # pool, which is why this sits after assembly rather than inside Pool C.
         if TIER_SLOW in tiers or self._floor_task is None:
             self._start_floor_sweep()
+
+        # Labels for whatever this payload is actually about to render -- the
+        # feed and the crown leaderboard are the only places a raw wallet
+        # reaches the screen, so resolving anything else would be work nobody
+        # sees.
+        self._start_name_sweep(self._visible_wallets(payload))
 
         self._sample_series(now, payload)
         self.save_cache()
@@ -1413,6 +1428,106 @@ class FWAManager:
             )
 
     # ------------------------------------------------------------------
+    # Display names — collection ``name()`` and verified ENS
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _visible_wallets(payload: Mapping[str, Any]) -> tuple[str, ...]:
+        """Every wallet address this payload will actually put on screen.
+
+        Order matters: the crown leaderboard is a short, stable list that sits
+        on screen permanently, while the activity feed churns every tick.
+        Crown first means the addresses a user looks at longest are the ones
+        that survive the ``limit`` when the feed is busy.
+        """
+        out: list[str] = []
+        seen: set[str] = set()
+
+        def _add(value: Any) -> None:
+            addr = str(value or "").lower()
+            if addr.startswith("0x") and len(addr) == 42 and addr not in seen:
+                seen.add(addr)
+                out.append(addr)
+
+        _add(payload.get("crown_holder"))
+        for row in payload.get("crown_history") or ():
+            if isinstance(row, Mapping):
+                _add(row.get("holder"))
+        for row in payload.get("draw_events") or ():
+            if isinstance(row, Mapping):
+                _add(row.get("purchaser"))
+        return tuple(out)
+
+    def _start_name_sweep(self, wallets: tuple[str, ...] = ()) -> None:
+        """Resolve any labels we are still missing, in the background.
+
+        Deliberately *not* on the critical path.  A label is cosmetic: the
+        board must render on the tick it has data for, with hex if that is all
+        it has, and improve on a later tick.  Blocking the payload on a name
+        lookup would trade a correct number now for a prettier one later.
+        """
+        if self._name_task is not None and not self._name_task.done():
+            return
+        unknown_collections = tuple(
+            addr
+            for addr in self._collection_addresses
+            if not self.cache.get_collection_name(addr)
+        )
+        now = float(self._clock())
+        fresh_ens = self.cache.ens_names_fresh(ens.DEFAULT_TTL_SECONDS, now)
+        # Most wallets have no ENS name at all. Without the miss cache they are
+        # re-queried on every tick forever -- four multicalls of pure waste per
+        # refresh against endpoints we do not pay for.
+        known_missing = self.cache.ens_misses_fresh(ENS_MISS_TTL_SECONDS, now)
+        unknown_wallets = tuple(
+            w for w in wallets
+            if w.lower() not in fresh_ens and w.lower() not in known_missing
+        )
+        if not unknown_collections and not unknown_wallets:
+            return
+        try:
+            self._name_task = asyncio.create_task(
+                self._sweep_names(unknown_collections, unknown_wallets)
+            )
+        except RuntimeError as exc:  # no running loop
+            logger.debug("could not start the FWA name sweep: %s", exc)
+
+    async def _sweep_names(
+        self, collections: tuple[str, ...], wallets: tuple[str, ...]
+    ) -> None:
+        """Background label resolution.  Never raises, never blocks a render."""
+        if collections:
+            try:
+                names = await self.client.fetch_collection_names(collections)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("FWA collection-name sweep failed: %s", exc)
+            else:
+                if names:
+                    _safe_call(self.cache.set_collection_names, names)
+                    logger.info(
+                        "resolved %d/%d collection names", len(names), len(collections)
+                    )
+        if wallets:
+            try:
+                resolved = await self.client.fetch_ens_names(wallets)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("FWA ENS sweep failed: %s", exc)
+            else:
+                stamp = float(self._clock())
+                if resolved:
+                    _safe_call(self.cache.set_ens_names, resolved, ts=stamp)
+                _safe_call(
+                    self.cache.note_ens_misses,
+                    [w for w in wallets if w.lower() not in resolved],
+                    ts=stamp,
+                )
+                logger.info("resolved %d/%d ENS names", len(resolved), len(wallets))
+
+    # ------------------------------------------------------------------
     # Assembly
     # ------------------------------------------------------------------
 
@@ -1432,10 +1547,20 @@ class FWAManager:
 
         self._remember_listings(positions)
         odds_stale = bool(state.get("sweep_stale")) or not self._invariants_ok
+        # Collection labels.  The marketplace quote is the *fallback* here, not
+        # the source: a floor quote only exists for a collection someone has
+        # priced, so deriving names from it alone named 1 of 52 and left the
+        # odds board a wall of hex.  ``name()`` is on-chain, free in the same
+        # multicall, immutable once read, and answered for all 48 collections
+        # in the live pool -- so the cached on-chain name wins wherever we have
+        # one, and the quote only fills gaps.
         names = {
             str(addr).lower(): (getattr(quote, "name", None) or None)
             for addr, quote in floors.items()
         }
+        for addr, onchain in self.cache.collection_names_snapshot().items():
+            if onchain:
+                names[addr] = onchain
 
         # -- price legs.  Never a computed guess, never a sum. ----------------
         fee_wei = _opt_int(_first(hot.get("quote_fee_wei"), hot.get("acquisition_fee")))
@@ -1576,17 +1701,22 @@ class FWAManager:
         log_payload: dict[str, Any] = logs.get("payload") or {}
         log_live = bool(logs.get("live"))
         as_of = _opt_float(logs.get("as_of_ts"))
+        ens_names = self.cache.ens_names_fresh(ens.DEFAULT_TTL_SECONDS, now)
         draw_rows = [
-            self._draw_row(row, names)
+            self._draw_row(row, names, ens_names)
             for row in (log_payload.get("draw_events") or [])
             if isinstance(row, dict)
         ]
         mix_rows = [
             dict(row) for row in (log_payload.get("settlement_mix") or []) if isinstance(row, dict)
         ]
-        crown_rows = [
-            dict(row) for row in (log_payload.get("crown_history") or []) if isinstance(row, dict)
-        ]
+        crown_rows = []
+        for row in (log_payload.get("crown_history") or []):
+            if not isinstance(row, dict):
+                continue
+            row = dict(row)
+            row["holder_name"] = ens_names.get(str(row.get("holder") or "").lower())
+            crown_rows.append(row)
         settle_has_data = bool(crown_rows) or any(
             int(row.get("count") or 0) > 0 for row in mix_rows
         )
@@ -1636,6 +1766,9 @@ class FWAManager:
             ),
             "crown_seize_eth": _wei_to_eth(crown.seize_wei) if crown else None,
             "crown_holder": crown.depositor if crown else None,
+            "crown_holder_name": (
+                ens_names.get(str(crown.depositor or "").lower()) if crown else None
+            ),
             "crown_vacant": bool(crown.vacant) if crown else False,
             "crown_available": crown is not None,
             # ---- odds board -------------------------------------------------
@@ -1876,14 +2009,23 @@ class FWAManager:
         )
 
     @staticmethod
-    def _draw_row(raw: dict[str, Any], names: dict[str, str | None]) -> dict:
+    def _draw_row(
+        raw: dict[str, Any],
+        names: dict[str, str | None],
+        ens_names: dict[str, str] | None = None,
+    ) -> dict:
         """One activity-feed row: the wei -> ETH boundary for ``amount_wei``."""
         collection = str(raw.get("collection") or "").lower()
+        purchaser = str(raw.get("purchaser") or "")
         return {
             "ts": _opt_int(raw.get("ts")) or 0,
             "block_number": _opt_int(raw.get("block_number")) or 0,
             "tx_hash": str(raw.get("tx_hash") or ""),
-            "purchaser": str(raw.get("purchaser") or ""),
+            "purchaser": purchaser,
+            # Verified ENS name or nothing -- the widget keeps the shortened
+            # address as its fallback, so an unresolved wallet renders exactly
+            # as it did before.
+            "purchaser_name": (ens_names or {}).get(purchaser.lower()),
             "collection": collection,
             "collection_name": raw.get("collection_name") or names.get(collection),
             "token_id": _opt_int(raw.get("token_id")),

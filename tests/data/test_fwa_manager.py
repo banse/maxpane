@@ -21,6 +21,7 @@ import pytest
 
 from maxpane_dashboard.analytics import fwa_ev
 from maxpane_dashboard.analytics.fwa_signals import SIGNAL_BAD
+from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import fwa_logs as fl
 from maxpane_dashboard.data.fwa_cache import (
     TIER_FAST,
@@ -555,10 +556,11 @@ def manager(tmp_path):
 
 
 async def _drain(manager):
-    """Let any detached floor task finish so no test leaks a pending task."""
-    task = manager._floor_task
-    if task is not None:
-        await asyncio.gather(task, return_exceptions=True)
+    """Let detached background tasks finish so no test leaks a pending task."""
+    for attr in ("_floor_task", "_name_task"):
+        task = getattr(manager, attr, None)
+        if task is not None:
+            await asyncio.gather(task, return_exceptions=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1269,3 +1271,87 @@ async def test_error_count_increments_and_is_reported(tmp_path):
     assert first["error_count"] > 0
     assert second["error_count"] > first["error_count"]
     assert second["poll_interval"] == 30
+
+
+# ---------------------------------------------------------------------------
+# Display names (see tests/data/test_fwa_display_names.py for the codec)
+# ---------------------------------------------------------------------------
+
+
+async def test_onchain_name_beats_the_marketplace_quote(manager):
+    """The fix for a board that was 51/52 hex.
+
+    Names used to come *only* from the floor quote, so a collection was named
+    only if it was also priced. The cached on-chain ``name()`` must win, and
+    must apply to collections the marketplace has never heard of.
+    """
+    manager.cache.set_collection_names({
+        COLL_MID: "Ten Thousand Tokens",
+        COLL_PUNKS: "CryptoPunks 721",
+    })
+
+    data = await manager.fetch_and_compute()
+    by_address = {row["address"]: row for row in data["collection_odds"]}
+
+    assert by_address[COLL_MID]["name"] == "Ten Thousand Tokens"
+    assert by_address[COLL_PUNKS]["name"] == "CryptoPunks 721"
+    await _drain(manager)
+
+
+async def test_a_collection_without_a_name_still_renders_its_address(manager):
+    """No name is not an error -- the row falls back, it does not blank."""
+    data = await manager.fetch_and_compute()
+    by_address = {row["address"]: row for row in data["collection_odds"]}
+
+    assert by_address[COLL_MID]["name"], "an unnamed collection rendered nothing"
+    await _drain(manager)
+
+
+async def test_verified_ens_reaches_the_feed_and_the_crown(manager):
+    """The manager, not the widget, decides which label an address gets."""
+    data = await manager.fetch_and_compute()
+    wallets = [row["purchaser"] for row in data["draw_events"]]
+    assert wallets, "fixture has no draw events -- this test cannot bite"
+
+    manager.cache.set_ens_names(
+        {wallets[0]: "someone.eth"}, ts=manager._clock_double()
+    )
+    data = await manager.fetch_and_compute()
+
+    labelled = [r for r in data["draw_events"] if r["purchaser"] == wallets[0]]
+    assert labelled and all(r["purchaser_name"] == "someone.eth" for r in labelled)
+    others = [r for r in data["draw_events"] if r["purchaser"] != wallets[0]]
+    assert all(r["purchaser_name"] is None for r in others), (
+        "an unresolved wallet must stay None so the widget falls back to hex"
+    )
+    await _drain(manager)
+
+
+async def test_expired_ens_names_are_not_rendered(manager):
+    """A lapsed name is worse than hex -- it is someone else's identity."""
+    data = await manager.fetch_and_compute()
+    wallet = data["draw_events"][0]["purchaser"]
+    manager.cache.set_ens_names({wallet: "someone.eth"}, ts=manager._clock_double())
+
+    manager._clock_double.advance(ens.DEFAULT_TTL_SECONDS + 60)
+    data = await manager.fetch_and_compute()
+
+    assert all(r["purchaser_name"] is None for r in data["draw_events"])
+    await _drain(manager)
+
+
+def test_visible_wallets_puts_the_crown_before_the_feed():
+    """The crown list is small and permanent; the feed churns every tick.
+
+    Ordering decides who survives the resolver's ``limit`` on a busy pool.
+    """
+    payload = {
+        "crown_holder": "0x" + "aa" * 20,
+        "crown_history": [{"holder": "0x" + "bb" * 20}],
+        "draw_events": [{"purchaser": "0x" + "cc" * 20}, {"purchaser": "0x" + "aa" * 20}],
+    }
+
+    got = FWAManager._visible_wallets(payload)
+
+    assert got == ("0x" + "aa" * 20, "0x" + "bb" * 20, "0x" + "cc" * 20)
+    assert len(got) == len(set(got)), "duplicate addresses cost round trips"

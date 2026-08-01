@@ -226,6 +226,20 @@ def _short_addr(value) -> str:
     return f"{s[:6]}..{s[-4:]}"
 
 
+def _holder_label(row: dict, width: int = 14) -> str:
+    """Verified ENS name for a crown holder, else the shortened address.
+
+    Escaped: this lands in a ``DataTable`` cell, and an ENS name is
+    third-party text where a raw address never was.
+    """
+    name = str(row.get("holder_name") or "").strip()
+    if name:
+        text = name if len(name) <= width else name[: width - 1] + "…"
+    else:
+        text = _short_addr(row.get("holder"))
+    return safe_markup(text)
+
+
 def _hhmm(timestamp) -> str:
     try:
         ts = int(timestamp or 0)
@@ -612,7 +626,7 @@ class FWASettlementTable(Vertical):
             table.add_row(
                 *_cells(
                     {
-                        "label": f"{rank}. {_short_addr(row.get('holder'))}",
+                        "label": f"{rank}. {_holder_label(row)}",
                         reign_key: _fmt_int(row.get("reigns")),
                         "eth": _fmt_eth(row.get("payout_eth")),
                     },
