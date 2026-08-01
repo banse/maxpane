@@ -21,8 +21,10 @@ import pytest
 
 from maxpane_dashboard.analytics import fwa_ev
 from maxpane_dashboard.analytics.fwa_signals import SIGNAL_BAD
+import maxpane_dashboard.data.fwa_manager as fm
 from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import fwa_logs as fl
+from maxpane_dashboard.data.fwa_logs import CONFIG_KEY_SURCHARGE
 from maxpane_dashboard.data.fwa_cache import (
     TIER_FAST,
     TIER_MEDIUM,
@@ -309,6 +311,7 @@ class FakeStateClient:
         self.closed = False
         self.sweep_gate: asyncio.Event | None = None
         self.raise_on_hot = False
+        self.sweep_kwargs: list[dict] = []
 
     async def fetch_hot_batch(self, **_kwargs):
         self.hot_calls += 1
@@ -325,6 +328,7 @@ class FakeStateClient:
 
     async def sweep_positions(self, **_kwargs):
         self.sweep_calls += 1
+        self.sweep_kwargs.append(dict(_kwargs))
         if self.sweep_gate is not None:
             await self.sweep_gate.wait()
         if self.fail:
@@ -355,6 +359,7 @@ class FakeLogClient:
         self.closed = False
         self.state_imported = None
         self.raise_on_snapshot = False
+        self.config_entries: list[dict] = []
 
     async def head_block(self):
         return self.head
@@ -392,6 +397,10 @@ class FakeLogClient:
 
     def entries(self, event):
         if event == "ConfigSet":
+            # Tests may inject their own ConfigSet history; the default is the
+            # real crown-tithe change (key 15, 500 -> 100) the fixtures carry.
+            if self.config_entries:
+                return list(self.config_entries)
             return [{"key": 15, "value": 100, "block_number": 25_592_190,
                      "log_index": 0}]
         return []
@@ -1355,3 +1364,126 @@ def test_visible_wallets_puts_the_crown_before_the_feed():
 
     assert got == ("0x" + "aa" * 20, "0x" + "bb" * 20, "0x" + "cc" * 20)
     assert len(got) == len(set(got)), "duplicate addresses cost round trips"
+
+
+# ---------------------------------------------------------------------------
+# Live surchargeBps (see tests/data/test_fwa_surcharge.py for the arithmetic)
+# ---------------------------------------------------------------------------
+
+
+def _config_set(key: int, value: int, block: int) -> dict:
+    return {
+        "topics": ["0x" + "00" * 32, "0x" + f"{key:064x}"],
+        "data": "0x" + f"{value:064x}",
+        "block_number": block,
+        "log_index": key,
+        "tx_hash": "0x" + f"{block:064x}",
+        "event": "ConfigSet",
+        "key": key,
+        "value": value,
+        "name": "SURCHARGE_BPS",
+    }
+
+
+async def test_the_live_surcharge_reaches_the_sweep(tmp_path):
+    """The end-to-end wiring, which no unit test above can see.
+
+    ``surchargeBps`` has no getter, so the manager must lift it out of
+    ``ConfigSet`` history and hand it to the next sweep. Without this the
+    client's careful ``None`` default just means the fee is never checked at
+    all -- a silent downgrade rather than a fix.
+    """
+    logs = FakeLogClient()
+    logs.config_entries = [_config_set(CONFIG_KEY_SURCHARGE, 500, block=900)]
+    state = FakeStateClient()
+    manager = _manager(tmp_path, state=state, logs=logs)
+
+    await manager.fetch_and_compute()
+    assert manager._live_surcharge_bps == 500, "the ConfigSet value was not read"
+
+    manager.cache.invalidate_sweep("test: force a second sweep")
+    await manager.fetch_and_compute()
+
+    assert state.sweep_kwargs[-1].get("surcharge_bps") == 500
+    await _drain(manager)
+
+
+async def test_an_unread_surcharge_is_passed_as_none_not_a_default(tmp_path):
+    """No ConfigSet history means no value -- and no guess."""
+    logs = FakeLogClient()
+    logs.config_entries = []
+    state = FakeStateClient()
+    manager = _manager(tmp_path, state=state, logs=logs)
+
+    await manager.fetch_and_compute()
+
+    assert manager._live_surcharge_bps is None
+    assert state.sweep_kwargs[0].get("surcharge_bps") is None
+    await _drain(manager)
+
+
+async def test_a_surcharge_change_is_picked_up(tmp_path):
+    """The owner moved it 1000 -> 500 mid-flight once already."""
+    logs = FakeLogClient()
+    logs.config_entries = [_config_set(CONFIG_KEY_SURCHARGE, 1000, block=100)]
+    manager = _manager(tmp_path, logs=logs)
+
+    await manager.fetch_and_compute()
+    assert manager._live_surcharge_bps == 1000
+
+    logs.config_entries.append(_config_set(CONFIG_KEY_SURCHARGE, 500, block=900))
+    await manager.fetch_and_compute()
+
+    assert manager._live_surcharge_bps == 500
+    await _drain(manager)
+
+
+async def test_the_ev_rebate_is_sized_with_the_live_surcharge(tmp_path, monkeypatch):
+    """The rebate is the surcharge slice of the fee, so it needs the same value.
+
+    Letting ``pull_ev_band`` fall back to its own 1000 default while the chain
+    ran 500 inflated the rebate 1.91x. That is one call site away from the
+    invariant bug and fails the same way: silently, in the optimistic
+    direction, on the flagship number.
+    """
+    logs = FakeLogClient()
+    logs.config_entries = [_config_set(CONFIG_KEY_SURCHARGE, 500, block=900)]
+    manager = _manager(tmp_path, logs=logs)
+
+    seen: list = []
+    real = fm.fwa_ev.pull_ev_band
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("surcharge_bps", "NOT PASSED"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(fm.fwa_ev, "pull_ev_band", spy)
+
+    await manager.fetch_and_compute()
+    await manager.fetch_and_compute()
+
+    assert seen, "pull_ev_band was never called -- this test cannot bite"
+    assert seen[-1] == 500, (
+        f"the EV rebate was sized with {seen[-1]!r}, not the live surchargeBps"
+    )
+    await _drain(manager)
+
+
+async def test_an_unknown_surcharge_sizes_the_rebate_at_zero(tmp_path, monkeypatch):
+    """No live value means no claimed rebate, not a defaulted one."""
+    logs = FakeLogClient()
+    logs.config_entries = []
+    manager = _manager(tmp_path, logs=logs)
+
+    seen: list = []
+    real = fm.fwa_ev.pull_ev_band
+    monkeypatch.setattr(
+        fm.fwa_ev,
+        "pull_ev_band",
+        lambda *a, **k: (seen.append(k.get("surcharge_bps", "NOT PASSED")), real(*a, **k))[1],
+    )
+
+    await manager.fetch_and_compute()
+
+    assert seen and seen[-1] == 0
+    await _drain(manager)

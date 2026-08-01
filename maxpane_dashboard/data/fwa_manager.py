@@ -171,7 +171,9 @@ from maxpane_dashboard.data.fwa_client import FWAClient
 from maxpane_dashboard.data.fwa_logs import (
     REASON_UNAVAILABLE,
     SETTLEMENT_EVENTS,
+    CONFIG_KEY_SURCHARGE,
     FWALogClient,
+    latest_config_value,
     settlement_mix_rows,
 )
 from maxpane_dashboard.data.fwa_market import FWAMarketClient, floors_for_ev
@@ -513,6 +515,12 @@ class FWAManager:
         self._floor_task: asyncio.Task | None = None
         # Detached background label sweep: collection name() and verified ENS.
         self._name_task: asyncio.Task | None = None
+        #: Live ``surchargeBps`` from the last ConfigSet for key 13, or None
+        #: until the log pool has produced one.  ``surchargeBps`` has no getter,
+        #: so this event is the only live source; None means "not read", and
+        #: the sweep then declines to assert the fee rather than assert it
+        #: against a guess.
+        self._live_surcharge_bps: int | None = None
 
         #: Live config parameters resolved against ``ConfigSet`` history. Not a
         #: data key — the flat contract has no parameter table — but the resolved
@@ -1020,7 +1028,9 @@ class FWAManager:
         """Sweep, check the invariants, publish atomically."""
         self._sweep_running = True
         try:
-            block, positions, report = await self.client.sweep_positions()
+            block, positions, report = await self.client.sweep_positions(
+                surcharge_bps=self._live_surcharge_bps
+            )
         except Exception as exc:  # noqa: BLE001 — documented not to raise
             logger.warning("FWA position sweep raised: %s", exc)
             # A sweep that never ran violated no invariant.  Flipping the flag
@@ -1610,6 +1620,17 @@ class FWAManager:
         floors_eth = _safe_call(floors_for_ev, floors, default={}) or {}
         band = None
         if pairs and fee_wei is not None:
+            # The rebate is the *surcharge slice* of the fee, so sizing it needs
+            # the live surchargeBps too.  Letting this default to 1000 while the
+            # chain ran 500 inflated the rebate 1.91x (0.0096 vs 0.0050 ETH per
+            # pull) and pushed the EV optimistic by the difference.
+            #
+            # Unknown means 0, not the documented default: with no live value we
+            # cannot split the fee into base and surcharge, and claiming a
+            # rebate we cannot size is the failure mode this whole fix is about.
+            # ``surcharge_wei`` returns 0 for 0, so the EV simply omits the
+            # rebate and errs pessimistic -- the same direction as its lower
+            # bound.
             band = _safe_call(
                 fwa_ev.pull_ev_band,
                 pairs,
@@ -1617,6 +1638,10 @@ class FWAManager:
                 fee_wei,
                 payout_bps,
                 rebate_share,
+                surcharge_bps=(
+                    0 if self._live_surcharge_bps is None
+                    else self._live_surcharge_bps
+                ),
             )
         pull_ev = None
         if band is not None:
@@ -1655,6 +1680,22 @@ class FWAManager:
         # status bar / a future drill-down and, more usefully, they make an
         # owner write loud: the owner is a plain EOA with no multisig and no
         # timelock and has already moved the crown tithe mid-flight.
+        # ``surchargeBps`` has no getter, so the last ConfigSet for key 13 *is*
+        # the live value.  Resolved here, used by the *next* sweep: the sweep
+        # runs earlier in the cycle than the log pool's payload lands, and
+        # coupling their order to share it within one tick would buy a single
+        # tick of latency at the cost of a real dependency.
+        surcharge = _safe_call(
+            latest_config_value, config_events, CONFIG_KEY_SURCHARGE, default=None
+        )
+        if surcharge is not None and int(surcharge) >= 0:
+            if surcharge != self._live_surcharge_bps:
+                logger.info(
+                    "live surchargeBps resolved to %s (was %s)",
+                    surcharge, self._live_surcharge_bps,
+                )
+            self._live_surcharge_bps = int(surcharge)
+
         self.config_params = tuple(
             _safe_call(resolve_config_params, config_events, live_params, default=[]) or ()
         )

@@ -1033,6 +1033,41 @@ def config_history(
     return rows
 
 
+#: ``ConfigSet`` key index for ``surchargeBps``, straight from
+#: ``config_keys.json``.  Named for what it is -- a key *index*, not a bps
+#: value -- so it stays clearly outside rule 6: freezing a parameter's value is
+#: the thing that drifts, while the key it is stored under is part of the ABI.
+CONFIG_KEY_SURCHARGE = 13
+
+
+def latest_config_value(
+    entries: Iterable[Mapping[str, Any]], key: int
+) -> int | None:
+    """Current on-chain value of one config key, or ``None`` if never written.
+
+    For keys with **no getter** the ``ConfigSet`` log *is* the state: the only
+    way the value moves is ``setUint``, which emits this event. That makes the
+    last event for a key the live value, provided the full history has been
+    scanned (the once tier backfills it).
+
+    ``include_launch=True`` is essential and easy to get wrong. The launch
+    write is filtered out of the drift *display* because 21 launch writes read
+    as 21 owner actions -- but a key written only at launch still holds that
+    value, and excluding it here would report ``None`` for every parameter
+    nobody has touched since deployment.
+
+    Returns ``None`` rather than a documented default: an unread parameter must
+    stay distinguishable from one we know (rule 4).
+    """
+    latest: dict[int, int] = {}
+    for row in config_history(entries, include_launch=True):
+        try:
+            latest[int(row["key"])] = int(row["value"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    return latest.get(int(key))
+
+
 def config_params(
     entries: Iterable[Mapping[str, Any]],
     live_values: Mapping[int, int] | None = None,

@@ -414,32 +414,44 @@ def check_sweep_invariants(
     weighted_backing_total_onchain: int,
     acquisition_fee_onchain: int,
     fee_share_total_onchain: int | None = None,
-    surcharge_bps: int = fwa_ev.DEFAULT_SURCHARGE_BPS,
+    surcharge_bps: int | None = None,
 ) -> dict[str, Any]:
-    """Recompute the three on-chain aggregates from a swept position set.
+    """Recompute the on-chain aggregates from a swept position set.
 
     Returns a report dict; ``report["invariants_ok"]`` is ``True`` only when the
-    row count matches ``activeListingCount()`` **and** all three aggregates
-    reproduce bit-for-bit at the pinned block::
+    row count matches ``activeListingCount()`` **and** the aggregates reproduce
+    bit-for-bit at the pinned block::
 
-        Σ (1e36 // value)                        == totalWeight()
-        Σ (weight * value)                       == weightedBackingTotal()
-        (Σ weighted // Σ weight) * 11000 // 10000 == acquisitionFee()
+        Σ (1e36 // value)                                    == totalWeight()
+        Σ (weight * value)                                   == weightedBackingTotal()
+        (Σ weighted // Σ weight) * (BPS + surcharge) // BPS   == acquisitionFee()
 
     The third is deliberately two sequential floor divisions
     (:func:`fwa_ev.acquisition_fee_wei`); collapsing them into one expression
     changes the integer by up to a wei and the check would then fail on a
     correct sweep.
 
-    A mismatch is logged at ERROR and reported — never raised.  The manager
-    marks the odds board stale; nothing derived from an incomplete sweep is
-    published (PRD §7 rule 11).
+    **``surcharge_bps=None`` means "not read", and the fee is then not
+    asserted.** ``surchargeBps`` has no getter, so its only live source is the
+    last ``ConfigSet`` for key 13. This used to default to the documented 1000
+    bps, and when the owner moved it to 500 the check began failing on every
+    sweep -- computing exactly ``onchain * 1.10/1.05``. The other two
+    aggregates still matched, because the sweep was *correct*: the fee is
+    derived from them and therefore proves nothing about completeness that they
+    do not already prove. It tests the surcharge constant and nothing else. The
+    cost of asserting it against a guess was a permanently stale odds board and
+    a suppressed EV card on data that was fine (rule 4: read it live, or do not
+    assert on it).
     """
+    fee_checked = surcharge_bps is not None
+    effective_surcharge = (
+        fwa_ev.DEFAULT_SURCHARGE_BPS if surcharge_bps is None else int(surcharge_bps)
+    )
     backings = [p.backing_wei for p in positions if p.backing_wei > 0]
     computed_tw = fwa_ev.total_weight(backings)
     computed_wbt = fwa_ev.weighted_backing_total(backings)
     computed_fee = fwa_ev.acquisition_fee_wei(
-        computed_wbt, computed_tw, surcharge_bps
+        computed_wbt, computed_tw, effective_surcharge
     )
     backing_total = sum(backings)
 
@@ -465,10 +477,11 @@ def check_sweep_invariants(
             f"{computed_wbt} != onchain {weighted_backing_total_onchain} "
             f"(short by {weighted_backing_total_onchain - computed_wbt})"
         )
-    if computed_fee != acquisition_fee_onchain:
+    if fee_checked and computed_fee != acquisition_fee_onchain:
         mismatches.append(
             f"acquisitionFee {computed_fee} != onchain {acquisition_fee_onchain} "
-            f"(off by {computed_fee - acquisition_fee_onchain} wei)"
+            f"(off by {computed_fee - acquisition_fee_onchain} wei, "
+            f"surchargeBps={effective_surcharge})"
         )
     if weight_mismatches:
         mismatches.append(f"{weight_mismatches} rows fail weight == 1e36 // value")
@@ -499,6 +512,10 @@ def check_sweep_invariants(
         "weighted_backing_total_onchain": weighted_backing_total_onchain,
         "acquisition_fee_computed": computed_fee,
         "acquisition_fee_onchain": acquisition_fee_onchain,
+        # False means the fee was recomputed for information but not asserted,
+        # because no live surchargeBps was available to compute it from.
+        "acquisition_fee_checked": fee_checked,
+        "surcharge_bps_used": surcharge_bps,
         "backing_total_wei": backing_total,
         "weight_mismatches": weight_mismatches,
     }
@@ -1099,7 +1116,10 @@ class FWAClient(OwnedHttpClient):
     # ------------------------------------------------------------------
 
     async def sweep_positions(
-        self, *, headroom: float = SLOT_SCAN_HEADROOM
+        self,
+        *,
+        headroom: float = SLOT_SCAN_HEADROOM,
+        surcharge_bps: int | None = None,
     ) -> tuple[int, list[Position], dict[str, Any]]:
         """Enumerate every live position at one pinned block.
 
@@ -1150,7 +1170,9 @@ class FWAClient(OwnedHttpClient):
 
         self._sweep_running = True
         try:
-            return await self._sweep_positions_inner(headroom=headroom)
+            return await self._sweep_positions_inner(
+                headroom=headroom, surcharge_bps=surcharge_bps
+            )
         except Exception as exc:  # noqa: BLE001 — never escape into the loop
             logger.warning("position sweep failed: %s", exc)
             return (
@@ -1169,7 +1191,7 @@ class FWAClient(OwnedHttpClient):
             self._sweep_running = False
 
     async def _sweep_positions_inner(
-        self, *, headroom: float
+        self, *, headroom: float, surcharge_bps: int | None = None
     ) -> tuple[int, list[Position], dict[str, Any]]:
         block_number = await self.fetch_block_number()
         if block_number <= 0:
@@ -1246,6 +1268,7 @@ class FWAClient(OwnedHttpClient):
             weighted_backing_total_onchain=agg["weighted_backing_total"] or 0,
             acquisition_fee_onchain=agg["acquisition_fee"] or 0,
             fee_share_total_onchain=agg["fee_share_total"],
+            surcharge_bps=surcharge_bps,
         )
         report.update(
             {
