@@ -14,23 +14,74 @@ from maxpane_dashboard.app import MaxPaneApp
 
 _DEFAULT_FONT_SIZE = 17
 
+#: Columns the widest dashboard layout needs before the last ``‹ widen`` marker
+#: goes away.  Measured against the composited output, not estimated: SIGNALS
+#: clears at 171, ACTIVITY at 189, CHASE BOARD at 195, SETTLEMENT & CROWN at
+#: 197.  Font size is the only lever most people have over this -- a window is
+#: already as wide as the display.
+FULL_LAYOUT_COLUMNS = 198
 
-def _maximize_terminal() -> None:
-    """Maximize the terminal window and set font size before launching the TUI."""
+
+def _font_size(value: str) -> int:
+    """Parse ``--font-size``.  ``0`` means "do not touch my terminal"."""
+    try:
+        size = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid int value: {value!r}") from None
+    if size < 0 or (0 < size < 6) or size > 72:
+        raise argparse.ArgumentTypeError(
+            f"must be 0 (leave the terminal alone) or 6-72 (got {size})"
+        )
+    return size
+
+
+def _resolve_font_size(cli_value: int | None) -> int:
+    """CLI flag > ``MAXPANE_FONT_SIZE`` > the built-in default."""
+    if cli_value is not None:
+        return cli_value
+    raw = os.environ.get("MAXPANE_FONT_SIZE", "").strip()
+    if raw:
+        try:
+            return _font_size(raw)
+        except argparse.ArgumentTypeError as exc:
+            logging.getLogger(__name__).warning(
+                "ignoring MAXPANE_FONT_SIZE=%r: %s", raw, exc
+            )
+    return _DEFAULT_FONT_SIZE
+
+
+def _maximize_terminal(font_size: int = _DEFAULT_FONT_SIZE) -> None:
+    """Maximize the terminal window, and set the font size unless told not to.
+
+    The font size is the whole reason this is configurable.  Every dashboard
+    lays itself out in *columns*, and the widest tier needs
+    :data:`FULL_LAYOUT_COLUMNS`; a maximized window on a laptop display gives
+    roughly 169 columns at 17 pt, which is below three of the four thresholds.
+    Forcing 17 pt unconditionally therefore capped the layout and silently
+    overrode whatever the user had chosen -- including a smaller size chosen
+    *specifically* to fit the full layout, which made the ``‹ widen`` hints
+    look like they were lying.
+
+    ``font_size=0`` skips the font entirely and only maximizes, which is the
+    right behaviour for anyone who has already set up their terminal.
+    """
     term = os.environ.get("TERM_PROGRAM", "")
     if term == "iTerm.app":
         # Set font size via iTerm2 proprietary escape sequence
-        sys.stdout.write(f"\033]1337;SetFontSize={_DEFAULT_FONT_SIZE}\a")
+        if font_size > 0:
+            sys.stdout.write(f"\033]1337;SetFontSize={font_size}\a")
         sys.stdout.write("\033]1337;SetFullscreen=true\a")
         sys.stdout.flush()
     elif term == "Apple_Terminal":
         # Terminal.app: use AppleScript to set font size and maximize
-        import subprocess
-        subprocess.run(
-            ["osascript", "-e",
-             f'tell application "Terminal" to set font size of front window to {_DEFAULT_FONT_SIZE}'],
-            capture_output=True,
-        )
+        if font_size > 0:
+            import subprocess
+            subprocess.run(
+                ["osascript", "-e",
+                 'tell application "Terminal" to set font size of front window '
+                 f'to {font_size}'],
+                capture_output=True,
+            )
         sys.stdout.write("\033[9;1t")
         sys.stdout.flush()
     else:
@@ -171,6 +222,17 @@ def main():
         ),
     )
     parser.add_argument(
+        "--font-size",
+        type=_font_size,
+        default=None,
+        help=(
+            f"Terminal font size on launch (default: {_DEFAULT_FONT_SIZE}; "
+            "0 leaves your terminal untouched). Smaller means more columns: "
+            f"the widest dashboard layout needs {FULL_LAYOUT_COLUMNS}. "
+            "Also settable via MAXPANE_FONT_SIZE."
+        ),
+    )
+    parser.add_argument(
         "--wallet",
         default=None,
         help="Wallet address for FrenPet pet view",
@@ -198,7 +260,7 @@ def main():
     logging.getLogger("httpcore").setLevel(logging.ERROR)
     logging.getLogger("pydantic").setLevel(logging.ERROR)
 
-    _maximize_terminal()
+    _maximize_terminal(_resolve_font_size(args.font_size))
 
     # Wallet: CLI flag > env var > saved config
     from maxpane_dashboard.config import get_wallet

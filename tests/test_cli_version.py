@@ -45,7 +45,7 @@ def _run_cli(monkeypatch, argv: list[str]) -> dict:
 
     monkeypatch.setattr(cli, "MaxPaneApp", _StubApp)
     monkeypatch.setattr(
-        cli, "_maximize_terminal", lambda: captured.update(maximized=True)
+        cli, "_maximize_terminal", lambda *a, **k: captured.update(maximized=True)
     )
     monkeypatch.setattr(
         cli.logging, "basicConfig", lambda **kw: captured.update(logging_configured=True)
@@ -175,7 +175,7 @@ def test_version_does_not_start_the_app(monkeypatch, capsys) -> None:
                 raise AssertionError("--version constructed MaxPaneApp")
 
         monkeypatch.setattr(cli, "MaxPaneApp", _Explode)
-        monkeypatch.setattr(cli, "_maximize_terminal", lambda: None)
+        monkeypatch.setattr(cli, "_maximize_terminal", lambda *a, **k: None)
         monkeypatch.setattr(cli.logging, "basicConfig", lambda **kw: None)
         monkeypatch.setattr(cli.sys, "argv", ["maxpane", "--version"])
         cli.main()
@@ -198,7 +198,7 @@ def test_version_does_not_resize_the_terminal(monkeypatch, capsys) -> None:
 
         monkeypatch.setattr(cli, "MaxPaneApp", object)
         monkeypatch.setattr(
-            cli, "_maximize_terminal", lambda: captured.update(maximized=True)
+            cli, "_maximize_terminal", lambda *a, **k: captured.update(maximized=True)
         )
         monkeypatch.setattr(cli.logging, "basicConfig", lambda **kw: None)
         monkeypatch.setattr(cli.sys, "argv", ["maxpane", "--version"])
@@ -223,7 +223,7 @@ def test_version_does_not_truncate_the_log(monkeypatch, capsys) -> None:
         import maxpane_dashboard.__main__ as cli
 
         monkeypatch.setattr(cli, "MaxPaneApp", object)
-        monkeypatch.setattr(cli, "_maximize_terminal", lambda: None)
+        monkeypatch.setattr(cli, "_maximize_terminal", lambda *a, **k: None)
         monkeypatch.setattr(
             cli.logging,
             "basicConfig",

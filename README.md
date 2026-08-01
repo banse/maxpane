@@ -97,8 +97,32 @@ maxpane --game talismans       # start on Talismans view
 maxpane --game fwa             # start on Fake World Assets view
 maxpane --theme minimal        # use minimal theme
 maxpane --poll-interval 60     # poll every 60s instead of 30s
+maxpane --font-size 12         # smaller font = more columns (see below)
+maxpane --font-size 0          # leave my terminal exactly as I set it
 maxpane --version              # which build is this, and which Python runs it
 ```
+
+### Making the panes fit ("‹ widen")
+
+Widgets drop columns when their slot is too narrow and say so in the title —
+`ACTIVITY ‹ widen for amounts`, `CHASE BOARD ‹ widen: TOKEN`. That is terminal
+**width in columns**. Check yours with `tput cols`. The FWA dashboard clears
+each marker at:
+
+| columns | what still shows |
+|--------:|------------------|
+| ≤ 170 | `SIGNALS ‹ widen` |
+| ≤ 188 | `ACTIVITY ‹ widen for amounts` |
+| ≤ 194 | `CHASE BOARD ‹ widen: TOKEN` |
+| ≤ 196 | `SETTLEMENT & CROWN ‹ widen: COUNT` |
+| **≥ 198** | **nothing — full layout** |
+
+A maximized window is already as wide as your display, so **font size is the
+only lever**: roughly 169 columns at 17 pt on a laptop screen, about 205 at
+14 pt. maxpane sets 17 pt on launch, so zooming out *beforehand* gets
+overwritten — pass `--font-size 13` (or export `MAXPANE_FONT_SIZE=13`) to
+change it, or `--font-size 0` to have maxpane leave your terminal alone
+entirely.
 
 ### Checking your version
 

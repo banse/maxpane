@@ -104,7 +104,15 @@ python -m maxpane_dashboard                      # splash → game select
 python -m maxpane_dashboard --game fwa           # straight to one dashboard
 python -m maxpane_dashboard --game ttt --theme fwa
 python -m maxpane_dashboard --version            # version + interpreter path
+python -m maxpane_dashboard --font-size 0        # do not resize my terminal
 ```
+
+**Layout is a function of terminal columns.** Widgets pick a tier by width and
+advertise dropped columns as `‹ widen` in their title. FWA needs **198
+columns** for the full layout (`__main__.FULL_LAYOUT_COLUMNS`, pinned by a test
+that renders the real screen at that width). Launch forces 17 pt — about 169
+columns on a laptop — so the top tier was unreachable until `--font-size` /
+`MAXPANE_FONT_SIZE` existed.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`.
@@ -141,6 +149,7 @@ MAXPANE_BASE_RPC_URL    override the Base RPC
 MAXPANE_WALLET          default wallet address for wallet-scoped views
 MAXPANE_INDEXER_DB      local indexer database path
 MAXPANE_BASEBOARD_ENV   Base dashboard environment file
+MAXPANE_FONT_SIZE       terminal font size on launch; 0 = leave it alone
 ```
 
 ## Conventions
