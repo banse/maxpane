@@ -32,15 +32,32 @@ game-specific analytics modules, and every one of them tolerates
 
 from __future__ import annotations
 
+import logging
+
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len as _visible_len
 
+logger = logging.getLogger(__name__)
+
 _DASH = "--"
 _EMDASH = "—"
 _MAX_ROWS = 60
+#: Narrowest the COLLECTION column ever gets -- the width it used to be fixed
+#: at, which truncated almost every real name ("Ten Thousand To…",
+#: "Art Blocks Expl…", "VeeFriends Seri…").
 _NAME_WIDTH = 16
+
+#: Widest it grows to. The longest live collection name is 40 characters
+#: ("MAX PAIN AND FRENS OPEN EDITION BY XCOPY"); past this the column starts
+#: taking space from numbers that carry the board's meaning, so a handful of
+#: outliers still elide.
+_NAME_WIDTH_MAX = 34
+
+#: Every other column plus DataTable's one-column pad on each side of all
+#: seven. What is left over goes to COLLECTION.
+_FIXED_COLUMN_COST = 3 + 5 + 9 + 10 + 8 + 10 + (2 * 7)
 _NOTE_WIDTH = 44
 
 
@@ -99,11 +116,11 @@ def _fmt_ratio(value) -> str:
     return f"{v:.3f}"
 
 
-def _fmt_name(name, address) -> str:
+def _fmt_name(name, address, width: int = _NAME_WIDTH) -> str:
     if name:
         s = str(name).strip()
         if s:
-            return s if len(s) <= _NAME_WIDTH else s[: _NAME_WIDTH - 1] + "…"
+            return s if len(s) <= width else s[: max(width - 1, 1)] + "…"
     if address:
         s = str(address).strip()
         if len(s) > 11:
@@ -166,6 +183,9 @@ class FWAOddsBoard(Vertical):
         yield Static("ODDS BOARD", classes="fwa-odds-title", id="fwa-odds-title")
         yield DataTable(id="fwa-odds-table", classes="fwa-odds-table")
 
+    #: Last payload, replayed on resize so the name column can re-fit.
+    _last_payload: dict | None = None
+
     def on_mount(self) -> None:
         table = self.query_one("#fwa-odds-table", DataTable)
         table.cursor_type = "row"
@@ -190,6 +210,12 @@ class FWAOddsBoard(Vertical):
         **_kwargs,
     ) -> None:
         """Refresh the board from ``FWA_ROW_KEYS["collection_odds"]`` rows."""
+        self._last_payload = {
+            "collection_odds": collection_odds,
+            "odds_available": odds_available,
+            "odds_as_of_block": odds_as_of_block,
+            "odds_stale": odds_stale,
+        }
         table = self.query_one("#fwa-odds-table", DataTable)
         table.clear()
 
@@ -219,12 +245,17 @@ class FWAOddsBoard(Vertical):
             return
 
         rows = sorted(rows, key=_sort_key)[:_MAX_ROWS]
+        name_width = self._grow_name_column(
+            [str(r.get("name") or r.get("address") or "") for r in rows]
+        )
 
         suppressed_note = ""
         for idx, row in enumerate(rows, start=1):
             rank = row.get("rank")
             rank_str = _fmt_int(rank) if rank is not None else str(idx)
-            name = safe_markup(_fmt_name(row.get("name"), row.get("address")))
+            name = safe_markup(
+                _fmt_name(row.get("name"), row.get("address"), name_width)
+            )
             positions = _fmt_int(row.get("positions"))
             share = _fmt_pct(row.get("weight_share_pct"))
             backed = _fmt_eth(row.get("eth_backed"))
@@ -249,6 +280,46 @@ class FWAOddsBoard(Vertical):
         self._set_title(len(rows), odds_as_of_block, odds_stale, suppressed_note)
 
     # -- helpers ---------------------------------------------------------
+
+    def _grow_name_column(self, names: list[str]) -> int:
+        """Widen COLLECTION to fit its content, bounded by the space available.
+
+        The board's seven columns cost 75 rendered columns at their declared
+        widths, in a slot that measures ~118 at a 200-column terminal -- so a
+        third of the pane sat blank while every collection name was elided to
+        16 characters. The numeric columns are all fixed-width by nature (a
+        percentage, an ETH amount), so the name is the only one that can take
+        the slack, exactly as the settlement table's ``_grow_label`` does.
+
+        Sized to the **longest name actually on the board**, not to the space:
+        growing to the full slot would pad a column of 19-character names out
+        to 34 and move the numbers away from them for nothing. Bounded below by
+        the old fixed width and above by both the free space and
+        :data:`_NAME_WIDTH_MAX`.
+
+        Returns the width so the row builder elides to the same number the
+        column will really render.
+        """
+        width = max(self.content_size.width - 2, 0)
+        if width <= 0:
+            return _NAME_WIDTH
+        longest = max((len(n) for n in names), default=0)
+        name_width = max(
+            _NAME_WIDTH,
+            min(longest, width - _FIXED_COLUMN_COST, _NAME_WIDTH_MAX),
+        )
+        try:
+            table = self.query_one("#fwa-odds-table", DataTable)
+            for key in table.columns:
+                column = table.columns[key]
+                if str(column.label).strip() == "COLLECTION":
+                    if column.width != name_width:
+                        column.width = name_width
+                        table.refresh()
+                    break
+        except Exception as exc:  # noqa: BLE001 -- cosmetic, never fatal
+            logger.debug("could not resize the collection column: %s", exc)
+        return name_width
 
     def _set_title_text(self, text: str) -> None:
         """Write the title line, ignoring a not-yet-composed widget."""
@@ -285,6 +356,11 @@ class FWAOddsBoard(Vertical):
             if not width or _visible_len(text) <= width or not optional:
                 return text
             optional.pop()
+
+    def on_resize(self, _event=None) -> None:
+        """Re-render so the name column tracks the new width."""
+        if self._last_payload is not None:
+            self.update_data(**self._last_payload)
 
     def _set_title(self, count: int, block, stale, suppressed_note: str) -> None:
         """``ODDS BOARD · 52 collections · block 25,666,513``, width permitting.

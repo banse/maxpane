@@ -27,12 +27,20 @@ from __future__ import annotations
 
 import inspect
 
+import pytest
+
+from maxpane_dashboard.widgets.markup_safety import visible_len
+
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.data.fwa_models import FWA_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.fwa.fwa_hero_metrics import FWAHeroMetrics
-from maxpane_dashboard.widgets.fwa.fwa_odds_board import FWAOddsBoard
+from maxpane_dashboard.widgets.fwa.fwa_odds_board import (
+    _NAME_WIDTH,
+    _NAME_WIDTH_MAX,
+    FWAOddsBoard,
+)
 from maxpane_dashboard.widgets.fwa.fwa_sparkline import FWASparkline
 
 
@@ -642,3 +650,121 @@ async def test_sparkline_unavailable_state():
         )
         assert "price feed unavailable" in _plain(widget, "#fwa-spark-price")
         assert "no market data" in _plain(widget, "#fwa-spark-meta")
+
+
+# -- COLLECTION column sizing ------------------------------------------
+
+
+_LONG_NAMES = [
+    "MAX PAIN AND FRENS OPEN EDITION BY XCOPY",   # 40, the longest live name
+    "DRIP DROP // BY DAVE KRUGMAN",               # 28
+    "Art Blocks Explorations",                    # 23
+]
+
+
+def _named_rows(names):
+    return [
+        {
+            "rank": i + 1,
+            "address": "0x" + f"{i:040x}",
+            "name": name,
+            "positions": 100,
+            "weight_share_pct": 1.0,
+            "eth_backed": 10.0,
+            "floor_eth": None,
+            "eth_per_odds_point": None,
+            "floor_source": "missing",
+            "floor_note": "",
+        }
+        for i, name in enumerate(names)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_collection_column_grows_to_fit_the_names():
+    """A wide pane must show real names, not elide every one to 16.
+
+    The column was fixed at 16 while the board's seven columns cost 75 of a
+    ~118-column slot, so a third of the pane sat blank next to
+    "Art Blocks Expl…".
+    """
+    widget = FWAOddsBoard()
+    async with _Harness(widget).run_test(size=(120, 20)):
+        widget.update_data(collection_odds=_named_rows(_LONG_NAMES), odds_available=True)
+        table = widget.query_one(DataTable)
+        rendered = [str(table.get_row_at(i)[1]) for i in range(table.row_count)]
+
+    assert "DRIP DROP // BY DAVE KRUGMAN" in rendered, (
+        f"a 28-character name was still elided: {rendered}"
+    )
+    assert "Art Blocks Explorations" in rendered
+
+
+@pytest.mark.asyncio
+async def test_collection_column_is_sized_to_content_not_to_the_slot():
+    """Short names must not be padded out to the maximum.
+
+    Growing to the full slot would push the numbers away from a column of
+    19-character names for nothing.
+    """
+    widget = FWAOddsBoard()
+    async with _Harness(widget).run_test(size=(120, 20)):
+        widget.update_data(
+            collection_odds=_named_rows(["Nakamigos", "Doodles", "Milady"]),
+            odds_available=True,
+        )
+        table = widget.query_one(DataTable)
+        column = next(
+            table.columns[k] for k in table.columns
+            if str(table.columns[k].label).strip() == "COLLECTION"
+        )
+        width = column.width
+
+    assert width == 16, f"short names widened the column to {width}"
+
+
+@pytest.mark.asyncio
+async def test_collection_column_never_exceeds_its_cap():
+    """Past the cap the column starts stealing from the numbers."""
+    widget = FWAOddsBoard()
+    async with _Harness(widget).run_test(size=(200, 20)):
+        widget.update_data(
+            collection_odds=_named_rows(["X" * 200]), odds_available=True
+        )
+        table = widget.query_one(DataTable)
+        column = next(
+            table.columns[k] for k in table.columns
+            if str(table.columns[k].label).strip() == "COLLECTION"
+        )
+        rendered = str(table.get_row_at(0)[1])
+
+    assert column.width <= _NAME_WIDTH_MAX
+    # Measured with the markup removed: row 1 is bold, so the raw string is 9
+    # characters longer than anything the user sees.
+    assert visible_len(rendered) <= _NAME_WIDTH_MAX
+    assert visible_len(rendered) > _NAME_WIDTH, "the cap was not reached at all"
+    assert "…" in rendered
+    # A literal bound as well as the constant: asserting only against
+    # `_NAME_WIDTH_MAX` lets the cap be raised to any value at all and still
+    # pass, because the test imports the very number it is checking. 40 is the
+    # longest real collection name, so a cap far past it means the numeric
+    # columns are being crowded out for a name nobody has.
+    assert visible_len(rendered) <= 40, (
+        f"the name column grew to {visible_len(rendered)}, past any real name"
+    )
+    assert _NAME_WIDTH_MAX <= 40
+
+
+@pytest.mark.asyncio
+async def test_a_narrow_pane_still_falls_back_to_the_old_width():
+    """The growth is opportunistic: no space means the previous behaviour."""
+    widget = FWAOddsBoard()
+    async with _Harness(widget).run_test(size=(70, 20)):
+        widget.update_data(collection_odds=_named_rows(_LONG_NAMES), odds_available=True)
+        table = widget.query_one(DataTable)
+        column = next(
+            table.columns[k] for k in table.columns
+            if str(table.columns[k].label).strip() == "COLLECTION"
+        )
+
+    assert column.width == _NAME_WIDTH
