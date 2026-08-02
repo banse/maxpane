@@ -112,10 +112,7 @@ each marker at:
 | columns | what still shows |
 |--------:|------------------|
 | ≤ 170 | `SIGNALS ‹ widen` |
-| ≤ 188 | `ACTIVITY ‹ widen for amounts` |
-| ≤ 194 | `CHASE BOARD ‹ widen: TOKEN` |
-| ≤ 196 | `SETTLEMENT & CROWN ‹ widen: COUNT` |
-| **≥ 198** | **nothing — full layout** |
+| **≥ 172** | **nothing — full layout** |
 
 A maximized window is already as wide as your display, so **font size is the
 only lever**: roughly 169 columns at 17 pt on a laptop screen, about 205 at
@@ -160,9 +157,12 @@ the other, so a single manager owns the command.
 
 ### Terminal size
 
-**FWA wants ~200 columns.** That is the width at which its bottom row (activity feed · chase board ·
-settlement table) can render every column at once; the three slots measure ~81 / ~55 / ~56 columns
-there, which is exactly what the three widgets need.
+**FWA wants 172 columns.** That is the width at which every widget can render its full column set.
+
+Press **`c`** to swap the odds board for the activity feed — they share the wide middle-left slot,
+so the bottom row belongs to the chase board and the settlement table alone. That split is why the
+requirement is 172 and not 198: with the feed in the bottom row, three widgets needing 79, 54 and 55
+columns had to share it, and none of them fit until the terminal was very wide.
 
 Below that the widgets do not wrap or clip silently: each one drops its least important columns and
 says so in its own title with a `‹ widen` marker. That is deliberate, tested behaviour, not a bug —
@@ -171,7 +171,7 @@ exists to prevent.
 
 What a narrow terminal costs you, in the order things go:
 
-| Widget | At ~200 cols | At ~140 cols |
+| Widget | Full layout | At ~140 cols |
 |--------|--------------|--------------|
 | Activity feed | full line: time · wallet · collection #token · outcome · ETH | drops the ETH amounts (`‹ widen for amounts`); the outcome label is reworded, never cut mid-word |
 | Chase board | `# COLLECTION TOKEN BACKING ODDS JACKPOT` | drops `TOKEN` then `BACKING` (`‹ widen: TOKEN/BACKING`); `ODDS` and `JACKPOT` are the last to go because they carry the board's entire point |

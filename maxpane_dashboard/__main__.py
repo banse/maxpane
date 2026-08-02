@@ -15,11 +15,17 @@ from maxpane_dashboard.app import MaxPaneApp
 _DEFAULT_FONT_SIZE = 17
 
 #: Columns the widest dashboard layout needs before the last ``‹ widen`` marker
-#: goes away.  Measured against the composited output, not estimated: SIGNALS
-#: clears at 171, ACTIVITY at 189, CHASE BOARD at 195, SETTLEMENT & CROWN at
-#: 197.  Font size is the only lever most people have over this -- a window is
+#: goes away.  Measured against the composited output, not estimated.
+#:
+#: Was 198 while the FWA activity feed shared the bottom row: it took 3fr of 7
+#: and left the chase board and settlement table ~55 columns each.  Moving the
+#: feed into the odds board's slot as a ``c`` toggle gave the bottom row to
+#: those two alone and brought the requirement down to 172, where the last
+#: marker to clear is the signals panel.
+#:
+#: Font size is the only lever most people have over this -- a window is
 #: already as wide as the display.
-FULL_LAYOUT_COLUMNS = 198
+FULL_LAYOUT_COLUMNS = 172
 
 
 def _font_size(value: str) -> int:

@@ -1854,6 +1854,11 @@ FWASignals > .fwa-signals-title {
     color: $text-muted;
 }
 
+/* The feed shares the middle-left slot with FWAOddsBoard, toggled with `c`.
+ * `3fr` against #right-col's `2fr` is the odds board's own ratio, so the two
+ * views are exactly the same size -- which is why moving the feed out of the
+ * bottom row needed no rule change here. Both fill the row height with no
+ * explicit `height`; adding one measures identically and would be dead CSS. */
 FWAActivityFeed {
     width: 3fr;
     padding: 0 1;
@@ -1868,9 +1873,15 @@ FWAActivityFeed RichLog {
     scrollbar-size: 1 1;
 }
 
-/* Both bottom-right panes, sized by class rather than by content: the column
- * set inside them is responsive, so nothing here may depend on how many
- * columns survive at a given width. */
+/* The two bottom panes, sized by class rather than by content: the column set
+ * inside them is responsive, so nothing here may depend on how many columns
+ * survive at a given width.
+ *
+ * `2fr` each is an even split now they have the row to themselves. The
+ * activity feed used to take 3fr of this row and left these two ~55 columns
+ * apiece at 200 columns, under what either needs for its full column set.
+ * Deliberately not rewritten to `1fr`: 2fr+2fr and 1fr+1fr are the same
+ * split, and changing the number would imply a behaviour change there is not. */
 FWAChaseBoard, FWASettlementTable {
     width: 2fr;
     padding: 0 1;

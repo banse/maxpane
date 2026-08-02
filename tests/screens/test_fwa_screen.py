@@ -423,10 +423,16 @@ def test_widget_package_exports_all_seven():
         assert getattr(pkg, name) is _WIDGET_CLASSES[name]
 
 
-def test_bindings_are_refresh_only():
-    """No ``c`` toggle: FWA shows both bottom tables at once."""
+def test_bindings_are_refresh_and_the_view_toggle():
+    """``c`` swaps the odds board and the activity feed in one slot.
+
+    The feed used to occupy 3fr of the bottom row, which left the chase board
+    and the settlement table ~55 columns each at a 200-column terminal --
+    under what either needs for its full column set. Sharing the middle-left
+    slot with the odds board instead gives the bottom row to those two alone.
+    """
     keys = {binding.key for binding in FWAScreen.BINDINGS}
-    assert keys == {"r"}
+    assert keys == {"r", "c"}
 
 
 # -- mount / refresh ----------------------------------------------------
@@ -444,7 +450,7 @@ async def test_screen_mounts_and_refreshes():
             screen.query_one(cls)
         assert screen.query_one("#middle-row").children
         assert screen.query_one("#right-col").children
-        assert len(screen.query_one("#bottom-row").children) == 3
+        assert len(screen.query_one("#bottom-row").children) == 2
 
         await screen._do_refresh()
         await pilot.pause()
@@ -684,3 +690,141 @@ async def test_screen_resume_sets_status_bar_labels_and_starts_timer():
 
         screen.on_screen_suspend()
         assert screen._refresh_timer is None
+
+
+# -- the odds / activity toggle -----------------------------------------
+
+
+async def test_c_swaps_the_odds_board_and_the_activity_feed():
+    """One slot, two views, mutually exclusive at every step."""
+    screen = FWAScreen(_FakeManager(), poll_interval=30, name="fwa")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        text = _screen_text(app)
+        assert "ODDS BOARD" in text and "ACTIVITY" not in text
+        assert screen._active_view == "odds"
+
+        await pilot.press("c")
+        await pilot.pause()
+        text = _screen_text(app)
+        assert "ACTIVITY" in text and "ODDS BOARD" not in text
+        assert screen._active_view == "activity"
+
+        await pilot.press("c")
+        await pilot.pause()
+        text = _screen_text(app)
+        assert "ODDS BOARD" in text and "ACTIVITY" not in text
+        assert screen._active_view == "odds"
+
+
+async def test_the_bottom_row_is_unaffected_by_the_toggle():
+    """The chase board and settlement table are always on screen.
+
+    They are the reason the feed moved; a toggle that hid one of them would
+    have defeated the change.
+    """
+    screen = FWAScreen(_FakeManager(), poll_interval=30, name="fwa")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        for _ in range(3):
+            text = _screen_text(app)
+            assert "CHASE BOARD" in text
+            assert "SETTLEMENT" in text
+            await pilot.press("c")
+            await pilot.pause()
+
+
+async def test_the_hidden_view_still_receives_updates():
+    """Both widgets are mounted and dispatched to, whichever is showing.
+
+    Creating the feed on demand would leave it empty for a beat after the
+    first toggle, which reads as a bug. This asserts the feed has content
+    *before* it is ever shown.
+    """
+    screen = FWAScreen(_FakeManager(), poll_interval=30, name="fwa")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        calls = _record_dispatches(screen)
+        await screen._do_refresh()
+        await pilot.pause()
+
+        assert calls["FWAActivityFeed"], "the hidden feed was never updated"
+        assert calls["FWAOddsBoard"]
+
+        # and it renders immediately on the very first toggle
+        await pilot.press("c")
+        await pilot.pause()
+        assert "ACTIVITY" in _screen_text(app)
+
+
+async def test_the_toggle_survives_a_missing_widget():
+    """A toggle must never take the screen down.
+
+    Guarded because the view flip runs outside the refresh path's per-widget
+    try/except.
+    """
+    screen = FWAScreen(_FakeManager(), poll_interval=30, name="fwa")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        screen.query_one(FWAOddsBoard).remove()
+        await pilot.pause()
+
+        screen.action_toggle_view()  # must not raise
+        await pilot.pause()
+
+        assert screen._active_view == "activity"
+
+
+async def test_the_status_bar_names_the_active_view():
+    """Same affordance Talismans and TTT use, so `c` is discoverable."""
+    screen = FWAScreen(_FakeManager(), poll_interval=30, name="fwa")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        seen = []
+        bar = screen.query_one(StatusBar)
+        original = bar.set_active_view
+        bar.set_active_view = lambda v: (seen.append(v), original(v))[1]
+
+        screen.action_toggle_view()
+        await pilot.pause()
+
+        assert seen == ["activity"]
+
+
+async def test_both_views_get_the_identical_slot():
+    """The toggle must not resize the panel underneath it.
+
+    The feed's ``width: 3fr`` against ``#right-col``'s ``2fr`` is the odds
+    board's own ratio, which is the whole reason moving the feed between rows
+    needed no stylesheet change. Give either widget a different width and the
+    layout jumps on every ``c`` press -- so this measures both under the real
+    stylesheet rather than trusting the numbers to stay equal.
+    """
+    screen = FWAScreen(_FakeManager(), poll_interval=30, name="fwa")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        odds_size = screen.query_one(FWAOddsBoard).size
+
+        await pilot.press("c")
+        await pilot.pause()
+        feed_size = screen.query_one(FWAActivityFeed).size
+
+        assert (feed_size.width, feed_size.height) == (odds_size.width, odds_size.height), (
+            f"feed occupies {feed_size} where the odds board occupied "
+            f"{odds_size} -- the panel resizes on every toggle"
+        )
+        assert feed_size.height > 1, "the feed collapsed instead of filling the row"

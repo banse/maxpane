@@ -779,6 +779,25 @@ class _Session:
         assert self.recorder.last is not None
         return self.recorder.last
 
+    async def show_feed(self) -> str:
+        """Composited text with the activity feed showing, then switch back.
+
+        The feed shares the odds board's slot behind ``c``, so anything
+        asserting on feed content has to switch to it first. This restores the
+        previous view before returning so a test can assert on feed *and* odds
+        content in any order -- a helper that left the screen toggled would
+        silently break every later assertion about the odds board.
+        """
+        before = getattr(self.screen, "_active_view", "odds")
+        if before != "activity":
+            await self.pilot.press("c")
+            await self.pilot.pause()
+        text = self.text
+        if before != "activity":
+            await self.pilot.press("c")
+            await self.pilot.pause()
+        return text
+
     @property
     def text(self) -> str:
         """Composited screen text -- what a user would actually see.
@@ -860,7 +879,11 @@ async def test_emissions_ended_leaves_every_other_widget_fully_meaningful(tmp_pa
         assert "ODDS BOARD" in text
         assert "CHASE BOARD" in text
         assert "SETTLEMENT & CROWN" in text
-        assert "ACTIVITY" in text
+        # The feed shares the odds board's slot behind `c`, so it is not on
+        # screen until toggled to -- and it must be intact when it is.
+        await session.pilot.press("c")
+        await session.pilot.pause()
+        assert "ACTIVITY" in session.text
         assert "of weight priced" in text          # the coverage badge
         assert "0.1368" in text                    # the live acquisition fee
         assert "$FWA / USD" in text
@@ -942,9 +965,9 @@ async def test_logs_down_cold_shows_explicit_unavailable_and_nothing_else_moves(
         assert data["settle_available"] is False
 
         # The feed says it is paused, and why -- it does not go blank.
-        assert "logs unavailable — activity paused" in text
-        assert fl.REASON_UNAVAILABLE in text
-        assert "no draws recorded yet" in text
+        assert "logs unavailable — activity paused" in await session.show_feed()
+        assert fl.REASON_UNAVAILABLE in await session.show_feed()
+        assert "no draws recorded yet" in await session.show_feed()
         # The settlement/crown panel likewise.
         assert "logs unavailable" in text
         assert "settlement mix paused" in text
@@ -977,6 +1000,7 @@ async def test_logs_down_warm_serves_last_good_behind_an_explicit_as_of(tmp_path
         # A *live* feed wears no staleness stamp. (The settlement table always
         # carries one: its aggregates are a log capture even when Pool B is up,
         # so "as of" there is a fact, not a degradation marker.)
+        await session.show_feed()
         assert "as of" not in session.plain("#fwa-feed-title")
 
         # The endpoint dies.
@@ -995,10 +1019,10 @@ async def test_logs_down_warm_serves_last_good_behind_an_explicit_as_of(tmp_path
         assert data["crown_paid_eth"] == pytest.approx(91.096)
 
         # On screen: the pause line, the stamp, and the persisted content.
-        assert "logs unavailable — activity paused" in text
-        assert f"as of {stamp}" in text
-        assert f"last good content, as of {stamp}" in text
-        assert "sold back ($FWA)" in text            # the persisted draw
+        feed_text = await session.show_feed()
+        assert "logs unavailable — activity paused" in feed_text
+        assert f"as of {stamp}" in text          # settlement table's stamp
+        assert f"last good content, as of {stamp}" in feed_text
         assert "73.92%" in text                      # the persisted mix
         assert "0xcccc..cccc" in text                # the persisted crown row
         assert "degraded: logs" in text
@@ -1187,7 +1211,7 @@ async def test_rpc_exhausted_cold_renders_explicit_unavailable_hero_cards(tmp_pa
         assert data["spark_available"] is True
         assert "73.92%" in text
         assert "$FWA / USD" in text
-        assert "sold back ($FWA)" in text
+        assert "sold back ($FWA)" in await session.show_feed()
 
 
 async def test_rpc_exhausted_warm_shows_last_good_block_marked_stale(tmp_path):
@@ -1218,7 +1242,7 @@ async def test_rpc_exhausted_warm_shows_last_good_block_marked_stale(tmp_path):
 
         # Log-derived widgets are untouched by a dead RPC.
         assert data["feed_available"] is True
-        assert "sold back ($FWA)" in text
+        assert "sold back ($FWA)" in await session.show_feed()
         assert "73.92%" in text
 
         # The error counter moved and the next cycle still runs.
@@ -1344,15 +1368,20 @@ async def test_all_three_pools_dead_with_an_empty_cache(tmp_path, size):
         assert "odds unavailable" in text           # odds board
         assert "price feed unavailable" in text     # sparkline
         assert "unavailable" in session.plain("#fwa-sig-pool-temp")   # signals
-        assert "activity paused" in text            # activity feed
+        assert "activity paused" in await session.show_feed()   # activity feed
         assert "positions unavailable" in text      # chase board
         assert "logs unavailable" in text           # settlement table
         assert "degraded: chain, logs, market" in text
 
         # ...and the panel frames are all still standing, not blank.
         for title in ("ODDS BOARD", "CHASE BOARD", "SETTLEMENT & CROWN",
-                      "SIGNALS", "ACTIVITY", "$FWA PRICE"):
+                      "SIGNALS", "$FWA PRICE"):
             assert title in text, title
+        # The feed lives behind `c`; a blackout must not stop it rendering
+        # its own frame when switched to.
+        await session.pilot.press("c")
+        await session.pilot.pause()
+        assert "ACTIVITY" in session.text
 
 
 async def test_worst_case_still_refreshes_on_the_next_cycle(tmp_path):
@@ -1396,7 +1425,7 @@ async def test_worst_case_recovers_when_the_pools_come_back(tmp_path):
         assert "degraded:" not in text
         assert "insufficient data" not in text
         assert "quote unavailable" not in text
-        assert "activity paused" not in text
+        assert "activity paused" not in await session.show_feed()
         assert "0.1368" in text
 
 
@@ -1460,7 +1489,7 @@ async def test_invariant_mismatch_leaves_the_log_and_market_panels_alone(tmp_pat
         assert data["feed_available"] is True
         assert data["settle_available"] is True
         assert data["spark_available"] is True
-        assert "sold back ($FWA)" in text
+        assert "sold back ($FWA)" in await session.show_feed()
         assert "73.92%" in text
         assert "$FWA / USD" in text
 
@@ -1607,8 +1636,11 @@ async def test_every_failure_combination_returns_the_full_contract(
         text = session.text
         # The frame is always there, whatever died.
         for title in ("ODDS BOARD", "CHASE BOARD", "SETTLEMENT & CROWN",
-                      "SIGNALS", "ACTIVITY"):
+                      "SIGNALS"):
             assert title in text, title
+        await session.pilot.press("c")
+        await session.pilot.pause()
+        assert "ACTIVITY" in session.text
         # No traceback text ever reaches a widget.
         assert "Traceback" not in text
         assert "Error" not in text

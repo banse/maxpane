@@ -5,20 +5,28 @@ lines 58-80 and ``screens/ttt.py``)::
 
     #title-bar          FWA · N positions · X ETH in core · fee Y ETH
     FWAHeroMetrics      PULL EV · PRICE · CROWN            (3 cards, height 7)
-    #middle-row         FWAOddsBoard (3fr) | #right-col (2fr)
-                                             FWASparkline  (height auto)
-                                             FWASignals    (1fr)
+    #middle-row         FWAOddsBoard (3fr)     | #right-col (2fr)
+                        FWAActivityFeed (3fr)    FWASparkline  (height auto)
+                          -- one or the other,   FWASignals    (1fr)
+                             toggled with `c`
     #separator
-    #bottom-row         FWAActivityFeed (3fr) | FWAChaseBoard (2fr)
-                                              | FWASettlementTable (2fr)
+    #bottom-row         FWAChaseBoard (2fr) | FWASettlementTable (2fr)
     StatusBar
 
 Three things about this screen are deliberate rather than incidental:
 
-1. **No ``c`` toggle.** Talismans and TTT bind ``c`` because their bottom-right
-   slot hosts two mutually exclusive tables. FWA shows the chase board *and*
-   the settlement table side by side, so there is nothing to toggle and the
-   only binding is ``r``.
+1. **``c`` toggles the odds board and the activity feed**, the same affordance
+   Talismans and TTT use for their two mutually exclusive tables. The feed
+   originally sat in the bottom row and took 3fr of 7, which left the chase
+   board and the settlement table roughly 55 rendered columns each at a
+   200-column terminal -- below what either needs for its full column set, so
+   both wore a permanent ``‹ widen`` marker. Giving the bottom row to those two
+   alone and letting the feed share the odds board's slot brought the width
+   needed for a marker-free layout down from 198 columns to 172.
+
+   Both widgets stay mounted and both are dispatched to on every refresh, so
+   toggling is a visibility flip with no refetch. Creating the feed on demand
+   would leave it blank for a beat after the first ``c``, which reads as a bug.
 
 2. **Every widget update is individually guarded.** One widget raising must
    never cost the other six their refresh, so each dispatch is its own
@@ -36,24 +44,28 @@ Three things about this screen are deliberate rather than incidental:
    somewhere permanent. If ``StatusBar`` ever grows a ``set_degraded()``, this
    is the line to move.
 
-Minimum terminal width: ~200 columns
-------------------------------------
+Minimum terminal width: 172 columns
+-----------------------------------
 
-The 3fr/2fr/2fr bottom row is the binding constraint. At **200 columns** the
-three slots measure ~81 / ~55 / ~56 rendered columns, which is exactly what the
-activity feed (79), the chase board (54) and the settlement table (55) need to
-show every field. At 140 columns they measure ~56 / ~38 / ~38 and each widget
-sheds columns.
+Measured against composited output, not estimated: at **172 columns** the last
+``‹ widen`` marker (the signals panel's) goes away, in both views.
+``__main__.FULL_LAYOUT_COLUMNS`` carries the number and a test renders this
+screen at it.
 
-That is a documented, tested behaviour rather than a defect, because **no widget
-drops a column silently**: each one announces the loss in its own title with a
-``‹ widen`` marker naming what went (``‹ widen: TOKEN/BACKING``,
-``‹ widen: COUNT``, ``‹ widen for amounts``). The chase board's ``ODDS`` and
-``JACKPOT`` and the settlement table's ``SHARE`` are the last columns to be
-dropped, because they carry those widgets' entire point. A narrow terminal
-therefore costs *fields*, never correctness — every number still on screen is
-the same number it would be at 200 columns. The mandated 3fr/2fr/2fr ratio was
-kept rather than reinvented per widget (findings §13.16).
+It used to be 198. The bottom row was 3fr/2fr/2fr with the activity feed taking
+the 3fr, so the chase board and settlement table got ~55 columns each -- the
+feed needs 79 for its full line and those two need 54 and 55, and the row could
+not satisfy all three until the terminal was very wide. Moving the feed into
+the odds board's slot leaves the bottom row split evenly between two widgets
+that each need ~55, which is why the requirement fell by 26 columns.
+
+Below the threshold, **no widget drops a column silently**: each announces the
+loss in its own title with a ``‹ widen`` marker naming what went
+(``‹ widen: TOKEN``, ``‹ widen: COUNT``, ``‹ widen for amounts``). The chase
+board's ``ODDS`` and ``JACKPOT`` and the settlement table's ``SHARE`` are the
+last columns dropped, because they carry those widgets' entire point. A narrow
+terminal therefore costs *fields*, never correctness — every number still on
+screen is the same number it would be at 200 columns.
 
 The screen is clock-free: every time-derived string (the emissions countdown,
 the feed's "as of HH:MM", staleness) arrives already rendered in the payload.
@@ -195,12 +207,13 @@ def _title_line(data: dict) -> str:
 class FWAScreen(RefreshGuard, Screen):
     """Fake World Assets gacha-terminal dashboard.
 
-    ``BINDINGS`` is ``r`` only: unlike Talismans/TTT there is no hidden second
-    table to toggle.
+    ``BINDINGS`` is ``r`` plus ``c`` -- the latter swaps the odds board and the
+    activity feed in the middle-left slot (see the module docstring).
     """
 
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
+        Binding("c", "toggle_view", "Odds/Activity", show=True),
     ]
 
     #: Worker name for the guarded refresh (see RefreshGuard).
@@ -283,6 +296,8 @@ class FWAScreen(RefreshGuard, Screen):
         self._data_manager = data_manager
         self._poll_interval = poll_interval
         self._refresh_timer = None
+        #: Which widget owns the wide middle-left slot: "odds" or "activity".
+        self._active_view: str = "odds"
 
     # ------------------------------------------------------------------
     # Layout
@@ -294,7 +309,14 @@ class FWAScreen(RefreshGuard, Screen):
         yield FWAHeroMetrics()
 
         with Horizontal(id="middle-row"):
+            # Two views of the same slot, toggled with ``c``. The feed is
+            # created hidden rather than created on demand so it keeps
+            # receiving every refresh and is already populated when toggled to
+            # -- an empty panel that fills in a beat later reads as a bug.
             yield FWAOddsBoard()
+            feed = FWAActivityFeed()
+            feed.display = False
+            yield feed
             with Vertical(id="right-col"):
                 yield FWASparkline()
                 yield FWASignals()
@@ -302,8 +324,10 @@ class FWAScreen(RefreshGuard, Screen):
         yield Static("─" * 300, id="separator")
 
         with Horizontal(id="bottom-row"):
-            # All three are always visible -- no toggle (see class docstring).
-            yield FWAActivityFeed()
+            # Two panes, half the width each. The activity feed used to sit
+            # here and took 3fr of 7, leaving these two ~55 columns apiece at a
+            # 200-column terminal -- below what either needs for its full
+            # column set. Sharing the row between them roughly doubles both.
             yield FWAChaseBoard()
             yield FWASettlementTable()
 
@@ -312,6 +336,25 @@ class FWAScreen(RefreshGuard, Screen):
     # ------------------------------------------------------------------
     # Actions / bindings
     # ------------------------------------------------------------------
+
+    def action_toggle_view(self) -> None:
+        """Swap the odds board and the activity feed in the middle-left slot.
+
+        Both widgets stay mounted and both keep being updated on every
+        refresh, so toggling is a pure visibility flip -- no refetch, no
+        repopulate, no empty frame.
+        """
+        self._active_view = "activity" if self._active_view == "odds" else "odds"
+        showing_odds = self._active_view == "odds"
+        try:
+            self.query_one(FWAOddsBoard).display = showing_odds
+            self.query_one(FWAActivityFeed).display = not showing_odds
+        except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
+            logger.debug("FWA view toggle failed: %s", exc)
+        try:
+            self.query_one(StatusBar).set_active_view(self._active_view)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -325,6 +368,7 @@ class FWAScreen(RefreshGuard, Screen):
         try:
             self.query_one(StatusBar).set_theme_name(self.app.theme)
             self.query_one(StatusBar).set_game_name("fwa")
+            self.query_one(StatusBar).set_active_view(self._active_view)
         except Exception:
             pass
 
