@@ -211,7 +211,7 @@ _LOG_STATE_PATH = str(_CACHE_DIR / "fwa_log_state.json")
 
 #: Sidecar schema version.  Bumped when the retention shape changes so an old
 #: unbounded file is re-trimmed on the next write rather than read as authoritative.
-LOG_STATE_VERSION = 2
+LOG_STATE_VERSION = 3
 
 #: How far back the **high-volume** raw events are persisted, in blocks
 #: (~4 hours at 12 s/block).
@@ -608,6 +608,27 @@ class FWAManager:
         except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             logger.debug("No FWA log state to load (%s): %s", self._log_state_path, exc)
             return
+
+        # The version was written on every save and never read on load, which
+        # made it useless exactly when it was needed: `wei_baseline` was added
+        # to this file without a way to signal that older state lacks it, so an
+        # existing install carried an all-time *count* baseline next to no wei
+        # at all and the settlement ETH column reported the handful of events
+        # since the watermark as if it were the all-time total -- 0.5 ETH where
+        # the answer is ~8,900. Validating it costs one full backfill on
+        # upgrade, once, and is the only way to rebuild a baseline that can no
+        # longer be derived from a windowed store.
+        version = _opt_int(state.get("version")) or 0
+        if version != LOG_STATE_VERSION:
+            logger.info(
+                "FWA log state is schema v%s, this build writes v%s — discarding "
+                "it and rescanning from chain so the all-time baselines are "
+                "rebuilt together",
+                version or "unknown",
+                LOG_STATE_VERSION,
+            )
+            return
+
         if not self.logs.import_state(state):
             return
         self._log_backfill_done = True
@@ -684,7 +705,23 @@ class FWAManager:
         answer the same question about different fields, and any divergence
         between them would show up as an ETH total that disagrees with its own
         row count.
+
+        Returns ``{}`` when a count baseline exists without a wei baseline.
+        That combination means the store was windowed by an older build that
+        did not persist wei, so the all-time figure is genuinely unknown and
+        cannot be recovered from what is in memory -- and reporting the events
+        seen since the watermark would present a few hours of settlements as
+        the all-time total. Empty renders a dash. The version check in
+        :meth:`_restore_state` normally rebuilds the file before this is
+        reached; this is the belt to that braces.
         """
+        if self._event_baseline and not self._wei_baseline:
+            logger.debug(
+                "count baseline present without a wei baseline — reporting the "
+                "settlement ETH totals as unknown rather than as a window"
+            )
+            return {}
+
         totals: dict[str, int] = dict(self._wei_baseline)
         floor = self._event_baseline_block if self._event_baseline else -1
         for name, outcome in SETTLEMENT_EVENTS.items():
@@ -1108,7 +1145,23 @@ class FWAManager:
                 chain_total_weight=report.get("total_weight_onchain"),
                 swept_weighted_backing=report.get("weighted_backing_total_computed"),
                 chain_weighted_backing=report.get("weighted_backing_total_onchain"),
-                derived_fee_wei=report.get("acquisition_fee_computed"),
+                # Only when the sweep actually *checked* the fee. It always
+                # reports a computed value -- informational -- but that value
+                # is derived from a surcharge we may not have read yet, and
+                # `invariant_summary` compares whatever it is given with `==`.
+                # Passing it unconditionally re-ran, here, exactly the
+                # comparison `check_sweep_invariants` had just declined to make:
+                # the first sweep of every launch happens before the ConfigSet
+                # history yields `surchargeBps`, so the fee was computed at the
+                # documented 1000 while the chain runs 500, and the header wore
+                # "invariant mismatch" with the odds board stale until the
+                # second sweep. `invariant_summary` skips a pair when either
+                # side is None, which is the behaviour wanted here.
+                derived_fee_wei=(
+                    report.get("acquisition_fee_computed")
+                    if report.get("acquisition_fee_checked")
+                    else None
+                ),
                 chain_fee_wei=report.get("acquisition_fee_onchain"),
                 fee_share_total=report.get("collected"),
                 active_listing_count=report.get("expected"),

@@ -164,13 +164,20 @@ class FWAOddsBoard(Vertical):
     FWAOddsBoard > DataTable {
         height: 1fr;
     }
-    /* The meta line is a single row by contract: if the block/stale/
-       suppression text is wider than the pane it is ellipsised, never
-       wrapped -- a second row would push the table down. */
+    /* The title is a single row by contract: if the block/stale/suppression
+       text is wider than the pane it is ellipsised, never wrapped -- a second
+       row would push the table down by one and cost a collection.
+
+       `margin-bottom: 1` separates it from the column headers, matching the
+       chase board and the settlement table below. It costs one row of the
+       table, which is why it is a margin on the title rather than a blank
+       Static: a widget that is only sometimes present is a widget that is
+       sometimes forgotten. */
     FWAOddsBoard > #fwa-odds-title {
         text-wrap: nowrap;
         text-overflow: ellipsis;
         text-style: none;
+        margin: 0 0 1 0;
     }
     """
 

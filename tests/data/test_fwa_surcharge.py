@@ -311,3 +311,21 @@ def test_an_unknown_surcharge_claims_no_rebate() -> None:
     would advertise value that may not exist.
     """
     assert fwa_ev.surcharge_wei(105_472_438_580_792_280, 0) == 0
+
+
+# ---------------------------------------------------------------------------
+# The unchecked fee must not leak into the *other* invariant check
+# ---------------------------------------------------------------------------
+
+
+def test_an_unchecked_fee_is_reported_but_flagged_unchecked():
+    """The report still carries a computed fee -- it is informational.
+
+    Consumers must gate on ``acquisition_fee_checked``; the number itself is
+    derived from whatever surcharge was supplied, which may be the fallback.
+    """
+    report = check_sweep_invariants(_positions(), **_aggregates(500))
+
+    assert report["acquisition_fee_checked"] is False
+    assert report["acquisition_fee_computed"] > 0, "still reported for info"
+    assert report["invariants_ok"] is True

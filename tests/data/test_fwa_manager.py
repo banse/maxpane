@@ -32,6 +32,7 @@ from maxpane_dashboard.data.fwa_cache import (
 )
 from maxpane_dashboard.data.fwa_client import FWA_HOT_KEYS
 from maxpane_dashboard.data.fwa_manager import (
+    LOG_STATE_VERSION,
     COINGECKO_MIN_SPACING,
     FWA_DEPLOY_BLOCK,
     LOG_ALLTIME_EVENTS,
@@ -91,9 +92,19 @@ def _sweep_report(positions, *, invariants_ok: bool = True) -> dict:
     backings = [p.backing_wei for p in positions]
     total_weight = fwa_ev.total_weight(backings)
     weighted = fwa_ev.weighted_backing_total(backings)
-    fee = fwa_ev.acquisition_fee_wei(weighted, total_weight)
+    # The chain runs 500 bps; with no live surchargeBps the client falls back
+    # to the documented 1000 and *computes* a different fee. Modelling that
+    # divergence is the whole point -- a fixture where the two agree cannot
+    # show whether a consumer is comparing them.
+    fee_onchain = fwa_ev.acquisition_fee_wei(weighted, total_weight, 500)
+    fee = fwa_ev.acquisition_fee_wei(
+        weighted, total_weight, fwa_ev.DEFAULT_SURCHARGE_BPS
+    )
     report = {
         "invariants_ok": invariants_ok,
+        # False: check_sweep_invariants declined to compare the fee because it
+        # had no live surcharge to compute it from.
+        "acquisition_fee_checked": False,
         "collected": len(positions),
         "expected": len(positions),
         "mismatches": () if invariants_ok else ("count 3 != activeListingCount 4",),
@@ -102,7 +113,7 @@ def _sweep_report(positions, *, invariants_ok: bool = True) -> dict:
         "weighted_backing_total_computed": weighted,
         "weighted_backing_total_onchain": weighted,
         "acquisition_fee_computed": fee,
-        "acquisition_fee_onchain": fee,
+        "acquisition_fee_onchain": fee_onchain,
         "backing_total_wei": sum(backings),
         "weight_mismatches": 0,
         "block_number": BLOCK,
@@ -1489,3 +1500,104 @@ async def test_an_unknown_surcharge_sizes_the_rebate_at_zero(tmp_path, monkeypat
 
     assert seen and seen[-1] == 0
     await _drain(manager)
+
+
+async def test_the_first_sweep_does_not_report_a_false_invariant_mismatch(tmp_path):
+    """The bug users actually saw, on every single launch.
+
+    ``surchargeBps`` has no getter, so it is lifted from ConfigSet history
+    during assembly and consumed by the *next* sweep -- which means the first
+    sweep of a run computes the fee from the fallback. ``check_sweep_invariants``
+    knows this and declines to compare it, but ``invariant_summary`` was handed
+    the same computed number unconditionally and compared it anyway, so the
+    header wore "invariant mismatch", the odds board went stale, the EV card
+    read "insufficient data" and the error count ticked -- until the second
+    sweep, roughly a minute later, quietly fixed it.
+    """
+    logs = FakeLogClient()
+    logs.config_entries = []          # nothing to resolve: surcharge stays None
+    manager = _manager(tmp_path, logs=logs)
+
+    data = await manager.fetch_and_compute()
+
+    assert manager._live_surcharge_bps is None, "fixture must not resolve one"
+    assert manager._invariants_ok is True, (
+        "an unread surchargeBps was compared as if it were verified"
+    )
+    assert data["odds_stale"] is False
+    assert data["error_count"] == 0
+    await _drain(manager)
+
+
+async def test_a_genuinely_wrong_sweep_is_still_caught(tmp_path):
+    """The counterweight: skipping the fee must not disarm the real checks."""
+    logs = FakeLogClient()
+    logs.config_entries = []
+    state = FakeStateClient(invariants_ok=False)
+    manager = _manager(tmp_path, state=state, logs=logs)
+
+    data = await manager.fetch_and_compute()
+
+    assert manager._invariants_ok is False
+    assert data["odds_stale"] is True
+    await _drain(manager)
+
+
+def test_log_state_from_an_older_schema_is_discarded(tmp_path):
+    """The version was written on every save and never read on load.
+
+    That is why `wei_baseline` could be added without anything noticing that
+    older files lack it: the install kept an all-time *count* baseline beside
+    no wei at all, and the settlement ETH column reported a few hours of
+    events as the all-time total.
+    """
+    import json as _json
+
+    path = tmp_path / "fwa_log_state.json"
+    path.write_text(
+        _json.dumps(
+            {
+                "version": LOG_STATE_VERSION - 1,
+                "last_seen_block": 25_000_000,
+                "event_baseline": {"NFTKept": 4321},
+                "event_baseline_block": 25_000_000,
+                "events": {},
+            }
+        )
+    )
+
+    manager = _manager(tmp_path, persist_log_state=True)
+    manager._log_state_path = str(path)
+    manager._load_state()
+
+    assert manager._event_baseline == {}, "stale schema was accepted"
+    assert manager._log_backfill_done is False, "a rescan must be scheduled"
+
+
+def test_counts_without_wei_report_unknown_not_a_window(tmp_path):
+    """Belt to the version check's braces.
+
+    A count baseline with no wei baseline means an older build windowed the
+    store, so the all-time ETH cannot be recovered from memory. Reporting what
+    is left in the store would present a few hours of settlements as all-time
+    -- 0.5 ETH where the answer is ~8,900.
+    """
+    manager = _manager(tmp_path)
+    # A store holding recent events, exactly as it would after a windowed
+    # restore: enough to produce a plausible, wrong total if it were used.
+    manager.logs.entries = lambda name: (
+        [{"block_number": 25_000_500, "backing_wei": 7 * 10**18}]
+        if name == "NFTKept"
+        else []
+    )
+    manager._event_baseline = {"NFTKept": 4321}
+    manager._event_baseline_block = 25_000_000
+    manager._wei_baseline = {}
+
+    assert manager._all_time_event_wei() == {}, (
+        "a windowed remainder was reported as the all-time total"
+    )
+
+    # ...and with a baseline present the same store *is* used, as the increment.
+    manager._wei_baseline = {"NFTKept": 100 * 10**18}
+    assert manager._all_time_event_wei() == {"NFTKept": 107 * 10**18}
