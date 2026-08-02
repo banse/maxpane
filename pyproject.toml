@@ -1,6 +1,6 @@
 [project]
 name = "maxpane"
-version = "0.5.2"
+version = "0.5.3"
 description = "Terminal dashboards for onchain games, NFTs and trading — Fake World Assets, Talismans, Ten Thousand Tokens, FrenPet, Cat Town and Base. Keyless and read-only."
 requires-python = ">=3.11"
 license = "MIT"
