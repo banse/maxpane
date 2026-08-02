@@ -119,15 +119,37 @@ def _fmt_eth(value) -> str:
 
 
 def _fmt_odds(value) -> str:
-    """Three decimals always: ``0.000%`` for the unreachable positions.
+    """Enough decimals to tell the chase positions apart.
 
-    A position with a vanishing share is still *in* the draw. Rendering it as
-    ``0`` would say otherwise, so the three decimals are mandatory.
+    Three decimals rendered *every* chase row as ``0.000%``: this board ranks
+    the richest-backed positions, backing sets an **inverse** draw weight, so
+    by construction these are the least likely positions in the pool. The live
+    range is roughly 0.000009% (a 300 ETH Punk) to 0.0005% -- entirely below
+    what three decimals can show, which left the column dead.
+
+    Precision therefore tracks magnitude, always inside the 9-column cell:
+    three decimals at or above 1%, four above 0.001%, six below. A position
+    with a vanishing share is still *in* the draw, so it never renders as a
+    bare ``0``.
     """
     if value is None:
         return _DASH
     try:
-        return f"{float(value):.3f}%"
+        pct = float(value)
+        if pct >= 1:
+            return f"{pct:.3f}%"
+        if pct >= 0.001:
+            return f"{pct:.4f}%"
+        text = f"{pct:.6f}%"
+        if pct > 0 and text.strip("0.%") == "":
+            # Rounded away. Six decimals would print `0.000000%`, which is the
+            # same dead column three decimals gave and, worse, reads as "cannot
+            # be drawn" -- every listed position is in the draw. Decided on the
+            # *formatted* value rather than a numeric threshold, because the
+            # boundary is wherever the formatter rounds, not wherever we guess
+            # it does (5e-7 rounds to zero here, banker's rounding).
+            return "<0.000001%"
+        return text
     except (TypeError, ValueError):
         return _DASH
 
@@ -161,44 +183,44 @@ def _fmt_jackpot(value) -> str:
 _TIERS: tuple[tuple[str, int, tuple[tuple[str, str, int], ...]], ...] = (
     (
         "full",
-        54,
+        58,
         (
             ("rank", "#", 3),
             ("collection", "COLLECTION", 11),
             ("token", "TOKEN", 8),
             ("backing", "BACKING", 7),
-            ("odds", "ODDS", 6),
+            ("odds", "ODDS", 10),
             ("jackpot", "JACKPOT", 7),
         ),
     ),
     (
         "compact",
-        44,
+        48,
         (
             ("rank", "#", 3),
             ("collection", "COLLECTION", 11),
             ("backing", "BACKING", 7),
-            ("odds", "ODDS", 6),
+            ("odds", "ODDS", 10),
             ("jackpot", "JACKPOT", 7),
         ),
     ),
     (
         "minimal",
-        34,
+        38,
         (
             ("rank", "#", 3),
             ("collection", "COLLECTION", 10),
-            ("odds", "ODDS", 6),
+            ("odds", "ODDS", 10),
             ("jackpot", "JACKPOT", 7),
         ),
     ),
     (
         "tiny",
-        23,
+        27,
         (
             ("rank", "#", 3),
             ("collection", "COLLECTION", 8),
-            ("odds", "ODDS", 6),
+            ("odds", "ODDS", 10),
         ),
     ),
 )

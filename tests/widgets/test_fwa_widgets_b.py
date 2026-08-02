@@ -76,7 +76,11 @@ class _Harness(App):
 # renders two columns narrower (81 / 56).
 WIDE_FEED = (83, 24)
 NARROW_FEED = (58, 24)
-WIDE_TABLE = (55, 24)
+#: Wide enough for the chase board's `full` tier. Raised from 55 when the ODDS
+#: column went from 6 to 9 columns: the board ranks the *least* likely
+#: positions, whose odds are ~1e-5%, and three decimals rendered every row as
+#: `0.000%`.
+WIDE_TABLE = (58, 24)
 NARROW_TABLE = (38, 24)
 
 
@@ -404,7 +408,7 @@ async def test_activity_feed_available_but_empty_is_not_blank():
 
 
 @pytest.mark.asyncio
-async def test_chase_board_zero_odds_renders_three_decimals():
+async def test_chase_board_odds_have_enough_digits_to_differ():
     widget = FWAChaseBoard()
     app = _Harness(widget)
     async with app.run_test():
@@ -414,12 +418,15 @@ async def test_chase_board_zero_odds_renders_three_decimals():
         table = widget.query_one("#fwa-chase-dt", DataTable)
         assert table.row_count == len(_CHASE_POSITIONS)
         first = [str(cell) for cell in table.get_row_at(0)]
-        assert "0.000%" in first
+        assert "0.000005%" in first, (
+            "the chase board ranks the least likely positions, so three "
+            "decimals rendered every row as 0.000% and the column said nothing"
+        )
         assert "0" not in [cell.strip() for cell in first]
         assert "1,378×" in first
         assert "221.00" in first
         second = [str(cell) for cell in table.get_row_at(1)]
-        assert "0.000%" in second  # 0.0001 still renders three decimals
+        assert "0.000100%" in second  # four zeros still resolve, unlike at 3dp
         assert "--" in second  # missing jackpot ratio
 
 
@@ -500,11 +507,13 @@ async def test_settlement_shares_sum_displayed_as_100():
         # crown section: per-holder aggregation, 4 reigns for one wallet
         assert "0xAAAA..1111" in joined
         assert "33 sets" in joined and "12 paid" in joined and "91.096" in joined
-        # the headline stat is computed from the rows, not hardcoded
+        # The sell-back headline no longer lives here: it moved to the
+        # SIGNALS panel, where the reader is already looking for statements
+        # about how the protocol behaves, and this widget got its row of
+        # vertical space back. It is still computed from these same rows --
+        # see tests/analytics/test_fwa_signals.py::test_sellback_*.
         note = _static_text(widget.query_one("#fwa-settle-note", Static))
-        assert "87.76%" in note
-        assert "sell straight back" in note
-        assert "4.60% keep the NFT" in note
+        assert "sell straight back" not in note
         title = _static_text(widget.query_one("#fwa-settle-title", Static))
         assert "as of" in title
 
@@ -559,7 +568,7 @@ async def test_chase_board_keeps_odds_and_jackpot_when_narrow():
         assert "JACKPOT" in headers
         assert "TOKEN" not in headers  # dropped first, by design
         row = " ".join(str(c) for c in table.get_row_at(0))
-        assert "0.000%" in row and "1,378×" in row
+        assert "0.000005%" in row and "1,378×" in row
 
 
 @pytest.mark.asyncio

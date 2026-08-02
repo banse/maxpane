@@ -35,7 +35,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len as _visible_len
 
 _DASH = "--"
 _EMDASH = "—"
@@ -150,7 +150,7 @@ class FWAOddsBoard(Vertical):
     /* The meta line is a single row by contract: if the block/stale/
        suppression text is wider than the pane it is ellipsised, never
        wrapped -- a second row would push the table down. */
-    FWAOddsBoard > #fwa-odds-meta {
+    FWAOddsBoard > #fwa-odds-title {
         text-wrap: nowrap;
         text-overflow: ellipsis;
         text-style: none;
@@ -158,8 +158,12 @@ class FWAOddsBoard(Vertical):
     """
 
     def compose(self) -> ComposeResult:
-        yield Static("ODDS BOARD", classes="fwa-odds-title")
-        yield Static(" ", classes="fwa-odds-meta", id="fwa-odds-meta")
+        # One title line, not a title plus a meta line. The provenance
+        # (collection count, swept block, staleness) is folded into the title
+        # instead of sitting under it: it is short, it belongs to the board as
+        # a whole, and a second line of muted text above a table reads as
+        # clutter -- especially since it clipped at the widths people run.
+        yield Static("ODDS BOARD", classes="fwa-odds-title", id="fwa-odds-title")
         yield DataTable(id="fwa-odds-table", classes="fwa-odds-table")
 
     def on_mount(self) -> None:
@@ -187,11 +191,16 @@ class FWAOddsBoard(Vertical):
     ) -> None:
         """Refresh the board from ``FWA_ROW_KEYS["collection_odds"]`` rows."""
         table = self.query_one("#fwa-odds-table", DataTable)
-        meta = self.query_one("#fwa-odds-meta", Static)
         table.clear()
 
         if odds_available is False:
-            meta.update("[yellow]odds unavailable — position sweep failed[/]")
+            # The unavailable state used to live in a meta line under the
+            # title. With that line gone it goes *in* the title, which is the
+            # only place left that is always visible -- the table below it is
+            # a row of dashes and says nothing on its own.
+            self._set_title_text(
+                "ODDS BOARD · [yellow]odds unavailable — position sweep failed[/]"
+            )
             table.add_row(
                 _DASH,
                 "unavailable",
@@ -205,7 +214,7 @@ class FWAOddsBoard(Vertical):
 
         rows = [r for r in (collection_odds or []) if isinstance(r, dict)]
         if not rows:
-            meta.update("no collections")
+            self._set_title_text("ODDS BOARD · no collections")
             table.add_row(_DASH, "No data", _DASH, _DASH, _DASH, _EMDASH, _EMDASH)
             return
 
@@ -237,22 +246,59 @@ class FWAOddsBoard(Vertical):
 
             table.add_row(rank_str, name, positions, share, backed, floor, per_point)
 
-        meta.update(self._meta_line(len(rows), odds_as_of_block, odds_stale, suppressed_note))
+        self._set_title(len(rows), odds_as_of_block, odds_stale, suppressed_note)
 
     # -- helpers ---------------------------------------------------------
 
-    @staticmethod
-    def _meta_line(count: int, block, stale, suppressed_note: str) -> str:
+    def _set_title_text(self, text: str) -> None:
+        """Write the title line, ignoring a not-yet-composed widget."""
+        try:
+            self.query_one("#fwa-odds-title", Static).update(text)
+        except Exception:  # not composed yet
+            pass
+
+    def _title_for(
+        self, count: int, block, stale, suppressed_note: str, width: int = 0
+    ) -> str:
+        """The title line for these values inside *width* columns.
+
+        Split out from :meth:`_set_title` so the composition rules can be
+        asserted directly, without a harness whose width decides which optional
+        parts survive.
+        """
         block_str = _fmt_int(block) if block is not None else _DASH
-        # The enclosing Static is already `color: $text-muted`; a `[dim]`
-        # on top of it compounds to 3.71:1 under `fwa` and 3.64 under
-        # bakery, below WCAG 1.4.3, for no visual gain (WP-19).
-        parts = [f"{count} collections · block {block_str}"]
-        if stale:
-            parts.append("[yellow]STALE — last good sweep[/]")
+        optional = [f"{count} collections", f"block {block_str}"]
         if suppressed_note:
             note = suppressed_note
             if len(note) > _NOTE_WIDTH:
                 note = note[: _NOTE_WIDTH - 1] + "…"
-            parts.append(f"* {note}")
-        return " · ".join(parts)
+            optional.append(f"* {note}")
+
+        # `[dim]` is deliberately absent: the enclosing Static is already
+        # `color: $text-muted` and compounding them gives 3.71:1 under `fwa`
+        # and 3.64 under bakery, below WCAG 1.4.3, for no visual gain (WP-19).
+        stale_part = "[yellow]STALE — last good sweep[/]" if stale else ""
+
+        while True:
+            parts = ["ODDS BOARD"] + optional + ([stale_part] if stale_part else [])
+            text = " · ".join(p for p in parts if p)
+            if not width or _visible_len(text) <= width or not optional:
+                return text
+            optional.pop()
+
+    def _set_title(self, count: int, block, stale, suppressed_note: str) -> None:
+        """``ODDS BOARD · 52 collections · block 25,666,513``, width permitting.
+
+        Parts are appended widest-last and dropped from the right when they do
+        not fit, so the panel never clips mid-word. Priority is deliberate:
+        ``STALE`` outranks everything because a stale board presented as live
+        is the one failure this widget must not have, then the block (the
+        board's provenance), then the count, then the suppressed-floor
+        footnote (whose ``*`` marker is already visible in the FLOOR column).
+        """
+        self._set_title_text(
+            self._title_for(
+                count, block, stale, suppressed_note,
+                max(self.content_size.width - 2, 0),
+            )
+        )

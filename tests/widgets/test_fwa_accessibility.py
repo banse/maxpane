@@ -369,8 +369,13 @@ async def test_hero_box_padding_is_never_1_2():
         assert "of weight priced" in plain
 
 
+# 30 is comfortably below the longest row and 200/240 comfortably above.
+# The clipping width was 54 while the gated row carried the long footnote;
+# shortening that row moved the boundary, and a threshold pinned to the old
+# number went red as a failure. What is under test is the *rule* -- marker iff
+# clipped -- so the widths only have to sit either side of it.
 @pytest.mark.parametrize(
-    ("width", "expect_marker"), [(200, False), (240, False), (54, True)]
+    ("width", "expect_marker"), [(200, False), (240, False), (30, True)]
 )
 async def test_widen_marker_only_appears_when_a_row_is_clipped(width, expect_marker):
     """A marker that is always on trains the operator to ignore it.

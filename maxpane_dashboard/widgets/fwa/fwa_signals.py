@@ -50,6 +50,7 @@ import re
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from maxpane_dashboard.widgets.markup_safety import visible_len as _visible_len
 from textual.widgets import Static
 
 _DASH = "--"
@@ -77,9 +78,6 @@ _GATE_WORDS = ("open", "closed", "gated", "enabled", "disabled", "blocked", "liv
 _NEGATIVE_COUNTDOWN = re.compile(r"[-−]\s*\d")
 
 
-def _visible_len(markup: str) -> int:
-    """Length of ``markup`` as rendered, i.e. with the tags removed."""
-    return len(_MARKUP.sub("", markup or ""))
 
 
 def _fmt_signal(sig: dict | None) -> str:
@@ -172,6 +170,7 @@ class FWASignals(Vertical):
         # Blank line below the title (doubles as the title spacer).
         yield Static("", classes="fwa-signals-body", id="fwa-sig-spacer")
         yield Static("", classes="fwa-signals-body", id="fwa-sig-pool-temp")
+        yield Static("", classes="fwa-signals-body", id="fwa-sig-sellback")
         yield Static("", classes="fwa-signals-body", id="fwa-sig-buy-gate")
         yield Static("", classes="fwa-signals-body", id="fwa-sig-emissions")
         yield Static("", classes="fwa-signals-body", id="fwa-sig-vrf")
@@ -180,6 +179,7 @@ class FWASignals(Vertical):
     def update_data(
         self,
         pool_temp_signal=None,
+        sellback_signal=None,
         buy_gate_signal=None,
         emissions_signal=None,
         vrf_queue_signal=None,
@@ -193,6 +193,7 @@ class FWASignals(Vertical):
         """
         self._payload = {
             "pool_temp_signal": pool_temp_signal,
+            "sellback_signal": sellback_signal,
             "buy_gate_signal": buy_gate_signal,
             "emissions_signal": emissions_signal,
             "vrf_queue_signal": vrf_queue_signal,
@@ -212,6 +213,7 @@ class FWASignals(Vertical):
 
         rows = (
             ("#fwa-sig-pool-temp", _fmt_pool_temp(payload.get("pool_temp_signal"))),
+            ("#fwa-sig-sellback", _fmt_signal(payload.get("sellback_signal"))),
             ("#fwa-sig-buy-gate", _fmt_buy_gate(payload.get("buy_gate_signal"))),
             ("#fwa-sig-emissions", _fmt_emissions(payload.get("emissions_signal"))),
             ("#fwa-sig-vrf", _fmt_signal(payload.get("vrf_queue_signal"))),

@@ -460,6 +460,7 @@ class FWAScreen(RefreshGuard, Screen):
         try:
             self.query_one(FWASignals).update_data(
                 pool_temp_signal=data.get("pool_temp_signal"),
+                sellback_signal=data.get("sellback_signal"),
                 buy_gate_signal=data.get("buy_gate_signal"),
                 emissions_signal=data.get("emissions_signal"),
                 vrf_queue_signal=data.get("vrf_queue_signal"),

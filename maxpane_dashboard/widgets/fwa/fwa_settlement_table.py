@@ -39,7 +39,7 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len as _visible_len
 
 _DASH = "--"
 _EMDASH = "—"
@@ -251,9 +251,6 @@ def _hhmm(timestamp) -> str:
         return "??:??"
 
 
-def _visible_len(markup: str) -> int:
-    """Length of ``markup`` as rendered, i.e. with the tags removed."""
-    return len(_MARKUP.sub("", markup or ""))
 
 
 def _headline(mix_rows: list, short: bool = False) -> str:
@@ -488,28 +485,29 @@ class FWASettlementTable(Vertical):
         )
 
     def _note_text(self, mix_rows: list, as_of) -> str:
-        """Headline stat, plus the staleness stamp when the title lost it.
+        """The staleness stamp, when the title could not carry it.
 
-        Both shrink together: the long form states the sell-back and keep
-        shares, the short form keeps only the sell-back number, which is the
-        one that reframes the protocol.
+        The sell-back headline used to live here too. It is the most revealing
+        statistic in the protocol -- about 90% of purchasers sell straight back
+        and almost nobody keeps the art -- which is precisely why it moved to
+        the SIGNALS panel, where the reader is already looking for statements
+        about how the protocol behaves. A second line of muted text between
+        this widget's title and its table bought nothing the signals row does
+        not, and cost a row of vertical space in the shortest pane on screen.
+
+        ``_headline`` is kept and still exported: it is what builds the signals
+        row, and its short form is still the fallback when the panel is narrow.
         """
         width = max(self.content_size.width - 2, 0)
         stamp = ""
         if as_of and not getattr(self, "_title_suffix_shown", True):
             stamp = f"as of {_hhmm(as_of)}"
 
-        long_headline = _headline(mix_rows)
-        parts = [p for p in (stamp, long_headline.strip()) if p]
+        parts = [p for p in (stamp,) if p]
         if not parts:
             return ""
-        long_text = "  " + " · ".join(parts)
-        if not width or _visible_len(long_text) <= width:
-            return long_text
-
-        short = _headline(mix_rows, short=True).strip()
-        parts = [p for p in (stamp, short) if p]
-        return "  " + " · ".join(parts)
+        text = "  " + " · ".join(parts)
+        return text if (not width or _visible_len(text) <= width) else text[:width]
 
     def _crown_rows_shown(self, table: DataTable, wanted: int) -> int:
         """How many holder rows fit under the mix without pushing TOTAL out.

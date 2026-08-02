@@ -104,7 +104,9 @@ __all__ = [
     "resolve_pool_temp",
     "pool_temp_signal",
     "pool_temp_signal_for",
-    # the five builders
+    # the signal builders
+    "sellback_signal",
+    "SELLBACK_OUTCOMES",
     "buy_gate_signal",
     "emissions_signal",
     "vrf_queue_signal",
@@ -153,9 +155,15 @@ INDICATOR = "●"
 #: DexScreener reports ~11.4k "buys" while ``externalBuysEnabled()`` is false.
 #: Those are FWARewards-routed protocol distributions, not open-market
 #: purchases (findings §9.2).  Without this note the UI reads as a
-#: contradiction, so the gated row carries it inline — kept short enough that
-#: it survives the signals panel's line width rather than being clipped off.
-BUY_GATE_FOOTNOTE = 'DEX "buys" are FWARewards payouts'
+#: contradiction, so the gated row carries it inline.
+#:
+#: It has to *fit*.  The long form (``DEX "buys" are FWARewards payouts``) made
+#: the row 61 columns against a signals panel that gets about 55, so it clipped
+#: to ``are FWARewar…`` and left the panel wearing a permanent ``‹ widen``
+#: marker: the note was costing more than it bought.  The scare quotes carry
+#: the meaning and are kept; ``FWARewards`` names an internal contract the
+#: reader cannot act on and is dropped.
+BUY_GATE_FOOTNOTE = 'DEX "buys" are payouts'
 
 #: Queue depth (``lastIssuedSequence - nextSequenceToProcess``) at or below
 #: which the sequencer is considered to be keeping up.  A *presentation*
@@ -727,6 +735,59 @@ def pool_temp_signal(
             cold_gap=cold_gap,
             forced_bps=forced_bps,
         )
+    )
+
+
+# ---------------------------------------------------------------------------
+# 1b. Sell-back mix
+# ---------------------------------------------------------------------------
+
+#: Settlement outcomes that mean "sold straight back to the pool".
+SELLBACK_OUTCOMES: tuple[str, ...] = ("bid_fwa", "bid_eth")
+
+
+def sellback_signal(settlement_mix: Iterable[Any] | None) -> FWASignal:
+    """What purchasers actually do with the NFT they drew.
+
+    About 90% accept the standing bid and roughly 4% keep the art. That is the
+    most revealing statistic in the protocol -- it says the gacha is used as a
+    price-discovery slot machine rather than a way to acquire NFTs -- and it
+    belongs with the other statements about how the protocol behaves rather
+    than as a second line of muted text above the settlement table.
+
+    Computed from the rows, never hardcoded: the shares move, and a frozen
+    "88%" would be wrong within days (rule 4).  A mix that has not loaded yet
+    is *unavailable*, not 0% -- rendering "0.00% sell straight back" on a
+    failed log read would invert the protocol's headline fact.
+    """
+    label = "SELL-BACK"
+    rows = [r for r in (settlement_mix or ()) if isinstance(r, Mapping)]
+    if not rows:
+        return _unavailable(label, "settlement mix")
+
+    total = 0
+    sellback = 0
+    kept = 0
+    for row in rows:
+        try:
+            count = int(row.get("count") or 0)
+        except (TypeError, ValueError):
+            continue
+        total += count
+        outcome = str(row.get("outcome") or "")
+        if outcome in SELLBACK_OUTCOMES:
+            sellback += count
+        elif outcome == "kept":
+            kept += count
+    if total <= 0:
+        return _unavailable(label, "settlement mix")
+
+    share = 100.0 * sellback / total
+    kept_share = 100.0 * kept / total
+    return _signal(
+        label,
+        f"{share:.1f}% sell straight back · {kept_share:.1f}% keep the NFT",
+        SIGNAL_WARN if share >= 50 else SIGNAL_GOOD,
     )
 
 

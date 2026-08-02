@@ -192,6 +192,17 @@ def _sample_data() -> dict:
             hot_gap=60,
             cold_gap=3_600,
         ).model_dump(),
+        # Built from the same mix rows the settlement table renders below, so
+        # the panel and the table can never disagree about the headline share.
+        "sellback_signal": _signals.sellback_signal(
+            [
+                {"outcome": "bid_fwa", "count": 7392},
+                {"outcome": "bid_eth", "count": 1384},
+                {"outcome": "relist", "count": 764},
+                {"outcome": "kept", "count": 460},
+                {"outcome": "forced", "count": 0},
+            ]
+        ).model_dump(),
         "buy_gate_signal": _signals.buy_gate_signal(False).model_dump(),
         "emissions_signal": EMISSIONS_ENDED_SIGNAL,
         "vrf_queue_signal": _signals.vrf_queue_signal(

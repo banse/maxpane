@@ -153,6 +153,7 @@ from maxpane_dashboard.analytics.fwa_signals import (
     invariant_summary,
     param_drift_signal,
     pool_temp_signal_for,
+    sellback_signal,
     resolve_config_params,
     resolve_pool_temp,
     vrf_queue_signal,
@@ -1751,6 +1752,12 @@ class FWAManager:
         mix_rows = [
             dict(row) for row in (log_payload.get("settlement_mix") or []) if isinstance(row, dict)
         ]
+        # Built here rather than with the other signals above, because it is
+        # derived from the settlement mix and that is computed on this line.
+        # Moved out of the settlement table's subtitle: it is a statement about
+        # how the protocol behaves, which is what the signals panel is for.
+        signals["sellback_signal"] = _dump(_safe_call(sellback_signal, mix_rows))
+
         crown_rows = []
         for row in (log_payload.get("crown_history") or []):
             if not isinstance(row, dict):

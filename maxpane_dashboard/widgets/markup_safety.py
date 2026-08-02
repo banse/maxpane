@@ -20,9 +20,29 @@ Use :func:`safe_markup` for the value; keep the markup tags around it::
 
 from __future__ import annotations
 
+import re
+
 from rich.markup import escape
 
-__all__ = ["safe_markup"]
+__all__ = ["safe_markup", "visible_len"]
+
+#: Matches a Rich/Textual markup tag, so a line can be measured as the user
+#: sees it rather than as it is written.
+_MARKUP_TAG = re.compile(r"\[/?[^\[\]]*\]")
+
+
+def visible_len(markup: str | None) -> int:
+    """Rendered width of *markup*, i.e. its length with the tags removed.
+
+    Any widget that decides whether a line fits has to measure it this way --
+    ``len("[bold]ODDS BOARD[/]")`` is 19 where the user sees 10, so measuring
+    the raw string silently truncates content that would have fitted.
+
+    Lives here rather than in each widget: this was already copied verbatim
+    into ``fwa_signals`` and ``fwa_settlement_table``, and a third copy was
+    about to be written for the odds board title.
+    """
+    return len(_MARKUP_TAG.sub("", markup or ""))
 
 
 def safe_markup(value: object) -> str:

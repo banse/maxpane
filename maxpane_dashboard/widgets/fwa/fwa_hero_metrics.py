@@ -326,7 +326,7 @@ class FWAHeroMetrics(Horizontal):
         if available is False or best is None:
             # Explicit unavailable state -- never a bare zero (PRD §9).
             box.update(
-                f"[dim]PULL EV[/]\n"
+                f"[dim]PULL EV[/]\n\n"
                 f"[dim]{_EMDASH}[/]\n"
                 f"[dim]insufficient data[/]\n"
                 f"[dim]{badge}[/]"
@@ -345,7 +345,7 @@ class FWAHeroMetrics(Horizontal):
             second = f"lower {_fmt_signed(lower)} · reb {_fmt_signed(rebate)}"
 
         box.update(
-            f"[dim]PULL EV[/]\n{big}\n[dim]{second}[/]\n[dim]{badge}[/]"
+            f"[dim]PULL EV[/]\n\n{big}\n[dim]{second}[/]\n[dim]{badge}[/]"
         )
 
     # -- PRICE ----------------------------------------------------------
@@ -365,7 +365,7 @@ class FWAHeroMetrics(Horizontal):
 
         if available is False or fee is None:
             box.update(
-                f"[dim]PRICE[/]\n"
+                f"[dim]PRICE[/]\n\n"
                 f"[dim]{_EMDASH}[/]\n"
                 f"[dim]quote unavailable[/]\n"
                 f"[dim] [/]"
@@ -399,7 +399,7 @@ class FWAHeroMetrics(Horizontal):
             parts.append(f"total {_fmt_eth(total)} ETH")
         third = " · ".join(parts) if parts else f"quote {_DASH}"
 
-        box.update(f"[dim]PRICE[/]\n{big}\n{gap_line}\n[dim]{third}[/]")
+        box.update(f"[dim]PRICE[/]\n\n{big}\n{gap_line}\n[dim]{third}[/]")
 
     # -- CROWN ----------------------------------------------------------
 
@@ -417,7 +417,7 @@ class FWAHeroMetrics(Horizontal):
 
         if available is False:
             box.update(
-                f"[dim]CROWN[/]\n"
+                f"[dim]CROWN[/]\n\n"
                 f"[dim]{_EMDASH}[/]\n"
                 f"[dim]crown unavailable[/]\n"
                 f"[dim] [/]"
@@ -434,7 +434,7 @@ class FWAHeroMetrics(Horizontal):
         if vacant:
             # An empty throne is not a zero pot.
             box.update(
-                f"[dim]CROWN[/]\n"
+                f"[dim]CROWN[/]\n\n"
                 f"[{_GOLD}]vacant[/]\n"
                 f"[dim]no incumbent[/]\n"
                 f"[dim]{seize_line}[/]"
@@ -455,5 +455,5 @@ class FWAHeroMetrics(Horizontal):
         second = f"{usd} · {who}"
 
         box.update(
-            f"[dim]CROWN[/]\n{big}\n[dim]{second}[/]\n[dim]{seize_line}[/]"
+            f"[dim]CROWN[/]\n\n{big}\n[dim]{second}[/]\n[dim]{seize_line}[/]"
         )

@@ -511,6 +511,7 @@ class FWASnapshot(BaseModel):
 
     # Signals
     pool_temp_signal: FWASignal | None = None
+    sellback_signal: FWASignal | None = None
     buy_gate_signal: FWASignal | None = None
     emissions_signal: FWASignal | None = None
     vrf_queue_signal: FWASignal | None = None
@@ -578,6 +579,7 @@ FWA_DATA_KEYS: tuple[str, ...] = (
     # ---- signals: FWASignals -------------------------------------------------
     # Each is an FWASignal dump ({label, value_str, indicator, color}) or None.
     "pool_temp_signal",
+    "sellback_signal",
     "buy_gate_signal",
     "emissions_signal",            # normally "emissions ended" — never a negative countdown
     "vrf_queue_signal",
@@ -669,6 +671,7 @@ FWA_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     ),
     "FWASignals": (
         "pool_temp_signal",
+        "sellback_signal",
         "buy_gate_signal",
         "emissions_signal",
         "vrf_queue_signal",

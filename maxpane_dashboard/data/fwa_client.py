@@ -118,9 +118,22 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _PRIMARY_RPC = "https://ethereum-rpc.publicnode.com"
+
+#: State fallbacks.  Every one of these was verified to **honour ``gasPrice``
+#: in ``eth_call``**, which is not a formality: ``quoteAcquisitionPrice()``
+#: proxies ``requestFee()``, which reads ``tx.gasprice``.  An endpoint that
+#: drops the field returns a VRF leg of 0 and the dashboard renders a pull as
+#: cheaper than it is -- TRAP 5, and the exact artifact that made two research
+#: agents conclude the fee was waived.  ``eth.drpc.org`` does precisely this
+#: (verified: same block, publicnode 42949569520000, drpc 0) and is banned
+#: below rather than merely omitted.
+#:
+#: Verified by scaling the gas price: 1 gwei -> 0.00104 ETH, 50 gwei -> 0.052
+#: ETH on all three, matching §13.9.
 _FALLBACK_RPCS = [
-    "https://cloudflare-eth.com",
-    "https://1rpc.io/eth",
+    "https://gateway.tenderly.co/public/mainnet",
+    "https://rpc.mevblocker.io",
+    "https://eth-pokt.nodies.app",
 ]
 
 #: Hosts that are dead, now keyed, or rate-limited into uselessness
@@ -134,6 +147,14 @@ _BANNED_RPC_HOSTS = frozenset(
         "mainnet.infura.io",  # keyed
         "api.opensea.io",  # keyed
         "api.reservoir.tools",  # sunset
+        "cloudflare-eth.com",  # -32603 / -32046 on every eth_call; long dead
+        # Answers, and answers *wrong*: it drops `gasPrice` from eth_call, so
+        # `tx.gasprice` reads 0 inside the contract and the VRF leg of
+        # quoteAcquisitionPrice() comes back 0. A silently cheap pull is worse
+        # than a failed read, so this is a ban rather than a low priority.
+        # (Still correct for logs, where fwa_logs uses it -- this list is the
+        # state pool only.)
+        "eth.drpc.org",
     }
 )
 

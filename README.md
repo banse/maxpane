@@ -108,8 +108,8 @@ each marker at:
 
 | columns | what still shows |
 |--------:|------------------|
-| ≤ 170 | `SIGNALS ‹ widen` |
-| **≥ 172** | **nothing — full layout** |
+| ≤ 142 | `SIGNALS ‹ widen` |
+| **≥ 143** | **nothing — full layout** |
 
 A maximized window is already as wide as your display, so **font size is the
 only lever**: roughly 169 columns at 17 pt on a laptop screen, about 205 at
@@ -154,7 +154,7 @@ the other, so a single manager owns the command.
 
 ### Terminal size
 
-**FWA wants 172 columns.** That is the width at which every widget can render its full column set.
+**FWA wants 143 columns.** That is the width at which every widget can render its full column set.
 
 Press **`c`** to swap the odds board for the activity feed — they share the wide middle-left slot,
 so the bottom row belongs to the chase board and the settlement table alone. That split is why the

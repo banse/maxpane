@@ -116,16 +116,18 @@ python -m maxpane_dashboard --font-size 0        # do not resize my terminal
 ```
 
 **Layout is a function of terminal columns.** Widgets pick a tier by width and
-advertise dropped columns as `‹ widen` in their title. FWA needs **172
+advertise dropped columns as `‹ widen` in their title. FWA needs **143
 columns** for the full layout (`__main__.FULL_LAYOUT_COLUMNS`, pinned by a test
 that renders the real screen at that width). Launch forces 17 pt — about 169
 columns on a laptop — so the top tier was unreachable until `--font-size` /
 `MAXPANE_FONT_SIZE` existed.
 
 FWA binds `c` to swap the odds board and the activity feed in one slot, so the
-bottom row is the chase board and the settlement table alone. That is what took
-the requirement from 198 to 172: three widgets needing 79/54/55 columns cannot
-share one row until it is very wide. TTT and Talismans use the same `c` pattern.
+bottom row is the chase board and the settlement table alone. That took the
+requirement from 198 to 172 (three widgets needing 79/54/55 columns cannot
+share one row until it is very wide); shortening the buy-gate signal took it to
+143, because by then the *signals panel* was the binding constraint, not a
+table. TTT and Talismans use the same `c` pattern.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`.

@@ -486,7 +486,7 @@ async def test_odds_board_row_count_and_sort():
         ]
         assert shares == sorted(shares, reverse=True)
 
-        meta = _plain(widget, "#fwa-odds-meta")
+        meta = _plain(widget, "#fwa-odds-title")
         assert "38 collections" in meta
         assert "25,621,114" in meta
 
@@ -514,8 +514,13 @@ async def test_odds_board_suppressed_floor_renders_note():
         table = widget.query_one(DataTable)
         row = [str(c) for c in table.get_row_at(1)]  # "Art Blocks"
         assert "n/a*" in row[5]
-        meta = _plain(widget, "#fwa-odds-meta")
-        assert "multi-collection" in meta
+        # The note explaining the `*` is the lowest-priority part of the title
+        # and is dropped first when the panel is narrow, so it is asserted
+        # against the text the widget builds rather than against a rendering
+        # at whatever width this harness happens to use.
+        title = widget._title_for(38, None, False, "multi-collection contract")
+        assert "multi-collection" in title
+        assert title.startswith("ODDS BOARD")
 
 
 async def test_odds_board_unavailable_and_stale_states():
@@ -525,7 +530,7 @@ async def test_odds_board_unavailable_and_stale_states():
         table = widget.query_one(DataTable)
         assert table.row_count == 1
         assert "unavailable" in str(table.get_row_at(0)[1])
-        assert "odds unavailable" in _plain(widget, "#fwa-odds-meta")
+        assert "odds unavailable" in _plain(widget, "#fwa-odds-title")
 
         widget.update_data(
             collection_odds=_odds_rows(5),
@@ -533,7 +538,7 @@ async def test_odds_board_unavailable_and_stale_states():
             odds_as_of_block=25621114,
             odds_stale=True,
         )
-        assert "STALE" in _plain(widget, "#fwa-odds-meta")
+        assert "STALE" in _plain(widget, "#fwa-odds-title")
 
 
 async def test_odds_board_tolerates_malformed_rows():

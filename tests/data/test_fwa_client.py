@@ -27,9 +27,12 @@ from typing import Any, Callable
 import httpx
 import pytest
 
+from urllib.parse import urlparse
+
 from maxpane_dashboard.analytics import fwa_ev
 from maxpane_dashboard.data import fwa_client
 from maxpane_dashboard.data.fwa_client import (
+    _FALLBACK_RPCS,
     FWA_CORE,
     FWA_HOT_KEYS,
     FWA_REWARDS,
@@ -1181,8 +1184,18 @@ async def test_fallback_rotation_on_429():
 
     assert await client.fetch_block_number() == 25_621_159
     assert any("publicnode" in u for u in hit)
-    assert any("cloudflare" in u for u in hit)
-    assert hit.index(next(u for u in hit if "cloudflare" in u)) > 0
+    # Asserted against the configured pool rather than a named host: this
+    # used to name cloudflare, which went red as a *failure* when that dead
+    # endpoint was finally removed. What matters is that rotation happens and
+    # that the primary is tried first.
+    fallback_hosts = [urlparse(u).hostname for u in _FALLBACK_RPCS]
+    assert any(urlparse(u).hostname in fallback_hosts for u in hit), (
+        f"never rotated off the primary; hit {hit}"
+    )
+    first_fallback = next(
+        i for i, u in enumerate(hit) if urlparse(u).hostname in fallback_hosts
+    )
+    assert first_fallback > 0, "a fallback was tried before the primary"
 
 
 async def test_error_inside_http_200_rotates():
@@ -1228,10 +1241,11 @@ async def test_all_endpoints_dead_returns_degraded():
     assert set(hot) == set(FWA_HOT_KEYS)
     assert hot["_ok"] is False
 
-    # every endpoint was tried before giving up
+    # every endpoint was tried before giving up -- counted from the configured
+    # pool rather than hardcoded, so retiring a dead endpoint (cloudflare) or
+    # adding a verified one does not read as a regression here.
     tried = {u.split("//")[1].split("/")[0] for u, _p in transport.requests}
-    assert len(tried) == 3
-
+    assert len(tried) == 1 + len(_FALLBACK_RPCS)
 
 # ---------------------------------------------------------------------------
 # collectionWhitelisted lives on core, not on the whitelist contract (§13.1)

@@ -349,7 +349,24 @@ def test_buy_gate_footnote_present():
     """The DexScreener contradiction is explained on the row itself."""
     row = sig.buy_gate_signal(False)
     assert sig.BUY_GATE_FOOTNOTE in row.value_str
-    assert "FWARewards" in row.value_str
+    # The scare quotes are the load-bearing part: they say the "buys" are not
+    # what they look like. The contract name was dropped when the row was
+    # shortened to fit -- it named something the reader cannot act on.
+    assert '"buys"' in row.value_str
+
+
+def test_buy_gate_row_fits_the_signals_panel():
+    """The footnote is only worth carrying if it survives the width.
+
+    The long form ran 61 columns against a panel that gets about 55, so it
+    clipped mid-word and left a permanent widen marker -- the explanation was
+    costing more clarity than it bought.
+    """
+    row = sig.buy_gate_signal(False)
+
+    assert len(row.value_str) + 2 <= 55, (
+        f"gated row is {len(row.value_str) + 2} columns: {row.value_str!r}"
+    )
 
 
 def test_buy_gate_green_when_true():
@@ -743,3 +760,60 @@ def test_config_key_meta_loads_the_vendored_map():
     assert sig.config_key_name(15) == "TOP_LISTING_SHARE_BPS"
     assert sig.config_key_name(15, short=True) == "crown tithe"
     assert sig.config_key_name(9_999) == "key 9999"
+
+
+# ---------------------------------------------------------------------------
+# Sell-back mix -- moved here from the settlement table's subtitle
+# ---------------------------------------------------------------------------
+
+
+_MIX = [
+    {"outcome": "bid_fwa", "count": 71_800},
+    {"outcome": "bid_eth", "count": 21_160},
+    {"outcome": "relist", "count": 6_016},
+    {"outcome": "kept", "count": 4_281},
+    {"outcome": "forced", "count": 90},
+]
+
+
+def test_sellback_is_computed_from_the_rows():
+    """Never hardcoded: the shares move and a frozen number goes stale."""
+    row = sig.sellback_signal(_MIX)
+
+    total = sum(r["count"] for r in _MIX)
+    expected = 100.0 * (71_800 + 21_160) / total
+    assert f"{expected:.1f}%" in row.value_str
+    assert "sell straight back" in row.value_str
+    assert "keep the NFT" in row.value_str
+
+
+def test_sellback_counts_both_bid_currencies():
+    """Taking the bid in $FWA or in ETH are both selling straight back."""
+    only_fwa = sig.sellback_signal([{"outcome": "bid_fwa", "count": 1}])
+    both = sig.sellback_signal(
+        [{"outcome": "bid_fwa", "count": 1}, {"outcome": "bid_eth", "count": 1}]
+    )
+
+    assert "100.0%" in only_fwa.value_str
+    assert "100.0%" in both.value_str
+
+
+def test_sellback_missing_mix_is_unavailable_not_zero():
+    """A failed log read must not render '0.0% sell straight back'.
+
+    That would invert the protocol's headline fact -- roughly nine in ten
+    purchasers sell straight back -- on exactly the failure where the reader
+    can least afford to be misled.
+    """
+    for empty in (None, [], [{"outcome": "bid_fwa", "count": 0}]):
+        row = sig.sellback_signal(empty)
+        assert "0.0%" not in row.value_str
+        assert row.color == sig.SIGNAL_MUTED
+
+
+def test_sellback_row_fits_the_signals_panel():
+    row = sig.sellback_signal(_MIX)
+
+    assert len(row.value_str) + 2 <= 55, (
+        f"sellback row is {len(row.value_str) + 2} columns: {row.value_str!r}"
+    )
