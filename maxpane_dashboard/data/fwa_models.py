@@ -396,6 +396,11 @@ class SettlementMix(BaseModel):
     label: str = ""                    # human string, e.g. "Accept bid, paid in $FWA"
     count: int = 0
     share_pct: float = 0.0
+    #: ETH that moved through this outcome, summed from the events' own amount
+    #: field (``_OUTCOME_AMOUNT_FIELD``). ``None`` means "no amount to show",
+    #: not zero: ``UnsettledFinalized`` carries no value at all, and a tally
+    #: taken before any logs are held is unknown rather than 0 ETH.
+    eth_total: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -757,6 +762,7 @@ FWA_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "label",                  # str — human string
         "count",                  # int
         "share_pct",              # float — the five rows sum to 100.0
+        "eth_total",              # float | None — None when the events carry none
     ),
     "crown_history": (
         "rank",                   # int, 1-based

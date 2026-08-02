@@ -778,3 +778,64 @@ async def test_group_b_widgets_accept_frozen_signature_kwargs():
         app = _Harness(widget)
         async with app.run_test():
             widget.update_data(**{key: None for key in expected})
+
+
+@pytest.mark.asyncio
+async def test_settlement_eth_column_shows_the_amounts():
+    """The ETH column must render the amounts, not a hardcoded dash.
+
+    It shipped rendering `—` on every row: the column existed in the layout and
+    nothing ever filled it, and no test looked. This asserts the cell *and* the
+    TOTAL, so replacing either with a constant goes red.
+    """
+    widget = FWASettlementTable()
+    app = _Harness(widget)
+    async with app.run_test(size=WIDE_TABLE):
+        widget.update_data(
+            settlement_mix=[
+                {"outcome": "bid_fwa", "label": "Accept bid, paid in $FWA",
+                 "count": 3, "share_pct": 60.0, "eth_total": 12.5},
+                {"outcome": "bid_eth", "label": "Accept bid, paid in ETH",
+                 "count": 1, "share_pct": 20.0, "eth_total": 4.25},
+                {"outcome": "forced", "label": "Force-finalized",
+                 "count": 1, "share_pct": 20.0, "eth_total": None},
+            ],
+            settle_available=True,
+        )
+        table = widget.query_one("#fwa-settle-dt", DataTable)
+        cells = [
+            " ".join(str(c) for c in table.get_row_at(i))
+            for i in range(table.row_count)
+        ]
+        joined = "\n".join(cells)
+
+        assert "12.500" in joined, "the per-outcome ETH amount never rendered"
+        assert "4.250" in joined
+        # 12.5 + 4.25, with the amount-less outcome contributing nothing
+        assert "16.750" in joined, "the TOTAL row did not sum the ETH column"
+
+
+@pytest.mark.asyncio
+async def test_settlement_eth_total_is_a_dash_when_nothing_carries_an_amount():
+    """A mix with no ETH data totals to a dash, never 0.000.
+
+    The windowed-restore path rebuilds the mix from counts alone; claiming
+    those settlements moved 0 ETH would be a measurement nobody took.
+    """
+    widget = FWASettlementTable()
+    app = _Harness(widget)
+    async with app.run_test(size=WIDE_TABLE):
+        widget.update_data(
+            settlement_mix=[
+                {"outcome": "bid_fwa", "label": "Accept bid, paid in $FWA",
+                 "count": 3, "share_pct": 100.0, "eth_total": None},
+            ],
+            settle_available=True,
+        )
+        table = widget.query_one("#fwa-settle-dt", DataTable)
+        joined = "\n".join(
+            " ".join(str(c) for c in table.get_row_at(i))
+            for i in range(table.row_count)
+        )
+
+        assert "0.000" not in joined

@@ -172,6 +172,7 @@ from maxpane_dashboard.data.fwa_client import FWAClient
 from maxpane_dashboard.data.fwa_logs import (
     REASON_UNAVAILABLE,
     SETTLEMENT_EVENTS,
+    _OUTCOME_AMOUNT_FIELD,
     CONFIG_KEY_SURCHARGE,
     FWALogClient,
     latest_config_value,
@@ -537,6 +538,11 @@ class FWAManager:
         # and false after a windowed restore.  This is what keeps the settlement
         # mix reporting 73.92% of 51,522 rather than 71% of the last four hours.
         self._event_baseline: dict[str, int] = {}
+        #: All-time per-event **wei** as of the same block. Persisted alongside
+        #: the counts for the same reason: after a windowed restore the store
+        #: holds no settlement events at all, so the ETH column has nothing to
+        #: sum and would otherwise render a dash forever.
+        self._wei_baseline: dict[str, int] = {}
         self._event_baseline_block = 0
         self._all_time_counts: dict[str, int] | None = None
 
@@ -612,9 +618,14 @@ class FWAManager:
                 for name, count in (state.get("event_baseline") or {}).items()
             }
             self._event_baseline_block = _opt_int(state.get("event_baseline_block")) or 0
+            self._wei_baseline = {
+                str(name): int(total)
+                for name, total in (state.get("wei_baseline") or {}).items()
+            }
         except (TypeError, ValueError) as exc:
             logger.warning("FWA log count baseline unreadable, dropping it: %s", exc)
             self._event_baseline = {}
+            self._wei_baseline = {}
             self._event_baseline_block = 0
         logger.info(
             "Restored FWA log state from %s: watermark block %d, raw events from "
@@ -665,6 +676,37 @@ class FWAManager:
             counts[str(name)] = counts.get(str(name), 0) + fresh
         return counts
 
+    def _all_time_event_wei(self) -> dict[str, int]:
+        """All-time per-event wei, correct across a windowed restore.
+
+        Mirrors :meth:`_all_time_event_counts` exactly -- baseline plus every
+        event ingested strictly after the baseline block -- because the two
+        answer the same question about different fields, and any divergence
+        between them would show up as an ETH total that disagrees with its own
+        row count.
+        """
+        totals: dict[str, int] = dict(self._wei_baseline)
+        floor = self._event_baseline_block if self._event_baseline else -1
+        for name, outcome in SETTLEMENT_EVENTS.items():
+            field = _OUTCOME_AMOUNT_FIELD.get(outcome, "")
+            if not field:
+                continue
+            try:
+                rows = self.logs.entries(name)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("wei for %s unavailable: %s", name, exc)
+                continue
+            fresh = 0
+            for row in rows:
+                try:
+                    if int(row.get("block_number") or 0) > floor:
+                        fresh += int(row.get(field) or 0)
+                except (TypeError, ValueError):
+                    continue
+            if fresh or name in totals:
+                totals[str(name)] = totals.get(str(name), 0) + fresh
+        return totals
+
     def _windowed_log_state(self, window_blocks: int) -> tuple[dict, dict[str, int]]:
         """Export the log store with the high-volume events bounded by block window.
 
@@ -695,6 +737,7 @@ class FWAManager:
         head = _opt_int(state.get("last_seen_block")) or 0
         state["version"] = LOG_STATE_VERSION
         state["event_baseline"] = counts
+        state["wei_baseline"] = self._all_time_event_wei()
         state["event_baseline_block"] = head
 
         events = state.get("events")
@@ -1284,8 +1327,11 @@ class FWAManager:
             return
 
         counts = self._all_time_counts or self._all_time_event_counts()
+        wei = self._all_time_event_wei()
         rows = _safe_call(
-            settlement_mix_rows, {name: counts.get(name, 0) for name in SETTLEMENT_EVENTS}
+            settlement_mix_rows,
+            {name: counts.get(name, 0) for name in SETTLEMENT_EVENTS},
+            {name: wei[name] for name in SETTLEMENT_EVENTS if name in wei},
         )
         if rows:
             snap["settlement_mix"] = rows

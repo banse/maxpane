@@ -940,7 +940,10 @@ def crown_summary(
     }
 
 
-def settlement_mix(counts: Mapping[str, int]) -> tuple[SettlementMix, ...]:
+def settlement_mix(
+    counts: Mapping[str, int],
+    wei_totals: Mapping[str, int] | None = None,
+) -> tuple[SettlementMix, ...]:
     """Five ``SettlementMix`` rows from a mapping of counts.
 
     *counts* may be keyed either by event name (``"NFTKept"``) or by outcome key
@@ -961,20 +964,37 @@ def settlement_mix(counts: Mapping[str, int]) -> tuple[SettlementMix, ...]:
         if outcome in tallies:
             tallies[outcome] += int(value)
     total = sum(tallies.values())
+
+    # Wei is summed per outcome by the caller, which is the only place that
+    # holds the decoded events. Absent for an outcome means *unknown*, which
+    # renders as a dash -- never 0.0 ETH, which would claim the settlements
+    # moved nothing.
+    wei = {}
+    for key, value in (wei_totals or {}).items():
+        outcome = SETTLEMENT_EVENTS.get(str(key), str(key))
+        if outcome in tallies:
+            wei[outcome] = wei.get(outcome, 0) + int(value)
+
     return tuple(
         SettlementMix(
             outcome=outcome,
             label=OUTCOME_LABELS[outcome],
             count=tallies[outcome],
             share_pct=(tallies[outcome] / total * 100.0) if total else 0.0,
+            eth_total=(
+                wei[outcome] / 1e18 if outcome in wei else None
+            ),
         )
         for outcome in FWA_SETTLEMENT_OUTCOMES
     )
 
 
-def settlement_mix_rows(counts: Mapping[str, int]) -> list[dict]:
+def settlement_mix_rows(
+    counts: Mapping[str, int],
+    wei_totals: Mapping[str, int] | None = None,
+) -> list[dict]:
     """:func:`settlement_mix` flattened to ``FWA_ROW_KEYS["settlement_mix"]``."""
-    return [row.model_dump() for row in settlement_mix(counts)]
+    return [row.model_dump() for row in settlement_mix(counts, wei_totals)]
 
 
 def _infer_launch_block(entries: Sequence[Mapping[str, Any]]) -> int | None:
@@ -1882,9 +1902,29 @@ class FWALogClient:
     # ------------------------------------------------------------------
 
     def settlement_mix(self) -> tuple[SettlementMix, ...]:
-        """The five-outcome mix from whatever settlement logs are held."""
+        """The five-outcome mix from whatever settlement logs are held.
+
+        The ETH column is summed here because this is the only object holding
+        the decoded events. Each outcome has its own amount field
+        (:data:`_OUTCOME_AMOUNT_FIELD`) -- the purchaser's payout, the
+        depositor's proceeds, the backing that stayed put -- and
+        ``UnsettledFinalized`` has none at all, which stays ``None`` rather
+        than becoming a zero.
+        """
         counts = {name: len(self._store.get(name, {})) for name in SETTLEMENT_EVENTS}
-        return settlement_mix(counts)
+        wei_totals: dict[str, int] = {}
+        for name in SETTLEMENT_EVENTS:
+            field = _OUTCOME_AMOUNT_FIELD.get(SETTLEMENT_EVENTS[name], "")
+            if not field:
+                continue
+            total = 0
+            for entry in (self._store.get(name, {}) or {}).values():
+                try:
+                    total += int((entry or {}).get(field) or 0)
+                except (TypeError, ValueError):
+                    continue
+            wei_totals[name] = total
+        return settlement_mix(counts, wei_totals)
 
     def crown_history(self) -> list[dict]:
         """Per-holder crown rows, vacate logs already dropped."""

@@ -22,6 +22,7 @@ import pytest
 
 from maxpane_dashboard.data.fwa_logs import (
     _MAX_SHRINKS_PER_WINDOW,
+    settlement_mix_rows,
     _SHRINKABLE,
     _classify_rpc_error,
     DRPC_BLOCK_PAGE,
@@ -1495,3 +1496,70 @@ def test_import_state_rejects_garbage_without_raising():
     assert client.import_state({}) is False
     assert client.import_state({"events": "nope"}) is False
     assert client.available is False
+
+
+# ---------------------------------------------------------------------------
+# Settlement ETH totals -- the column that had no data source
+# ---------------------------------------------------------------------------
+
+
+def test_settlement_mix_sums_eth_per_outcome():
+    """The ETH column rendered `—` on every row because nothing filled it.
+
+    ``settlement_mix`` took counts only, so the column had been declared in the
+    layout and never wired to the wei the events already carry. Each outcome
+    has its own amount field: the purchaser's payout, the depositor's proceeds,
+    the backing that stayed put.
+    """
+    rows = {
+        r["outcome"]: r
+        for r in settlement_mix_rows(
+            {"bid_fwa": 2, "bid_eth": 1, "relist": 1, "kept": 1, "forced": 1},
+            {
+                "bid_fwa": 5 * 10**18,
+                "bid_eth": 2 * 10**18,
+                "relist": 3 * 10**18,
+                "kept": 4 * 10**18,
+            },
+        )
+    }
+
+    assert rows["bid_fwa"]["eth_total"] == pytest.approx(5.0)
+    assert rows["bid_eth"]["eth_total"] == pytest.approx(2.0)
+    assert rows["relist"]["eth_total"] == pytest.approx(3.0)
+    assert rows["kept"]["eth_total"] == pytest.approx(4.0)
+
+
+def test_an_outcome_with_no_amount_is_none_not_zero():
+    """``UnsettledFinalized`` carries no value at all.
+
+    Rendering 0.000 would claim 90 force-finalizations moved no ETH, which is
+    a measurement we never took.
+    """
+    rows = {r["outcome"]: r for r in settlement_mix_rows({"forced": 90}, {})}
+
+    assert rows["forced"]["count"] == 90
+    assert rows["forced"]["eth_total"] is None
+
+
+def test_no_wei_at_all_leaves_every_total_unknown():
+    """Counts without amounts is the windowed-restore path; unknown != 0."""
+    rows = settlement_mix_rows({"bid_fwa": 5})
+
+    assert all(r["eth_total"] is None for r in rows)
+    assert rows[0]["count"] == 5, "counts must still work without wei"
+
+
+def test_eth_totals_come_from_the_events_own_amount_field():
+    """Each outcome reads a *different* field; a single field would be wrong."""
+    from maxpane_dashboard.data.fwa_logs import _OUTCOME_AMOUNT_FIELD
+
+    fields = {
+        outcome: field
+        for outcome, field in _OUTCOME_AMOUNT_FIELD.items()
+        if field
+    }
+    assert len(set(fields.values())) == len(fields), (
+        f"two outcomes share an amount field, which cannot be right: {fields}"
+    )
+    assert _OUTCOME_AMOUNT_FIELD["forced"] == "", "forced has no amount"

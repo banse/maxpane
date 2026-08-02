@@ -190,14 +190,16 @@ def _log_snapshot(*, available: bool = True, as_of_ts: float | None = 1_785_900_
         "last_seen_block": BLOCK,
         "settlement_mix": [
             {"outcome": "bid_fwa", "label": "Accept bid, paid in $FWA",
-             "count": 38_083, "share_pct": 73.92},
+             "count": 38_083, "share_pct": 73.92, "eth_total": 3_912.5},
             {"outcome": "bid_eth", "label": "Accept bid, paid in ETH",
-             "count": 7_131, "share_pct": 13.84},
+             "count": 7_131, "share_pct": 13.84, "eth_total": 742.25},
             {"outcome": "relist", "label": "Purchaser relists", "count": 3_936,
-             "share_pct": 7.64},
+             "share_pct": 7.64, "eth_total": 401.0},
             {"outcome": "kept", "label": "Keep the NFT", "count": 2_370,
-             "share_pct": 4.60},
+             "share_pct": 4.60, "eth_total": 244.75},
+            # UnsettledFinalized carries no amount at all -- None, never 0.0.
             {"outcome": "forced", "label": "Force-finalized", "count": 2,
+             "eth_total": None,
              "share_pct": 0.0},
         ],
         # Presentation payload with no model behind it: already ETH.

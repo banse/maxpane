@@ -530,6 +530,9 @@ class FWASettlementTable(Vertical):
         total_count = 0
         total_share = 0.0
         any_share = False
+        # None until some row actually carries an amount, so a mix with no ETH
+        # data totals to a dash rather than to 0.000.
+        total_eth: float | None = None
 
         for row in mix_rows:
             label = str(row.get("label") or row.get("outcome") or _DASH)
@@ -541,13 +544,20 @@ class FWASettlementTable(Vertical):
                 total_share += share
                 any_share = True
             outcome = str(row.get("outcome") or "").strip().lower()
+            eth_total = _as_float(row.get("eth_total"))
+            if eth_total is not None:
+                total_eth = (total_eth or 0.0) + eth_total
             table.add_row(
                 *_cells(
                     {
                         "label": safe_markup(_fit_label(label, outcome, label_width)),
                         "count": _fmt_int(count),
                         "share": _fmt_pct(share),
-                        "eth": _EMDASH,
+                        # `eth_total` is None for UnsettledFinalized (the event
+                        # carries no amount) and before any logs are held --
+                        # both render as a dash rather than 0.000, which would
+                        # claim the settlements moved no ETH.
+                        "eth": _fmt_eth(eth_total),
                     },
                     columns,
                 )
@@ -562,7 +572,7 @@ class FWASettlementTable(Vertical):
                         "share": (
                             f"[bold]{_fmt_pct(total_share) if any_share else _DASH}[/]"
                         ),
-                        "eth": _EMDASH,
+                        "eth": f"[bold]{_fmt_eth(total_eth)}[/]",
                     },
                     columns,
                 )
