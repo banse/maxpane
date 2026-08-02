@@ -115,30 +115,37 @@ def test_failing_prefetch_does_not_kill_app(game: str) -> None:
 
 
 def test_failing_prefetch_still_reaches_the_dashboard() -> None:
-    """Offline launch of the default game reaches a usable BakeryScreen.
+    """Offline launch of the first menu entry reaches a usable dashboard.
 
-    Splash -> game select -> bakery dashboard, with the bakery manager raising
-    on every fetch.  Before the fix this never got past ``on_mount``: the
-    prefetch worker raised ``WorkerFailed`` while the splash was showing.
+    Splash -> game select -> dashboard, with every manager raising on every
+    fetch.  Before the fix this never got past ``on_mount``: the prefetch
+    worker raised ``WorkerFailed`` while the splash was showing.
+
+    The game is *derived from* ``GAMES`` rather than named.  This used to press
+    the Rugpull Bakery row and assert ``isinstance(screen, BakeryScreen)``,
+    which stopped existing the moment that dashboard was hidden -- and what is
+    under test is the path, not which dashboard sits at the end of it.
     """
-    bakery_key = next(key for key, gid, *_ in GAMES if gid == "bakery")
+    key, game_id, *_ = GAMES[0]
 
     async def _run() -> None:
-        app = _make_app("bakery")
+        app = _make_app(game_id)
         async with app.run_test() as pilot:
             await pilot.pause()
             await pilot.press("space")  # dismiss splash
             await pilot.pause()
             assert isinstance(app.screen, GameSelectScreen)
-            await pilot.press(bakery_key)  # choose Rugpull Bakery
+            await pilot.press(key)  # choose the first menu entry
             await pilot.pause()
 
             assert app._exception is None
-            assert isinstance(app.screen, BakeryScreen)
-            assert app.screen.name == "bakery"
+            assert not isinstance(app.screen, GameSelectScreen), (
+                "the menu never handed off to a dashboard"
+            )
+            assert app.screen.name == game_id
             # The screen's own refresh also failed and was swallowed, so the
             # dashboard is up with an error status rather than gone.
-            assert app._bakery_manager.calls >= 2
+            assert app._prefetch_manager(game_id).calls >= 2
         assert app.return_code != 1
 
     asyncio.run(_run())
@@ -181,17 +188,17 @@ def test_every_game_choice_has_a_prefetch_manager() -> None:
 
 def test_tab_cycles_games_on_a_dashboard() -> None:
     """Tab on a dashboard runs action_switch_game (was: focus_next)."""
-    bakery_key = next(key for key, gid, *_ in GAMES if gid == "bakery")
+    key, game_id, *_ = GAMES[0]
 
     async def _run() -> None:
-        app = _make_app("bakery")
+        app = _make_app(game_id)
         async with app.run_test() as pilot:
             await pilot.pause()
             await pilot.press("space")
             await pilot.pause()
-            await pilot.press(bakery_key)
+            await pilot.press(key)
             await pilot.pause()
-            assert isinstance(app.screen, BakeryScreen)
+            assert app.screen.name == game_id
 
             # Record the switch instead of mounting the next dashboard (which
             # would spin up a real manager's poll timer).
@@ -202,7 +209,7 @@ def test_tab_cycles_games_on_a_dashboard() -> None:
             await pilot.pause()
 
             expected = MaxPaneApp._GAME_CYCLE[
-                (MaxPaneApp._GAME_CYCLE.index("bakery") + 1)
+                (MaxPaneApp._GAME_CYCLE.index(game_id) + 1)
                 % len(MaxPaneApp._GAME_CYCLE)
             ]
             assert launched == [expected]

@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import pytest
 
+from maxpane_dashboard.screens.game_select import GAMES
+
 #: Choices removed by MEDI-5; re-add them when the views are re-enabled.
 UNREACHABLE_GAMES = ["frenpet_full", "frenpet_wallet", "frenpet_perf"]
 
@@ -86,8 +88,14 @@ def test_every_game_choice_is_offered_by_the_menu(monkeypatch) -> None:
 
 
 def test_reachable_games_still_work(monkeypatch) -> None:
-    """The removal did not take any live dashboard with it."""
-    for game in ("bakery", "frenpet", "ttt", "talismans", "fwa"):
+    """Every game the menu offers is actually launchable.
+
+    Derived from ``GAMES`` rather than a hand-kept list: the hardcoded version
+    named ``bakery``, and went red as a *failure* when that dashboard was
+    deliberately hidden. The invariant worth holding is "everything on the
+    menu works", which survives any hide, show or reorder.
+    """
+    for _key, game, *_rest in GAMES:
         captured = _run_cli(monkeypatch, ["--game", game])
         assert captured["initial_game"] == game
         assert captured.get("ran") is True

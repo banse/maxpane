@@ -61,7 +61,7 @@ class MaxPaneApp(App):
         self,
         poll_interval: int = 30,
         theme: str = "matrix",
-        initial_game: str = "bakery",
+        initial_game: str = "fwa",
         wallet_address: str | None = None,
         **kwargs,
     ):
@@ -187,7 +187,7 @@ class MaxPaneApp(App):
     # temporarily hidden from cycling — code intact, restore by re-adding them.
     # "dota" is omitted: its game backend is NXDOMAIN. The manager, screen and
     # shutdown wiring below are intact so it can be restored by re-adding the id.
-    _GAME_CYCLE = ["base", "frenpet", "cattown", "bakery", "ocm", "ttt", "talismans", "fwa"]
+    _GAME_CYCLE = ["fwa", "base", "frenpet", "cattown", "ttt", "talismans"]
 
     def _launch_game(self, game_id: str, *, first: bool = False) -> None:
         """Install and switch to a game screen.

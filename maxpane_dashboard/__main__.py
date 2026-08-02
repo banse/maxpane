@@ -219,10 +219,10 @@ def main():
     # views are re-enabled in GAMES.
     parser.add_argument(
         "--game",
-        default="bakery",
-        choices=["bakery", "frenpet", "base", "cattown", "ocm", "ttt", "talismans", "fwa"],
+        default="fwa",
+        choices=["fwa", "base", "frenpet", "cattown", "ttt", "talismans"],
         help=(
-            "Which game dashboard to preload (default: bakery). The game "
+            "Which game dashboard to preload (default: fwa). The game "
             "selection menu still appears at startup; this only warms that "
             "game's data first."
         ),

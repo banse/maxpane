@@ -2,7 +2,7 @@
 
 Terminal dashboards for onchain games, NFT collections, and trading on Base, Abstract, and Ethereum.
 
-Track leaderboards, signals, trends, and analytics for 9 onchain projects — all from your terminal.
+Track leaderboards, signals, trends, and analytics for onchain projects — all from your terminal.
 
 Every dashboard is **read-only and keyless**: public RPCs and public APIs only, no API keys of any
 kind, no wallet, no signing, no transactions.
@@ -11,14 +11,12 @@ kind, no wallet, no signing, no transactions.
 
 | Game | Chain | What you see |
 |------|-------|-------------|
+| **FWA** | Ethereum | NFT gacha pool, inverse-weighted VRF draws, pull EV |
 | **Base Trading** | Base | Trending tokens, volume, ETH price, signals |
 | **FrenPet** | Base | Pet battles, leaderboard, activity, trends |
 | **Cat Town** | Base | Fishing competition, KIBBLE economy, catches |
-| **Rugpull Bakery** | Abstract | Bake cookies, boost/attack, season prizes |
-| **OCM** | Ethereum | Onchain Monsters staking, supply, burns |
 | **Ten Thousand Tokens** | Ethereum | NFT burn-to-launch on UniV4, fee engines, holder claims |
 | **Talismans** | Ethereum | Core-conservation NFT collection, materials, essence × tier |
-| **FWA** | Ethereum | NFT gacha pool, inverse-weighted VRF draws, pull EV |
 
 ### FWA — Fake World Assets
 
@@ -87,14 +85,13 @@ alias maxpane='~/path/to/maxpane/maxpane/target/release/maxpane && command maxpa
 ## Usage
 
 ```bash
-maxpane                        # launch dashboard (default: bakery)
-maxpane --game frenpet         # start on FrenPet view
+maxpane                        # launch dashboard (default: fwa)
+maxpane --game fwa             # start on Fake World Assets view
 maxpane --game base            # start on Base trading view
+maxpane --game frenpet         # start on FrenPet view
 maxpane --game cattown         # start on Cat Town view
-maxpane --game ocm             # start on OCM view
 maxpane --game ttt             # start on Ten Thousand Tokens view
 maxpane --game talismans       # start on Talismans view
-maxpane --game fwa             # start on Fake World Assets view
 maxpane --theme minimal        # use minimal theme
 maxpane --poll-interval 60     # poll every 60s instead of 30s
 maxpane --font-size 12         # smaller font = more columns (see below)

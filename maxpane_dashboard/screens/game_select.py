@@ -9,24 +9,28 @@ from textual.widgets import Static
 
 
 GAMES = [
-    ("1", "base", "Base Trading", "Trending tokens, volume, signals on Base"),
-    ("2", "frenpet", "FrenPet", "Pet battles, leaderboard, activity on Base"),
+    ("1", "fwa", "Fake World Assets", "NFT gacha pool w/ inverse-weighted VRF draws on Ethereum"),
+    ("2", "base", "Base Trading", "Trending tokens, volume, signals on Base"),
+    ("3", "frenpet", "FrenPet", "Pet battles, leaderboard, activity on Base"),
     # Temporarily hidden — code intact, restore by uncommenting:
-    # ("3", "frenpet_full", "FrenPet Full", "General, Wallet, Pet views on Base"),
-    # ("4", "frenpet_wallet", "FrenPet Wallet", "ETH rewards, pool share, APR on Base"),
-    # ("5", "frenpet_perf", "FrenPet Performance", "Pet comparison, velocity, win rates on Base"),
-    ("3", "cattown", "Cat Town", "Fishing competition, KIBBLE economy on Base"),
+    # ("_", "frenpet_full", "FrenPet Full", "General, Wallet, Pet views on Base"),
+    # ("_", "frenpet_wallet", "FrenPet Wallet", "ETH rewards, pool share, APR on Base"),
+    # ("_", "frenpet_perf", "FrenPet Performance", "Pet comparison, velocity, win rates on Base"),
+    ("4", "cattown", "Cat Town", "Fishing competition, KIBBLE economy on Base"),
     # Hidden — the game's backend is gone: wc2-agentic-dev-3o6un.ondigitalocean.app
     # is NXDOMAIN, so every fetch fails and the dashboard can only ever render its
     # unavailable state. Code and tests are intact (77 client tests); restore by
     # uncommenting here and re-adding "dota" to _GAME_CYCLE in app.py and to the
     # --game choices in __main__.py.
-    # ("4", "dota", "DOTA", "Defense of the Agents idle MOBA on Base"),
-    ("4", "bakery", "Rugpull Bakery", "Bake cookies, boost, attack on Abstract"),
-    ("5", "ocm", "OCM", "Onchain Monsters staking, supply, burns on Ethereum"),
-    ("6", "ttt", "Ten Thousand Tokens", "NFT collection w/ UniV4 burn-to-launch on Ethereum"),
-    ("7", "talismans", "Talismans", "Core-conservation NFT collection on Ethereum"),
-    ("8", "fwa", "Fake World Assets", "NFT gacha pool w/ inverse-weighted VRF draws on Ethereum"),
+    # ("_", "dota", "DOTA", "Defense of the Agents idle MOBA on Base"),
+    # Hidden on request. Both dashboards, their managers and their tests are
+    # intact; restore by uncommenting here, re-adding the id to _GAME_CYCLE in
+    # app.py and to the --game choices in __main__.py, and renumbering the keys
+    # below so they stay contiguous (tests/test_cli_game_choices.py asserts it).
+    # ("_", "bakery", "Rugpull Bakery", "Bake cookies, boost, attack on Abstract"),
+    # ("_", "ocm", "OCM", "Onchain Monsters staking, supply, burns on Ethereum"),
+    ("5", "ttt", "Ten Thousand Tokens", "NFT collection w/ UniV4 burn-to-launch on Ethereum"),
+    ("6", "talismans", "Talismans", "Core-conservation NFT collection on Ethereum"),
 ]
 
 

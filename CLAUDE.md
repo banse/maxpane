@@ -77,22 +77,30 @@ scripts/                    one-shot tooling (ABI vendoring etc). Imported by no
 (render primitives only). Widgets never import from `data/` or `analytics/`; they receive
 `str`/`int`/`float`/`bool`/`dict`/`list[dict]`.
 
-## The eight visible dashboards
+## The six visible dashboards
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
-| 1 | `base` | Base | trending tokens, volume, signals |
-| 2 | `frenpet` | Base | pet battles, leaderboard, activity |
-| 3 | `cattown` | Base | fishing competition, KIBBLE economy |
-| 4 | `bakery` | Abstract | bake / boost / attack, season prizes |
-| 5 | `ocm` | Ethereum | Onchain Monsters staking, supply, burns |
-| 6 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
-| 7 | `talismans` | Ethereum | core-conservation NFT collection |
-| 8 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
+| 1 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
+| 2 | `base` | Base | trending tokens, volume, signals |
+| 3 | `frenpet` | Base | pet battles, leaderboard, activity |
+| 4 | `cattown` | Base | fishing competition, KIBBLE economy |
+| 5 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
+| 6 | `talismans` | Ethereum | core-conservation NFT collection |
 
-Three FrenPet variants (`frenpet_full`, `frenpet_wallet`, `frenpet_perf`) and `dota` exist in
-code but are hidden from the selection pane — DOTA because its game backend is NXDOMAIN, so it
-could only ever render an unavailable state. Its code and 77 client tests are intact. Ten themes are registered.
+`fwa` is position 1 and the `--game` default.
+
+Hidden from the selection pane, code and tests intact: `bakery` and `ocm` (hidden on request),
+`dota` (its backend is NXDOMAIN, so it could only ever render an unavailable state; 77 client
+tests still pass), and three FrenPet variants (`frenpet_full`, `frenpet_wallet`,
+`frenpet_perf`). Ten themes are registered.
+
+**Hiding a dashboard touches five surfaces and they must agree**: `GAMES` in
+`screens/game_select.py` (keys stay contiguous 1..N — a test asserts it), `_GAME_CYCLE` in
+`app.py`, the `--game` `choices` *and* `default` in `__main__.py`, plus this table and the
+README. Hiding the current default silently breaks launch, so check `default=` every time.
+Tests must derive game ids from `GAMES` rather than naming them: hardcoded ids turn a
+deliberate hide into a red suite.
 
 ## Build & run
 
