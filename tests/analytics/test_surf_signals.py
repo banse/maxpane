@@ -169,3 +169,88 @@ def test_markup_hostile_text_survives_verbatim():
     """
     assert sig.decode_utf8_calldata("0x5b2f785d") == "[/x]"
     assert sig.decode_utf8_calldata("0x5b626c696e6b5d") == "[blink]"
+
+
+# --- classify_channel_tx ----------------------------------------------------
+#
+# The dev's spec: from == to == channel is a post; from == channel to anything
+# else is an onchain action; from == a dev wallet is funding; everything else
+# is a community reply.  All four kinds exist in the 21 captured txs.
+
+
+def _kind(row: dict) -> str:
+    return sig.classify_channel_tx(
+        row["from"], row["to"], int(row["value"]), row["raw_input"]
+    )
+
+
+def test_self_post_is_self(calldata: dict):
+    """nonce 13: from == to == 0x200E710a…, value 0."""
+    row = calldata["self_lp_add"]
+    assert row["from"].lower() == row["to"].lower()
+    assert _kind(row) == "self"
+
+
+def test_outbound_contract_call_is_action(calldata: dict):
+    """nonce 4: the channel EOA calling the ERC-8004 registry.
+
+    This is the exact shape the NEW DEPLOY detector watches for (PRD §3 #4).
+    """
+    row = calldata["action_register"]
+    assert row["to"].lower() == "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432"
+    assert _kind(row) == "action"
+
+
+def test_dev_wallet_value_transfer_is_fund(calldata: dict):
+    """0.054 ETH from surfsurf.eth — the tx that proves he owns the channel."""
+    row = calldata["fund_ownership_proof"]
+    assert int(row["value"]) == 54_000_000_000_000_000
+    assert _kind(row) == "fund"
+
+
+@pytest.mark.parametrize("name", ["reply_pasta", "reply_begging"])
+def test_strangers_are_replies_whatever_they_send(calldata: dict, name: str):
+    """Both real replies: one value-0, one carrying 1e13 wei of bait.
+
+    Value never promotes a stranger to ``fund``: ``fund`` is about *who*, and
+    treating a funded-looking reply as the dev's own tx is how a spoofed feed
+    row gets rendered as trusted (PRD §6.4/§6.5).
+    """
+    assert _kind(calldata[name]) == "reply"
+
+
+def test_dev_wallet_message_is_not_mislabelled_as_funding():
+    """A dev-wallet tx that carries a readable message is a reply, not funding.
+
+    ``fund`` means value moved or empty calldata.  The literal spec says
+    "from == dev wallet -> funding", but the feed renders these kinds as words
+    next to a message body, and labelling a readable message "fund" would be a
+    lie on screen.
+    """
+    from maxpane_dashboard.data.surf_addresses import ANNOUNCE, DEV_WALLET
+
+    assert sig.classify_channel_tx(DEV_WALLET, ANNOUNCE, 0, "0x736f6f6e") == "reply"
+    assert sig.classify_channel_tx(DEV_WALLET, ANNOUNCE, 0, "0x") == "fund"
+
+
+def test_case_and_missing_addresses_never_raise():
+    """RPC gives lowercase, Blockscout gives checksummed; both must classify.
+
+    A contract-creation tx has ``to = None``; from the channel that is an
+    action, and from a stranger it is not our business but must still return a
+    kind rather than raising inside a render path.
+    """
+    from maxpane_dashboard.data.surf_addresses import ANNOUNCE
+
+    assert sig.classify_channel_tx(ANNOUNCE.lower(), ANNOUNCE.upper(), 0, "0x736f6f6e") == "self"
+    assert sig.classify_channel_tx(ANNOUNCE, None, 0, "0x") == "action"
+    assert sig.classify_channel_tx(None, None, None, None) == "reply"
+
+    # The vocabulary is WP0's, re-exported — *identity*, not equality.  A second
+    # literal here would be a closed vocabulary with two green tests, and a fifth
+    # kind added to one copy would pass both suites while the classifier and the
+    # models disagreed.  WP0's test_channel_tx_kinds_are_the_four_frozen_strings
+    # owns the contents; this line owns the fact that there is only one object.
+    from maxpane_dashboard.data import surf_models
+
+    assert sig.CHANNEL_KINDS is surf_models.CHANNEL_KINDS

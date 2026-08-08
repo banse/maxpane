@@ -44,6 +44,11 @@ Pattern: ``maxpane_dashboard/analytics/fwa_signals.py``.
 
 from __future__ import annotations
 
+from typing import Any
+
+from maxpane_dashboard.data.surf_addresses import ANNOUNCE, DEV_WALLET, OPS_WALLET
+from maxpane_dashboard.data.surf_models import CHANNEL_KINDS
+
 __all__ = [
     "FIRED_TTL_S",
     "STATE_OK",
@@ -55,6 +60,8 @@ __all__ = [
     "BASELINE_EVENT_KEYS",
     "MONOTONIC_BASELINES",
     "decode_utf8_calldata",
+    "CHANNEL_KINDS",
+    "classify_channel_tx",
 ]
 
 
@@ -165,3 +172,83 @@ def decode_utf8_calldata(hex_str: str) -> str | None:
         return None
     text = text.strip()
     return text or None
+
+
+# The four feed kinds (PRD §4) come from WP0's data/surf_models.py and are
+# re-exported above, never redefined.  ``self`` is the dev's broadcast,
+# ``action`` is the channel EOA doing something onchain, ``fund`` is a dev
+# wallet paying the channel's gas, ``reply`` is everyone else — and everyone
+# else can write anything, so replies are rendered distinctly and never as the
+# dev's words.
+
+_CHANNEL = ANNOUNCE.lower()
+_DEV_WALLETS = frozenset({DEV_WALLET.lower(), OPS_WALLET.lower()})
+
+
+def _as_int(value: Any) -> int | None:
+    """Coerce to ``int``; ``None`` when missing or unparseable.
+
+    ``bool`` is rejected: ``True`` is never a nonce, and reading it as ``1`` is
+    exactly how a failed read becomes a plausible number.  Hex strings are
+    accepted because raw ``eth_call`` returns arrive that way.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value == int(value) else None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return int(text, 16) if text.lower().startswith("0x") else int(text, 10)
+        except ValueError:
+            return None
+    return None
+
+
+def _addr(value: Any) -> str:
+    """Lowercased address, or ``""``.
+
+    Case matters here and only here: the RPC answers lowercase, Blockscout
+    answers checksummed, and a case-sensitive comparison would classify the
+    same tx differently depending on which source fetched it.
+    """
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
+def classify_channel_tx(
+    from_addr: str,
+    to_addr: str,
+    value_wei: int,
+    input_hex: str,
+) -> str:
+    """One of :data:`CHANNEL_KINDS` for a tx involving the announce channel.
+
+    Order matters, and it is the dev's own filter order (channel nonce 2):
+
+    1. ``from == to == channel`` -> ``self``.  A post.
+    2. ``from == channel`` -> ``action``.  The channel EOA doing something
+       onchain — the ERC-8004 ``register()`` at nonce 4 is this, and NEW DEPLOY
+       watches for the next one.  ``to = None`` (a deployment) lands here too.
+    3. ``from`` is a dev wallet **and** (value moved **or** the calldata is not
+       a message) -> ``fund``.  A dev wallet that writes a readable message is
+       a ``reply``, because the feed prints these kinds next to the message and
+       calling a message "fund" would be wrong on screen.
+    4. everything else -> ``reply``.
+
+    ``value_wei`` never promotes a stranger: the begging tx sent 1e13 wei and
+    is still a reply.  Nothing here raises — a missing address is ``""``, a
+    missing value is ``0`` — because this runs inside the feed builder.
+    """
+    src = _addr(from_addr)
+    dst = _addr(to_addr)
+    if src == _CHANNEL:
+        return "self" if dst == _CHANNEL else "action"
+    if src in _DEV_WALLETS:
+        value = _as_int(value_wei) or 0
+        if value > 0 or decode_utf8_calldata(input_hex) is None:
+            return "fund"
+    return "reply"
