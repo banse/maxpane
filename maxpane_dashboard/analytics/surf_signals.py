@@ -44,8 +44,6 @@ Pattern: ``maxpane_dashboard/analytics/fwa_signals.py``.
 
 from __future__ import annotations
 
-from typing import Any
-
 __all__ = [
     "FIRED_TTL_S",
     "STATE_OK",

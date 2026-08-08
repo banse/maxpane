@@ -97,6 +97,26 @@ def test_abi_encoded_register_call_is_not_a_message(calldata: dict):
     assert sig.decode_utf8_calldata(raw) is None
 
 
+def test_invalid_utf8_with_no_control_bytes_is_none():
+    """Isolates the ``UnicodeDecodeError`` branch from the control-char guard.
+
+    The real ``register()`` fixture (nonce 4) is ABI-encoded, so its
+    zero-padding is full of NUL bytes — the control-character guard rejects it
+    on its own, independent of the UTF-8 decode step, so that test cannot tell
+    which guard actually fired.  ``0xc328`` has none of that: ``0xc3`` is a
+    valid two-byte UTF-8 lead byte, but ``0x28`` (``"("``) is not a valid
+    continuation byte, so decoding raises ``UnicodeDecodeError`` and nothing
+    else in the function can catch it.  A regression to
+    ``errors="replace"`` would pass every other test in this file and still
+    slip U+FFFD into the feed; this is the one test built to catch exactly
+    that.
+    """
+    raw = bytes.fromhex("c328")
+    with pytest.raises(UnicodeDecodeError):
+        raw.decode("utf-8")
+    assert sig.decode_utf8_calldata("0xc328") is None
+
+
 def test_empty_calldata_is_not_a_message(calldata: dict):
     """The 0.054 ETH funding tx from surfsurf.eth carries no calldata at all."""
     assert calldata["fund_ownership_proof"]["raw_input"] == "0x"
@@ -110,6 +130,18 @@ def test_trailing_whitespace_is_stripped(calldata: dict):
     assert sig.decode_utf8_calldata(calldata["reply_begging"]["raw_input"]) == (
         "Gm Adam. Help me. Donate 10 ETH, to me, pls. Thanks you."
     )
+
+
+def test_crlf_is_normalised_to_lf():
+    """A CRLF-terminated line decodes with the ``\\r`` dropped, not kept.
+
+    ``0x6c696e65206f6e650d0a6c696e652074776f`` is ``"line one\\r\\nline
+    two"`` UTF-8-encoded.  The feed renders one message per row, so a stray
+    ``\\r`` must not survive into the widget layer.
+    """
+    text = sig.decode_utf8_calldata("0x6c696e65206f6e650d0a6c696e652074776f")
+    assert text == "line one\nline two"
+    assert "\r" not in text
 
 
 @pytest.mark.parametrize(
