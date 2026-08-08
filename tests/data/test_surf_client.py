@@ -241,3 +241,150 @@ async def test_close_does_not_close_injected_client():
     await client.close()
     assert not http.is_closed  # injected clients belong to the caller
     await http.aclose()
+
+
+# ---------------------------------------------------------------------------
+# WP1.2 — fixture integrity
+# ---------------------------------------------------------------------------
+
+
+def test_client_fixtures_are_committed_and_shaped():
+    announce = load_fixture("announce_txs_page1.json")
+    assert set(announce) == {"items", "next_page_params"}
+    assert len(announce["items"]) == 21          # the full channel, one page
+    assert announce["next_page_params"] is None
+    assert len(load_fixture("dev_txs_page1.json")["items"]) == 30
+    assert len(load_fixture("ops_txs_page1.json")["items"]) == 50
+    # The register() row is the one non-UTF-8 body — keep it in the slice.
+    reg = [t for t in announce["items"]
+           if t["hash"].startswith("0xa4ce159e")]
+    assert len(reg) == 1 and reg[0]["raw_input"].startswith("0xf2c298be")
+    # Markup-hostile message text survived the slice (em-dash post, nonce 8).
+    hostile = [t for t in announce["items"] if t["nonce"] == 8
+               and t["from"]["hash"] == t["to"]["hash"]]
+    assert len(hostile) == 1
+
+
+def test_the_transfer_slice_can_answer_a_24h_question():
+    """The rate fixture must keep timestamps, and must stay small.
+
+    Two independent failure modes: a projection that drops `timestamp` makes
+    every row uncountable (the client would report 0 transfers/day, which
+    looks like a quiet collection rather than a broken slice), and a slice
+    that keeps `token_instance` drags 392 KB of base64 SVG per row into the
+    suite.
+    """
+    page = load_fixture("idmd_transfers_page1.json")
+    assert set(page) == {"items", "next_page_params"}
+    rows = page["items"]
+    assert len(rows) == 25 and all(r.get("timestamp") for r in rows)
+    assert page["next_page_params"] is None
+    assert all("token_instance" not in json.dumps(r) for r in rows)
+    # Newest first, and the whole slice spans well under a day (10.8 h) — so
+    # every row counts toward a 24 h window anchored just after the newest.
+    stamps = [r["timestamp"] for r in rows]
+    assert stamps == sorted(stamps, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# WP1.2 — the model vocabulary this WP constructs against
+# ---------------------------------------------------------------------------
+
+
+#: Fields WP1 deliberately leaves at their WP0.4 default, with the reason.
+#: Anything NOT listed here must actually be passed by this WP — see the
+#: `declared - passed` assertion below.
+WP1_LEAVES_DEFAULTED: dict[str, set[str]] = {
+    # No keyless floor source exists for IDMD in v1 (WP0 open issue 2). The
+    # field is pinned to None by WP0.4's own test so the widget can render the
+    # explicit unavailable state; filling it would require a keyed API.
+    "NftStats": {"floor_eth"},
+}
+
+
+def test_this_wp_constructs_against_wp0s_frozen_field_names():
+    """A rename in WP0.4 must fail here, at collection, not at a live refresh.
+
+    Every `fetch_*` below builds its model **by keyword**, so a field WP0 renames
+    is a `TypeError` the first time that method runs — which in a client suite
+    means the first time a transport double answers, and in production means the
+    first refresh after deploy. This test drags that failure forward to import
+    time and names the culprit, by asserting the kwargs this WP passes are
+    exactly WP0.4's declared fields.
+
+    It is deliberately assertive in **both** directions:
+
+    * `passed - declared` catches WP1 inventing a field WP0 does not have (a
+      `TypeError` at the first live refresh).
+    * `required - passed` catches WP0 adding a mandatory field WP1 never fills
+      (also a `TypeError`).
+    * `declared - passed` catches the third and quietest case: WP0 declares a
+      field **with a default** and names WP1 as its producer, and WP1 never
+      passes it. Nothing raises, every suite stays green, and WP4 reads `None`
+      forever. `ChainState.block_number` and `NonceSet.block_number` were
+      exactly this — both are `int | None = None`, both are read by WP4's
+      `_pool_chain`, and neither was in a constructor call. WP0's rule 1 says a
+      field with no producer is a defect to *report*; this assertion is what
+      makes it impossible to ship one by accident instead.
+
+    The literal dicts below are deliberately duplicated from the `Consumes` lines
+    rather than derived from the dataclasses: deriving them would make the test
+    agree with any rename, which is the one thing it must not do.
+    """
+    import dataclasses
+
+    from maxpane_dashboard.data import surf_models as m
+
+    kwargs_this_wp_passes = {
+        m.NonceSet: {"announce", "dev", "ops", "block_number"},
+        m.ChainState: {
+            "lp_liquidity", "lp_token0", "lp_token1", "lp_fee",
+            "lp_tokens_owed0_wei", "lp_tokens_owed1_wei", "lp_owner",
+            "lp_imd_wei", "lp_weth_wei",
+            "identity_allowed", "imd_supply_wei", "sqrt_price_x96", "pool_tick",
+            "imd_name", "imd_symbol", "block_number",
+        },
+        m.ChannelTx: {
+            "tx_hash", "ts", "nonce", "from_addr", "to_addr", "value_wei",
+            "input_hex", "method",
+        },
+        m.DevTx: {
+            "tx_hash", "ts", "wallet_label", "from_addr", "to_addr",
+            "counterparty", "counterparty_label", "value_wei", "method", "kind",
+            "created_contract",
+        },
+        m.MarketSnapshot: {
+            "imd_price_usd", "imd_price_usd_gecko", "imd_change_24h_pct",
+            "imd_vol_24h_usd", "pool_liquidity_usd", "pool_imd", "pool_weth",
+            "fp_price_usd", "fdv_usd", "eth_usd", "indexer_name",
+            "indexer_symbol", "sources_agree",
+        },
+        m.LogWindow: {
+            "from_block", "to_block", "bridge_mints", "identity_updates",
+            "v4_initializes", "seaport_sales",
+        },
+        m.NftStats: {
+            "holders", "total_supply", "transfers_total", "transfers_24h",
+            "dev_holdings", "written",
+        },
+    }
+    for model, passed in kwargs_this_wp_passes.items():
+        declared = {f.name for f in dataclasses.fields(model)}
+        unknown = passed - declared
+        assert not unknown, f"{model.__name__}: WP1 passes {unknown}, WP0 has {declared}"
+        required = {
+            f.name for f in dataclasses.fields(model)
+            if f.default is dataclasses.MISSING
+        }
+        assert not required - passed, (
+            f"{model.__name__}: WP0 requires {required - passed}, WP1 never passes it"
+        )
+        unproduced = declared - passed - WP1_LEAVES_DEFAULTED.get(
+            model.__name__, set()
+        )
+        assert not unproduced, (
+            f"{model.__name__}: WP0 declares {unproduced} and names WP1 as the "
+            "producer, but WP1 never passes it — it would be None forever with "
+            "a green suite. Fill it, or ask WP0 to drop it and add it to "
+            "WP1_LEAVES_DEFAULTED with the reason."
+        )
