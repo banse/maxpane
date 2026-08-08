@@ -470,6 +470,43 @@ async def test_fetch_nonces_one_batched_post_real_values():
 
 
 @pytest.mark.asyncio
+async def test_fetch_nonces_pairs_by_id_when_responses_arrive_shuffled():
+    """``fetch_nonces`` batches four calls into one POST and must pair each
+    response back to its address by request ``id`` — not by its position in
+    the response array. No existing test feeds the batch back out of order,
+    so that pairing was correct by inspection only. A mis-pairing would
+    attribute one wallet's nonce to another, which is worse than reading
+    nothing: it produces a false detection instead of an honest gap.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        assert isinstance(batch, list)
+        out = []
+        for entry in batch:
+            if entry["method"] == "eth_blockNumber":
+                out.append({"jsonrpc": "2.0", "id": entry["id"],
+                            "result": HEAD_BLOCK_HEX})
+                continue
+            addr = entry["params"][0].lower()
+            out.append({"jsonrpc": "2.0", "id": entry["id"],
+                        "result": LIVE_NONCES[addr]})
+        # Same ids, SHUFFLED array positions — legal JSON-RPC batch behaviour
+        # (nothing requires a server to answer in request order) and exactly
+        # the case a position-based pairing bug would get wrong.
+        shuffled = [out[2], out[0], out[3], out[1]]
+        assert {e["id"] for e in shuffled} == {e["id"] for e in out}
+        return httpx.Response(200, json=shuffled)
+
+    async with _client_on(RecordingTransport(handler)) as client:
+        nonces = await client.fetch_nonces()
+    assert nonces is not None
+    assert nonces.announce == 14
+    assert nonces.dev == 2350
+    assert nonces.ops == 38
+    assert nonces.block_number == HEAD_BLOCK
+
+
+@pytest.mark.asyncio
 async def test_fetch_nonces_partial_batch_error_is_field_none_never_zero():
     def handler(request: httpx.Request) -> httpx.Response:
         batch = json.loads(request.content)
@@ -2030,6 +2067,38 @@ async def test_every_log_row_reaches_the_manager_with_its_decodable_fields():
 
 
 @pytest.mark.asyncio
+async def test_log_row_topics_survive_in_the_served_order():
+    """``topics`` order is content, not just presence.
+
+    ``topics[1]`` carries a position-dependent token id — the WP1 header's
+    hazard table calls it the highest-consequence field after the hook
+    address. The test above only proves ``topics`` is a non-empty list; a
+    "canonicalising" edit that sorted or otherwise permuted the list would
+    slip straight past it while silently corrupting every downstream decode.
+    This pins full element-for-element, IN-ORDER equality against what the
+    endpoint actually served.
+    """
+    logs = _standard_logs()
+    expected = {
+        "bridge": list(logs[A.TOPIC_TRANSFER][0]["topics"]),
+        "v4": list(logs[A.TOPIC_V4_INITIALIZE][0]["topics"]),
+        "seaport": list(logs[A.TOPIC_SEAPORT_ORDER_FULFILLED][0]["topics"]),
+    }
+    # Every fixture row's topics are pairwise distinct, so a reversal is
+    # guaranteed to differ from the original — otherwise the assertion below
+    # would be vacuously true even against a client that silently reordered.
+    for topics in expected.values():
+        assert len(set(topics)) == len(topics)
+
+    async with _client_on(RecordingTransport(_logs_handler(logs))) as client:
+        window = await client.fetch_recent_logs()
+
+    assert window.bridge_mints[0]["topics"] == expected["bridge"]
+    assert window.v4_initializes[0]["topics"] == expected["v4"]
+    assert window.seaport_sales[0]["topics"] == expected["seaport"]
+
+
+@pytest.mark.asyncio
 async def test_the_full_data_word_run_survives_untruncated():
     """`hooks` is data word 2 of a v4 Initialize — five words in.
 
@@ -2104,3 +2173,174 @@ def test_the_client_never_decodes_a_log_itself():
     # The dev-activity labelling IS this module's (WP0.4 forces it), so the
     # allowlist lookup is expected here and only here.
     assert "_label_for" in source
+
+
+# ---------------------------------------------------------------------------
+# WP1.10 — structural guards
+# ---------------------------------------------------------------------------
+
+import inspect
+import re
+
+from maxpane_dashboard.data import surf_client as _mod
+
+
+def _code_only(source: str) -> str:
+    """Source with docstrings and comments stripped (WP2 uses the same idiom).
+
+    The guards below assert on what the code *does*. Prose has to be free to
+    NAME the thing it forbids: the module docstring explains that publicnode
+    "REFUSES archive ``eth_getLogs``" — which is the entire reason the pools are
+    separate — and the ``LOG_RPCS`` comment says the same again. A raw
+    substring check would fail against the very implementation WP1.1 specifies.
+    """
+    return re.sub(r"#[^\n]*", "", re.sub(r'"""(?:.|\n)*?"""', "", source))
+
+
+FETCHERS = [
+    "fetch_nonces", "fetch_chain_state", "fetch_channel_txs",
+    "fetch_dev_activity", "fetch_market", "fetch_recent_logs",
+    "fetch_nft_stats",
+]
+
+
+def test_frozen_surface_is_complete():
+    for name in FETCHERS:
+        fn = getattr(SurfClient, name)
+        assert inspect.iscoroutinefunction(fn), f"{name} must be async"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", FETCHERS)
+async def test_every_fetcher_survives_total_outage_as_none(name):
+    """PRD success criterion 3: full outage → explicit degraded state.
+
+    Every request fails at the transport layer, so this proves each method
+    survives its retries, its endpoint rotation and its ``asyncio.gather``
+    without letting an exception escape into the refresh loop.
+
+    ``_offline_client``, not ``_raising_client``: these methods all DO issue
+    requests, and an ``AssertionError`` from a ``MockTransport`` handler is not
+    an ``httpx.HTTPError`` — it would propagate out of the fetcher and error
+    all seven cases instead of asserting anything.
+    """
+    async with _offline_client() as client:
+        result = await getattr(client, name)()
+    assert result is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", FETCHERS)
+async def test_no_fetcher_turns_outage_into_zero(name):
+    """A failed read is None, never 0 / [] / {} (CLAUDE.md convention)."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(521, json={})
+
+    async with _client_on(RecordingTransport(handler)) as client:
+        result = await getattr(client, name)()
+    assert result is None
+    assert result != 0 and result != [] and result != {}
+
+
+def test_state_pool_is_structurally_logless():
+    """No state-pool CODE may spell eth_getLogs.
+
+    A capability probe is the failure mode: publicnode answers a narrow
+    recent range and 403s the backfill, so the safe rule is that no state-
+    pool helper can even name the method (mirrors
+    test_no_eth_getlogs_in_this_module in the FWA suite).
+
+    Run on ``_code_only``, not on the raw source: the module docstring names
+    ``eth_getLogs`` twice and the ``LOG_RPCS`` comment once, all three to
+    explain why the pools are separate at all. Deleting that prose to satisfy a
+    substring check would remove the explanation and keep the hazard.
+    """
+    code = _code_only(Path(_mod.__file__).read_text())
+    state_section = code.split("async def _rpc_logs")[0]
+    assert "eth_getLogs" not in state_section
+
+
+def test_client_module_never_reads_the_wall_clock_directly():
+    """time.time() is injected as now_fn; time.monotonic (pacing) is fine."""
+    source = Path(_mod.__file__).read_text()
+    assert "time.time()" not in source
+
+
+@pytest.mark.asyncio
+async def test_no_fetcher_invents_a_zero_timestamp():
+    """The sweep for the sentinel that would disable BRIDGE STAGE.
+
+    0.0 is the one value that is both falsy AND a valid float: it survives
+    every `if ts:` guard downstream while meaning 1970, i.e. an event that can
+    never be recent enough to fire.  No parsed `ts` may be 0.0 — a row whose
+    timestamp could not be parsed is dropped, never zero-stamped.
+
+    THREE addresses, because this test drives two fetchers: `fetch_dev_activity`
+    GETs the dev and ops pages, and `fetch_channel_txs` GETs the announce
+    address.  A missing entry does not degrade to `None` here — the handler
+    raises `AssertionError`, which is neither an `httpx.HTTPError` nor a
+    `ValueError`, so `_get_json` lets it through and MockTransport re-raises it
+    verbatim (httpx 0.28.1): the test errors instead of sweeping anything.
+    """
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [load_fixture("dev_txs_page1.json")],
+        A.OPS_WALLET: [load_fixture("ops_txs_page1.json")],
+        A.ANNOUNCE: [load_fixture("announce_txs_page1.json")],
+    })
+    async with _client_on(RecordingTransport(handler)) as client:
+        rows = await client.fetch_dev_activity()
+        channel = await client.fetch_channel_txs()
+
+    # All 21 announce rows and all 80 dev/ops rows carry a real Blockscout
+    # timestamp, so every surviving row must clear the 2020-09 floor.
+    assert rows and channel
+    for row in [*rows, *channel]:
+        assert row.ts > 1_600_000_000.0, row
+
+
+def test_every_log_group_is_a_tuple_never_none():
+    """WP0 froze the four groups as tuple[dict, ...]; WP4 iterates them.
+
+    This pins only the container — a `None` reaching a `for` loop in the
+    manager is the failure it prevents.  The *contents* are pinned by
+    WP1.9b's hand-over tests.
+    """
+    from maxpane_dashboard.data.surf_models import LogWindow as _LW
+
+    window = _LW(from_block=1, to_block=2)
+    for name in ("bridge_mints", "identity_updates",
+                 "v4_initializes", "seaport_sales"):
+        assert getattr(window, name) == ()
+
+
+def test_degradation_signals_are_part_of_the_clients_contract():
+    """``channel_truncated`` / ``activity_truncated`` / ``log_group_failed``
+    exist so WP4 can surface a degraded state (their own docstrings say so).
+    This pins their presence, falsy defaults and types on a FRESHLY
+    constructed client — no fetch has run — and pins ``log_group_failed``'s
+    keys against ``LogWindow``'s ACTUAL dataclass field names, not a
+    hardcoded list, so a later refactor that quietly renames or drops one of
+    the four groups fails HERE instead of leaving the manager reading an
+    attribute that no longer exists.
+    """
+    import dataclasses
+
+    from maxpane_dashboard.data.surf_models import LogWindow as _LW
+
+    client = _raising_client()  # constructed only — no request may be issued
+
+    assert client.channel_truncated is False
+    assert isinstance(client.channel_truncated, bool)
+    assert client.activity_truncated is False
+    assert isinstance(client.activity_truncated, bool)
+
+    assert isinstance(client.log_group_failed, dict)
+    assert client.log_group_failed, "must have the four groups, not be empty"
+    assert all(v is False for v in client.log_group_failed.values())
+    assert all(isinstance(v, bool) for v in client.log_group_failed.values())
+
+    log_window_group_fields = {
+        f.name for f in dataclasses.fields(_LW)
+        if f.name not in ("from_block", "to_block")
+    }
+    assert set(client.log_group_failed) == log_window_group_fields
