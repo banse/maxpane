@@ -157,8 +157,12 @@ SEL_POSITIONS = "0x99fbab88"        # NFPM.positions(uint256)
 SEL_IDENTITY_ALLOWED = "0xac8f3de6"  # IdentityRegistry.identityAllowed()
 SEL_TOTAL_SUPPLY = "0x18160ddd"      # ERC-20/721 totalSupply()
 SEL_SLOT0 = "0x3850c7bd"             # UniswapV3Pool.slot0()
-SEL_NAME = "0x06fdde03"              # ERC-20 name()  — mutable, display only
-SEL_SYMBOL = "0x95d89b41"            # ERC-20 symbol() — mutable, display only
+SEL_NAME = "0x06fdde03"              # name()  — shared by ERC-20 and ERC-721
+SEL_SYMBOL = "0x95d89b41"            # symbol() — shared by ERC-20 and ERC-721
+#: Both selectors are called against IMD_TOKEN only, where name()/symbol() are
+#: mutable, display-only owner-set strings (FP -> VIBE -> IMD, twice already —
+#: see the module docstring).  IDMD_NFT's name()/symbol() are hardcoded `pure`
+#: returns in the verified source and are not read through these selectors.
 SEL_OWNER_OF = "0x6352211e"          # ERC-721 ownerOf(uint256) — NFPM position
 
 #: constant name -> the exact Solidity function signature it hashes.

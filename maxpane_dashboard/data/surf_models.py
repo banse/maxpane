@@ -37,7 +37,7 @@ BURN signal (docs/surf_PRD.md §6.1).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 #: The four announcement-channel classifications (analytics/surf_signals.py
 #: ``classify_channel_tx`` returns exactly one of these).
