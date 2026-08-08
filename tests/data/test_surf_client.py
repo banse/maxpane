@@ -1988,3 +1988,119 @@ async def test_fetch_recent_logs_resets_group_flags_on_a_clean_call():
 
 def test_seaport_address_is_labeled():
     assert surf_client._SEAPORT in A.KNOWN_LABELS  # one cast list, no drift
+
+
+# ---------------------------------------------------------------------------
+# WP1.9b — the hand-over contract
+# ---------------------------------------------------------------------------
+
+# Field-for-field, what WP4's decoders index into.  Keep in sync with the
+# hand-over table in the WP1 header; a failure here is a WP1 defect, and a
+# change here needs WP4's agreement.
+_REQUIRED_LOG_FIELDS = {"topics", "data", "blockNumber", "transactionHash"}
+
+
+def _rich_log(topic0: str, address: str, **extra: Any) -> dict:
+    """A log with every field a real endpoint sends, including the optional
+    ``blockTimestamp`` that tenderly returns and drpc does not."""
+    return {
+        **_fake_log(topic0, address, **extra),
+        "blockTimestamp": hex(1_786_076_339),
+        "logIndex": "0x2c",
+        "removed": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_every_log_row_reaches_the_manager_with_its_decodable_fields():
+    """The contract WP4's decoders are written against."""
+    handler = _logs_handler(_standard_logs())
+    async with _client_on(RecordingTransport(handler)) as client:
+        window = await client.fetch_recent_logs()
+
+    groups = (window.bridge_mints, window.identity_updates,
+              window.v4_initializes, window.seaport_sales)
+    rows = [r for group in groups for r in group]
+    assert rows, "fixture must produce rows in at least one group"
+    for row in rows:
+        assert _REQUIRED_LOG_FIELDS <= set(row), row
+        assert isinstance(row["topics"], list) and row["topics"]
+        assert str(row["data"]).startswith("0x")
+        assert row["transactionHash"]
+
+
+@pytest.mark.asyncio
+async def test_the_full_data_word_run_survives_untruncated():
+    """`hooks` is data word 2 of a v4 Initialize — five words in.
+
+    A client that kept only the first word would leave WP4 reading "" for
+    hooks, which is falsy, which reads as hookless, which pins the hero to
+    NOT LIVE forever.  This is the single highest-consequence field in the
+    dashboard, so it gets its own test.
+    """
+    hooks_word = _strip0x(A.VIBECOINS_HOOK).lower().rjust(64, "0")
+    data = "0x" + "".join([
+        "0" * 60 + "2710",          # fee = 10000
+        "0" * 60 + "00c8",          # tickSpacing = 200
+        hooks_word,                 # word 2 — hooks
+        "0" * 63 + "1",             # sqrtPriceX96
+        "0" * 64,                   # tick
+    ])
+    logs = _standard_logs()
+    logs[A.TOPIC_V4_INITIALIZE] = [
+        _fake_log(A.TOPIC_V4_INITIALIZE, A.POOL_MANAGER_V4,
+                  topics=["0x" + "11" * 32, _addr_topic(A.IMD_TOKEN),
+                          _addr_topic(A.WETH)],
+                  data=data),
+    ]
+
+    async with _client_on(RecordingTransport(_logs_handler(logs))) as client:
+        window = await client.fetch_recent_logs()
+
+    row = window.v4_initializes[0]
+    assert row["data"] == data                       # byte-for-byte
+    assert len(_strip0x(row["data"])) == 64 * 5      # all five words
+    # Decoded the way WP4 will decode it, as a cross-check of the contract.
+    assert "0x" + _strip0x(row["data"])[64 * 2 + 24:64 * 3] == \
+        A.VIBECOINS_HOOK.lower()
+    assert len(row["topics"]) == 4                   # id + both currencies
+
+
+@pytest.mark.asyncio
+async def test_block_timestamp_is_passed_through_when_the_endpoint_sends_it():
+    """Optional upstream field, and the difference between a true FIRED age
+    and "just now" for every event (WP4's `_log_ts` prefers it)."""
+    logs = {
+        A.TOPIC_TRANSFER: [
+            _rich_log(A.TOPIC_TRANSFER, A.IMD_TOKEN,
+                      topics=["0x" + "0" * 64, _addr_topic(A.OPS_WALLET)],
+                      data="0x" + f"{10**22:064x}"),
+        ],
+        A.TOPIC_IDENTITY_HASH_UPDATED: [],
+        A.TOPIC_V4_INITIALIZE: [],
+        A.TOPIC_SEAPORT_ORDER_FULFILLED: [],
+    }
+    async with _client_on(RecordingTransport(_logs_handler(logs))) as client:
+        window = await client.fetch_recent_logs()
+
+    row = window.bridge_mints[0]
+    assert row["blockTimestamp"] == hex(1_786_076_339)
+    # The amount word is intact too — 10,000 IMD at 18 decimals.
+    assert int(row["data"], 16) == 10**22
+
+
+def test_the_client_never_decodes_a_log_itself():
+    """One owner for the log decoders, and it is WP4.
+
+    A second copy here would drift from the manager's and the two would
+    disagree about launch day.  Matching on WP4's helper names rather than on
+    words like "hooks" keeps this from firing on an explanatory comment.
+    """
+    source = Path(surf_client.__file__).read_text()
+    for banned in ("_word_addr", "_log_ts", "_v4_launch_rows"):
+        assert banned not in source, (
+            f"{banned} is WP4's; surf_client must hand over raw rows"
+        )
+    # The dev-activity labelling IS this module's (WP0.4 forces it), so the
+    # allowlist lookup is expected here and only here.
+    assert "_label_for" in source
