@@ -492,3 +492,65 @@ def test_no_idmd_transfer_row_carries_a_price() -> None:
     assert all("value" not in r for r in rows)
     seaport = [r for r in rows if (r["method"] or "").startswith(("fulfill", "match"))]
     assert len(seaport) == 24
+
+
+# ---------------------------------------------------------------------------
+# suite-wide guards
+# ---------------------------------------------------------------------------
+
+
+def test_the_capture_inventory_is_complete() -> None:
+    """29 JSON captures + the README + the agent card.  A later work package
+    deleting one, or quietly re-capturing under a new name, fails loudly here."""
+    assert {p.name for p in CAPTURES.iterdir()} == {
+        "README.md",
+        "agent_card_ipfs.txt",
+        "announce_eth_info.json",
+        "announce_eth_txs.json",
+        "dexscreener_fp.json",
+        "dexscreener_imd.json",
+        "ens_surfsurf.json",
+        "eth_search_frenpet.json",
+        "fp_base_token.json",
+        "geckoterminal_fp.json",
+        "geckoterminal_imd.json",
+        "identity_contract.json",
+        "identity_counters.json",
+        "identity_holders_page1.json",
+        "identity_info.json",
+        "identity_instances_sample.json",
+        "identity_token.json",
+        "identity_transfers_page1.json",
+        "imd_contract.json",
+        "imd_counters.json",
+        "imd_holders.json",
+        "imd_info.json",
+        "imd_token.json",
+        "ops_eth_info.json",
+        "ops_eth_token_transfers.json",
+        "ops_eth_txs.json",
+        "reg_contract.json",
+        "reg_info.json",
+        "wallet_eth_info.json",
+        "wallet_eth_token_transfers_page1.json",
+        "wallet_eth_txs_page1.json",
+    }
+
+
+def test_the_capture_set_stays_small() -> None:
+    """Provenance, not an archive.  1.6 MB on 2026-08-08; the captures were already
+    trimmed at capture time (paginated lists cut to one page, strings over 4000
+    chars end in ``...TRUNCATED``).  A re-capture that forgets that trimming shows
+    up here before it shows up in a clone."""
+    total = sum(p.stat().st_size for p in CAPTURES.rglob("*") if p.is_file())
+    assert total < 4_000_000, f"capture set has grown to {total} bytes"
+
+
+def test_nothing_shipped_reads_the_captures() -> None:
+    """``tests/fixtures/`` is test-only material and is not in the wheel, so a
+    runtime read would be a ``FileNotFoundError`` on every installed copy."""
+    package = SURF_FIXTURES.parents[2] / "maxpane_dashboard"
+    for path in package.rglob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "fixtures/surf" not in source, path
+        assert "surf_fixtures" not in source, path
