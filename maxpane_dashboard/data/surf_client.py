@@ -376,6 +376,20 @@ class SurfClient(OwnedHttpClient):
         #: reads this to render a degraded/partial-feed flag; this client
         #: does not render anything itself.
         self.channel_truncated: bool = False
+        #: Same contract as ``channel_truncated``, for ``fetch_dev_activity()``:
+        #: True when EITHER the dev-wallet or the ops-wallet page fetch hit
+        #: ``MAX_ACTIVITY_PAGES`` while Blockscout still had a
+        #: ``next_page_params`` cursor. Reset to ``False`` at the START of
+        #: every call. A single bool, not per-wallet, because the frozen
+        #: ``SURF_KEYS``/``degraded`` surface tracks source GROUPS
+        #: ("dev_activity"), not individual wallets — the extra bit would be
+        #: dead weight downstream. The dropped detail (which wallet) still
+        #: reaches the log line in ``fetch_dev_activity``. This flag matters
+        #: more than the channel's: a truncated activity page can drop a
+        #: ``created_contract`` row off the end, which is the sole signal the
+        #: NEW DEPLOY detector watches for — silent truncation there means the
+        #: dashboard reports "nothing deployed" when something did.
+        self.activity_truncated: bool = False
 
     # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
@@ -866,13 +880,32 @@ class SurfClient(OwnedHttpClient):
         Inbound rows — including the six live address-poisoning dust transfers
         sitting in these two wallets' histories today — are dropped here, at
         the only place that still knows *whose page* a row came from.
+
+        Sets ``self.activity_truncated`` — reset to ``False`` before the
+        fetch, then ``True`` if EITHER wallet's page fetch hit
+        ``MAX_ACTIVITY_PAGES`` while a cursor remained. A truncated page can
+        drop a ``created_contract`` row off its end, and that row is the only
+        signal the NEW DEPLOY detector watches for — silent truncation here
+        would render as "nothing deployed" instead of "unknown".
         """
-        (dev_rows, _dev_truncated), (ops_rows, _ops_truncated) = await asyncio.gather(
+        self.activity_truncated = False
+        (dev_rows, dev_truncated), (ops_rows, ops_truncated) = await asyncio.gather(
             self._blockscout_tx_pages(A.DEV_WALLET, MAX_ACTIVITY_PAGES),
             self._blockscout_tx_pages(A.OPS_WALLET, MAX_ACTIVITY_PAGES),
         )
         if dev_rows is None and ops_rows is None:
             return None
+        self.activity_truncated = dev_truncated or ops_truncated
+        if self.activity_truncated:
+            which = ", ".join(
+                label for label, trunc in
+                (("dev", dev_truncated), ("ops", ops_truncated)) if trunc
+            )
+            logger.warning(
+                "fetch_dev_activity: hit the %d-page bound for the %s "
+                "wallet(s) with more pages still available",
+                MAX_ACTIVITY_PAGES, which,
+            )
         out: list[DevTx] = []
         for rows, wallet_addr in (
             (dev_rows, A.DEV_WALLET.lower()),

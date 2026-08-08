@@ -1335,3 +1335,50 @@ async def test_fetch_dev_activity_one_wallet_down_is_partial_not_none():
 async def test_fetch_dev_activity_outage_returns_none():
     async with _offline_client() as client:
         assert await client.fetch_dev_activity() is None
+
+
+# ---------------------------------------------------------------------------
+# WP1.6 fix round 1 — activity_truncated: page-bound truncation is
+# discoverable, not silent (mirrors WP1.5's channel_truncated)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_dev_activity_page_bound_sets_truncated_signal():
+    """Hitting MAX_ACTIVITY_PAGES on either wallet while a cursor remains
+    must be discoverable.  The dev/ops pages are the NEW DEPLOY detector's
+    only data source — a `created_contract` row that falls off a silently
+    truncated page renders as "he has not deployed anything", which is
+    exactly the failure this product exists to prevent.
+    """
+    fixture = load_fixture("dev_txs_page1.json")
+    endless = {"items": fixture["items"][:5],
+               "next_page_params": {"block_number": 1, "index": 1}}
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [endless],
+        A.OPS_WALLET: [{"items": [], "next_page_params": None}],
+    })
+    async with _client_on(RecordingTransport(handler)) as client:
+        rows = await client.fetch_dev_activity()
+    # Truncated is not the same failure as down: partial rows still return.
+    assert rows is not None
+    assert client.activity_truncated is True
+
+
+@pytest.mark.asyncio
+async def test_fetch_dev_activity_truncated_signal_is_false_on_a_normal_fetch():
+    """A fetch that ends because both servers ran out of pages is NOT
+    truncated — and it must say so even though a PREVIOUS call on the same
+    client instance left the flag True, proving the reset and not a lucky
+    default.
+    """
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [load_fixture("dev_txs_page1.json")],
+        A.OPS_WALLET: [load_fixture("ops_txs_page1.json")],
+    })
+    async with _client_on(RecordingTransport(handler)) as client:
+        client.activity_truncated = True  # simulate a stale True from a
+        # previous refresh cycle; the next call must not inherit it.
+        rows = await client.fetch_dev_activity()
+    assert rows is not None and len(rows) == 63
+    assert client.activity_truncated is False
