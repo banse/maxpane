@@ -56,7 +56,13 @@ from maxpane_dashboard.data.rpc_common import (
     jsonrpc_payload,
     pace,
 )
-from maxpane_dashboard.data.surf_models import ChainState, ChannelTx, DevTx, NonceSet
+from maxpane_dashboard.data.surf_models import (
+    ChainState,
+    ChannelTx,
+    DevTx,
+    MarketSnapshot,
+    NonceSet,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -917,6 +923,112 @@ class SurfClient(OwnedHttpClient):
                     out.append(parsed)
         out.sort(key=lambda r: r.ts, reverse=True)
         return out
+
+    # ------------------------------------------------------------------
+    # Market REST — GeckoTerminal + DexScreener, cross-checked
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _pick_imd_pair(body: Any) -> dict | None:
+        """The canonical v3 pool's pair, else the deepest pair, else None."""
+        pairs = (body or {}).get("pairs") or []
+        for p in pairs:
+            if str(p.get("pairAddress", "")).lower() == A.POOL_V3.lower():
+                return p
+        return max(
+            pairs,
+            key=lambda p: ((p.get("liquidity") or {}).get("usd") or 0.0),
+            default=None,
+        )
+
+    @staticmethod
+    def _f(value: Any) -> float | None:
+        """Lenient float parse: None/absent/garbage stays None, never 0."""
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    async def fetch_market(self) -> MarketSnapshot | None:
+        """IMD + FP market data, DexScreener primary, GeckoTerminal check.
+
+        GeckoTerminal serves a STALE token name for IMD ("Vibe Coins") — its
+        numbers are welcome, its strings are not (PRD §6 rule 3).
+        """
+        dex_body, gecko_body, fp_body, eth_body = await asyncio.gather(
+            self._get_json(f"{DEXSCREENER_TOKENS_API}/{A.IMD_TOKEN}"),
+            self._get_json(GECKO_TOKEN_API.format(address=A.IMD_TOKEN.lower()),
+                           params={"include": "top_pools"}),
+            self._get_json(f"{DEXSCREENER_TOKENS_API}/{A.FP_TOKEN_BASE}"),
+            self._get_json(COINGECKO_ETH_URL),
+        )
+        eth_usd = self._f(((eth_body or {}).get("ethereum") or {}).get("usd"))
+
+        pair = self._pick_imd_pair(dex_body)
+        gecko_price = None
+        gecko_pool = None
+        if isinstance(gecko_body, dict):
+            attrs = ((gecko_body.get("data") or {}).get("attributes") or {})
+            gecko_price = self._f(attrs.get("price_usd"))
+            included = gecko_body.get("included") or []
+            gecko_pool = (included[0].get("attributes") or {}) if included else None
+        if pair is None and gecko_price is None:
+            return None  # both IMD sources dead — no snapshot, no zeros
+
+        price_dex = self._f((pair or {}).get("priceUsd"))
+        price = price_dex if price_dex is not None else gecko_price
+        agree: bool | None = None
+        if price_dex is not None and gecko_price is not None:
+            mid = (price_dex + gecko_price) / 2
+            agree = (
+                abs(price_dex - gecko_price) / mid * 100
+                <= PRICE_AGREE_TOLERANCE_PCT
+                if mid > 0 else False
+            )
+
+        fp_pair = None
+        if isinstance(fp_body, dict):
+            fp_pair = max(
+                fp_body.get("pairs") or [],
+                key=lambda p: ((p.get("liquidity") or {}).get("usd") or 0.0),
+                default=None,
+            )
+
+        liq = (pair or {}).get("liquidity") or {}
+        change = (pair or {}).get("priceChange") or {}
+        vol = (pair or {}).get("volume") or {}
+        return MarketSnapshot(
+            imd_price_usd=price,
+            imd_price_usd_gecko=gecko_price,
+            imd_change_24h_pct=(
+                self._f(change.get("h24"))
+                if pair is not None
+                else self._f((gecko_pool or {}).get(
+                    "price_change_percentage", {}).get("h24"))
+            ),
+            imd_vol_24h_usd=(
+                self._f(vol.get("h24"))
+                if pair is not None
+                else self._f(((gecko_pool or {}).get("volume_usd") or {}).get("h24"))
+            ),
+            pool_liquidity_usd=(
+                self._f(liq.get("usd"))
+                if pair is not None
+                else self._f((gecko_pool or {}).get("reserve_in_usd"))
+            ),
+            pool_imd=self._f(liq.get("base")),
+            pool_weth=self._f(liq.get("quote")),
+            fp_price_usd=self._f((fp_pair or {}).get("priceUsd")),
+            fdv_usd=self._f((pair or {}).get("fdv")),
+            # 0.0 would be a sentinel, and an ETH price of zero is not a number
+            # anyone should see rendered as one.
+            eth_usd=(eth_usd if (eth_usd or 0) > 0 else None),
+            indexer_name=((pair or {}).get("baseToken") or {}).get("name"),
+            indexer_symbol=((pair or {}).get("baseToken") or {}).get("symbol"),
+            sources_agree=agree,
+        )
 
 
 __all__ = [

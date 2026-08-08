@@ -1382,3 +1382,139 @@ async def test_fetch_dev_activity_truncated_signal_is_false_on_a_normal_fetch():
         rows = await client.fetch_dev_activity()
     assert rows is not None and len(rows) == 63
     assert client.activity_truncated is False
+
+
+# ---------------------------------------------------------------------------
+# WP1.7 — fetch_market
+# ---------------------------------------------------------------------------
+
+
+#: ETH/USD as CoinGecko answered on 2026-08-08.  There is no committed capture
+#: for this leg (the capture set predates `eth_usd` being a MarketSnapshot
+#: field), so it is an inline literal and labelled as one rather than dressed up
+#: as fixture-derived.
+COINGECKO_ETH_USD = 1917.74
+
+
+def _market_handler(
+    *, dex_imd=True, gecko=True, dex_fp=True, eth=True,
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Routes ALL FOUR legs `fetch_market` gathers.
+
+    The fourth (CoinGecko) is easy to forget, and forgetting it does not
+    degrade anything — ``_get_json`` catches only ``(httpx.HTTPError,
+    ValueError)``, so the fallthrough ``AssertionError`` below would escape
+    through ``asyncio.gather`` and error every market test instead of failing
+    one assertion.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "api.dexscreener.com" in url and A.IMD_TOKEN.lower() in url.lower():
+            if not dex_imd:
+                return httpx.Response(500, json={})
+            return httpx.Response(200, json=load_fixture("dexscreener_imd.json"))
+        if "api.dexscreener.com" in url and A.FP_TOKEN_BASE.lower() in url.lower():
+            if not dex_fp:
+                return httpx.Response(500, json={})
+            return httpx.Response(200, json=load_fixture("dexscreener_fp.json"))
+        if "api.geckoterminal.com" in url:
+            if not gecko:
+                return httpx.Response(500, json={})
+            return httpx.Response(200, json=load_fixture("geckoterminal_imd.json"))
+        if "coingecko" in url:
+            if not eth:
+                return httpx.Response(500, json={})
+            return httpx.Response(
+                200, json={"ethereum": {"usd": COINGECKO_ETH_USD}}
+            )
+        raise AssertionError(f"unexpected market URL: {url}")
+
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_fetch_market_cross_checked_real_values():
+    async with _client_on(RecordingTransport(_market_handler())) as client:
+        snap = await client.fetch_market()
+    assert snap is not None
+    assert snap.imd_price_usd == pytest.approx(0.7074)          # DexScreener
+    assert snap.imd_price_usd_gecko == pytest.approx(0.7127337345)
+    assert snap.sources_agree is True    # 0.751 % diff < 5 % tolerance
+    assert snap.imd_change_24h_pct == pytest.approx(30.89)
+    assert snap.imd_vol_24h_usd == pytest.approx(244178.0)
+    assert snap.pool_liquidity_usd == pytest.approx(548701.21)
+    assert snap.pool_imd == pytest.approx(388421.0)
+    assert snap.pool_weth == pytest.approx(142.7067)
+    assert snap.fdv_usd == pytest.approx(1647147.0)
+    # FP parity leg: the MAX-LIQUIDITY Base pair (424,308.81 USD), not the
+    # first pair DexScreener happens to order.
+    assert snap.fp_price_usd == pytest.approx(0.7274)
+    # The fourth leg: eth_usd is a MarketSnapshot field and THIS method fills it
+    # (WP4 reads the flat key off the snapshot).  A missing leg here is
+    # invisible — the field just stays None forever.
+    assert snap.eth_usd == pytest.approx(COINGECKO_ETH_USD)
+    # Identity is mutable and GeckoTerminal is STALE ("Vibe Coins"): the
+    # snapshot must carry DexScreener's current name and never Gecko's.
+    assert snap.indexer_name == "Identity.md"
+    assert snap.indexer_symbol == "IMD"
+
+
+@pytest.mark.asyncio
+async def test_fetch_market_gecko_down_degrades_cross_check_not_price():
+    async with _client_on(
+        RecordingTransport(_market_handler(gecko=False))
+    ) as client:
+        snap = await client.fetch_market()
+    assert snap is not None
+    assert snap.imd_price_usd == pytest.approx(0.7074)
+    assert snap.imd_price_usd_gecko is None
+    assert snap.sources_agree is None  # unknown, NOT False and NOT True
+
+
+@pytest.mark.asyncio
+async def test_fetch_market_dexscreener_down_falls_back_to_gecko_price():
+    async with _client_on(
+        RecordingTransport(_market_handler(dex_imd=False, dex_fp=False))
+    ) as client:
+        snap = await client.fetch_market()
+    assert snap is not None
+    assert snap.imd_price_usd == pytest.approx(0.7127337345)  # fallback leg
+    assert snap.sources_agree is None
+    assert snap.fp_price_usd is None
+    assert snap.indexer_name is None  # Gecko's stale name must NOT leak in
+
+
+@pytest.mark.asyncio
+async def test_fetch_market_disagreement_is_flagged_not_averaged():
+    fixture = load_fixture("dexscreener_imd.json")
+    fixture["pairs"][0]["priceUsd"] = "0.90"  # ~23 % off Gecko's 0.7127
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "dexscreener" in url and A.IMD_TOKEN.lower() in url.lower():
+            return httpx.Response(200, json=fixture)
+        return _market_handler()(request)
+
+    async with _client_on(RecordingTransport(handler)) as client:
+        snap = await client.fetch_market()
+    assert snap.sources_agree is False
+    assert snap.imd_price_usd == pytest.approx(0.90)  # still reported raw
+
+
+@pytest.mark.asyncio
+async def test_fetch_market_coingecko_down_is_none_never_zero():
+    """`PriceClient.get_eth_usd()` returns 0.0 on failure. That sentinel must
+    not be copied here: an ETH price of 0 makes every ETH-denominated figure
+    downstream render as free rather than as unavailable."""
+    async with _client_on(RecordingTransport(_market_handler(eth=False))) as client:
+        snap = await client.fetch_market()
+    assert snap is not None
+    assert snap.eth_usd is None
+    assert snap.eth_usd != 0.0
+    assert snap.imd_price_usd == pytest.approx(0.7074)  # the IMD legs survive
+
+
+@pytest.mark.asyncio
+async def test_fetch_market_total_outage_returns_none():
+    async with _offline_client() as client:
+        assert await client.fetch_market() is None
