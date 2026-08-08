@@ -418,6 +418,32 @@ class SurfClient(OwnedHttpClient):
         #: NEW DEPLOY detector watches for — silent truncation there means the
         #: dashboard reports "nothing deployed" when something did.
         self.activity_truncated: bool = False
+        #: Per-group failure flags for the most recent ``fetch_recent_logs()``
+        #: call, keyed by the exact ``LogWindow`` field name each result feeds
+        #: (``bridge_mints`` / ``identity_updates`` / ``v4_initializes`` /
+        #: ``seaport_sales``). Reset to all ``False`` at the START of every
+        #: call, same contract as ``channel_truncated`` / ``activity_truncated``
+        #: above. A ``dict`` rather than a fifth bool because the four groups
+        #: feed four independent detectors (BRIDGE STAGE / GATE OPEN /
+        #: V4 LAUNCH / NFT sales) and the manager must be able to degrade only
+        #: the one that actually failed — collapsing them into one flag would
+        #: make a dead Seaport filter mark a healthy bridge-mint filter
+        #: degraded too. This is the out-of-band channel ``LogWindow``'s own
+        #: docstring calls for: its four tuple fields cannot hold ``None``, so
+        #: ``()`` is ambiguous between "read succeeded, nothing matched" and
+        #: "read failed" on its own — this dict is what resolves that
+        #: ambiguity for whoever reads the ``LogWindow`` this call returns.
+        #: ``v4_initializes`` is flagged failed if EITHER the currency0 or the
+        #: currency1 query failed, even when the other one returned rows: a
+        #: real v4 Initialize on the failed side is invisible either way, and
+        #: reporting the group as healthy because the *other* query happened
+        #: to succeed would hide exactly that gap.
+        self.log_group_failed: dict[str, bool] = {
+            "bridge_mints": False,
+            "identity_updates": False,
+            "v4_initializes": False,
+            "seaport_sales": False,
+        }
 
     # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
@@ -1175,7 +1201,7 @@ class SurfClient(OwnedHttpClient):
     # ------------------------------------------------------------------
 
     async def _get_logs_shrinking(
-        self, base_filter: dict, from_block: int, to_block: int
+        self, base_filter: dict, from_block: int, to_block: int, *, group: str
     ) -> list[dict] | None:
         """eth_getLogs with bounded window-halving on range errors.
 
@@ -1183,6 +1209,11 @@ class SurfClient(OwnedHttpClient):
         a single block per round trip, which livelocks a verbatim follower.
         Halving our own window converges in <= _LOG_MAX_SHRINKS steps or
         fails honestly.
+
+        *group* is a label only — one of the ``LogWindow`` field names — used
+        solely so a warning can say WHICH filter died. It does not affect the
+        request; the caller still owns turning a ``None`` return into
+        ``self.log_group_failed[group] = True``.
         """
         window = to_block - from_block
         for _shrink in range(_LOG_MAX_SHRINKS + 1):
@@ -1197,8 +1228,15 @@ class SurfClient(OwnedHttpClient):
                 if window == _LOG_MIN_WINDOW and _shrink >= 1:
                     break
             except RuntimeError as exc:
-                logger.warning("getLogs failed: %s", exc)
+                logger.warning("getLogs failed for %s: %s", group, exc)
                 return None
+        # Every attempt either range-errored or hit the shrink floor without
+        # a shrink left to spend: honest failure, never a livelock.
+        logger.warning(
+            "getLogs shrink exhausted for %s: still range-limited at a "
+            "%d-block window after %d attempt(s)",
+            group, window, _LOG_MAX_SHRINKS + 1,
+        )
         return None
 
     async def fetch_recent_logs(self) -> LogWindow | None:
@@ -1207,12 +1245,28 @@ class SurfClient(OwnedHttpClient):
         LOGS POOL ONLY. Four filter groups; an *empty* group is data (nothing
         happened); a *failed* group is ``None``; a dead head-read is a dead
         window. Raw log dicts pass through — decoding is downstream.
+
+        Sets ``self.log_group_failed`` — reset to all ``False`` at the START
+        of every call, then per-group ``True`` for whichever of the four
+        ``LogWindow`` fields could not be read. ``LogWindow`` itself cannot
+        carry that distinction (its tuple fields default to ``()``, and ``()``
+        is a legitimate "nothing happened" answer), so this dict is the
+        out-of-band channel the model's own docstring calls for.
         """
+        self.log_group_failed = {
+            "bridge_mints": False,
+            "identity_updates": False,
+            "v4_initializes": False,
+            "seaport_sales": False,
+        }
         try:
             head_hex = await self._rpc_logs("eth_blockNumber", [])
             head = int(head_hex, 16)
         except (RuntimeError, TypeError, ValueError) as exc:
             logger.warning("fetch_recent_logs head: %s", exc)
+            # No filter was even attempted: every group is exactly as
+            # unread as the head itself, so every group is failed too.
+            self.log_group_failed = {k: True for k in self.log_group_failed}
             return None
         from_block = head - self._log_window_blocks
 
@@ -1225,35 +1279,41 @@ class SurfClient(OwnedHttpClient):
                     [_addr_topic(A.DEV_WALLET), _addr_topic(A.OPS_WALLET)],
                 ],
             },
-            from_block, head,
+            from_block, head, group="bridge_mints",
         )
+        self.log_group_failed["bridge_mints"] = bridge is None
         identity = await self._get_logs_shrinking(
             {"address": A.IDENTITY_REGISTRY,
              "topics": [A.TOPIC_IDENTITY_HASH_UPDATED]},
-            from_block, head,
+            from_block, head, group="identity_updates",
         )
+        self.log_group_failed["identity_updates"] = identity is None
         # v4 Initialize: IMD may be currency0 (topic2) or currency1 (topic3).
         init0 = await self._get_logs_shrinking(
             {"address": A.POOL_MANAGER_V4,
              "topics": [A.TOPIC_V4_INITIALIZE, None, _addr_topic(A.IMD_TOKEN)]},
-            from_block, head,
+            from_block, head, group="v4_initializes[currency0]",
         )
         init1 = await self._get_logs_shrinking(
             {"address": A.POOL_MANAGER_V4,
              "topics": [A.TOPIC_V4_INITIALIZE, None, None,
                         _addr_topic(A.IMD_TOKEN)]},
-            from_block, head,
+            from_block, head, group="v4_initializes[currency1]",
         )
         v4_inits: list[dict] | None
         if init0 is None and init1 is None:
             v4_inits = None
         else:
             v4_inits = [*(init0 or []), *(init1 or [])]
+        # Failed if EITHER side failed: a row missing from the failed side is
+        # invisible even when the other side's query came back clean.
+        self.log_group_failed["v4_initializes"] = init0 is None or init1 is None
         seaport_raw = await self._get_logs_shrinking(
             {"address": _SEAPORT,
              "topics": [A.TOPIC_SEAPORT_ORDER_FULFILLED]},
-            from_block, head,
+            from_block, head, group="seaport_sales",
         )
+        self.log_group_failed["seaport_sales"] = seaport_raw is None
         seaport: list[dict] | None = None
         if seaport_raw is not None:
             # Cheap pre-filter: keep only fulfillments whose payload mentions

@@ -1901,5 +1901,90 @@ async def test_fetch_recent_logs_outage_returns_none():
         assert await client.fetch_recent_logs() is None
 
 
+def _logs_handler_single_group_dies(
+    logs_by_topic0: dict[str, list[dict]], *, dying_topic0: str,
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Like ``_logs_handler``, but requests for ``dying_topic0`` NEVER
+    recover — every attempt range-errors, so ``_get_logs_shrinking``'s bounded
+    loop exhausts and that ONE group returns ``None`` while every other group
+    is served normally from *logs_by_topic0*. This is what proves
+    ``log_group_failed`` is keyed per-group, not a single fetch-wide bit.
+    """
+    state = {"windows_seen": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] == "eth_blockNumber":
+            return httpx.Response(200, json=_rpc_ok(payload, hex(LOG_HEAD_BLOCK)))
+        assert payload["method"] == "eth_getLogs", payload["method"]
+        flt = payload["params"][0]
+        window = int(flt["toBlock"], 16) - int(flt["fromBlock"], 16)
+        state["windows_seen"].append(window)
+        topic0 = flt["topics"][0]
+        if topic0 == dying_topic0:
+            return httpx.Response(200, json={
+                "jsonrpc": "2.0", "id": payload["id"],
+                "error": {"code": -32005,
+                          "message": "block range is too large, try "
+                                     f"{LOG_HEAD_BLOCK - 1}-{LOG_HEAD_BLOCK}"},
+            })
+        rows = [
+            log for log in logs_by_topic0.get(topic0, [])
+            if _topics_match(log["topics"], flt["topics"])
+        ]
+        return httpx.Response(200, json=_rpc_ok(payload, rows))
+
+    handler.state = state  # type: ignore[attr-defined]
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_fetch_recent_logs_flags_only_the_group_that_failed():
+    """A single filter dying degrades ONLY its own group — the LogWindow's
+    tuple still can't say so (an exhausted group looks exactly like an empty
+    one), which is why ``log_group_failed`` is the thing this test actually
+    asserts against.
+    """
+    handler = _logs_handler_single_group_dies(
+        _standard_logs(), dying_topic0=A.TOPIC_IDENTITY_HASH_UPDATED,
+    )
+    async with _client_on(RecordingTransport(handler)) as client:
+        window = await client.fetch_recent_logs()
+    assert window is not None
+    # The three healthy groups still came through with real data.
+    assert len(window.bridge_mints) == 1
+    assert len(window.v4_initializes) == 1
+    assert len(window.seaport_sales) == 1
+    # identity_updates degraded to () — indistinguishable from "nothing
+    # happened" in the tuple alone; the flag below is the only place this
+    # was a failure and not a quiet gate.
+    assert window.identity_updates == ()
+    assert client.log_group_failed == {
+        "bridge_mints": False,
+        "identity_updates": True,
+        "v4_initializes": False,
+        "seaport_sales": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_fetch_recent_logs_resets_group_flags_on_a_clean_call():
+    """Primed all-True beforehand, so a clean call proves the per-call RESET
+    (mirrors ``channel_truncated`` / ``activity_truncated``), not a default
+    that happens to already read ``False``.
+    """
+    handler = _logs_handler(_standard_logs())
+    async with _client_on(RecordingTransport(handler)) as client:
+        client.log_group_failed = {k: True for k in client.log_group_failed}
+        window = await client.fetch_recent_logs()
+    assert window is not None
+    assert client.log_group_failed == {
+        "bridge_mints": False,
+        "identity_updates": False,
+        "v4_initializes": False,
+        "seaport_sales": False,
+    }
+
+
 def test_seaport_address_is_labeled():
     assert surf_client._SEAPORT in A.KNOWN_LABELS  # one cast list, no drift
