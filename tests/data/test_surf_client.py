@@ -847,6 +847,57 @@ async def test_fetch_chain_state_block_number_leg_is_none_when_it_fails():
 
 
 @pytest.mark.asyncio
+async def test_fetch_chain_state_failed_subcall_with_plausible_data_is_still_none():
+    """A reverted sub-call whose return data still decodes to something
+    plausible must still degrade to ``None`` — the ``success`` flag from
+    ``aggregate3``'s ``Result[]`` is authoritative, never the shape of the
+    bytes behind it.
+
+    ``_chain_state_subcall``'s other failure simulations all use ``(False,
+    "0x")`` — empty return data — so ``ok()``'s ``success and strip0x(ret)``
+    check is never actually exercised by the ``success`` half: empty data
+    already falls through the ``strip0x(ret)`` truthiness check on its own,
+    so a decoder that dropped ``success and`` entirely would still pass
+    every other test in this suite. This is the case that isolates it.
+
+    ``identity_allowed`` is the worst-case field: the gate's real value
+    today IS ``False``, so a decoder that ignores ``success`` and reads a
+    failed call's leftover return data of ``true`` would render the OPEN
+    state on screen — the exact false-positive PRD §6 rule 1 exists to rule
+    out — while a run where the garbage happened to decode ``false`` would
+    look correct by coincidence. Only checking ``success`` catches both.
+    ``imd_supply_wei`` is the numeric sibling: a failed call whose return
+    data decodes to a large non-zero number must not leak through as a real
+    supply.
+    """
+    poisoned_supply = 999_999_000_000_000_000_000_000
+
+    def subcall(target, calldata):
+        sel = "0x" + _strip0x(calldata)[:8]
+        if sel == A.SEL_IDENTITY_ALLOWED:
+            # allowFailure miss, but the return data is NOT empty — it
+            # decodes to `true`, the opposite of the gate's real state.
+            return False, "0x" + _encode_uint(1)
+        if sel == A.SEL_TOTAL_SUPPLY:
+            # allowFailure miss, but the return data decodes to a plausible,
+            # non-zero supply.
+            return False, "0x" + _encode_uint(poisoned_supply)
+        return _chain_state_subcall(target, calldata)
+
+    async with _client_on(RecordingTransport(_chain_state_handler(subcall))) as client:
+        state = await client.fetch_chain_state()
+    assert state is not None
+    assert state.identity_allowed is None       # NOT True, NOT False
+    assert state.imd_supply_wei is None
+    assert state.imd_supply_wei != poisoned_supply
+    # Sibling fields that genuinely succeeded still decode normally — proof
+    # the fix degrades only the failed legs, not the whole round.
+    assert state.lp_liquidity == LP_LIQUIDITY
+    assert state.pool_tick == POOL_TICK
+    assert state.block_number == HEAD_BLOCK
+
+
+@pytest.mark.asyncio
 async def test_fetch_chain_state_total_outage_returns_none():
     async with _offline_client() as client:
         assert await client.fetch_chain_state() is None
