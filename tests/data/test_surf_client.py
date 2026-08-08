@@ -23,6 +23,7 @@ were derived by decoding those files, never typed from memory.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any, Callable
 
@@ -1100,3 +1101,237 @@ async def test_fetch_channel_txs_truncated_signal_is_false_on_a_normal_fetch():
         txs = await client.fetch_channel_txs()
     assert txs is not None and len(txs) == 21
     assert client.channel_truncated is False
+
+
+# ---------------------------------------------------------------------------
+# WP1.6 — fetch_dev_activity
+# ---------------------------------------------------------------------------
+
+
+# The senders of the six live ≤1-gwei dust transfers on the two captured pages
+# — FIVE distinct addresses, because 0x61ccfd… spoofed the ops wallet twice.
+# Six rows, five senders: this is a set of senders, so it has five members and
+# the count below must never be "corrected" to six.  Each shares its target's
+# first four and last four hex characters — which is exactly what a truncated
+# `0x1234…abcdef` rendering shows.  WP0 pins three of them in LIVE_SPOOFS;
+# these are all of them, across both wallets.
+LIVE_DUST_SENDERS = {
+    "0x61ccfd5d33f0f27a2cd5acb558d9281b110df14e",  # ~ LP_FEE_SINK_B (x2)
+    "0xf3083828702c1989710ceca517412071c2f60ee6",  # ~ LP_FEE_SINK_A
+    "0xf30875988b99489ac71ec2f5069de0dd80b70ee6",  # ~ LP_FEE_SINK_A
+    "0x5823d93a369b0aebd798e4557196f23927d84e55",  # ~ DEV_SWEEP
+    "0xa4ad23e725bb527dd5cae35b6aa985e7867d5717",  # no cast match, still dust
+}
+
+
+@pytest.mark.asyncio
+async def test_fetch_dev_activity_merges_both_wallets_real_rows():
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [load_fixture("dev_txs_page1.json")],
+        A.OPS_WALLET: [load_fixture("ops_txs_page1.json")],
+    })
+    async with _client_on(RecordingTransport(handler)) as client:
+        rows = await client.fetch_dev_activity()
+    # 80 captured rows; 17 are inbound and never become DevTx rows.
+    assert rows is not None and len(rows) == 63
+
+    # The 2026-08-07 33-ETH LP add (ops wallet, multicall to NFPM).
+    lp = [r for r in rows if r.tx_hash.startswith("0x90a0f8e2")][0]
+    assert lp.wallet_label == "ops"
+    assert lp.from_addr == A.OPS_WALLET.lower()
+    assert lp.to_addr == A.NFPM.lower()
+    assert lp.method == "multicall"
+    assert lp.kind == "lp"
+    assert lp.value_wei == 33_252_659_725_872_729_307
+    assert lp.ts == 1786076603.0  # 2026-08-07T04:23:23Z
+    # Labelled from the allowlist, not from any string in the payload.
+    assert lp.counterparty == A.NFPM.lower()
+    assert lp.counterparty_label == A.KNOWN_LABELS[A.NFPM.lower()]
+
+    # The dev-wallet FWA splitter claims — 12 of them on this page.
+    claims = [r for r in rows if r.kind == "fwa claim"]
+    assert len(claims) == 12
+    assert all(r.counterparty == A.FWA_SPLITTER.lower() for r in claims)
+    assert all(r.counterparty_label == "FWA Splitter" for r in claims)
+
+    # Newest-first across the merge.
+    assert all(rows[i].ts >= rows[i + 1].ts for i in range(len(rows) - 1))
+
+
+@pytest.mark.asyncio
+async def test_the_kind_vocabulary_matches_the_captured_pages():
+    """PRD §4: deploy / LP / burn / bridge / FWA claim / transfer / other.
+
+    Counts are derived from the two capture files, not chosen.  Re-derive them
+    from `tests/fixtures/surf/captures/` if a fixture is ever re-sliced.
+    """
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [load_fixture("dev_txs_page1.json")],
+        A.OPS_WALLET: [load_fixture("ops_txs_page1.json")],
+    })
+    async with _client_on(RecordingTransport(handler)) as client:
+        rows = await client.fetch_dev_activity()
+
+    counts = Counter(r.kind for r in rows)
+    assert counts == Counter({
+        "other": 33, "fwa claim": 12, "transfer": 8,
+        "lp": 5, "burn": 3, "bridge": 2,
+    })
+    # Every kind is from the closed vocabulary — a Blockscout `method` string
+    # never reaches the widget's label column.  It is attacker-influenced
+    # (anyone can deploy a contract with a chosen function name) and unbounded
+    # in width.
+    assert set(counts) <= surf_client.DEV_TX_KINDS
+
+
+@pytest.mark.asyncio
+async def test_a_deploy_row_is_labelled_from_created_contract():
+    """No page in the captures holds a deployment, so this row is synthetic.
+
+    It is the shape PRD §3 signal 4 fires on (the ERC-8004 registration was
+    exactly this), and `to` is null on a real deploy — the counterparty has to
+    come from `created_contract` or the row renders blank.
+    """
+    page = load_fixture("dev_txs_page1.json")
+    row = dict(page["items"][0])
+    row |= {
+        "hash": "0x" + "de" * 32,
+        "to": None,
+        "method": None,
+        "created_contract": {"hash": "0x" + "c0" * 20},
+    }
+    # BOTH wallets must be mapped even when only one carries the row under
+    # test: `fetch_dev_activity` gathers the dev page and the ops page, and an
+    # address the map does not cover falls through to the handler's
+    # `raise AssertionError`.  That is neither an `httpx.HTTPError` nor a
+    # `ValueError`, so `_get_json` does not catch it and MockTransport re-raises
+    # it verbatim (verified against the installed httpx 0.28.1) — the test would
+    # ERROR out of `asyncio.gather` before reaching a single assertion below.
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [{"items": [row], "next_page_params": None}],
+        A.OPS_WALLET: [{"items": [], "next_page_params": None}],
+    })
+    async with _client_on(RecordingTransport(handler)) as client:
+        rows = await client.fetch_dev_activity()
+
+    # An empty ops page is `[]`, not `None`, so the merge keeps going and the
+    # synthetic dev row is the only row there is.
+    assert len(rows) == 1
+    assert rows[0].kind == "deploy"
+    assert rows[0].counterparty == "0x" + "c0" * 20
+    assert rows[0].counterparty_label is None      # a fresh deploy is unknown
+
+
+@pytest.mark.asyncio
+async def test_poisoning_dust_never_becomes_an_activity_row():
+    """PRD §4 + §6.5 — the whole point of the sender keying.
+
+    Six live ≤1-gwei transfers from lookalike addresses sit in these two
+    captures today.  Every one of them is inbound, so keying on the sender
+    removes all six; none may appear as a row, and none may borrow the label
+    of the address it imitates.
+    """
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [load_fixture("dev_txs_page1.json")],
+        A.OPS_WALLET: [load_fixture("ops_txs_page1.json")],
+    })
+    async with _client_on(RecordingTransport(handler)) as client:
+        rows = await client.fetch_dev_activity()
+
+    senders = {r.from_addr for r in rows}
+    assert senders == {A.DEV_WALLET.lower(), A.OPS_WALLET.lower()}
+    assert not (senders & LIVE_DUST_SENDERS)
+    # …and the spoofs did not sneak in on the counterparty side either.
+    assert not ({r.counterparty for r in rows} & LIVE_DUST_SENDERS)
+
+    # The real fee sinks the spoofs imitate ARE labelled — proving the test
+    # discriminates by address and not by "anything that looks like a sink".
+    assert A.KNOWN_LABELS[A.LP_FEE_SINK_A.lower()] == "LP-fee sink A"
+    assert A.KNOWN_LABELS[A.LP_FEE_SINK_B.lower()] == "LP-fee sink B"
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_counterparty_is_never_labelled():
+    """The allowlist has no fallback.  USDT is a real, frequent counterparty
+    on the ops page and is deliberately not in the cast: it must stay None so
+    WP5 renders it dimmed rather than as a trusted name."""
+    # The USDT rows all live on the ops page, but the dev leg of
+    # `fetch_dev_activity`'s gather still issues its GET — leave it unmapped and
+    # the handler's `raise AssertionError` propagates verbatim through
+    # MockTransport (it is not an `httpx.HTTPError`/`ValueError`, so `_get_json`
+    # never sees it) and the test errors instead of asserting.  An empty page
+    # answers that leg without adding a row.
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [{"items": [], "next_page_params": None}],
+        A.OPS_WALLET: [load_fixture("ops_txs_page1.json")],
+    })
+    async with _client_on(RecordingTransport(handler)) as client:
+        rows = await client.fetch_dev_activity()
+
+    usdt = [r for r in rows
+            if r.counterparty == "0xdac17f958d2ee523a2206206994597c13d831ec7"]
+    assert usdt, "the ops page holds USDT transfers"
+    assert all(r.counterparty_label is None for r in usdt)
+    assert all(
+        r.counterparty_label is None
+        for r in rows if r.counterparty not in A.KNOWN_LABELS
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_prefix_lookalike_counterparty_is_never_labelled():
+    """The allowlist match is exact, not a shared-prefix heuristic.
+
+    Neither captured page happens to contain a counterparty whose leading hex
+    characters collide with a `KNOWN_LABELS` entry it is not itself — so
+    without this synthetic row, a `_label_for` regression to "shared prefix"
+    matching (the exact shape a well-meaning "make more addresses readable"
+    change would take) would pass every other WP1.6 test in this file while
+    still being the poisoning defense's failure mode: a lookalike inheriting
+    its target's trusted label.  This row shares NFPM's `0xc364…` prefix and
+    is a different address entirely.
+    """
+    lookalike = "0xc364" + "1" * 32 + "fe88"
+    assert lookalike not in A.KNOWN_LABELS
+    assert lookalike[:6] == A.NFPM.lower()[:6]
+
+    page = load_fixture("dev_txs_page1.json")
+    row = dict(page["items"][0])
+    row |= {
+        "hash": "0x" + "ab" * 32,
+        "to": {"hash": lookalike},
+        "method": None,
+        "raw_input": "0xdeadbeef",
+        "created_contract": None,
+    }
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [{"items": [row], "next_page_params": None}],
+        A.OPS_WALLET: [{"items": [], "next_page_params": None}],
+    })
+    async with _client_on(RecordingTransport(handler)) as client:
+        rows = await client.fetch_dev_activity()
+
+    assert len(rows) == 1
+    assert rows[0].counterparty == lookalike
+    assert rows[0].counterparty_label is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_dev_activity_one_wallet_down_is_partial_not_none():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if A.OPS_WALLET.lower() in str(request.url).lower():
+            return httpx.Response(521, json={})
+        return _blockscout_handler(
+            {A.DEV_WALLET: [load_fixture("dev_txs_page1.json")]}
+        )(request)
+
+    async with _client_on(RecordingTransport(handler)) as client:
+        rows = await client.fetch_dev_activity()
+    # 30 captured dev rows, 4 of them inbound → 26 survive the sender keying.
+    assert rows is not None and len(rows) == 26
+
+
+@pytest.mark.asyncio
+async def test_fetch_dev_activity_outage_returns_none():
+    async with _offline_client() as client:
+        assert await client.fetch_dev_activity() is None

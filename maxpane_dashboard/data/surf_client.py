@@ -56,7 +56,7 @@ from maxpane_dashboard.data.rpc_common import (
     jsonrpc_payload,
     pace,
 )
-from maxpane_dashboard.data.surf_models import ChainState, ChannelTx, NonceSet
+from maxpane_dashboard.data.surf_models import ChainState, ChannelTx, DevTx, NonceSet
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +262,30 @@ def _lenient_int(value: Any) -> int | None:
         except ValueError:
             return None
     return None
+
+
+#: The closed label vocabulary for the activity column (PRD §4).
+DEV_TX_KINDS = frozenset(
+    {"deploy", "lp", "burn", "bridge", "fwa claim", "transfer", "other"}
+)
+
+_DEV_WALLET_LABELS: dict[str, str] = {
+    A.DEV_WALLET.lower(): "dev",
+    A.OPS_WALLET.lower(): "ops",
+}
+
+#: Inbound value at or below this is poisoning bait, not a payment.  Not used
+#: by the filter — sender keying already removes every inbound row — and kept
+#: as the documented PRD §4 threshold for whoever later surfaces inbound rows
+#: deliberately.  See rule 2 in task WP1.6.
+_DUST_WEI = 10**9
+
+
+def _label_for(addr: str | None) -> str | None:
+    """Allowlist lookup.  No fallback, no fuzzy match, no prefix match."""
+    if not addr:
+        return None
+    return A.KNOWN_LABELS.get(addr.lower())
 
 
 # ---------------------------------------------------------------------------
@@ -760,6 +784,106 @@ class SurfClient(OwnedHttpClient):
             return None
         parsed = [self._parse_channel_tx(r) for r in rows]
         return [p for p in parsed if p is not None]
+
+    # ------------------------------------------------------------------
+    # Blockscout REST — dev-wallet activity feed
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _classify_dev_kind(row: dict, to_addr: str | None,
+                           created: str | None) -> str:
+        """Map one tx onto the closed PRD §4 vocabulary.
+
+        Keyed on the *destination address* wherever possible, because the
+        address is what the dashboard trusts (CLAUDE.md: trust the address,
+        never the name).  `method` only ever narrows a decision the address
+        has already made.
+        """
+        if created:
+            return "deploy"
+        if to_addr == A.NFPM.lower():
+            return "lp"
+        if to_addr == A.BURN_EXECUTOR.lower():
+            # bridgeToBaseBurnReceiver(): it bridges in order to burn, and the
+            # burn is what signal 6 and the supply sparkline care about.
+            return "burn"
+        if to_addr == A.RELAY_DEPOSITORY.lower():
+            return "bridge"
+        if to_addr == A.FWA_SPLITTER.lower() and row.get("method") == "claim":
+            return "fwa claim"
+        if row.get("method") is None and (row.get("raw_input") or "0x") == "0x":
+            return "transfer"
+        return "other"
+
+    @classmethod
+    def _parse_dev_tx(cls, row: dict, wallet_addr: str) -> DevTx | None:
+        """Build one DevTx, or None if this row is not this wallet's own tx.
+
+        The sender check is the address-poisoning defense (PRD §6.5) and it
+        lives HERE, at construction, so that no later stage can be handed a
+        row that should not exist.  A 1-gwei transfer from a lookalike address
+        returns None and never becomes a widget row.
+        """
+        from_addr = ((row.get("from") or {}).get("hash") or "").lower()
+        if from_addr != wallet_addr:
+            return None                      # ← the whole poisoning defense
+
+        ts = _parse_iso_ts(row.get("timestamp"))
+        tx_hash = row.get("hash")
+        if ts is None or not tx_hash:
+            return None
+        try:
+            value_wei = int(row.get("value") or "0")
+        except (TypeError, ValueError):
+            return None
+
+        to_addr = ((row.get("to") or {}).get("hash") or "").lower() or None
+        created = row.get("created_contract") or None
+        if isinstance(created, dict):
+            created = (created.get("hash") or "").lower() or None
+        elif isinstance(created, str):
+            created = created.lower() or None
+
+        counterparty = to_addr or created or ""
+        return DevTx(
+            tx_hash=tx_hash,
+            ts=ts,
+            wallet_label=_DEV_WALLET_LABELS[wallet_addr],
+            from_addr=from_addr,
+            to_addr=to_addr,
+            counterparty=counterparty,
+            counterparty_label=_label_for(counterparty),
+            value_wei=value_wei,
+            method=row.get("method"),
+            kind=cls._classify_dev_kind(row, to_addr, created),
+            created_contract=created,
+        )
+
+    async def fetch_dev_activity(self) -> list[DevTx] | None:
+        """Recent txs of both dev wallets, merged newest-first, filtered and
+        labelled.
+
+        Inbound rows — including the six live address-poisoning dust transfers
+        sitting in these two wallets' histories today — are dropped here, at
+        the only place that still knows *whose page* a row came from.
+        """
+        (dev_rows, _dev_truncated), (ops_rows, _ops_truncated) = await asyncio.gather(
+            self._blockscout_tx_pages(A.DEV_WALLET, MAX_ACTIVITY_PAGES),
+            self._blockscout_tx_pages(A.OPS_WALLET, MAX_ACTIVITY_PAGES),
+        )
+        if dev_rows is None and ops_rows is None:
+            return None
+        out: list[DevTx] = []
+        for rows, wallet_addr in (
+            (dev_rows, A.DEV_WALLET.lower()),
+            (ops_rows, A.OPS_WALLET.lower()),
+        ):
+            for row in rows or []:
+                parsed = self._parse_dev_tx(row, wallet_addr)
+                if parsed is not None:
+                    out.append(parsed)
+        out.sort(key=lambda r: r.ts, reverse=True)
+        return out
 
 
 __all__ = [
