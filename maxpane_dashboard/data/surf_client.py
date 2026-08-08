@@ -34,6 +34,7 @@ import asyncio
 import logging
 import math
 import time
+from datetime import datetime
 from typing import Any, Callable
 from urllib.parse import urlparse
 
@@ -55,7 +56,7 @@ from maxpane_dashboard.data.rpc_common import (
     jsonrpc_payload,
     pace,
 )
-from maxpane_dashboard.data.surf_models import ChainState, NonceSet
+from maxpane_dashboard.data.surf_models import ChainState, ChannelTx, NonceSet
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +222,46 @@ def _position_amounts_wei(
     amount0 = (liquidity * _Q96 * (sb - sp)) // (sp * sb) if sp * sb else 0
     amount1 = (liquidity * (sp - sa)) // _Q96
     return amount0, amount1
+
+
+# ---------------------------------------------------------------------------
+# Blockscout REST row parsing helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_iso_ts(ts: str | None) -> float | None:
+    """Blockscout ISO-8601 ('2026-08-07T04:27:11.000000Z') -> epoch seconds."""
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _lenient_int(value: Any) -> int | None:
+    """A Blockscout scalar that may be ``int``, ``str``, missing or ``null``.
+
+    ``None`` for anything unreadable — **never** ``0``. The field this exists
+    for is ``ChannelTx.nonce``, where ``0`` is a real value (the channel's
+    genesis "soon" post), so ``int(row.get("nonce") or 0)`` would make every
+    unreadable row impersonate it. ``bool`` is rejected for the same reason
+    WP2's ``_as_int`` rejects it: ``True`` is never a nonce, and reading it as
+    ``1`` turns a broken payload into a plausible number.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return int(text, 10)
+        except ValueError:
+            return None
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -618,6 +659,70 @@ class SurfClient(OwnedHttpClient):
                 None if block_raw is None else decode_uint(block_raw, 0)
             ),
         )
+
+    # ------------------------------------------------------------------
+    # Blockscout REST — announcement channel
+    # ------------------------------------------------------------------
+
+    async def _blockscout_tx_pages(
+        self, address: str, max_pages: int
+    ) -> list[dict] | None:
+        """All tx rows for *address*, following next_page_params, bounded."""
+        url = f"{self._blockscout}/addresses/{address}/transactions"
+        rows: list[dict] = []
+        params: dict | None = None
+        for _page in range(max_pages):
+            body = await self._get_json(url, params=params)
+            if not isinstance(body, dict) or "items" not in body:
+                return rows or None  # partial > nothing; None only if empty
+            rows.extend(body["items"])
+            nxt = body.get("next_page_params")
+            if not nxt:
+                break
+            params = nxt  # the server cursor, verbatim, as query params
+        return rows
+
+    @staticmethod
+    def _parse_channel_tx(row: dict) -> ChannelTx | None:
+        ts = _parse_iso_ts(row.get("timestamp"))
+        tx_hash = row.get("hash")
+        from_addr = ((row.get("from") or {}).get("hash") or "").lower()
+        # `or None`, exactly as _parse_dev_tx does it: WP0.4 types this field
+        # `str | None`, and a contract creation has no `to`.  "" would be a
+        # third state nobody declared — falsy like None, but a str, so a
+        # downstream `to_addr is None` check stops matching in silence.
+        to_addr = ((row.get("to") or {}).get("hash") or "").lower() or None
+        if ts is None or not tx_hash or not from_addr:
+            return None  # a malformed row is dropped, never zero-filled
+        try:
+            value_wei = int(row.get("value") or "0")
+        except (TypeError, ValueError):
+            return None
+        return ChannelTx(
+            ts=ts,
+            # NOT `int(... or 0)`: nonce 0 is the channel's genesis "soon" post,
+            # so a missing nonce coerced to 0 impersonates a real tx.
+            nonce=_lenient_int(row.get("nonce")),
+            from_addr=from_addr,
+            to_addr=to_addr,
+            value_wei=value_wei,
+            input_hex=row.get("raw_input") or "0x",
+            tx_hash=tx_hash,
+            method=row.get("method"),
+        )
+
+    async def fetch_channel_txs(self) -> list[ChannelTx] | None:
+        """Every tx touching the announce channel, newest first, RAW.
+
+        No decoding, no classification here: the channel is permissionless
+        and attacker-writable; interpretation is pure-function work in
+        analytics/surf_signals.py where it is table-tested (PRD §6 rule 4).
+        """
+        rows = await self._blockscout_tx_pages(A.ANNOUNCE, MAX_CHANNEL_PAGES)
+        if rows is None:
+            return None
+        parsed = [self._parse_channel_tx(r) for r in rows]
+        return [p for p in parsed if p is not None]
 
 
 __all__ = [

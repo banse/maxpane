@@ -901,3 +901,152 @@ async def test_fetch_chain_state_failed_subcall_with_plausible_data_is_still_non
 async def test_fetch_chain_state_total_outage_returns_none():
     async with _offline_client() as client:
         assert await client.fetch_chain_state() is None
+
+
+# ---------------------------------------------------------------------------
+# WP1.5 — fetch_channel_txs
+# ---------------------------------------------------------------------------
+
+
+def _blockscout_handler(
+    pages: dict[str, list[dict]],
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Maps '/addresses/{addr}/transactions' path fragments to page lists.
+
+    Each page list is served in order: first GET gets pages[addr][0], the
+    second (with next_page_params echoed as query args) pages[addr][1], etc.
+    """
+    served: dict[str, int] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        for addr, plist in pages.items():
+            if f"/addresses/{addr}" in path and path.endswith("/transactions"):
+                i = served.get(addr, 0)
+                served[addr] = i + 1
+                return httpx.Response(200, json=plist[min(i, len(plist) - 1)])
+        raise AssertionError(f"unexpected Blockscout path: {path}")
+
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_fetch_channel_txs_parses_the_full_page():
+    fixture = load_fixture("announce_txs_page1.json")
+    handler = _blockscout_handler({A.ANNOUNCE: [fixture]})
+    async with _client_on(RecordingTransport(handler)) as client:
+        txs = await client.fetch_channel_txs()
+    assert txs is not None and len(txs) == 21
+
+    # Newest self-post: nonce 13, the 33-ETH LP announcement (2026-08-07).
+    head = txs[0]
+    assert head.nonce == 13
+    assert head.from_addr == A.ANNOUNCE.lower()
+    assert head.to_addr == A.ANNOUNCE.lower()
+    assert head.ts == 1786076831.0  # 2026-08-07T04:27:11Z
+    assert head.tx_hash.startswith("0xe397869a")
+    assert head.input_hex.startswith("0x49206d6f766564")  # "I moved" — raw,
+    # undecoded: UTF-8 decoding is analytics/surf_signals.py's job (WP2).
+
+    # The register() action: to = ERC-8004 registry, method preserved.
+    reg = [t for t in txs if t.tx_hash.startswith("0xa4ce159e")][0]
+    assert reg.from_addr == A.ANNOUNCE.lower()
+    assert reg.to_addr == A.ERC8004_REGISTRY.lower()
+    assert reg.method == "register"
+    assert reg.input_hex.startswith("0xf2c298be")
+
+    # The funding tx: from the dev wallet, 0.054 ETH, empty calldata.
+    fund = [t for t in txs if t.tx_hash.startswith("0x632f5dc3")][0]
+    assert fund.from_addr == A.DEV_WALLET.lower()
+    assert fund.value_wei == 54_000_000_000_000_000
+    assert fund.input_hex == "0x"
+
+    # A community reply keeps its own sender (permissionless channel).
+    pasta = [t for t in txs if t.tx_hash.startswith("0xdcb8bf92")][0]
+    assert pasta.from_addr == "0x1c3a0ad54418fe843953c71df23637de732ce159"
+    assert pasta.to_addr == A.ANNOUNCE.lower()
+
+
+@pytest.mark.asyncio
+async def test_fetch_channel_txs_follows_next_page_params_once_per_page():
+    fixture = load_fixture("announce_txs_page1.json")
+    nxt = {"block_number": 25108773, "index": 224, "items_count": 50}
+    page1 = {"items": fixture["items"][:11], "next_page_params": nxt}
+    page2 = {"items": fixture["items"][11:], "next_page_params": None}
+    transport = RecordingTransport(_blockscout_handler({A.ANNOUNCE: [page1, page2]}))
+    async with _client_on(transport) as client:
+        txs = await client.fetch_channel_txs()
+    assert len(txs) == 21
+    assert len(transport.requests) == 2
+    # The second GET must carry the server's cursor verbatim as query params.
+    second_url = transport.urls()[1]
+    assert "block_number=25108773" in second_url and "index=224" in second_url
+
+
+@pytest.mark.asyncio
+async def test_fetch_channel_txs_page_growth_is_bounded():
+    """A server that always hands back a cursor must not be followed forever."""
+    fixture = load_fixture("announce_txs_page1.json")
+    endless = {"items": fixture["items"][:7],
+               "next_page_params": {"block_number": 1, "index": 1}}
+    transport = RecordingTransport(_blockscout_handler({A.ANNOUNCE: [endless]}))
+    async with _client_on(transport) as client:
+        txs = await client.fetch_channel_txs()
+    assert txs is not None
+    assert len(transport.requests) == surf_client.MAX_CHANNEL_PAGES
+
+
+@pytest.mark.asyncio
+async def test_channel_tx_unreadable_nonce_is_none_never_the_genesis_post():
+    """`0` is a real nonce here — the channel's first post, the "soon" tx.
+
+    So a row whose `nonce` Blockscout omits or nulls may not be coerced to 0:
+    it would silently impersonate that post, and every consumer that keys on
+    nonce (the feed's ordering, WP2's new-post detector's baseline) would see
+    two rows claiming to be the same tx. `None` says "unread", which is what it
+    is. `_parse_dev_tx` already does exactly this for its own optional fields.
+    """
+    fixture = load_fixture("announce_txs_page1.json")
+    rows = [dict(r) for r in fixture["items"][:3]]
+    rows[0]["nonce"] = None            # Blockscout nulls it
+    rows[1].pop("nonce", None)         # …or omits it entirely
+    rows[2]["nonce"] = 0               # …and a genuine 0 must survive as 0
+    page = {"items": rows, "next_page_params": None}
+
+    handler = _blockscout_handler({A.ANNOUNCE: [page]})
+    async with _client_on(RecordingTransport(handler)) as client:
+        txs = await client.fetch_channel_txs()
+
+    assert len(txs) == 3
+    assert txs[0].nonce is None and txs[0].nonce != 0
+    assert txs[1].nonce is None
+    assert txs[2].nonce == 0          # a read that worked and said zero
+
+
+@pytest.mark.asyncio
+async def test_channel_tx_contract_creation_has_to_addr_none_not_empty_string():
+    """WP0.4 types `to_addr` `str | None`; a creation has no `to`.
+
+    `""` is a third state nobody declared: it is falsy like `None` but is a
+    `str`, so `str(to_addr or "")` in WP4 and `_addr("")` in WP2 both keep
+    working while `to_addr is None` — the check WP2's classifier documents for
+    "``to = None`` (a deployment)" — quietly stops matching.
+    """
+    fixture = load_fixture("announce_txs_page1.json")
+    row = dict(fixture["items"][0])
+    row["to"] = None
+    page = {"items": [row], "next_page_params": None}
+
+    handler = _blockscout_handler({A.ANNOUNCE: [page]})
+    async with _client_on(RecordingTransport(handler)) as client:
+        txs = await client.fetch_channel_txs()
+    assert len(txs) == 1
+    assert txs[0].to_addr is None
+    assert txs[0].to_addr != ""
+
+
+@pytest.mark.asyncio
+async def test_fetch_channel_txs_outage_returns_none_not_empty_list():
+    async with _offline_client() as client:
+        result = await client.fetch_channel_txs()
+    assert result is None  # [] would mean "the channel is empty" — a lie
