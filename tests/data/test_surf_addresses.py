@@ -184,3 +184,49 @@ def test_hash_strings_are_lowercase_and_sized() -> None:
     for name in A.SELECTOR_PREIMAGES:
         value = getattr(A, name)
         assert len(value) == 10 and value == value.lower()
+
+
+# ---------------------------------------------------------------------------
+# KNOWN_LABELS — the allowlist that defeats address poisoning
+# ---------------------------------------------------------------------------
+
+# Live spoofs found in frenpet.eth's history on 2026-08-08.  Each sent exactly
+# 1 gwei so it would appear in the wallet's tx list next to the real recipient.
+LIVE_SPOOFS = (
+    "0x61ccfd5d33f0f27a2cd5acb558d9281b110df14e",  # imitates LP_FEE_SINK_B
+    "0xf3083828702c1989710ceca517412071c2f60ee6",  # imitates LP_FEE_SINK_A
+    "0xf30875988b99489ac71ec2f5069de0dd80b70ee6",  # imitates LP_FEE_SINK_A
+)
+
+
+def test_known_labels_keys_are_lowercase_addresses() -> None:
+    for key in A.KNOWN_LABELS:
+        assert key == key.lower(), key
+        assert len(key) == 42 and key.startswith("0x"), key
+
+
+def test_known_labels_covers_every_labeled_address() -> None:
+    assert set(A.KNOWN_LABELS) == {a.lower() for a in A.LABELED_ADDRESSES}
+
+
+def test_labels_are_short_enough_for_a_narrow_column() -> None:
+    for key, label in A.KNOWN_LABELS.items():
+        assert label.strip() == label and label, key
+        assert len(label) <= 22, f"{label!r} will blow up the activity column"
+
+
+def test_no_spoof_is_ever_labeled() -> None:
+    """The defence is an allowlist.  A poisoned lookalike must fall through to
+    the dimmed unknown rendering, never to a label."""
+    for spoof in LIVE_SPOOFS:
+        assert spoof not in A.KNOWN_LABELS
+
+
+def test_the_real_fee_sinks_are_labeled_and_differ_from_their_spoofs() -> None:
+    assert A.KNOWN_LABELS[A.LP_FEE_SINK_A.lower()]
+    assert A.KNOWN_LABELS[A.LP_FEE_SINK_B.lower()]
+    assert A.LP_FEE_SINK_A.lower() not in LIVE_SPOOFS
+    assert A.LP_FEE_SINK_B.lower() not in LIVE_SPOOFS
+    # They differ only in the middle — first 6 and last 4 chars collide.
+    assert A.LP_FEE_SINK_B.lower()[:6] == LIVE_SPOOFS[0][:6]
+    assert A.LP_FEE_SINK_B.lower()[-4:] == LIVE_SPOOFS[0][-4:]

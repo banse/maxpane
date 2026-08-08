@@ -171,3 +171,37 @@ SELECTOR_PREIMAGES: dict[str, str] = {
     "SEL_SYMBOL": "symbol()",
     "SEL_OWNER_OF": "ownerOf(uint256)",
 }
+
+#: Lowercase address -> the label ``SurfDevActivity`` may render as trusted.
+#:
+#: This is an **allowlist**.  Anything absent renders dimmed as
+#: ``0x`` + first 8 + ``…`` + last 6 and is never styled as known.  Do not add
+#: spoof addresses here; the poisoning defence is that they fall through.
+KNOWN_LABELS: dict[str, str] = {
+    DEV_WALLET.lower(): "dev · surfsurf.eth",
+    OPS_WALLET.lower(): "ops · frenpet.eth",
+    ANNOUNCE.lower(): "announce channel",
+    IMD_TOKEN.lower(): "IMD token",
+    IDMD_NFT.lower(): "IDMD NFT",
+    IDENTITY_RENDERER.lower(): "IdentityRenderer",
+    IDENTITY_REGISTRY.lower(): "IdentityRegistry",
+    POOL_V3.lower(): "IMD/WETH v3 pool",
+    NFPM.lower(): "Uniswap v3 NFPM",
+    BURN_EXECUTOR.lower(): "BurnExecutor",
+    ERC8004_REGISTRY.lower(): "ERC-8004 registry",
+    POOL_MANAGER_V4.lower(): "v4 PoolManager",
+    WETH.lower(): "WETH",
+    FP_TOKEN_BASE.lower(): "FP token · Base",
+    SEAPORT.lower(): "Seaport",
+    UNIVERSAL_ROUTER.lower(): "UniversalRouter",
+    RELAY_DEPOSITORY.lower(): "Relay depository",
+    FWA_SPLITTER.lower(): "FWA Splitter",
+    DEV_SWEEP.lower(): "dev sweep wallet",
+    LP_FEE_SINK_A.lower(): "LP-fee sink A",
+    LP_FEE_SINK_B.lower(): "LP-fee sink B",
+    CREATE2_FACTORY.lower(): "CREATE2 factory",
+    VIBECOINS_HOOK.lower(): "Vibecoins v4 hook",
+    IDMD_BASE_TWIN.lower(): "IDMD twin · Base",
+    KRAKEN_HOT.lower(): "Kraken hot wallet",
+    ZERO_ADDRESS.lower(): "0x0 mint/burn",
+}
