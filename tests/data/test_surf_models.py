@@ -226,3 +226,131 @@ def test_module_has_no_io_imports() -> None:
     source = inspect.getsource(surf_models)
     for banned in ("import httpx", "import asyncio", "from textual", "import requests"):
         assert banned not in source
+
+
+# ---------------------------------------------------------------------------
+# the flat-dict contract (docs/surf_PRD.md §5)
+# ---------------------------------------------------------------------------
+
+EXPECTED_KEYS = {
+    # meta
+    "as_of",
+    "degraded",
+    "eth_usd",
+    # feed
+    "feed_nonce",
+    "feed_last_post_age_s",
+    "feed_items",
+    # signals — six detectors x (state, detail, age)
+    "sig_post_state",
+    "sig_post_detail",
+    "sig_post_age_s",
+    "sig_lp_state",
+    "sig_lp_detail",
+    "sig_lp_age_s",
+    "sig_gate_state",
+    "sig_gate_detail",
+    "sig_gate_age_s",
+    "sig_deploy_state",
+    "sig_deploy_detail",
+    "sig_deploy_age_s",
+    "sig_bridge_state",
+    "sig_bridge_detail",
+    "sig_bridge_age_s",
+    "sig_burn_state",
+    "sig_burn_detail",
+    "sig_burn_age_s",
+    # hero
+    "hook_status",
+    "lp_liquidity",
+    "lp_imd",
+    "lp_weth",
+    "lp_owner_ok",
+    "gate_open",
+    "identities_written",
+    "imd_supply",
+    "imd_burned_cum",
+    # market
+    "imd_price_usd",
+    "imd_change_24h_pct",
+    "imd_vol_24h_usd",
+    "pool_liquidity_usd",
+    "fp_price_usd",
+    "parity_pct",
+    "supply_series",
+    "price_series",
+    # nft
+    "nft_holders",
+    "nft_transfers_24h",
+    "nft_dev_holdings",
+    "nft_written",
+    "nft_last_sales",
+    "nft_floor",
+    # activity
+    "dev_activity",
+}
+
+
+def test_surf_keys_is_exactly_the_prd_contract() -> None:
+    from maxpane_dashboard.data.surf_models import SURF_KEYS
+
+    assert set(SURF_KEYS) == EXPECTED_KEYS
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 48
+
+
+def test_every_signal_has_all_three_facets() -> None:
+    from maxpane_dashboard.data.surf_models import SURF_KEYS
+
+    for base in ("post", "lp", "gate", "deploy", "bridge", "burn"):
+        for suffix in ("state", "detail", "age_s"):
+            assert f"sig_{base}_{suffix}" in SURF_KEYS
+
+
+def test_signal_output_keys_are_a_subset_of_surf_keys() -> None:
+    """SIGNAL_OUTPUT_KEYS (the signals module) must all exist in SURF_KEYS.
+
+    Skips until ``analytics/surf_signals.py`` lands; from then on this is the
+    only test in the repo that compares the two frozen key surfaces, so a
+    rename on either side fails here — instead of surfacing as a widget that
+    quietly renders ``None`` for a signal nobody notices is missing.
+    """
+    surf_signals = pytest.importorskip("maxpane_dashboard.analytics.surf_signals")
+    from maxpane_dashboard.data.surf_models import SURF_KEYS
+
+    missing = sorted(set(surf_signals.SIGNAL_OUTPUT_KEYS) - set(SURF_KEYS))
+    assert not missing, f"signal keys absent from SURF_KEYS: {missing}"
+
+
+def test_row_key_sets_match_the_prd() -> None:
+    from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS
+
+    assert SURF_ROW_KEYS["feed_items"] == (
+        "ts",
+        "kind",
+        "from_addr",
+        "from_label",
+        "text",
+        "tx_hash",
+    )
+    assert SURF_ROW_KEYS["nft_last_sales"] == ("ts", "token_id", "eth")
+    assert SURF_ROW_KEYS["dev_activity"] == (
+        "ts",
+        "wallet_label",
+        "kind",
+        "counterparty",
+        "counterparty_known",
+        "value_eth",
+        "tx_hash",
+    )
+    assert set(SURF_ROW_KEYS) <= set(
+        __import__(
+            "maxpane_dashboard.data.surf_models", fromlist=["SURF_KEYS"]
+        ).SURF_KEYS
+    )
+
+
+def test_no_wei_key_leaks_into_the_flat_dict() -> None:
+    """The dict is the presentation boundary: ETH/float only."""
+    from maxpane_dashboard.data.surf_models import SURF_KEYS
+
+    assert not [k for k in SURF_KEYS if k.endswith("_wei")]

@@ -253,3 +253,81 @@ class NftStats:
     transfers_24h: float | None = None
     written: int | None = None
     floor_eth: None = None
+
+
+#: Every key ``SurfManager.fetch_and_compute()`` returns — the parallel-agent
+#: interface, frozen by docs/surf_PRD.md §5.  Every numeric is ``float|int|None``
+#: and ``None`` renders as the widget's unavailable state, never as 0.
+SURF_KEYS: tuple[str, ...] = (
+    # ---- meta ---------------------------------------------------------------
+    "as_of",                 # float — epoch of the sweep that produced this dict
+    "degraded",              # list[str] — source-group names currently failing
+    "eth_usd",               # float | None — CoinGecko via data/price.py
+    # ---- feed ---------------------------------------------------------------
+    "feed_nonce",            # int | None — eth_getTransactionCount(ANNOUNCE)
+    "feed_last_post_age_s",  # float | None
+    "feed_items",            # list[dict] — SURF_ROW_KEYS["feed_items"]
+    # ---- signals: six detectors, state/detail/age each ----------------------
+    "sig_post_state",        # "ok" | "watch" | "fired" | None
+    "sig_post_detail",       # str
+    "sig_post_age_s",        # float | None
+    "sig_lp_state",
+    "sig_lp_detail",
+    "sig_lp_age_s",
+    "sig_gate_state",
+    "sig_gate_detail",
+    "sig_gate_age_s",
+    "sig_deploy_state",
+    "sig_deploy_detail",
+    "sig_deploy_age_s",
+    "sig_bridge_state",
+    "sig_bridge_detail",
+    "sig_bridge_age_s",
+    "sig_burn_state",
+    "sig_burn_detail",
+    "sig_burn_age_s",
+    # ---- hero ---------------------------------------------------------------
+    "hook_status",           # str — "NOT LIVE" until an Initialize with hooks!=0
+    "lp_liquidity",          # float | None — raw v3 L, rendered abbreviated
+    "lp_imd",                # float | None — IMD side, whole tokens
+    "lp_weth",                # float | None — WETH side, whole tokens
+    "lp_owner_ok",            # bool | None — ownerOf(1167726) == OPS_WALLET
+    "gate_open",              # bool | None — IdentityRegistry.identityAllowed()
+    "identities_written",     # int | None — 1 of 2000 on 2026-08-08
+    "imd_supply",             # float | None — whole IMD, never 0 on failure
+    "imd_burned_cum",         # float | None — cumulative, from the burn ledger
+    # ---- market -------------------------------------------------------------
+    "imd_price_usd",
+    "imd_change_24h_pct",
+    "imd_vol_24h_usd",
+    "pool_liquidity_usd",
+    "fp_price_usd",
+    "parity_pct",             # float | None — (imd/fp - 1) * 100, computed live
+    "supply_series",          # list[[ts, supply]] — burns step it down
+    "price_series",           # list[[ts, price_usd]]
+    # ---- nft ----------------------------------------------------------------
+    "nft_holders",
+    "nft_transfers_24h",
+    "nft_dev_holdings",
+    "nft_written",
+    "nft_last_sales",        # list[dict] — SURF_ROW_KEYS["nft_last_sales"]
+    "nft_floor",              # always None in v1 — explicit unavailable state
+    # ---- activity -----------------------------------------------------------
+    "dev_activity",           # list[dict] — SURF_ROW_KEYS["dev_activity"]
+)
+
+#: Row shapes for the three list-of-dict payloads.  Widgets index these keys
+#: directly, so adding one is a contract change, not an implementation detail.
+SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
+    "feed_items": ("ts", "kind", "from_addr", "from_label", "text", "tx_hash"),
+    "nft_last_sales": ("ts", "token_id", "eth"),
+    "dev_activity": (
+        "ts",
+        "wallet_label",
+        "kind",
+        "counterparty",
+        "counterparty_known",
+        "value_eth",
+        "tx_hash",
+    ),
+}
