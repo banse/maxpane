@@ -2179,32 +2179,34 @@ def test_the_client_never_decodes_a_log_itself():
 # WP1.10 — structural guards
 # ---------------------------------------------------------------------------
 
+import ast
 import inspect
-import re
 
 from maxpane_dashboard.data import surf_client as _mod
 
 
-def _code_only(source: str) -> str:
-    """Source with docstrings and comments stripped (WP2 uses the same idiom).
+def _public_fetchers() -> list[str]:
+    """Every public ``fetch_*`` name defined on ``SurfClient``, live.
 
-    The guards below assert on what the code *does*. Prose has to be free to
-    NAME the thing it forbids: the module docstring explains that publicnode
-    "REFUSES archive ``eth_getLogs``" — which is the entire reason the pools are
-    separate — and the ``LOG_RPCS`` comment says the same again. A raw
-    substring check would fail against the very implementation WP1.1 specifies.
+    Fix round 1 finding (MINOR): a hardcoded list matched the seven real
+    fetchers today, but an eighth added later would silently escape the
+    outage sweep and the zero-turn sweep below — the one place that
+    guarantees every fetcher degrades to ``None`` rather than ``0`` or an
+    exception. Derived from ``dir(SurfClient)`` instead, so a new fetcher is
+    swept automatically. Nothing is excluded by name; if one genuinely needs
+    excluding later, exclude it explicitly here with a comment saying why.
     """
-    return re.sub(r"#[^\n]*", "", re.sub(r'"""(?:.|\n)*?"""', "", source))
+    return sorted(
+        name for name in dir(SurfClient)
+        if name.startswith("fetch_") and not name.startswith("_")
+    )
 
 
-FETCHERS = [
-    "fetch_nonces", "fetch_chain_state", "fetch_channel_txs",
-    "fetch_dev_activity", "fetch_market", "fetch_recent_logs",
-    "fetch_nft_stats",
-]
+FETCHERS = _public_fetchers()
 
 
 def test_frozen_surface_is_complete():
+    assert FETCHERS, "no public fetch_* method found on SurfClient"
     for name in FETCHERS:
         fn = getattr(SurfClient, name)
         assert inspect.iscoroutinefunction(fn), f"{name} must be async"
@@ -2250,14 +2252,67 @@ def test_state_pool_is_structurally_logless():
     pool helper can even name the method (mirrors
     test_no_eth_getlogs_in_this_module in the FWA suite).
 
-    Run on ``_code_only``, not on the raw source: the module docstring names
-    ``eth_getLogs`` twice and the ``LOG_RPCS`` comment once, all three to
-    explain why the pools are separate at all. Deleting that prose to satisfy a
-    substring check would remove the explanation and keep the hazard.
+    Fix round 1 finding (CRITICAL): the original version sliced the raw
+    source on ``code.split("async def _rpc_logs")[0]``, so it only ever
+    inspected ``_post_rpc`` / ``_rpc_state`` / ``_rpc_state_batch`` — every
+    function defined ABOVE ``_rpc_logs`` in the file. ``fetch_nonces`` and
+    ``fetch_chain_state``, the module's two biggest state-pool consumers,
+    are defined below it and were never inspected at all; a reviewer proved
+    this by planting ``_BOGUS_ROUTE = "eth_getLogs"`` inside ``fetch_nonces``
+    and watching the old guard pass.
+
+    Rebuilt on ``ast`` instead of a text slice, and keyed on WHAT a function
+    IS (does it own the logs pool?) rather than WHERE it sits in the file: the
+    WP1 header freezes "the string ``eth_getLogs`` appears only in the logs
+    section of the module", and the logs section is exactly the three
+    functions named in ``_LOG_SECTION_FUNCS``. Every ``eth_getLogs`` STRING
+    CONSTANT anywhere else in the module — module-level code (the original
+    ``STATE_RPC_PRIMARY``-adjacent probe) or any function regardless of its
+    textual position (the ``fetch_nonces`` case above) — fails this test.
+    Docstrings are explicitly exempted throughout (by AST node identity, not
+    by string-stripping): the module docstring, ``_LogRangeError``'s and
+    ``_addr_topic``'s docstrings all name ``eth_getLogs`` in prose, and prose
+    must stay free to name the thing it forbids.
     """
-    code = _code_only(Path(_mod.__file__).read_text())
-    state_section = code.split("async def _rpc_logs")[0]
-    assert "eth_getLogs" not in state_section
+    tree = ast.parse(Path(_mod.__file__).read_text())
+
+    # Every docstring's Constant node, by identity — the ONE thing allowed to
+    # say "eth_getLogs" anywhere in the module, prose being prose.
+    docstring_ids: set[int] = set()
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if isinstance(body, list) and body and isinstance(body[0], ast.Expr) \
+                and isinstance(body[0].value, ast.Constant) \
+                and isinstance(body[0].value.value, str):
+            docstring_ids.add(id(body[0].value))
+
+    # The logs section, named — not wherever it happens to sit in the file.
+    _LOG_SECTION_FUNCS = {"_rpc_logs", "_get_logs_shrinking", "fetch_recent_logs"}
+    protected_ids: set[int] = set()
+    found_log_funcs: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                and node.name in _LOG_SECTION_FUNCS:
+            found_log_funcs.add(node.name)
+            protected_ids.update(id(n) for n in ast.walk(node))
+    assert found_log_funcs == _LOG_SECTION_FUNCS, (
+        "expected the logs section to be exactly "
+        f"{sorted(_LOG_SECTION_FUNCS)}, found {sorted(found_log_funcs)} — "
+        "a rename here means this guard is silently checking nothing"
+    )
+
+    offending = [
+        f"line {getattr(node, 'lineno', '?')}: {node.value!r}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        and "eth_getLogs" in node.value
+        and id(node) not in docstring_ids
+        and id(node) not in protected_ids
+    ]
+    assert not offending, (
+        "'eth_getLogs' appears as CODE outside the logs section "
+        f"{sorted(_LOG_SECTION_FUNCS)}: {offending}"
+    )
 
 
 def test_client_module_never_reads_the_wall_clock_directly():
