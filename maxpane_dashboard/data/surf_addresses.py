@@ -116,3 +116,58 @@ LABELED_ADDRESSES: tuple[str, ...] = (
     KRAKEN_HOT,
     ZERO_ADDRESS,
 )
+
+# --- Event topics -----------------------------------------------------------
+# Vendored hashes with their preimages beside them; the preimages are not
+# decoration — tests/data/test_surf_addresses.py recomputes every value from
+# them, and pins the literals too, so a matched pair of typos still fails.
+#
+# ``IdentityHashUpdated`` was taken from the verified IdentityMD source
+# (captures/identity_contract.json): ``event IdentityHashUpdated(uint256
+# indexed id, string ipfsHash, bool permanent)``.  Indexed-ness does not enter
+# the topic0 preimage; the *types* do.
+
+TOPIC_TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+TOPIC_IDENTITY_HASH_UPDATED = (
+    "0x57c85cf86ae80c7b372281c7dd1b0f8b99de39e76d757725a32b6bd88f7ff1b6"
+)
+TOPIC_V4_INITIALIZE = (
+    "0xdd466e674ea557f56295e2d0218a125ea4b4f0f6f3307b95f85e6110838d6438"
+)
+TOPIC_SEAPORT_ORDER_FULFILLED = (
+    "0x9d9af8e38d66c62e2c12f0225249fd9d721c54b83f48d9352c97c6cacdcb6f31"
+)
+
+#: constant name -> the exact Solidity event signature it hashes.
+TOPIC_PREIMAGES: dict[str, str] = {
+    "TOPIC_TRANSFER": "Transfer(address,address,uint256)",
+    "TOPIC_IDENTITY_HASH_UPDATED": "IdentityHashUpdated(uint256,string,bool)",
+    "TOPIC_V4_INITIALIZE": (
+        "Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)"
+    ),
+    "TOPIC_SEAPORT_ORDER_FULFILLED": (
+        "OrderFulfilled(bytes32,address,address,address,"
+        "(uint8,address,uint256,uint256)[],"
+        "(uint8,address,uint256,uint256,address)[])"
+    ),
+}
+
+# --- Function selectors -----------------------------------------------------
+SEL_POSITIONS = "0x99fbab88"        # NFPM.positions(uint256)
+SEL_IDENTITY_ALLOWED = "0xac8f3de6"  # IdentityRegistry.identityAllowed()
+SEL_TOTAL_SUPPLY = "0x18160ddd"      # ERC-20/721 totalSupply()
+SEL_SLOT0 = "0x3850c7bd"             # UniswapV3Pool.slot0()
+SEL_NAME = "0x06fdde03"              # ERC-20 name()  — mutable, display only
+SEL_SYMBOL = "0x95d89b41"            # ERC-20 symbol() — mutable, display only
+SEL_OWNER_OF = "0x6352211e"          # ERC-721 ownerOf(uint256) — NFPM position
+
+#: constant name -> the exact Solidity function signature it hashes.
+SELECTOR_PREIMAGES: dict[str, str] = {
+    "SEL_POSITIONS": "positions(uint256)",
+    "SEL_IDENTITY_ALLOWED": "identityAllowed()",
+    "SEL_TOTAL_SUPPLY": "totalSupply()",
+    "SEL_SLOT0": "slot0()",
+    "SEL_NAME": "name()",
+    "SEL_SYMBOL": "symbol()",
+    "SEL_OWNER_OF": "ownerOf(uint256)",
+}

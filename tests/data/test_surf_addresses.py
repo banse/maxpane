@@ -120,3 +120,67 @@ def test_module_imports_nothing_but_stdlib() -> None:
             assert root in sys.stdlib_module_names, (
                 f"surf_addresses must not import non-stdlib module {root!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# topics + selectors, recomputed from their preimages
+# ---------------------------------------------------------------------------
+
+from maxpane_dashboard.data.keccak import keccak256_hex  # noqa: E402
+
+
+@pytest.mark.parametrize("name,preimage", sorted(A.TOPIC_PREIMAGES.items()))
+def test_topic_matches_its_preimage(name: str, preimage: str) -> None:
+    assert getattr(A, name) == keccak256_hex(preimage.encode("ascii"))
+
+
+@pytest.mark.parametrize("name,preimage", sorted(A.SELECTOR_PREIMAGES.items()))
+def test_selector_matches_its_preimage(name: str, preimage: str) -> None:
+    assert getattr(A, name) == keccak256_hex(preimage.encode("ascii"))[:10]
+
+
+def test_preimage_maps_cover_exactly_the_constants() -> None:
+    """A vendored hash with no preimage is unverifiable; a preimage with no
+    constant is dead weight.  Both are failures."""
+    topic_names = {n for n in dir(A) if n.startswith("TOPIC_") and n != "TOPIC_PREIMAGES"}
+    sel_names = {n for n in dir(A) if n.startswith("SEL_")}
+    assert set(A.TOPIC_PREIMAGES) == topic_names
+    assert set(A.SELECTOR_PREIMAGES) == sel_names
+
+
+def test_pinned_topic_values() -> None:
+    """Pinned literals, so a *matching pair* of typos (preimage + hash) fails.
+
+    These four hexes were computed during planning with this repo's keccak and
+    cross-checked against docs/surf_PRD.md §5.
+    """
+    assert A.TOPIC_TRANSFER == (
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+    )
+    assert A.TOPIC_IDENTITY_HASH_UPDATED == (
+        "0x57c85cf86ae80c7b372281c7dd1b0f8b99de39e76d757725a32b6bd88f7ff1b6"
+    )
+    assert A.TOPIC_V4_INITIALIZE == (
+        "0xdd466e674ea557f56295e2d0218a125ea4b4f0f6f3307b95f85e6110838d6438"
+    )
+    assert A.TOPIC_SEAPORT_ORDER_FULFILLED == (
+        "0x9d9af8e38d66c62e2c12f0225249fd9d721c54b83f48d9352c97c6cacdcb6f31"
+    )
+
+
+def test_pinned_selector_values() -> None:
+    assert A.SEL_POSITIONS == "0x99fbab88"
+    assert A.SEL_IDENTITY_ALLOWED == "0xac8f3de6"
+    assert A.SEL_TOTAL_SUPPLY == "0x18160ddd"
+    assert A.SEL_SLOT0 == "0x3850c7bd"
+    assert A.SEL_NAME == "0x06fdde03"
+    assert A.SEL_SYMBOL == "0x95d89b41"
+
+
+def test_hash_strings_are_lowercase_and_sized() -> None:
+    for name in A.TOPIC_PREIMAGES:
+        value = getattr(A, name)
+        assert len(value) == 66 and value == value.lower()
+    for name in A.SELECTOR_PREIMAGES:
+        value = getattr(A, name)
+        assert len(value) == 10 and value == value.lower()
