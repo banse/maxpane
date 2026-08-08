@@ -88,9 +88,35 @@ def test_labeled_addresses_is_the_union() -> None:
 
 
 def test_module_imports_nothing_but_stdlib() -> None:
-    """Constants must be importable from a widget test with no I/O stack."""
+    """Constants must be importable from a widget test with no I/O stack.
+
+    Structural, not textual: walks the module's AST rather than
+    substring-matching import lines, so a disguised or renamed third-party
+    import (``import  httpx`` with extra whitespace, ``import requests as
+    r``, ``import yaml``) cannot sail through the way a literal-string
+    denylist would.
+    """
+    import ast
     import inspect
+    import sys
 
     source = inspect.getsource(A)
-    for banned in ("import httpx", "import asyncio", "from textual", "import requests"):
-        assert banned not in source, f"surf_addresses must not {banned}"
+    tree = ast.parse(source)
+
+    import_nodes = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+    ]
+    assert import_nodes, "expected at least one import node (the __future__ import)"
+
+    for node in import_nodes:
+        if isinstance(node, ast.Import):
+            roots = {alias.name.split(".")[0] for alias in node.names}
+        else:
+            assert node.module is not None, "relative import with no module"
+            roots = {node.module.split(".")[0]}
+        for root in roots:
+            assert root in sys.stdlib_module_names, (
+                f"surf_addresses must not import non-stdlib module {root!r}"
+            )
