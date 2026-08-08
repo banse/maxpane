@@ -343,6 +343,15 @@ class SurfClient(OwnedHttpClient):
         self._log_window_blocks = log_window_blocks
         self._request_id = 0
         self._last_rpc_at: float = 0.0
+        #: True only when the most recent ``fetch_channel_txs()`` hit
+        #: ``MAX_CHANNEL_PAGES`` while Blockscout was still reporting a
+        #: ``next_page_params`` cursor — i.e. more rows existed than that
+        #: sweep was willing to fetch. Reset to ``False`` at the START of
+        #: every call (never left stale from a previous cycle) so a caller
+        #: can trust it as "true right now", not "true once, ever". WP4
+        #: reads this to render a degraded/partial-feed flag; this client
+        #: does not render anything itself.
+        self.channel_truncated: bool = False
 
     # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
@@ -666,21 +675,40 @@ class SurfClient(OwnedHttpClient):
 
     async def _blockscout_tx_pages(
         self, address: str, max_pages: int
-    ) -> list[dict] | None:
-        """All tx rows for *address*, following next_page_params, bounded."""
+    ) -> tuple[list[dict] | None, bool]:
+        """All tx rows for *address*, following next_page_params, bounded.
+
+        Returns ``(rows, truncated)``. ``rows`` keeps the existing "partial
+        beats nothing, ``None`` only when nothing was read" contract.
+        ``truncated`` is True ONLY when the ``max_pages`` bound was exhausted
+        while the server was still handing back a ``next_page_params``
+        cursor — i.e. more rows existed than this sweep was willing to fetch.
+        Returning the partial rows silently (no flag, no log line) is the bug
+        this return value exists to close: a caller cannot tell "that is
+        everything" from "we stopped asking" without it, and the manager
+        package needs exactly that distinction to render a degraded-feed
+        flag.
+        """
         url = f"{self._blockscout}/addresses/{address}/transactions"
         rows: list[dict] = []
         params: dict | None = None
         for _page in range(max_pages):
             body = await self._get_json(url, params=params)
             if not isinstance(body, dict) or "items" not in body:
-                return rows or None  # partial > nothing; None only if empty
+                return rows or None, False  # partial > nothing; None only if empty
             rows.extend(body["items"])
             nxt = body.get("next_page_params")
             if not nxt:
-                break
+                return rows, False
             params = nxt  # the server cursor, verbatim, as query params
-        return rows
+        # The loop ran out of page budget while the last page still handed
+        # back a cursor: there was more to fetch and we chose not to.
+        logger.warning(
+            "_blockscout_tx_pages: hit the %d-page bound for %s with more "
+            "pages still available; returning %d partial rows",
+            max_pages, address, len(rows),
+        )
+        return rows, True
 
     @staticmethod
     def _parse_channel_tx(row: dict) -> ChannelTx | None:
@@ -717,8 +745,17 @@ class SurfClient(OwnedHttpClient):
         No decoding, no classification here: the channel is permissionless
         and attacker-writable; interpretation is pure-function work in
         analytics/surf_signals.py where it is table-tested (PRD §6 rule 4).
+
+        Sets ``self.channel_truncated`` — reset to ``False`` before the
+        fetch, then to whatever ``_blockscout_tx_pages`` reports — so a
+        caller can tell a bounded partial read apart from a genuinely
+        complete one. It is never left stale from a previous refresh.
         """
-        rows = await self._blockscout_tx_pages(A.ANNOUNCE, MAX_CHANNEL_PAGES)
+        self.channel_truncated = False
+        rows, truncated = await self._blockscout_tx_pages(
+            A.ANNOUNCE, MAX_CHANNEL_PAGES
+        )
+        self.channel_truncated = truncated
         if rows is None:
             return None
         parsed = [self._parse_channel_tx(r) for r in rows]

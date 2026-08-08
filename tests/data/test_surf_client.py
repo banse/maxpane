@@ -1050,3 +1050,53 @@ async def test_fetch_channel_txs_outage_returns_none_not_empty_list():
     async with _offline_client() as client:
         result = await client.fetch_channel_txs()
     assert result is None  # [] would mean "the channel is empty" — a lie
+
+
+# ---------------------------------------------------------------------------
+# WP1.5 fix round 1 — channel_truncated: page-bound truncation is
+# discoverable, not silent
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_channel_txs_page_bound_sets_truncated_signal():
+    """Hitting MAX_CHANNEL_PAGES while a cursor remains must be discoverable.
+
+    Returning the partial rows is correct and stays — but returning them
+    with no signal is the bug: WP4 needs a way to tell "that is everything"
+    apart from "we stopped asking", and it cannot invent that fact for
+    itself (one owner per file; this client is the only thing that ever
+    sees the raw ``next_page_params`` cursor).
+    """
+    fixture = load_fixture("announce_txs_page1.json")
+    endless = {"items": fixture["items"][:7],
+               "next_page_params": {"block_number": 1, "index": 1}}
+    transport = RecordingTransport(_blockscout_handler({A.ANNOUNCE: [endless]}))
+    async with _client_on(transport) as client:
+        txs = await client.fetch_channel_txs()
+    assert txs is not None
+    assert len(transport.requests) == surf_client.MAX_CHANNEL_PAGES
+    # The rows actually fetched (7 per page, served MAX_CHANNEL_PAGES times),
+    # not an empty stand-in — truncated still means "partial beats nothing".
+    assert len(txs) == 7 * surf_client.MAX_CHANNEL_PAGES
+    assert client.channel_truncated is True
+
+
+@pytest.mark.asyncio
+async def test_fetch_channel_txs_truncated_signal_is_false_on_a_normal_fetch():
+    """A fetch that ends because the server ran out of pages is NOT truncated.
+
+    Guards against a future refactor hardcoding ``channel_truncated = True``:
+    the one real fixture page (``next_page_params: null``) must leave the
+    signal False, and it must be False even though a *previous* call on the
+    same client instance could have left it True — the flag is reset at the
+    start of every ``fetch_channel_txs()`` call, never sticky.
+    """
+    fixture = load_fixture("announce_txs_page1.json")
+    handler = _blockscout_handler({A.ANNOUNCE: [fixture]})
+    async with _client_on(RecordingTransport(handler)) as client:
+        client.channel_truncated = True  # simulate a stale True from a
+        # previous refresh cycle; the next call must not inherit it.
+        txs = await client.fetch_channel_txs()
+    assert txs is not None and len(txs) == 21
+    assert client.channel_truncated is False
