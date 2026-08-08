@@ -1563,7 +1563,12 @@ def test_one_bad_section_never_costs_the_others(tmp_path):
     )
     c = SurfCache(path=str(path), clock=FakeClock())
     c.load()
-    assert c.get_baselines() == {"announce_nonce": 14, BASELINE_FIRED_KEY: {}}
+    # No `fired` key: `_sanitise_baselines` emits one only when the input had
+    # one, and this file's `baselines` section does not. Seeding it
+    # unconditionally would be the wrong repair — `test_set_baselines_replaces_wholesale`
+    # asserts `{"announce_nonce": 15}` exactly, and a manufactured empty `fired`
+    # would also claim a store the file never held.
+    assert c.get_baselines() == {"announce_nonce": 14}
     assert c.get_series(SERIES_IMD_SUPPLY) == [[1_786_100_000.0, IMD_SUPPLY]]
     assert c.burned_cum == 0.0
     assert c.last_supply == pytest.approx(IMD_SUPPLY)
@@ -1860,6 +1865,29 @@ IMD_SUPPLY_WEI = 2_376_731_868_679_000_000_000_000   # imd_token.json total_supp
 IMD_SUPPLY = 2_376_731.868679                        # ... / 1e18
 LP_IMD_WEI = 388_421_000_000_000_000_000_000
 LP_WETH_WEI = 142_706_700_000_000_000_000
+
+# DexScreener's **whole-pool** reserves (`liquidity.base` / `liquidity.quote`).
+# These two are *constructed*, not captured — they are the only numbers in this
+# block that are, and the construction is the point. The pool holds every
+# position while the hero tracks 1167726 alone, so the pool pair must be the
+# larger one; it is set here to ~2.32x the position, i.e. the tracked position
+# is ~43% of the pool.
+#
+# They have to be *visibly* different or the discrimination they exist for
+# cannot be written down. `LP_IMD_WEI / 1e18` is 388420.99999999994 in binary
+# floating point, so the previous doubles (`pool_imd = 388_421.0`,
+# `pool_weth = 142.7067`) matched `pytest.approx` of the hero's own legs at the
+# default `rel=1e-6` — `test_wei_is_divided_exactly_once` was asserting
+# `x == approx(y)` and `x != approx(y)` about the same pair of numbers and could
+# never go green. Keep any edit clearly apart from the two `LP_*_WEI / 1e18`
+# values, and never derive one pair from the other.
+#
+# `POOL_LIQ_USD` is DexScreener's own `liquidity.usd` field, captured
+# independently of these two; nothing in WP4 reads the reserves at all
+# (`_market_payload` omits them on purpose), so no test cross-checks the three.
+POOL_IMD = 902_763.4
+POOL_WETH = 331.6772
+
 IMD_PRICE_USD = 0.7074                 # dexscreener_imd.json priceUsd
 FP_PRICE_USD = 0.7274                  # dexscreener_fp.json, deepest Base pair
 PARITY_PCT = -2.7495188342040167
@@ -1870,7 +1898,7 @@ ETH_USD = 1917.74                      # announce_eth_info.json exchange_rate
 NFT_HOLDERS = 667                      # identity_counters.json
 ANNOUNCE_NONCE = 14                    # 13 self-posts + the register() call
 DEV_NONCE = 2350
-OPS_NONCE = 29
+OPS_NONCE = 38                         # ops_eth_txs.json: sent nonces 1..37 → account nonce 38
 LP_LIQUIDITY = 1_234_567_890_123_456_789
 BLOCK = 25_707_780
 
@@ -2223,9 +2251,16 @@ def _market(**overrides) -> MarketSnapshot:
     position's tick bounds precisely so the whole-pool numbers are never
     substituted (WP0.4, WP1.4, and this file's header table). Neither
     ``pool_*`` value is ever divided — they are already whole tokens, so
-    scaling them would be a second division of something that was never wei;
-    ``test_wei_is_divided_exactly_once`` pins that with
-    ``data["lp_imd"] != 388_421.0``.
+    scaling them would be a second division of something that was never wei.
+
+    ``POOL_IMD``/``POOL_WETH`` are therefore the *larger* pair, and they have
+    to be visibly larger for this double to be worth anything: these fields
+    exist here only so ``test_wei_is_divided_exactly_once`` can assert
+    ``data["lp_imd"] != pytest.approx(POOL_IMD)`` and
+    ``data["lp_weth"] != pytest.approx(POOL_WETH)``. This double used to carry
+    ``388_421.0``/``142.7067`` — the position's own legs to the last digit — so
+    those two assertions were structurally unsatisfiable and the discrimination
+    the docstring claimed was one the numbers denied. See the constants.
 
     ``indexer_name`` is DexScreener's (current) — GeckoTerminal's stale
     "Vibe Coins" never reaches a model, so there is no staleness flag to set.
@@ -2236,8 +2271,8 @@ def _market(**overrides) -> MarketSnapshot:
         "imd_change_24h_pct": CHANGE_24H,
         "imd_vol_24h_usd": VOL_24H_USD,
         "pool_liquidity_usd": POOL_LIQ_USD,
-        "pool_imd": 388_421.0,
-        "pool_weth": 142.7067,
+        "pool_imd": POOL_IMD,
+        "pool_weth": POOL_WETH,
         "fp_price_usd": FP_PRICE_USD,
         "fdv_usd": 1_284_000.0,
         "eth_usd": ETH_USD,
@@ -2792,6 +2827,11 @@ cd /Library/Vibes/autopull && git add maxpane_dashboard/data/surf_manager.py tes
   `lp_owner_ok`, `gate_open`, `imd_supply`, `imd_burned_cum`, `feed_nonce`, `as_of`.
   **Not** `identities_written`: the registry exposes no getter, so that key has no
   fast-tier producer — it comes off `NftStats.written` on the slow tier (Task WP4.10).
+  `ok` is `nonces_res is not None **and** state_res is not None` — both halves of the
+  one state RPC pool, so half an answer is a degradation of the `chain` group and says
+  so. `or` would let a provider that answers `eth_getTransactionCount` but drops the
+  batched `eth_call` round publish six `None` hero keys under a `degraded` list that
+  omits `chain`.
 
 - [ ] **Write the failing test.** Append to `tests/data/test_surf_manager.py`:
 
@@ -2842,8 +2882,17 @@ async def test_wei_is_divided_exactly_once(tmp_path):
     assert data["lp_imd"] == pytest.approx(LP_IMD_WEI / 1e18)
     assert data["lp_weth"] == pytest.approx(LP_WETH_WEI / 1e18)
     # MarketSnapshot.pool_* is the whole pool, not this position — it must not be
-    # what the hero shows, and it is not divided either way.
-    assert data["lp_imd"] != pytest.approx(388_421.0)
+    # what the hero shows, and it is not divided either way. Both halves are
+    # asserted because a hero fed from the market snapshot would show whichever
+    # leg the writer reached for first.
+    assert data["lp_imd"] != pytest.approx(POOL_IMD)
+    assert data["lp_weth"] != pytest.approx(POOL_WETH)
+    # And the two pairs really are distinguishable — the point the old doubles
+    # missed. `LP_IMD_WEI / 1e18` is 388420.99999999994, so a `pool_imd` of
+    # 388_421.0 satisfies `pytest.approx` at the default rel=1e-6 and the two
+    # assertions above become mutually exclusive with the two before them.
+    assert LP_IMD_WEI / 1e18 != pytest.approx(POOL_IMD)
+    assert LP_WETH_WEI / 1e18 != pytest.approx(POOL_WETH)
     # lp_liquidity is a raw uint128, not a token amount: it must NOT be divided.
     assert data["lp_liquidity"] == LP_LIQUIDITY
 
@@ -2905,17 +2954,30 @@ async def test_a_raising_client_call_is_a_degradation_not_a_crash(tmp_path):
     async def _pool_chain(self, now: float) -> dict[str, Any]:
         """Three nonces + the batched ``eth_call`` round. Never raises.
 
-        Both reads are issued concurrently and judged together: either the state
-        RPC pool answered or it did not. A partial answer still publishes what
-        came back — ``None`` fields render as unavailable, and a ``None`` can
-        never advance a baseline downstream.
+        Both reads are issued concurrently against the **same** state RPC pool
+        and are judged together, so ``ok`` is ``True`` only when *both*
+        answered. ``and``, not ``or``: the two calls fail independently and the
+        realistic half-failure is the cheap one surviving — the provider answers
+        ``eth_getTransactionCount`` and drops the batched ``eth_call`` round.
+        Under ``or`` that cycle published ``lp_liquidity``, ``lp_imd``,
+        ``lp_weth``, ``lp_owner_ok``, ``gate_open`` and ``imd_supply`` as
+        ``None`` while ``degraded`` reported the chain group **healthy**: six
+        dashes across the hero with nothing on screen to explain them, which is
+        the one shape CLAUDE.md's degradation rule forbids.
+
+        Flagging is all ``and`` changes. Whatever *did* come back is still read
+        straight off the models in ``_cycle`` and still published, ``None``
+        fields still render as unavailable, and a ``None`` can never advance a
+        baseline downstream. What a half-failure does **not** do is overwrite
+        the ``SLOT_CHAIN`` last-good with a half-empty payload or mark the fast
+        tier fetched.
         """
         nonces_res, state_res = await asyncio.gather(
             self._guard(self.client.fetch_nonces, "fetch_nonces"),
             self._guard(self.client.fetch_chain_state, "fetch_chain_state"),
             return_exceptions=False,
         )
-        ok = nonces_res is not None or state_res is not None
+        ok = nonces_res is not None and state_res is not None
         if ok:
             self.cache.store_last_good(
                 SLOT_CHAIN,
@@ -3016,6 +3078,26 @@ Replace `_cycle` with:
             return None
         return str(owner).lower() == OPS_WALLET.lower()
 ```
+
+- [ ] **Prove the half-failure flag bites.** In `_pool_chain`, change `ok = ... and ...`
+      to `ok = nonces_res is not None or state_res is not None` and re-run
+      `.venv/bin/python -m pytest tests/data/test_surf_manager.py -k "raising_client or chain_outage" -v`
+      → `test_a_raising_client_call_is_a_degradation_not_a_crash` fails with `chain`
+      **absent** from `data["degraded"]` (the state read raised, the nonce read did
+      not, and `or` called that healthy — it also stored a half-empty `SLOT_CHAIN`,
+      so `_degraded`'s never-produced-a-payload clause cannot catch it either), while
+      `test_a_chain_outage_is_flagged_and_invents_nothing` stays green because it
+      kills *both* reads and there the two operators agree. That asymmetry is the
+      whole point: only a half-failure can tell `and` from `or`, and exactly one test
+      in this file produces one. Restore `and`.
+
+- [ ] **Prove the pool/position doubles bite.** In `_market()`, set
+      `"pool_imd": 388_421.0` and `"pool_weth": 142.7067` (the old values) and re-run
+      `.venv/bin/python -m pytest tests/data/test_surf_manager.py -k divided -v`
+      → `test_wei_is_divided_exactly_once` fails on
+      `assert 388420.99999999994 != 388421.0 ± 3.9e-01` — the two `!=` assertions and
+      the two `==` assertions above them become mutually exclusive, so no manager
+      implementation can satisfy the test. Restore `POOL_IMD` / `POOL_WETH`.
 
 - [ ] **Run to green.** `.venv/bin/python -m pytest tests/data/test_surf_manager.py -v`
       → 11 passed.

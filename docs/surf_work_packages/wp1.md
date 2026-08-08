@@ -2342,12 +2342,15 @@ invented `DevTx(wallet=…, nonce=…)`, which are not WP0.4 names and would not
 # ---------------------------------------------------------------------------
 
 
-# The six live ≤1-gwei dust senders on the two captured pages.  Each shares
-# its target's first four and last four hex characters — which is exactly what
-# a truncated `0x1234…abcdef` rendering shows.  WP0 pins three of them in
-# LIVE_SPOOFS; these are all six, across both wallets.
+# The senders of the six live ≤1-gwei dust transfers on the two captured pages
+# — FIVE distinct addresses, because 0x61ccfd… spoofed the ops wallet twice.
+# Six rows, five senders: this is a set of senders, so it has five members and
+# the count below must never be "corrected" to six.  Each shares its target's
+# first four and last four hex characters — which is exactly what a truncated
+# `0x1234…abcdef` rendering shows.  WP0 pins three of them in LIVE_SPOOFS;
+# these are all of them, across both wallets.
 LIVE_DUST_SENDERS = {
-    "0x61ccfd5d33f0f27a2cd5acb558d9281b110df14e",  # ~ LP_FEE_SINK_B
+    "0x61ccfd5d33f0f27a2cd5acb558d9281b110df14e",  # ~ LP_FEE_SINK_B (x2)
     "0xf3083828702c1989710ceca517412071c2f60ee6",  # ~ LP_FEE_SINK_A
     "0xf30875988b99489ac71ec2f5069de0dd80b70ee6",  # ~ LP_FEE_SINK_A
     "0x5823d93a369b0aebd798e4557196f23927d84e55",  # ~ DEV_SWEEP
@@ -2431,12 +2434,22 @@ async def test_a_deploy_row_is_labelled_from_created_contract():
         "method": None,
         "created_contract": {"hash": "0x" + "c0" * 20},
     }
-    handler = _blockscout_handler(
-        {A.DEV_WALLET: [{"items": [row], "next_page_params": None}]}
-    )
+    # BOTH wallets must be mapped even when only one carries the row under
+    # test: `fetch_dev_activity` gathers the dev page and the ops page, and an
+    # address the map does not cover falls through to the handler's
+    # `raise AssertionError`.  That is neither an `httpx.HTTPError` nor a
+    # `ValueError`, so `_get_json` does not catch it and MockTransport re-raises
+    # it verbatim (verified against the installed httpx 0.28.1) — the test would
+    # ERROR out of `asyncio.gather` before reaching a single assertion below.
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [{"items": [row], "next_page_params": None}],
+        A.OPS_WALLET: [{"items": [], "next_page_params": None}],
+    })
     async with _client_on(RecordingTransport(handler)) as client:
         rows = await client.fetch_dev_activity()
 
+    # An empty ops page is `[]`, not `None`, so the merge keeps going and the
+    # synthetic dev row is the only row there is.
     assert len(rows) == 1
     assert rows[0].kind == "deploy"
     assert rows[0].counterparty == "0x" + "c0" * 20
@@ -2476,9 +2489,16 @@ async def test_an_unknown_counterparty_is_never_labelled():
     """The allowlist has no fallback.  USDT is a real, frequent counterparty
     on the ops page and is deliberately not in the cast: it must stay None so
     WP5 renders it dimmed rather than as a trusted name."""
-    handler = _blockscout_handler(
-        {A.OPS_WALLET: [load_fixture("ops_txs_page1.json")]}
-    )
+    # The USDT rows all live on the ops page, but the dev leg of
+    # `fetch_dev_activity`'s gather still issues its GET — leave it unmapped and
+    # the handler's `raise AssertionError` propagates verbatim through
+    # MockTransport (it is not an `httpx.HTTPError`/`ValueError`, so `_get_json`
+    # never sees it) and the test errors instead of asserting.  An empty page
+    # answers that leg without adding a row.
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [{"items": [], "next_page_params": None}],
+        A.OPS_WALLET: [load_fixture("ops_txs_page1.json")],
+    })
     async with _client_on(RecordingTransport(handler)) as client:
         rows = await client.fetch_dev_activity()
 
@@ -3994,16 +4014,27 @@ async def test_no_fetcher_invents_a_zero_timestamp():
     every `if ts:` guard downstream while meaning 1970, i.e. an event that can
     never be recent enough to fire.  No parsed `ts` may be 0.0 — a row whose
     timestamp could not be parsed is dropped, never zero-stamped.
+
+    THREE addresses, because this test drives two fetchers: `fetch_dev_activity`
+    GETs the dev and ops pages, and `fetch_channel_txs` GETs the announce
+    address.  A missing entry does not degrade to `None` here — the handler
+    raises `AssertionError`, which is neither an `httpx.HTTPError` nor a
+    `ValueError`, so `_get_json` lets it through and MockTransport re-raises it
+    verbatim (httpx 0.28.1): the test errors instead of sweeping anything.
     """
     handler = _blockscout_handler({
         A.DEV_WALLET: [load_fixture("dev_txs_page1.json")],
         A.OPS_WALLET: [load_fixture("ops_txs_page1.json")],
+        A.ANNOUNCE: [load_fixture("announce_txs_page1.json")],
     })
     async with _client_on(RecordingTransport(handler)) as client:
         rows = await client.fetch_dev_activity()
         channel = await client.fetch_channel_txs()
 
-    for row in [*rows, *(channel or [])]:
+    # All 21 announce rows and all 80 dev/ops rows carry a real Blockscout
+    # timestamp, so every surviving row must clear the 2020-09 floor.
+    assert rows and channel
+    for row in [*rows, *channel]:
         assert row.ts > 1_600_000_000.0, row
 
 
