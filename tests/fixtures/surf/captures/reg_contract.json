@@ -1,0 +1,74 @@
+{
+ "optimization_enabled": true,
+ "compiler_version": "v0.8.24+commit.e11b9ed9",
+ "verified_at": "2026-01-29T10:31:17.285067Z",
+ "name": "ERC1967Proxy",
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "implementation",
+     "type": "address"
+    },
+    {
+     "internalType": "bytes",
+     "name": "_data",
+     "type": "bytes"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "constructor"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "target",
+     "type": "address"
+    }
+   ],
+   "name": "AddressEmptyCode",
+   "type": "error"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "implementation",
+     "type": "address"
+    }
+   ],
+   "name": "ERC1967InvalidImplementation",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "ERC1967NonPayable",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "FailedCall",
+   "type": "error"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "implementation",
+     "type": "address"
+    }
+   ],
+   "name": "Upgraded",
+   "type": "event"
+  },
+  {
+   "stateMutability": "payable",
+   "type": "fallback"
+  }
+ ],
+ "source_code_head": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol\" as OZProxy;\n\n// This contract just re-exports OpenZeppelin's ERC1967Proxy\n// so it can be compiled and used in our tests and deployment scripts\ncontract ERC1967Proxy is OZProxy.ERC1967Proxy {\n    constructor(address implementation, bytes memory _data) OZProxy.ERC1967Proxy(implementation, _data) {}\n}\n"
+}

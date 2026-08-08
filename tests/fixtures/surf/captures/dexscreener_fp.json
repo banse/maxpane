@@ -1,0 +1,273 @@
+{
+ "schemaVersion": "1.0.0",
+ "pairs": [
+  {
+   "chainId": "base",
+   "dexId": "uniswap",
+   "url": "https://dexscreener.com/base/0xde66c35e01ed8e619bf092352338ef94f2327337",
+   "pairAddress": "0xDE66c35e01ED8e619Bf092352338ef94f2327337",
+   "labels": [
+    "v2"
+   ],
+   "baseToken": {
+    "address": "0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105",
+    "name": "Fren Pet",
+    "symbol": "Fren Pet"
+   },
+   "quoteToken": {
+    "address": "0x4200000000000000000000000000000000000006",
+    "name": "Wrapped Ether",
+    "symbol": "WETH"
+   },
+   "priceNative": "0.0003790",
+   "priceUsd": "0.7274",
+   "txns": {
+    "m5": {
+     "buys": 3,
+     "sells": 0
+    },
+    "h1": {
+     "buys": 15,
+     "sells": 12
+    },
+    "h6": {
+     "buys": 196,
+     "sells": 25
+    },
+    "h24": {
+     "buys": 298,
+     "sells": 76
+    }
+   },
+   "volume": {
+    "h24": 55245.98,
+    "h6": 35764.52,
+    "h1": 22878.59,
+    "m5": 0.61
+   },
+   "priceChange": {
+    "m5": 0.01,
+    "h1": 23.52,
+    "h6": 34.75,
+    "h24": 40.17
+   },
+   "liquidity": {
+    "usd": 424308.81,
+    "base": 291652,
+    "quote": 110.5575
+   },
+   "fdv": 5234199,
+   "marketCap": 4658249,
+   "pairCreatedAt": 1708618187000,
+   "info": {
+    "imageUrl": "https://cdn.dexscreener.com/cms/images/579051b75772994b323f32313b37f13e6c8d69c247993507af63713cb7c5a220?width=800&height=800&quality=95&format=auto",
+    "header": "https://cdn.dexscreener.com/cms/images/fed78e043e9b68dfeccdcec560b7fc42cf3336be67b79f63a04cc4f7455ea54e?width=1500&height=500&quality=95&format=auto",
+    "openGraph": "https://cdn.dexscreener.com/token-images/og/base/0xff0c532fdb8cd566ae169c1cb157ff2bdc83e105?timestamp=1786183200000",
+    "websites": [
+     {
+      "url": "https://frenpet.xyz",
+      "label": "Website"
+     },
+     {
+      "url": "https://docs.frenpet.xyz",
+      "label": "Docs"
+     },
+     {
+      "url": "https://warpcast.com/frenpet",
+      "label": "Warpcast"
+     }
+    ],
+    "socials": [
+     {
+      "url": "https://x.com/frenpetonbase",
+      "type": "twitter"
+     },
+     {
+      "url": "https://t.me/frenpet",
+      "type": "telegram"
+     },
+     {
+      "url": "https://discord.gg/gC4sHDQua4",
+      "type": "discord"
+     }
+    ]
+   }
+  },
+  {
+   "chainId": "base",
+   "dexId": "baseswap",
+   "url": "https://dexscreener.com/base/0x29b3a7869e3662d00aabd89a8ee74b2f703a6a66",
+   "pairAddress": "0x29b3a7869E3662D00aaBD89A8ee74B2F703a6a66",
+   "baseToken": {
+    "address": "0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105",
+    "name": "Fren Pet",
+    "symbol": "Fren Pet"
+   },
+   "quoteToken": {
+    "address": "0x4200000000000000000000000000000000000006",
+    "name": "Wrapped Ether",
+    "symbol": "WETH"
+   },
+   "priceNative": "0.0003618",
+   "priceUsd": "0.6945",
+   "txns": {
+    "m5": {
+     "buys": 0,
+     "sells": 0
+    },
+    "h1": {
+     "buys": 7,
+     "sells": 0
+    },
+    "h6": {
+     "buys": 14,
+     "sells": 0
+    },
+    "h24": {
+     "buys": 25,
+     "sells": 3
+    }
+   },
+   "volume": {
+    "h24": 118.43,
+    "h6": 79.65,
+    "h1": 64.03,
+    "m5": 0
+   },
+   "priceChange": {
+    "h1": 21.88,
+    "h6": 28.38,
+    "h24": 36.35
+   },
+   "liquidity": {
+    "usd": 1367.77,
+    "base": 984.6094,
+    "quote": 0.3562
+   },
+   "fdv": 4997870,
+   "marketCap": 4447923,
+   "pairCreatedAt": 1693455145000,
+   "info": {
+    "imageUrl": "https://cdn.dexscreener.com/cms/images/579051b75772994b323f32313b37f13e6c8d69c247993507af63713cb7c5a220?width=800&height=800&quality=95&format=auto",
+    "header": "https://cdn.dexscreener.com/cms/images/fed78e043e9b68dfeccdcec560b7fc42cf3336be67b79f63a04cc4f7455ea54e?width=1500&height=500&quality=95&format=auto",
+    "openGraph": "https://cdn.dexscreener.com/token-images/og/base/0xff0c532fdb8cd566ae169c1cb157ff2bdc83e105?timestamp=1786183200000",
+    "websites": [
+     {
+      "url": "https://frenpet.xyz",
+      "label": "Website"
+     },
+     {
+      "url": "https://docs.frenpet.xyz",
+      "label": "Docs"
+     },
+     {
+      "url": "https://warpcast.com/frenpet",
+      "label": "Warpcast"
+     }
+    ],
+    "socials": [
+     {
+      "url": "https://x.com/frenpetonbase",
+      "type": "twitter"
+     },
+     {
+      "url": "https://t.me/frenpet",
+      "type": "telegram"
+     },
+     {
+      "url": "https://discord.gg/gC4sHDQua4",
+      "type": "discord"
+     }
+    ]
+   }
+  },
+  {
+   "chainId": "base",
+   "dexId": "aerodrome",
+   "url": "https://dexscreener.com/base/0x95d6856d120a79caaa0827b1cb100e9fb9dcfdee",
+   "pairAddress": "0x95d6856d120a79CAaa0827B1cb100e9FB9DCFDEe",
+   "baseToken": {
+    "address": "0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105",
+    "name": "Fren Pet",
+    "symbol": "Fren Pet"
+   },
+   "quoteToken": {
+    "address": "0x4200000000000000000000000000000000000006",
+    "name": "Wrapped Ether",
+    "symbol": "WETH"
+   },
+   "priceNative": "0.0003472",
+   "priceUsd": "0.6664",
+   "txns": {
+    "m5": {
+     "buys": 0,
+     "sells": 0
+    },
+    "h1": {
+     "buys": 2,
+     "sells": 0
+    },
+    "h6": {
+     "buys": 2,
+     "sells": 0
+    },
+    "h24": {
+     "buys": 2,
+     "sells": 0
+    }
+   },
+   "volume": {
+    "h24": 0.23,
+    "h6": 0.23,
+    "h1": 0.23,
+    "m5": 0
+   },
+   "priceChange": {
+    "h1": 5.62,
+    "h6": 5.62,
+    "h24": 5.62
+   },
+   "liquidity": {
+    "usd": 5.5,
+    "base": 4.1269,
+    "quote": 0.001433
+   },
+   "fdv": 4795427,
+   "marketCap": 4267757,
+   "pairCreatedAt": 1707886057000,
+   "info": {
+    "imageUrl": "https://cdn.dexscreener.com/cms/images/579051b75772994b323f32313b37f13e6c8d69c247993507af63713cb7c5a220?width=800&height=800&quality=95&format=auto",
+    "header": "https://cdn.dexscreener.com/cms/images/fed78e043e9b68dfeccdcec560b7fc42cf3336be67b79f63a04cc4f7455ea54e?width=1500&height=500&quality=95&format=auto",
+    "openGraph": "https://cdn.dexscreener.com/token-images/og/base/0xff0c532fdb8cd566ae169c1cb157ff2bdc83e105?timestamp=1786183200000",
+    "websites": [
+     {
+      "url": "https://frenpet.xyz",
+      "label": "Website"
+     },
+     {
+      "url": "https://docs.frenpet.xyz",
+      "label": "Docs"
+     },
+     {
+      "url": "https://warpcast.com/frenpet",
+      "label": "Warpcast"
+     }
+    ],
+    "socials": [
+     {
+      "url": "https://x.com/frenpetonbase",
+      "type": "twitter"
+     },
+     {
+      "url": "https://t.me/frenpet",
+      "type": "telegram"
+     },
+     {
+      "url": "https://discord.gg/gC4sHDQua4",
+      "type": "discord"
+     }
+    ]
+   }
+  }
+ ]
+}

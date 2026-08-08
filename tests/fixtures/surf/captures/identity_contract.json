@@ -1,0 +1,901 @@
+{
+ "optimization_enabled": true,
+ "compiler_version": "v0.8.26+commit.8a97fa7a",
+ "verified_at": "2026-05-14T01:34:32.100371Z",
+ "name": "IdentityMD",
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "contract IdentityRenderer",
+     "name": "renderer_",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "constructor"
+  },
+  {
+   "inputs": [],
+   "name": "AccountBalanceOverflow",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "AlreadyInitialized",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "AlreadyMinted",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "BalanceQueryForZeroAddress",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "EmptyIdentityHash",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "IdentityHashLocked",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "IdentityHashNotAllowed",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "NewOwnerIsZeroAddress",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "NoHandoverRequest",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "NotOwnerNorApproved",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "NotTokenOwner",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "TokenAlreadyExists",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "TokenDoesNotExist",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "TokenIdOutOfRange",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "TransferFromIncorrectOwner",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "TransferToNonERC721ReceiverImplementer",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "TransferToZeroAddress",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "Unauthorized",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "WalletAlreadyMinted",
+   "type": "error"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "owner",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "Approval",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "owner",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "operator",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "bool",
+     "name": "isApproved",
+     "type": "bool"
+    }
+   ],
+   "name": "ApprovalForAll",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "epoch",
+     "type": "uint256"
+    }
+   ],
+   "name": "EpochUpdated",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": false,
+     "internalType": "bool",
+     "name": "allowed",
+     "type": "bool"
+    }
+   ],
+   "name": "IdentityAllowedUpdated",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    },
+    {
+     "indexed": false,
+     "internalType": "string",
+     "name": "ipfsHash",
+     "type": "string"
+    },
+    {
+     "indexed": false,
+     "internalType": "bool",
+     "name": "permanent",
+     "type": "bool"
+    }
+   ],
+   "name": "IdentityHashUpdated",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "pendingOwner",
+     "type": "address"
+    }
+   ],
+   "name": "OwnershipHandoverCanceled",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "pendingOwner",
+     "type": "address"
+    }
+   ],
+   "name": "OwnershipHandoverRequested",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "oldOwner",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "newOwner",
+     "type": "address"
+    }
+   ],
+   "name": "OwnershipTransferred",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "from",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "to",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "Transfer",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "hook",
+     "type": "address"
+    }
+   ],
+   "name": "Univ4HookUpdated",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "pool",
+     "type": "address"
+    }
+   ],
+   "name": "Univ4PoolUpdated",
+   "type": "event"
+  },
+  {
+   "inputs": [],
+   "name": "MAX_SUPPLY",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "approve",
+   "outputs": [],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "owner",
+     "type": "address"
+    }
+   ],
+   "name": "balanceOf",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "result",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "cancelOwnershipHandover",
+   "outputs": [],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "pendingOwner",
+     "type": "address"
+    }
+   ],
+   "name": "completeOwnershipHandover",
+   "outputs": [],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "epoch",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "getApproved",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "result",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "hasIdentityHash",
+   "outputs": [
+    {
+     "internalType": "bool",
+     "name": "set",
+     "type": "bool"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "minter",
+     "type": "address"
+    }
+   ],
+   "name": "hasMinted",
+   "outputs": [
+    {
+     "internalType": "bool",
+     "name": "minted",
+     "type": "bool"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "identityAllowed",
+   "outputs": [
+    {
+     "internalType": "bool",
+     "name": "",
+     "type": "bool"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "identityHash",
+   "outputs": [
+    {
+     "internalType": "string",
+     "name": "",
+     "type": "string"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "identityHashLocked",
+   "outputs": [
+    {
+     "internalType": "bool",
+     "name": "locked",
+     "type": "bool"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "owner",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "operator",
+     "type": "address"
+    }
+   ],
+   "name": "isApprovedForAll",
+   "outputs": [
+    {
+     "internalType": "bool",
+     "name": "result",
+     "type": "bool"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "mint",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "name",
+   "outputs": [
+    {
+     "internalType": "string",
+     "name": "",
+     "type": "string"
+    }
+   ],
+   "stateMutability": "pure",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "owner",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "result",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "ownerOf",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "result",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "pendingOwner",
+     "type": "address"
+    }
+   ],
+   "name": "ownershipHandoverExpiresAt",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "result",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "renderer",
+   "outputs": [
+    {
+     "internalType": "contract IdentityRenderer",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "renounceOwnership",
+   "outputs": [],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "requestOwnershipHandover",
+   "outputs": [],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "from",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "to",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "safeTransferFrom",
+   "outputs": [],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "from",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "to",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    },
+    {
+     "internalType": "bytes",
+     "name": "data",
+     "type": "bytes"
+    }
+   ],
+   "name": "safeTransferFrom",
+   "outputs": [],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "operator",
+     "type": "address"
+    },
+    {
+     "internalType": "bool",
+     "name": "isApproved",
+     "type": "bool"
+    }
+   ],
+   "name": "setApprovalForAll",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "epoch_",
+     "type": "uint256"
+    }
+   ],
+   "name": "setEpoch",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "bool",
+     "name": "allowed",
+     "type": "bool"
+    }
+   ],
+   "name": "setIdentityAllowed",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    },
+    {
+     "internalType": "string",
+     "name": "ipfsHash",
+     "type": "string"
+    },
+    {
+     "internalType": "bool",
+     "name": "permanent",
+     "type": "bool"
+    }
+   ],
+   "name": "setIdentityHash",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "hook",
+     "type": "address"
+    }
+   ],
+   "name": "setUniv4Hook",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "pool",
+     "type": "address"
+    }
+   ],
+   "name": "setUniv4Pool",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "bytes4",
+     "name": "interfaceId",
+     "type": "bytes4"
+    }
+   ],
+   "name": "supportsInterface",
+   "outputs": [
+    {
+     "internalType": "bool",
+     "name": "result",
+     "type": "bool"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "symbol",
+   "outputs": [
+    {
+     "internalType": "string",
+     "name": "",
+     "type": "string"
+    }
+   ],
+   "stateMutability": "pure",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "tokenURI",
+   "outputs": [
+    {
+     "internalType": "string",
+     "name": "",
+     "type": "string"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "totalSupply",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "from",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "to",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "id",
+     "type": "uint256"
+    }
+   ],
+   "name": "transferFrom",
+   "outputs": [],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "newOwner",
+     "type": "address"
+    }
+   ],
+   "name": "transferOwnership",
+   "outputs": [],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "univ4Hook",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "univ4Pool",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  }
+ ],
+ "source_code_head": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport {ERC721} from \"solady/tokens/ERC721.sol\";\nimport {Ownable} from \"solady/auth/Ownable.sol\";\nimport {IdentityRenderer} from \"./IdentityRenderer.sol\";\n\n/// @notice Free mint ERC721 for identity.md.\ncontract IdentityMD is ERC721, Ownable {\n    error TokenIdOutOfRange();\n    error AlreadyMinted();\n    error WalletAlreadyMinted();\n    error NotTokenOwner();\n    error EmptyIdentityHash();\n    error IdentityHashLocked();\n    error IdentityHashNotAllowed();\n\n    event IdentityAllowedUpdated(bool allowed);\n    event IdentityHashUpdated(uint256 indexed id, string ipfsHash, bool permanent);\n    event EpochUpdated(uint256 indexed epoch);\n    event Univ4HookUpdated(address indexed hook);\n    event Univ4PoolUpdated(address indexed pool);\n\n    uint256 public constant MAX_SUPPLY = 2000;\n\n    IdentityRenderer public immutable renderer;\n    uint256 public totalSupply;\n    uint256 public epoch;\n    bool public identityAllowed;\n    address public univ4Hook;\n    address public univ4Pool;\n\n    mapping(address minter => bool minted) public hasMinted;\n    mapping(uint256 id => bool set) public hasIdentityHash;\n    mapping(uint256 id => bool locked) public identityHashLocked;\n\n    mapping(uint256 id => string ipfsHash) private _identityHashes;\n\n    constructor(IdentityRenderer renderer_) {\n        renderer = renderer_;\n        _initializeOwner(msg.sender);\n    }\n\n    function name() public pure override returns (string memory) {\n        return \"identity.md\";\n    }\n\n    function symbol() public pure override returns (string memory) {\n        return \"IDMD\";\n    }\n\n    /// @notice Free mint a specific token ID. IDs are 0 through 1999. One mint per wallet.\n    function mint(uint256 id) external {\n        if (id >= MAX_SUPPLY) revert TokenIdOutOfRange();\n        if (_exists(id)) revert AlreadyMinted();\n        if (hasMinted[msg.sender]) revert WalletAlreadyMinted();\n\n        hasMinted[msg.sender] = true;\n        unchecked {\n            ++totalSupply;\n        }\n        _mint(msg.sender, id);\n    }\n\n    function setIdentityAllowed(bool allowed) external onlyOwner {\n        identityAllowed = allowed;\n        emit IdentityAllowedUpdated(allowed);\n    }\n\n    function setEpoch(uint256 epoch_) external onlyOwner {\n        epoch = epoch_;\n        emit EpochUpdated(epoch_);\n    }\n\n    function setUniv4Hook(address hook) external onlyOwner {\n        univ4Hook = hook;\n        emit Univ4HookUpdated(hook);\n    }\n\n    function setUniv4Pool(address pool) external onlyOwner {\n        univ4Pool = pool;\n        emit Univ4PoolUpdated(pool);\n    }\n\n    /// @notice Set or update the token's identity markdown IPFS hash. Pass `permanent=true` to lock it forever.\n    function setIdentityHash(uint256 id, string calldata ipfsHash, bool permanent) external {\n        if (!identityAllowed) revert IdentityHashNotAllowed();\n        if (ownerOf(id) != msg.sender) revert NotTokenOwner();\n        if (identityHashLocked[id]) revert IdentityHashLocked();\n        if (bytes(ipfsHash).length == 0) revert EmptyIdentityHash();\n\n        _identityHashes[id] = ipfsHash;\n        hasIdentityHash[id] = true;\n        if (permanent) identityHashLocked[id] = true;\n\n        emit IdentityHashUpdated(id, ipfsHash, permanent);\n    }\n\n    function identityHash(uint256 id) external view returns (string memory) {\n        ownerOf(id);\n        return _identityHashes[id];\n    }\n\n    function tokenURI(uint256 id) public view override returns (string memory) {\n        ownerOf(id);\n        return renderer.tokenURI(id, _identityHashes[id], hasIdentityHash[id], identityHashLocked[id]);\n    }\n}\n"
+}

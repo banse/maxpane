@@ -1,0 +1,47 @@
+{
+ "block_number_balance_updated_at": 25709497,
+ "coin_balance": "0",
+ "creation_status": "success",
+ "creation_transaction_hash": "0xd0adc6f92123673d7e0b9132d160cf73f11df11bf8e1a253d8b73ebedc726cf3",
+ "creator_address_hash": "0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7",
+ "ens_domain_name": null,
+ "exchange_rate": "1917.74",
+ "has_beacon_chain_withdrawals": false,
+ "has_logs": true,
+ "has_token_transfers": true,
+ "has_tokens": true,
+ "has_validated_blocks": false,
+ "hash": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+ "implementations": [
+  {
+   "address_hash": "0x7274e874CA62410a93Bd8bf61c69d8045E399c02",
+   "name": "IdentityRegistryUpgradeable"
+  }
+ ],
+ "is_contract": true,
+ "is_scam": false,
+ "is_verified": true,
+ "metadata": null,
+ "name": "AgentIdentity",
+ "private_tags": [],
+ "proxy_type": "eip1967",
+ "public_tags": [],
+ "reputation": "ok",
+ "token": {
+  "address_hash": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+  "circulating_market_cap": null,
+  "circulating_supply": null,
+  "decimals": null,
+  "exchange_rate": null,
+  "holders_count": "9678",
+  "icon_url": null,
+  "name": "AgentIdentity",
+  "reputation": "ok",
+  "symbol": "AGENT",
+  "total_supply": null,
+  "type": "ERC-721",
+  "volume_24h": null
+ },
+ "watchlist_address_id": null,
+ "watchlist_names": []
+}

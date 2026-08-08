@@ -1,0 +1,10 @@
+{
+ "address": "0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7",
+ "contentHash": null,
+ "ens": "surfsurf.eth",
+ "ens_primary": "surfsurf.eth",
+ "resolverAddress": "0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41",
+ "wallets": {
+  "eth": "0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7"
+ }
+}

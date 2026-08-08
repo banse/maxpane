@@ -1,0 +1,15 @@
+{
+ "address_hash": "0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105",
+ "circulating_market_cap": "4797413.500193717",
+ "circulating_supply": null,
+ "decimals": "18",
+ "exchange_rate": "0.664613",
+ "holders_count": "22053",
+ "icon_url": "https://assets.coingecko.com/coins/images/33022/small/token.png?1700274697",
+ "name": "Fren Pet",
+ "reputation": "ok",
+ "symbol": "FP",
+ "total_supply": "7195584582643610841108662",
+ "type": "ERC-20",
+ "volume_24h": "420488.97995422326"
+}

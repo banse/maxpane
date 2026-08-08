@@ -1,0 +1,79 @@
+{
+ "items": [
+  {
+   "address_hash": "0x629574Bf40560f2e2f36868D337C7b67cd687233",
+   "address_url": "/address/0x629574Bf40560f2e2f36868D337C7b67cd687233",
+   "certified": false,
+   "circulating_market_cap": null,
+   "exchange_rate": null,
+   "icon_url": null,
+   "is_smart_contract_address": true,
+   "is_smart_contract_verified": true,
+   "is_verified_via_admin_panel": false,
+   "name": "Fren Pet",
+   "priority": 2,
+   "reputation": "ok",
+   "symbol": "FRENPET",
+   "token_type": "ERC-20",
+   "token_url": "/token/0x629574Bf40560f2e2f36868D337C7b67cd687233",
+   "total_supply": "200000000000000000000000000",
+   "type": "token"
+  },
+  {
+   "address_hash": "0xFB7eCdda9eeeD722eAdD5961afF85793E59bBcB9",
+   "address_url": "/address/0xFB7eCdda9eeeD722eAdD5961afF85793E59bBcB9",
+   "certified": false,
+   "circulating_market_cap": null,
+   "exchange_rate": null,
+   "icon_url": null,
+   "is_smart_contract_address": true,
+   "is_smart_contract_verified": true,
+   "is_verified_via_admin_panel": false,
+   "name": "frenpet",
+   "priority": 2,
+   "reputation": "ok",
+   "symbol": "fp",
+   "token_type": "ERC-20",
+   "token_url": "/token/0xFB7eCdda9eeeD722eAdD5961afF85793E59bBcB9",
+   "total_supply": "100000000000000000000000000",
+   "type": "token"
+  },
+  {
+   "address_hash": "0xFB7eCdda9eeeD722eAdD5961afF85793E59bBcB9",
+   "certified": false,
+   "ens_info": null,
+   "is_smart_contract_address": true,
+   "is_smart_contract_verified": true,
+   "name": "Frenpet",
+   "priority": 0,
+   "reputation": "ok",
+   "type": "contract",
+   "url": "/address/0xFB7eCdda9eeeD722eAdD5961afF85793E59bBcB9"
+  },
+  {
+   "address_hash": "0xf211B12537d60442D257581a39FA32a4Dc9E4f3E",
+   "certified": false,
+   "ens_info": null,
+   "is_smart_contract_address": true,
+   "is_smart_contract_verified": true,
+   "name": "FRENPET",
+   "priority": 0,
+   "reputation": "ok",
+   "type": "contract",
+   "url": "/address/0xf211B12537d60442D257581a39FA32a4Dc9E4f3E"
+  },
+  {
+   "address_hash": "0x629574Bf40560f2e2f36868D337C7b67cd687233",
+   "certified": false,
+   "ens_info": null,
+   "is_smart_contract_address": true,
+   "is_smart_contract_verified": true,
+   "name": "FRENPET",
+   "priority": 0,
+   "reputation": "ok",
+   "type": "contract",
+   "url": "/address/0x629574Bf40560f2e2f36868D337C7b67cd687233"
+  }
+ ],
+ "next_page_params": null
+}

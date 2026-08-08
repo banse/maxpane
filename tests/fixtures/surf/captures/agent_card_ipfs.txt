@@ -1,0 +1,10 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "identitymd-agent",
+  "description": "ERC-8004 agent metadata. Full metadata will be updated later.",
+  "services": [],
+  "x402Support": false,
+  "active": false,
+  "registrations": [],
+  "supportedTrust": []
+}

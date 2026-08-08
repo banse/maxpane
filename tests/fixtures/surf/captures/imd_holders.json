@@ -1,0 +1,1116 @@
+{
+ "items": [
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xD6A822D028bbf7b6EDfA1533e110Ee40c08551d9",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": "UniswapV3Pool",
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "388421668673360502399489"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x274a38D48225256add28fb78C5e22dF1fCACCeD7",
+    "implementations": [
+     {
+      "address_hash": "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
+      "name": "Simple7702Account"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "68979136155997937089671"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xD99F65C8952044F84D482509647b192C70c86A04",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "60317919315975239569542"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x580Aa9df627A396F32aE649EC427a4Cb430a5eD2",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "55985495323812821417696"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x69326E48f68500fb6cf3b3a7da640737B9cC347b",
+    "implementations": [
+     {
+      "address_hash": "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
+      "name": "Simple7702Account"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "51832514840475873003530"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xfCf083b04a25ea6403f2a38B8e275c57E48E2C06",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "49238364364280018431300"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x62ECc369f62C2B9791FE758b37709Faa1513F72e",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "43867895153587353183388"
+  },
+  {
+   "address": {
+    "ens_domain_name": "hundo.eth",
+    "hash": "0x2888BE6982957103EA88Ac10f4179dF0A294e877",
+    "implementations": [
+     {
+      "address_hash": "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B",
+      "name": "EIP7702StatelessDeleGator"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": {
+     "tags": [
+      {
+       "meta": {},
+       "name": "hundo.eth",
+       "ordinal": 10,
+       "slug": "hundoeth",
+       "tagType": "name"
+      },
+      {
+       "meta": {},
+       "name": "Metamask User",
+       "ordinal": 0,
+       "slug": "metamask-user",
+       "tagType": "generic"
+      }
+     ]
+    },
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "40000000000000000000000"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x3e2CcdE4df053206e513f3ed98F2DD79B8910D0e",
+    "implementations": [
+     {
+      "address_hash": "0x000000009B1D0aF20D8C6d0A44e162d11F9b8f00",
+      "name": "CaliburEntry"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "38208687064394414217067"
+  },
+  {
+   "address": {
+    "ens_domain_name": "knowstheunknown.eth",
+    "hash": "0x4AdbfDee6188df8a24EAeEE87c9BdEBD4dD3fb64",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "36066609288622215423132"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x4D8e3F39EA0a6b3BaCFF2d080D7c576F177eC6f8",
+    "implementations": [
+     {
+      "address_hash": "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
+      "name": "Simple7702Account"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "33302303878770088510547"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x4CDC19e2aa403CBBd391359439E187196D26624c",
+    "implementations": [
+     {
+      "address_hash": "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
+      "name": "Simple7702Account"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "32055480954331991184081"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x1f3cc123f5C83C34Ee68B9Bd7b13039A73D3E937",
+    "implementations": [
+     {
+      "address_hash": "0x535023ed14A1862444EC29d0FE07cF3092C73BC2",
+      "name": null
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "29594203868821741518429"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xF98c3BF5F3544F64E60560304b58DcA900A3c4DB",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "27682903390975215364646"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x8F86B823CD79b0cBc328e18B1Cc0c66CC1B583F5",
+    "implementations": [
+     {
+      "address_hash": "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
+      "name": null
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "26497536427672944175805"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xCC9ED2E1a9a7349F679F39609788e7D17A4C8583",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "26276244511804234015203"
+  },
+  {
+   "address": {
+    "ens_domain_name": "mcclick.eth",
+    "hash": "0x0Ed1f91769D6add12f3AcA1229F96eeA198ac0Ed",
+    "implementations": [
+     {
+      "address_hash": "0x612373D7003d694220f7800EeaF8E3924c0951D3",
+      "name": "CaliburEntry"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": {
+     "tags": [
+      {
+       "meta": {
+        "bgColor": "#8465CB",
+        "tagIcon": "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%20viewBox%3D%220%200%2032%2029%22%3E%3Cpath%20d%3D%22M%205.507%200.072%20L%2026.097%200.072%20L%2026.097%204.167%20L%2031.952%204.167%20L%2030.725%208.263%20L%2029.686%208.263%20L%2029.686%2024.833%20C%2030.207%2024.833%2030.63%2025.249%2030.63%2025.763%20L%2030.63%2026.88%20L%2030.819%2026.88%20C%2031.341%2026.88%2031.764%2027.297%2031.764%2027.811%20L%2031.764%2028.928%20L%2021.185%2028.928%20L%2021.185%2027.811%20C%2021.185%2027.297%2021.608%2026.88%2022.13%2026.88%20L%2022.319%2026.88%20L%2022.319%2025.763%20C%2022.319%2025.316%2022.639%2024.943%2023.065%2024.853%20L%2023.045%2015.71%20C%2022.711%2012.057%2019.596%209.194%2015.802%209.194%20C%2012.008%209.194%208.893%2012.057%208.559%2015.71%20L%208.539%2024.845%20C%209.043%2024.919%209.663%2025.302%209.663%2025.763%20L%209.663%2026.88%20L%209.852%2026.88%20C%2010.373%2026.88%2010.796%2027.297%2010.796%2027.811%20L%2010.796%2028.928%20L%200.218%2028.928%20L%200.218%2027.811%20C%200.218%2027.297%200.641%2026.88%201.162%2026.88%20L%201.351%2026.88%20L%201.351%2025.763%20C%201.351%2025.249%201.774%2024.833%202.296%2024.833%20L%202.296%208.263%20L%201.257%208.263%20L%200.029%204.167%20L%205.507%204.167%20L%205.507%200.072%20Z%22%20fill%3D%22rgb(255%2C%20255%2C%20255)%22%3E%3C%2Fpath%3E%3Cpath%20d%3D%22M%2026.097%200.072%20L%2026.166%200.072%20L%2026.166%200.004%20L%2026.097%200.004%20Z%20M%205.507%200.072%20L%205.507%200.004%20L%205.438%200.004%20L%205.438%200.072%20Z%20M%2026.097%204.167%20L%2026.028%204.167%20L%2026.028%204.235%20L%2026.097%204.235%20Z%20M%2031.952%204.167%20L%2032.019%204.187%20L%2032.045%204.099%20L%2031.952%204.099%20L%2031.952%204.167%20Z%20M%2030.725%208.263%20L%2030.725%208.331%20L%2030.776%208.331%20L%2030.791%208.282%20Z%20M%2029.686%208.263%20L%2029.686%208.195%20L%2029.617%208.195%20L%2029.617%208.263%20Z%20M%2029.686%2024.833%20L%2029.617%2024.833%20L%2029.617%2024.901%20L%2029.686%2024.901%20Z%20M%2030.63%2026.88%20L%2030.561%2026.88%20L%2030.561%2026.948%20L%2030.63%2026.948%20Z%20M%2031.764%2028.928%20L%2031.764%2028.996%20L%2031.832%2028.996%20L%2031.832%2028.928%20Z%20M%2021.185%2028.928%20L%2021.116%2028.928%20L%2021.116%2028.996%20L%2021.185%2028.996%20Z%20M%2022.319%2026.88%20L%2022.319%2026.948%20L%2022.388%2026.948%20L%2022.388%2026.88%20Z%20M%2023.065%2024.853%20L%2023.08%2024.919%20L%2023.134%2024.908%20L%2023.134%2024.853%20Z%20M%2023.045%2015.71%20L%2023.114%2015.71%20L%2023.114%2015.707%20L%2023.113%2015.704%20Z%20M%208.559%2015.71%20L%208.49%2015.704%20L%208.49%2015.707%20L%208.49%2015.71%20Z%20M%208.539%2024.845%20L%208.47%2024.845%20L%208.469%2024.904%20L%208.528%2024.913%20Z%20M%209.663%2026.88%20L%209.594%2026.88%20L%209.594%2026.948%20L%209.663%2026.948%20Z%20M%2010.796%2028.928%20L%2010.796%2028.996%20L%2010.865%2028.996%20L%2010.865%2028.928%20Z%20M%200.218%2028.928%20L%200.149%2028.928%20L%200.149%2028.996%20L%200.218%2028.996%20Z%20M%201.351%2026.88%20L%201.351%2026.948%20L%201.42%2026.948%20L%201.42%2026.88%20Z%20M%202.296%2024.833%20L%202.296%2024.901%20L%202.365%2024.901%20L%202.365%2024.833%20Z%20M%202.296%208.263%20L%202.365%208.263%20L%202.365%208.195%20L%202.296%208.195%20Z%20M%201.257%208.263%20L%201.191%208.282%20L%201.205%208.331%20L%201.257%208.331%20Z%20M%200.029%204.167%20L%200.029%204.1%20L%20-0.063%204.1%20L%20-0.037%204.187%20L%200.029%204.167%20Z%20M%205.507%204.167%20L%205.507%204.235%20L%205.576%204.235%20L%205.576%204.167%20Z%20M%2026.097%200.004%20L%205.507%200.004%20L%205.507%200.139%20L%2026.097%200.139%20Z%20M%2026.166%204.167%20L%2026.166%200.072%20L%2026.028%200.072%20L%2026.028%204.167%20L%2026.166%204.167%20Z%20M%2031.952%204.099%20L%2026.097%204.099%20L%2026.097%204.235%20L%2031.952%204.235%20Z%20M%2030.791%208.282%20L%2032.019%204.187%20L%2031.886%204.148%20L%2030.658%208.244%20Z%20M%2029.686%208.331%20L%2030.725%208.331%20L%2030.725%208.195%20L%202...TRUNCATED",
+        "tagUrl": "https://warpcast.com/kyle",
+        "textColor": "#FFFFFF",
+        "tooltipDescription": "This address is linked to a Farcaster account"
+       },
+       "name": "Farcaster",
+       "ordinal": 0,
+       "slug": "warpcast-account",
+       "tagType": "classifier"
+      }
+     ]
+    },
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "22203207412191250350107"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xb90B5F1D0fd50B0Ca8448AA21191F6A3CD37E42E",
+    "implementations": [
+     {
+      "address_hash": "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
+      "name": "Simple7702Account"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "21679469208894437984511"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x9C0F221c134591F7C9d565548Ea4417900302eA3",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "21676719938720584569090"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xBb34960AfeC64f3F1cc78b0c9c342C4657021696",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "21517041875834915471850"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xd92Fe06d1dae5b4757A0E6061FEC24054639AC35",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "21346152552424302795706"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xe8bB718d462516B85326C052853373d295aAE9Ed",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "19013752184313813928485"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa347101D5752706Fe7D959a945EF5298326c7E4F",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "18689010457933013246616"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x2BDF1a698d39A4358e2C162dEacc038FAdb8A9d5",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "18592361489860113518324"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x2D89671B6A79B9B542CfeB289bF0Ad52F7bE3676",
+    "implementations": [
+     {
+      "address_hash": "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
+      "name": "Simple7702Account"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "18248553908801192313897"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x82DD04672BCD6d29E28E7Db562a3d17F77c504b5",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "17971310068484246893188"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x39B337121494b10CFfe3E581ab3281b2d62C5b08",
+    "implementations": [
+     {
+      "address_hash": "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
+      "name": "Simple7702Account"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "17579028149102671590642"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x9E10803A097F663aA8483dD4CdD5D1fF09751cCe",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "17073619699278274200433"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x2b4A103032a9B0FfA22eECc68c436fd5A8950881",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "16270527618778044181756"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xF9922a11b057668943957B618d90431139D73594",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "16000000000000000000000"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x3f539d0201D62f5596d8c3685a87E4Bec55c938d",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "15279502572247123187470"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x43f61D1fE0f26115d111ede05b851f5976D9345A",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "14689488734448327138574"
+  },
+  {
+   "address": {
+    "ens_domain_name": "eca.eth",
+    "hash": "0x000461A73d3985eef4923655782aA5d0De75C111",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": {
+     "tags": [
+      {
+       "meta": {
+        "tooltipUrl": "https://x.com/FlippingProfits"
+       },
+       "name": "Profit",
+       "ordinal": 10,
+       "slug": "profit",
+       "tagType": "name"
+      }
+     ]
+    },
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "14131806452106114749035"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x273B2DB0BD6A8799A7C6511A04eE244493CA3138",
+    "implementations": [
+     {
+      "address_hash": "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
+      "name": null
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "14029673771228481200137"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xf102D9372E410E7498E4079599733b80351aff29",
+    "implementations": [
+     {
+      "address_hash": "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
+      "name": "Simple7702Account"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "13921705956653141378686"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xFD7f6588Fe01DE297cc168A153A244340e517794",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "12936666646491675047032"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x61805AcF1B779D22540D94DA868231012C761909",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "12791403880268946115524"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x6d75BD1c110f0f69EE7525B3f04438BEF71B518e",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "12274005684417112168532"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x99CD5F95759941E9578ce3790ba4b15B73418bA6",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "12099496725616701201275"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x06e04B685Cc4AB3f5DDABc0c49E818A91311A904",
+    "implementations": [
+     {
+      "address_hash": "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
+      "name": "Simple7702Account"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "11947378929756131534975"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xf7B903B33B80B7a0B60a3eA34C1f85D39AaF750f",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "11826532600315198017193"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xC7F92f3672a90c224817dEA6BC31fCc88c5A54ac",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "11702692485919504391489"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x23ad4067aF541ee28c7f5c69Eff348139Beb7BD8",
+    "implementations": [
+     {
+      "address_hash": "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
+      "name": "Simple7702Account"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "11622611658081290260869"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x02648f6BE61BFc6417d36925491bF07F607d52DA",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "11363892110592434255222"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x01467c420df8d9556fe5DbbF02b0c25C42226558",
+    "implementations": [
+     {
+      "address_hash": "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B",
+      "name": "EIP7702StatelessDeleGator"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "11277607092369819589394"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xf53cAB0C6F25f48F985d1e2c40E03FC7C1963364",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "10850470685995294474754"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x3DAc271d1B36A434880C527A678B6487AC9C1F8c",
+    "implementations": [
+     {
+      "address_hash": "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B",
+      "name": "EIP7702StatelessDeleGator"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": {
+     "tags": [
+      {
+       "meta": {
+        "bgColor": "#8465CB",
+        "tagIcon": "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%20viewBox%3D%220%200%2032%2029%22%3E%3Cpath%20d%3D%22M%205.507%200.072%20L%2026.097%200.072%20L%2026.097%204.167%20L%2031.952%204.167%20L%2030.725%208.263%20L%2029.686%208.263%20L%2029.686%2024.833%20C%2030.207%2024.833%2030.63%2025.249%2030.63%2025.763%20L%2030.63%2026.88%20L%2030.819%2026.88%20C%2031.341%2026.88%2031.764%2027.297%2031.764%2027.811%20L%2031.764%2028.928%20L%2021.185%2028.928%20L%2021.185%2027.811%20C%2021.185%2027.297%2021.608%2026.88%2022.13%2026.88%20L%2022.319%2026.88%20L%2022.319%2025.763%20C%2022.319%2025.316%2022.639%2024.943%2023.065%2024.853%20L%2023.045%2015.71%20C%2022.711%2012.057%2019.596%209.194%2015.802%209.194%20C%2012.008%209.194%208.893%2012.057%208.559%2015.71%20L%208.539%2024.845%20C%209.043%2024.919%209.663%2025.302%209.663%2025.763%20L%209.663%2026.88%20L%209.852%2026.88%20C%2010.373%2026.88%2010.796%2027.297%2010.796%2027.811%20L%2010.796%2028.928%20L%200.218%2028.928%20L%200.218%2027.811%20C%200.218%2027.297%200.641%2026.88%201.162%2026.88%20L%201.351%2026.88%20L%201.351%2025.763%20C%201.351%2025.249%201.774%2024.833%202.296%2024.833%20L%202.296%208.263%20L%201.257%208.263%20L%200.029%204.167%20L%205.507%204.167%20L%205.507%200.072%20Z%22%20fill%3D%22rgb(255%2C%20255%2C%20255)%22%3E%3C%2Fpath%3E%3Cpath%20d%3D%22M%2026.097%200.072%20L%2026.166%200.072%20L%2026.166%200.004%20L%2026.097%200.004%20Z%20M%205.507%200.072%20L%205.507%200.004%20L%205.438%200.004%20L%205.438%200.072%20Z%20M%2026.097%204.167%20L%2026.028%204.167%20L%2026.028%204.235%20L%2026.097%204.235%20Z%20M%2031.952%204.167%20L%2032.019%204.187%20L%2032.045%204.099%20L%2031.952%204.099%20L%2031.952%204.167%20Z%20M%2030.725%208.263%20L%2030.725%208.331%20L%2030.776%208.331%20L%2030.791%208.282%20Z%20M%2029.686%208.263%20L%2029.686%208.195%20L%2029.617%208.195%20L%2029.617%208.263%20Z%20M%2029.686%2024.833%20L%2029.617%2024.833%20L%2029.617%2024.901%20L%2029.686%2024.901%20Z%20M%2030.63%2026.88%20L%2030.561%2026.88%20L%2030.561%2026.948%20L%2030.63%2026.948%20Z%20M%2031.764%2028.928%20L%2031.764%2028.996%20L%2031.832%2028.996%20L%2031.832%2028.928%20Z%20M%2021.185%2028.928%20L%2021.116%2028.928%20L%2021.116%2028.996%20L%2021.185%2028.996%20Z%20M%2022.319%2026.88%20L%2022.319%2026.948%20L%2022.388%2026.948%20L%2022.388%2026.88%20Z%20M%2023.065%2024.853%20L%2023.08%2024.919%20L%2023.134%2024.908%20L%2023.134%2024.853%20Z%20M%2023.045%2015.71%20L%2023.114%2015.71%20L%2023.114%2015.707%20L%2023.113%2015.704%20Z%20M%208.559%2015.71%20L%208.49%2015.704%20L%208.49%2015.707%20L%208.49%2015.71%20Z%20M%208.539%2024.845%20L%208.47%2024.845%20L%208.469%2024.904%20L%208.528%2024.913%20Z%20M%209.663%2026.88%20L%209.594%2026.88%20L%209.594%2026.948%20L%209.663%2026.948%20Z%20M%2010.796%2028.928%20L%2010.796%2028.996%20L%2010.865%2028.996%20L%2010.865%2028.928%20Z%20M%200.218%2028.928%20L%200.149%2028.928%20L%200.149%2028.996%20L%200.218%2028.996%20Z%20M%201.351%2026.88%20L%201.351%2026.948%20L%201.42%2026.948%20L%201.42%2026.88%20Z%20M%202.296%2024.833%20L%202.296%2024.901%20L%202.365%2024.901%20L%202.365%2024.833%20Z%20M%202.296%208.263%20L%202.365%208.263%20L%202.365%208.195%20L%202.296%208.195%20Z%20M%201.257%208.263%20L%201.191%208.282%20L%201.205%208.331%20L%201.257%208.331%20Z%20M%200.029%204.167%20L%200.029%204.1%20L%20-0.063%204.1%20L%20-0.037%204.187%20L%200.029%204.167%20Z%20M%205.507%204.167%20L%205.507%204.235%20L%205.576%204.235%20L%205.576%204.167%20Z%20M%2026.097%200.004%20L%205.507%200.004%20L%205.507%200.139%20L%2026.097%200.139%20Z%20M%2026.166%204.167%20L%2026.166%200.072%20L%2026.028%200.072%20L%2026.028%204.167%20L%2026.166%204.167%20Z%20M%2031.952%204.099%20L%2026.097%204.099%20L%2026.097%204.235%20L%2031.952%204.235%20Z%20M%2030.791%208.282%20L%2032.019%204.187%20L%2031.886%204.148%20L%2030.658%208.244%20Z%20M%2029.686%208.331%20L%2030.725%208.331%20L%2030.725%208.195%20L%202...TRUNCATED",
+        "tagUrl": "https://warpcast.com/bored-bear",
+        "textColor": "#FFFFFF",
+        "tooltipDescription": "This address is linked to a Farcaster account",
+        "warpcastHandle": "bored-bear"
+       },
+       "name": "Farcaster",
+       "ordinal": 0,
+       "slug": "warpcast-account",
+       "tagType": "classifier"
+      }
+     ]
+    },
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "10661397426616068250266"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xb28D1b5ABBf6E1FC6130c8E05B72829ACA5e462B",
+    "implementations": [
+     {
+      "address_hash": "0x69007702764179f14F51cdce752f4f775d74E139",
+      "name": "SemiModularAccount7702"
+     }
+    ],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": "eip7702",
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "10482670863177344103203"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xd266390Cce06eF5d3e1dca95E16d677b474672Db",
+    "implementations": [],
+    "is_contract": false,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "10193493079835818949691"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0x4f214020736784fA37BC35D970d4cFA7348EDC2f",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "token_id": null,
+   "value": "10062520094985243026835"
+  }
+ ],
+ "next_page_params": {
+  "value": "10062520094985243026835",
+  "address_hash": "0x4f214020736784fa37bc35d970d4cfa7348edc2f",
+  "items_count": 50
+ }
+}

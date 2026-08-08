@@ -1,0 +1,42 @@
+{
+ "data": {
+  "id": "base_0xff0c532fdb8cd566ae169c1cb157ff2bdc83e105",
+  "type": "token",
+  "attributes": {
+   "address": "0xff0c532fdb8cd566ae169c1cb157ff2bdc83e105",
+   "name": "Fren Pet",
+   "symbol": "Fren Pet",
+   "decimals": 18,
+   "image_url": "https://coin-images.coingecko.com/coins/images/33022/large/token.png?1700274697",
+   "banner_image_url": null,
+   "coingecko_coin_id": "frenpet",
+   "total_supply": "7195584582643610841108662.0",
+   "normalized_total_supply": "7195584.58264361",
+   "price_usd": "0.7248520504",
+   "fdv_usd": "5215701.34696218",
+   "total_reserve_in_usd": "212148.7657739151605575613903362016",
+   "volume_usd": {
+    "h24": "55326.8295989323"
+   },
+   "market_cap_usd": "5215734.23855585"
+  },
+  "relationships": {
+   "top_pools": {
+    "data": [
+     {
+      "id": "base_0xde66c35e01ed8e619bf092352338ef94f2327337",
+      "type": "pool"
+     },
+     {
+      "id": "base_0x29b3a7869e3662d00aabd89a8ee74b2f703a6a66",
+      "type": "pool"
+     },
+     {
+      "id": "base_0x9c93fd133424b07543336200ce8e83be0f7acb8c",
+      "type": "pool"
+     }
+    ]
+   }
+  }
+ }
+}
