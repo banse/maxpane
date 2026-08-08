@@ -62,6 +62,7 @@ __all__ = [
     "decode_utf8_calldata",
     "CHANNEL_KINDS",
     "classify_channel_tx",
+    "parity_pct",
 ]
 
 
@@ -252,3 +253,72 @@ def classify_channel_tx(
         if value > 0 or decode_utf8_calldata(input_hex) is None:
             return "fund"
     return "reply"
+
+
+def _as_float(value: Any) -> float | None:
+    """Coerce to ``float``; ``None`` when missing or unparseable.  ``bool`` is
+    rejected for the same reason as in :func:`_as_int`."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return float(int(text, 16)) if text.lower().startswith("0x") else float(text)
+        except ValueError:
+            return None
+    return None
+
+
+def parity_pct(imd_price_usd: float | None, fp_price_usd: float | None) -> float | None:
+    """IMD's premium/discount to FP in percent, signed.  ``None`` if unknown.
+
+    IMD is FP bridged 1:1 (FP locks on Base via the OFT adapter, IMD mints on
+    mainnet), so the pair should trade together and the spread is a real health
+    metric rather than decoration.  Computed every refresh — the 33.0% bridged
+    share and this spread both move with every bridge tx and are never
+    hardcoded (PRD §6.2).
+
+    A missing or non-positive FP price yields ``None``, never ``0.0``: on a
+    dead market feed "0%" reads as *at parity*, which is a statement the
+    dashboard has no basis to make.
+    """
+    imd = _as_float(imd_price_usd)
+    fp = _as_float(fp_price_usd)
+    if imd is None or fp is None or fp <= 0:
+        return None
+    return (imd / fp - 1.0) * 100.0
+
+
+def _fmt_amount(value: float) -> str:
+    """``114366.899256`` -> ``114,367``; small amounts keep two decimals."""
+    return f"{value:,.0f}" if abs(value) >= 1000 else f"{value:,.2f}"
+
+
+def _truncate(text: str, limit: int = DETAIL_LIMIT) -> str:
+    """Collapse whitespace to one line and cut at ``limit`` with an ellipsis.
+
+    Channel messages carry embedded newlines and two-space indentation; a
+    signal detail is a single row, so the flattening is part of the contract
+    rather than the widget's problem.
+    """
+    flat = " ".join(str(text).split())
+    if len(flat) <= limit:
+        return flat
+    return flat[: limit - 1].rstrip() + "…"
+
+
+def _short_addr(value: Any) -> str:
+    """``0x`` + first 8 + ``…`` + last 6 — the PRD §4 untrusted-address form.
+
+    Long enough to compare against a known address by eye, short enough for a
+    signal row, and never a label: live look-alike spoofs of both fee
+    recipients are in frenpet.eth's history today (research §Hazards 2).
+    """
+    text = value.strip() if isinstance(value, str) else ""
+    if len(text) < 20:
+        return text
+    return f"{text[:10]}…{text[-6:]}"

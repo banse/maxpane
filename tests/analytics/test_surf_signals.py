@@ -254,3 +254,57 @@ def test_case_and_missing_addresses_never_raise():
     from maxpane_dashboard.data import surf_models
 
     assert sig.CHANNEL_KINDS is surf_models.CHANNEL_KINDS
+
+
+# --- parity_pct and detail formatting ---------------------------------------
+#
+# IMD is FP bridged 1:1 (FP locks on Base, IMD mints on mainnet), so the two
+# prices should track and the spread is a real arbitrage/health number.  It is
+# computed every refresh and never hardcoded: the repo has watched a documented
+# "constant" drift three days running (CLAUDE.md rule 4).
+
+# dexscreener_imd.json / dexscreener_fp.json, captured 2026-08-08.
+IMD_PRICE_USD = 0.7074
+FP_PRICE_USD = 0.7274
+
+
+def test_parity_uses_the_captured_prices():
+    assert sig.parity_pct(IMD_PRICE_USD, FP_PRICE_USD) == pytest.approx(-2.7495188, abs=1e-6)
+
+
+def test_parity_is_signed_both_ways():
+    assert sig.parity_pct(1.10, 1.00) == pytest.approx(10.0)
+    assert sig.parity_pct(1.00, 1.00) == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize(
+    "imd,fp",
+    [(None, 0.7274), (0.7074, None), (None, None), (0.7074, 0.0), (0.7074, -1.0), ("x", 1.0)],
+)
+def test_parity_is_none_when_a_price_is_missing_or_impossible(imd, fp):
+    """A dead market feed is ``None``, never 0% — 0% would read as 'at parity'."""
+    assert sig.parity_pct(imd, fp) is None
+
+
+def test_amounts_render_without_inventing_precision():
+    assert sig._fmt_amount(114_366.899256) == "114,367"
+    assert sig._fmt_amount(15_745.0) == "15,745"
+    assert sig._fmt_amount(10_000.0) == "10,000"
+    assert sig._fmt_amount(0.5) == "0.50"
+
+
+def test_truncate_flattens_newlines_and_marks_the_cut(calldata: dict):
+    """A feed detail is one line: the LP post's two sentences become 48 chars."""
+    text = sig.decode_utf8_calldata(calldata["self_lp_add"]["raw_input"])
+    assert sig._truncate(text) == "I moved 33 eth to the LP on mainnet https://eth…"
+    assert len(sig._truncate(text)) == sig.DETAIL_LIMIT
+    assert sig._truncate("soon") == "soon"
+    assert sig._truncate("a\nb\n  c") == "a b c"
+
+
+def test_short_addr_matches_the_prd_poisoning_format():
+    """0x + first 8 + … + last 6 (PRD §4) — enough to be checked, never trusted."""
+    assert sig._short_addr("0xd6C6d48e8ff38DD7F242E34442FBdaA10eCF7A44") == "0xd6C6d48e…CF7A44"
+    assert sig._short_addr("0x8004A169FB4a3325136EB29fA0ceB6D2e539a432") == "0x8004A169…39a432"
+    assert sig._short_addr("0x00") == "0x00"
+    assert sig._short_addr(None) == ""
