@@ -44,6 +44,7 @@ Pattern: ``maxpane_dashboard/analytics/fwa_signals.py``.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from maxpane_dashboard.data.surf_addresses import ANNOUNCE, DEV_WALLET, OPS_WALLET
@@ -256,21 +257,33 @@ def classify_channel_tx(
 
 
 def _as_float(value: Any) -> float | None:
-    """Coerce to ``float``; ``None`` when missing or unparseable.  ``bool`` is
-    rejected for the same reason as in :func:`_as_int`."""
+    """Coerce to ``float``; ``None`` when missing, unparseable, or not finite.
+
+    ``bool`` is rejected for the same reason as in :func:`_as_int`.  ``inf``,
+    ``-inf`` and ``nan`` are rejected too, whether they arrive as a native
+    float or by parsing a string: third-party keyless market payloads are not
+    under our control, and ``float("1e400")`` overflows to ``inf`` silently
+    rather than raising, so an overflowing numeric string would otherwise sail
+    straight through as a "valid" price.
+    """
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
+        try:
+            result = float(value)
+        except OverflowError:
+            return None
+    elif isinstance(value, str):
         text = value.strip()
         if not text:
             return None
         try:
-            return float(int(text, 16)) if text.lower().startswith("0x") else float(text)
-        except ValueError:
+            result = float(int(text, 16)) if text.lower().startswith("0x") else float(text)
+        except (ValueError, OverflowError):
             return None
-    return None
+    else:
+        return None
+    return result if math.isfinite(result) else None
 
 
 def parity_pct(imd_price_usd: float | None, fp_price_usd: float | None) -> float | None:
@@ -284,13 +297,17 @@ def parity_pct(imd_price_usd: float | None, fp_price_usd: float | None) -> float
 
     A missing or non-positive FP price yields ``None``, never ``0.0``: on a
     dead market feed "0%" reads as *at parity*, which is a statement the
-    dashboard has no basis to make.
+    dashboard has no basis to make.  Two finite inputs can still divide out to
+    a non-finite result (``1e308 / 1e-308`` overflows to ``inf``), so the
+    computed ratio is checked too, not just the inputs: ``inf%``/``nan%`` on
+    screen would read as a genuine depeg rather than as missing data.
     """
     imd = _as_float(imd_price_usd)
     fp = _as_float(fp_price_usd)
     if imd is None or fp is None or fp <= 0:
         return None
-    return (imd / fp - 1.0) * 100.0
+    result = (imd / fp - 1.0) * 100.0
+    return result if math.isfinite(result) else None
 
 
 def _fmt_amount(value: float) -> str:

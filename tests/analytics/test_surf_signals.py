@@ -286,6 +286,36 @@ def test_parity_is_none_when_a_price_is_missing_or_impossible(imd, fp):
     assert sig.parity_pct(imd, fp) is None
 
 
+@pytest.mark.parametrize(
+    "imd,fp",
+    [
+        (float("inf"), 0.7274),
+        (0.7074, float("inf")),
+        (float("nan"), 0.7274),
+        (0.7074, float("nan")),
+        ("1e400", 0.7274),
+    ],
+)
+def test_parity_rejects_non_finite_or_overflowing_prices(imd, fp):
+    """inf/nan/an overflowing numeric string must never surface as a computed
+    spread (fix round 1).  Third-party keyless market payloads are not under
+    our control, and ``float("1e400")`` overflows to ``inf`` without raising,
+    so it would otherwise sail through as a "valid" price.  ``inf%``/``nan%``
+    on screen would read as a genuine depeg rather than as missing data --
+    the same class of lie a fabricated spread would be.
+    """
+    assert sig.parity_pct(imd, fp) is None
+
+
+def test_parity_rejects_a_result_that_overflows_even_with_finite_inputs():
+    """Two finite, legitimate-looking extremes can still divide out to inf.
+
+    Neither input alone is invalid, so the inputs pass the finiteness guard
+    in ``_as_float``; the computed ratio itself must be checked too.
+    """
+    assert sig.parity_pct(1e308, 1e-308) is None
+
+
 def test_amounts_render_without_inventing_precision():
     assert sig._fmt_amount(114_366.899256) == "114,367"
     assert sig._fmt_amount(15_745.0) == "15,745"
