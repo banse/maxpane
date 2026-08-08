@@ -257,16 +257,54 @@ def test_the_four_poisoning_rows_are_one_gwei_inbound_from_lookalikes() -> None:
 
 
 def test_each_spoof_shares_a_prefix_and_suffix_with_its_target() -> None:
-    """This is why a truncated address must never be styled as trusted."""
-    real_b = "0x61CC704c7A5B7071c7B3f4Cc09A9CBC86373f14E".lower()
-    spoof_b = "0x61ccfd5d33f0f27a2cd5acb558d9281b110df14e"
-    assert real_b[:6] == spoof_b[:6] and real_b[-4:] == spoof_b[-4:]
-    real_a = "0xF3084Bc7380D2dEfaA5bB42DCA6F517424D60eE6".lower()
-    for spoof_a in (
-        "0xf3083828702c1989710ceca517412071c2f60ee6",
-        "0xf30875988b99489ac71ec2f5069de0dd80b70ee6",
-    ):
-        assert real_a[:6] == spoof_a[:6] and real_a[-4:] == spoof_a[-4:]
+    """This is why a truncated address must never be styled as trusted.
+
+    The spoof set is derived from the captures, not typed in: every
+    counterparty of the ops wallet's ETH-tx and token-transfer history that
+    is *not* in ``KNOWN_LABELS`` is checked for a display-truncation
+    collision (first 6 / last 4 characters, case-folded) against the two
+    real fee-sink targets — imported from ``surf_addresses``, never
+    re-typed.  This naturally finds all of them, including a lookalike that
+    only shows up in the token-transfer capture (a fake outbound "ĖTḨ"
+    transfer to a second address imitating ``LP_FEE_SINK_B``), not just the
+    three 1-gwei inbound rows in the tx capture.
+    """
+    from maxpane_dashboard.data.surf_addresses import (
+        KNOWN_LABELS,
+        LP_FEE_SINK_A,
+        LP_FEE_SINK_B,
+    )
+
+    targets = (LP_FEE_SINK_A.lower(), LP_FEE_SINK_B.lower())
+
+    counterparties: set[str] = set()
+    for name in ("ops_eth_txs.json", "ops_eth_token_transfers.json"):
+        for row in rows_of(name):
+            for side in ("from", "to"):
+                party = (row.get(side) or {}).get("hash")
+                if party:
+                    counterparties.add(party.lower())
+
+    spoofs_by_target: dict[str, set[str]] = {target: set() for target in targets}
+    for addr in counterparties:
+        if addr in KNOWN_LABELS:
+            continue
+        for target in targets:
+            if addr[:6] == target[:6] and addr[-4:] == target[-4:]:
+                spoofs_by_target[target].add(addr)
+
+    # Not vacuous: both real fee sinks are actively being imitated, and the
+    # collision property holds for every address the capture scan found.
+    for target, spoofs in spoofs_by_target.items():
+        assert spoofs, f"no captured lookalike collides with {target}"
+        for spoof in spoofs:
+            assert spoof[:6] == target[:6] and spoof[-4:] == target[-4:]
+
+    # 3 senders in the ETH-tx poisoning rows + the token-transfer lookalike.
+    # A lower bound, not an exact count that could exclude a real one found
+    # later — the point is that a re-capture may only ever add spoofs here.
+    all_spoofs = {addr for spoofs in spoofs_by_target.values() for addr in spoofs}
+    assert len(all_spoofs) >= 4
 
 
 # ---------------------------------------------------------------------------
@@ -391,7 +429,9 @@ def test_imd_supply_and_the_two_disagreeing_holder_counts() -> None:
     token = capture("imd_token.json")
     assert token["address_hash"] == IMD
     assert token["total_supply"] == "2376731868679000000000000"
-    assert int(token["total_supply"]) / 10**18 == pytest.approx(2_376_731.868679)
+    assert int(token["total_supply"]) / 10**18 == pytest.approx(
+        2_376_731.868679, rel=1e-12
+    )
     assert token["symbol"] == "IMD" and token["name"] == "Identity.md"
     assert token["holders_count"] == "1148"
     assert capture("imd_counters.json")["token_holders_count"] == "1132"
