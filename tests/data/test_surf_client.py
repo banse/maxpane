@@ -1702,3 +1702,204 @@ async def test_fetch_nft_stats_rest_down_still_reports_dev_holdings():
 async def test_fetch_nft_stats_everything_down_returns_none():
     async with _offline_client() as client:
         assert await client.fetch_nft_stats() is None
+
+
+# ---------------------------------------------------------------------------
+# WP1.9 — fetch_recent_logs
+# ---------------------------------------------------------------------------
+
+#: The head the LOGS pool reports — deliberately NOT ``HEAD_BLOCK`` (WP1.3's
+#: state-pool head, 25,707,884).  The two pools answer ``eth_blockNumber``
+#: independently and this suite must not pretend otherwise, so they get
+#: different names as well as different values.  Reusing the name would be worse
+#: than confusing: module globals resolve at call time, so the later definition
+#: would win for the WHOLE file and quietly break WP1.3's assertions.
+LOG_HEAD_BLOCK = 25_709_000
+
+
+def _addr_topic(addr: str) -> str:
+    return "0x" + _strip0x(addr).lower().rjust(64, "0")
+
+
+def _fake_log(topic0: str, address: str, **extra: Any) -> dict:
+    return {
+        "address": address.lower(),
+        "topics": [topic0, *extra.pop("topics", [])],
+        "data": extra.pop("data", "0x"),
+        "blockNumber": hex(extra.pop("block", LOG_HEAD_BLOCK - 5)),
+        "transactionHash": extra.pop("tx", "0x" + "ab" * 32),
+        "logIndex": "0x0",
+    }
+
+
+def _topics_match(log_topics: list, flt_topics: list) -> bool:
+    """Real ``eth_getLogs`` topic semantics: positional, ``None`` = wildcard,
+    a list = OR at that position.
+
+    The double MUST honour positions. ``fetch_recent_logs`` asks for
+    ``Initialize`` twice — IMD as ``currency0`` (topic 2), then as ``currency1``
+    (topic 3) — and merges the two answers without deduping, because on a real
+    chain IMD is only ever one of the two. A position-blind handler serves the
+    same row to both queries and the merged group holds a phantom duplicate,
+    which is a defect in the DOUBLE, not in the client.
+    """
+    for i, want in enumerate(flt_topics):
+        if want is None:
+            continue
+        if i >= len(log_topics):
+            return False
+        got = str(log_topics[i]).lower()
+        if isinstance(want, (list, tuple)):
+            if got not in {str(w).lower() for w in want}:
+                return False
+        elif got != str(want).lower():
+            return False
+    return True
+
+
+def _logs_handler(
+    logs_by_topic0: dict[str, list[dict]],
+    *, range_errors_before_success: int = 0,
+) -> Callable[[httpx.Request], httpx.Response]:
+    state = {"range_errors_left": range_errors_before_success,
+             "windows_seen": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] == "eth_blockNumber":
+            return httpx.Response(200, json=_rpc_ok(payload, hex(LOG_HEAD_BLOCK)))
+        assert payload["method"] == "eth_getLogs", payload["method"]
+        flt = payload["params"][0]
+        window = int(flt["toBlock"], 16) - int(flt["fromBlock"], 16)
+        state["windows_seen"].append(window)
+        if state["range_errors_left"] > 0:
+            state["range_errors_left"] -= 1
+            return httpx.Response(200, json={
+                "jsonrpc": "2.0", "id": payload["id"],
+                "error": {"code": -32005,
+                          # a DECREMENTING suggested range — following it
+                          # verbatim livelocks (CLAUDE.md hazard).
+                          "message": "block range is too large, try "
+                                     f"{LOG_HEAD_BLOCK - 1}-{LOG_HEAD_BLOCK}"},
+            })
+        topic0 = flt["topics"][0]
+        rows = [
+            log for log in logs_by_topic0.get(topic0, [])
+            if _topics_match(log["topics"], flt["topics"])
+        ]
+        return httpx.Response(200, json=_rpc_ok(payload, rows))
+
+    handler.state = state  # type: ignore[attr-defined]
+    return handler
+
+
+def _standard_logs() -> dict[str, list[dict]]:
+    idmd_word = _strip0x(A.IDMD_NFT).lower().rjust(64, "0")
+    return {
+        A.TOPIC_TRANSFER: [
+            _fake_log(A.TOPIC_TRANSFER, A.IMD_TOKEN, topics=[
+                "0x" + "0" * 64, _addr_topic(A.OPS_WALLET)]),
+        ],
+        A.TOPIC_IDENTITY_HASH_UPDATED: [],
+        # topics = [Initialize, poolId, currency0, currency1] — IMD sits at
+        # topic 2, i.e. it is currency0 here.  A pool can only ever have IMD on
+        # ONE side, which is why `_topics_match` must answer exactly one of the
+        # client's two Initialize queries.
+        A.TOPIC_V4_INITIALIZE: [
+            _fake_log(A.TOPIC_V4_INITIALIZE, A.POOL_MANAGER_V4, topics=[
+                "0x" + "11" * 32, _addr_topic(A.IMD_TOKEN),
+                _addr_topic("0x" + "c0" * 20)]),
+        ],
+        A.TOPIC_SEAPORT_ORDER_FULFILLED: [
+            _fake_log(A.TOPIC_SEAPORT_ORDER_FULFILLED, surf_client._SEAPORT,
+                      topics=["0x" + "22" * 32, "0x" + "33" * 32],
+                      data="0x" + "00" * 31 + "01" + idmd_word),
+            # An OrderFulfilled for some OTHER collection — must be dropped
+            # by the IDMD pre-filter.
+            _fake_log(A.TOPIC_SEAPORT_ORDER_FULFILLED, surf_client._SEAPORT,
+                      topics=["0x" + "44" * 32, "0x" + "55" * 32],
+                      data="0x" + "ee" * 96),
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_fetch_recent_logs_filters_and_pools():
+    handler = _logs_handler(_standard_logs())
+    transport = RecordingTransport(handler)
+    async with _client_on(transport) as client:
+        window = await client.fetch_recent_logs()
+    assert window is not None
+    assert window.to_block == LOG_HEAD_BLOCK
+    assert window.from_block == LOG_HEAD_BLOCK - surf_client.LOG_WINDOW_BLOCKS
+    assert len(window.bridge_mints) == 1
+    assert window.identity_updates == ()          # empty is DATA, not failure
+    # ONE Initialize row, from TWO queries: the fixture log carries IMD at
+    # topic 2 (currency0), so the currency0 query matches it and the currency1
+    # query answers []. `_topics_match` is what makes the double behave like a
+    # real node here — a position-blind one would hand the same row to both
+    # queries and the un-deduped merge below would hold it twice.
+    assert len(window.v4_initializes) == 1
+    assert len(window.seaport_sales) == 1         # the non-IDMD row was dropped
+
+    # Every request in this method went to the LOGS pool — never publicnode.
+    assert transport.urls(), "no requests recorded"
+    for url in transport.urls():
+        assert "publicnode" not in url
+
+    # The bridge-mint filter is exact: Transfer, from == 0x0, to ∈ {dev, ops}.
+    getlogs = [p for (_u, _m, p) in transport.requests
+               if p and p.get("method") == "eth_getLogs"]
+    mint = [p for p in getlogs
+            if p["params"][0]["topics"][0] == A.TOPIC_TRANSFER][0]
+    flt = mint["params"][0]
+    assert flt["address"].lower() == A.IMD_TOKEN.lower()
+    assert flt["topics"][1] == "0x" + "0" * 64
+    assert sorted(t.lower() for t in flt["topics"][2]) == sorted(
+        [_addr_topic(A.DEV_WALLET), _addr_topic(A.OPS_WALLET)])
+
+    # The v4 Initialize filter matches IMD as EITHER currency (two topics-OR
+    # calls or one per position — assert both positions were queried).
+    init_calls = [p for p in getlogs
+                  if p["params"][0]["topics"][0] == A.TOPIC_V4_INITIALIZE]
+    assert len(init_calls) == 2
+    positions = set()
+    for p in init_calls:
+        topics = p["params"][0]["topics"]
+        for i in (2, 3):
+            if len(topics) > i and topics[i] == _addr_topic(A.IMD_TOKEN):
+                positions.add(i)
+    assert positions == {2, 3}
+
+
+@pytest.mark.asyncio
+async def test_fetch_recent_logs_halves_window_never_follows_suggestion():
+    handler = _logs_handler(_standard_logs(), range_errors_before_success=1)
+    async with _client_on(RecordingTransport(handler)) as client:
+        window = await client.fetch_recent_logs()
+    assert window is not None
+    seen = handler.state["windows_seen"]
+    assert seen[0] == surf_client.LOG_WINDOW_BLOCKS
+    assert seen[1] == surf_client.LOG_WINDOW_BLOCKS // 2  # halved…
+    assert 1 not in seen  # …and the endpoint's 1-block suggestion was IGNORED
+
+
+@pytest.mark.asyncio
+async def test_fetch_recent_logs_shrink_is_bounded_then_none():
+    handler = _logs_handler(_standard_logs(), range_errors_before_success=99)
+    async with _client_on(RecordingTransport(handler)) as client:
+        window = await client.fetch_recent_logs()
+    assert window is None  # bounded retries, then honest failure — no livelock
+    assert len(handler.state["windows_seen"]) <= (
+        (surf_client._LOG_MAX_SHRINKS + 1) * 5 * 2  # filters x endpoints cap
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_recent_logs_outage_returns_none():
+    async with _offline_client() as client:
+        assert await client.fetch_recent_logs() is None
+
+
+def test_seaport_address_is_labeled():
+    assert surf_client._SEAPORT in A.KNOWN_LABELS  # one cast list, no drift

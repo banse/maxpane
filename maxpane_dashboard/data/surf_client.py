@@ -61,6 +61,7 @@ from maxpane_dashboard.data.surf_models import (
     ChainState,
     ChannelTx,
     DevTx,
+    LogWindow,
     MarketSnapshot,
     NftStats,
     NonceSet,
@@ -147,6 +148,15 @@ _SEL_GET_BLOCK_NUMBER = "0x42cbb15c"
 #: WP0's frozen surface has no entry for it (open issue 7), so it is defined
 #: HERE rather than added to ``surf_addresses``.
 _SEL_BALANCE_OF = "0x70a08231"
+
+#: Seaport 1.6 — lowercase because every log-filter address this module
+#: builds is compared/stored lowercase (module docstring / CLAUDE.md rule).
+#: ``surf_addresses.SEAPORT`` is the checksummed, display-facing twin; this
+#: is the client-local one actually used to build ``eth_getLogs`` filters.
+_SEAPORT = "0x0000000000000068f116a894984e2db1123eb395"
+#: A ``bytes32`` topic of all zeros — matches ``Transfer``'s ``from`` when the
+#: sender is the mint address, i.e. this IS the mint filter's "from == 0x0".
+_ZERO_TOPIC = "0x" + "0" * 64
 
 _POSITIONS_RETURN_WORDS = 12
 _SLOT0_RETURN_WORDS = 7
@@ -340,6 +350,11 @@ def _is_range_limitation(err: Any) -> bool:
 
 class _LogRangeError(RuntimeError):
     """eth_getLogs failed because the requested window is too wide."""
+
+
+def _addr_topic(addr: str) -> str:
+    """Left-pad a 20-byte address into a 32-byte ``eth_getLogs`` topic word."""
+    return "0x" + pad_left(strip0x(addr).lower(), 64)
 
 
 class SurfClient(OwnedHttpClient):
@@ -1153,6 +1168,114 @@ class SurfClient(OwnedHttpClient):
             dev_holdings=dev_holdings,
             written=written,               # feeds BOTH hero and NFT panel
             # floor_eth stays at its pinned None: no keyless source exists.
+        )
+
+    # ------------------------------------------------------------------
+    # Logs RPC — the recent-window sweep for signals 2/3/5 + NFT sales
+    # ------------------------------------------------------------------
+
+    async def _get_logs_shrinking(
+        self, base_filter: dict, from_block: int, to_block: int
+    ) -> list[dict] | None:
+        """eth_getLogs with bounded window-halving on range errors.
+
+        A provider's suggested range is NEVER adopted: one of them decrements
+        a single block per round trip, which livelocks a verbatim follower.
+        Halving our own window converges in <= _LOG_MAX_SHRINKS steps or
+        fails honestly.
+        """
+        window = to_block - from_block
+        for _shrink in range(_LOG_MAX_SHRINKS + 1):
+            flt = dict(base_filter)
+            flt["fromBlock"] = hex(to_block - window)
+            flt["toBlock"] = hex(to_block)
+            try:
+                result = await self._rpc_logs("eth_getLogs", [flt])
+                return result if isinstance(result, list) else None
+            except _LogRangeError:
+                window = max(window // 2, _LOG_MIN_WINDOW)
+                if window == _LOG_MIN_WINDOW and _shrink >= 1:
+                    break
+            except RuntimeError as exc:
+                logger.warning("getLogs failed: %s", exc)
+                return None
+        return None
+
+    async def fetch_recent_logs(self) -> LogWindow | None:
+        """The recent-window log sweep for signals 2/3/5 and NFT sales.
+
+        LOGS POOL ONLY. Four filter groups; an *empty* group is data (nothing
+        happened); a *failed* group is ``None``; a dead head-read is a dead
+        window. Raw log dicts pass through — decoding is downstream.
+        """
+        try:
+            head_hex = await self._rpc_logs("eth_blockNumber", [])
+            head = int(head_hex, 16)
+        except (RuntimeError, TypeError, ValueError) as exc:
+            logger.warning("fetch_recent_logs head: %s", exc)
+            return None
+        from_block = head - self._log_window_blocks
+
+        bridge = await self._get_logs_shrinking(
+            {
+                "address": A.IMD_TOKEN,
+                "topics": [
+                    A.TOPIC_TRANSFER,
+                    _ZERO_TOPIC,
+                    [_addr_topic(A.DEV_WALLET), _addr_topic(A.OPS_WALLET)],
+                ],
+            },
+            from_block, head,
+        )
+        identity = await self._get_logs_shrinking(
+            {"address": A.IDENTITY_REGISTRY,
+             "topics": [A.TOPIC_IDENTITY_HASH_UPDATED]},
+            from_block, head,
+        )
+        # v4 Initialize: IMD may be currency0 (topic2) or currency1 (topic3).
+        init0 = await self._get_logs_shrinking(
+            {"address": A.POOL_MANAGER_V4,
+             "topics": [A.TOPIC_V4_INITIALIZE, None, _addr_topic(A.IMD_TOKEN)]},
+            from_block, head,
+        )
+        init1 = await self._get_logs_shrinking(
+            {"address": A.POOL_MANAGER_V4,
+             "topics": [A.TOPIC_V4_INITIALIZE, None, None,
+                        _addr_topic(A.IMD_TOKEN)]},
+            from_block, head,
+        )
+        v4_inits: list[dict] | None
+        if init0 is None and init1 is None:
+            v4_inits = None
+        else:
+            v4_inits = [*(init0 or []), *(init1 or [])]
+        seaport_raw = await self._get_logs_shrinking(
+            {"address": _SEAPORT,
+             "topics": [A.TOPIC_SEAPORT_ORDER_FULFILLED]},
+            from_block, head,
+        )
+        seaport: list[dict] | None = None
+        if seaport_raw is not None:
+            # Cheap pre-filter: keep only fulfillments whose payload mentions
+            # the IDMD contract. Exact consideration decoding is downstream.
+            idmd_word = strip0x(A.IDMD_NFT).lower()
+            seaport = [
+                log for log in seaport_raw
+                if idmd_word in str(log.get("data", "")).lower()
+            ]
+
+        if bridge is None and identity is None and v4_inits is None \
+                and seaport is None:
+            return None
+        # Raw rows, verbatim from the endpoint.  WP4 decodes them; this module
+        # must not normalise, prune or re-key them.
+        return LogWindow(
+            from_block=from_block,
+            to_block=head,
+            bridge_mints=tuple(bridge or ()),
+            identity_updates=tuple(identity or ()),
+            v4_initializes=tuple(v4_inits or ()),
+            seaport_sales=tuple(seaport or ()),
         )
 
 
