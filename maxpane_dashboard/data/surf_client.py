@@ -48,6 +48,7 @@ from maxpane_dashboard.data.evm_abi import (
     decode_uint,
     encode_aggregate3,
     encode_uint,
+    pad_left,
     strip0x,
 )
 from maxpane_dashboard.data.rpc_common import (
@@ -61,6 +62,7 @@ from maxpane_dashboard.data.surf_models import (
     ChannelTx,
     DevTx,
     MarketSnapshot,
+    NftStats,
     NonceSet,
 )
 
@@ -140,6 +142,11 @@ MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"
 #: WP0's frozen selector surface has no entry for it and WP1 may not edit
 #: ``surf_addresses`` (open issue 14 offers WP0 the one-line promotion).
 _SEL_GET_BLOCK_NUMBER = "0x42cbb15c"
+
+#: ERC-721 ``balanceOf(address)`` — client-local, like the selector above:
+#: WP0's frozen surface has no entry for it (open issue 7), so it is defined
+#: HERE rather than added to ``surf_addresses``.
+_SEL_BALANCE_OF = "0x70a08231"
 
 _POSITIONS_RETURN_WORDS = 12
 _SLOT0_RETURN_WORDS = 7
@@ -1028,6 +1035,124 @@ class SurfClient(OwnedHttpClient):
             indexer_name=((pair or {}).get("baseToken") or {}).get("name"),
             indexer_symbol=((pair or {}).get("baseToken") or {}).get("symbol"),
             sources_agree=agree,
+        )
+
+    # ------------------------------------------------------------------
+    # Blockscout REST + state RPC — IDMD collection stats
+    # ------------------------------------------------------------------
+
+    async def _count_transfers_24h(self) -> float | None:
+        """IDMD transfers in the last 24 h — a RATE, never the lifetime count.
+
+        Rows arrive newest-first, so the first row older than the cutoff ends
+        the count: everything after it is outside the window. Two endings are
+        complete answers — that older row, or a page the server did not
+        continue. Running out of page budget while still inside the window is
+        NOT: that answer is a lower bound, and a lower bound rendered as
+        "transfers/day" is a wrong number, so it degrades to ``None``.
+        """
+        cutoff = self._now_fn() - _DAY_SECONDS
+        url = f"{self._blockscout}/tokens/{A.IDMD_NFT}/transfers"
+        params: dict | None = None
+        count = 0
+        for _page in range(MAX_NFT_TRANSFER_PAGES):
+            body = await self._get_json(url, params=params)
+            if not isinstance(body, dict) or "items" not in body:
+                return None
+            for row in body["items"]:
+                ts = _parse_iso_ts(row.get("timestamp"))
+                if ts is None:
+                    continue          # undated row: skip it, never count it
+                if ts < cutoff:
+                    return float(count)          # crossed the window edge
+                count += 1
+            nxt = body.get("next_page_params")
+            if not nxt:
+                return float(count)              # no older rows exist
+            params = nxt
+        logger.warning(
+            "transfers_24h: %s pages did not reach the 24 h edge — reporting "
+            "unavailable rather than a lower bound", MAX_NFT_TRANSFER_PAGES,
+        )
+        return None
+
+    async def _count_identities_written(self) -> int | None:
+        """Distinct IDMD ids that ever received an identity hash (x of 2000).
+
+        LIFETIME, not windowed. The only write today happened 2026-05-14,
+        months before any ``eth_getLogs`` window this client opens, so a
+        window count would render a confident 0/2000. Blockscout's address-log
+        view is the keyless lifetime source; the registry exposes no
+        written-hash getter.
+
+        Counted over DISTINCT ``topics[1]``: ``IdentityHashUpdated`` fires
+        again when a holder replaces their hash, and that is one identity
+        written, not two. Topic0 is filtered explicitly — the registry emits
+        other events, and "every log this contract ever emitted" is a
+        different, larger number.
+        """
+        url = f"{self._blockscout}/addresses/{A.IDENTITY_REGISTRY}/logs"
+        params: dict | None = None
+        ids: set[str] = set()
+        for _page in range(MAX_REGISTRY_LOG_PAGES):
+            body = await self._get_json(url, params=params)
+            if not isinstance(body, dict) or "items" not in body:
+                return None
+            for row in body["items"]:
+                topics = row.get("topics") or []
+                if not topics or str(topics[0] or "").lower() != \
+                        A.TOPIC_IDENTITY_HASH_UPDATED.lower():
+                    continue
+                if len(topics) > 1 and topics[1]:
+                    ids.add(str(topics[1]).lower())
+            if not body.get("next_page_params"):
+                return len(ids)       # 0 is a real answer: nobody has written
+            params = body["next_page_params"]
+        logger.warning("identities written: page bound hit, count truncated")
+        return None                   # a lower bound is not a count
+
+    async def fetch_nft_stats(self) -> NftStats | None:
+        """IDMD collection stats. Floor is deliberately absent: no keyless
+        source (OpenSea keyed/Cloudflare-gated) — the manager renders the
+        explicit unavailable state, never a faked number.
+        """
+        token_body, counters_body, transfers_24h, written = await asyncio.gather(
+            self._get_json(f"{self._blockscout}/tokens/{A.IDMD_NFT}"),
+            self._get_json(f"{self._blockscout}/tokens/{A.IDMD_NFT}/counters"),
+            self._count_transfers_24h(),
+            self._count_identities_written(),
+        )
+        dev_holdings: int | None = None
+        try:
+            calldata = _SEL_BALANCE_OF + pad_left(strip0x(A.DEV_WALLET).lower(), 64)
+            raw = await self._rpc_state(
+                "eth_call", [{"to": A.IDMD_NFT, "data": calldata}, "latest"]
+            )
+            if raw and strip0x(raw):
+                dev_holdings = decode_uint(raw, 0)
+        except RuntimeError as exc:
+            logger.warning("fetch_nft_stats balanceOf: %s", exc)
+
+        def to_int(v: Any) -> int | None:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return None
+
+        holders = to_int((token_body or {}).get("holders_count"))
+        supply = to_int((token_body or {}).get("total_supply"))
+        transfers = to_int((counters_body or {}).get("transfers_count"))
+        if all(v is None for v in (holders, supply, transfers, dev_holdings,
+                                   transfers_24h, written)):
+            return None
+        return NftStats(
+            holders=holders,
+            total_supply=supply,
+            transfers_total=transfers,     # lifetime, 7,411
+            transfers_24h=transfers_24h,   # the rate — a different number
+            dev_holdings=dev_holdings,
+            written=written,               # feeds BOTH hero and NFT panel
+            # floor_eth stays at its pinned None: no keyless source exists.
         )
 
 

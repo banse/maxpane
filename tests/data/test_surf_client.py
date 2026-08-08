@@ -1518,3 +1518,187 @@ async def test_fetch_market_coingecko_down_is_none_never_zero():
 async def test_fetch_market_total_outage_returns_none():
     async with _offline_client() as client:
         assert await client.fetch_market() is None
+
+
+# ---------------------------------------------------------------------------
+# WP1.8 — fetch_nft_stats
+# ---------------------------------------------------------------------------
+
+
+# The capture's newest IDMD transfer, 2026-08-08T09:51:59Z.  Every clock in
+# these tests is expressed relative to it, so the expected counts are a
+# property of the fixture rather than of the day the suite runs.
+IDMD_NEWEST_TRANSFER_TS = 1786182719.0
+
+# One IdentityHashUpdated log: token id 0, the only identity ever written
+# (2026-05-14).  Blockscout's /addresses/{h}/logs shape, trimmed to the three
+# fields the client reads.
+def _registry_log(token_id: int, topic0: str = A.TOPIC_IDENTITY_HASH_UPDATED) -> dict:
+    return {
+        "address": {"hash": A.IDENTITY_REGISTRY},
+        "topics": [topic0, "0x" + _encode_uint(token_id)],
+        "data": "0x",
+        "block_number": 25_004_000,
+    }
+
+
+REGISTRY_LOGS_PAGE = {
+    "items": [
+        _registry_log(0),
+        # A second write to the SAME id — still one identity written.
+        _registry_log(0),
+        # An unrelated event from the same contract (ownership transfer):
+        # topic0 filtering, not "every log this address emitted", is the rule.
+        _registry_log(7, topic0="0x" + "ab" * 32),
+    ],
+    "next_page_params": None,
+}
+
+
+def _nft_handler(
+    *, rest_up=True, rpc_up=True, dev_balance=3,
+    transfers_page=None, registry_page=None,
+) -> Callable[[httpx.Request], httpx.Response]:
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "blockscout" in url:
+            if not rest_up:
+                return httpx.Response(521, json={})
+            path = request.url.path.rstrip("/")
+            if path.endswith("/counters"):
+                return httpx.Response(200, json=load_fixture("idmd_counters.json"))
+            if path.endswith("/transfers"):
+                return httpx.Response(200, json=(
+                    transfers_page
+                    if transfers_page is not None
+                    else load_fixture("idmd_transfers_page1.json")
+                ))
+            if path.endswith("/logs"):
+                assert A.IDENTITY_REGISTRY.lower() in path.lower()
+                return httpx.Response(200, json=(
+                    registry_page if registry_page is not None
+                    else REGISTRY_LOGS_PAGE
+                ))
+            return httpx.Response(200, json=load_fixture("idmd_token.json"))
+        payload = json.loads(request.content)
+        if not rpc_up:
+            return httpx.Response(521, json={})
+        assert payload["method"] == "eth_call"
+        call = payload["params"][0]
+        assert call["to"].lower() == A.IDMD_NFT.lower()
+        assert call["data"].startswith(surf_client._SEL_BALANCE_OF)
+        assert A.DEV_WALLET.lower()[2:] in call["data"].lower()
+        return httpx.Response(
+            200, json=_rpc_ok(payload, "0x" + _encode_uint(dev_balance))
+        )
+
+    return handler
+
+
+def _nft_client(transport, *, now: float = IDMD_NEWEST_TRANSFER_TS + 60.0):
+    """A client whose clock sits just after the capture's newest transfer."""
+    return _client_on(transport, now_fn=lambda: now)
+
+
+@pytest.mark.asyncio
+async def test_fetch_nft_stats_real_values():
+    async with _nft_client(RecordingTransport(_nft_handler())) as client:
+        stats = await client.fetch_nft_stats()
+    assert stats is not None
+    assert stats.holders == 667          # idmd_token.json holders_count
+    assert stats.total_supply == 2000    # minted out on launch day
+    assert stats.transfers_total == 7411 # idmd_counters.json — LIFETIME
+    assert stats.dev_holdings == 3       # balanceOf(dev) — he buys his own
+    # The whole 25-row slice sits inside the 24 h window (it spans 10.8 h),
+    # so the rate is the page count — NOT the lifetime counter beside it.
+    assert stats.transfers_24h == 25.0
+    assert stats.transfers_24h != stats.transfers_total
+    assert stats.written == 1            # IDMD #0, the only identity written
+    assert stats.floor_eth is None       # no keyless source, pinned
+
+
+@pytest.mark.asyncio
+async def test_transfers_24h_is_a_window_not_a_page_count():
+    """Move the clock forward and rows fall out of the window.
+
+    The derivation must be "rows newer than now-24h", not "rows on the page".
+    The clock has to move far enough to actually cross the window's trailing
+    edge, and the page only spans 10.77 h: at +6 h the cutoff is still
+    ``newest - 18 h``, older than every row on it, so the count would be 25 and
+    this test would be byte-identical to ``test_fetch_nft_stats_real_values``.
+    At **+18 h** the cutoff is ``newest - 6 h`` = 1786161119, which lands
+    between row 15 (5.907 h old, inside) and row 16 (8.197 h old, outside) —
+    16 rows. Any anchor in (newest + 15.81 h, newest + 18.09 h] gives 16;
+    18 h sits comfortably inside that and states the cutoff in round hours.
+    """
+    async with _nft_client(
+        RecordingTransport(_nft_handler()),
+        now=IDMD_NEWEST_TRANSFER_TS + 18 * 3600.0,
+    ) as client:
+        stats = await client.fetch_nft_stats()
+    assert stats.transfers_24h == 16.0
+    # NOT 25: that is the answer for a cutoff older than the whole page, and
+    # "change the expectation to 25" is the repair that makes this test vacuous.
+    assert stats.transfers_24h != 25.0
+
+
+@pytest.mark.asyncio
+async def test_transfers_24h_is_none_when_the_window_outruns_the_page_bound():
+    """A lower bound is not a rate.
+
+    A server that keeps handing back a cursor while every row is still inside
+    the window means the client never saw the edge of the day. `None` renders
+    the unavailable state; the partial count would render as fact.
+    """
+    fixture = load_fixture("idmd_transfers_page1.json")
+    endless = {"items": fixture["items"], "next_page_params": {"index": 1}}
+    transport = RecordingTransport(_nft_handler(transfers_page=endless))
+    async with _nft_client(transport) as client:
+        stats = await client.fetch_nft_stats()
+    assert stats is not None
+    assert stats.transfers_24h is None
+    assert stats.transfers_total == 7411   # the lifetime leg still answered
+    transfer_gets = [u for u in transport.urls() if u.endswith("/transfers")
+                     or "/transfers?" in u]
+    assert len(transfer_gets) == surf_client.MAX_NFT_TRANSFER_PAGES
+
+
+@pytest.mark.asyncio
+async def test_written_counts_distinct_ids_and_only_the_right_topic():
+    """1/2000 — and it stays 1 when the same token is re-written."""
+    async with _nft_client(RecordingTransport(_nft_handler())) as client:
+        stats = await client.fetch_nft_stats()
+    assert stats.written == 1
+
+    two = {"items": [_registry_log(0), _registry_log(1337)],
+           "next_page_params": None}
+    async with _nft_client(
+        RecordingTransport(_nft_handler(registry_page=two))
+    ) as client:
+        stats = await client.fetch_nft_stats()
+    assert stats.written == 2
+
+    # A registry that emitted nothing yet is 0 written — a real value, and
+    # the one case where 0 must NOT become None.
+    empty = {"items": [], "next_page_params": None}
+    async with _nft_client(
+        RecordingTransport(_nft_handler(registry_page=empty))
+    ) as client:
+        stats = await client.fetch_nft_stats()
+    assert stats.written == 0
+
+
+@pytest.mark.asyncio
+async def test_fetch_nft_stats_rest_down_still_reports_dev_holdings():
+    async with _nft_client(RecordingTransport(_nft_handler(rest_up=False))) as client:
+        stats = await client.fetch_nft_stats()
+    assert stats is not None
+    assert stats.holders is None and stats.transfers_total is None
+    assert stats.transfers_24h is None and stats.written is None
+    assert stats.dev_holdings == 3
+
+
+@pytest.mark.asyncio
+async def test_fetch_nft_stats_everything_down_returns_none():
+    async with _offline_client() as client:
+        assert await client.fetch_nft_stats() is None
