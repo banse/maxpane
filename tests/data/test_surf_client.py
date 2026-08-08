@@ -31,6 +31,10 @@ import pytest
 
 from maxpane_dashboard.data import surf_addresses as A
 from maxpane_dashboard.data import surf_client
+from maxpane_dashboard.data.evm_abi import (
+    encode_uint as _encode_uint,
+    strip0x as _strip0x,
+)
 from maxpane_dashboard.data.surf_client import SurfClient
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "surf" / "client"
@@ -517,3 +521,332 @@ async def test_fetch_nonces_total_outage_returns_none():
     # the outage has to arrive as a transport error the client classifies.
     async with _offline_client() as client:
         assert await client.fetch_nonces() is None
+
+
+# ---------------------------------------------------------------------------
+# WP1.4 — fetch_chain_state
+# ---------------------------------------------------------------------------
+
+# Copied idioms from tests/data/test_fwa_client.py (they are test-local there
+# too; the shared codec is evm_abi, the harness helpers are per-suite).
+
+
+def decode_aggregate3_calldata(data: str) -> list[tuple[str, bool, str]]:
+    raw = _strip0x(data)
+    assert raw[:8] == "82ad56cb", f"not an aggregate3 payload: {raw[:8]}"
+    body = raw[8:]
+    arr_off = int(body[0:64], 16) * 2
+    n = int(body[arr_off:arr_off + 64], 16)
+    base = arr_off + 64
+    out: list[tuple[str, bool, str]] = []
+    for i in range(n):
+        off = int(body[base + i * 64: base + (i + 1) * 64], 16) * 2
+        s = base + off
+        target = "0x" + body[s + 24: s + 64]
+        allow = int(body[s + 64: s + 128], 16) != 0
+        cd_off = int(body[s + 128: s + 192], 16) * 2
+        cs = s + cd_off
+        cd_len = int(body[cs: cs + 64], 16)
+        out.append((target, allow, "0x" + body[cs + 64: cs + 64 + cd_len * 2]))
+    return out
+
+
+def encode_aggregate3_result(results: list[tuple[bool, str]]) -> str:
+    tuples = []
+    for success, data in results:
+        raw = _strip0x(data)
+        n_bytes = len(raw) // 2
+        padded = raw + "0" * ((64 - (len(raw) % 64)) % 64)
+        tuples.append(
+            _encode_uint(1 if success else 0)
+            + _encode_uint(0x40)
+            + _encode_uint(n_bytes)
+            + padded
+        )
+    offsets, cursor = [], len(tuples) * 32
+    for t in tuples:
+        offsets.append(cursor)
+        cursor += len(t) // 2
+    return ("0x" + _encode_uint(0x20) + _encode_uint(len(tuples))
+            + "".join(_encode_uint(o) for o in offsets) + "".join(tuples))
+
+
+def _word_addr(a: str) -> str:
+    return _strip0x(a).lower().rjust(64, "0")
+
+
+def _word_int(v: int) -> str:
+    # evm_abi.encode_uint already two's-complements a negative into a full
+    # word (evm_abi.py:183), which is exactly how a node returns int24 ticks.
+    return _encode_uint(v)
+
+
+LP_LIQUIDITY = 2_351_337_420_000_000_000_000   # realistic uint128 for the test
+POOL_TICK = 79188                              # ≈ ln(2749.58)/ln(1.0001)
+SQRT_PRICE_X96 = int((2749.578620645) ** 0.5 * 2**96)
+
+
+def encode_positions_return(
+    *,
+    liquidity: int = LP_LIQUIDITY,
+    tick_lower: int = -887200,
+    tick_upper: int = 887200,
+) -> str:
+    """Flat 12-word positions(uint256) return; token0=WETH < token1=IMD.
+
+    Defaults are the live position: full range at spacing 200, so the side
+    amounts collapse to the closed form the first LP test asserts against.
+    """
+    words = [
+        _word_int(0),                        # nonce
+        _word_addr("0x" + "00" * 20),        # operator
+        _word_addr(A.WETH),                  # token0
+        _word_addr(A.IMD_TOKEN),             # token1
+        _word_int(10000),                    # fee — the 1% tier
+        _word_int(tick_lower),               # tickLower (signed int24)
+        _word_int(tick_upper),               # tickUpper
+        _word_int(liquidity),                # liquidity
+        _word_int(0), _word_int(0),          # feeGrowthInside{0,1}
+        _word_int(7_345_000_000_000_000_000),      # tokensOwed0
+        _word_int(30_784_000_000_000_000_000_000), # tokensOwed1
+    ]
+    return "0x" + "".join(words)
+
+
+def encode_slot0_return(*, tick: int = POOL_TICK) -> str:
+    words = [
+        _word_int(SQRT_PRICE_X96), _word_int(tick),
+        _word_int(0), _word_int(1), _word_int(1), _word_int(0), _word_int(1),
+    ]
+    return "0x" + "".join(words)
+
+
+def encode_string_return(s: str) -> str:
+    b = s.encode()
+    padded = b.hex() + "0" * ((64 - (len(b.hex()) % 64)) % 64)
+    return "0x" + _encode_uint(0x20) + _encode_uint(len(b)) + padded
+
+
+IMD_SUPPLY_WEI = 2376731868679000000000000  # imd_token.json total_supply
+
+
+def _chain_state_subcall(target: str, calldata: str) -> tuple[bool, str]:
+    sel = "0x" + _strip0x(calldata)[:8]
+    t = target.lower()
+    if t == A.NFPM.lower() and sel == A.SEL_POSITIONS:
+        arg = int(_strip0x(calldata)[8:72], 16)
+        assert arg == A.LP_POSITION_ID  # 1167726 — the watched position
+        return True, encode_positions_return()
+    if t == A.NFPM.lower() and sel == A.SEL_OWNER_OF:
+        arg = int(_strip0x(calldata)[8:72], 16)
+        assert arg == A.LP_POSITION_ID
+        return True, "0x" + _word_addr(A.OPS_WALLET)   # frenpet.eth holds it
+    if t == A.IDENTITY_REGISTRY.lower() and sel == A.SEL_IDENTITY_ALLOWED:
+        return True, "0x" + _encode_uint(0)  # gate CLOSED on 2026-08-08
+    if t == A.IMD_TOKEN.lower() and sel == A.SEL_TOTAL_SUPPLY:
+        return True, "0x" + _encode_uint(IMD_SUPPLY_WEI)
+    if t == A.POOL_V3.lower() and sel == A.SEL_SLOT0:
+        return True, encode_slot0_return()
+    if t == A.IMD_TOKEN.lower() and sel == A.SEL_NAME:
+        return True, encode_string_return("Identity.md")
+    if t == A.IMD_TOKEN.lower() and sel == A.SEL_SYMBOL:
+        return True, encode_string_return("IMD")
+    if t == surf_client.MULTICALL3.lower() and sel == surf_client._SEL_GET_BLOCK_NUMBER:
+        # Multicall3 answering about itself — the eighth leg, so the state and
+        # the height it was read at are the same round trip.
+        return True, "0x" + _encode_uint(HEAD_BLOCK)
+    return False, "0x"
+
+
+def _chain_state_handler(
+    subcall=_chain_state_subcall,
+) -> Callable[[httpx.Request], httpx.Response]:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["method"] == "eth_call"
+        call = payload["params"][0]
+        assert call["to"].lower() == surf_client.MULTICALL3.lower()
+        inner = decode_aggregate3_calldata(call["data"])
+        result = encode_aggregate3_result(
+            [subcall(t, cd) for (t, _allow, cd) in inner]
+        )
+        return httpx.Response(200, json=_rpc_ok(payload, result))
+
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_one_multicall_real_values():
+    transport = RecordingTransport(_chain_state_handler())
+    async with _client_on(transport) as client:
+        state = await client.fetch_chain_state()
+    assert state is not None
+    assert state.lp_liquidity == LP_LIQUIDITY
+    assert state.lp_token0 == A.WETH.lower()
+    assert state.lp_token1 == A.IMD_TOKEN.lower()
+    assert state.lp_fee == 10000
+    assert state.lp_tokens_owed0_wei == 7_345_000_000_000_000_000
+    assert state.lp_tokens_owed1_wei == 30_784_000_000_000_000_000_000
+    assert state.lp_owner == A.OPS_WALLET.lower()
+    assert state.identity_allowed is False        # closed, NOT None
+    assert state.imd_supply_wei == IMD_SUPPLY_WEI
+    assert state.sqrt_price_x96 == SQRT_PRICE_X96
+    assert state.pool_tick == POOL_TICK
+    assert state.imd_name == "Identity.md"
+    assert state.imd_symbol == "IMD"
+    assert state.block_number == HEAD_BLOCK       # the eighth sub-call
+    assert len(transport.requests) == 1           # ONE eth_call round
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_derives_both_lp_side_amounts():
+    """PRD §5 hero keys `lp_imd` / `lp_weth` — this is their only producer.
+
+    The captured position is full range (tickLower/Upper = ∓887200), where the
+    general v3 formula collapses to L/√P and L·√P; asserting against that
+    closed form proves the general implementation is right *here* while the
+    concentrated case below proves it is not a hardcoded shortcut.  Sides are
+    mapped by ADDRESS (token0 == WETH), never by index: this pool happens to
+    order WETH first, and the next one need not.
+    """
+    async with _client_on(RecordingTransport(_chain_state_handler())) as client:
+        state = await client.fetch_chain_state()
+
+    q96 = 1 << 96
+    assert state.lp_weth_wei == pytest.approx(LP_LIQUIDITY * q96 / SQRT_PRICE_X96, rel=1e-9)
+    assert state.lp_imd_wei == pytest.approx(LP_LIQUIDITY * SQRT_PRICE_X96 / q96, rel=1e-9)
+    # And they are wei ints, not floats: the models are wei-native and WP4
+    # divides exactly once (WP0.4 test_wei_fields_are_named_wei).
+    assert isinstance(state.lp_imd_wei, int) and isinstance(state.lp_weth_wei, int)
+
+
+@pytest.mark.asyncio
+async def test_lp_side_amounts_use_the_real_range_not_the_full_range_shortcut():
+    """The day signal 2 fires, the LP is re-added — very likely concentrated.
+
+    A narrower range holds strictly less of both tokens for the same L, and a
+    range entirely below spot is 100 % token1.  A full-range shortcut
+    (L/√P, L·√P) passes the test above and fails both of these, which is why
+    `_decode_positions` must keep `tick_lower` / `tick_upper`.
+    """
+    def narrow(target, calldata, *, lo, hi):
+        sel = "0x" + _strip0x(calldata)[:8]
+        if target.lower() == A.NFPM.lower() and sel == A.SEL_POSITIONS:
+            return True, encode_positions_return(tick_lower=lo, tick_upper=hi)
+        return _chain_state_subcall(target, calldata)
+
+    async with _client_on(RecordingTransport(_chain_state_handler(
+        lambda t, cd: narrow(t, cd, lo=78000, hi=80000)
+    ))) as client:
+        inside = await client.fetch_chain_state()
+
+    q96 = 1 << 96
+    assert 0 < inside.lp_weth_wei < LP_LIQUIDITY * q96 / SQRT_PRICE_X96
+    assert 0 < inside.lp_imd_wei < LP_LIQUIDITY * SQRT_PRICE_X96 / q96
+
+    # Range entirely BELOW spot (tick 79188): the position is all token1 = IMD.
+    async with _client_on(RecordingTransport(_chain_state_handler(
+        lambda t, cd: narrow(t, cd, lo=60000, hi=70000)
+    ))) as client:
+        below = await client.fetch_chain_state()
+    assert below.lp_weth_wei == 0     # a REAL zero — the side holds nothing.
+    assert below.lp_imd_wei > 0       # (None here would mean "read failed".)
+
+
+@pytest.mark.asyncio
+async def test_lp_side_amounts_are_none_when_any_input_is_missing():
+    """No half-derivation.  With slot0 dead we have L but no √P, and an amount
+    computed from a missing price is a number nobody can distinguish from a
+    real one — the exact shape of the false-BURN bug in PRD §6 rule 1."""
+    def subcall(target, calldata):
+        sel = "0x" + _strip0x(calldata)[:8]
+        if sel == A.SEL_SLOT0:
+            return False, "0x"
+        return _chain_state_subcall(target, calldata)
+
+    async with _client_on(RecordingTransport(_chain_state_handler(subcall))) as client:
+        state = await client.fetch_chain_state()
+    assert state.lp_liquidity == LP_LIQUIDITY   # the leg that worked
+    assert state.sqrt_price_x96 is None
+    assert state.lp_imd_wei is None and state.lp_weth_wei is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_uses_exactly_the_frozen_kwargs():
+    """The contract freeze, asserted where it can actually bite.
+
+    ``ChainState`` is constructed by keyword in one place; WP0.4 owns the names.
+    Comparing against ``CONSTRUCTOR_KWARGS`` here turns a rename in either
+    direction into a red test rather than a TypeError at the first live refresh
+    — and, worse, a WP4 ``getattr(state, "lp_imd", None)`` that never raises.
+    """
+    import dataclasses
+
+    from maxpane_dashboard.data.surf_models import ChainState as _CS
+    from tests.data.test_surf_models import CONSTRUCTOR_KWARGS
+
+    async with _client_on(RecordingTransport(_chain_state_handler())) as client:
+        state = await client.fetch_chain_state()
+    assert tuple(f.name for f in dataclasses.fields(_CS)) == CONSTRUCTOR_KWARGS[_CS]
+    assert isinstance(state, _CS)
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_decodes_negative_tick_as_signed():
+    def subcall(target, calldata):
+        sel = "0x" + _strip0x(calldata)[:8]
+        if sel == A.SEL_SLOT0:
+            return True, encode_slot0_return(tick=-79188)
+        return _chain_state_subcall(target, calldata)
+
+    async with _client_on(RecordingTransport(_chain_state_handler(subcall))) as client:
+        state = await client.fetch_chain_state()
+    assert state.pool_tick == -79188  # unsigned decode would give 2**256-79188
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_failed_subcall_is_field_none():
+    def subcall(target, calldata):
+        sel = "0x" + _strip0x(calldata)[:8]
+        if sel == A.SEL_TOTAL_SUPPLY:
+            return False, "0x"  # allowFailure miss — e.g. a reverted call
+        return _chain_state_subcall(target, calldata)
+
+    async with _client_on(RecordingTransport(_chain_state_handler(subcall))) as client:
+        state = await client.fetch_chain_state()
+    assert state is not None
+    assert state.imd_supply_wei is None       # a 0 here is a 2.37M-token
+    assert state.lp_liquidity == LP_LIQUIDITY  # false-BURN — PRD §6 rule 1
+    # identityAllowed's real value IS false — prove failure did not leak in:
+    assert state.identity_allowed is False
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_block_number_leg_is_none_when_it_fails():
+    """`block_number` is the one ChainState field with a default, which is the
+    only reason it needs a test of its own.
+
+    A constructor that simply omits it type-checks, constructs, and passes
+    WP1.2's `required - passed` check — and hands WP4's `_pool_chain` a chain
+    slot whose `block` is `None` on every refresh forever. Here the eighth
+    sub-call reverts, so the field is `None` **because the read failed**, and
+    the other seven legs still land.
+    """
+    def subcall(target, calldata):
+        sel = "0x" + _strip0x(calldata)[:8]
+        if sel == surf_client._SEL_GET_BLOCK_NUMBER:
+            return False, "0x"
+        return _chain_state_subcall(target, calldata)
+
+    async with _client_on(RecordingTransport(_chain_state_handler(subcall))) as client:
+        state = await client.fetch_chain_state()
+    assert state is not None
+    assert state.block_number is None
+    assert state.block_number != 0             # 0 would render as genesis
+    assert state.lp_liquidity == LP_LIQUIDITY  # the round survived
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_total_outage_returns_none():
+    async with _offline_client() as client:
+        assert await client.fetch_chain_state() is None

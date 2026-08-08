@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -39,13 +40,22 @@ from urllib.parse import urlparse
 import httpx
 
 from maxpane_dashboard.data import surf_addresses as A
+from maxpane_dashboard.data.evm_abi import (
+    decode_address,
+    decode_aggregate3_result,
+    decode_string,
+    decode_uint,
+    encode_aggregate3,
+    encode_uint,
+    strip0x,
+)
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
     jsonrpc_payload,
     pace,
 )
-from maxpane_dashboard.data.surf_models import NonceSet
+from maxpane_dashboard.data.surf_models import ChainState, NonceSet
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +124,104 @@ MAX_REGISTRY_LOG_PAGES = 4
 _DAY_SECONDS = 86400.0
 
 PRICE_AGREE_TOLERANCE_PCT = 5.0
+
+#: Canonical Multicall3 deployment — identical address on every EVM chain.
+MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"
+
+#: ``getBlockNumber()`` on Multicall3 itself — recomputed during planning with
+#: this repo's keccak, not remembered.  Module-private and defined HERE because
+#: WP0's frozen selector surface has no entry for it and WP1 may not edit
+#: ``surf_addresses`` (open issue 14 offers WP0 the one-line promotion).
+_SEL_GET_BLOCK_NUMBER = "0x42cbb15c"
+
+_POSITIONS_RETURN_WORDS = 12
+_SLOT0_RETURN_WORDS = 7
+
+
+def _decode_int24(word: int) -> int:
+    """Two's-complement for the int24 tick returned as a full word."""
+    return word - (1 << 256) if word >= 1 << 255 else word
+
+
+def _decode_positions(raw_hex: str) -> dict | None:
+    """positions(uint256) flat 12-word tuple; short return = revert = None."""
+    raw = strip0x(raw_hex or "")
+    if len(raw) < _POSITIONS_RETURN_WORDS * 64:
+        return None
+    return {
+        "token0": decode_address(raw, 2),
+        "token1": decode_address(raw, 3),
+        "fee": decode_uint(raw, 4),
+        "tick_lower": _decode_int24(decode_uint(raw, 5)),
+        "tick_upper": _decode_int24(decode_uint(raw, 6)),
+        "liquidity": decode_uint(raw, 7),
+        "tokens_owed0": decode_uint(raw, 10),
+        "tokens_owed1": decode_uint(raw, 11),
+    }
+
+
+def _decode_slot0(raw_hex: str) -> dict | None:
+    raw = strip0x(raw_hex or "")
+    if len(raw) < _SLOT0_RETURN_WORDS * 64:
+        return None
+    return {
+        "sqrt_price_x96": decode_uint(raw, 0),
+        "tick": _decode_int24(decode_uint(raw, 1)),
+    }
+
+
+_Q96 = 1 << 96
+_MAX_TICK = 887272
+
+
+def _sqrt_ratio_at_tick(tick: int) -> int:
+    """``sqrt(1.0001**tick) * 2**96`` — the range edge in Q64.96.
+
+    Deliberately NOT Uniswap's 256-bit bit-shift ladder: that exists so a
+    *contract* can be exact in integer arithmetic, and porting it is a
+    well-known source of transcription bugs. A float pow is accurate to about
+    1e-12 relative, which is roughly a millionth of the last digit this
+    dashboard ever prints (four decimals of a 388,421-token side). Read-only,
+    display-only, and the exactness that matters — ``liquidity`` and
+    ``sqrtPriceX96`` — comes off the chain untouched.
+    """
+    tick = max(-_MAX_TICK, min(_MAX_TICK, int(tick)))
+    return int(math.exp(tick * math.log(1.0001) / 2) * _Q96)
+
+
+def _position_amounts_wei(
+    liquidity: int | None,
+    sqrt_price_x96: int | None,
+    tick_lower: int | None,
+    tick_upper: int | None,
+) -> tuple[int | None, int | None]:
+    """``(amount0_wei, amount1_wei)`` currently held by an v3 position.
+
+    Any missing input yields ``(None, None)``: an amount derived from a failed
+    price read is indistinguishable from a real one on screen, and this pair
+    feeds the LP MIGRATION hero row.
+
+    The general formula — the full-range shortcut ``L/√P`` / ``L·√P`` is only
+    its limit case, and the LP is expected to be re-added concentrated:
+
+        √P clamped into [√a, √b]
+        amount0 = L · 2**96 · (√b − √P) / (√P · √b)
+        amount1 = L · (√P − √a) / 2**96
+
+    An in-range side that genuinely holds nothing is ``0``; that is a value,
+    not a failure (a position parked entirely below spot is 100 % token1).
+    """
+    if None in (liquidity, sqrt_price_x96, tick_lower, tick_upper):
+        return None, None
+    if sqrt_price_x96 <= 0 or tick_lower >= tick_upper:
+        return None, None
+    sa = _sqrt_ratio_at_tick(tick_lower)
+    sb = _sqrt_ratio_at_tick(tick_upper)
+    sp = max(sa, min(sb, sqrt_price_x96))
+    amount0 = (liquidity * _Q96 * (sb - sp)) // (sp * sb) if sp * sb else 0
+    amount1 = (liquidity * (sp - sa)) // _Q96
+    return amount0, amount1
+
 
 # ---------------------------------------------------------------------------
 # Error classification — message text first (mirrors ttt_client; policy is
@@ -410,6 +518,107 @@ class SurfClient(OwnedHttpClient):
             block_number=to_int(results[3]),
         )
 
+    async def fetch_chain_state(self) -> ChainState | None:
+        """The fast-tier eth_call round: one aggregate3 over eight views.
+
+        Sub-call order is positional and mirrored in the decode below.
+        Every sub-call is ``allowFailure=True``: a single reverted view
+        degrades one field to ``None``, never the round.
+
+        The eighth sub-call is Multicall3's own ``getBlockNumber()``, which is
+        how ``ChainState.block_number`` gets a producer without a second round
+        trip. Reading the height inside the same ``eth_call`` also makes it
+        *the* height of this state: fetch it separately and a reorg or a
+        rotated endpoint can hand back a block the other seven never saw.
+        """
+        calls = [
+            (A.NFPM, A.SEL_POSITIONS + encode_uint(A.LP_POSITION_ID)),
+            (A.NFPM, A.SEL_OWNER_OF + encode_uint(A.LP_POSITION_ID)),
+            (A.IDENTITY_REGISTRY, A.SEL_IDENTITY_ALLOWED),
+            (A.IMD_TOKEN, A.SEL_TOTAL_SUPPLY),
+            (A.POOL_V3, A.SEL_SLOT0),
+            (A.IMD_TOKEN, A.SEL_NAME),
+            (A.IMD_TOKEN, A.SEL_SYMBOL),
+            (MULTICALL3, _SEL_GET_BLOCK_NUMBER),
+        ]
+        # NOTE the tuple order evm_abi.encode_aggregate3 actually takes:
+        # (target, callData, allowFailure) -- NOT (target, allow, data).
+        data = encode_aggregate3(
+            [(target, calldata, True) for target, calldata in calls]
+        )
+        try:
+            raw = await self._rpc_state(
+                "eth_call", [{"to": MULTICALL3, "data": data}, "latest"]
+            )
+        except RuntimeError as exc:
+            logger.warning("fetch_chain_state: %s", exc)
+            return None
+        results = decode_aggregate3_result(raw or "0x")
+        if len(results) != len(calls):
+            logger.warning("fetch_chain_state: short aggregate3 reply")
+            return None
+
+        def ok(i: int) -> str | None:
+            success, ret = results[i]
+            return ret if success and strip0x(ret) else None
+
+        pos = _decode_positions(ok(0)) if ok(0) else None
+        owner_raw = ok(1)
+        gate_raw = ok(2)
+        supply_raw = ok(3)
+        slot0 = _decode_slot0(ok(4)) if ok(4) else None
+        name_raw, sym_raw = ok(5), ok(6)
+        block_raw = ok(7)
+
+        # The two LP side amounts (PRD §5 `lp_imd` / `lp_weth`).  Mapped by
+        # ADDRESS: this pool orders WETH as token0, but trusting the index
+        # instead of the address is how a dashboard prints 142 IMD and 388k
+        # WETH the first time a pool is deployed the other way round.
+        amount0, amount1 = _position_amounts_wei(
+            pos["liquidity"] if pos else None,
+            slot0["sqrt_price_x96"] if slot0 else None,
+            pos["tick_lower"] if pos else None,
+            pos["tick_upper"] if pos else None,
+        )
+        weth_wei = imd_wei = None
+        if pos and (pos["token0"] or "").lower() == A.WETH.lower():
+            weth_wei, imd_wei = amount0, amount1
+        elif pos and (pos["token1"] or "").lower() == A.WETH.lower():
+            imd_wei, weth_wei = amount0, amount1
+        else:
+            logger.warning(
+                "fetch_chain_state: position %s is not a WETH pair (%s/%s) — "
+                "LP sides unavailable",
+                A.LP_POSITION_ID,
+                pos and pos["token0"], pos and pos["token1"],
+            )
+
+        # Keyword names are WP0.4's CONSTRUCTOR_KWARGS[ChainState], verbatim.
+        return ChainState(
+            lp_imd_wei=imd_wei,
+            lp_weth_wei=weth_wei,
+            lp_liquidity=pos["liquidity"] if pos else None,
+            lp_token0=pos["token0"] if pos else None,
+            lp_token1=pos["token1"] if pos else None,
+            lp_fee=pos["fee"] if pos else None,
+            lp_tokens_owed0_wei=pos["tokens_owed0"] if pos else None,
+            lp_tokens_owed1_wei=pos["tokens_owed1"] if pos else None,
+            lp_owner=decode_address(owner_raw) if owner_raw else None,
+            identity_allowed=(
+                None if gate_raw is None else decode_uint(gate_raw, 0) != 0
+            ),
+            imd_supply_wei=(
+                None if supply_raw is None else decode_uint(supply_raw, 0)
+            ),
+            sqrt_price_x96=slot0["sqrt_price_x96"] if slot0 else None,
+            pool_tick=slot0["tick"] if slot0 else None,
+            imd_name=decode_string(name_raw) if name_raw else None,
+            imd_symbol=decode_string(sym_raw) if sym_raw else None,
+            block_number=(
+                None if block_raw is None else decode_uint(block_raw, 0)
+            ),
+        )
+
 
 __all__ = [
     "SurfClient",
@@ -426,4 +635,5 @@ __all__ = [
     "MAX_NFT_TRANSFER_PAGES",
     "MAX_REGISTRY_LOG_PAGES",
     "PRICE_AGREE_TOLERANCE_PCT",
+    "MULTICALL3",
 ]
