@@ -45,6 +45,7 @@ from maxpane_dashboard.data.rpc_common import (
     jsonrpc_payload,
     pace,
 )
+from maxpane_dashboard.data.surf_models import NonceSet
 
 logger = logging.getLogger(__name__)
 
@@ -362,6 +363,52 @@ class SurfClient(OwnedHttpClient):
                 else:
                     logger.warning("GET %s failed: %s", url, exc)
         return None
+
+    # ------------------------------------------------------------------
+    # Public API — fast tier
+    # ------------------------------------------------------------------
+
+    async def fetch_nonces(self) -> NonceSet | None:
+        """The three account nonces **and the height they were read at**, one
+        batched POST (PRD §3 signals 1/2/4).
+
+        The announce channel emits NO logs — this poll IS the new-post
+        detector. A failed leg is ``None``: turning it into 0 would read as
+        "fresh EOA" and un-fire / re-fire every nonce-derived signal, and a
+        ``block_number`` of 0 would read as genesis.
+
+        ``eth_blockNumber`` is the fourth entry of the same batch array, not a
+        second round trip: a height fetched separately can describe a different
+        block from the counts, which is worse than no height at all for a
+        detector that diffs nonces between refreshes. It is also why the fast
+        tier is still ONE request.
+        """
+        addrs = [A.ANNOUNCE, A.DEV_WALLET, A.OPS_WALLET]
+        try:
+            results = await self._rpc_state_batch(
+                [("eth_getTransactionCount", [a, "latest"]) for a in addrs]
+                + [("eth_blockNumber", [])]
+            )
+        except RuntimeError as exc:  # malformed-request short-circuit
+            logger.warning("fetch_nonces: %s", exc)
+            return None
+        if results is None:
+            return None
+
+        def to_int(hex_or_none: Any) -> int | None:
+            if not isinstance(hex_or_none, str):
+                return None
+            try:
+                return int(hex_or_none, 16)
+            except ValueError:
+                return None
+
+        return NonceSet(
+            announce=to_int(results[0]),
+            dev=to_int(results[1]),
+            ops=to_int(results[2]),
+            block_number=to_int(results[3]),
+        )
 
 
 __all__ = [

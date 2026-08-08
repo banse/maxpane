@@ -29,6 +29,7 @@ from typing import Any, Callable
 import httpx
 import pytest
 
+from maxpane_dashboard.data import surf_addresses as A
 from maxpane_dashboard.data import surf_client
 from maxpane_dashboard.data.surf_client import SurfClient
 
@@ -388,3 +389,131 @@ def test_this_wp_constructs_against_wp0s_frozen_field_names():
             "a green suite. Fill it, or ask WP0 to drop it and add it to "
             "WP1_LEAVES_DEFAULTED with the reason."
         )
+
+
+# ---------------------------------------------------------------------------
+# WP1.3 — fetch_nonces
+# ---------------------------------------------------------------------------
+
+#: The newest block any 2026-08-08 capture names (the Seaport purchase's block —
+#: see the ground-truth table in this plan's header).  Used as the head the STATE
+#: pool reports, so every expected value in this suite stays capture-derived.
+#: WP1.9's logs pool has its own, deliberately different head (``LOG_HEAD_BLOCK``);
+#: the two are never interchangeable and must never share a name — module globals
+#: resolve at call time, so a second ``HEAD_BLOCK = …`` further down this file
+#: would silently retune every assertion above it.
+HEAD_BLOCK = 25_707_884
+#: Derived, never pinned separately: two literals that must agree are two
+#: literals that can disagree.
+HEAD_BLOCK_HEX = hex(HEAD_BLOCK)  # "0x188456c"
+
+
+def _nonce_handler(
+    values: dict[str, str], block: str | None = HEAD_BLOCK_HEX
+) -> Callable[[httpx.Request], httpx.Response]:
+    """values maps lowercase address -> hex nonce; answers a JSON-RPC batch.
+
+    ``block`` answers the fourth leg (``eth_blockNumber``); passing ``None``
+    makes that one leg error while the three counts still succeed.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        assert isinstance(batch, list), "fetch_nonces must POST one batch array"
+        out = []
+        for entry in batch:
+            if entry["method"] == "eth_blockNumber":
+                assert entry["params"] == []
+                if block is None:
+                    out.append({"jsonrpc": "2.0", "id": entry["id"],
+                                "error": {"code": -32005, "message": "rate limit"}})
+                else:
+                    out.append({"jsonrpc": "2.0", "id": entry["id"],
+                                "result": block})
+                continue
+            assert entry["method"] == "eth_getTransactionCount"
+            addr = entry["params"][0].lower()
+            out.append({"jsonrpc": "2.0", "id": entry["id"],
+                        "result": values[addr]})
+        return httpx.Response(200, json=out)
+
+    return handler
+
+
+LIVE_NONCES = {
+    A.ANNOUNCE.lower(): "0xe",     # 14 — channel account nonce 2026-08-08
+    A.DEV_WALLET.lower(): "0x92e", # 2350
+    A.OPS_WALLET.lower(): "0x26",  # 38
+}
+
+
+@pytest.mark.asyncio
+async def test_fetch_nonces_one_batched_post_real_values():
+    transport = RecordingTransport(_nonce_handler(dict(LIVE_NONCES)))
+    async with _client_on(transport) as client:
+        nonces = await client.fetch_nonces()
+    assert nonces is not None
+    assert nonces.announce == 14
+    assert nonces.dev == 2350
+    assert nonces.ops == 38
+    # The height the three counts were read at — WP0.4's fourth NonceSet field,
+    # which WP4's `_pool_chain` stores as the chain slot's `block`.  It rides
+    # the SAME batch array, so it can never describe a different block from the
+    # counts beside it.
+    assert nonces.block_number == HEAD_BLOCK
+    assert len(transport.requests) == 1  # ONE round trip for the fast tier
+
+
+@pytest.mark.asyncio
+async def test_fetch_nonces_partial_batch_error_is_field_none_never_zero():
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        out = []
+        for entry in batch:
+            if entry["method"] == "eth_blockNumber":
+                out.append({"jsonrpc": "2.0", "id": entry["id"],
+                            "result": HEAD_BLOCK_HEX})
+                continue
+            addr = entry["params"][0].lower()
+            if addr == A.DEV_WALLET.lower():
+                out.append({"jsonrpc": "2.0", "id": entry["id"],
+                            "error": {"code": -32005, "message": "rate limit"}})
+            else:
+                out.append({"jsonrpc": "2.0", "id": entry["id"], "result": "0xe"})
+        return httpx.Response(200, json=out)
+
+    async with _client_on(RecordingTransport(handler)) as client:
+        nonces = await client.fetch_nonces()
+    assert nonces is not None
+    assert nonces.announce == 14
+    assert nonces.dev is None      # failed read: None. 0 here would mean a
+    assert nonces.dev != 0         # fresh EOA and reset every baseline.
+    assert nonces.ops == 14
+    assert nonces.block_number == HEAD_BLOCK  # the height leg is independent
+
+
+@pytest.mark.asyncio
+async def test_fetch_nonces_block_leg_failure_is_none_never_zero():
+    """The height leg fails alone; the three counts still arrive.
+
+    ``block_number`` has a default, so it is the one field on this model that a
+    constructor can silently omit with every test green — which is exactly what
+    happened before this test existed.  Two things are asserted: it is genuinely
+    produced (the test above), and a *failed* read of it is ``None``.  ``0``
+    would be genesis, and WP4 would render block 0 beside three live nonces.
+    """
+    handler = _nonce_handler(dict(LIVE_NONCES), block=None)
+    async with _client_on(RecordingTransport(handler)) as client:
+        nonces = await client.fetch_nonces()
+    assert nonces is not None
+    assert (nonces.announce, nonces.dev, nonces.ops) == (14, 2350, 38)
+    assert nonces.block_number is None
+    assert nonces.block_number != 0
+
+
+@pytest.mark.asyncio
+async def test_fetch_nonces_total_outage_returns_none():
+    # _offline_client, not _raising_client: this path DOES issue a request, and
+    # the outage has to arrive as a transport error the client classifies.
+    async with _offline_client() as client:
+        assert await client.fetch_nonces() is None
