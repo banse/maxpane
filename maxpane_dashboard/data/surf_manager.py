@@ -83,12 +83,12 @@ the attempt that just happened:
 ``getattr`` with a default, because a client double that only implements the
 seven ``fetch_*`` coroutines, as every WP4 test double so far does, need not
 define them) and folds whatever they report into :meth:`_degraded`'s output.
-This task (WP4.7) wires that composition end-to-end, but no ``fetch_*`` call
-happens yet in :meth:`_cycle`, so today the three flags are always at their
-"nothing wrong" default and contribute nothing observable — the wiring exists
-so that whichever later WP4 task adds the ``fetch_channel_txs`` /
-``fetch_dev_activity`` / ``fetch_recent_logs`` calls does not *also* have to
-remember to fold these three into ``degraded``: the path already reaches them.
+WP4.7 wired that composition end-to-end before any ``fetch_*`` call reached it;
+WP4.9 is what finally makes ``channel_truncated`` and ``log_group_failed``
+observable, by wiring :meth:`_pool_channel`'s ``fetch_channel_txs`` and
+:meth:`_pool_logs`'s ``fetch_recent_logs`` into :meth:`_cycle`.
+``activity_truncated`` is still silent: ``fetch_dev_activity`` belongs to the
+activity group, wired by a later WP4 task.
 """
 
 from __future__ import annotations
@@ -240,6 +240,92 @@ def _tokens(wei: Any) -> float | None:
     return None if raw is None else raw / WEI
 
 
+def _hex_int(value: Any) -> int | None:
+    """``int`` from a decimal *or* ``0x`` string — RPC payloads use both."""
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return int(text, 16) if text.lower().startswith("0x") else int(text, 10)
+        except ValueError:
+            return None
+    return _opt_int(value)
+
+
+def _word_addr(data: Any, index: int) -> str:
+    """The *index*-th 32-byte word of a log payload, read as an address.
+
+    ``""`` when the payload is short or unparseable — never a zero address,
+    which would read as "hookless" rather than "undecodable".
+    """
+    raw = str(data or "")
+    raw = raw[2:] if raw.startswith("0x") else raw
+    start = index * 64
+    word = raw[start : start + 64]
+    if len(word) != 64:
+        return ""
+    return "0x" + word[24:]
+
+
+def _data_words(data: Any) -> list[str]:
+    """A log payload split into whole 32-byte words, ``0x`` stripped.
+
+    A trailing partial word is discarded rather than padded: a short payload is
+    a *truncated* one, and inventing zeroes for the missing bytes is how a
+    truncated Seaport order would decode into a confident, wrong price.
+    """
+    raw = str(data or "")
+    raw = raw[2:] if raw.startswith("0x") else raw
+    usable = len(raw) - len(raw) % 64
+    return [raw[i : i + 64] for i in range(0, usable, 64)]
+
+
+def _abi_array(words: list[str], head_index: int, stride: int) -> list[list[str]]:
+    """The dynamic array whose 32-byte *offset* sits at ``words[head_index]``.
+
+    Solidity encodes a dynamic array as an offset in the head and a
+    ``length``-prefixed body at that offset, counted in **bytes** from the start
+    of the payload — so the length word is at ``offset // 32``. Each element is
+    ``stride`` words (4 for Seaport's ``SpentItem``, 5 for ``ReceivedItem``).
+
+    Returns ``[]`` for a malformed head and stops early — never a partial
+    element — when the payload runs out. Both are the "undecodable" answer, and
+    the callers treat them as such rather than as an empty order.
+    """
+    if head_index >= len(words):
+        return []
+    offset = _hex_int("0x" + words[head_index])
+    if offset is None or offset % 32 or offset // 32 >= len(words):
+        return []
+    start = offset // 32
+    count = _hex_int("0x" + words[start]) or 0
+    items: list[list[str]] = []
+    for i in range(count):
+        lo = start + 1 + i * stride
+        if lo + stride > len(words):
+            break
+        items.append(words[lo : lo + stride])
+    return items
+
+
+def _log_ts(log: Any, now: float) -> float:
+    """A log's block timestamp, or *now* as the first-seen time.
+
+    Some of the keyless logs endpoints return ``blockTimestamp`` on the log
+    object and some do not, and resolving a block header per log is a round trip
+    per event on a pool that already rate-limits. Falling back to the observation
+    clock is safe for WP2's detectors — they key on ``tx_hash`` first, so a
+    re-observed row can never re-fire — but it does mean a FIRED age can read as
+    "just now" for an event that landed a few minutes earlier. See Open issues.
+    """
+    if isinstance(log, dict):
+        stamp = _hex_int(log.get("blockTimestamp") or log.get("timestamp"))
+        if stamp:
+            return float(stamp)
+    return float(now)
+
+
 def _opt_float(value: Any) -> float | None:
     """``float`` or ``None`` — never a silent ``0``."""
     if value is None or isinstance(value, bool):
@@ -361,6 +447,318 @@ class SurfManager:
             logger.warning("SURF %s raised: %s", name, exc)
             return None
 
+    # -- the medium tier: market, logs, channel ------------------------------
+
+    async def _pool_market(self, tiers: set[str], now: float) -> Any:
+        if TIER_MEDIUM not in tiers and self.cache.get_last_good(SLOT_MARKET) is not None:
+            return None                     # skip, not a failure: no `_note` above
+        snap = await self._guard(self.client.fetch_market, "fetch_market")
+        self._note(SOURCE_MARKET, snap is not None)
+        if snap is not None:
+            self.cache.store_last_good(SLOT_MARKET, self._market_payload(snap), ts=now)
+        return snap
+
+    @staticmethod
+    def _market_payload(snap: Any) -> dict[str, Any]:
+        """The whole PRD §5 market view, scaled once and cached as one dict.
+
+        **All seven values, not just the two prices.** The slot is what `_cycle`
+        falls back to on a skipped medium tier, so anything left out of it is a
+        key that renders `--` on two refreshes out of three — while `_degraded`
+        correctly says the market group is healthy, because a skip never reaches
+        `_note`. Storing only `imd_price_usd`/`fp_price_usd` (as this method used
+        to) blanked `imd_change_24h_pct`, `imd_vol_24h_usd`, `pool_liquidity_usd`
+        and `eth_usd`, took `parity_pct` with them, and dropped this cycle's
+        price and parity samples on the floor as well — `sample_series` treats a
+        `None` as "nothing to record", which is right for an outage and wrong for
+        a refresh that simply did not need to re-fetch.
+
+        `pool_imd` / `pool_weth` are deliberately absent: they are DexScreener's
+        whole-pool reserves and no `SURF_KEYS` entry reads them. The hero's LP
+        legs come off `ChainState.lp_imd_wei` / `lp_weth_wei` (WP0.4, WP1.4).
+        """
+        return {
+            "imd_price_usd": _opt_float(_field(snap, "imd_price_usd")),
+            "imd_change_24h_pct": _opt_float(_field(snap, "imd_change_24h_pct")),
+            "imd_vol_24h_usd": _opt_float(_field(snap, "imd_vol_24h_usd")),
+            "pool_liquidity_usd": _opt_float(_field(snap, "pool_liquidity_usd")),
+            "fp_price_usd": _opt_float(_field(snap, "fp_price_usd")),
+            "eth_usd": _opt_float(_field(snap, "eth_usd")),
+        }
+
+    async def _pool_logs(self, tiers: set[str], now: float) -> Any:
+        if TIER_MEDIUM not in tiers and self.cache.get_last_good(SLOT_LOGS) is not None:
+            return None
+        window = await self._guard(self.client.fetch_recent_logs, "fetch_recent_logs")
+        self._note(SOURCE_LOGS, window is not None)
+        if window is not None:
+            # Decoded **into WP2's row shapes** here, once, and cached that way:
+            # `_readings` reads these back off the slot on every fast-only
+            # refresh (Task WP4.11), so the detectors keep seeing a read window
+            # rather than an outage between two medium ticks. All four groups
+            # arrive raw; all four are decoded here and nowhere else.
+            hooked = self._hook_pool_rows(window, now)
+            # `hook_live` is **latched**, and that is not a convenience.
+            # `hooked` is only what the *current* ~8 h window shows
+            # (`LOG_WINDOW_BLOCKS = 2400`) and this slot is replaced wholesale on
+            # every successful medium-tier read, so a `hook_live` derived from
+            # the window alone flips the hero back from LAUNCHED to NOT LIVE
+            # about eight hours after the launch — on a perfectly healthy chain,
+            # for the single event PRD §1/§7 says this dashboard exists to catch.
+            # A v4 pool initialization is irreversible, so that is a *wrong*
+            # value, not a stale one, and no as-of marker makes it honest.
+            # `v4_hook_pools` is deliberately **not** latched: it is the panel's
+            # row list and must keep meaning "seen in this window".
+            previously_live = bool(
+                (
+                    getattr(self.cache.get_last_good(SLOT_LOGS), "payload", None) or {}
+                ).get("hook_live")
+            )
+            self.cache.store_last_good(
+                SLOT_LOGS,
+                {
+                    "to_block": _opt_int(_field(window, "to_block")),
+                    "bridge_mints": self._bridge_rows(window, now),
+                    "v4_hook_pools": hooked,
+                    "hook_live": bool(hooked) or previously_live,
+                    # Signal 3's detail line: writes seen *in this window*, not
+                    # the hero's lifetime "x/2000". Two different numbers with
+                    # one name — see the header's consequence 4.
+                    "identity_writes": self._identity_writes(window),
+                    # Realized sales belong to the logs group, not to the
+                    # Blockscout counters: they are on different tiers, and the
+                    # NFT panel must keep showing them through a slow-tier skip.
+                    "nft_last_sales": self._seaport_sale_rows(window, now),
+                },
+                ts=now,
+            )
+        return window
+
+    async def _pool_channel(
+        self, tiers: set[str], now: float, nonce: int | None
+    ) -> Any:
+        """Fetch the channel bodies when the announce nonce moved — *whenever* it moved.
+
+        The nonce is the cheap detector and it is read on the **fast** tier, every
+        refresh; the bodies are a Blockscout page. Two rules, in this order:
+
+        1. **A nonce change forces the fetch regardless of the medium tier.** PRD
+           §11.1 wants the decoded text within one refresh interval of the tx
+           landing. Checking ``TIER_MEDIUM`` first (as this method used to) meant
+           a post detected on a 30 s fast-tier cycle waited for the 90 s tier
+           before its body was pulled — the signal quoting text the payload did
+           not have yet, up to three refreshes running.
+        2. **An unchanged nonce skips the page**, even when the medium tier is
+           due: nothing was posted for 52 days over the real May-to-July gap.
+
+        Every ``return None`` here is a *skip*, not a failure: it must not call
+        :meth:`_note`, because a skipped group is not degraded and the feed keeps
+        rendering its last-good rows without a staleness marker it has not earned.
+        """
+        cached = self.cache.get_last_good(SLOT_CHANNEL)
+        seen = (cached.payload or {}).get("nonce") if cached is not None else None
+        moved = nonce is not None and seen is not None and int(seen) != int(nonce)
+
+        if not moved and cached is not None:
+            if seen is not None and nonce is not None:
+                return None                 # skip: nothing new was posted
+            if TIER_MEDIUM not in tiers:
+                return None                 # skip: nonce unreadable, tier fresh
+
+        rows = await self._guard(self.client.fetch_channel_txs, "fetch_channel_txs")
+        self._note(SOURCE_CHANNEL, rows is not None)
+        if rows is not None:
+            self.cache.store_last_good(
+                SLOT_CHANNEL, self._channel_payload(rows, nonce), ts=now
+            )
+        return rows
+
+    def _channel_payload(self, rows: Any, nonce: int | None) -> dict[str, Any]:
+        """The cached channel slot: what the feed renders *and* what POST reads.
+
+        ``tx_count`` is the **unclipped** row count — ``feed_items`` is capped at
+        :data:`FEED_ITEM_LIMIT`, so ``len(items)`` would saturate and silently
+        stop being a tx count. ``last_text`` / ``last_ts`` are the newest
+        *self*-post, which is what NEW POST quotes; a reply is not the dev posting.
+        """
+        items = self._feed_items(rows)
+        selfs = [i for i in items if i.get("kind") == "self" and i.get("ts") is not None]
+        newest = max(selfs, key=lambda i: i["ts"]) if selfs else None
+        return {
+            "nonce": nonce,
+            "tx_count": len(list(rows or ())),
+            "items": items,
+            "last_text": (newest or {}).get("text"),
+            "last_ts": (newest or {}).get("ts"),
+        }
+
+    def _bridge_rows(self, window: Any, now: float) -> list[dict[str, Any]]:
+        """OFT mints as ``{ts, tx_hash, amount, to_label}`` (WP2's shape).
+
+        ``Transfer(from, to, value)``: ``from``/``to`` are indexed, the amount is
+        the whole payload. WP1 pre-filters to ``from == 0x0`` and ``to ∈ {dev,
+        ops}``, so every row here is unambiguous staging — IMD has no mint
+        function, and on 2026-08-07 the first of these landed 264 s before the
+        LP add.
+        """
+        rows: list[dict[str, Any]] = []
+        for log in _field(window, "bridge_mints") or ():
+            topics = list((log or {}).get("topics") or ())
+            to_addr = ("0x" + topics[2][-40:]).lower() if len(topics) > 2 else ""
+            rows.append(
+                {
+                    "ts": _log_ts(log, now),
+                    "tx_hash": str(log.get("transactionHash") or ""),
+                    "amount": _tokens(_hex_int(log.get("data"))),
+                    "to_label": KNOWN_LABELS.get(to_addr, ""),
+                }
+            )
+        return rows
+
+    def _hook_pool_rows(self, window: Any, now: float) -> list[dict[str, Any]]:
+        """Hooked v4 ``Initialize`` rows as ``{ts, tx_hash, hooks}`` (WP2's shape).
+
+        ``Initialize(id, currency0, currency1, fee, tickSpacing, hooks,
+        sqrtPriceX96, tick)`` — three indexed args, so ``hooks`` is the third word
+        of ``data``. Every one of the 19 existing IMD v4 pools is third-party and
+        **hookless**, so a non-zero hooks address *is* the launch signal (PRD §3,
+        signal 2); the hookless rows are filtered out here so they can never
+        advance WP2's ``v4_tx`` baseline past a real one.
+        """
+        rows: list[dict[str, Any]] = []
+        for log in _field(window, "v4_initializes") or ():
+            hooks = _word_addr(log.get("data"), 2)
+            if not hooks or int(hooks, 16) == 0:
+                continue
+            rows.append(
+                {
+                    "ts": _log_ts(log, now),
+                    "tx_hash": str(log.get("transactionHash") or ""),
+                    "hooks": hooks,
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _seaport_sale_rows(window: Any, now: float) -> list[dict[str, Any]]:
+        """Realized IDMD sales as ``{ts, token_id, eth}`` — PRD §4's NFT panel.
+
+        ``OrderFulfilled(bytes32 orderHash, address indexed offerer, address
+        indexed zone, address recipient, SpentItem[] offer,
+        ReceivedItem[] consideration)``. Two indexed args, so ``data`` opens
+        with ``orderHash``, ``recipient`` and the two array *offsets*;
+        ``SpentItem`` is 4 words ``(itemType, token, identifier, amount)`` and
+        ``ReceivedItem`` is those plus a ``recipient``.
+
+        A row survives only when the **offer** side is the IDMD contract. WP1's
+        pre-filter only checks that the payload mentions IDMD *anywhere*, which
+        also matches an order paid **in** IDMD — that is a purchase of something
+        else and must not appear as a sale of an identity.
+
+        The realized price is the sum of the **native** consideration legs:
+        seller proceeds plus the marketplace fee, because both were paid. On the
+        pinned fill ``0x5b4d1b44…eadad2`` the two orders come to 0.18 and
+        0.1838989 ETH and those sum to the transaction's own ``value`` of
+        363898900000000000 wei. That identity is the cheapest available proof
+        this walk is right: get an offset wrong and the sum stops matching.
+        """
+        rows: list[dict[str, Any]] = []
+        for log in _field(window, "seaport_sales") or ():
+            words = _data_words((log or {}).get("data"))
+            offer = _abi_array(words, 2, 4)
+            consideration = _abi_array(words, 3, 5)
+            token_id = next(
+                (
+                    _hex_int("0x" + item[2])
+                    for item in offer
+                    if _word_addr(item[1], 0).lower() == IDMD_NFT.lower()
+                ),
+                None,
+            )
+            if token_id is None:
+                continue                    # paid in IDMD, not a sale of one
+            wei = 0
+            for item in consideration:
+                if _hex_int("0x" + item[0]) == 0:        # itemType NATIVE
+                    wei += _hex_int("0x" + item[3]) or 0
+            rows.append(
+                {
+                    "ts": _log_ts(log, now),
+                    "token_id": token_id,
+                    "eth": wei / WEI,
+                }
+            )
+        rows.sort(key=lambda r: (r["ts"] is not None, r["ts"] or 0.0), reverse=True)
+        return rows[:NFT_SALES_LIMIT]
+
+    @staticmethod
+    def _identity_writes(window: Any) -> int | None:
+        """Distinct identities written **in the recent log window**.
+
+        Not the hero's number, and the two must never be swapped (wp1.md open
+        issue 9). ``NftStats.written`` is a *lifetime* count off Blockscout's
+        registry log view — 1 of 2000, written 2026-05-14, months outside any
+        window this app opens. This one answers "writes seen since breakfast"
+        and is the only thing PRD §3 #3 asks the GATE row's detail to carry.
+
+        Counted over distinct ``topics[1]``, never ``len(rows)``:
+        ``IdentityHashUpdated(uint256 indexed id, string, bool)`` fires again
+        when a holder replaces their hash, and that is one identity written.
+        WP1 already filtered the group by topic0, so the id is topics[1] on
+        every row here.
+        """
+        rows = _field(window, "identity_updates")
+        if rows is None:
+            return None                     # the filter failed; not "no writes"
+        ids: set[str] = set()
+        for row in rows:
+            topics = list((row or {}).get("topics") or ())
+            if len(topics) > 1 and topics[1]:
+                ids.add(str(topics[1]).lower())
+        return len(ids)
+
+    def _feed_items(self, rows: Any) -> list[dict[str, Any]]:
+        """Classify and decode the channel rows into widget-ready primitives.
+
+        ``kind`` and ``text`` both come from the pure layer, so the classification
+        rules and the UTF-8 decoder have exactly one implementation each; WP0.4's
+        ``ChannelTx`` deliberately carries neither.
+
+        ``label`` is what an outbound channel call *did* — Blockscout's decoded
+        ``method`` when it has one, the 4-byte selector when it does not. NEW
+        DEPLOY renders its ``action`` rows with it (Task WP4.11), and both halves
+        are third-party-influenced strings escaped at the widget, never here.
+        """
+        items: list[dict[str, Any]] = []
+        for row in rows or ():
+            from_addr = str(_field(row, "from_addr") or "")
+            input_hex = str(_field(row, "input_hex") or "")
+            kind = _safe_call(
+                classify_channel_tx,
+                from_addr,
+                str(_field(row, "to_addr") or ""),
+                _opt_int(_field(row, "value_wei")) or 0,
+                input_hex,
+                default=None,
+            )
+            items.append(
+                {
+                    "ts": _opt_float(_field(row, "ts")),
+                    "kind": kind,
+                    "from_addr": from_addr,
+                    "from_label": KNOWN_LABELS.get(from_addr.lower()),
+                    "text": _safe_call(decode_utf8_calldata, input_hex, default=None),
+                    "tx_hash": str(_field(row, "tx_hash") or ""),
+                    "label": (
+                        f"{_field(row, 'method')}()"
+                        if _field(row, "method")
+                        else (input_hex[:10] if len(input_hex) >= 10 else "")
+                    ),
+                }
+            )
+        items.sort(key=lambda i: (i["ts"] is not None, i["ts"] or 0.0), reverse=True)
+        return items[:FEED_ITEM_LIMIT]
+
     # -- public API ----------------------------------------------------------
 
     async def fetch_and_compute(self) -> dict[str, Any]:
@@ -390,6 +788,7 @@ class SurfManager:
         chain = await self._pool_chain(now)
         state = chain.get("state")
         nonces = chain.get("nonces")
+        announce_nonce = _opt_int(_field(nonces, "announce"))
 
         # Divided exactly once, here, and reused everywhere below — the models
         # are wei-native and this dict is the presentation boundary (WP0.4).
@@ -400,10 +799,57 @@ class SurfManager:
         # anything from a ``None``.
         self.cache.record_supply(imd_supply, _opt_int(_field(state, "block_number")))
 
+        market, logs, channel = await asyncio.gather(
+            self._pool_market(tiers, now),
+            self._pool_logs(tiers, now),
+            self._pool_channel(tiers, now, announce_nonce),
+        )
+        if market is not None or logs is not None or channel is not None:
+            self.cache.mark_fetched(TIER_MEDIUM, now)
+
+        # This cycle's channel slot: fresh when we fetched, last-good otherwise.
+        # Both shapes are the same dict, so the POST detector reads one thing.
+        channel_payload = (
+            self._channel_payload(channel, announce_nonce)
+            if channel is not None
+            else dict(
+                getattr(self.cache.get_last_good(SLOT_CHANNEL), "payload", None) or {}
+            )
+        )
+        # `None` when the channel has never been read (cold cache + dead
+        # Blockscout), `[]` when it was read and held nothing. WP3's feed
+        # widget branches on exactly that: `[]` renders "no posts in window"
+        # with the unavailable banner absent, so publishing `[]` for an outage
+        # would have the screen state that the dev has not posted.
+        raw_items = channel_payload.get("items")
+        feed_items = list(raw_items) if raw_items is not None else None
+
+        # This cycle's market view: fresh when we fetched, last-good otherwise —
+        # the same resolution `channel_payload` gets above and `nft_payload` /
+        # `activity_rows` get in Task WP4.10. Reading the seven keys off `market`
+        # instead (as this block used to) publishes `None` for all of them on
+        # every *skipped* medium tier, which with a 30 s poll and a 90 s TTL is
+        # two refreshes in three: the whole market panel goes to `--`/`$ --` and
+        # the title bar to `SURF · IMD — · parity —`, while `degraded` says the
+        # group is healthy — correctly, because a skip never reaches `_note`. A
+        # dark panel with nothing flagging it is the one outcome CLAUDE.md's
+        # degradation rule forbids. `fresh_market` stays separate because the
+        # sparklines may not be fed the fallback; see the sampling call below.
+        fresh_market = self._market_payload(market) if market is not None else None
+        market_payload = (
+            fresh_market
+            if fresh_market is not None
+            else dict(
+                getattr(self.cache.get_last_good(SLOT_MARKET), "payload", None) or {}
+            )
+        )
+        imd_price = market_payload.get("imd_price_usd")
+        fp_price = market_payload.get("fp_price_usd")
+
         data: dict[str, Any] = {
             "as_of": self.cache.newest_as_of(),
             "degraded": self._degraded(),
-            "feed_nonce": _opt_int(_field(nonces, "announce")),
+            "feed_nonce": announce_nonce,
             "lp_liquidity": _opt_int(_field(state, "lp_liquidity")),
             # WP1.4 derives these from liquidity + sqrtPrice + the position's tick
             # bounds; the bounds exist nowhere downstream, which is why the client
@@ -418,6 +864,19 @@ class SurfManager:
             # question. It is filled from `NftStats.written` in Task WP4.10.
             "imd_supply": imd_supply,
             "imd_burned_cum": self.cache.observed_burn_total(),
+            "eth_usd": market_payload.get("eth_usd"),
+            "imd_price_usd": imd_price,
+            "imd_change_24h_pct": market_payload.get("imd_change_24h_pct"),
+            "imd_vol_24h_usd": market_payload.get("imd_vol_24h_usd"),
+            "pool_liquidity_usd": market_payload.get("pool_liquidity_usd"),
+            "fp_price_usd": fp_price,
+            # The one implementation, imported from analytics/ — never a copy.
+            # IMD is FP bridged 1:1, so the spread is a real arbitrage/health
+            # metric and it moves with every bridge tx (PRD §6.2).
+            "parity_pct": parity_pct(imd_price, fp_price),
+            "feed_items": feed_items,
+            "feed_last_post_age_s": self._last_post_age(feed_items or [], now),
+            "hook_status": self._hook_status(),
         }
 
         payload = self._finalise(data)
@@ -430,14 +889,29 @@ class SurfManager:
             self.cache.sample_series,
             now,
             imd_supply=payload.get("imd_supply"),
-            imd_price_usd=payload.get("imd_price_usd"),
-            parity_pct=payload.get("parity_pct"),
+            # Fresh-only. `None` on a skipped or failed medium tier, and that
+            # costs nothing on the skip path: the tier is due every 90 s while
+            # the buckets are hourly, so the bucket the user is looking at is
+            # filled by the next real read either way.
+            imd_price_usd=(fresh_market or {}).get("imd_price_usd"),
+            parity_pct=parity_pct(
+                (fresh_market or {}).get("imd_price_usd"),
+                (fresh_market or {}).get("fp_price_usd"),
+            ),
         )
         payload["supply_series"] = self.cache.get_series(SERIES_IMD_SUPPLY)
         payload["price_series"] = self.cache.get_series(SERIES_IMD_PRICE_USD)
 
         self.save_cache()
         return payload
+
+    @staticmethod
+    def _last_post_age(items: list[dict[str, Any]], now: float) -> float | None:
+        """Age of the newest **self**-post. Replies are not the dev posting."""
+        stamps = [
+            i["ts"] for i in items if i.get("kind") == "self" and i.get("ts") is not None
+        ]
+        return None if not stamps else max(0.0, float(now) - max(stamps))
 
     @staticmethod
     def _opt_bool(value: Any) -> bool | None:
@@ -510,42 +984,19 @@ class SurfManager:
 
     # -- hero: v4 hook status --------------------------------------------------
 
-    def _hook_status(self, hooked_pools: Any) -> str | None:
-        """"NOT LIVE" / "LAUNCHED" / ``None`` — the hero's frozen vocabulary.
+    def _hook_status(self) -> str | None:
+        """``"LAUNCHED"`` / ``"NOT LIVE"`` / ``None`` when the logs pool never answered.
 
-        Takes the **already-decoded, already hook-filtered** v4 ``Initialize``
-        rows for IMD (each with ``hooks != 0x0``) — the same shape
-        ``analytics.surf_signals``' ``v4_hook_pools`` reading is built from
-        (see its docstring: "all 19 live IMD v4 pools are third-party and
-        hookless", filtered upstream). Raw ``LogWindow.v4_initializes`` log
-        rows are undecoded on purpose (``surf_models.LogWindow``'s own
-        docstring: "the decoders ... live in ``surf_manager``"), and that
-        decode is a later WP4 task's job, not this scaffolding task's — so this
-        method only turns "is there at least one confirmed hooked pool" into
-        the two-word vocabulary the hero renders, and does not itself parse a
-        raw log.
-
-        Kept as a **named, tested-by-name method** now — rather than inlined
-        into whichever later task first has real data to feed it — because
-        ``widgets/surf/hero.py`` and its test suite already name
-        ``SurfManager._hook_status`` and its exact vocabulary
-        (``HOOK_NOT_LIVE``/``HOOK_LAUNCHED``) in their own docstrings; defining
-        it here, correctly, now, is what stops that name or vocabulary from
-        drifting before the decoder exists to call it.
-
-        ``None`` means "the logs group was never read this cycle" — distinct
-        from an empty sequence, which means "read, and confirmed empty": NOT
-        LIVE is a real, confirmed answer (PRD §4), never a guess standing in
-        for an outage.
+        Reads the **latched** ``hook_live`` written by ``_pool_logs``, never
+        ``v4_hook_pools`` — those rows fall out of the ~8 h log window and a
+        launch does not. ``None`` means "the logs group has never produced a
+        payload" — distinct from a confirmed-empty window, which is a real
+        answer (PRD §4), never a guess standing in for an outage.
         """
-        if hooked_pools is None:
+        entry = self.cache.get_last_good(SLOT_LOGS)
+        if entry is None or not isinstance(entry.payload, dict):
             return None
-        try:
-            return HOOK_LAUNCHED if len(hooked_pools) > 0 else HOOK_NOT_LIVE
-        except TypeError:
-            # Not sized (e.g. a bad type slipped through) — an unreadable
-            # answer is not the same as a confirmed-empty one.
-            return None
+        return HOOK_LAUNCHED if entry.payload.get("hook_live") else HOOK_NOT_LIVE
 
     # -- contract enforcement ------------------------------------------------
 

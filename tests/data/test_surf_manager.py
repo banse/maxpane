@@ -17,6 +17,7 @@ from maxpane_dashboard.data.surf_cache import (
     SERIES_IMD_PRICE_USD,
     SERIES_IMD_SUPPLY,
     SLOT_CHANNEL,
+    SLOT_LOGS,
     SurfCache,
 )
 from maxpane_dashboard.data.surf_manager import (
@@ -738,3 +739,475 @@ async def test_a_raising_client_call_is_a_degradation_not_a_crash(tmp_path):
     data = await _manager(tmp_path, client=client).fetch_and_compute()
     assert set(data) == set(SURF_KEYS)
     assert SOURCE_CHAIN in data["degraded"]
+
+
+# ---------------------------------------------------------------------------
+# Medium tier — market, logs, channel
+# ---------------------------------------------------------------------------
+
+
+async def test_parity_is_computed_live_never_quoted(manager):
+    data = await manager.fetch_and_compute()
+    assert data["imd_price_usd"] == pytest.approx(IMD_PRICE_USD)
+    assert data["fp_price_usd"] == pytest.approx(FP_PRICE_USD)
+    assert data["parity_pct"] == pytest.approx(PARITY_PCT)
+    assert data["imd_vol_24h_usd"] == pytest.approx(VOL_24H_USD)
+    assert data["pool_liquidity_usd"] == pytest.approx(POOL_LIQ_USD)
+    assert data["imd_change_24h_pct"] == pytest.approx(CHANGE_24H)
+    assert data["eth_usd"] == pytest.approx(ETH_USD)
+
+
+async def test_parity_comes_from_the_pure_layer_not_a_local_copy(manager):
+    """The math lives in ``analytics/surf_signals.parity_pct`` and nowhere else."""
+    import inspect
+
+    from maxpane_dashboard.analytics import surf_signals
+    from maxpane_dashboard.data import surf_manager as sm
+
+    assert sm.parity_pct is surf_signals.parity_pct
+    source = inspect.getsource(sm)
+    assert "_parity" not in source, "parity math was re-implemented in data/"
+
+
+async def test_parity_is_none_when_either_leg_is_missing(tmp_path):
+    client = FakeSurfClient(
+        fetch_market=_market(
+            imd_change_24h_pct=None, imd_vol_24h_usd=None,
+            pool_liquidity_usd=None, pool_imd=None, pool_weth=None,
+            fp_price_usd=None, eth_usd=None,
+        )
+    )
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["parity_pct"] is None
+
+
+async def test_the_feed_is_classified_and_decoded_by_the_pure_layer(manager):
+    data = await manager.fetch_and_compute()
+    kinds = {item["tx_hash"]: item["kind"] for item in data["feed_items"]}
+    assert kinds["0x" + "a1" * 32] == "self"     # from == to == channel
+    assert kinds["0x" + "a2" * 32] == "action"   # channel -> ERC-8004 register()
+    assert kinds["0x" + "a3" * 32] == "fund"     # dev wallet -> channel, 0.054 ETH
+    assert kinds["0x" + "a4" * 32] == "reply"    # anyone else
+
+    texts = {item["tx_hash"]: item["text"] for item in data["feed_items"]}
+    assert texts["0x" + "a1" * 32] == "soon"
+    assert texts["0x" + "a2" * 32] is None       # register() calldata is not UTF-8
+    assert texts["0x" + "a4" * 32] == "hey"
+
+    # Newest first, and the known-label map names the channel.
+    assert data["feed_items"][0]["ts"] >= data["feed_items"][-1]["ts"]
+    labels = {i["tx_hash"]: i["from_label"] for i in data["feed_items"]}
+    assert labels["0x" + "a1" * 32] == KNOWN_LABELS[ANNOUNCE.lower()]
+    assert labels["0x" + "a4" * 32] is None      # unknown senders stay unlabelled
+
+
+async def test_last_post_age_counts_self_posts_only(manager):
+    """A community reply is not the dev posting (PRD §6.4)."""
+    data = await manager.fetch_and_compute()
+    # a1 is the only self-post; a2 is an action, a3 a fund, a4 a community reply.
+    assert data["feed_last_post_age_s"] == pytest.approx(NOW - SOON_TS)
+
+
+async def test_channel_bodies_are_fetched_only_when_the_nonce_moves(tmp_path):
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+
+    await m.fetch_and_compute()
+    assert client.calls.count("fetch_channel_txs") == 1
+
+    clock.advance(600.0)                      # medium tier is due again
+    await m.fetch_and_compute()
+    assert client.calls.count("fetch_channel_txs") == 1   # nonce unchanged: skipped
+
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE
+    )
+    clock.advance(600.0)
+    await m.fetch_and_compute()
+    assert client.calls.count("fetch_channel_txs") == 2   # a new post: fetched
+
+
+async def test_a_new_post_reaches_the_feed_in_the_cycle_that_detects_it(tmp_path):
+    """PRD §11.1: decoded text within *one* refresh interval of the tx landing.
+
+    The nonce is read on the fast tier every 30 s, so a nonce change must force
+    the body fetch immediately.  Gating the bodies behind the 90 s medium TTL
+    would let the signal fire up to three refreshes before the text it quotes
+    exists — the exact opposite of the job this dashboard has.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient(fetch_channel_txs=[])       # channel read as empty
+    m = _manager(tmp_path, client=client, clock=clock)
+
+    first = await m.fetch_and_compute()
+    assert first["feed_items"] == []
+    assert client.calls.count("fetch_channel_txs") == 1
+
+    # One poll interval later — the medium tier is NOT due — a post lands.
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE
+    )
+    client._returns["fetch_channel_txs"] = _channel_txs()
+    clock.advance(30.0)
+    second = await m.fetch_and_compute()
+
+    assert client.calls.count("fetch_channel_txs") == 2
+    assert len(second["feed_items"]) == 4                # same cycle, not the next
+    # The signal half of this — FIRED and the decoded body in the *same* cycle —
+    # is asserted in Task WP4.11 once build_signals is wired.
+
+
+async def test_a_skipped_channel_fetch_is_not_a_degradation(tmp_path):
+    clock = FakeClock()
+    m = _manager(tmp_path, clock=clock)
+    await m.fetch_and_compute()
+    clock.advance(600.0)
+    data = await m.fetch_and_compute()
+    assert SOURCE_CHANNEL not in data["degraded"]
+    assert len(data["feed_items"]) == 4         # served from last-good
+
+
+async def test_the_medium_tier_is_skipped_while_fresh(tmp_path):
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+
+    await m.fetch_and_compute()
+    before = client.calls.count("fetch_market")
+    clock.advance(30.0)                          # inside the 90 s medium TTL
+    await m.fetch_and_compute()
+    assert client.calls.count("fetch_market") == before
+    assert client.calls.count("fetch_nonces") == 2       # fast tier always runs
+
+
+async def test_a_skipped_medium_tier_still_renders_the_whole_market_panel(tmp_path):
+    """A skip is not an outage, and the panel must not go dark for one.
+
+    This is the other half of ``test_the_medium_tier_is_skipped_while_fresh``,
+    and it is the half that bites: counting calls proves the tier was skipped and
+    says nothing about what the payload then contains. With the shipped defaults
+    (``--poll-interval`` 30 s, ``TIER_TTL_SECONDS[TIER_MEDIUM] = 90.0``) the
+    medium tier is due on one refresh in three, so a `_cycle` that reads the
+    seven market keys off `_pool_market`'s return value publishes `None` for all
+    of them **two refreshes out of three** — `--` / `$ --` / `parity —` on a
+    healthy chain — while `degraded` correctly omits ``market``, because a skip
+    never reaches `_note`. Nothing else in this suite can see it: every other
+    market assertion runs a single cycle in which every tier is due.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+
+    await m.fetch_and_compute()
+    clock.advance(30.0)                          # inside the 90 s medium TTL
+    second = await m.fetch_and_compute()
+
+    assert client.calls.count("fetch_market") == 1     # the tier really was skipped
+    assert second["imd_price_usd"] == pytest.approx(IMD_PRICE_USD)
+    assert second["fp_price_usd"] == pytest.approx(FP_PRICE_USD)
+    assert second["parity_pct"] == pytest.approx(PARITY_PCT)
+    assert second["imd_change_24h_pct"] == pytest.approx(CHANGE_24H)
+    assert second["imd_vol_24h_usd"] == pytest.approx(VOL_24H_USD)
+    assert second["pool_liquidity_usd"] == pytest.approx(POOL_LIQ_USD)
+    assert second["eth_usd"] == pytest.approx(ETH_USD)
+    assert SOURCE_MARKET not in second["degraded"]
+
+
+async def test_hook_status_reads_not_live_until_a_hooked_initialize_appears(tmp_path):
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client)
+    assert (await m.fetch_and_compute())["hook_status"] == "NOT LIVE"
+
+    client._returns["fetch_recent_logs"] = LogWindow(
+        from_block=BLOCK - 5_000,
+        to_block=BLOCK + 10,
+        bridge_mints=(),
+        identity_updates=(),
+        v4_initializes=(
+            _v4_init_log("0x" + "ab" * 20, ts=NOW - 120.0, tx="0x" + "a5" * 32),
+        ),
+        seaport_sales=(),
+    )
+    m._clock_double.advance(600.0)
+    assert (await m.fetch_and_compute())["hook_status"] == "LAUNCHED"
+
+
+async def test_a_launch_is_never_un_launched_when_the_log_window_moves_past_it(tmp_path):
+    """``Initialize`` is irreversible; the ~8 h log window is not.
+
+    ``LOG_WINDOW_BLOCKS`` is 2400 blocks (≈8 h at 12 s), and `_pool_logs`
+    replaces `SLOT_LOGS` wholesale on every successful medium-tier read. So a
+    `hook_live` derived from the current window alone flips the hero back from
+    LAUNCHED to NOT LIVE roughly eight hours after the launch, on a perfectly
+    healthy chain, for the one event PRD §1/§7 says this dashboard exists to
+    catch. That is a wrong value rather than a stale one — no `as of` marker
+    redeems it — so `_pool_logs` latches the flag while leaving `v4_hook_pools`
+    as the current window's rows.
+
+    The cycle above (`..._until_a_hooked_initialize_appears`) cannot see this: it
+    asserts LAUNCHED on the cycle that reads the log and never runs a later one.
+    """
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(), identity_updates=(), seaport_sales=(),
+            v4_initializes=(
+                _v4_init_log("0x" + "ab" * 20, ts=NOW - 120.0, tx="0x" + "a5" * 32),
+            ),
+        )
+    )
+    m = _manager(tmp_path, client=client)
+    assert (await m.fetch_and_compute())["hook_status"] == "LAUNCHED"
+
+    # The pool is still there — the window has simply moved past its Initialize.
+    client._returns["fetch_recent_logs"] = LogWindow(
+        from_block=BLOCK, to_block=BLOCK + LOG_WINDOW,
+        bridge_mints=(), identity_updates=(), v4_initializes=(), seaport_sales=(),
+    )
+    m._clock_double.advance(600.0)
+    later = await m.fetch_and_compute()
+
+    assert later["hook_status"] == "LAUNCHED"
+    # ...and the *rows* still mean "seen in this window", so the panel does not
+    # claim a pool was initialized in a window that did not contain it.
+    assert m.cache.get_last_good(SLOT_LOGS).payload["v4_hook_pools"] == []
+
+
+async def test_a_hookless_third_party_pool_does_not_launch_the_hook(tmp_path):
+    """All 19 existing IMD v4 pools are third-party and hookless."""
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - 5_000, to_block=BLOCK, bridge_mints=(),
+            identity_updates=(),
+            v4_initializes=(
+                _v4_init_log("0x" + "00" * 20, ts=NOW - 120.0, tx="0x" + "b0" * 32),
+            ),
+            seaport_sales=(),
+        )
+    )
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["hook_status"] == "NOT LIVE"
+
+
+async def test_hook_status_is_none_when_the_logs_pool_never_answered(tmp_path):
+    client = FakeSurfClient(fetch_recent_logs=None)
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["hook_status"] is None
+    assert SOURCE_LOGS in data["degraded"]
+
+
+async def test_log_rows_are_decoded_into_wp2s_shapes_and_cached_that_way(tmp_path):
+    """The 2026-08-07 staging mint, decoded once and stored in WP2's row shape.
+
+    WP1 hands raw rows over (its own ratchet test bans `_word_addr`/`_log_ts`
+    from the client), so the amount word, the ``to`` topic and the block
+    timestamp are decoded here — and cached decoded, because `_readings` reads
+    the slot back on every fast-only refresh.
+    """
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - 5_000, to_block=BLOCK,
+            bridge_mints=(
+                _mint_log(OPS_WALLET, 10_000 * 10**18, ts=1_786_076_339.0,
+                          tx="0x17084b1bfc998a457416c1ba9689f50ca04efc6e1"
+                             "60b7e28d4c75dc89bcea85c"),
+            ),
+            identity_updates=(
+                _identity_log(1751, ts=NOW - 600.0, tx="0x" + "e1" * 32),
+                # The same holder replacing their hash: ONE identity written,
+                # two logs. `len(rows)` here is the wrong number (wp1.md #9).
+                _identity_log(1751, ts=NOW - 300.0, tx="0x" + "e2" * 32),
+            ),
+            v4_initializes=(
+                _v4_init_log("0x" + "ab" * 20, ts=NOW - 120.0, tx="0x" + "a5" * 32),
+            ),
+            seaport_sales=(),
+        )
+    )
+    m = _manager(tmp_path, client=client)
+    await m.fetch_and_compute()
+    cached = m.cache.get_last_good(SLOT_LOGS).payload
+
+    mint = cached["bridge_mints"][0]
+    assert mint["amount"] == pytest.approx(10_000.0)      # the data word / 1e18
+    assert mint["to_label"] == KNOWN_LABELS[OPS_WALLET.lower()]
+    assert mint["ts"] == pytest.approx(1_786_076_339.0)   # blockTimestamp, not now
+    assert mint["tx_hash"].startswith("0x17084b1b")
+
+    assert cached["v4_hook_pools"][0]["hooks"] == "0x" + "ab" * 20
+    assert cached["hook_live"] is True
+
+    assert cached["identity_writes"] == 1                 # distinct ids, not rows
+    assert cached["nft_last_sales"] == []                 # read, and empty
+
+
+async def test_seaport_sales_are_decoded_from_the_raw_order_logs(tmp_path):
+    """The real 2026-08-08 fill, walked out of raw ``OrderFulfilled`` payloads.
+
+    ``LogWindow.seaport_sales`` arrives **raw** like the other three groups
+    (wp1.md, *Decode ownership*), so the offer/consideration walk is WP4's. The
+    proof it is right is arithmetic rather than a hand-typed expectation: the
+    two realized totals of tx ``0x5b4d1b44…eadad2`` sum to that transaction's
+    own ``value``, ``363898900000000000`` wei. Miss an array offset or count
+    only the seller's leg and the identity stops holding.
+    """
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(), identity_updates=(), v4_initializes=(),
+            seaport_sales=(
+                *_seaport_fill(),
+                # An OrderFulfilled for a *different* collection. WP1's
+                # pre-filter is a substring match on the payload, so any order
+                # that merely mentions IDMD anywhere reaches us; only the offer
+                # side makes it a sale of an identity.
+                _seaport_log(7, (1_000,), ts=SEAPORT_TS - 60.0,
+                             tx="0x" + "f0" * 32,
+                             offer_token="0x" + "be" * 20),
+            ),
+        )
+    )
+    m = _manager(tmp_path, client=client)
+    await m.fetch_and_compute()
+    sales = m.cache.get_last_good(SLOT_LOGS).payload["nft_last_sales"]
+
+    assert [row["token_id"] for row in sales] == [1751, 354]
+    assert sales[0]["eth"] == pytest.approx(0.18)
+    assert sales[1]["eth"] == pytest.approx(0.1838989)
+    assert all(row["ts"] == pytest.approx(SEAPORT_TS) for row in sales)
+    assert sum(row["eth"] for row in sales) == pytest.approx(
+        SEAPORT_TX_VALUE_WEI / 1e18
+    )
+
+
+# ---------------------------------------------------------------------------
+# Medium tier — the real Initialize fixture (2026-08-09 controller capture)
+# ---------------------------------------------------------------------------
+#
+# ``tests/fixtures/surf/manager/v4_initialize_real.json`` is a real
+# ``eth_getLogs`` response for a v4 PoolManager ``Initialize`` event
+# involving IMD, captured live to settle where the ``hooks`` field sits in
+# the payload (data word index 2 — see the file's own ``_meta``). The pool
+# it describes is hookless (``hooks == 0x0``); no hooked IMD v4 pool exists
+# on chain yet, so the LAUNCHED case below is a synthetic row built by
+# flipping only the hooks word of this same real payload, keeping every
+# other word (fee, tickSpacing, sqrtPriceX96, tick) exactly as captured.
+
+
+def _real_v4_initialize_log() -> dict:
+    import json
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parent.parent
+        / "fixtures" / "surf" / "manager" / "v4_initialize_real.json"
+    )
+    with open(path, encoding="utf-8") as fh:
+        payload = json.load(fh)
+    return payload["logs"][0]
+
+
+def test_the_real_initialize_log_confirms_hooks_is_data_word_index_2():
+    """Ground truth, not an assumption: hooks decodes to the zero address here.
+
+    ``_v4_init_log`` (this file's own synthetic builder, used by every other
+    hook test) already places ``hooks`` at word index 2 — this test is what
+    justifies that placement against a payload nobody in this plan hand-built.
+    """
+    from maxpane_dashboard.data.surf_manager import _word_addr
+
+    log = _real_v4_initialize_log()
+    hooks = _word_addr(log["data"], 2)
+    assert hooks == "0x" + "00" * 20
+
+
+async def test_a_real_hookless_pool_does_not_launch_the_hook(tmp_path):
+    """The one real ``Initialize`` this token has ever emitted: hookless."""
+    real_log = _real_v4_initialize_log()
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - 5_000, to_block=BLOCK, bridge_mints=(),
+            identity_updates=(), seaport_sales=(),
+            v4_initializes=(real_log,),
+        )
+    )
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["hook_status"] == "NOT LIVE"
+
+
+async def test_a_hooked_pool_shaped_like_the_real_capture_launches_the_hook(tmp_path):
+    """A synthetic hooked row, built by flipping only the real payload's hooks word.
+
+    Every other word — fee, tickSpacing, sqrtPriceX96, tick — stays exactly as
+    captured on 2026-08-09; only the hooks word (data index 2) changes. This is
+    the "hooked case with the real payload's shape" the task calls for, since no
+    hooked IMD v4 pool exists on chain to capture directly.
+    """
+    real_log = _real_v4_initialize_log()
+    raw = real_log["data"]
+    prefix = raw[: 2 + 64 * 2]                      # 0x + fee + tickSpacing
+    suffix = raw[2 + 64 * 3 :]                       # sqrtPriceX96 + tick
+    hooked_data = prefix + _addr_word("0x" + "ab" * 20) + suffix
+    hooked_log = dict(real_log, data=hooked_data)
+
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - 5_000, to_block=BLOCK, bridge_mints=(),
+            identity_updates=(), seaport_sales=(),
+            v4_initializes=(hooked_log,),
+        )
+    )
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["hook_status"] == "LAUNCHED"
+
+
+# ---------------------------------------------------------------------------
+# The client's own degradation flags, wired for the first time by this task
+# ---------------------------------------------------------------------------
+#
+# ``SurfClient.channel_truncated`` and ``.log_group_failed`` exist on the real
+# client (WP1.5, WP1.9) and ``_client_degradation`` has read them since WP4.7 —
+# but nothing called ``fetch_channel_txs``/``fetch_recent_logs`` before this
+# task, so the two flags never moved off their "nothing wrong" defaults in any
+# manager cycle. These two tests are what proves the wiring, not just the
+# reading, is in place: a double that reports truncation/failure the way the
+# real client would (an attribute set on the object the manager actually
+# calls) must show up in ``degraded``.
+
+
+async def test_a_truncated_channel_page_reaches_degraded_now_that_it_is_fetched(
+    tmp_path,
+):
+    """WP1.5's page-bound truncation flag, read right after the call this task adds."""
+    client = FakeSurfClient()
+    client.channel_truncated = True        # as the real client leaves it mid-page
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert SOURCE_CHANNEL in data["degraded"]
+
+
+async def test_a_failed_log_group_reaches_degraded_even_on_an_otherwise_ok_window(
+    tmp_path,
+):
+    """The exact failure this product exists to prevent: an empty ``bridge_mints``
+    that is a *filter failure*, not "no mints", flagged even though the rest of
+    the sweep answered fine and ``hook_status`` still reads a real value.
+    """
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(), identity_updates=(), v4_initializes=(),
+            seaport_sales=(),
+        )
+    )
+    client.log_group_failed = {
+        "bridge_mints": True,
+        "identity_updates": False,
+        "v4_initializes": False,
+        "seaport_sales": False,
+    }
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert SOURCE_LOGS in data["degraded"]
+    # The rest of the sweep is trustworthy — a per-group failure must not sink
+    # a hero value that a different group answered cleanly.
+    assert data["hook_status"] == "NOT LIVE"

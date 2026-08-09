@@ -1,0 +1,28 @@
+{
+ "_meta": {
+  "source": "eth_getLogs via gateway.tenderly.co/public/mainnet",
+  "captured": "2026-08-09 by controller",
+  "address": "PoolManager v4 0x000000000004444c5dc75cB358380D2e3dE08A90",
+  "why": "Real Initialize log for the IMD token. Ground truth for the hooks-field position: topics=[topic0, poolId, currency0, currency1]; data words=[fee, tickSpacing, HOOKS, sqrtPriceX96, tick]. hooks is data word index 2 and is the zero address here, i.e. a genuine HOOKLESS third-party pool. No hooked pool for this token exists on chain yet.",
+  "row_count": 1
+ },
+ "logs": [
+  {
+   "address": "0x000000000004444c5dc75cb358380d2e3de08a90",
+   "topics": [
+    "0xdd466e674ea557f56295e2d0218a125ea4b4f0f6f3307b95f85e6110838d6438",
+    "0x75b9b041702dc2c7fdd3304996f3eba009941ecaab02e800a10f65d93e8b948d",
+    "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7"
+   ],
+   "data": "0x000000000000000000000000000000000000000000000000000000000000271200000000000000000000000000000000000000000000000000000000000000c8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000269c382f548329907e2ac863440000000000000000000000000000000000000000000000000000000000011d72",
+   "blockNumber": "0x187581d",
+   "transactionHash": "0xb773cb0dd23024f253063063b5170eca34b951629ff673478920c681b4f7e033",
+   "transactionIndex": "0xef",
+   "blockHash": "0x68c85e90bcea1f6cd83bffb574da0562bd61009629ece612538735d9843368c1",
+   "logIndex": "0x319",
+   "blockTimestamp": "0x6a6b8813",
+   "removed": false
+  }
+ ]
+}
