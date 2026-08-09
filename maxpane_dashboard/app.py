@@ -32,6 +32,7 @@ from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 from maxpane_dashboard.config import get_wallet
 from maxpane_dashboard.screens.ocm import OCMScreen
 from maxpane_dashboard.screens.splash import SplashScreen
+from maxpane_dashboard.screens.surf import SurfScreen
 from maxpane_dashboard.screens.talismans import TalismansScreen
 from maxpane_dashboard.screens.ttt import TTTScreen
 from maxpane_dashboard.themes import THEMES, THEME_NAMES
@@ -190,7 +191,7 @@ class MaxPaneApp(App):
     # temporarily hidden from cycling — code intact, restore by re-adding them.
     # "dota" is omitted: its game backend is NXDOMAIN. The manager, screen and
     # shutdown wiring below are intact so it can be restored by re-adding the id.
-    _GAME_CYCLE = ["fwa", "base", "frenpet", "cattown", "ttt", "talismans"]
+    _GAME_CYCLE = ["fwa", "base", "frenpet", "cattown", "ttt", "talismans", "surf"]
 
     def _launch_game(self, game_id: str, *, first: bool = False) -> None:
         """Install and switch to a game screen.
@@ -286,6 +287,16 @@ class MaxPaneApp(App):
                         name="fwa",
                     ),
                     name="fwa",
+                )
+        elif game_id == "surf":
+            if not self.is_screen_installed("surf"):
+                self.install_screen(
+                    SurfScreen(
+                        self._surf_manager,
+                        self.poll_interval,
+                        name="surf",
+                    ),
+                    name="surf",
                 )
         else:
             return

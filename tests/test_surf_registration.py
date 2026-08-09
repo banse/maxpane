@@ -148,3 +148,89 @@ def test_quit_closes_the_surf_manager() -> None:
         assert app._exception is None
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# app.py: the screen and the tab cycle
+# ---------------------------------------------------------------------------
+
+
+def test_launching_surf_installs_the_surf_screen() -> None:
+    """``_launch_game('surf')`` must reach a SurfScreen, not the else-return.
+
+    Driven through ``_launch_game`` rather than the menu because the menu row
+    lands two tasks later; the branch is what is under test here.
+    """
+    from maxpane_dashboard.screens.surf import SurfScreen
+
+    async def _run() -> None:
+        app, _stubs = _stubbed_app("surf")
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._launch_game("surf", first=True)
+            await pilot.pause()
+
+            assert isinstance(app.screen, SurfScreen), (
+                f"_launch_game('surf') left {type(app.screen).__name__} on "
+                "screen -- the branch is missing and it hit `else: return`"
+            )
+            assert app.screen.name == "surf"
+            assert app.is_screen_installed("surf")
+            assert app._exception is None
+
+    asyncio.run(_run())
+
+
+def test_launching_surf_twice_reuses_one_installed_screen() -> None:
+    """The install is guarded, so ``m`` -> surf -> ``m`` -> surf leaks nothing."""
+
+    async def _run() -> None:
+        app, _stubs = _stubbed_app("surf")
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._launch_game("surf", first=True)
+            await pilot.pause()
+            installed = len(app._installed_screens)
+            for _ in range(5):
+                app._launch_game("surf")
+                await pilot.pause()
+            assert len(app._installed_screens) == installed
+            assert app._exception is None
+
+    asyncio.run(_run())
+
+
+def test_surf_is_in_the_tab_cycle_exactly_once() -> None:
+    """Tab must reach surf, and must not visit it twice per lap."""
+    assert MaxPaneApp._GAME_CYCLE.count("surf") == 1, MaxPaneApp._GAME_CYCLE
+
+
+def test_tab_from_the_previous_game_reaches_surf() -> None:
+    """The cycle is walked for real, not re-declared.
+
+    ``_launch_game`` is replaced by a recorder so no second dashboard mounts
+    (which would start a real poll timer).
+    """
+    cycle = MaxPaneApp._GAME_CYCLE
+    previous = cycle[cycle.index("surf") - 1]
+
+    async def _run() -> None:
+        app, _stubs = _stubbed_app(previous)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._launch_game(previous, first=True)
+            await pilot.pause()
+            app._current_game = previous
+
+            launched: list[str] = []
+            app._launch_game = lambda game_id, **kw: launched.append(game_id)
+
+            await pilot.press("tab")
+            await pilot.pause()
+
+            assert launched == ["surf"], (
+                f"tab from {previous} went to {launched} instead of surf"
+            )
+            assert app._current_game == "surf"
+
+    asyncio.run(_run())
