@@ -51,21 +51,23 @@ from maxpane_dashboard.data.surf_addresses import ANNOUNCE, DEV_WALLET, OPS_WALL
 from maxpane_dashboard.data.surf_models import CHANNEL_KINDS
 
 __all__ = [
+    # constants
     "FIRED_TTL_S",
     "STATE_OK",
     "STATE_WATCH",
     "STATE_FIRED",
     "DETAIL_LIMIT",
+    "CHANNEL_KINDS",  # re-export of data.surf_models.CHANNEL_KINDS (WP0)
     "READING_KEYS",
     "BASELINE_SCALARS",
     "BASELINE_EVENT_KEYS",
     "MONOTONIC_BASELINES",
-    "decode_utf8_calldata",
-    "CHANNEL_KINDS",
-    "classify_channel_tx",
-    "parity_pct",
     "SIGNAL_NAMES",
     "SIGNAL_OUTPUT_KEYS",
+    # pure functions
+    "decode_utf8_calldata",
+    "classify_channel_tx",
+    "parity_pct",
     "build_signals",
 ]
 
@@ -121,29 +123,55 @@ BASELINE_SCALARS: tuple[str, ...] = (
 #: failed read: the previous baseline value is left untouched, never
 #: overwritten with something malformed.
 #:
-#: ``gate_open`` is the case that bit us: ``_detect_gate`` already refuses a
-#: non-``bool`` reading (an int ``0`` is not ``False``), but ``_advance``'s
-#: only guard used to be "not ``None``", so a stray ``0`` sailed straight into
-#: the persisted baseline and *changed its type*.  The next cycle's genuine
-#: ``False -> True`` flip then read that corrupted baseline as unset,
-#: silently re-seeded, and never fired -- one bad read permanently disarmed
-#: the one transition this detector exists to catch.  A scalar with no entry
-#: here keeps the previous behaviour (trusted as-is once it is not ``None``);
-#: add an entry here, not a special case in ``_advance``, if another reading
-#: later needs the same protection.
-#: ``imd_supply`` needs the same protection for the mirror-image reason: BURN
-#: and BRIDGE STAGE already refuse to *compare* a non-numeric baseline (both
-#: read it through ``_as_float``, which turns garbage into ``None``), but
-#: without a coercer here ``_advance`` would still persist that garbage raw.
-#: The corrupted baseline would then read back as ``None`` on the very cycle a
-#: real burn or bridge mint lands, and both detectors treat an unset baseline
-#: as "seed, don't fire" -- so a real event is silently swallowed, the same
-#: failure shape as the ``gate_open`` bug above, one call away.  ``_as_float``
-#: is looked up by name rather than imported at definition time, which is
-#: fine: this dict is only ever consulted from ``_advance``, well after the
-#: whole module -- including ``_as_float`` -- has finished loading.
+#: **Every** :data:`BASELINE_SCALARS` key has an entry here — this is
+#: enforced by ``test_every_baseline_scalar_has_a_coercer`` — because the
+#: earlier, narrower version of this table (``gate_open`` and ``imd_supply``
+#: only) left the other six keys exactly as permissive as before a coercer
+#: existed anywhere, and a reviewer proved that gap is exploitable, not just
+#: theoretical:
+#:
+#: * ``gate_open`` was the first case that bit us: ``_detect_gate`` already
+#:   refuses a non-``bool`` reading (an int ``0`` is not ``False``), but
+#:   ``_advance``'s only guard used to be "not ``None``", so a stray ``0``
+#:   sailed straight into the persisted baseline and *changed its type*. The
+#:   next cycle's genuine ``False -> True`` flip then read that corrupted
+#:   baseline as unset, silently re-seeded, and never fired -- one bad read
+#:   permanently disarmed the one transition this detector exists to catch.
+#: * ``imd_supply`` needs the mirror-image protection: BURN and BRIDGE STAGE
+#:   already refuse to *compare* a non-numeric baseline (both read it through
+#:   ``_as_float``, which turns garbage into ``None``), but without a coercer
+#:   here ``_advance`` would still persist that garbage raw. The corrupted
+#:   baseline would then read back as ``None`` on the very cycle a real burn
+#:   or bridge mint lands, and both detectors treat an unset baseline as
+#:   "seed, don't fire" -- so a real event is silently swallowed.
+#: * every counter -- ``dev_nonce``, ``announce_nonce``, ``channel_tx_count``,
+#:   ``ops_nonce``, ``identities_written`` -- had *no* coercer at all until
+#:   this table grew to cover them, which was worse than either case above:
+#:   ``_as_int(True)`` is ``None`` (a bool is never a nonce), so a bool
+#:   reading not only sailed past the "not ``None``" guard but also **bypassed
+#:   the ``MONOTONIC_BASELINES`` down-guard** in the same motion -- that guard
+#:   compares ``_as_int`` of both sides, and ``current is not None`` was
+#:   already ``False`` for a bool, so "don't move backward" never even ran,
+#:   and the raw ``True`` sailed straight into ``out[key] = value``.  The
+#:   corrupted baseline then reads back as ``None`` on the next cycle,
+#:   the same "unset -> silently re-seed, never fire" swallow as the
+#:   ``imd_supply`` case, for five more keys.
+#:
+#: The rule is now general, not key-by-key: add a new key to
+#: :data:`BASELINE_SCALARS` and the test above forces a matching entry here in
+#: the same change, rather than depending on someone remembering to add one.
+#: ``_as_int``/``_as_float`` are looked up by name inside each lambda rather
+#: than imported at definition time, which is fine: this dict is only ever
+#: consulted from ``_advance``, well after the whole module -- including both
+#: helpers -- has finished loading.
 _SCALAR_COERCERS: dict[str, Any] = {
+    "announce_nonce": lambda value: _as_int(value),
+    "channel_tx_count": lambda value: _as_int(value),
+    "lp_liquidity": lambda value: _as_int(value),
+    "ops_nonce": lambda value: _as_int(value),
+    "dev_nonce": lambda value: _as_int(value),
     "gate_open": lambda value: value if isinstance(value, bool) else None,
+    "identities_written": lambda value: _as_int(value),
     "imd_supply": lambda value: _as_float(value),
 }
 
@@ -760,11 +788,12 @@ def _advance(baselines: dict, readings: dict) -> dict:
     skipped:
 
     1. A scalar baseline moves **only** when its reading is not ``None`` --
-       and, for a scalar listed in :data:`_SCALAR_COERCERS`, only when it also
-       survives that scalar's own type check.  A malformed reading is treated
-       exactly like a failed one: the previous value is left in place, never
-       overwritten with something a detector could not have produced itself
-       (CLAUDE.md; a real regression -- see :data:`_SCALAR_COERCERS`).
+       and only when it also survives that scalar's own coercer in
+       :data:`_SCALAR_COERCERS`, which covers every :data:`BASELINE_SCALARS`
+       key, not a chosen few.  A malformed reading is treated exactly like a
+       failed one: the previous value is left in place, never overwritten
+       with something a detector could not have produced itself (CLAUDE.md; a
+       real regression -- see :data:`_SCALAR_COERCERS`).
     2. Counters in :data:`MONOTONIC_BASELINES` never move down.
 
     Event streams keep ``(tx, ts)``.  A *successful but empty* read seeds the

@@ -885,6 +885,101 @@ def test_a_legitimate_supply_reading_is_still_persisted():
     assert advanced["imd_supply"] == SUPPLY_AFTER_MINTS
 
 
+# --- WP2.11: every BASELINE_SCALARS key needs a coercer, not just the two
+# the earlier two regressions happened to name ------------------------------
+#
+# gate_open and imd_supply both got a coercer because a reviewer found a
+# concrete exploit for each. The other six BASELINE_SCALARS keys were left
+# exactly as permissive as before either fix -- and a reviewer proved that gap
+# is exploitable too: ``_as_int(True)`` is ``None`` (a bool is never a nonce),
+# so a bool reading not only slips past _advance's "reading is not None"
+# guard, it also *bypasses the MONOTONIC_BASELINES down-guard in the same
+# motion* -- that guard compares ``_as_int`` of both sides, and
+# ``current is not None`` is already False for a bool, so "don't move
+# backward" never runs, and the raw bool sails straight into
+# ``out[key] = value``. The corrupted baseline then reads back as ``None`` on
+# the next cycle (``_as_int(True)`` again), so every detector that gates on
+# "the baseline is not None" treats it as unset and silently re-seeds instead
+# of firing -- a genuine event swallowed, the exact shape of the imd_supply
+# bug, for five more keys.
+
+
+def test_every_baseline_scalar_has_a_coercer():
+    """Closes the class of bug, not the eight keys that happen to exist today.
+
+    A future BASELINE_SCALARS entry with no matching _SCALAR_COERCERS entry
+    would silently fall back to the pre-WP2.11 lax behaviour -- this fails the
+    moment that happens, instead of depending on someone remembering to add
+    the key by hand.
+    """
+    assert set(sig._SCALAR_COERCERS) == set(sig.BASELINE_SCALARS)
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["dev_nonce", "announce_nonce", "channel_tx_count", "ops_nonce", "identities_written"],
+)
+def test_a_bool_reading_never_corrupts_any_counter_baseline(key):
+    """The dev_nonce=True exploit, generalised to every affected counter.
+
+    MUTATION CHECK (run it, watch it go red, restore): trim
+    ``_SCALAR_COERCERS`` back to only ``"gate_open"`` and ``"imd_supply"``
+    (the state before this task) -> this fails with e.g.
+    ``AssertionError: assert True == 2350``: the raw bool is exactly what got
+    persisted, having sailed straight past the monotonic-down guard too
+    (``_as_int(True)`` is ``None``, so that guard's own "is not None" check
+    never fires).
+    """
+    base = _baseline(**{key: 2350})
+    _, advanced = sig.build_signals(base, _readings(**{key: True}), NOW)
+    assert advanced[key] == 2350
+
+
+def test_a_bool_dev_nonce_reading_does_not_swallow_the_next_genuine_watch():
+    """The concrete consequence of the exploit above, spelled out end to end.
+
+    A corrupted ``dev_nonce`` baseline of ``True`` reads back as ``None``
+    (``_as_int(True)``), so NEW DEPLOY's own ``base_dev is not None`` guard
+    would treat the very next real nonce move as a first-ever read and
+    silently re-seed instead of watching it -- one bad read permanently
+    disarming NEW DEPLOY's nonce-only precursor for as long as the baseline
+    stays poisoned. With the fix, the baseline survives the bool untouched and
+    the genuine transition is still watched.
+    """
+    base = _baseline(dev_nonce=2350)
+    _, advanced = sig.build_signals(base, _readings(dev_nonce=True), NOW)
+    assert advanced["dev_nonce"] == 2350
+
+    state, detail, age = _sig("deploy", advanced, _readings(dev_nonce=2351))
+    assert state == "watch"
+    assert detail == "surfsurf.eth nonce 2350→2351"
+
+
+def test_a_bool_announce_nonce_reading_does_not_swallow_the_next_genuine_post():
+    """Same exploit on the key whose genuine detection is a FIRED row, not a
+    WATCH -- proving the fix holds where "swallowed" means a missed NEW POST,
+    the single cheapest and earliest of the six detectors.
+    """
+    base = _baseline(announce_nonce=13)
+    _, advanced = sig.build_signals(base, _readings(announce_nonce=True), NOW)
+    assert advanced["announce_nonce"] == 13
+    assert advanced["fired"] == {}
+
+    state, detail, age = _sig(
+        "post",
+        advanced,
+        _readings(
+            announce_nonce=14,
+            channel_tx_count=21,
+            announce_last_text=LP_POST_TEXT,
+            announce_last_ts=LP_POST_TS,
+        ),
+    )
+    assert state == "fired"
+    assert detail == LP_POST_DETAIL
+    assert age == pytest.approx(NOW - LP_POST_TS)
+
+
 # ---------------------------------------------------------------------------
 # The matrix: every detector x every state.
 #
@@ -1217,3 +1312,122 @@ def test_an_empty_cache_plus_a_full_outage_is_completely_silent():
     out, advanced = sig.build_signals({}, _blackout(), NOW)
     assert all(out[f"sig_{name}_state"] is None for name in sig.SIGNAL_NAMES)
     assert advanced == {"fired": {}}
+
+
+# ---------------------------------------------------------------------------
+# Structural guards.
+#
+# This module is required to be pure (CLAUDE.md: analytics/ is "PURE functions:
+# signals, EV math. No I/O, no Textual imports.").  "No test touches the
+# network" is asserted structurally rather than by mocking, because there is no
+# transport here to inject a raising stub into: the assertion is that the
+# module cannot reach a network or a clock at all.
+# ---------------------------------------------------------------------------
+
+import re
+
+_MODULE_SOURCE = Path(sig.__file__).read_text(encoding="utf-8")
+
+
+def _code_only(source: str) -> str:
+    """Source with docstrings and comments stripped.
+
+    The guards below assert on what the code *does*; a docstring is allowed to
+    name the thing it forbids.
+    """
+    return re.sub(r"#[^\n]*", "", re.sub(r'"""(?:.|\n)*?"""', "", source))
+
+
+def test_module_is_pure():
+    code = _code_only(_MODULE_SOURCE)
+    for forbidden in (
+        "import requests", "import httpx", "import aiohttp", "import urllib",
+        "import socket", "import time", "import datetime", "import asyncio",
+        "from textual", "import textual",
+        "time.time(", "datetime.now(", "utcnow(",
+        "maxpane_dashboard.data.surf_client", "maxpane_dashboard.data.surf_cache",
+    ):
+        assert forbidden not in code, forbidden
+
+
+def test_the_only_data_imports_are_the_two_wp0_boundary_modules():
+    """WP0 is the single dependency, and it is exactly two stdlib-only modules.
+
+    ``surf_addresses`` and ``surf_models`` are boundary declarations — constants
+    and dataclasses, no I/O — so importing them does not cost this module its
+    purity.  The client (WP1), the cache and the manager (WP4) are not importable
+    from here at any point, and the list is compared exactly rather than by
+    substring so a third import cannot arrive unnoticed.
+
+    The second half is the re-export rule: ``CHANNEL_KINDS`` is frozen once, in
+    WP0's models module.  A local literal would give one closed vocabulary two
+    green tests — WP0's ``test_channel_tx_kinds_are_the_four_frozen_strings``
+    and this suite's — so a fifth kind added to one copy would pass both while
+    the classifier and the models disagreed about what may be returned.
+    """
+    from maxpane_dashboard.data import surf_models
+
+    imports = [line for line in _MODULE_SOURCE.splitlines() if line.startswith("from maxpane")]
+    assert imports == [
+        "from maxpane_dashboard.data.surf_addresses import ANNOUNCE, DEV_WALLET, OPS_WALLET",
+        "from maxpane_dashboard.data.surf_models import CHANNEL_KINDS",
+    ]
+    assert sig.CHANNEL_KINDS is surf_models.CHANNEL_KINDS
+    assert "CHANNEL_KINDS: tuple[str, ...] = (" not in _code_only(_MODULE_SOURCE)
+
+
+def test_no_live_value_is_hardcoded():
+    """CLAUDE.md rule 4: parity, supply, pool composition and burn totals are read.
+
+    The numbers that appear in this module are structural (24 h, 48 columns,
+    percent) — never a measured one.
+    """
+    code = _code_only(_MODULE_SOURCE)
+    for measured in ("2376731", "2,376,731", "0.7074", "58849", "33.0", "1148", "2000"):
+        assert measured not in code, measured
+
+
+def test_public_surface_is_the_frozen_one():
+    for name in (
+        "decode_utf8_calldata", "classify_channel_tx", "parity_pct", "build_signals",
+        "FIRED_TTL_S", "SIGNAL_NAMES", "SIGNAL_OUTPUT_KEYS", "READING_KEYS",
+    ):
+        assert name in sig.__all__, name
+        assert hasattr(sig, name), name
+    assert sig.FIRED_TTL_S == 86400
+
+
+def test_signal_output_keys_match_the_prd_naming():
+    """PRD §5: ``sig_{post,lp,gate,deploy,bridge,burn}_{state,detail,age_s}``."""
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 18
+    assert sig.SIGNAL_OUTPUT_KEYS[:3] == ("sig_post_state", "sig_post_detail", "sig_post_age_s")
+    assert set(sig.SIGNAL_OUTPUT_KEYS) == {
+        f"sig_{name}_{field}"
+        for name in ("post", "lp", "gate", "deploy", "bridge", "burn")
+        for field in ("state", "detail", "age_s")
+    }
+
+
+def test_every_state_value_is_one_of_the_four():
+    """No detector may invent a fifth state string (PRD §5)."""
+    for _name, expected_state, overrides, _detail in MATRIX:
+        out, _ = sig.build_signals(_baseline(), _readings(**overrides), NOW)
+        for key, value in out.items():
+            if key.endswith("_state"):
+                assert value in ("ok", "watch", "fired", None), (key, value)
+
+
+def test_details_fit_the_signals_panel():
+    """Every freshly-built detail stays inside a plausible row width.
+
+    The panel gets ~55 columns at the pinned full-layout width; a longer detail
+    would leave the panel wearing a permanent ``‹ widen`` marker (the FWA
+    buy-gate footnote lesson).  The budget covers what a detector *builds*; the
+    composed ``… · last: …`` form deliberately exceeds it when both halves are
+    long, and truncating that is the widget's call, not this module's.
+    """
+    for _name, _state, overrides, _detail in MATRIX:
+        out, _ = sig.build_signals(_baseline(), _readings(**overrides), NOW)
+        for key, value in out.items():
+            if key.endswith("_detail"):
+                assert len(value) <= 55, (key, len(value), value)
