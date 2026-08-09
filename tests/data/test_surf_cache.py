@@ -161,3 +161,34 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     c.store_last_good(SLOT_MARKET, {})
     assert c.newest_as_of() == clock.t
     assert len(SLOTS) == 6
+
+
+def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):
+    """None means no successful read happened; it must never overwrite a good one."""
+    clock = FakeClock()
+    c = _cache(tmp_path, clock)
+
+    c.store_last_good(SLOT_MARKET, {"price": 9.99})
+    original_ts = clock.t
+    clock.advance(60.0)
+
+    with pytest.raises(ValueError):
+        c.store_last_good(SLOT_MARKET, None)
+
+    entry = c.get_last_good(SLOT_MARKET)
+    assert entry.payload == {"price": 9.99}
+    assert entry.ts == original_ts
+
+
+def test_store_last_good_accepts_a_genuine_empty_payload(tmp_path):
+    """[]/0/""/{} are real successful readings, not outages -- do not over-guard."""
+    clock = FakeClock()
+    c = _cache(tmp_path, clock)
+
+    c.store_last_good(SLOT_MARKET, {"price": 9.99})
+    clock.advance(60.0)
+
+    entry = c.store_last_good(SLOT_MARKET, [])
+    assert entry.payload == []
+    assert entry.ts == clock.t
+    assert c.get_last_good(SLOT_MARKET).payload == []

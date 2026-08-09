@@ -230,8 +230,22 @@ class SurfCache:
     def store_last_good(
         self, slot: str, payload: Any, *, ts: float | None = None
     ) -> LastGood:
-        """Replace ``slot``'s last-good payload. Always stamped with a timestamp."""
+        """Replace ``slot``'s last-good payload. Always stamped with a timestamp.
+
+        ``payload=None`` is refused: it means *no successful read happened*, and
+        storing it would overwrite a good payload (and its provenance) with an
+        indistinguishable outage. Falsy-but-real readings (``[]``, ``0``, ``""``,
+        ``{}``) are accepted without complaint -- an empty result is a fact about
+        the world, not a missing one, and rejecting it would recreate the exact
+        "outage vs. genuine zero" conflation this cache exists to prevent.
+        """
         self._check_slot(slot)
+        if payload is None:
+            raise ValueError(
+                f"store_last_good({slot!r}, None) refused: None means no read "
+                "happened, not an empty result -- it must never overwrite a "
+                "good last-good payload"
+            )
         entry = LastGood(payload=payload, ts=self._now(ts))
         self.last_good[slot] = entry
         return entry
