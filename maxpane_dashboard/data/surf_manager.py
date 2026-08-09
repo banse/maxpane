@@ -308,6 +308,59 @@ class SurfManager:
         except Exception as exc:            # noqa: BLE001
             logger.debug("closing the SURF client failed: %s", exc)
 
+    # -- the chain group (fast tier) -----------------------------------------
+
+    async def _pool_chain(self, now: float) -> dict[str, Any]:
+        """Three nonces + the batched ``eth_call`` round. Never raises.
+
+        Both reads are issued concurrently against the **same** state RPC pool
+        and are judged together, so ``ok`` is ``True`` only when *both*
+        answered. ``and``, not ``or``: the two calls fail independently and the
+        realistic half-failure is the cheap one surviving — the provider answers
+        ``eth_getTransactionCount`` and drops the batched ``eth_call`` round.
+        Under ``or`` that cycle published ``lp_liquidity``, ``lp_imd``,
+        ``lp_weth``, ``lp_owner_ok``, ``gate_open`` and ``imd_supply`` as
+        ``None`` while ``degraded`` reported the chain group **healthy**: six
+        dashes across the hero with nothing on screen to explain them, which is
+        the one shape CLAUDE.md's degradation rule forbids.
+
+        Flagging is all ``and`` changes. Whatever *did* come back is still read
+        straight off the models in ``_cycle`` and still published, ``None``
+        fields still render as unavailable, and a ``None`` can never advance a
+        baseline downstream. What a half-failure does **not** do is overwrite
+        the ``SLOT_CHAIN`` last-good with a half-empty payload or mark the fast
+        tier fetched.
+        """
+        nonces_res, state_res = await asyncio.gather(
+            self._guard(self.client.fetch_nonces, "fetch_nonces"),
+            self._guard(self.client.fetch_chain_state, "fetch_chain_state"),
+            return_exceptions=False,
+        )
+        ok = nonces_res is not None and state_res is not None
+        if ok:
+            self.cache.store_last_good(
+                SLOT_CHAIN,
+                {
+                    "block": _opt_int(_field(state_res, "block_number")),
+                    "imd_supply": _tokens(_field(state_res, "imd_supply_wei")),
+                    "announce_nonce": _opt_int(_field(nonces_res, "announce")),
+                },
+                ts=now,
+            )
+            self.cache.mark_fetched(TIER_FAST, now)
+        else:
+            self.cache.mark_failed(TIER_FAST, now)
+        self._note(SOURCE_CHAIN, ok)
+        return {"nonces": nonces_res, "state": state_res, "ok": ok}
+
+    async def _guard(self, call: Any, name: str) -> Any:
+        """Await ``call()``; a raise becomes ``None`` and is logged, never escapes."""
+        try:
+            return await call()
+        except Exception as exc:            # noqa: BLE001 — clients document None on failure
+            logger.warning("SURF %s raised: %s", name, exc)
+            return None
+
     # -- public API ----------------------------------------------------------
 
     async def fetch_and_compute(self) -> dict[str, Any]:
@@ -332,11 +385,74 @@ class SurfManager:
     async def _cycle(self) -> dict[str, Any]:
         now = float(self._clock())
         self._cycle_count += 1
-        payload = self._blank_payload()
-        payload["degraded"] = self._degraded()
-        payload["as_of"] = self.cache.newest_as_of()
+        tiers = set(self.cache.tiers_due(now))
+
+        chain = await self._pool_chain(now)
+        state = chain.get("state")
+        nonces = chain.get("nonces")
+
+        # Divided exactly once, here, and reused everywhere below — the models
+        # are wei-native and this dict is the presentation boundary (WP0.4).
+        imd_supply = _tokens(_field(state, "imd_supply_wei"))
+
+        # Folded in before anything else reads it: a burn is a *pair* of
+        # successful supply reads, and ``record_supply`` refuses to conclude
+        # anything from a ``None``.
+        self.cache.record_supply(imd_supply, _opt_int(_field(state, "block_number")))
+
+        data: dict[str, Any] = {
+            "as_of": self.cache.newest_as_of(),
+            "degraded": self._degraded(),
+            "feed_nonce": _opt_int(_field(nonces, "announce")),
+            "lp_liquidity": _opt_int(_field(state, "lp_liquidity")),
+            # WP1.4 derives these from liquidity + sqrtPrice + the position's tick
+            # bounds; the bounds exist nowhere downstream, which is why the client
+            # owns the math and the manager only scales it.
+            "lp_imd": _tokens(_field(state, "lp_imd_wei")),
+            "lp_weth": _tokens(_field(state, "lp_weth_wei")),
+            "lp_owner_ok": self._owner_ok(_field(state, "lp_owner")),
+            "gate_open": self._opt_bool(_field(state, "identity_allowed")),
+            # `identities_written` is NOT set here. `ChainState` has no such
+            # field (WP0.4 dropped it — the registry has no getter), and the
+            # ~8 h `LogWindow.identity_updates` count answers a different
+            # question. It is filled from `NftStats.written` in Task WP4.10.
+            "imd_supply": imd_supply,
+            "imd_burned_cum": self.cache.observed_burn_total(),
+        }
+
+        payload = self._finalise(data)
+
+        # Sample *before* reading the series back, so this cycle's point is in
+        # the sparkline the user is looking at rather than one refresh behind.
+        # ``None`` leaves a series untouched — a dead source must never write a
+        # sentinel into a history (CLAUDE.md).
+        _safe_call(
+            self.cache.sample_series,
+            now,
+            imd_supply=payload.get("imd_supply"),
+            imd_price_usd=payload.get("imd_price_usd"),
+            parity_pct=payload.get("parity_pct"),
+        )
+        payload["supply_series"] = self.cache.get_series(SERIES_IMD_SUPPLY)
+        payload["price_series"] = self.cache.get_series(SERIES_IMD_PRICE_USD)
+
         self.save_cache()
         return payload
+
+    @staticmethod
+    def _opt_bool(value: Any) -> bool | None:
+        return None if value is None else bool(value)
+
+    @staticmethod
+    def _owner_ok(owner: Any) -> bool | None:
+        """``None`` = unread, ``False`` = someone other than frenpet.eth holds it.
+
+        PRD §4 wants this as a sanity flag on the hero, and the two are not the
+        same fact: conflating them would make a dead RPC read as a stolen LP.
+        """
+        if owner is None:
+            return None
+        return str(owner).lower() == OPS_WALLET.lower()
 
     # -- degradation ---------------------------------------------------------
 

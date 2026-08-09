@@ -632,3 +632,109 @@ async def test_close_persists_the_cache_and_closes_the_client(tmp_path):
     await m.close()
     assert client.closed is True
     assert (tmp_path / "surf_cache.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Fast tier — the chain group
+# ---------------------------------------------------------------------------
+
+
+async def test_hero_values_come_straight_off_the_chain_read(manager):
+    data = await manager.fetch_and_compute()
+    assert data["lp_liquidity"] == LP_LIQUIDITY
+    assert data["lp_imd"] == pytest.approx(LP_IMD_WEI / 1e18)
+    assert data["lp_weth"] == pytest.approx(LP_WETH_WEI / 1e18)
+    assert data["lp_owner_ok"] is True             # ownerOf(1167726) == frenpet.eth
+    assert data["gate_open"] is False              # ChainState.identity_allowed
+    assert data["imd_supply"] == pytest.approx(IMD_SUPPLY)
+    assert data["feed_nonce"] == ANNOUNCE_NONCE
+    # The hero's other number, `identities_written`, is deliberately NOT here:
+    # `ChainState` has no such getter, so it rides in on the slow tier off
+    # `NftStats.written`. Task WP4.10 asserts it.
+
+
+async def test_a_wrong_lp_owner_is_flagged_not_hidden(tmp_path):
+    client = FakeSurfClient(fetch_chain_state=_chain_state(lp_owner="0x" + "de" * 20))
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["lp_owner_ok"] is False
+
+
+async def test_an_unknown_lp_owner_is_none_not_false(tmp_path):
+    """``None`` is 'we could not read it'; ``False`` is 'someone else owns it'."""
+    client = FakeSurfClient(
+        fetch_chain_state=_chain_state(
+            identity_allowed=None, imd_supply_wei=None, lp_liquidity=None,
+            lp_imd_wei=None, lp_weth_wei=None, lp_owner=None,
+        )
+    )
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["lp_owner_ok"] is None
+    assert data["gate_open"] is None
+    assert data["imd_supply"] is None
+
+
+async def test_wei_is_divided_exactly_once(tmp_path):
+    """WP0.4's models are wei-native; this flat dict is the presentation boundary."""
+    data = await _manager(tmp_path).fetch_and_compute()
+    assert data["imd_supply"] == pytest.approx(IMD_SUPPLY_WEI / 1e18)
+    assert data["lp_imd"] == pytest.approx(LP_IMD_WEI / 1e18)
+    assert data["lp_weth"] == pytest.approx(LP_WETH_WEI / 1e18)
+    # MarketSnapshot.pool_* is the whole pool, not this position — it must not be
+    # what the hero shows, and it is not divided either way. Both halves are
+    # asserted because a hero fed from the market snapshot would show whichever
+    # leg the writer reached for first.
+    assert data["lp_imd"] != pytest.approx(POOL_IMD)
+    assert data["lp_weth"] != pytest.approx(POOL_WETH)
+    # And the two pairs really are distinguishable — the point the old doubles
+    # missed. `LP_IMD_WEI / 1e18` is 388420.99999999994, so a `pool_imd` of
+    # 388_421.0 satisfies `pytest.approx` at the default rel=1e-6 and the two
+    # assertions above become mutually exclusive with the two before them.
+    assert LP_IMD_WEI / 1e18 != pytest.approx(POOL_IMD)
+    assert LP_WETH_WEI / 1e18 != pytest.approx(POOL_WETH)
+    # lp_liquidity is a raw uint128, not a token amount: it must NOT be divided.
+    assert data["lp_liquidity"] == LP_LIQUIDITY
+
+
+async def test_burned_cum_is_zero_after_one_read_then_accumulates(tmp_path):
+    """Day one on a healthy RPC: ``0.0``, meaning "observed nothing yet".
+
+    Note what this is *not*: an all-time total.  ~58,849 IMD had already been
+    burned before this cache existed (PRD §1) and no keyless source can hand
+    it to us, so ``0.0`` here is a statement about the observation window
+    only.  WP3.2's hero renders it as words rather than the digit ``0`` for
+    that reason -- if that rendering contract ever loosens, this key starts
+    lying on every fresh install.
+    """
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client)
+
+    first = await m.fetch_and_compute()
+    assert first["imd_burned_cum"] == 0.0        # one read: honestly zero observed
+
+    client._returns["fetch_chain_state"] = _chain_state(
+        block_number=BLOCK + 100,
+        imd_supply_wei=IMD_SUPPLY_WEI - 15_745 * 10**18,
+    )
+    second = await m.fetch_and_compute()
+    assert second["imd_burned_cum"] == pytest.approx(15_745.0)
+    assert second["imd_supply"] == pytest.approx(2_360_986.868679)
+
+
+async def test_a_chain_outage_is_flagged_and_invents_nothing(tmp_path):
+    """The 'only the chain group' half of this lands in WP4.10, once six exist."""
+    client = FakeSurfClient(fetch_nonces=None, fetch_chain_state=None)
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert SOURCE_CHAIN in data["degraded"]
+    assert data["imd_supply"] is None
+    assert data["feed_nonce"] is None
+    assert data["lp_liquidity"] is None
+    # Cold start + dead chain group: never read a supply, so there is nothing
+    # to report -- ``None`` (unavailable), not ``0.0`` ("watched, saw nothing").
+    assert data["imd_burned_cum"] is None
+
+
+async def test_a_raising_client_call_is_a_degradation_not_a_crash(tmp_path):
+    client = FakeSurfClient(fetch_chain_state=RuntimeError("publicnode 521"))
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert set(data) == set(SURF_KEYS)
+    assert SOURCE_CHAIN in data["degraded"]
