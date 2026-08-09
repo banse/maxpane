@@ -93,26 +93,21 @@ MANAGER_FAILURE_SECONDS = 999
 #: see tests. The width at which ordinary (non-token) feed content, and
 #: every other widget, show zero ``‹ widen`` markers in both views.
 #:
-#: 139 is set by ``SurfHero``: four boxes across a ``3fr`` half of the hero
-#: row get 12 content columns at 135 and 13 at 139, and 13 is what
-#: ``hero.MINIMAL_WIDTH`` needs -- ``IDENTITY GATE``, ``OWNER CHANGED`` and
-#: today's ``2,376,732 IMD`` are each exactly 13 columns and none of them
-#: may be cut. The activity panel clears its own full tier at 119, so the
-#: hero is the binding constraint. Both were re-measured together after the
-#: final review: before it, four of the six widgets had no marker mechanism
-#: at all, so "every other widget shows zero markers" was satisfied by
-#: widgets that could not register a loss and the number was calibrated by
-#: ``SurfFeed`` and ``SurfSignals`` alone.
+#: 135 is set by ``SurfFeed``. Swept one column at a time over the real
+#: screen in both ``c`` views (125..145, then 150/169/200/240): the feed
+#: lights exactly one marker at every width through 134, both views are
+#: clean from 135 up, and nothing relights above it.
 #:
-#: 139 rather than 137, which also measures clean *today*: ``1fr`` rounding
-#: leaves one box on 12 columns at 137-138, and which box that is decides
-#: whether anything overflows. Today it is the HOOK box, whose copy is
-#: short, so the screen happens to come up clean -- but a longer
-#: unrecognised ``hook_status`` lights a marker at 137 and 138 and not at
-#: 139 (measured, all three). 139 is the first width where *every* box
-#: reaches ``MINIMAL_WIDTH``, which is a property of the layout rather than
-#: of the current payload, and that is what this constant is supposed to
-#: mean.
+#: It was 139 before the 2026-08-09 restructure, and 139 was set by
+#: ``SurfHero``: four boxes across a ``3fr`` half of the row got 12 content
+#: columns at 135 and 13 -- ``hero.MINIMAL_WIDTH`` -- at 139, so a longer
+#: unrecognised ``hook_status`` could light a box marker at 137-138. A
+#: full-width hero row ends that whole class of sensitivity: each box now
+#: gets ~26 content columns at 135, which is the ``full`` tier (24) with
+#: headroom, and the hero's own marker is unreachable above 81 columns. The
+#: activity panel clears its full tier at 119 and the rail's two panels
+#: clear theirs inside a ``2fr`` share well below this, so the feed alone
+#: decides the number now.
 #:
 #: This number deliberately EXCLUDES posts carrying an inherently
 #: unbreakable token (a URL glued to a raw tx hash, e.g. by a trailing
@@ -126,7 +121,7 @@ MANAGER_FAILURE_SECONDS = 999
 #: raise this toward 194 to silence a linked post's marker: that marker is
 #: correct, and 194 is past the ~169 columns a laptop gets at the forced
 #: 17 pt, i.e. a "full layout" nobody could reach.
-SURF_FULL_LAYOUT_COLUMNS = 139
+SURF_FULL_LAYOUT_COLUMNS = 135
 
 
 # -- format helpers ----------------------------------------------------

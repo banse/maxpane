@@ -1108,30 +1108,29 @@ async def test_the_pinned_width_clears_every_widen_marker():
 FIRST_CLEAN_WIDTH = 135
 
 
-async def test_the_pinned_width_is_no_longer_the_tight_one():
-    """135 is where the screen actually comes up clean; the constant says 139.
+async def test_the_pinned_width_is_exactly_the_tight_one():
+    """The constant is the measured width, pinned in both directions.
 
-    Before the restructure the two were the same number, and the old test
-    asserted that four columns below the pin *something* advertised a loss.
-    Widening the hero to the full row moved the binding constraint from
-    ``SurfHero`` to ``SurfFeed`` and the true width down to 135, so
-    ``SURF_FULL_LAYOUT_COLUMNS`` is now four columns conservative.
+    The restructure left this test as a hand-off: the screen came up clean
+    at 135 while ``SURF_FULL_LAYOUT_COLUMNS`` still said 139, because the
+    hero -- which had set 139 across a ``3fr`` half-row -- stopped being the
+    binding constraint once it owned the full width. The re-measurement has
+    now landed and the two numbers agree again.
 
-    It is deliberately **not** lowered here: the constant is re-measured in
-    the stage that also lands the dashboard rename, and a value that is too
-    high is safe (every widget still clears it) where one that is too low is
-    not. This test is the hand-off -- it pins the measured width in both
-    directions, so whoever lowers the constant has the number, and a widget
-    that later grows past 135 fails here rather than silently making the
-    documented width honest again for the wrong reason.
+    Both directions matter. Too high and the app documents a terminal wider
+    than the screen needs; too low and it documents one that clips. The
+    ``-1`` assertion is what keeps this honest: a widget that quietly grows
+    a column fails *here*, with the number in hand, instead of making the
+    documented width dishonest in silence.
     """
+    assert SURF_FULL_LAYOUT_COLUMNS == FIRST_CLEAN_WIDTH, (
+        f"the constant says {SURF_FULL_LAYOUT_COLUMNS} but the screen first "
+        f"comes up clean at {FIRST_CLEAN_WIDTH} -- re-measure and pin both"
+    )
     assert await _widen_markers(FIRST_CLEAN_WIDTH, "feed") == 0
     assert await _widen_markers(FIRST_CLEAN_WIDTH, "activity") == 0
     assert await _widen_markers(FIRST_CLEAN_WIDTH - 1, "feed") > 0, (
         "the screen is clean below the measured width -- re-measure it"
-    )
-    assert FIRST_CLEAN_WIDTH <= SURF_FULL_LAYOUT_COLUMNS, (
-        "the pinned width no longer covers every widget"
     )
 
 
