@@ -23,6 +23,7 @@ while the last-good payload covers the gap.
 
 from __future__ import annotations
 
+import bisect
 import json
 import logging
 import math
@@ -311,10 +312,26 @@ class SurfCache:
         if deq is None:
             return
         bucket = _hour_bucket(float(now_ts))
-        if deq and deq[-1][0] == bucket:
-            deq[-1] = (bucket, val)
-        else:
+        if not deq or bucket > deq[-1][0]:
             deq.append((bucket, val))
+            return
+        if deq[-1][0] == bucket:
+            deq[-1] = (bucket, val)
+            return
+        # Out-of-order sample (a backward clock step, or -- once WP4.6 lands --
+        # a fresh reading interleaving with points reloaded from disk): merge
+        # it in place rather than blindly appending. The sparkline renders a
+        # step down as an on-chain burn, so a misordered or duplicated bucket
+        # would draw a dip that never happened (CLAUDE.md). Two invariants
+        # hold after every call: ``get_series`` stays ascending by timestamp,
+        # and no hour ever appears twice.
+        points = list(deq)
+        idx = bisect.bisect_left([p[0] for p in points], bucket)
+        if idx < len(points) and points[idx][0] == bucket:
+            points[idx] = (bucket, val)          # same last-wins policy, in place
+        else:
+            points.insert(idx, (bucket, val))
+        self.series[name] = deque(points, maxlen=deq.maxlen)
 
     def sample_series(
         self,

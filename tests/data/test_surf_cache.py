@@ -255,3 +255,47 @@ def test_series_are_bounded_at_seven_days(tmp_path):
     series = c.get_series(SERIES_IMD_PRICE_USD)
     assert len(series) == 168
     assert series[-1][1] == 0.7 + 199
+
+
+def test_forward_ordered_sampling_is_unchanged(tmp_path):
+    """Baseline: normal ascending-time polling still just appends/overwrites."""
+    c = _cache(tmp_path)
+    base = 1_786_190_400.0
+    c.sample_series(base, imd_supply=100.0)
+    c.sample_series(base + 1800.0, imd_supply=150.0)          # same hour: last-wins
+    c.sample_series(base + 3600.0, imd_supply=200.0)
+    c.sample_series(base + 7200.0, imd_supply=300.0)
+    assert c.get_series(SERIES_IMD_SUPPLY) == [
+        [base, 150.0],
+        [base + 3600.0, 200.0],
+        [base + 7200.0, 300.0],
+    ]
+
+
+def test_out_of_order_sample_does_not_break_ascending_order(tmp_path):
+    """A backward clock step (NTP correction) must not reverse the series."""
+    c = _cache(tmp_path)
+    hour = 1_786_190_400.0
+    c.sample_series(hour + 3600.0, imd_supply=200.0)
+    c.sample_series(hour, imd_supply=100.0)                   # arrives late, older bucket
+
+    series = c.get_series(SERIES_IMD_SUPPLY)
+    assert series == [[hour, 100.0], [hour + 3600.0, 200.0]]
+    timestamps = [pt[0] for pt in series]
+    assert timestamps == sorted(timestamps)
+
+
+def test_interleaved_repeat_of_an_earlier_hour_does_not_duplicate_it(tmp_path):
+    """A repeat of an already-recorded hour, arriving after a newer one, must
+    merge in place -- never create two non-adjacent entries for one hour."""
+    c = _cache(tmp_path)
+    hour = 1_786_190_400.0
+    c.sample_series(hour, imd_supply=1.0)
+    c.sample_series(hour - 3600.0, imd_supply=2.0)            # older, unseen hour
+    c.sample_series(hour, imd_supply=3.0)                     # repeat of the first hour
+
+    series = c.get_series(SERIES_IMD_SUPPLY)
+    timestamps = [pt[0] for pt in series]
+    assert timestamps == sorted(timestamps)
+    assert len(timestamps) == len(set(timestamps)), "an hour must never appear twice"
+    assert series == [[hour - 3600.0, 2.0], [hour, 3.0]]
