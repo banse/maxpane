@@ -70,8 +70,15 @@ INITIAL_TITLE = "SURF · Mission Control · Ethereum Mainnet"
 #: Sentinel staleness pushed to the StatusBar when the manager itself failed.
 MANAGER_FAILURE_SECONDS = 999
 
-#: Measured in Task WP5.5 (provisional: the FWA number until then).
-SURF_FULL_LAYOUT_COLUMNS = 143
+#: Measured against composited output (both c views), not estimated -- see
+#: tests. The binding constraint is SurfFeed's unbreakable-token guard
+#: (feed.py's ``FULL_TEXT_WIDTH`` path): the sample announce post's tx-link
+#: token, including its trailing period, is 91 columns wide, and the feed
+#: RichLog's content width only reaches that budget once the screen itself
+#: is 194 columns (the panel gets 3/5 of the row, less title/spacer/border
+#: overhead). Below 194 the feed panel truncates the token and lights its
+#: own ``‹ widen`` marker, exactly as the house rule requires.
+SURF_FULL_LAYOUT_COLUMNS = 194
 
 
 # -- format helpers ----------------------------------------------------

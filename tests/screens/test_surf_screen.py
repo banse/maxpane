@@ -823,3 +823,58 @@ async def test_both_views_get_the_identical_slot():
             f"{feed_size} -- the panel resizes on every toggle"
         )
         assert act_size.height > 1, "the activity table collapsed instead of filling the row"
+
+
+# -- the pinned full-layout width ---------------------------------------
+
+from maxpane_dashboard.screens.surf import SURF_FULL_LAYOUT_COLUMNS
+
+
+async def _widen_markers(width: int, view: str = "feed") -> int:
+    """Composited ``‹ widen`` count at *width*, in the requested ``c`` view."""
+    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        if view == "activity":
+            await pilot.press("c")
+            await pilot.pause()
+        return _screen_text(app).count("‹ widen")
+
+
+async def test_the_pinned_width_clears_every_widen_marker():
+    """At ``SURF_FULL_LAYOUT_COLUMNS``, both views are marker-free."""
+    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS, "feed") == 0
+    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS, "activity") == 0
+
+
+async def test_the_pinned_width_is_tight_not_padded():
+    """Four columns narrower, at least one widget advertises the loss."""
+    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS - 4, "feed") > 0 or (
+        await _widen_markers(SURF_FULL_LAYOUT_COLUMNS - 4, "activity") > 0
+    ), "the documented width is higher than it needs to be"
+
+
+async def test_a_narrow_tier_advertises_rather_than_truncating_silently():
+    """Well below the threshold every drop is announced, never silent."""
+    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS - 20, "feed") > 0
+
+
+def test_surf_fits_inside_the_documented_app_width():
+    """WP6 coordination tripwire — mechanical, not a comment.
+
+    ``__main__.FULL_LAYOUT_COLUMNS`` (owned by WP6/one owner) documents the
+    width the *widest* dashboard needs. If surf measures wider than it, the
+    app-level constant and its help text become lies; this failure message is
+    the hand-off.
+    """
+    from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
+
+    assert SURF_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS, (
+        f"surf needs {SURF_FULL_LAYOUT_COLUMNS} columns but "
+        f"__main__.FULL_LAYOUT_COLUMNS documents {FULL_LAYOUT_COLUMNS}. "
+        "Do NOT edit __main__.py from WP5 — report to WP6, which owns it, "
+        "and land this test together with WP6's raise."
+    )
