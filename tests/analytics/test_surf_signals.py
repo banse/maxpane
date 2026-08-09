@@ -1053,3 +1053,153 @@ def test_a_fired_row_relaxes_but_the_event_is_never_forgotten():
     assert state == "ok"
     assert detail == "liquidity holds · last: LIQUIDITY OUT -32.3%"
     assert age == pytest.approx(float(sig.FIRED_TTL_S) + 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Success criterion 2 (PRD §11): replay the real 2026-08-07 LP-add sequence and
+# assert BRIDGE STAGE fires before NEW POST.
+#
+# The real choreography, from ops_eth_txs.json / ops_eth_token_transfers.json /
+# announce_eth_txs.json:
+#
+#   04:18:59  OFT mint      10,000.000000 IMD -> frenpet.eth   0x17084b1b…
+#   04:21:35  OFT mint     114,366.899256 IMD -> frenpet.eth   0xc7acbcc0…
+#   04:22:23  approve      IMD -> NFPM (ops nonce 36)          0x0031c5c8…
+#   04:23:23  multicall    increaseLiquidity (ops nonce 37)    0x90a0f8e2…
+#   04:27:11  announce     "I moved 33 eth to the LP…"         0xe397869a…
+#
+# Eight minutes end to end.  BRIDGE STAGE flags it at the first mint, 492 s
+# before the announcement everyone else was waiting for.  Each poll
+# feeds the previous poll's advanced baselines back in, which is what the
+# manager does and what makes the ordering claim real rather than staged.
+
+T1_STAGED = 1_786_076_520.0   # 04:22:00Z -- both mints landed, LP untouched
+T2_ADDED = 1_786_076_700.0    # 04:25:00Z -- liquidity added, no post yet
+T3_POSTED = 1_786_076_900.0   # 04:28:20Z -- the announcement landed
+
+
+def test_the_2026_08_07_sequence_fires_bridge_before_post():
+    base = _baseline()
+
+    # --- poll 1: 04:22:00Z.  Only the mints have happened.
+    out1, base = sig.build_signals(
+        base,
+        _readings(bridge_mints=[MINT_1, MINT_2], imd_supply=SUPPLY_AFTER_MINTS),
+        T1_STAGED,
+    )
+    assert out1["sig_bridge_state"] == "fired"
+    assert out1["sig_bridge_detail"] == "mint 114,367 IMD → frenpet.eth"
+    assert out1["sig_bridge_age_s"] == pytest.approx(T1_STAGED - MINT_2["ts"])
+    assert out1["sig_post_state"] == "ok"
+    assert out1["sig_lp_state"] == "ok"
+
+    # --- poll 2: 04:25:00Z.  33 ETH went in; the LP row escalates to WATCH and
+    # BRIDGE stays FIRED without re-firing on the mints it already reported.
+    out2, base = sig.build_signals(
+        base,
+        _readings(
+            bridge_mints=[MINT_1, MINT_2],
+            imd_supply=SUPPLY_AFTER_MINTS,
+            lp_liquidity=LP_LIQUIDITY_AFTER_ADD,
+            ops_nonce=38,
+        ),
+        T2_ADDED,
+    )
+    assert out2["sig_lp_state"] == "watch"
+    assert out2["sig_lp_detail"] == "LP added +33.0%"
+    assert out2["sig_bridge_state"] == "fired"
+    assert out2["sig_bridge_age_s"] == pytest.approx(T2_ADDED - MINT_2["ts"])
+    assert out2["sig_post_state"] == "ok"
+
+    # --- poll 3: 04:28:20Z.  The announcement lands last, as it always does.
+    out3, base = sig.build_signals(
+        base,
+        _readings(
+            bridge_mints=[MINT_1, MINT_2],
+            imd_supply=SUPPLY_AFTER_MINTS,
+            lp_liquidity=LP_LIQUIDITY_AFTER_ADD,
+            ops_nonce=38,
+            announce_nonce=14,
+            channel_tx_count=21,
+            announce_last_text=LP_POST_TEXT,
+            announce_last_ts=LP_POST_TS,
+        ),
+        T3_POSTED,
+    )
+    assert out3["sig_post_state"] == "fired"
+    assert out3["sig_post_detail"] == LP_POST_DETAIL
+    assert out3["sig_bridge_state"] == "fired"
+
+    # The claim itself: staging was seen first, and is older on screen.
+    assert base["fired"]["bridge"]["ts"] < base["fired"]["post"]["ts"]
+    assert out3["sig_bridge_age_s"] > out3["sig_post_age_s"]
+    # The lead time the dashboard bought, measured from the mint it reported…
+    assert base["fired"]["post"]["ts"] - base["fired"]["bridge"]["ts"] == pytest.approx(336.0)
+    # …and from the first mint of the pair, which is when the staging began.
+    assert LP_POST_TS - MINT_1["ts"] == pytest.approx(492.0)
+
+
+def test_the_replay_never_re_fires_an_event_it_already_reported():
+    """Polling the same window twice reports one event, not two."""
+    base = _baseline()
+    _, base = sig.build_signals(
+        base, _readings(bridge_mints=[MINT_1, MINT_2], imd_supply=SUPPLY_AFTER_MINTS), T1_STAGED
+    )
+    first_fired = base["fired"]["bridge"]["ts"]
+    out, base = sig.build_signals(
+        base, _readings(bridge_mints=[MINT_1, MINT_2], imd_supply=SUPPLY_AFTER_MINTS), T2_ADDED
+    )
+    assert base["fired"]["bridge"]["ts"] == first_fired
+    assert out["sig_bridge_age_s"] == pytest.approx(T2_ADDED - MINT_2["ts"])
+
+
+def test_a_rolled_log_window_does_not_look_like_a_new_event():
+    """When the newest mint scrolls out of the window, the older one is not news."""
+    base = _baseline()
+    _, base = sig.build_signals(base, _readings(bridge_mints=[MINT_1, MINT_2]), T1_STAGED)
+    out, advanced = sig.build_signals(base, _readings(bridge_mints=[MINT_1]), T2_ADDED)
+    assert out["sig_bridge_state"] == "fired"          # persisted, not re-fired
+    assert advanced["fired"]["bridge"]["ts"] == MINT_2["ts"]
+    assert advanced["bridge_tx"] == MINT_2["tx_hash"]
+
+
+# ---------------------------------------------------------------------------
+# Success criterion 3 (PRD §11): under a full outage no signal fires and no
+# baseline moves.
+# ---------------------------------------------------------------------------
+
+
+def _blackout() -> dict:
+    return {key: None for key in sig.READING_KEYS}
+
+
+def test_total_outage_fires_nothing_and_moves_nothing():
+    base = _baseline()
+    out, advanced = sig.build_signals(base, _blackout(), NOW)
+
+    for name in sig.SIGNAL_NAMES:
+        assert out[f"sig_{name}_state"] is None, name
+        assert out[f"sig_{name}_detail"].endswith("unavailable"), name
+        assert out[f"sig_{name}_age_s"] is None, name
+
+    assert {k: v for k, v in advanced.items() if k != "fired"} == {
+        k: v for k, v in base.items() if k != "fired"
+    }
+    assert advanced["fired"] == {}
+
+
+def test_total_outage_keeps_a_recent_fired_row_visible():
+    """Criterion 3 says nothing *new* fires — not that history disappears."""
+    base = _baseline(fired={"burn": {"ts": NOW - 600.0, "detail": "burn 15,745 IMD"}})
+    out, advanced = sig.build_signals(base, _blackout(), NOW)
+    assert out["sig_burn_state"] == "fired"
+    assert out["sig_burn_age_s"] == pytest.approx(600.0)
+    assert advanced["fired"]["burn"]["ts"] == NOW - 600.0
+    assert advanced["imd_supply"] == SUPPLY_BEFORE
+
+
+def test_an_empty_cache_plus_a_full_outage_is_completely_silent():
+    """First launch with the network down: six unknowns, no invented state."""
+    out, advanced = sig.build_signals({}, _blackout(), NOW)
+    assert all(out[f"sig_{name}_state"] is None for name in sig.SIGNAL_NAMES)
+    assert advanced == {"fired": {}}
