@@ -339,8 +339,135 @@ class SurfScreen(RefreshGuard, Screen):
             self._refresh_timer = None
 
     # ------------------------------------------------------------------
-    # Refresh flow (Task WP5.3 fills this in)
+    # Refresh flow
     # ------------------------------------------------------------------
 
     async def _do_refresh(self) -> None:
-        await self._data_manager.fetch_and_compute()
+        try:
+            data = await self._data_manager.fetch_and_compute()
+        except Exception as exc:
+            # Belt and braces: WP4's SurfManager.fetch_and_compute() never
+            # raises -- it guarantees the full SURF_KEYS dict with None
+            # values under every failure combination. This branch covers a
+            # mis-wired manager or a future manager edit that breaks that
+            # guarantee, not the specified outage path (see
+            # test_screen_survives_all_none_payload for the real one).
+            logger.debug("surf refresh failed: %s", exc)
+            try:
+                self.query_one(StatusBar).update_data(
+                    last_updated_seconds_ago=MANAGER_FAILURE_SECONDS,
+                    error_count=getattr(self._data_manager, "_error_count", 0),
+                    poll_interval=self._poll_interval,
+                )
+            except Exception:
+                pass
+            return
+
+        if not isinstance(data, dict):  # defensive: a broken manager contract
+            logger.debug("surf refresh returned %r, not a dict", type(data))
+            return
+
+        # Title bar
+        try:
+            self.query_one("#title-bar", Static).update(_title_line(data))
+        except Exception as exc:
+            logger.debug("Failed to update title bar: %s", exc)
+
+        # Hero (hero-row left)
+        try:
+            self.query_one(SurfHero).update_data(
+                hook_status=data.get("hook_status"),
+                lp_liquidity=data.get("lp_liquidity"),
+                lp_imd=data.get("lp_imd"),
+                lp_weth=data.get("lp_weth"),
+                lp_owner_ok=data.get("lp_owner_ok"),
+                gate_open=data.get("gate_open"),
+                identities_written=data.get("identities_written"),
+                imd_supply=data.get("imd_supply"),
+                imd_burned_cum=data.get("imd_burned_cum"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfHero: %s", exc)
+
+        # Signals (hero-row right) -- the six detectors
+        try:
+            self.query_one(SurfSignals).update_data(
+                sig_post_state=data.get("sig_post_state"),
+                sig_post_detail=data.get("sig_post_detail"),
+                sig_post_age_s=data.get("sig_post_age_s"),
+                sig_lp_state=data.get("sig_lp_state"),
+                sig_lp_detail=data.get("sig_lp_detail"),
+                sig_lp_age_s=data.get("sig_lp_age_s"),
+                sig_gate_state=data.get("sig_gate_state"),
+                sig_gate_detail=data.get("sig_gate_detail"),
+                sig_gate_age_s=data.get("sig_gate_age_s"),
+                sig_deploy_state=data.get("sig_deploy_state"),
+                sig_deploy_detail=data.get("sig_deploy_detail"),
+                sig_deploy_age_s=data.get("sig_deploy_age_s"),
+                sig_bridge_state=data.get("sig_bridge_state"),
+                sig_bridge_detail=data.get("sig_bridge_detail"),
+                sig_bridge_age_s=data.get("sig_bridge_age_s"),
+                sig_burn_state=data.get("sig_burn_state"),
+                sig_burn_detail=data.get("sig_burn_detail"),
+                sig_burn_age_s=data.get("sig_burn_age_s"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfSignals: %s", exc)
+
+        # Announce feed (middle-row left, view A)
+        try:
+            self.query_one(SurfFeed).update_data(
+                feed_items=data.get("feed_items"),
+                feed_nonce=data.get("feed_nonce"),
+                feed_last_post_age_s=data.get("feed_last_post_age_s"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfFeed: %s", exc)
+
+        # Dev activity (middle-row left, view B -- hidden, still updated)
+        try:
+            self.query_one(SurfDevActivity).update_data(
+                dev_activity=data.get("dev_activity"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfDevActivity: %s", exc)
+
+        # Market (middle-row right)
+        try:
+            self.query_one(SurfMarket).update_data(
+                imd_price_usd=data.get("imd_price_usd"),
+                imd_change_24h_pct=data.get("imd_change_24h_pct"),
+                imd_vol_24h_usd=data.get("imd_vol_24h_usd"),
+                pool_liquidity_usd=data.get("pool_liquidity_usd"),
+                fp_price_usd=data.get("fp_price_usd"),
+                parity_pct=data.get("parity_pct"),
+                supply_series=data.get("supply_series"),
+                price_series=data.get("price_series"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfMarket: %s", exc)
+
+        # NFT (bottom row)
+        try:
+            self.query_one(SurfNft).update_data(
+                nft_holders=data.get("nft_holders"),
+                nft_transfers_24h=data.get("nft_transfers_24h"),
+                nft_dev_holdings=data.get("nft_dev_holdings"),
+                nft_written=data.get("nft_written"),
+                nft_last_sales=data.get("nft_last_sales"),
+                nft_floor=data.get("nft_floor"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfNft: %s", exc)
+
+        # Status bar. A refresh that reaches this line just fetched, so the
+        # staleness is honestly 0 without consulting any clock; ``as_of`` is
+        # the *payload's* fetch instant and stays inside the widgets' strings.
+        try:
+            self.query_one(StatusBar).update_data(
+                last_updated_seconds_ago=0.0,
+                error_count=int(_num(getattr(self._data_manager, "_error_count", 0))),
+                poll_interval=self._poll_interval,
+            )
+        except Exception as exc:
+            logger.debug("Failed to update StatusBar: %s", exc)

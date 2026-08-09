@@ -419,7 +419,15 @@ async def test_screen_mounts_all_six_widgets():
         # The dev-activity view starts hidden; the feed starts showing.
         assert screen.query_one(SurfFeed).display is True
         assert screen.query_one(SurfDevActivity).display is False
-        assert "Mission Control" in _plain(screen.query_one("#title-bar"))
+        # WP5.3 wires ``_title_line`` into ``_do_refresh``, and RefreshGuard
+        # fires that refresh on screen resume, so by the time ``pilot.pause()``
+        # returns the placeholder ``INITIAL_TITLE`` has already been replaced
+        # by the fetched payload's title -- this is no longer the pre-refresh
+        # state the old assertion checked. Asserted against **composited
+        # output**, not the widget's content string (house rule): a title
+        # that never reaches the compositor would still pass a ``_plain()``
+        # check while being invisible to a real user.
+        assert "SURF · IMD $0.71 · parity -2.7% · feed #14 (23h)" in _screen_text(app)
 
 
 # -- title line (pure) ---------------------------------------------------
@@ -500,3 +508,158 @@ def test_title_line_with_a_malformed_degraded_value_never_reads_healthy():
         line = surf_mod._title_line(_frozen_payload(degraded=bad))
         assert line != healthy
         assert "degraded" in line
+
+
+# -- refresh dispatch ----------------------------------------------------
+
+
+def _record_dispatches(screen) -> dict[str, list[dict]]:
+    """Wrap every widget's ``update_data`` so we can see what it was handed."""
+    calls: dict[str, list[dict]] = {name: [] for name in _WIDGET_CLASSES}
+
+    def _wrap(name: str, original):
+        def recorder(**kwargs):
+            calls[name].append(kwargs)
+            return original(**kwargs)
+
+        return recorder
+
+    for name, cls in _WIDGET_CLASSES.items():
+        widget = screen.query_one(cls)
+        widget.update_data = _wrap(name, widget.update_data)
+
+    return calls
+
+
+async def test_screen_dispatches_every_data_key():
+    """Every ``SURF_KEYS`` group reaches the widget that owns it."""
+    manager = _FakeManager()
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _Harness(screen)
+    async with app.run_test(size=(150, 46)) as pilot:
+        await pilot.pause()
+        calls = _record_dispatches(screen)
+        await screen._do_refresh()
+        await pilot.pause()
+        assert manager.calls >= 1
+
+        dispatched: set[str] = set()
+        for name, signature in SURF_WIDGET_SIGNATURES.items():
+            assert calls[name], f"{name}.update_data was never called"
+            kwargs = calls[name][-1]
+            assert set(kwargs) == set(signature), (
+                f"{name} got {sorted(set(kwargs) ^ set(signature))} "
+                "off-contract"
+            )
+            dispatched |= set(kwargs)
+
+        # Nothing in the contract goes unrendered: it is either a widget
+        # kwarg or a meta key the screen itself consumes.
+        unconsumed = set(SURF_KEYS) - dispatched - META_KEYS
+        assert not unconsumed, f"contract keys reach no widget: {sorted(unconsumed)}"
+
+
+async def test_refresh_renders_title_and_all_panels():
+    manager = _FakeManager()
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _Harness(screen)
+    async with app.run_test(size=(150, 46)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        title = _plain(screen.query_one("#title-bar"))
+        assert "SURF · IMD $0.71 · parity -2.7% · feed #14 (23h)" in title
+
+        text = _screen_text(app)
+        # Panel titles (the WP3 widget-interface strings).
+        assert "SIGNALS" in text
+        assert "ANNOUNCE FEED" in text
+        assert "MARKET" in text
+        assert "IDMD NFT" in text
+        # The hook vocabulary the manager actually emits reaches the hero in
+        # words. ``NOT_LIVE`` (underscore) is WP3's *fallback* headline for an
+        # unrecognised value, so asserting its absence is the tripwire against
+        # this fixture drifting back to the lowercase-snake spelling — both
+        # forms are 8 characters, so both survive the hero box's
+        # ``text-overflow: ellipsis`` here and the two stay separable.
+        assert "NOT LIVE" in text
+        assert "NOT_LIVE" not in text
+        # The observed burn reached the hero, and PRD §1's all-time ledger is
+        # nowhere on screen — the manager cannot produce it. Only the prefix is
+        # asserted: at 150 columns a hero box has 14 content columns
+        # (150·3/5 = 90, −2 screen padding = 88, ÷4 boxes = 22, −2 margin
+        # −2 border −4 padding), so WP3.2's full ``burned 15,745 observed``
+        # copy is ellipsised. The exact string is WP3's to pin at box width.
+        assert "burned 15,7" in text
+        assert "58,848" not in text
+        # The clipping trap: all six detector rows reach the compositor.
+        # SurfSignals is six rows + title inside #hero-row's fixed height —
+        # if a theme or CSS change costs it a row, BURN (the last) goes first.
+        for label in ("NEW POST", "LP MIGRATION", "GATE OPEN",
+                      "NEW DEPLOY", "BRIDGE STAGE", "BURN"):
+            assert label in text, f"detector row {label!r} clipped or missing"
+        # The floor is explicitly unavailable, never faked (PRD §4).
+        assert "no keyless source" in text
+
+
+async def test_screen_survives_manager_exception():
+    """Belt and braces: the screen stands; only the StatusBar is marked.
+
+    This is **not** the specified outage path — WP4's manager never raises,
+    it returns all-``None`` (see ``test_screen_survives_all_none_payload``,
+    which is the real-outage test).  A raising manager models a mis-wired or
+    non-manager object, i.e. a programming error, and this test exists so
+    that error degrades instead of killing the app.
+    """
+    manager = _FakeManager(raises=True)
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _Harness(screen)
+    async with app.run_test(size=(150, 46)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()   # must not raise
+        await pilot.pause()
+
+        status = screen.query_one(StatusBar).query_one("#status-left")
+        rendered = _plain(status)
+        assert "updated 999s ago" in rendered
+        assert "3 errors" in rendered   # manager's _error_count is surfaced
+
+        # The title bar was not half-overwritten with a broken frame.
+        assert "Mission Control" in _plain(screen.query_one("#title-bar"))
+        # Every widget is still mounted and rendering.
+        text = _screen_text(app)
+        assert "SIGNALS" in text
+        assert "IDMD NFT" in text
+
+
+async def test_screen_survives_all_none_payload():
+    """A full outage renders explicit unavailable states, never zeros."""
+    manager = _FakeManager(payload=_all_none_payload())
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _Harness(screen)
+    async with app.run_test(size=(150, 46)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()   # must not raise
+        await pilot.pause()
+
+        title = _plain(screen.query_one("#title-bar"))
+        assert "SURF · IMD — · parity — · feed #— (—)" in title
+        text = _screen_text(app)
+        assert "$0.00" not in text     # a None price is never a zero price
+        assert "no keyless source" in text
+
+
+async def test_degraded_sources_reach_the_title_bar():
+    manager = _FakeManager(
+        payload=_frozen_payload(degraded=["logs", "market"], lp_owner_ok=False)
+    )
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _Harness(screen)
+    async with app.run_test(size=(150, 46)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        text = _screen_text(app)
+        assert "degraded: logs, market" in text
+        assert "LP owner changed" in text
