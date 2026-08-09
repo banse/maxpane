@@ -1130,13 +1130,27 @@ def test_the_2026_08_07_sequence_fires_bridge_before_post():
     assert out3["sig_post_detail"] == LP_POST_DETAIL
     assert out3["sig_bridge_state"] == "fired"
 
-    # The claim itself: staging was seen first, and is older on screen.
-    assert base["fired"]["bridge"]["ts"] < base["fired"]["post"]["ts"]
-    assert out3["sig_bridge_age_s"] > out3["sig_post_age_s"]
-    # The lead time the dashboard bought, measured from the mint it reported…
-    assert base["fired"]["post"]["ts"] - base["fired"]["bridge"]["ts"] == pytest.approx(336.0)
-    # …and from the first mint of the pair, which is when the staging began.
-    assert LP_POST_TS - MINT_1["ts"] == pytest.approx(492.0)
+    # The claim itself: BRIDGE STAGE's first FIRED poll is strictly earlier
+    # than NEW POST's.  A bare timestamp comparison here would be tautological
+    # -- `fired[name]["ts"]` is the chain event's own timestamp, not a
+    # detection-order marker, so `fired["bridge"]["ts"] < fired["post"]["ts"]`
+    # reduces to `MINT_2["ts"] < LP_POST_TS`, provable straight from the
+    # fixture JSON with zero calls into build_signals, and it would hold even
+    # if a single poll detected both signals at once or in reverse order.
+    # This instead asks which *poll* first rendered each signal as "fired",
+    # which is exactly the poll-order-sensitive claim the criterion makes.
+    polls = (out1, out2, out3)
+
+    def _first_fired_poll(name: str) -> int | None:
+        for index, out in enumerate(polls, start=1):
+            if out[f"sig_{name}_state"] == "fired":
+                return index
+        return None
+
+    bridge_first_fired = _first_fired_poll("bridge")
+    post_first_fired = _first_fired_poll("post")
+    assert bridge_first_fired is not None and post_first_fired is not None
+    assert bridge_first_fired < post_first_fired
 
 
 def test_the_replay_never_re_fires_an_event_it_already_reported():
