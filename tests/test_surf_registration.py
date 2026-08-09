@@ -287,3 +287,93 @@ def test_a_typo_is_still_rejected(monkeypatch) -> None:
     """The choices list stays a whitelist -- ``--game surfs`` must exit 2."""
     with pytest.raises(SystemExit):
         _run_cli(monkeypatch, ["--game", "surfs"])
+
+
+# ---------------------------------------------------------------------------
+# game_select.py: the menu row -- the surface a user actually presses
+# ---------------------------------------------------------------------------
+
+
+def test_surf_is_menu_entry_seven() -> None:
+    """The row is asserted verbatim so the copy cannot drift silently."""
+    row = next((g for g in GAMES if g[1] == "surf"), None)
+    assert row is not None, "surf is not registered in GAMES"
+    assert tuple(row) == SURF_ROW, f"menu row drifted: {row}"
+
+
+def test_the_menu_and_the_tab_cycle_offer_the_same_games_in_the_same_order() -> None:
+    """Two orderings of one list are one bug waiting to happen.
+
+    ``_GAME_CYCLE`` and ``GAMES`` are separate literals in separate files;
+    this is the assertion that keeps them in step, and it is derived from
+    both rather than restating either.
+    """
+    assert MaxPaneApp._GAME_CYCLE == [game_id for _key, game_id, *_ in GAMES]
+
+
+def test_the_cli_choices_are_exactly_the_menu(monkeypatch) -> None:
+    """CLI -> menu, the direction ``test_cli_game_choices`` does not assert.
+
+    It checks that every menu entry is an accepted choice; this checks that
+    every accepted choice is a menu entry, in order.  Together they pin the
+    two lists to each other.
+    """
+    import argparse
+
+    seen: dict[str, list[str]] = {}
+    real_add_argument = argparse.ArgumentParser.add_argument
+
+    def spy(self, *args, **kwargs):
+        if args and args[0] == "--game":
+            seen["choices"] = list(kwargs.get("choices") or [])
+        return real_add_argument(self, *args, **kwargs)
+
+    monkeypatch.setattr(argparse.ArgumentParser, "add_argument", spy)
+    _run_cli(monkeypatch, [])
+
+    assert seen["choices"] == [game_id for _key, game_id, *_ in GAMES]
+
+
+def test_pressing_seven_opens_the_surf_dashboard() -> None:
+    """The whole path: splash -> menu -> the key the row advertises.
+
+    The key is read out of ``GAMES`` rather than typed as "7", so a future
+    reorder moves this test with the menu instead of breaking it.
+    """
+    from maxpane_dashboard.screens.surf import SurfScreen
+
+    key = next(k for k, game_id, *_ in GAMES if game_id == "surf")
+
+    async def _run() -> None:
+        app, _stubs = _stubbed_app("surf")
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("space")
+            await pilot.pause()
+            assert isinstance(app.screen, GameSelectScreen)
+            await pilot.press(key)
+            await pilot.pause()
+
+            assert isinstance(app.screen, SurfScreen)
+            assert app.screen.name == "surf"
+            assert app._exception is None
+        assert app.return_code != 1
+
+    asyncio.run(_run())
+
+
+def test_the_menu_lists_the_surf_row() -> None:
+    """The row reaches the compositor -- not merely the GAMES list."""
+
+    async def _run() -> None:
+        app, _stubs = _stubbed_app("surf")
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("space")
+            await pilot.pause()
+            text = _screen_text(app)
+            assert "[7]" in text
+            assert SURF_ROW[2] in text          # Mission Control
+            assert "announce channel" in text   # from the description
+
+    asyncio.run(_run())
