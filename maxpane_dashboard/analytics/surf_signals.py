@@ -45,7 +45,7 @@ Pattern: ``maxpane_dashboard/analytics/fwa_signals.py``.
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, NamedTuple
 
 from maxpane_dashboard.data.surf_addresses import ANNOUNCE, DEV_WALLET, OPS_WALLET
 from maxpane_dashboard.data.surf_models import CHANNEL_KINDS
@@ -64,6 +64,9 @@ __all__ = [
     "CHANNEL_KINDS",
     "classify_channel_tx",
     "parity_pct",
+    "SIGNAL_NAMES",
+    "SIGNAL_OUTPUT_KEYS",
+    "build_signals",
 ]
 
 
@@ -339,3 +342,294 @@ def _short_addr(value: Any) -> str:
     if len(text) < 20:
         return text
     return f"{text[:10]}…{text[-6:]}"
+
+
+# ---------------------------------------------------------------------------
+# The six detectors
+# ---------------------------------------------------------------------------
+
+
+class _Det(NamedTuple):
+    """One detector's verdict for one refresh.
+
+    ``fired_ts`` set means *this refresh detected the event*; the state machine
+    then records it in the persisted fired store.  ``state = None`` means the
+    inputs this detector needs were unavailable — explicitly unknown, which is
+    a different thing from ``ok``.
+    """
+
+    state: str | None
+    detail: str
+    fired_ts: float | None = None
+
+
+def _ok(detail: str) -> _Det:
+    return _Det(STATE_OK, detail, None)
+
+
+def _watch(detail: str) -> _Det:
+    return _Det(STATE_WATCH, detail, None)
+
+
+def _fired(detail: str, ts: float | None) -> _Det:
+    return _Det(STATE_FIRED, detail, ts)
+
+
+def _dead(detail: str) -> _Det:
+    return _Det(None, detail, None)
+
+
+def _rows(events: Any) -> list[dict]:
+    """The dict rows of an event list; anything else is dropped.
+
+    A single malformed row must not take a detector down — it is a log decode
+    away from an attacker-influenced field.
+    """
+    if not isinstance(events, (list, tuple)):
+        return []
+    return [row for row in events if isinstance(row, dict)]
+
+
+def _newest(rows: list[dict]) -> dict | None:
+    """The row with the highest ``ts``; ``None`` for an empty list."""
+    if not rows:
+        return None
+    return max(rows, key=lambda row: _as_float(row.get("ts")) or 0.0)
+
+
+_ZERO_ADDRESS = "0x" + "0" * 40
+
+
+def _event_rows(read_key: str, events: Any) -> list[dict] | None:
+    """Normalised rows for an event stream; ``None`` when the read failed.
+
+    ``v4_hook_pools`` is filtered here rather than in the detector so the
+    baseline and the detector agree: all 19 live IMD v4 pools are third-party
+    and **hookless**, and a hookless ``Initialize`` is noise, not the launch.
+    Filtering in one place only would let noise advance the baseline past a
+    real hooked pool.
+    """
+    if events is None:
+        return None
+    rows = _rows(events)
+    if read_key == "v4_hook_pools":
+        rows = [
+            row
+            for row in rows
+            if _addr(row.get("hooks")) not in ("", _ZERO_ADDRESS)
+        ]
+    return rows
+
+
+def _fresh_event(base: dict, tx_key: str, ts_key: str, rows: list[dict] | None) -> dict | None:
+    """The newest event that is genuinely new, or ``None``.
+
+    Three ways this returns ``None``, and each one is a bug that would
+    otherwise ship:
+
+    * ``rows is None`` — the read failed.  An outage detects nothing.
+    * the baseline key is **absent** — this is the first successful read of
+      this window ever, so it *seeds*.  Without this, an empty cache reports
+      every historical event as breaking news on first launch.
+    * the newest row is the one already recorded, or is **older** than it — the
+      log window rolled, and a window that lost its newest row must not make
+      the second-newest look new.
+    """
+    if not rows:
+        return None
+    newest = _newest(rows)
+    if newest is None:
+        return None
+    seen_tx = base.get(tx_key)
+    if seen_tx is None:
+        return None
+    if str(newest.get("tx_hash") or "") == str(seen_tx):
+        return None
+    ts = _as_float(newest.get("ts")) or 0.0
+    if ts <= (_as_float(base.get(ts_key)) or 0.0):
+        return None
+    return newest
+
+
+# --- 1. NEW POST -----------------------------------------------------------
+
+
+def _detect_post(base: dict, read: dict, now: float) -> _Det:
+    """Channel nonce moved -> the dev posted (PRD §3 #1).
+
+    The cheapest and earliest of the six: these txs emit **no logs**, so every
+    event-driven watcher is structurally blind to them and a nonce poll sees a
+    post within one refresh interval.  ``channel_tx_count`` moving without the
+    nonce means somebody *else* wrote to the channel — worth a WATCH, never a
+    post.
+    """
+    nonce = _as_int(read.get("announce_nonce"))
+    if nonce is None:
+        return _dead("channel unavailable")
+
+    base_nonce = _as_int(base.get("announce_nonce"))
+    if base_nonce is None:
+        return _ok(f"nonce {nonce} · baseline set")
+
+    if nonce > base_nonce:
+        text = read.get("announce_last_text")
+        body = f' "{_truncate(text)}"' if isinstance(text, str) and text.strip() else ""
+        return _fired(f"#{nonce}{body}", _as_float(read.get("announce_last_ts")))
+
+    tx_count = _as_int(read.get("channel_tx_count"))
+    base_txs = _as_int(base.get("channel_tx_count"))
+    if tx_count is not None and base_txs is not None and tx_count > base_txs:
+        return _watch(f"reply on channel · {tx_count} txs")
+
+    return _ok(f"nonce {nonce} · no new post")
+
+
+# --- registry --------------------------------------------------------------
+
+#: ``(name, detector)`` in render order.  :data:`SIGNAL_NAMES` and
+#: :data:`SIGNAL_OUTPUT_KEYS` are derived from it, so the module can never
+#: advertise a key it does not emit.
+_DETECTORS: tuple[tuple[str, Any], ...] = (
+    ("post", _detect_post),
+)
+
+SIGNAL_NAMES: tuple[str, ...] = tuple(name for name, _ in _DETECTORS)
+
+#: The PRD §5 signal keys, in order: ``sig_<name>_state|detail|age_s``.
+SIGNAL_OUTPUT_KEYS: tuple[str, ...] = tuple(
+    f"sig_{name}_{field}"
+    for name in SIGNAL_NAMES
+    for field in ("state", "detail", "age_s")
+)
+
+
+# ---------------------------------------------------------------------------
+# The state machine
+# ---------------------------------------------------------------------------
+
+
+def _fired_store(baselines: dict) -> dict[str, dict]:
+    """The persisted ``{signal: {ts, detail}}`` map, defensively parsed."""
+    raw = baselines.get("fired")
+    store: dict[str, dict] = {}
+    if not isinstance(raw, dict):
+        return store
+    for name, entry in raw.items():
+        if name not in SIGNAL_NAMES or not isinstance(entry, dict):
+            continue
+        ts = _as_float(entry.get("ts"))
+        if ts is None:
+            continue
+        store[name] = {"ts": ts, "detail": str(entry.get("detail") or "")}
+    return store
+
+
+def _advance(baselines: dict, readings: dict) -> dict:
+    """The baselines to persist after this refresh.
+
+    Two rules, and every correctness bug in this module is one of them being
+    skipped:
+
+    1. A scalar baseline moves **only** when its reading is not ``None``.  A
+       failed read leaves the previous value in place — it never writes a
+       sentinel into persisted state (CLAUDE.md).
+    2. Counters in :data:`MONOTONIC_BASELINES` never move down.
+
+    Event streams keep ``(tx, ts)``.  A *successful but empty* read seeds the
+    pair with ``("", 0.0)`` — "the window was read and held nothing" — which is
+    what lets the next event fire; an outage (``None``) leaves the pair alone.
+    """
+    out = {key: value for key, value in baselines.items() if key != "fired"}
+
+    for key in BASELINE_SCALARS:
+        value = readings.get(key)
+        if value is None:
+            continue
+        if key in MONOTONIC_BASELINES:
+            previous = _as_int(out.get(key))
+            current = _as_int(value)
+            if previous is not None and current is not None and current < previous:
+                continue
+        out[key] = value
+
+    for read_key, (tx_key, ts_key) in BASELINE_EVENT_KEYS.items():
+        rows = _event_rows(read_key, readings.get(read_key))
+        if rows is None:
+            continue
+        newest = _newest(rows)
+        if newest is None:
+            if tx_key not in out:
+                out[tx_key] = ""
+                out[ts_key] = 0.0
+            continue
+        ts = _as_float(newest.get("ts")) or 0.0
+        previous_ts = _as_float(out.get(ts_key))
+        if previous_ts is None or ts >= previous_ts:
+            out[tx_key] = str(newest.get("tx_hash") or "")
+            out[ts_key] = ts
+
+    return out
+
+
+def build_signals(
+    baselines: dict,
+    readings: dict,
+    now_ts: float,
+) -> tuple[dict, dict]:
+    """The detector rows plus the baselines to persist.
+
+    Returns ``(signals, advanced_baselines)`` where ``signals`` holds exactly
+    :data:`SIGNAL_OUTPUT_KEYS`.
+
+    The FIRED store is consulted **before** the live state is rendered and
+    regardless of whether this refresh could read anything, which is the rule
+    that stops a network blip from silently retracting an event the user was
+    already shown.  A relaxed row keeps the event as ``last: …`` and keeps its
+    age, so "nothing is happening" and "nothing has *ever* happened" never look
+    the same.
+
+    A detector may also *detect* an event that is already older than the TTL —
+    a wide log window against a cold cache.  That is recorded as history and
+    rendered ``ok`` with a ``last: …`` detail rather than as a fresh FIRED row:
+    the same instinct as the first-sweep seeding rule, one layer up.
+
+    ``now_ts`` is injected and there is no wall-clock fallback: that is what
+    makes the 2026-08-07 replay reproducible forever.
+    """
+    base = baselines if isinstance(baselines, dict) else {}
+    read = readings if isinstance(readings, dict) else {}
+    now = float(now_ts)
+
+    fired = _fired_store(base)
+    signals: dict[str, Any] = {}
+
+    for name, detect in _DETECTORS:
+        det = detect(base, read, now)
+        if det.fired_ts is not None or det.state == STATE_FIRED:
+            event_ts = det.fired_ts if det.fired_ts is not None else now
+            fired[name] = {"ts": min(float(event_ts), now), "detail": det.detail}
+
+        entry = fired.get(name)
+        if entry is not None and now - entry["ts"] < FIRED_TTL_S:
+            signals[f"sig_{name}_state"] = STATE_FIRED
+            signals[f"sig_{name}_detail"] = entry["detail"]
+            signals[f"sig_{name}_age_s"] = max(0.0, now - entry["ts"])
+            continue
+
+        state = det.state
+        detail = det.detail
+        if state == STATE_FIRED:
+            # Detected now, but the event itself is older than the TTL -- a wide
+            # log window on a cold cache.  That is history, not news: the row
+            # must not shout, and the text survives in the `last:` clause.
+            state = STATE_OK
+            detail = ""
+        if entry is not None:
+            detail = f"{detail} · last: {entry['detail']}" if detail else f"last: {entry['detail']}"
+        signals[f"sig_{name}_state"] = state
+        signals[f"sig_{name}_detail"] = detail
+        signals[f"sig_{name}_age_s"] = None if entry is None else max(0.0, now - entry["ts"])
+
+    advanced = _advance(base, read)
+    advanced["fired"] = {name: dict(entry) for name, entry in fired.items()}
+    return signals, advanced

@@ -337,4 +337,258 @@ def test_short_addr_matches_the_prd_poisoning_format():
     assert sig._short_addr("0xd6C6d48e8ff38DD7F242E34442FBdaA10eCF7A44") == "0xd6C6d48e…CF7A44"
     assert sig._short_addr("0x8004A169FB4a3325136EB29fA0ceB6D2e539a432") == "0x8004A169…39a432"
     assert sig._short_addr("0x00") == "0x00"
+
+
+# ---------------------------------------------------------------------------
+# build_signals — the six detectors
+#
+# Every payload below is the real 2026-08-07 sequence out of
+# tests/fixtures/surf/captures/.  NOW is 2026-08-07T05:20:00Z, 53 minutes after
+# the LP-add post, so all of that day's events are inside the 24 h FIRED TTL.
+# ---------------------------------------------------------------------------
+
+NOW = 1_786_080_000.0        # 2026-08-07T05:20:00Z
+
+# ops_eth_token_transfers.json — the two OFT bridge-in mints to frenpet.eth.
+MINT_1 = {
+    "ts": 1_786_076_339.0,
+    "tx_hash": "0x17084b1bfc998a457416c1ba9689f50ca04efc6e160b7e28d4c75dc89bcea85c",
+    "amount": 10_000.0,
+    "to_label": "frenpet.eth",
+}
+MINT_2 = {
+    "ts": 1_786_076_495.0,
+    "tx_hash": "0xc7acbcc0b164a0eaecb1220484e97d410bb159ca42d3c61165a26fe03c1d0a01",
+    "amount": 114_366.899256,
+    "to_label": "frenpet.eth",
+}
+# ops_eth_txs.json / ops_eth_token_transfers.json — IMD -> BurnExecutor.
+BURN_0731 = {
+    "ts": 1_785_464_459.0,
+    "tx_hash": "0xa25b08cfc4b2ca2ada16374001e377961514b50985d887ffcfc60a5194e5cd5c",
+    "amount": 31_064.0,
+}
+BURN_0805 = {
+    "ts": 1_785_903_035.0,
+    "tx_hash": "0x11bf8d3e3fd83538faa906521c5f5f0592f6b6117c3d4967c97f05b3ae753a6e",
+    "amount": 15_745.0,
+}
+# announce_eth_txs.json nonce 4 — the ERC-8004 registration, the exact shape
+# NEW DEPLOY watches for.
+REGISTER_ACTION = {
+    "ts": 1_779_469_691.0,
+    "tx_hash": "0xa4ce159e5100eba90d231efb103b2c727a25660bacf9a2f02de569a4a1d1c1c2",
+    "kind": "action",
+    "label": "register()",
+    "wallet_label": "announce",
+}
+# The same call replayed into the current poll window.  The matrix pins one
+# clock, and NEW DEPLOY's FIRED row is about an event that just happened; the
+# real 2026-05-22 timestamp is exercised by
+# ``test_an_event_older_than_the_ttl_renders_as_history_not_news``.
+FRESH_ACTION = {**REGISTER_ACTION, "ts": NOW - 240.0}
+# announce_eth_txs.json nonce 13.
+LP_POST_TS = 1_786_076_831.0
+LP_POST_TEXT = (
+    "I moved 33 eth to the LP on mainnet https://etherscan.io/tx/"
+    "0x90a0f8e2b039e8d86d1b10e33e61e12d13728444e0a9e5ac258051cccb64d669. "
+    "Hopefully in the coming days will be able to share more what been "
+    "working on, as always 0 promises."
+)
+LP_POST_DETAIL = '#14 "I moved 33 eth to the LP on mainnet https://eth…"'
+
+# SYNTHETIC: no hooked IMD v4 pool exists yet — all 19 live ones have
+# hooks=0x0.  The hook address is the dev's *existing* Vibecoins launchpad
+# hook, used here only to give the row a realistic non-zero value.
+HOOKLESS_POOL = {
+    "ts": 1_786_000_000.0,
+    "tx_hash": "0x" + "b0" * 32,
+    "hooks": "0x0000000000000000000000000000000000000000",
+}
+HOOKED_POOL = {
+    "ts": 1_786_079_000.0,
+    "tx_hash": "0x" + "a5" * 32,
+    "hooks": "0xd6C6d48e8ff38DD7F242E34442FBdaA10eCF7A44",
+}
+
+# Supply before the 2026-08-07 bridge-in: the live 2,376,731.868679 from
+# imd_token.json minus the two mints.
+SUPPLY_BEFORE = 2_252_364.969423
+SUPPLY_AFTER_MINTS = 2_376_731.868679
+LP_LIQUIDITY_BEFORE = 1_000_000_000_000
+LP_LIQUIDITY_AFTER_ADD = 1_330_000_000_000     # +33.0%
+
+
+def _baseline(**overrides) -> dict:
+    """The persisted state as of 2026-08-06 — the day before the LP add."""
+    base = {
+        "announce_nonce": 13,
+        "channel_tx_count": 20,
+        "lp_liquidity": LP_LIQUIDITY_BEFORE,
+        "ops_nonce": 36,
+        "dev_nonce": 2350,
+        "gate_open": False,
+        "identities_written": 1,
+        "imd_supply": SUPPLY_BEFORE,
+        "bridge_tx": "",
+        "bridge_ts": 0.0,
+        "deploy_tx": "",
+        "deploy_ts": 0.0,
+        "v4_tx": "",
+        "v4_ts": 0.0,
+        "burn_tx": BURN_0731["tx_hash"],
+        "burn_ts": BURN_0731["ts"],
+        "fired": {},
+    }
+    base.update(overrides)
+    return base
+
+
+def _readings(**overrides) -> dict:
+    """A quiet refresh: everything read successfully, nothing moved."""
+    read = {
+        "announce_nonce": 13,
+        "channel_tx_count": 20,
+        "announce_last_text": None,
+        "announce_last_ts": None,
+        "lp_liquidity": LP_LIQUIDITY_BEFORE,
+        "ops_nonce": 36,
+        "dev_nonce": 2350,
+        "v4_hook_pools": [],
+        "gate_open": False,
+        "identities_written": 1,
+        "deploy_events": [],
+        "bridge_mints": [],
+        "burn_transfers": [],
+        "imd_supply": SUPPLY_BEFORE,
+    }
+    read.update(overrides)
+    return read
+
+
+def _sig(name: str, baselines: dict, readings: dict, now: float = NOW) -> tuple:
+    """``(state, detail, age_s)`` for one detector."""
+    out, _ = sig.build_signals(baselines, readings, now)
+    return (
+        out[f"sig_{name}_state"],
+        out[f"sig_{name}_detail"],
+        out[f"sig_{name}_age_s"],
+    )
+
+
+def test_output_keys_are_exactly_the_prd_contract():
+    out, _ = sig.build_signals(_baseline(), _readings(), NOW)
+    assert set(out) == set(sig.SIGNAL_OUTPUT_KEYS)
+    # WP2.4 lands NEW POST only; the other five detectors (lp, gate, deploy,
+    # bridge, burn) are later tasks in this same work package appending to
+    # this same _DETECTORS registry. Asserting the full six-name PRD roster
+    # here would be asserting a future task's state, not this one's.
+    assert sig.SIGNAL_NAMES == ("post",)
+
+
+def test_quiet_refresh_leaves_post_ok():
+    assert _sig("post", _baseline(), _readings()) == (
+        "ok", "nonce 13 · no new post", None
+    )
+
+
+def test_new_post_fires_with_the_decoded_body():
+    """The flagship: nonce 13 -> 14 with the LP-add message."""
+    state, detail, age = _sig(
+        "post",
+        _baseline(),
+        _readings(
+            announce_nonce=14,
+            channel_tx_count=21,
+            announce_last_text=LP_POST_TEXT,
+            announce_last_ts=LP_POST_TS,
+        ),
+    )
+    assert state == "fired"
+    assert detail == LP_POST_DETAIL
+    assert age == pytest.approx(NOW - LP_POST_TS)
+
+
+def test_a_reply_is_a_watch_not_a_post():
+    """Replies raise the Blockscout tx count without moving the nonce.
+
+    Anyone can write to the channel; a reply is worth surfacing but it is not
+    the dev speaking (PRD §6.4).
+    """
+    assert _sig("post", _baseline(), _readings(channel_tx_count=21)) == (
+        "watch", "reply on channel · 21 txs", None
+    )
+
+
+def test_first_ever_read_seeds_the_baseline_and_never_fires():
+    """An empty cache must not report the whole history as brand-new.
+
+    This is the false-first-sweep regression that shipped once already
+    (2b0b43c, 'stop the first sweep of every launch reporting a false
+    mismatch').
+    """
+    state, detail, age = _sig("post", {}, _readings(announce_nonce=14))
+    assert state == "ok"
+    assert detail == "nonce 14 · baseline set"
+    assert age is None
+
+
+def test_channel_outage_is_none_not_ok():
+    assert _sig(
+        "post", _baseline(), _readings(announce_nonce=None, channel_tx_count=None)
+    ) == (None, "channel unavailable", None)
+
+
+def test_baselines_advance_only_on_successful_reads():
+    _, advanced = sig.build_signals(
+        _baseline(),
+        _readings(announce_nonce=None, lp_liquidity=None, imd_supply=None, gate_open=None),
+        NOW,
+    )
+    assert advanced["announce_nonce"] == 13
+    assert advanced["lp_liquidity"] == LP_LIQUIDITY_BEFORE
+    assert advanced["imd_supply"] == SUPPLY_BEFORE
+    assert advanced["gate_open"] is False
+
+
+def test_a_lagging_replica_cannot_drag_a_nonce_baseline_down():
+    """Nonces only go up.
+
+    A replica that answers 13 after we recorded 14 would otherwise reset the
+    baseline, and the next correct answer (14) would re-fire NEW POST with a
+    message the user already read.
+    """
+    _, advanced = sig.build_signals(
+        _baseline(announce_nonce=14), _readings(announce_nonce=13), NOW
+    )
+    assert advanced["announce_nonce"] == 14
+    state, _, _ = _sig("post", _baseline(announce_nonce=14), _readings(announce_nonce=13))
+    assert state == "ok"
+
+
+def test_fired_persists_for_24h_then_relaxes_with_a_last_detail():
+    """PRD §3: FIRED holds for FIRED_TTL_S with its age, then relaxes."""
+    fired_at = NOW - 3600.0
+    base = _baseline(fired={"post": {"ts": fired_at, "detail": LP_POST_DETAIL}})
+    assert _sig("post", base, _readings()) == ("fired", LP_POST_DETAIL, 3600.0)
+
+    # Exactly at the TTL it is no longer FIRED (strict <).
+    edge = _baseline(fired={"post": {"ts": NOW - sig.FIRED_TTL_S, "detail": LP_POST_DETAIL}})
+    state, detail, age = _sig("post", edge, _readings())
+    assert state == "ok"
+    assert detail == f"nonce 13 · no new post · last: {LP_POST_DETAIL}"
+    assert age == pytest.approx(float(sig.FIRED_TTL_S))
+
+
+def test_fired_events_survive_a_restart_through_the_returned_baselines():
+    """The advanced baselines carry the fired store back to the cache."""
+    _, advanced = sig.build_signals(
+        _baseline(),
+        _readings(announce_nonce=14, announce_last_text="soon", announce_last_ts=LP_POST_TS),
+        NOW,
+    )
+    assert advanced["fired"]["post"]["ts"] == LP_POST_TS
+    assert advanced["fired"]["post"]["detail"] == '#14 "soon"'
+    # Replayed from the persisted state with no new event: still FIRED.
+    assert _sig("post", advanced, _readings(announce_nonce=14))[0] == "fired"
     assert sig._short_addr(None) == ""
