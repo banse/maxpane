@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pytest
 
+from maxpane_dashboard.analytics import surf_signals
 from maxpane_dashboard.data.surf_cache import (
     SERIES_IMD_PRICE_USD,
     SERIES_IMD_SUPPLY,
@@ -1446,3 +1447,461 @@ async def test_a_chain_outage_degrades_only_the_chain_group(tmp_path):
     assert data["imd_price_usd"] == pytest.approx(IMD_PRICE_USD)
     assert data["nft_holders"] == NFT_HOLDERS
     assert data["imd_supply"] is None
+
+
+# ---------------------------------------------------------------------------
+# Signals — driven through the real analytics/surf_signals.py, not a double
+# ---------------------------------------------------------------------------
+
+# Both come from WP2, and `SIGNAL_NAMES` deliberately does **not** come from
+# the manager: WP2 derives it from `_DETECTORS`, so importing it from there is
+# what makes this suite assert against the real registry instead of against the
+# manager's own copy of it. A local copy in `data/` would keep `_signal_keys`
+# reading WP0's spellings out of a dict keyed by WP2's — eighteen `sig_*` keys
+# silently `None`, and `test_every_signal_contributes_three_keys` comparing the
+# manager against itself and passing.
+from maxpane_dashboard.analytics.surf_signals import (   # noqa: E402
+    FIRED_TTL_S,
+    SIGNAL_NAMES,
+)
+
+
+async def test_every_signal_contributes_three_keys(manager):
+    data = await manager.fetch_and_compute()
+    for name in SIGNAL_NAMES:
+        assert f"sig_{name}_state" in data
+        assert f"sig_{name}_detail" in data
+        assert f"sig_{name}_age_s" in data
+    assert data["sig_post_state"] in ("ok", "watch", "fired", None)
+
+
+async def test_a_new_post_fires_within_one_cycle(tmp_path):
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+
+    first = await m.fetch_and_compute()
+    assert first["sig_post_state"] != "fired"     # the first read only baselines
+
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE
+    )
+    clock.advance(30.0)
+    # The page that nonce belongs to, carrying the post that just landed. The
+    # FIRED age asserted below is `now - announce_last_ts`, so handing back the
+    # unchanged `_channel_txs()` page here would date brand-new news to the
+    # *previous* post — 600 s old in this fixture — and the assertion would be
+    # pinning the wrong fact while still saying "fired".
+    client._returns["fetch_channel_txs"] = _posted_channel_txs(clock.t)
+    second = await m.fetch_and_compute()
+    assert second["sig_post_state"] == "fired"
+    assert second["sig_post_age_s"] == pytest.approx(0.0, abs=1.0)
+
+    # Baselines advance immediately, so the *same* post never re-fires...
+    clock.advance(30.0)
+    third = await m.fetch_and_compute()
+    assert third["sig_post_state"] == "fired"     # ...but the display persists 24 h
+    assert third["sig_post_age_s"] == pytest.approx(30.0, abs=1.0)
+
+
+async def test_a_fired_display_relaxes_after_its_ttl(tmp_path):
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+    await m.fetch_and_compute()
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE
+    )
+    clock.advance(30.0)
+    # Dated to the fire moment, so the advance below is exactly one TTL past the
+    # event rather than one TTL past the event plus the fixture post's own age.
+    client._returns["fetch_channel_txs"] = _posted_channel_txs(clock.t)
+    await m.fetch_and_compute()
+
+    clock.advance(FIRED_TTL_S + 60.0)
+    relaxed = await m.fetch_and_compute()
+    assert relaxed["sig_post_state"] == "ok"
+    assert "last" in (relaxed["sig_post_detail"] or "")
+
+
+async def test_a_restart_neither_resurrects_nor_loses_a_fired_signal(tmp_path):
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+    await m.fetch_and_compute()
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE
+    )
+    clock.advance(30.0)
+    # The post that fires is the one dated *now*, so the age below is the two
+    # hours the process was down and nothing else.
+    client._returns["fetch_channel_txs"] = _posted_channel_txs(clock.t)
+    await m.fetch_and_compute()
+    fire_ts = clock.t                      # the exact instant the post fired
+    await m.close()
+
+    clock.advance(7_200.0)                 # two hours later, fresh process
+    restarted = _manager(tmp_path, client=FakeSurfClient(
+        fetch_nonces=NonceSet(announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE)
+    ), clock=clock)
+    data = await restarted.fetch_and_compute()
+
+    assert data["sig_post_state"] == "fired"                     # not lost
+    assert data["sig_post_age_s"] == pytest.approx(7_200.0, abs=2.0)   # real age
+    # The nonce baseline came back too, so the same post did not fire again.
+    assert restarted.cache.get_baselines()["announce_nonce"] == ANNOUNCE_NONCE + 1
+
+    # The LITERAL "fired" key, never the imported `BASELINE_FIRED_KEY` constant.
+    # A reviewer proved a real coverage gap here: `SurfCache._sanitise_baselines`
+    # (write side) and `SurfCache.get_baselines` (read side) both key off that
+    # one symbol, so a spelling regression that renames it moves both sides
+    # together and no test would ever notice — monkey-patching the constant to
+    # "fired_at" and then calling with the literal "fired" silently dropped the
+    # whole FIRED store while every existing cache test stayed green. Pinning
+    # the literal here, at the manager/cache seam and through a real
+    # `build_signals` round trip, is what closes that gap.
+    fired = restarted.cache.get_baselines()["fired"]
+    assert fired["post"]["ts"] == pytest.approx(fire_ts)
+    assert fired["post"]["detail"]
+
+
+async def test_baselines_are_stored_back_every_cycle(tmp_path):
+    m = _manager(tmp_path)
+    await m.fetch_and_compute()
+    baselines = m.cache.get_baselines()
+    assert baselines["announce_nonce"] == ANNOUNCE_NONCE
+    assert baselines["imd_supply"] == pytest.approx(IMD_SUPPLY)
+    assert baselines["gate_open"] is False
+
+
+def test_the_readings_dict_is_exactly_wp2s_contract(tmp_path):
+    """A misspelled reading key is an invisible outage, not a failure.
+
+    ``build_signals`` treats *absent* and *``None``* identically, so spelling
+    ``identity_writes`` where WP2 froze ``identities_written`` raises nothing,
+    logs nothing and reddens nothing — it just turns the GATE detail off for
+    good. This assertion is the only thing in either package that catches it,
+    which is why it compares against the imported tuple and never a literal.
+    """
+    m = _manager(tmp_path)
+    readings = m._readings({}, None, {}, [])
+    assert set(readings) == set(surf_signals.READING_KEYS)
+    # Cold cache, nothing read: nothing may claim it was. No 0, no [], no False.
+    assert set(readings.values()) == {None}
+
+
+async def test_a_read_but_empty_window_is_data_not_an_outage(manager):
+    """``[]`` and ``None`` are opposite claims — only ``[]`` can reach ``ok``."""
+    data = await manager.fetch_and_compute()
+    channel = manager.cache.get_last_good(SLOT_CHANNEL).payload
+    readings = manager._readings(
+        data,
+        NonceSet(announce=ANNOUNCE_NONCE, dev=DEV_NONCE, ops=OPS_NONCE),
+        channel,
+        data["dev_activity"],
+    )
+    assert readings["bridge_mints"] == []       # the window was read; it was empty
+    assert readings["v4_hook_pools"] == []
+    assert readings["burn_transfers"] == []     # the pages held no BurnExecutor call
+    assert data["sig_bridge_state"] == "ok"     # reachable only through that []
+
+    # The ops LP row is not a deploy — but the channel's ERC-8004 register()
+    # call is an `action`, the second shape PRD §3 #4 names.
+    assert [e["kind"] for e in readings["deploy_events"]] == ["action"]
+    assert readings["deploy_events"][0]["tx_hash"] == "0x" + "a2" * 32
+    assert readings["deploy_events"][0]["wallet_label"] == "announce"
+
+    # The channel page count, not the feed render cap, and the newest self-post.
+    assert readings["channel_tx_count"] == 4
+    assert readings["announce_last_text"] == "soon"
+    assert readings["announce_last_ts"] == pytest.approx(SOON_TS)
+
+
+async def test_a_channel_action_never_claims_the_tx_pages_were_read(tmp_path):
+    """`[]` is a claim about a source, and one source may not make it for another.
+
+    `deploy_events` merges two streams that fail independently: the dev tx
+    pages and the announce channel page. If the channel answers while the tx
+    pages are down, an unguarded merge turns `None` ("we have no pages") into
+    `[]` ("we read the pages and there were no deploys") — and `[]` seeds WP2's
+    `deploy_tx`/`deploy_ts`. The first real deploy would then be measured
+    against a baseline the tx-page source never contributed to.
+    """
+    client = FakeSurfClient(fetch_dev_activity=None)      # tx pages dead
+    m = _manager(tmp_path, client=client)
+    data = await m.fetch_and_compute()
+    channel = m.cache.get_last_good(SLOT_CHANNEL).payload
+    readings = m._readings(data, None, channel, data["dev_activity"])
+
+    assert channel["items"], "the channel page itself was read fine"
+    assert readings["deploy_events"] is None
+    assert SOURCE_ACTIVITY in data["degraded"]
+
+
+async def test_an_older_deploy_and_a_newer_action_both_reach_the_detector(tmp_path):
+    """Both streams are carried, newest first — and one of them is not reported.
+
+    A contract creation at T+0 on the slow tier and a channel `action` at
+    T+100 on the medium tier are two different events on two cadences. WP4
+    hands both to WP2 in one list, ordered, so nothing is dropped on the way.
+
+    **Known limitation, Open issue 12:** WP2's `_fresh_event` reports only the
+    *newest* row of a stream and refuses anything with `ts <= base["deploy_ts"]`,
+    which is right for one chronological stream and wrong for two. So the row
+    below is carried but never reported, and the fix is to split
+    `deploy_events` into two `READING_KEYS` entries with their own baseline
+    pairs — a WP2 contract change, raised with that file's owner rather than
+    worked around here. This test pins what WP4 can guarantee today and goes
+    green the moment WP2 splits the key.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient(fetch_dev_activity=[], fetch_channel_txs=[])
+    m = _manager(tmp_path, client=client, clock=clock)
+    await m.fetch_and_compute()
+
+    client._returns["fetch_dev_activity"] = [
+        _dev_tx(tx_hash="0x" + "d2" * 32, ts=NOW, wallet_label="dev",
+                from_addr=DEV_WALLET, to_addr=None, method=None, value_wei=0,
+                counterparty="0x" + "ce" * 20, counterparty_label=None,
+                kind="deploy", created_contract="0x" + "ce" * 20),
+    ]
+    client._returns["fetch_channel_txs"] = [
+        ChannelTx(tx_hash="0x" + "a2" * 32, ts=NOW + 100.0, nonce=4,
+                  from_addr=ANNOUNCE, to_addr=ERC8004, value_wei=0,
+                  input_hex=REGISTER_HEX, method="register"),
+    ]
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE + 1, ops=OPS_NONCE,
+        block_number=BLOCK,
+    )
+    clock.advance(30.0)
+    data = await m.fetch_and_compute()
+    channel = m.cache.get_last_good(SLOT_CHANNEL).payload
+    readings = m._readings(data, client._returns["fetch_nonces"], channel,
+                           data["dev_activity"])
+
+    assert [e["kind"] for e in readings["deploy_events"]] == ["action", "deploy"]
+    assert readings["deploy_events"][1]["tx_hash"] == "0x" + "d2" * 32
+    assert data["sig_deploy_state"] == "fired"
+
+
+async def test_the_gate_detail_reads_the_window_and_the_hero_reads_the_lifetime(tmp_path):
+    """Two counts, one name, and only one of them is the hero's (wp1.md #9).
+
+    `NftStats.written` is a **lifetime** count over the registry's whole log
+    history — 1 of 2000, written 2026-05-14, months outside any `eth_getLogs`
+    window this app opens. WP2's `identities_written` *reading* is the other
+    one: distinct ids seen in the recent window, which PRD §3 #3 makes signal
+    3's detail line. Cross them and both break silently — the hero renders
+    `0/2000` on a chain whose real answer is `1/2000`, and `_detect_gate`'s
+    `written > base_written` WATCH branch becomes unreachable.
+    """
+    client = FakeSurfClient(
+        fetch_nft_stats=_nft_stats(written=1),
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(), v4_initializes=(), seaport_sales=(),
+            identity_updates=(
+                _identity_log(1751, ts=NOW - 600.0, tx="0x" + "e1" * 32),
+                # Same id, replaced hash: one identity written, two logs.
+                _identity_log(1751, ts=NOW - 300.0, tx="0x" + "e2" * 32),
+                _identity_log(354, ts=NOW - 120.0, tx="0x" + "e3" * 32),
+            ),
+        ),
+    )
+    m = _manager(tmp_path, client=client)
+    data = await m.fetch_and_compute()
+    readings = m._readings(data, None, {}, data["dev_activity"])
+
+    assert data["identities_written"] == 1      # lifetime, NftStats.written
+    assert data["nft_written"] == 1
+    assert readings["identities_written"] == 2  # distinct ids in the window
+    assert "2 written" in (data["sig_gate_detail"] or "")
+
+
+async def test_a_stale_page_never_quotes_an_old_body_under_a_new_nonce(tmp_path):
+    """Blockscout down while the RPC is up: the nonce moved, the page did not.
+
+    ``_pool_channel`` fetches the bodies on the same cycle the nonce moves, so the
+    pair is normally matched — but the two live on different hosts and the page
+    read is the one that fails. Without this guard the FIRED row for the brand-new
+    post carries the *previous* post's text and timestamp, and across the real
+    52-day May-to-July silence that timestamp is older than ``FIRED_TTL_S``: the
+    news would render as relaxed history and the quote would be the wrong post.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+    await m.fetch_and_compute()
+
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE
+    )
+    client._returns["fetch_channel_txs"] = None      # the page read fails
+    clock.advance(30.0)
+    data = await m.fetch_and_compute()
+
+    channel = m.cache.get_last_good(SLOT_CHANNEL).payload   # still the old page
+    readings = m._readings(
+        data, client._returns["fetch_nonces"], channel, data["dev_activity"]
+    )
+    assert readings["announce_nonce"] == ANNOUNCE_NONCE + 1
+    assert readings["announce_last_text"] is None     # not the previous body
+    assert readings["announce_last_ts"] is None
+    assert SOURCE_CHANNEL in data["degraded"]
+    # The nonce alone still fires it, and dates it to now rather than to May.
+    assert data["sig_post_state"] == "fired"
+    assert data["sig_post_age_s"] == pytest.approx(0.0, abs=1.0)
+
+
+async def test_a_contract_creation_reaches_the_deploy_detector(tmp_path):
+    """The row shape NEW DEPLOY exists for (PRD §3 #4), end to end.
+
+    ``_activity_rows`` must flatten a ``created_contract`` tx as
+    ``kind == "deploy"``: WP2 selects deploy rows *by kind*, so a row flattened
+    under any other spelling is a deploy the panel never reports — silently, with
+    every other test still green. This is the assertion that pins the vocabulary
+    the two tasks share.
+    """
+    client = FakeSurfClient(fetch_dev_activity=[
+        _dev_tx(tx_hash="0x" + "cc" * 32, ts=NOW - 60.0, wallet_label="dev",
+                from_addr=DEV_WALLET, to_addr=None, value_wei=0, method=None,
+                counterparty="0x" + "de" * 20, counterparty_label=None,
+                kind="deploy", created_contract="0x" + "de" * 20),
+    ])
+    m = _manager(tmp_path, client=client)
+    data = await m.fetch_and_compute()
+    readings = m._readings(data, None, {}, data["dev_activity"])
+
+    assert [row["tx_hash"] for row in readings["deploy_events"]] == ["0x" + "cc" * 32]
+    assert readings["deploy_events"][0]["kind"] == "deploy"
+    # The label is the flattened row's counterparty — the created contract for a
+    # deploy. Asserted against the row rather than against a literal, so this test
+    # pins the *hand-off* between the two tasks and not WP4.10's labelling rule.
+    assert (
+        readings["deploy_events"][0]["label"] == data["dev_activity"][0]["counterparty"]
+    )
+    assert "de" in readings["deploy_events"][0]["label"]   # the contract, not ""
+
+
+async def test_the_first_deploy_after_an_empty_page_still_fires(tmp_path):
+    """A successful-but-empty read must seed the baseline, or event #1 is lost.
+
+    ``[]`` seeds ``deploy_tx``/``deploy_ts`` and ``None`` does not (WP2's
+    ``_advance``), so encoding "read the pages, found no deploys" as ``None``
+    costs exactly one event: the first one ever — which on a fresh install is
+    the one the user installed this for. It is a *silent* loss:
+    ``_fresh_event`` returns ``None`` against an unseeded baseline while
+    ``_advance`` records the row, so the next deploy fires and nobody notices
+    the first never did.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient(fetch_dev_activity=[], fetch_channel_txs=[])
+    m = _manager(tmp_path, client=client, clock=clock)
+
+    first = await m.fetch_and_compute()
+    assert first["sig_deploy_state"] == "ok"          # read, empty, baseline seeded
+    assert m.cache.get_baselines()["deploy_tx"] == ""
+
+    client._returns["fetch_dev_activity"] = [
+        _dev_tx(tx_hash="0x" + "d1" * 32, ts=NOW + 100.0, wallet_label="dev",
+                from_addr=DEV_WALLET, to_addr=None, method=None, value_wei=0,
+                counterparty="0x" + "cd" * 20, counterparty_label=None,
+                kind="deploy", created_contract="0x" + "cd" * 20),
+    ]
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE, dev=DEV_NONCE + 1, ops=OPS_NONCE, block_number=BLOCK
+    )
+    clock.advance(30.0)
+    second = await m.fetch_and_compute()
+
+    assert second["sig_deploy_state"] == "fired"
+    assert "new contract" in (second["sig_deploy_detail"] or "")
+
+
+async def test_an_announce_channel_action_fires_new_deploy(tmp_path):
+    """The ERC-8004 registration shape — PRD §3 #4's own worked example.
+
+    It lands on the **channel** page, never on a dev-wallet tx page: the announce
+    EOA is not one of the two wallets ``fetch_dev_activity`` pages. A
+    ``deploy_events`` list built only from activity rows can therefore never see
+    it, and NEW DEPLOY would sit at ``ok`` through the exact event it was
+    specified for.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient(fetch_channel_txs=[], fetch_dev_activity=[])
+    m = _manager(tmp_path, client=client, clock=clock)
+    await m.fetch_and_compute()
+
+    client._returns["fetch_channel_txs"] = [
+        ChannelTx(tx_hash="0x" + "a2" * 32, ts=NOW + 60.0, nonce=4,
+                  from_addr=ANNOUNCE, to_addr=ERC8004, value_wei=0,
+                  input_hex=REGISTER_HEX, method="register"),
+    ]
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE, block_number=BLOCK
+    )
+    clock.advance(30.0)
+    data = await m.fetch_and_compute()
+
+    assert data["sig_deploy_state"] == "fired"
+    assert "action register()" in (data["sig_deploy_detail"] or "")
+    assert "announce" in (data["sig_deploy_detail"] or "")
+
+
+async def test_a_burn_executor_call_is_the_burn_precursor(tmp_path):
+    """PRD §3 #6's "BurnExecutor tx seen" half, from the dev tx page.
+
+    ``bridgeToBaseBurnReceiver`` to ``0x2EC59BEd…`` is a real, keyless row (three
+    of them in the captures, 2026-07-31 and 2026-08-05). The IMD amount is *not*
+    on that page — the ETH value is the OFT fee, 3.05e-5 ETH — so the row carries
+    ``amount: None`` rather than a number wrong by nine orders of magnitude.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient(fetch_dev_activity=[], fetch_channel_txs=[])
+    m = _manager(tmp_path, client=client, clock=clock)
+    await m.fetch_and_compute()
+
+    client._returns["fetch_dev_activity"] = [
+        _dev_tx(tx_hash="0xcfb8f6e2c733742615519cfc5596a6524daabb1efe0e628ee10da5b00f24964c",
+                ts=NOW + 60.0, wallet_label="dev", from_addr=DEV_WALLET,
+                to_addr=BURN_EXECUTOR, method="bridgeToBaseBurnReceiver",
+                counterparty=BURN_EXECUTOR,
+                counterparty_label=KNOWN_LABELS[BURN_EXECUTOR.lower()],
+                kind="burn", value_wei=30_466_501_051_555),
+    ]
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE, dev=DEV_NONCE + 1, ops=OPS_NONCE, block_number=BLOCK
+    )
+    clock.advance(30.0)
+    data = await m.fetch_and_compute()
+
+    assert data["dev_activity"][0]["kind"] == "burn"
+    assert data["sig_burn_state"] == "watch"        # supply flat, executor called
+    assert "BurnExecutor" in (data["sig_burn_detail"] or "")
+
+
+async def test_the_post_body_lands_in_the_same_cycle_the_signal_fires(tmp_path):
+    """PRD §11.1 end to end: FIRED *and* the decoded text, one refresh interval.
+
+    The bug this pins is the tier gate: with the medium-tier check ahead of the
+    nonce check, the signal fired on the fast tier and the body arrived up to
+    three refreshes later, so the FIRED row quoted nothing and the feed still
+    showed the previous post.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient(fetch_channel_txs=[])
+    m = _manager(tmp_path, client=client, clock=clock)
+    first = await m.fetch_and_compute()
+    assert first["feed_items"] == []
+
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE, block_number=BLOCK
+    )
+    client._returns["fetch_channel_txs"] = _channel_txs()
+    clock.advance(30.0)                      # ONE poll interval; medium not due
+    second = await m.fetch_and_compute()
+
+    assert second["sig_post_state"] == "fired"
+    assert len(second["feed_items"]) == 4
+    assert '"soon"' in (second["sig_post_detail"] or "")

@@ -919,6 +919,199 @@ class SurfManager:
         items.sort(key=lambda i: (i["ts"] is not None, i["ts"] or 0.0), reverse=True)
         return items[:FEED_ITEM_LIMIT]
 
+    # -- signals -------------------------------------------------------------
+
+    def _readings(
+        self,
+        data: dict[str, Any],
+        nonces: Any,
+        channel: dict[str, Any],
+        activity_rows: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """This cycle's values for the six detectors, keyed by ``READING_KEYS``.
+
+        Built as ``dict.fromkeys(READING_KEYS)`` and filled in place, so a key WP2
+        adds arrives here as an explicit ``None`` instead of as a detector that
+        quietly never fires again.
+
+        Four rules the body encodes:
+
+        1. **Unread is ``None`` — never ``0``, ``[]`` or ``False``.** An empty list
+           is the opposite claim ("the window was read and held nothing"), and it
+           is the only thing that lets BRIDGE STAGE and BURN reach ``ok`` at all.
+        2. **The three chain scalars are taken off the assembled payload**, not
+           re-read off the model, so the hero panel and the detectors cannot
+           disagree about liquidity, the gate or the supply, and the wei->token
+           division stays at exactly one site (`_tokens`, Task WP4.7).
+           `identities_written` is the deliberate exception and reads off the
+           **log slot** instead: it is the one reading whose flat-key namesake
+           is a *different number* — see the block comment below.
+        3. **Event rows and the channel page come off last-good, not off this
+           cycle's fetch results.** The logs group is medium tier, so on a
+           fast-only refresh ``fetch_recent_logs`` was never called — and reading
+           its ``None`` as an outage would blank BRIDGE STAGE and LP MIGRATION
+           every 30 s. That is a lie about the source where the truth is only a
+           refresh rate. The slot's as-of marker already carries the staleness
+           (CLAUDE.md: serve last-good behind an ``as of`` marker), and re-serving
+           rows cannot re-fire anything — WP2 keys events on ``(tx, ts)``. The
+           caller passes ``channel`` for the same reason, already resolved to
+           fresh-or-last-good by ``_cycle``.
+        4. **A post body is only quoted under the nonce it was read at.** See the
+           comment below; this one is load-bearing for the FIRED age.
+        """
+        logs = dict(getattr(self.cache.get_last_good(SLOT_LOGS), "payload", None) or {})
+        channel = channel or {}
+        # The same list `_cycle` renders the feed from — unpacked here rather than
+        # passed as a sixth argument, so the rows the panel shows and the rows the
+        # detectors read can never be two different lists.
+        feed_items = list(channel.get("items") or ())
+        read: dict[str, Any] = dict.fromkeys(READING_KEYS)
+
+        # -- fast tier: three nonces, every refresh, the whole early edge -----
+        read["announce_nonce"] = data.get("feed_nonce")
+        read["dev_nonce"] = _opt_int(_field(nonces, "dev"))
+        read["ops_nonce"] = _opt_int(_field(nonces, "ops"))
+
+        # -- fast tier: the batched chain read, via the payload ---------------
+        read["lp_liquidity"] = data.get("lp_liquidity")
+        read["gate_open"] = data.get("gate_open")
+        read["imd_supply"] = data.get("imd_supply")
+
+        # -- the GATE detail's write count is the WINDOW count ----------------
+        # Not `data["identities_written"]`, which is the hero's *lifetime*
+        # number off `NftStats.written` (1 of 2000, written 2026-05-14 — months
+        # outside any log window this app opens). WP2 documents this reading as
+        # "distinct tokens in IdentityHashUpdated logs" and PRD §3 #3 makes the
+        # log count the detector's detail source; wp1.md open issue 9 assigns
+        # the window count here and the lifetime count to the hero, precisely
+        # because they are different facts. Feed the lifetime number in and
+        # `_detect_gate`'s `written > base_written` WATCH branch — "the gate
+        # opened and closed between two polls" — can never be reached.
+        read["identities_written"] = logs.get("identity_writes")
+
+        # -- the channel page, as `_channel_payload` stored it -----------------
+        # ``tx_count`` counts posts AND replies (21 today against nonce 14), which
+        # is the only thing that moves when somebody *else* writes to the channel.
+        read["channel_tx_count"] = _opt_int(channel.get("tx_count"))
+        # The body we hold belongs to *this* nonce only if the page was read at
+        # it. `_pool_channel` fetches on the same cycle the nonce moves, so the
+        # pair is normally matched -- but the nonce comes from an RPC and the page
+        # from Blockscout, and either can be the one that is down. Quoting an
+        # older post under a newer nonce would misquote it and -- worse -- date
+        # the FIRED row to the previous post; across the real 52-day May-to-July
+        # silence that timestamp is past FIRED_TTL_S, so brand-new news would
+        # render as relaxed history. ``None`` here loses nothing: `build_signals`
+        # falls back to ``now``, which is when we actually saw it.
+        if read["announce_nonce"] is not None and _opt_int(
+            channel.get("nonce")
+        ) == read["announce_nonce"]:
+            # Raw third-party text: escaped at the widget, never here.
+            read["announce_last_text"] = channel.get("last_text")
+            read["announce_last_ts"] = _opt_float(channel.get("last_ts"))
+
+        # -- the log window (medium tier, served from last-good) --------------
+        read["bridge_mints"] = logs.get("bridge_mints")
+        read["v4_hook_pools"] = logs.get("v4_hook_pools")
+
+        # -- the dev tx pages (slow tier, or a nonce change) ------------------
+        # ``[]`` once the group has answered even once, ``None`` before that:
+        # "no deploys in the pages we have" and "we have no pages" are different
+        # facts and only the first may seed a baseline.
+        activity_read = self.cache.get_last_good(SLOT_ACTIVITY) is not None
+        if activity_read:
+            # PRD §3 #6's precursor half, "BurnExecutor tx seen": an outbound
+            # call to the executor, which is what `_activity_rows` labels
+            # ``burn``. The IMD amount is not on a tx page (the ETH value is the
+            # OFT fee, and passing *that* as an IMD amount would be a lie), so
+            # the row carries ``amount: None`` and WP2 renders "? IMD ->
+            # BurnExecutor". BURN still FIREs on the verified supply drop; this
+            # is the earlier WATCH.
+            read["burn_transfers"] = [
+                {"ts": row.get("ts"), "tx_hash": row.get("tx_hash"), "amount": None}
+                for row in activity_rows or ()
+                if row.get("kind") == "burn"
+            ]
+
+        # -- NEW DEPLOY reads two streams, and only one is the tx pages -------
+        # PRD §3 #4: "new tx with ``created_contract``, **or** announce-EOA
+        # outbound *contract call*". The second never appears in
+        # ``fetch_dev_activity`` -- that fetches the two dev wallets' pages, and
+        # the announce EOA is neither of them -- so it has to come off the
+        # channel page, where `classify_channel_tx` already labels it ``action``.
+        # The ERC-8004 registration at channel nonce 4 is the PRD's own worked
+        # example of the shape, and without this branch it would not fire.
+        #
+        # The channel branch is gated on `activity_read` as well as on
+        # `channel`, and that is load-bearing: `[]` is a claim that "the deploy
+        # window was read and held nothing", and it seeds WP2's `deploy_tx` /
+        # `deploy_ts` baselines. One source may not make that claim on the
+        # other's behalf — a channel page answering while Blockscout's tx pages
+        # are down would seed the baseline before the tx-page source has ever
+        # produced a row, and the first real deploy would then be measured
+        # against a baseline it never contributed to.
+        events: list[dict[str, Any]] | None = None
+        if activity_read:
+            events = [
+                {
+                    "ts": row.get("ts"),
+                    "tx_hash": row.get("tx_hash"),
+                    "kind": "deploy",
+                    "label": row.get("counterparty"),
+                    "wallet_label": row.get("wallet_label"),
+                }
+                for row in activity_rows or ()
+                if row.get("kind") == "deploy"
+            ]
+        if channel and activity_read:
+            events = [
+                *(events or []),
+                *(
+                    {
+                        "ts": item.get("ts"),
+                        "tx_hash": item.get("tx_hash"),
+                        "kind": "action",
+                        # Blockscout's decoded method name when it has one, the
+                        # 4-byte selector when it does not. WP2 prints it
+                        # verbatim: "action register() · announce".
+                        "label": item.get("label") or "",
+                        "wallet_label": "announce",
+                    }
+                    for item in feed_items or ()
+                    if item.get("kind") == "action"
+                ),
+            ]
+            # Newest first, so `_newest` and the row order agree. Two streams on
+            # two cadences share one `(deploy_tx, deploy_ts)` baseline pair, and
+            # WP2 reports only the newest row — so a channel `action` can still
+            # bury an older tx-page `deploy` here. That is a WP2 contract
+            # question, not a WP4 one; see Open issue 12.
+            events.sort(
+                key=lambda e: (e["ts"] is not None, e["ts"] or 0.0), reverse=True
+            )
+        read["deploy_events"] = events
+        return read
+
+    def _signal_keys(self, readings: dict[str, Any], now: float) -> dict[str, Any]:
+        """Run ``build_signals`` and expand its result into the 18 ``sig_*`` keys."""
+        baselines = self.cache.get_baselines()
+        result = _safe_call(
+            build_signals, baselines, readings, now, default=None
+        )
+        if not isinstance(result, tuple) or len(result) != 2:
+            logger.warning("build_signals returned %r — leaving the baselines alone", result)
+            return {}
+        signals, advanced = result
+        if isinstance(advanced, dict):
+            self.cache.set_baselines(advanced, now=now)
+        out: dict[str, Any] = {}
+        for name in SIGNAL_NAMES:
+            out[f"sig_{name}_state"] = (signals or {}).get(f"sig_{name}_state")
+            out[f"sig_{name}_detail"] = (signals or {}).get(f"sig_{name}_detail")
+            out[f"sig_{name}_age_s"] = _opt_float(
+                (signals or {}).get(f"sig_{name}_age_s")
+            )
+        return out
+
     # -- public API ----------------------------------------------------------
 
     async def fetch_and_compute(self) -> dict[str, Any]:
@@ -1107,6 +1300,12 @@ class SurfManager:
             "nft_floor": None,
             "dev_activity": activity_rows,
         }
+
+        data.update(
+            self._signal_keys(
+                self._readings(data, nonces, channel_payload, activity_rows), now
+            )
+        )
 
         payload = self._finalise(data)
 
