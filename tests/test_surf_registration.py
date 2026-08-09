@@ -377,3 +377,103 @@ def test_the_menu_lists_the_surf_row() -> None:
             assert "announce channel" in text   # from the description
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# themes/minimal.tcss: the shared stylesheet must know about surf
+# ---------------------------------------------------------------------------
+
+_TCSS = REPO / "maxpane_dashboard" / "themes" / "minimal.tcss"
+
+
+def _surf_block() -> str:
+    """The surf section of the shared stylesheet, or '' if absent."""
+    text = _TCSS.read_text(encoding="utf-8")
+    marker = "/* ── Surf screen"
+    if marker not in text:
+        return ""
+    start = text.index(marker)
+    nxt = text.find("/* ── ", start + len(marker))
+    return text[start:] if nxt == -1 else text[start:nxt]
+
+
+def test_the_shared_stylesheet_has_a_surf_block() -> None:
+    """DEFAULT_CSS is a fallback; the app stylesheet is what actually renders."""
+    block = _surf_block()
+    assert block, (
+        "themes/minimal.tcss has no surf block -- SurfScreen's proportions "
+        "come from DEFAULT_CSS only, which any theme edit to the shared ids "
+        "(#middle-row, #bottom-row, #separator) can silently override"
+    )
+    for selector in (
+        "SurfScreen #hero-row",
+        "SurfHero",
+        "SurfSignals",
+        "SurfFeed",
+        "SurfDevActivity",
+        "SurfMarket",
+        "SurfNft",
+    ):
+        assert selector in block, f"{selector} is not styled in the surf block"
+
+
+def test_the_surf_hero_row_has_no_vertical_padding() -> None:
+    """The FWA coverage-badge lesson, applied before it can bite.
+
+    ``#hero-row`` is ten rows and SurfSignals fills them with a title plus six
+    detector rows inside a border.  A vertical pad here clips the sixth row --
+    the BURN detector -- exactly the way ``padding: 1 2`` clipped the FWA
+    coverage badge.  Horizontal padding (``0 1``, ``0 2``) is fine.
+    """
+    import re
+
+    block = _surf_block()
+    hero = re.search(r"SurfScreen #hero-row\s*\{([^}]*)\}", block)
+    assert hero, "no SurfScreen #hero-row rule in the surf block"
+    for line in hero.group(1).splitlines():
+        line = line.strip()
+        if line.startswith("padding:"):
+            vertical = line.split(":", 1)[1].strip().rstrip(";").split()[0]
+            assert vertical == "0", (
+                f"vertical padding {vertical!r} on #hero-row will clip the "
+                "sixth detector row"
+            )
+
+
+def test_all_six_detectors_survive_the_real_stylesheet() -> None:
+    """Composited proof, under ``minimal.tcss``, at the pinned width.
+
+    This is a regression guard rather than the driver for the block: it also
+    passes with DEFAULT_CSS alone today.  It is what turns red if a future
+    theme edit -- or a "tidy" of the block above -- costs the screen a row.
+    """
+    import importlib.util
+
+    from maxpane_dashboard.screens.surf import SURF_FULL_LAYOUT_COLUMNS
+
+    path = REPO / "tests" / "screens" / "test_surf_screen.py"
+    spec = importlib.util.spec_from_file_location("_surf_screen_harness", path)
+    harness = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(harness)
+
+    async def _run() -> None:
+        screen = harness.SurfScreen(
+            harness._FakeManager(), poll_interval=30, name="surf"
+        )
+        app = harness._ThemedHarness(screen)
+        async with app.run_test(size=(SURF_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+            await pilot.pause()
+            await screen._do_refresh()
+            await pilot.pause()
+            text = harness._screen_text(app)
+            for label in (
+                "NEW POST",
+                "LP MIGRATION",
+                "GATE OPEN",
+                "NEW DEPLOY",
+                "BRIDGE STAGE",
+                "BURN",
+            ):
+                assert label in text, f"{label} never reached the compositor"
+
+    asyncio.run(_run())

@@ -391,14 +391,21 @@ def test_fwa_css_block_uses_only_universal_variables(fwa_css_block: str):
 def test_fwa_css_block_is_appended_at_eof(tcss_text: str):
     """Acceptance criterion: appended only, nothing above it disturbed.
 
-    The Talismans block must still be the last thing before it, and the FWA
-    block must be the last thing in the file.
+    The Talismans block must still be the last thing before FWA. WP6 (surf)
+    later appends its own block after FWA's, per the same append-only
+    discipline, so FWA is no longer required to be the literal EOF -- instead
+    the Surf block must immediately follow it with nothing interleaved, and
+    the Surf block must now be the last thing in the file.
     """
     tal = tcss_text.index("/* ── Talismans screen")
     fwa = tcss_text.index("/* ── FWA screen")
-    assert tal < fwa
-    assert "/* ──" not in tcss_text[fwa + 10 :], (
-        "the FWA block must be the last section in minimal.tcss"
+    surf = tcss_text.index("/* ── Surf screen")
+    assert tal < fwa < surf
+    assert "/* ──" not in tcss_text[fwa + 10 : surf], (
+        "nothing may be appended between the FWA block and the Surf block"
+    )
+    assert "/* ──" not in tcss_text[surf + 10 :], (
+        "the Surf block must be the last section in minimal.tcss"
     )
 
 
