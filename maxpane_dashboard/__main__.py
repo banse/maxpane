@@ -221,7 +221,7 @@ def main():
     parser.add_argument(
         "--game",
         default="fwa",
-        choices=["fwa", "base", "frenpet", "cattown", "ttt", "talismans"],
+        choices=["fwa", "base", "frenpet", "cattown", "ttt", "talismans", "surf"],
         help=(
             "Which game dashboard to preload (default: fwa). The game "
             "selection menu still appears at startup; this only warms that "

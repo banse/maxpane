@@ -234,3 +234,56 @@ def test_tab_from_the_previous_game_reaches_surf() -> None:
             assert app._current_game == "surf"
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# __main__.py: the --game choice
+# ---------------------------------------------------------------------------
+
+
+def _run_cli(monkeypatch, argv: list[str]) -> dict:
+    """Invoke ``__main__.main()`` with *argv*, returning the app's kwargs.
+
+    No TUI is started, no terminal is resized, and ``logging.basicConfig`` is
+    neutered so a test run never truncates ``~/.maxpane/maxpane.log``.
+    """
+    import maxpane_dashboard.__main__ as cli
+
+    captured: dict = {}
+
+    class _StubApp:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def run(self):
+            captured["ran"] = True
+
+    monkeypatch.setattr(cli, "MaxPaneApp", _StubApp)
+    monkeypatch.setattr(cli, "_maximize_terminal", lambda *a, **k: None)
+    monkeypatch.setattr(cli.logging, "basicConfig", lambda **kw: None)
+    monkeypatch.setattr(cli.sys, "argv", ["maxpane", *argv])
+    cli.main()
+    return captured
+
+
+def test_game_surf_is_accepted(monkeypatch) -> None:
+    captured = _run_cli(monkeypatch, ["--game", "surf"])
+    assert captured["initial_game"] == "surf"
+    assert captured.get("ran") is True
+
+
+def test_the_default_game_is_still_fwa(monkeypatch) -> None:
+    """CLAUDE.md pins fwa as position 1 *and* the ``--game`` default.
+
+    Adding a dashboard must never move it: hiding or displacing the default
+    silently breaks launch, which is why this assertion sits next to the one
+    that adds surf.
+    """
+    captured = _run_cli(monkeypatch, [])
+    assert captured["initial_game"] == "fwa"
+
+
+def test_a_typo_is_still_rejected(monkeypatch) -> None:
+    """The choices list stays a whitelist -- ``--game surfs`` must exit 2."""
+    with pytest.raises(SystemExit):
+        _run_cli(monkeypatch, ["--game", "surfs"])
