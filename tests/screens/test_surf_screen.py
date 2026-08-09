@@ -458,3 +458,45 @@ def test_fmt_age_tiers():
     assert surf_mod._fmt_age(5_400.0) == "90m"      # 90 min is the m/h boundary
     assert surf_mod._fmt_age(3 * 86_400.0) == "3d"  # 36 h is the h/d boundary
     assert surf_mod._fmt_age(-5.0) == "—"           # a negative age is nonsense
+
+
+# -- degraded formatting (pure) -- review round 1 -----------------------
+#
+# _fmt_degraded's job is to make anything short of "nothing is degraded"
+# ((None)/[]) visibly wrong. A bare ``except TypeError: return ""`` used to
+# turn a malformed ``degraded`` value into the *healthy* line -- the exact
+# failure this project exists to prevent, on the most prominent line of the
+# screen.
+
+
+def test_fmt_degraded_healthy_inputs_render_empty():
+    assert surf_mod._fmt_degraded(None) == ""
+    assert surf_mod._fmt_degraded([]) == ""
+
+
+def test_fmt_degraded_bare_string_is_one_group_not_characters():
+    # A string is iterable character-by-character; treat it as a single
+    # group name instead of exploding "logs" into "l, o, g, s".
+    assert surf_mod._fmt_degraded("logs") == " · degraded: logs"
+
+
+def test_fmt_degraded_list_with_a_non_string_element_still_renders():
+    assert surf_mod._fmt_degraded(["logs", 42]) == " · degraded: logs, 42"
+
+
+def test_fmt_degraded_unexpected_shapes_never_render_the_healthy_line():
+    # None of these mean "nothing is degraded" -- an int cannot be iterated
+    # and a dict is not a list of names -- so none may collapse to "", which
+    # the title line renders identically to a genuinely healthy state.
+    assert surf_mod._fmt_degraded(42) != ""
+    assert surf_mod._fmt_degraded({"logs": True}) != ""
+    assert "degraded" in surf_mod._fmt_degraded(42)
+    assert "degraded" in surf_mod._fmt_degraded({"logs": True})
+
+
+def test_title_line_with_a_malformed_degraded_value_never_reads_healthy():
+    healthy = surf_mod._title_line(_frozen_payload(degraded=[]))
+    for bad in (42, {"logs": True}, ["logs", 42]):
+        line = surf_mod._title_line(_frozen_payload(degraded=bad))
+        assert line != healthy
+        assert "degraded" in line

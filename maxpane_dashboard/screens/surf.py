@@ -148,15 +148,34 @@ def _fmt_age(value) -> str:
 
 
 def _fmt_degraded(sources) -> str:
-    """``· degraded: logs, market`` — or an empty string when all is well."""
+    """``· degraded: logs, market`` — or an empty string when all is well.
+
+    Only ``None``/``[]`` (or anything else falsy) genuinely mean "nothing is
+    degraded" and may render empty. Every other input must render
+    *something* visibly wrong, even if it is a shape the manager should
+    never actually produce: a bare ``except: return ""`` here would let a
+    malformed ``degraded`` value collapse the title bar to the healthy line
+    on the single most prominent row of the screen, which is the exact
+    failure this whole project exists to prevent.
+    """
     if not sources:
         return ""
+
+    # A bare string is one group name, not a sequence of one-letter groups
+    # (``"logs"`` iterates to ``"l", "o", "g", "s"`` otherwise).
+    if isinstance(sources, (str, bytes)):
+        sources = [sources]
+
     try:
         names = [str(s).strip() for s in sources if str(s).strip()]
     except TypeError:
-        return ""
+        # Truthy but not iterable (an int, a float, ...) -- an unexpected
+        # shape the manager never emits today, but "unreachable today" is
+        # not a reason to fail toward looking healthy.
+        return " · degraded: ?"
+
     if not names:
-        return ""
+        return " · degraded: ?"
     return " · degraded: " + ", ".join(names)
 
 
