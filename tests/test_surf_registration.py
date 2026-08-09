@@ -504,3 +504,126 @@ def test_the_readme_quotes_the_documented_width() -> None:
     assert f"≥ {FULL_LAYOUT_COLUMNS}" in readme, (
         f"README's width table never mentions ≥ {FULL_LAYOUT_COLUMNS}"
     )
+
+
+# ---------------------------------------------------------------------------
+# PRD §11.3: full outage renders explicit states, never a crash or a zero
+# ---------------------------------------------------------------------------
+
+
+class BoomManager:
+    """Every fetch fails, the way an offline launch fails."""
+
+    def __init__(self) -> None:
+        self._error_count = 1
+        self.calls = 0
+
+    async def fetch_and_compute(self) -> dict[str, Any]:
+        self.calls += 1
+        raise RuntimeError("no network")
+
+    async def close(self) -> None:
+        return None
+
+
+class DeadSourcesManager:
+    """Every source is down, but the contract is still honoured in full.
+
+    ``degraded`` is built from the real :data:`SOURCES` tuple, not from
+    hand-written names.  The vocabulary is PRD §5's "list[str] of source-group
+    names" and the manager can only ever emit members of it -- a double that
+    invents ``"state_rpc"``/``"blockscout"`` would still light the banner up
+    while proving nothing about the strings the screen will actually receive,
+    and would hide a ``_fmt_degraded`` bug that only bites on real group names.
+    Importing the tuple also means a renamed group turns this test red instead
+    of leaving it quietly testing a dead vocabulary.
+    """
+
+    def __init__(self) -> None:
+        from maxpane_dashboard.data.surf_manager import SOURCES
+        from maxpane_dashboard.data.surf_models import SURF_KEYS
+
+        self._error_count = 1
+        self.calls = 0
+        self._keys = SURF_KEYS
+        # `sorted` is the order the specified outage path emits (WP4's
+        # `_cycle` sorts the collected group names); the outermost guard emits
+        # `list(SOURCES)`. Same six names either way.
+        self._degraded = sorted(SOURCES)
+
+    async def fetch_and_compute(self) -> dict[str, Any]:
+        self.calls += 1
+        payload: dict[str, Any] = {key: None for key in self._keys}
+        payload["degraded"] = list(self._degraded)
+        return payload
+
+    async def close(self) -> None:
+        return None
+
+
+def _offline_app(manager) -> MaxPaneApp:
+    app, _stubs = _stubbed_app("surf")
+    app._surf_manager = manager
+    return app
+
+
+@pytest.mark.parametrize("factory", [BoomManager, DeadSourcesManager])
+def test_offline_launch_of_surf_never_kills_the_app(factory) -> None:
+    """Splash -> menu -> [7] with the surf manager down: degraded, not dead."""
+    key = next(k for k, game_id, *_ in GAMES if game_id == "surf")
+
+    async def _run() -> None:
+        manager = factory()
+        app = _offline_app(manager)
+        async with app.run_test(size=(143, 48)) as pilot:
+            await pilot.pause()
+            await pilot.press("space")
+            await pilot.pause()
+            await pilot.press(key)
+            await pilot.pause()
+
+            assert app.screen.name == "surf"
+            assert app._exception is None, repr(app._exception)
+            assert app.is_running
+            assert manager.calls >= 1, "the screen never even tried to fetch"
+        assert app.return_code != 1
+
+    asyncio.run(_run())
+
+
+def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
+    """Every detector is on screen, none of them reads as a live number.
+
+    ``0`` is the forbidden rendering: CLAUDE.md's "a failed read is None,
+    never 0" exists because a zeroed supply reads as a 100% burn.
+    """
+    key = next(k for k, game_id, *_ in GAMES if game_id == "surf")
+
+    async def _run() -> None:
+        app = _offline_app(DeadSourcesManager())
+        async with app.run_test(size=(143, 48)) as pilot:
+            await pilot.pause()
+            await pilot.press("space")
+            await pilot.pause()
+            await pilot.press(key)
+            await pilot.pause()
+
+            text = _screen_text(app)
+            for label in (
+                "NEW POST",
+                "LP MIGRATION",
+                "GATE OPEN",
+                "NEW DEPLOY",
+                "BRIDGE STAGE",
+                "BURN",
+            ):
+                assert label in text, f"{label} vanished under outage"
+            assert "degraded" in text.lower(), (
+                "the title bar never told the operator sources are down"
+            )
+            assert "FIRED" not in text, (
+                "a signal fired on an outage -- baselines moved on a failed read"
+            )
+            assert "$0.00" not in text, "a missing price rendered as zero"
+
+    asyncio.run(_run())
