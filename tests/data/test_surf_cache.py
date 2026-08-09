@@ -102,3 +102,62 @@ def test_unknown_tier_raises(tmp_path):
 
 def test_default_cache_path_is_the_maxpane_convention():
     assert DEFAULT_CACHE_PATH.endswith("/.maxpane/surf_cache.json")
+
+
+from maxpane_dashboard.data.surf_cache import (   # noqa: E402  (appended import)
+    SLOTS,
+    SLOT_CHAIN,
+    SLOT_MARKET,
+    LastGood,
+)
+
+
+# ---------------------------------------------------------------------------
+# Last-good slots
+# ---------------------------------------------------------------------------
+
+
+def test_last_good_survives_a_failed_fetch_and_carries_its_timestamp(tmp_path):
+    clock = FakeClock()
+    c = _cache(tmp_path, clock)
+
+    c.store_last_good(SLOT_MARKET, {"imd_price_usd": 0.7074})
+    clock.advance(300.0)
+    c.mark_failed(TIER_MEDIUM)
+
+    entry = c.get_last_good(SLOT_MARKET)
+    assert entry.payload == {"imd_price_usd": 0.7074}
+    assert entry.age_seconds(clock.t) == 300.0
+    assert c.as_of_ts(SLOT_MARKET) == clock.t - 300.0
+    assert c.age_of(SLOT_MARKET) == 300.0
+    assert len(entry.as_of_hhmm()) == 5 and ":" in entry.as_of_hhmm()
+
+
+def test_a_last_good_never_exists_without_a_timestamp(tmp_path):
+    """A stale value presented as live is worse than an honest gap."""
+    c = _cache(tmp_path)
+    entry = c.store_last_good(SLOT_CHAIN, {"imd_supply": 2376731.868679})
+    assert entry.ts > 0.0
+    with pytest.raises(Exception):
+        entry.ts = 1.0                       # type: ignore[misc]
+    assert entry.age_seconds(entry.ts - 5.0) == 0.0     # never negative
+
+
+def test_unknown_slot_and_empty_slots_are_honest(tmp_path):
+    c = _cache(tmp_path)
+    assert c.get_last_good(SLOT_CHAIN) is None
+    assert c.as_of_ts(SLOT_CHAIN) is None
+    assert c.age_of(SLOT_CHAIN) is None
+    assert c.newest_as_of() is None
+    with pytest.raises(ValueError):
+        c.store_last_good("weather", {})
+
+
+def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
+    clock = FakeClock()
+    c = _cache(tmp_path, clock)
+    c.store_last_good(SLOT_CHAIN, {})
+    clock.advance(120.0)
+    c.store_last_good(SLOT_MARKET, {})
+    assert c.newest_as_of() == clock.t
+    assert len(SLOTS) == 6

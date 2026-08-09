@@ -69,6 +69,73 @@ TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Last-good slots — one per independently failing source group (PRD §5 meta)
+# ---------------------------------------------------------------------------
+
+SLOT_CHAIN = "chain"          # state RPC: nonces + the batched eth_call round
+SLOT_CHANNEL = "channel"      # Blockscout channel bodies
+SLOT_MARKET = "market"        # GeckoTerminal / DexScreener / CoinGecko
+SLOT_LOGS = "logs"            # logs RPC pool (mints, identity writes, v4, Seaport)
+SLOT_NFT = "nft"              # Blockscout token counters / holders
+SLOT_ACTIVITY = "activity"    # Blockscout dev tx pages
+
+SLOTS: tuple[str, ...] = (
+    SLOT_CHAIN,
+    SLOT_CHANNEL,
+    SLOT_MARKET,
+    SLOT_LOGS,
+    SLOT_NFT,
+    SLOT_ACTIVITY,
+)
+
+
+@dataclass(frozen=True)
+class LastGood:
+    """One source group's last *successful* payload with the time it arrived.
+
+    ``ts`` is mandatory: it is what lets a widget render ``as of HH:MM`` instead
+    of implying the value is live. A :class:`LastGood` never exists without it.
+    """
+
+    payload: Any
+    ts: float
+
+    def age_seconds(self, now: float) -> float:
+        return max(0.0, float(now) - float(self.ts))
+
+    def as_of_hhmm(self) -> str:
+        return time.strftime("%H:%M", time.localtime(self.ts))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"payload": _jsonable(self.payload), "ts": float(self.ts)}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "LastGood":
+        return cls(payload=data.get("payload"), ts=float(data.get("ts") or 0.0))
+
+
+def _jsonable(value: Any, _depth: int = 0) -> Any:
+    """Best-effort conversion of a cached payload to JSON-safe primitives.
+
+    Non-finite floats become ``None`` and unknown objects are dropped rather
+    than coerced — fabricating a value on the way to disk is worse than losing
+    it.
+    """
+    if _depth > 8:
+        return None
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Mapping):
+        return {str(k): _jsonable(v, _depth + 1) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset, deque)):
+        return [_jsonable(v, _depth + 1) for v in value]
+    logger.debug("Dropping non-serialisable %s from the SURF cache", type(value).__name__)
+    return None
+
+
 class SurfCache:
     """Tiered TTLs, last-good store, series and baselines for one SURF process.
 
@@ -86,6 +153,7 @@ class SurfCache:
         self._clock = clock
         self._tier_last_fetch: dict[str, float] = {}
         self._tier_next_due: dict[str, float] = {}
+        self.last_good: dict[str, LastGood] = {}
 
     # -- clock ---------------------------------------------------------------
 
@@ -151,9 +219,50 @@ class SurfCache:
         self._check_tier(tier)
         return self._tier_last_fetch.get(tier)
 
+    # -- last-good snapshots -------------------------------------------------
+
+    @staticmethod
+    def _check_slot(slot: str) -> str:
+        if slot not in SLOTS:
+            raise ValueError(f"unknown SURF slot {slot!r}; expected one of {SLOTS}")
+        return slot
+
+    def store_last_good(
+        self, slot: str, payload: Any, *, ts: float | None = None
+    ) -> LastGood:
+        """Replace ``slot``'s last-good payload. Always stamped with a timestamp."""
+        self._check_slot(slot)
+        entry = LastGood(payload=payload, ts=self._now(ts))
+        self.last_good[slot] = entry
+        return entry
+
+    def get_last_good(self, slot: str) -> LastGood | None:
+        return self.last_good.get(slot)
+
+    def as_of_ts(self, slot: str) -> float | None:
+        entry = self.last_good.get(slot)
+        return None if entry is None else entry.ts
+
+    def age_of(self, slot: str, now: float | None = None) -> float | None:
+        entry = self.last_good.get(slot)
+        return None if entry is None else entry.age_seconds(self._now(now))
+
+    def newest_as_of(self) -> float | None:
+        """Timestamp of the freshest successful read across every slot."""
+        stamps = [e.ts for e in self.last_good.values()]
+        return max(stamps) if stamps else None
+
 
 __all__ = [
     "DEFAULT_CACHE_PATH",
+    "LastGood",
+    "SLOTS",
+    "SLOT_ACTIVITY",
+    "SLOT_CHAIN",
+    "SLOT_CHANNEL",
+    "SLOT_LOGS",
+    "SLOT_MARKET",
+    "SLOT_NFT",
     "SurfCache",
     "TIERS",
     "TIER_FAILURE_BACKOFF_SECONDS",
