@@ -26,10 +26,13 @@ fee recipients exist in frenpet.eth's history today):
   (``0xF3084Bc7…D60eE6`` vs ``0xF3083828…f60Ee6``), which the classic
   first-6/last-4 short form is not.
 * dust never renders: ``kind == "dust"`` rows are dropped outright, and a
-  zero-value ``transfer`` from an unknown counterparty -- exactly the
-  poisoning shape -- is dropped even if the manager's own filter missed
-  it.  Defense in depth; the manager keys on tx sender (PRD §6.5), this
-  widget keys on the rendered row.
+  ``transfer`` at-or-below dust value (see ``_DUST_ETH`` below) from an
+  unknown counterparty -- exactly the poisoning shape -- is dropped even
+  if the manager's own filter missed it.  Defense in depth; the manager
+  keys on tx sender (PRD §6.5), this widget keys on the rendered row.
+  The threshold is a *value* check, not a zero check: the real captured
+  poisoning rows carry 1 gwei (``1_000_000_000`` wei), not 0 wei, and a
+  bare falsiness test (``not value``) lets that exact shape through.
 
 ``dev_activity=None`` -> explicit unavailable state; ``[]`` -> genuinely
 quiet wallets.  Primitives only.
@@ -56,6 +59,18 @@ _MAX_ROWS = 25
 #: The explicit degraded line.  Tested verbatim.
 UNAVAILABLE_LINE = "activity unavailable"
 
+#: Mirrors ``surf_client._DUST_WEI = 10**9`` (1 gwei), converted to the ETH
+#: float unit this row's ``value_eth`` field carries -- ``value_eth`` is
+#: whole ETH (e.g. ``33.25``), not wei, so the client's wei threshold has
+#: to be divided by ``10**18`` (wei per ETH) to compare in the same unit;
+#: getting that conversion wrong by that same factor would silently
+#: disable the filter again. The client's own docstring calls the boundary
+#: "at or below" dust, so the comparison here is inclusive (``<=``): the
+#: real captured poisoning rows carry exactly ``1_000_000_000`` wei, i.e.
+#: exactly this threshold, and a strict ``<`` would let that exact value
+#: through untouched.
+_DUST_ETH = 10**9 / 10**18  # == 1e-9 ETH == 1 gwei == surf_client._DUST_WEI
+
 
 def _row_markup(row) -> str | None:
     """Format one activity row; ``None`` drops it (malformed or poisonous)."""
@@ -67,9 +82,13 @@ def _row_markup(row) -> str | None:
             return None
         known = bool(row.get("counterparty_known"))
         value = as_float(row.get("value_eth"))
-        if kind == "transfer" and not known and not value:
-            # Zero-value transfer from an unknown counterparty: the
-            # address-poisoning shape.  Never rendered (PRD §4).
+        if kind == "transfer" and not known and (
+            value is None or abs(value) <= _DUST_ETH
+        ):
+            # A transfer at or below dust value from an unknown
+            # counterparty: the address-poisoning shape.  Testing exact
+            # zero here (``not value``) missed the real attack, which
+            # arrives as 1 gwei, not 0 wei.  Never rendered (PRD §4).
             return None
 
         stamp = f"{mmdd(row.get('ts'))} {hhmm(row.get('ts'))}"

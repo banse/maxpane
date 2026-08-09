@@ -384,6 +384,28 @@ from maxpane_dashboard.widgets.surf.activity import (  # noqa: E402
 _SPOOF = "0xF3083828702C1989710CECA517412071c2f60Ee6"   # 1-gwei lookalike
 _REAL_UNKNOWN = "0x61CC704c7A5B7071c7B3f4Cc09A9CBC86373f14E"  # LP-fee ETH dest
 
+#: The REAL captured poisoning transfer (``tests/fixtures/surf/captures/
+#: ops_eth_txs.json``, tx ``0x78dde333…``, 2026-06-06T11:48:23Z): the spoof
+#: sends exactly ``1_000_000_000`` wei -- 1 gwei, ``1e-9`` ETH -- not the
+#: hand-typed ``0.0`` a first pass of this fixture used.  1 gwei is Python
+#: -truthy, so a bare ``not value`` check renders it; only a value
+#: *threshold* (``activity._DUST_ETH``) catches it.  Used instead of a
+#: literal ``0.0`` in ``_DEV_ACTIVITY`` below so the fixture exercises the
+#: exact live attack shape, not a stand-in for it.
+_REAL_DUST_WEI = 1_000_000_000
+_REAL_DUST_TS = 1780746503
+_REAL_DUST_TX = "0x78dde33315dcd41e262c26d86f75fb3cfaa03f973cc5f20b976da6d50cf743d7"
+
+#: A REAL captured legitimate small transfer (same capture file, tx
+#: ``0x98df1902…``, 2026-07-17T03:25:11Z, from an unrelated unknown
+#: sender): ``95772789712599`` wei ~= ``9.577e-5`` ETH, about 95,772x the
+#: dust threshold.  Proves the threshold catches the attack's exact value
+#: without swallowing honest small activity that sits near it.
+_REAL_SMALL_WEI = 95772789712599
+_REAL_SMALL_SENDER = "0x91604F590d66Ace8975eeD6bd16cf55647d1C499"
+_REAL_SMALL_TS = 1784258711
+_REAL_SMALL_TX = "0x98df190207ef5afee8f806eb6002d832eff45611ce43bd85ac77106e5736d42d"
+
 _DEV_ACTIVITY = [
     {
         "ts": 1786076603,
@@ -412,14 +434,14 @@ _DEV_ACTIVITY = [
         "value_eth": 8.0,
         "tx_hash": "0x9ea235039668",
     },
-    {  # the poisoning row: zero-value, unknown sender lookalike
-        "ts": 1783519000,
+    {  # the poisoning row: the REAL 1-gwei lookalike transfer, not 0.0
+        "ts": _REAL_DUST_TS,
         "wallet_label": "ops",
         "kind": "transfer",
         "counterparty": _SPOOF,
         "counterparty_known": False,
-        "value_eth": 0.0,
-        "tx_hash": "0xdust1",
+        "value_eth": _REAL_DUST_WEI / 1e18,
+        "tx_hash": _REAL_DUST_TX,
     },
     {  # manager-labelled dust: dropped regardless of any other field
         "ts": 1783518000,
@@ -482,8 +504,15 @@ async def test_activity_dust_rows_are_never_rendered():
 
 
 def test_activity_row_markup_drop_rules_are_exact():
-    """Pure-function check: exactly the poisoning triple is dropped."""
-    base = dict(_DEV_ACTIVITY[3])  # zero-value unknown transfer -> dropped
+    """Pure-function check: exactly the poisoning triple is dropped.
+
+    ``base`` is the REAL 1-gwei captured poisoning row (``_REAL_DUST_WEI``
+    == ``1_000_000_000`` wei == ``1e-9`` ETH), Python-truthy -- proving the
+    drop rule is a value *threshold*, not a ``not value`` falsiness check
+    that only catches a hand-typed ``0.0``.
+    """
+    base = dict(_DEV_ACTIVITY[3])  # real 1-gwei unknown transfer -> dropped
+    assert base["value_eth"] == 1e-9  # truthy; this is the point of the test
     assert _row_markup(base) is None
     assert _row_markup({**base, "kind": "dust", "value_eth": 5.0}) is None
     # Any leg of the triple broken -> the row renders.
@@ -494,6 +523,58 @@ def test_activity_row_markup_drop_rules_are_exact():
     assert _row_markup(None) is None
     assert _row_markup("junk") is None
     assert _row_markup({}) is not None  # renders a dash row, doesn't raise
+
+
+async def test_activity_real_captured_dust_row_is_dropped():
+    """The exact live poisoning row -- real sender, real hash, real 1-gwei
+    value -- from ``ops_eth_txs.json`` must never reach the screen, whole
+    and standalone (not mixed into the larger ``_DEV_ACTIVITY`` fixture).
+    """
+    real_row = {
+        "ts": _REAL_DUST_TS,
+        "wallet_label": "ops",
+        "kind": "transfer",
+        "counterparty": _SPOOF,
+        "counterparty_known": False,
+        "value_eth": _REAL_DUST_WEI / 1e18,
+        "tx_hash": _REAL_DUST_TX,
+    }
+    assert _row_markup(real_row) is None
+
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(110, 20)) as pilot:
+        widget.update_data(dev_activity=[real_row])
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "F3083828" not in screen
+        assert "no recent activity" in screen
+
+
+async def test_activity_legitimate_small_transfer_still_renders():
+    """A genuinely small REAL transfer (~9.577e-5 ETH, ~95,772x the dust
+    threshold) from an unrelated unknown sender must still render -- the
+    threshold targets the attack's exact value, not "small" in general.
+    """
+    real_row = {
+        "ts": _REAL_SMALL_TS,
+        "wallet_label": "ops",
+        "kind": "transfer",
+        "counterparty": _REAL_SMALL_SENDER,
+        "counterparty_known": False,
+        "value_eth": _REAL_SMALL_WEI / 1e18,
+        "tx_hash": _REAL_SMALL_TX,
+    }
+    assert _row_markup(real_row) is not None
+
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(110, 20)) as pilot:
+        widget.update_data(dev_activity=[real_row])
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "0x91604F59…d1C499" in screen  # long_addr(sender), dimmed
+        assert "no recent activity" not in screen
 
 
 async def test_activity_markup_hostile_label_cannot_crash_the_pump():
