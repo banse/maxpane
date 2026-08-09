@@ -1211,3 +1211,238 @@ async def test_a_failed_log_group_reaches_degraded_even_on_an_otherwise_ok_windo
     # The rest of the sweep is trustworthy — a per-group failure must not sink
     # a hero value that a different group answered cleanly.
     assert data["hook_status"] == "NOT LIVE"
+
+
+# ---------------------------------------------------------------------------
+# Slow tier — NFT and dev activity
+# ---------------------------------------------------------------------------
+
+
+async def test_nft_stats_reach_the_payload_and_the_floor_stays_none(manager):
+    data = await manager.fetch_and_compute()
+    assert data["nft_holders"] == NFT_HOLDERS
+    assert data["nft_dev_holdings"] == 3
+    # One number, one producer: WP1.8's lifetime distinct-id count over the
+    # registry's Blockscout log view. Both flat keys read `NftStats.written` —
+    # the hero's "x/2000" and the NFT panel's "written" are the same fact, and
+    # neither may be back-filled from `len(LogWindow.identity_updates)`, which
+    # counts an eight-hour window and would render 0/2000 on a chain whose real
+    # answer is 1/2000 (wp1.md open issues 9 and 11).
+    assert data["identities_written"] == 1
+    assert data["nft_written"] == 1
+    # `transfers_24h` is a *rate*; Blockscout serves a lifetime 7,411 and WP1.8
+    # answers `None` rather than a lower bound when its page walk cannot reach
+    # the 24 h edge. Asserting `is None` here is what stops someone "fixing" it
+    # later with the lifetime counter, which is the wrong number closest to hand.
+    assert data["nft_transfers_24h"] is None
+    # Sales come off the log window, not off the Blockscout counters — decoded
+    # from raw `OrderFulfilled` payloads in WP4.9.
+    assert [row["token_id"] for row in data["nft_last_sales"]] == [1751, 354]
+    assert data["nft_last_sales"][0]["eth"] == pytest.approx(0.18)
+    # PRD §4: there is no keyless floor source; it renders an explicit n/a.
+    assert data["nft_floor"] is None
+
+
+async def test_an_unreadable_written_count_is_none_never_zero(tmp_path):
+    """``0`` would say "nobody has written an identity". One person has.
+
+    ``None`` is the only honest answer when WP1.8's page walk is truncated or
+    Blockscout is down, and WP3.2's hero renders it as a dash rather than as
+    ``0/2000`` — which would read as a fact about the collection.
+    """
+    client = FakeSurfClient(fetch_nft_stats=_nft_stats(written=None))
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["identities_written"] is None
+    assert data["nft_written"] is None
+    assert data["nft_holders"] == NFT_HOLDERS      # the rest of the group survives
+
+
+async def test_dev_activity_is_newest_first_and_capped(tmp_path):
+    from maxpane_dashboard.data.surf_manager import DEV_ACTIVITY_LIMIT
+
+    rows = [
+        _dev_tx(tx_hash=f"0x{i:064x}", ts=float(NOW - i * 60), wallet_label="dev",
+                from_addr=DEV_WALLET, to_addr=FWA_SPLITTER, method="claim",
+                counterparty=FWA_SPLITTER,
+                counterparty_label=KNOWN_LABELS[FWA_SPLITTER.lower()],
+                kind="FWA claim", value_wei=10_000_000_000_000_000)
+        for i in range(DEV_ACTIVITY_LIMIT + 10)
+    ]
+    client = FakeSurfClient(fetch_dev_activity=list(reversed(rows)))
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+
+    assert len(data["dev_activity"]) == DEV_ACTIVITY_LIMIT
+    stamps = [row["ts"] for row in data["dev_activity"]]
+    assert stamps == sorted(stamps, reverse=True)
+    assert data["dev_activity"][0] == {
+        "ts": float(NOW), "wallet_label": "dev", "kind": "FWA claim",
+        "counterparty": KNOWN_LABELS[FWA_SPLITTER.lower()],
+        "counterparty_known": True,
+        "value_eth": pytest.approx(0.01), "tx_hash": "0x" + "0" * 64,
+    }
+
+
+async def test_the_four_live_poisoning_rows_never_reach_the_feed(tmp_path, caplog):
+    """PRD §6.5, against the real thing, one layer late.
+
+    These four 1-gwei sends are in ``captures/ops_eth_txs.json`` today: inbound
+    from addresses that share a 6-char prefix and a 4-char suffix with the two
+    real LP-fee sinks.  WP1.6 is supposed to have dropped them already; here they
+    arrive anyway, labelled ``ops`` with a sender that is not the ops wallet —
+    the shape a regression in WP1's filter would produce.  The manager drops them
+    and says so, because a truncated render of a lookalike is indistinguishable
+    from the real one: the row must not exist rather than be rendered carefully.
+    """
+    poison = [
+        _dev_tx(tx_hash="0x2ad89153afba05142769ad7855c49084bbc185b23e40d77ba46859336d0529ed",
+                ts=1_785_903_359.0, wallet_label="ops",
+                from_addr="0x61CCFD5d33F0F27a2cd5aCb558d9281b110DF14e",
+                to_addr=OPS_WALLET, method=None, value_wei=1_000_000_000),
+        _dev_tx(tx_hash="0xe81febd42dc8671210bc65ff6a1604f7c5e44b8fb640e208a0f66183f95a5b73",
+                ts=1_785_464_471.0, wallet_label="ops",
+                from_addr="0x61CCFD5d33F0F27a2cd5aCb558d9281b110DF14e",
+                to_addr=OPS_WALLET, method=None, value_wei=1_000_000_000),
+        _dev_tx(tx_hash="0x3f51f2eae061d3b10582fb545952524a1401a23ce6879c56c85cc5803adec605",
+                ts=1_780_746_731.0, wallet_label="ops",
+                from_addr="0xF30875988B99489ac71EC2F5069DE0dD80B70eE6",
+                to_addr=OPS_WALLET, method=None, value_wei=1_000_000_000),
+        _dev_tx(tx_hash="0x78dde33315dcd41e262c26d86f75fb3cfaa03f973cc5f20b976da6d50cf743d7",
+                ts=1_780_746_503.0, wallet_label="ops",
+                from_addr="0xF3083828702C1989710CECA517412071c2f60Ee6",
+                to_addr=OPS_WALLET, method=None, value_wei=1_000_000_000),
+    ]
+    real = _dev_tx()                       # the 2026-08-07 LP add, outbound
+    client = FakeSurfClient(fetch_dev_activity=[*poison, real])
+    with caplog.at_level("WARNING"):
+        data = await _manager(tmp_path, client=client).fetch_and_compute()
+
+    assert [row["tx_hash"] for row in data["dev_activity"]] == [real.tx_hash]
+    # Loud, not silent: if this ever fires in production it is a WP1 regression.
+    assert caplog.text.count("is not the ops wallet") == 4
+    # And the spoof senders are not in the allowlist, which is why no layer of
+    # this can ever hand one of them a label.
+    for row in poison:
+        assert row.from_addr.lower() not in KNOWN_LABELS
+
+
+async def test_an_unknown_counterparty_is_never_marked_known(tmp_path):
+    """0x61CC704c… is a real, unlabelled LP-fee destination — dimmed, not trusted.
+
+    ``counterparty_known`` is the one value this layer derives, and it derives it
+    from the *absence* of a label rather than from any property of the address:
+    an allowlist miss is the only thing that can produce it.
+    """
+    unknown = "0x61CC704c7A5B7071c7B3f4Cc09A9CBC86373f14E"
+    client = FakeSurfClient(
+        fetch_dev_activity=[
+            _dev_tx(from_addr=OPS_WALLET, to_addr=unknown, counterparty=unknown,
+                    counterparty_label=None, kind="transfer", method=None,
+                    value_wei=300_000_000_000_000_000)
+        ]
+    )
+    row = (await _manager(tmp_path, client=client).fetch_and_compute())["dev_activity"][0]
+    assert row["counterparty_known"] is False
+    assert row["counterparty"] == unknown       # the raw address, for the dim render
+    assert row["value_eth"] == pytest.approx(0.3)
+
+
+async def test_the_slow_tier_is_skipped_while_fresh(tmp_path):
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+
+    await m.fetch_and_compute()
+    clock.advance(120.0)                         # medium due, slow not
+    await m.fetch_and_compute()
+    assert client.calls.count("fetch_nft_stats") == 1
+    assert client.calls.count("fetch_market") == 2
+
+    clock.advance(400.0)
+    await m.fetch_and_compute()
+    assert client.calls.count("fetch_nft_stats") == 2
+
+
+async def test_a_dev_nonce_bump_pulls_the_tx_page_inside_the_slow_window(tmp_path):
+    """PRD §3 #4: 'both dev nonces every refresh; Blockscout tx page **on change**'.
+
+    Waiting for the 420 s tier would surface a contract creation up to seven
+    minutes late.  The NFT counters, which nothing detects on, stay on the tier.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+
+    await m.fetch_and_compute()
+    assert client.calls.count("fetch_dev_activity") == 1
+
+    clock.advance(30.0)                          # one poll; slow tier not due
+    await m.fetch_and_compute()
+    assert client.calls.count("fetch_dev_activity") == 1   # nothing moved: skipped
+
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE, dev=DEV_NONCE + 1, ops=OPS_NONCE, block_number=BLOCK
+    )
+    clock.advance(30.0)
+    await m.fetch_and_compute()
+    assert client.calls.count("fetch_dev_activity") == 2   # exactly one extra
+    assert client.calls.count("fetch_nft_stats") == 1      # still tier-gated
+
+    clock.advance(30.0)                          # same nonce again: no third call
+    await m.fetch_and_compute()
+    assert client.calls.count("fetch_dev_activity") == 2
+
+
+async def test_an_nft_outage_leaves_the_rest_of_the_screen_alone(tmp_path):
+    """A dead source hands back ``None``, and specifically not ``[]``.
+
+    WP3 froze the pair of meanings and its widgets branch on them: ``[]``
+    renders "no recent activity" with the unavailable banner deliberately
+    *absent*. Publishing ``[]`` for a Blockscout outage would make the screen
+    assert the dev wallets were quiet — a dead source presented as a fact, which
+    is the one thing CLAUDE.md's degradation rule forbids.
+    """
+    client = FakeSurfClient(fetch_nft_stats=None, fetch_dev_activity=None)
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert SOURCE_NFT in data["degraded"]
+    assert SOURCE_ACTIVITY in data["degraded"]
+    assert SOURCE_MARKET not in data["degraded"]
+    assert data["nft_holders"] is None
+    assert data["dev_activity"] is None
+    assert data["imd_price_usd"] == pytest.approx(IMD_PRICE_USD)
+
+
+async def test_a_read_but_empty_page_is_an_empty_list_not_none(tmp_path):
+    """The other half of the same contract — and the reason it is not free.
+
+    ``fetch_dev_activity`` answering ``[]`` is data: the pages were read and
+    held nothing. That must reach the widget as ``[]`` so it renders "no recent
+    activity" rather than the outage banner, and it must reach WP2 as ``[]`` so
+    the deploy baseline can seed (see
+    ``test_the_first_deploy_after_an_empty_page_still_fires``).
+    """
+    client = FakeSurfClient(fetch_dev_activity=[], fetch_channel_txs=[])
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["dev_activity"] == []
+    assert data["feed_items"] == []
+    assert SOURCE_ACTIVITY not in data["degraded"]
+
+
+# All six groups exist now, so a healthy cycle can finally assert the full shape.
+
+
+async def test_a_healthy_cycle_reports_nothing_degraded(manager):
+    data = await manager.fetch_and_compute()
+    assert data["degraded"] == []
+    assert data["as_of"] == pytest.approx(NOW)
+    # This cycle's sample is already in the sparkline, not one refresh behind.
+    assert data["supply_series"] == [[1_786_190_400.0, pytest.approx(IMD_SUPPLY)]]
+    assert data["price_series"] == [[1_786_190_400.0, pytest.approx(IMD_PRICE_USD)]]
+
+
+async def test_a_chain_outage_degrades_only_the_chain_group(tmp_path):
+    client = FakeSurfClient(fetch_nonces=None, fetch_chain_state=None)
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["degraded"] == [SOURCE_CHAIN]
+    assert data["imd_price_usd"] == pytest.approx(IMD_PRICE_USD)
+    assert data["nft_holders"] == NFT_HOLDERS
+    assert data["imd_supply"] is None

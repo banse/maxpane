@@ -84,11 +84,13 @@ the attempt that just happened:
 seven ``fetch_*`` coroutines, as every WP4 test double so far does, need not
 define them) and folds whatever they report into :meth:`_degraded`'s output.
 WP4.7 wired that composition end-to-end before any ``fetch_*`` call reached it;
-WP4.9 is what finally makes ``channel_truncated`` and ``log_group_failed``
-observable, by wiring :meth:`_pool_channel`'s ``fetch_channel_txs`` and
-:meth:`_pool_logs`'s ``fetch_recent_logs`` into :meth:`_cycle`.
-``activity_truncated`` is still silent: ``fetch_dev_activity`` belongs to the
-activity group, wired by a later WP4 task.
+WP4.9 made ``channel_truncated`` and ``log_group_failed`` observable, by wiring
+:meth:`_pool_channel`'s ``fetch_channel_txs`` and :meth:`_pool_logs`'s
+``fetch_recent_logs`` into :meth:`_cycle`. WP4.10 is what finally makes
+``activity_truncated`` observable too, by wiring :meth:`_pool_activity`'s
+``fetch_dev_activity`` into :meth:`_cycle` — it is the flag that matters most,
+because a silent truncation of the dev/ops tx pages is indistinguishable from
+"nothing shipped" to the NEW DEPLOY detector.
 """
 
 from __future__ import annotations
@@ -534,6 +536,164 @@ class SurfManager:
             )
         return window
 
+    # -- the slow tier: NFT counters and dev tx pages -------------------------
+
+    async def _pool_nft(self, tiers: set[str], now: float) -> Any:
+        """Blockscout's collection counters. No log window is in scope here.
+
+        This coroutine runs *concurrently* with `_pool_logs`, so the realized
+        sales genuinely do not exist yet: the slot is stored with counters only
+        and `_cycle` folds the sales in from `SLOT_LOGS` afterwards. Reaching
+        for a `window` here is a `NameError` on the first successful slow-tier
+        fetch, and because `_guard` wraps only the *await*, it escapes past
+        `_pool_nft` to `fetch_and_compute`'s outermost guard — turning every
+        cycle that refreshes the NFT tier into a blank payload with
+        ``degraded == list(SOURCES)``.
+        """
+        if TIER_SLOW not in tiers and self.cache.get_last_good(SLOT_NFT) is not None:
+            return None
+        stats = await self._guard(self.client.fetch_nft_stats, "fetch_nft_stats")
+        self._note(SOURCE_NFT, stats is not None)
+        if stats is not None:
+            self.cache.store_last_good(SLOT_NFT, self._nft_payload(stats), ts=now)
+        return stats
+
+    async def _pool_activity(
+        self, tiers: set[str], now: float, dev_nonce: int | None, ops_nonce: int | None
+    ) -> Any:
+        """The two dev tx pages — on the slow tier **or** on a nonce change.
+
+        Mirrors :meth:`_pool_channel`, for the same reason: PRD §3 #4 reads
+        "both dev nonces every refresh; Blockscout tx page **on change**". The
+        nonces come off the fast tier, so a contract creation is *detectable*
+        within 30 s; leaving the page on the 420 s tier would then sit on that
+        detection for up to seven more minutes, which is the whole margin the
+        detector exists to buy.
+
+        Every ``return None`` is a skip and must not reach :meth:`_note`.
+        """
+        cached = self.cache.get_last_good(SLOT_ACTIVITY)
+        payload = (cached.payload or {}) if cached is not None else {}
+        moved = self._nonce_moved(payload.get("dev_nonce"), dev_nonce) or (
+            self._nonce_moved(payload.get("ops_nonce"), ops_nonce)
+        )
+        if not moved and TIER_SLOW not in tiers and cached is not None:
+            return None
+
+        rows = await self._guard(self.client.fetch_dev_activity, "fetch_dev_activity")
+        self._note(SOURCE_ACTIVITY, rows is not None)
+        if rows is not None:
+            self.cache.store_last_good(
+                SLOT_ACTIVITY,
+                {
+                    "rows": self._activity_rows(rows),
+                    "dev_nonce": dev_nonce,
+                    "ops_nonce": ops_nonce,
+                },
+                ts=now,
+            )
+        return rows
+
+    @staticmethod
+    def _nonce_moved(seen: Any, current: int | None) -> bool:
+        """``True`` only when both are known and they differ.
+
+        An unreadable nonce is not a change: an outage must never *cause* a
+        fetch storm, and it must never look like activity either.
+        """
+        previous = _opt_int(seen)
+        return previous is not None and current is not None and previous != current
+
+    @staticmethod
+    def _nft_payload(stats: Any, sales: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        """Blockscout counters, plus the sales the **logs** group already decoded.
+
+        The two sources are on different tiers on purpose: counters are
+        slow-tier REST, sales are medium-tier logs. ``sales`` is therefore
+        passed in already decoded (WP4.9's ``_seaport_sale_rows``, cached under
+        ``SLOT_LOGS``) and defaults to ``None`` — this method never reaches for
+        a log window, because when `_pool_nft` calls it there is not one.
+
+        ``written`` is WP1.8's **lifetime** distinct-id count and is published
+        under both flat names, ``nft_written`` and the hero's
+        ``identities_written``. ``transfers_24h`` is the *rate* and is ``None``
+        until WP1.8's window walk reaches the 24 h edge — never back-filled from
+        the lifetime counter beside it, which is *available* and wrong.
+        """
+        return {
+            "nft_holders": _opt_int(_field(stats, "holders")),
+            "nft_transfers_24h": _opt_float(_field(stats, "transfers_24h")),
+            "nft_dev_holdings": _opt_int(_field(stats, "dev_holdings")),
+            "nft_written": _opt_int(_field(stats, "written")),
+            "nft_last_sales": sales,
+            # There is no keyless floor source. Never faked, never blank-by-accident.
+            # WP0.4 pins ``NftStats.floor_eth`` to ``None`` for the same reason.
+            "nft_floor": None,
+        }
+
+    @staticmethod
+    def _activity_rows(rows: Any) -> list[dict[str, Any]]:
+        """Re-check, flatten, scale, sort and cap.
+
+        **WP1.6 owns the poisoning defence** — it filters on the sender and fills
+        ``counterparty`` / ``counterparty_label`` / ``kind`` from ``KNOWN_LABELS``
+        at construction, where the row's provenance still exists (see the
+        ownership note in this file's header, and report the conflict if WP1's
+        text still disagrees). This method therefore *reads* those three fields
+        instead of deriving them: two implementations of one allowlist is how a
+        lookalike eventually inherits its target's label.
+
+        What stays here — and it doubles as the manager's half of the dust
+        defence (CLAUDE.md / PRD §6.5): the widget's dust filter keys on the
+        *rendered row shape* (``kind``/``value_eth``); this one keys on the
+        *sender*, so it drops every dust row without ever inspecting a value —
+        a poisoning transfer is inbound by construction, and rule 1 below drops
+        every inbound row regardless of its wei amount. That is why the header
+        can say "the manager never emits a dust row, because it never emits an
+        inbound row at all": there is no falsy-vs-1-gwei distinction to get
+        wrong here, because there is no value threshold in this method at all.
+
+        1. **A cheap re-check of rule 1, as defence in depth.** A row whose
+           ``from_addr`` is not the wallet its own ``wallet_label`` names cannot
+           be one of that wallet's own txs, so it is dropped *and logged* — loud,
+           because if it ever fires it is a WP1 bug and not a normal condition.
+           This is an assertion about the rule, not a second copy of it.
+        2. **``counterparty_known``**, the one derived value: a label the client
+           resolved is a known counterparty, a ``None`` is not. The widget dims
+           the unknowns without ever importing the address module.
+        3. **wei→ETH**, once, at the presentation boundary.
+        """
+        out: list[dict[str, Any]] = []
+        for row in rows or ():
+            sender = str(_field(row, "from_addr") or "").lower()
+            label_name = str(_field(row, "wallet_label") or "")
+            expected = DEV_WALLETS.get(label_name)
+            if expected is not None and sender != expected:
+                logger.warning(
+                    "SURF activity: %s row from %s is not the %s wallet — "
+                    "WP1's sender filter let an inbound row through",
+                    _field(row, "tx_hash"), sender, label_name,
+                )
+                continue
+            counterparty_label = _field(row, "counterparty_label")
+            out.append(
+                {
+                    "ts": _opt_float(_field(row, "ts")),
+                    "wallet_label": label_name,
+                    "kind": str(_field(row, "kind") or ""),
+                    "counterparty": (
+                        counterparty_label
+                        if counterparty_label is not None
+                        else str(_field(row, "counterparty") or "")
+                    ),
+                    "counterparty_known": counterparty_label is not None,
+                    "value_eth": _tokens(_field(row, "value_wei")),
+                    "tx_hash": str(_field(row, "tx_hash") or ""),
+                }
+            )
+        out.sort(key=lambda r: (r["ts"] is not None, r["ts"] or 0.0), reverse=True)
+        return out[:DEV_ACTIVITY_LIMIT]
+
     async def _pool_channel(
         self, tiers: set[str], now: float, nonce: int | None
     ) -> Any:
@@ -799,13 +959,71 @@ class SurfManager:
         # anything from a ``None``.
         self.cache.record_supply(imd_supply, _opt_int(_field(state, "block_number")))
 
-        market, logs, channel = await asyncio.gather(
+        dev_nonce = _opt_int(_field(nonces, "dev"))
+        ops_nonce = _opt_int(_field(nonces, "ops"))
+
+        market, logs, channel, nft, activity = await asyncio.gather(
             self._pool_market(tiers, now),
             self._pool_logs(tiers, now),
             self._pool_channel(tiers, now, announce_nonce),
+            self._pool_nft(tiers, now),
+            self._pool_activity(tiers, now, dev_nonce, ops_nonce),
         )
-        if market is not None or logs is not None or channel is not None:
-            self.cache.mark_fetched(TIER_MEDIUM, now)
+        # A tier's clock is moved by the tier's *own* work, never by a
+        # nonce-forced fetch: a channel or tx-page pull triggered off the fast
+        # tier must not push the market and the log window another 90/420 s out.
+        # A due tier that produced nothing takes the failure backoff instead of
+        # being retried on every refresh.
+        if TIER_MEDIUM in tiers:
+            if market is not None or logs is not None:
+                self.cache.mark_fetched(TIER_MEDIUM, now)
+            else:
+                self.cache.mark_failed(TIER_MEDIUM, now)
+        if TIER_SLOW in tiers:
+            if nft is not None:
+                self.cache.mark_fetched(TIER_SLOW, now)
+            else:
+                self.cache.mark_failed(TIER_SLOW, now)
+
+        # The sales live in the *logs* slot, decoded once by `_pool_logs`. They
+        # are read back from there on every cycle — including a fast-only one,
+        # where `logs` is `None` because the medium tier was skipped — so a
+        # skipped or cached NFT tier can neither blank them nor serve a copy
+        # that is staler than the window they came from.
+        logs_payload = dict(
+            getattr(self.cache.get_last_good(SLOT_LOGS), "payload", None) or {}
+        )
+        sales = logs_payload.get("nft_last_sales")
+
+        nft_payload = (
+            self._nft_payload(nft, sales) if nft is not None
+            else dict(getattr(self.cache.get_last_good(SLOT_NFT), "payload", None) or {})
+        )
+        nft_payload["nft_last_sales"] = sales
+
+        # `None` and `[]` are opposite claims about the tx pages, and the widget
+        # renders them differently ("activity unavailable" vs "no recent
+        # activity"). `[]` is only allowed once the group has actually answered:
+        # a cold cache plus a dead Blockscout is `None`.
+        #
+        # Read back from ``SLOT_ACTIVITY`` rather than re-running
+        # ``_activity_rows(activity)`` here: unlike ``_nft_payload``/
+        # ``_channel_payload`` (pure re-shapers, safe to call twice),
+        # ``_activity_rows`` *logs* on every dropped poisoning row, and
+        # ``_pool_activity`` already called it once and stored the result
+        # before this line runs (the ``gather`` above only returns once every
+        # coroutine, including ``_pool_activity``, has finished). Calling it
+        # again here would double every "is not the wallet" warning for a
+        # spoof row still in the client's page — the same row logged twice
+        # for one cycle is not "loud", it is misleading.
+        activity_cached = getattr(
+            self.cache.get_last_good(SLOT_ACTIVITY), "payload", None
+        )
+        activity_rows = (
+            list((activity_cached or {}).get("rows") or [])
+            if activity_cached is not None
+            else None
+        )
 
         # This cycle's channel slot: fresh when we fetched, last-good otherwise.
         # Both shapes are the same dict, so the POST detector reads one thing.
@@ -861,7 +1079,7 @@ class SurfManager:
             # `identities_written` is NOT set here. `ChainState` has no such
             # field (WP0.4 dropped it — the registry has no getter), and the
             # ~8 h `LogWindow.identity_updates` count answers a different
-            # question. It is filled from `NftStats.written` in Task WP4.10.
+            # question. It is filled from `NftStats.written` below.
             "imd_supply": imd_supply,
             "imd_burned_cum": self.cache.observed_burn_total(),
             "eth_usd": market_payload.get("eth_usd"),
@@ -877,6 +1095,17 @@ class SurfManager:
             "feed_items": feed_items,
             "feed_last_post_age_s": self._last_post_age(feed_items or [], now),
             "hook_status": self._hook_status(),
+            "nft_holders": nft_payload.get("nft_holders"),
+            "nft_transfers_24h": nft_payload.get("nft_transfers_24h"),
+            "nft_dev_holdings": nft_payload.get("nft_dev_holdings"),
+            "nft_written": nft_payload.get("nft_written"),
+            # One number, one producer (`NftStats.written`, WP1.8): the hero and
+            # the NFT panel must never be able to disagree about it, so they are
+            # the same expression rather than two reads.
+            "identities_written": nft_payload.get("nft_written"),
+            "nft_last_sales": nft_payload.get("nft_last_sales"),
+            "nft_floor": None,
+            "dev_activity": activity_rows,
         }
 
         payload = self._finalise(data)
