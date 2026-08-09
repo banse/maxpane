@@ -226,6 +226,7 @@ class SurfCache:
         self._baselines: dict[str, Any] = {}
         self.last_supply: float | None = None
         self.burned_cum: float = 0.0
+        self._last_supply_block: int | None = None
 
     # -- clock ---------------------------------------------------------------
 
@@ -403,14 +404,32 @@ class SurfCache:
 
     # -- observed burns --------------------------------------------------------
 
-    def record_supply(self, supply: float | None) -> float | None:
+    def record_supply(
+        self, supply: float | None, block_number: int | None = None
+    ) -> float | None:
         """Fold one ``totalSupply`` reading in. Returns the burn observed, if any.
 
         ``None`` in -> ``None`` out and **no state change**: a failed read must be
         incapable of producing a BURN (PRD §6.1). The first successful read only
-        establishes the baseline, so it also concludes nothing.
+        establishes the baseline, so it also concludes nothing. A numeric
+        *string* is likewise not a reading -- the contract is ``float | None``,
+        not "anything ``float()`` tolerates" -- so it is rejected the same way.
+
+        ``block_number``, when supplied, is the block the reading was taken at
+        (``ChainState.block_number``, fetched in the same batched call as the
+        supply itself). A reading whose block does not strictly advance past
+        the last one folded in is treated as a stale replica, not a bridge-in
+        or a burn: public RPC pools are load-balanced across nodes that do not
+        all see the same head, so an older replica answering after a fresher
+        one is routine, not exotic. Such a reading changes **nothing** --
+        neither the supply baseline nor the block watermark -- so a later
+        in-order reading is still compared against the correct baseline
+        instead of one a stale read displaced. Omitting ``block_number``
+        (``None``, the default) skips this check entirely and falls back to
+        the original value-only behaviour, for any caller that does not yet
+        have a block number to offer.
         """
-        if supply is None or isinstance(supply, bool):
+        if supply is None or isinstance(supply, (bool, str)):
             return None
         try:
             value = float(supply)
@@ -418,6 +437,18 @@ class SurfCache:
             return None
         if not math.isfinite(value) or value < 0:
             return None
+
+        if block_number is not None:
+            try:
+                block = int(block_number)
+            except (TypeError, ValueError):
+                return None
+            if self._last_supply_block is not None and block <= self._last_supply_block:
+                # Stale replica: this block was already superseded by one
+                # folded in earlier. Ignore it outright -- do not let it
+                # re-baseline the accumulator or displace the watermark.
+                return None
+            self._last_supply_block = block
 
         previous = self.last_supply
         self.last_supply = value

@@ -510,3 +510,61 @@ def test_a_non_finite_supply_is_not_a_reading(tmp_path):
     c.record_supply(IMD_SUPPLY)
     assert c.record_supply(float("nan")) is None
     assert c.last_supply == IMD_SUPPLY
+
+
+def test_out_of_order_block_does_not_fabricate_a_burn(tmp_path):
+    """Fix round 1: a stale RPC replica must not manufacture a burn.
+
+    True burn is 150 (1000 -> 850). A stale replica then answers with an
+    OLDER block reporting 900 -- read naively that looks like a bridge-in
+    increase and would re-baseline the accumulator upward; a later in-order
+    re-poll of 850 would then look like a SECOND decrease (total 200, not
+    150). The block number is what tells the accumulator to ignore it: it
+    advances monotonically on-chain even when replies do not arrive in that
+    order over a load-balanced RPC pool.
+    """
+    c = _cache(tmp_path)
+    assert c.record_supply(1000.0, block_number=100) is None       # baseline
+    assert c.record_supply(850.0, block_number=200) == pytest.approx(150.0)
+    # Stale replica: block 150 was already superseded by block 200.
+    assert c.record_supply(900.0, block_number=150) is None
+    assert c.last_supply == 850.0                                   # untouched
+    # In-order re-poll of the same true value: no further decrease.
+    assert c.record_supply(850.0, block_number=300) == 0.0
+    assert c.observed_burn_total() == pytest.approx(150.0)          # not 200
+
+
+def test_a_genuine_bridge_in_still_re_baselines_at_an_advancing_block(tmp_path):
+    """An increase at a strictly later block is a real bridge-in, not noise."""
+    c = _cache(tmp_path)
+    c.record_supply(1000.0, block_number=100)
+    assert c.record_supply(1200.0, block_number=200) == 0.0   # bridge-in, re-baselines
+    assert c.last_supply == 1200.0
+    delta = c.record_supply(1100.0, block_number=300)         # decrease from the NEW high
+    assert delta == pytest.approx(100.0)
+    assert c.observed_burn_total() == pytest.approx(100.0)
+
+
+def test_a_repeated_block_is_ignored(tmp_path):
+    c = _cache(tmp_path)
+    c.record_supply(1000.0, block_number=100)
+    assert c.record_supply(850.0, block_number=200) == pytest.approx(150.0)
+    assert c.record_supply(900.0, block_number=200) is None    # same block, ignored
+    assert c.last_supply == 850.0
+    assert c.observed_burn_total() == pytest.approx(150.0)
+
+
+def test_omitting_block_number_falls_back_to_value_only_behaviour(tmp_path):
+    """A caller with no block number yet must not lose the old behaviour."""
+    c = _cache(tmp_path)
+    c.record_supply(1000.0)
+    assert c.record_supply(850.0) == pytest.approx(150.0)
+    assert c.observed_burn_total() == pytest.approx(150.0)
+
+
+def test_a_numeric_string_is_not_a_reading(tmp_path):
+    """The contract is ``float | None``, not "anything float() tolerates"."""
+    c = _cache(tmp_path)
+    c.record_supply(1000.0)
+    assert c.record_supply("1000") is None
+    assert c.last_supply == 1000.0
