@@ -479,11 +479,12 @@ def _sig(name: str, baselines: dict, readings: dict, now: float = NOW) -> tuple:
 def test_output_keys_are_exactly_the_prd_contract():
     out, _ = sig.build_signals(_baseline(), _readings(), NOW)
     assert set(out) == set(sig.SIGNAL_OUTPUT_KEYS)
-    # WP2.4 lands NEW POST only; the other five detectors (lp, gate, deploy,
-    # bridge, burn) are later tasks in this same work package appending to
-    # this same _DETECTORS registry. Asserting the full six-name PRD roster
-    # here would be asserting a future task's state, not this one's.
-    assert sig.SIGNAL_NAMES == ("post",)
+    # WP2.4 landed NEW POST; WP2.5 appends LP MIGRATION. The remaining four
+    # detectors (gate, deploy, bridge, burn) are later tasks in this same work
+    # package appending to this same _DETECTORS registry. Asserting the full
+    # six-name PRD roster here would be asserting a future task's state, not
+    # this one's.
+    assert sig.SIGNAL_NAMES == ("post", "lp")
 
 
 def test_quiet_refresh_leaves_post_ok():
@@ -592,3 +593,63 @@ def test_fired_events_survive_a_restart_through_the_returned_baselines():
     # Replayed from the persisted state with no new event: still FIRED.
     assert _sig("post", advanced, _readings(announce_nonce=14))[0] == "fired"
     assert sig._short_addr(None) == ""
+
+
+# --- 2. LP MIGRATION --------------------------------------------------------
+#
+# He promised onchain to announce before moving the LP (nonce 8), so the
+# decrease is the act itself.  An *increase* is movement worth watching but is
+# the opposite event -- that is exactly what 2026-08-07 was.
+
+
+def test_liquidity_holding_is_ok():
+    assert _sig("lp", _baseline(), _readings()) == ("ok", "liquidity holds", None)
+
+
+def test_liquidity_decrease_fires():
+    assert _sig("lp", _baseline(), _readings(lp_liquidity=677_000_000_000)) == (
+        "fired", "LIQUIDITY OUT -32.3%", 0.0
+    )
+
+
+def test_liquidity_increase_is_a_watch_not_a_fire():
+    """The 2026-08-07 add: 33 ETH *into* the pool, not out of it."""
+    assert _sig("lp", _baseline(), _readings(lp_liquidity=LP_LIQUIDITY_AFTER_ADD)) == (
+        "watch", "LP added +33.0%", None
+    )
+
+
+def test_any_frenpet_eth_activity_is_a_watch():
+    """29 lifetime txs on that wallet: any nonce move is signal (PRD §3 #2)."""
+    assert _sig("lp", _baseline(), _readings(ops_nonce=37)) == (
+        "watch", "frenpet.eth active · nonce 37", None
+    )
+
+
+def test_hooked_v4_initialize_fires_as_the_launch():
+    """SYNTHETIC event, real rule: currency IMD and hooks != 0x0 IS the launch."""
+    state, detail, age = _sig("lp", _baseline(), _readings(v4_hook_pools=[HOOKED_POOL]))
+    assert state == "fired"
+    assert detail == "V4 LAUNCH · hooks 0xd6C6d48e…CF7A44"
+    assert age == pytest.approx(NOW - HOOKED_POOL["ts"])
+
+
+def test_hookless_pools_are_noise():
+    """All 19 live IMD v4 pools are third-party and hookless.
+
+    Firing on them would make the flagship detector permanently wrong on day
+    one, and would advance the baseline past a real hooked pool.
+    """
+    state, detail, _ = _sig("lp", _baseline(), _readings(v4_hook_pools=[HOOKLESS_POOL]))
+    assert state == "ok"
+    assert detail == "liquidity holds"
+    _, advanced = sig.build_signals(_baseline(), _readings(v4_hook_pools=[HOOKLESS_POOL]), NOW)
+    assert advanced["v4_tx"] == ""
+
+
+def test_lp_outage_is_none():
+    assert _sig(
+        "lp",
+        _baseline(),
+        _readings(lp_liquidity=None, ops_nonce=None, v4_hook_pools=None),
+    ) == (None, "LP state unavailable", None)

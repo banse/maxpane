@@ -484,6 +484,54 @@ def _detect_post(base: dict, read: dict, now: float) -> _Det:
     return _ok(f"nonce {nonce} · no new post")
 
 
+# --- 2. LP MIGRATION -------------------------------------------------------
+
+
+def _detect_lp(base: dict, read: dict, now: float) -> _Det:
+    """The next launch's watchable precondition (PRD §3 #2).
+
+    Escalating order, strongest first:
+
+    1. a PoolManager ``Initialize`` for IMD with ``hooks != 0x0`` — that log
+       *is* the launch.  Hookless initialisations are third-party noise and are
+       filtered upstream in :func:`_event_rows`.
+    2. liquidity **down** on position #1167726 — the act he promised to
+       announce before performing.
+    3. liquidity **up**, or any frenpet.eth nonce movement — precursors.  The
+       2026-08-07 add was both.
+
+    A liquidity read of ``None`` produces no comparison at all.  It also cannot
+    un-fire anything: the FIRED store is applied by :func:`build_signals`
+    independently of what this returns.
+    """
+    hooked = _event_rows("v4_hook_pools", read.get("v4_hook_pools"))
+    launch = _fresh_event(base, "v4_tx", "v4_ts", hooked)
+    if launch is not None:
+        hooks = _short_addr(launch.get("hooks"))
+        return _fired(f"V4 LAUNCH · hooks {hooks}", _as_float(launch.get("ts")))
+
+    liquidity = _as_int(read.get("lp_liquidity"))
+    base_liquidity = _as_int(base.get("lp_liquidity"))
+    if liquidity is not None and base_liquidity is not None and base_liquidity > 0:
+        if liquidity < base_liquidity:
+            drop = 100.0 * (base_liquidity - liquidity) / base_liquidity
+            return _fired(f"LIQUIDITY OUT -{drop:.1f}%", now)
+        if liquidity > base_liquidity:
+            rise = 100.0 * (liquidity - base_liquidity) / base_liquidity
+            return _watch(f"LP added +{rise:.1f}%")
+
+    ops_nonce = _as_int(read.get("ops_nonce"))
+    base_ops = _as_int(base.get("ops_nonce"))
+    if ops_nonce is not None and base_ops is not None and ops_nonce > base_ops:
+        return _watch(f"frenpet.eth active · nonce {ops_nonce}")
+
+    if liquidity is None:
+        return _dead("LP state unavailable")
+    if base_liquidity is None:
+        return _ok("liquidity baseline set")
+    return _ok("liquidity holds")
+
+
 # --- registry --------------------------------------------------------------
 
 #: ``(name, detector)`` in render order.  :data:`SIGNAL_NAMES` and
@@ -491,6 +539,7 @@ def _detect_post(base: dict, read: dict, now: float) -> _Det:
 #: advertise a key it does not emit.
 _DETECTORS: tuple[tuple[str, Any], ...] = (
     ("post", _detect_post),
+    ("lp", _detect_lp),
 )
 
 SIGNAL_NAMES: tuple[str, ...] = tuple(name for name, _ in _DETECTORS)
