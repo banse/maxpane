@@ -2176,6 +2176,98 @@ def test_the_client_never_decodes_a_log_itself():
 
 
 # ---------------------------------------------------------------------------
+# fetch_tx_senders — the v4-launch corroboration read
+# ---------------------------------------------------------------------------
+#
+# Uniswap v4 ``initialize()`` is permissionless, so an ``Initialize`` log for
+# IMD with a non-zero hook proves only that *somebody* paid gas.  The one thing
+# a stranger cannot forge is the signature on the transaction that emitted it,
+# and this is the read that recovers it.  The manager decides what the answer
+# means; this module only refuses to invent one.
+
+
+def _tx_handler(senders: dict[str, str]):
+    """Answer an ``eth_getTransactionByHash`` batch from a hash -> from map.
+
+    A hash absent from *senders* comes back as a JSON-RPC ``error`` — the way a
+    pruning or lagging endpoint answers for a transaction it does not hold.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        assert isinstance(batch, list), "fetch_tx_senders must POST one batch"
+        out = []
+        for entry in batch:
+            assert entry["method"] == "eth_getTransactionByHash", entry["method"]
+            tx = str(entry["params"][0]).lower()
+            if tx in senders:
+                out.append(_rpc_ok(entry, {"hash": tx, "from": senders[tx],
+                                           "to": A.POOL_MANAGER_V4}))
+            else:
+                out.append({"jsonrpc": "2.0", "id": entry["id"],
+                            "error": {"code": -32000, "message": "not found"}})
+        return httpx.Response(200, json=out)
+
+    return handler
+
+
+_LAUNCH_TX = "0x" + "5c" * 32
+_STRANGER_TX = "0x" + "6d" * 32
+
+
+@pytest.mark.asyncio
+async def test_fetch_tx_senders_reads_the_signer_off_the_state_pool():
+    transport = RecordingTransport(
+        _tx_handler({_LAUNCH_TX: A.DEV_WALLET, _STRANGER_TX: "0x" + "ee" * 20})
+    )
+    async with _client_on(transport) as client:
+        senders = await client.fetch_tx_senders([_LAUNCH_TX, _STRANGER_TX])
+
+    # Lowercased on both sides: the RPC answers lowercase and the vendored
+    # constants are checksummed, so a case-sensitive caller would read the
+    # dev's own launch as a stranger's.
+    assert senders == {
+        _LAUNCH_TX: A.DEV_WALLET.lower(),
+        _STRANGER_TX: "0x" + "ee" * 20,
+    }
+    # STATE pool only — publicnode indexes transactions and the logs pool is
+    # reserved for the archive-range reads it is chosen for.
+    assert transport.urls() == [client.state_endpoints[0]]
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_transaction_is_absent_not_a_zero_address():
+    """"We could not read who sent it" and "a stranger sent it" are the two
+    answers the launch corroboration exists to keep apart.  A zero address, an
+    empty string or any other placeholder here reads as *attributed to nobody*,
+    which is a stranger — and that turns an outage into a confident NOT LIVE on
+    the one event this dashboard exists to catch.
+    """
+    async with _client_on(RecordingTransport(_tx_handler({}))) as client:
+        senders = await client.fetch_tx_senders([_LAUNCH_TX])
+    assert senders == {}
+
+    async with _offline_client() as client:
+        assert await client.fetch_tx_senders([_LAUNCH_TX]) == {}
+
+
+@pytest.mark.asyncio
+async def test_fetch_tx_senders_issues_no_request_for_an_empty_list():
+    """The everyday case is zero hooked pools; it must cost zero requests."""
+    async with _raising_client() as client:
+        assert await client.fetch_tx_senders([]) == {}
+
+
+@pytest.mark.asyncio
+async def test_fetch_tx_senders_asks_for_each_hash_once():
+    transport = RecordingTransport(_tx_handler({_LAUNCH_TX: A.DEV_WALLET}))
+    async with _client_on(transport) as client:
+        await client.fetch_tx_senders([_LAUNCH_TX, _LAUNCH_TX.upper(), _LAUNCH_TX])
+    (_url, _method, payload), = transport.requests
+    assert len(payload) == 1
+
+
+# ---------------------------------------------------------------------------
 # WP1.10 — structural guards
 # ---------------------------------------------------------------------------
 
@@ -2193,12 +2285,22 @@ def _public_fetchers() -> list[str]:
     outage sweep and the zero-turn sweep below — the one place that
     guarantees every fetcher degrades to ``None`` rather than ``0`` or an
     exception. Derived from ``dir(SurfClient)`` instead, so a new fetcher is
-    swept automatically. Nothing is excluded by name; if one genuinely needs
-    excluding later, exclude it explicitly here with a comment saying why.
+    swept automatically.
+
+    ``fetch_tx_senders`` is the one explicit exclusion, and the reason is that
+    the two sweeps below would assert the wrong contract for it. It is not a
+    source-group fetcher: it takes a list of hashes and answers a **per-hash
+    map**, so its outage encoding is *absence of a key*, not a ``None`` return
+    — a ``None`` there would say "the whole lookup is unavailable" about a
+    batch in which some hashes resolved and others did not. Its own outage
+    behaviour is pinned by
+    ``test_an_unreadable_transaction_is_absent_not_a_zero_address``, which
+    drives it through ``_offline_client`` exactly as these sweeps do.
     """
     return sorted(
         name for name in dir(SurfClient)
         if name.startswith("fetch_") and not name.startswith("_")
+        and name != "fetch_tx_senders"
     )
 
 

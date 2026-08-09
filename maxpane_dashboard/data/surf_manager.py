@@ -36,7 +36,20 @@ Four rules this module exists to enforce
    readings to ``build_signals`` and stores back whatever comes out.
 3. **No sentinel ever reaches a series.** ``sample_series`` is called with the
    assembled payload's values, which are ``None`` when unread.
-4. **"Not due to retry" is not "healthy."** :meth:`SurfCache.is_fresh` /
+4. **A permissionless event is not a claim until someone unforgeable made
+   it.** Uniswap v4 ``initialize()`` is open to anyone, so an ``Initialize``
+   log naming IMD with a non-zero hook costs a stranger one transaction's gas
+   and says nothing about who sent it. ``hook_status`` and the LP MIGRATION
+   detector therefore act only on a row whose enclosing transaction a dev
+   wallet signed (``client.fetch_tx_senders`` → :meth:`_attribute_launches` →
+   :meth:`_valid_launch`); a hooked row we could not attribute renders as an
+   explicit unknown, never as a launch. The persisted ``hook_launch`` record
+   holds that evidence and is re-validated on every read, so it is durable
+   without being a latch — the previous ``hook_live = bool(hooked) or
+   previously_live`` was an unconditional OR over third-party input, and one
+   griefing transaction pinned the hero to LAUNCHED for the life of the cache
+   file.
+5. **"Not due to retry" is not "healthy."** :meth:`SurfCache.is_fresh` /
    ``tiers_due`` answer *whether to attempt a fetch*, and only that:
    ``mark_failed`` advances the same ``_tier_next_due`` clock ``mark_fetched``
    does, purely to space out retries, so a tier sitting out a failure's backoff
@@ -199,6 +212,21 @@ DEV_WALLETS: dict[str, str] = {
     "dev": DEV_WALLET.lower(),
     "ops": OPS_WALLET.lower(),
 }
+
+#: The signers whose ``Initialize`` transaction makes a hooked v4 pool *the
+#: dev's launch* rather than a stranger's. Derived from ``DEV_WALLETS`` above,
+#: which is read from ``surf_addresses`` — the module that owns this vocabulary
+#: — rather than restated, so a corrected address cannot come to mean two
+#: different things in one repo.
+LAUNCH_SIGNERS: frozenset[str] = frozenset(DEV_WALLETS.values())
+
+#: Distinct ``Initialize`` transaction hashes whose signer the manager will
+#: remember between cycles. Bounded because the memo is keyed by an
+#: attacker-choosable value: anyone can emit a hooked ``Initialize`` for IMD,
+#: and an unbounded memo would grow one entry per grief transaction for the
+#: life of the process. Nineteen IMD v4 pools have ever existed, so this is
+#: room for two orders of magnitude more than the chain has produced.
+_SIGNER_MEMO_CAP = 256
 
 # NOTE: the counterparty -> kind map that used to live here belongs to WP1.6,
 # which fills ``DevTx.kind`` at construction. Keeping a copy here would be a
@@ -404,6 +432,12 @@ class SurfManager:
         self._error_count = 0
         #: Groups whose most recent *attempt* failed. Cleared on success.
         self._failed_groups: set[str] = set()
+        #: ``Initialize`` tx hash -> the wallet that signed it. In-memory only
+        #: and never persisted: it is a cache of an answer, not a state the
+        #: dashboard may restore and act on across restarts. Only successful
+        #: lookups are remembered, so an RPC outage never freezes an
+        #: attribution. Bounded by :data:`_SIGNER_MEMO_CAP`.
+        self._launch_signer_memo: dict[str, str] = {}
 
         try:
             self.cache.load()
@@ -540,30 +574,29 @@ class SurfManager:
             # refresh (Task WP4.11), so the detectors keep seeing a read window
             # rather than an outage between two medium ticks. All four groups
             # arrive raw; all four are decoded here and nowhere else.
-            hooked = self._hook_pool_rows(window, now)
-            # `hook_live` is **latched**, and that is not a convenience.
-            # `hooked` is only what the *current* ~8 h window shows
-            # (`LOG_WINDOW_BLOCKS = 2400`) and this slot is replaced wholesale on
-            # every successful medium-tier read, so a `hook_live` derived from
-            # the window alone flips the hero back from LAUNCHED to NOT LIVE
-            # about eight hours after the launch — on a perfectly healthy chain,
-            # for the single event PRD §1/§7 says this dashboard exists to catch.
-            # A v4 pool initialization is irreversible, so that is a *wrong*
-            # value, not a stale one, and no as-of marker makes it honest.
-            # `v4_hook_pools` is deliberately **not** latched: it is the panel's
-            # row list and must keep meaning "seen in this window".
-            previously_live = bool(
-                (
-                    getattr(self.cache.get_last_good(SLOT_LOGS), "payload", None) or {}
-                ).get("hook_live")
+            candidates = self._hooked_candidates(window, now)
+            signers = await self._launch_signers(candidates)
+            hooked, unattributed = self._attribute_launches(candidates, signers)
+            previous = dict(
+                getattr(self.cache.get_last_good(SLOT_LOGS), "payload", None) or {}
             )
             self.cache.store_last_good(
                 SLOT_LOGS,
                 {
                     "to_block": _opt_int(_field(window, "to_block")),
                     "bridge_mints": self._bridge_rows(window, now),
-                    "v4_hook_pools": hooked,
-                    "hook_live": bool(hooked) or previously_live,
+                    # "Hooked pools seen in THIS window, that a dev wallet
+                    # signed". `None` when the window held a hooked pool whose
+                    # signer we could not read: that is an unread attribution,
+                    # not an empty window, and `[]` here would seed WP2's v4
+                    # baseline with the claim that nothing happened.
+                    "v4_hook_pools": (
+                        hooked if hooked or not unattributed else None
+                    ),
+                    "hook_launch": self._launch_record(
+                        hooked, previous.get("hook_launch")
+                    ),
+                    "hook_unverified": bool(unattributed),
                     # Signal 3's detail line: writes seen *in this window*, not
                     # the hero's lifetime "x/2000". Two different numbers with
                     # one name — see the header's consequence 4.
@@ -576,6 +609,120 @@ class SurfManager:
                 ts=now,
             )
         return window
+
+    async def _launch_signers(self, candidates: list[dict[str, Any]]) -> dict[str, str]:
+        """``{tx_hash: signer}`` for the hooked ``Initialize`` rows, memoised.
+
+        Costs nothing in the everyday case, because the everyday case is zero
+        hooked rows: all nineteen IMD v4 pools that have ever existed are
+        third-party and hookless. A row whose signer stays unreadable is simply
+        absent from the result and stays a candidate for the next attempt —
+        the memo only ever remembers answers, never failures, so a transient
+        RPC outage cannot freeze an attribution.
+
+        Every failure mode here — a client that never grew the method, a
+        malformed answer, an exception — lands on the same conservative
+        outcome: no attribution. That direction is deliberate. An unattributed
+        hooked pool renders as an explicit unknown; a wrongly attributed one
+        renders as a launch that did not happen.
+        """
+        wanted = {
+            str(row.get("tx_hash") or "").lower()
+            for row in candidates
+            if row.get("tx_hash")
+        }
+        missing = sorted(wanted - set(self._launch_signer_memo))
+        if missing:
+            try:
+                found = await self.client.fetch_tx_senders(missing)
+            except Exception as exc:        # noqa: BLE001 — never a false launch
+                logger.warning("SURF v4 initiator lookup failed: %s", exc)
+                found = None
+            if isinstance(found, dict):
+                if len(self._launch_signer_memo) + len(found) > _SIGNER_MEMO_CAP:
+                    self._launch_signer_memo.clear()
+                for tx, signer in found.items():
+                    address = str(signer or "").strip().lower()
+                    if address:
+                        self._launch_signer_memo[str(tx).strip().lower()] = address
+        return {
+            tx: self._launch_signer_memo[tx]
+            for tx in wanted
+            if tx in self._launch_signer_memo
+        }
+
+    @staticmethod
+    def _attribute_launches(
+        candidates: list[dict[str, Any]], signers: dict[str, str]
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Split hooked rows into ``(dev-signed rows, any unattributable?)``.
+
+        Three outcomes per row and they are three different facts:
+
+        * signed by a wallet in :data:`LAUNCH_SIGNERS` — the dev's launch;
+        * signed by anyone else — a stranger's pool, dropped outright so it can
+          neither reach the hero nor advance WP2's ``v4_tx`` baseline;
+        * signer unread — neither claim is available, reported through the
+          second return value so the hero can say so instead of guessing.
+        """
+        rows: list[dict[str, Any]] = []
+        unattributed = False
+        for row in candidates:
+            signer = signers.get(str(row.get("tx_hash") or "").lower())
+            if signer is None:
+                unattributed = True
+                continue
+            if signer not in LAUNCH_SIGNERS:
+                continue
+            rows.append({**row, "initiator": signer})
+        return rows, unattributed
+
+    @classmethod
+    def _launch_record(
+        cls, rows: list[dict[str, Any]], previous: Any
+    ) -> dict[str, Any] | None:
+        """The verified launch to persist: the one we already hold, else this
+        window's earliest dev-signed pool.
+
+        This replaces the old ``hook_live = bool(hooked) or previously_live``
+        latch. The difference is not cosmetic: that expression was an
+        unconditional OR over unverified third-party input, so one griefing
+        transaction pinned the hero to LAUNCHED for the life of the cache file
+        and no code path could clear it. Here the stored value is the
+        *evidence*, and it is re-validated by :meth:`_valid_launch` on every
+        write and every read — so a record that stops naming a dev wallet stops
+        producing a launch.
+
+        The earliest row wins when a window holds several: a launch happens
+        once, and the row that dates it is the first one.
+        """
+        held = cls._valid_launch(previous)
+        if held is not None:
+            return held
+        verified = [row for row in rows if cls._valid_launch(row) is not None]
+        if not verified:
+            return None
+        return dict(min(verified, key=lambda r: _opt_float(r.get("ts")) or 0.0))
+
+    @staticmethod
+    def _valid_launch(record: Any) -> dict[str, Any] | None:
+        """The record if it still evidences a dev-signed hooked pool, else ``None``.
+
+        Re-checked every time rather than trusted once, because this value is
+        read back out of a JSON file on disk that a previous build, a hand
+        edit, or a corrected address constant can leave inconsistent with the
+        vocabulary the running code holds.
+        """
+        if not isinstance(record, dict):
+            return None
+        hooks = str(record.get("hooks") or "")
+        if not hooks or (_hex_int(hooks) or 0) == 0:
+            return None
+        if not str(record.get("tx_hash") or ""):
+            return None
+        if str(record.get("initiator") or "").lower() not in LAUNCH_SIGNERS:
+            return None
+        return dict(record)
 
     # -- the slow tier: NFT counters and dev tx pages -------------------------
 
@@ -816,25 +963,34 @@ class SurfManager:
             )
         return rows
 
-    def _hook_pool_rows(self, window: Any, now: float) -> list[dict[str, Any]]:
+    def _hooked_candidates(self, window: Any, now: float) -> list[dict[str, Any]]:
         """Hooked v4 ``Initialize`` rows as ``{ts, tx_hash, hooks}`` (WP2's shape).
 
         ``Initialize(id, currency0, currency1, fee, tickSpacing, hooks,
         sqrtPriceX96, tick)`` — three indexed args, so ``hooks`` is the third word
         of ``data``. Every one of the 19 existing IMD v4 pools is third-party and
-        **hookless**, so a non-zero hooks address *is* the launch signal (PRD §3,
-        signal 2); the hookless rows are filtered out here so they can never
-        advance WP2's ``v4_tx`` baseline past a real one.
+        **hookless**, so the hookless rows are filtered out here: they can never
+        be the launch and must never advance WP2's ``v4_tx`` baseline past a
+        real one.
+
+        A non-zero hooks address makes a row a **candidate**, not the launch.
+        ``PoolManager.initialize()`` is permissionless and the event payload
+        carries nothing about who called it, so this method deliberately stops
+        one step short of a verdict; :meth:`_attribute_launches` supplies the
+        part a stranger cannot forge.
         """
         rows: list[dict[str, Any]] = []
         for log in _field(window, "v4_initializes") or ():
-            hooks = _word_addr(log.get("data"), 2)
-            if not hooks or int(hooks, 16) == 0:
+            hooks = _word_addr((log or {}).get("data"), 2)
+            # `_hex_int`, not `int(hooks, 16)`: the payload is third-party text
+            # and a non-hex data word would raise out of `_pool_logs`, which
+            # `_guard` does not cover — one bad row would blank all 48 keys.
+            if not hooks or (_hex_int(hooks) or 0) == 0:
                 continue
             rows.append(
                 {
                     "ts": _log_ts(log, now),
-                    "tx_hash": str(log.get("transactionHash") or ""),
+                    "tx_hash": str((log or {}).get("transactionHash") or ""),
                     "hooks": hooks,
                 }
             )
@@ -1454,18 +1610,34 @@ class SurfManager:
     # -- hero: v4 hook status --------------------------------------------------
 
     def _hook_status(self) -> str | None:
-        """``"LAUNCHED"`` / ``"NOT LIVE"`` / ``None`` when the logs pool never answered.
+        """``"LAUNCHED"`` / ``"NOT LIVE"`` / ``None`` when we cannot honestly say.
 
-        Reads the **latched** ``hook_live`` written by ``_pool_logs``, never
-        ``v4_hook_pools`` — those rows fall out of the ~8 h log window and a
-        launch does not. ``None`` means "the logs group has never produced a
-        payload" — distinct from a confirmed-empty window, which is a real
-        answer (PRD §4), never a guess standing in for an outage.
+        Reads the persisted ``hook_launch`` **record** written by ``_pool_logs``,
+        never ``v4_hook_pools`` — those rows fall out of the ~8 h log window and
+        a launch does not — and re-validates it through :meth:`_valid_launch`
+        rather than trusting the boolean a file happened to contain.
+
+        Two shapes produce ``None``, and both mean "no answer this cycle
+        earned":
+
+        * the logs group has never produced a payload at all;
+        * the window held a hooked ``Initialize`` whose signer we could not
+          read (``hook_unverified``). ``PoolManager.initialize()`` is
+          permissionless, so an unattributed hooked pool is evidence of
+          *somebody*, and naming the dev would be a guess on the one event the
+          dashboard exists to catch.
+
+        A confirmed-empty window is a real answer and renders ``NOT LIVE``
+        (PRD §4).
         """
         entry = self.cache.get_last_good(SLOT_LOGS)
         if entry is None or not isinstance(entry.payload, dict):
             return None
-        return HOOK_LAUNCHED if entry.payload.get("hook_live") else HOOK_NOT_LIVE
+        if self._valid_launch(entry.payload.get("hook_launch")) is not None:
+            return HOOK_LAUNCHED
+        if entry.payload.get("hook_unverified"):
+            return None
+        return HOOK_NOT_LIVE
 
     # -- contract enforcement ------------------------------------------------
 

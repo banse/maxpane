@@ -34,6 +34,7 @@ import asyncio
 import logging
 import math
 import time
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -1195,6 +1196,55 @@ class SurfClient(OwnedHttpClient):
             written=written,               # feeds BOTH hero and NFT panel
             # floor_eth stays at its pinned None: no keyless source exists.
         )
+
+    # ------------------------------------------------------------------
+    # State RPC — transaction provenance (the v4-launch corroboration)
+    # ------------------------------------------------------------------
+
+    async def fetch_tx_senders(self, tx_hashes: Sequence[str]) -> dict[str, str]:
+        """``{tx_hash: signer}``, both lowercased, for the hashes we could read.
+
+        Uniswap v4 ``initialize()`` is permissionless: an ``Initialize`` log
+        naming IMD with a non-zero hook costs a stranger one transaction's gas,
+        and the event payload says nothing about who sent it. The signature on
+        the enclosing transaction is the one part of that a stranger cannot
+        forge, so this read is what lets the manager tell the dev's launch from
+        an impostor's. Nothing here decides what the answer *means*.
+
+        A hash we could not read is **absent from the result** — never mapped to
+        ``""``, to the zero address, or to any other placeholder. "We do not
+        know who sent it" and "a stranger sent it" are opposite conclusions for
+        the caller, and collapsing them turns an RPC outage into a confident
+        verdict about the single event this dashboard exists to catch.
+
+        One batched POST on the state pool for the whole (de-duplicated) list,
+        and **no request at all** for an empty one: the everyday answer is zero
+        hooked pools, and the everyday cost must be zero.
+        """
+        wanted: list[str] = []
+        for raw in tx_hashes or ():
+            tx = str(raw or "").strip().lower()
+            if tx and tx not in wanted:
+                wanted.append(tx)
+        if not wanted:
+            return {}
+        try:
+            results = await self._rpc_state_batch(
+                [("eth_getTransactionByHash", [tx]) for tx in wanted]
+            )
+        except RuntimeError as exc:      # malformed-request short-circuit
+            logger.warning("fetch_tx_senders: %s", exc)
+            return {}
+        if results is None:
+            return {}
+        out: dict[str, str] = {}
+        for tx, result in zip(wanted, results):
+            if not isinstance(result, dict):
+                continue                  # a failed entry stays absent, never ""
+            sender = str(result.get("from") or "").strip().lower()
+            if sender.startswith("0x") and len(sender) == 42:
+                out[tx] = sender
+        return out
 
     # ------------------------------------------------------------------
     # Logs RPC — the recent-window sweep for signals 2/3/5 + NFT sales

@@ -569,6 +569,13 @@ class FakeSurfClient:
                 seaport_sales=_seaport_fill(),
             ),
             "fetch_nft_stats": _nft_stats(),
+            # ``{tx_hash: signer}`` for the transactions the state pool could
+            # read. **Empty by default, and that is the honest default**: a
+            # double that answered "the dev sent it" for every hash would make
+            # the v4-launch corroboration structurally unfalsifiable, which is
+            # the exact shape of the defect it exists to close. A test that
+            # wants a launch attributed says whose it is.
+            "fetch_tx_senders": {},
         }
         self._returns.update(overrides)
 
@@ -578,6 +585,16 @@ class FakeSurfClient:
         if isinstance(value, BaseException):
             raise value
         return value
+
+    async def fetch_tx_senders(self, tx_hashes):
+        """The real client's contract: a hash it could not read is ABSENT."""
+        table = await self._answer("fetch_tx_senders")
+        table = {str(k).lower(): str(v).lower() for k, v in (table or {}).items()}
+        return {
+            tx: table[tx]
+            for tx in {str(h or "").lower() for h in tx_hashes or ()}
+            if tx in table
+        }
 
     async def fetch_nonces(self):        return await self._answer("fetch_nonces")
     async def fetch_chain_state(self):   return await self._answer("fetch_chain_state")
@@ -916,8 +933,16 @@ async def test_a_skipped_medium_tier_still_renders_the_whole_market_panel(tmp_pa
     assert SOURCE_MARKET not in second["degraded"]
 
 
+#: The transaction that emits a hooked ``Initialize`` in the tests below, and
+#: the wallet that signed it. Both matter: v4 ``initialize()`` is
+#: permissionless, so the log alone says only that *somebody* paid gas, and the
+#: signer is the part of it a stranger cannot forge.
+LAUNCH_TX = "0x" + "a5" * 32
+STRANGER = "0x" + "ee" * 20
+
+
 async def test_hook_status_reads_not_live_until_a_hooked_initialize_appears(tmp_path):
-    client = FakeSurfClient()
+    client = FakeSurfClient(fetch_tx_senders={LAUNCH_TX: DEV_WALLET})
     m = _manager(tmp_path, client=client)
     assert (await m.fetch_and_compute())["hook_status"] == "NOT LIVE"
 
@@ -927,7 +952,7 @@ async def test_hook_status_reads_not_live_until_a_hooked_initialize_appears(tmp_
         bridge_mints=(),
         identity_updates=(),
         v4_initializes=(
-            _v4_init_log("0x" + "ab" * 20, ts=NOW - 120.0, tx="0x" + "a5" * 32),
+            _v4_init_log("0x" + "ab" * 20, ts=NOW - 120.0, tx=LAUNCH_TX),
         ),
         seaport_sales=(),
     )
@@ -935,17 +960,125 @@ async def test_hook_status_reads_not_live_until_a_hooked_initialize_appears(tmp_
     assert (await m.fetch_and_compute())["hook_status"] == "LAUNCHED"
 
 
+async def test_a_stranger_can_not_launch_the_hook_for_the_price_of_gas(tmp_path):
+    """Uniswap v4 ``initialize()`` is permissionless — the merge blocker.
+
+    The client's filter accepts any ``Initialize`` from the PoolManager naming
+    IMD in either currency, and a hook address only has to carry valid
+    permission bits. So one transaction from any EOA used to produce
+    ``hook_status: LAUNCHED`` and ``sig_lp: fired | V4 LAUNCH`` — permanently,
+    because the flag was latched into the persisted cache and no code path
+    could ever clear it.
+
+    Every other failure in this layer degrades to an explicit unavailable
+    state. This one manufactured a confident, permanent, adversarially-chosen
+    *positive* on the single event PRD §1/§7 says the dashboard exists to
+    catch. A pool a stranger created is not the dev's launch, and the signature
+    on the enclosing transaction is what says so.
+    """
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(), identity_updates=(), seaport_sales=(),
+            v4_initializes=(
+                _v4_init_log("0x" + "de" * 20, ts=NOW - 120.0, tx=LAUNCH_TX),
+            ),
+        ),
+        fetch_tx_senders={LAUNCH_TX: STRANGER},
+    )
+    m = _manager(tmp_path, client=client, clock=FakeClock())
+    data = await m.fetch_and_compute()
+
+    assert data["hook_status"] == "NOT LIVE"
+    assert data["sig_lp_state"] != "fired"
+    assert "V4 LAUNCH" not in (data["sig_lp_detail"] or "")
+    # ...and it is still not the dev's launch 150 days and many clean windows
+    # later, which is where the old latch made it permanent.
+    client._returns["fetch_recent_logs"] = LogWindow(
+        from_block=BLOCK, to_block=BLOCK + LOG_WINDOW,
+        bridge_mints=(), identity_updates=(), v4_initializes=(), seaport_sales=(),
+    )
+    m._clock_double.advance(150 * 86400.0)
+    later = await m.fetch_and_compute()
+    assert later["hook_status"] == "NOT LIVE"
+    assert later["sig_lp_state"] != "fired"
+
+
+async def test_an_unattributable_hooked_pool_is_unknown_never_launched(tmp_path):
+    """The signer read failed, so we do not know whose pool this is.
+
+    An explicit unknown (``None`` — the hero's unavailable state) is the honest
+    answer and the only one that is not a guess. Publishing LAUNCHED would let
+    an outage on *our* side decide the headline; publishing NOT LIVE would
+    swallow a real launch. Neither is a claim this cycle earned.
+    """
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(), identity_updates=(), seaport_sales=(),
+            v4_initializes=(
+                _v4_init_log("0x" + "ab" * 20, ts=NOW - 120.0, tx=LAUNCH_TX),
+            ),
+        ),
+        fetch_tx_senders={},          # the state pool could not read the tx
+    )
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["hook_status"] is None
+    assert data["sig_lp_state"] != "fired"
+
+
+async def test_a_persisted_launch_that_no_longer_names_a_dev_wallet_is_dropped(tmp_path):
+    """The launch record is re-validated on every read — it is not a latch.
+
+    A cache file written by an older build (whose ``hook_live`` was an
+    unconditional boolean), hand-edited, or carried across a correction to the
+    dev-wallet vocabulary can assert a launch that its own evidence does not
+    support. The hero must return to NOT LIVE, because a state this
+    consequential has to be able to stop being true when the evidence stops
+    supporting it.
+    """
+    clock = FakeClock()
+    m = _manager(tmp_path, client=FakeSurfClient(), clock=clock)
+    m.cache.store_last_good(
+        SLOT_LOGS,
+        {
+            "to_block": BLOCK,
+            "bridge_mints": [],
+            "v4_hook_pools": [],
+            "hook_launch": {
+                "ts": NOW - 3600.0, "tx_hash": LAUNCH_TX,
+                "hooks": "0x" + "ab" * 20, "initiator": STRANGER,
+            },
+            "identity_writes": 0,
+            "nft_last_sales": [],
+        },
+        ts=NOW - 3600.0,
+    )
+    assert m._hook_status() == "NOT LIVE"
+
+    clock.advance(600.0)
+    data = await m.fetch_and_compute()
+    assert data["hook_status"] == "NOT LIVE"
+    # ...and the unusable record is gone from the slot rather than lying dormant.
+    assert m.cache.get_last_good(SLOT_LOGS).payload.get("hook_launch") is None
+
+
 async def test_a_launch_is_never_un_launched_when_the_log_window_moves_past_it(tmp_path):
     """``Initialize`` is irreversible; the ~8 h log window is not.
 
     ``LOG_WINDOW_BLOCKS`` is 2400 blocks (≈8 h at 12 s), and `_pool_logs`
     replaces `SLOT_LOGS` wholesale on every successful medium-tier read. So a
-    `hook_live` derived from the current window alone flips the hero back from
+    launch derived from the current window alone flips the hero back from
     LAUNCHED to NOT LIVE roughly eight hours after the launch, on a perfectly
     healthy chain, for the one event PRD §1/§7 says this dashboard exists to
     catch. That is a wrong value rather than a stale one — no `as of` marker
-    redeems it — so `_pool_logs` latches the flag while leaving `v4_hook_pools`
-    as the current window's rows.
+    redeems it — so `_pool_logs` persists the verified launch record while
+    leaving `v4_hook_pools` as the current window's rows.
+
+    Persistence, not permanence: the record is only ever written from a
+    dev-signed ``Initialize`` and is re-validated against that same vocabulary
+    every time it is read (see
+    ``..._that_no_longer_names_a_dev_wallet_is_dropped``).
 
     The cycle above (`..._until_a_hooked_initialize_appears`) cannot see this: it
     asserts LAUNCHED on the cycle that reads the log and never runs a later one.
@@ -955,9 +1088,10 @@ async def test_a_launch_is_never_un_launched_when_the_log_window_moves_past_it(t
             from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
             bridge_mints=(), identity_updates=(), seaport_sales=(),
             v4_initializes=(
-                _v4_init_log("0x" + "ab" * 20, ts=NOW - 120.0, tx="0x" + "a5" * 32),
+                _v4_init_log("0x" + "ab" * 20, ts=NOW - 120.0, tx=LAUNCH_TX),
             ),
-        )
+        ),
+        fetch_tx_senders={LAUNCH_TX: OPS_WALLET},
     )
     m = _manager(tmp_path, client=client)
     assert (await m.fetch_and_compute())["hook_status"] == "LAUNCHED"
@@ -1022,10 +1156,11 @@ async def test_log_rows_are_decoded_into_wp2s_shapes_and_cached_that_way(tmp_pat
                 _identity_log(1751, ts=NOW - 300.0, tx="0x" + "e2" * 32),
             ),
             v4_initializes=(
-                _v4_init_log("0x" + "ab" * 20, ts=NOW - 120.0, tx="0x" + "a5" * 32),
+                _v4_init_log("0x" + "ab" * 20, ts=NOW - 120.0, tx=LAUNCH_TX),
             ),
             seaport_sales=(),
-        )
+        ),
+        fetch_tx_senders={LAUNCH_TX: DEV_WALLET},
     )
     m = _manager(tmp_path, client=client)
     await m.fetch_and_compute()
@@ -1038,7 +1173,12 @@ async def test_log_rows_are_decoded_into_wp2s_shapes_and_cached_that_way(tmp_pat
     assert mint["tx_hash"].startswith("0x17084b1b")
 
     assert cached["v4_hook_pools"][0]["hooks"] == "0x" + "ab" * 20
-    assert cached["hook_live"] is True
+    # The stored launch is the *evidence*, not a boolean: the signer is what
+    # separates the dev's launch from a stranger's transaction, so it has to
+    # survive into the file that the next process re-validates.
+    assert cached["hook_launch"]["initiator"] == DEV_WALLET.lower()
+    assert cached["hook_launch"]["tx_hash"] == LAUNCH_TX
+    assert cached["hook_unverified"] is False
 
     assert cached["identity_writes"] == 1                 # distinct ids, not rows
     assert cached["nft_last_sales"] == []                 # read, and empty
@@ -1158,7 +1298,8 @@ async def test_a_hooked_pool_shaped_like_the_real_capture_launches_the_hook(tmp_
             from_block=BLOCK - 5_000, to_block=BLOCK, bridge_mints=(),
             identity_updates=(), seaport_sales=(),
             v4_initializes=(hooked_log,),
-        )
+        ),
+        fetch_tx_senders={hooked_log["transactionHash"]: DEV_WALLET},
     )
     data = await _manager(tmp_path, client=client).fetch_and_compute()
     assert data["hook_status"] == "LAUNCHED"
