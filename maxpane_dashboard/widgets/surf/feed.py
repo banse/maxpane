@@ -167,9 +167,26 @@ def _item_lines(item, width: int) -> tuple[list[str], bool] | None:
 
         if width >= FULL_TEXT_WIDTH:
             wrapped = _wrap_no_widow(raw, budget)
-            lines = [prefix + safe_markup(wrapped[0])]
-            lines += [indent + safe_markup(chunk) for chunk in wrapped[1:]]
-            return lines, False
+            # An unbreakable token -- a base64 blob, a long URL, a hash --
+            # is exactly what ``textwrap.wrap(..., break_long_words=False)``
+            # will not split: it lands on its own line wider than ``budget``
+            # and passes through untouched.  RichLog would then clip it
+            # itself with no visible sign at all (the same silent-clip
+            # failure mode fixed above for the scrollbar gutter), which
+            # breaks the house rule that a clipped row is always announced.
+            # Force it to the same visible ``…`` truncation the narrow tier
+            # uses, and light the widen hint -- never widen a retry (that
+            # risks the identical RichLog clip), only ever shrink to fit.
+            clipped = False
+            fitted = []
+            for chunk in wrapped:
+                if len(chunk) > budget:
+                    chunk = chunk[: max(budget - 1, 0)] + "…"
+                    clipped = True
+                fitted.append(chunk)
+            lines = [prefix + safe_markup(fitted[0])]
+            lines += [indent + safe_markup(chunk) for chunk in fitted[1:]]
+            return lines, clipped
 
         if len(raw) > budget:
             return [prefix + safe_markup(raw[: budget - 1] + "…")], True

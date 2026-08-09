@@ -271,6 +271,70 @@ async def test_feed_malformed_bracket_shape_that_defeats_escaping_cannot_crash()
             assert "\\" not in screen
 
 
+async def test_feed_unbreakable_token_past_budget_is_truncated_and_advertised():
+    """A single unbreakable token past the wrap budget must never render
+    past the usable width in silence -- fix round 1.
+
+    ``docs/surf_game_mechanics.md`` documents a real ``EOE1.`` encrypted
+    envelope (A256GCM/PBKDF2 format) the subject himself posted; it was a
+    tweet, not an announce-channel tx ("no onchain counterpart found yet"
+    per that doc), so the literal bytes are not part of this repo's
+    committed captures. The token below mirrors that documented shape --
+    ``EOE1.`` plus a long no-space base64 payload -- and the same shape
+    covers any address hash, base64 blob or URL pasted into a real
+    announce message: none of those contain a space for ``textwrap.wrap``
+    to break on.
+
+    ``textwrap.wrap(..., break_long_words=False)`` places such a token on
+    its own line even when that line is *wider* than the wrap budget --
+    confirmed directly: reverting the ``_item_lines`` fix below still keeps
+    every rendered row within ``RichLog``'s own width (its internal
+    ``shrink=True`` clips it regardless), but with **no** ``…`` and **no**
+    ``WIDEN_HINT`` -- a silent clip, exactly what the scrollbar-gutter fix
+    above exists to prevent for the *other* silent-clip path.
+    """
+    token = (
+        "EOE1.eyJ2IjoxLCJhbGciOiJBMjU2R0NNIiwicCI6eyJuIjoyMDAwMCwiciI6OCwicCI6"
+        "MX0sInMiOiI5ZjNhMWMyZTdkNGI1YTZmIn0."
+        + "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5eg" * 8
+    )
+    hostile = [
+        {
+            "ts": 1785795251,
+            "kind": "self",
+            "from_addr": _CHANNEL,
+            "from_label": "channel",
+            "text": f"ledger backup: {token} -- keep this safe",
+            "tx_hash": "0xenvelope",
+        }
+    ]
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 24)) as pilot:
+        assert 120 - 4 >= FULL_TEXT_WIDTH  # still the wide tier
+        widget.update_data(feed_nonce=14, feed_items=hostile)
+        await pilot.pause()
+        log = widget.query_one("#surf-feed-log")
+        usable = log.scrollable_content_region.width
+        screen = _screen_text(app)
+
+        # No rendered row exceeds the usable width (RichLog's own shrink
+        # already guarantees this even when the marker is missing -- this
+        # pins the invariant explicitly rather than relying on that as an
+        # implementation detail of a widget we don't own).
+        for line in screen.splitlines():
+            assert len(line.rstrip()) <= usable + 1  # +1: the left gutter col
+
+        # The blob itself was cut -- not merely re-wrapped elsewhere.
+        assert token not in screen
+        assert token[:40] in screen  # the head of the token still renders
+        assert "ledger backup" in screen  # surrounding message still there
+
+        # ...and the cut is visibly announced, not silent.
+        assert "…" in screen
+        assert WIDEN_HINT in screen
+
+
 async def test_feed_unavailable_vs_empty_are_different_states():
     widget = SurfFeed()
     app = _Harness(widget)
