@@ -532,6 +532,84 @@ def _detect_lp(base: dict, read: dict, now: float) -> _Det:
     return _ok("liquidity holds")
 
 
+# --- 3. GATE OPEN ------------------------------------------------------------
+
+
+def _detect_gate(base: dict, read: dict, now: float) -> _Det:
+    """``identityAllowed()`` false -> true (PRD §3 #3).
+
+    Closed since 2026-05-14 with one identity written, so ``ok`` is the state
+    this row lives in — and it still spells the gate's condition out, because a
+    detector row that says nothing about the thing it watches is useless when
+    it is quiet.
+
+    An ``IdentityHashUpdated`` count that moves while we still read the gate as
+    closed means the gate opened and closed between two polls; that is a WATCH,
+    not a miss to be swallowed.  The written count carries no ``/2000``: the
+    cap is documented, and documented numbers are read live elsewhere or not
+    shown (CLAUDE.md rule 4).
+    """
+    gate = read.get("gate_open")
+    gate = gate if isinstance(gate, bool) else None
+    written = _as_int(read.get("identities_written"))
+    suffix = f" · {written} written" if written is not None else ""
+
+    if gate is None:
+        return _dead(f"gate unavailable{suffix}" if written is not None else "gate unavailable")
+
+    word = "OPEN" if gate else "closed"
+    base_gate = base.get("gate_open")
+    base_gate = base_gate if isinstance(base_gate, bool) else None
+    if base_gate is None:
+        return _ok(f"{word}{suffix}")
+
+    if gate and not base_gate:
+        return _fired(f"GATE OPEN{suffix}", now)
+
+    base_written = _as_int(base.get("identities_written"))
+    if written is not None and base_written is not None and written > base_written:
+        return _watch(f"{base_written}→{written} written · gate {word.lower()}")
+
+    return _ok(f"{word}{suffix}")
+
+
+# --- 4. NEW DEPLOY -----------------------------------------------------------
+
+
+def _detect_deploy(base: dict, read: dict, now: float) -> _Det:
+    """A new contract, or the announce EOA calling one (PRD §3 #4).
+
+    The ERC-8004 registration at channel nonce 4 was the second shape, and the
+    "P2P decentralized harness" is expected to surface the same way, so both
+    count.  ``dev_nonce`` moving with no contract behind it is a WATCH —
+    surfsurf.eth is the deployer wallet; frenpet.eth's movements belong to LP
+    MIGRATION.
+
+    ``label`` reaches here from Blockscout and is third-party text; it is
+    passed through untouched and escaped at the widget, never here.
+    """
+    events = _event_rows("deploy_events", read.get("deploy_events"))
+    fresh = _fresh_event(base, "deploy_tx", "deploy_ts", events)
+    if fresh is not None:
+        label = str(fresh.get("label") or "")
+        if str(fresh.get("kind") or "") == "action":
+            head = f"action {label}" if label else "onchain action"
+        else:
+            head = f"new contract {_short_addr(label)}" if label else "new contract"
+        who = str(fresh.get("wallet_label") or "")
+        detail = f"{head} · {who}" if who else head
+        return _fired(detail, _as_float(fresh.get("ts")))
+
+    dev_nonce = _as_int(read.get("dev_nonce"))
+    base_dev = _as_int(base.get("dev_nonce"))
+    if dev_nonce is not None and base_dev is not None and dev_nonce > base_dev:
+        return _watch(f"surfsurf.eth nonce {base_dev}→{dev_nonce}")
+
+    if events is None and dev_nonce is None:
+        return _dead("dev activity unavailable")
+    return _ok("no new contract")
+
+
 # --- registry --------------------------------------------------------------
 
 #: ``(name, detector)`` in render order.  :data:`SIGNAL_NAMES` and
@@ -540,6 +618,8 @@ def _detect_lp(base: dict, read: dict, now: float) -> _Det:
 _DETECTORS: tuple[tuple[str, Any], ...] = (
     ("post", _detect_post),
     ("lp", _detect_lp),
+    ("gate", _detect_gate),
+    ("deploy", _detect_deploy),
 )
 
 SIGNAL_NAMES: tuple[str, ...] = tuple(name for name, _ in _DETECTORS)

@@ -479,12 +479,12 @@ def _sig(name: str, baselines: dict, readings: dict, now: float = NOW) -> tuple:
 def test_output_keys_are_exactly_the_prd_contract():
     out, _ = sig.build_signals(_baseline(), _readings(), NOW)
     assert set(out) == set(sig.SIGNAL_OUTPUT_KEYS)
-    # WP2.4 landed NEW POST; WP2.5 appends LP MIGRATION. The remaining four
-    # detectors (gate, deploy, bridge, burn) are later tasks in this same work
-    # package appending to this same _DETECTORS registry. Asserting the full
-    # six-name PRD roster here would be asserting a future task's state, not
-    # this one's.
-    assert sig.SIGNAL_NAMES == ("post", "lp")
+    # WP2.4 landed NEW POST; WP2.5 appended LP MIGRATION; WP2.6 appends GATE
+    # OPEN and NEW DEPLOY. The remaining two detectors (bridge, burn) are
+    # later tasks in this same work package appending to this same
+    # _DETECTORS registry. Asserting the full six-name PRD roster here would
+    # be asserting a future task's state, not this one's.
+    assert sig.SIGNAL_NAMES == ("post", "lp", "gate", "deploy")
 
 
 def test_quiet_refresh_leaves_post_ok():
@@ -653,3 +653,100 @@ def test_lp_outage_is_none():
         _baseline(),
         _readings(lp_liquidity=None, ops_nonce=None, v4_hook_pools=None),
     ) == (None, "LP state unavailable", None)
+
+
+# --- 3. GATE OPEN -----------------------------------------------------------
+#
+# identityAllowed() has been false since 2026-05-14 with 1/2000 written.  The
+# moment "the agent" flips it, any IDMD holder can write an identity.
+#
+# The written count is rendered without a "/2000" denominator on purpose: the
+# cap is a documented number and the hero widget reads it live (CLAUDE.md
+# rule 4).
+
+
+def test_closed_gate_is_ok_and_says_so():
+    assert _sig("gate", _baseline(), _readings()) == ("ok", "closed · 1 written", None)
+
+
+def test_gate_flip_fires():
+    assert _sig("gate", _baseline(), _readings(gate_open=True)) == (
+        "fired", "GATE OPEN · 1 written", 0.0
+    )
+
+
+def test_writes_without_a_flip_we_saw_are_a_watch():
+    """The gate opened and closed between two polls — the write proves it."""
+    assert _sig("gate", _baseline(), _readings(identities_written=2)) == (
+        "watch", "1→2 written · gate closed", None
+    )
+
+
+def test_an_already_open_gate_on_first_read_does_not_fire():
+    state, detail, age = _sig("gate", {}, _readings(gate_open=True))
+    assert state == "ok"
+    assert detail == "OPEN · 1 written"
+    assert age is None
+
+
+def test_gate_outage_is_none():
+    assert _sig(
+        "gate", _baseline(), _readings(gate_open=None, identities_written=None)
+    ) == (None, "gate unavailable", None)
+
+
+# --- 4. NEW DEPLOY ----------------------------------------------------------
+#
+# The ERC-8004 registration at channel nonce 4 was exactly this shape: an
+# outbound contract call from the announce EOA.  Contract creations by
+# surfsurf.eth are the other half.
+
+
+def test_no_new_contract_is_ok():
+    assert _sig("deploy", _baseline(), _readings()) == ("ok", "no new contract", None)
+
+
+def test_an_outbound_contract_call_fires():
+    state, detail, age = _sig("deploy", _baseline(), _readings(deploy_events=[FRESH_ACTION]))
+    assert state == "fired"
+    assert detail == "action register() · announce"
+    assert age == pytest.approx(240.0)
+
+
+def test_an_event_older_than_the_ttl_renders_as_history_not_news():
+    """The real register() call is from 2026-05-22 — detected late, it is not news.
+
+    A cold cache with a wide log window would otherwise shout FIRED about a
+    76-day-old transaction: the false-first-sweep bug wearing a different hat.
+    The event is still recorded, so the row says what it was.
+    """
+    state, detail, age = _sig("deploy", _baseline(), _readings(deploy_events=[REGISTER_ACTION]))
+    assert state == "ok"
+    assert detail == "last: action register() · announce"
+    assert age == pytest.approx(NOW - REGISTER_ACTION["ts"])
+
+
+def test_a_contract_creation_fires():
+    event = {
+        "ts": NOW - 120.0,
+        "tx_hash": "0x" + "c0" * 32,
+        "kind": "deploy",
+        "label": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+        "wallet_label": "surfsurf.eth",
+    }
+    state, detail, age = _sig("deploy", _baseline(), _readings(deploy_events=[event]))
+    assert state == "fired"
+    assert detail == "new contract 0x8004A169…39a432 · surfsurf.eth"
+    assert age == pytest.approx(120.0)
+
+
+def test_dev_nonce_movement_alone_is_a_watch():
+    assert _sig("deploy", _baseline(), _readings(dev_nonce=2351)) == (
+        "watch", "surfsurf.eth nonce 2350→2351", None
+    )
+
+
+def test_deploy_outage_is_none():
+    assert _sig(
+        "deploy", _baseline(), _readings(deploy_events=None, dev_nonce=None)
+    ) == (None, "dev activity unavailable", None)
