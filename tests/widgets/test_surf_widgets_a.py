@@ -310,3 +310,210 @@ async def test_hero_unknown_hook_status_is_escaped_not_parsed():
         assert "HOLDER-GATED" in screen
         # This is the arm the two real values must never reach.
         assert "unrecognized status" in screen
+
+
+# ---------------------------------------------------------------------
+# SurfSignals
+# ---------------------------------------------------------------------
+
+from maxpane_dashboard.widgets.markup_safety import visible_len  # noqa: E402
+from maxpane_dashboard.widgets.surf.signals import (  # noqa: E402
+    DETECTOR_LABELS,
+    MIN_DETAIL_COLS,
+    SEPARATOR_COLS,
+    WIDEN_HINT,
+    SurfSignals,
+    _fmt_signal_row,
+    _head,
+)
+
+#: A realistic mixed payload: the 2026-08-07 morning, 12 minutes after the
+#: staging mint (ops_eth_token_transfers.json: +114,366.9 IMD OFT-minted to
+#: frenpet.eth at 04:21:35) and two hours after the nonce-13 announce post.
+_FULL_SIGNALS = {
+    "sig_post_state": "fired",
+    "sig_post_detail": "#14 · I moved 33 eth to the LP on mainnet",
+    "sig_post_age_s": 7200.0,
+    "sig_lp_state": "ok",
+    "sig_lp_detail": "pos #1167726 liquidity unchanged",
+    "sig_lp_age_s": None,
+    "sig_gate_state": "ok",
+    "sig_gate_detail": "closed · 1/2000 written",
+    "sig_gate_age_s": None,
+    "sig_deploy_state": "watch",
+    "sig_deploy_detail": "frenpet.eth nonce 29→30",
+    "sig_deploy_age_s": 900.0,
+    "sig_bridge_state": "fired",
+    "sig_bridge_detail": "+114,367 IMD minted to frenpet.eth",
+    "sig_bridge_age_s": 720.0,
+    "sig_burn_state": "ok",
+    "sig_burn_detail": "last burn 15,745 IMD",
+    "sig_burn_age_s": None,
+}
+
+
+async def test_signals_labels_are_the_prd_names_wp5_and_wp6_assert_on():
+    """The label vocabulary is a cross-WP interface, pinned in one place.
+
+    WP5's screen test and WP6's stylesheet/outage acceptance tests assert
+    these exact PRD §3 strings against composited output.  If someone
+    shortens a label for width, this goes red *here* -- in the widget WP
+    that owns the string -- instead of in two WPs that only consume it.
+    """
+    assert DETECTOR_LABELS == (
+        "NEW POST",
+        "LP MIGRATION",
+        "GATE OPEN",
+        "NEW DEPLOY",
+        "BRIDGE STAGE",
+        "BURN",
+    )
+
+
+async def test_signals_fired_rows_carry_state_and_age_in_words():
+    """FIRED must survive greyscale: the word, the age, the glyph -- in text."""
+    widget = SurfSignals()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 14)) as pilot:
+        widget.update_data(**_FULL_SIGNALS)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "NEW POST FIRED 2h ago" in screen
+        assert "BRIDGE STAGE FIRED 12m ago" in screen
+        assert "NEW DEPLOY WATCH" in screen
+        assert "LP MIGRATION OK" in screen
+        assert "GATE OPEN OK" in screen
+        assert "BURN OK" in screen
+        # Details ride along.
+        assert "+114,367 IMD minted to frenpet.eth" in screen
+        assert "frenpet.eth nonce 29→30" in screen
+
+
+async def test_signals_all_six_rows_always_render():
+    """None-state rows are dashes -- six rows on screen no matter what."""
+    widget = SurfSignals()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 14)) as pilot:
+        widget.update_data()
+        await pilot.pause()
+        screen = _screen_text(app)
+        for label in DETECTOR_LABELS:
+            assert f"{label} --" in screen, label
+        # No invented state: nothing fired, nothing ok.
+        assert "FIRED" not in screen
+        assert "OK" not in screen.replace("SIGNALS", "")
+
+
+async def test_signals_fired_without_age_omits_the_age_not_the_state():
+    row = _fmt_signal_row("LP MIGRATION", "fired", "liquidity -37%", None)
+    assert "LP MIGRATION FIRED" in row
+    assert "ago" not in row
+    assert "-- ago" not in row
+
+
+async def test_signals_unknown_state_renders_as_unknown_not_ok():
+    """A state string the widget doesn't know is unknown -- never OK."""
+    row = _fmt_signal_row("NEW POST", "exploded", "detail", 5.0)
+    assert "NEW POST --" in row
+    assert "OK" not in row and "FIRED" not in row
+
+
+async def test_signals_detail_is_escaped_and_newline_flattened():
+    """Detail strings quote announce text -- attacker-writable (PRD §6.4)."""
+    widget = SurfSignals()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 14)) as pilot:
+        widget.update_data(
+            **{
+                **_FULL_SIGNALS,
+                "sig_post_detail": "[/x] pwn\nsecond line",
+            }
+        )
+        await pilot.pause()  # a MarkupError would raise inside the pump here
+        screen = _screen_text(app)
+        assert "pwn second line" in screen  # flattened, rendered literally
+
+
+def test_signals_head_is_never_wider_than_the_panel_it_gets():
+    """The unshrinkable part of a row must fit the pinned full-layout width.
+
+    ``SurfSignals`` is the 2fr of a 3fr:2fr hero row, so it gets ``2W/5 - 4``
+    content columns -- 53 at the pinned ``W = 143`` -- and ``padding: 0 1``
+    on the body rows leaves 51.  The head is glyph + full PRD §3 label +
+    state word + age; if *that* stops fitting, the panel genuinely needs a
+    wider terminal.  While it fits, the detail is truncated to what is left
+    and the marker stays dark -- which is what keeps ``‹ widen`` meaningful.
+    """
+    available = 2 * 143 // 5 - 4 - 2  # == 51
+    worst = max(
+        visible_len(_head(label, state, age))
+        for label in DETECTOR_LABELS
+        for state in ("fired", "watch", "ok", None, "exploded")
+        for age in (None, 45.0, 7200.0, 100 * 86400.0)
+    )
+    # "  ▶ BRIDGE STAGE FIRED 100d ago" -- the widest head this widget can
+    # build.  The realistic fired row ("... 12m ago") is 30.
+    assert worst == 31, worst
+    # Head + separator + a usable detail stub still fits the real panel.
+    assert worst + SEPARATOR_COLS + MIN_DETAIL_COLS <= available
+
+
+async def test_signals_long_detail_is_truncated_and_does_not_light_the_marker():
+    """A 100-char detail in a 60-column panel: label intact, tail cut, no widen.
+
+    This is the FWA buy-gate lesson.  WP2 builds details up to
+    ``DETAIL_LIMIT = 48`` and its relaxed-FIRED form composes an even longer
+    ``... · last: ...`` string, so real rows are 80-105 columns against a
+    51-column panel.  If the *whole row* set ``clipped``, ``‹ widen`` would
+    be lit during healthy operation and would stop meaning anything.
+    """
+    widget = SurfSignals()
+    app = _Harness(widget)
+    async with app.run_test(size=(60, 14)) as pilot:
+        widget.update_data(**{**_FULL_SIGNALS, "sig_post_detail": "x" * 100})
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "NEW POST FIRED 2h ago" in screen   # head survives whole
+        assert "…" in screen                       # detail was cut, visibly
+        assert "x" * 40 not in screen              # and really cut
+        assert WIDEN_HINT not in screen            # a fitted head is not clipped
+
+
+async def test_signals_narrow_width_announces_clipping():
+    """``‹ widen`` fires when the *head* cannot fit -- 26 columns is below 30."""
+    widget = SurfSignals()
+    app = _Harness(widget)
+    async with app.run_test(size=(26, 14)) as pilot:
+        widget.update_data(**_FULL_SIGNALS)
+        await pilot.pause()
+        assert WIDEN_HINT in _screen_text(app)
+
+    app2 = _Harness(SurfSignals())
+    async with app2.run_test(size=(120, 14)) as pilot:
+        app2._widget.update_data(**_FULL_SIGNALS)
+        await pilot.pause()
+        assert WIDEN_HINT not in _screen_text(app2)
+
+
+def test_signals_row_truncation_is_pure_and_keeps_the_head():
+    """``available`` drives the cut; ``None`` means "width unknown, don't cut".
+
+    The long payload is WP2's relaxed-FIRED composition shape -- the one that
+    deliberately blows past ``DETAIL_LIMIT`` -- so this is the real input, not
+    a stress string.
+    """
+    long_detail = "nonce 13 · no new post · last: " + "y" * 60
+    full = _fmt_signal_row("NEW POST", "ok", long_detail, None)
+    assert long_detail in full          # unsized widget: never truncate
+
+    cut = _fmt_signal_row("NEW POST", "ok", long_detail, None, available=40)
+    assert "NEW POST OK" in cut         # head intact
+    assert "…" in cut                   # tail cut, visibly
+    assert visible_len(cut) <= 40
+
+    # Too narrow for a usable detail: the head renders alone, never a bare "…".
+    head_only = _fmt_signal_row(
+        "BRIDGE STAGE", "fired", long_detail, 7200.0, available=31
+    )
+    assert "BRIDGE STAGE FIRED 2h ago" in head_only
+    assert "…" not in head_only
