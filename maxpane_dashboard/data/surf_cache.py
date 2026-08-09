@@ -90,6 +90,33 @@ SLOTS: tuple[str, ...] = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Hourly series (7 days deep)
+# ---------------------------------------------------------------------------
+
+SERIES_IMD_SUPPLY = "imd_supply"
+SERIES_IMD_PRICE_USD = "imd_price_usd"
+SERIES_PARITY_PCT = "parity_pct"
+
+SERIES_NAMES: tuple[str, ...] = (
+    SERIES_IMD_SUPPLY,
+    SERIES_IMD_PRICE_USD,
+    SERIES_PARITY_PCT,
+)
+
+#: Parity is a *spread* (IMD vs FP) and is legitimately below zero — the live
+#: capture is -2.75%. Supply and price cannot be, and a negative one is corruption.
+SERIES_ALLOW_NEGATIVE: dict[str, bool] = {
+    SERIES_IMD_SUPPLY: False,
+    SERIES_IMD_PRICE_USD: False,
+    SERIES_PARITY_PCT: True,
+}
+
+
+def _hour_bucket(ts: float) -> float:
+    return float(int(ts // 3600) * 3600)
+
+
 @dataclass(frozen=True)
 class LastGood:
     """One source group's last *successful* payload with the time it arrived.
@@ -154,6 +181,9 @@ class SurfCache:
         self._tier_last_fetch: dict[str, float] = {}
         self._tier_next_due: dict[str, float] = {}
         self.last_good: dict[str, LastGood] = {}
+        self.series: dict[str, deque[tuple[float, float]]] = {
+            name: deque(maxlen=_HISTORY_HOURS) for name in SERIES_NAMES
+        }
 
     # -- clock ---------------------------------------------------------------
 
@@ -266,10 +296,62 @@ class SurfCache:
         stamps = [e.ts for e in self.last_good.values()]
         return max(stamps) if stamps else None
 
+    # -- series --------------------------------------------------------------
+
+    def _bucket_into(self, name: str, now_ts: float, value: Any) -> None:
+        try:
+            val = float(value)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(val):
+            return
+        if val < 0 and not SERIES_ALLOW_NEGATIVE.get(name, False):
+            return
+        deq = self.series.get(name)
+        if deq is None:
+            return
+        bucket = _hour_bucket(float(now_ts))
+        if deq and deq[-1][0] == bucket:
+            deq[-1] = (bucket, val)
+        else:
+            deq.append((bucket, val))
+
+    def sample_series(
+        self,
+        now_ts: float,
+        *,
+        imd_supply: float | None = None,
+        imd_price_usd: float | None = None,
+        parity_pct: float | None = None,
+    ) -> None:
+        """Bucket this cycle's values. ``None`` leaves the series untouched.
+
+        A dead source must never write a sentinel into a history series
+        (CLAUDE.md): the zero would be persisted and outlive the outage.
+        """
+        if imd_supply is not None:
+            self._bucket_into(SERIES_IMD_SUPPLY, now_ts, imd_supply)
+        if imd_price_usd is not None:
+            self._bucket_into(SERIES_IMD_PRICE_USD, now_ts, imd_price_usd)
+        if parity_pct is not None:
+            self._bucket_into(SERIES_PARITY_PCT, now_ts, parity_pct)
+
+    def get_series(self, name: str) -> list[list[float]]:
+        """``[[hour_ts, value], ...]`` oldest first — the sparkline shape."""
+        deq = self.series.get(name)
+        if not deq:
+            return []
+        return [[float(ts), float(v)] for (ts, v) in deq]
+
 
 __all__ = [
     "DEFAULT_CACHE_PATH",
     "LastGood",
+    "SERIES_ALLOW_NEGATIVE",
+    "SERIES_IMD_PRICE_USD",
+    "SERIES_IMD_SUPPLY",
+    "SERIES_NAMES",
+    "SERIES_PARITY_PCT",
     "SLOTS",
     "SLOT_ACTIVITY",
     "SLOT_CHAIN",

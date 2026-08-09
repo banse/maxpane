@@ -192,3 +192,66 @@ def test_store_last_good_accepts_a_genuine_empty_payload(tmp_path):
     assert entry.payload == []
     assert entry.ts == clock.t
     assert c.get_last_good(SLOT_MARKET).payload == []
+
+
+from maxpane_dashboard.data.surf_cache import (   # noqa: E402
+    SERIES_IMD_PRICE_USD,
+    SERIES_IMD_SUPPLY,
+    SERIES_NAMES,
+    SERIES_PARITY_PCT,
+)
+
+# Live values captured 2026-08-08 (tests/fixtures/surf/captures/).
+IMD_SUPPLY = 2_376_731.868679          # imd_token.json total_supply / 1e18
+IMD_PRICE_USD = 0.7074                 # dexscreener_imd.json priceUsd
+FP_PRICE_USD = 0.7274                  # dexscreener_fp.json, deepest pair
+PARITY_PCT = -2.7495188342040167       # (imd - fp) / fp * 100
+
+
+def test_series_bucket_by_hour_and_overwrite_within_the_hour(tmp_path):
+    c = _cache(tmp_path)
+    base = 1_786_190_400.0               # exactly on an hour boundary
+
+    c.sample_series(base, imd_supply=IMD_SUPPLY, imd_price_usd=IMD_PRICE_USD)
+    c.sample_series(base + 1800.0, imd_supply=IMD_SUPPLY - 15_745.0)
+    assert c.get_series(SERIES_IMD_SUPPLY) == [[base, IMD_SUPPLY - 15_745.0]]
+
+    c.sample_series(base + 3600.0, imd_supply=IMD_SUPPLY - 15_745.0)
+    assert len(c.get_series(SERIES_IMD_SUPPLY)) == 2
+    assert c.get_series(SERIES_IMD_PRICE_USD) == [[base, IMD_PRICE_USD]]
+
+
+def test_none_never_punches_a_zero_into_a_series(tmp_path):
+    """A dead RPC must not write a 2.37M -> 0 supply step into the sparkline."""
+    c = _cache(tmp_path)
+    base = 1_786_190_400.0
+    c.sample_series(base, imd_supply=IMD_SUPPLY, imd_price_usd=IMD_PRICE_USD)
+    c.sample_series(base + 3600.0, imd_supply=None, imd_price_usd=None, parity_pct=None)
+
+    assert c.get_series(SERIES_IMD_SUPPLY) == [[base, IMD_SUPPLY]]
+    assert c.get_series(SERIES_IMD_PRICE_USD) == [[base, IMD_PRICE_USD]]
+    assert c.get_series(SERIES_PARITY_PCT) == []
+
+
+def test_parity_series_accepts_a_negative_spread(tmp_path):
+    c = _cache(tmp_path)
+    c.sample_series(1_786_190_400.0, parity_pct=PARITY_PCT)
+    assert c.get_series(SERIES_PARITY_PCT) == [[1_786_190_400.0, PARITY_PCT]]
+
+
+def test_non_finite_and_unparsable_samples_are_dropped(tmp_path):
+    c = _cache(tmp_path)
+    c.sample_series(1_786_190_400.0, imd_supply=float("nan"))
+    c.sample_series(1_786_190_400.0, imd_price_usd=float("inf"))
+    c.sample_series(1_786_190_400.0, parity_pct="cheap")     # type: ignore[arg-type]
+    assert all(c.get_series(name) == [] for name in SERIES_NAMES)
+
+
+def test_series_are_bounded_at_seven_days(tmp_path):
+    c = _cache(tmp_path)
+    base = 1_700_000_000.0
+    for hour in range(200):
+        c.sample_series(base + hour * 3600.0, imd_price_usd=0.7 + hour)
+    series = c.get_series(SERIES_IMD_PRICE_USD)
+    assert len(series) == 168
+    assert series[-1][1] == 0.7 + 199
