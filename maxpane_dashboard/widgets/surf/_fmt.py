@@ -4,6 +4,17 @@ These live in one private module because ``fmt_age`` is needed by both the
 signals panel (``FIRED 2h ago``) and the feed title (``last 2h ago``), and a
 second copy is how the sparkline helpers drifted apart before MEDI-36.
 Pure functions, no I/O, no Textual imports, nothing raises.
+
+**Escaping contract: callers escape, not this module.** Every function here
+returns plain text, never markup-safe text. ``long_addr`` is the one
+formatter that can carry attacker-controlled bytes through unchanged (an
+on-chain address string, in the pathological case a display name or symbol
+misrouted through it) — it does **not** call ``safe_markup`` on its output.
+The calling widget owns escaping: pass every value this module returns
+through ``widgets.markup_safety.safe_markup`` before it reaches
+``Text.from_markup`` or a ``DataTable`` cell. Escaping here as well as at the
+widget would double-escape and print literal ``\\[`` to the user, so this
+module deliberately does not import ``safe_markup`` at all.
 """
 
 from __future__ import annotations
@@ -91,6 +102,11 @@ def long_addr(value) -> str:
     Live spoofs of both fee recipients exist in frenpet.eth's history today;
     they collide with the real addresses on first-6/last-4 (what ``0xAB..CD``
     shorteners show) but not on this window (PRD §4).
+
+    Returns raw, unescaped text -- including for short (<=17 char) inputs
+    that pass through verbatim. The calling widget must pass the result
+    through ``safe_markup`` before handing it to markup or a table; this
+    formatter never escapes, so it never double-escapes either.
     """
     if not value:
         return DASH

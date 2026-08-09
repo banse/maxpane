@@ -104,6 +104,21 @@ def test_long_addr_distinguishes_the_live_spoof_pair():
     assert _fmt.long_addr("") == "--"
 
 
+def test_long_addr_does_not_escape_markup_the_caller_owns_that():
+    """Contract: ``long_addr`` returns raw text; escaping is the widget's job.
+
+    A hostile on-chain string routed through ``long_addr`` (e.g. a short
+    display name standing in for an address) must come back byte-identical,
+    ``[/x]`` and all -- proving this formatter never calls ``safe_markup``.
+    If it started escaping here, a widget that *also* escapes (as the house
+    rule requires at the render boundary) would double-escape and show the
+    user literal backslash-bracket text instead of the intended glyph. This
+    test is the tripwire: change it and the double-escaping question has to
+    be answered deliberately, not discovered on screen.
+    """
+    assert _fmt.long_addr("[/x]") == "[/x]"
+
+
 def test_hhmm_mmdd_fallbacks():
     assert _fmt.hhmm(None) == "??:??"
     assert _fmt.hhmm("junk") == "??:??"
