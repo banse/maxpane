@@ -479,12 +479,11 @@ def _sig(name: str, baselines: dict, readings: dict, now: float = NOW) -> tuple:
 def test_output_keys_are_exactly_the_prd_contract():
     out, _ = sig.build_signals(_baseline(), _readings(), NOW)
     assert set(out) == set(sig.SIGNAL_OUTPUT_KEYS)
-    # WP2.4 landed NEW POST; WP2.5 appended LP MIGRATION; WP2.6 appends GATE
-    # OPEN and NEW DEPLOY. The remaining two detectors (bridge, burn) are
-    # later tasks in this same work package appending to this same
-    # _DETECTORS registry. Asserting the full six-name PRD roster here would
-    # be asserting a future task's state, not this one's.
-    assert sig.SIGNAL_NAMES == ("post", "lp", "gate", "deploy")
+    # WP2.4 landed NEW POST; WP2.5 appended LP MIGRATION; WP2.6 appended GATE
+    # OPEN and NEW DEPLOY; WP2.7 appends BRIDGE STAGE and BURN, completing the
+    # six-name PRD §3 roster.
+    assert sig.SIGNAL_NAMES == ("post", "lp", "gate", "deploy", "bridge", "burn")
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 18
 
 
 def test_quiet_refresh_leaves_post_ok():
@@ -786,3 +785,64 @@ def test_a_legitimate_false_is_still_persisted():
         _baseline(gate_open=True), _readings(gate_open=False), NOW
     )
     assert advanced["gate_open"] is False
+
+
+# --- 5. BRIDGE STAGE --------------------------------------------------------
+#
+# The earliest link in the 2026-08-07 chain: mint 04:18:59 -> mint 04:21:35 ->
+# approve 04:22:23 -> add 04:23:23 -> announce 04:27:11.  Staging preceded the
+# add by 12 minutes (PRD §3 #5).
+
+
+def test_no_mints_in_window_is_ok():
+    assert _sig("bridge", _baseline(), _readings()) == ("ok", "no mints in window", None)
+
+
+def test_an_oft_mint_to_a_dev_wallet_fires_on_the_newest_row():
+    state, detail, age = _sig("bridge", _baseline(), _readings(bridge_mints=[MINT_1, MINT_2]))
+    assert state == "fired"
+    assert detail == "mint 114,367 IMD → frenpet.eth"
+    assert age == pytest.approx(NOW - MINT_2["ts"])
+
+
+def test_supply_growth_with_no_dev_mint_is_a_watch():
+    """Somebody bridged in, but not to a wallet we track."""
+    assert _sig("bridge", _baseline(), _readings(imd_supply=SUPPLY_BEFORE + 10_000.0)) == (
+        "watch", "supply +10,000 · no dev-wallet mint", None
+    )
+
+
+def test_bridge_outage_is_none():
+    assert _sig(
+        "bridge", _baseline(), _readings(bridge_mints=None, imd_supply=None)
+    ) == (None, "bridge logs unavailable", None)
+
+
+# --- 6. BURN ----------------------------------------------------------------
+#
+# LP fees (IMD side) -> BurnExecutor -> OFT-send to a Base burn receiver ->
+# mainnet totalSupply drops.  The transfer to the executor lands *before* the
+# supply moves, which is why it is a WATCH rather than nothing.
+
+
+def test_flat_supply_is_ok():
+    assert _sig("burn", _baseline(), _readings()) == ("ok", "supply flat", None)
+
+
+def test_a_verified_supply_drop_fires():
+    """The 2026-08-05 burn: 15,745 IMD, matching announce nonce 12 to the minute."""
+    assert _sig("burn", _baseline(), _readings(imd_supply=SUPPLY_BEFORE - 15_745.0)) == (
+        "fired", "burn 15,745 IMD", 0.0
+    )
+
+
+def test_a_transfer_to_the_burn_executor_is_a_watch():
+    assert _sig("burn", _baseline(), _readings(burn_transfers=[BURN_0805])) == (
+        "watch", "15,745 IMD → BurnExecutor", None
+    )
+
+
+def test_burn_outage_is_none():
+    assert _sig(
+        "burn", _baseline(), _readings(imd_supply=None, burn_transfers=None)
+    ) == (None, "supply unavailable", None)

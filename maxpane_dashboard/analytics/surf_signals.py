@@ -630,6 +630,72 @@ def _detect_deploy(base: dict, read: dict, now: float) -> _Det:
     return _ok("no new contract")
 
 
+# --- 5. BRIDGE STAGE -------------------------------------------------------
+
+
+def _detect_bridge(base: dict, read: dict, now: float) -> _Det:
+    """OFT bridge-in mints to a dev wallet (PRD §3 #5).
+
+    IMD has no mint function: supply exists only via ``lzReceive`` from an
+    owner-set peer, so ``Transfer(from=0x0, to=dev)`` is unambiguous staging.
+    On 2026-08-07 the first mint landed 264 s before the LP add and 492 s
+    before the announcement — the earliest warning of the five.
+
+    Supply rising with no matching mint means somebody *else* bridged in; that
+    is a WATCH, and it is only computed when both supply reads succeeded.
+    """
+    mints = _event_rows("bridge_mints", read.get("bridge_mints"))
+    fresh = _fresh_event(base, "bridge_tx", "bridge_ts", mints)
+    if fresh is not None:
+        amount = _as_float(fresh.get("amount"))
+        rendered = _fmt_amount(amount) if amount is not None else "?"
+        who = str(fresh.get("to_label") or "dev wallet")
+        return _fired(f"mint {rendered} IMD → {who}", _as_float(fresh.get("ts")))
+
+    supply = _as_float(read.get("imd_supply"))
+    base_supply = _as_float(base.get("imd_supply"))
+    if supply is not None and base_supply is not None and supply > base_supply:
+        return _watch(f"supply +{_fmt_amount(supply - base_supply)} · no dev-wallet mint")
+
+    if mints is None:
+        return _dead("bridge logs unavailable")
+    return _ok("no mints in window")
+
+
+# --- 6. BURN ---------------------------------------------------------------
+
+
+def _detect_burn(base: dict, read: dict, now: float) -> _Det:
+    """A verified supply decrease, with a transfer-to-executor precursor.
+
+    **Both reads must have succeeded.**  This is the regression the whole
+    module is shaped around: an outage that reads as ``0`` turns 2,376,731 into
+    a 100% burn, fires the signal, and then persists the zero.  ``supply is
+    None`` therefore never reaches a comparison, and the row degrades to an
+    explicit unavailable state instead (CLAUDE.md; research §Hazards 5).
+
+    Informational rather than actionable — it feeds the supply sparkline — but
+    a false one would discredit every other row on the panel.
+    """
+    supply = _as_float(read.get("imd_supply"))
+    base_supply = _as_float(base.get("imd_supply"))
+    if supply is not None and base_supply is not None and supply < base_supply:
+        return _fired(f"burn {_fmt_amount(base_supply - supply)} IMD", now)
+
+    transfers = _event_rows("burn_transfers", read.get("burn_transfers"))
+    fresh = _fresh_event(base, "burn_tx", "burn_ts", transfers)
+    if fresh is not None:
+        amount = _as_float(fresh.get("amount"))
+        rendered = _fmt_amount(amount) if amount is not None else "?"
+        return _watch(f"{rendered} IMD → BurnExecutor")
+
+    if supply is None:
+        return _dead("supply unavailable")
+    if base_supply is None:
+        return _ok("supply baseline set")
+    return _ok("supply flat")
+
+
 # --- registry --------------------------------------------------------------
 
 #: ``(name, detector)`` in render order.  :data:`SIGNAL_NAMES` and
@@ -640,6 +706,8 @@ _DETECTORS: tuple[tuple[str, Any], ...] = (
     ("lp", _detect_lp),
     ("gate", _detect_gate),
     ("deploy", _detect_deploy),
+    ("bridge", _detect_bridge),
+    ("burn", _detect_burn),
 )
 
 SIGNAL_NAMES: tuple[str, ...] = tuple(name for name, _ in _DETECTORS)
