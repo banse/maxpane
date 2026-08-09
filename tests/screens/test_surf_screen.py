@@ -663,3 +663,163 @@ async def test_degraded_sources_reach_the_title_bar():
         text = _screen_text(app)
         assert "degraded: logs, market" in text
         assert "LP owner changed" in text
+
+
+# -- the feed / activity toggle -----------------------------------------
+
+
+async def test_c_swaps_the_feed_and_the_activity_table():
+    """One slot, two views, mutually exclusive at every step."""
+    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        text = _screen_text(app)
+        assert "ANNOUNCE FEED" in text and "DEV ACTIVITY" not in text
+        assert screen._active_view == "feed"
+
+        await pilot.press("c")
+        await pilot.pause()
+        text = _screen_text(app)
+        assert "DEV ACTIVITY" in text and "ANNOUNCE FEED" not in text
+        assert screen._active_view == "activity"
+
+        await pilot.press("c")
+        await pilot.pause()
+        text = _screen_text(app)
+        assert "ANNOUNCE FEED" in text and "DEV ACTIVITY" not in text
+        assert screen._active_view == "feed"
+
+
+async def test_the_market_and_nft_panels_are_unaffected_by_the_toggle():
+    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        for _ in range(3):
+            text = _screen_text(app)
+            assert "MARKET" in text
+            assert "IDMD NFT" in text
+            await pilot.press("c")
+            await pilot.pause()
+
+
+async def test_the_hidden_view_still_receives_updates():
+    """Both widgets stay mounted and dispatched to, whichever is showing.
+
+    Creating the activity table on demand would leave it empty for a beat
+    after the first toggle, which reads as a bug. This asserts it has
+    content *before* it is ever shown.
+    """
+    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        calls = _record_dispatches(screen)
+        await screen._do_refresh()
+        await pilot.pause()
+
+        assert calls["SurfDevActivity"], "the hidden activity table was never updated"
+        assert calls["SurfFeed"]
+
+        # and it renders immediately on the very first toggle
+        await pilot.press("c")
+        await pilot.pause()
+        assert "DEV ACTIVITY" in _screen_text(app)
+
+
+async def test_the_activity_view_defends_against_address_poisoning():
+    """The anti-poisoning form survives all the way to the compositor.
+
+    Two live shapes from frenpet.eth's history are in the payload: an
+    unlabelled but genuine LP-fee destination, and a 1-gwei lookalike that
+    collides with a real fee recipient on first-6/last-4. WP3 renders unknown
+    counterparties as ``0x`` + first 8 + ``…`` + last 6 and drops the
+    (transfer, zero value, unknown) triple outright -- this asserts both
+    through the real screen rather than trusting the widget's own unit test,
+    because a short-form *fixture* would make either defence a silent no-op.
+    """
+    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("c")          # the activity table owns the slot
+        await pilot.pause()
+
+        text = _screen_text(app)
+        assert "DEV ACTIVITY" in text
+        # The genuine unknown renders in the wide, poisoning-resistant window…
+        assert "0x61CC704c…73f14E" in text
+        # …and never in the classic short form the lookalike collides with.
+        assert "0x61CC…f14E" not in text
+        # The dust row reaches no pixel at all -- not the address, not the tail.
+        assert "F3083828" not in text
+        assert "f60Ee6" not in text
+
+
+async def test_the_toggle_survives_a_missing_widget():
+    """A toggle must never take the screen down (it runs outside the
+    refresh path's per-widget try/except)."""
+    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        screen.query_one(SurfFeed).remove()
+        await pilot.pause()
+
+        screen.action_toggle_view()  # must not raise
+        await pilot.pause()
+
+        assert screen._active_view == "activity"
+
+
+async def test_the_status_bar_names_the_active_view():
+    """Same affordance FWA, Talismans and TTT use, so `c` is discoverable."""
+    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        seen = []
+        bar = screen.query_one(StatusBar)
+        original = bar.set_active_view
+        bar.set_active_view = lambda v: (seen.append(v), original(v))[1]
+
+        screen.action_toggle_view()
+        await pilot.pause()
+
+        assert seen == ["activity"]
+
+
+async def test_both_views_get_the_identical_slot():
+    """The toggle must not resize the panel underneath it.
+
+    Both views carry ``width: 3fr`` against SurfMarket's ``2fr``; give either
+    a different width and the layout jumps on every ``c`` press. Measured
+    under the real stylesheet rather than trusting the numbers to stay equal
+    (and it keeps holding after WP6 restates the block in minimal.tcss).
+    """
+    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        feed_size = screen.query_one(SurfFeed).size
+
+        await pilot.press("c")
+        await pilot.pause()
+        act_size = screen.query_one(SurfDevActivity).size
+
+        assert (act_size.width, act_size.height) == (feed_size.width, feed_size.height), (
+            f"activity occupies {act_size} where the feed occupied "
+            f"{feed_size} -- the panel resizes on every toggle"
+        )
+        assert act_size.height > 1, "the activity table collapsed instead of filling the row"

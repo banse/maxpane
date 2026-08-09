@@ -290,6 +290,29 @@ class SurfScreen(RefreshGuard, Screen):
         self._active_view: str = "feed"
 
     # ------------------------------------------------------------------
+    # Actions / bindings
+    # ------------------------------------------------------------------
+
+    def action_toggle_view(self) -> None:
+        """Swap the announce feed and the dev-activity table in one slot.
+
+        Both widgets stay mounted and both keep being updated on every
+        refresh, so toggling is a pure visibility flip -- no refetch, no
+        repopulate, no empty frame.
+        """
+        self._active_view = "activity" if self._active_view == "feed" else "feed"
+        showing_feed = self._active_view == "feed"
+        try:
+            self.query_one(SurfFeed).display = showing_feed
+            self.query_one(SurfDevActivity).display = not showing_feed
+        except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
+            logger.debug("surf view toggle failed: %s", exc)
+        try:
+            self.query_one(StatusBar).set_active_view(self._active_view)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     # Layout
     # ------------------------------------------------------------------
 
