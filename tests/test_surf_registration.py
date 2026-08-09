@@ -477,3 +477,30 @@ def test_all_six_detectors_survive_the_real_stylesheet() -> None:
                 assert label in text, f"{label} never reached the compositor"
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# __main__.FULL_LAYOUT_COLUMNS must cover every dashboard, surf included
+# ---------------------------------------------------------------------------
+
+
+def test_the_documented_width_covers_surf() -> None:
+    """``--font-size`` help quotes this number; it must not become a lie."""
+    from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
+    from maxpane_dashboard.screens.surf import SURF_FULL_LAYOUT_COLUMNS
+
+    assert FULL_LAYOUT_COLUMNS >= SURF_FULL_LAYOUT_COLUMNS, (
+        f"surf needs {SURF_FULL_LAYOUT_COLUMNS} columns, the app documents "
+        f"{FULL_LAYOUT_COLUMNS}: raise FULL_LAYOUT_COLUMNS and the README "
+        "width table together"
+    )
+
+
+def test_the_readme_quotes_the_documented_width() -> None:
+    """The README's width table is prose around one number; pin them together."""
+    from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
+
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    assert f"≥ {FULL_LAYOUT_COLUMNS}" in readme, (
+        f"README's width table never mentions ≥ {FULL_LAYOUT_COLUMNS}"
+    )
