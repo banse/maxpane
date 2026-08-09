@@ -143,6 +143,18 @@ class LastGood:
         return cls(payload=data.get("payload"), ts=float(data.get("ts") or 0.0))
 
 
+class _Drop:
+    """Sentinel: this value is not usable and must be dropped, never coerced."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:      # pragma: no cover - debugging aid
+        return "<drop>"
+
+
+_DROP = _Drop()
+
+
 def _jsonable(value: Any, _depth: int = 0) -> Any:
     """Best-effort conversion of a cached payload to JSON-safe primitives.
 
@@ -162,6 +174,32 @@ def _jsonable(value: Any, _depth: int = 0) -> Any:
         return [_jsonable(v, _depth + 1) for v in value]
     logger.debug("Dropping non-serialisable %s from the SURF cache", type(value).__name__)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Signal baselines (PRD §3)
+# ---------------------------------------------------------------------------
+
+#: Nested map inside the baselines dict: signal name -> ``{"ts": epoch seconds,
+#: "detail": the rendered line}`` of its last FIRED. Persisted so a restart
+#: neither resurrects nor loses a FIRED display; whether an entry still
+#: *renders* FIRED is ``build_signals``' call, not this module's.
+#:
+#: The spelling is ``build_signals``' own (``advanced["fired"]``). It is not a
+#: free choice: this cache is schema-agnostic, so a key that does not match
+#: routes the whole store down the generic scalar branch, where a mapping is
+#: dropped — the FIRED map would then be silently discarded every cycle.
+BASELINE_FIRED_KEY = "fired"
+
+#: Longest list a baseline value may be (seen tx hashes and the like).
+BASELINE_LIST_CAP = 64
+
+#: Longest FIRED ``detail`` string kept. Deliberately far above WP2's
+#: ``DETAIL_LIMIT`` (48): that one caps the quoted *message body*, while a
+#: rendered detail wraps it in a label, quotes and a ``· last: …`` clause. This
+#: bound exists to stop an unbounded third-party string reaching the cache
+#: file, not to reformat the line a restart re-renders.
+BASELINE_DETAIL_CAP = 200
 
 
 class SurfCache:
@@ -185,6 +223,7 @@ class SurfCache:
         self.series: dict[str, deque[tuple[float, float]]] = {
             name: deque(maxlen=_HISTORY_HOURS) for name in SERIES_NAMES
         }
+        self._baselines: dict[str, Any] = {}
 
     # -- clock ---------------------------------------------------------------
 
@@ -360,8 +399,101 @@ class SurfCache:
             return []
         return [[float(ts), float(v)] for (ts, v) in deq]
 
+    # -- signal baselines ----------------------------------------------------
+
+    @staticmethod
+    def _scalar(value: Any) -> Any:
+        """A JSON-safe scalar, or the sentinel ``_DROP`` when unusable."""
+        if value is None or isinstance(value, (bool, int, str)):
+            return value
+        if isinstance(value, float):
+            return value if math.isfinite(value) else _DROP
+        return _DROP
+
+    @staticmethod
+    def _sanitise_fired(raw: Any, horizon: float) -> dict[str, dict[str, Any]]:
+        """The ``{signal: {"ts", "detail"}}`` store, defensively rebuilt.
+
+        Shape kept deliberately narrow — this is the one nested value the cache
+        understands, and it understands it because ``build_signals`` writes it
+        and reads it back. Anything that is not a two-field mapping with a
+        usable stamp is **dropped**, never repaired: a resurrected FIRED is a
+        false alarm and a coerced one is a lie about when it happened. Entries
+        in the pre-repair flat shape (``{signal: float}``) land here too and are
+        dropped by the same rule, which is the honest outcome — a stamp with no
+        detail would restore as a FIRED row quoting nothing.
+        """
+        fired: dict[str, dict[str, Any]] = {}
+        if not isinstance(raw, Mapping):
+            return fired
+        for sig, entry in raw.items():
+            if not isinstance(entry, Mapping):
+                logger.debug("Dropping malformed SURF fired entry %r", sig)
+                continue
+            try:
+                stamp = float(entry.get("ts"))      # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                continue
+            # A future-dated stamp is clock-skew corruption; keeping it would
+            # pin the detector at FIRED forever.
+            if not math.isfinite(stamp) or not 0.0 < stamp <= horizon:
+                continue
+            detail = entry.get("detail")
+            text = "" if detail is None else str(detail)
+            fired[str(sig)] = {"ts": stamp, "detail": text[:BASELINE_DETAIL_CAP]}
+        return fired
+
+    def _sanitise_baselines(self, raw: Any, now: float) -> dict[str, Any]:
+        if not isinstance(raw, Mapping):
+            logger.debug("Ignoring non-mapping SURF baselines: %r", type(raw).__name__)
+            return {}
+        out: dict[str, Any] = {}
+        horizon = now + CLOCK_SKEW_TOLERANCE_SECONDS
+        for key, value in raw.items():
+            name = str(key)
+            if name == BASELINE_FIRED_KEY:
+                out[name] = self._sanitise_fired(value, horizon)
+                continue
+            if isinstance(value, (list, tuple)):
+                items = [self._scalar(v) for v in list(value)[:BASELINE_LIST_CAP]]
+                out[name] = [v for v in items if v is not _DROP]
+                continue
+            scalar = self._scalar(value)
+            if scalar is _DROP:
+                logger.debug("Dropping unusable SURF baseline %s=%r", name, value)
+                continue
+            out[name] = scalar
+        return out
+
+    def get_baselines(self) -> dict[str, Any]:
+        """A **copy** of the persisted baselines, safe for a caller to mutate.
+
+        The FIRED store is two levels deep, so the inner ``{"ts", "detail"}``
+        dicts are copied too — a shallow copy would hand out live references and
+        a caller editing a detail would rewrite what the next restart renders.
+        """
+        out = dict(self._baselines)
+        fired = out.get(BASELINE_FIRED_KEY)
+        if isinstance(fired, dict):
+            out[BASELINE_FIRED_KEY] = {
+                name: (dict(entry) if isinstance(entry, dict) else entry)
+                for name, entry in fired.items()
+            }
+        return out
+
+    def set_baselines(self, baselines: Mapping[str, Any], *, now: float | None = None) -> None:
+        """Replace the baselines wholesale with ``build_signals``' advanced set.
+
+        Wholesale, never merged: ``build_signals`` returns the *complete* advanced
+        set, so merging would let a key it deliberately dropped come back.
+        """
+        self._baselines = self._sanitise_baselines(baselines, self._now(now))
+
 
 __all__ = [
+    "BASELINE_DETAIL_CAP",
+    "BASELINE_FIRED_KEY",
+    "BASELINE_LIST_CAP",
     "DEFAULT_CACHE_PATH",
     "LastGood",
     "SERIES_ALLOW_NEGATIVE",

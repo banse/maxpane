@@ -299,3 +299,149 @@ def test_interleaved_repeat_of_an_earlier_hour_does_not_duplicate_it(tmp_path):
     assert timestamps == sorted(timestamps)
     assert len(timestamps) == len(set(timestamps)), "an hour must never appear twice"
     assert series == [[hour - 3600.0, 2.0], [hour, 3.0]]
+
+
+# ---------------------------------------------------------------------------
+# Signal baselines (PRD §3)
+# ---------------------------------------------------------------------------
+
+
+from maxpane_dashboard.data.surf_cache import (   # noqa: E402
+    BASELINE_DETAIL_CAP,
+    BASELINE_FIRED_KEY,
+)
+
+
+def _baselines() -> dict:
+    """The shape build_signals returns, using live values from the captures."""
+    return {
+        "announce_nonce": 14,             # eth_getTransactionCount(ANNOUNCE)
+        "dev_nonce": 2350,
+        "ops_nonce": 29,
+        "lp_liquidity": 1234567890123456789,
+        "gate_open": False,               # gate closed since 2026-05-14
+        # WP2's spelling (BASELINE_SCALARS), not a paraphrase: the cache is
+        # schema-agnostic, so a wrong key here round-trips green and only shows
+        # up as a detector that never fires. Task WP4.11 has the same rule.
+        "identities_written": 1,          # 1/2000 written
+        "imd_supply": IMD_SUPPLY,
+        "channel_tx_count": 21,           # posts AND replies, against nonce 14
+        "hook_live": False,               # v4 hook not deployed
+        "bridge_last_block": 25_707_780,
+        # WP2's shape, verbatim: {signal: {"ts": float, "detail": str}}. The
+        # details are the real ones build_signals renders — the nonce-13 post
+        # and the 2026-07-31 burn.
+        BASELINE_FIRED_KEY: {
+            "post": {"ts": 1_786_076_831.0, "detail": '#13 "as always 0 promises."'},
+            "burn": {"ts": 1_785_903_575.0, "detail": "31,064 IMD → BurnExecutor"},
+        },
+    }
+
+
+def test_baselines_round_trip_in_memory(tmp_path):
+    c = _cache(tmp_path)
+    assert c.get_baselines() == {}
+    c.set_baselines(_baselines())
+    assert c.get_baselines() == _baselines()
+
+
+def test_get_baselines_hands_out_a_copy_not_the_live_dict(tmp_path):
+    """A caller mutating what it got must not silently advance a baseline.
+
+    The FIRED store is two levels deep, so a one-level ``dict(...)`` is not a
+    copy: the per-signal ``{"ts", "detail"}`` dicts would still be shared, and a
+    caller editing a detail would rewrite what the next restart renders.
+    """
+    c = _cache(tmp_path)
+    c.set_baselines(_baselines())
+    got = c.get_baselines()
+    got["announce_nonce"] = 99
+    got[BASELINE_FIRED_KEY]["post"]["ts"] = 0.0
+    got[BASELINE_FIRED_KEY]["post"]["detail"] = "tampered"
+    assert c.get_baselines()["announce_nonce"] == 14
+    assert c.get_baselines()[BASELINE_FIRED_KEY]["post"] == {
+        "ts": 1_786_076_831.0,
+        "detail": '#13 "as always 0 promises."',
+    }
+
+
+def test_unusable_baseline_values_are_dropped_not_coerced(tmp_path):
+    c = _cache(tmp_path)
+    c.set_baselines(
+        {
+            "announce_nonce": 14,
+            "imd_supply": float("nan"),
+            "junk": object(),
+            "nested": {"too": {"deep": 1}},
+            BASELINE_FIRED_KEY: {
+                "post": {"ts": "yesterday", "detail": "x"},   # unparsable stamp
+                "lp": {"ts": float("inf"), "detail": "x"},
+                "burn": {"ts": -1.0, "detail": "x"},          # non-positive
+                "gate": 1_786_076_831.0,                      # the OLD flat shape
+            },
+        }
+    )
+    got = c.get_baselines()
+    assert got["announce_nonce"] == 14
+    assert "imd_supply" not in got          # NaN is not a supply
+    assert "junk" not in got
+    assert "nested" not in got
+    assert got[BASELINE_FIRED_KEY] == {}    # every fired entry was unusable
+
+
+def test_a_fired_detail_is_coerced_to_text_and_bounded(tmp_path):
+    """``detail`` is what a restart re-renders, so it must survive as text.
+
+    It is third-party-influenced (a post body reaches it through WP2), so it is
+    stored as a plain string and bounded — but bounded generously: WP2's
+    ``DETAIL_LIMIT`` (48) caps the *message body*, and the rendered line adds a
+    label and quotes around it. A tight cap here would silently rewrite the
+    line the user sees after a restart.
+    """
+    clock = FakeClock()
+    c = _cache(tmp_path, clock)
+    c.set_baselines(
+        {
+            BASELINE_FIRED_KEY: {
+                "post": {"ts": clock.t - 60.0, "detail": "x" * (BASELINE_DETAIL_CAP + 50)},
+                "lp": {"ts": clock.t - 60.0, "detail": None},
+                "gate": {"ts": clock.t - 60.0, "detail": 42},
+            }
+        }
+    )
+    fired = c.get_baselines()[BASELINE_FIRED_KEY]
+    assert len(fired["post"]["detail"]) == BASELINE_DETAIL_CAP
+    assert fired["lp"]["detail"] == ""       # a missing detail is empty, not dropped
+    assert fired["gate"]["detail"] == "42"   # coerced, never a stray int on disk
+
+
+def test_a_future_dated_fired_stamp_is_dropped(tmp_path):
+    """Clock-skew corruption must not pin a detector at FIRED forever."""
+    clock = FakeClock()
+    c = _cache(tmp_path, clock)
+    c.set_baselines(
+        {
+            BASELINE_FIRED_KEY: {
+                "post": {"ts": clock.t + 86_400.0, "detail": "from the future"},
+                "lp": {"ts": clock.t - 60.0, "detail": "LP +33 ETH"},
+            }
+        }
+    )
+    assert c.get_baselines()[BASELINE_FIRED_KEY] == {
+        "lp": {"ts": clock.t - 60.0, "detail": "LP +33 ETH"}
+    }
+
+
+def test_set_baselines_replaces_wholesale(tmp_path):
+    """build_signals returns the complete advanced set; merging would resurrect."""
+    c = _cache(tmp_path)
+    c.set_baselines(_baselines())
+    c.set_baselines({"announce_nonce": 15})
+    assert c.get_baselines() == {"announce_nonce": 15}
+
+
+def test_non_mapping_baselines_are_ignored(tmp_path):
+    c = _cache(tmp_path)
+    c.set_baselines(_baselines())
+    c.set_baselines(None)                   # type: ignore[arg-type]
+    assert c.get_baselines() == {}
