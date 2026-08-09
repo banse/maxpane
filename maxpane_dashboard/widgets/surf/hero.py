@@ -69,10 +69,7 @@ only when the *narrowest* tier still does not fit (see :func:`_tier_for`):
 ===========  =====  ===================================================
 Tier         Needs  What it gives up
 ===========  =====  ===================================================
-``full``     24     nothing
-``compact``  22     ``· L <liquidity>`` -- a raw v3 uint128 rendered
-                    ``2.16e+18`` is the least legible field on the
-                    screen and the most expensive in columns
+``compact``  22     nothing
 ``tight``    17     ``burned N observed`` -> ``burn N``;
                     ``owner ✓ frenpet.eth`` -> ``owner ✓`` (the tick
                     *is* the assertion, the ENS name is decoration)
@@ -80,6 +77,15 @@ Tier         Needs  What it gives up
                     ``since 2026-05-14`` -> ``2026-05-14``;
                     ``detectors armed`` -> ``armed``
 ===========  =====  ===================================================
+
+The LP box carries no liquidity field.  There was one -- the position's
+raw v3 ``L``, a uint128 that renders ``2.16e+18`` because K/M/B suffixes
+lie at that magnitude -- and it was the widest tier's only content, so a
+``full`` tier existed to hold it.  It was dropped on request: scientific
+notation of an unnamed unit told a reader nothing that ``142.71 WETH``
+does not, and it cost the most columns on the row.  The tier above
+``compact`` went with it rather than becoming a tier that renders
+identically to its neighbour.
 
 Titles and quantities are never in that table: they are rendered whole at
 every tier.  ``MINIMAL_WIDTH`` is 13 precisely because three of them are
@@ -100,7 +106,6 @@ from maxpane_dashboard.widgets.surf._fmt import (
     EMDASH,
     as_float,
     fmt_compact,
-    fmt_liquidity,
 )
 
 #: The hook vocabulary the *manager* emits, spelled exactly as
@@ -122,7 +127,6 @@ WIDEN_HINT = "‹ widen"
 #: below actually emit -- ``test_every_hero_tier_fits_the_width_it_advertises``
 #: renders every state at every tier and measures it, so a copy edit that
 #: outgrows its tier fails there rather than on a user's terminal.
-FULL_WIDTH = 24     # "142.71 WETH · L 2.16e+18"
 COMPACT_WIDTH = 22  # "burned 15,745 observed"
 TIGHT_WIDTH = 17    # "2000/2000 written" -- see below
 MINIMAL_WIDTH = 13  # "IDENTITY GATE" / "OWNER CHANGED" / "2,376,732 IMD"
@@ -136,7 +140,6 @@ MINIMAL_WIDTH = 13  # "IDENTITY GATE" / "OWNER CHANGED" / "2,376,732 IMD"
 # which fits "2000/2000" in 9. The sweep now includes the cap.
 
 TIER_WIDTHS = {
-    "full": FULL_WIDTH,
     "compact": COMPACT_WIDTH,
     "tight": TIGHT_WIDTH,
     "minimal": MINIMAL_WIDTH,
@@ -151,12 +154,10 @@ _HOOK_HEADLINE_CAP = 18
 def _tier_for(width: int) -> str:
     """Widest box layout that fits ``width`` rendered columns.
 
-    ``width <= 0`` means "not laid out yet" and optimistically picks
-    ``full``; :meth:`SurfHero.on_resize` re-renders once the box has a size.
+    ``width <= 0`` means "not laid out yet" and optimistically picks the
+    widest; :meth:`SurfHero.on_resize` re-renders once the box has a size.
     """
-    if width <= 0 or width >= FULL_WIDTH:
-        return "full"
-    if width >= COMPACT_WIDTH:
+    if width <= 0 or width >= COMPACT_WIDTH:
         return "compact"
     if width >= TIGHT_WIDTH:
         return "tight"
@@ -211,16 +212,18 @@ def _hook_lines(hook_status, tier: str) -> list[str]:
     return ["[dim]V4 HOOK[/]", "", big, f"[dim]{sub}[/]", "[dim] [/]"]
 
 
-def _lp_lines(lp_liquidity, lp_imd, lp_weth, lp_owner_ok, tier: str) -> list[str]:
-    """LP box: pool sides, raw liquidity, and the owner sanity flag."""
+def _lp_lines(lp_imd, lp_weth, lp_owner_ok, tier: str) -> list[str]:
+    """LP box: the pool sides and the owner sanity flag.
+
+    No liquidity field: the position's raw v3 ``L`` used to render here as
+    ``2.16e+18`` and was dropped on request -- see the module docstring.
+    ``lp_liquidity`` is still a manager key and still feeds the LP
+    MIGRATION detector; it simply has no box of its own any more.
+    """
     imd = as_float(lp_imd)
     weth = as_float(lp_weth)
     big = f"[bold]{fmt_compact(imd)} IMD[/]" if imd is not None else f"[dim]{EMDASH}[/]"
-    weth_str = f"{weth:,.2f} WETH" if weth is not None else f"{DASH} WETH"
-    # The raw uint128 goes first: rendered `2.16e+18` it is the least legible
-    # field in the row and the most expensive in columns, and `142.71 WETH`
-    # alone is the readable half.
-    second = weth_str if tier != "full" else f"{weth_str} · L {fmt_liquidity(lp_liquidity)}"
+    second = f"{weth:,.2f} WETH" if weth is not None else f"{DASH} WETH"
     if lp_owner_ok is True:
         # The tick *is* the assertion; the ENS name is decoration, and
         # `fren…` would distinguish nothing.
@@ -349,7 +352,6 @@ class SurfHero(Horizontal):
     def update_data(
         self,
         hook_status=None,
-        lp_liquidity=None,
         lp_imd=None,
         lp_weth=None,
         lp_owner_ok=None,
@@ -362,7 +364,6 @@ class SurfHero(Horizontal):
         """Refresh all four boxes from the manager's flat dict (PRD §5 hero)."""
         self._payload = {
             "hook_status": hook_status,
-            "lp_liquidity": lp_liquidity,
             "lp_imd": lp_imd,
             "lp_weth": lp_weth,
             "lp_owner_ok": lp_owner_ok,
@@ -396,7 +397,6 @@ class SurfHero(Horizontal):
         )
         boxes["lp"].render_lines_at_tier(
             lambda tier: _lp_lines(
-                data.get("lp_liquidity"),
                 data.get("lp_imd"),
                 data.get("lp_weth"),
                 data.get("lp_owner_ok"),

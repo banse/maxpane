@@ -1359,6 +1359,18 @@ async def _hero_text(width: int) -> str:
         return _region_text(app, screen.query_one(SurfHero))
 
 
+def _hero_fields(text: str) -> set[str]:
+    """The hero's content words, free of box drawing and padding.
+
+    Two renders at different widths differ in border length and padding even
+    when they show the same fields, so a raw string compare would always
+    differ. This reduces a render to what it actually *says*.
+    """
+    box_drawing = "─│┌┐└┘┬┴├┤┼"
+    scrubbed = "".join(" " if ch in box_drawing else ch for ch in text)
+    return set(scrubbed.split())
+
+
 async def test_the_hero_cuts_neither_a_number_nor_a_title_at_the_pinned_width():
     """I-2: ``burned 15,74…`` and ``IDENTITY GA…`` must not be reachable.
 
@@ -1376,10 +1388,15 @@ async def test_the_hero_cuts_neither_a_number_nor_a_title_at_the_pinned_width():
         # Since the hero took the full row this width reaches the *widest*
         # tier, so the fields the narrow tiers shed are all present too --
         # whole, and with the word that scopes them ("observed") intact.
-        "burned 15,745 observed", "· L ", "owner ✓ frenpet.eth",
+        "burned 15,745 observed", "owner ✓ frenpet.eth",
         "since 2026-05-14", "detectors armed", "1/2000 written",
     ):
         assert whole in hero, f"{whole!r} did not survive the hero row whole"
+
+    # The raw v3 ``L`` is gone from the box at every width, including this
+    # one, where the widest tier renders. Dropped on request: rendered
+    # ``2.16e+18`` it named no unit and said nothing ``142.71 WETH`` does not.
+    assert "· L " not in hero
 
     # The general statement the list above is a sample of: at the pinned
     # width the hero truncates nothing at all.
@@ -1387,29 +1404,38 @@ async def test_the_hero_cuts_neither_a_number_nor_a_title_at_the_pinned_width():
 
 
 async def test_the_hero_spends_new_columns_in_the_documented_order():
-    """Widening restores the shed fields cheapest-last: owner/burn, then L.
+    """Widening restores the shed fields cheapest-last: `written`, then owner/burn.
 
     Pins the *order* rather than just the endpoints, because the order is the
-    product decision: the raw v3 uint128 is the least legible field and the
-    most expensive in columns, so it is the first to go and the last to come
-    back.
+    product decision about what a reader can most afford to lose.
 
-    The four widths are measured on the real full-width row, not guessed --
-    a box gets roughly a quarter of the terminal minus its own frame, so the
-    tiers land at 91 / 99 / 119 / 127 columns (see the sweep in the module
-    docstring of ``widgets/surf/hero.py``). They used to be 139 / 200 / 240
-    for the same four tiers, when the hero had half a row.
+    The widths are measured on the real full-width row, not guessed -- a box
+    gets roughly a quarter of the terminal minus its own frame, so the tiers
+    land at 91 / 99 / 119 columns (see the sweep in the module docstring of
+    ``widgets/surf/hero.py``). They used to be 139 / 200 / 240 when the hero
+    had half a row.
+
+    A fourth tier used to sit above these three, holding ``· L <liquidity>``.
+    The field was dropped on request, and the tier went with it rather than
+    becoming a tier that renders exactly what ``compact`` renders. ``wide``
+    below is therefore no longer a distinct tier -- it is kept in the sweep
+    precisely to assert that extra columns now buy *nothing*, which is the
+    claim that would quietly go untested if the width were simply deleted.
     """
     narrow = await _hero_text(91)     # minimal tier
     tight = await _hero_text(99)      # tight tier
     mid = await _hero_text(119)       # compact tier
-    wide = await _hero_text(127)      # full tier
+    wide = await _hero_text(127)      # still compact: there is nothing wider
 
-    # `· L <liquidity>` is shed first and restored last.
-    assert "· L " not in narrow
-    assert "· L " not in tight
-    assert "· L " not in mid
-    assert "· L " in wide
+    # The dropped liquidity field is absent at every width, including the
+    # widest -- there is no tier that brings it back.
+    for text in (narrow, tight, mid, wide):
+        assert "· L " not in text
+        assert "e+" not in text, "a raw uint128 is rendering somewhere in the hero"
+
+    # Past `compact`, extra columns buy nothing: the two widest renders agree
+    # field for field. Without this the collapsed ladder would be untested.
+    assert _hero_fields(mid) == _hero_fields(wide)
 
     # The observed burn: a whole short form, never cut digits.
     assert "burn 15,745" in narrow

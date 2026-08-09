@@ -177,7 +177,13 @@ async def test_hero_full_payload_renders_all_four_boxes_on_screen():
         # LP: both pool sides and the owner sanity flag.
         assert "388.4K IMD" in screen
         assert "142.71 WETH" in screen
-        assert "2.60e+19" in screen
+        # The raw v3 ``L`` used to render beside the WETH side as
+        # ``2.60e+19``. It was dropped on request: scientific notation of an
+        # unnamed unit told a reader nothing the WETH side does not. The
+        # payload still carries ``lp_liquidity`` -- the LP MIGRATION detector
+        # reads it -- so this asserts the *box* dropped it, not the key.
+        assert "2.60e+19" not in screen
+        assert "· L " not in screen
         assert "owner ✓ frenpet.eth" in screen
         # GATE: closed, 1/2000 written (identity_counters + research).
         assert "CLOSED" in screen
@@ -316,24 +322,25 @@ def test_hero_tier_table_is_measured_not_rounded():
     """The thresholds are the widths their own layouts need, in order."""
     from maxpane_dashboard.widgets.surf.hero import (
         COMPACT_WIDTH,
-        FULL_WIDTH,
         MINIMAL_WIDTH,
         TIER_WIDTHS,
         TIGHT_WIDTH,
         _tier_for,
     )
 
-    assert FULL_WIDTH > COMPACT_WIDTH > TIGHT_WIDTH > MINIMAL_WIDTH
+    assert COMPACT_WIDTH > TIGHT_WIDTH > MINIMAL_WIDTH
     # ``0`` is "not laid out yet"; ``on_resize`` corrects the guess.
-    assert _tier_for(0) == "full"
-    assert _tier_for(FULL_WIDTH) == "full"
-    assert _tier_for(FULL_WIDTH - 1) == "compact"
+    assert _tier_for(0) == "compact"
     assert _tier_for(COMPACT_WIDTH) == "compact"
+    # There is no tier above ``compact``: the ``full`` tier existed only to
+    # hold ``· L <liquidity>``, and when that field was dropped it would have
+    # rendered identically to its neighbour. A tier that shows exactly what
+    # the next one shows is a lie about the ladder, so it went too.
+    assert _tier_for(COMPACT_WIDTH + 50) == "compact"
     assert _tier_for(COMPACT_WIDTH - 1) == "tight"
     assert _tier_for(TIGHT_WIDTH) == "tight"
     assert _tier_for(TIGHT_WIDTH - 1) == "minimal"
     assert TIER_WIDTHS == {
-        "full": FULL_WIDTH,
         "compact": COMPACT_WIDTH,
         "tight": TIGHT_WIDTH,
         "minimal": MINIMAL_WIDTH,
@@ -363,9 +370,7 @@ def test_every_hero_tier_fits_the_width_it_advertises():
         for status in (HOOK_NOT_LIVE, HOOK_LAUNCHED, None, "", "holder-gated"):
             renderings.append(_hook_lines(status, tier))
         for owner in (True, False, None):
-            renderings.append(
-                _lp_lines(_FULL_HERO["lp_liquidity"], 388421.0, 142.7067, owner, tier)
-            )
+            renderings.append(_lp_lines(388421.0, 142.7067, owner, tier))
         for gate in (True, False, None):
             # 2000 is the IDMD cap and therefore the counter's widest
             # reachable value, not a hypothetical: ``2000/2000 written`` is

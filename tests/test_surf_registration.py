@@ -798,6 +798,17 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     # Mentioned only in a code comment in screens/surf.py; never passed to
     # StatusBar.update_data or any widget's update_data.
     "as_of": "never read by screens/surf.py or any widgets/surf/* module",
+    # Was probed as `"· L 0"` until the hero's liquidity field was dropped on
+    # request (a raw v3 uint128 renders `2.16e+18`, which names no unit and
+    # says nothing `142.71 WETH` does not). The key is still computed and the
+    # LP MIGRATION detector still reads it -- it simply has no box any more,
+    # so a fabricated 0 cannot reach a pixel through the hero. Moved here
+    # deliberately rather than left in place: the old probe would have gone
+    # on passing, because a substring that can never render is trivially
+    # absent, and this suite has already produced five tests that passed for
+    # exactly that kind of reason. If a future widget renders it, move this
+    # key back into `_NUMERIC_ZERO_PROBES` in the same change.
+    "lp_liquidity": "dropped from the hero LP box; no widget renders it",
     # widgets/surf/signals.py `_head()` reads `age_s` only inside the
     # `state == "fired"` branch; every other state -- including the `None`
     # a full outage produces -- ignores it entirely, so `{state: None,
@@ -827,7 +838,6 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
 _NUMERIC_ZERO_PROBES: dict[str, str] = {
     "feed_nonce": "feed #0",                    # screens/surf.py _fmt_int
     "feed_last_post_age_s": "(0s)",              # screens/surf.py _fmt_age
-    "lp_liquidity": "· L 0",                # hero.py fmt_liquidity
     "lp_imd": "0 IMD",                           # hero.py _update_lp
     "lp_weth": "0.00 WETH",                      # hero.py _update_lp
     "identities_written": "0/2000 writt",        # hero.py _update_gate
