@@ -11,6 +11,8 @@ whole PRD hangs on — must never let a failed read move a baseline.
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from maxpane_dashboard.analytics import surf_signals
@@ -2416,6 +2418,67 @@ async def test_a_half_empty_chain_state_is_not_penalised(tmp_path):
     assert data["imd_supply"] == pytest.approx(IMD_SUPPLY)   # the rest still reads
 
 
+#: One poll cadence, spelled once. `_manager` builds every manager with
+#: ``poll_interval=30`` and the backoff arithmetic below is derived from it
+#: rather than counted by hand.
+POLL_INTERVAL = 30.0
+
+
+async def test_a_cold_cache_does_not_bypass_the_failure_backoff(tmp_path):
+    """A fresh install against a rate-limiting host used to fetch on every poll.
+
+    Every skip predicate read ``if TIER_X not in tiers and
+    self.cache.get_last_good(SLOT) is not None: return None``. The second
+    conjunct means a group whose slot has never been populated is fetched every
+    refresh no matter what ``mark_failed`` did to the tier clock — and that is
+    exactly the state a fresh install is in when the upstream host is down or
+    rate-limiting. The multiplier is what makes it matter: one
+    ``fetch_nft_stats`` is up to 11 upstream requests and ``_get_json`` retries
+    each failure once, so a dead Blockscout cost roughly 40 requests to one
+    already-rate-limiting host every 30 s, indefinitely. For a keyless tool
+    installed with ``pipx`` by people who cannot register for anything, getting
+    the user's IP blocked is a first-class failure.
+
+    The cold cache never needed the second conjunct: a tier with no recorded
+    ``next_due`` is *already* due, so cycle 1 fetches either way. All the
+    conjunct ever did was disable the backoff on the one path that needs it.
+
+    Counts are derived from ``TIER_FAILURE_BACKOFF_SECONDS``, not typed in, so
+    a change to a backoff constant reaches this test as a change and not as a
+    silent pass.
+    """
+    from maxpane_dashboard.data.surf_cache import (
+        TIER_FAILURE_BACKOFF_SECONDS, TIER_MEDIUM, TIER_SLOW,
+    )
+
+    polls = 10
+    span = polls * POLL_INTERVAL
+    clock = FakeClock()
+    client = _dead_client()
+    m = _manager(tmp_path, client=client, clock=clock)
+    for _ in range(polls):
+        await m.fetch_and_compute()
+        clock.advance(POLL_INTERVAL)
+
+    medium = math.ceil(span / TIER_FAILURE_BACKOFF_SECONDS[TIER_MEDIUM])
+    slow = math.ceil(span / TIER_FAILURE_BACKOFF_SECONDS[TIER_SLOW])
+    assert client.calls.count("fetch_market") == medium
+    assert client.calls.count("fetch_recent_logs") == medium
+    assert client.calls.count("fetch_channel_txs") == medium
+    assert client.calls.count("fetch_nft_stats") == slow
+    assert client.calls.count("fetch_dev_activity") == slow
+
+    # The fast tier is deliberately untouched: the announce channel emits no
+    # logs, so `eth_getTransactionCount` is the only detector that exists for
+    # it and it runs every refresh by design. Its 15 s backoff is shorter than
+    # the poll interval anyway, so it could not skip a cycle if it tried.
+    assert client.calls.count("fetch_nonces") == polls
+    assert client.calls.count("fetch_chain_state") == polls
+
+    # And a skipped group is still reported — it has never produced a payload.
+    assert (await m.fetch_and_compute())["degraded"] == sorted(SOURCES)
+
+
 async def test_a_backed_off_group_stays_degraded_through_the_retry_window(tmp_path):
     """Review point: ``mark_failed`` advances the retry clock, not
     ``last_fetch_ts`` — a tier sitting out a failure's backoff window answers
@@ -2424,6 +2487,12 @@ async def test_a_backed_off_group_stays_degraded_through_the_retry_window(tmp_pa
     is trustworthy; ``_failed_groups`` must keep the group degraded through a
     skip cycle inside the backoff window, and the served value must be the
     honestly-stale last-good, never blanked and never silently "live".
+
+    This one opens with a **successful** cycle, so it proves the warm-cache
+    path only — which is the path that already worked. The cold-cache path its
+    docstring used to imply is
+    ``test_a_cold_cache_does_not_bypass_the_failure_backoff`` above, and it was
+    broken for every one of the five skip predicates.
     """
     clock = FakeClock()
     client = FakeSurfClient()

@@ -577,7 +577,28 @@ class SurfManager:
     # -- the medium tier: market, logs, channel ------------------------------
 
     async def _pool_market(self, tiers: set[str], now: float) -> Any:
-        if TIER_MEDIUM not in tiers and self.cache.get_last_good(SLOT_MARKET) is not None:
+        """Fetch the market view when the medium tier is due. Never raises.
+
+        The skip predicate is the tier's due-ness and **nothing else**. It used
+        to read ``TIER_MEDIUM not in tiers and get_last_good(SLOT) is not
+        None``, and every one of the five skip predicates in this module was
+        written that way. The second conjunct means a group whose slot has
+        never been populated is fetched on *every* poll no matter what
+        ``mark_failed`` did to the tier clock — i.e. the failure backoff was
+        bypassed entirely on a cold cache, which is exactly the state a fresh
+        install is in when the upstream host is down or rate-limiting.
+
+        It was never needed: a tier with no recorded ``next_due`` is already
+        due (:meth:`SurfCache.is_fresh` returns ``False`` for an unset tier), so
+        cycle 1 on a cold cache fetches on the tier check alone. All the
+        conjunct did was disable the backoff on the path that needs it — this
+        one hammered DexScreener, GeckoTerminal and CoinGecko every 30 s
+        indefinitely, and ``_pool_nft``'s ~11 requests per call (each retried
+        once by ``_get_json``) did the same to Blockscout. For a keyless tool
+        installed by people who cannot register for anything, getting the
+        user's IP blocked is a first-class failure.
+        """
+        if TIER_MEDIUM not in tiers:
             return None                     # skip, not a failure: no `_note` above
         snap = await self._guard(self.client.fetch_market, "fetch_market")
         self._note(SOURCE_MARKET, snap is not None)
@@ -614,7 +635,7 @@ class SurfManager:
         }
 
     async def _pool_logs(self, tiers: set[str], now: float) -> Any:
-        if TIER_MEDIUM not in tiers and self.cache.get_last_good(SLOT_LOGS) is not None:
+        if TIER_MEDIUM not in tiers:
             return None
         window = await self._guard(self.client.fetch_recent_logs, "fetch_recent_logs")
         self._note(SOURCE_LOGS, window is not None)
@@ -818,7 +839,7 @@ class SurfManager:
         cycle that refreshes the NFT tier into a blank payload with
         ``degraded == list(SOURCES)``.
         """
-        if TIER_SLOW not in tiers and self.cache.get_last_good(SLOT_NFT) is not None:
+        if TIER_SLOW not in tiers:
             return None
         stats = await self._guard(self.client.fetch_nft_stats, "fetch_nft_stats")
         self._note(SOURCE_NFT, stats is not None)
@@ -838,6 +859,10 @@ class SurfManager:
         detection for up to seven more minutes, which is the whole margin the
         detector exists to buy.
 
+        The skip does **not** also require a populated slot. It used to, and
+        that conjunct disabled the failure backoff on the one path that needs
+        it — see :meth:`_pool_market`.
+
         Every ``return None`` is a skip and must not reach :meth:`_note`.
         """
         cached = self.cache.get_last_good(SLOT_ACTIVITY)
@@ -845,7 +870,7 @@ class SurfManager:
         moved = self._nonce_moved(payload.get("dev_nonce"), dev_nonce) or (
             self._nonce_moved(payload.get("ops_nonce"), ops_nonce)
         )
-        if not moved and TIER_SLOW not in tiers and cached is not None:
+        if not moved and TIER_SLOW not in tiers:
             return None
 
         rows = await self._guard(self.client.fetch_dev_activity, "fetch_dev_activity")
@@ -978,6 +1003,10 @@ class SurfManager:
            not have yet, up to three refreshes running.
         2. **An unchanged nonce skips the page**, even when the medium tier is
            due: nothing was posted for 52 days over the real May-to-July gap.
+        3. **A tier that is not due skips the page** — including on a cold
+           cache, where this method used to fetch unconditionally and so
+           bypassed the failure backoff (see :meth:`_pool_market`). Rule 1
+           still overrides: a nonce change forces the fetch either way.
 
         Every ``return None`` here is a *skip*, not a failure: it must not call
         :meth:`_note`, because a skipped group is not degraded and the feed keeps
@@ -987,11 +1016,11 @@ class SurfManager:
         seen = (cached.payload or {}).get("nonce") if cached is not None else None
         moved = nonce is not None and seen is not None and int(seen) != int(nonce)
 
-        if not moved and cached is not None:
-            if seen is not None and nonce is not None:
+        if not moved:
+            if cached is not None and seen is not None and nonce is not None:
                 return None                 # skip: nothing new was posted
             if TIER_MEDIUM not in tiers:
-                return None                 # skip: nonce unreadable, tier fresh
+                return None                 # skip: tier not due (fresh, or backed off)
 
         rows = await self._guard(self.client.fetch_channel_txs, "fetch_channel_txs")
         self._note(SOURCE_CHANNEL, rows is not None)
