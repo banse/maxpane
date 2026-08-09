@@ -923,6 +923,108 @@ async def test_a_linked_post_advertises_widen_at_full_layout_width_forever():
     )
 
 
+# -- the activity panel's own width tiers (final-review I-1) -------------
+
+from maxpane_dashboard.widgets.surf.activity import (  # noqa: E402
+    WIDEN_HINTS as ACTIVITY_WIDEN_HINTS,
+)
+
+#: The unknown-counterparty window as ``_fmt.long_addr`` renders the real
+#: unlabelled LP-fee destination. Spelled once here: every assertion below is
+#: about *this exact string* surviving whole, because the classic
+#: first-6/last-4 short form collides with a live spoof (see the module
+#: docstring of ``widgets/surf/activity.py``).
+_ADDR_WINDOW = "0x61CC704c…73f14E"
+
+#: The hints, as **test-local literals**. Asserting
+#: ``ACTIVITY_WIDEN_HINTS[tier] in text`` instead would be satisfied by an
+#: empty hint -- i.e. by a widget that sheds the column in exactly the
+#: silence these tests exist to catch. Proven: emptying the widget's table
+#: left every assertion green until this literal was introduced.
+_ACTIVITY_HINTS = {
+    "compact": "‹ widen for amounts",
+    "minimal": "‹ widen: time, kind, ETH",
+}
+
+
+def test_the_activity_hints_are_the_strings_this_file_asserts_on():
+    """Pin the literals above to the widget's own table, both directions."""
+    assert {
+        tier: ACTIVITY_WIDEN_HINTS[tier] for tier in _ACTIVITY_HINTS
+    } == _ACTIVITY_HINTS
+    # The widest layout sheds nothing, so it advertises nothing.
+    assert ACTIVITY_WIDEN_HINTS["full"] == ""
+    assert set(ACTIVITY_WIDEN_HINTS) == set(_ACTIVITY_HINTS) | {"full"}
+
+
+async def _activity_text(width: int) -> str:
+    """Composited screen text at *width*, with the dev-activity view showing.
+
+    The panel starts hidden (``display = False``), so this also exercises the
+    zero-width-then-shown path: the rows are first written while the log has
+    no size at all, and only ``on_resize`` can re-lay them out at the real
+    width. A widget that formats once in ``update_data`` and never again
+    fails these tests for that reason alone.
+    """
+    manager = _FakeManager(payload=_widen_sweep_payload())
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("c")
+        await pilot.pause()
+        return _screen_text(app)
+
+
+async def test_the_activity_panel_shows_every_column_at_the_pinned_width():
+    """The positive half: at the pinned width nothing is shed and nothing is
+    advertised. Without this, the two tests below could be satisfied by a
+    widget that simply always renders its narrowest tier."""
+    text = await _activity_text(SURF_FULL_LAYOUT_COLUMNS)
+    assert _ADDR_WINDOW in text
+    assert "0.310 ETH" in text          # the amount column is present...
+    assert "transfer" in text           # ...and so is the kind column
+    assert "‹ widen" not in text        # ...so there is nothing to advertise
+
+
+async def test_the_activity_panel_never_drops_the_amount_column_in_silence():
+    """100 columns leaves the log 55 usable against a 66-column row.
+
+    Measured on the real screen: the ``0.310 ETH`` amount cannot fit, and
+    ``RichLog(wrap=False)`` shrinks the line at write time with no ``…`` and
+    nothing in the title. Shedding the column is correct; shedding it in
+    silence is the defect — a user comparing a 120-column window with a
+    100-column one otherwise sees two different truths about one tx.
+    """
+    text = await _activity_text(100)
+    assert "0.310 ETH" not in text, (
+        "the amount fits after all at 100 columns -- re-measure FULL_WIDTH"
+    )
+    assert _ACTIVITY_HINTS["compact"] in text, (
+        "the amount column vanished without the title saying so"
+    )
+    # The column that was *not* shed is still there, whole.
+    assert _ADDR_WINDOW in text
+
+
+async def test_the_narrow_activity_panel_never_cuts_the_poisoning_window():
+    """80 columns leaves the log 43 usable — and the window must survive.
+
+    This is the correctness half of I-1, not a cosmetic one. Cut to its first
+    six characters both live spoof addresses render ``0xF308``, which is the
+    exact collision the wide ``0x``+8+``…``+6 window exists to prevent. The
+    panel must shed whole fields — time, kind, amount — before it touches a
+    single hex digit, and say which ones went.
+    """
+    text = await _activity_text(80)
+    assert _ADDR_WINDOW in text, "the anti-poisoning window was cut to fit"
+    assert _ACTIVITY_HINTS["minimal"] in text
+    # The fields that were shed to pay for it, and nothing half-rendered.
+    assert "0.310 ETH" not in text
+
+
 def test_surf_fits_inside_the_documented_app_width():
     """WP6 coordination tripwire — mechanical, not a comment.
 

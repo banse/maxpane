@@ -599,6 +599,93 @@ async def test_activity_markup_hostile_label_cannot_crash_the_pump():
         assert "Kraken" in _screen_text(app)
 
 
+def test_activity_tier_table_is_measured_not_rounded():
+    """Each threshold is the width its own layout really needs.
+
+    Asserting the constants against themselves would prove nothing, so every
+    tier is rendered at exactly its threshold and measured: if a format string
+    grows a separator, the layout stops fitting its own number and this fails.
+    """
+    from maxpane_dashboard.widgets.markup_safety import visible_len
+    from maxpane_dashboard.widgets.surf.activity import (
+        COMPACT_WIDTH,
+        FULL_WIDTH,
+        MINIMAL_WIDTH,
+        _tier_for,
+    )
+
+    assert FULL_WIDTH > COMPACT_WIDTH > MINIMAL_WIDTH
+    # ``0`` is "not laid out yet" and optimistically picks the widest layout;
+    # ``on_resize`` corrects it once the panel has a size.
+    assert _tier_for(0) == "full"
+    assert _tier_for(FULL_WIDTH) == "full"
+    assert _tier_for(FULL_WIDTH - 1) == "compact"
+    assert _tier_for(COMPACT_WIDTH) == "compact"
+    assert _tier_for(COMPACT_WIDTH - 1) == "minimal"
+
+    # The widest row this feed produces: an unknown 17-column counterparty
+    # window and a two-digit ETH amount.
+    row = _DEV_ACTIVITY[2]
+    for tier, need in (
+        ("full", FULL_WIDTH),
+        ("compact", COMPACT_WIDTH),
+        ("minimal", MINIMAL_WIDTH),
+    ):
+        markup = _row_markup(row, tier, need)
+        assert markup is not None
+        assert visible_len(markup) <= need, (
+            f"{tier} needs more than the {need} columns it advertises"
+        )
+        assert "0x61CC704c…73f14E" in markup
+
+
+def test_activity_the_wallet_column_yields_before_the_address_window():
+    """Below the narrowest tier the address window is still never cut.
+
+    ``RichLog(wrap=False)`` would shrink the line silently, and a window cut
+    to ``0xF308`` re-creates the exact spoof collision this module exists to
+    prevent.  The wallet label is a *label*: it shrinks, then goes whole.  The
+    window is a fingerprint and does neither.
+    """
+    from maxpane_dashboard.widgets.markup_safety import visible_len
+    from maxpane_dashboard.widgets.surf.activity import ADDR_COLS, MINIMAL_WIDTH
+
+    row = _DEV_ACTIVITY[2]  # unknown counterparty, 8 ETH transfer
+    floor = 5 + 2 + ADDR_COLS  # "MM-DD" + gap + the window: the absolute floor
+    for width in range(MINIMAL_WIDTH, floor - 1, -1):
+        markup = _row_markup(row, "minimal", width)
+        assert markup is not None
+        assert "0x61CC704c…73f14E" in markup, f"window cut at width {width}"
+        assert visible_len(markup) <= width, f"row overflows at width {width}"
+
+
+async def test_activity_relays_out_on_resize_never_shrunk_by_richlog():
+    """The tier tracks the terminal, and the title tracks the tier."""
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(110, 20)) as pilot:
+        widget.update_data(dev_activity=_DEV_ACTIVITY)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "33.250 ETH" in screen
+        assert "‹ widen" not in screen
+
+        # Narrower than the full row: the amount goes, and is advertised.
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "33.250 ETH" not in screen
+        assert "‹ widen for amounts" in screen
+        assert "0x61CC704c…73f14E" in screen
+
+        # ...and widening puts it back, with the marker dark again.
+        await pilot.resize_terminal(110, 20)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "33.250 ETH" in screen
+        assert "‹ widen" not in screen
+
+
 async def test_activity_unavailable_vs_empty_vs_none_args():
     widget = SurfDevActivity()
     app = _Harness(widget)

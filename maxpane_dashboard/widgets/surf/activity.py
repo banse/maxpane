@@ -36,6 +36,28 @@ fee recipients exist in frenpet.eth's history today):
 
 ``dev_activity=None`` -> explicit unavailable state; ``[]`` -> genuinely
 quiet wallets.  Primitives only.
+
+Width behaviour
+---------------
+
+``RichLog`` is composed ``wrap=False`` so the columns stay aligned down the
+panel, and ``RichLog.write()`` defaults to ``shrink=True``: any line wider
+than ``scrollable_content_region.width`` is narrowed *at write time*, with
+no ``…``, no marker and nothing in the title.  ``wrap=False`` and a width
+tier are therefore a package deal -- choosing the first without the second
+is what let this panel drop the ETH amount at 100 columns and cut the
+address window to ``0xF308`` at 80, silently, in both cases.
+
+The row sheds whole fields as the width drops (see :func:`_tier_for`) and
+the title names the ones that went.  Two things are never traded away:
+
+* **the unknown-counterparty window** (``0x``+8+``…``+6, ``ADDR_COLS``).
+  Cut to the classic first-6/last-4 form both live spoofs collide with
+  their targets, which is the one failure this panel exists to prevent, so
+  the *wallet* column shrinks and then goes whole before a single hex digit
+  is cut (:func:`_budget`).
+* **the ``MM-DD`` date**, because these rows span months -- the ``HH:MM``
+  half is what goes at the narrowest tier.
 """
 
 from __future__ import annotations
@@ -59,6 +81,118 @@ _MAX_ROWS = 25
 #: The explicit degraded line.  Tested verbatim.
 UNAVAILABLE_LINE = "activity unavailable"
 
+#: Panel title.  A hint is appended to it, never substituted for it, so the
+#: screen tests' ``"DEV ACTIVITY" in text`` stays true at every width.
+TITLE = "DEV ACTIVITY"
+
+# -- the column budget, in rendered columns ----------------------------
+#
+# Measured from the format strings in :func:`_row_markup`, not rounded.
+
+#: ``MM-DD HH:MM`` and its narrow-tier ``MM-DD`` half.
+_STAMP_COLS = 11
+_STAMP_SHORT_COLS = 5
+
+#: The gap between two cells.
+_GAP = 2
+
+#: ``wallet_label`` cell.  The producer emits ``"dev"``/``"ops"``, but the
+#: cell is padded so a longer label cannot reflow the columns.
+_WALLET_COLS = 12
+
+#: ``kind`` cell (``transfer`` / ``bridge`` / ``LP`` ...).
+_KIND_COLS = 8
+
+#: Widest amount cell these ETH values produce: ``"  33.250 ETH"``.
+_AMOUNT_COLS = 12
+
+#: The anti-poisoning window: ``0x`` + 8 hex + ``…`` + 6 (``_fmt.long_addr``).
+#: **Never shrinks.**  See the module docstring.
+ADDR_COLS = 17
+
+#: Floor for a *known* counterparty label before it is cut with a visible
+#: ``…``.  A label is descriptive text, unlike the window above.
+_MIN_LABEL_COLS = 6
+
+#: Columns each row layout needs.
+FULL_WIDTH = (
+    _STAMP_COLS + _GAP + _WALLET_COLS + _GAP + _KIND_COLS + _GAP
+    + ADDR_COLS + _AMOUNT_COLS
+)                                                                    # 66
+COMPACT_WIDTH = FULL_WIDTH - _AMOUNT_COLS                            # 54
+MINIMAL_WIDTH = _STAMP_SHORT_COLS + _GAP + _WALLET_COLS + _GAP + ADDR_COLS  # 38
+
+#: Marker appended to the title when the layout had to shed a field.  Each
+#: one names what went, so the user knows what they are not looking at.
+#: Kept short enough to sit beside ``TITLE`` in the narrowest panel that can
+#: select it (``DEV ACTIVITY`` + 2 + 24 == 38 columns, against ~44 at the
+#: 80-column terminal that first selects ``minimal``).
+WIDEN_HINTS = {
+    "full": "",
+    "compact": "‹ widen for amounts",
+    "minimal": "‹ widen: time, kind, ETH",
+}
+
+
+def _tier_for(width: int) -> str:
+    """Widest row layout that fits ``width`` rendered columns.
+
+    ==========  =====  ==================================================
+    Tier        Needs  Row
+    ==========  =====  ==================================================
+    ``full``    66     ``MM-DD HH:MM  wallet  kind  who  0.310 ETH``
+    ``compact`` 54     ``MM-DD HH:MM  wallet  kind  who``
+    ``minimal`` 38     ``MM-DD  wallet  who``
+    ==========  =====  ==================================================
+
+    The real slot is 3fr of a 3:2 split: 80 usable columns at a 139-column
+    terminal, 55 at 100 and 43 at 80.  ``width <= 0`` means "not laid out
+    yet" -- this panel starts hidden behind the ``c`` toggle, so that is the
+    *normal* first call -- and optimistically picks ``full``;
+    :meth:`SurfDevActivity.on_resize` re-lays it out once it has a size.
+    """
+    if width <= 0 or width >= FULL_WIDTH:
+        return "full"
+    if width >= COMPACT_WIDTH:
+        return "compact"
+    return "minimal"
+
+
+def _budget(tier: str, width: int, stamp_cols: int, who: str, known: bool,
+            amount_cols: int) -> tuple[int, str]:
+    """Fit one row to ``width``; returns ``(wallet_cols, who)``.
+
+    Order of sacrifice, after the tier has already dropped whole columns:
+
+    1. a **known** label is cut with a visible ``…`` (down to
+       ``_MIN_LABEL_COLS``) -- it is descriptive text;
+    2. the **wallet** cell shrinks, and then goes whole;
+    3. the **unknown-counterparty window** is never touched at all.
+
+    ``width <= 0`` (not laid out yet) leaves everything at its natural size.
+    """
+    wallet_cols = _WALLET_COLS
+    if width <= 0:
+        return wallet_cols, who
+
+    # Everything except the wallet cell, the counterparty and the amount.
+    fixed = stamp_cols + _GAP + _GAP
+    if tier != "minimal":
+        fixed += _KIND_COLS + _GAP
+
+    spare = width - (fixed + wallet_cols + len(who) + amount_cols)
+    if spare >= 0:
+        return wallet_cols, who
+
+    if known and len(who) > _MIN_LABEL_COLS:
+        room = max(len(who) + spare, _MIN_LABEL_COLS)
+        spare += len(who) - room
+        who = who[: room - 1] + "…"
+
+    if spare < 0:
+        wallet_cols = max(wallet_cols + spare, 0)
+    return wallet_cols, who
+
 #: Mirrors ``surf_client._DUST_WEI = 10**9`` (1 gwei), converted to the ETH
 #: float unit this row's ``value_eth`` field carries -- ``value_eth`` is
 #: whole ETH (e.g. ``33.25``), not wei, so the client's wei threshold has
@@ -72,8 +206,15 @@ UNAVAILABLE_LINE = "activity unavailable"
 _DUST_ETH = 10**9 / 10**18  # == 1e-9 ETH == 1 gwei == surf_client._DUST_WEI
 
 
-def _row_markup(row) -> str | None:
-    """Format one activity row; ``None`` drops it (malformed or poisonous)."""
+def _row_markup(row, tier: str = "full", width: int = 0) -> str | None:
+    """Format one activity row at ``tier``; ``None`` drops it.
+
+    ``None`` means the row is malformed or poisonous and must never reach a
+    pixel.  ``width`` is the real number of columns the log can show; the
+    returned markup is guaranteed to fit it (see :func:`_budget`), so
+    ``RichLog.write()`` never has to shrink -- and therefore never clips
+    without a visible ``…``.
+    """
     if not isinstance(row, dict):
         return None
     try:
@@ -91,16 +232,30 @@ def _row_markup(row) -> str | None:
             # arrives as 1 gwei, not 0 wei.  Never rendered (PRD §4).
             return None
 
-        stamp = f"{mmdd(row.get('ts'))} {hhmm(row.get('ts'))}"
+        ts = row.get("ts")
+        stamp = mmdd(ts) if tier == "minimal" else f"{mmdd(ts)} {hhmm(ts)}"
+        who_raw = (
+            str(row.get("counterparty") or DASH)
+            if known
+            else long_addr(row.get("counterparty"))
+        )
+        amount = f"  {value:,.3f} ETH" if (value and tier == "full") else ""
+
+        wallet_cols, who_raw = _budget(
+            tier, width, len(stamp), who_raw, known, len(amount)
+        )
+
         # Pad raw, escape after -- padding an escaped string misaligns it.
-        wallet = safe_markup(f"{str(row.get('wallet_label') or DASH)[:12]:<12}")
-        kind_cell = safe_markup(f"{(kind or DASH)[:8]:<8}")
-        if known:
-            who = f"[cyan]{safe_markup(str(row.get('counterparty') or DASH))}[/]"
-        else:
-            who = f"[dim]{safe_markup(long_addr(row.get('counterparty')))}[/]"
-        amount = f"  {value:,.3f} ETH" if value else ""
-        return f"{stamp}  [bold]{wallet}[/]  [dim]{kind_cell}[/]  {who}{amount}"
+        cells = [stamp]
+        if wallet_cols:
+            label = f"{str(row.get('wallet_label') or DASH)[:wallet_cols]:<{wallet_cols}}"
+            cells.append(f"[bold]{safe_markup(label)}[/]")
+        if tier != "minimal":
+            kind_cell = f"{(kind or DASH)[:_KIND_COLS]:<{_KIND_COLS}}"
+            cells.append(f"[dim]{safe_markup(kind_cell)}[/]")
+        colour = "cyan" if known else "dim"
+        cells.append(f"[{colour}]{safe_markup(who_raw)}[/]")
+        return (" " * _GAP).join(cells) + amount
     except Exception:
         # A single malformed row must never take down the panel.
         return None
@@ -123,8 +278,15 @@ class SurfDevActivity(Vertical):
     }
     """
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # The raw rows, not formatted lines, so a resize re-lays them out.
+        # Empty until the first ``update_data`` -- ``on_resize`` before that
+        # has nothing to render and must not blank the panel.
+        self._payload: dict = {}
+
     def compose(self) -> ComposeResult:
-        yield Static("DEV ACTIVITY", classes="surf-activity-title", id="surf-act-title")
+        yield Static(TITLE, classes="surf-activity-title", id="surf-act-title")
         yield Static(" ", classes="surf-activity-spacer")
         yield RichLog(
             id="surf-activity-log",
@@ -136,6 +298,55 @@ class SurfDevActivity(Vertical):
 
     def update_data(self, dev_activity=None, **_kwargs) -> None:
         """Rewrite the log.  ``dev_activity`` is the PRD §5 activity key."""
+        self._payload = {"rows": dev_activity, "seen": True}
+        self._render_view()
+
+    def on_resize(self, _event=None) -> None:
+        """Re-lay the rows out: the layout depends on the width.
+
+        This panel is created hidden behind the ``c`` toggle, so its first
+        ``update_data`` runs at zero width and picks the optimistic ``full``
+        tier.  Without this hook that guess would stand for the life of the
+        screen and every row would be silently shrunk by ``RichLog`` the
+        moment the panel was shown.
+        """
+        if self._payload:
+            self._render_view()
+
+    # -- rendering -----------------------------------------------------
+
+    def _log_width(self, log: RichLog) -> int:
+        """Rendered columns available to one line.
+
+        ``scrollable_content_region``, not ``content_size``: ``RichLog``'s own
+        ``DEFAULT_CSS`` sets ``overflow-y: scroll`` (always on, not ``auto``),
+        so the gutter is reserved even for a two-line log and
+        ``content_size.width`` overstates the usable width by one column --
+        which is exactly the column ``write()`` shrinks away.  ``SurfFeed``
+        carries the same measurement and the same note.
+        """
+        width = log.scrollable_content_region.width
+        if width <= 0:
+            width = max(self.content_size.width - 3, 0)
+        return width
+
+    def _set_title(self, hint: str = "") -> None:
+        """``DEV ACTIVITY  ‹ widen for amounts``, width permitting.
+
+        The hint is *appended*: the title itself never changes, so the screen
+        tests' ``"DEV ACTIVITY" in text`` holds at every width.  It is dropped
+        only when it genuinely cannot fit beside the title -- this Static has
+        no ``text-overflow``, so an over-long title would wrap onto a second
+        line and push a row out of the log instead of announcing anything.
+        """
+        title = self.query_one("#surf-act-title", Static)
+        width = max(self.content_size.width - 2, 0)
+        text = TITLE
+        if hint and (not width or len(TITLE) + 2 + len(hint) <= width):
+            text += f"  [yellow]{hint}[/]"
+        title.update(text)
+
+    def _render_view(self) -> None:
         try:
             log = self.query_one("#surf-activity-log", RichLog)
         except Exception:  # not composed yet
@@ -144,7 +355,9 @@ class SurfDevActivity(Vertical):
         log.clear()
         log.auto_scroll = False
 
+        dev_activity = self._payload.get("rows")
         if dev_activity is None:
+            self._set_title()
             log.write(f"[yellow]⚠ {UNAVAILABLE_LINE}[/]")
             return
 
@@ -153,7 +366,16 @@ class SurfDevActivity(Vertical):
         except TypeError:
             rows = []
 
-        lines = [m for m in (_row_markup(row) for row in rows) if m is not None]
+        width = self._log_width(log)
+        tier = _tier_for(width)
+        lines = [
+            m
+            for m in (_row_markup(row, tier, width) for row in rows)
+            if m is not None
+        ]
+        # No rows means nothing was shed, so nothing is advertised: a marker
+        # over "no recent activity" would point at columns that do not exist.
+        self._set_title(WIDEN_HINTS.get(tier, "") if lines else "")
         if not lines:
             log.write("[dim]  no recent activity[/]")
             return
