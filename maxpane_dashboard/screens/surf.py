@@ -1,16 +1,34 @@
 """SurfScreen -- surfsurf.eth Mission Control as a Textual Screen.
 
-Layout (the house pattern; structurally the FWA screen with the hero split
-into two side-by-side widgets)::
+Layout (the house pattern; the hero owns the top row outright and the
+signals ride a right-hand rail above the market)::
 
-    #title-bar      SURF · IMD $x.xx · parity ±x.x% · feed #N (age)
-    #hero-row       SurfHero (3fr)   | SurfSignals (2fr)
-    #middle-row     SurfFeed (3fr)     | SurfMarket (2fr)
-                    SurfDevActivity (3fr)
-                      -- one or the other, toggled with `c`
+    #title-bar         SURF · IMD $x.xx · parity ±x.x% · feed #N (age)
+    #hero-row          SurfHero (full width, four boxes)
+    #middle-row        SurfFeed (3fr)          | #surf-right-rail (2fr)
+                       SurfDevActivity (3fr)   |   SurfSignals (auto)
+                         -- one or the other,  |   SurfMarket  (1fr)
+                            toggled with `c`   |
     #separator
-    #bottom-row     SurfNft (full width)
+    #bottom-row        SurfNft (full width)
     StatusBar
+
+The hero was half a row wide until 2026-08-09 and shared it with the
+signals panel. Two things were wrong with that. Its four boxes had to
+share a ``3fr`` half, which left each of them 13 content columns on a
+139-column terminal -- narrow enough that the box copy had to shed whole
+fields to fit (see ``widgets/surf/hero.py``), and the ``full`` tier was
+unreachable below ~220 columns, i.e. on no terminal anybody owns. And the
+row was pinned at ``height: 10`` for a ``height: 7`` widget, so three rows
+under the boxes were reserved and blank on every launch. Full width buys
+each box ~26 columns at the same 139, which reaches the ``full`` tier, and
+the row now sizes to its content.
+
+**Every row but the middle one sizes to its content**, and the middle row
+alone carries ``1fr``. That is what makes a tall terminal grow the feed
+instead of stranding whitespace: previously ``#bottom-row`` also carried
+``1fr`` and took half the slack for a panel with eight lines in it, which
+left roughly a fifth of the screen empty above the status bar.
 
 Deliberate choices, in the FWA screen's terms (see screens/fwa.py, whose
 docstring carries the full rationale):
@@ -18,7 +36,8 @@ docstring carries the full rationale):
 1. **``c`` toggles the announce feed and the dev-activity table** in the
    middle-left slot. Both stay mounted and both are dispatched to on every
    refresh, so toggling is a visibility flip with no refetch and no blank
-   first frame.
+   first frame. The rail to their right is outside the swap, so it never
+   flickers.
 2. **Every widget update is individually guarded** -- one widget raising must
    never cost the other five their refresh. A *manager* failure touches only
    the StatusBar and leaves the previous frame standing.
@@ -41,7 +60,7 @@ from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
@@ -255,12 +274,32 @@ class SurfScreen(RefreshGuard, Screen):
     # Structural fallback only. WP6 restates these in themes/minimal.tcss
     # (one owner) the way the FWA block does, app-stylesheet rules then beat
     # DEFAULT_CSS. They live here so the screen is reviewable and correctly
-    # proportioned on its own, under any theme that has no surf block.
+    # proportioned on its own, under any theme that has no surf block. The
+    # two copies must stay in agreement -- edit both or neither.
     #
-    # #hero-row is height 10: SurfSignals renders six detector rows plus a
-    # title inside a border. Any theme rule that adds vertical padding here
-    # drops the sixth row -- the BURN detector -- which is exactly the FWA
-    # coverage-badge clipping bug. The compositor test pins all six rows.
+    # `#hero-row` is `height: auto` and carries NO vertical padding. SurfHero
+    # is a height-7 widget whose boxes hold five content lines inside a
+    # height-7 frame; one row of vertical padding here clips the bottom
+    # border off the screen, which is the FWA hero-clipping bug. `auto` also
+    # replaces the old `height: 10`, whose three spare rows were the dead
+    # space above the feed.
+    #
+    # `#middle-row` is the ONLY `1fr` row on the screen, so every row a
+    # taller terminal adds lands in the feed. `#bottom-row` is `auto`: the
+    # NFT panel has eight lines and used to be handed half the slack.
+    #
+    # SurfSignals is `auto` inside the rail (a title plus six detector rows);
+    # SurfMarket takes the rail's remainder. Giving *signals* the remainder
+    # instead would push the market off the bottom of a short terminal, and
+    # any vertical padding on either costs the sixth detector row -- BURN --
+    # while the panel still looks complete. tests/test_surf_registration.py
+    # asserts all six reach the compositor.
+    #
+    # The rail scrolls (`overflow-y: auto`) purely as the short-terminal
+    # guard: sizing the rows to their content means the rail is only as tall
+    # as the middle row, so below ~29 terminal rows BURN no longer fits. No
+    # scrollbar is drawn at any normal height; when one is, it is what makes
+    # that loss visible instead of silent.
     DEFAULT_CSS = """
     SurfScreen #title-bar {
         width: 100%;
@@ -269,15 +308,11 @@ class SurfScreen(RefreshGuard, Screen):
         content-align: center middle;
     }
     SurfScreen #hero-row {
-        height: 10;
+        height: auto;
         margin: 1 0 0 0;
     }
     SurfScreen SurfHero {
-        width: 3fr;
-        padding: 0 1;
-    }
-    SurfScreen SurfSignals {
-        width: 2fr;
+        width: 1fr;
         padding: 0 1;
     }
     SurfScreen #middle-row {
@@ -292,8 +327,19 @@ class SurfScreen(RefreshGuard, Screen):
         width: 3fr;
         padding: 0 1;
     }
-    SurfScreen SurfMarket {
+    SurfScreen #surf-right-rail {
         width: 2fr;
+        height: 1fr;
+        overflow-y: auto;
+    }
+    SurfScreen SurfSignals {
+        width: 1fr;
+        height: auto;
+        padding: 0 1;
+    }
+    SurfScreen SurfMarket {
+        width: 1fr;
+        height: 1fr;
         padding: 0 1;
     }
     SurfScreen #separator {
@@ -302,11 +348,12 @@ class SurfScreen(RefreshGuard, Screen):
         padding: 0 2;
     }
     SurfScreen #bottom-row {
-        height: 1fr;
+        height: auto;
         margin: 0 0 1 0;
     }
     SurfScreen SurfNft {
         width: 1fr;
+        height: auto;
         padding: 0 1;
     }
     """
@@ -357,7 +404,6 @@ class SurfScreen(RefreshGuard, Screen):
 
         with Horizontal(id="hero-row"):
             yield SurfHero()
-            yield SurfSignals()
 
         with Horizontal(id="middle-row"):
             # Two views of one slot, toggled with ``c``. The activity table
@@ -367,7 +413,12 @@ class SurfScreen(RefreshGuard, Screen):
             activity = SurfDevActivity()
             activity.display = False
             yield activity
-            yield SurfMarket()
+            # The right rail: signals on top, market underneath. Sibling of
+            # the two swapped views rather than a child of either, so ``c``
+            # cannot take it with it.
+            with Vertical(id="surf-right-rail"):
+                yield SurfSignals()
+                yield SurfMarket()
 
         yield Static("─" * 300, id="separator")
 
@@ -432,7 +483,7 @@ class SurfScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.debug("Failed to update title bar: %s", exc)
 
-        # Hero (hero-row left)
+        # Hero (the full-width top row)
         try:
             self.query_one(SurfHero).update_data(
                 hook_status=data.get("hook_status"),
@@ -448,7 +499,7 @@ class SurfScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.debug("Failed to update SurfHero: %s", exc)
 
-        # Signals (hero-row right) -- the six detectors
+        # Signals (right rail, top) -- the six detectors
         try:
             self.query_one(SurfSignals).update_data(
                 sig_post_state=data.get("sig_post_state"),
@@ -473,7 +524,7 @@ class SurfScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.debug("Failed to update SurfSignals: %s", exc)
 
-        # Announce feed (middle-row left, view A)
+        # Announce feed (middle-row left slot, view A)
         try:
             self.query_one(SurfFeed).update_data(
                 feed_items=data.get("feed_items"),
@@ -483,7 +534,7 @@ class SurfScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.debug("Failed to update SurfFeed: %s", exc)
 
-        # Dev activity (middle-row left, view B -- hidden, still updated)
+        # Dev activity (middle-row left slot, view B -- hidden, still updated)
         try:
             self.query_one(SurfDevActivity).update_data(
                 dev_activity=data.get("dev_activity"),
@@ -491,7 +542,7 @@ class SurfScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.debug("Failed to update SurfDevActivity: %s", exc)
 
-        # Market (middle-row right)
+        # Market (right rail, bottom)
         try:
             self.query_one(SurfMarket).update_data(
                 imd_price_usd=data.get("imd_price_usd"),

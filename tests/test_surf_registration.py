@@ -407,6 +407,9 @@ def test_the_shared_stylesheet_has_a_surf_block() -> None:
     )
     for selector in (
         "SurfScreen #hero-row",
+        "SurfScreen #middle-row",
+        "SurfScreen #surf-right-rail",
+        "SurfScreen #bottom-row",
         "SurfHero",
         "SurfSignals",
         "SurfFeed",
@@ -420,10 +423,12 @@ def test_the_shared_stylesheet_has_a_surf_block() -> None:
 def test_the_surf_hero_row_has_no_vertical_padding() -> None:
     """The FWA coverage-badge lesson, applied before it can bite.
 
-    ``#hero-row`` is ten rows and SurfSignals fills them with a title plus six
-    detector rows inside a border.  A vertical pad here clips the sixth row --
-    the BURN detector -- exactly the way ``padding: 1 2`` clipped the FWA
-    coverage badge.  Horizontal padding (``0 1``, ``0 2``) is fine.
+    ``#hero-row`` is ``height: auto`` around a seven-row SurfHero whose boxes
+    hold five content lines inside a seven-row frame.  A vertical pad here
+    pushes the boxes' bottom border off the row -- exactly the way
+    ``padding: 1 2`` clipped the FWA coverage badge -- and, against ``auto``,
+    silently pads the whole row back out to the dead height this layout was
+    restructured to remove.  Horizontal padding (``0 1``, ``0 2``) is fine.
     """
     import re
 
@@ -436,8 +441,134 @@ def test_the_surf_hero_row_has_no_vertical_padding() -> None:
             vertical = line.split(":", 1)[1].strip().rstrip(";").split()[0]
             assert vertical == "0", (
                 f"vertical padding {vertical!r} on #hero-row will clip the "
-                "sixth detector row"
+                "hero boxes and re-inflate the row"
             )
+
+
+# -- the two copies of the surf structure must agree --------------------
+#
+# ``SurfScreen.DEFAULT_CSS`` and the surf block restate the same layout: the
+# block is what renders (an app stylesheet outranks DEFAULT_CSS), DEFAULT_CSS
+# is what keeps the screen correctly proportioned under a theme that has no
+# surf rules. Edit one and not the other and the dashboard has two different
+# layouts depending on which stylesheet is loaded -- and the tests that use
+# ``_ThemedHarness`` would certify only one of them.
+
+#: Shorthand properties whose absence means "the CSS default", so that one
+#: copy spelling ``padding: 0 0`` and the other omitting it is agreement.
+_SHORTHAND_DEFAULTS = {"padding": "0", "margin": "0"}
+
+#: What this comparison is about: the geometry. Colour and text properties
+#: belong to the theme and to the widgets' own DEFAULT_CSS.
+_STRUCTURAL = ("width", "height", "padding", "margin")
+
+
+def _expand(value: str) -> tuple[str, ...]:
+    """CSS box shorthand -> four values, so ``0 0`` == ``0`` == ``0 0 0 0``."""
+    parts = value.split()
+    if len(parts) == 1:
+        return tuple(parts * 4)
+    if len(parts) == 2:
+        return (parts[0], parts[1], parts[0], parts[1])
+    if len(parts) == 3:
+        return (parts[0], parts[1], parts[2], parts[1])
+    return tuple(parts[:4])
+
+
+def _rules(css: str) -> dict[str, dict[str, str]]:
+    """``{selector: {property: value}}`` for the structural properties.
+
+    A leading ``SurfScreen `` is stripped: DEFAULT_CSS has to scope every
+    rule to the screen, the block scopes the *ids* (the shared ``#middle-row``
+    / ``#bottom-row`` rules above it are law for nine other screens) and
+    leaves the ``Surf*`` types unscoped, since those types exist nowhere
+    else. The two spellings mean the same thing here.
+    """
+    import re
+
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    out: dict[str, dict[str, str]] = {}
+    for chunk in css.split("}"):
+        if "{" not in chunk:
+            continue
+        head, body = chunk.split("{", 1)
+        props = {}
+        for decl in body.split(";"):
+            if ":" not in decl:
+                continue
+            name, _, value = decl.partition(":")
+            name = name.strip()
+            if name in _STRUCTURAL:
+                props[name] = " ".join(value.split())
+        if not props:
+            continue
+        for selector in head.split(","):
+            selector = " ".join(selector.split())
+            if selector.startswith("SurfScreen "):
+                selector = selector[len("SurfScreen "):]
+            out.setdefault(selector, {}).update(props)
+    return out
+
+
+def test_the_stylesheet_block_and_default_css_describe_one_layout() -> None:
+    """Every rule the two copies share must carry the same geometry."""
+    from maxpane_dashboard.screens.surf import SurfScreen
+
+    fallback = _rules(SurfScreen.DEFAULT_CSS)
+    block = _rules(_surf_block())
+
+    shared = sorted(set(fallback) & set(block))
+    # Guard against the comparison quietly becoming vacuous (a renamed
+    # selector on one side would otherwise just shrink the overlap).
+    assert len(shared) >= 8, f"only {len(shared)} selectors overlap: {shared}"
+
+    for selector in shared:
+        for prop in _STRUCTURAL:
+            default = _SHORTHAND_DEFAULTS.get(prop)
+            left = fallback[selector].get(prop, default)
+            right = block[selector].get(prop, default)
+            if left is None and right is None:
+                continue
+            assert left is not None and right is not None, (
+                f"{selector}: {prop} is declared in only one copy "
+                f"(DEFAULT_CSS={left!r}, minimal.tcss={right!r})"
+            )
+            if prop in _SHORTHAND_DEFAULTS:
+                assert _expand(left) == _expand(right), (
+                    f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
+                    f"{right!r} in minimal.tcss"
+                )
+            else:
+                assert left == right, (
+                    f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
+                    f"{right!r} in minimal.tcss"
+                )
+
+
+def test_the_middle_row_is_the_only_one_that_grows() -> None:
+    """The dead-space fix, pinned in both copies of the stylesheet.
+
+    Give ``#bottom-row`` a ``1fr`` back and a tall terminal splits its spare
+    rows between the feed and eight lines of NFT panel, which is the empty
+    fifth of the screen this layout replaced.
+    """
+    from maxpane_dashboard.screens.surf import SurfScreen
+
+    for name, css in (
+        ("DEFAULT_CSS", SurfScreen.DEFAULT_CSS),
+        ("minimal.tcss", _surf_block()),
+    ):
+        rules = _rules(css)
+        # The screen's own rows -- ``#surf-right-rail`` is a column *inside*
+        # the middle row and legitimately takes that row's height.
+        rows = ("#hero-row", "#middle-row", "#bottom-row")
+        growing = [r for r in rows if rules[r].get("height") == "1fr"]
+        assert growing == ["#middle-row"], (
+            f"{name}: rows that absorb slack are {growing}, expected "
+            "#middle-row alone"
+        )
+        assert rules["#hero-row"]["height"] == "auto", name
+        assert rules["#bottom-row"]["height"] == "auto", name
 
 
 def test_all_six_detectors_survive_the_real_stylesheet() -> None:

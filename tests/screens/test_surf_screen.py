@@ -411,10 +411,11 @@ async def test_screen_mounts_all_six_widgets():
 
         for cls in _WIDGET_CLASSES.values():
             screen.query_one(cls)
-        # Slot grid: hero row holds two widgets, middle row the swap pair
-        # plus the market, bottom row the NFT panel alone.
-        assert len(screen.query_one("#hero-row").children) == 2
+        # Slot grid: the hero owns the top row alone; the middle row holds
+        # the swap pair plus the right rail; the bottom row the NFT panel.
+        assert len(screen.query_one("#hero-row").children) == 1
         assert len(screen.query_one("#middle-row").children) == 3
+        assert len(screen.query_one("#surf-right-rail").children) == 2
         assert len(screen.query_one("#bottom-row").children) == 1
         # The dev-activity view starts hidden; the feed starts showing.
         assert screen.query_one(SurfFeed).display is True
@@ -829,6 +830,210 @@ async def test_both_views_get_the_identical_slot():
         assert act_size.height > 1, "the activity table collapsed instead of filling the row"
 
 
+# -- the restructured layout --------------------------------------------
+#
+# The hero spans the full width on a row of its own; below it the ``c``-swapped
+# slot takes the left and a right rail stacks SIGNALS above IMD MARKET; the NFT
+# panel stays full width at the bottom. Every assertion below is geometric or
+# composited -- the arrangement is what the user asked for, so "the widget is
+# mounted" is not enough: it has to land where they put it.
+
+#: The rail id, spelled once. Scoped to ``SurfScreen`` in both stylesheets.
+_RAIL = "#surf-right-rail"
+
+
+class _screen_at:
+    """``async with _screen_at(w, h) as (app, screen, pilot):`` -- refreshed."""
+
+    def __init__(self, width: int = 150, height: int = 46) -> None:
+        self._size = (width, height)
+        self._ctx = None
+
+    async def __aenter__(self):
+        manager = _FakeManager(payload=_widen_sweep_payload())
+        self._screen = SurfScreen(manager, poll_interval=30, name="surf")
+        self._app = _ThemedHarness(self._screen)
+        self._ctx = self._app.run_test(size=self._size)
+        pilot = await self._ctx.__aenter__()
+        await pilot.pause()
+        await self._screen._do_refresh()
+        await pilot.pause()
+        return self._app, self._screen, pilot
+
+    async def __aexit__(self, *exc):
+        return await self._ctx.__aexit__(*exc)
+
+
+async def test_the_hero_owns_a_full_width_row_of_its_own():
+    """The hero is the whole top row -- nothing shares it."""
+    async with _screen_at(150, 46) as (app, screen, _pilot):
+        hero_row = screen.query_one("#hero-row")
+        hero = screen.query_one(SurfHero)
+
+        assert len(hero_row.children) == 1, (
+            "something else is still sharing the hero row: "
+            f"{[type(c).__name__ for c in hero_row.children]}"
+        )
+        assert hero.region.width == hero_row.region.width == 150
+        # All four boxes are laid out inside that full width, in order.
+        xs = [box.region.x for box in hero.children]
+        assert len(xs) == 4 and xs == sorted(xs)
+        assert xs[-1] + hero.children[-1].region.width <= 150
+
+
+async def test_the_right_rail_stacks_the_signals_above_the_market():
+    """SIGNALS sits on top of IMD MARKET, both in the middle row's right rail."""
+    async with _screen_at(150, 46) as (app, screen, _pilot):
+        rail = screen.query_one(_RAIL)
+        signals = screen.query_one(SurfSignals)
+        market = screen.query_one(SurfMarket)
+        feed = screen.query_one(SurfFeed)
+
+        assert [type(c).__name__ for c in rail.children] == ["SurfSignals", "SurfMarket"]
+        # Stacked, not side by side: same column, signals strictly above.
+        assert signals.region.x == market.region.x == rail.region.x
+        assert signals.region.y + signals.region.height <= market.region.y
+        # ...and the whole rail is to the right of the feed, in one row.
+        assert feed.region.x + feed.region.width <= rail.region.x
+        assert feed.region.y == rail.region.y
+
+        # Composited, not just geometric: both titles reach a pixel, in order.
+        text = _screen_text(app)
+        assert text.index("SIGNALS") < text.index("IMD MARKET")
+
+
+async def test_the_hero_row_is_no_taller_than_the_hero():
+    """The dead space above the feed: the row used to reserve 10 rows for 7.
+
+    Sized to its content instead. Composited, because the failure is *blank
+    rows* -- a region height alone would not show them.
+    """
+    async with _screen_at(150, 46) as (app, screen, _pilot):
+        hero_row = screen.query_one("#hero-row")
+        hero = screen.query_one(SurfHero)
+        assert hero_row.region.height == hero.region.height
+
+        lines = _screen_text(app).split("\n")
+        top, bottom = hero_row.region.y, hero_row.region.y + hero_row.region.height
+        assert lines[bottom - 1].strip(), (
+            "the hero row's last line is blank -- it is still taller than its content"
+        )
+        # The row directly under the hero belongs to the middle row's margin,
+        # and there is exactly one of them.
+        assert not lines[bottom].strip()
+        assert lines[bottom + 1].strip(), "more than one blank row under the hero"
+        assert top == 2
+
+
+async def test_the_bottom_row_sizes_to_the_nft_panel_and_strands_no_rows():
+    """The other half of the complaint: ~a fifth of the screen was empty.
+
+    The NFT panel is the last thing on screen above the status bar, so any row
+    the bottom row reserves beyond the panel's own content is dead. Asserted
+    against composited output: the last non-blank row before the status bar
+    must be the panel's last line, not eight rows above it.
+    """
+    async with _screen_at(150, 46) as (app, screen, _pilot):
+        bottom = screen.query_one("#bottom-row")
+        nft = screen.query_one(SurfNft)
+        assert bottom.region.height == nft.region.height
+
+        lines = _screen_text(app).split("\n")
+        status_row = len(lines) - 1
+        assert "q quit" in lines[status_row]
+        last_content = max(i for i in range(status_row) if lines[i].strip())
+        # One margin row between the panel and the status bar, no more.
+        assert status_row - last_content <= 2, (
+            f"{status_row - last_content - 1} dead rows above the status bar"
+        )
+        assert "0.200 ETH" in lines[last_content], (
+            "the last NFT sale is not the last thing on screen"
+        )
+
+
+async def test_a_taller_terminal_hands_every_new_row_to_the_feed():
+    """Slack goes to the feed, never back into the fixed rows.
+
+    Fourteen more terminal rows must arrive as fourteen more feed rows -- if
+    the hero or the NFT panel takes a share of them the dead space is back.
+    """
+    async with _screen_at(150, 46) as (_app, screen, _pilot):
+        short = {
+            "feed": screen.query_one(SurfFeed).region.height,
+            "hero": screen.query_one(SurfHero).region.height,
+            "nft": screen.query_one(SurfNft).region.height,
+        }
+    async with _screen_at(150, 60) as (_app, screen, _pilot):
+        tall = {
+            "feed": screen.query_one(SurfFeed).region.height,
+            "hero": screen.query_one(SurfHero).region.height,
+            "nft": screen.query_one(SurfNft).region.height,
+        }
+
+    assert tall["feed"] - short["feed"] == 14, (
+        f"the feed absorbed {tall['feed'] - short['feed']} of 14 new rows"
+    )
+    assert tall["hero"] == short["hero"]
+    assert tall["nft"] == short["nft"]
+
+
+async def test_a_terminal_too_short_for_six_detectors_says_so():
+    """Rows are the columns problem again: the loss must be advertised.
+
+    Sizing every row to its content is what removed the dead space, and the
+    price is that the rail is only as tall as the middle row -- where the old
+    layout gave the signals a fixed ten-row band that survived down to a
+    ~16-row terminal. Below 29 rows the sixth detector (BURN, always the
+    first to go) no longer fits. ``overflow-y: auto`` on the rail is the
+    row-wise ``‹ widen``: nothing is drawn while everything fits, and the
+    scrollbar appears exactly when something is missing.
+
+    Both halves are asserted, because a rail that scrolled *always* would
+    satisfy the second one while being the permanently-lit marker this
+    codebase keeps warning about.
+    """
+    async with _screen_at(150, 46) as (app, screen, _pilot):
+        text = _screen_text(app)
+        for label in ("NEW POST", "LP MIGRATION", "GATE OPEN",
+                      "NEW DEPLOY", "BRIDGE STAGE", "BURN"):
+            assert label in text, f"{label} is missing at a normal height"
+        assert screen.query_one(_RAIL).show_vertical_scrollbar is False, (
+            "the rail scrolls even when everything fits -- a marker that is "
+            "always on says nothing"
+        )
+
+    async with _screen_at(150, 28) as (app, screen, _pilot):
+        assert "BURN" not in _screen_text(app), (
+            "28 rows fits all six detectors after all -- re-measure"
+        )
+        assert screen.query_one(_RAIL).show_vertical_scrollbar is True, (
+            "a detector row was dropped with nothing on screen to say so"
+        )
+
+
+async def test_the_toggle_still_swaps_the_left_slot_only():
+    """`c` keeps its meaning after the move: the rail never flickers.
+
+    The activity table's first render happens at zero width (it is composed
+    hidden), so this also re-exercises the ``on_resize`` path in the new slot.
+    """
+    async with _screen_at(150, 46) as (app, screen, pilot):
+        feed_region = screen.query_one(SurfFeed).region
+        rail_region = screen.query_one(_RAIL).region
+        signals_region = screen.query_one(SurfSignals).region
+
+        await pilot.press("c")
+        await pilot.pause()
+
+        assert screen.query_one(SurfDevActivity).region == feed_region
+        assert screen.query_one(_RAIL).region == rail_region
+        assert screen.query_one(SurfSignals).region == signals_region
+        text = _screen_text(app)
+        assert "DEV ACTIVITY" in text and "ANNOUNCE FEED" not in text
+        # The rail is untouched by the swap.
+        assert "SIGNALS" in text and "IMD MARKET" in text
+
+
 # -- the pinned full-layout width ---------------------------------------
 
 from maxpane_dashboard.screens.surf import SURF_FULL_LAYOUT_COLUMNS
@@ -895,11 +1100,39 @@ async def test_the_pinned_width_clears_every_widen_marker():
     assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS, "activity") == 0
 
 
-async def test_the_pinned_width_is_tight_not_padded():
-    """Four columns narrower, at least one widget advertises the loss."""
-    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS - 4, "feed") > 0 or (
-        await _widen_markers(SURF_FULL_LAYOUT_COLUMNS - 4, "activity") > 0
-    ), "the documented width is higher than it needs to be"
+#: The narrowest width at which *no* widget advertises a loss, measured on the
+#: real screen in both ``c`` views. Set by ``SurfFeed`` since the 2026-08-09
+#: restructure: the hero used to be the binding constraint at 139, but four
+#: boxes across the full width clear their widest tier at 127 and their marker
+#: is unreachable above 81, so the feed is now what decides this number.
+FIRST_CLEAN_WIDTH = 135
+
+
+async def test_the_pinned_width_is_no_longer_the_tight_one():
+    """135 is where the screen actually comes up clean; the constant says 139.
+
+    Before the restructure the two were the same number, and the old test
+    asserted that four columns below the pin *something* advertised a loss.
+    Widening the hero to the full row moved the binding constraint from
+    ``SurfHero`` to ``SurfFeed`` and the true width down to 135, so
+    ``SURF_FULL_LAYOUT_COLUMNS`` is now four columns conservative.
+
+    It is deliberately **not** lowered here: the constant is re-measured in
+    the stage that also lands the dashboard rename, and a value that is too
+    high is safe (every widget still clears it) where one that is too low is
+    not. This test is the hand-off -- it pins the measured width in both
+    directions, so whoever lowers the constant has the number, and a widget
+    that later grows past 135 fails here rather than silently making the
+    documented width honest again for the wrong reason.
+    """
+    assert await _widen_markers(FIRST_CLEAN_WIDTH, "feed") == 0
+    assert await _widen_markers(FIRST_CLEAN_WIDTH, "activity") == 0
+    assert await _widen_markers(FIRST_CLEAN_WIDTH - 1, "feed") > 0, (
+        "the screen is clean below the measured width -- re-measure it"
+    )
+    assert FIRST_CLEAN_WIDTH <= SURF_FULL_LAYOUT_COLUMNS, (
+        "the pinned width no longer covers every widget"
+    )
 
 
 async def test_a_narrow_tier_advertises_rather_than_truncating_silently():
@@ -984,8 +1217,13 @@ async def test_the_hero_cuts_neither_a_number_nor_a_title_at_the_pinned_width():
 
     for whole in (
         "V4 HOOK", "LP #1167726", "IDENTITY GATE", "IMD SUPPLY",   # the titles
-        "2,376,732 IMD", "388.4K IMD", "142.71 WETH", "burn 15,745",  # the numbers
+        "2,376,732 IMD", "388.4K IMD", "142.71 WETH",              # the numbers
         "1/2000", "NOT LIVE", "CLOSED", "owner ✓",
+        # Since the hero took the full row this width reaches the *widest*
+        # tier, so the fields the narrow tiers shed are all present too --
+        # whole, and with the word that scopes them ("observed") intact.
+        "burned 15,745 observed", "· L ", "owner ✓ frenpet.eth",
+        "since 2026-05-14", "detectors armed", "1/2000 written",
     ):
         assert whole in hero, f"{whole!r} did not survive the hero row whole"
 
@@ -1001,49 +1239,66 @@ async def test_the_hero_spends_new_columns_in_the_documented_order():
     product decision: the raw v3 uint128 is the least legible field and the
     most expensive in columns, so it is the first to go and the last to come
     back.
+
+    The four widths are measured on the real full-width row, not guessed --
+    a box gets roughly a quarter of the terminal minus its own frame, so the
+    tiers land at 91 / 99 / 119 / 127 columns (see the sweep in the module
+    docstring of ``widgets/surf/hero.py``). They used to be 139 / 200 / 240
+    for the same four tiers, when the hero had half a row.
     """
-    narrow = await _hero_text(SURF_FULL_LAYOUT_COLUMNS)   # minimal tier
-    mid = await _hero_text(200)                           # compact tier
-    wide = await _hero_text(240)                          # full tier
+    narrow = await _hero_text(91)     # minimal tier
+    tight = await _hero_text(99)      # tight tier
+    mid = await _hero_text(119)       # compact tier
+    wide = await _hero_text(127)      # full tier
 
     # `· L <liquidity>` is shed first and restored last.
     assert "· L " not in narrow
+    assert "· L " not in tight
     assert "· L " not in mid
     assert "· L " in wide
 
     # The observed burn: a whole short form, never cut digits.
     assert "burn 15,745" in narrow
+    assert "burn 15,745" in tight
     assert "burned 15,745 observed" in mid
-    assert "burned 15,74…" not in narrow and "burned 15,74…" not in mid
+    for text in (narrow, tight, mid):
+        assert "burned 15,74…" not in text
 
     # The owner assertion: the tick is the claim, the ENS name is decoration.
     assert "owner ✓" in narrow and "frenpet.eth" not in narrow
+    assert "owner ✓" in tight and "frenpet.eth" not in tight
     assert "owner ✓ frenpet.eth" in mid
 
-    # Nothing is truncated at any of the three widths.
-    for text in (narrow, mid, wide):
+    # `N/2000 written` and `since <date>` are the minimal tier's own drops.
+    assert "1/2000" in narrow and "written" not in narrow
+    assert "1/2000 written" in tight
+
+    # Nothing is truncated at any of the four widths.
+    for text in (narrow, tight, mid, wide):
         assert "…" not in text
 
 
 async def test_the_hero_marker_is_dark_on_every_terminal_anyone_owns():
     """The marker fires only when the *narrowest* tier cannot fit.
 
-    Bolting a bare ``‹ widen`` onto the hero would leave it permanently lit:
-    the full copy needs ~220 columns, past the ~169 a laptop gets at the
-    forced 17 pt. A marker that is on everywhere means nothing -- the trap
-    ``widgets/surf/signals.py`` documents. Tying it to the narrowest tier
-    keeps it dark in normal operation and therefore worth reading.
+    Bolting a bare ``‹ widen`` onto the hero would leave it permanently lit
+    -- back when the row was shared, the full copy needed ~220 columns,
+    past the ~169 a laptop gets at the forced 17 pt. A marker that is on
+    everywhere means nothing (the trap ``widgets/surf/signals.py``
+    documents). Tying it to the narrowest tier keeps it dark, and the
+    full-width row lowers the floor much further: 82 columns, which is
+    narrower than any terminal this dashboard is usable in at all.
     """
     assert HERO_WIDEN_HINT == "‹ widen"
 
-    for width in (SURF_FULL_LAYOUT_COLUMNS, 143, 169, 200, 240):
+    for width in (82, 100, SURF_FULL_LAYOUT_COLUMNS, 143, 169, 200, 240):
         assert HERO_WIDEN_HINT not in await _hero_text(width), (
             f"the hero advertises a loss at {width} columns"
         )
 
-    # ...and it is not merely unreachable: four columns below the pinned
-    # width the gate box can no longer fit its own title, and says so.
-    assert HERO_WIDEN_HINT in await _hero_text(SURF_FULL_LAYOUT_COLUMNS - 4)
+    # ...and it is not merely unreachable: one column narrower a box can no
+    # longer fit ``OWNER CHANGED``/``2,376,732 IMD`` at any tier, and says so.
+    assert HERO_WIDEN_HINT in await _hero_text(81)
 
 
 # -- the activity panel's own width tiers (final-review I-1) -------------

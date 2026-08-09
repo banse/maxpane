@@ -367,7 +367,12 @@ def test_every_hero_tier_fits_the_width_it_advertises():
                 _lp_lines(_FULL_HERO["lp_liquidity"], 388421.0, 142.7067, owner, tier)
             )
         for gate in (True, False, None):
-            for written in (1, None):
+            # 2000 is the IDMD cap and therefore the counter's widest
+            # reachable value, not a hypothetical: ``2000/2000 written`` is
+            # 17 columns and used to overflow the tight tier's advertised 16
+            # with nothing in this sweep to catch it. A bounded quantity's
+            # bound belongs in the measurement.
+            for written in (1, None, 999, 2000):
                 renderings.append(_gate_lines(gate, written, tier))
         for burned in (15745.0, 0.0, None):
             renderings.append(_supply_lines(2376731.868679, burned, tier))

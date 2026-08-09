@@ -40,10 +40,21 @@ nothing from the data layer.
 Width behaviour
 ---------------
 
-A hero box is one quarter of a ``3fr`` half of the hero row, so it is far
-narrower than it looks: **12 content columns at 135 terminal columns, 13
-at 139, 17 at 169, 22 at 200**.  The full copy needs 24, which arrives at
-about 220 -- past anything a laptop reaches at the forced 17 pt.
+A hero box is one quarter of the **full-width** hero row, so its budget is
+roughly the terminal's columns over four: measured on the real screen,
+**16 content columns at 100 terminal columns, 22 at 119, 26 at 135, 27 at
+139, 34 at 169, 42 at 200**.  ``1fr`` rounding leaves neighbouring boxes a
+column apart, which is why each box picks its tier from *its own* width
+rather than the row's (see :meth:`SurfHeroBox.render_lines_at_tier`).
+
+Until 2026-08-09 the row was shared with ``SurfSignals`` and the four
+boxes divided a ``3fr`` half of it: 13 content columns at 139, and the
+``full`` tier's 24 arrived at about 220 -- past anything a laptop reaches
+at the forced 17 pt, i.e. a tier nobody could ever see.  Full width makes
+``full`` the tier every real terminal gets: it needs 24 content columns,
+which arrives at **127 terminal columns**, and the marker below is
+unreachable above **81**.  The tiers were not re-cut for that: they are
+the widths their own copy measures, and it is the geometry that moved.
 
 Two answers were considered and rejected.  A bare ``‹ widen`` marker would
 be lit on every terminal anyone owns, which is the trap ``signals.py``
@@ -62,7 +73,7 @@ Tier         Needs  What it gives up
 ``compact``  22     ``· L <liquidity>`` -- a raw v3 uint128 rendered
                     ``2.16e+18`` is the least legible field on the
                     screen and the most expensive in columns
-``tight``    16     ``burned N observed`` -> ``burn N``;
+``tight``    17     ``burned N observed`` -> ``burn N``;
                     ``owner ✓ frenpet.eth`` -> ``owner ✓`` (the tick
                     *is* the assertion, the ENS name is decoration)
 ``minimal``  13     ``N/2000 written`` -> ``N/2000``;
@@ -113,8 +124,16 @@ WIDEN_HINT = "‹ widen"
 #: outgrows its tier fails there rather than on a user's terminal.
 FULL_WIDTH = 24     # "142.71 WETH · L 2.16e+18"
 COMPACT_WIDTH = 22  # "burned 15,745 observed"
-TIGHT_WIDTH = 16    # "since 2026-05-14"
+TIGHT_WIDTH = 17    # "2000/2000 written" -- see below
 MINIMAL_WIDTH = 13  # "IDENTITY GATE" / "OWNER CHANGED" / "2,376,732 IMD"
+
+# TIGHT_WIDTH was 16, measured off "since 2026-05-14", because the tier sweep
+# only ever fed the gate box ``identities_written`` of 1 and None. The IDMD cap
+# is 2000 and the counter can reach it, at which point the tight tier renders
+# "2000/2000 written" -- 17 columns, one past its own advertised width. The
+# effect was not a silent cut (the marker fires on the overflow, correctly) but
+# a box on 16 columns advertising a loss instead of dropping to ``minimal``,
+# which fits "2000/2000" in 9. The sweep now includes the cap.
 
 TIER_WIDTHS = {
     "full": FULL_WIDTH,
