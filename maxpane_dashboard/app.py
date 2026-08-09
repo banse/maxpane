@@ -15,6 +15,7 @@ from maxpane_dashboard.data.frenpet_manager import FrenPetManager
 from maxpane_dashboard.data.fwa_manager import FWAManager
 from maxpane_dashboard.data.manager import DataManager
 from maxpane_dashboard.data.ocm_manager import OCMManager
+from maxpane_dashboard.data.surf_manager import SurfManager
 from maxpane_dashboard.data.talismans_manager import TalismansManager
 from maxpane_dashboard.data.ttt_manager import TTTManager
 from maxpane_dashboard.screens.bakery import BakeryScreen
@@ -93,6 +94,7 @@ class MaxPaneApp(App):
         self._dota_manager = DOTAManager(poll_interval=poll_interval)
         self._ttt_manager = TTTManager(poll_interval=poll_interval)
         self._talismans_manager = TalismansManager(poll_interval=poll_interval)
+        self._surf_manager = SurfManager(poll_interval=poll_interval)
         # FWAManager builds its own market client with coingecko_min_spacing=6.0
         # (COINGECKO_MIN_SPACING); do not pass one in here.
         self._fwa_manager = FWAManager(poll_interval=poll_interval)
@@ -152,6 +154,7 @@ class MaxPaneApp(App):
             "dota": self._dota_manager,
             "ttt": self._ttt_manager,
             "talismans": self._talismans_manager,
+            "surf": self._surf_manager,
             "fwa": self._fwa_manager,
         }.get(game_id)
 
@@ -435,4 +438,8 @@ class MaxPaneApp(App):
             await self._fwa_manager.close()
         except Exception as exc:
             logger.warning("Error during fwa shutdown: %s", exc)
+        try:
+            await self._surf_manager.close()
+        except Exception as exc:
+            logger.warning("Error during surf shutdown: %s", exc)
         self.exit()

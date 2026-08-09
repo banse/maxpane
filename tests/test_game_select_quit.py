@@ -47,6 +47,7 @@ MANAGER_ATTRS = [
     "_ttt_manager",
     "_talismans_manager",
     "_fwa_manager",
+    "_surf_manager",
 ]
 
 #: A game whose screen mounts without a wallet or any network call.
