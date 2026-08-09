@@ -220,6 +220,33 @@ DEV_WALLETS: dict[str, str] = {
 #: different things in one repo.
 LAUNCH_SIGNERS: frozenset[str] = frozenset(DEV_WALLETS.values())
 
+#: ``LogWindow`` group name -> the ``SLOT_LOGS`` keys that group produces.
+#:
+#: This is the table that turns ``SurfClient.log_group_failed`` into an answer.
+#: ``LogWindow``'s tuple fields default to ``()`` and cannot hold ``None``, so a
+#: filter that died and a window that was genuinely empty arrive here
+#: identically; the client's flag is the out-of-band channel that separates
+#: them, and these are the keys it has to reach. Adding a key to the
+#: ``SLOT_LOGS`` payload without adding it here means a failed filter silently
+#: publishes an affirmative empty claim for it again.
+LOG_GROUP_SLOT_KEYS: dict[str, tuple[str, ...]] = {
+    "bridge_mints": ("bridge_mints",),
+    "identity_updates": ("identity_writes",),
+    "v4_initializes": ("v4_hook_pools", "hook_launch", "hook_unverified"),
+    "seaport_sales": ("nft_last_sales",),
+}
+
+#: ``LOG_GROUP_SLOT_KEYS`` group -> the ``READING_KEYS`` entry it feeds. A group
+#: that failed must reach ``build_signals`` as ``None``: ``[]``/``0`` is the
+#: affirmative claim "read and held nothing", and that claim is what lets
+#: BRIDGE STAGE report all-clear during an outage. ``seaport_sales`` is absent
+#: on purpose — realized sales are a panel, not a detector.
+LOG_GROUP_READING_KEYS: dict[str, str] = {
+    "bridge_mints": "bridge_mints",
+    "identity_updates": "identities_written",
+    "v4_initializes": "v4_hook_pools",
+}
+
 #: Distinct ``Initialize`` transaction hashes whose signer the manager will
 #: remember between cycles. Bounded because the memo is keyed by an
 #: attacker-choosable value: anyone can emit a hooked ``Initialize`` for IMD,
@@ -580,35 +607,65 @@ class SurfManager:
             previous = dict(
                 getattr(self.cache.get_last_good(SLOT_LOGS), "payload", None) or {}
             )
-            self.cache.store_last_good(
-                SLOT_LOGS,
-                {
-                    "to_block": _opt_int(_field(window, "to_block")),
-                    "bridge_mints": self._bridge_rows(window, now),
-                    # "Hooked pools seen in THIS window, that a dev wallet
-                    # signed". `None` when the window held a hooked pool whose
-                    # signer we could not read: that is an unread attribution,
-                    # not an empty window, and `[]` here would seed WP2's v4
-                    # baseline with the claim that nothing happened.
-                    "v4_hook_pools": (
-                        hooked if hooked or not unattributed else None
-                    ),
-                    "hook_launch": self._launch_record(
-                        hooked, previous.get("hook_launch")
-                    ),
-                    "hook_unverified": bool(unattributed),
-                    # Signal 3's detail line: writes seen *in this window*, not
-                    # the hero's lifetime "x/2000". Two different numbers with
-                    # one name — see the header's consequence 4.
-                    "identity_writes": self._identity_writes(window),
-                    # Realized sales belong to the logs group, not to the
-                    # Blockscout counters: they are on different tiers, and the
-                    # NFT panel must keep showing them through a slow-tier skip.
-                    "nft_last_sales": self._seaport_sale_rows(window, now),
-                },
-                ts=now,
-            )
+            failed = self._log_group_failed()
+            payload: dict[str, Any] = {
+                "to_block": _opt_int(_field(window, "to_block")),
+                "bridge_mints": self._bridge_rows(window, now),
+                # "Hooked pools seen in THIS window, that a dev wallet
+                # signed". `None` when the window held a hooked pool whose
+                # signer we could not read: that is an unread attribution,
+                # not an empty window, and `[]` here would seed WP2's v4
+                # baseline with the claim that nothing happened.
+                "v4_hook_pools": hooked if hooked or not unattributed else None,
+                "hook_launch": self._launch_record(
+                    hooked, previous.get("hook_launch")
+                ),
+                "hook_unverified": bool(unattributed),
+                # Signal 3's detail line: writes seen *in this window*, not
+                # the hero's lifetime "x/2000". Two different numbers with
+                # one name — see the header's consequence 4.
+                "identity_writes": self._identity_writes(window),
+                # Realized sales belong to the logs group, not to the
+                # Blockscout counters: they are on different tiers, and the
+                # NFT panel must keep showing them through a slow-tier skip.
+                "nft_last_sales": self._seaport_sale_rows(window, now),
+            }
+            # A group whose filter FAILED contributed nothing to the four
+            # decoders above -- they saw `()`, which `LogWindow` cannot tell
+            # from "read and held nothing" (its own docstring says so and
+            # hands the resolution here). Writing their output would replace
+            # this group's last-good rows with an affirmative empty claim, so
+            # instead every key the failed group owns keeps the value we
+            # already hold, or stays `None` when we have never held one.
+            for group, keys in LOG_GROUP_SLOT_KEYS.items():
+                if not failed.get(group):
+                    continue
+                for key in keys:
+                    payload[key] = previous.get(key)
+            # Persisted with the payload, because it is what tells `_readings`
+            # which of these values may be handed to a detector as a reading
+            # and which must arrive as `None`. It survives a fast-only cycle
+            # for the same reason `_failed_groups` does: nothing re-read the
+            # group, so nothing has re-earned the claim.
+            payload["log_group_failed"] = failed
+            self.cache.store_last_good(SLOT_LOGS, payload, ts=now)
         return window
+
+    def _log_group_failed(self) -> dict[str, bool]:
+        """Which of the four log filters failed inside this cycle's sweep.
+
+        ``getattr`` with a default, exactly as :meth:`_client_degradation`
+        documents: the real client always defines ``log_group_failed`` and
+        resets it at the start of every ``fetch_recent_logs`` call, but a test
+        double implementing only the ``fetch_*`` coroutines need not, and this
+        manager must not crash on a client that is *less* chatty about its
+        failures. An absent flag reads as "nothing reported failed", which is
+        the same conclusion the code drew before the flag was wired anywhere.
+        """
+        flags = getattr(self.client, "log_group_failed", None)
+        if not isinstance(flags, dict):
+            return dict.fromkeys(LOG_GROUP_SLOT_KEYS, False)
+        return {group: bool(flags.get(group)) for group in LOG_GROUP_SLOT_KEYS}
 
     async def _launch_signers(self, candidates: list[dict[str, Any]]) -> dict[str, str]:
         """``{tx_hash: signer}`` for the hooked ``Initialize`` rows, memoised.
@@ -1066,7 +1123,13 @@ class SurfManager:
         """
         rows = _field(window, "identity_updates")
         if rows is None:
-            return None                     # the filter failed; not "no writes"
+            # Unreachable through ``LogWindow`` -- the field is
+            # ``tuple[dict, ...] = ()`` and no input can make it ``None``, as
+            # its own docstring says. Kept because this method also runs
+            # against a ``window`` double in tests, but it is NOT the filter's
+            # failure guard: ``LOG_GROUP_SLOT_KEYS`` is, and it is what stops a
+            # dead ``IdentityHashUpdated`` filter rendering "closed · 0 written".
+            return None
         ids: set[str] = set()
         for row in rows:
             topics = list((row or {}).get("topics") or ())
@@ -1209,6 +1272,20 @@ class SurfManager:
         # -- the log window (medium tier, served from last-good) --------------
         read["bridge_mints"] = logs.get("bridge_mints")
         read["v4_hook_pools"] = logs.get("v4_hook_pools")
+
+        # -- a log group whose FILTER died is unread, whatever the slot holds --
+        # Last after every log-derived reading is assigned, so nothing can
+        # re-fill one of these behind it. `_pool_logs` keeps a failed group's
+        # last-good rows so the panels can still render them behind the slot's
+        # as-of marker -- but last-good is not a reading. Handing it to a
+        # detector either re-seeds a baseline off stale rows or, for an empty
+        # group, makes the affirmative claim "read and held nothing", and that
+        # claim is exactly what let BRIDGE STAGE render `ok · no mints in
+        # window` through a dead bridge-mint filter -- the earliest of the six
+        # detectors reporting all-clear out of a read that failed.
+        for group, reading_key in LOG_GROUP_READING_KEYS.items():
+            if (logs.get("log_group_failed") or {}).get(group):
+                read[reading_key] = None
 
         # -- the dev tx pages (slow tier, or a nonce change) ------------------
         # ``[]`` once the group has answered even once, ``None`` before that:

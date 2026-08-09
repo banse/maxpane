@@ -1329,12 +1329,29 @@ async def test_a_truncated_channel_page_reaches_degraded_now_that_it_is_fetched(
     assert SOURCE_CHANNEL in data["degraded"]
 
 
+def _group_failure(**failed: bool) -> dict[str, bool]:
+    """``SurfClient.log_group_failed`` with the named groups reporting failure."""
+    flags = dict.fromkeys(
+        ("bridge_mints", "identity_updates", "v4_initializes", "seaport_sales"),
+        False,
+    )
+    flags.update(failed)
+    return flags
+
+
 async def test_a_failed_log_group_reaches_degraded_even_on_an_otherwise_ok_window(
     tmp_path,
 ):
     """The exact failure this product exists to prevent: an empty ``bridge_mints``
     that is a *filter failure*, not "no mints", flagged even though the rest of
     the sweep answered fine and ``hook_status`` still reads a real value.
+
+    This test used to stop at ``degraded`` — which its own docstring promised
+    more than. ``degraded`` was the *only* place ``log_group_failed`` reached,
+    so the bug it names was fully present with it green, and wiring the flag
+    into ``_readings`` would have left it green too: it could not tell the two
+    apart. The detector assertion below is the half that bites, because
+    ``sig_bridge`` is what a user reads as "nothing is staging".
     """
     client = FakeSurfClient(
         fetch_recent_logs=LogWindow(
@@ -1343,17 +1360,118 @@ async def test_a_failed_log_group_reaches_degraded_even_on_an_otherwise_ok_windo
             seaport_sales=(),
         )
     )
-    client.log_group_failed = {
-        "bridge_mints": True,
-        "identity_updates": False,
-        "v4_initializes": False,
-        "seaport_sales": False,
-    }
+    client.log_group_failed = _group_failure(bridge_mints=True)
     data = await _manager(tmp_path, client=client).fetch_and_compute()
     assert SOURCE_LOGS in data["degraded"]
     # The rest of the sweep is trustworthy — a per-group failure must not sink
     # a hero value that a different group answered cleanly.
     assert data["hook_status"] == "NOT LIVE"
+    # ...and the failed group is unavailable, NOT an affirmative all-clear.
+    assert data["sig_bridge_state"] is None
+    assert data["sig_bridge_detail"] == "bridge logs unavailable"
+
+
+async def test_a_bridge_filter_that_dies_after_a_good_window_stops_claiming_all_clear(
+    tmp_path,
+):
+    """``_detect_bridge``'s unavailable branch was unreachable in production.
+
+    ``read["bridge_mints"]`` is ``logs.get("bridge_mints")`` and ``_pool_logs``
+    always wrote that key, so it was ``None`` only before the logs group had
+    *ever* succeeded. After one success a bridge-filter outage could never
+    again produce the unavailable state — it produced ``ok · no mints in
+    window``, an affirmative claim about the earliest of the six detectors,
+    made out of a read that failed. ``tests/analytics`` pins the ``None``
+    branch; nothing pinned that the manager can reach it.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(), identity_updates=(), v4_initializes=(),
+            seaport_sales=(),
+        )
+    )
+    m = _manager(tmp_path, client=client, clock=clock)
+    first = await m.fetch_and_compute()
+    assert first["sig_bridge_state"] == "ok"          # read, and held nothing
+    assert first["sig_bridge_detail"] == "no mints in window"
+
+    client.log_group_failed = _group_failure(bridge_mints=True)
+    clock.advance(120.0)                               # the medium tier is due
+    second = await m.fetch_and_compute()
+    assert second["sig_bridge_state"] is None
+    assert second["sig_bridge_detail"] == "bridge logs unavailable"
+
+
+async def test_a_failed_seaport_filter_serves_last_good_sales_not_an_empty_list(
+    tmp_path,
+):
+    """A partial failure must not destroy the other groups' last-good.
+
+    ``_pool_logs`` replaced ``SLOT_LOGS`` wholesale, so one dead filter wrote
+    ``[]`` over rows that were read successfully minutes earlier — and ``[]``
+    is this manager's own contract for *genuinely nothing*, which is what the
+    NFT panel renders as "no realized sales". CLAUDE.md's rule for a dead
+    source is last-good behind an ``as of`` marker, and ``degraded`` already
+    carries the marker's other half.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+    first = await m.fetch_and_compute()
+    assert [row["token_id"] for row in first["nft_last_sales"]] == [1751, 354]
+
+    client._returns["fetch_recent_logs"] = LogWindow(
+        from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+        bridge_mints=(), identity_updates=(), v4_initializes=(), seaport_sales=(),
+    )
+    client.log_group_failed = _group_failure(seaport_sales=True)
+    clock.advance(120.0)
+    second = await m.fetch_and_compute()
+
+    assert [row["token_id"] for row in second["nft_last_sales"]] == [1751, 354]
+    assert SOURCE_LOGS in second["degraded"]
+
+
+async def test_a_failed_identity_filter_is_unavailable_not_zero_writes(tmp_path):
+    """``_identity_writes`` guarded a branch its own model cannot reach.
+
+    ``LogWindow.identity_updates`` is ``tuple[dict, ...] = ()`` and can never
+    be ``None``, so ``if rows is None: return None  # the filter failed`` was a
+    comment describing a protection that was not there: a dead
+    ``IdentityHashUpdated`` filter yielded ``0`` and the GATE row rendered
+    ``closed · 0 written`` — a count, made up, about a registry nobody read.
+
+    Two cycles, and the first one has to succeed: with a cold slot the failed
+    group has no last-good to carry forward and lands on ``None`` anyway, so a
+    one-cycle version of this test passes against a manager that never reads
+    ``log_group_failed`` at all.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(), v4_initializes=(), seaport_sales=(),
+            identity_updates=(
+                _identity_log(1751, ts=NOW - 600.0, tx="0x" + "e1" * 32),
+            ),
+        )
+    )
+    m = _manager(tmp_path, client=client, clock=clock)
+    first = await m.fetch_and_compute()
+    assert "1 written" in first["sig_gate_detail"]
+
+    client._returns["fetch_recent_logs"] = LogWindow(
+        from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+        bridge_mints=(), identity_updates=(), v4_initializes=(), seaport_sales=(),
+    )
+    client.log_group_failed = _group_failure(identity_updates=True)
+    clock.advance(120.0)
+    second = await m.fetch_and_compute()
+    # Neither a stale count presented as live nor a fabricated zero.
+    assert "written" not in (second["sig_gate_detail"] or "")
+    assert SOURCE_LOGS in second["degraded"]
 
 
 # ---------------------------------------------------------------------------
