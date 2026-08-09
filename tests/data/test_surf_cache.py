@@ -445,3 +445,68 @@ def test_non_mapping_baselines_are_ignored(tmp_path):
     c.set_baselines(_baselines())
     c.set_baselines(None)                   # type: ignore[arg-type]
     assert c.get_baselines() == {}
+
+
+# ---------------------------------------------------------------------------
+# Observed-burn accumulator (WP4.5) -- successful reads only
+# ---------------------------------------------------------------------------
+
+
+def test_observed_burn_total_is_none_before_any_read_then_zero(tmp_path):
+    """The three states the widget branches on, pinned at the source.
+
+    ``None`` and ``0.0`` are different claims and the difference is the whole
+    point: ``None`` is "we have never successfully read totalSupply", ``0.0``
+    is "we have, and nothing has moved *since*".  Neither is "no IMD has ever
+    been burned" -- ~58,849 IMD were burned before any install existed (PRD
+    §1) and this accumulator structurally cannot see them.  WP3.2's SurfHero
+    renders ``0.0`` as words for exactly that reason.
+    """
+    c = _cache(tmp_path)
+    assert c.observed_burn_total() is None
+    assert c.record_supply(IMD_SUPPLY) is None          # first read: no conclusion
+    assert c.observed_burn_total() == 0.0               # observed nothing, honestly
+    # A *delta* still needs a second successful read; one read concludes nothing.
+    assert c.record_supply(IMD_SUPPLY) == 0.0
+    assert c.observed_burn_total() == 0.0
+
+
+def test_a_real_burn_is_accumulated(tmp_path):
+    """The 2026-08-05 event: 15,745 IMD, announced to the minute."""
+    c = _cache(tmp_path)
+    c.record_supply(IMD_SUPPLY)
+    delta = c.record_supply(IMD_SUPPLY - 15_745.0)
+    assert delta == pytest.approx(15_745.0)
+    assert c.observed_burn_total() == pytest.approx(15_745.0)
+
+    # A later burn adds; the total is cumulative, never a replacement.
+    c.record_supply(IMD_SUPPLY - 15_745.0 - 31_064.0)
+    assert c.observed_burn_total() == pytest.approx(46_809.0)
+
+
+def test_a_failed_supply_read_can_never_produce_a_burn(tmp_path):
+    """The regression this whole module exists for: None is not 0 (PRD §6.1)."""
+    c = _cache(tmp_path)
+    c.record_supply(IMD_SUPPLY)
+    assert c.record_supply(None) is None                # outage
+    assert c.observed_burn_total() == 0.0               # no 2.37M "burn"
+    assert c.last_supply == IMD_SUPPLY                  # baseline untouched
+
+    # Recovery compares against the pre-outage baseline, not against None.
+    assert c.record_supply(IMD_SUPPLY) == 0.0
+    assert c.observed_burn_total() == 0.0
+
+
+def test_a_supply_increase_is_a_bridge_in_not_a_negative_burn(tmp_path):
+    c = _cache(tmp_path)
+    c.record_supply(IMD_SUPPLY)
+    assert c.record_supply(IMD_SUPPLY + 1_000.0) == 0.0
+    assert c.observed_burn_total() == 0.0
+    assert c.last_supply == IMD_SUPPLY + 1_000.0
+
+
+def test_a_non_finite_supply_is_not_a_reading(tmp_path):
+    c = _cache(tmp_path)
+    c.record_supply(IMD_SUPPLY)
+    assert c.record_supply(float("nan")) is None
+    assert c.last_supply == IMD_SUPPLY

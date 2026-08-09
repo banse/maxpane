@@ -224,6 +224,8 @@ class SurfCache:
             name: deque(maxlen=_HISTORY_HOURS) for name in SERIES_NAMES
         }
         self._baselines: dict[str, Any] = {}
+        self.last_supply: float | None = None
+        self.burned_cum: float = 0.0
 
     # -- clock ---------------------------------------------------------------
 
@@ -398,6 +400,48 @@ class SurfCache:
         if not deq:
             return []
         return [[float(ts), float(v)] for (ts, v) in deq]
+
+    # -- observed burns --------------------------------------------------------
+
+    def record_supply(self, supply: float | None) -> float | None:
+        """Fold one ``totalSupply`` reading in. Returns the burn observed, if any.
+
+        ``None`` in -> ``None`` out and **no state change**: a failed read must be
+        incapable of producing a BURN (PRD §6.1). The first successful read only
+        establishes the baseline, so it also concludes nothing.
+        """
+        if supply is None or isinstance(supply, bool):
+            return None
+        try:
+            value = float(supply)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(value) or value < 0:
+            return None
+
+        previous = self.last_supply
+        self.last_supply = value
+        if previous is None:
+            return None
+        if value < previous:
+            delta = previous - value
+            self.burned_cum += delta
+            return delta
+        # An increase is an OFT bridge-in, not a negative burn.
+        return 0.0
+
+    def observed_burn_total(self) -> float | None:
+        """Cumulative burn *since first observation*, or ``None`` if never read.
+
+        Not an all-time total and not obtainable as one: the burns predating
+        this cache (~58,849 IMD across 2026-05-16 / 07-31 / 08-05) have no
+        keyless source.  ``0.0`` therefore means "nothing observed in the
+        window", never "nothing was ever burned" -- consumers must render the
+        two differently (see WP3.2 ``SurfHero._update_supply``).
+        """
+        if self.last_supply is None:
+            return None
+        return float(self.burned_cum)
 
     # -- signal baselines ----------------------------------------------------
 
