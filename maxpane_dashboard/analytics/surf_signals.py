@@ -131,8 +131,20 @@ BASELINE_SCALARS: tuple[str, ...] = (
 #: here keeps the previous behaviour (trusted as-is once it is not ``None``);
 #: add an entry here, not a special case in ``_advance``, if another reading
 #: later needs the same protection.
+#: ``imd_supply`` needs the same protection for the mirror-image reason: BURN
+#: and BRIDGE STAGE already refuse to *compare* a non-numeric baseline (both
+#: read it through ``_as_float``, which turns garbage into ``None``), but
+#: without a coercer here ``_advance`` would still persist that garbage raw.
+#: The corrupted baseline would then read back as ``None`` on the very cycle a
+#: real burn or bridge mint lands, and both detectors treat an unset baseline
+#: as "seed, don't fire" -- so a real event is silently swallowed, the same
+#: failure shape as the ``gate_open`` bug above, one call away.  ``_as_float``
+#: is looked up by name rather than imported at definition time, which is
+#: fine: this dict is only ever consulted from ``_advance``, well after the
+#: whole module -- including ``_as_float`` -- has finished loading.
 _SCALAR_COERCERS: dict[str, Any] = {
     "gate_open": lambda value: value if isinstance(value, bool) else None,
+    "imd_supply": lambda value: _as_float(value),
 }
 
 #: Event streams: ``reading key -> (tx baseline key, ts baseline key)``.  Two

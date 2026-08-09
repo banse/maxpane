@@ -846,3 +846,40 @@ def test_burn_outage_is_none():
     assert _sig(
         "burn", _baseline(), _readings(imd_supply=None, burn_transfers=None)
     ) == (None, "supply unavailable", None)
+
+
+# --- fix round 2: _advance must coerce imd_supply as strictly as BRIDGE STAGE
+# and BURN read it ----------------------------------------------------------
+#
+# Mirrors the gate_open regression above.  _detect_bridge and _detect_burn
+# both defend the *read* side with _as_float, so a garbage baseline value
+# already can't be compared as a number -- but without a coercer in
+# _SCALAR_COERCERS, _advance's only guard is "reading is not None", so that
+# same garbage would still get persisted verbatim.  The next cycle then reads
+# the corrupted baseline back as None (via _as_float) and both detectors treat
+# an unset baseline as "seed, don't fire" -- so a genuine burn or bridge mint
+# landing on exactly that cycle would be silently swallowed instead of firing.
+
+
+def test_a_malformed_supply_reading_never_corrupts_the_persisted_baseline():
+    base = _baseline(imd_supply=SUPPLY_BEFORE)
+    _, advanced = sig.build_signals(base, _readings(imd_supply="not-a-number"), NOW)
+    # The garbage string must not reach the baseline -- the prior valid float
+    # survives untouched, exactly as an outright None reading would leave it.
+    assert advanced["imd_supply"] == SUPPLY_BEFORE
+
+    # A real burn on the following cycle must still be seen as a real drop.
+    state, detail, age = _sig(
+        "burn", advanced, _readings(imd_supply=SUPPLY_BEFORE - 15_745.0)
+    )
+    assert state == "fired"
+    assert detail == "burn 15,745 IMD"
+    assert age == 0.0
+
+
+def test_a_legitimate_supply_reading_is_still_persisted():
+    """The hardening must not stop a genuinely valid float from persisting."""
+    _, advanced = sig.build_signals(
+        _baseline(imd_supply=SUPPLY_BEFORE), _readings(imd_supply=SUPPLY_AFTER_MINTS), NOW
+    )
+    assert advanced["imd_supply"] == SUPPLY_AFTER_MINTS
