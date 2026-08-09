@@ -1,4 +1,4 @@
-"""Orchestrator for the SURF "Mission Control" dashboard (WP4).
+"""Orchestrator for the SURF "Surfboard" dashboard (WP4).
 
 One coordination point between six independently failing source groups, three
 refresh tiers and one frozen output contract. Exposes one public coroutine,

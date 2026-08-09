@@ -1965,15 +1965,19 @@ SurfFeed, SurfDevActivity {
  * bakery `SignalsPanel` above uses. The old layout gave the signals a fixed
  * ten-row band in the hero row, so all six detectors survived down to a
  * ~16-row terminal; sizing the rows to their content means the rail is only
- * as tall as the middle row, and below ~29 rows the sixth detector -- BURN --
- * no longer fits. `auto` costs nothing at any normal height (no scrollbar is
- * drawn) and turns that into an advertised loss rather than a silent one, the
- * row-wise counterpart of the `‹ widen` marker. */
+ * as tall as the middle row, and below 35 rows its fifteen lines no longer
+ * fit. Scrolling is the *affordance*: nothing is dropped, it is all still
+ * reachable. The *advertisement* is `TALLER_HINT` on the title bar (see
+ * screens/surf.py) -- a scrollbar in a gutter names nothing it took away,
+ * and both halves of the rail can lose their own titles before it appears.
+ * `scrollbar-size: 1 1` matches every other scrollable container in this
+ * file; the Textual default is two cells wide. */
 SurfScreen #surf-right-rail {
     width: 2fr;
     height: 1fr;
     padding: 0 0;
     overflow-y: auto;
+    scrollbar-size: 1 1;
 }
 
 /* padding stays `0 1` -- horizontal only.
@@ -1985,9 +1989,15 @@ SurfScreen #surf-right-rail {
  * different widget, and tests/test_surf_registration.py asserts all six reach
  * the compositor.
  *
- * `height: auto` rather than `1fr`: the market underneath takes the rail's
- * remainder, so a short terminal shortens the market rather than pushing it
- * off the bottom. */
+ * `height: auto` rather than `1fr`, and the same for SurfMarket below: a
+ * `1fr` child cannot overflow its scroll container -- it shrinks -- so the
+ * rail's `overflow-y: auto` never fires for it. SurfMarket *was* `1fr` and
+ * shed one row per terminal row from 35 down, reaching "IMD MARKET title
+ * only" at 31 and a blank rail at 30, with no scrollbar, no marker and no
+ * trace anywhere on screen. Two `auto` children give the rail a fixed
+ * fifteen-row content height, which is what makes the overflow, the
+ * scrollbar and the title bar's `‹ taller` all fire on the same terminal
+ * row that the first line is lost on. */
 SurfSignals {
     width: 1fr;
     height: auto;
@@ -1996,7 +2006,7 @@ SurfSignals {
 
 SurfMarket {
     width: 1fr;
-    height: 1fr;
+    height: auto;
     padding: 0 1;
 }
 

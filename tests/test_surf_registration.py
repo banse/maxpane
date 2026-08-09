@@ -462,6 +462,24 @@ _SHORTHAND_DEFAULTS = {"padding": "0", "margin": "0"}
 #: belong to the theme and to the widgets' own DEFAULT_CSS.
 _STRUCTURAL = ("width", "height", "padding", "margin")
 
+#: The two copies deliberately do **not** cover the same selector set, and
+#: both asymmetries are load-bearing:
+#:
+#: * ``#title-bar`` / ``#separator`` are DEFAULT_CSS-only. The shared
+#:   stylesheet already styles those two ids for every screen (lines 12-130);
+#:   the surf block restating them would give a shared rule a second owner.
+#: * The two ``> RichLog`` rules are block-only: they are the app-stylesheet
+#:   half of the feed/activity height, and the widgets' own DEFAULT_CSS owns
+#:   the rest.
+#:
+#: Pinned as *sets*, not counted. A count is the vacuity hole it was meant to
+#: close: the guard used to read ``len(shared) >= 8`` against a real overlap
+#: of ten, so renaming ``SurfMarket`` to ``SurfMarketX`` in DEFAULT_CSS alone
+#: dropped the market out of the comparison entirely and left nine -- still
+#: green, with the two copies' market geometry never compared again.
+_DEFAULT_CSS_ONLY = frozenset({"#title-bar", "#separator"})
+_BLOCK_ONLY = frozenset({"SurfFeed > RichLog", "SurfDevActivity > RichLog"})
+
 
 def _expand(value: str) -> tuple[str, ...]:
     """CSS box shorthand -> four values, so ``0 0`` == ``0`` == ``0 0 0 0``."""
@@ -517,10 +535,19 @@ def test_the_stylesheet_block_and_default_css_describe_one_layout() -> None:
     fallback = _rules(SurfScreen.DEFAULT_CSS)
     block = _rules(_surf_block())
 
+    # Guard against the comparison quietly becoming vacuous. A renamed or
+    # deleted selector on one side does not shrink a threshold here -- it
+    # lands in one of these two differences and fails by name.
+    assert set(fallback) - set(block) == _DEFAULT_CSS_ONLY, (
+        "DEFAULT_CSS has selectors the surf block does not: "
+        f"{sorted((set(fallback) - set(block)) - _DEFAULT_CSS_ONLY)} -- each "
+        "is a rule the two copies no longer compare"
+    )
+    assert set(block) - set(fallback) == _BLOCK_ONLY, (
+        "the surf block has selectors DEFAULT_CSS does not: "
+        f"{sorted((set(block) - set(fallback)) - _BLOCK_ONLY)}"
+    )
     shared = sorted(set(fallback) & set(block))
-    # Guard against the comparison quietly becoming vacuous (a renamed
-    # selector on one side would otherwise just shrink the overlap).
-    assert len(shared) >= 8, f"only {len(shared)} selectors overlap: {shared}"
 
     for selector in shared:
         for prop in _STRUCTURAL:

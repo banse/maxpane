@@ -1,4 +1,4 @@
-"""SurfScreen -- surfsurf.eth Mission Control as a Textual Screen.
+"""SurfScreen -- the surfsurf.eth Surfboard as a Textual Screen.
 
 Layout (the house pattern; the hero owns the top row outright and the
 signals ride a right-hand rail above the market)::
@@ -7,11 +7,20 @@ signals ride a right-hand rail above the market)::
     #hero-row          SurfHero (full width, four boxes)
     #middle-row        SurfFeed (3fr)          | #surf-right-rail (2fr)
                        SurfDevActivity (3fr)   |   SurfSignals (auto)
-                         -- one or the other,  |   SurfMarket  (1fr)
+                         -- one or the other,  |   SurfMarket  (auto)
                             toggled with `c`   |
     #separator
     #bottom-row        SurfNft (full width)
     StatusBar
+
+Both rail children are ``auto`` and the rail scrolls, so the rail's content
+height is a constant fifteen rows. Below a 35-row terminal that no longer
+fits, and the title bar says so with ``TALLER_HINT`` -- the height half of
+the ``‹ widen`` contract. ``SurfMarket`` was ``1fr`` until 2026-08-09, and a
+``1fr`` child cannot overflow its scroll container: it shrinks. The market
+therefore shed one row per terminal row from 35 down without the rail ever
+overflowing, so nothing scrolled, nothing was marked, and by 30 rows the
+whole panel -- title included -- was simply not on the screen.
 
 The hero was half a row wide until 2026-08-09 and shared it with the
 signals panel. Two things were wrong with that. Its four boxes had to
@@ -83,8 +92,23 @@ logger = logging.getLogger(__name__)
 
 _EMDASH = "—"
 
-#: Shown until the first payload lands.
-INITIAL_TITLE = "SURF · Mission Control · Ethereum Mainnet"
+#: Shown until the first payload lands -- and, on the degraded path where the
+#: manager raises, for good: ``_title_line`` is what replaces it and that code
+#: is never reached. The name here must therefore be the name the game-select
+#: menu uses (``screens/game_select.GAMES``), which is asserted by
+#: ``test_the_initial_title_names_the_dashboard_the_menu_names``. It was not:
+#: the rename to "Surfboard" reached the menu, the README and CLAUDE.md and
+#: stopped here, so the one surface a user reads *inside* the dashboard kept
+#: the old name.
+INITIAL_TITLE = "SURF · Surfboard · Ethereum Mainnet"
+
+#: The row-wise counterpart of the widgets' ``‹ widen``: the right rail holds
+#: more than this terminal's height can show, so some of SIGNALS / IMD MARKET
+#: is scrolled off. It rides the **title bar** rather than a panel title
+#: because a panel title is itself the first thing a short rail loses -- at
+#: 143x31 the composited rail was the ``IMD MARKET`` heading alone, and at
+#: 143x30 not even that. Row 0 cannot be pushed off by anything.
+TALLER_HINT = "‹ taller"
 
 #: Sentinel staleness pushed to the StatusBar when the manager itself failed.
 MANAGER_FAILURE_SECONDS = 999
@@ -229,13 +253,17 @@ def _fmt_degraded(sources) -> str:
     return " · degraded: " + ", ".join(names)
 
 
-def _title_line(data: dict) -> str:
+def _title_line(data: dict, row_hint: bool = False) -> str:
     """Compose the meta row (PRD §4).
 
     Ordered by what must survive a narrow terminal: warnings before the
     version tail, because ``#title-bar`` is one row high and the tail is what
     gets clipped. Parity renders with the em-dash fallback rather than a
     zero: a dead market source must never read as perfect parity.
+
+    ``row_hint`` is the height counterpart of a widget's ``‹ widen`` and goes
+    in front of the version tail for the same reason the warnings do -- it is
+    a statement about missing content, and the tail is not.
     """
     feed_age = _fmt_age(data.get("feed_last_post_age_s"))
     line = (
@@ -248,6 +276,8 @@ def _title_line(data: dict) -> str:
         line += " · [yellow]⚠ LP owner changed[/]"
 
     line += _fmt_degraded(data.get("degraded"))
+    if row_hint:
+        line += f" · [yellow]{TALLER_HINT}[/]"
     # Plain, unmarked version tail: the StatusBar already carries the dim
     # version, and markup here would only complicate every assertion on the
     # end of this string.
@@ -256,7 +286,7 @@ def _title_line(data: dict) -> str:
 
 
 class SurfScreen(RefreshGuard, Screen):
-    """surfsurf.eth Mission Control dashboard."""
+    """surfsurf.eth Surfboard dashboard."""
 
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
@@ -283,18 +313,27 @@ class SurfScreen(RefreshGuard, Screen):
     # taller terminal adds lands in the feed. `#bottom-row` is `auto`: the
     # NFT panel has eight lines and used to be handed half the slack.
     #
-    # SurfSignals is `auto` inside the rail (a title plus six detector rows);
-    # SurfMarket takes the rail's remainder. Giving *signals* the remainder
-    # instead would push the market off the bottom of a short terminal, and
-    # any vertical padding on either costs the sixth detector row -- BURN --
+    # SurfSignals and SurfMarket are BOTH `auto` inside the rail: a title
+    # plus six detector rows, and seven market rows. Neither may be `1fr`.
+    # SurfMarket was, and a `1fr` child cannot overflow its scroll container
+    # -- it shrinks -- so the rail's `overflow-y: auto` never fired for it
+    # and the market shed one row per terminal row from 35 down, reaching
+    # "title only" at 31 and nothing at all at 30, with no scrollbar and no
+    # marker. Two `auto` children give the rail a fixed 15-row content
+    # height, which is what makes the overflow, the scrollbar and the title
+    # bar's `‹ taller` all fire on the same row that the first line is lost.
+    # Any vertical padding on either costs the sixth detector row -- BURN --
     # while the panel still looks complete. tests/test_surf_registration.py
     # asserts all six reach the compositor.
     #
-    # The rail scrolls (`overflow-y: auto`) purely as the short-terminal
-    # guard: sizing the rows to their content means the rail is only as tall
-    # as the middle row, so below ~29 terminal rows BURN no longer fits. No
-    # scrollbar is drawn at any normal height; when one is, it is what makes
-    # that loss visible instead of silent.
+    # The rail scrolls (`overflow-y: auto`, at the stylesheet-wide
+    # `scrollbar-size: 1 1`) as the short-terminal guard: sizing the rows to
+    # their content means the rail is only as tall as the middle row, so
+    # below 35 terminal rows its 15 lines no longer fit. Scrolling is the
+    # *affordance* -- nothing is dropped, it is all still reachable. The
+    # *advertisement* is `TALLER_HINT` on the title bar, because a two-cell
+    # scrollbar in a gutter names nothing, and at very short heights Textual
+    # paints it outside the rail's own rectangle.
     DEFAULT_CSS = """
     SurfScreen #title-bar {
         width: 100%;
@@ -326,6 +365,7 @@ class SurfScreen(RefreshGuard, Screen):
         width: 2fr;
         height: 1fr;
         overflow-y: auto;
+        scrollbar-size: 1 1;
     }
     SurfScreen SurfSignals {
         width: 1fr;
@@ -334,7 +374,7 @@ class SurfScreen(RefreshGuard, Screen):
     }
     SurfScreen SurfMarket {
         width: 1fr;
-        height: 1fr;
+        height: auto;
         padding: 0 1;
     }
     SurfScreen #separator {
@@ -366,6 +406,11 @@ class SurfScreen(RefreshGuard, Screen):
         self._refresh_timer = None
         #: Which widget owns the middle-left slot: "feed" or "activity".
         self._active_view: str = "feed"
+        #: Last payload the title bar was built from, kept so a resize can
+        #: rebuild the line with (or without) the row marker at no cost and
+        #: without a refetch. ``None`` until the first payload lands, which
+        #: is also the degraded-manager state -- see ``_render_title``.
+        self._title_data: dict | None = None
 
     # ------------------------------------------------------------------
     # Actions / bindings
@@ -443,6 +488,45 @@ class SurfScreen(RefreshGuard, Screen):
             self._refresh_timer.stop()
             self._refresh_timer = None
 
+    def on_resize(self, _event=None) -> None:
+        """Keep the row marker honest when the terminal changes height.
+
+        Deferred to after the next refresh: the ``Resize`` message arrives
+        before the rail has been re-laid-out, so reading its scroll state
+        here would answer for the *previous* height and the marker would
+        lag one resize behind -- lit on a terminal that now fits, dark on
+        one that no longer does. Both are worse than no marker.
+        """
+        self.call_after_refresh(self._render_title)
+
+    def _rail_is_cut(self) -> bool:
+        """Does the right rail hold more than this height can show?
+
+        ``show_vertical_scrollbar`` is the rail's own answer to that question
+        and is what the layout already turns the loss into; asking it rather
+        than re-deriving the arithmetic keeps the marker and the scrollbar
+        from ever disagreeing.
+        """
+        try:
+            return bool(self.query_one("#surf-right-rail").show_vertical_scrollbar)
+        except Exception:  # noqa: BLE001 -- not composed yet, or torn down
+            return False
+
+    def _render_title(self) -> None:
+        """(Re)compose the title bar from the last payload plus the marker."""
+        cut = self._rail_is_cut()
+        if self._title_data is None:
+            # No payload yet -- or the manager raised and there never will
+            # be one. INITIAL_TITLE carries no version tail, so the marker
+            # simply goes on the end.
+            line = INITIAL_TITLE + (f" · [yellow]{TALLER_HINT}[/]" if cut else "")
+        else:
+            line = _title_line(self._title_data, row_hint=cut)
+        try:
+            self.query_one("#title-bar", Static).update(line)
+        except Exception as exc:  # noqa: BLE001 -- a title must never crash
+            logger.debug("Failed to update title bar: %s", exc)
+
     # ------------------------------------------------------------------
     # Refresh flow
     # ------------------------------------------------------------------
@@ -472,11 +556,10 @@ class SurfScreen(RefreshGuard, Screen):
             logger.debug("surf refresh returned %r, not a dict", type(data))
             return
 
-        # Title bar
-        try:
-            self.query_one("#title-bar", Static).update(_title_line(data))
-        except Exception as exc:
-            logger.debug("Failed to update title bar: %s", exc)
+        # Title bar. The payload is kept so a later resize can re-compose
+        # this same line with or without the row marker, without refetching.
+        self._title_data = data
+        self._render_title()
 
         # Hero (the full-width top row)
         try:

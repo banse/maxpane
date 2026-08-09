@@ -20,7 +20,7 @@ from textual.app import App
 
 from maxpane_dashboard import __version__
 from maxpane_dashboard.data.surf_models import SURF_KEYS
-from maxpane_dashboard.screens.surf import SurfScreen
+from maxpane_dashboard.screens.surf import INITIAL_TITLE, TALLER_HINT, SurfScreen
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surf import (
     SurfDevActivity,
@@ -399,6 +399,26 @@ def test_bindings_are_refresh_and_the_view_toggle():
     assert keys == {"r", "c"}
 
 
+def test_the_initial_title_names_the_dashboard_the_menu_names():
+    """The title bar is the only place the name is read *inside* the app.
+
+    Derived from ``GAMES``, never a second literal: the menu row and the
+    screen's own title must not be able to drift apart again. They did --
+    the rename reached the menu, the README and CLAUDE.md and stopped at
+    ``INITIAL_TITLE``, so pressing the menu key opened a screen still
+    titled with the old name for the whole first fetch, and permanently on
+    the degraded path (``_title_line`` is what replaces it, and a manager
+    that raises never reaches it).
+    """
+    from maxpane_dashboard.screens.game_select import GAMES
+
+    name = next(row[2] for row in GAMES if row[1] == "surf")
+    assert name in INITIAL_TITLE, (
+        f"the menu calls this dashboard {name!r}; its own title bar says "
+        f"{INITIAL_TITLE!r}"
+    )
+
+
 # -- mount ---------------------------------------------------------------
 
 
@@ -630,10 +650,16 @@ async def test_screen_survives_manager_exception():
         assert "updated 999s ago" in rendered
         assert "3 errors" in rendered   # manager's _error_count is surfaced
 
-        # The title bar was not half-overwritten with a broken frame.
-        assert "Mission Control" in _plain(screen.query_one("#title-bar"))
-        # Every widget is still mounted and rendering.
+        # The title bar was not half-overwritten with a broken frame -- and
+        # it still names the dashboard the menu names. This is the *only*
+        # path on which ``INITIAL_TITLE`` is what the user reads for good
+        # (``_title_line`` never runs), so the name has to be right here.
+        # Composited, not the content string: the title bar is centred and
+        # one row high, and a name that never reaches a pixel is not a name.
         text = _screen_text(app)
+        assert INITIAL_TITLE in text.split("\n")[0]
+        assert "Mission Control" not in text
+        # Every widget is still mounted and rendering.
         assert "SIGNALS" in text
         assert "IDMD NFT" in text
 
@@ -1008,6 +1034,135 @@ async def test_a_terminal_too_short_for_six_detectors_says_so():
         )
         assert screen.query_one(_RAIL).show_vertical_scrollbar is True, (
             "a detector row was dropped with nothing on screen to say so"
+        )
+
+
+#: What the market panel exists to show, as composited fragments.  Matched
+#: inside the panel's own rectangle and nowhere else: "parity" is also in the
+#: title bar and "supply" in the hero, so a whole-screen match would keep
+#: reading the market as present long after it had gone.
+_MARKET_FIELDS = ("$0.7074", "vol 24h", "parity", "price ", "supply")
+
+
+def _visible_panel(app, widget, clip) -> str:
+    """Composited text of *widget*'s rectangle, intersected with *clip*'s.
+
+    Two things ``_region_text`` below does not do, both of which this sweep
+    needs.  It assumes the whole region is on-screen, and at these heights
+    the market's region starts *below* the last composited row -- which is
+    the failure being measured, so it has to clip rather than raise.  And a
+    widget inside a scroll container keeps its full region even when the
+    container paints only part of it, so without intersecting the rail's
+    rectangle this would read the separator and the NFT panel underneath and
+    call them "the market".
+    """
+    lines = _screen_text(app).split("\n")
+    region = widget.region.intersection(clip.region)
+    return "\n".join(
+        lines[y][region.x : region.x + region.width]
+        for y in range(region.y, min(region.y + region.height, len(lines)))
+    )
+
+
+async def test_a_short_terminal_never_sheds_a_market_row_in_silence():
+    """The row-wise half of the ``‹ widen`` contract, swept height by height.
+
+    ``SurfMarket`` was ``height: 1fr`` inside the ``1fr`` rail, and a ``1fr``
+    child cannot overflow its scroll container -- it shrinks.  So the rail's
+    ``overflow-y: auto`` never fired *for the market*, and the panel shed one
+    row per terminal row from 35 down: at 143x31 the composited rail was the
+    ``IMD MARKET`` title and nothing else, at 143x30 not even that, with no
+    scrollbar, no marker and no other trace anywhere on screen.  The layout
+    this replaced rendered all five fields at the same 143x30, so it was a
+    regression, and no surf test rendered below 40 rows to catch it.
+
+    The contract asserted here is not "everything always fits" -- at 28 rows
+    it cannot.  It is that a height which costs the market a row must light
+    the row marker on the **title bar**: row 0, the one row a short terminal
+    can never push off, unlike the panel titles themselves.
+    """
+    for height in range(40, 27, -1):
+        async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, height) as (app, screen, _p):
+            panel = _visible_panel(
+                app, screen.query_one(SurfMarket), screen.query_one(_RAIL)
+            )
+            missing = [field for field in _MARKET_FIELDS if field not in panel]
+            lit = TALLER_HINT in _screen_text(app).split("\n")[0]
+            if missing:
+                assert lit, (
+                    f"at {SURF_FULL_LAYOUT_COLUMNS}x{height} the market lost "
+                    f"{missing} with nothing on screen to say so"
+                )
+            else:
+                # The two must move on the same row, not merely both exist:
+                # the rail's fixed fifteen-line content height is what makes
+                # "a line went off" and "the rail overflows" the same event.
+                assert not lit, (
+                    f"at {SURF_FULL_LAYOUT_COLUMNS}x{height} the whole market "
+                    "is composited but the row marker is lit anyway"
+                )
+
+
+async def test_the_row_marker_is_dark_on_a_terminal_that_fits_everything():
+    """The other half: a marker that is always on says nothing.
+
+    Paired with the sweep above -- that one alone is satisfied by a hint
+    welded permanently to the title bar, which is the failure mode this
+    codebase keeps recording.
+    """
+    for height in (46, 60):
+        async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, height) as (app, screen, _p):
+            panel = _visible_panel(
+                app, screen.query_one(SurfMarket), screen.query_one(_RAIL)
+            )
+            assert all(field in panel for field in _MARKET_FIELDS)
+            assert TALLER_HINT not in _screen_text(app), (
+                f"the row marker is lit at {SURF_FULL_LAYOUT_COLUMNS}x{height}, "
+                "where the whole rail fits"
+            )
+
+
+async def test_the_row_loss_is_advertised_in_words_not_only_by_a_scrollbar():
+    """143x30: the height the reviewers measured the whole market missing at.
+
+    The rail's two-cell scrollbar is the only thing that ever said anything
+    here, and it said it six rows too late (it first appeared at 29, by which
+    point every market field had been gone since 31) and in the wrong place:
+    at 143x20 it paints on the NFT panel, rows below the rail it belongs to.
+    A word on the title bar is the advertisement; the scrollbar is the
+    affordance that gets the content back.
+    """
+    async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, 30) as (app, screen, _p):
+        assert TALLER_HINT in _screen_text(app).split("\n")[0]
+        # ...and the content is still reachable, not dropped: the rail
+        # scrolls rather than the market silently shrinking to nothing.
+        assert screen.query_one(_RAIL).show_vertical_scrollbar is True
+        assert screen.query_one(SurfMarket).region.height == 7, (
+            "the market gave its rows back to the rail again"
+        )
+
+
+async def test_the_row_marker_follows_a_live_resize_in_both_directions():
+    """Dragging the window is the common case, and it refetches nothing.
+
+    The title bar is composed from the last payload, so without a resize
+    hook the marker only corrects itself on the next 30-second poll: half a
+    minute of a lit marker on a terminal that now fits, or -- worse -- of a
+    dark one on a terminal that no longer does.
+    """
+    async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, 46) as (app, _screen, pilot):
+        assert TALLER_HINT not in _screen_text(app).split("\n")[0]
+
+        await pilot.resize_terminal(SURF_FULL_LAYOUT_COLUMNS, 30)
+        await pilot.pause()
+        assert TALLER_HINT in _screen_text(app).split("\n")[0], (
+            "the terminal shrank past the rail and the marker stayed dark"
+        )
+
+        await pilot.resize_terminal(SURF_FULL_LAYOUT_COLUMNS, 46)
+        await pilot.pause()
+        assert TALLER_HINT not in _screen_text(app).split("\n")[0], (
+            "the terminal grew back and the marker stayed lit"
         )
 
 
