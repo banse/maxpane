@@ -564,6 +564,135 @@ class SurfCache:
         """
         self._baselines = self._sanitise_baselines(baselines, self._now(now))
 
+    # -- persistence ---------------------------------------------------------
+
+    def save(self, path: str | None = None) -> None:
+        """Persist to disk via atomic temp-then-rename. Never raises.
+
+        The tier marks are deliberately **not** persisted: after a restart every
+        tier is due, because the chain moved while the process was down and the
+        announce nonce is the one number the dashboard exists to be early on.
+        """
+        target = str(path or self.path)
+        payload: dict[str, Any] = {
+            "version": _SCHEMA_VERSION,
+            "saved_at": self._now(),
+            "last_good": {
+                slot: entry.to_dict() for slot, entry in self.last_good.items()
+            },
+            "series": {
+                name: [[float(ts), float(v)] for (ts, v) in deq]
+                for name, deq in self.series.items()
+            },
+            "baselines": _jsonable(self._baselines),
+            "burned_cum": float(self.burned_cum),
+            "last_supply": None if self.last_supply is None else float(self.last_supply),
+        }
+        tmp = target + ".tmp"
+        try:
+            os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+            with open(tmp, "w") as handle:
+                json.dump(payload, handle)
+            os.replace(tmp, target)
+            logger.info(
+                "SURF cache saved to %s (%d last-good slots, burned %.0f observed)",
+                target,
+                len(self.last_good),
+                self.burned_cum,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            logger.warning("Failed to save the SURF cache: %s", exc)
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+    def load(self, path: str | None = None, *, now: float | None = None) -> None:
+        """Restore saved state. Silent no-op on a missing or corrupt file.
+
+        Per-section ``try``/``except``: one bad block never costs the others, and
+        nothing here raises into the manager's constructor. Series points are
+        validated one at a time, so a single ``null`` costs that sample rather
+        than every dashboard's startup.
+        """
+        target = str(path or self.path)
+        try:
+            with open(target) as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            logger.info("No SURF cache to load (%s): %s", target, exc)
+            return
+        if not isinstance(payload, dict):
+            logger.warning("SURF cache %s has an unexpected shape, skipping", target)
+            return
+
+        reference = self._now(now)
+
+        try:
+            for slot, data in (payload.get("last_good") or {}).items():
+                if slot not in SLOTS or not isinstance(data, dict):
+                    continue
+                try:
+                    self.last_good[str(slot)] = LastGood.from_dict(data)
+                except Exception as exc:            # noqa: BLE001
+                    logger.debug("Skipping bad SURF last-good slot %s: %s", slot, exc)
+        except Exception as exc:                    # noqa: BLE001
+            logger.warning("SURF last_good block bad: %s", exc)
+
+        try:
+            skipped = 0
+            for name, points in (payload.get("series") or {}).items():
+                deq = self.series.get(str(name))
+                if deq is None:
+                    continue
+                good, dropped = coerce_points(
+                    points,
+                    now=reference,
+                    allow_negative=SERIES_ALLOW_NEGATIVE.get(str(name), False),
+                )
+                skipped += dropped
+                deq.clear()
+                deq.extend(good)
+            if skipped:
+                logger.warning(
+                    "Skipped %d unusable point(s) while loading the SURF cache %s",
+                    skipped,
+                    target,
+                )
+        except Exception as exc:                    # noqa: BLE001
+            logger.warning("SURF series block bad: %s", exc)
+
+        try:
+            self._baselines = self._sanitise_baselines(
+                payload.get("baselines"), reference
+            )
+        except Exception as exc:                    # noqa: BLE001
+            logger.warning("SURF baselines block bad: %s", exc)
+            self._baselines = {}
+
+        try:
+            burned = float(payload.get("burned_cum") or 0.0)
+            self.burned_cum = burned if math.isfinite(burned) and burned >= 0 else 0.0
+        except (TypeError, ValueError):
+            self.burned_cum = 0.0
+
+        try:
+            supply = payload.get("last_supply")
+            value = None if supply is None else float(supply)
+            self.last_supply = (
+                value if value is not None and math.isfinite(value) and value >= 0
+                else None
+            )
+        except (TypeError, ValueError):
+            self.last_supply = None
+
+        logger.info(
+            "Loaded the SURF cache from %s: %d last-good slots, %d baselines",
+            target,
+            len(self.last_good),
+            len(self._baselines),
+        )
+
 
 __all__ = [
     "BASELINE_DETAIL_CAP",

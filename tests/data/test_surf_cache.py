@@ -568,3 +568,236 @@ def test_a_numeric_string_is_not_a_reading(tmp_path):
     c.record_supply(1000.0)
     assert c.record_supply("1000") is None
     assert c.last_supply == 1000.0
+
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+HOSTILE = [
+    [1_786_100_000.0, 0.71],       # good
+    [1_786_103_600.0, None],       # the reported crash: a null in the file
+    "not a point",
+    # A **non-numeric** string, matching `tests/data/test_cache_corruption.py`'s
+    # own hostile fixture. `"0.72"` would be the wrong choice and it is the one
+    # this fixture used to carry: `coerce_point` does `float(pt[1])` inside a
+    # `except (TypeError, ValueError)`, so `float("0.72")` *succeeds* and the
+    # point survives — three points back, not two, and the assertion below fails
+    # for a reason that looks like a validator bug. It is not one. Do **not**
+    # "fix" `data/series_points.py` to reject numeric strings: it is a leaf
+    # shared by all eight dashboards, no surf work package owns it, and
+    # tightening it is a repo-wide change to report to the plan owner.
+    [1_786_107_200.0, "banana"],   # a string that is not a number
+    [1_786_110_800.0, float("nan")],
+    [0, 0.73],                     # non-positive timestamp
+    [1_786_114_400.0, 0.74],       # good
+]
+GOOD = [[1_786_100_000.0, 0.71], [1_786_114_400.0, 0.74]]
+
+
+def test_round_trip_restores_everything_that_matters(tmp_path):
+    clock = FakeClock()
+    path = str(tmp_path / "surf_cache.json")
+    c = SurfCache(path=path, clock=clock)
+
+    c.store_last_good(SLOT_MARKET, {"imd_price_usd": IMD_PRICE_USD})
+    c.sample_series(clock.t, imd_supply=IMD_SUPPLY, imd_price_usd=IMD_PRICE_USD,
+                    parity_pct=PARITY_PCT)
+    c.set_baselines(_baselines())
+    c.record_supply(IMD_SUPPLY)
+    c.record_supply(IMD_SUPPLY - 15_745.0)
+    c.save()
+
+    restored = SurfCache(path=path, clock=clock)
+    restored.load()
+
+    assert restored.get_last_good(SLOT_MARKET).payload == {"imd_price_usd": IMD_PRICE_USD}
+    assert restored.get_last_good(SLOT_MARKET).ts == clock.t
+    assert restored.get_series(SERIES_IMD_SUPPLY) == c.get_series(SERIES_IMD_SUPPLY)
+    assert restored.get_series(SERIES_PARITY_PCT) == [[_bucket(clock.t), PARITY_PCT]]
+    assert restored.get_baselines() == _baselines()
+    assert restored.observed_burn_total() == pytest.approx(15_745.0)
+    assert restored.last_supply == pytest.approx(IMD_SUPPLY - 15_745.0)
+
+
+def _bucket(ts: float) -> float:
+    return float(int(ts // 3600) * 3600)
+
+
+def test_a_restart_neither_resurrects_nor_loses_a_fired_stamp(tmp_path):
+    """PRD §3: the FIRED display must survive a restart with its real age.
+
+    Both halves of the entry have to survive: the ``ts`` is what dates the row
+    (``age_s``, and whether ``FIRED_TTL_S`` has passed) and the ``detail`` is
+    what the relaxed ``last: …`` clause quotes. Losing either turns a persisted
+    FIRED into a blank one.
+    """
+    clock = FakeClock()
+    path = str(tmp_path / "surf_cache.json")
+    fired_at = clock.t - 7_200.0             # fired two hours ago
+
+    c = SurfCache(path=path, clock=clock)
+    c.set_baselines(
+        {
+            "announce_nonce": 14,
+            BASELINE_FIRED_KEY: {"post": {"ts": fired_at, "detail": '#14 "soon"'}},
+        }
+    )
+    c.save()
+
+    restored = SurfCache(path=path, clock=clock)
+    restored.load()
+    assert restored.get_baselines()[BASELINE_FIRED_KEY]["post"] == {
+        "ts": fired_at,
+        "detail": '#14 "soon"',
+    }
+    # And the *nonce* baseline came back too, so the signal cannot re-fire on
+    # the same post.
+    assert restored.get_baselines()["announce_nonce"] == 14
+
+
+def test_every_tier_is_due_again_after_a_restart(tmp_path):
+    clock = FakeClock()
+    path = str(tmp_path / "surf_cache.json")
+    c = SurfCache(path=path, clock=clock)
+    for tier in TIERS:
+        c.mark_fetched(tier)
+    c.save()
+
+    restored = SurfCache(path=path, clock=clock)
+    restored.load()
+    assert set(restored.tiers_due()) == set(TIERS)
+
+
+def test_a_null_poisoned_series_costs_only_that_point(tmp_path, caplog):
+    """One null used to abort startup for *every* dashboard."""
+    path = tmp_path / "surf_cache.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "series": {
+                    SERIES_IMD_PRICE_USD: HOSTILE,
+                    SERIES_PARITY_PCT: [[1_786_100_000.0, -2.7495188342040167]],
+                },
+            }
+        )
+    )
+    c = SurfCache(path=str(path), clock=FakeClock())
+    with caplog.at_level("WARNING"):
+        c.load()                                     # must not raise
+
+    assert c.get_series(SERIES_IMD_PRICE_USD) == GOOD
+    assert c.get_series(SERIES_PARITY_PCT) == [[1_786_100_000.0, -2.7495188342040167]]
+    assert "Skipped" in caplog.text
+
+
+def test_a_negative_parity_point_survives_but_a_negative_price_does_not(tmp_path):
+    path = tmp_path / "surf_cache.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "series": {
+                    SERIES_PARITY_PCT: [[1_786_100_000.0, -2.75]],
+                    SERIES_IMD_PRICE_USD: [[1_786_100_000.0, -0.71]],
+                },
+            }
+        )
+    )
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    assert c.get_series(SERIES_PARITY_PCT) == [[1_786_100_000.0, -2.75]]
+    assert c.get_series(SERIES_IMD_PRICE_USD) == []
+
+
+def test_corrupt_missing_and_hostile_files_load_empty_not_raise(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json at all")
+    SurfCache(path=str(bad), clock=FakeClock()).load()          # no raise
+
+    SurfCache(path=str(tmp_path / "nope.json"), clock=FakeClock()).load()
+
+    listy = tmp_path / "list.json"
+    listy.write_text("[1, 2, 3]")
+    c = SurfCache(path=str(listy), clock=FakeClock())
+    c.load()
+    assert c.get_baselines() == {}
+    assert c.get_last_good(SLOT_CHAIN) is None
+
+
+def test_one_bad_section_never_costs_the_others(tmp_path):
+    path = tmp_path / "surf_cache.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "last_good": "not a mapping",
+                "baselines": {"announce_nonce": 14},
+                "series": {SERIES_IMD_SUPPLY: [[1_786_100_000.0, IMD_SUPPLY]]},
+                "burned_cum": "lots",
+                "last_supply": IMD_SUPPLY,
+            }
+        )
+    )
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    # No `fired` key: `_sanitise_baselines` emits one only when the input had
+    # one, and this file's `baselines` section does not. Seeding it
+    # unconditionally would be the wrong repair — `test_set_baselines_replaces_wholesale`
+    # asserts `{"announce_nonce": 15}` exactly, and a manufactured empty `fired`
+    # would also claim a store the file never held.
+    assert c.get_baselines() == {"announce_nonce": 14}
+    assert c.get_series(SERIES_IMD_SUPPLY) == [[1_786_100_000.0, IMD_SUPPLY]]
+    assert c.burned_cum == 0.0
+    assert c.last_supply == pytest.approx(IMD_SUPPLY)
+
+
+def test_save_creates_its_directory_is_atomic_and_never_raises(tmp_path):
+    nested = tmp_path / "deep" / "surf_cache.json"
+    c = SurfCache(path=str(nested), clock=FakeClock())
+    c.set_baselines({"announce_nonce": 14})
+    c.save()
+    assert nested.exists()
+    assert not (tmp_path / "deep" / "surf_cache.json.tmp").exists()
+    json.loads(nested.read_text())
+
+    SurfCache(path="/proc/definitely/not/writable.json", clock=FakeClock()).save()
+
+
+def test_a_non_finite_value_is_nulled_on_the_way_to_disk_never_fabricated(tmp_path):
+    path = tmp_path / "surf_cache.json"
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.store_last_good(SLOT_CHAIN, {"imd_supply": float("inf"), "block": 25_707_780})
+    c.save()
+    payload = json.loads(path.read_text())
+    assert payload["last_good"][SLOT_CHAIN]["payload"] == {
+        "imd_supply": None,
+        "block": 25_707_780,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Guardrails
+# ---------------------------------------------------------------------------
+
+
+def test_the_cache_imports_no_client_no_analytics_no_network():
+    from pathlib import Path as _Path
+
+    import maxpane_dashboard.data.surf_cache as mod
+
+    src = _Path(mod.__file__).read_text()
+    project_imports = [
+        line.strip()
+        for line in src.splitlines()
+        if line.strip().startswith(("import maxpane", "from maxpane"))
+    ]
+    assert project_imports == [
+        "from maxpane_dashboard.data.series_points import (",
+    ]
+    for banned in ("requests", "httpx", "aiohttp", "urllib", "socket",
+                   "surf_client", "surf_signals", "surf_manager", "textual"):
+        assert f"import {banned}" not in src
+    # It must not know the FIRED window: relaxing a FIRED is build_signals' call.
+    assert "FIRED_TTL_S" not in src
