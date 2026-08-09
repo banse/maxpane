@@ -125,16 +125,35 @@ def _addr_word(addr: str) -> str:
     return addr[2:].lower().rjust(64, "0")
 
 
-def _mint_log(to_addr: str, amount_wei: int, *, ts: float, tx: str) -> dict:
-    """A raw ``Transfer(0x0 -> dev wallet)`` log, exactly as WP1 passes it through."""
-    return {
+def _mint_log(
+    to_addr: str,
+    amount_wei: int,
+    *,
+    ts: float,
+    tx: str,
+    block: int = BLOCK,
+    log_index: int = 0,
+    stamped: bool = True,
+) -> dict:
+    """A raw ``Transfer(0x0 -> dev wallet)`` log, exactly as WP1 passes it through.
+
+    ``stamped=False`` models the endpoints that omit ``blockTimestamp`` — drpc
+    does, tenderly does not, and both are in the logs pool. That is the sweep
+    where every row in the group ends up carrying the same observation clock,
+    so ``(block, log_index)`` is the only thing left that orders them.
+    """
+    log = {
         "address": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7".lower(),
         "topics": [TOPIC_TRANSFER, "0x" + "0" * 64, "0x" + _addr_word(to_addr)],
         "data": "0x" + _word(amount_wei),
-        "blockNumber": hex(BLOCK),
+        "blockNumber": hex(block),
         "blockTimestamp": hex(int(ts)),
+        "logIndex": hex(log_index),
         "transactionHash": tx,
     }
+    if not stamped:
+        del log["blockTimestamp"]
+    return log
 
 
 def _v4_init_log(hooks: str, *, ts: float, tx: str) -> dict:
@@ -1432,6 +1451,51 @@ async def test_a_failed_seaport_filter_serves_last_good_sales_not_an_empty_list(
 
     assert [row["token_id"] for row in second["nft_last_sales"]] == [1751, 354]
     assert SOURCE_LOGS in second["degraded"]
+
+
+async def test_a_new_mint_is_not_invisible_when_the_endpoint_omits_blocktimestamp(
+    tmp_path,
+):
+    """End to end, through the decoder that produces the ambiguity.
+
+    ``_log_ts`` falls back to the observation clock when the endpoint sends no
+    ``blockTimestamp``, so every row of that sweep carries one identical stamp.
+    ``_newest``'s ``max`` then returned the FIRST maximal row — the oldest, in
+    the ascending order ``eth_getLogs`` serves — which is exactly the row the
+    baseline already holds, so a genuinely new mint sitting behind it was
+    invisible. It surfaced hours later, when the old row rolled out of the
+    window, and fired then: the wrong event at the wrong time on the detector
+    the PRD sells as the earliest of the six.
+
+    Every log fixture in this file carries an explicit ``blockTimestamp``; this
+    one deliberately does not, because that is where the bug lives.
+    """
+    clock = FakeClock()
+    seen = _mint_log(OPS_WALLET, 10_000 * 10**18, ts=0.0, tx="0x" + "c1" * 32,
+                     block=BLOCK, log_index=4, stamped=False)
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(seen,), identity_updates=(), v4_initializes=(),
+            seaport_sales=(),
+        )
+    )
+    m = _manager(tmp_path, client=client, clock=clock)
+    first = await m.fetch_and_compute()
+    assert first["sig_bridge_state"] == "ok"        # first sweep seeds, never news
+
+    fresh = _mint_log(OPS_WALLET, 25_000 * 10**18, ts=0.0, tx="0x" + "c2" * 32,
+                      block=BLOCK + 3, log_index=1, stamped=False)
+    client._returns["fetch_recent_logs"] = LogWindow(
+        from_block=BLOCK - LOG_WINDOW, to_block=BLOCK + 3,
+        bridge_mints=(seen, fresh),                 # ascending, new row last
+        identity_updates=(), v4_initializes=(), seaport_sales=(),
+    )
+    clock.advance(120.0)
+    second = await m.fetch_and_compute()
+
+    assert second["sig_bridge_state"] == "fired"
+    assert "25,000" in second["sig_bridge_detail"]
 
 
 async def test_a_failed_identity_filter_is_unavailable_not_zero_writes(tmp_path):

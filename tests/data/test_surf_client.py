@@ -2034,7 +2034,16 @@ def test_seaport_address_is_labeled():
 # Field-for-field, what WP4's decoders index into.  Keep in sync with the
 # hand-over table in the WP1 header; a failure here is a WP1 defect, and a
 # change here needs WP4's agreement.
-_REQUIRED_LOG_FIELDS = {"topics", "data", "blockNumber", "transactionHash"}
+#
+# ``logIndex`` joined this set when the ordering fix landed. ``ts`` alone is not
+# a total order over an event stream — two events in one block share a
+# timestamp, and a whole sweep shares one when the endpoint omits
+# ``blockTimestamp`` — so WP4 orders on ``(ts, blockNumber, logIndex)``. A
+# client that dropped ``logIndex`` would leave a genuinely new event invisible
+# behind an equally-stamped one.
+_REQUIRED_LOG_FIELDS = {
+    "topics", "data", "blockNumber", "logIndex", "transactionHash",
+}
 
 
 def _rich_log(topic0: str, address: str, **extra: Any) -> dict:

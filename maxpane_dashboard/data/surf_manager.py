@@ -400,17 +400,40 @@ def _log_ts(log: Any, now: float) -> float:
     """A log's block timestamp, or *now* as the first-seen time.
 
     Some of the keyless logs endpoints return ``blockTimestamp`` on the log
-    object and some do not, and resolving a block header per log is a round trip
-    per event on a pool that already rate-limits. Falling back to the observation
-    clock is safe for WP2's detectors — they key on ``tx_hash`` first, so a
-    re-observed row can never re-fire — but it does mean a FIRED age can read as
-    "just now" for an event that landed a few minutes earlier. See Open issues.
+    object and some do not (drpc does not; tenderly does), and resolving a block
+    header per log is a round trip per event on a pool that already rate-limits.
+    Falling back to the observation clock is safe for WP2's detectors — they key
+    on ``tx_hash`` first, so a re-observed row can never re-fire — but it does
+    mean a FIRED age can read as "just now" for an event that landed a few
+    minutes earlier. See Open issues.
+
+    What the fallback does **not** give you is an ordering: a whole group
+    stamped with one clock has no ``ts`` order at all. That is why every row
+    carries :func:`_log_position` beside this stamp, and why WP2 orders on
+    ``(ts, block, log_index)`` rather than on ``ts`` alone.
     """
     if isinstance(log, dict):
         stamp = _hex_int(log.get("blockTimestamp") or log.get("timestamp"))
         if stamp:
             return float(stamp)
     return float(now)
+
+
+def _log_position(log: Any) -> dict[str, int | None]:
+    """``{"block": …, "log_index": …}`` — a log's place in the chain's own order.
+
+    The client preserves both fields verbatim and the decoders used to discard
+    them, which left ``ts`` as the only ordering key over an event stream — and
+    ``ts`` is not a total order over these rows. Two events in one block share a
+    timestamp, and an endpoint that omits ``blockTimestamp`` makes every row in
+    the sweep share one. ``None`` for either field when the endpoint did not
+    send it; WP2 sorts those below a row that has one rather than ahead of it.
+    """
+    row = log if isinstance(log, dict) else {}
+    return {
+        "block": _hex_int(row.get("blockNumber")),
+        "log_index": _hex_int(row.get("logIndex")),
+    }
 
 
 def _opt_float(value: Any) -> float | None:
@@ -1016,6 +1039,7 @@ class SurfManager:
                     "tx_hash": str(log.get("transactionHash") or ""),
                     "amount": _tokens(_hex_int(log.get("data"))),
                     "to_label": KNOWN_LABELS.get(to_addr, ""),
+                    **_log_position(log),
                 }
             )
         return rows
@@ -1049,6 +1073,7 @@ class SurfManager:
                     "ts": _log_ts(log, now),
                     "tx_hash": str((log or {}).get("transactionHash") or ""),
                     "hooks": hooks,
+                    **_log_position(log),
                 }
             )
         return rows

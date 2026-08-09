@@ -848,6 +848,118 @@ def test_burn_outage_is_none():
     ) == (None, "supply unavailable", None)
 
 
+# --- ordering: equal timestamps must not hide a genuinely new event ---------
+#
+# Two ways a stream arrives with equal ``ts`` values, and both are ordinary:
+#
+# 1. ``_log_ts``'s fallback. Some keyless logs endpoints omit ``blockTimestamp``
+#    (drpc does; tenderly does not), so every row in that sweep is stamped with
+#    the same observation clock.
+# 2. Two events in the SAME BLOCK carry identical real timestamps. Two OFT mints
+#    in one block is nothing unusual — 2026-08-07's pair landed 156 s apart, but
+#    nothing makes that a rule.
+#
+# Under either, ``max(rows, key=ts)`` returns the FIRST maximal element, which
+# for the ascending order ``eth_getLogs`` serves is the OLDEST row — the one
+# already recorded as the baseline. The new event behind it was structurally
+# invisible, and then fired hours later when the old row rolled out of the
+# window. BRIDGE STAGE is documented as the earliest of the six detectors, so
+# it is the one with the most to lose.
+
+
+def _mint(tx: str, *, ts: float, block: int, log_index: int, amount: float = 1000.0) -> dict:
+    """A decoded bridge-mint row in the manager's shape, ordering fields and all."""
+    return {
+        "ts": ts, "tx_hash": tx, "amount": amount, "to_label": "frenpet.eth",
+        "block": block, "log_index": log_index,
+    }
+
+
+def test_a_new_mint_behind_an_equally_stamped_row_still_fires():
+    """Trigger 1: the whole group carries one observation stamp."""
+    stamp = NOW - 60.0
+    seen = _mint("0x" + "aa" * 32, ts=stamp, block=25_707_000, log_index=4)
+    fresh = _mint("0x" + "bb" * 32, ts=stamp, block=25_707_010, log_index=1)
+
+    state, detail, _age = _sig(
+        "bridge",
+        _baseline(bridge_tx=seen["tx_hash"], bridge_ts=stamp,
+                  bridge_seq=[seen["block"], seen["log_index"]]),
+        # Ascending, exactly as the endpoint serves it — the new row is LAST.
+        _readings(bridge_mints=[seen, fresh]),
+    )
+    assert state == "fired"
+    assert detail == "mint 1,000 IMD → frenpet.eth"
+
+
+def test_a_second_event_in_the_same_block_still_fires():
+    """Trigger 2: identical REAL timestamps, no fallback involved.
+
+    ``_fresh_event`` required ``ts > base_ts`` strictly, so the second of two
+    events in one block could never fire — not late, never.
+    """
+    stamp = NOW - 60.0
+    seen = _mint("0x" + "aa" * 32, ts=stamp, block=25_707_000, log_index=4)
+    fresh = _mint("0x" + "bb" * 32, ts=stamp, block=25_707_000, log_index=9)
+
+    state, _detail, _age = _sig(
+        "bridge",
+        _baseline(bridge_tx=seen["tx_hash"], bridge_ts=stamp,
+                  bridge_seq=[seen["block"], seen["log_index"]]),
+        _readings(bridge_mints=[seen, fresh]),
+    )
+    assert state == "fired"
+
+
+def test_the_baseline_advances_to_the_truly_newest_of_an_equally_stamped_group():
+    """A baseline pinned to the oldest row re-fires it on the next refresh."""
+    stamp = NOW - 60.0
+    seen = _mint("0x" + "aa" * 32, ts=stamp, block=25_707_000, log_index=4)
+    fresh = _mint("0x" + "bb" * 32, ts=stamp, block=25_707_010, log_index=1)
+
+    _out, advanced = sig.build_signals(
+        _baseline(bridge_tx="", bridge_ts=0.0),
+        _readings(bridge_mints=[seen, fresh]),
+        NOW,
+    )
+    assert advanced["bridge_tx"] == fresh["tx_hash"]
+    assert advanced["bridge_seq"] == [fresh["block"], fresh["log_index"]]
+
+
+def test_a_rolled_window_still_cannot_make_the_second_newest_look_new():
+    """The rule the ordering must not break: losing the newest row is not news."""
+    seen = _mint("0x" + "bb" * 32, ts=NOW - 60.0, block=25_707_010, log_index=1)
+    older = _mint("0x" + "aa" * 32, ts=NOW - 600.0, block=25_707_000, log_index=4)
+
+    state, _detail, _age = _sig(
+        "bridge",
+        _baseline(bridge_tx=seen["tx_hash"], bridge_ts=seen["ts"],
+                  bridge_seq=[seen["block"], seen["log_index"]]),
+        _readings(bridge_mints=[older]),
+    )
+    assert state == "ok"
+
+
+def test_ordering_never_falls_back_to_iteration_order():
+    """Position is not a tie-break, because the streams disagree about it.
+
+    ``eth_getLogs`` serves ascending and ``_bridge_rows`` keeps that order, but
+    ``deploy_events`` is sorted newest-first by the manager before it is handed
+    over. A positional rule would therefore mean opposite things for two streams
+    that share one code path — which is why the tie-break is ``(block, log
+    index)``, both of which the client preserves verbatim.
+    """
+    stamp = NOW - 60.0
+    seen = _mint("0x" + "aa" * 32, ts=stamp, block=25_707_000, log_index=4)
+    fresh = _mint("0x" + "bb" * 32, ts=stamp, block=25_707_010, log_index=1)
+    base = _baseline(bridge_tx=seen["tx_hash"], bridge_ts=stamp,
+                     bridge_seq=[seen["block"], seen["log_index"]])
+
+    for rows in ([seen, fresh], [fresh, seen]):
+        state, _detail, _age = _sig("bridge", base, _readings(bridge_mints=rows))
+        assert state == "fired", rows
+
+
 # --- fix round 2: _advance must coerce imd_supply as strictly as BRIDGE STAGE
 # and BURN read it ----------------------------------------------------------
 #

@@ -175,15 +175,30 @@ _SCALAR_COERCERS: dict[str, Any] = {
     "imd_supply": lambda value: _as_float(value),
 }
 
-#: Event streams: ``reading key -> (tx baseline key, ts baseline key)``.  Two
-#: keys per stream rather than one, so a log window that *rolls* (the newest
-#: row we can still see is older than the one we already saw) cannot look like
-#: a new event.
-BASELINE_EVENT_KEYS: dict[str, tuple[str, str]] = {
-    "bridge_mints": ("bridge_tx", "bridge_ts"),
-    "deploy_events": ("deploy_tx", "deploy_ts"),
-    "v4_hook_pools": ("v4_tx", "v4_ts"),
-    "burn_transfers": ("burn_tx", "burn_ts"),
+#: Event streams: ``reading key -> (tx key, ts key, sequence key)``.  Three
+#: keys per stream rather than one:
+#:
+#: * ``tx`` alone cannot tell a *rolled* window (the newest row we can still
+#:   see is older than the one we already saw) from a new event;
+#: * ``ts`` alone is **not a total order over these rows**, and the ties are
+#:   ordinary rather than exotic.  ``_log_ts`` stamps a whole group with one
+#:   observation clock whenever the endpoint omits ``blockTimestamp`` (drpc
+#:   does; tenderly does not — both are in the logs pool), and two events in
+#:   one block carry identical real timestamps whatever the endpoint sends.
+#:   Under either, ``max(rows, key=ts)`` returns the FIRST maximal row, which
+#:   for the ascending order ``eth_getLogs`` serves is the *oldest* — the one
+#:   the baseline already holds — so a genuinely new event behind it was
+#:   invisible, and then fired hours later when the old row rolled out.
+#: * ``sequence`` is ``[block, log_index]``, which the client preserves
+#:   verbatim on every row and the manager's decoders now carry through.  It is
+#:   a real chain ordering rather than list position: ``deploy_events`` is
+#:   sorted newest-first by the manager while the log streams stay ascending,
+#:   so position means opposite things on one code path.
+BASELINE_EVENT_KEYS: dict[str, tuple[str, str, str]] = {
+    "bridge_mints": ("bridge_tx", "bridge_ts", "bridge_seq"),
+    "deploy_events": ("deploy_tx", "deploy_ts", "deploy_seq"),
+    "v4_hook_pools": ("v4_tx", "v4_ts", "v4_seq"),
+    "burn_transfers": ("burn_tx", "burn_ts", "burn_seq"),
 }
 
 #: Counters that can only go up.  A lagging RPC replica that answers with an
@@ -450,11 +465,59 @@ def _rows(events: Any) -> list[dict]:
     return [row for row in events if isinstance(row, dict)]
 
 
+#: Sorts below every real block/log index, so a row that carries neither orders
+#: under one that does rather than jumping ahead of it.
+_NO_POSITION = -1
+
+
+def _order_key(row: Any) -> tuple[float, int, int]:
+    """``(ts, block, log_index)`` — the total order over one event stream.
+
+    ``ts`` first because it is what a user reads and what the FIRED age is
+    measured from; ``(block, log_index)`` after it because ``ts`` is *not*
+    total over these rows (see :data:`BASELINE_EVENT_KEYS`).  Deliberately not
+    list position: the streams disagree about what position means.
+
+    Rows that carry no chain position — ``deploy_events`` and
+    ``burn_transfers`` come off Blockscout transaction pages, which have no log
+    index — fall back to :data:`_NO_POSITION` for both, so they compare exactly
+    as they did before this key existed.
+    """
+    row = row if isinstance(row, dict) else {}
+    block = _as_int(row.get("block"))
+    log_index = _as_int(row.get("log_index"))
+    return (
+        _as_float(row.get("ts")) or 0.0,
+        _NO_POSITION if block is None else block,
+        _NO_POSITION if log_index is None else log_index,
+    )
+
+
+def _baseline_order_key(base: dict, ts_key: str, seq_key: str) -> tuple[float, int, int]:
+    """The recorded event's order key, from the two baseline entries.
+
+    A baseline written before ``seq_key`` existed — every cache file on disk
+    today — reads back as :data:`_NO_POSITION` for both positions. That is the
+    right direction: a same-``ts`` row with a real position then counts as
+    newer, which is precisely the event the old ordering swallowed, and the
+    ``tx`` check above still stops the recorded row itself from re-firing.
+    """
+    raw = base.get(seq_key)
+    seq = list(raw) if isinstance(raw, (list, tuple)) else []
+    block = _as_int(seq[0]) if len(seq) > 0 else None
+    log_index = _as_int(seq[1]) if len(seq) > 1 else None
+    return (
+        _as_float(base.get(ts_key)) or 0.0,
+        _NO_POSITION if block is None else block,
+        _NO_POSITION if log_index is None else log_index,
+    )
+
+
 def _newest(rows: list[dict]) -> dict | None:
-    """The row with the highest ``ts``; ``None`` for an empty list."""
+    """The row with the highest :func:`_order_key`; ``None`` for an empty list."""
     if not rows:
         return None
-    return max(rows, key=lambda row: _as_float(row.get("ts")) or 0.0)
+    return max(rows, key=_order_key)
 
 
 _ZERO_ADDRESS = "0x" + "0" * 40
@@ -481,7 +544,9 @@ def _event_rows(read_key: str, events: Any) -> list[dict] | None:
     return rows
 
 
-def _fresh_event(base: dict, tx_key: str, ts_key: str, rows: list[dict] | None) -> dict | None:
+def _fresh_event(
+    base: dict, tx_key: str, ts_key: str, seq_key: str, rows: list[dict] | None
+) -> dict | None:
     """The newest event that is genuinely new, or ``None``.
 
     Three ways this returns ``None``, and each one is a bug that would
@@ -491,9 +556,14 @@ def _fresh_event(base: dict, tx_key: str, ts_key: str, rows: list[dict] | None) 
     * the baseline key is **absent** — this is the first successful read of
       this window ever, so it *seeds*.  Without this, an empty cache reports
       every historical event as breaking news on first launch.
-    * the newest row is the one already recorded, or is **older** than it — the
-      log window rolled, and a window that lost its newest row must not make
-      the second-newest look new.
+    * the newest row is the one already recorded, or is **not after** it in
+      :func:`_order_key` — the log window rolled, and a window that lost its
+      newest row must not make the second-newest look new.
+
+    The last comparison is on the whole order key, not on ``ts`` alone.  ``ts``
+    ties are ordinary (see :data:`BASELINE_EVENT_KEYS`), and a strict ``ts >``
+    against a tie means the second of two events **in one block** can never
+    fire — not late, never.
     """
     if not rows:
         return None
@@ -505,8 +575,7 @@ def _fresh_event(base: dict, tx_key: str, ts_key: str, rows: list[dict] | None) 
         return None
     if str(newest.get("tx_hash") or "") == str(seen_tx):
         return None
-    ts = _as_float(newest.get("ts")) or 0.0
-    if ts <= (_as_float(base.get(ts_key)) or 0.0):
+    if _order_key(newest) <= _baseline_order_key(base, ts_key, seq_key):
         return None
     return newest
 
@@ -565,7 +634,7 @@ def _detect_lp(base: dict, read: dict, now: float) -> _Det:
     independently of what this returns.
     """
     hooked = _event_rows("v4_hook_pools", read.get("v4_hook_pools"))
-    launch = _fresh_event(base, "v4_tx", "v4_ts", hooked)
+    launch = _fresh_event(base, *BASELINE_EVENT_KEYS["v4_hook_pools"], hooked)
     if launch is not None:
         hooks = _short_addr(launch.get("hooks"))
         return _fired(f"V4 LAUNCH · hooks {hooks}", _as_float(launch.get("ts")))
@@ -649,7 +718,7 @@ def _detect_deploy(base: dict, read: dict, now: float) -> _Det:
     passed through untouched and escaped at the widget, never here.
     """
     events = _event_rows("deploy_events", read.get("deploy_events"))
-    fresh = _fresh_event(base, "deploy_tx", "deploy_ts", events)
+    fresh = _fresh_event(base, *BASELINE_EVENT_KEYS["deploy_events"], events)
     if fresh is not None:
         label = str(fresh.get("label") or "")
         if str(fresh.get("kind") or "") == "action":
@@ -685,7 +754,7 @@ def _detect_bridge(base: dict, read: dict, now: float) -> _Det:
     is a WATCH, and it is only computed when both supply reads succeeded.
     """
     mints = _event_rows("bridge_mints", read.get("bridge_mints"))
-    fresh = _fresh_event(base, "bridge_tx", "bridge_ts", mints)
+    fresh = _fresh_event(base, *BASELINE_EVENT_KEYS["bridge_mints"], mints)
     if fresh is not None:
         amount = _as_float(fresh.get("amount"))
         rendered = _fmt_amount(amount) if amount is not None else "?"
@@ -723,7 +792,7 @@ def _detect_burn(base: dict, read: dict, now: float) -> _Det:
         return _fired(f"burn {_fmt_amount(base_supply - supply)} IMD", now)
 
     transfers = _event_rows("burn_transfers", read.get("burn_transfers"))
-    fresh = _fresh_event(base, "burn_tx", "burn_ts", transfers)
+    fresh = _fresh_event(base, *BASELINE_EVENT_KEYS["burn_transfers"], transfers)
     if fresh is not None:
         amount = _as_float(fresh.get("amount"))
         rendered = _fmt_amount(amount) if amount is not None else "?"
@@ -816,7 +885,7 @@ def _advance(baselines: dict, readings: dict) -> dict:
                 continue
         out[key] = value
 
-    for read_key, (tx_key, ts_key) in BASELINE_EVENT_KEYS.items():
+    for read_key, (tx_key, ts_key, seq_key) in BASELINE_EVENT_KEYS.items():
         rows = _event_rows(read_key, readings.get(read_key))
         if rows is None:
             continue
@@ -825,12 +894,19 @@ def _advance(baselines: dict, readings: dict) -> dict:
             if tx_key not in out:
                 out[tx_key] = ""
                 out[ts_key] = 0.0
+                out[seq_key] = [_NO_POSITION, _NO_POSITION]
             continue
-        ts = _as_float(newest.get("ts")) or 0.0
+        ts, block, log_index = _order_key(newest)
         previous_ts = _as_float(out.get(ts_key))
-        if previous_ts is None or ts >= previous_ts:
+        # The whole order key, matching `_fresh_event`: a baseline that pins
+        # only `ts` cannot advance past a same-`ts` row, so the row that *did*
+        # fire this cycle would be re-detected on the next one.
+        if previous_ts is None or (ts, block, log_index) >= _baseline_order_key(
+            out, ts_key, seq_key
+        ):
             out[tx_key] = str(newest.get("tx_hash") or "")
             out[ts_key] = ts
+            out[seq_key] = [block, log_index]
 
     return out
 
