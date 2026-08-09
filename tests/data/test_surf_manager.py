@@ -1,0 +1,634 @@
+"""WP4 — orchestration, tiering and degradation tests for :class:`SurfManager`.
+
+Zero network: the client is a double whose transport raises on use, the clock is
+a fake, and persistence points at ``tmp_path``. Nothing here sleeps.
+
+The centre of gravity is degradation, because that is the deliverable: the
+manager must return exactly ``SURF_KEYS`` under every combination of source
+failures, must never let an exception escape, and — the correctness rule the
+whole PRD hangs on — must never let a failed read move a baseline.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from maxpane_dashboard.data.surf_cache import (
+    SERIES_IMD_PRICE_USD,
+    SERIES_IMD_SUPPLY,
+    SLOT_CHANNEL,
+    SurfCache,
+)
+from maxpane_dashboard.data.surf_manager import (
+    SOURCES,
+    SOURCE_ACTIVITY,
+    SOURCE_CHAIN,
+    SOURCE_CHANNEL,
+    SOURCE_LOGS,
+    SOURCE_MARKET,
+    SOURCE_NFT,
+    SurfManager,
+)
+from maxpane_dashboard.data.surf_models import (
+    SURF_KEYS,
+    ChainState,
+    ChannelTx,
+    DevTx,
+    LogWindow,
+    MarketSnapshot,
+    NftStats,
+    NonceSet,
+)
+from maxpane_dashboard.data.surf_addresses import (
+    ANNOUNCE,
+    BURN_EXECUTOR,
+    DEV_WALLET,
+    FWA_SPLITTER,
+    IDENTITY_REGISTRY,
+    IDMD_NFT,
+    IMD_TOKEN,
+    KNOWN_LABELS,
+    NFPM,
+    OPS_WALLET,
+    POOL_MANAGER_V4,
+    SEAPORT,
+    TOPIC_IDENTITY_HASH_UPDATED,
+    TOPIC_SEAPORT_ORDER_FULFILLED,
+    TOPIC_TRANSFER,
+    TOPIC_V4_INITIALIZE,
+    WETH,
+)
+
+# --- live values, captured 2026-08-08 (tests/fixtures/surf/captures/) -------
+#
+# The models are wei-native (WP0.4); the *_WEI constants are what a double
+# hands the manager, and the token figures are what the manager must publish
+# after dividing exactly once.
+
+IMD_SUPPLY_WEI = 2_376_731_868_679_000_000_000_000   # imd_token.json total_supply
+IMD_SUPPLY = 2_376_731.868679                        # ... / 1e18
+LP_IMD_WEI = 388_421_000_000_000_000_000_000
+LP_WETH_WEI = 142_706_700_000_000_000_000
+
+# DexScreener's **whole-pool** reserves (`liquidity.base` / `liquidity.quote`).
+# These two are *constructed*, not captured — they are the only numbers in this
+# block that are, and the construction is the point. The pool holds every
+# position while the hero tracks 1167726 alone, so the pool pair must be the
+# larger one; it is set here to ~2.32x the position, i.e. the tracked position
+# is ~43% of the pool.
+#
+# They have to be *visibly* different or the discrimination they exist for
+# cannot be written down. `LP_IMD_WEI / 1e18` is 388420.99999999994 in binary
+# floating point, so the previous doubles (`pool_imd = 388_421.0`,
+# `pool_weth = 142.7067`) matched `pytest.approx` of the hero's own legs at the
+# default `rel=1e-6` — `test_wei_is_divided_exactly_once` was asserting
+# `x == approx(y)` and `x != approx(y)` about the same pair of numbers and could
+# never go green. Keep any edit clearly apart from the two `LP_*_WEI / 1e18`
+# values, and never derive one pair from the other.
+#
+# `POOL_LIQ_USD` is DexScreener's own `liquidity.usd` field, captured
+# independently of these two; nothing in WP4 reads the reserves at all
+# (`_market_payload` omits them on purpose), so no test cross-checks the three.
+POOL_IMD = 902_763.4
+POOL_WETH = 331.6772
+
+IMD_PRICE_USD = 0.7074                 # dexscreener_imd.json priceUsd
+FP_PRICE_USD = 0.7274                  # dexscreener_fp.json, deepest Base pair
+PARITY_PCT = -2.7495188342040167
+VOL_24H_USD = 244_178.0
+POOL_LIQ_USD = 548_701.21
+CHANGE_24H = 30.89
+ETH_USD = 1917.74                      # announce_eth_info.json exchange_rate
+NFT_HOLDERS = 667                      # identity_counters.json
+ANNOUNCE_NONCE = 14                    # 13 self-posts + the register() call
+DEV_NONCE = 2350
+OPS_NONCE = 38                         # ops_eth_txs.json: sent nonces 1..37 → account nonce 38
+LP_LIQUIDITY = 1_234_567_890_123_456_789
+BLOCK = 25_707_780
+
+#: Mirrors ``surf_client.LOG_WINDOW_BLOCKS`` (2400, ≈8 h at 12 s blocks) as a
+#: literal rather than an import: this module drives a *double*, and importing
+#: the real client here would make the manager suite depend on the transport
+#: layer it exists to stand in for. Only the arithmetic matters — a
+#: ``LogWindow`` double needs some plausible ``from_block``.
+LOG_WINDOW = 2400
+
+
+def _word(value: int) -> str:
+    return f"{value & (2**256 - 1):064x}"
+
+
+def _addr_word(addr: str) -> str:
+    return addr[2:].lower().rjust(64, "0")
+
+
+def _mint_log(to_addr: str, amount_wei: int, *, ts: float, tx: str) -> dict:
+    """A raw ``Transfer(0x0 -> dev wallet)`` log, exactly as WP1 passes it through."""
+    return {
+        "address": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7".lower(),
+        "topics": [TOPIC_TRANSFER, "0x" + "0" * 64, "0x" + _addr_word(to_addr)],
+        "data": "0x" + _word(amount_wei),
+        "blockNumber": hex(BLOCK),
+        "blockTimestamp": hex(int(ts)),
+        "transactionHash": tx,
+    }
+
+
+def _v4_init_log(hooks: str, *, ts: float, tx: str) -> dict:
+    """A raw v4 ``Initialize`` log: hooks is the third word of ``data``.
+
+    ``Initialize(id, currency0, currency1, fee, tickSpacing, hooks, sqrtPriceX96, tick)``
+    — three indexed args, five in the payload.
+    """
+    return {
+        "address": POOL_MANAGER_V4.lower(),
+        "topics": [
+            TOPIC_V4_INITIALIZE,
+            "0x" + "11" * 32,
+            "0x" + _addr_word("0x" + "00" * 20),
+            "0x" + _addr_word("0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7"),
+        ],
+        "data": (
+            "0x" + _word(10_000) + _word(200) + _addr_word(hooks)
+            + _word(0) + _word(0)
+        ),
+        "blockNumber": hex(BLOCK),
+        "blockTimestamp": hex(int(ts)),
+        "transactionHash": tx,
+    }
+
+
+def _identity_log(token_id: int, *, ts: float, tx: str) -> dict:
+    """A raw ``IdentityHashUpdated(uint256 indexed id, string, bool)`` log.
+
+    Verified off ``captures/identity_contract.json`` (`source_code_head`): the
+    id is **topics[1]**, and the payload is a dynamic ``(string, bool)`` that
+    nobody needs to decode. Two logs for one id are one identity written.
+    """
+    return {
+        "address": IDENTITY_REGISTRY.lower(),
+        "topics": [TOPIC_IDENTITY_HASH_UPDATED, "0x" + _word(token_id)],
+        "data": "0x" + _word(64) + _word(1) + _word(0),
+        "blockNumber": hex(BLOCK),
+        "blockTimestamp": hex(int(ts)),
+        "transactionHash": tx,
+    }
+
+
+def _seaport_log(
+    token_id: int,
+    amounts: tuple[int, ...],
+    *,
+    ts: float,
+    tx: str,
+    offer_token: str = IDMD_NFT,
+) -> dict:
+    """A raw Seaport ``OrderFulfilled``, exactly as WP1.9 passes it through.
+
+    ``OrderFulfilled(bytes32 orderHash, address indexed offerer, address
+    indexed zone, address recipient, SpentItem[] offer,
+    ReceivedItem[] consideration)`` — two indexed args, so ``data`` is
+    ``orderHash | recipient | offset(offer) | offset(consideration)`` followed
+    by the two arrays. ``SpentItem`` is 4 words
+    ``(itemType, token, identifier, amount)``; ``ReceivedItem`` is those plus a
+    ``recipient``. ``amounts`` are the **native** consideration legs — seller
+    proceeds and marketplace fee — which is what a realized price is made of.
+    """
+    offer = [_word(2), _addr_word(offer_token), _word(token_id), _word(1)]
+    consideration: list[str] = []
+    for amount in amounts:
+        consideration += [
+            _word(0),                          # itemType NATIVE
+            _addr_word("0x" + "00" * 20),
+            _word(0),
+            _word(amount),
+            _addr_word(DEV_WALLET),
+        ]
+    offer_at = 4 * 32                          # after the four head words
+    consideration_at = offer_at + 32 + len(offer) * 32
+    return {
+        "address": SEAPORT.lower(),
+        "topics": [
+            TOPIC_SEAPORT_ORDER_FULFILLED,
+            "0x" + _addr_word(OPS_WALLET),     # offerer (the seller)
+            "0x" + "0" * 64,                   # zone
+        ],
+        "data": "0x" + "".join(
+            [
+                _word(0),                      # orderHash — unread here
+                _addr_word(DEV_WALLET),        # recipient
+                _word(offer_at),
+                _word(consideration_at),
+                _word(1),                      # len(offer)
+                *offer,
+                _word(len(amounts)),           # len(consideration)
+                *consideration,
+            ]
+        ),
+        "blockNumber": hex(25_707_884),
+        "blockTimestamp": hex(int(ts)),
+        "transactionHash": tx,
+    }
+
+
+# The one real Seaport purchase in the captures: dev wallet,
+# ``fulfillAvailableAdvancedOrders``, two orders in one transaction whose
+# realized totals sum to the transaction's own ``value``.
+SEAPORT_TX = "0x5b4d1b4416bbd7d466c9aca7ecd371252ba2ea38aa82aa6c186be35035eadad2"
+SEAPORT_TS = 1_786_163_591.0                   # 2026-08-08T04:33:11Z
+SEAPORT_TX_VALUE_WEI = 363_898_900_000_000_000
+
+
+def _seaport_fill() -> tuple[dict, ...]:
+    """Both ``OrderFulfilled`` logs of that transaction, raw."""
+    return (
+        _seaport_log(1751, (178_200_000_000_000_000, 1_800_000_000_000_000),
+                     ts=SEAPORT_TS, tx=SEAPORT_TX),
+        _seaport_log(354, (182_059_911_000_000_000, 1_838_989_000_000_000),
+                     ts=SEAPORT_TS, tx=SEAPORT_TX),
+    )
+
+
+# Real channel calldata (announce_eth_txs.json — complete, not truncated).
+SOON_HEX = "0x736f6f6e"                                   # "soon", nonce 0
+REGISTER_HEX = (
+    "0xf2c298be0000000000000000000000000000000000000000000000000000000000000020"
+    "0000000000000000000000000000000000000000000000000000000000000035"
+    "697066733a2f2f516d596a3962727053775a6f634a7772745a6e375835426f4e5550515"
+    "54d77456171564e4654796764367a726133"
+    "0000000000000000000000000000000000000000000000000000"
+)
+REGISTER_TS = 1_779_469_691.0                              # 2026-05-22T17:08:11Z
+FUND_TS = 1_778_737_523.0                                  # 2026-05-14T05:45:23Z
+NOW = 1_786_190_400.0                                      # 2026-08-08T12:00:00Z
+
+#: The newest **self**-post in the default channel double — ten minutes before
+#: the suite's clock, and that recency is load-bearing rather than cosmetic.
+#:
+#: `_channel_payload` makes this row's timestamp `last_ts`, `_readings` copies it
+#: to `announce_last_ts`, WP2's `_detect_post` returns it as the detector's
+#: `fired_ts`, and `build_signals` stores `fired["post"]["ts"] = min(ts, now)`.
+#: A post older than `FIRED_TTL_S` (86400 s) therefore takes the *relaxation*
+#: branch on the very cycle it is detected — "detected, but older than the TTL is
+#: history, not news" — and renders `state="ok"` with a `last: …` detail instead
+#: of FIRED. This constant used to be `1_779_000_000.0`, 83 days before `NOW`,
+#: which made `"fired"` structurally unreachable in this suite: three WP4.11
+#: tests asserted it and would all have failed, and no amount of manager work
+#: could have fixed them. Keep any edit to this value inside the FIRED window.
+SOON_TS = NOW - 600.0                                      # 2026-08-08T11:50:00Z
+
+ERC8004 = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+REPLIER = "0x1c3A0Ad54418Fe843953C71dF23637DE732Ce159"
+
+
+class FakeClock:
+    def __init__(self, t: float = NOW) -> None:
+        self.t = float(t)
+
+    def __call__(self) -> float:
+        return self.t
+
+    def advance(self, seconds: float) -> float:
+        self.t += float(seconds)
+        return self.t
+
+
+class DeadTransport:
+    """Proves structurally that no test reaches the network."""
+
+    async def aclose(self):
+        return None
+
+    async def post(self, *_a, **_k):     # pragma: no cover — must never be reached
+        raise AssertionError("SURF manager tests must not touch the network")
+
+    async def get(self, *_a, **_k):      # pragma: no cover
+        raise AssertionError("SURF manager tests must not touch the network")
+
+
+def test_the_doubles_construct_against_wp0s_frozen_models():
+    """The cheapest possible guard on the thing that broke this plan once.
+
+    Every helper below builds its model **by keyword**, so a WP0.4 rename is a
+    `TypeError` here at collection. That matters more on the *consuming* side
+    than on the producing one: WP4 reads models through `_field()`, and the
+    earlier revision of this file read `state.lp_imd`, `state.identity_allowed`
+    and `logs.identity_writes` off dataclasses that had no such fields. With a
+    plain `getattr(..., None)` that is not an error at all — it is a hero panel
+    that renders "unavailable" on a perfectly healthy chain, behind a green
+    suite. Hence both halves: `_field()` raises on an unknown name, and this
+    test proves the names the doubles use are real ones.
+    """
+    import dataclasses
+
+    from tests.data.test_surf_models import CONSTRUCTOR_KWARGS
+
+    for model, names in CONSTRUCTOR_KWARGS.items():
+        assert tuple(f.name for f in dataclasses.fields(model)) == names
+
+    # Constructing each double is the actual assertion — a TypeError here names
+    # the field that moved.
+    _chain_state()
+    _channel_txs()
+    _posted_channel_txs(NOW)
+    _dev_tx()
+    _market()
+    _nft_stats()
+    FakeSurfClient()
+
+    # And every model *attribute* the manager reads must exist. `_field` raises
+    # AttributeError on a typo, so this is the list that keeps it honest.
+    reads = {
+        ChainState: ("lp_liquidity", "lp_imd_wei", "lp_weth_wei", "lp_owner",
+                     "identity_allowed", "imd_supply_wei", "block_number"),
+        NonceSet: ("announce", "dev", "ops"),
+        ChannelTx: ("tx_hash", "ts", "nonce", "from_addr", "to_addr",
+                    "value_wei", "input_hex"),
+        DevTx: ("tx_hash", "ts", "wallet_label", "from_addr", "counterparty",
+                "counterparty_label", "value_wei", "kind"),
+        MarketSnapshot: ("imd_price_usd", "imd_change_24h_pct", "imd_vol_24h_usd",
+                         "pool_liquidity_usd", "pool_imd", "pool_weth",
+                         "fp_price_usd", "eth_usd"),
+        LogWindow: ("to_block", "bridge_mints", "identity_updates",
+                    "v4_initializes", "seaport_sales"),
+        NftStats: ("holders", "total_supply", "transfers_total", "transfers_24h",
+                   "dev_holdings", "written", "floor_eth"),
+    }
+    for model, names in reads.items():
+        declared = {f.name for f in dataclasses.fields(model)}
+        assert not set(names) - declared, (
+            f"{model.__name__}: WP4 reads {set(names) - declared}, which WP0 does "
+            f"not declare — check for a flat-dict key used as a field name"
+        )
+
+
+def _chain_state(**overrides) -> ChainState:
+    """A WP0.4 ``ChainState``, keyword-for-keyword. Wei in, tokens out later.
+
+    Every key here is a real field of the frozen dataclass, so a rename in WP0.4
+    makes this helper raise ``TypeError`` at collection — which is the point.
+    Note what is *absent*: there is no ``identities_written`` — the registry
+    exposes no written-hash getter, so WP0.4 dropped the field and the number
+    lives on ``NftStats.written`` instead (WP1.8, and this file's header
+    consequence 4). And ``lp_imd_wei``/``lp_weth_wei`` are present but are
+    *derived* by WP1.4 from the tick bounds, so a double that sets them is
+    standing in for that derivation, not for a getter.
+    """
+    fields = {
+        "lp_liquidity": LP_LIQUIDITY,
+        "lp_token0": WETH,
+        "lp_token1": IMD_TOKEN,
+        "lp_fee": 10_000,
+        "lp_tokens_owed0_wei": 7_345_000_000_000_000_000,
+        "lp_tokens_owed1_wei": 30_784_000_000_000_000_000_000,
+        "lp_imd_wei": LP_IMD_WEI,
+        "lp_weth_wei": LP_WETH_WEI,
+        "lp_owner": OPS_WALLET,
+        "identity_allowed": False,          # gate closed since 2026-05-14
+        "imd_supply_wei": IMD_SUPPLY_WEI,
+        "sqrt_price_x96": 4_181_066_022_637_632_195_530_919_936,
+        "pool_tick": -3466,
+        "imd_name": "Identity.md",
+        "imd_symbol": "IMD",
+        "block_number": BLOCK,
+    }
+    fields.update(overrides)
+    return ChainState(**fields)
+
+
+def _channel_txs() -> list[ChannelTx]:
+    """The four real channel shapes.
+
+    ``ChannelTx`` has **no** ``kind``/``text`` field: the client returns the row
+    as read and the manager classifies it through the pure layer.  So every
+    assertion downstream about a kind or a message body is an assertion about
+    ``classify_channel_tx`` / ``decode_utf8_calldata`` running for real on the
+    ``input_hex`` carried here.
+    """
+    return [
+        ChannelTx(tx_hash="0x" + "a1" * 32, ts=SOON_TS, nonce=0,
+                  from_addr=ANNOUNCE, to_addr=ANNOUNCE, value_wei=0,
+                  input_hex=SOON_HEX),
+        ChannelTx(tx_hash="0x" + "a2" * 32, ts=REGISTER_TS, nonce=4,
+                  from_addr=ANNOUNCE, to_addr=ERC8004, value_wei=0,
+                  input_hex=REGISTER_HEX, method="register"),
+        ChannelTx(tx_hash="0x" + "a3" * 32, ts=FUND_TS, nonce=2266,
+                  from_addr=DEV_WALLET, to_addr=ANNOUNCE,
+                  value_wei=54_000_000_000_000_000, input_hex="0x"),
+        ChannelTx(tx_hash="0x" + "a4" * 32, ts=SOON_TS + 60.0, nonce=0,
+                  from_addr=REPLIER, to_addr=ANNOUNCE, value_wei=0,
+                  input_hex="0x686579"),                          # "hey"
+    ]
+
+
+def _posted_channel_txs(ts: float, *, tx: str = "0x" + "a9" * 32) -> list[ChannelTx]:
+    """The channel page as it looks *after* a new self-post lands at ``ts``.
+
+    A test that bumps the announce nonce but keeps handing back the *old*
+    ``_channel_txs()`` page is not exercising a new post — it is exercising a
+    stale page, which is a different scenario with its own test
+    (``test_a_stale_page_never_quotes_an_old_body_under_a_new_nonce``, where the
+    page read *fails*). The difference is visible in exactly one number and it is
+    the number PRD §3 sells: the FIRED row is dated to ``announce_last_ts``, so a
+    page that still holds only the previous post dates brand-new news to that
+    post's timestamp instead of to the post that just landed.
+
+    ``nonce`` is the nonce this tx *consumed*, so a page whose newest row is
+    ``ANNOUNCE_NONCE`` belongs to an account nonce of ``ANNOUNCE_NONCE + 1`` —
+    which is what the callers set on their ``NonceSet``.
+    """
+    return [
+        ChannelTx(tx_hash=tx, ts=float(ts), nonce=ANNOUNCE_NONCE,
+                  from_addr=ANNOUNCE, to_addr=ANNOUNCE, value_wei=0,
+                  input_hex=SOON_HEX),
+        *_channel_txs(),
+    ]
+
+
+def _market(**overrides) -> MarketSnapshot:
+    """A WP0.4 ``MarketSnapshot``, keyword-for-keyword.
+
+    ``pool_imd``/``pool_weth`` are DexScreener's **whole-pool reserves across
+    every position**, kept for the market panel's cross-check only. They are
+    *not* the hero's LP legs: those are ``ChainState.lp_imd_wei`` /
+    ``lp_weth_wei`` for position 1167726 alone, which WP1.4 derives from the
+    position's tick bounds precisely so the whole-pool numbers are never
+    substituted (WP0.4, WP1.4, and this file's header table). Neither
+    ``pool_*`` value is ever divided — they are already whole tokens, so
+    scaling them would be a second division of something that was never wei.
+
+    ``POOL_IMD``/``POOL_WETH`` are therefore the *larger* pair, and they have
+    to be visibly larger for this double to be worth anything: these fields
+    exist here only so ``test_wei_is_divided_exactly_once`` can assert
+    ``data["lp_imd"] != pytest.approx(POOL_IMD)`` and
+    ``data["lp_weth"] != pytest.approx(POOL_WETH)``. This double used to carry
+    ``388_421.0``/``142.7067`` — the position's own legs to the last digit — so
+    those two assertions were structurally unsatisfiable and the discrimination
+    the docstring claimed was one the numbers denied. See the constants.
+
+    ``indexer_name`` is DexScreener's (current) — GeckoTerminal's stale
+    "Vibe Coins" never reaches a model, so there is no staleness flag to set.
+    """
+    fields = {
+        "imd_price_usd": IMD_PRICE_USD,
+        "imd_price_usd_gecko": IMD_PRICE_USD,
+        "imd_change_24h_pct": CHANGE_24H,
+        "imd_vol_24h_usd": VOL_24H_USD,
+        "pool_liquidity_usd": POOL_LIQ_USD,
+        "pool_imd": POOL_IMD,
+        "pool_weth": POOL_WETH,
+        "fp_price_usd": FP_PRICE_USD,
+        "fdv_usd": 1_284_000.0,
+        "eth_usd": ETH_USD,
+        "indexer_name": "Identity.md",
+        "indexer_symbol": "IMD",
+        "sources_agree": True,
+    }
+    fields.update(overrides)
+    return MarketSnapshot(**fields)
+
+
+def _dev_tx(**overrides) -> DevTx:
+    """A WP0.4 ``DevTx`` as WP1.6 hands it over: already filtered and labelled.
+
+    The real 2026-08-07 33-ETH LP add.  ``counterparty_label`` is populated
+    because the client fills it from ``KNOWN_LABELS``; the manager turns it into
+    the ``counterparty_known`` boolean and scales the wei.  Tests that care about
+    an *unknown* counterparty override ``counterparty_label=None`` — that is the
+    poisoning-relevant shape, and it must render dimmed, never trusted.
+    """
+    fields = {
+        "tx_hash": "0x" + "b1" * 32,
+        "ts": NOW - 3600.0,
+        "wallet_label": "ops",
+        "from_addr": OPS_WALLET,
+        "to_addr": NFPM,
+        "counterparty": NFPM,
+        "counterparty_label": "NFPM",
+        "value_wei": 33_252_659_725_872_729_307,
+        "method": "multicall",
+        "kind": "lp",
+        "created_contract": None,
+    }
+    fields.update(overrides)
+    return DevTx(**fields)
+
+
+def _nft_stats(**overrides) -> NftStats:
+    """A WP0.4 ``NftStats`` as WP1.8 hands it over — the live 2026-08-08 values.
+
+    ``written=1`` is the real chain: one identity of 2000 has a hash, set
+    2026-05-14. WP1.8 derives it with ``_count_identities_written()`` over the
+    registry's **lifetime** Blockscout log view, counted across distinct
+    ``topics[1]``, so it is a genuine producer and both ``identities_written``
+    and ``nft_written`` read it. Tests that want the unavailable state override
+    ``written=None`` — never ``0``, which would claim nobody has written one.
+
+    ``transfers_24h`` stays ``None`` here: it is the *rate*, and WP1.8 answers
+    ``None`` rather than a lower bound when its page walk does not reach the
+    24 h edge (wp1.md open issue 12). ``floor_eth`` is pinned ``None`` for good.
+    """
+    fields = {
+        "holders": NFT_HOLDERS,
+        "total_supply": 2000,
+        "transfers_total": 7411,          # lifetime counter, not a daily rate
+        "dev_holdings": 3,
+        "transfers_24h": None,
+        "written": 1,
+    }
+    fields.update(overrides)
+    return NftStats(**fields)
+
+
+class FakeSurfClient:
+    """A SurfClient-shaped double. Any method set to ``None`` reports failure."""
+
+    def __init__(self, **overrides) -> None:
+        self.http = DeadTransport()
+        self.calls: list[str] = []
+        self.closed = False
+        self._returns = {
+            "fetch_nonces": NonceSet(
+                announce=ANNOUNCE_NONCE, dev=DEV_NONCE, ops=OPS_NONCE,
+                block_number=BLOCK,
+            ),
+            "fetch_chain_state": _chain_state(),
+            "fetch_channel_txs": _channel_txs(),
+            "fetch_dev_activity": [_dev_tx()],
+            "fetch_market": _market(),
+            # All four groups are **raw** log dicts — WP1.9 hands them over
+            # verbatim and WP4.9 owns every decoder (wp1.md, *Decode
+            # ownership*). ``seaport_sales`` is not the exception it was once
+            # written as: it arrives with `topics`/`data` like the other three.
+            "fetch_recent_logs": LogWindow(
+                from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+                bridge_mints=(), identity_updates=(), v4_initializes=(),
+                seaport_sales=_seaport_fill(),
+            ),
+            "fetch_nft_stats": _nft_stats(),
+        }
+        self._returns.update(overrides)
+
+    async def _answer(self, name: str):
+        self.calls.append(name)
+        value = self._returns[name]
+        if isinstance(value, BaseException):
+            raise value
+        return value
+
+    async def fetch_nonces(self):        return await self._answer("fetch_nonces")
+    async def fetch_chain_state(self):   return await self._answer("fetch_chain_state")
+    async def fetch_channel_txs(self):   return await self._answer("fetch_channel_txs")
+    async def fetch_dev_activity(self):  return await self._answer("fetch_dev_activity")
+    async def fetch_market(self):        return await self._answer("fetch_market")
+    async def fetch_recent_logs(self):   return await self._answer("fetch_recent_logs")
+    async def fetch_nft_stats(self):     return await self._answer("fetch_nft_stats")
+
+    async def close(self):
+        self.closed = True
+
+
+def _manager(tmp_path, *, client=None, clock=None, **kwargs) -> SurfManager:
+    clock = clock or FakeClock()
+    manager = SurfManager(
+        poll_interval=30,
+        clock=clock,
+        cache_path=str(tmp_path / "surf_cache.json"),
+        client=client if client is not None else FakeSurfClient(),
+        cache=SurfCache(path=str(tmp_path / "surf_cache.json"), clock=clock),
+        **kwargs,
+    )
+    manager._clock_double = clock
+    return manager
+
+
+@pytest.fixture
+def manager(tmp_path):
+    return _manager(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# The frozen contract
+# ---------------------------------------------------------------------------
+
+
+async def test_returns_exactly_surf_keys(manager):
+    data = await manager.fetch_and_compute()
+    assert set(data) == set(SURF_KEYS)
+    assert len(data) == len(SURF_KEYS)
+
+
+async def test_every_source_group_is_named(manager):
+    assert SOURCES == (
+        SOURCE_CHAIN, SOURCE_CHANNEL, SOURCE_MARKET,
+        SOURCE_LOGS, SOURCE_NFT, SOURCE_ACTIVITY,
+    )
+
+
+async def test_close_persists_the_cache_and_closes_the_client(tmp_path):
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client)
+    await m.fetch_and_compute()
+    await m.close()
+    assert client.closed is True
+    assert (tmp_path / "surf_cache.json").exists()
