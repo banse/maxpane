@@ -115,6 +115,26 @@ BASELINE_SCALARS: tuple[str, ...] = (
     "imd_supply",
 )
 
+#: Per-scalar coercion applied by :func:`_advance` *before* the ``is None``
+#: check, so persistence is exactly as strict as the matching detector.  A
+#: coercer that returns ``None`` makes ``_advance`` treat the reading like a
+#: failed read: the previous baseline value is left untouched, never
+#: overwritten with something malformed.
+#:
+#: ``gate_open`` is the case that bit us: ``_detect_gate`` already refuses a
+#: non-``bool`` reading (an int ``0`` is not ``False``), but ``_advance``'s
+#: only guard used to be "not ``None``", so a stray ``0`` sailed straight into
+#: the persisted baseline and *changed its type*.  The next cycle's genuine
+#: ``False -> True`` flip then read that corrupted baseline as unset,
+#: silently re-seeded, and never fired -- one bad read permanently disarmed
+#: the one transition this detector exists to catch.  A scalar with no entry
+#: here keeps the previous behaviour (trusted as-is once it is not ``None``);
+#: add an entry here, not a special case in ``_advance``, if another reading
+#: later needs the same protection.
+_SCALAR_COERCERS: dict[str, Any] = {
+    "gate_open": lambda value: value if isinstance(value, bool) else None,
+}
+
 #: Event streams: ``reading key -> (tx baseline key, ts baseline key)``.  Two
 #: keys per stream rather than one, so a log window that *rolls* (the newest
 #: row we can still see is older than the one we already saw) cannot look like
@@ -656,12 +676,15 @@ def _fired_store(baselines: dict) -> dict[str, dict]:
 def _advance(baselines: dict, readings: dict) -> dict:
     """The baselines to persist after this refresh.
 
-    Two rules, and every correctness bug in this module is one of them being
+    Three rules, and every correctness bug in this module is one of them being
     skipped:
 
-    1. A scalar baseline moves **only** when its reading is not ``None``.  A
-       failed read leaves the previous value in place — it never writes a
-       sentinel into persisted state (CLAUDE.md).
+    1. A scalar baseline moves **only** when its reading is not ``None`` --
+       and, for a scalar listed in :data:`_SCALAR_COERCERS`, only when it also
+       survives that scalar's own type check.  A malformed reading is treated
+       exactly like a failed one: the previous value is left in place, never
+       overwritten with something a detector could not have produced itself
+       (CLAUDE.md; a real regression -- see :data:`_SCALAR_COERCERS`).
     2. Counters in :data:`MONOTONIC_BASELINES` never move down.
 
     Event streams keep ``(tx, ts)``.  A *successful but empty* read seeds the
@@ -672,6 +695,9 @@ def _advance(baselines: dict, readings: dict) -> dict:
 
     for key in BASELINE_SCALARS:
         value = readings.get(key)
+        coerce = _SCALAR_COERCERS.get(key)
+        if coerce is not None:
+            value = coerce(value)
         if value is None:
             continue
         if key in MONOTONIC_BASELINES:

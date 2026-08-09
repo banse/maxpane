@@ -750,3 +750,39 @@ def test_deploy_outage_is_none():
     assert _sig(
         "deploy", _baseline(), _readings(deploy_events=None, dev_nonce=None)
     ) == (None, "dev activity unavailable", None)
+
+
+# --- fix round 1: _advance must persist gate_open as strictly as _detect_gate
+# reads it ---------------------------------------------------------------
+#
+# Regression: _advance's only guard used to be "reading is not None", so a
+# malformed reading -- an int 0, which is neither a bool nor None -- sailed
+# past _detect_gate's own isinstance guard (which correctly reports "gate
+# unavailable" and refuses to compare it) and was persisted verbatim,
+# corrupting the baseline's type. The following cycle's genuine False->True
+# flip then read that corrupted, non-bool baseline as unset, silently
+# re-seeded, and never fired: one bad read permanently disarmed the one
+# transition GATE OPEN exists to catch.
+
+
+def test_a_non_bool_gate_reading_never_corrupts_the_persisted_baseline():
+    base = _baseline(gate_open=False)
+    _, advanced = sig.build_signals(base, _readings(gate_open=0), NOW)
+    # The garbage int must not reach the baseline -- the prior valid bool
+    # (False) survives untouched, exactly as an outright None reading would
+    # leave it.
+    assert advanced["gate_open"] is False
+
+    # The following cycle's real flip must still be seen as a flip, and fire.
+    state, detail, age = _sig("gate", advanced, _readings(gate_open=True))
+    assert state == "fired"
+    assert detail == "GATE OPEN · 1 written"
+    assert age == 0.0
+
+
+def test_a_legitimate_false_is_still_persisted():
+    """The hardening must not stop a genuinely valid False from persisting."""
+    _, advanced = sig.build_signals(
+        _baseline(gate_open=True), _readings(gate_open=False), NOW
+    )
+    assert advanced["gate_open"] is False
