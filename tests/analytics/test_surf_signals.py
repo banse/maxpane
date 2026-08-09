@@ -962,3 +962,94 @@ def test_no_row_of_the_matrix_moves_an_unread_baseline(name, expected_state, ove
     for key, value in overrides.items():
         if value is None and key in sig.BASELINE_SCALARS:
             assert advanced[key] == base[key], key
+
+
+# ---------------------------------------------------------------------------
+# The two poisoned-baseline regressions.
+#
+# Both are recorded failures, not hypotheticals: CLAUDE.md's "a failed read is
+# None, never 0" exists because a client turned an outage into a zero and the
+# zero got persisted, and PRD §6.1 names the supply case specifically.
+# ---------------------------------------------------------------------------
+
+
+def test_a_failed_supply_read_cannot_fire_burn():
+    """supply None must not read as 0 and burn 2.37M tokens.
+
+    MUTATION CHECK (run it, watch it go red, restore):
+    in ``_detect_burn`` replace
+
+        if supply is not None and base_supply is not None and supply < base_supply:
+
+    with the coercion that shipped in the original bug
+
+        supply = float(supply or 0)
+        base_supply = float(base_supply or 0)
+        if supply < base_supply:
+
+    -> this test fails with ``AssertionError: assert 'fired' is None``, and the
+    detail on that row reads ``burn 2,252,365 IMD``: the entire supply, burned
+    by a network hiccup.  ``test_a_failed_supply_read_cannot_poison_the_
+    persisted_baseline`` fails with it.
+    """
+    state, detail, age = _sig("burn", _baseline(), _readings(imd_supply=None))
+    assert state is None
+    assert detail == "supply unavailable"
+    assert age is None
+
+
+def test_a_failed_supply_read_cannot_poison_the_persisted_baseline():
+    """The outage must not survive itself: the old supply stays in the cache."""
+    base = _baseline()
+    _, advanced = sig.build_signals(base, _readings(imd_supply=None), NOW)
+    assert advanced["imd_supply"] == SUPPLY_BEFORE
+    # And the next successful read compares against the real previous value,
+    # so no burn is invented on recovery either.
+    state, _, _ = _sig("burn", advanced, _readings(imd_supply=SUPPLY_BEFORE))
+    assert state == "ok"
+
+
+def test_an_lp_outage_cannot_un_fire_a_migration():
+    """A network blip must never retract an event already shown.
+
+    MUTATION CHECK (run it, watch it go red, restore):
+    in ``build_signals`` replace
+
+        if entry is not None and now - entry["ts"] < FIRED_TTL_S:
+
+    with
+
+        if det.state is not None and entry is not None and now - entry["ts"] < FIRED_TTL_S:
+
+    -> this test fails with ``AssertionError: assert None == 'fired'``: the
+    outage clears a FIRED row that is 1 h old.
+    """
+    fired_at = NOW - 3600.0
+    base = _baseline(fired={"lp": {"ts": fired_at, "detail": "LIQUIDITY OUT -32.3%"}})
+    state, detail, age = _sig(
+        "lp", base, _readings(lp_liquidity=None, ops_nonce=None, v4_hook_pools=None)
+    )
+    assert state == "fired"
+    assert detail == "LIQUIDITY OUT -32.3%"
+    assert age == pytest.approx(3600.0)
+
+
+def test_an_outage_does_not_extend_or_reset_the_fired_age():
+    """The age tracks the event, not the last successful poll."""
+    fired_at = NOW - 7200.0
+    base = _baseline(fired={"lp": {"ts": fired_at, "detail": "LIQUIDITY OUT -32.3%"}})
+    _, advanced = sig.build_signals(base, _readings(lp_liquidity=None), NOW)
+    assert advanced["fired"]["lp"]["ts"] == fired_at
+    _, _, age = _sig("lp", advanced, _readings(lp_liquidity=None), now=NOW + 600.0)
+    assert age == pytest.approx(7800.0)
+
+
+def test_a_fired_row_relaxes_but_the_event_is_never_forgotten():
+    """After the TTL the row is ok/watch again and still names what happened."""
+    base = _baseline(
+        fired={"lp": {"ts": NOW - sig.FIRED_TTL_S - 1.0, "detail": "LIQUIDITY OUT -32.3%"}}
+    )
+    state, detail, age = _sig("lp", base, _readings())
+    assert state == "ok"
+    assert detail == "liquidity holds · last: LIQUIDITY OUT -32.3%"
+    assert age == pytest.approx(float(sig.FIRED_TTL_S) + 1.0)
