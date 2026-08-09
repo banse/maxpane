@@ -359,3 +359,180 @@ async def test_feed_no_args_and_all_none_do_not_raise():
         widget.update_data(**_none_payload(widget))
         await pilot.pause()
         assert UNAVAILABLE_LINE in _screen_text(app)
+
+
+# ---------------------------------------------------------------------
+# SurfDevActivity
+# ---------------------------------------------------------------------
+
+from maxpane_dashboard.widgets.surf.activity import (  # noqa: E402
+    SurfDevActivity,
+    _row_markup,
+)
+
+#: The real 2026-08-07 04:2x staging choreography (ops_eth_token_transfers)
+#: plus the two poisoning shapes that live in frenpet.eth's history today.
+#:
+#: ``wallet_label`` is the **producer's** vocabulary, not an ENS name: WP1
+#: fills it from ``_DEV_WALLET_LABELS = {DEV_WALLET: "dev", OPS_WALLET:
+#: "ops"}``, WP4 passes it straight through and re-checks it against
+#: ``DEV_WALLETS = {"dev": ..., "ops": ...}``.  The ENS spellings live in
+#: ``KNOWN_LABELS`` ("dev · surfsurf.eth" / "ops · frenpet.eth") and reach
+#: the screen through the *hero*, not through this column.  The rows below
+#: are all ops-wallet (frenpet.eth) history except the last, which is the
+#: dev wallet (surfsurf.eth) -- hence "ops" / "dev".
+_SPOOF = "0xF3083828702C1989710CECA517412071c2f60Ee6"   # 1-gwei lookalike
+_REAL_UNKNOWN = "0x61CC704c7A5B7071c7B3f4Cc09A9CBC86373f14E"  # LP-fee ETH dest
+
+_DEV_ACTIVITY = [
+    {
+        "ts": 1786076603,
+        "wallet_label": "ops",
+        "kind": "LP",
+        "counterparty": "NFPM",
+        "counterparty_known": True,
+        "value_eth": 33.25,
+        "tx_hash": "0x90a0f8e2b039e8d86d1b10e33e61e12d13728444e0a9e5ac258051cccb64d669",
+    },
+    {
+        "ts": 1786076495,
+        "wallet_label": "ops",
+        "kind": "bridge",
+        "counterparty": "OFT endpoint",
+        "counterparty_known": True,
+        "value_eth": 0.0,
+        "tx_hash": "0xc7acbcc0b164",
+    },
+    {
+        "ts": 1783519943,
+        "wallet_label": "ops",
+        "kind": "transfer",
+        "counterparty": _REAL_UNKNOWN,
+        "counterparty_known": False,
+        "value_eth": 8.0,
+        "tx_hash": "0x9ea235039668",
+    },
+    {  # the poisoning row: zero-value, unknown sender lookalike
+        "ts": 1783519000,
+        "wallet_label": "ops",
+        "kind": "transfer",
+        "counterparty": _SPOOF,
+        "counterparty_known": False,
+        "value_eth": 0.0,
+        "tx_hash": "0xdust1",
+    },
+    {  # manager-labelled dust: dropped regardless of any other field
+        "ts": 1783518000,
+        "wallet_label": "dev",
+        "kind": "dust",
+        "counterparty": _SPOOF,
+        "counterparty_known": False,
+        "value_eth": 0.0,
+        "tx_hash": "0xdust2",
+    },
+]
+
+
+async def test_activity_known_labels_and_values_render():
+    """The wallet column renders the producer's label, not an ENS name.
+
+    WP1 emits ``"dev"`` / ``"ops"`` in ``wallet_label`` and WP4 re-checks
+    exactly those two keys, so a fixture spelled ``"frenpet.eth"`` would
+    certify a column that never appears on screen.  The ENS spellings belong
+    to ``KNOWN_LABELS`` and reach the user through the hero's ``owner ✓``
+    line instead.
+    """
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(110, 20)) as pilot:
+        widget.update_data(dev_activity=_DEV_ACTIVITY)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "ops" in screen
+        assert "frenpet.eth" not in screen   # not this column's vocabulary
+        assert "NFPM" in screen
+        assert "33.250 ETH" in screen
+        assert "OFT endpoint" in screen   # known zero-value row still renders
+
+
+async def test_activity_unknown_addresses_render_long_form_never_shortform():
+    """0x+8+…+6 -- the form that distinguishes the live spoof pair."""
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(110, 20)) as pilot:
+        widget.update_data(dev_activity=_DEV_ACTIVITY)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "0x61CC704c…73f14E" in screen
+        # Never the classic first-6/last-4 shortener the spoof collides with.
+        assert "0x61CC…f14E" not in screen
+
+
+async def test_activity_dust_rows_are_never_rendered():
+    """The poisoning vector: nothing from either dust row reaches a pixel."""
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(110, 20)) as pilot:
+        widget.update_data(dev_activity=_DEV_ACTIVITY)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "F3083828" not in screen           # long form absent
+        assert "f60Ee6" not in screen             # tail absent too
+        assert "dust" not in screen               # not even the kind
+
+
+def test_activity_row_markup_drop_rules_are_exact():
+    """Pure-function check: exactly the poisoning triple is dropped."""
+    base = dict(_DEV_ACTIVITY[3])  # zero-value unknown transfer -> dropped
+    assert _row_markup(base) is None
+    assert _row_markup({**base, "kind": "dust", "value_eth": 5.0}) is None
+    # Any leg of the triple broken -> the row renders.
+    assert _row_markup({**base, "value_eth": 0.001}) is not None
+    assert _row_markup({**base, "counterparty_known": True}) is not None
+    assert _row_markup({**base, "kind": "burn"}) is not None
+    # Malformed input degrades to a dropped row, never a raise.
+    assert _row_markup(None) is None
+    assert _row_markup("junk") is None
+    assert _row_markup({}) is not None  # renders a dash row, doesn't raise
+
+
+async def test_activity_markup_hostile_label_cannot_crash_the_pump():
+    """Counterparty text is third-party even when 'known' upstream."""
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(110, 20)) as pilot:
+        widget.update_data(
+            dev_activity=[
+                {
+                    "ts": 1786076603,
+                    "wallet_label": "[/x] evil",
+                    "kind": "transfer",
+                    "counterparty": "[bold]Kraken[/bold]",
+                    "counterparty_known": True,
+                    "value_eth": 1.0,
+                    "tx_hash": "0x1",
+                }
+            ]
+        )
+        await pilot.pause()  # MarkupError would surface here
+        assert "Kraken" in _screen_text(app)
+
+
+async def test_activity_unavailable_vs_empty_vs_none_args():
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(110, 20)) as pilot:
+        widget.update_data(dev_activity=None)
+        await pilot.pause()
+        assert "activity unavailable" in _screen_text(app)
+
+        widget.update_data(dev_activity=[])
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "no recent activity" in screen
+        assert "activity unavailable" not in screen
+
+        widget.update_data()
+        widget.update_data(**_none_payload(widget))
+        await pilot.pause()
+        assert "activity unavailable" in _screen_text(app)
