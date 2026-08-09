@@ -3,6 +3,15 @@
 Four boxes answering PRD §4's hero-left slot:
 
 * **HOOK**   -- v4 hook status: NOT LIVE / LAUNCHED, always in words.
+  ``None`` renders ``hook unconfirmed``, which has to be true of the *two*
+  things the manager means by it (``SurfManager._hook_status``): the logs
+  group never answered at all, **or** the window held a hooked
+  ``Initialize`` whose signer could not be attributed. The second one did
+  read something -- ``PoolManager.initialize()`` is permissionless, so an
+  unattributed hooked pool is evidence of somebody, just not of the dev --
+  so the older ``status unknown`` understated it. ``unconfirmed`` claims
+  neither a launch nor a clean window, which is the only honest reading of
+  both.
 * **LP**     -- position #1167726's composition (IMD/WETH sides), raw
   liquidity, and the owner sanity flag.  ``lp_owner_ok=False`` means the
   position NFT moved -- the committed launch precondition -- and renders
@@ -27,6 +36,45 @@ Four boxes answering PRD §4's hero-left slot:
 Copied from ``fwa/fwa_hero_metrics.py`` and adapted to the surf data
 contract (PRD §5 ``hero`` keys).  Primitives only: this module imports
 nothing from the data layer.
+
+Width behaviour
+---------------
+
+A hero box is one quarter of a ``3fr`` half of the hero row, so it is far
+narrower than it looks: **12 content columns at 135 terminal columns, 13
+at 139, 17 at 169, 22 at 200**.  The full copy needs 24, which arrives at
+about 220 -- past anything a laptop reaches at the forced 17 pt.
+
+Two answers were considered and rejected.  A bare ``‹ widen`` marker would
+be lit on every terminal anyone owns, which is the trap ``signals.py``
+documents and ``fwa_signals.py`` records before it: a marker that is
+always on says nothing.  Accepting the CSS ellipsis is worse, because the
+boxes carry *numbers* and *titles* -- ``burned 15,74…`` still reads as a
+quantity and ``IDENTITY GA…`` reads as a different panel.
+
+So the boxes shed **whole fields**, in a fixed order, and the marker fires
+only when the *narrowest* tier still does not fit (see :func:`_tier_for`):
+
+===========  =====  ===================================================
+Tier         Needs  What it gives up
+===========  =====  ===================================================
+``full``     24     nothing
+``compact``  22     ``· L <liquidity>`` -- a raw v3 uint128 rendered
+                    ``2.16e+18`` is the least legible field on the
+                    screen and the most expensive in columns
+``tight``    16     ``burned N observed`` -> ``burn N``;
+                    ``owner ✓ frenpet.eth`` -> ``owner ✓`` (the tick
+                    *is* the assertion, the ENS name is decoration)
+``minimal``  13     ``N/2000 written`` -> ``N/2000``;
+                    ``since 2026-05-14`` -> ``2026-05-14``;
+                    ``detectors armed`` -> ``armed``
+===========  =====  ===================================================
+
+Titles and quantities are never in that table: they are rendered whole at
+every tier.  ``MINIMAL_WIDTH`` is 13 precisely because three of them are
+13 columns wide -- ``IDENTITY GATE``, ``OWNER CHANGED`` and today's
+``2,376,732 IMD``.  A supply that outgrows its box is the one case the
+marker exists for, and it fires rather than the digits being cut.
 """
 
 from __future__ import annotations
@@ -35,7 +83,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
 
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
     EMDASH,
@@ -54,9 +102,195 @@ from maxpane_dashboard.widgets.surf._fmt import (
 HOOK_NOT_LIVE = "NOT LIVE"
 HOOK_LAUNCHED = "LAUNCHED"
 
+#: Marker raised in a box's bottom border when even ``minimal`` does not fit.
+#: The border, not a content line: the boxes carry five content lines inside a
+#: height-7 frame and have no sixth to spare (see the DEFAULT_CSS note below).
+WIDEN_HINT = "‹ widen"
+
+#: Rendered columns each layout needs.  Measured from the strings the boxes
+#: below actually emit -- ``test_every_hero_tier_fits_the_width_it_advertises``
+#: renders every state at every tier and measures it, so a copy edit that
+#: outgrows its tier fails there rather than on a user's terminal.
+FULL_WIDTH = 24     # "142.71 WETH · L 2.16e+18"
+COMPACT_WIDTH = 22  # "burned 15,745 observed"
+TIGHT_WIDTH = 16    # "since 2026-05-14"
+MINIMAL_WIDTH = 13  # "IDENTITY GATE" / "OWNER CHANGED" / "2,376,732 IMD"
+
+TIER_WIDTHS = {
+    "full": FULL_WIDTH,
+    "compact": COMPACT_WIDTH,
+    "tight": TIGHT_WIDTH,
+    "minimal": MINIMAL_WIDTH,
+}
+
+#: Hard cap on the *unrecognised* hook headline, independent of the tier: it
+#: is third-party-ish text in a fixed-height box, so it is sliced (and only
+#: then escaped) before it can reach the parser.
+_HOOK_HEADLINE_CAP = 18
+
+
+def _tier_for(width: int) -> str:
+    """Widest box layout that fits ``width`` rendered columns.
+
+    ``width <= 0`` means "not laid out yet" and optimistically picks
+    ``full``; :meth:`SurfHero.on_resize` re-renders once the box has a size.
+    """
+    if width <= 0 or width >= FULL_WIDTH:
+        return "full"
+    if width >= COMPACT_WIDTH:
+        return "compact"
+    if width >= TIGHT_WIDTH:
+        return "tight"
+    return "minimal"
+
+
+def _short(tier: str) -> bool:
+    """``tight`` or narrower: the tier that gives up decoration."""
+    return tier in ("tight", "minimal")
+
+
+# -- box bodies (pure: a state and a tier in, markup lines out) --------
+
+
+def _hook_lines(hook_status, tier: str) -> list[str]:
+    """HOOK box: the launch state, always in words."""
+    status = str(hook_status or "").strip()
+    if not status:
+        # Two producers, one copy, and it has to be true of both: the logs
+        # group never answered, *or* the window held a hooked Initialize
+        # whose signer could not be read. The second one *did* read
+        # something, so "status unknown" understated it -- "unconfirmed"
+        # says the only thing true either way: we have not earned an answer.
+        return [
+            "[dim]V4 HOOK[/]", "", f"[dim]{EMDASH}[/]",
+            "[dim]unconfirmed[/]" if _short(tier) else "[dim]hook unconfirmed[/]",
+            "[dim] [/]",
+        ]
+
+    # Canonical form: collapse whitespace, upper-case.  The manager already
+    # sends "NOT LIVE"/"LAUNCHED"; this only absorbs case/spacing drift, it
+    # does NOT invent a second vocabulary.
+    canon = " ".join(status.split()).upper()
+    if canon == HOOK_NOT_LIVE:
+        big = f"[bold $warning]{HOOK_NOT_LIVE}[/]"
+        sub = "armed" if tier == "minimal" else "detectors armed"
+    elif canon == HOOK_LAUNCHED:
+        # The flagship event: $success styling is the point (PRD §4).
+        big = f"[bold $success]{HOOK_LAUNCHED}[/]"
+        sub = "live" if tier == "minimal" else "v4 hook live"
+    else:
+        # Tomorrow's vocabulary: escaped AFTER flattening/slicing/upper-
+        # casing so a hostile or merely novel value renders literally
+        # (PRD §6.3).  Slicing ``canon`` rather than ``status`` also keeps a
+        # newline out of a fixed-height box -- these are 5 content lines in
+        # a height-7 frame, so an extra line clips silently.  The cut is
+        # visible, because this is prose rather than a number or a title.
+        limit = min(_HOOK_HEADLINE_CAP, TIER_WIDTHS[tier])
+        head = canon if len(canon) <= limit else canon[: limit - 1] + "…"
+        big = f"[bold]{safe_markup(head)}[/]"
+        sub = "unrecognized" if _short(tier) else "unrecognized status"
+    return ["[dim]V4 HOOK[/]", "", big, f"[dim]{sub}[/]", "[dim] [/]"]
+
+
+def _lp_lines(lp_liquidity, lp_imd, lp_weth, lp_owner_ok, tier: str) -> list[str]:
+    """LP box: pool sides, raw liquidity, and the owner sanity flag."""
+    imd = as_float(lp_imd)
+    weth = as_float(lp_weth)
+    big = f"[bold]{fmt_compact(imd)} IMD[/]" if imd is not None else f"[dim]{EMDASH}[/]"
+    weth_str = f"{weth:,.2f} WETH" if weth is not None else f"{DASH} WETH"
+    # The raw uint128 goes first: rendered `2.16e+18` it is the least legible
+    # field in the row and the most expensive in columns, and `142.71 WETH`
+    # alone is the readable half.
+    second = weth_str if tier != "full" else f"{weth_str} · L {fmt_liquidity(lp_liquidity)}"
+    if lp_owner_ok is True:
+        # The tick *is* the assertion; the ENS name is decoration, and
+        # `fren…` would distinguish nothing.
+        third = "[dim]owner ✓[/]" if _short(tier) else "[dim]owner ✓ frenpet.eth[/]"
+    elif lp_owner_ok is False:
+        # The position NFT moved: the committed launch precondition.  Never
+        # shortened at any tier -- it is the alarm, and it is what sets
+        # MINIMAL_WIDTH at 13 along with the titles.
+        third = "[bold $error]OWNER CHANGED[/]"
+    else:
+        third = f"[dim]owner {DASH}[/]"
+    return ["[dim]LP #1167726[/]", "", big, f"[dim]{second}[/]", third]
+
+
+def _gate_lines(gate_open, identities_written, tier: str) -> list[str]:
+    """GATE box: identityAllowed() state + identities written."""
+    if gate_open is True:
+        big = "[bold $success]OPEN[/]"
+        sub = (
+            "can write"
+            if tier == "minimal"
+            else "can write now" if tier == "tight" else "holders can write now"
+        )
+    elif gate_open is False:
+        big = "[bold]CLOSED[/]"
+        # The date is the fact; "since" is grammar.
+        sub = "2026-05-14" if tier == "minimal" else "since 2026-05-14"
+    else:
+        big = f"[dim]{EMDASH}[/]"
+        sub = "gate unknown"
+    try:
+        # The `/2000` denominator is the IDMD cap (see the module docstring):
+        # a documented number that cannot drift, unlike every live metric.
+        count = f"{int(identities_written)}/2000"
+        written = count if tier == "minimal" else f"{count} written"
+    except (TypeError, ValueError):
+        written = f"{DASH} written" if tier != "minimal" else DASH
+    return ["[dim]IDENTITY GATE[/]", "", big, f"[dim]{written}[/]", f"[dim]{sub}[/]"]
+
+
+def _supply_lines(imd_supply, imd_burned_cum, tier: str) -> list[str]:
+    """SUPPLY box: IMD totalSupply + the burn *this install has observed*."""
+    supply = as_float(imd_supply)
+    burned = as_float(imd_burned_cum)
+    # None is a failed read, never 0 -- the false-BURN twin (PRD §6.1).  The
+    # quantity is never abbreviated or cut: if it outgrows the box the marker
+    # fires instead, because a number cut mid-digits still reads as a number.
+    big = f"[bold]{supply:,.0f} IMD[/]" if supply is not None else f"[dim]{EMDASH}[/]"
+    # Three states, because the key has three meanings (WP4.5):
+    #   None -> no successful supply read yet / read failed  -> dash
+    #   0.0  -> watched, nothing moved                       -> say so in words
+    #   >0   -> the burn observed since we started watching  -> quantity
+    # "observed", not "cum": the ~58,849 IMD of PRD §1 was burned before any
+    # install existed and this widget can never see it, so a bare
+    # "burned 0 cum" on day one would be a confident false statement.  The
+    # narrow forms keep that distinction -- "burn N" is still scoped by the
+    # box, and "no burn yet" still refuses to claim none was ever burned.
+    if burned is None:
+        second = f"burn {DASH}" if _short(tier) else f"burned {DASH}"
+    elif burned <= 0:
+        second = "no burn yet" if _short(tier) else "no burn observed yet"
+    else:
+        second = (
+            f"burn {burned:,.0f}" if _short(tier) else f"burned {burned:,.0f} observed"
+        )
+    return ["[dim]IMD SUPPLY[/]", "", big, f"[dim]{second}[/]", "[dim] [/]"]
+
 
 class SurfHeroBox(Static):
     """A single hero box: title, big line, two subtitle lines."""
+
+    def render_lines_at_tier(self, build) -> None:
+        """Render ``build(tier)`` at this box's own width, marker and all.
+
+        ``build`` takes a tier name and returns the five markup lines.  The
+        tier comes from *this* box's width rather than the row's, because
+        ``1fr`` rounding leaves neighbouring boxes a column apart and the
+        narrow one is the one that has to fit.
+        """
+        width = self.content_size.width
+        lines = build(_tier_for(width))
+        # The marker is the last resort, not the first: it fires only when
+        # the narrowest copy still does not fit, which is what keeps it dark
+        # in normal operation and therefore worth reading.  `text-overflow:
+        # ellipsis` remains the backstop underneath -- but now an announced
+        # one.
+        over = width > 0 and any(visible_len(line) > width for line in lines)
+        self.border_subtitle = WIDEN_HINT if over else ""
+        self.update("\n".join(lines))
 
 
 class SurfHero(Horizontal):
@@ -80,8 +314,14 @@ class SurfHero(Horizontal):
         text-align: center;
         text-wrap: nowrap;
         text-overflow: ellipsis;
+        border-subtitle-color: $warning;
     }
     """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # The raw values, not formatted lines, so a resize re-lays them out.
+        self._payload: dict = {}
 
     def compose(self) -> ComposeResult:
         for box_id in ("surf-hero-hook", "surf-hero-lp", "surf-hero-gate", "surf-hero-supply"):
@@ -101,90 +341,56 @@ class SurfHero(Horizontal):
         **_kwargs,
     ) -> None:
         """Refresh all four boxes from the manager's flat dict (PRD §5 hero)."""
-        self._update_hook(hook_status)
-        self._update_lp(lp_liquidity, lp_imd, lp_weth, lp_owner_ok)
-        self._update_gate(gate_open, identities_written)
-        self._update_supply(imd_supply, imd_burned_cum)
+        self._payload = {
+            "hook_status": hook_status,
+            "lp_liquidity": lp_liquidity,
+            "lp_imd": lp_imd,
+            "lp_weth": lp_weth,
+            "lp_owner_ok": lp_owner_ok,
+            "gate_open": gate_open,
+            "identities_written": identities_written,
+            "imd_supply": imd_supply,
+            "imd_burned_cum": imd_burned_cum,
+            "seen": True,
+        }
+        self._render_view()
+
+    def on_resize(self, _event=None) -> None:
+        """Re-render: each box's tier is a function of its own width."""
+        if self._payload:
+            self._render_view()
 
     # -- boxes ----------------------------------------------------------
 
-    def _update_hook(self, hook_status) -> None:
-        box = self.query_one("#surf-hero-hook", SurfHeroBox)
-        status = str(hook_status or "").strip()
-        if not status:
-            box.update(f"[dim]V4 HOOK[/]\n\n[dim]{EMDASH}[/]\n[dim]status unknown[/]\n[dim] [/]")
-            return
-        # Canonical form: collapse whitespace, upper-case.  The manager already
-        # sends "NOT LIVE"/"LAUNCHED"; this only absorbs case/spacing drift, it
-        # does NOT invent a second vocabulary.
-        canon = " ".join(status.split()).upper()
-        if canon == HOOK_NOT_LIVE:
-            big = f"[bold $warning]{HOOK_NOT_LIVE}[/]"
-            sub = "detectors armed"
-        elif canon == HOOK_LAUNCHED:
-            # The flagship event: $success styling is the point (PRD §4).
-            big = f"[bold $success]{HOOK_LAUNCHED}[/]"
-            sub = "v4 hook live"
-        else:
-            # Tomorrow's vocabulary: escaped AFTER flattening/slicing/upper-
-            # casing so a hostile or merely novel value renders literally
-            # (PRD §6.3).  Slicing ``canon`` rather than ``status`` also keeps a
-            # newline out of a fixed-height box -- these are 5 content lines in
-            # a height-7 frame, so an extra line clips silently.
-            big = f"[bold]{safe_markup(canon[:18])}[/]"
-            sub = "unrecognized status"
-        box.update(f"[dim]V4 HOOK[/]\n\n{big}\n[dim]{sub}[/]\n[dim] [/]")
-
-    def _update_lp(self, lp_liquidity, lp_imd, lp_weth, lp_owner_ok) -> None:
-        box = self.query_one("#surf-hero-lp", SurfHeroBox)
-        imd = as_float(lp_imd)
-        weth = as_float(lp_weth)
-        big = f"[bold]{fmt_compact(imd)} IMD[/]" if imd is not None else f"[dim]{EMDASH}[/]"
-        weth_str = f"{weth:,.2f} WETH" if weth is not None else f"{DASH} WETH"
-        second = f"{weth_str} · L {fmt_liquidity(lp_liquidity)}"
-        if lp_owner_ok is True:
-            third = "[dim]owner ✓ frenpet.eth[/]"
-        elif lp_owner_ok is False:
-            # The position NFT moved: the committed launch precondition.
-            third = "[bold $error]OWNER CHANGED[/]"
-        else:
-            third = f"[dim]owner {DASH}[/]"
-        box.update(f"[dim]LP #1167726[/]\n\n{big}\n[dim]{second}[/]\n{third}")
-
-    def _update_gate(self, gate_open, identities_written) -> None:
-        box = self.query_one("#surf-hero-gate", SurfHeroBox)
-        if gate_open is True:
-            big = "[bold $success]OPEN[/]"
-            sub = "holders can write now"
-        elif gate_open is False:
-            big = "[bold]CLOSED[/]"
-            sub = "since 2026-05-14"
-        else:
-            big = f"[dim]{EMDASH}[/]"
-            sub = "gate unknown"
+    def _render_view(self) -> None:
+        data = self._payload
         try:
-            written = f"{int(identities_written)}/2000 written"
-        except (TypeError, ValueError):
-            written = f"{DASH} written"
-        box.update(f"[dim]IDENTITY GATE[/]\n\n{big}\n[dim]{written}[/]\n[dim]{sub}[/]")
+            boxes = {
+                key: self.query_one(f"#surf-hero-{key}", SurfHeroBox)
+                for key in ("hook", "lp", "gate", "supply")
+            }
+        except Exception:  # not composed yet
+            return
 
-    def _update_supply(self, imd_supply, imd_burned_cum) -> None:
-        box = self.query_one("#surf-hero-supply", SurfHeroBox)
-        supply = as_float(imd_supply)
-        burned = as_float(imd_burned_cum)
-        # None is a failed read, never 0 -- the false-BURN twin (PRD §6.1).
-        big = f"[bold]{supply:,.0f} IMD[/]" if supply is not None else f"[dim]{EMDASH}[/]"
-        # Three states, because the key has three meanings (WP4.5):
-        #   None -> no successful supply read yet / read failed  -> dash
-        #   0.0  -> watched, nothing moved                       -> say so in words
-        #   >0   -> the burn observed since we started watching  -> quantity
-        # "observed", not "cum": the ~58,849 IMD of PRD §1 was burned before any
-        # install existed and this widget can never see it, so a bare
-        # "burned 0 cum" on day one would be a confident false statement.
-        if burned is None:
-            second = f"burned {DASH}"
-        elif burned <= 0:
-            second = "no burn observed yet"
-        else:
-            second = f"burned {burned:,.0f} observed"
-        box.update(f"[dim]IMD SUPPLY[/]\n\n{big}\n[dim]{second}[/]\n[dim] [/]")
+        boxes["hook"].render_lines_at_tier(
+            lambda tier: _hook_lines(data.get("hook_status"), tier)
+        )
+        boxes["lp"].render_lines_at_tier(
+            lambda tier: _lp_lines(
+                data.get("lp_liquidity"),
+                data.get("lp_imd"),
+                data.get("lp_weth"),
+                data.get("lp_owner_ok"),
+                tier,
+            )
+        )
+        boxes["gate"].render_lines_at_tier(
+            lambda tier: _gate_lines(
+                data.get("gate_open"), data.get("identities_written"), tier
+            )
+        )
+        boxes["supply"].render_lines_at_tier(
+            lambda tier: _supply_lines(
+                data.get("imd_supply"), data.get("imd_burned_cum"), tier
+            )
+        )

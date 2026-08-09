@@ -312,6 +312,125 @@ async def test_hero_unknown_hook_status_is_escaped_not_parsed():
         assert "unrecognized status" in screen
 
 
+def test_hero_tier_table_is_measured_not_rounded():
+    """The thresholds are the widths their own layouts need, in order."""
+    from maxpane_dashboard.widgets.surf.hero import (
+        COMPACT_WIDTH,
+        FULL_WIDTH,
+        MINIMAL_WIDTH,
+        TIER_WIDTHS,
+        TIGHT_WIDTH,
+        _tier_for,
+    )
+
+    assert FULL_WIDTH > COMPACT_WIDTH > TIGHT_WIDTH > MINIMAL_WIDTH
+    # ``0`` is "not laid out yet"; ``on_resize`` corrects the guess.
+    assert _tier_for(0) == "full"
+    assert _tier_for(FULL_WIDTH) == "full"
+    assert _tier_for(FULL_WIDTH - 1) == "compact"
+    assert _tier_for(COMPACT_WIDTH) == "compact"
+    assert _tier_for(COMPACT_WIDTH - 1) == "tight"
+    assert _tier_for(TIGHT_WIDTH) == "tight"
+    assert _tier_for(TIGHT_WIDTH - 1) == "minimal"
+    assert TIER_WIDTHS == {
+        "full": FULL_WIDTH,
+        "compact": COMPACT_WIDTH,
+        "tight": TIGHT_WIDTH,
+        "minimal": MINIMAL_WIDTH,
+    }
+
+
+def test_every_hero_tier_fits_the_width_it_advertises():
+    """Render every box in every state at every tier, then *measure* it.
+
+    This is what makes the constants above honest: a copy edit that grows a
+    subtitle past its tier fails here rather than reappearing as an ellipsis
+    on someone's terminal. Live *numbers* are deliberately out of scope --
+    they cannot be shortened without lying, so a quantity that outgrows its
+    box lights the marker instead (see the test below).
+    """
+    from maxpane_dashboard.widgets.markup_safety import visible_len
+    from maxpane_dashboard.widgets.surf.hero import (
+        TIER_WIDTHS,
+        _gate_lines,
+        _hook_lines,
+        _lp_lines,
+        _supply_lines,
+    )
+
+    for tier, need in TIER_WIDTHS.items():
+        renderings = []
+        for status in (HOOK_NOT_LIVE, HOOK_LAUNCHED, None, "", "holder-gated"):
+            renderings.append(_hook_lines(status, tier))
+        for owner in (True, False, None):
+            renderings.append(
+                _lp_lines(_FULL_HERO["lp_liquidity"], 388421.0, 142.7067, owner, tier)
+            )
+        for gate in (True, False, None):
+            for written in (1, None):
+                renderings.append(_gate_lines(gate, written, tier))
+        for burned in (15745.0, 0.0, None):
+            renderings.append(_supply_lines(2376731.868679, burned, tier))
+
+        for lines in renderings:
+            widest = max(visible_len(line) for line in lines)
+            assert widest <= need, (
+                f"{tier} tier advertises {need} columns but renders "
+                f"{widest}: {[line for line in lines if visible_len(line) == widest]}"
+            )
+
+
+async def test_hero_a_number_too_big_for_its_box_is_announced_not_cut_in_silence():
+    """A quantity cannot be tiered, so the box says so instead.
+
+    ``burned 15,74…`` -- a number cut mid-digits with nothing to mark it --
+    is the failure this replaces. When even the narrowest copy cannot fit a
+    live value, the border carries the marker.
+    """
+    from maxpane_dashboard.widgets.surf.hero import MINIMAL_WIDTH, WIDEN_HINT
+
+    widget = SurfHero()
+    app = _Harness(widget)
+    # Four boxes across a 60-column app: ~7 content columns each, far below
+    # MINIMAL_WIDTH, so even the shortest copy cannot fit.
+    async with app.run_test(size=(60, 12)) as pilot:
+        widget.update_data(**_FULL_HERO)
+        await pilot.pause()
+        assert WIDEN_HINT in _screen_text(app)
+
+    # ...and with room to spare it stays dark.
+    widget2 = SurfHero()
+    app2 = _Harness(widget2)
+    async with app2.run_test(size=(4 * (MINIMAL_WIDTH + 8) + 4, 12)) as pilot:
+        widget2.update_data(**_FULL_HERO)
+        await pilot.pause()
+        assert WIDEN_HINT not in _screen_text(app2)
+
+
+async def test_hero_unreadable_hook_says_unconfirmed_not_that_nothing_was_read():
+    """``hook_status is None`` now has two producers, and one of them read.
+
+    WP4's ``_hook_status`` returns ``None`` both when the logs group never
+    answered *and* when the window held a hooked ``Initialize`` whose signer
+    could not be attributed (``hook_unverified``) -- ``PoolManager.initialize``
+    is permissionless, so naming the dev there would be a guess. The copy has
+    to be true of both: "unconfirmed" is, "status unknown" reads only as the
+    first.
+    """
+    widget = SurfHero()
+    app = _Harness(widget)
+    async with app.run_test(size=(160, 12)) as pilot:
+        widget.update_data(**{**_FULL_HERO, "hook_status": None})
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "unconfirmed" in screen
+        # Never the two answers we have not earned.
+        assert "NOT LIVE" not in screen
+        assert "LAUNCHED" not in screen
+        # ...and never the fallback arm, which means something else entirely.
+        assert "unrecognized status" not in screen
+
+
 # ---------------------------------------------------------------------
 # SurfSignals
 # ---------------------------------------------------------------------

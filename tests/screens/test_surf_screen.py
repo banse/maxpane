@@ -586,12 +586,16 @@ async def test_refresh_renders_title_and_all_panels():
         assert "NOT LIVE" in text
         assert "NOT_LIVE" not in text
         # The observed burn reached the hero, and PRD §1's all-time ledger is
-        # nowhere on screen — the manager cannot produce it. Only the prefix is
-        # asserted: at 150 columns a hero box has 14 content columns
-        # (150·3/5 = 90, −2 screen padding = 88, ÷4 boxes = 22, −2 margin
-        # −2 border −4 padding), so WP3.2's full ``burned 15,745 observed``
-        # copy is ellipsised. The exact string is WP3's to pin at box width.
-        assert "burned 15,7" in text
+        # nowhere on screen — the manager cannot produce it. At 150 columns a
+        # hero box has ~15 content columns (150·3/5 = 90, −2 screen padding
+        # = 88, ÷4 boxes = 22, −2 margin −2 border −4 padding), which selects
+        # the hero's ``minimal`` tier: the copy is the short ``burn 15,745``,
+        # and the quantity is *whole*. This used to assert the prefix
+        # ``"burned 15,7"`` because the full copy was ellipsised here to
+        # ``burned 15,74…`` — a number cut mid-digits, with nothing marking
+        # the cut. That was final-review I-2; the shed field replaced it.
+        assert "burn 15,745" in text
+        assert "burned 15,74…" not in text
         assert "58,848" not in text
         # The clipping trap: all six detector rows reach the compositor.
         # SurfSignals is six rows + title inside #hero-row's fixed height —
@@ -903,17 +907,24 @@ async def test_a_narrow_tier_advertises_rather_than_truncating_silently():
     assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS - 20, "feed") > 0
 
 
-async def test_a_linked_post_advertises_widen_at_full_layout_width_forever():
+async def test_a_linked_post_advertises_widen_at_the_full_layout_width():
     """A tx-linked post's ``‹ widen`` at the full-layout width is correct,
     not a bug -- do not "fix" this by raising ``SURF_FULL_LAYOUT_COLUMNS``.
 
     The nonce-13 capture's tx-link token (a URL glued to a 66-char hex hash
-    by the post's own punctuation) is 91 columns and cannot be wrapped. No
-    finite pinned width clears it: the same shape recurs on any post that
-    links a transaction, and ``SurfFeed`` will correctly re-advertise at 194
-    columns, 594, or any width smaller than the token. The house rule is
-    "never clip silently" -- this is that rule working, at exactly the width
-    this repo has chosen to call "full layout".
+    by the post's own punctuation) is 91 columns and cannot be wrapped, so
+    ``SurfFeed`` truncates it visibly and says so. The house rule is "never
+    clip silently"; this is that rule working.
+
+    The *reason* not to chase it, corrected: this token is 91 columns and
+    therefore finite, and the marker does clear -- at 194, pinned below.
+    (The earlier wording claimed "no finite width fixes it" and named 194 as
+    an example of a width where it would not, which was measurably false and
+    would send the next reader to the wrong conclusion.) The conclusion is
+    unchanged and rests on different ground: 194 is past the ~169 columns a
+    laptop gets at the forced 17 pt, and the *next* post linking a
+    transaction brings its own token of its own length, so no pinned width
+    settles the general case.
     """
     assert (
         await _widen_markers(
@@ -921,6 +932,118 @@ async def test_a_linked_post_advertises_widen_at_full_layout_width_forever():
         )
         > 0
     )
+    # Where it actually clears -- measured, not asserted from the comment.
+    assert await _widen_markers(190, "feed", payload=_frozen_payload()) > 0
+    assert await _widen_markers(194, "feed", payload=_frozen_payload()) == 0
+
+
+# -- the hero's own width tiers (final-review I-2) -----------------------
+
+from maxpane_dashboard.widgets.surf.hero import (  # noqa: E402
+    WIDEN_HINT as HERO_WIDEN_HINT,
+)
+
+
+def _region_text(app, widget) -> str:
+    """Composited text of just *widget*'s rectangle on the screen.
+
+    ``_screen_text`` is the whole screen, which is useless for "nothing in
+    the hero is truncated": the feed below it legitimately renders ``…`` on
+    an over-long token. Slicing the compositor's strips to the widget's own
+    region keeps the claim about the widget it is made about.
+    """
+    strips = app.screen._compositor.render_strips()
+    region = widget.region
+    return "\n".join(
+        "".join(seg.text for seg in strips[y])[region.x : region.x + region.width]
+        for y in range(region.y, region.y + region.height)
+    )
+
+
+async def _hero_text(width: int) -> str:
+    """Composited text of the hero row alone at *width* columns."""
+    manager = _FakeManager(payload=_widen_sweep_payload())
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        return _region_text(app, screen.query_one(SurfHero))
+
+
+async def test_the_hero_cuts_neither_a_number_nor_a_title_at_the_pinned_width():
+    """I-2: ``burned 15,74…`` and ``IDENTITY GA…`` must not be reachable.
+
+    A truncated *word* is a shortened word; a truncated *number* still reads
+    as a number, and a truncated panel title reads as a different panel. The
+    hero sheds whole fields instead, so at the pinned width every title and
+    every quantity arrives intact.
+    """
+    hero = await _hero_text(SURF_FULL_LAYOUT_COLUMNS)
+
+    for whole in (
+        "V4 HOOK", "LP #1167726", "IDENTITY GATE", "IMD SUPPLY",   # the titles
+        "2,376,732 IMD", "388.4K IMD", "142.71 WETH", "burn 15,745",  # the numbers
+        "1/2000", "NOT LIVE", "CLOSED", "owner ✓",
+    ):
+        assert whole in hero, f"{whole!r} did not survive the hero row whole"
+
+    # The general statement the list above is a sample of: at the pinned
+    # width the hero truncates nothing at all.
+    assert "…" not in hero, f"something in the hero is still ellipsised:\n{hero}"
+
+
+async def test_the_hero_spends_new_columns_in_the_documented_order():
+    """Widening restores the shed fields cheapest-last: owner/burn, then L.
+
+    Pins the *order* rather than just the endpoints, because the order is the
+    product decision: the raw v3 uint128 is the least legible field and the
+    most expensive in columns, so it is the first to go and the last to come
+    back.
+    """
+    narrow = await _hero_text(SURF_FULL_LAYOUT_COLUMNS)   # minimal tier
+    mid = await _hero_text(200)                           # compact tier
+    wide = await _hero_text(240)                          # full tier
+
+    # `· L <liquidity>` is shed first and restored last.
+    assert "· L " not in narrow
+    assert "· L " not in mid
+    assert "· L " in wide
+
+    # The observed burn: a whole short form, never cut digits.
+    assert "burn 15,745" in narrow
+    assert "burned 15,745 observed" in mid
+    assert "burned 15,74…" not in narrow and "burned 15,74…" not in mid
+
+    # The owner assertion: the tick is the claim, the ENS name is decoration.
+    assert "owner ✓" in narrow and "frenpet.eth" not in narrow
+    assert "owner ✓ frenpet.eth" in mid
+
+    # Nothing is truncated at any of the three widths.
+    for text in (narrow, mid, wide):
+        assert "…" not in text
+
+
+async def test_the_hero_marker_is_dark_on_every_terminal_anyone_owns():
+    """The marker fires only when the *narrowest* tier cannot fit.
+
+    Bolting a bare ``‹ widen`` onto the hero would leave it permanently lit:
+    the full copy needs ~220 columns, past the ~169 a laptop gets at the
+    forced 17 pt. A marker that is on everywhere means nothing -- the trap
+    ``widgets/surf/signals.py`` documents. Tying it to the narrowest tier
+    keeps it dark in normal operation and therefore worth reading.
+    """
+    assert HERO_WIDEN_HINT == "‹ widen"
+
+    for width in (SURF_FULL_LAYOUT_COLUMNS, 143, 169, 200, 240):
+        assert HERO_WIDEN_HINT not in await _hero_text(width), (
+            f"the hero advertises a loss at {width} columns"
+        )
+
+    # ...and it is not merely unreachable: four columns below the pinned
+    # width the gate box can no longer fit its own title, and says so.
+    assert HERO_WIDEN_HINT in await _hero_text(SURF_FULL_LAYOUT_COLUMNS - 4)
 
 
 # -- the activity panel's own width tiers (final-review I-1) -------------

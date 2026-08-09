@@ -70,22 +70,44 @@ INITIAL_TITLE = "SURF · Mission Control · Ethereum Mainnet"
 #: Sentinel staleness pushed to the StatusBar when the manager itself failed.
 MANAGER_FAILURE_SECONDS = 999
 
-#: Measured against composited output (both c views), not estimated -- see
-#: tests. This number deliberately EXCLUDES posts carrying an inherently
+#: Measured against composited output (both ``c`` views), not estimated --
+#: see tests. The width at which ordinary (non-token) feed content, and
+#: every other widget, show zero ``‹ widen`` markers in both views.
+#:
+#: 139 is set by ``SurfHero``: four boxes across a ``3fr`` half of the hero
+#: row get 12 content columns at 135 and 13 at 139, and 13 is what
+#: ``hero.MINIMAL_WIDTH`` needs -- ``IDENTITY GATE``, ``OWNER CHANGED`` and
+#: today's ``2,376,732 IMD`` are each exactly 13 columns and none of them
+#: may be cut. The activity panel clears its own full tier at 119, so the
+#: hero is the binding constraint. Both were re-measured together after the
+#: final review: before it, four of the six widgets had no marker mechanism
+#: at all, so "every other widget shows zero markers" was satisfied by
+#: widgets that could not register a loss and the number was calibrated by
+#: ``SurfFeed`` and ``SurfSignals`` alone.
+#:
+#: 139 rather than 137, which also measures clean *today*: ``1fr`` rounding
+#: leaves one box on 12 columns at 137-138, and which box that is decides
+#: whether anything overflows. Today it is the HOOK box, whose copy is
+#: short, so the screen happens to come up clean -- but a longer
+#: unrecognised ``hook_status`` lights a marker at 137 and 138 and not at
+#: 139 (measured, all three). 139 is the first width where *every* box
+#: reaches ``MINIMAL_WIDTH``, which is a property of the layout rather than
+#: of the current payload, and that is what this constant is supposed to
+#: mean.
+#:
+#: This number deliberately EXCLUDES posts carrying an inherently
 #: unbreakable token (a URL glued to a raw tx hash, e.g. by a trailing
 #: period with no space -- the real nonce-13 capture's link is 91 columns).
-#: SurfFeed correctly truncates such a token and lights its own ``‹ widen``
-#: no matter how wide the panel is; the *next* real post linking a
-#: transaction reproduces the same shape and re-triggers the marker at this
-#: width, at 194, or at 594. There is no finite width that "fixes" it, so a
-#: fixture containing one cannot be what "full layout" is measured against
-#: -- see ``test_a_linked_post_advertises_widen_at_full_layout_width_forever``,
-#: which pins that behaviour as permanent, not a defect. This constant is
-#: instead the width at which ordinary (non-token) feed content, and every
-#: other widget, show zero markers in both ``c`` views. Do not raise this
-#: back toward 194 to silence a linked post's marker -- that marker is
-#: correct.
-SURF_FULL_LAYOUT_COLUMNS = 135
+#: SurfFeed correctly truncates such a token and lights its own ``‹ widen``;
+#: *this particular capture* clears at 194, and the next real post linking a
+#: transaction reproduces the shape at whatever width its own token needs.
+#: A fixture containing one therefore cannot be what "full layout" is
+#: measured against -- see
+#: ``test_a_linked_post_advertises_widen_at_the_full_layout_width``. Do not
+#: raise this toward 194 to silence a linked post's marker: that marker is
+#: correct, and 194 is past the ~169 columns a laptop gets at the forced
+#: 17 pt, i.e. a "full layout" nobody could reach.
+SURF_FULL_LAYOUT_COLUMNS = 139
 
 
 # -- format helpers ----------------------------------------------------
