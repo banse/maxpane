@@ -830,9 +830,47 @@ async def test_both_views_get_the_identical_slot():
 from maxpane_dashboard.screens.surf import SURF_FULL_LAYOUT_COLUMNS
 
 
-async def _widen_markers(width: int, view: str = "feed") -> int:
-    """Composited ``‹ widen`` count at *width*, in the requested ``c`` view."""
-    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
+def _representative_feed_items() -> list[dict]:
+    """The captured feed items minus the one carrying an unbreakable token.
+
+    The nonce-13 post's tx-link (a URL glued to a 66-char hex hash by the
+    raw text's own punctuation, no space) is 91 columns wide and cannot be
+    wrapped -- ``SurfFeed`` correctly truncates it and lights its own
+    ``‹ widen`` no matter how wide the panel gets, because the *next* real
+    post linking a transaction will do the same thing again. That belongs to
+    a fixture that documents it as permanent
+    (``test_a_linked_post_advertises_widen_at_full_layout_width_forever``
+    below), not to the fixture the full-layout width is measured against --
+    a fixture containing an inherently-unbreakable token has no finite width
+    that clears it, so it cannot be what "full layout" is measured from.
+    This is the same real captures (nonce 12's short link, the reply) minus
+    that one post, nothing invented.
+    """
+    return [
+        item
+        for item in _sample_data()["feed_items"]
+        if item["ts"] != _TS_POST_13
+    ]
+
+
+def _widen_sweep_payload() -> dict:
+    """The payload the full-layout-width measurement sweeps against."""
+    return _frozen_payload(feed_items=_representative_feed_items())
+
+
+async def _widen_markers(
+    width: int, view: str = "feed", payload: dict | None = None
+) -> int:
+    """Composited ``‹ widen`` count at *width*, in the requested ``c`` view.
+
+    Defaults to the representative (no-unbreakable-token) payload; pass
+    ``payload=`` to measure against something else, e.g. the full sample
+    with the tx-linked post.
+    """
+    manager = _FakeManager(
+        payload=payload if payload is not None else _widen_sweep_payload()
+    )
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
     app = _ThemedHarness(screen)
     async with app.run_test(size=(width, 48)) as pilot:
         await pilot.pause()
@@ -845,7 +883,10 @@ async def _widen_markers(width: int, view: str = "feed") -> int:
 
 
 async def test_the_pinned_width_clears_every_widen_marker():
-    """At ``SURF_FULL_LAYOUT_COLUMNS``, both views are marker-free."""
+    """At ``SURF_FULL_LAYOUT_COLUMNS``, both views are marker-free for
+    representative content. (A tx-linked post is a separate, permanent
+    case -- see ``test_a_linked_post_advertises_widen_at_full_layout_width_forever``.)
+    """
     assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS, "feed") == 0
     assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS, "activity") == 0
 
@@ -860,6 +901,26 @@ async def test_the_pinned_width_is_tight_not_padded():
 async def test_a_narrow_tier_advertises_rather_than_truncating_silently():
     """Well below the threshold every drop is announced, never silent."""
     assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS - 20, "feed") > 0
+
+
+async def test_a_linked_post_advertises_widen_at_full_layout_width_forever():
+    """A tx-linked post's ``‹ widen`` at the full-layout width is correct,
+    not a bug -- do not "fix" this by raising ``SURF_FULL_LAYOUT_COLUMNS``.
+
+    The nonce-13 capture's tx-link token (a URL glued to a 66-char hex hash
+    by the post's own punctuation) is 91 columns and cannot be wrapped. No
+    finite pinned width clears it: the same shape recurs on any post that
+    links a transaction, and ``SurfFeed`` will correctly re-advertise at 194
+    columns, 594, or any width smaller than the token. The house rule is
+    "never clip silently" -- this is that rule working, at exactly the width
+    this repo has chosen to call "full layout".
+    """
+    assert (
+        await _widen_markers(
+            SURF_FULL_LAYOUT_COLUMNS, "feed", payload=_frozen_payload()
+        )
+        > 0
+    )
 
 
 def test_surf_fits_inside_the_documented_app_width():

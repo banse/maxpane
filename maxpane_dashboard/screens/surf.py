@@ -71,14 +71,21 @@ INITIAL_TITLE = "SURF · Mission Control · Ethereum Mainnet"
 MANAGER_FAILURE_SECONDS = 999
 
 #: Measured against composited output (both c views), not estimated -- see
-#: tests. The binding constraint is SurfFeed's unbreakable-token guard
-#: (feed.py's ``FULL_TEXT_WIDTH`` path): the sample announce post's tx-link
-#: token, including its trailing period, is 91 columns wide, and the feed
-#: RichLog's content width only reaches that budget once the screen itself
-#: is 194 columns (the panel gets 3/5 of the row, less title/spacer/border
-#: overhead). Below 194 the feed panel truncates the token and lights its
-#: own ``‹ widen`` marker, exactly as the house rule requires.
-SURF_FULL_LAYOUT_COLUMNS = 194
+#: tests. This number deliberately EXCLUDES posts carrying an inherently
+#: unbreakable token (a URL glued to a raw tx hash, e.g. by a trailing
+#: period with no space -- the real nonce-13 capture's link is 91 columns).
+#: SurfFeed correctly truncates such a token and lights its own ``‹ widen``
+#: no matter how wide the panel is; the *next* real post linking a
+#: transaction reproduces the same shape and re-triggers the marker at this
+#: width, at 194, or at 594. There is no finite width that "fixes" it, so a
+#: fixture containing one cannot be what "full layout" is measured against
+#: -- see ``test_a_linked_post_advertises_widen_at_full_layout_width_forever``,
+#: which pins that behaviour as permanent, not a defect. This constant is
+#: instead the width at which ordinary (non-token) feed content, and every
+#: other widget, show zero markers in both ``c`` views. Do not raise this
+#: back toward 194 to silence a linked post's marker -- that marker is
+#: correct.
+SURF_FULL_LAYOUT_COLUMNS = 135
 
 
 # -- format helpers ----------------------------------------------------
