@@ -139,8 +139,26 @@ class LastGood:
         return {"payload": _jsonable(self.payload), "ts": float(self.ts)}
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "LastGood":
-        return cls(payload=data.get("payload"), ts=float(data.get("ts") or 0.0))
+    def from_dict(cls, data: Mapping[str, Any], *, now: float) -> "LastGood":
+        """Rebuild one persisted slot, refusing an unusable or future-dated ``ts``.
+
+        ``ts`` is documented above as mandatory, so a missing, non-positive or
+        non-finite one is **dropped** (raises, caught by the per-slot loop in
+        ``load()``) rather than defaulted to ``0.0`` -- a sentinel here would
+        silently claim an as-of time the file never held. A ``ts`` more than
+        :data:`CLOCK_SKEW_TOLERANCE_SECONDS` in the future is exactly what a
+        skewed or hand-edited clock produces; keeping it would let
+        :meth:`age_seconds` clamp to ``0.0`` forever, rendering a dead source
+        as permanently live (CLAUDE.md) -- precisely what a last-good slot
+        exists to prevent.
+        """
+        try:
+            ts = float(data.get("ts"))
+        except (TypeError, ValueError):
+            raise ValueError("SURF last-good entry has no usable ts") from None
+        if not math.isfinite(ts) or ts <= 0.0 or ts > now + CLOCK_SKEW_TOLERANCE_SECONDS:
+            raise ValueError(f"unusable SURF last-good ts {ts!r}")
+        return cls(payload=data.get("payload"), ts=ts)
 
 
 class _Drop:
@@ -227,6 +245,14 @@ class SurfCache:
         self.last_supply: float | None = None
         self.burned_cum: float = 0.0
         self._last_supply_block: int | None = None
+        # Set by ``load()`` when a restored ``last_supply`` came back with no
+        # trustworthy block watermark to compare it against (the field was
+        # absent -- an older cache file -- or failed to parse). See
+        # ``record_supply`` for why this is not the same as "no watermark
+        # yet": a fresh, never-loaded cache has ``last_supply is None`` too,
+        # and the ordinary "first read only establishes the baseline" path
+        # already handles that case without this flag.
+        self._supply_block_unverified: bool = False
 
     # -- clock ---------------------------------------------------------------
 
@@ -443,6 +469,20 @@ class SurfCache:
                 block = int(block_number)
             except (TypeError, ValueError):
                 return None
+            if self._supply_block_unverified:
+                # A restart restored ``last_supply`` but not a trustworthy
+                # block watermark (missing or corrupt on disk -- see
+                # ``load()``). Comparing this reading against that value
+                # would be the exact bug this watermark exists to prevent: a
+                # stale replica answering first would look "in order" against
+                # an absent watermark and get folded in as a burn or a
+                # bridge-in. Instead, treat this reading as the new reference
+                # point outright and conclude nothing from it, exactly like
+                # the very first observation of a fresh cache.
+                self._last_supply_block = block
+                self._supply_block_unverified = False
+                self.last_supply = value
+                return None
             if self._last_supply_block is not None and block <= self._last_supply_block:
                 # Stale replica: this block was already superseded by one
                 # folded in earlier. Ignore it outright -- do not let it
@@ -587,6 +627,9 @@ class SurfCache:
             "baselines": _jsonable(self._baselines),
             "burned_cum": float(self.burned_cum),
             "last_supply": None if self.last_supply is None else float(self.last_supply),
+            "last_supply_block": (
+                None if self._last_supply_block is None else int(self._last_supply_block)
+            ),
         }
         tmp = target + ".tmp"
         try:
@@ -625,6 +668,21 @@ class SurfCache:
         if not isinstance(payload, dict):
             logger.warning("SURF cache %s has an unexpected shape, skipping", target)
             return
+        version = payload.get("version")
+        if isinstance(version, int) and not isinstance(version, bool) and version > _SCHEMA_VERSION:
+            # Written by a newer MaxPane than this one understands. Refusing
+            # the whole file (rather than best-effort parsing sections whose
+            # shape may have changed) is the same "start fresh" degradation
+            # every other corrupt-shape case gets -- a partially-understood
+            # future schema is not safer than an empty cache. A *missing*
+            # version (every file this code has ever written until now, plus
+            # any hand-crafted fixture) is treated as schema 1 and loads
+            # normally, so this is additive, not a new failure mode.
+            logger.warning(
+                "SURF cache %s is from a newer schema (%s > %s), skipping",
+                target, version, _SCHEMA_VERSION,
+            )
+            return
 
         reference = self._now(now)
 
@@ -633,7 +691,7 @@ class SurfCache:
                 if slot not in SLOTS or not isinstance(data, dict):
                     continue
                 try:
-                    self.last_good[str(slot)] = LastGood.from_dict(data)
+                    self.last_good[str(slot)] = LastGood.from_dict(data, now=reference)
                 except Exception as exc:            # noqa: BLE001
                     logger.debug("Skipping bad SURF last-good slot %s: %s", slot, exc)
         except Exception as exc:                    # noqa: BLE001
@@ -685,6 +743,26 @@ class SurfCache:
             )
         except (TypeError, ValueError):
             self.last_supply = None
+
+        # The block watermark that guards ``record_supply`` against a stale
+        # RPC replica (see its docstring) must round-trip alongside
+        # ``last_supply``, or the exact bug it fixes comes back on every
+        # restart: a replica of an already-superseded block would look "in
+        # order" against an absent watermark and get folded into burned_cum
+        # a second time. A watermark that fails to load is not the same as
+        # "no watermark was ever recorded" (a fresh cache) when a
+        # ``last_supply`` DID come back -- that combination means the file
+        # predates this field, or the field is corrupt, and it is flagged so
+        # ``record_supply`` re-establishes the watermark from the next
+        # reading instead of comparing against one it cannot verify.
+        try:
+            raw_block = payload.get("last_supply_block")
+            self._last_supply_block = None if raw_block is None else int(raw_block)
+        except (TypeError, ValueError):
+            self._last_supply_block = None
+        self._supply_block_unverified = (
+            self._last_supply_block is None and self.last_supply is not None
+        )
 
         logger.info(
             "Loaded the SURF cache from %s: %d last-good slots, %d baselines",

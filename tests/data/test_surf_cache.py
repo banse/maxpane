@@ -777,6 +777,90 @@ def test_a_non_finite_value_is_nulled_on_the_way_to_disk_never_fabricated(tmp_pa
     }
 
 
+def test_a_stale_replica_after_restart_does_not_double_count_a_burn(tmp_path):
+    """Fix round 1 review repro: the block watermark must survive a restart.
+
+    True burn across the whole sequence is 150 (1000 -> 900 -> 850). Without
+    a persisted watermark, a post-restart stale replica of the
+    already-superseded block-100 reading looks "in order" (no watermark to
+    reject it against), gets read as a bridge-in back up to 1000, and the
+    next genuine 850 reading then looks like a SECOND 150 burn -- 250 total,
+    not 150.
+    """
+    clock = FakeClock()
+    path = str(tmp_path / "surf_cache.json")
+    c = SurfCache(path=path, clock=clock)
+    assert c.record_supply(1000.0, block_number=100) is None            # baseline
+    assert c.record_supply(900.0, block_number=101) == pytest.approx(100.0)
+    c.save()
+
+    restored = SurfCache(path=path, clock=clock)
+    restored.load()
+    # The stale replica: block 100 was already superseded by block 101
+    # before the restart.
+    assert restored.record_supply(1000.0, block_number=100) is None
+    assert restored.last_supply == pytest.approx(900.0)                 # untouched
+    assert restored.record_supply(850.0, block_number=200) == pytest.approx(50.0)
+    assert restored.observed_burn_total() == pytest.approx(150.0)       # not 250
+
+
+def test_a_missing_watermark_does_not_silently_unguard_a_restored_supply(tmp_path):
+    """A legacy/corrupt ``last_supply_block`` must not revert to no guard at all.
+
+    ``last_supply`` came back but its watermark did not, so the cache cannot
+    verify what block that value belongs to. The first block-numbered
+    reading after that -- however it compares to the restored value -- must
+    re-establish the watermark rather than be scored as a delta against a
+    value whose provenance it cannot trust; only the *next* one after that is
+    a real, guarded comparison.
+    """
+    path = tmp_path / "surf_cache.json"
+    path.write_text(
+        json.dumps({"version": 1, "last_supply": 900.0})   # no last_supply_block key
+    )
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    assert c.last_supply == pytest.approx(900.0)
+
+    # This would look like a 100-unit burn if compared naively -- it must not be.
+    assert c.record_supply(800.0, block_number=50) is None
+    assert c.last_supply == pytest.approx(800.0)
+    assert c.observed_burn_total() == pytest.approx(0.0)
+    # The watermark is now established at block 50, so ordering is guarded again.
+    assert c.record_supply(700.0, block_number=40) is None              # stale, ignored
+    assert c.last_supply == pytest.approx(800.0)
+    assert c.record_supply(700.0, block_number=60) == pytest.approx(100.0)
+    assert c.observed_burn_total() == pytest.approx(100.0)
+
+
+def test_a_last_good_slot_stamped_a_year_ahead_does_not_read_as_live(tmp_path):
+    """A skewed or hand-edited clock must not make a dead source look live.
+
+    Series points and FIRED entries already reject a far-future ``ts``
+    (``test_a_null_poisoned_series_costs_only_that_point`` and
+    ``test_a_future_dated_fired_stamp_is_dropped``); a last-good slot must
+    get the same treatment, or ``age_of`` clamps to ``0.0`` and the slot
+    renders as freshly-arrived forever.
+    """
+    clock = FakeClock()
+    path = tmp_path / "surf_cache.json"
+    future_ts = clock.t + 365 * 24 * 3600            # a year ahead
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "last_good": {
+                    SLOT_MARKET: {"payload": {"imd_price_usd": IMD_PRICE_USD}, "ts": future_ts},
+                },
+            }
+        )
+    )
+    c = SurfCache(path=str(path), clock=clock)
+    c.load()
+    assert c.get_last_good(SLOT_MARKET) is None
+    assert c.age_of(SLOT_MARKET) is None
+
+
 # ---------------------------------------------------------------------------
 # Guardrails
 # ---------------------------------------------------------------------------
