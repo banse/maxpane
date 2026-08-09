@@ -87,17 +87,34 @@ must be incapable of producing a BURN or un-FIREing LP MIGRATION. Signal math li
 ## 4. Widget mapping
 
 Slot grid per house template (title bar → hero row → middle row → bottom row; `c` swap;
-width tiers with `‹ widen`):
+width tiers with `‹ widen`, height loss with `‹ taller`):
 
 | Slot | Widget | Content |
 |---|---|---|
 | title bar | — | `SURF · IMD $x.xx · parity ±x.x% · feed #N (age)` + degraded flags + version |
-| hero left | `SurfHero` | experiment status: v4 hook NOT LIVE / LAUNCHED; LP position (liquidity, IMD/WETH sides, owner=frenpet.eth sanity flag); gate CLOSED/OPEN + written x/2000; supply + cumulative burned |
-| hero right | `SurfSignals` | the six detectors, FIRED rows styled loud |
+| hero row (full width) | `SurfHero` | experiment status in four boxes: v4 hook NOT LIVE / LAUNCHED; LP position (IMD/WETH sides, owner=frenpet.eth sanity flag); gate CLOSED/OPEN + written x/2000; supply + burns observed since this install began (never an all-time figure — no keyless source; renders "no burn observed yet" until the first one) |
 | middle left (`c` A) | `SurfFeed` | announce feed: date · kind (`self` / `reply` / `action` / `fund`) · message. Full text at wide tiers, truncated + `‹ widen` below |
 | middle left (`c` B) | `SurfDevActivity` | recent txs of both dev wallets: date · wallet · label (deploy / LP / burn / bridge / FWA claim / transfer / other) · counterparty |
-| middle right | `SurfMarket` | price, 24h Δ, volume, pool liquidity, FP↔IMD parity spread, supply sparkline (burn steps down) |
-| bottom | `SurfNFT` | holders, transfers/day, dev holdings, identities written, last realized Seaport sales; floor = explicit `n/a — no keyless source` |
+| right rail, top | `SurfSignals` | the six detectors, FIRED rows styled loud |
+| right rail, below | `SurfMarket` | price, 24h Δ, volume, pool liquidity, FP↔IMD parity spread, supply sparkline (burn steps down) |
+| bottom (full width) | `SurfNFT` | holders, transfers/day, dev holdings, identities written, last realized Seaport sales; floor = explicit `n/a — no keyless source` |
+
+Two amendments to this table were made after the dashboard was first built and run:
+
+1. **The hero spans the full width and the signals moved into a right rail.** The original
+   grid put `SurfHero` and `SurfSignals` side by side on the hero row, which left the four
+   hero boxes sharing half a row — too narrow to render their widest tier on any real
+   terminal — and stranded blank rows under the hero and above the status bar. The hero now
+   owns its row, the announce feed takes the left of the middle row, and `SurfSignals` sits
+   above `SurfMarket` in a right rail. Every row but the middle one is content-sized, so a
+   taller terminal hands its extra rows to the feed instead of reserving them blank.
+2. **The LP box no longer shows raw liquidity.** It used to render the position's v3 `L`
+   beside the WETH side. `L` is a uint128 around 1e19, so it can only be shown as
+   `2.16e+18` — K/M/B suffixes lie at that magnitude — and scientific notation of an
+   unnamed unit told a reader nothing the WETH side does not, at the highest column cost on
+   the row. `lp_liquidity` remains a manager key and still feeds the LP MIGRATION detector;
+   it simply has no box. The tier that existed only to hold it was removed with it, rather
+   than left as a tier that renders exactly what the next one renders.
 
 Counterparty rendering in `SurfDevActivity` (address-poisoning defense — live spoofs of
 both fee recipients exist in frenpet.eth's history today): known addresses render as
