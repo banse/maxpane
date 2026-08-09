@@ -1,6 +1,48 @@
 """Widgets for the surf dashboard (surfsurf.eth mission control).
 
-The six widget classes are re-exported from this module in WP3.7, once all
-six submodules exist -- see ``widgets/ttt/__init__.py`` for the house shape.
-Until then, import the submodule directly (``from .hero import SurfHero``).
+Six render-only widgets, one per PRD §5 panel group:
+
+======================  ===================================================
+Widget                  Slot in ``screens/surf.SurfScreen``
+======================  ===================================================
+``SurfHero``            hero row, left (3fr) -- experiment status
+``SurfSignals``         hero row, right (2fr) -- the six detectors
+``SurfFeed``            middle row -- announce channel (``c`` swaps it out)
+``SurfDevActivity``     middle row -- dev wallets (``c`` swaps it in)
+``SurfMarket``          bottom row, left -- price, parity, supply
+``SurfNft``             bottom row, right -- IDMD collection
+======================  ===================================================
+
+The classes are re-exported here because the package root is the import
+surface the screen and its tests use, exactly as ``widgets/ttt`` and
+``widgets/talismans`` do it and as ``screens/fwa.py`` consumes
+``maxpane_dashboard.widgets.fwa``.
+
+``DETECTOR_LABELS``, ``FEED_TITLE`` and ``FLOOR_UNAVAILABLE`` ride along:
+they are *rendered interface strings* asserted against composited output by
+the screen WP and by the app-level acceptance tests, so consumers import
+them instead of retyping the literals.
+
+These widgets take primitives only and import nothing from ``data/`` or
+``analytics/``, so this package is safe to import with no manager, no cache
+and no network present (pinned by ``tests/widgets/test_surf_widget_contract.py``).
 """
+
+from .activity import SurfDevActivity
+from .feed import FEED_TITLE, SurfFeed
+from .hero import SurfHero
+from .market import SurfMarket
+from .nft import FLOOR_UNAVAILABLE, SurfNft
+from .signals import DETECTOR_LABELS, SurfSignals
+
+__all__ = [
+    "DETECTOR_LABELS",
+    "FEED_TITLE",
+    "FLOOR_UNAVAILABLE",
+    "SurfDevActivity",
+    "SurfFeed",
+    "SurfHero",
+    "SurfMarket",
+    "SurfNft",
+    "SurfSignals",
+]

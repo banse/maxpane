@@ -617,3 +617,165 @@ async def test_activity_unavailable_vs_empty_vs_none_args():
         widget.update_data(**_none_payload(widget))
         await pilot.pause()
         assert "activity unavailable" in _screen_text(app)
+
+
+# ---------------------------------------------------------------------
+# SurfNft
+# ---------------------------------------------------------------------
+
+from maxpane_dashboard.widgets.surf.nft import (  # noqa: E402
+    FLOOR_UNAVAILABLE,
+    SurfNft,
+)
+
+#: identity_counters.json (667 holders), research (38 transfers/day, dev
+#: holds 3, 1/2000 written).
+#:
+#: The sales are the **only** realized IDMD prices anyone has decoded: both
+#: legs of the dev wallet's Seaport purchase ``0x5b4d1b44...eadad2`` at ts
+#: 1786163591 -- token 1751 at 0.18 ETH and token 354 at 0.1838989 ETH,
+#: whose realized values sum to the transaction's own ``value`` exactly
+#: (WP1 §"One real Seaport purchase").  They are decoded from that tx's
+#: ``OrderFulfilled`` logs, *not* from ``identity_transfers_page1.json``:
+#: WP0.7's ``test_no_idmd_transfer_row_carries_a_price`` pins that no row of
+#: that capture carries a price at all, so a price attributed to one would
+#: be invented -- which is what the header of this file promises not to do.
+_FULL_NFT = {
+    "nft_holders": 667,
+    "nft_transfers_24h": 38,
+    "nft_dev_holdings": 3,
+    "nft_written": 1,
+    "nft_last_sales": [
+        {"ts": 1786163591, "token_id": 1751, "eth": 0.18},
+        {"ts": 1786163591, "token_id": 354, "eth": 0.1838989},
+    ],
+    "nft_floor": None,  # pinned None in v1 (PRD §5)
+}
+
+
+async def test_nft_full_payload_renders_stats_and_sales():
+    widget = SurfNft()
+    app = _Harness(widget)
+    async with app.run_test(size=(90, 16)) as pilot:
+        widget.update_data(**_FULL_NFT)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "667" in screen and "holders" in screen
+        assert "38" in screen and "transfers/24h" in screen
+        assert "dev holds 3" in screen
+        assert "1/2000 written" in screen
+        # Both legs of the one real Seaport fill, at three decimals.
+        assert "#1751" in screen and "0.180 ETH" in screen
+        assert "#354" in screen and "0.184 ETH" in screen
+
+
+async def test_nft_floor_is_the_explicit_unavailable_state_never_a_number():
+    """No keyless floor source exists; the UI says so (PRD §5 nft_floor)."""
+    widget = SurfNft()
+    app = _Harness(widget)
+    async with app.run_test(size=(90, 16)) as pilot:
+        widget.update_data(**_FULL_NFT)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert FLOOR_UNAVAILABLE in screen
+        assert "floor 0" not in screen           # never faked as zero
+
+        # v2 escape hatch: if a float ever arrives, render it -- with units.
+        # 0.25 is a *hypothetical* v2 value, deliberately not one of the two
+        # realized prices above, so this assertion cannot be satisfied by a
+        # sale line; there is no keyless floor source to take a real one from.
+        widget.update_data(**{**_FULL_NFT, "nft_floor": 0.25})
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "0.250 ETH" in screen
+        assert FLOOR_UNAVAILABLE not in screen
+
+
+async def test_nft_sales_unavailable_vs_empty():
+    widget = SurfNft()
+    app = _Harness(widget)
+    async with app.run_test(size=(90, 16)) as pilot:
+        widget.update_data(**{**_FULL_NFT, "nft_last_sales": None})
+        await pilot.pause()
+        assert "sales unavailable" in _screen_text(app)
+
+        widget.update_data(**{**_FULL_NFT, "nft_last_sales": []})
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "no sales in window" in screen
+        assert "sales unavailable" not in screen
+
+
+async def test_nft_no_args_and_all_none_render_dashes_never_zero():
+    widget = SurfNft()
+    app = _Harness(widget)
+    async with app.run_test(size=(90, 16)) as pilot:
+        widget.update_data()
+        widget.update_data(**_none_payload(widget))
+        await pilot.pause()
+        screen = _screen_text(app)
+        # A dead Blockscout is not a collection with zero holders.
+        assert "0 holders" not in screen
+        assert f"{FLOOR_UNAVAILABLE}" in screen
+        assert "--" in screen
+
+
+async def test_nft_malformed_sale_rows_are_skipped():
+    widget = SurfNft()
+    app = _Harness(widget)
+    async with app.run_test(size=(90, 16)) as pilot:
+        widget.update_data(
+            **{
+                **_FULL_NFT,
+                "nft_last_sales": [
+                    None,
+                    "junk",
+                    {"ts": None, "token_id": None, "eth": None},
+                    {"ts": 1786163591, "token_id": 1751, "eth": 0.18},
+                ],
+            }
+        )
+        await pilot.pause()
+        assert "#1751" in _screen_text(app)
+
+
+# ---------------------------------------------------------------------
+# Package surface
+# ---------------------------------------------------------------------
+
+
+def test_package_root_reexports_the_six_widget_classes():
+    """``from maxpane_dashboard.widgets.surf import SurfHero`` must work.
+
+    This is the house pattern (``widgets/ttt/__init__.py``,
+    ``widgets/talismans/__init__.py``, and ``screens/fwa.py`` importing from
+    ``maxpane_dashboard.widgets.fwa``), and it is the surface the screen WP
+    imports from -- both ``screens/surf.py`` and its screen test spell
+    ``from maxpane_dashboard.widgets.surf import (SurfDevActivity, SurfFeed,
+    SurfHero, SurfMarket, SurfNft, SurfSignals)``.  A bare-docstring
+    ``__init__.py`` turns both of those into ``ImportError``, and this file
+    owns ``__init__.py``, so the guard belongs here.
+    """
+    import maxpane_dashboard.widgets.surf as pkg
+
+    from maxpane_dashboard.widgets.surf import (
+        DETECTOR_LABELS,
+        FEED_TITLE,
+        FLOOR_UNAVAILABLE,
+        SurfDevActivity,
+        SurfFeed,
+        SurfHero,
+        SurfMarket,
+        SurfNft,
+        SurfSignals,
+    )
+
+    classes = (SurfHero, SurfSignals, SurfFeed, SurfDevActivity, SurfMarket, SurfNft)
+    for cls in classes:
+        assert cls.__name__ in pkg.__all__, cls.__name__
+        assert getattr(pkg, cls.__name__) is cls
+    # The three rendered interface strings ride along, so consumers never
+    # retype them (see the deliverable summary).
+    assert DETECTOR_LABELS[0] == "NEW POST"
+    assert FEED_TITLE == "ANNOUNCE FEED"
+    assert FLOOR_UNAVAILABLE.startswith("n/a")
