@@ -559,3 +559,103 @@ def test_signals_row_truncation_is_pure_and_keeps_the_head():
     )
     assert "BRIDGE STAGE FIRED 2h ago" in head_only
     assert "…" not in head_only
+
+
+# ---------------------------------------------------------------------
+# SurfMarket
+# ---------------------------------------------------------------------
+
+from maxpane_dashboard.widgets.surf.market import SurfMarket  # noqa: E402
+
+#: dexscreener_imd.json / dexscreener_fp.json, fetched 2026-08-08:
+#: IMD $0.7074 +30.89% vol $244,178 pool $548,701.21; FP $0.7274 →
+#: parity (0.7074/0.7274 − 1)·100 = −2.75%.  The supply series is the real
+#: burn staircase: pre-07-31 supply, the 31,064 burn, the 15,745 burn, then
+#: the 08-07 bridge-in mint of 114,366.9 (imd_token.json end state).
+_SUPPLY_SERIES = [
+    [1784000000, 2309194.0],
+    [1785467000, 2278130.0],
+    [1785903575, 2262384.97],
+    [1786076495, 2376731.868679],
+]
+_PRICE_SERIES = [[1785900000 + i * 3600, 0.53 + i * 0.004] for i in range(48)]
+
+_FULL_MARKET = {
+    "imd_price_usd": 0.7074,
+    "imd_change_24h_pct": 30.89,
+    "imd_vol_24h_usd": 244178.0,
+    "pool_liquidity_usd": 548701.21,
+    "fp_price_usd": 0.7274,
+    "parity_pct": -2.75,
+    "supply_series": _SUPPLY_SERIES,
+    "price_series": _PRICE_SERIES,
+}
+
+
+async def test_market_full_payload_renders_all_numbers():
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(80, 14)) as pilot:
+        widget.update_data(**_FULL_MARKET)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "$0.7074" in screen
+        assert "▲ +30.89%" in screen          # glyph AND sign, not colour alone
+        assert "vol 24h $244.2K" in screen
+        assert "pool $548.7K" in screen
+        assert "FP $0.7274" in screen
+        assert "parity ▼ -2.75%" in screen    # negative: IMD below FP
+
+
+async def test_market_supply_sparkline_shows_the_burn_steps():
+    """The supply bar must actually vary -- burns step down, mints step up."""
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(80, 14)) as pilot:
+        widget.update_data(**_FULL_MARKET)
+        await pilot.pause()
+        screen = _screen_text(app)
+        supply_line = next(l for l in screen.splitlines() if "supply" in l)
+        # More than one distinct block char = the staircase is visible.
+        blocks = {c for c in supply_line if c in "▁▂▃▄▅▆▇█"}
+        assert len(blocks) >= 2, supply_line
+        assert "2.4M" in supply_line          # the live end-state, labelled
+
+
+async def test_market_short_or_missing_series_say_waiting():
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(80, 14)) as pilot:
+        widget.update_data(**{**_FULL_MARKET, "supply_series": [], "price_series": None})
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert screen.count("waiting for data") == 2
+
+
+async def test_market_no_args_and_all_none_render_dashes_never_zero():
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(80, 14)) as pilot:
+        widget.update_data()
+        widget.update_data(**_none_payload(widget))
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "$0.00" not in screen
+        assert "+0.00%" not in screen
+        assert "--" in screen
+
+
+async def test_market_malformed_series_points_are_skipped_not_fatal():
+    """A single null in a persisted series must not kill the panel."""
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(80, 14)) as pilot:
+        widget.update_data(
+            **{
+                **_FULL_MARKET,
+                "supply_series": [None, [1, None], "junk", *_SUPPLY_SERIES],
+            }
+        )
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "2.4M" in screen  # the valid points still render
