@@ -60,16 +60,36 @@ Primitives only -- this module imports nothing from the data layer.
 
 from __future__ import annotations
 
+import logging
+
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.css.query import QueryError
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
 from maxpane_dashboard.widgets.surf._fmt import DASH, fmt_age
 
+logger = logging.getLogger(__name__)
+
 #: Marker appended to the title when a *head* could not fit (see the module
 #: docstring: a truncated detail is normal operation, not a clipped row).
 WIDEN_HINT = "‹ widen"
+
+#: Detail shown when a row's markup passes ``safe_markup`` but still fails
+#: Textual's own markup parser at render time -- e.g. the unbalanced
+#: ``]][[/][/ malformed`` shape, which ``rich.markup.escape`` renders inert
+#: but ``textual.markup`` still rejects as a closing tag with no opener.  The
+#: announce channel is an address anyone can write to (PRD §6.4), so this is
+#: reachable with a real chain-sourced detail, not a synthetic string.
+#:
+#: Deliberately distinct from both a real detail (this is never quoted text)
+#: and from ``DASH`` (the dead-detector marker): a render failure means the
+#: read *succeeded* and produced an unparseable detail, which is a different,
+#: narrower and less alarming fact than "this detector could not be read".
+#: Rendering it as ``DASH`` would misreport a working read as a dead one --
+#: exactly the failure mode this whole panel exists to avoid.
+RENDER_FAILED_DETAIL = "⚠ detail failed to render"
 
 #: Visible cost of the ``· `` that joins a head to its detail, counting the
 #: space in front of it: ``" · "``.
@@ -253,6 +273,7 @@ class SurfSignals(Vertical):
         for prefix, label, selector in _ROWS:
             state = payload.get(f"sig_{prefix}_state")
             age_s = payload.get(f"sig_{prefix}_age_s")
+            head = _head(label, state, age_s)
             markup = _fmt_signal_row(
                 label,
                 state,
@@ -263,15 +284,47 @@ class SurfSignals(Vertical):
             # Only an unfittable *head* is a clipped row: the detail was
             # already shrunk to fit, and flagging that as clipping would keep
             # the marker permanently lit (module docstring).
-            if available and visible_len(_head(label, state, age_s)) > available:
+            if available and visible_len(head) > available:
                 clipped = True
+
             try:
-                self.query_one(selector, Static).update(markup)
-            except Exception:  # not composed yet
+                row = self.query_one(selector, Static)
+            except QueryError:
+                # Not composed yet -- none of the six rows are, so there is
+                # nothing left to update this cycle.  Distinct from the
+                # render-failure branch below: this is "the widget tree
+                # isn't ready", not "a detail broke the markup parser".
                 return
+
+            try:
+                row.update(markup)
+            except Exception as exc:
+                # A detail string can clear ``safe_markup`` (which only
+                # neutralises Rich's parser) and still break Textual's own,
+                # stricter ``textual.markup`` parser -- the ``]][[/][/
+                # malformed`` shape is a real example, and the announce
+                # channel this quotes is attacker-writable (PRD §6.4). This
+                # must stay a *per-row* failure: the other five detectors
+                # still updated this cycle, so this one must not stop them.
+                # ``head`` alone is always safe to render -- it is built
+                # entirely from this module's own trusted strings (the
+                # label, the state word, ``fmt_age``'s output), never from
+                # chain-sourced text -- so the detector's true state still
+                # shows; only the detail is replaced with an explicit,
+                # visibly-wrong marker, never the dead-state dash (which
+                # would misreport a successful read as a failed one).
+                logger.warning(
+                    "SurfSignals: row %s failed to render, showing head only: %s",
+                    selector,
+                    exc,
+                )
+                try:
+                    row.update(f"{head} [$error]{RENDER_FAILED_DETAIL}[/]")
+                except Exception:
+                    pass  # even the fallback failed -- leave prior content
 
         try:
             title = self.query_one("#surf-sig-title", Static)
-        except Exception:
+        except QueryError:
             return
         title.update(f"SIGNALS  [yellow]{WIDEN_HINT}[/]" if clipped else "SIGNALS")

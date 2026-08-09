@@ -320,6 +320,7 @@ from maxpane_dashboard.widgets.markup_safety import visible_len  # noqa: E402
 from maxpane_dashboard.widgets.surf.signals import (  # noqa: E402
     DETECTOR_LABELS,
     MIN_DETAIL_COLS,
+    RENDER_FAILED_DETAIL,
     SEPARATOR_COLS,
     WIDEN_HINT,
     SurfSignals,
@@ -416,6 +417,47 @@ async def test_signals_unknown_state_renders_as_unknown_not_ok():
     row = _fmt_signal_row("NEW POST", "exploded", "detail", 5.0)
     assert "NEW POST --" in row
     assert "OK" not in row and "FIRED" not in row
+
+
+async def test_signals_hostile_markup_survivor_degrades_only_its_own_row():
+    """A detail that clears ``safe_markup`` but still breaks Textual's own
+    markup parser must not take the whole panel down.
+
+    ``]][[/][/ malformed`` escapes cleanly through ``rich.markup.escape``
+    (the primitive ``safe_markup`` wraps -- it turns the brackets into
+    ``\\[``/``\\]`` so Rich's own parser reads it literally) but Textual's
+    own ``textual.markup`` parser is stricter and still raises
+    ``MarkupError: closing tag '[/malformed]' does not match any open tag``
+    on the *escaped* string -- verified directly against this project's
+    pinned Textual (8.1.1) before writing this test. The announce channel
+    this detail quotes is attacker-writable (PRD §6.4), so this shape is
+    reachable with real chain data, not a synthetic stress string.
+    """
+    widget = SurfSignals()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 14)) as pilot:
+        widget.update_data(
+            **{**_FULL_SIGNALS, "sig_post_detail": "]][[/][/ malformed"}
+        )
+        await pilot.pause()
+        screen = _screen_text(app)
+        # The poisoned row: true state still shows (never stale, never the
+        # dead-detector dash -- the read succeeded, only the detail broke
+        # rendering), detail replaced with an explicit, visibly-wrong marker.
+        assert "NEW POST FIRED 2h ago" in screen
+        assert RENDER_FAILED_DETAIL in screen
+        assert "malformed" not in screen
+        assert "NEW POST --" not in screen
+        # This is the assertion that actually matters: every other detector
+        # still updated normally in the *same* refresh cycle -- one poisoned
+        # row cannot freeze the panel at stale content.
+        assert "BRIDGE STAGE FIRED 12m ago" in screen
+        assert "+114,367 IMD minted to frenpet.eth" in screen
+        assert "NEW DEPLOY WATCH" in screen
+        assert "frenpet.eth nonce 29→30" in screen
+        assert "LP MIGRATION OK" in screen
+        assert "GATE OPEN OK" in screen
+        assert "BURN OK" in screen
 
 
 async def test_signals_detail_is_escaped_and_newline_flattened():
