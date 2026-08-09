@@ -19,6 +19,7 @@ from maxpane_dashboard.data.surf_cache import (
     SERIES_IMD_SUPPLY,
     SLOT_CHANNEL,
     SLOT_LOGS,
+    SLOT_NFT,
     SurfCache,
 )
 from maxpane_dashboard.data.surf_manager import (
@@ -1905,3 +1906,229 @@ async def test_the_post_body_lands_in_the_same_cycle_the_signal_fires(tmp_path):
     assert second["sig_post_state"] == "fired"
     assert len(second["feed_items"]) == 4
     assert '"soon"' in (second["sig_post_detail"] or "")
+
+
+# ---------------------------------------------------------------------------
+# Full outage — PRD §11.3
+# ---------------------------------------------------------------------------
+
+
+def _dead_client() -> FakeSurfClient:
+    """Every source returns ``None``: total, honest outage."""
+    return FakeSurfClient(
+        fetch_nonces=None, fetch_chain_state=None, fetch_channel_txs=None,
+        fetch_dev_activity=None, fetch_market=None, fetch_recent_logs=None,
+        fetch_nft_stats=None,
+    )
+
+
+async def test_a_total_outage_returns_the_full_key_set_with_nothing_invented(tmp_path):
+    data = await _manager(tmp_path, client=_dead_client()).fetch_and_compute()
+
+    assert set(data) == set(SURF_KEYS)
+    assert data["degraded"] == sorted(SOURCES)
+    for key in (
+        "eth_usd", "imd_price_usd", "imd_change_24h_pct", "imd_vol_24h_usd",
+        "pool_liquidity_usd", "fp_price_usd", "parity_pct", "imd_supply",
+        "lp_liquidity", "lp_imd", "lp_weth", "lp_owner_ok", "gate_open",
+        "identities_written", "imd_burned_cum", "hook_status", "feed_nonce",
+        "feed_last_post_age_s", "nft_holders", "nft_transfers_24h",
+        "nft_dev_holdings", "nft_written", "nft_floor", "as_of",
+        # The three source-backed lists are `None` too, and that is the whole
+        # point of WP3's contract: `[]` would render "no posts in window" / "no
+        # recent activity" / "no sales in window" — three confident statements
+        # about a chain nobody could reach. WP6's `DeadSourcesManager` builds
+        # `{key: None for key in SURF_KEYS}`, so it is an accurate double of
+        # exactly this payload.
+        "feed_items", "dev_activity", "nft_last_sales",
+    ):
+        assert data[key] is None, f"{key} should be None under a total outage"
+    # The two series are this cache's own history, not a source's answer, so an
+    # empty one is a fact about the install rather than about the network.
+    for key in ("supply_series", "price_series"):
+        assert data[key] == []
+
+
+async def test_no_signal_fires_and_no_baseline_moves_under_a_total_outage(tmp_path):
+    clock = FakeClock()
+    m = _manager(tmp_path, client=FakeSurfClient(), clock=clock)
+    await m.fetch_and_compute()                      # establish real baselines
+    before = m.cache.get_baselines()
+
+    m.client = _dead_client()
+    clock.advance(120.0)
+    data = await m.fetch_and_compute()
+
+    assert m.cache.get_baselines() == before
+    for name in SIGNAL_NAMES:
+        assert data[f"sig_{name}_state"] != "fired"
+
+
+async def test_an_outage_never_writes_a_sentinel_into_a_series(tmp_path):
+    clock = FakeClock()
+    m = _manager(tmp_path, client=FakeSurfClient(), clock=clock)
+    await m.fetch_and_compute()
+    healthy_supply = m.cache.get_series(SERIES_IMD_SUPPLY)
+    healthy_price = m.cache.get_series(SERIES_IMD_PRICE_USD)
+
+    m.client = _dead_client()
+    clock.advance(7_200.0)                            # two fresh hour buckets
+    await m.fetch_and_compute()
+    clock.advance(3_600.0)
+    await m.fetch_and_compute()
+
+    assert m.cache.get_series(SERIES_IMD_SUPPLY) == healthy_supply
+    assert m.cache.get_series(SERIES_IMD_PRICE_USD) == healthy_price
+
+
+async def test_an_outage_can_never_produce_a_burn(tmp_path):
+    """The false-BURN regression named in PRD §6.1."""
+    clock = FakeClock()
+    m = _manager(tmp_path, client=FakeSurfClient(), clock=clock)
+    await m.fetch_and_compute()
+
+    m.client = _dead_client()
+    clock.advance(120.0)
+    data = await m.fetch_and_compute()
+
+    assert data["sig_burn_state"] != "fired"
+    # A good read happened before the outage, so the observation window is
+    # open and the honest answer is 0.0 -- unlike the cold start in
+    # ``test_a_total_outage_returns_the_full_key_set_with_nothing_invented``,
+    # where the same key must be ``None``. The outage moves it neither way.
+    assert data["imd_burned_cum"] == 0.0
+    assert m.cache.last_supply == pytest.approx(IMD_SUPPLY)
+
+
+async def test_an_outage_after_a_good_read_serves_last_good_behind_an_as_of(tmp_path):
+    clock = FakeClock()
+    m = _manager(tmp_path, client=FakeSurfClient(), clock=clock)
+    await m.fetch_and_compute()
+    good_at = clock.t
+
+    m.client = _dead_client()
+    clock.advance(600.0)
+    data = await m.fetch_and_compute()
+
+    # The feed keeps rendering, but the header can say how old it is.
+    assert len(data["feed_items"]) == 4
+    assert data["as_of"] == pytest.approx(good_at)
+    assert m.cache.age_of(SLOT_CHANNEL) == pytest.approx(600.0)
+    assert SOURCE_CHANNEL in data["degraded"]
+
+
+async def test_a_recovered_group_stops_being_degraded(tmp_path):
+    clock = FakeClock()
+    client = FakeSurfClient(fetch_market=None)
+    m = _manager(tmp_path, client=client, clock=clock)
+    first = await m.fetch_and_compute()
+    assert SOURCE_MARKET in first["degraded"]
+
+    client._returns["fetch_market"] = _market()
+    clock.advance(120.0)
+    second = await m.fetch_and_compute()
+    assert SOURCE_MARKET not in second["degraded"]
+
+
+async def test_no_exception_escapes_when_every_call_raises(tmp_path):
+    boom = FakeSurfClient(
+        fetch_nonces=RuntimeError("dns"), fetch_chain_state=RuntimeError("dns"),
+        fetch_channel_txs=RuntimeError("dns"), fetch_dev_activity=RuntimeError("dns"),
+        fetch_market=RuntimeError("dns"), fetch_recent_logs=RuntimeError("dns"),
+        fetch_nft_stats=RuntimeError("dns"),
+    )
+    data = await _manager(tmp_path, client=boom).fetch_and_compute()
+    assert set(data) == set(SURF_KEYS)
+    assert data["degraded"] == sorted(SOURCES)
+
+
+async def test_the_manager_never_reaches_the_network_in_these_tests(manager):
+    """Structural, per CLAUDE.md: the injected transport raises on any use."""
+    await manager.fetch_and_compute()
+    with pytest.raises(AssertionError):
+        await manager.client.http.post("https://ethereum-rpc.publicnode.com")
+
+
+# ---------------------------------------------------------------------------
+# Review findings folded into WP4.12 (not in the brief; see the task report)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_wholly_none_chain_state_degrades_the_chain_group(tmp_path):
+    """A ``fetch_chain_state()`` that succeeds structurally (hands back a
+    ``ChainState``, not ``None``) while every sub-field reads back ``None`` is a
+    client-side partial-batch failure, not a healthy read. Left unguarded,
+    ``ok`` stayed ``True`` in ``_pool_chain`` because it only checked
+    ``state_res is not None`` — so six hero keys rendered dashes with no
+    ``degraded`` entry to explain them, exactly the "screen full of dashes,
+    nothing invented" gap this task exists to close.
+    """
+    client = FakeSurfClient(
+        fetch_chain_state=_chain_state(
+            lp_liquidity=None, lp_imd_wei=None, lp_weth_wei=None, lp_owner=None,
+            identity_allowed=None, imd_supply_wei=None, block_number=None,
+        )
+    )
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert SOURCE_CHAIN in data["degraded"]
+    assert data["lp_liquidity"] is None
+    assert data["gate_open"] is None
+    assert data["imd_supply"] is None
+    assert data["imd_burned_cum"] is None       # cold start: nothing observed yet
+
+
+async def test_a_half_empty_chain_state_is_not_penalised(tmp_path):
+    """The wholly-``None`` guard must not overreach: a real partial read (some
+    fields populated, some not — the everyday half-failure this dashboard is
+    built to tolerate) is still an honest, healthy read and must not be flagged
+    degraded on top of the per-field ``None``s already rendering as unavailable.
+    """
+    client = FakeSurfClient(
+        fetch_chain_state=_chain_state(lp_owner=None, identity_allowed=None)
+    )
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert SOURCE_CHAIN not in data["degraded"]
+    assert data["lp_owner_ok"] is None
+    assert data["gate_open"] is None
+    assert data["imd_supply"] == pytest.approx(IMD_SUPPLY)   # the rest still reads
+
+
+async def test_a_backed_off_group_stays_degraded_through_the_retry_window(tmp_path):
+    """Review point: ``mark_failed`` advances the retry clock, not
+    ``last_fetch_ts`` — a tier sitting out a failure's backoff window answers
+    ``is_fresh``/``tiers_due`` exactly like a tier that just succeeded. The
+    manager must not use that question to decide whether this cycle's payload
+    is trustworthy; ``_failed_groups`` must keep the group degraded through a
+    skip cycle inside the backoff window, and the served value must be the
+    honestly-stale last-good, never blanked and never silently "live".
+    """
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+    await m.fetch_and_compute()                      # establishes a good NFT read
+
+    client._returns["fetch_nft_stats"] = None
+    clock.advance(420.0)                              # the slow tier is due
+    failed = await m.fetch_and_compute()
+    assert SOURCE_NFT in failed["degraded"]
+    assert client.calls.count("fetch_nft_stats") == 2
+
+    clock.advance(60.0)                               # inside the 120 s backoff
+    skipped = await m.fetch_and_compute()
+    assert client.calls.count("fetch_nft_stats") == 2  # backed off, not retried
+    assert SOURCE_NFT in skipped["degraded"]            # still degraded, not "fresh"
+    assert skipped["nft_holders"] == NFT_HOLDERS        # stale last-good, served honestly
+    assert m.cache.age_of(SLOT_NFT) == pytest.approx(480.0)
+
+
+async def test_a_client_flagged_partial_failure_names_only_that_group(tmp_path):
+    """Review point: a partial outage — one group down, five healthy — must
+    name only the failed group. ``activity_truncated`` is one of the three
+    client-side flags folded into ``_degraded`` outside the ``fetch_*``
+    None/exception path, so it is the one most at risk of leaking into groups
+    it has nothing to do with.
+    """
+    client = FakeSurfClient()
+    client.activity_truncated = True
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["degraded"] == [SOURCE_ACTIVITY]

@@ -236,6 +236,36 @@ def _field(obj: Any, name: str) -> Any:
     return getattr(obj, name)
 
 
+#: The fields checked by :func:`_chain_state_empty`. Every one of WP0.4's
+#: ``ChainState`` fields — deliberately the same tuple ``test_the_doubles_...``
+#: pins as "the fields WP4 reads", so a WP0 rename that ``_field()`` would
+#: already catch cannot silently narrow this check instead.
+_CHAIN_STATE_FIELDS: tuple[str, ...] = (
+    "lp_liquidity", "lp_imd_wei", "lp_weth_wei", "lp_owner",
+    "identity_allowed", "imd_supply_wei", "block_number",
+)
+
+
+def _chain_state_empty(state: Any) -> bool:
+    """``True`` when ``fetch_chain_state()`` returned an object with nothing in it.
+
+    A batched ``eth_call`` round can come back as a real :class:`ChainState`
+    (not ``None``) while every sub-call inside it failed client-side — a
+    partial-batch decode failure that never raises. ``_pool_chain``'s ``ok``
+    check used to read only ``state_res is not None``, so this shape passed as
+    a healthy read: six hero keys (``lp_liquidity``, ``lp_imd``, ``lp_weth``,
+    ``lp_owner_ok``, ``gate_open``, ``imd_supply``) rendered dashes with
+    ``"chain"`` never entering ``degraded`` — a screen full of unexplained
+    dashes, which is the one shape CLAUDE.md's degradation rule forbids. A
+    state with even one field populated is a genuine partial read (the everyday
+    case ``_pool_chain``'s docstring already documents) and is not touched by
+    this check.
+    """
+    return state is not None and all(
+        _field(state, name) is None for name in _CHAIN_STATE_FIELDS
+    )
+
+
 def _tokens(wei: Any) -> float | None:
     """Wei -> whole tokens, exactly once. ``None`` in, ``None`` out."""
     raw = _opt_int(wei)
@@ -418,13 +448,24 @@ class SurfManager:
         baseline downstream. What a half-failure does **not** do is overwrite
         the ``SLOT_CHAIN`` last-good with a half-empty payload or mark the fast
         tier fetched.
+
+        WP4.12 adds one more shape to ``ok``: a ``state_res`` that is not
+        ``None`` but is wholly empty (:func:`_chain_state_empty`) — a
+        client-side partial-batch decode failure that never raises and never
+        returns ``None`` either, so it looked exactly like a healthy read
+        before this guard. A ``state_res`` with even one field populated is
+        the ordinary half-failure above and is unaffected.
         """
         nonces_res, state_res = await asyncio.gather(
             self._guard(self.client.fetch_nonces, "fetch_nonces"),
             self._guard(self.client.fetch_chain_state, "fetch_chain_state"),
             return_exceptions=False,
         )
-        ok = nonces_res is not None and state_res is not None
+        ok = (
+            nonces_res is not None
+            and state_res is not None
+            and not _chain_state_empty(state_res)
+        )
         if ok:
             self.cache.store_last_good(
                 SLOT_CHAIN,
