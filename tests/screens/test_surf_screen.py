@@ -420,3 +420,41 @@ async def test_screen_mounts_all_six_widgets():
         assert screen.query_one(SurfFeed).display is True
         assert screen.query_one(SurfDevActivity).display is False
         assert "Mission Control" in _plain(screen.query_one("#title-bar"))
+
+
+# -- title line (pure) ---------------------------------------------------
+
+from maxpane_dashboard.screens import surf as surf_mod
+
+
+def test_title_line_composes_the_mandated_format():
+    line = surf_mod._title_line(_frozen_payload())
+    # PRD §4: SURF · IMD $x.xx · parity ±x.x% · feed #N (age) + flags + version
+    assert line.startswith("SURF · IMD $0.71 · parity -2.7% · feed #14 (23h)")
+    assert line.endswith(f"v{__version__}")
+    assert "degraded" not in line          # nothing degraded in the sample
+
+
+def test_title_line_all_none_shows_emdashes_never_zeros():
+    line = surf_mod._title_line(_all_none_payload())
+    assert "IMD —" in line
+    assert "parity —" in line
+    assert "feed #— (—)" in line
+    assert "$0.00" not in line and "0.0%" not in line   # None is never 0-coerced
+
+
+def test_title_line_renders_degraded_and_lp_owner_warning():
+    line = surf_mod._title_line(
+        _frozen_payload(degraded=["logs", "market"], lp_owner_ok=False)
+    )
+    assert "· degraded: logs, market" in line
+    assert "⚠ LP owner changed" in line    # position #1167726 left frenpet.eth
+
+
+def test_fmt_age_tiers():
+    assert surf_mod._fmt_age(None) == "—"
+    assert surf_mod._fmt_age(42.0) == "42s"
+    assert surf_mod._fmt_age(84_769.0) == "23h"     # the sample's real age
+    assert surf_mod._fmt_age(5_400.0) == "90m"      # 90 min is the m/h boundary
+    assert surf_mod._fmt_age(3 * 86_400.0) == "3d"  # 36 h is the h/d boundary
+    assert surf_mod._fmt_age(-5.0) == "—"           # a negative age is nonsense

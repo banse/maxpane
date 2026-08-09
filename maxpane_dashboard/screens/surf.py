@@ -74,6 +74,118 @@ MANAGER_FAILURE_SECONDS = 999
 SURF_FULL_LAYOUT_COLUMNS = 143
 
 
+# -- format helpers ----------------------------------------------------
+
+
+def _num(value, default: float = 0.0) -> float:
+    """Coerce to ``float``, falling back to ``default`` — never raise."""
+    if value is None or isinstance(value, bool):
+        return default
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return default
+    if out != out:  # NaN
+        return default
+    return out
+
+
+def _fmt_int(value) -> str:
+    if value is None or isinstance(value, bool):
+        return _EMDASH
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return _EMDASH
+
+
+def _fmt_usd(value) -> str:
+    if value is None or isinstance(value, bool):
+        return _EMDASH
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return _EMDASH
+    if out != out:
+        return _EMDASH
+    return f"${out:,.2f}"
+
+
+def _fmt_signed_pct(value) -> str:
+    if value is None or isinstance(value, bool):
+        return _EMDASH
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return _EMDASH
+    if out != out:
+        return _EMDASH
+    return f"{out:+.1f}%"
+
+
+def _fmt_age(value) -> str:
+    """``42s`` / ``17m`` / ``23h`` / ``3d`` — or an em-dash for ``None``.
+
+    90 is the seconds/minutes boundary and 90 min the minutes/hours boundary
+    (``5400.0`` renders ``90m``); 36 h is the hours/days boundary — the same
+    tiers the sparkline axis uses.
+    """
+    if value is None or isinstance(value, bool):
+        return _EMDASH
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return _EMDASH
+    if seconds != seconds or seconds < 0:
+        return _EMDASH
+    if seconds < 90:
+        return f"{int(seconds)}s"
+    if seconds <= 90 * 60:
+        return f"{int(seconds // 60)}m"
+    if seconds < 36 * 3600:
+        return f"{int(seconds // 3600)}h"
+    return f"{int(seconds // 86400)}d"
+
+
+def _fmt_degraded(sources) -> str:
+    """``· degraded: logs, market`` — or an empty string when all is well."""
+    if not sources:
+        return ""
+    try:
+        names = [str(s).strip() for s in sources if str(s).strip()]
+    except TypeError:
+        return ""
+    if not names:
+        return ""
+    return " · degraded: " + ", ".join(names)
+
+
+def _title_line(data: dict) -> str:
+    """Compose the meta row (PRD §4).
+
+    Ordered by what must survive a narrow terminal: warnings before the
+    version tail, because ``#title-bar`` is one row high and the tail is what
+    gets clipped. Parity renders with the em-dash fallback rather than a
+    zero: a dead market source must never read as perfect parity.
+    """
+    feed_age = _fmt_age(data.get("feed_last_post_age_s"))
+    line = (
+        f"SURF · IMD {_fmt_usd(data.get('imd_price_usd'))} · "
+        f"parity {_fmt_signed_pct(data.get('parity_pct'))} · "
+        f"feed #{_fmt_int(data.get('feed_nonce'))} ({feed_age})"
+    )
+
+    if data.get("lp_owner_ok") is False:
+        line += " · [yellow]⚠ LP owner changed[/]"
+
+    line += _fmt_degraded(data.get("degraded"))
+    # Plain, unmarked version tail: the StatusBar already carries the dim
+    # version, and markup here would only complicate every assertion on the
+    # end of this string.
+    line += f" · v{__version__}"
+    return line
+
+
 class SurfScreen(RefreshGuard, Screen):
     """surfsurf.eth Mission Control dashboard."""
 
