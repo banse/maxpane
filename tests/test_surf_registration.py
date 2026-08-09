@@ -769,3 +769,43 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 )
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# the documentation surfaces (CLAUDE.md, README) -- derived from GAMES
+# ---------------------------------------------------------------------------
+
+_NUMBER_WORDS = {
+    1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
+    6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten",
+}
+
+
+def test_every_visible_dashboard_is_documented() -> None:
+    """A dashboard nobody documented is a dashboard nobody finds.
+
+    Derived from ``GAMES``, so it covers dashboard eight without being
+    touched -- and goes red the moment one is added to the menu and not to
+    the docs.
+    """
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    claude = (REPO / "CLAUDE.md").read_text(encoding="utf-8")
+
+    for _key, game_id, name, _desc in GAMES:
+        assert f"--game {game_id}" in readme, (
+            f"README's usage block never shows `maxpane --game {game_id}`"
+        )
+        assert name in readme, f"README never names the {game_id} dashboard"
+        assert f"`{game_id}`" in claude, (
+            f"CLAUDE.md's dashboard table has no `{game_id}` row"
+        )
+
+
+def test_claude_md_counts_the_visible_dashboards() -> None:
+    """The heading states a number; ``GAMES`` is that number."""
+    claude = (REPO / "CLAUDE.md").read_text(encoding="utf-8")
+    word = _NUMBER_WORDS[len(GAMES)]
+    assert f"## The {word} visible dashboards" in claude, (
+        f"CLAUDE.md does not say 'The {word} visible dashboards' while GAMES "
+        f"lists {len(GAMES)}"
+    )

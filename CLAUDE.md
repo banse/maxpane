@@ -77,7 +77,7 @@ scripts/                    one-shot tooling (ABI vendoring etc). Imported by no
 (render primitives only). Widgets never import from `data/` or `analytics/`; they receive
 `str`/`int`/`float`/`bool`/`dict`/`list[dict]`.
 
-## The six visible dashboards
+## The seven visible dashboards
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
@@ -87,6 +87,7 @@ scripts/                    one-shot tooling (ABI vendoring etc). Imported by no
 | 4 | `cattown` | Base | fishing competition, KIBBLE economy |
 | 5 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
 | 6 | `talismans` | Ethereum | core-conservation NFT collection |
+| 7 | `surf` | Ethereum | surfsurf.eth Mission Control: announce channel + launch detectors |
 
 `fwa` is position 1 and the `--game` default.
 
@@ -101,6 +102,11 @@ tests still pass), and three FrenPet variants (`frenpet_full`, `frenpet_wallet`,
 README. Hiding the current default silently breaks launch, so check `default=` every time.
 Tests must derive game ids from `GAMES` rather than naming them: hardcoded ids turn a
 deliberate hide into a red suite.
+
+**Adding one touches the same five**, in the order app.py → `__main__.py` → `GAMES`: the
+registration tests derive their expectations from `GAMES`, so growing that list first turns
+`tests/test_cli_game_choices.py` and `tests/test_app_startup.py` red until the wiring catches up.
+`tests/test_surf_registration.py` is the worked example.
 
 ## Build & run
 

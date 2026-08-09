@@ -17,6 +17,7 @@ kind, no wallet, no signing, no transactions.
 | **Cat Town** | Base | Fishing competition, KIBBLE economy, catches |
 | **Ten Thousand Tokens** | Ethereum | NFT burn-to-launch on UniV4, fee engines, holder claims |
 | **Talismans** | Ethereum | Core-conservation NFT collection, materials, essence × tier |
+| **Mission Control** | Ethereum | surfsurf.eth announce feed, six launch detectors, IMD market, IDMD NFT |
 
 ### FWA — Fake World Assets
 
@@ -35,6 +36,26 @@ account for only about a fifth of the draw weight, so roughly 79.6% of what you 
 to draw has no keyless floor. A single confident EV number would be a lie that costs someone ETH, so
 the band ships with an inseparable coverage badge. The harmonic-vs-arithmetic backing gap — the
 protocol in one number — is computed live at the current block and never printed as a constant.
+
+### Mission Control — surfsurf.eth
+
+The onchain experiments of the FrenPet dev, watched from the front-runner's seat. He announces
+by sending **UTF-8 calldata to himself** — a channel that emits no logs at all, so every
+event-driven watcher is structurally blind to it and a nonce poll sees a post within one refresh
+interval. That asymmetry is the whole point of the dashboard.
+
+Six detectors answer one question continuously:
+
+> **Did something just happen in the surfsurf universe — and how early am I?**
+
+New post · LP migration · identity gate · new deploy · bridge staging · burn. Each renders
+`state · age · one-line detail`, and a detector only re-fires on a *new* event: baselines advance
+on the successful read that detected the last one, and never on a failed read — an outage cannot
+fire a burn or un-fire a migration.
+
+The NFT floor is shown as `n/a — no keyless source`, not estimated. There is no keyless floor
+feed for this collection, and a made-up number on a dashboard people trade against is worse than
+an honest gap.
 
 ## Install
 
@@ -92,6 +113,7 @@ maxpane --game frenpet         # start on FrenPet view
 maxpane --game cattown         # start on Cat Town view
 maxpane --game ttt             # start on Ten Thousand Tokens view
 maxpane --game talismans       # start on Talismans view
+maxpane --game surf            # start on surfsurf.eth Mission Control view
 maxpane --theme minimal        # use minimal theme
 maxpane --poll-interval 60     # poll every 60s instead of 30s
 maxpane --font-size 12         # smaller font = more columns (see below)
