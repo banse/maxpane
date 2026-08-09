@@ -17,7 +17,7 @@ kind, no wallet, no signing, no transactions.
 | **Cat Town** | Base | Fishing competition, KIBBLE economy, catches |
 | **Ten Thousand Tokens** | Ethereum | NFT burn-to-launch on UniV4, fee engines, holder claims |
 | **Talismans** | Ethereum | Core-conservation NFT collection, materials, essence × tier |
-| **Mission Control** | Ethereum | surfsurf.eth announce feed, six launch detectors, IMD market, IDMD NFT |
+| **Surfboard** | Ethereum | surfsurf.eth announce feed, six launch detectors, IMD market, IDMD NFT |
 
 ### FWA — Fake World Assets
 
@@ -37,7 +37,7 @@ to draw has no keyless floor. A single confident EV number would be a lie that c
 the band ships with an inseparable coverage badge. The harmonic-vs-arithmetic backing gap — the
 protocol in one number — is computed live at the current block and never printed as a constant.
 
-### Mission Control — surfsurf.eth
+### Surfboard — surfsurf.eth
 
 The onchain experiments of the FrenPet dev, watched from the front-runner's seat. He announces
 by sending **UTF-8 calldata to himself** — a channel that emits no logs at all, so every
@@ -113,7 +113,7 @@ maxpane --game frenpet         # start on FrenPet view
 maxpane --game cattown         # start on Cat Town view
 maxpane --game ttt             # start on Ten Thousand Tokens view
 maxpane --game talismans       # start on Talismans view
-maxpane --game surf            # start on surfsurf.eth Mission Control view
+maxpane --game surf            # start on surfsurf.eth Surfboard view
 maxpane --theme minimal        # use minimal theme
 maxpane --poll-interval 60     # poll every 60s instead of 30s
 maxpane --font-size 12         # smaller font = more columns (see below)

@@ -33,8 +33,8 @@ REPO = Path(__file__).resolve().parents[1]
 SURF_ROW = (
     "7",
     "surf",
-    "Mission Control",
-    "surfsurf.eth announce channel + launch detectors on Ethereum",
+    "Surfboard",
+    "The onchain adventures of surfsurf.eth",
 )
 
 #: Attribute names of every manager ``MaxPaneApp.__init__`` builds.  Hardcoded
@@ -373,8 +373,8 @@ def test_the_menu_lists_the_surf_row() -> None:
             await pilot.pause()
             text = _screen_text(app)
             assert "[7]" in text
-            assert SURF_ROW[2] in text          # Mission Control
-            assert "announce channel" in text   # from the description
+            assert SURF_ROW[2] in text          # Surfboard
+            assert "onchain adventures" in text  # from the description
 
     asyncio.run(_run())
 

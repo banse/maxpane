@@ -87,7 +87,7 @@ scripts/                    one-shot tooling (ABI vendoring etc). Imported by no
 | 4 | `cattown` | Base | fishing competition, KIBBLE economy |
 | 5 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
 | 6 | `talismans` | Ethereum | core-conservation NFT collection |
-| 7 | `surf` | Ethereum | surfsurf.eth Mission Control: announce channel + launch detectors |
+| 7 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel + launch detectors |
 
 `fwa` is position 1 and the `--game` default.
 

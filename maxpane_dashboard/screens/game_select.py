@@ -31,7 +31,7 @@ GAMES = [
     # ("_", "ocm", "OCM", "Onchain Monsters staking, supply, burns on Ethereum"),
     ("5", "ttt", "Ten Thousand Tokens", "NFT collection w/ UniV4 burn-to-launch on Ethereum"),
     ("6", "talismans", "Talismans", "Core-conservation NFT collection on Ethereum"),
-    ("7", "surf", "Mission Control", "surfsurf.eth announce channel + launch detectors on Ethereum"),
+    ("7", "surf", "Surfboard", "The onchain adventures of surfsurf.eth"),
 ]
 
 
