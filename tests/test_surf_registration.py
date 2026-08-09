@@ -591,11 +591,147 @@ def test_offline_launch_of_surf_never_kills_the_app(factory) -> None:
     asyncio.run(_run())
 
 
+# ---------------------------------------------------------------------------
+# Fix round 1 (Important finding): the zero-catch above only proved
+# ``imd_price_usd`` never fakes a zero. ``SURF_KEYS`` carries ~20 other
+# numerics -- lp_liquidity, lp_imd, feed_nonce, supply, holders, transfers,
+# identities-written -- and a future manager bug that zeroed any *one* of
+# those instead would have passed the original test in silence. The house
+# rule is "a failed read is None, never 0" (CLAUDE.md), not "the price is
+# never a fake zero", so the assertion has to cover the numeric surface, not
+# one representative field.
+#
+# Every ``SURF_KEYS`` entry is triaged into exactly one of three buckets
+# below, and ``test_every_surf_key_is_triaged_for_the_zero_catch`` proves the
+# triage is exhaustive by deriving its check from the live ``SURF_KEYS``
+# tuple rather than a second hand-typed list -- a key added later fails that
+# test instead of silently staying uncovered, which is the same defect this
+# whole finding is about, one level up.
+# ---------------------------------------------------------------------------
+
+#: Keys whose type is never a bare ``int``/``float`` -- ``str``, ``bool`` or
+#: ``list[...]`` -- so there is no None-vs-0 ambiguity to defend: a bool's
+#: unread state is already distinct from ``False`` without going anywhere
+#: near ``"0"``, and a list's unread state is ``None`` vs. ``[]``, the same
+#: distinction ``surf_models.LogWindow``'s own docstring draws for ``()``.
+_NON_NUMERIC_KEYS = frozenset(
+    {
+        "degraded", "feed_items",
+        "sig_post_state", "sig_lp_state", "sig_gate_state",
+        "sig_deploy_state", "sig_bridge_state", "sig_burn_state",
+        "sig_post_detail", "sig_lp_detail", "sig_gate_detail",
+        "sig_deploy_detail", "sig_bridge_detail", "sig_burn_detail",
+        "hook_status", "lp_owner_ok", "gate_open",
+        "supply_series", "price_series", "nft_last_sales", "dev_activity",
+    }
+)
+
+#: Numeric keys with *no render path this acceptance test can observe*, each
+#: with the specific reason a zero there could never mislead a user (see
+#: task-WP6.8-report.md for the full writeup and how each was verified).
+_NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
+    # Computed by the manager (surf_manager._market_payload) but never read
+    # by screens/surf.py or any widgets/surf/* module -- grep confirms no
+    # `data.get("eth_usd")` call exists anywhere in either package. A
+    # fabricated 0 here cannot mislead anyone because it never reaches a
+    # pixel; if a future screen edit starts reading it, this key must move
+    # into `_NUMERIC_ZERO_PROBES` in the same change.
+    "eth_usd": "never read by screens/surf.py or any widgets/surf/* module",
+    # Mentioned only in a code comment in screens/surf.py; never passed to
+    # StatusBar.update_data or any widget's update_data.
+    "as_of": "never read by screens/surf.py or any widgets/surf/* module",
+    # widgets/surf/signals.py `_head()` reads `age_s` only inside the
+    # `state == "fired"` branch; every other state -- including the `None`
+    # a full outage produces -- ignores it entirely, so `{state: None,
+    # age_s: 0}` renders byte-identical output to `{state: None, age_s:
+    # None}`. The None-vs-0 rule for these six fields can only be observed
+    # under a FIRED state, and this acceptance test's whole premise is that
+    # no signal may fire under a full outage (see the `"FIRED" not in text`
+    # assertion below) -- so it structurally cannot exercise them.
+    "sig_post_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
+    "sig_lp_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
+    "sig_gate_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
+    "sig_deploy_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
+    "sig_bridge_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
+    "sig_burn_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
+}
+
+#: Numeric keys this test DOES probe: key -> the exact substring the real
+#: widget/screen formatter renders for a *genuine* ``0`` in that field, each
+#: with enough surrounding context that it cannot be confused with a bare
+#: ``"0"`` that legitimately appears elsewhere on screen (an address, a block
+#: number, the version tail, the poll interval). Verified empirically against
+#: the real ``SurfScreen`` at the pinned ``(143, 48)`` size -- one field
+#: zeroed at a time, all others ``None`` -- and against the true all-``None``
+#: baseline to rule out false-positive collisions. Some substrings are
+#: shortened to survive box truncation at this width (e.g. ``identities_written``
+#: renders ``"0/2000 writt…"`` inside the narrow GATE hero box).
+_NUMERIC_ZERO_PROBES: dict[str, str] = {
+    "feed_nonce": "feed #0",                    # screens/surf.py _fmt_int
+    "feed_last_post_age_s": "(0s)",              # screens/surf.py _fmt_age
+    "lp_liquidity": "· L 0",                # hero.py fmt_liquidity
+    "lp_imd": "0 IMD",                           # hero.py _update_lp
+    "lp_weth": "0.00 WETH",                      # hero.py _update_lp
+    "identities_written": "0/2000 writt",        # hero.py _update_gate
+    "imd_supply": "0 IMD",                       # hero.py _update_supply
+    # The field's own honest zero rendering (distinct from `imd_burned_cum
+    # is None` -> "burned --"): this is the exact shape the house rule
+    # guards -- a fabricated 0 here would falsely claim "we watched and
+    # nothing moved" instead of the honest "we could not read this".
+    "imd_burned_cum": "no burn obser",           # hero.py _update_supply
+    "imd_price_usd": "$0.00",                    # market.py fmt_price (pre-existing check)
+    "fp_price_usd": "FP $0.00",                  # market.py fmt_price
+    "imd_change_24h_pct": "+0.00% 24h",          # market.py _fmt_change
+    "imd_vol_24h_usd": "vol 24h $0",             # market.py fmt_compact
+    "pool_liquidity_usd": "pool $0",             # market.py fmt_compact
+    "parity_pct": "parity ● +0.00%",        # market.py _fmt_parity
+    "nft_holders": "0 holders",                  # nft.py _fmt_count
+    "nft_transfers_24h": "0 transfers/24h",      # nft.py _fmt_count
+    "nft_dev_holdings": "dev holds 0",           # nft.py _fmt_count
+    "nft_written": "identities 0/2000 written",  # nft.py update_data
+    # The honesty flagship the widget's own module docstring names: "never
+    # faked, never 0, never silently blank". A genuine 0 renders with units;
+    # a failed read must render `FLOOR_UNAVAILABLE`, never this string.
+    "nft_floor": "0.000 ETH",                    # nft.py update_data
+}
+
+
+def test_every_surf_key_is_triaged_for_the_zero_catch() -> None:
+    """A SURF_KEYS key added later must be triaged, not silently uncovered.
+
+    Three disjoint buckets -- checked, numeric-but-unobservable, and
+    structurally non-numeric -- must partition ``SURF_KEYS`` exactly. This is
+    what "drive it from the real key list" means in practice: a hand-typed
+    list of fields to check would silently stop covering the contract the
+    moment ``SURF_KEYS`` grows, which is exactly the shape of the finding
+    this test exists to close.
+    """
+    from maxpane_dashboard.data.surf_models import SURF_KEYS
+
+    checked = set(_NUMERIC_ZERO_PROBES)
+    excluded = set(_NUMERIC_KEYS_EXCLUDED)
+    non_numeric = set(_NON_NUMERIC_KEYS)
+
+    overlap = (checked & excluded) | (checked & non_numeric) | (excluded & non_numeric)
+    assert not overlap, f"a key is triaged into more than one bucket: {overlap}"
+
+    covered = checked | excluded | non_numeric
+    missing = set(SURF_KEYS) - covered
+    assert not missing, (
+        f"SURF_KEYS grew a key this test never triaged: {missing} -- add it "
+        "to _NUMERIC_ZERO_PROBES, _NUMERIC_KEYS_EXCLUDED or _NON_NUMERIC_KEYS"
+    )
+    extra = covered - set(SURF_KEYS)
+    assert not extra, f"triaged a key SURF_KEYS no longer has: {extra}"
+
+
 def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
     """Every detector is on screen, none of them reads as a live number.
 
     ``0`` is the forbidden rendering: CLAUDE.md's "a failed read is None,
-    never 0" exists because a zeroed supply reads as a 100% burn.
+    never 0" exists because a zeroed supply reads as a 100% burn. Checked
+    across the numeric surface of ``SURF_KEYS`` (see ``_NUMERIC_ZERO_PROBES``
+    above), not just the price.
     """
     key = next(k for k, game_id, *_ in GAMES if game_id == "surf")
 
@@ -625,5 +761,11 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 "a signal fired on an outage -- baselines moved on a failed read"
             )
             assert "$0.00" not in text, "a missing price rendered as zero"
+            for probe_key, needle in _NUMERIC_ZERO_PROBES.items():
+                assert needle not in text, (
+                    f"{probe_key} rendered its zero-formatted string "
+                    f"{needle!r} under a full outage -- a failed read must "
+                    "never render as a real 0"
+                )
 
     asyncio.run(_run())
