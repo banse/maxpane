@@ -883,3 +883,82 @@ def test_a_legitimate_supply_reading_is_still_persisted():
         _baseline(imd_supply=SUPPLY_BEFORE), _readings(imd_supply=SUPPLY_AFTER_MINTS), NOW
     )
     assert advanced["imd_supply"] == SUPPLY_AFTER_MINTS
+
+
+# ---------------------------------------------------------------------------
+# The matrix: every detector x every state.
+#
+# PRD §8 asks for exactly this table.  It is a coverage lock as much as a
+# behaviour test: `test_the_matrix_covers_every_detector` fails the moment a
+# seventh detector lands without its four rows, and the None column is the
+# machine-checkable half of success criterion 3.
+# ---------------------------------------------------------------------------
+
+MATRIX: tuple[tuple[str, str, dict, str], ...] = (
+    # (signal, expected state, reading overrides, expected detail)
+    ("post", "ok", {}, "nonce 13 · no new post"),
+    ("post", "watch", {"channel_tx_count": 21}, "reply on channel · 21 txs"),
+    ("post", "fired",
+     {"announce_nonce": 14, "announce_last_text": LP_POST_TEXT, "announce_last_ts": LP_POST_TS},
+     LP_POST_DETAIL),
+    ("post", None, {"announce_nonce": None, "channel_tx_count": None}, "channel unavailable"),
+
+    ("lp", "ok", {}, "liquidity holds"),
+    ("lp", "watch", {"ops_nonce": 37}, "frenpet.eth active · nonce 37"),
+    ("lp", "fired", {"lp_liquidity": 677_000_000_000}, "LIQUIDITY OUT -32.3%"),
+    ("lp", None, {"lp_liquidity": None, "ops_nonce": None, "v4_hook_pools": None},
+     "LP state unavailable"),
+
+    ("gate", "ok", {}, "closed · 1 written"),
+    ("gate", "watch", {"identities_written": 2}, "1→2 written · gate closed"),
+    ("gate", "fired", {"gate_open": True}, "GATE OPEN · 1 written"),
+    ("gate", None, {"gate_open": None, "identities_written": None}, "gate unavailable"),
+
+    ("deploy", "ok", {}, "no new contract"),
+    ("deploy", "watch", {"dev_nonce": 2351}, "surfsurf.eth nonce 2350→2351"),
+    ("deploy", "fired", {"deploy_events": [FRESH_ACTION]}, "action register() · announce"),
+    ("deploy", None, {"deploy_events": None, "dev_nonce": None}, "dev activity unavailable"),
+
+    ("bridge", "ok", {}, "no mints in window"),
+    ("bridge", "watch", {"imd_supply": SUPPLY_BEFORE + 10_000.0},
+     "supply +10,000 · no dev-wallet mint"),
+    ("bridge", "fired", {"bridge_mints": [MINT_1, MINT_2]}, "mint 114,367 IMD → frenpet.eth"),
+    ("bridge", None, {"bridge_mints": None, "imd_supply": None}, "bridge logs unavailable"),
+
+    ("burn", "ok", {}, "supply flat"),
+    ("burn", "watch", {"burn_transfers": [BURN_0805]}, "15,745 IMD → BurnExecutor"),
+    ("burn", "fired", {"imd_supply": SUPPLY_BEFORE - 15_745.0}, "burn 15,745 IMD"),
+    ("burn", None, {"imd_supply": None, "burn_transfers": None}, "supply unavailable"),
+)
+
+
+@pytest.mark.parametrize(
+    "name,expected_state,overrides,expected_detail",
+    MATRIX,
+    ids=[f"{row[0]}-{row[1] or 'outage'}" for row in MATRIX],
+)
+def test_signal_matrix(name, expected_state, overrides, expected_detail):
+    state, detail, _ = _sig(name, _baseline(), _readings(**overrides))
+    assert state == expected_state
+    assert detail == expected_detail
+
+
+def test_the_matrix_covers_every_detector_and_every_state():
+    covered = {(row[0], row[1]) for row in MATRIX}
+    expected = {
+        (name, state)
+        for name in sig.SIGNAL_NAMES
+        for state in ("ok", "watch", "fired", None)
+    }
+    assert covered == expected
+
+
+@pytest.mark.parametrize("name,expected_state,overrides,_detail", MATRIX,
+                         ids=[f"{row[0]}-{row[1] or 'outage'}" for row in MATRIX])
+def test_no_row_of_the_matrix_moves_an_unread_baseline(name, expected_state, overrides, _detail):
+    """Whatever a detector decides, a ``None`` reading never writes a baseline."""
+    base = _baseline()
+    _, advanced = sig.build_signals(base, _readings(**overrides), NOW)
+    for key, value in overrides.items():
+        if value is None and key in sig.BASELINE_SCALARS:
+            assert advanced[key] == base[key], key
