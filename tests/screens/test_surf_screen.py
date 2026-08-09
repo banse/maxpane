@@ -939,3 +939,322 @@ def test_surf_fits_inside_the_documented_app_width():
         "Do NOT edit __main__.py from WP5 — report to WP6, which owns it, "
         "and land this test together with WP6's raise."
     )
+
+
+# -- refresh guard: skip, never queue ------------------------------------
+
+
+def test_surf_screen_opts_into_the_refresh_guard():
+    """Structural: the mixin comes first and the worker name is surf's own.
+
+    The generic suite (tests/screens/test_refresh_guard.py) auto-discovers
+    every polling screen; this pins the two things it cannot: MRO order and
+    the name.
+    """
+    mro = SurfScreen.__mro__
+    from textual.screen import Screen as _Screen
+
+    from maxpane_dashboard.screens.refresh_guard import RefreshGuard
+
+    assert mro.index(RefreshGuard) < mro.index(_Screen)
+    assert SurfScreen.REFRESH_WORKER_NAME == "surf-refresh"
+
+
+class _BlockingManager:
+    """Parks inside ``fetch_and_compute`` until the test releases it."""
+
+    def __init__(self) -> None:
+        self._error_count = 0
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.calls = 0
+
+    async def fetch_and_compute(self) -> dict:
+        self.calls += 1
+        self.entered.set()
+        await self.release.wait()
+        return _frozen_payload()
+
+    async def close(self) -> None:  # pragma: no cover - never called here
+        pass
+
+
+async def test_overrun_tick_is_skipped_never_queued_or_cancelled():
+    """A tick landing mid-refresh is dropped; the refresh completes once."""
+    manager = _BlockingManager()
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _Harness(screen)
+    async with app.run_test(size=(150, 46)) as pilot:
+        # on_screen_resume started the initial refresh; wait until it is
+        # provably parked inside fetch_and_compute.
+        await asyncio.wait_for(manager.entered.wait(), timeout=2)
+
+        skipped_before = screen._refresh_skipped
+        assert screen.start_refresh() is None          # the overrunning tick
+        assert screen.start_refresh() is None          # and another
+        assert screen._refresh_skipped == skipped_before + 2
+        assert manager.calls == 1                      # nothing queued
+
+        manager.release.set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+        await pilot.pause()
+
+        assert manager.calls == 1                      # nothing ran after
+        assert screen._refresh_in_flight is False      # flag lowered
+        # ...and the completed refresh actually rendered.
+        assert "feed #14" in _plain(screen.query_one("#title-bar"))
+
+
+async def test_manual_refresh_and_interval_tick_share_one_guard():
+    """The ``r`` binding and the interval callback fund into one guard.
+
+    Both are inherited unchanged from ``RefreshGuard`` (pinned structurally
+    by ``test_every_polling_screen_uses_the_guard``); this drives the actual
+    named entry points -- ``action_refresh`` (the ``r`` key) and
+    ``_schedule_refresh`` (the interval timer) -- through a real SurfScreen
+    to prove neither can double-run against the other nor deadlock waiting
+    for the other to finish.
+    """
+    manager = _BlockingManager()
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _Harness(screen)
+    async with app.run_test(size=(150, 46)) as pilot:
+        await asyncio.wait_for(manager.entered.wait(), timeout=2)
+        assert manager.calls == 1
+
+        # A manual "r" press and an interval tick both land while the
+        # initial refresh is still in flight -- neither may start a second
+        # fetch, and neither blocks waiting on the other.
+        screen.action_refresh()
+        screen._schedule_refresh()
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert manager.calls == 1, "a manual or interval tick started a second fetch"
+
+        manager.release.set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+        await pilot.pause()
+        assert manager.calls == 1
+        assert screen._refresh_in_flight is False
+
+        # Once idle, a manual refresh runs cleanly to completion...
+        manager.entered.clear()
+        manager.release.clear()
+        screen.action_refresh()
+        await asyncio.wait_for(manager.entered.wait(), timeout=2)
+        assert manager.calls == 2
+        manager.release.set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+        await pilot.pause()
+        assert screen._refresh_in_flight is False
+
+        # ...and so does an interval tick straight after it: no deadlock
+        # either way round.
+        manager.entered.clear()
+        manager.release.clear()
+        screen._schedule_refresh()
+        await asyncio.wait_for(manager.entered.wait(), timeout=2)
+        assert manager.calls == 3
+        manager.release.set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+        await pilot.pause()
+        assert screen._refresh_in_flight is False
+
+
+class _TrackingBlockingManager:
+    """``_BlockingManager`` plus concurrency/failure observables.
+
+    ``_BlockingManager`` above is kept exactly as the brief specifies it;
+    this sibling adds the extra bookkeeping the prefetch-join and
+    raise-recovery proofs below need (concurrency high-water mark, a
+    one-shot failure) without touching that frozen class.
+    """
+
+    def __init__(self) -> None:
+        self._error_count = 0
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.calls = 0
+        self.concurrent = 0
+        self.max_concurrent = 0
+        self.fail_next = False
+
+    async def fetch_and_compute(self) -> dict:
+        self.calls += 1
+        self.concurrent += 1
+        self.max_concurrent = max(self.max_concurrent, self.concurrent)
+        self.entered.set()
+        try:
+            await self.release.wait()
+            if self.fail_next:
+                self.fail_next = False
+                raise RuntimeError("simulated RPC failure")
+            return _frozen_payload()
+        finally:
+            self.concurrent -= 1
+
+    async def close(self) -> None:  # pragma: no cover - never called here
+        pass
+
+
+class _PrefetchHarness(App):
+    """Reproduces ``MaxPaneApp.on_mount``'s startup prefetch closely enough
+    to prove SurfScreen's own first refresh joins it (MEDI-35). Same worker
+    name, same node (the app), same ``exclusive=True`` as the real app and
+    as ``tests/screens/test_refresh_guard.py``'s generic harness -- this
+    drives the identical race through a real ``SurfScreen`` so WP5's own
+    sign-off does not rest solely on another screen's test file.
+    """
+
+    def __init__(self, manager: _TrackingBlockingManager) -> None:
+        super().__init__()
+        self._manager = manager
+
+    def on_mount(self) -> None:
+        from maxpane_dashboard.screens.refresh_guard import PREFETCH_WORKER_NAME
+
+        self.run_worker(
+            self._prefetch(),
+            exclusive=True,
+            name=PREFETCH_WORKER_NAME,
+            exit_on_error=False,
+        )
+
+    async def _prefetch(self) -> None:
+        try:
+            await self._manager.fetch_and_compute()
+        except Exception:
+            pass
+
+
+async def test_surf_first_refresh_joins_the_startup_prefetch():
+    """SurfScreen's initial refresh does not race the app-node prefetch.
+
+    The join behaviour (``_await_startup_prefetch``) is inherited unchanged
+    from ``RefreshGuard`` and already covered generically (other screens) in
+    ``tests/screens/test_refresh_guard.py``; this repeats the exact race
+    through a real ``SurfScreen`` instance so the first paint is proven, not
+    assumed, not to be a race between the placeholder title and real data.
+    """
+    manager = _TrackingBlockingManager()
+    app = _PrefetchHarness(manager)
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+
+    async with app.run_test():
+        await asyncio.wait_for(manager.entered.wait(), timeout=2)
+        assert manager.calls == 1
+
+        # The dashboard screen appears while the prefetch is still running --
+        # this is the ordering the real app produces (prefetch starts at
+        # on_mount, the dashboard screen only appears after splash + game
+        # select).
+        app.push_screen(screen)
+        for _ in range(50):
+            await asyncio.sleep(0)
+
+        # Joined, not raced: only the prefetch's fetch is in flight, and the
+        # screen's own has not started yet.
+        assert manager.max_concurrent == 1
+        assert manager.calls == 1
+
+        manager.release.set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+
+        # The prefetch finished, then the screen's own fetch ran -- serially,
+        # never concurrently -- and it produced the real first paint.
+        assert manager.calls == 2
+        assert manager.max_concurrent == 1
+        assert "feed #14" in _plain(screen.query_one("#title-bar"))
+
+
+async def test_a_raising_refresh_lowers_the_guard_flag_and_the_next_tick_still_runs():
+    """The *guard* recovers from a raising manager, not just ``_do_refresh``.
+
+    ``test_screen_survives_manager_exception`` already proves SurfScreen's
+    own try/except around ``fetch_and_compute()`` degrades cleanly when
+    ``_do_refresh()`` is called directly. This test drives the same failure
+    through ``start_refresh()`` -- the real scheduling entry point used by
+    the ``r`` binding and the interval timer -- to prove
+    ``RefreshGuard._guarded_refresh``'s ``finally`` also lowers
+    ``_refresh_in_flight`` and that the next scheduled tick still runs, so a
+    raising manager cannot wedge the screen on placeholders for the rest of
+    the session.
+    """
+    manager = _TrackingBlockingManager()
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _Harness(screen)
+    async with app.run_test(size=(150, 46)) as pilot:
+        await asyncio.wait_for(manager.entered.wait(), timeout=2)
+        manager.fail_next = True
+        manager.release.set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+        await pilot.pause()
+
+        assert manager.calls == 1
+        assert screen._refresh_in_flight is False, "a raising refresh wedged the guard"
+
+        manager.entered.clear()
+        manager.release.clear()
+        screen._schedule_refresh()
+        await asyncio.wait_for(manager.entered.wait(), timeout=2)
+        assert manager.calls == 2, "the guard did not schedule the next tick"
+        manager.release.set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+        await pilot.pause()
+        assert screen._refresh_in_flight is False
+        assert "feed #14" in _plain(screen.query_one("#title-bar"))
+
+
+async def test_toggling_view_mid_refresh_does_not_corrupt_either_view():
+    """``c`` flips visibility instantly; the in-flight refresh still lands
+    into a single, consistent active view once it completes.
+
+    ``action_toggle_view`` never awaits a fetch -- it is a pure ``.display``
+    flip -- and ``_do_refresh``'s widget dispatch is a straight-line sequence
+    of synchronous ``update_data`` calls with no ``await`` between them,
+    so the two cannot interleave into a half-updated or doubly-visible
+    state. This proves it rather than assumes it: toggle while a refresh is
+    parked mid-fetch, let it land, and check exactly one panel is visible
+    and it carries the fetched data -- both before and after flipping back.
+    """
+    manager = _BlockingManager()
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(200, 48)) as pilot:
+        await asyncio.wait_for(manager.entered.wait(), timeout=2)
+
+        # Toggle to the activity view while the initial refresh is still
+        # parked inside fetch_and_compute.
+        await pilot.press("c")
+        await pilot.pause()
+        assert screen._active_view == "activity"
+        assert screen.query_one(SurfDevActivity).display is True
+        assert screen.query_one(SurfFeed).display is False
+
+        manager.release.set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+        await pilot.pause()
+
+        # Exactly one view visible once the refresh lands, and it carries
+        # the fetched payload, not stale or blank content.
+        assert screen.query_one(SurfDevActivity).display is True
+        assert screen.query_one(SurfFeed).display is False
+        text = _screen_text(app)
+        assert "DEV ACTIVITY" in text and "ANNOUNCE FEED" not in text
+
+        # Flip back -- the feed (never hidden from updates while it was
+        # invisible) shows the correct fixture content, proving the swap
+        # never desynced from the payload.
+        await pilot.press("c")
+        await pilot.pause()
+        text = _screen_text(app)
+        assert "ANNOUNCE FEED" in text and "DEV ACTIVITY" not in text
+        assert "feed #14" in _plain(screen.query_one("#title-bar"))
