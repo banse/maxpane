@@ -1158,8 +1158,13 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     "parity_pct": "parity ● +0.00%",        # market.py _fmt_parity
     "nft_holders": "0 holders",                  # nft.py _fmt_count
     "nft_transfers_24h": "0 transfers/24h",      # nft.py _fmt_count
-    "nft_dev_holdings": "dev holds 0",           # nft.py _fmt_count
-    "nft_written": "identities 0/2000 written",  # nft.py update_data
+    "nft_dev_holdings": "dev holds 0 identities",  # nft.py _dev_row
+    # Was `identities 0/2000 written` while the written count had a row of its
+    # own. It moved onto the stats row and lost the leading `identities` word
+    # (which now labels the dev holdings), so the old probe went absent for the
+    # wrong reason -- a needle this test only ever asserts is *missing* stops
+    # covering anything the moment the render stops being able to produce it.
+    "nft_written": "0/2000 written",             # nft.py _stats_variants
     # The honesty flagship the widget's own module docstring names: "never
     # faked, never 0, never silently blank". A genuine 0 renders with units;
     # a failed read must render `FLOOR_UNAVAILABLE`, never this string.

@@ -1,6 +1,15 @@
 """IDENTITY.MD panel: holders, velocity, identities, honest floor, last sales.
 
-Rows: title · stats · written · floor · last-sales block.
+Rows: title · stats · dev holdings · floor · last-sales block.
+
+The stats row carries the three *collection* figures -- ``holders``,
+``transfers/24h`` and the ``N/2000 written`` count -- and the dev's own
+holdings get a row of their own, phrased as the sentence it is: ``dev holds
+3 identities``.  It used to be the other way round (``dev holds 3`` was the
+tail of the stats row and the written count was a row reading ``identities
+1/2000 written``), which put the one figure that is about a *person* inside
+a row of figures about the *collection*, and spent a whole row on a count
+that is a single fraction.
 
 **The floor line is the honesty flagship.**  There is no keyless floor
 source for IDMD (OpenSea is keyed/Cloudflare-gated -- game_mechanics
@@ -9,6 +18,24 @@ renders the explicit ``n/a — no keyless source`` state.  It is never
 faked, never ``0``, never silently blank.  If a future version ships a
 real source and hands us a float, it renders with units -- the escape
 hatch costs nothing today.
+
+That absent state renders **muted**, at the same ``[dim]`` the panel's own
+labels use.  It was ``[yellow]`` -- warning vocabulary -- for a condition
+that cannot change: no keyless floor source exists for this collection at
+all, so the line is a permanent statement rather than an alert about
+something wrong *now*, and a colour that shouts on a standing fact is a
+colour the eye is trained to skip.  Muting it is not hiding it: ``[dim]``
+composites at 4.65:1 or better against the background in all ten registered
+themes, pinned per theme by
+``test_nft_muted_floor_is_still_legible_in_every_theme``.  The *real* floor
+branch keeps its ``[bold]`` -- a number is news, a permanent absence is not.
+
+There is no de-emphasis token to reach for instead: ``[$text-muted]`` in
+inline markup does **not** resolve to the muted colour the same name gives
+in CSS -- it composites at ``#ffffff``, i.e. brighter than the row it is
+meant to recede behind (the alpha the token carries is dropped on the way
+through markup).  ``[dim]`` is the inline idiom in this package for exactly
+that reason.
 
 Realized Seaport sales (``nft_last_sales``) are the closest keyless proxy
 and get their own block: ``MM-DD  #token  x.xxx ETH``.  Those prices come
@@ -35,21 +62,36 @@ panel had no machinery for at all, because it did not need any: until
 2026-08-10 it was the sole child of ``#bottom-row`` at ``width: 1fr``, i.e.
 the whole terminal.  The three-row restructure put ``SurfMarket`` beside it
 and made it ``2fr`` of a 3:2 split, so it now sees roughly ``0.4 * terminal
-- 4`` columns against the 46 its stats row needs, and at 122 columns and
-below it ellipsised ``dev holds 3`` -- and at 90, ``38 transfers/24…``,
-which is a number wearing a different unit.
+- 4`` columns against the 49 its stats row needs (46 while the row ended in
+``dev holds 3``), and at 122 columns and below it ellipsised that tail --
+and at 90, ``38 transfers/24…``, which is a number wearing a different unit.
 
 So the stats row now sheds whole labelled fields (see :func:`_tier_for`) and
-the title names them.  Only *that* row has fields to trade: ``identities
-N/2000 written`` and the floor line are single statements, and the sales
-block is already the narrowest thing here.  When one of those is what
-overflows -- the floor line's ``n/a — no keyless source`` is 31 columns and
-is the binding row once the stats row has reached its narrowest tier --
-there is no field to name, and :data:`SHORT_HINT` carries the bare marker.
+the title names them.  Only *that* row has fields to trade: ``dev holds N
+identities`` and the floor line are single statements, and the sales block
+is already the narrowest thing here.  When one of those is what overflows --
+the floor line's ``n/a — no keyless source`` is 31 columns and is the
+binding row once the stats row has reached its narrowest tier -- there is no
+field to name, and :data:`SHORT_HINT` carries the bare marker.
 
-The order of sacrifice is the reverse of the PRD's ordering of the figures:
-``dev holds`` (a dev-behaviour detail) goes first, ``transfers/24h`` (the
-velocity signal) second, and the holder count is the last thing standing.
+**The ladder was re-derived when the rows were rearranged, not re-pointed.**
+It used to shed ``dev holds`` first and that field has left the stats row
+entirely, so every tier below ``full`` measured a string the row no longer
+renders -- the failure mode this module keeps warning about, a budget taken
+on one string and a paint of another.  The order of sacrifice is now:
+
+1. ``N/2000 written`` -- **the only figure on the row that is also on the
+   screen somewhere else.**  ``SurfHero``'s IDENTITY GATE box renders
+   ``N/2000 written`` from ``identities_written``, which the manager
+   publishes from the same lifetime count as ``nft_written``
+   (``surf_manager._nft_payload``).  Shedding it here costs the *dashboard*
+   nothing; shedding either of the other two would take the figure off the
+   screen outright.  It is also the slowest thing on the row -- 1 of 2000
+   since deploy -- so it is the field least likely to have moved since the
+   reader last looked at it, and it frees 17 of the 36 columns between the
+   widest and narrowest tiers.
+2. ``transfers/24h`` -- the velocity signal, and unique to this panel.
+3. the holder count, which is the last thing standing.
 """
 
 from __future__ import annotations
@@ -81,12 +123,19 @@ _MAX_SALES = 4
 #: ``minimal`` tier (31 usable, minus ``IDENTITY.MD`` and two of gap).  A
 #: longer ``minimal`` wording would be unreachable in every layout this
 #: widget has -- dead string, permanently replaced by :data:`SHORT_HINT`.
-#: ``compact`` has more room and spells the field out; below ~101 terminal
-#: columns even that falls back.
+#: ``compact`` has 35 to play with and spells the field out; below a panel of
+#: 38 usable columns even that falls back.
+#:
+#: Both name their fields with text the shed row renders **verbatim** --
+#: ``/2000`` out of ``1/2000 written``, ``24h`` out of ``transfers/24h`` --
+#: so a hint cannot drift into naming a field that is still on screen (which
+#: is what the previous ``dev``-shaped pair became the moment the dev
+#: holdings moved to a row of their own).  Pinned by
+#: ``test_nft_every_widen_hint_names_text_the_tier_actually_dropped``.
 WIDEN_HINTS = {
     "full": "",
-    "compact": "‹ widen for dev holdings",
-    "minimal": "‹ widen: 24h, dev",
+    "compact": "‹ widen for /2000 written",
+    "minimal": "‹ widen: 24h /2000",
 }
 
 #: Fallback marker for a panel too narrow to carry a descriptive hint beside
@@ -106,7 +155,7 @@ def _fmt_count(value) -> str:
         return DASH
 
 
-def _stats_variants(holders: str, transfers: str, dev: str) -> dict[str, str]:
+def _stats_variants(holders: str, transfers: str, written: str) -> dict[str, str]:
     """Plain text of the stats row at each tier, widest first.
 
     Plain, not markup: this is what :func:`_tier_for` measures, and
@@ -118,13 +167,16 @@ def _stats_variants(holders: str, transfers: str, dev: str) -> dict[str, str]:
     width and paints another, i.e. clips with the marker dark.
     """
     return {
-        "full": f"  {holders} holders · {transfers} transfers/24h · dev holds {dev}",
+        "full": (
+            f"  {holders} holders · {transfers} transfers/24h "
+            f"· {written}/2000 written"
+        ),
         "compact": f"  {holders} holders · {transfers} transfers/24h",
         "minimal": f"  {holders} holders",
     }
 
 
-def _stats_markup(tier: str, holders: str, transfers: str, dev: str) -> str:
+def _stats_markup(tier: str, holders: str, transfers: str, written: str) -> str:
     """The same three rows, styled."""
     if tier == "minimal":
         return f"  [bold]{holders}[/] [dim]holders[/]"
@@ -136,24 +188,39 @@ def _stats_markup(tier: str, holders: str, transfers: str, dev: str) -> str:
     return (
         f"  [bold]{holders}[/] [dim]holders ·[/] "
         f"[bold]{transfers}[/] [dim]transfers/24h ·[/] "
-        f"[dim]dev holds[/] [bold]{dev}[/]"
+        f"[bold]{written}[/][dim]/2000 written[/]"
     )
+
+
+def _dev_row(dev: str) -> tuple[str, str]:
+    """``(plain, markup)`` for the dev-holdings row.
+
+    Its own row, and a sentence rather than a figure: ``dev holds 3
+    identities`` is a statement about a person, which is why it no longer
+    rides the row of collection-wide counters.  A ``--`` mutes whole,
+    following the ``written`` row it replaced -- ``dev holds 0 identities``
+    would be a claim about the dev's wallet that no read was able to make.
+    """
+    plain = f"  dev holds {dev} identities"
+    if dev == DASH:
+        return plain, f"  [dim]dev holds {DASH} identities[/]"
+    return plain, f"  [dim]dev holds[/] [bold]{dev}[/] [dim]identities[/]"
 
 
 def _tier_for(width: int, variants: dict[str, str]) -> str:
     """Widest stats row that fits ``width`` rendered columns.
 
-    ==========  ===================================================
+    ==========  =========================================================
     Tier        Row
-    ==========  ===================================================
-    ``full``    ``667 holders · 38 transfers/24h · dev holds 3``
+    ==========  =========================================================
+    ``full``    ``667 holders · 38 transfers/24h · 1/2000 written``
     ``compact`` ``667 holders · 38 transfers/24h``
     ``minimal`` ``667 holders``
-    ==========  ===================================================
+    ==========  =========================================================
 
     Measured against the *rendered* strings rather than pinned constants:
     the counts are comma-grouped, so a collection an order of magnitude
-    larger moves every threshold and a hardcoded 46 would silently stop
+    larger moves every threshold and a hardcoded 49 would silently stop
     being the truth.
 
     ``width <= 0`` means "not laid out yet" and optimistically picks
@@ -221,7 +288,11 @@ class SurfNft(Vertical):
         yield Static(PANEL_TITLE, classes="surf-nft-title", id="surf-nft-title")
         yield Static("", classes="surf-nft-line", id="surf-nft-spacer")
         yield Static("", classes="surf-nft-line", id="surf-nft-stats")
-        yield Static("", classes="surf-nft-line", id="surf-nft-written")
+        # ``#surf-nft-dev``, not the ``#surf-nft-written`` this row used to be:
+        # the written count moved onto the stats row and the dev holdings took
+        # the row, so keeping the old id would leave a selector naming the one
+        # field the row no longer carries.
+        yield Static("", classes="surf-nft-line", id="surf-nft-dev")
         yield Static("", classes="surf-nft-line", id="surf-nft-floor")
         yield Static("", classes="surf-nft-line", id="surf-nft-sales-head")
         yield Static("", classes="surf-nft-line", id="surf-nft-sales")
@@ -296,7 +367,7 @@ class SurfNft(Vertical):
     def _render_view(self) -> None:
         try:
             stats = self.query_one("#surf-nft-stats", Static)
-            written_row = self.query_one("#surf-nft-written", Static)
+            dev_row = self.query_one("#surf-nft-dev", Static)
             floor_row = self.query_one("#surf-nft-floor", Static)
             sales_head = self.query_one("#surf-nft-sales-head", Static)
             sales_body = self.query_one("#surf-nft-sales", Static)
@@ -307,35 +378,26 @@ class SurfNft(Vertical):
         width = self._line_width()
 
         # -- the one row with fields to trade ---------------------------
-        variants = _stats_variants(
-            _fmt_count(payload.get("nft_holders")),
-            _fmt_count(payload.get("nft_transfers_24h")),
-            _fmt_count(payload.get("nft_dev_holdings")),
-        )
+        holders = _fmt_count(payload.get("nft_holders"))
+        transfers = _fmt_count(payload.get("nft_transfers_24h"))
+        written = _fmt_count(payload.get("nft_written"))
+        variants = _stats_variants(holders, transfers, written)
         tier = _tier_for(width, variants)
-        stats.update(
-            _stats_markup(
-                tier,
-                _fmt_count(payload.get("nft_holders")),
-                _fmt_count(payload.get("nft_transfers_24h")),
-                _fmt_count(payload.get("nft_dev_holdings")),
-            )
-        )
+        stats.update(_stats_markup(tier, holders, transfers, written))
         # Every row's rendered width, so a marker can be lit for a line the
         # tiers cannot help -- the floor line above all, at 31 columns.
         widths = [len(variants[tier])]
 
-        written = _fmt_count(payload.get("nft_written"))
-        widths.append(len(f"  identities {written}/2000 written"))
-        written_row.update(
-            f"  [dim]identities[/] [bold]{written}[/][dim]/2000 written[/]"
-            if written != DASH
-            else f"  [dim]identities {DASH}/2000 written[/]"
-        )
+        dev_plain, dev_markup = _dev_row(_fmt_count(payload.get("nft_dev_holdings")))
+        dev_row.update(dev_markup)
+        widths.append(len(dev_plain))
 
         floor = as_float(payload.get("nft_floor"))
         if floor is None:
-            floor_row.update(f"  [dim]floor[/] [yellow]{FLOOR_UNAVAILABLE}[/]")
+            # Muted, not warned: the absence is structural and permanent (see
+            # the module docstring), so it recedes to the panel's own label
+            # weight instead of wearing the ``[yellow]`` it used to.
+            floor_row.update(f"  [dim]floor {FLOOR_UNAVAILABLE}[/]")
             widths.append(len(f"  floor {FLOOR_UNAVAILABLE}"))
         else:
             floor_row.update(f"  [dim]floor[/] [bold]{floor:.3f} ETH[/]")

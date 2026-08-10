@@ -2565,11 +2565,21 @@ async def test_the_activity_panel_is_never_silent_about_a_shed_column():
 # ``SurfNft`` was the one surf widget with no marker machinery at all. It did
 # not need any while it was the sole child of ``#bottom-row`` at ``1fr``; the
 # three-row restructure put it beside the market at ``2fr`` of a 3:2 split, so
-# it sees ~``0.4 * W - 4`` columns against the 46 its stats row needs and
+# it sees ~``0.4 * W - 4`` columns against the 46 its stats row needed and
 # started silently ellipsising ``dev holds 3`` -- and, further down, cutting
 # ``38 transfers/24h`` into ``38 transfers/24…``, a number with a different
 # unit. ``text-overflow: ellipsis`` renders the ``…``; nothing put a word in
 # the title, which is the half of the contract that names what went.
+#
+# **The rows were then rearranged, and every number below moved with them.**
+# The written count folded into the stats row and the dev holdings
+# took a row of their own (``dev holds 3 identities``), so the stats row is
+# 49 columns rather than 46 and the ladder sheds ``1/2000 written`` first,
+# ``transfers/24h`` second. Two consequences these tests pin: the panel's own
+# clean width went 107 -> 113 (three more columns on its widest row, at ~0.46
+# panel columns per terminal column), and ``dev holds`` is now present at
+# *every* width -- an assertion that it is absent no longer says anything
+# about a tier.
 
 from maxpane_dashboard.widgets.surf.nft import (  # noqa: E402
     SHORT_HINT as NFT_SHORT_HINT,
@@ -2583,8 +2593,8 @@ from maxpane_dashboard.widgets.surf.nft import (  # noqa: E402
 #: the descriptive hint from the bare fallback -- every assertion below names
 #: the whole string it means, and the two are asserted against each other.
 _NFT_HINTS = {
-    "compact": "‹ widen for dev holdings",
-    "minimal": "‹ widen: 24h, dev",
+    "compact": "‹ widen for /2000 written",
+    "minimal": "‹ widen: 24h /2000",
 }
 
 
@@ -2620,42 +2630,50 @@ async def _nft_panel(width: int) -> str:
 async def test_the_nft_panel_shows_every_figure_at_its_own_clean_width():
     """The positive half: nothing shed, nothing cut, nothing advertised.
 
-    107 is the measured boundary -- one column narrower the stats row no
+    113 is the measured boundary -- one column narrower the stats row no
     longer fits -- so this also pins that the panel is clean at every width
-    the dashboard is actually meant to run at, the pinned one (142 today,
+    the dashboard is actually meant to run at, the pinned one (143 today,
     read from the constant rather than retyped) included.
     Without it the sweep below is satisfied by a panel welded to its
     narrowest tier, which is the failure this codebase keeps recording.
 
-    It was 123 at the 3:2 seam. The NFT panel is on the *right* of the seam,
-    so widening the right column to 6:13 handed it 16 columns it did not have
-    and every one of its tier boundaries moved down with that.
+    It was 123 at the 3:2 seam and 107 after the re-seam: the NFT panel is on
+    the *right* of the seam, so widening the right column to 6:13 handed it 16
+    columns it did not have. It is 113 since the rows were rearranged, the one
+    time this boundary has moved *up*: the stats row gained the written count
+    (46 -> 49 columns) and gave up the dev holdings to a row of its own.
     """
-    for width in (107, 143, 169, MEASURED_FULL_LAYOUT_COLUMNS,
+    for width in (113, 143, 169, MEASURED_FULL_LAYOUT_COLUMNS,
                   SURF_FULL_LAYOUT_COLUMNS):
         panel = await _nft_panel(width)
         assert "667 holders" in panel, width
         assert "38 transfers/24h" in panel, width
-        assert "dev holds 3" in panel, width
+        assert "1/2000 written" in panel, width
+        assert "dev holds 3 identities" in panel, width
         assert "…" not in panel, f"the NFT panel truncates at {width}:\n{panel}"
         assert NFT_SHORT_HINT not in panel, (
             f"a marker is lit at {width} where nothing was shed"
         )
 
 
-async def test_the_nft_panel_sheds_dev_holdings_rather_than_cutting_it():
-    """106 columns: one short of the whole row, which is where it broke.
+async def test_the_nft_panel_sheds_the_written_count_rather_than_cutting_it():
+    """112 columns: one short of the whole row, which is where it breaks.
 
-    It rendered ``dev holds…`` -- a labelled figure with the figure gone --
-    with an unmarked title. Shedding the field is correct; shedding it in
-    silence is the defect. (122 at the 3:2 seam; the panel got wider when the
-    seam moved, so the same boundary is 16 terminal columns lower.)
+    The field that goes first is the written count, and it goes *whole*: the
+    alternative the ellipsis gives you is ``1/2000 writt…``, a labelled figure
+    with its label gone. Shedding is correct; shedding in silence is the
+    defect. (It was ``dev holds`` that went first, at 106, until the dev
+    holdings moved to a row of their own -- the ladder was re-derived rather
+    than re-pointed, because a hint naming a field the panel now always shows
+    would be a marker that lies.)
     """
-    panel = await _nft_panel(106)
-    assert "dev holds" not in panel, "the truncated `dev holds…` is still there"
-    # The fields that stayed, whole.
+    panel = await _nft_panel(112)
+    assert "1/2000 written" not in panel, "the truncated written count survives"
+    # The fields that stayed, whole -- including the dev row, which is not the
+    # stats row's to trade any more.
     assert "667 holders" in panel
     assert "38 transfers/24h" in panel
+    assert "dev holds 3 identities" in panel
     assert _NFT_HINTS["compact"] in panel, "the field went with nothing said"
 
 
@@ -2670,17 +2688,18 @@ async def test_the_nft_panel_never_cuts_a_number_off_its_unit():
     for width in (90, 100):
         panel = await _nft_panel(width)
         assert "38 transfers/24h" in panel, f"the unit was cut off at {width}"
-        assert "dev holds" not in panel, width
+        assert "1/2000 written" not in panel, width
     # Both hint branches are reachable, and which one shows is a width fact:
-    # ``IDENTITY.MD`` + 2 + the 24-column hint needs 37 usable columns, which
-    # the panel first has at a terminal width of 87 (101 at the 3:2 seam).
-    assert _NFT_HINTS["compact"] in await _nft_panel(87)
-    narrow = await _nft_panel(86)
+    # ``IDENTITY.MD`` + 2 + the 25-column hint needs 38 usable columns, which
+    # the panel first has at a terminal width of 89 (87 while the hint was 24
+    # columns, 101 at the 3:2 seam).
+    assert _NFT_HINTS["compact"] in await _nft_panel(89)
+    narrow = await _nft_panel(88)
     assert _NFT_HINTS["compact"] not in narrow, (
-        "the descriptive hint fits after all at 86 columns -- re-measure"
+        "the descriptive hint fits after all at 88 columns -- re-measure"
     )
     # ...and the fallback is the *bare* marker, not the hint belonging to the
-    # narrower tier. That one is 17 columns and does fit here, so a fallback
+    # narrower tier. That one is 18 columns and does fit here, so a fallback
     # chain routed through it would render a marker naming ``24h`` -- a field
     # this tier still shows -- and every ``SHORT_HINT in panel`` assertion
     # would stay green, ``SHORT_HINT`` being a prefix of it.
@@ -2691,17 +2710,22 @@ async def test_the_nft_panel_never_cuts_a_number_off_its_unit():
 
 
 async def test_the_nft_panel_names_the_fields_it_sheds_at_its_narrowest_tier():
-    """74 columns leaves 32 usable, which fits ``667 holders`` and no more.
+    """74 columns leaves 31 usable, which fits ``667 holders`` and no more.
 
     The hint is terse because it has to be: an 11-column title plus two
-    columns of gap leaves 18 for a marker that only appears when the panel is
-    barely over 31 wide. Below that it falls back to the bare one. (87 and 80
-    at the 3:2 seam -- the panel is wider now, so it takes a narrower terminal
-    to drive it this far down.)
+    columns of gap leaves exactly 18 for a marker that only appears when the
+    panel is 31 wide, and 31 is where the tier starts -- the descriptive
+    wording spends the whole budget and lives in a two-terminal-column band
+    (74-75). Below it the panel falls back to the bare marker. (87 and 80 at
+    the 3:2 seam -- the panel is wider now, so it takes a narrower terminal to
+    drive it this far down.)
     """
     panel = await _nft_panel(74)
     assert "667 holders" in panel
-    assert "transfers/24h" not in panel and "dev holds" not in panel
+    assert "transfers/24h" not in panel and "1/2000 written" not in panel
+    # The dev holdings are on their own row and survive the narrowest tier --
+    # the stats ladder has nothing to do with them any more.
+    assert "dev holds 3 identities" in panel
     assert _NFT_HINTS["minimal"] in panel
 
     bare = await _nft_panel(71)

@@ -16,8 +16,11 @@ from __future__ import annotations
 import inspect
 import re
 
+import pytest
 from textual.app import App, ComposeResult
+from textual.color import Color
 
+from maxpane_dashboard.themes import THEMES
 from maxpane_dashboard.widgets.surf.feed import (
     FEED_TITLE,
     FULL_TEXT_WIDTH,
@@ -38,9 +41,58 @@ class _Harness(App):
         yield self._widget
 
 
+class _ThemedHarness(_Harness):
+    """The same, with every registered theme available and one selected.
+
+    Only the colour assertions need it: ``[dim]`` is resolved by *blending the
+    foreground into the background*, so what it composites to is a fact about
+    the theme, not about the markup.  A default-theme measurement would say
+    nothing about the ten themes this app ships.
+    """
+
+    def __init__(self, widget, theme: str) -> None:
+        super().__init__(widget)
+        self._theme_name = theme
+
+    def on_mount(self) -> None:
+        for theme in THEMES.values():
+            self.register_theme(theme)
+        self.theme = self._theme_name
+
+
 def _screen_text(app) -> str:
     strips = app.screen._compositor.render_strips()
     return "\n".join("".join(seg.text for seg in strip) for strip in strips)
+
+
+def _screen_lines(app) -> list[str]:
+    """Composited text split into rows, trailing pad stripped.
+
+    Row *order* and row *membership* are the claims this file makes about the
+    NFT panel, and ``needle in _screen_text(app)`` can make neither: every
+    string the panel renders was also somewhere on the screen before the rows
+    were rearranged.
+    """
+    return [line.rstrip() for line in _screen_text(app).split("\n")]
+
+
+def _painted(app, needle: str) -> tuple[str, str] | None:
+    """``(fg, bg)`` of the first composited segment containing *needle*.
+
+    Reads the compositor, so markup, theme and CSS have all already been
+    applied -- this is the colour that reached the screen, not the tag that
+    asked for it.
+    """
+    for strip in app.screen._compositor.render_strips():
+        for segment in strip:
+            if needle in segment.text and segment.style:
+                style = segment.style
+                if style.color and style.bgcolor:
+                    return (
+                        style.color.get_truecolor().hex,
+                        style.bgcolor.get_truecolor().hex,
+                    )
+    return None
 
 
 def _none_payload(widget) -> dict:
@@ -1162,6 +1214,50 @@ async def test_nft_full_payload_renders_stats_and_sales():
         assert "#354" in screen and "0.184 ETH" in screen
 
 
+async def test_nft_rows_are_stats_then_dev_holdings_then_floor_then_sales():
+    """Row *membership* and row *order*, composited line by line.
+
+    Every string asserted here was on the screen under the previous
+    arrangement too -- the written count sat on its own row reading
+    ``identities 1/2000 written`` and ``dev holds 3`` was the tail of the
+    stats row -- so a ``needle in screen_text`` assertion cannot tell the two
+    layouts apart, and this whole rearrangement would be invisible to it.
+    """
+    widget = SurfNft()
+    app = _Harness(widget)
+    async with app.run_test(size=(90, 16)) as pilot:
+        widget.update_data(**_FULL_NFT)
+        await pilot.pause()
+        lines = _screen_lines(app)
+        first = next(i for i, line in enumerate(lines) if "holders" in line)
+        assert [line.strip() for line in lines[first : first + 4]] == [
+            "667 holders · 38 transfers/24h · 1/2000 written",
+            "dev holds 3 identities",
+            f"floor {FLOOR_UNAVAILABLE}",
+            "last sales (Seaport)",
+        ]
+        # The old wording of the written row, which must not survive anywhere:
+        # ``identities`` now labels the dev holdings and nothing else.
+        assert "identities 1/2000" not in _screen_text(app)
+
+
+async def test_nft_dev_holdings_row_degrades_to_a_dash_never_to_zero():
+    """A dead Blockscout is not a dev who sold out.
+
+    The dev row is the one row this rearrangement created, so it needs its own
+    ``--`` proof: ``dev holds 0 identities`` would be a claim about the dev's
+    wallet that no read was able to make.
+    """
+    widget = SurfNft()
+    app = _Harness(widget)
+    async with app.run_test(size=(90, 16)) as pilot:
+        widget.update_data(**{**_FULL_NFT, "nft_dev_holdings": None})
+        await pilot.pause()
+        lines = _screen_lines(app)
+        assert any(line.strip() == "dev holds -- identities" for line in lines), lines
+        assert "dev holds 0" not in _screen_text(app)
+
+
 async def test_nft_floor_is_the_explicit_unavailable_state_never_a_number():
     """No keyless floor source exists; the UI says so (PRD §5 nft_floor)."""
     widget = SurfNft()
@@ -1182,6 +1278,91 @@ async def test_nft_floor_is_the_explicit_unavailable_state_never_a_number():
         screen = _screen_text(app)
         assert "0.250 ETH" in screen
         assert FLOOR_UNAVAILABLE not in screen
+
+
+@pytest.mark.parametrize("theme_name", sorted(THEMES))
+async def test_nft_missing_floor_is_muted_not_warned(theme_name):
+    """The absence is permanent, so it is de-emphasised rather than flagged.
+
+    It rendered ``[yellow]`` -- the warning vocabulary -- for a fact that
+    cannot change: there is no keyless floor source for this collection at
+    all (PRD §5), so the line is a standing statement, not an alert about
+    something wrong right now.  A warning colour on a permanent condition is
+    a warning the eye learns to skip.
+
+    Pinned as a *relationship*, not as a hex literal: the value must composite
+    at exactly the de-emphasis the panel's own labels already use, which is
+    what ``[dim]`` means once the theme has resolved it, and must not
+    composite at the theme's warning colour.  Every registered theme, because
+    ``[dim]`` is a blend of foreground into background and its result is a
+    property of the palette.
+    """
+    widget = SurfNft()
+    app = _ThemedHarness(widget, theme_name)
+    async with app.run_test(size=(90, 16)) as pilot:
+        widget.update_data(**_FULL_NFT)
+        await pilot.pause()
+
+        value = _painted(app, FLOOR_UNAVAILABLE)
+        label = _painted(app, "holders")       # a [dim] label on the stats row
+        figure = _painted(app, "667")          # a [bold] figure on the same row
+        assert value and label and figure
+        assert value[0] == label[0], (
+            f"{theme_name}: the floor value composites at {value[0]}, the "
+            f"panel's muted labels at {label[0]}"
+        )
+        assert value[0] != figure[0], f"{theme_name}: still at full emphasis"
+
+        warning = Color.parse(app.current_theme.warning).hex.lower()
+        assert value[0].lower() != warning, f"{theme_name}: still a warning"
+        assert value[0].lower() != "#ffff00", f"{theme_name}: still [yellow]"
+
+
+@pytest.mark.parametrize("theme_name", sorted(THEMES))
+async def test_nft_muted_floor_is_still_legible_in_every_theme(theme_name):
+    """Muted, not erased -- the line exists to say *why* there is no floor.
+
+    ``[dim]`` blends the foreground toward the background, so "de-emphasised"
+    and "invisible" are the same instruction with a different palette behind
+    it.  WCAG AA for body text is the floor; the ruler is the accessibility
+    suite's own, imported rather than retyped so the two cannot disagree.
+    """
+    from tests.widgets.test_fwa_accessibility import AA, contrast
+
+    widget = SurfNft()
+    app = _ThemedHarness(widget, theme_name)
+    async with app.run_test(size=(90, 16)) as pilot:
+        widget.update_data(**_FULL_NFT)
+        await pilot.pause()
+        painted = _painted(app, FLOOR_UNAVAILABLE)
+        assert painted, "the floor line never reached the compositor"
+        fg, bg = painted
+        assert contrast(fg, bg) >= AA, (
+            f"{theme_name}: the muted floor line is {contrast(fg, bg):.2f}:1 "
+            f"against its background ({fg} on {bg}) -- that is dimmed to "
+            "unreadable, not de-emphasised"
+        )
+
+
+@pytest.mark.parametrize("theme_name", sorted(THEMES))
+async def test_nft_a_real_floor_keeps_its_emphasis(theme_name):
+    """Only the *absence* is muted.  A number is news; a permanent gap is not.
+
+    The v2 escape hatch renders ``floor 0.250 ETH`` in bold, and muting that
+    too would be the wrong lesson from this change: it would hide the one
+    value the row is for on the day a keyless source finally exists.
+    """
+    widget = SurfNft()
+    app = _ThemedHarness(widget, theme_name)
+    async with app.run_test(size=(90, 16)) as pilot:
+        widget.update_data(**{**_FULL_NFT, "nft_floor": 0.25})
+        await pilot.pause()
+        value = _painted(app, "0.250 ETH")
+        label = _painted(app, "floor")         # the [dim] label beside it
+        figure = _painted(app, "667")          # a [bold] figure elsewhere
+        assert value and label and figure
+        assert value[0] == figure[0], f"{theme_name}: the real floor was muted"
+        assert value[0] != label[0], f"{theme_name}: level with its own label"
 
 
 async def test_nft_sales_unavailable_vs_empty():
@@ -1245,9 +1426,9 @@ def test_nft_stats_budget_matches_what_the_markup_actually_renders():
 
     from maxpane_dashboard.widgets.surf.nft import _stats_markup, _stats_variants
 
-    variants = _stats_variants("667", "38", "3")
+    variants = _stats_variants("667", "38", "1")
     for tier, plain in variants.items():
-        rendered = Content.from_markup(_stats_markup(tier, "667", "38", "3")).plain
+        rendered = Content.from_markup(_stats_markup(tier, "667", "38", "1")).plain
         assert rendered == plain, f"{tier}: {rendered!r} != {plain!r}"
     # The ladder only works if every rung is strictly narrower than the one
     # above it -- equal rungs would make a tier unreachable.
@@ -1258,12 +1439,79 @@ def test_nft_stats_budget_matches_what_the_markup_actually_renders():
     )
 
 
+def test_nft_every_widen_hint_names_text_the_tier_actually_dropped():
+    """A hint may only name a field that tier really loses.
+
+    The trap this replaces was live for one commit's worth of drafting: the
+    ladder shed ``dev holds`` and named it, then the rearrangement moved the
+    dev holdings onto a row of their own -- leaving hints that pointed at a
+    field the panel shows unconditionally, and no assertion anywhere that
+    could notice.  So the hints are checked against the *difference* between
+    the tier's row and the widest one, computed from the same builder the
+    widget renders through, at a payload whose figures cannot be mistaken for
+    each other.
+
+    Also pins that every descriptive hint is *reachable*: it has to fit
+    beside the title inside a panel no wider than the tier that triggers it,
+    or it is a dead string permanently replaced by ``SHORT_HINT``.
+    """
+    from maxpane_dashboard.widgets.surf.nft import (
+        PANEL_TITLE,
+        SHORT_HINT,
+        WIDEN_HINTS,
+        _stats_variants,
+    )
+
+    variants = _stats_variants("667", "38", "1")
+    widest = variants["full"]
+    order = ("full", "compact", "minimal")
+
+    for i, tier in enumerate(order):
+        hint = WIDEN_HINTS[tier]
+        if tier == "full":
+            assert hint == "", "the widest tier sheds nothing and says nothing"
+            continue
+        assert hint.startswith(SHORT_HINT), hint
+        # What this tier no longer renders, as literal text.
+        dropped = widest
+        for kept in variants[tier].split():
+            dropped = dropped.replace(kept, " ", 1)
+        named = [
+            token.strip(",")
+            for token in hint[len(SHORT_HINT) :].replace(":", " ").split()
+            if token.strip(",") not in {"for"}          # connective, not a field
+        ]
+        assert named, f"{tier}: the hint names no field at all"
+        for token in named:
+            assert token in dropped, (
+                f"{tier}: the hint names {token!r}, which is not in the text "
+                f"this tier drops ({dropped.strip()!r})"
+            )
+            assert token not in variants[tier], (
+                f"{tier}: the hint names {token!r}, which this tier still "
+                f"renders ({variants[tier].strip()!r})"
+            )
+
+        # Reachable: the tier is active while the row above it does not fit,
+        # i.e. at panel widths up to ``len(variants[order[i - 1]]) - 1``.
+        ceiling = len(variants[order[i - 1]]) - 1
+        assert len(PANEL_TITLE) + 2 + len(hint) <= ceiling, (
+            f"{tier}: the {len(hint)}-column hint never fits beside "
+            f"{PANEL_TITLE!r} in a panel of at most {ceiling} columns -- it is "
+            "a dead string, always replaced by SHORT_HINT"
+        )
+
+
 async def test_nft_re_tiers_on_resize_and_the_title_tracks_the_tier():
     """The tier follows the terminal, in both directions, and says so.
 
     Without the resize hook the panel keeps whatever tier it was first laid
     out at: padded on a widened terminal, ellipsised on a narrowed one, for
     the life of the screen.
+
+    The field that goes first is the written count, not the dev holdings it
+    used to be -- the dev holdings have a row of their own now and are not
+    the stats row's to trade.
     """
     widget = SurfNft()
     app = _Harness(widget)
@@ -1271,27 +1519,29 @@ async def test_nft_re_tiers_on_resize_and_the_title_tracks_the_tier():
         widget.update_data(**_FULL_NFT)
         await pilot.pause()
         screen = _screen_text(app)
-        assert "dev holds 3" in screen
+        assert "1/2000 written" in screen
         assert "‹ widen" not in screen
 
-        # Narrower than the whole stats row: the dev holdings go, advertised.
+        # Narrower than the whole stats row: the written count goes, said.
         await pilot.resize_terminal(40, 16)
         await pilot.pause()
         screen = _screen_text(app)
-        assert "dev holds" not in screen
+        assert "1/2000 written" not in screen
         assert "38 transfers/24h" in screen          # and the rest is whole
-        assert "‹ widen for dev holdings" in screen
+        assert "‹ widen for /2000 written" in screen
+        # The dev holdings are *not* what a narrow stats row costs any more.
+        assert "dev holds 3 identities" in screen
 
         # ...and widening puts it back, with the marker dark again.
         await pilot.resize_terminal(60, 16)
         await pilot.pause()
         screen = _screen_text(app)
-        assert "dev holds 3" in screen
+        assert "1/2000 written" in screen
         assert "‹ widen" not in screen
 
 
 async def test_nft_a_panel_too_narrow_to_name_what_it_shed_still_says_so():
-    """``IDENTITY.MD`` plus the 24-column hint needs 37; 34 has to fall back.
+    """``IDENTITY.MD`` plus the 25-column hint needs 38; 34 has to fall back.
 
     The bare marker names no field, but "something was dropped here" is the
     contract, and it costs seven columns.  The title has no ``text-overflow``,
@@ -1344,7 +1594,11 @@ async def test_nft_a_row_the_tiers_cannot_help_is_still_advertised():
         await pilot.pause()
         screen = _screen_text(app)
 
-        assert "dev holds 3" in screen, "the stats row fits at 60 -- re-measure"
+        # The written count is the first field the ladder sheds, so its
+        # presence is what says "the stats row is at its widest tier here".
+        # ``dev holds 3`` would not: that row is outside the ladder now and
+        # shows at every width, so asserting it proves nothing about the tier.
+        assert "1/2000 written" in screen, "the stats row fits at 60 -- re-measure"
         assert "…" in screen, "the over-long sale row was not cut after all"
         assert SHORT_HINT in screen, "a row was cut with nothing said"
 

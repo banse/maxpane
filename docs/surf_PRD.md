@@ -98,9 +98,9 @@ the title bar advertises rows lost off the bottom of the right rail with `‹ ta
 | middle right rail, top | `SurfSignals` | the six detectors, FIRED rows styled loud |
 | middle right rail, below | `SurfDevActivity` | recent txs of both dev wallets: date · wallet · label (deploy / LP / burn / bridge / FWA claim / transfer / other) · counterparty |
 | bottom left | `SurfMarket` | price, 24h Δ, volume, pool liquidity, FP↔IMD parity spread, price + supply sparklines (burn steps the supply down) |
-| bottom right | `SurfNft` | holders, transfers/24h, dev holdings, identities written, last realized Seaport sales; floor = explicit `n/a — no keyless source` |
+| bottom right | `SurfNft` | holders, transfers/24h, identities written on one row; dev holdings on their own (`dev holds N identities`); last realized Seaport sales; floor = explicit `n/a — no keyless source`, muted |
 
-Three amendments to this table were made after the dashboard was first built and run:
+Four amendments to this table were made after the dashboard was first built and run:
 
 1. **The hero spans the full width and the signals moved into a right rail.** The original
    grid put `SurfHero` and `SurfSignals` side by side on the hero row, which left the four
@@ -128,6 +128,24 @@ Three amendments to this table were made after the dashboard was first built and
    instead of a `3fr` slot, so it selects a narrower row tier — and says which fields it
    shed, which is the sanctioned answer to a cramped panel here. That is what moved
    `SURF_FULL_LAYOUT_COLUMNS` from 135 to 176.
+4. **`SurfNft`'s rows were regrouped and its floor line was muted.** The written count
+   folded into the stats row (`666 holders · 7 transfers/24h · 1/2000 written`) and the dev
+   holdings took a row of their own, phrased as the sentence they are: `dev holds 4
+   identities`. The old arrangement put the one figure about a *person* at the end of a row
+   of figures about the *collection*, and spent a whole row on a single fraction. **The
+   floor line did not move and its claim is unchanged** — it is still the explicit
+   `n/a — no keyless source`, still never faked and never blank; only its colour changed,
+   from `[yellow]` to the `[dim]` the panel's own labels use. Warning vocabulary was wrong
+   for it: there is no keyless floor source for this collection *at all*, so the line states
+   a permanent condition rather than flagging something wrong right now, and a colour that
+   shouts on a standing fact trains the eye to skip it. Muted is not hidden — it composites
+   at 4.65:1 or better against the background in all ten themes, pinned per theme. A *real*
+   floor, if a keyless source ever exists, still renders bold. The regrouping also forced
+   the width ladder to be re-derived rather than re-pointed: the row now sheds
+   `1/2000 written` first (the only one of its three figures that is also on screen in the
+   hero's IDENTITY GATE box), then `transfers/24h`, with the holder count last standing.
+   The panel's own clean width went 107 → 113; `SURF_FULL_LAYOUT_COLUMNS` did not move,
+   because the market still binds at 143.
 
 Counterparty rendering in `SurfDevActivity` (address-poisoning defense — live spoofs of
 both fee recipients exist in frenpet.eth's history today): known addresses render as

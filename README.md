@@ -130,17 +130,20 @@ last marker goes out at:
 
 | columns | what still shows |
 |--------:|------------------|
-| 109–134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
+| 109–112 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, surf `IDENTITY.MD ‹ widen for /2000 written`, FWA `SIGNALS ‹ widen` |
+| 113–134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
 | 135–141 | surf `ANNOUNCE FEED ‹ widen`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
 | 142 | surf `IMD MARKET ‹ widen for 24h volume and bridge flow`, FWA `SIGNALS ‹ widen` |
 | **≥ 143** | **nothing — full layout**, with one exception below |
 
 The table starts at 109 rather than running down to zero because narrower terminals light
 *more* markers, not the same ones: below 109 surf's `DEV ACTIVITY` marker changes wording
-to `‹ widen: time, kind, ETH` as the time and kind columns go too, and at 106 and below
-surf's `IDENTITY.MD ‹ widen for dev holdings` joins them. Every one of those is a panel
-saying what it dropped, which is the system working; the table lists the last few to go
-out, not every marker a narrow terminal can show.
+to `‹ widen: time, kind, ETH` as the time and kind columns go too, and below 89 surf's
+`IDENTITY.MD` runs out of room to name its shed field beside the title and falls back to a
+bare `‹ widen`, then at 75 and below sheds `transfers/24h` as well. Every one of those is a
+panel saying what it dropped,
+which is the system working; the table lists the last few to go out, not every marker a
+narrow terminal can show.
 
 `IMD MARKET` is the one row that moves with the data rather than with your terminal. Its
 widest line carries the IMD/FP gap in dollars, and prices under a cent print with six
