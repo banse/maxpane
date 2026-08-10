@@ -1230,7 +1230,15 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 "BURN",
             ):
                 assert label in text, f"{label} vanished under outage"
-            assert "degraded" in text.lower(), (
+            # The title bar names every failing group behind the house
+            # warning glyph. The word "degraded" was the prefix until
+            # 2026-08-12; the *names* are what matters and they come from
+            # the manager's own SOURCES, so they are derived here rather
+            # than re-typed -- a renamed group must fail loudly, not quietly
+            # match a word this row no longer prints.
+            from maxpane_dashboard.data.surf_manager import SOURCES
+
+            assert "⚠ " + ", ".join(sorted(SOURCES)) in text, (
                 "the title bar never told the operator sources are down"
             )
             assert "FIRED" not in text, (

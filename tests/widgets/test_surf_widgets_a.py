@@ -773,11 +773,17 @@ async def test_market_full_payload_renders_all_numbers():
         widget.update_data(**_FULL_MARKET)
         await pilot.pause()
         screen = _screen_text(app)
-        assert "$0.7074" in screen
+        assert "IMD $0.7074" in screen        # the figure is named, not bare
         assert "▲ +30.89%" in screen          # glyph AND sign, not colour alone
         assert "vol 24h $244.2K" in screen
         assert "pool $548.7K" in screen
-        assert "FP $0.7274" in screen
+        # Two spaces after ``FP``: the label is padded to ``IMD``'s width so
+        # both figures share a column.  Spelled out rather than derived from
+        # ``market.ROW_LABELS`` -- a re-worded label should redden this and be
+        # re-typed on purpose.  That the padding is *computed* and not a magic
+        # space is a separate claim, pinned by
+        # ``test_market_the_price_and_the_fp_figure_start_in_one_column``.
+        assert "FP  $0.7274" in screen
         assert "parity ▼ -2.75%" in screen    # negative: IMD below FP
 
 
@@ -852,6 +858,106 @@ def _lines(app) -> list[str]:
 
 def _line_with(app, needle: str) -> str:
     return next(line for line in _lines(app) if needle in line)
+
+
+# -- SurfMarket: the price row's label, its window, and the FP row --------
+#
+# The price row was the one line on the whole surf screen whose number was
+# unnamed -- ``$0.7074  ▲ +30.89% 24h`` -- sitting directly above a row that
+# says ``FP`` out loud.  It now takes that row's shape: a label, a ``·``
+# join, and a labelled change, with the two figures in one column.
+#
+# ``±`` is deliberate and is not decoration: it reads exactly as the ``+/-``
+# the wording was asked for and costs two columns fewer on the panel that
+# binds the whole screen's width.
+
+
+async def test_market_price_row_names_its_figure_and_its_window():
+    """``IMD $0.7074 · 24h ± ▲ +30.89%`` -- composited, not the markup."""
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 14)) as pilot:
+        widget.update_data(**_FULL_MARKET)
+        await pilot.pause()
+        assert "IMD $0.7074 · 24h ± ▲ +30.89%" in _line_with(app, "$0.7074")
+
+
+async def test_market_price_row_keeps_its_shape_when_the_change_turns_or_fails():
+    """Down, flat and unread render the same row with the same label.
+
+    The ``None`` case is the one that matters: a failed read must still say
+    *what* could not be read rather than leaving a bare label -- and it must
+    never fall back to a zero, which on a 24h change reads as "unmoved".
+    """
+    expected = {
+        -3.80: "IMD $0.7074 · 24h ± ▼ -3.80%",
+        0.0: "IMD $0.7074 · 24h ± ● +0.00%",
+        None: "IMD $0.7074 · 24h ± --",
+    }
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 14)) as pilot:
+        for change, row in expected.items():
+            widget.update_data(**{**_FULL_MARKET, "imd_change_24h_pct": change})
+            await pilot.pause()
+            assert row in _line_with(app, "$0.7074"), (
+                f"a 24h change of {change!r} renders "
+                f"{_line_with(app, '$0.7074')!r}"
+            )
+
+
+async def test_market_the_price_and_the_fp_figure_start_in_one_column():
+    """``IMD`` is three characters and ``FP`` two -- and it must not show.
+
+    The padding is **derived from the labels**, so re-wording either one
+    moves both rows together.  That is what the second half asserts: a
+    hand-typed two-space gap aligns the shipped wording perfectly and drifts
+    the instant a label changes length, and a test spelling out ``"FP  "``
+    would go on passing while the columns came apart.
+    """
+    from maxpane_dashboard.widgets.surf import market as market_mod
+
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 14)) as pilot:
+        widget.update_data(**_FULL_MARKET)
+        await pilot.pause()
+        assert _line_with(app, "$0.7074").index("$0.7074") == _line_with(
+            app, "$0.7274"
+        ).index("$0.7274")
+
+        original = market_mod.ROW_LABELS
+        try:
+            market_mod.ROW_LABELS = {**original, "imd": "IMDX"}
+            widget.update_data(**_FULL_MARKET)
+            await pilot.pause()
+            price_row = _line_with(app, "$0.7074")
+            assert "IMDX $0.7074" in price_row, price_row
+            assert price_row.index("$0.7074") == _line_with(app, "$0.7274").index(
+                "$0.7274"
+            ), (
+                f"a one-character-longer label broke the column:\n{price_row}\n"
+                f"{_line_with(app, '$0.7274')}"
+            )
+        finally:
+            market_mod.ROW_LABELS = original
+
+
+async def test_market_both_labelled_rows_survive_a_failed_read():
+    """``IMD --`` over ``FP  --``: still labelled, still aligned, never 0."""
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 14)) as pilot:
+        widget.update_data(**{**_FULL_MARKET, "imd_price_usd": None,
+                              "fp_price_usd": None, "parity_pct": None})
+        await pilot.pause()
+        rows = [r for r in _lines(app) if r.strip()]
+        price_row = next(r for r in rows if "24h" in r)
+        fp_row = next(r for r in rows if "parity" in r)
+        assert "IMD --" in price_row, price_row
+        assert "FP  --" in fp_row, fp_row
+        assert price_row.index("--") == fp_row.index("--")
+        assert "$0.00" not in "\n".join(rows)
 
 
 async def test_market_puts_each_sparkline_on_the_row_it_belongs_to():
@@ -931,7 +1037,7 @@ async def test_market_blank_row_separates_the_token_figures_from_the_bridge():
         widget.update_data(**_FULL_MARKET)
         await pilot.pause()
         lines = _lines(app)
-        fp_row = next(i for i, l in enumerate(lines) if "FP $0.7274" in l)
+        fp_row = next(i for i, l in enumerate(lines) if "FP  $0.7274" in l)
         assert lines[fp_row - 1].strip() == "", lines
         assert lines[fp_row - 2].strip() != "", "the blank is padding, not a seam"
 
@@ -1264,7 +1370,7 @@ async def test_market_widen_hints_all_fit_beside_the_title_at_their_own_tier():
 #: named a field that never sheds and left all 21 market tests green.
 _HINT_CLAIMS: dict[str, tuple[tuple[str, str], ...]] = {
     "compact": (("24h volume", "vol 24h"), ("bridge flow", "gap narrows")),
-    "narrow": (("FP price", "FP $0.7274"), ("price bar", "▁▁▁▂")),
+    "narrow": (("FP price", "FP  $0.7274"), ("price bar", "▁▁▁▂")),
     "minimal": (("$ spread", "under FP"),),
     "bare": (("bridge", "IMD is FP bridged 1:1 from Base"),),
 }
@@ -1333,7 +1439,7 @@ async def test_market_sheds_whole_labelled_fields_in_the_documented_order():
         gone = {
             "flow": "gap narrows" not in body,
             "vol": "vol 24h" not in body,
-            "fp": "FP $0.7274" not in body,
+            "fp": "FP  $0.7274" not in body,
             "price_bar": not (set(price_row) & bars),
             "spread": "under FP" not in body,
             "supply_bar": not (set(token_row) & bars),

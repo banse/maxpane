@@ -433,11 +433,16 @@ def test_the_initial_title_names_the_dashboard_the_menu_names():
     titled with the old name for the whole first fetch, and permanently on
     the degraded path (``_title_line`` is what replaces it, and a manager
     that raises never reaches it).
+
+    **Case-insensitively** since 2026-08-12: the title bar shouts its
+    board's name (``SURFBOARD``, like FWA's ``FWA``) where the menu prints
+    it as a word. Only the case is allowed to differ -- the letters are
+    still the menu's, derived from ``GAMES`` and never re-typed.
     """
     from maxpane_dashboard.screens.game_select import GAMES
 
     name = next(row[2] for row in GAMES if row[1] == "surf")
-    assert name in INITIAL_TITLE, (
+    assert name.lower() in INITIAL_TITLE.lower(), (
         f"the menu calls this dashboard {name!r}; its own title bar says "
         f"{INITIAL_TITLE!r}"
     )
@@ -473,7 +478,7 @@ async def test_screen_mounts_all_six_widgets():
         # output**, not the widget's content string (house rule): a title
         # that never reaches the compositor would still pass a ``_plain()``
         # check while being invisible to a real user.
-        assert "SURF · IMD $0.71 · parity -2.7% · feed #14 (23h)" in _screen_text(app)
+        assert "SURFBOARD · IMD $0.71 · parity -2.7% · feed #14 (23h)" in _screen_text(app)
 
 
 # -- title line (pure) ---------------------------------------------------
@@ -483,10 +488,12 @@ from maxpane_dashboard.screens import surf as surf_mod
 
 def test_title_line_composes_the_mandated_format():
     line = surf_mod._title_line(_frozen_payload())
-    # PRD §4: SURF · IMD $x.xx · parity ±x.x% · feed #N (age) + flags + version
-    assert line.startswith("SURF · IMD $0.71 · parity -2.7% · feed #14 (23h)")
-    assert line.endswith(f"v{__version__}")
-    assert "degraded" not in line          # nothing degraded in the sample
+    # PRD §4: SURFBOARD · IMD $x.xx · parity ±x.x% · feed #N (age) + flags
+    assert line.startswith("SURFBOARD · IMD $0.71 · parity -2.7% · feed #14 (23h)")
+    # Nothing follows the healthy figures: no flags in this sample, and the
+    # version tail went in 2026-08-12 (the StatusBar already carries it).
+    assert line == "SURFBOARD · IMD $0.71 · parity -2.7% · feed #14 (23h)"
+    assert "⚠" not in line                 # nothing degraded in the sample
 
 
 def test_title_line_all_none_shows_emdashes_never_zeros():
@@ -501,8 +508,58 @@ def test_title_line_renders_degraded_and_lp_owner_warning():
     line = surf_mod._title_line(
         _frozen_payload(degraded=["logs", "market"], lp_owner_ok=False)
     )
-    assert "· degraded: logs, market" in line
+    assert "· ⚠ logs, market" in line
     assert "⚠ LP owner changed" in line    # position #1167726 left frenpet.eth
+
+
+# -- the title bar's own copy (2026-08-12) -------------------------------
+#
+# Three edits to one row: the board is named in full, the version tail is
+# gone (the StatusBar three rows down already carries it), and the degraded
+# list wears this codebase's warning glyph instead of spelling the word.
+# All three buy columns back on the one row of this screen that cannot
+# ellipsise -- everything past its first line reaches no pixel at all.
+
+
+def test_the_title_line_shouts_the_board_and_leaves_the_version_alone():
+    """``SURFBOARD``, and nothing that looks like a version anywhere on it."""
+    import re
+
+    line = surf_mod._title_line(_frozen_payload())
+    assert line.startswith("SURFBOARD · IMD ")
+    assert f"v{__version__}" not in line, (
+        "the version is duplicated: the StatusBar already carries it"
+    )
+    assert not re.search(r"v\d+\.\d+", line), line
+
+
+def test_the_initial_title_is_the_confirmed_wording():
+    """Spelled out, not derived: ``SURF · Surfboard`` said the name twice.
+
+    A test asserting ``"SURFBOARD" in INITIAL_TITLE`` would pass on the old
+    three-segment wording too, so the whole string is the assertion.
+    """
+    assert INITIAL_TITLE == "SURFBOARD · Ethereum Mainnet"
+
+
+def test_degraded_sources_ride_the_house_warning_glyph_not_the_word():
+    """``⚠ activity`` -- the glyph ``⚠ feed unavailable`` already uses.
+
+    The source names themselves are untouched: they are the manager's own
+    ``SOURCES`` vocabulary, and the six are spelled out here against a
+    ``sorted(SOURCES)`` derived from the manager so a rename reddens this
+    rather than quietly re-wording the most prominent row on the screen.
+    """
+    from maxpane_dashboard.data.surf_manager import SOURCES
+
+    assert surf_mod._fmt_degraded(["activity"]) == " · ⚠ activity"
+    assert surf_mod._fmt_degraded(sorted(SOURCES)) == (
+        " · ⚠ activity, chain, channel, logs, market, nft"
+    )
+    assert sorted(SOURCES) == [
+        "activity", "chain", "channel", "logs", "market", "nft"
+    ], "a source group was renamed -- the title bar's vocabulary follows it"
+    assert "degraded" not in surf_mod._fmt_degraded(sorted(SOURCES))
 
 
 def test_fmt_age_tiers():
@@ -531,11 +588,11 @@ def test_fmt_degraded_healthy_inputs_render_empty():
 def test_fmt_degraded_bare_string_is_one_group_not_characters():
     # A string is iterable character-by-character; treat it as a single
     # group name instead of exploding "logs" into "l, o, g, s".
-    assert surf_mod._fmt_degraded("logs") == " · degraded: logs"
+    assert surf_mod._fmt_degraded("logs") == " · ⚠ logs"
 
 
 def test_fmt_degraded_list_with_a_non_string_element_still_renders():
-    assert surf_mod._fmt_degraded(["logs", 42]) == " · degraded: logs, 42"
+    assert surf_mod._fmt_degraded(["logs", 42]) == " · ⚠ logs, 42"
 
 
 def test_fmt_degraded_unexpected_shapes_never_render_the_healthy_line():
@@ -544,16 +601,17 @@ def test_fmt_degraded_unexpected_shapes_never_render_the_healthy_line():
     # the title line renders identically to a genuinely healthy state.
     assert surf_mod._fmt_degraded(42) != ""
     assert surf_mod._fmt_degraded({"logs": True}) != ""
-    assert "degraded" in surf_mod._fmt_degraded(42)
-    assert "degraded" in surf_mod._fmt_degraded({"logs": True})
+    assert "⚠" in surf_mod._fmt_degraded(42)
+    assert "⚠" in surf_mod._fmt_degraded({"logs": True})
 
 
 def test_title_line_with_a_malformed_degraded_value_never_reads_healthy():
     healthy = surf_mod._title_line(_frozen_payload(degraded=[]))
+    assert "⚠" not in healthy
     for bad in (42, {"logs": True}, ["logs", 42]):
         line = surf_mod._title_line(_frozen_payload(degraded=bad))
         assert line != healthy
-        assert "degraded" in line
+        assert "⚠" in line
 
 
 # -- refresh dispatch ----------------------------------------------------
@@ -615,7 +673,7 @@ async def test_refresh_renders_title_and_all_panels():
         await pilot.pause()
 
         title = _plain(screen.query_one("#title-bar"))
-        assert "SURF · IMD $0.71 · parity -2.7% · feed #14 (23h)" in title
+        assert "SURFBOARD · IMD $0.71 · parity -2.7% · feed #14 (23h)" in title
 
         text = _screen_text(app)
         # Panel titles (the WP3 widget-interface strings).
@@ -700,7 +758,7 @@ async def test_screen_survives_all_none_payload():
         await pilot.pause()
 
         title = _plain(screen.query_one("#title-bar"))
-        assert "SURF · IMD — · parity — · feed #— (—)" in title
+        assert "SURFBOARD · IMD — · parity — · feed #— (—)" in title
         text = _screen_text(app)
         assert "$0.00" not in text     # a None price is never a zero price
         assert "no keyless source" in text
@@ -717,7 +775,7 @@ async def test_degraded_sources_reach_the_title_bar():
         await screen._do_refresh()
         await pilot.pause()
         text = _screen_text(app)
-        assert "degraded: logs, market" in text
+        assert "⚠ logs, market" in text
         assert "LP owner changed" in text
 
 
@@ -1365,6 +1423,45 @@ async def test_the_row_marker_survives_a_title_bar_full_of_warnings():
     async with _screen_at(100, 46, payload=payload) as (app, screen, _p):
         assert screen.query_one(_RAIL).show_vertical_scrollbar is False
         assert TALLER_HINT not in _screen_text(app)
+
+
+#: The narrowest terminal on which the **whole** worst-case title bar reaches
+#: a pixel: the board's name, every figure, ``‹ taller``, the LP warning and
+#: three degraded groups, all on the one row of this screen that cannot
+#: ellipsise. Swept over the real screen rather than counted -- ``⚠`` is not a
+#: one-column glyph on every width table, so the arithmetic is not the test.
+#:
+#: The line itself is 107 columns and the screen spends 4 on padding, so the
+#: terminal has to be **111**. It was **123** (a 119-column line) while the
+#: row ended ``· degraded: logs, market, nft · v0.6.0``: naming the board in
+#: full costs five columns, and dropping the duplicated version tail and
+#: shortening ``degraded: `` to ``⚠ `` give seventeen back. Twelve columns,
+#: on a row whose overflow is *silent* -- which is the whole reason the
+#: ordering inside ``_title_line`` had to be argued in the first place.
+WORST_CASE_TITLE_COLUMNS = 111
+
+
+async def test_the_worst_case_title_bar_keeps_its_whole_tail_from_here():
+    """Both directions, so the number is tight rather than merely generous.
+
+    A wrapping ``height: 1`` ``Static`` loses its tail with no ``…`` and no
+    scrollbar, so "where does it start losing it" is a real measurement and
+    not a detail -- and it moves whenever this row's copy moves.
+    """
+    payload = _worst_case_title_payload()
+    async with _screen_at(WORST_CASE_TITLE_COLUMNS, 30, payload=payload) as (
+        app, _screen, _p
+    ):
+        assert "nft" in _screen_text(app).split("\n")[0], (
+            f"the tail is already gone at {WORST_CASE_TITLE_COLUMNS} columns"
+        )
+    async with _screen_at(WORST_CASE_TITLE_COLUMNS - 1, 30, payload=payload) as (
+        app, _screen, _p
+    ):
+        assert "nft" not in _screen_text(app).split("\n")[0], (
+            f"the whole line already fits at {WORST_CASE_TITLE_COLUMNS - 1} -- "
+            "the copy got shorter, re-measure this"
+        )
 
 
 #: A width where ``SurfDevActivity`` is genuinely below its widest tier, for

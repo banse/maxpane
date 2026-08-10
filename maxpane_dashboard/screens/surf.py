@@ -2,7 +2,7 @@
 
 Layout: three content rows, every widget on screen at once::
 
-    #title-bar         SURF · IMD $x.xx · parity ±x.x% · feed #N (age)
+    #title-bar         SURFBOARD · IMD $x.xx · parity ±x.x% · feed #N (age)
     #hero-row          SurfHero (full width, four boxes)
     #middle-row        SurfFeed (7fr)   | #surf-right-rail (6fr)
                                         |   SurfSignals     (auto, +1 margin)
@@ -90,7 +90,7 @@ docstring carries the full rationale):
 1. **Every widget update is individually guarded** -- one widget raising must
    never cost the other five their refresh. A *manager* failure touches only
    the StatusBar and leaves the previous frame standing.
-2. **Degradation reaches the title bar** (``· degraded: …``), because the
+2. **Degradation reaches the title bar** (``· ⚠ logs, market``), because the
    shared StatusBar API has no ``set_degraded()``.
 
 The screen is clock-free: every time-derived string (``feed_last_post_age_s``,
@@ -113,7 +113,6 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
-from maxpane_dashboard import __version__
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surf import (
@@ -140,7 +139,14 @@ _EMDASH = "—"
 #: the rename to "Surfboard" reached the menu, the README and CLAUDE.md and
 #: stopped here, so the one surface a user reads *inside* the dashboard kept
 #: the old name.
-INITIAL_TITLE = "SURF · Surfboard · Ethereum Mainnet"
+#:
+#: **Two segments since 2026-08-12, not three.** ``SURF · Surfboard ·
+#: Ethereum Mainnet`` said the name twice -- the abbreviation and then the
+#: word -- so the live title's ``SURF`` became ``SURFBOARD`` and this line
+#: dropped the middle segment to match. The menu's ``Surfboard`` is still the
+#: name being asserted against; only its case differs, this row being the
+#: shouted one.
+INITIAL_TITLE = "SURFBOARD · Ethereum Mainnet"
 
 #: The row-wise counterpart of the widgets' ``‹ widen``: the right rail holds
 #: more than this terminal's height can show, so some of SIGNALS / DEV
@@ -341,7 +347,7 @@ def _fmt_age(value) -> str:
 
 
 def _fmt_degraded(sources) -> str:
-    """``· degraded: logs, market`` — or an empty string when all is well.
+    """``· ⚠ logs, market`` — or an empty string when all is well.
 
     Only ``None``/``[]`` (or anything else falsy) genuinely mean "nothing is
     degraded" and may render empty. Every other input must render
@@ -350,6 +356,13 @@ def _fmt_degraded(sources) -> str:
     malformed ``degraded`` value collapse the title bar to the healthy line
     on the single most prominent row of the screen, which is the exact
     failure this whole project exists to prevent.
+
+    The prefix was the word ``degraded: `` until 2026-08-12. ``⚠`` is this
+    codebase's warning idiom already (``⚠ feed unavailable``, ``⚠ sales
+    unavailable``, ``⚠ LP owner changed`` on this very row), so it needs no
+    new vocabulary and buys eight columns back on a row whose overflow is
+    *silent*. The **names** are untouched: they are the manager's own
+    ``SOURCES`` members and nothing here abbreviates or re-words them.
     """
     if not sources:
         return ""
@@ -365,11 +378,11 @@ def _fmt_degraded(sources) -> str:
         # Truthy but not iterable (an int, a float, ...) -- an unexpected
         # shape the manager never emits today, but "unreachable today" is
         # not a reason to fail toward looking healthy.
-        return " · degraded: ?"
+        return " · ⚠ ?"
 
     if not names:
-        return " · degraded: ?"
-    return " · degraded: " + ", ".join(names)
+        return " · ⚠ ?"
+    return " · ⚠ " + ", ".join(names)
 
 
 def _title_line(data: dict, row_hint: bool = False) -> str:
@@ -392,12 +405,19 @@ def _title_line(data: dict, row_hint: bool = False) -> str:
     the hero's ``OWNER CHANGED`` box; a degraded group is that panel's own
     unavailable state), and nothing anywhere else says a row went off the
     bottom of the rail -- so if exactly one of the three has to survive a
-    narrow terminal, it is this one. The version tail stays last: the
-    StatusBar carries the version too.
+    narrow terminal, it is this one.
+
+    **There is no version tail any more** (2026-08-12). It used to end
+    ``· v0.6.0``, which the StatusBar three rows down already renders -- nine
+    columns of the one row on this screen that cannot ellipsise, spent saying
+    something twice. Dropping it, and shortening ``degraded: `` to ``⚠ ``,
+    took the worst-case line 119 -> 107 columns even after ``SURF`` grew into
+    ``SURFBOARD``; see
+    ``tests/screens/test_surf_screen.WORST_CASE_TITLE_COLUMNS``.
     """
     feed_age = _fmt_age(data.get("feed_last_post_age_s"))
     line = (
-        f"SURF · IMD {_fmt_usd(data.get('imd_price_usd'))} · "
+        f"SURFBOARD · IMD {_fmt_usd(data.get('imd_price_usd'))} · "
         f"parity {_fmt_signed_pct(data.get('parity_pct'))} · "
         f"feed #{_fmt_int(data.get('feed_nonce'))} ({feed_age})"
     )
@@ -409,10 +429,6 @@ def _title_line(data: dict, row_hint: bool = False) -> str:
         line += " · [yellow]⚠ LP owner changed[/]"
 
     line += _fmt_degraded(data.get("degraded"))
-    # Plain, unmarked version tail: the StatusBar already carries the dim
-    # version, and markup here would only complicate every assertion on the
-    # end of this string.
-    line += f" · v{__version__}"
     return line
 
 
@@ -645,8 +661,11 @@ class SurfScreen(RefreshGuard, Screen):
         cut = self._rail_is_cut()
         if self._title_data is None:
             # No payload yet -- or the manager raised and there never will
-            # be one. INITIAL_TITLE carries no version tail, so the marker
-            # simply goes on the end.
+            # be one. The marker simply goes on the end here, and *neither*
+            # line carries a version tail since 2026-08-12, so this branch
+            # and ``_title_line`` no longer differ in that respect at all --
+            # what still differs is that ``_title_line`` puts the marker
+            # ahead of two warnings this branch has no payload to produce.
             line = INITIAL_TITLE + (f" · [yellow]{TALLER_HINT}[/]" if cut else "")
         else:
             line = _title_line(self._title_data, row_hint=cut)

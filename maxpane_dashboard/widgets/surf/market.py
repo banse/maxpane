@@ -5,11 +5,21 @@ the two-row bridge block)::
 
     IMD MARKET
 
-      $0.7074  ▲ +30.89% 24h           price  ▁▁▂▃▄▅▆▇█
+      IMD $0.7074 · 24h ± ▲ +30.89%    price  ▁▁▂▃▄▅▆▇█
       vol 24h $244.2K · pool $548.7K   supply       ▁▁█ 2.4M
 
-      FP $0.7274 · parity ▼ -2.75%     IMD $0.0200 under FP, gross of fees
+      FP  $0.7274 · parity ▼ -2.75%    IMD $0.0200 under FP, gross of fees
       IMD is FP bridged 1:1 from Base  gap narrows as IMD bridges back
+
+The first two figure rows are deliberately the same shape -- label, figure,
+``·``, labelled reading.  The price row carried a bare ``$0.7074`` until
+2026-08-12 and was the only line on the whole surf screen whose number went
+unnamed, directly above a row saying ``FP`` out loud.  ``24h ±`` names the
+window the way ``parity`` names the comparison, and the single glyph ``±``
+is worth two columns over ``+/-`` on the panel that sets this screen's
+width.  The two labels are padded to a common width by :func:`_labelled`
+(``FP`` is a character shorter than ``IMD``), so both figures start in one
+column and re-wording either label moves both rows together.
 
 The pairing is by subject, not by convenience: the price sparkline belongs
 to the price, and the supply staircase belongs beside the IMD-token
@@ -114,6 +124,20 @@ A payload measuring this panel must therefore carry a sub-cent gap: the
 capture's unusually wide spread renders the *narrow* case and clears one
 column early.
 
+**Labelling the price row cost the panel nothing**, which is not obvious and
+was measured rather than assumed.  ``IMD `` and ``24h ± `` took that row's
+left-hand field 24 -> 31 columns, and the panel takes 7/13 of the terminal,
+so a naive estimate says the screen's requirement rises about eleven.  It
+does not rise at all: the row that pins :func:`_second_column` is the
+33-column mechanism sentence, 31 is still under it, and the price row's own
+right-hand segment (a label and a 24-cell bar) is nowhere near the parity
+row's spread cell.  The full tier is **73** against a tight peg before and
+after, ``SURF_FULL_LAYOUT_COLUMNS`` stays 143 and the app-wide
+``__main__.FULL_LAYOUT_COLUMNS`` stays FWA's 143.  Only the *compact* tier
+moved, 68 -> 69, where the price row now outgrows the FP row it replaced as
+that tier's widest left-hand field.  Re-sweep rather than estimate: the
+seven columns landed on a row that was not the binding one.
+
 So the panel now sheds **whole labelled fields** in a fixed order and the
 title names them (:data:`WIDEN_HINTS`, :data:`SHORT_HINT`).
 
@@ -131,15 +155,21 @@ tier:
    every other row one column left as well: **71 -> 70**.
 2. ``vol 24h`` -- the one figure here that says nothing about the spread.
    Depth (``pool``) is what decides whether a 2.75% gap is real; turnover
-   does not, so ``pool`` never sheds and the volume goes first.  **70 -> 68**
+   does not, so ``pool`` never sheds and the volume goes first.  **70 -> 69**
    (and 71 -> 71 on its own: it pays only once the flow has gone, which is
    why the two share one tier).
 3. ``FP $0.7274`` on the parity row, **with** the price sparkline.  FP's
    price is recoverable from the two figures that survive (IMD's price and
    the dollar gap beside it), and the 24h change on the price row states the
    same window the price bar draws.  They go together because the parity row
-   binds: the bar alone is 68 -> 68 and FP alone 68 -> 62, where the pair is
-   **68 -> 55**.
+   binds: neither buys a column alone (bar alone 69 -> 69, **and FP alone
+   69 -> 69**), where the pair is **69 -> 55**.
+
+   *FP alone used to buy six columns* (68 -> 62).  It stopped on 2026-08-12,
+   when labelling the price row took it 24 -> 31 columns -- level with the
+   parity row -- so shedding FP now leaves the *price* row pinning
+   :func:`_second_column` at the same place.  Nothing about the pairing
+   changed; the measurement behind it got stronger.
 4. The dollar spread ``IMD $0.0200 under FP, gross of fees``, **with** the
    supply bar -- **55 -> 33**, the biggest step on the ladder.  Note what
    does *not* go here: ``parity ▼ -2.75%`` is the spread, stated as a
@@ -202,6 +232,31 @@ _GUTTER = 3
 #: line up as well as the labels do.
 _SPARK_LABELS = ("price", "supply")
 _LABEL_WIDTH = max(len(label) for label in _SPARK_LABELS)
+
+#: The two price figures' labels: IMD's on the price row, FP's on the parity
+#: row.  The price row was the only line on the surf screen whose number was
+#: unnamed -- ``$0.7074  ▲ +30.89% 24h``, directly above a row saying ``FP``
+#: out loud -- so it now takes that row's shape.  Read at render time through
+#: :func:`_labelled` rather than baked into the f-strings, which is what lets
+#: a test re-word one and watch the two columns stay together.
+ROW_LABELS: dict[str, str] = {"imd": "IMD", "fp": "FP"}
+
+#: The price row's window, mirroring ``parity`` on the row below.  The single
+#: glyph ``±`` rather than ``+/-``: it reads the same and costs two columns
+#: on the panel that binds the whole screen's width.
+CHANGE_LABEL = "24h ±"
+
+
+def _labelled(key: str, figure: str) -> str:
+    """``IMD $0.7074`` -- *figure* behind its label, padded to one column.
+
+    The padding is **derived from** :data:`ROW_LABELS`, never written as a
+    literal space: ``FP`` is a character shorter than ``IMD`` today, and a
+    hand-typed gap would keep rendering unchanged while a re-worded label
+    drifted the two figures apart.
+    """
+    width = max(len(label) for label in ROW_LABELS.values())
+    return f"[dim]{ROW_LABELS[key]:<{width}}[/] {figure}"
 
 #: What IMD *is*, stated on the panel because the parity row above is
 #: meaningless without it.  Not a market number and not a documented one: the
@@ -300,15 +355,20 @@ _ROW_IDS = (
 
 
 def _fmt_change(value) -> str:
-    """Signed 24h change: glyph + sign in text, theme colours only."""
+    """``24h ± ▲ +30.89%`` -- the window named, then glyph + sign in text.
+
+    Shaped exactly like :func:`_fmt_parity` one row down, including the
+    unavailable state: ``24h ± --`` still says *what* could not be read,
+    where a bare label says nothing and a zero would read as "unmoved".
+    """
     v = as_float(value)
     if v is None:
-        return f"[dim]{DASH} 24h[/]"
+        return f"[dim]{CHANGE_LABEL} {DASH}[/]"
     if v > 0:
-        return f"[$success]▲ {v:+.2f}%[/] [dim]24h[/]"
+        return f"[dim]{CHANGE_LABEL}[/] [$success]▲ {v:+.2f}%[/]"
     if v < 0:
-        return f"[$error]▼ {v:+.2f}%[/] [dim]24h[/]"
-    return f"[dim]● {v:+.2f}% 24h[/]"
+        return f"[dim]{CHANGE_LABEL}[/] [$error]▼ {v:+.2f}%[/]"
+    return f"[dim]{CHANGE_LABEL} ● {v:+.2f}%[/]"
 
 
 def _fmt_parity(value) -> str:
@@ -426,11 +486,13 @@ def _parts(
     measurable = bool(spread)
 
     return {
-        "price": f"[bold]{price}[/]" if price != DASH else f"[dim]{DASH}[/]",
+        "price": _labelled(
+            "imd", f"[bold]{price}[/]" if price != DASH else f"[dim]{DASH}[/]"
+        ),
         "change": _fmt_change(imd_change_24h_pct),
         "vol": f"${fmt_compact(vol)}" if vol is not None else DASH,
         "pool": f"${fmt_compact(liq)}" if liq is not None else DASH,
-        "fp": f"[dim]FP[/] {fp}" if fp != DASH else f"[dim]FP {DASH}[/]",
+        "fp": _labelled("fp", fp if fp != DASH else f"[dim]{DASH}[/]"),
         "parity": _fmt_parity(parity_pct if measurable else None),
         "price_series": price_series,
         "supply_series": supply_series,
@@ -456,7 +518,9 @@ def _rows_for(tier: str, parts: dict) -> list[tuple[str, str]]:
     """
     gone = _SHED[tier]
 
-    left_price = f"  {parts['price']}  {parts['change']}"
+    # Joined with ``·`` and not two spaces, because this row is now the same
+    # shape as the parity row below it: label, figure, join, labelled change.
+    left_price = f"  {parts['price']} [dim]·[/] {parts['change']}"
     right_price = (
         "" if "price_bar" in gone else _spark_cell("price", parts["price_series"])
     )
