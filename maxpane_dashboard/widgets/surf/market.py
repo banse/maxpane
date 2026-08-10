@@ -51,7 +51,9 @@ Three things this block deliberately does not do:
 * **The spread is gross and says so.**  Bridge fees, mainnet and Base gas
   and both pools' slippage are not knowable keylessly, so no net figure is
   available at any price; ``gross of fees`` is what stops a 2% parity
-  being read as 2% free.
+  being read as 2% free.  The dollar figure and that caveat are **one
+  field**: they are shed together or not at all (:data:`_TIER_STEPS`), so
+  no width can leave a bare gap on screen reading as free money.
 * **It degrades explicitly.**  ``parity_pct`` is ``None`` whenever either
   price read fails, and then the whole block is
   :data:`SPREAD_UNAVAILABLE` -- not a blank right-hand column (which reads
@@ -72,6 +74,70 @@ MEDI-36 -- import, never copy), and widths are measured with
 ``markup_safety.visible_len`` for the same reason.  Primitives only, and
 no third-party text reaches this panel: every field here is a number this
 app computed, so there is nothing for ``safe_markup`` to guard.
+
+Width behaviour
+---------------
+
+The rows are ``Static``\\ s at ``text-wrap: nowrap; text-overflow: ellipsis``,
+so an over-long row is cut with a visible ``…``.  That is half the house
+contract; the other half -- a word in the *title* naming what went -- this
+panel had none of until 2026-08-11, and it did not much matter while its
+widest row was ~33 columns.  Pairing the sparklines with their figures and
+adding the bridge block took that row to **71** rendered columns, i.e. from
+"fits anything" to a panel that is clean only from a **140**-column terminal
+against the 142 this screen is measured at.  Two columns of margin, on a row
+whose width moves with ``fmt_price``'s precision band -- a sub-cent IMD
+renders ``$0.000200`` where today's $0.7074 renders ``$0.0200`` and costs two
+more -- so the marker had stopped being theoretical.
+
+So the panel now sheds **whole labelled fields** in a fixed order and the
+title names them (:data:`WIDEN_HINTS`, :data:`SHORT_HINT`).
+
+**The order is by how derivable a field is from what is left, not by
+taste**, and every step in it was measured rather than assumed -- the
+binding row is the *parity* row (``FP $x · parity ±y%`` beside
+``IMD $d under FP, gross of fees``), so a field that is not on that row and
+does not move :func:`_second_column` buys nothing at all and does not earn a
+tier:
+
+1. ``gap narrows as IMD bridges back`` -- the flow.  It restates a sign that
+   is already on screen twice (the parity glyph ``▼``/``▲``, and the
+   spread's own ``under``/``over``), and it is the 33-column mechanism
+   sentence beside it that pins :func:`_second_column`, so dropping it moves
+   every other row one column left as well: **71 -> 70**.
+2. ``vol 24h`` -- the one figure here that says nothing about the spread.
+   Depth (``pool``) is what decides whether a 2.75% gap is real; turnover
+   does not, so ``pool`` never sheds and the volume goes first.  **70 -> 68**
+   (and 71 -> 71 on its own: it pays only once the flow has gone, which is
+   why the two share one tier).
+3. ``FP $0.7274`` on the parity row, **with** the price sparkline.  FP's
+   price is recoverable from the two figures that survive (IMD's price and
+   the dollar gap beside it), and the 24h change on the price row states the
+   same window the price bar draws.  They go together because the parity row
+   binds: the bar alone is 68 -> 68 and FP alone 68 -> 62, where the pair is
+   **68 -> 55**.
+4. The dollar spread ``IMD $0.0200 under FP, gross of fees``, **with** the
+   supply bar -- **55 -> 33**, the biggest step on the ladder.  Note what
+   does *not* go here: ``parity ▼ -2.75%`` is the spread, stated as a
+   percentage, and it is 18 columns, so the panel's job survives every tier;
+   what is shed is the dollar restatement.  Again measured: the supply bar
+   alone is 55 -> 55 while the spread cell is present, which is why the burn
+   staircase is the last graphic standing.
+5. ``IMD is FP bridged 1:1 from Base`` -- the mechanism, last, because it is
+   what makes "parity" mean anything.  It saves five columns in the healthy
+   state (33 -> 28) and **28** in the unavailable one (56 -> 28), where it
+   shares its row with ``⚠ spread unavailable``: that warning is the reason
+   this tier exists at all, since a cut warning is the one thing worse than
+   a shed one.
+
+The tiers are picked by measuring **the very lines that are then rendered**
+(:func:`_tier_for` lays each candidate out with :func:`_lay_out` and takes
+``visible_len`` of the result), which is the trap ``widgets/surf/nft.py``
+documents: a budget measured against a different string than the one painted
+picks a tier by one width and paints another, i.e. clips with the marker
+dark.  Here the measured object *is* the painted object, so the two cannot
+disagree -- pinned anyway by
+``test_market_tier_budget_matches_what_it_actually_renders``.
 """
 
 from __future__ import annotations
@@ -95,6 +161,12 @@ from maxpane_dashboard.widgets.surf._fmt import (
 
 _WAITING = "[dim]waiting for data...[/]"
 
+#: Panel title.  Deliberately *not* imported by the tests that assert it:
+#: they spell the string out, so a rename reddens them and has to be made on
+#: purpose.  A test comparing this constant against itself would pass through
+#: any rename at all.
+PANEL_TITLE = "IMD MARKET"
+
 #: Columns of clear space between the widest left-hand field and the second
 #: column.  Two would still read as one gap on a row whose field happens to
 #: end in a digit; three is the smallest that does not.
@@ -115,6 +187,73 @@ BRIDGE_MECHANISM = "IMD is FP bridged 1:1 from Base"
 #: The explicit unavailable state for the whole bridge block.  Rendered
 #: verbatim and asserted verbatim by the widget tests.
 SPREAD_UNAVAILABLE = "spread unavailable"
+
+#: The width ladder: ``(tier, fields this tier gives up)``, widest first and
+#: **cumulative** -- each tier has also given up everything above it.  The
+#: reasoning for the order, and the measurement behind each pairing, is in
+#: the module docstring; the field names are consumed only by
+#: :func:`_rows_for`.
+_TIER_STEPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("full", ()),
+    ("compact", ("flow", "vol")),
+    ("narrow", ("fp", "price_bar")),
+    ("minimal", ("spread", "supply_bar")),
+    ("bare", ("mechanism",)),
+)
+
+
+def _shed_sets() -> dict[str, frozenset[str]]:
+    """Cumulative shed set per tier, built from :data:`_TIER_STEPS`.
+
+    Written out as steps rather than as five explicit sets so a field cannot
+    be dropped from one tier and silently reappear in a narrower one.
+    """
+    out: dict[str, frozenset[str]] = {}
+    seen: set[str] = set()
+    for name, fields in _TIER_STEPS:
+        seen |= set(fields)
+        out[name] = frozenset(seen)
+    return out
+
+
+#: Tier names, widest first.
+TIERS: tuple[str, ...] = tuple(name for name, _fields in _TIER_STEPS)
+
+_SHED: dict[str, frozenset[str]] = _shed_sets()
+
+#: Marker appended to the title once a tier has shed something, naming what
+#: went.  The wording gets terser as the tiers narrow for a measured reason:
+#: the hint has to fit beside a 10-column title inside a panel that is *at
+#: most* as wide as the tier that triggered it, which leaves 56 columns at
+#: ``compact`` but only 21 at ``minimal`` and 16 at ``bare``.  A longer
+#: wording down there would be unreachable in every layout this widget has --
+#: a dead string, permanently replaced by :data:`SHORT_HINT` -- so the narrow
+#: tiers name the field they just gave up and leave the rest to the wider
+#: tiers a user passes through on the way down.  Pinned by
+#: ``test_market_widen_hints_all_fit_beside_the_title_at_their_own_tier``.
+WIDEN_HINTS: dict[str, str] = {
+    "full": "",
+    "compact": "‹ widen for 24h volume and bridge flow",
+    "narrow": "‹ widen: FP price, price bar, vol, flow",
+    "minimal": "‹ widen: $ spread",
+    "bare": "‹ widen: bridge",
+}
+
+#: Fallback marker for a panel too narrow to carry a descriptive hint beside
+#: its title.  It names nothing, which is a real loss -- but "columns were
+#: dropped here" is the contract, and going silent is not an option this
+#: codebase allows.
+SHORT_HINT = "‹ widen"
+
+#: The four data rows, in compose order.  ``#surf-mkt-gap`` is not here: it is
+#: the blank seam between the token figures and the bridge block and is never
+#: written to.
+_ROW_IDS = (
+    "#surf-mkt-price",
+    "#surf-mkt-vol",
+    "#surf-mkt-parity",
+    "#surf-mkt-bridge",
+)
 
 
 def _fmt_change(value) -> str:
@@ -203,6 +342,131 @@ def _lay_out(rows: list[tuple[str, str]], column: int) -> list[str]:
     ]
 
 
+def _parts(
+    imd_price_usd,
+    imd_change_24h_pct,
+    imd_vol_24h_usd,
+    pool_liquidity_usd,
+    fp_price_usd,
+    parity_pct,
+    supply_series,
+    price_series,
+) -> dict:
+    """Every rendered fragment the tiers choose between, formatted once.
+
+    Tier selection renders the whole panel up to five times, so the numbers
+    are formatted here rather than inside :func:`_rows_for` -- and, more to
+    the point, formatting them once is what guarantees the five candidates
+    differ only in *which* fields they carry, never in what a field says.
+    """
+    price = fmt_price(imd_price_usd)
+    vol = as_float(imd_vol_24h_usd)
+    liq = as_float(pool_liquidity_usd)
+    fp = fmt_price(fp_price_usd)
+    supply_points = coerce_points(supply_series)
+    spread, direction = _bridge_cells(imd_price_usd, fp_price_usd, parity_pct)
+
+    return {
+        "price": f"[bold]{price}[/]" if price != DASH else f"[dim]{DASH}[/]",
+        "change": _fmt_change(imd_change_24h_pct),
+        "vol": f"${fmt_compact(vol)}" if vol is not None else DASH,
+        "pool": f"${fmt_compact(liq)}" if liq is not None else DASH,
+        "fp": f"[dim]FP[/] {fp}" if fp != DASH else f"[dim]FP {DASH}[/]",
+        "parity": _fmt_parity(parity_pct),
+        "price_series": price_series,
+        "supply_series": supply_series,
+        "supply_last": fmt_compact(supply_points[-1][1]) if supply_points else "",
+        "spread": spread,
+        "direction": direction,
+        # ``spread`` is emptied by the tiers as well as by an outage, so the
+        # bridge row needs a flag that means only "the pair could be read".
+        "measurable": bool(spread),
+    }
+
+
+def _rows_for(tier: str, parts: dict) -> list[tuple[str, str]]:
+    """``(left, right)`` markup for the four data rows at *tier*.
+
+    The single source of both the measurement and the render: :func:`_tier_for`
+    lays these out to decide, and :meth:`SurfMarket._render_view` lays the
+    winner out to paint.  Nothing else may compose a row.
+    """
+    gone = _SHED[tier]
+
+    left_price = f"  {parts['price']}  {parts['change']}"
+    right_price = (
+        "" if "price_bar" in gone else _spark_cell("price", parts["price_series"])
+    )
+
+    figures = []
+    if "vol" not in gone:
+        figures.append(f"[dim]vol 24h[/] {parts['vol']}")
+    # ``pool`` never sheds: depth is what makes the spread above mean
+    # anything, and the row it sits on is not the row that binds.
+    figures.append(f"[dim]pool[/] {parts['pool']}")
+    left_token = "  " + " [dim]·[/] ".join(figures)
+
+    last = f" [dim]{parts['supply_last']}[/]" if parts["supply_last"] else ""
+    if "supply_bar" not in gone:
+        right_token = _spark_cell("supply", parts["supply_series"], suffix=last)
+    elif parts["supply_last"]:
+        # The bar is gone; the number it ended on is not.
+        right_token = f"[dim]{'supply':<{_LABEL_WIDTH}}[/] {parts['supply_last']}"
+    else:
+        right_token = ""
+
+    bits = []
+    if "fp" not in gone:
+        bits.append(parts["fp"])
+    bits.append(parts["parity"])
+    left_parity = "  " + " [dim]·[/] ".join(bits)
+    right_parity = "" if "spread" in gone else parts["spread"]
+
+    if "mechanism" in gone:
+        # The mechanism is a claim about what IMD *is*, so it outlives every
+        # figure -- but not the explicit unavailable warning it shares a row
+        # with, which is why this tier exists.
+        left_bridge = (
+            "" if parts["measurable"] else f"  [yellow]⚠ {SPREAD_UNAVAILABLE}[/]"
+        )
+    elif parts["measurable"]:
+        left_bridge = f"  [dim]{BRIDGE_MECHANISM}[/]"
+    else:
+        left_bridge = (
+            f"  [dim]{BRIDGE_MECHANISM} ·[/] [yellow]⚠ {SPREAD_UNAVAILABLE}[/]"
+        )
+    right_bridge = "" if "flow" in gone else parts["direction"]
+
+    return [
+        (left_price, right_price),
+        (left_token, right_token),
+        (left_parity, right_parity),
+        (left_bridge, right_bridge),
+    ]
+
+
+def _lines_for(tier: str, parts: dict) -> list[str]:
+    """The four rendered rows at *tier*, padded onto their common column."""
+    rows = _rows_for(tier, parts)
+    return _lay_out(rows, _second_column(rows))
+
+
+def _tier_for(width: int, parts: dict) -> str:
+    """Widest tier whose widest **rendered** row fits ``width`` columns.
+
+    ``width <= 0`` means "not laid out yet" and optimistically picks the
+    widest tier; :meth:`SurfMarket.on_resize` re-lays it out once the panel
+    has a size.  Nothing narrower than the last tier exists -- a panel that
+    cannot fit even that ellipsises, with :data:`WIDEN_HINTS` already lit.
+    """
+    if width <= 0:
+        return TIERS[0]
+    for tier in TIERS:
+        if max(visible_len(line) for line in _lines_for(tier, parts)) <= width:
+            return tier
+    return TIERS[-1]
+
+
 class SurfMarket(Vertical):
     """IMD market panel."""
 
@@ -221,8 +485,18 @@ class SurfMarket(Vertical):
     }
     """
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        #: The last payload, not the formatted rows, so a resize can re-lay
+        #: them out at the new width.  ``None`` until the first
+        #: ``update_data`` -- ``on_resize`` before that has nothing to render
+        #: and must not blank the panel.
+        self._payload: dict | None = None
+
     def compose(self) -> ComposeResult:
-        yield Static("IMD MARKET", classes="surf-market-title")
+        yield Static(
+            PANEL_TITLE, classes="surf-market-title", id="surf-mkt-title"
+        )
         yield Static("", classes="surf-market-line", id="surf-mkt-spacer")
         yield Static(_WAITING, classes="surf-market-line", id="surf-mkt-price")
         yield Static("", classes="surf-market-line", id="surf-mkt-vol")
@@ -243,46 +517,75 @@ class SurfMarket(Vertical):
         **_kwargs,
     ) -> None:
         """Refresh all rows.  Kwargs are exactly the PRD §5 market keys."""
-        # -- left column: the figures ----------------------------------
-        price = fmt_price(imd_price_usd)
-        big = f"[bold]{price}[/]" if price != DASH else f"[dim]{DASH}[/]"
-        left_price = f"  {big}  {_fmt_change(imd_change_24h_pct)}"
+        self._payload = {
+            "imd_price_usd": imd_price_usd,
+            "imd_change_24h_pct": imd_change_24h_pct,
+            "imd_vol_24h_usd": imd_vol_24h_usd,
+            "pool_liquidity_usd": pool_liquidity_usd,
+            "fp_price_usd": fp_price_usd,
+            "parity_pct": parity_pct,
+            "supply_series": supply_series,
+            "price_series": price_series,
+        }
+        self._render_view()
 
-        vol = as_float(imd_vol_24h_usd)
-        liq = as_float(pool_liquidity_usd)
-        vol_s = f"${fmt_compact(vol)}" if vol is not None else DASH
-        liq_s = f"${fmt_compact(liq)}" if liq is not None else DASH
-        left_token = f"  [dim]vol 24h[/] {vol_s} [dim]·[/] [dim]pool[/] {liq_s}"
+    def on_resize(self, _event=None) -> None:
+        """Re-lay the rows out: the tier depends on the width.
 
-        fp = fmt_price(fp_price_usd)
-        fp_s = f"[dim]FP[/] {fp}" if fp != DASH else f"[dim]FP {DASH}[/]"
-        left_parity = f"  {fp_s} [dim]·[/] {_fmt_parity(parity_pct)}"
+        The rows are formatted once per refresh against the width they were
+        formatted at, and nothing else re-renders them, so without this hook
+        a widened or narrowed terminal would show the previous size's tier --
+        padded, or ellipsised by ``text-overflow`` with the title still
+        claiming nothing was shed -- until the next 30-second poll.
+        """
+        if self._payload is not None:
+            self._render_view()
 
-        # -- right column: the sparklines and the bridge block ----------
-        supply_points = coerce_points(supply_series)
-        last = f" [dim]{fmt_compact(supply_points[-1][1])}[/]" if supply_points else ""
-        spread, direction = _bridge_cells(imd_price_usd, fp_price_usd, parity_pct)
+    # -- rendering -----------------------------------------------------
 
-        if spread:
-            left_bridge = f"  [dim]{BRIDGE_MECHANISM}[/]"
-        else:
-            # No measurable spread: the mechanism still holds, the number
-            # does not, and the row says which is which.
-            left_bridge = (
-                f"  [dim]{BRIDGE_MECHANISM} ·[/] "
-                f"[yellow]⚠ {SPREAD_UNAVAILABLE}[/]"
-            )
+    def _line_width(self) -> int:
+        """Rendered columns one row of this panel can show.
 
-        rows = [
-            (left_price, _spark_cell("price", price_series)),
-            (left_token, _spark_cell("supply", supply_series, suffix=last)),
-            (left_parity, spread),
-            (left_bridge, direction),
-        ]
-        laid_out = _lay_out(rows, _second_column(rows))
+        Every row (and the title) is a ``width: 100%`` ``Static`` at
+        ``padding: 0 1`` inside this widget's own content box, so they all
+        have the same usable width and one number answers for the lot.
+        """
+        return max(self.content_size.width - 2, 0)
 
-        for line, row_id in zip(
-            laid_out,
-            ("#surf-mkt-price", "#surf-mkt-vol", "#surf-mkt-parity", "#surf-mkt-bridge"),
-        ):
-            self.query_one(row_id, Static).update(line)
+    def _set_title(self, hint: str = "") -> None:
+        """``IMD MARKET  ‹ widen: $ spread``, width permitting.
+
+        The hint is *appended*: the title itself never changes, so the screen
+        tests' ``"IMD MARKET" in text`` holds at every width.  It degrades to
+        :data:`SHORT_HINT` rather than to nothing when the descriptive wording
+        will not fit beside the title -- silence is what the tiers exist to
+        prevent -- and only a panel too narrow for even that goes unmarked,
+        because this ``Static`` has no ``text-overflow`` and an over-long
+        title wraps onto a second line, pushing the bridge block out of a row
+        whose height is ``auto``.
+        """
+        title = self.query_one("#surf-mkt-title", Static)
+        width = self._line_width()
+        text = PANEL_TITLE
+        if hint:
+            for candidate in (hint, SHORT_HINT):
+                if not width or len(PANEL_TITLE) + 2 + len(candidate) <= width:
+                    text += f"  [yellow]{candidate}[/]"
+                    break
+        title.update(text)
+
+    def _render_view(self) -> None:
+        payload = self._payload
+        if payload is None:
+            return
+        try:
+            rows = [self.query_one(row_id, Static) for row_id in _ROW_IDS]
+        except Exception:  # not composed yet
+            return
+
+        parts = _parts(**payload)
+        width = self._line_width()
+        tier = _tier_for(width, parts)
+        for row, line in zip(rows, _lines_for(tier, parts)):
+            row.update(line)
+        self._set_title(WIDEN_HINTS.get(tier, SHORT_HINT))

@@ -1206,25 +1206,23 @@ async def test_the_market_keeps_its_figures_far_below_the_rail():
 
 
 async def test_the_market_panel_is_not_clipped_at_the_pinned_layout_width():
-    """The one panel on this screen with no ``‹ widen`` machinery at all.
+    """Nothing is cut here at the width the layout is measured at.
 
-    Every other surf panel sheds a named field and says so; this one is a
-    column of ``text-overflow: ellipsis`` ``Static``\\ s, so an over-long row
-    is cut with a ``…`` and nothing anywhere names the loss. Until the marker
-    lands (deferred as Minor by review), *not overflowing* is the whole of the
-    contract, and it needs a test because the panel stopped being trivially
-    narrow: pairing the sparklines with their figures and adding the bridge
-    block took its widest row from ~33 rendered columns to 72, i.e. from
-    "fits anything" to 140 terminal columns against the 142 this layout is
-    measured at.
+    Pairing the sparklines with their figures and adding the bridge block
+    took the panel's widest row from ~33 rendered columns to 71, i.e. from
+    "fits anything" to a panel that is clean only from a **140**-column
+    terminal against the 142 this layout is measured at. Two columns of
+    margin, on a row whose width moves with ``fmt_price``'s precision band --
+    a sub-cent IMD renders ``$0.000200`` where today's $0.7074 renders
+    ``$0.0200`` and costs two more.
 
-    The binding row is the parity row -- ``FP $x · parity ±y%`` beside
-    ``IMD $d under FP, gross of fees`` -- and its width moves with
-    ``fmt_price``'s precision band: a sub-cent IMD renders ``$0.000200``
-    where today's $0.7074 renders ``$0.0200`` and costs two more columns.
-    So this is a two-to-three column margin, not a comfortable one, and the
-    stage that adds the marker should size for the wider band rather than
-    for the number measured here.
+    The panel grew its own tiers on 2026-08-11 (``widgets/surf/market.py``:
+    five of them, measured off the rows it actually paints), so a narrower
+    terminal now sheds a named field and says so rather than ellipsising in
+    silence. That is the *narrow* half and it is pinned in the widget tests.
+    This is the wide half, and it stays here because the two are different
+    claims: a tiered panel that sheds a field it did not have to would pass
+    every test over there and be wrong on every terminal anyone owns.
     """
     for width in (SURF_FULL_LAYOUT_COLUMNS, 143, 160):
         async with _screen_at(width, 46) as (app, screen, _p):
@@ -1240,6 +1238,55 @@ async def test_the_market_panel_is_not_clipped_at_the_pinned_layout_width():
             # that the spread is gross.
             assert "IMD is FP bridged 1:1 from Base" in panel
             assert "gross of fees" in panel
+            # ...and it says so, too: a panel shedding a field it has room
+            # for would satisfy every assertion above.
+            assert "‹ widen" not in panel, (
+                f"at {width} columns the market sheds a field it has room "
+                f"for:\n{panel}"
+            )
+
+
+async def test_the_market_advertises_its_own_shedding_on_the_real_screen():
+    """The narrow half, on the composited screen rather than in a harness.
+
+    The widget tests drive ``SurfMarket`` in a bare harness where its content
+    box is the whole app; here it is ``7fr`` of a 13-column seam inside a
+    padded row, which is the geometry that actually decides how many columns
+    it gets -- and the geometry a widget test cannot see. **139 is the first
+    terminal width that costs the market a field** and it is three below the
+    142 this screen clears at, so the two halves of the contract are pinned
+    at both ends and one column apart:
+
+    * at 140 the panel is whole and unmarked;
+    * at 139 a field is gone, the marker names it, and no row is cut.
+
+    Deliberately *not* derived from ``SURF_FULL_LAYOUT_COLUMNS``: the market
+    is not the panel that sets that number (the announce feed is), so tying
+    the two together would make this test pass through any regression that
+    moved them in step.
+    """
+    market_first_full_terminal = 140
+    assert market_first_full_terminal < MEASURED_FULL_LAYOUT_COLUMNS, (
+        "the market is now the panel that sets the full-layout width -- "
+        "re-measure it and correct every surface that names the feed"
+    )
+
+    async with _screen_at(market_first_full_terminal, 46) as (app, screen, _p):
+        whole = _visible_panel(
+            app, screen.query_one(SurfMarket), screen.query_one("#bottom-row")
+        )
+    assert "‹ widen" not in whole and "…" not in whole, whole
+    assert "vol 24h" in whole and "gap narrows" in whole
+
+    async with _screen_at(market_first_full_terminal - 1, 46) as (app, screen, _p):
+        shed = _visible_panel(
+            app, screen.query_one(SurfMarket), screen.query_one("#bottom-row")
+        )
+    assert "…" not in shed, f"a row is cut where a tier should have fitted:\n{shed}"
+    assert "vol 24h" not in shed, f"nothing was shed one column down:\n{shed}"
+    # The marker is on this panel's own rectangle, and it names the field.
+    assert "‹ widen" in shed.split("\n")[0], shed
+    assert "24h volume" in shed.split("\n")[0], shed
 
 
 async def test_the_row_marker_follows_a_live_resize_in_both_directions():

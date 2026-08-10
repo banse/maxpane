@@ -190,6 +190,16 @@ ACTIVITY_MIN_HEIGHT = 7
 #: before the constant moved: 141 lights exactly one marker, 142 lights none,
 #: and every width from 142 to 200 lights none either.
 #:
+#: **Re-swept unchanged on 2026-08-11**, when ``SurfMarket`` gained the ``‹
+#: widen`` tiers it had never had. That panel's widest row is 71 rendered
+#: columns, so it is whole from a **140**-column terminal and sheds ``vol
+#: 24h`` at 139 -- two columns *below* the announce feed's edge, which is why
+#: the marker it can now light does not move this number. Swept again with the
+#: tiers in place, the whole-screen
+#: marker count now reads: 130-134 three (feed, market, activity), 135-139 two
+#: (feed, market), 140-141 one (feed alone), 142-200 none. The announce feed
+#: is still the panel that sets this number.
+#:
 #: **The binding panel changed hands with this measurement.** Through the 176
 #: and 152 eras the last marker standing was ``SurfDevActivity``'s and the
 #: feed was clean well below it; sizing the activity row's cells to the

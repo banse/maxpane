@@ -1037,3 +1037,276 @@ async def test_market_bridge_copy_never_advises_a_transaction():
                 "opportunity", "should", "you ", "free", "risk-free",
             ):
                 assert banned not in panel, f"the panel says {banned!r}"
+
+
+# -- SurfMarket: the ‹ widen tiers --------------------------------------
+#
+# The panel's rows are ``Static``s at ``text-overflow: ellipsis``, so a row
+# that does not fit is cut with a visible ``…``.  Until 2026-08-11 nothing in
+# the *title* said so -- the half of the house contract this panel had no
+# machinery for at all, deferred as Minor by review while its widest row was
+# ~33 columns and reopened when the sparkline pairing and the bridge block
+# took that row to 71.
+#
+# Everything below reads the composited panel.  The tier widths are
+# **measured off the widget**, never written down: the fields are live
+# numbers, so a payload with a sub-cent price moves every threshold and a
+# pinned 71 would quietly stop being the truth.
+
+from maxpane_dashboard.widgets.markup_safety import visible_len  # noqa: E402
+from maxpane_dashboard.widgets.surf import market as _market  # noqa: E402
+
+
+def _tier_width(tier: str, payload: dict) -> int:
+    """Widest rendered row of *payload* at *tier* -- the width it needs.
+
+    Derived from the widget's own row builder, which is also what
+    ``update_data`` paints, so this helper cannot drift away from the render
+    the way a table of literals would.
+    """
+    parts = _market._parts(**payload)
+    return max(visible_len(line) for line in _market._lines_for(tier, parts))
+
+
+def _panel_rows(app) -> list[str]:
+    """Composited, right-trimmed, blank rows dropped."""
+    return [line for line in _lines(app) if line.strip()]
+
+
+async def _render_at(payload: dict, line_width: int) -> tuple[list[str], str]:
+    """``(rows, title)`` composited with the panel exactly *line_width* wide.
+
+    The widget is the only child of a bare harness, so its content box is the
+    app's width and one row of it is that minus the ``padding: 0 1`` on the
+    row ``Static``s -- i.e. ``_line_width() == width - 2``.  Asserted here
+    rather than assumed, because every threshold below is expressed in the
+    widget's own units and an off-by-two would move all of them together and
+    still pass.
+    """
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(line_width + 2, 14)) as pilot:
+        widget.update_data(**payload)
+        await pilot.pause()
+        assert widget._line_width() == line_width
+        rows = _panel_rows(app)
+        return rows, rows[0]
+
+
+async def test_market_tier_budget_matches_what_it_actually_renders():
+    """The trap ``widgets/surf/nft.py`` documents, closed structurally.
+
+    A tier budget measured against a different string than the one painted
+    picks a tier by one width and paints another -- it clips with the marker
+    dark.  Here the measured object *is* the painted object
+    (``_tier_for`` lays each candidate out with ``_lay_out`` and takes
+    ``visible_len`` of the result, and ``_render_view`` paints that same
+    list), and this is what pins the two together end to end: at exactly the
+    width each tier says it needs, the composited panel carries that tier's
+    marker and **no** ``…``.
+    """
+    for tier in _market.TIERS:
+        width = _tier_width(tier, _FULL_MARKET)
+        rows, title = await _render_at(_FULL_MARKET, width)
+        assert "…" not in "\n".join(rows), (
+            f"tier {tier} says it fits in {width} columns and is cut there:\n"
+            + "\n".join(rows)
+        )
+        hint = _market.WIDEN_HINTS[tier]
+        if hint:
+            assert hint in title, (
+                f"at {width} columns the panel renders the {tier} tier and "
+                f"its title says {title!r}"
+            )
+        else:
+            assert "widen" not in title, title
+        # ...and every row really is inside the panel, not merely uncut.
+        assert max(len(r) for r in rows) <= width + 2
+
+
+async def test_market_drops_to_the_next_tier_one_column_below_each_threshold():
+    """The other direction: a tier's width is *tight*, not generous.
+
+    Without this every threshold could be padded by ten columns and the tests
+    above would all still pass -- the panel would simply shed a field earlier
+    than it had to, silently, for the rest of the widget's life.
+    """
+    widths = [(tier, _tier_width(tier, _FULL_MARKET)) for tier in _market.TIERS]
+    for (tier, width), (next_tier, _next_width) in zip(widths, widths[1:]):
+        _rows, title = await _render_at(_FULL_MARKET, width - 1)
+        expected = _market.WIDEN_HINTS[next_tier]
+        assert expected in title, (
+            f"one column below {tier}'s {width} the panel should be at "
+            f"{next_tier}; its title reads {title!r}"
+        )
+
+
+async def test_market_widen_hints_all_fit_beside_the_title_at_their_own_tier():
+    """No hint may be a dead string, permanently replaced by ``SHORT_HINT``.
+
+    Each hint has to fit beside a 10-column title inside a panel that is *at
+    most* as wide as the tier that triggered it, which is 21 columns of room
+    at ``minimal``.  A wording that never fits is worse than a terse one: the
+    user gets ``‹ widen`` and the field name is written down nowhere.
+    """
+    for tier in _market.TIERS:
+        hint = _market.WIDEN_HINTS[tier]
+        if not hint:
+            continue
+        width = _tier_width(tier, _FULL_MARKET)
+        _rows, title = await _render_at(_FULL_MARKET, width)
+        assert hint in title, (
+            f"{tier}'s hint is {len(hint)} columns and its panel is {width}: "
+            f"it degrades to {_market.SHORT_HINT!r} at its own tier"
+        )
+
+
+#: The ladder, **spelled out here** rather than read from
+#: ``market._TIER_STEPS``: the order is an argument (how recoverable each
+#: field is from what survives, module docstring), so reordering it must be a
+#: deliberate edit in two places.  Deriving this from the widget's own
+#: constant would compare it against itself and pin nothing but the render.
+_EXPECTED_LADDER = (
+    ("full", frozenset()),
+    ("compact", frozenset({"flow", "vol"})),
+    ("narrow", frozenset({"flow", "vol", "fp", "price_bar"})),
+    (
+        "minimal",
+        frozenset({"flow", "vol", "fp", "price_bar", "spread", "supply_bar"}),
+    ),
+    (
+        "bare",
+        frozenset(
+            {"flow", "vol", "fp", "price_bar", "spread", "supply_bar", "mechanism"}
+        ),
+    ),
+)
+
+
+async def test_market_sheds_whole_labelled_fields_in_the_documented_order():
+    """Composited: what is gone at each tier, and what is still there.
+
+    The order is the module docstring's, and it is an argument about how
+    recoverable each field is from what survives -- so it is worth asserting
+    as an order and not merely as "something went".
+    """
+    assert [name for name, _gone in _EXPECTED_LADDER] == list(_market.TIERS)
+    bars = set("▁▂▃▄▅▆▇█")
+    seen: list[str] = []
+    for tier, expected_gone in _EXPECTED_LADDER:
+        # Row 0 is the title, whose own hint names fields -- reading it as
+        # content would make "price bar" in the marker look like a price bar.
+        rows = (await _render_at(_FULL_MARKET, _tier_width(tier, _FULL_MARKET)))[0][1:]
+        body = "\n".join(rows)
+        price_row = next((r for r in rows if "$0.7074" in r), "")
+        token_row = next((r for r in rows if "pool $" in r), "")
+        gone = {
+            "flow": "gap narrows" not in body,
+            "vol": "vol 24h" not in body,
+            "fp": "FP $0.7274" not in body,
+            "price_bar": not (set(price_row) & bars),
+            "spread": "under FP" not in body,
+            "supply_bar": not (set(token_row) & bars),
+            "mechanism": "IMD is FP bridged 1:1 from Base" not in body,
+        }
+        seen.append(tier)
+        assert {f for f, is_gone in gone.items() if is_gone} == expected_gone, (
+            f"at the {tier} tier the panel renders:\n{body}"
+        )
+    assert seen == [name for name, _gone in _EXPECTED_LADDER]
+
+
+async def test_market_the_dollar_spread_and_its_caveat_are_one_field():
+    """``gross of fees`` may never outlive, or be outlived by, the number.
+
+    Bridge fees, gas on two chains and both pools' slippage are not knowable
+    keylessly, so a dollar gap printed without that caveat is a gap a reader
+    can take for free money.  Shedding either half alone is the way that
+    happens, which is why they are one field.
+    """
+    for tier in _market.TIERS:
+        rows = "\n".join(
+            (await _render_at(_FULL_MARKET, _tier_width(tier, _FULL_MARKET)))[0]
+        )
+        assert ("under FP" in rows) == ("gross of fees" in rows), (
+            f"the {tier} tier separates the spread from its caveat:\n{rows}"
+        )
+
+
+async def test_market_the_parity_percentage_survives_every_tier():
+    """The panel's job is the spread, so the spread is what stands last.
+
+    What the narrow tiers shed is the *dollar restatement* of it; the
+    percentage is 18 columns and never goes, so a reader on any terminal
+    still learns which side of parity IMD is on.
+    """
+    for tier in _market.TIERS:
+        rows = "\n".join(
+            (await _render_at(_FULL_MARKET, _tier_width(tier, _FULL_MARKET)))[0]
+        )
+        assert "parity ▼ -2.75%" in rows, f"the {tier} tier lost the parity:\n{rows}"
+
+
+async def test_market_narrowest_tier_keeps_the_unavailable_warning_whole():
+    """``⚠ spread unavailable`` shares a row with the mechanism sentence.
+
+    Together they are 54 columns, so on a narrow panel the *warning* is what
+    ``text-overflow`` would cut -- an explicit unavailable state degrading
+    into an ellipsis, which is the one outcome worse than shedding a field.
+    Dropping the mechanism is why the last tier exists.
+    """
+    payload = {**_FULL_MARKET, "parity_pct": None}
+    width = _tier_width("bare", payload)
+    rows, title = await _render_at(payload, width)
+    body = "\n".join(rows)
+    assert "⚠ spread unavailable" in body, body
+    assert "…" not in body, body
+    assert _market.BRIDGE_MECHANISM not in body       # the field that paid for it
+    assert _market.WIDEN_HINTS["bare"] in title
+
+
+async def test_market_never_cuts_a_row_without_saying_so():
+    """The whole contract, swept column by column over the real widget.
+
+    Two failures this catches and no single-width test does: a tier that
+    fits by measurement but paints one column wider, and a hint that stops
+    fitting beside the title before the rows stop fitting inside the panel.
+    Below the width at which even ``‹ widen`` fits beside a 10-column title
+    the panel goes unmarked -- the same limit ``widgets/surf/nft.py`` records,
+    and the reason the sweep starts where it does.
+    """
+    floor = len(_market.PANEL_TITLE) + 2 + len(_market.SHORT_HINT)
+    for width in range(floor, _tier_width("full", _FULL_MARKET) + 6):
+        rows, title = await _render_at(_FULL_MARKET, width)
+        body = "\n".join(rows)
+        if "…" in body or "widen" in title:
+            assert "widen" in title, (
+                f"at {width} columns the panel is cut with nothing to say so:"
+                f"\n{body}"
+            )
+        else:
+            assert body.count("$") >= 3, body   # a full panel, not an empty one
+
+
+async def test_market_re_tiers_when_the_panel_is_resized():
+    """Rows are formatted at the width they were formatted at, once.
+
+    Without ``on_resize`` a widened terminal keeps the narrow tier -- fields
+    shed for no reason -- and a narrowed one keeps the wide tier, ellipsised,
+    with the title still claiming nothing went. Both last until the next
+    30-second poll.
+    """
+    widget = SurfMarket()
+    app = _Harness(widget)
+    narrow = _tier_width("minimal", _FULL_MARKET) + 2
+    wide = _tier_width("full", _FULL_MARKET) + 2
+    async with app.run_test(size=(narrow, 14)) as pilot:
+        widget.update_data(**_FULL_MARKET)
+        await pilot.pause()
+        assert _market.WIDEN_HINTS["minimal"] in _lines(app)[0]
+
+        await pilot.resize_terminal(wide, 14)
+        await pilot.pause()
+        title = _lines(app)[0]
+        assert "widen" not in title, f"still shedding after the widen: {title!r}"
+        assert "vol 24h" in "\n".join(_panel_rows(app))
