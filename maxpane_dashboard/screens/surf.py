@@ -4,15 +4,28 @@ Layout: three content rows, every widget on screen at once::
 
     #title-bar         SURF · IMD $x.xx · parity ±x.x% · feed #N (age)
     #hero-row          SurfHero (full width, four boxes)
-    #middle-row        SurfFeed (3fr)   | #surf-right-rail (2fr)
-                                        |   SurfSignals     (auto)
+    #middle-row        SurfFeed (7fr)   | #surf-right-rail (6fr)
+                                        |   SurfSignals     (auto, +1 margin)
                                         |   SurfDevActivity (1fr)
     #separator
-    #bottom-row        SurfMarket (3fr) | SurfNft (2fr)
+    #bottom-row        SurfMarket (7fr) | SurfNft (6fr)
     StatusBar
 
-Both rows below the hero are split 3:2 on the same seam, so the two rows
+Both rows below the hero are split 7:6 on the same seam, so the two rows
 read as one grid rather than two unrelated bands.
+
+**The seam is a measurement.** It was 3:2 until 2026-08-10. The left
+column's binding panel is ``SurfFeed`` (81 columns before it breaks a post),
+the right column's is ``SurfDevActivity`` (71 columns of rail before it
+sheds a field), so the narrowest terminal serving both is 81 + 71 = 152 --
+but only a seam near 81:71 collects it. 3:2 hands the feed 0.60 W against
+the 0.538 it needs, so the rail reached 71 only at 176: 24 columns of waste,
+and past the ~169 a laptop gets at the 17 pt ``__main__`` forces on launch,
+i.e. the full layout was unreachable at the app's own font size. Every
+candidate seam was swept over the real screen (5:3 187 · 3:2 176 · 7:5 169 ·
+4:3 164 · 6:5 155 · 7:6 152 · 1:1 162); 152 is the floor, four seams reach
+it, 7:6 is the simplest. The table and both pins live in
+``tests/screens/test_surf_screen.py``.
 
 **Nothing is hidden.** Until 2026-08-10 the announce feed and the
 dev-activity panel shared the middle-left slot and ``c`` swapped them, which
@@ -25,9 +38,15 @@ row a single row on the way: ``SurfNft`` is the taller of the two (its
 last-sales block runs to four lines), so an ``auto`` row sized to the NFT
 panel already had room for the market's seven.
 
-``SurfSignals`` is ``auto`` (a title, a spacer and six detector rows) and
-``SurfDevActivity`` takes the rest of the rail at ``1fr``, floored by
-``ACTIVITY_MIN_HEIGHT``. That floor is what keeps the rail's
+``SurfSignals`` is ``auto`` (a title, a spacer and six detector rows) with a
+one-row bottom margin, and ``SurfDevActivity`` takes the rest of the rail at
+``1fr``, floored by ``ACTIVITY_MIN_HEIGHT``. That margin is the blank line
+between the two rail panels: they sat flush and read as one block. A margin
+rather than a spacer widget -- nothing to compose, nothing to query, and it
+collapses into the rail's scroll extent like any other row, so ``TALLER_HINT``
+keeps accounting for it. It costs the rail exactly one row: the marker now
+lights at 36 rows instead of 35, and the first genuinely-lost activity row
+moved 33 -> 34 with it, so the marker still leads the loss by two. That floor is what keeps the rail's
 ``overflow-y: auto`` honest: a ``1fr`` child cannot overflow its scroll
 container -- it shrinks -- so without a floor the activity panel would shed
 one row per terminal row down to a bare title with no scrollbar, no marker
@@ -118,11 +137,15 @@ INITIAL_TITLE = "SURF · Surfboard · Ethereum Mainnet"
 #: MARKET`` heading alone and 143x30 not even that. Row 0 cannot be pushed off
 #: by anything.
 #:
-#: It lights at or below 35 rows and is dark from 36 up -- the same threshold
-#: as before the market left the rail, because ``ACTIVITY_MIN_HEIGHT`` is the
-#: seven rows the market used to hold. Below 20 rows the bottom row goes off
-#: the end of a screen that has itself started scrolling; the marker is
-#: already lit long before that, so nothing is ever lost in silence.
+#: It lights at or below **36** rows and is dark from 37 up. It was 35/36
+#: until 2026-08-10, when the one-row margin under ``SurfSignals`` -- the
+#: blank line separating the rail's two panels -- made the rail's content one
+#: row taller. Nothing else about the threshold moved: the first genuinely
+#: lost activity row went 33 -> 34 in the same step, so the marker still leads
+#: the first real loss by two rows, which is the property that matters.
+#: Below 20 rows the bottom row goes off the end of a screen that has itself
+#: started scrolling; the marker is already lit long before that, so nothing
+#: is ever lost in silence.
 #:
 #: Riding row 0 is necessary but not sufficient: that row is one line of a
 #: *wrapping* ``Static``, so its own tail is silently dropped rather than
@@ -136,8 +159,10 @@ MANAGER_FAILURE_SECONDS = 999
 
 #: The rail's floor for ``SurfDevActivity``: a title, a spacer and five rows
 #: -- the same seven rows ``SurfMarket`` occupied here until it moved to the
-#: bottom row, so the height at which ``TALLER_HINT`` lights has not moved
-#: either. A ``1fr`` child shrinks instead of overflowing its scroll
+#: bottom row, which is why the height at which ``TALLER_HINT`` lights did not
+#: move then. (It moved one row later, when the signals panel gained its
+#: separating margin: 35 -> 36. This floor is unchanged.)
+#: A ``1fr`` child shrinks instead of overflowing its scroll
 #: container, so this floor is the only thing that turns "the rail is too
 #: short" into an overflow the screen can see and advertise; without it the
 #: panel silently thins to its title. **Restated as ``min-height`` in both
@@ -148,41 +173,46 @@ ACTIVITY_MIN_HEIGHT = 7
 
 #: Measured against composited output, not estimated -- see tests.
 #:
-#: **Re-measured 2026-08-10 after the three-row restructure: 135 -> 176.** It
-#: was 135 while ``SurfDevActivity`` had a ``3fr`` slot of its own (it shared
-#: the feed's, behind a ``c`` swap that no longer exists). The restructure
-#: traded that slot for a permanent share of the ``2fr`` right rail, where the
-#: panel gets roughly ``0.4 * W`` minus its own padding, the log's, and the
-#: log's scrollbar gutter -- against the 66 columns its widest row layout
-#: needs. It therefore now sets this number, and the number went up.
+#: .. warning::
 #:
-#: Swept one column at a time over the real screen: **175 lights exactly one
-#: marker, the activity panel's, and 176 lights none**. The other five panels
-#: are clean far below it -- the feed, which used to set this constant, from
-#: 135 up; the hero, signals, market and NFT panels well below that (the
-#: hero's own marker is unreachable above 81 columns). Both numbers are pinned
-#: in both directions in ``tests/screens/test_surf_screen.py``
-#: (``FIRST_CLEAN_WIDTH`` and ``FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL``).
+#:    **This constant is 24 columns stale on purpose.** The layout measures
+#:    **152** as of 2026-08-10; this still says 176. The seam commit that
+#:    brought the number down deliberately changed no constant, because 176
+#:    is quoted by ``__main__.FULL_LAYOUT_COLUMNS``, the ``--font-size`` help
+#:    text, the README width table and CLAUDE.md, and moving five surfaces
+#:    together is a step of its own. **The measured number lives in
+#:    ``tests/screens/test_surf_screen.MEASURED_FULL_LAYOUT_COLUMNS``**, which
+#:    pins it to the real screen in both directions (152 clean, 151 marked).
+#:    Trust that one; this is an upper bound until the reconciliation lands.
+#:    A documented width *above* the measured one is merely generous -- one
+#:    *below* it would clip, which is what
+#:    ``test_the_documented_width_still_covers_the_measured_one`` forbids.
 #:
-#: 176 is past the ~169 columns a laptop gets at the forced 17 pt, which is
-#: not a reason to shave it: it is the reason ``--font-size`` exists. The
-#: widths in between are not a defect either -- they are the activity panel
-#: correctly naming the columns it shed. Raising this constant moved
-#: ``__main__.FULL_LAYOUT_COLUMNS`` 143 -> 176, its ``--font-size`` help text,
-#: the README width table and CLAUDE.md with it; they must stay in step.
+#: The history, because the number has moved twice in three days. It was 135
+#: while ``SurfDevActivity`` had a ``3fr`` slot of its own (shared with the
+#: feed, behind a ``c`` swap that no longer exists). The three-row restructure
+#: traded that slot for a share of the right rail and the number went to 176 --
+#: not because the panel needs 176 columns, but because a **3:2** seam gives
+#: the rail only ``0.4 * W`` and the rail needs 71. Re-seaming to **7:6** hands
+#: the feed exactly the 0.538 it needs and the rail the rest, and 81 + 71 = 152
+#: falls out. The whole seam sweep is in the screen docstring and, with the
+#: losing candidates, in the test module.
 #:
-#: This number deliberately EXCLUDES posts carrying an inherently
+#: 152 is inside the ~169 columns a laptop gets at the forced 17 pt, which was
+#: the point of re-seaming: at 176 the full layout was unreachable at the
+#: font size the app itself picks, and ``--font-size 12`` was the only way in.
+#:
+#: The measured number deliberately EXCLUDES posts carrying an inherently
 #: unbreakable token (a URL glued to a raw tx hash, e.g. by a trailing
 #: period with no space -- the real nonce-13 capture's link is 91 columns).
 #: SurfFeed correctly truncates such a token and lights its own ``‹ widen``;
-#: *this particular capture* clears at 194, and the next real post linking a
-#: transaction reproduces the shape at whatever width its own token needs.
-#: A fixture containing one therefore cannot be what "full layout" is
-#: measured against -- see
-#: ``test_a_linked_post_advertises_widen_at_the_full_layout_width``. Do not
-#: raise this toward 194 to silence a linked post's marker: that marker is
-#: correct, and 194 is past the ~169 columns a laptop gets at the forced
-#: 17 pt, i.e. a "full layout" nobody could reach.
+#: *this particular capture* clears at 216 (194 before the re-seam, the feed
+#: being narrower now), and the next real post linking a transaction
+#: reproduces the shape at whatever width its own token needs. A fixture
+#: containing one therefore cannot be what "full layout" is measured against
+#: -- see ``test_a_linked_post_advertises_widen_at_the_full_layout_width``.
+#: Do not raise this toward 216 to silence a linked post's marker: that
+#: marker is correct, and 216 is a "full layout" nobody could reach.
 SURF_FULL_LAYOUT_COLUMNS = 176
 
 
@@ -368,7 +398,13 @@ class SurfScreen(RefreshGuard, Screen):
     # the screen's spare rows.
     #
     # Inside the rail SurfSignals is `auto` -- a title, a spacer and six
-    # detector rows, exactly 8 -- and SurfDevActivity takes the remainder at
+    # detector rows, exactly 8 -- plus a one-row bottom margin, the blank line
+    # that stops the two rail panels reading as one block. A margin, not a
+    # spacer widget: nothing to compose or query, and it collapses into the
+    # rail's scroll extent like any other row, so `TALLER_HINT` still accounts
+    # for it (that marker moved 35 -> 36 rows, and the first real loss 33 ->
+    # 34, so it still leads the loss by two).
+    # SurfDevActivity takes the remainder at
     # `1fr` with a `min-height` floor. The floor is the load-bearing part: a
     # `1fr` child cannot overflow its scroll container, it shrinks, so
     # without one the activity panel would shed a row per terminal row down
@@ -389,10 +425,13 @@ class SurfScreen(RefreshGuard, Screen):
     # scrollbar in a gutter names nothing, and at very short heights Textual
     # paints it outside the rail's own rectangle.
     #
-    # Both rows below the hero split 3:2 on the same seam: SurfFeed/SurfMarket
-    # take `3fr`, the rail/SurfNft `2fr`. Equal shares would starve the feed
-    # (it needs ~81 columns for an unbroken post) to give width to two panels
-    # whose longest lines are ~35 and ~47.
+    # Both rows below the hero split 7:6 on the same seam: SurfFeed/SurfMarket
+    # take `7fr`, the rail/SurfNft `6fr`. Measured, not chosen -- the feed
+    # needs 81 columns for an unbroken post and the rail 71 before the
+    # activity panel sheds a field, so 152 is the floor and only a seam near
+    # 81:71 collects it. This was 3:2 until 2026-08-10, which over-fed the
+    # left column and pushed the full layout to 176. Equal shares are wrong in
+    # the other direction: 1:1 starves the feed and costs 162.
     DEFAULT_CSS = """
     SurfScreen #title-bar {
         width: 100%;
@@ -413,11 +452,11 @@ class SurfScreen(RefreshGuard, Screen):
         margin: 1 0 0 0;
     }
     SurfScreen SurfFeed {
-        width: 3fr;
+        width: 7fr;
         padding: 0 1;
     }
     SurfScreen #surf-right-rail {
-        width: 2fr;
+        width: 6fr;
         height: 1fr;
         overflow-y: auto;
         scrollbar-size: 1 1;
@@ -426,6 +465,7 @@ class SurfScreen(RefreshGuard, Screen):
         width: 1fr;
         height: auto;
         padding: 0 1;
+        margin: 0 0 1 0;
     }
     SurfScreen SurfDevActivity {
         width: 1fr;
@@ -443,12 +483,12 @@ class SurfScreen(RefreshGuard, Screen):
         margin: 0 0 1 0;
     }
     SurfScreen SurfMarket {
-        width: 3fr;
+        width: 7fr;
         height: auto;
         padding: 0 1;
     }
     SurfScreen SurfNft {
-        width: 2fr;
+        width: 6fr;
         height: auto;
         padding: 0 1;
     }

@@ -1035,11 +1035,19 @@ _DETECTORS = ("NEW POST", "LP MIGRATION", "GATE OPEN", "NEW DEPLOY",
 _ACTIVITY_ROWS = ("0x61CC704c…73f14E", "NFPM", "OFT endpoint")
 
 #: The height at and above which the whole rail fits: ``SurfSignals`` is 8 rows
-#: (title, spacer, six detectors) and ``SurfDevActivity`` is floored at
-#: ``ACTIVITY_MIN_HEIGHT``, so the rail's content is a constant 15 and the
+#: (title, spacer, six detectors) plus the one-row margin that separates it
+#: from the activity panel, and ``SurfDevActivity`` is floored at
+#: ``ACTIVITY_MIN_HEIGHT``, so the rail's content is a constant 16 and the
 #: other rows of the screen cost a fixed 21. Measured, not derived -- the
 #: arithmetic is here to explain the number, the sweep below is what pins it.
-FIRST_WHOLE_HEIGHT = 36
+#:
+#: **36 -> 37 on 2026-08-10**, the one row the rail separator costs. The
+#: ``‹ taller`` marker therefore lights at 36 where it used to light at 35,
+#: and the first genuinely-lost activity row moved 33 -> 34 with it: the
+#: marker still leads the loss by exactly two rows, which is the property
+#: that matters and which ``test_the_marker_lights_before_the_first_line_is_
+#: actually_lost`` pins at both ends.
+FIRST_WHOLE_HEIGHT = 37
 
 
 def _visible_panel(app, widget, clip) -> str:
@@ -1133,11 +1141,16 @@ async def test_the_marker_lights_before_the_first_line_is_actually_lost():
     ``SurfDevActivity`` is ``1fr`` in a scroll container, so it shrinks rather
     than overflowing; ``min-height: ACTIVITY_MIN_HEIGHT`` is what converts
     "the rail is one row short" into an overflow the screen can see. The two
-    rows of slack are the blank tail of that floor: at 35 and 34 the rail is
-    genuinely painting less than it holds, and by 33 a real activity row has
-    gone. A marker that lit at 33 instead would have let two heights of
+    rows of slack are the blank tail of that floor: at 36 and 35 the rail is
+    genuinely painting less than it holds, and by 34 a real activity row has
+    gone. A marker that lit at 34 instead would have let two heights of
     silent shrinkage through, which is precisely how the market disappeared
     from this rail before.
+
+    Both numbers moved up one on 2026-08-10 (35/33 -> 36/34) when the rail
+    gained its one-row separator. The *lead* is what this test is about, and
+    it is unchanged -- which is the point: the separator cost a row of rail,
+    not a row of warning.
     """
     async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, FIRST_WHOLE_HEIGHT - 1) as (
         app, screen, _p
@@ -1148,8 +1161,13 @@ async def test_the_marker_lights_before_the_first_line_is_actually_lost():
             "the marker no longer leads the loss -- re-measure both numbers"
         )
 
-    async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, 33) as (app, screen, _p):
-        assert _missing_at(app, screen), "33 rows fits everything after all"
+    async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, FIRST_WHOLE_HEIGHT - 3) as (
+        app, screen, _p
+    ):
+        assert _missing_at(app, screen), (
+            f"{FIRST_WHOLE_HEIGHT - 3} rows fits everything after all -- the "
+            "marker leads the loss by more than two rows now"
+        )
 
 
 async def test_the_market_keeps_its_figures_far_below_the_rail():
@@ -1339,10 +1357,11 @@ async def _markers_outside_the_activity_panel(width: int) -> int:
     """The same count, minus the ones inside ``SurfDevActivity``'s rectangle.
 
     The activity panel is the one widget the three-row layout genuinely
-    narrowed -- it swapped a ``3fr`` slot of its own for a share of the
-    ``2fr`` rail -- so it is the one panel whose marker is expected below
-    ``FIRST_CLEAN_WIDTH``.  Subtracting it is how the tests below still say
-    something about *the other five*.
+    narrowed -- it swapped a ``3fr`` slot of its own for a share of the right
+    rail -- so it is the last panel to come clean as the terminal widens.
+    Subtracting it is how the tests below still say something about *the
+    other five*, and it is how the seam's balance is measured: the two
+    numbers are now adjacent where they were 41 columns apart.
     """
     manager = _FakeManager(payload=_widen_sweep_payload())
     screen = SurfScreen(manager, poll_interval=30, name="surf")
@@ -1356,74 +1375,211 @@ async def _markers_outside_the_activity_panel(width: int) -> int:
         return whole - panel.count("‹ widen")
 
 
-#: Readable alias for the width the constant now *is*: the narrowest at which
-#: **every** panel is marker-free.  Deliberately not a second literal -- a
-#: duplicated 176 here would drift from ``screens/surf.py`` the first time the
-#: layout moves, and the test below is what pins the number to the real screen
-#: in both directions anyway.
-FIRST_CLEAN_WIDTH = SURF_FULL_LAYOUT_COLUMNS
+# -- the seam, and the width it buys ------------------------------------
+#
+# Both lower rows split on one seam, and *where* that seam sits is the whole
+# full-layout width. It is a measurement, not a taste call: the left column's
+# binding panel is ``SurfFeed`` (81 columns before it breaks a post) and the
+# right column's is ``SurfDevActivity`` (71 columns of rail before it sheds a
+# field), so the narrowest terminal that satisfies both is 81 + 71 = 152 --
+# and only a seam near 81:71 collects it. 3:2 hands the feed 0.60 W against
+# the 0.538 it needs, so the rail reached 71 columns only at 176: 24 columns
+# wider than the layout requires, and past the ~169 a laptop gets at the 17 pt
+# MaxPane forces on launch. Swept seam by seam over the real screen, first
+# width at which no panel composites a marker:
+#
+#     5:3 187 · 13:8 184 · 8:5 183 · 3:2 176 · 7:5 169 · 11:8 167 · 4:3 164
+#     1:1 162 · 9:7 161 · 5:4 158 · 11:9 156 · 12:11 156 · 6:5 155 · 10:9 154
+#     19:17 154 · 9:8 153 · 13:11 153 · 17:15 153 · 7:6 152 · 8:7 152
+#     23:20 152 · 81:71 152
+#
+# 152 is the floor and four seams reach it; **7:6** is the simplest of them
+# and is what both rows now use. Above ~1.19 the activity panel binds and the
+# number climbs; below ~1.14 the feed binds and it climbs again (1:1 costs
+# 162, all of it the feed's). The old rejection of 7:5 "because it starved the
+# feed at 135-138" was made against the 135 pin and does not survive the
+# re-measurement: 7:5 costs 169, it simply is not the best available.
+#
+# These constants used to be ``FIRST_CLEAN_WIDTH`` (an alias for
+# ``SURF_FULL_LAYOUT_COLUMNS``) and ``FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_
+# PANEL = 135``, describing the 3:2 seam with 41 columns of daylight between
+# them. Both moved with the seam.
 
-#: The narrowest width at which every panel *except* the activity is clean.
-#: This is what ``SURF_FULL_LAYOUT_COLUMNS`` used to be, and it is still set by
-#: ``SurfFeed`` -- keeping it pinned is how the 41-column gap up to the real
-#: constant stays attributable to exactly one widget.
-FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL = 135
+#: Columns a laptop gets at the 17 pt ``__main__`` forces on launch. The whole
+#: point of the seam re-measurement: at 3:2 the full layout needed 176 and was
+#: therefore unreachable here without ``--font-size``.
+LAPTOP_COLUMNS_AT_THE_FORCED_FONT = 169
 
+#: The narrowest width at which **no** surf panel composites a ``‹ widen``,
+#: swept one column at a time over the real screen and pinned in both
+#: directions by ``test_the_measured_full_layout_width_is_exactly_the_tight_one``.
+#:
+#: Deliberately *not* ``SURF_FULL_LAYOUT_COLUMNS``: that constant still reads
+#: 176, the number the 3:2 seam needed, and reconciling it (with
+#: ``__main__.FULL_LAYOUT_COLUMNS``, the ``--font-size`` help text, the README
+#: width table and CLAUDE.md, which all quote it) is a step of its own. Until
+#: then the documented width is merely *generous* -- never short, which is the
+#: half that would clip, and which
+#: ``test_the_documented_width_still_covers_the_measured_one`` pins.
+MEASURED_FULL_LAYOUT_COLUMNS = 152
 
-async def test_the_pinned_width_is_exactly_the_tight_one():
-    """``SURF_FULL_LAYOUT_COLUMNS``, measured on the real screen both ways.
+#: The narrowest width at which every panel *except* the activity is clean --
+#: i.e. the width ``SurfFeed`` alone asks for. One column below the number
+#: above, where it used to be 41 below: that gap *was* the defect.
+MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL = 151
 
-    Too high and the app documents a terminal wider than any panel needs; too
-    low and it documents one that clips.  The ``-1`` assertion is what keeps it
-    honest: a widget that quietly grows a column fails *here*, with the number
-    in hand, instead of making the documented width dishonest in silence.
-
-    Nothing here compares the constant with a copy of itself -- both sides are
-    renders of the real screen at ``SURF_FULL_LAYOUT_COLUMNS`` and one column
-    below it, so the constant is what is under test.
-    """
-    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS) == 0, (
-        f"a marker survives at {SURF_FULL_LAYOUT_COLUMNS} -- the documented "
-        "width clips, re-measure it"
-    )
-    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS - 1) > 0, (
-        f"the screen is already clean at {SURF_FULL_LAYOUT_COLUMNS - 1} -- the "
-        "documented width is padded, re-measure it"
-    )
-
-
-async def test_the_activity_panel_alone_is_what_sets_the_pinned_width():
-    """Which widget owns the number, pinned so the next reader need not guess.
-
-    The other five panels clear at ``FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL``
-    (135, set by ``SurfFeed``), and every column between there and the constant
-    is bought for ``SurfDevActivity`` alone -- it traded a ``3fr`` slot of its
-    own for a share of the ``2fr`` rail so that all six panels stay on screen
-    at once.  The marker in between is that panel correctly announcing which
-    fields it shed; it is not a defect, and emphatically not something to
-    silence by widening the rail until the feed (which needs 81 columns before
-    it starts breaking a post) starts breaking posts.
-    """
-    assert FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL < SURF_FULL_LAYOUT_COLUMNS
-    # The other five are clean well below the constant, pinned both ways...
-    assert await _markers_outside_the_activity_panel(
-        FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL
-    ) == 0
-    assert await _markers_outside_the_activity_panel(
-        FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL - 1
-    ) > 0, "those panels are clean below the measured width -- re-measure it"
-    # ...and in the whole gap, the only marker on screen is the activity's.
-    for width in (FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL, 143, 169,
-                  SURF_FULL_LAYOUT_COLUMNS - 1):
-        assert await _widen_markers(width) == 1, f"more than one marker at {width}"
-        assert await _markers_outside_the_activity_panel(width) == 0, (
-            f"a panel other than the activity is marked at {width}"
-        )
+#: Readable alias at the one site that wants to say "the width at which this
+#: panel has everything it needs".
+FIRST_CLEAN_WIDTH = MEASURED_FULL_LAYOUT_COLUMNS
 
 
 async def test_a_narrow_tier_advertises_rather_than_truncating_silently():
     """Well below the threshold every drop is announced, never silent."""
-    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS - 20) > 0
+    assert await _widen_markers(MEASURED_FULL_LAYOUT_COLUMNS - 20) > 0
+
+
+# -- the seam's measured consequences (the sweep is documented above) ----
+
+
+async def test_the_measured_full_layout_width_is_exactly_the_tight_one():
+    """Both directions, both sides a render of the real screen.
+
+    Too high and the app would document a terminal wider than any panel
+    needs; too low and it documents one that clips. The ``-1`` assertion is
+    what keeps a widget that quietly grows a column failing *here*, with the
+    number in hand.
+    """
+    assert await _widen_markers(MEASURED_FULL_LAYOUT_COLUMNS) == 0, (
+        f"a marker survives at {MEASURED_FULL_LAYOUT_COLUMNS} -- the measured "
+        "width clips, re-measure it"
+    )
+    assert await _widen_markers(MEASURED_FULL_LAYOUT_COLUMNS - 1) > 0, (
+        f"the screen is already clean at {MEASURED_FULL_LAYOUT_COLUMNS - 1} -- "
+        "the measured width is padded, re-measure it"
+    )
+
+
+async def test_the_full_layout_is_reachable_at_the_forced_font_size():
+    """The prize. ``__main__`` forces 17 pt, which is ~169 columns on a laptop.
+
+    At the 3:2 seam this was one marker short of clean -- the dev-activity
+    panel one tier down, permanently, on the font size the app itself picks.
+    A "full layout" no user reaches without passing ``--font-size 12`` is not
+    a full layout, it is a footnote.
+    """
+    assert await _widen_markers(LAPTOP_COLUMNS_AT_THE_FORCED_FONT) == 0, (
+        f"a panel is still shedding fields at {LAPTOP_COLUMNS_AT_THE_FORCED_FONT} "
+        "columns, the width the forced font size actually gives"
+    )
+
+
+async def test_the_two_columns_now_clear_within_one_column_of_each_other():
+    """The seam is balanced when both columns run out of slack together.
+
+    At 3:2 the other five panels were clean from 135 and the activity panel
+    only at 176: 41 columns bought for one widget, every one of them wasted
+    on a feed that had already stopped needing them. Balanced, the two
+    numbers are adjacent -- which is also the proof that nothing further is
+    available from moving the seam alone.
+    """
+    assert await _markers_outside_the_activity_panel(
+        MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL
+    ) == 0
+    assert await _markers_outside_the_activity_panel(
+        MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL - 1
+    ) > 0, "those panels are clean below the measured width -- re-measure it"
+    assert (
+        MEASURED_FULL_LAYOUT_COLUMNS - MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL
+    ) <= 1, (
+        "one column is buying width the other has already stopped using -- "
+        "the seam is off balance again"
+    )
+    # ...and the last marker standing is the activity panel's, not a fifth
+    # panel that crept into the gap while the seam moved.
+    assert await _widen_markers(MEASURED_FULL_LAYOUT_COLUMNS - 1) == 1
+    assert await _markers_outside_the_activity_panel(
+        MEASURED_FULL_LAYOUT_COLUMNS - 1
+    ) == 0
+
+
+async def test_the_documented_width_still_covers_the_measured_one():
+    """``SURF_FULL_LAYOUT_COLUMNS`` may be generous; it may never be short.
+
+    It still reads 176 while the layout needs 152, because reconciling it
+    reaches ``__main__``, the README and CLAUDE.md and belongs to one commit
+    of its own. What must hold meanwhile is the direction: a documented width
+    *below* the measured one is a width that clips, which is the failure this
+    whole marker system exists to prevent.
+    """
+    assert SURF_FULL_LAYOUT_COLUMNS >= MEASURED_FULL_LAYOUT_COLUMNS
+    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS) == 0
+
+
+async def test_both_lower_rows_split_on_the_same_seam():
+    """The columns line up down the screen -- a real, visible property.
+
+    The middle row's seam and the bottom row's are one line, so SIGNALS/DEV
+    ACTIVITY sit directly above IDENTITY.MD rather than beside a ragged edge.
+    Swept across the seam's own rounding: ``fr`` shares land on different
+    integers at different widths, and the two rows must round *together*.
+    """
+    for width in (MEASURED_FULL_LAYOUT_COLUMNS, 158, 163,
+                  LAPTOP_COLUMNS_AT_THE_FORCED_FONT, 176, 201):
+        async with _screen_at(width, 48) as (_app, screen, _p):
+            feed = screen.query_one(SurfFeed).region
+            rail = screen.query_one(_RAIL).region
+            market = screen.query_one(SurfMarket).region
+            nft = screen.query_one(SurfNft).region
+            assert feed.right == rail.x, f"middle row has a gap at {width}"
+            assert market.right == nft.x, f"bottom row has a gap at {width}"
+            assert feed.right == market.right, (
+                f"at {width} the middle row's seam is at {feed.right} and the "
+                f"bottom row's at {market.right} -- the columns do not line up"
+            )
+
+
+# -- the blank row between the rail's two panels ------------------------
+
+
+async def test_a_blank_row_separates_the_signals_from_the_dev_activity():
+    """The two rail panels read as one block without it.
+
+    Asserted three ways, because each alone is satisfied by a bug: the
+    geometry (one row of gap), the *composited* content of that row (blank
+    across the rail's full width -- a gap with something painted in it is not
+    a separator), and that the rows on either side are **not** blank, which is
+    what stops a panel that merely grew a trailing empty line from passing.
+    """
+    async with _screen_at(MEASURED_FULL_LAYOUT_COLUMNS, 48) as (app, screen, _p):
+        signals = screen.query_one(SurfSignals).region
+        activity = screen.query_one(SurfDevActivity).region
+        rail = screen.query_one(_RAIL).region
+
+        assert activity.y - signals.bottom == 1, (
+            f"the rail's two panels are {activity.y - signals.bottom} rows "
+            "apart, expected exactly one blank row between them"
+        )
+
+        lines = _screen_text(app).split("\n")
+
+        def _rail_slice(y: int) -> str:
+            return lines[y][rail.x : rail.x + rail.width]
+
+        assert _rail_slice(signals.bottom).strip() == "", (
+            "the separating row is not blank: "
+            f"{_rail_slice(signals.bottom)!r}"
+        )
+        assert _rail_slice(signals.bottom - 1).strip() != "", (
+            "the signals panel already ended in a blank row -- this test is "
+            "measuring padding that was there before, not the separator"
+        )
+        assert _rail_slice(activity.y).strip() != "", (
+            "the activity panel starts on a blank row -- the gap is two rows "
+            "wide, not one"
+        )
+        # The separator must not have cost either panel a line.
+        assert "BURN" in _screen_text(app)
+        assert "DEV ACTIVITY" in _rail_slice(activity.y)
 
 
 async def test_a_linked_post_advertises_widen_at_the_full_layout_width():
@@ -1436,22 +1592,31 @@ async def test_a_linked_post_advertises_widen_at_the_full_layout_width():
     clip silently"; this is that rule working.
 
     The *reason* not to chase it, corrected: this token is 91 columns and
-    therefore finite, and the marker does clear -- at 194, pinned below.
-    (The earlier wording claimed "no finite width fixes it" and named 194 as
-    an example of a width where it would not, which was measurably false and
-    would send the next reader to the wrong conclusion.) The conclusion is
-    unchanged and rests on different ground: 194 is past the ~169 columns a
-    laptop gets at the forced 17 pt, and the *next* post linking a
-    transaction brings its own token of its own length, so no pinned width
-    settles the general case.
+    therefore finite, and the marker does clear -- at 216, pinned below.
+    (The earlier wording claimed "no finite width fixes it", which was
+    measurably false and would send the next reader to the wrong conclusion.)
+    The conclusion is unchanged and rests on different ground: 216 is far past
+    the ~169 columns a laptop gets at the forced 17 pt, and the *next* post
+    linking a transaction brings its own token of its own length, so no pinned
+    width settles the general case.
+
+    It was 194 while the seam was 3:2. Narrowing the feed's share to buy the
+    layout 24 columns overall moved it out to 216 -- the one thing the new
+    seam costs, and it is a width nobody reaches under either seam.
     """
+    assert (
+        await _widen_markers(
+            MEASURED_FULL_LAYOUT_COLUMNS, payload=_frozen_payload()
+        )
+        > 0
+    )
     assert (
         await _widen_markers(SURF_FULL_LAYOUT_COLUMNS, payload=_frozen_payload())
         > 0
     )
     # Where it actually clears -- measured, not asserted from the comment.
-    assert await _widen_markers(190, payload=_frozen_payload()) > 0
-    assert await _widen_markers(194, payload=_frozen_payload()) == 0
+    assert await _widen_markers(215, payload=_frozen_payload()) > 0
+    assert await _widen_markers(216, payload=_frozen_payload()) == 0
 
 
 # -- the hero's own width tiers (final-review I-2) -----------------------
@@ -1685,7 +1850,7 @@ async def test_the_activity_panel_shows_every_column_at_its_own_clean_width():
 
 
 async def test_the_activity_panel_never_drops_the_amount_column_in_silence():
-    """150 columns leaves the log 55 usable against a 66-column row.
+    """150 columns leaves the panel 70, one short of the 71 the full row needs.
 
     Measured on the real screen: the ``0.310 ETH`` amount cannot fit, and
     ``RichLog(wrap=False)`` shrinks the line at write time with no ``…`` and
@@ -1697,6 +1862,9 @@ async def test_the_activity_panel_never_drops_the_amount_column_in_silence():
     assert "0.310 ETH" not in panel, (
         "the amount fits after all at 150 columns -- re-measure FULL_WIDTH"
     )
+    # ...and two columns wider it does, which is what makes 150 a boundary
+    # rather than a width that happens to sit inside a wide marked band.
+    assert "0.310 ETH" in await _activity_panel(MEASURED_FULL_LAYOUT_COLUMNS)
     assert _ACTIVITY_HINTS["compact"] in panel, (
         "the amount column vanished without the title saying so"
     )
@@ -1706,18 +1874,31 @@ async def test_the_activity_panel_never_drops_the_amount_column_in_silence():
 
 
 async def test_the_activity_panel_names_the_columns_the_rail_costs_it():
-    """143 columns -- a terminal people actually run -- is the minimal tier.
+    """120 columns is the minimal tier: address only, and the title says so.
 
-    The rail hands the panel ``0.4 * W - 5`` usable columns, which is 53 here
-    against the 54 its compact layout needs, so the time and kind columns go
-    too. That is the trade the three-row layout makes on purpose: permanent
-    visibility for narrower columns. What is *not* negotiable is that the
-    title says which fields went.
+    The rail is the panel's whole width budget, so a narrow terminal takes
+    the time and kind columns as well as the amount. What is not negotiable
+    is that the title names which fields went.
+
+    This used to be asserted at **143**, and the change is the seam's doing:
+    at 3:2 a 143-column terminal put the panel in its *minimal* tier, and at
+    7:6 the same terminal reaches the compact one -- the stamp and the kind
+    are back on a width people actually run. The minimal tier now starts
+    below 126, which is why this test had to move down to find it. Both ends
+    are pinned so the band cannot silently widen again.
     """
-    panel = await _activity_panel(143)
+    panel = await _activity_panel(120)
     assert _ACTIVITY_HINTS["minimal"] in panel
     assert "0.310 ETH" not in panel and "transfer" not in panel
     assert _ADDR_WINDOW in panel
+
+    # The tier the seam bought back: 143 is no longer minimal.
+    wider = await _activity_panel(143)
+    assert _ACTIVITY_HINTS["minimal"] not in wider, (
+        "143 columns is back in the minimal tier -- the seam moved"
+    )
+    assert _ACTIVITY_HINTS["compact"] in wider
+    assert "transfer" in wider
 
 
 async def test_the_narrow_activity_panel_never_cuts_the_poisoning_window():
@@ -1803,13 +1984,18 @@ async def _nft_panel(width: int) -> str:
 async def test_the_nft_panel_shows_every_figure_at_its_own_clean_width():
     """The positive half: nothing shed, nothing cut, nothing advertised.
 
-    123 is the measured boundary -- one column narrower the stats row no
+    107 is the measured boundary -- one column narrower the stats row no
     longer fits -- so this also pins that the panel is clean at every width
     the dashboard is actually meant to run at, the pinned 176 included.
     Without it the sweep below is satisfied by a panel welded to its
     narrowest tier, which is the failure this codebase keeps recording.
+
+    It was 123 at the 3:2 seam. The NFT panel is on the *right* of the seam,
+    so widening the right column to 6:13 handed it 16 columns it did not have
+    and every one of its tier boundaries moved down with that.
     """
-    for width in (123, 143, 169, SURF_FULL_LAYOUT_COLUMNS):
+    for width in (107, 143, 169, MEASURED_FULL_LAYOUT_COLUMNS,
+                  SURF_FULL_LAYOUT_COLUMNS):
         panel = await _nft_panel(width)
         assert "667 holders" in panel, width
         assert "38 transfers/24h" in panel, width
@@ -1821,13 +2007,14 @@ async def test_the_nft_panel_shows_every_figure_at_its_own_clean_width():
 
 
 async def test_the_nft_panel_sheds_dev_holdings_rather_than_cutting_it():
-    """122 columns: one short of the whole row, which is where it broke.
+    """106 columns: one short of the whole row, which is where it broke.
 
     It rendered ``dev holds…`` -- a labelled figure with the figure gone --
     with an unmarked title. Shedding the field is correct; shedding it in
-    silence is the defect.
+    silence is the defect. (122 at the 3:2 seam; the panel got wider when the
+    seam moved, so the same boundary is 16 terminal columns lower.)
     """
-    panel = await _nft_panel(122)
+    panel = await _nft_panel(106)
     assert "dev holds" not in panel, "the truncated `dev holds…` is still there"
     # The fields that stayed, whole.
     assert "667 holders" in panel
@@ -1848,12 +2035,12 @@ async def test_the_nft_panel_never_cuts_a_number_off_its_unit():
         assert "38 transfers/24h" in panel, f"the unit was cut off at {width}"
         assert "dev holds" not in panel, width
     # Both hint branches are reachable, and which one shows is a width fact:
-    # ``IDENTITY.MD`` + 2 + the 24-column hint needs 37 columns, which the
-    # panel first has at 101.
-    assert _NFT_HINTS["compact"] in await _nft_panel(101)
-    narrow = await _nft_panel(100)
+    # ``IDENTITY.MD`` + 2 + the 24-column hint needs 37 usable columns, which
+    # the panel first has at a terminal width of 87 (101 at the 3:2 seam).
+    assert _NFT_HINTS["compact"] in await _nft_panel(87)
+    narrow = await _nft_panel(86)
     assert _NFT_HINTS["compact"] not in narrow, (
-        "the descriptive hint fits after all at 100 columns -- re-measure"
+        "the descriptive hint fits after all at 86 columns -- re-measure"
     )
     # ...and the fallback is the *bare* marker, not the hint belonging to the
     # narrower tier. That one is 17 columns and does fit here, so a fallback
@@ -1867,20 +2054,22 @@ async def test_the_nft_panel_never_cuts_a_number_off_its_unit():
 
 
 async def test_the_nft_panel_names_the_fields_it_sheds_at_its_narrowest_tier():
-    """87 columns leaves 31 usable, which fits ``667 holders`` and no more.
+    """74 columns leaves 32 usable, which fits ``667 holders`` and no more.
 
     The hint is terse because it has to be: an 11-column title plus two
     columns of gap leaves 18 for a marker that only appears when the panel is
-    at most 31 wide. Below that it falls back to the bare one.
+    barely over 31 wide. Below that it falls back to the bare one. (87 and 80
+    at the 3:2 seam -- the panel is wider now, so it takes a narrower terminal
+    to drive it this far down.)
     """
-    panel = await _nft_panel(87)
+    panel = await _nft_panel(74)
     assert "667 holders" in panel
     assert "transfers/24h" not in panel and "dev holds" not in panel
     assert _NFT_HINTS["minimal"] in panel
 
-    bare = await _nft_panel(80)
+    bare = await _nft_panel(71)
     assert _NFT_HINTS["minimal"] not in bare, (
-        "the descriptive hint fits after all at 80 columns -- re-measure"
+        "the descriptive hint fits after all at 71 columns -- re-measure"
     )
     assert NFT_SHORT_HINT in bare
 
