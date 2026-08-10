@@ -638,14 +638,9 @@ def test_all_six_detectors_survive_the_real_stylesheet() -> None:
     passes with DEFAULT_CSS alone today.  It is what turns red if a future
     theme edit -- or a "tidy" of the block above -- costs the screen a row.
     """
-    import importlib.util
-
     from maxpane_dashboard.screens.surf import SURF_FULL_LAYOUT_COLUMNS
 
-    path = REPO / "tests" / "screens" / "test_surf_screen.py"
-    spec = importlib.util.spec_from_file_location("_surf_screen_harness", path)
-    harness = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(harness)
+    harness = _surf_screen_harness()
 
     async def _run() -> None:
         screen = harness.SurfScreen(
@@ -695,6 +690,90 @@ def test_the_readme_quotes_the_documented_width() -> None:
     assert f"≥ {FULL_LAYOUT_COLUMNS}" in readme, (
         f"README's width table never mentions ≥ {FULL_LAYOUT_COLUMNS}"
     )
+
+
+def _surf_screen_harness():
+    """The screen test module, loaded as a library (it owns the fixtures)."""
+    import importlib.util
+
+    path = REPO / "tests" / "screens" / "test_surf_screen.py"
+    spec = importlib.util.spec_from_file_location("_surf_screen_harness", path)
+    harness = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(harness)
+    return harness
+
+
+def test_the_documented_width_is_not_promised_to_clear_every_post() -> None:
+    """The width table says "nothing" of the *layout*, and must not overpromise.
+
+    Measured here, not assumed: against the **full** captured feed -- the one
+    that includes the nonce-13 post whose tx link is a single unbreakable
+    91-column token -- surf still lights a ``‹ widen`` at
+    ``FULL_LAYOUT_COLUMNS``.  A README row reading "nothing" with no caveat is
+    therefore false on the exact terminal it tells people to build, and the
+    caveat is what makes it true.
+
+    Bound in both directions on purpose.  If a future change ever does clear
+    that marker at the documented width, this test fails on the *first*
+    assertion and tells you to delete the caveat rather than leave two
+    user-facing documents warning about something that no longer happens.
+    """
+    from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
+
+    harness = _surf_screen_harness()
+    lit = asyncio.run(
+        harness._widen_markers(
+            FULL_LAYOUT_COLUMNS, payload=harness._frozen_payload()
+        )
+    )
+    assert lit > 0, (
+        f"the full captured feed now clears every marker at {FULL_LAYOUT_COLUMNS} "
+        "columns -- delete the linked-post caveat from README.md and CLAUDE.md "
+        "instead of leaving them warning about nothing"
+    )
+
+    for name in ("README.md", "CLAUDE.md"):
+        text = (REPO / name).read_text(encoding="utf-8")
+        assert "links a transaction" in text, (
+            f"{name} documents {FULL_LAYOUT_COLUMNS} columns as clearing every "
+            "marker, which a post linking a transaction makes false"
+        )
+
+
+#: The two docs read as the *current* spec for this dashboard.  The files under
+#: ``docs/surf_work_packages/`` are deliberately excluded: they are build-time
+#: records of what each work package was asked to do, and rewriting history
+#: there would destroy the record rather than correct a lie.
+_LIVE_SPEC_DOCS = ("surf_PRD.md", "surf_implementation_plan.md")
+
+
+def test_the_live_spec_docs_describe_no_key_the_screen_does_not_bind() -> None:
+    """The PRD and the plan are read as current, so they must stay current.
+
+    Both described a ``c`` view swap after the binding, its action, the
+    status-bar indicator and their tests were deleted -- the restructure that
+    removed them updated the code, the README and CLAUDE.md and stopped at
+    ``docs/``.  Derived from ``BINDINGS`` rather than asserting the absence of
+    a literal, so re-adding the key legitimately would move this test instead
+    of breaking it.
+
+    The phrases below are the ones a *current* description uses (the slot-grid
+    labels and the noun).  Prose recording that the swap was **removed** has to
+    avoid them, which is the same trade
+    ``test_no_theme_token_reaches_a_rich_parsing_surface`` makes: a scan of raw
+    text cannot tell a specification from its own changelog.
+    """
+    from maxpane_dashboard.screens.surf import SurfScreen
+
+    bound = {binding.key for binding in SurfScreen.BINDINGS}
+    for name in _LIVE_SPEC_DOCS:
+        text = (REPO / "docs" / name).read_text(encoding="utf-8")
+        for phrase in ("`c` swap", "`c`-swap", "`c` A", "`c` B"):
+            if phrase in text:
+                assert "c" in bound, (
+                    f"docs/{name} still describes {phrase!r}, and SurfScreen "
+                    f"binds only {sorted(bound)}"
+                )
 
 
 # ---------------------------------------------------------------------------

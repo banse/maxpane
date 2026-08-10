@@ -123,6 +123,12 @@ INITIAL_TITLE = "SURF · Surfboard · Ethereum Mainnet"
 #: seven rows the market used to hold. Below 20 rows the bottom row goes off
 #: the end of a screen that has itself started scrolling; the marker is
 #: already lit long before that, so nothing is ever lost in silence.
+#:
+#: Riding row 0 is necessary but not sufficient: that row is one line of a
+#: *wrapping* ``Static``, so its own tail is silently dropped rather than
+#: ellipsised. ``_title_line`` therefore puts this marker ahead of both
+#: warnings -- see its docstring for why it, of the three, is the one that
+#: has to survive.
 TALLER_HINT = "‹ taller"
 
 #: Sentinel staleness pushed to the StatusBar when the manager itself failed.
@@ -288,14 +294,25 @@ def _fmt_degraded(sources) -> str:
 def _title_line(data: dict, row_hint: bool = False) -> str:
     """Compose the meta row (PRD §4).
 
-    Ordered by what must survive a narrow terminal: warnings before the
-    version tail, because ``#title-bar`` is one row high and the tail is what
-    gets clipped. Parity renders with the em-dash fallback rather than a
-    zero: a dead market source must never read as perfect parity.
+    Ordered by what must survive a narrow terminal, because ``#title-bar`` is
+    ``height: 1`` around a wrapping ``Static``: everything past the first
+    line reaches no pixel at all -- no ``…``, no scrollbar, no trace. The tail
+    of this string is not "clipped", it is *gone*, so the order here is the
+    only priority mechanism the row has. Parity renders with the em-dash
+    fallback rather than a zero: a dead market source must never read as
+    perfect parity.
 
-    ``row_hint`` is the height counterpart of a widget's ``‹ widen`` and goes
-    in front of the version tail for the same reason the warnings do -- it is
-    a statement about missing content, and the tail is not.
+    ``row_hint`` -- the height counterpart of a widget's ``‹ widen`` -- comes
+    **first**, ahead of both warnings. It used to sit after the degraded list,
+    which meant the one advertisement on this screen with no second home was
+    lost exactly when a source was also down: three degraded groups plus the
+    LP warning ran the line to 118 columns, and at 100 the wrap fell inside
+    the list. The warnings are each mirrored inside a panel (the LP flag is
+    the hero's ``OWNER CHANGED`` box; a degraded group is that panel's own
+    unavailable state), and nothing anywhere else says a row went off the
+    bottom of the rail -- so if exactly one of the three has to survive a
+    narrow terminal, it is this one. The version tail stays last: the
+    StatusBar carries the version too.
     """
     feed_age = _fmt_age(data.get("feed_last_post_age_s"))
     line = (
@@ -304,12 +321,13 @@ def _title_line(data: dict, row_hint: bool = False) -> str:
         f"feed #{_fmt_int(data.get('feed_nonce'))} ({feed_age})"
     )
 
+    if row_hint:
+        line += f" · [yellow]{TALLER_HINT}[/]"
+
     if data.get("lp_owner_ok") is False:
         line += " · [yellow]⚠ LP owner changed[/]"
 
     line += _fmt_degraded(data.get("degraded"))
-    if row_hint:
-        line += f" · [yellow]{TALLER_HINT}[/]"
     # Plain, unmarked version tail: the StatusBar already carries the dim
     # version, and markup here would only complicate every assertion on the
     # end of this string.

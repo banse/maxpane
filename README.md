@@ -133,7 +133,15 @@ last marker goes out at:
 | ≤ 134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen`, FWA `SIGNALS ‹ widen` |
 | 135–142 | surf `DEV ACTIVITY ‹ widen`, FWA `SIGNALS ‹ widen` |
 | 143–175 | surf `DEV ACTIVITY ‹ widen` (FWA is already full) |
-| **≥ 176** | **nothing — full layout** |
+| **≥ 176** | **nothing — full layout**, with one exception below |
+
+The exception is a post, not a panel. When an announce post links a transaction, its own
+punctuation can glue the URL to the 66-character hash into a single token no column budget
+can break — the captured one is 91 columns wide — so surf's `ANNOUNCE FEED` truncates it
+and keeps its `‹ widen` lit above 176 (that particular post needs 194). The marker is
+right: the link really is cut. The table's 176 is the width at which every *layout* is
+whole, and the next post linking a transaction arrives with a token of its own length, so
+no fixed number can promise more than that.
 
 A maximized window is already as wide as your display, so **font size is the
 only lever**: roughly 169 columns at 17 pt on a laptop screen, about 205 at
@@ -180,8 +188,11 @@ the other, so a single manager owns the command.
 ### Terminal size
 
 **The widest layout wants 176 columns.** That is the width at which every widget on every dashboard
-can render its full column set. **FWA wants 143**; the 176 belongs to **surf**, whose dev-activity
-panel shares the narrow right rail so that all six of its panels stay on screen at once.
+can render its full column set for the data it holds today. **FWA wants 143**; the 176 belongs to
+**surf**, whose dev-activity panel shares the narrow right rail so that all six of its panels stay
+on screen at once. One thing 176 does not promise is a clean announce feed on every possible post:
+a post that links a transaction can carry a single unbreakable token wider than the panel, and the
+feed correctly truncates it and says so at any width (see the note under the table above).
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why

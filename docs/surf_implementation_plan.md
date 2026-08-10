@@ -11,7 +11,8 @@ happening while it happens.
 
 **Architecture:** House data flow — `surf_client` (keyless fetch, injectable transport) →
 `surf_cache` (tiered TTL + persisted baselines/series) → `surf_manager` (`fetch_and_compute()`
-→ one flat dict, exactly `SURF_KEYS`) → `SurfScreen` (slot grid, width tiers, `c` swap) →
+→ one flat dict, exactly `SURF_KEYS`) → `SurfScreen` (slot grid, width tiers, no view
+swap — every widget is visible at once) →
 `widgets/surf/*` (render primitives only). All signal math lives in `analytics/surf_signals.py`
 as pure functions.
 

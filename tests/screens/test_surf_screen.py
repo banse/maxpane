@@ -818,12 +818,16 @@ _RAIL = "#surf-right-rail"
 class _screen_at:
     """``async with _screen_at(w, h) as (app, screen, pilot):`` -- refreshed."""
 
-    def __init__(self, width: int = 150, height: int = 46) -> None:
+    def __init__(self, width: int = 150, height: int = 46, payload=None) -> None:
         self._size = (width, height)
+        self._payload = payload
         self._ctx = None
 
     async def __aenter__(self):
-        manager = _FakeManager(payload=_widen_sweep_payload())
+        manager = _FakeManager(
+            payload=self._payload if self._payload is not None
+            else _widen_sweep_payload()
+        )
         self._screen = SurfScreen(manager, poll_interval=30, name="surf")
         self._app = _ThemedHarness(self._screen)
         self._ctx = self._app.run_test(size=self._size)
@@ -1191,6 +1195,57 @@ async def test_the_row_marker_follows_a_live_resize_in_both_directions():
         assert TALLER_HINT not in _screen_text(app).split("\n")[0], (
             "the terminal grew back and the marker stayed lit"
         )
+
+
+#: A payload with every flag the title bar can carry lit at once: the LP owner
+#: warning and three degraded groups. Not a hypothetical -- ``degraded`` is a
+#: list the manager grows one entry per failing source group, and the LP flag
+#: is independent of it.
+def _worst_case_title_payload() -> dict:
+    return _frozen_payload(
+        feed_items=_representative_feed_items(),
+        degraded=["logs", "market", "nft"],
+        lp_owner_ok=False,
+    )
+
+
+async def test_the_row_marker_survives_a_title_bar_full_of_warnings():
+    """The one loss signal on the screen must not be the first thing lost.
+
+    ``#title-bar`` is one row high and the ``Static`` *wraps*: everything past
+    the first line reaches no pixel at all -- no ``…``, no scrollbar, nothing.
+    With three degraded groups and the LP warning the line ran 118 columns, so
+    at 100 the wrap fell inside the degraded list and took ``‹ taller`` (and
+    the version tail) with it. The rail was scrolling, DEV ACTIVITY's rows
+    were off screen, and the screen said so nowhere -- and only when a source
+    was *also* down, which is precisely when a reader needs both.
+
+    So the marker rides in front of the warnings. It is the only advertisement
+    on this screen with no second home: the LP flag is also the hero's
+    ``OWNER CHANGED`` box, and a degraded group is also its own panel's
+    unavailable state, but nothing else anywhere says a row went off the
+    bottom.
+    """
+    payload = _worst_case_title_payload()
+    for width in (100, 120, 143, SURF_FULL_LAYOUT_COLUMNS):
+        async with _screen_at(width, 30, payload=payload) as (app, screen, _p):
+            assert screen.query_one(_RAIL).show_vertical_scrollbar is True, (
+                f"{width}x30 fits the rail after all -- pick a shorter height"
+            )
+            row0 = _screen_text(app).split("\n")[0]
+            assert TALLER_HINT in row0, (
+                f"at {width}x30 the rail is scrolling and row 0 says nothing:\n"
+                f"{row0!r}"
+            )
+            # The warning it now precedes is still on the same row -- the fix
+            # is an ordering, not a trade of one advertisement for another.
+            assert "⚠ LP owner changed" in row0, row0
+
+    # ...and it stays dark on a terminal that fits, warnings or no warnings:
+    # this must not become a marker that is simply always on.
+    async with _screen_at(100, 46, payload=payload) as (app, screen, _p):
+        assert screen.query_one(_RAIL).show_vertical_scrollbar is False
+        assert TALLER_HINT not in _screen_text(app)
 
 
 #: A width where ``SurfDevActivity`` is genuinely below its widest tier, for
@@ -1686,6 +1741,172 @@ async def test_the_narrow_activity_panel_never_cuts_the_poisoning_window():
     assert SHORT_HINT in panel, "three columns went with nothing said"
     # The fields that were shed to pay for it, and nothing half-rendered.
     assert "0.310 ETH" not in panel
+
+
+# -- the NFT panel's own width tiers -------------------------------------
+#
+# ``SurfNft`` was the one surf widget with no marker machinery at all. It did
+# not need any while it was the sole child of ``#bottom-row`` at ``1fr``; the
+# three-row restructure put it beside the market at ``2fr`` of a 3:2 split, so
+# it sees ~``0.4 * W - 4`` columns against the 46 its stats row needs and
+# started silently ellipsising ``dev holds 3`` -- and, further down, cutting
+# ``38 transfers/24h`` into ``38 transfers/24…``, a number with a different
+# unit. ``text-overflow: ellipsis`` renders the ``…``; nothing put a word in
+# the title, which is the half of the contract that names what went.
+
+from maxpane_dashboard.widgets.surf.nft import (  # noqa: E402
+    SHORT_HINT as NFT_SHORT_HINT,
+    WIDEN_HINTS as NFT_WIDEN_HINTS,
+)
+
+#: The NFT hints as **test-local literals**, for the reason ``_ACTIVITY_HINTS``
+#: is one: ``NFT_WIDEN_HINTS[tier] in panel`` is satisfied by an *empty* hint,
+#: i.e. by exactly the silent shed these tests exist to catch. ``SHORT_HINT``
+#: is additionally a **prefix** of both, so ``SHORT_HINT in panel`` cannot tell
+#: the descriptive hint from the bare fallback -- every assertion below names
+#: the whole string it means, and the two are asserted against each other.
+_NFT_HINTS = {
+    "compact": "‹ widen for dev holdings",
+    "minimal": "‹ widen: 24h, dev",
+}
+
+
+def test_the_nft_hints_are_the_strings_this_file_asserts_on():
+    """Pin the literals above to the widget's own table, both directions."""
+    assert {tier: NFT_WIDEN_HINTS[tier] for tier in _NFT_HINTS} == _NFT_HINTS
+    assert NFT_WIDEN_HINTS["full"] == "", "the widest tier sheds nothing"
+    assert set(NFT_WIDEN_HINTS) == set(_NFT_HINTS) | {"full"}
+    assert NFT_SHORT_HINT == "‹ widen"
+    # The prefix relationship this file has to work around, stated once.
+    for hint in _NFT_HINTS.values():
+        assert hint.startswith(NFT_SHORT_HINT)
+
+
+async def _nft_panel(width: int) -> str:
+    """Composited text of the NFT panel's own rectangle at *width*.
+
+    The panel's rectangle, not the whole screen: ``38 transfers/24h`` also
+    appears nowhere else, but ``‹ widen`` appears in up to three other titles,
+    so a whole-screen assertion about *this* panel's marker would be satisfied
+    by the activity panel's.
+    """
+    manager = _FakeManager(payload=_widen_sweep_payload())
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        return _region_text(app, screen.query_one(SurfNft))
+
+
+async def test_the_nft_panel_shows_every_figure_at_its_own_clean_width():
+    """The positive half: nothing shed, nothing cut, nothing advertised.
+
+    123 is the measured boundary -- one column narrower the stats row no
+    longer fits -- so this also pins that the panel is clean at every width
+    the dashboard is actually meant to run at, the pinned 176 included.
+    Without it the sweep below is satisfied by a panel welded to its
+    narrowest tier, which is the failure this codebase keeps recording.
+    """
+    for width in (123, 143, 169, SURF_FULL_LAYOUT_COLUMNS):
+        panel = await _nft_panel(width)
+        assert "667 holders" in panel, width
+        assert "38 transfers/24h" in panel, width
+        assert "dev holds 3" in panel, width
+        assert "…" not in panel, f"the NFT panel truncates at {width}:\n{panel}"
+        assert NFT_SHORT_HINT not in panel, (
+            f"a marker is lit at {width} where nothing was shed"
+        )
+
+
+async def test_the_nft_panel_sheds_dev_holdings_rather_than_cutting_it():
+    """122 columns: one short of the whole row, which is where it broke.
+
+    It rendered ``dev holds…`` -- a labelled figure with the figure gone --
+    with an unmarked title. Shedding the field is correct; shedding it in
+    silence is the defect.
+    """
+    panel = await _nft_panel(122)
+    assert "dev holds" not in panel, "the truncated `dev holds…` is still there"
+    # The fields that stayed, whole.
+    assert "667 holders" in panel
+    assert "38 transfers/24h" in panel
+    assert _NFT_HINTS["compact"] in panel, "the field went with nothing said"
+
+
+async def test_the_nft_panel_never_cuts_a_number_off_its_unit():
+    """100 and 90 columns: ``… transfers/24h · …`` and ``38 transfers/24…``.
+
+    A truncated word is a shortened word; a truncated *number* still reads as
+    a number, and ``24…`` is a different quantity from ``24h``. The hero
+    carries the same rule (``burned 15,74…``), and the NFT panel now sheds
+    whole fields to keep it.
+    """
+    for width in (90, 100):
+        panel = await _nft_panel(width)
+        assert "38 transfers/24h" in panel, f"the unit was cut off at {width}"
+        assert "dev holds" not in panel, width
+    # Both hint branches are reachable, and which one shows is a width fact:
+    # ``IDENTITY.MD`` + 2 + the 24-column hint needs 37 columns, which the
+    # panel first has at 101.
+    assert _NFT_HINTS["compact"] in await _nft_panel(101)
+    narrow = await _nft_panel(100)
+    assert _NFT_HINTS["compact"] not in narrow, (
+        "the descriptive hint fits after all at 100 columns -- re-measure"
+    )
+    # ...and the fallback is the *bare* marker, not the hint belonging to the
+    # narrower tier. That one is 17 columns and does fit here, so a fallback
+    # chain routed through it would render a marker naming ``24h`` -- a field
+    # this tier still shows -- and every ``SHORT_HINT in panel`` assertion
+    # would stay green, ``SHORT_HINT`` being a prefix of it.
+    assert _NFT_HINTS["minimal"] not in narrow, (
+        "the panel fell back to a hint for a tier it is not in"
+    )
+    assert NFT_SHORT_HINT in narrow, "a field went with nothing said at all"
+
+
+async def test_the_nft_panel_names_the_fields_it_sheds_at_its_narrowest_tier():
+    """87 columns leaves 31 usable, which fits ``667 holders`` and no more.
+
+    The hint is terse because it has to be: an 11-column title plus two
+    columns of gap leaves 18 for a marker that only appears when the panel is
+    at most 31 wide. Below that it falls back to the bare one.
+    """
+    panel = await _nft_panel(87)
+    assert "667 holders" in panel
+    assert "transfers/24h" not in panel and "dev holds" not in panel
+    assert _NFT_HINTS["minimal"] in panel
+
+    bare = await _nft_panel(80)
+    assert _NFT_HINTS["minimal"] not in bare, (
+        "the descriptive hint fits after all at 80 columns -- re-measure"
+    )
+    assert NFT_SHORT_HINT in bare
+
+
+async def test_no_width_lets_the_nft_panel_cut_a_line_in_silence():
+    """The sweep: whatever gets cut, the title says so -- at every width.
+
+    Two claims, both against composited output. Anything ellipsised is
+    advertised, and no *number* is ever the thing ellipsised: the tiers shed
+    whole labelled fields, so a figure is either whole or absent.
+    """
+    import re
+
+    widths = sorted(
+        set(range(80, SURF_FULL_LAYOUT_COLUMNS + 1, 6))
+        | {86, 87, 88, 90, 100, 101, 122, 123, SURF_FULL_LAYOUT_COLUMNS}
+    )
+    for width in widths:
+        panel = await _nft_panel(width)
+        if "…" in panel:
+            assert NFT_SHORT_HINT in panel, (
+                f"the NFT panel cut a line at {width} in silence:\n{panel}"
+            )
+        assert re.search(r"\d…", panel) is None, (
+            f"a number was cut off its tail at {width}:\n{panel}"
+        )
 
 
 def test_surf_fits_inside_the_documented_app_width():

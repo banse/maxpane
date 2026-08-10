@@ -129,6 +129,14 @@ Launch forces 17 pt — about 169 columns on a laptop — so the top tier was
 unreachable until `--font-size` / `MAXPANE_FONT_SIZE` existed, and at 176 it
 still is without one.
 
+176 clears every *layout*, not every possible string. Surf's announce feed
+still lights `‹ widen` there whenever a post links a transaction: the post's
+own punctuation glues the URL to the 66-char hash into one unbreakable token
+(the captured one is 91 columns and clears at 194). That marker is correct and
+must not be silenced by raising the constant — the next such post brings its
+own length. The width sweep therefore measures against a fixture with that
+post removed, pinned by `test_a_linked_post_advertises_widen_at_the_full_layout_width`.
+
 FWA binds `c` to swap the odds board and the activity feed in one slot, so the
 bottom row is the chase board and the settlement table alone. That took the
 requirement from 198 to 172 (three widgets needing 79/54/55 columns cannot

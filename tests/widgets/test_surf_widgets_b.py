@@ -740,18 +740,35 @@ async def test_activity_a_panel_too_narrow_to_name_what_it_shed_still_says_so():
 
     The bare marker is the fallback: it names no field, but "something was
     dropped here" is the contract, and it fits in seven columns.
+
+    **36, not 34.** ``SHORT_HINT`` is a *prefix* of both descriptive hints, so
+    ``SHORT_HINT in screen`` alone cannot tell the fallback from a hint for the
+    wrong tier -- and the width chosen decides whether it can tell at all. The
+    panel here is on the ``minimal`` tier, whose 24-column hint needs 38; the
+    ``compact`` hint needs 33. At 34 columns *neither* fits, so a fallback
+    chain wrongly routed through ``compact`` renders exactly what the correct
+    one renders and no assertion at that width can see the difference. 36 is
+    inside the 35..39 band where ``compact`` fits and ``minimal`` does not,
+    which is the only place the routing is observable at all -- verified by
+    mutating the chain and watching this test, and only this test, redden.
     """
     from maxpane_dashboard.widgets.surf.activity import SHORT_HINT, WIDEN_HINTS
 
     widget = SurfDevActivity()
     app = _Harness(widget)
-    async with app.run_test(size=(34, 20)) as pilot:
+    async with app.run_test(size=(36, 20)) as pilot:
         widget.update_data(dev_activity=_DEV_ACTIVITY)
         await pilot.pause()
         screen = _screen_text(app)
 
         assert WIDEN_HINTS["minimal"] not in screen, (
-            "the descriptive hint fits after all at 34 columns -- re-measure"
+            "the descriptive hint fits after all at 36 columns -- re-measure"
+        )
+        # The tier's own hint does not fit; a hint belonging to a *wider* tier
+        # does, and would name ``amounts`` while staying silent about the time
+        # and kind columns this tier also shed.
+        assert WIDEN_HINTS["compact"] not in screen, (
+            "the panel fell back to a hint for a tier it is not in"
         )
         assert SHORT_HINT in screen, "the panel shed three columns in silence"
         # The fallback never costs the log a row: the title is still one line.
@@ -896,6 +913,123 @@ async def test_nft_malformed_sale_rows_are_skipped():
         )
         await pilot.pause()
         assert "#1751" in _screen_text(app)
+
+
+def test_nft_stats_budget_matches_what_the_markup_actually_renders():
+    """The tier is chosen on a plain string; the panel paints markup.
+
+    If the two drift the panel measures one row and renders another -- a
+    silent clip with the marker *dark*, which is strictly worse than no
+    tiering at all.  Compared through Textual's own markup parser rather than
+    a hand-rolled tag stripper, so the check cannot agree with the widget by
+    repeating its bug.
+    """
+    from textual.content import Content
+
+    from maxpane_dashboard.widgets.surf.nft import _stats_markup, _stats_variants
+
+    variants = _stats_variants("667", "38", "3")
+    for tier, plain in variants.items():
+        rendered = Content.from_markup(_stats_markup(tier, "667", "38", "3")).plain
+        assert rendered == plain, f"{tier}: {rendered!r} != {plain!r}"
+    # The ladder only works if every rung is strictly narrower than the one
+    # above it -- equal rungs would make a tier unreachable.
+    assert (
+        len(variants["full"])
+        > len(variants["compact"])
+        > len(variants["minimal"])
+    )
+
+
+async def test_nft_re_tiers_on_resize_and_the_title_tracks_the_tier():
+    """The tier follows the terminal, in both directions, and says so.
+
+    Without the resize hook the panel keeps whatever tier it was first laid
+    out at: padded on a widened terminal, ellipsised on a narrowed one, for
+    the life of the screen.
+    """
+    widget = SurfNft()
+    app = _Harness(widget)
+    async with app.run_test(size=(60, 16)) as pilot:
+        widget.update_data(**_FULL_NFT)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "dev holds 3" in screen
+        assert "‹ widen" not in screen
+
+        # Narrower than the whole stats row: the dev holdings go, advertised.
+        await pilot.resize_terminal(40, 16)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "dev holds" not in screen
+        assert "38 transfers/24h" in screen          # and the rest is whole
+        assert "‹ widen for dev holdings" in screen
+
+        # ...and widening puts it back, with the marker dark again.
+        await pilot.resize_terminal(60, 16)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "dev holds 3" in screen
+        assert "‹ widen" not in screen
+
+
+async def test_nft_a_panel_too_narrow_to_name_what_it_shed_still_says_so():
+    """``IDENTITY.MD`` plus the 24-column hint needs 37; 34 has to fall back.
+
+    The bare marker names no field, but "something was dropped here" is the
+    contract, and it costs seven columns.  The title has no ``text-overflow``,
+    so an over-long hint would wrap the title onto a second line and push a
+    sales row out of the panel instead of announcing anything.
+    """
+    from maxpane_dashboard.widgets.surf.nft import SHORT_HINT, WIDEN_HINTS
+
+    widget = SurfNft()
+    app = _Harness(widget)
+    async with app.run_test(size=(36, 16)) as pilot:
+        widget.update_data(**_FULL_NFT)
+        await pilot.pause()
+        screen = _screen_text(app)
+
+        assert WIDEN_HINTS["compact"] not in screen, (
+            "the descriptive hint fits after all at 36 columns -- re-measure"
+        )
+        assert SHORT_HINT in screen, "a field went with nothing said"
+        # The fallback never costs the panel a row: the title is one line, so
+        # the last sales block is still whole underneath it.
+        assert "#1751" in screen and "#354" in screen
+
+
+async def test_nft_a_row_the_tiers_cannot_help_is_still_advertised():
+    """Only the stats row has fields to trade; the rest must still be honest.
+
+    ``token_id`` comes out of a decoded ``OrderFulfilled`` log, so this widget
+    does not get to assume a four-digit id -- and a token id is not a field it
+    could shed anyway, since it is what identifies the sale.  When the row
+    that overflows is one the ladder cannot shorten, the bare marker is the
+    whole of what is left to say, and saying nothing is not an option.
+
+    60 columns is deliberately wide enough for the stats row's *widest* tier,
+    so this exercises the case the tier hints do not cover at all.
+    """
+    from maxpane_dashboard.widgets.surf.nft import SHORT_HINT
+
+    widget = SurfNft()
+    app = _Harness(widget)
+    async with app.run_test(size=(60, 16)) as pilot:
+        widget.update_data(
+            **{
+                **_FULL_NFT,
+                "nft_last_sales": [
+                    {"ts": 1786163591, "token_id": 10**40, "eth": 0.18},
+                ],
+            }
+        )
+        await pilot.pause()
+        screen = _screen_text(app)
+
+        assert "dev holds 3" in screen, "the stats row fits at 60 -- re-measure"
+        assert "…" in screen, "the over-long sale row was not cut after all"
+        assert SHORT_HINT in screen, "a row was cut with nothing said"
 
 
 # ---------------------------------------------------------------------
