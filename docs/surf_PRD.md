@@ -129,10 +129,13 @@ Four amendments to this table were made after the dashboard was first built and 
    shed, which is the sanctioned answer to a cramped panel here. That is what moved
    `SURF_FULL_LAYOUT_COLUMNS` from 135 to 176.
 4. **`SurfNft`'s rows were regrouped and its floor line was muted.** The written count
-   folded into the stats row (`666 holders · 7 transfers/24h · 1/2000 written`) and the dev
-   holdings took a row of their own, phrased as the sentence they are: `dev holds 4
-   identities`. The old arrangement put the one figure about a *person* at the end of a row
-   of figures about the *collection*, and spent a whole row on a single fraction. **The
+   folded into the stats row (`667 holders · 38 transfers/24h · 1/2000 written`) and the dev
+   holdings took a row of their own, phrased as the sentence they are: `dev holds 3
+   identities`. (Figures as of the 2026-08-08 capture, matching §2 and
+   `surf_game_mechanics.md` §IDMD; they are read live and will have moved. This amendment
+   first quoted `666 holders · 7 transfers/24h` and `dev holds 4`, which matched neither.)
+   The old arrangement put the one figure about a *person* at the end of a row of figures
+   about the *collection*, and spent a whole row on a single fraction. **The
    floor line did not move and its claim is unchanged** — it is still the explicit
    `n/a — no keyless source`, still never faked and never blank; only its colour changed,
    from `[yellow]` to the `[dim]` the panel's own labels use. Warning vocabulary was wrong

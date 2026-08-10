@@ -207,6 +207,36 @@ def _dev_row(dev: str) -> tuple[str, str]:
     return plain, f"  [dim]dev holds[/] [bold]{dev}[/] [dim]identities[/]"
 
 
+def _floor_row(floor) -> tuple[str, str]:
+    """``(plain, markup)`` for the floor line.
+
+    Absent: muted whole, at the ``[dim]`` the panel's own labels use -- the
+    condition is permanent, not an alert (see the module docstring).  Real:
+    the label stays muted and the *number* is bold, because a number is news.
+    """
+    if floor is None:
+        return (
+            f"  floor {FLOOR_UNAVAILABLE}",
+            f"  [dim]floor {FLOOR_UNAVAILABLE}[/]",
+        )
+    return (
+        f"  floor {floor:.3f} ETH",
+        f"  [dim]floor[/] [bold]{floor:.3f} ETH[/]",
+    )
+
+
+#: The sales block's fixed ``(plain, markup)`` rows.  Constants rather than
+#: literals inlined at the point of use so the plain half a budget is taken on
+#: and the markup half that gets painted cannot be edited apart -- the failure
+#: this module keeps warning about, and the one
+#: ``test_nft_every_budget_string_matches_the_markup_beside_it`` sweeps for by
+#: discovering every such pair in this module rather than listing them.
+_SALES_HEAD = ("  last sales (Seaport)", "  [dim]last sales (Seaport)[/]")
+_SALES_HEAD_DEAD = ("  last sales", "  [dim]last sales[/]")
+_SALES_UNAVAILABLE = ("  ⚠ sales unavailable", "  [yellow]⚠ sales unavailable[/]")
+_SALES_EMPTY = ("  no sales in window", "  [dim]no sales in window[/]")
+
+
 def _tier_for(width: int, variants: dict[str, str]) -> str:
     """Widest stats row that fits ``width`` rendered columns.
 
@@ -343,7 +373,13 @@ class SurfNft(Vertical):
         return max(self.content_size.width - 2, 0)
 
     def _set_title(self, hint: str = "") -> None:
-        """``IDENTITY.MD  ‹ widen for dev holdings``, width permitting.
+        """``IDENTITY.MD  ‹ widen for /2000 written``, width permitting.
+
+        The example is the ``compact`` hint, not the ``‹ widen for dev
+        holdings`` this docstring used to show: the dev holdings have a row of
+        their own and are never shed, so that wording named a field the panel
+        always renders -- the exact drift the note above :data:`WIDEN_HINTS`
+        exists to prevent, left behind in prose where no assertion reaches it.
 
         The hint is *appended*: the title itself never changes, so the screen
         tests' ``"IDENTITY.MD" in text`` holds at every width.  It degrades to
@@ -392,36 +428,34 @@ class SurfNft(Vertical):
         dev_row.update(dev_markup)
         widths.append(len(dev_plain))
 
-        floor = as_float(payload.get("nft_floor"))
-        if floor is None:
-            # Muted, not warned: the absence is structural and permanent (see
-            # the module docstring), so it recedes to the panel's own label
-            # weight instead of wearing the ``[yellow]`` it used to.
-            floor_row.update(f"  [dim]floor {FLOOR_UNAVAILABLE}[/]")
-            widths.append(len(f"  floor {FLOOR_UNAVAILABLE}"))
-        else:
-            floor_row.update(f"  [dim]floor[/] [bold]{floor:.3f} ETH[/]")
-            widths.append(len(f"  floor {floor:.3f} ETH"))
+        # Muted when absent, bold when real -- see :func:`_floor_row`.
+        floor_plain, floor_markup = _floor_row(as_float(payload.get("nft_floor")))
+        floor_row.update(floor_markup)
+        widths.append(len(floor_plain))
 
         nft_last_sales = payload.get("nft_last_sales")
         if nft_last_sales is None:
-            sales_head.update("  [dim]last sales[/]")
-            sales_body.update("  [yellow]⚠ sales unavailable[/]")
-            widths += [len("  last sales"), len("  ⚠ sales unavailable")]
+            head_plain, head_markup = _SALES_HEAD_DEAD
+            body_plain, body_markup = _SALES_UNAVAILABLE
+            sales_head.update(head_markup)
+            sales_body.update(body_markup)
+            widths += [len(head_plain), len(body_plain)]
         else:
             try:
                 rows = list(nft_last_sales)[:_MAX_SALES]
             except TypeError:
                 rows = []
             lines = [l for l in (_sale_line(s) for s in rows) if l is not None]
-            sales_head.update("  [dim]last sales (Seaport)[/]")
-            widths.append(len("  last sales (Seaport)"))
+            head_plain, head_markup = _SALES_HEAD
+            sales_head.update(head_markup)
+            widths.append(len(head_plain))
             if lines:
                 sales_body.update("\n".join(markup for _plain, markup in lines))
                 widths += [len(plain) for plain, _markup in lines]
             else:
-                sales_body.update("  [dim]no sales in window[/]")
-                widths.append(len("  no sales in window"))
+                empty_plain, empty_markup = _SALES_EMPTY
+                sales_body.update(empty_markup)
+                widths.append(len(empty_plain))
 
         # ``WIDEN_HINTS`` names the fields the stats row shed; the bare
         # marker covers a row that overflowed with no field to shed.

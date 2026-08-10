@@ -1331,8 +1331,10 @@ cd /Library/Vibes/autopull && .venv/bin/python -m maxpane_dashboard --game surf 
   **Three fields render `--` on a healthy live run, and that is correct — do not file it as a bug.** `identities_written`, `nft_written` and `nft_transfers_24h` all have **no keyless producer in v1** (WP0 open issue 9: the verified IdentityMD source exposes only `totalSupply` and `identityAllowed`, with no written-hash counter; Blockscout serves a *lifetime* transfer count, not a 24h rate). WP4 pins this deliberately — `_nft_payload` passes `NftStats.written` through untouched and `tests/data/test_surf_manager.py::test_nft_stats_reach_the_payload_and_the_floor_stays_none` asserts `data["nft_written"] is None` *specifically* to stop someone "fixing" it later with the lifetime counter. So expect, verbatim from WP3's widgets:
 
   - `SurfHero` identity-gate box: `CLOSED` over `-- written` (`_fmt_count(None)` → `--`);
-  - `SurfNft` written line: `identities --/2000 written`;
-  - `SurfNft` stats line: `667 holders · -- transfers/24h · dev holds 3`.
+  - `SurfNft` stats line: `667 holders · -- transfers/24h · --/2000 written` — the written
+    count folded into this row on 2026-08-10, so the separate
+    `identities --/2000 written` line this checklist used to name no longer exists;
+  - `SurfNft` dev row, its own line since the same change: `dev holds 3 identities`.
 
   A run that shows `1/2000` or a transfers-per-day number is the finding worth reporting — it means a documented constant was hardcoded past the missing producer.
 

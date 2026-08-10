@@ -140,7 +140,11 @@ The table starts at 109 rather than running down to zero because narrower termin
 *more* markers, not the same ones: below 109 surf's `DEV ACTIVITY` marker changes wording
 to `‹ widen: time, kind, ETH` as the time and kind columns go too, and below 89 surf's
 `IDENTITY.MD` runs out of room to name its shed field beside the title and falls back to a
-bare `‹ widen`, then at 75 and below sheds `transfers/24h` as well. Every one of those is a
+bare `‹ widen`. It stays bare down to 76; at 75–74 the stats row sheds `transfers/24h` as
+well, and the shorter wording that names both — `‹ widen: 24h /2000`, 18 columns against
+25 — fits beside the title again, so the hint is *descriptive at a narrower terminal than
+the bare one it replaced*. Below 74 the floor line is what overflows, and it has no field
+to shed, so the marker is bare again. Every one of those is a
 panel saying what it dropped,
 which is the system working; the table lists the last few to go out, not every marker a
 narrow terminal can show.

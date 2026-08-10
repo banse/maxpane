@@ -95,6 +95,23 @@ def _painted(app, needle: str) -> tuple[str, str] | None:
     return None
 
 
+def _weight(app, needle: str) -> bool | None:
+    """``style.bold`` of the first composited segment containing *needle*.
+
+    ``None`` when the needle never reached the compositor, so "not bold" and
+    "not rendered" cannot be confused.
+
+    Separate from :func:`_painted` because bold is *not a colour*: ``_painted``
+    reads ``(fg, bg)`` only, so an emphasis assertion written through it alone
+    still passes with every ``[bold]`` deleted from the widget.
+    """
+    for strip in app.screen._compositor.render_strips():
+        for segment in strip:
+            if needle in segment.text and segment.style:
+                return bool(segment.style.bold)
+    return None
+
+
 def _none_payload(widget) -> dict:
     return {
         name: None
@@ -1351,6 +1368,13 @@ async def test_nft_a_real_floor_keeps_its_emphasis(theme_name):
     The v2 escape hatch renders ``floor 0.250 ETH`` in bold, and muting that
     too would be the wrong lesson from this change: it would hide the one
     value the row is for on the day a keyless source finally exists.
+
+    Emphasis here is **two** properties and the test has to read both.  For
+    one build it read only the colour: ``_painted`` returns ``(fg, bg)``, and
+    ``bold`` is a style attribute rather than a colour, so deleting ``[bold]``
+    from the real-floor branch while leaving its colour alone kept every
+    assertion below green -- the one property this test is named for was
+    unguarded.  :func:`_weight` reads the composited ``style.bold``.
     """
     widget = SurfNft()
     app = _ThemedHarness(widget, theme_name)
@@ -1363,6 +1387,18 @@ async def test_nft_a_real_floor_keeps_its_emphasis(theme_name):
         assert value and label and figure
         assert value[0] == figure[0], f"{theme_name}: the real floor was muted"
         assert value[0] != label[0], f"{theme_name}: level with its own label"
+
+        assert _weight(app, "0.250 ETH") is True, (
+            f"{theme_name}: the real floor reached the screen un-bolded -- it "
+            "is the colour of a figure without the weight of one"
+        )
+        assert _weight(app, "667") is True, (
+            f"{theme_name}: the reference figure is not bold either, so the "
+            "assertion above proves nothing about this panel"
+        )
+        assert _weight(app, "floor") is False, (
+            f"{theme_name}: the label went bold with its value"
+        )
 
 
 async def test_nft_sales_unavailable_vs_empty():
@@ -1437,6 +1473,56 @@ def test_nft_stats_budget_matches_what_the_markup_actually_renders():
         > len(variants["compact"])
         > len(variants["minimal"])
     )
+
+
+def test_nft_every_budget_string_matches_the_markup_beside_it():
+    """The stats row was the only pair pinned; these are all the others.
+
+    ``_dev_row``, ``_sale_line``, ``_floor_row`` and the sales block's fixed
+    rows each hand-pair a plain string with a markup one, and the plain half
+    is what ``_render_view`` puts into ``widths`` -- the list that decides
+    whether the bare marker lights for a row the tier ladder cannot shorten.
+    A pair that drifts measures one string and paints another, which is a clip
+    with the title claiming nothing was shed.
+
+    The fixed pairs are *discovered* from the module rather than listed, so a
+    row added later is covered without anyone remembering to come back here;
+    the count is asserted so the discovery cannot quietly find nothing and
+    pass.  Compared through Textual's own parser, never a hand-rolled tag
+    stripper, which would only agree with the widget by repeating its bug.
+    """
+    from textual.content import Content
+
+    from maxpane_dashboard.widgets.surf import nft as nft_mod
+    from maxpane_dashboard.widgets.surf._fmt import DASH
+
+    def check(pair, label):
+        plain, markup = pair
+        assert Content.from_markup(markup).plain == plain, (
+            f"{label}: budget {plain!r} != render "
+            f"{Content.from_markup(markup).plain!r}"
+        )
+
+    for dev in ("3", "1,234", DASH):
+        check(nft_mod._dev_row(dev), f"_dev_row({dev!r})")
+    for floor in (None, 0.25, 0.0, 1234.5):
+        check(nft_mod._floor_row(floor), f"_floor_row({floor!r})")
+    for sale in (
+        {"ts": 1786163591, "token_id": 1751, "eth": 0.18},
+        {"ts": None, "token_id": 10**40, "eth": 0.0},     # ??-?? and a long id
+    ):
+        check(nft_mod._sale_line(sale), f"_sale_line({sale!r})")
+
+    fixed = {
+        name: value
+        for name, value in vars(nft_mod).items()
+        if isinstance(value, tuple)
+        and len(value) == 2
+        and all(isinstance(half, str) for half in value)
+    }
+    assert len(fixed) >= 4, f"the sales block's fixed rows were not found: {fixed}"
+    for name, pair in fixed.items():
+        check(pair, name)
 
 
 def test_nft_every_widen_hint_names_text_the_tier_actually_dropped():
