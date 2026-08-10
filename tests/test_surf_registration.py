@@ -740,6 +740,118 @@ def test_the_documented_width_is_not_promised_to_clear_every_post() -> None:
         )
 
 
+#: Every surface that narrates the 3:2 -> 7:6 re-seam.  All three carried the
+#: same sentence, so all three carried the same lie.
+_SEAM_NARRATIVE_SURFACES = (
+    "CLAUDE.md",
+    "README.md",
+    "maxpane_dashboard/__main__.py",
+)
+
+#: The band where the new seam costs the announce feed its wrapped-post
+#: rendering: 3:2 gave the feed the 81 columns it needs from 135, 7:6 only from
+#: 151.  Spelled with an en dash to match the README's own width table.
+_FEED_REGRESSION_BAND = "135–150"
+
+#: Sentences that say the re-seam was free *everywhere*.  Each was true of the
+#: layout and false of the feed, and each is what final review flagged.
+_UNQUALIFIED_FREE_CLAIMS = (
+    "bought nothing",
+    "without a widget giving anything up",
+    "without a widget losing anything",
+    "Nothing was hidden, shortened or re-cut",
+    "Nothing was re-cut or hidden",
+    "Nothing was hidden or cut to get there",
+)
+
+
+def test_the_docs_do_not_call_the_re_seam_free_below_the_full_width() -> None:
+    """Moving the seam bought 24 columns app-wide and cost the feed a tier.
+
+    Measured, not assumed.  One column below the documented width every
+    marker still standing belongs to the dev-activity panel -- that is the
+    balanced-seam claim, and it is tested next door.  Eight columns below it,
+    at the width FWA calls full, a *second* panel is shedding: the announce
+    feed, which the 3:2 seam left clean from 135 and 7:6 leaves clean only
+    from 151.  So "nothing was given up" is true at and above the full width
+    and false for every terminal in between, and three documents said it
+    without the qualifier.
+
+    Bound in both directions.  If a future change clears the feed at the width
+    below, the first assertion fails and tells you to delete the qualifier
+    rather than leave three documents hedging something that stopped
+    happening.
+    """
+    harness = _surf_screen_harness()
+    full = harness.MEASURED_FULL_LAYOUT_COLUMNS
+
+    # The last marker at full-1 is the activity panel's alone...
+    assert asyncio.run(harness._markers_outside_the_activity_panel(full - 1)) == 0
+    # ...and below the band's top a second panel is shedding too.
+    assert asyncio.run(harness._markers_outside_the_activity_panel(full - 2)) > 0, (
+        "the seam no longer costs a second panel anything below the full "
+        "width -- drop the qualifier from CLAUDE.md, README.md and "
+        "__main__.py instead of leaving them hedging"
+    )
+
+    for name in _SEAM_NARRATIVE_SURFACES:
+        text = (REPO / name).read_text(encoding="utf-8")
+        for claim in _UNQUALIFIED_FREE_CLAIMS:
+            assert claim not in text, (
+                f"{name} says {claim!r} of the 3:2 -> 7:6 re-seam, which is "
+                f"false at {_FEED_REGRESSION_BAND} columns: the announce feed "
+                "renders one truncated line per post there where the old seam "
+                "wrapped them"
+            )
+        assert _FEED_REGRESSION_BAND in text, (
+            f"{name} narrates the re-seam without naming the "
+            f"{_FEED_REGRESSION_BAND} band it costs the announce feed"
+        )
+
+
+def test_the_readme_does_not_send_a_laptop_after_a_smaller_font() -> None:
+    """The forced font already clears the full layout; the README said it did not.
+
+    Derived, not written down: ``LAPTOP_COLUMNS_AT_THE_FORCED_FONT`` follows
+    ``__main__._DEFAULT_FONT_SIZE``, so this asserts the real relationship
+    between what the app forces and what the widest layout needs.  While the
+    former covers the latter, telling a reader to pass a smaller
+    ``--font-size`` to reach the full layout is false -- and the README said
+    exactly that 46 lines above the sentence saying the opposite.  It was true
+    for the width's 176 era and outlived it.
+
+    If the width ever climbs back past what the forced font gives, the first
+    assertion fails and the advice is required again.
+    """
+    from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
+
+    harness = _surf_screen_harness()
+    laptop = harness.LAPTOP_COLUMNS_AT_THE_FORCED_FONT
+    assert laptop >= FULL_LAYOUT_COLUMNS, (
+        f"the forced font size gives {laptop} columns and the widest layout "
+        f"needs {FULL_LAYOUT_COLUMNS}: the README's `--font-size` advice is "
+        "required again, so put it back rather than deleting this test"
+    )
+
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    for claim in (
+        "one tier short of the full layout",
+        "reaching it means passing a smaller",
+    ):
+        assert claim not in readme, (
+            f"README.md still says {claim!r} while {laptop} columns covers the "
+            f"{FULL_LAYOUT_COLUMNS} the full layout needs"
+        )
+    # ...and it still says so positively, in one sentence carrying both numbers.
+    assert any(
+        str(FULL_LAYOUT_COLUMNS) in para and str(laptop) in para
+        for para in readme.split("\n\n")
+    ), (
+        f"no README paragraph puts {FULL_LAYOUT_COLUMNS} and {laptop} together, "
+        "which is the sentence that tells a reader they need no --font-size"
+    )
+
+
 #: The two docs read as the *current* spec for this dashboard.  The files under
 #: ``docs/surf_work_packages/`` are deliberately excluded: they are build-time
 #: records of what each work package was asked to do, and rewriting history

@@ -148,8 +148,9 @@ only lever**: roughly 169 columns at 17 pt on a laptop screen, about 205 at
 14 pt. maxpane sets 17 pt on launch, so zooming out *beforehand* gets
 overwritten — pass `--font-size 13` (or export `MAXPANE_FONT_SIZE=13`) to
 change it, or `--font-size 0` to have maxpane leave your terminal alone
-entirely. At 17 pt a laptop lands at 169, one tier short of the full layout,
-so reaching it means passing a smaller `--font-size`.
+entirely. At 17 pt a laptop lands at 169, which already clears the 152 the
+full layout wants — you need `--font-size` for a smaller screen, not for the
+full layout.
 
 ### Checking your version
 
@@ -197,8 +198,14 @@ feed correctly truncates it and says so at any width (see the note under the tab
 152 is inside the ~169 columns a laptop gets at the 17 pt maxpane sets on launch, so the full
 layout is reachable without touching `--font-size`. It briefly was not: surf's number stood at 176
 for part of 2026-08-10, until the seam between its two columns moved from 3:2 to 7:6 and handed the
-announce feed exactly the share it needed instead of 24 columns more. Nothing was hidden or cut to
-get there — only the split moved.
+announce feed exactly the share it needed instead of 24 columns more. No panel was hidden and no
+field re-cut to get there — only the split moved — and at 152 and above nothing at all is given up.
+It is not free below that, though: the feed's share of the terminal fell with the seam, so between
+**135–150** columns the announce feed now prints one truncated line per post where the 3:2 seam
+still wrapped them whole. It lights `‹ widen` throughout that band and the table above lists it,
+which is the trade the move was worth making: the old seam bought those posts their wrapping at
+135–150 and bought the *layout* nothing, because the dev-activity rail stayed one tier down all
+the way to 176.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why

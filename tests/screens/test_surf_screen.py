@@ -1302,6 +1302,7 @@ async def test_the_activity_panel_re_tiers_when_the_terminal_is_resized():
 
 # -- the pinned full-layout width ---------------------------------------
 
+from maxpane_dashboard.__main__ import _DEFAULT_FONT_SIZE  # noqa: E402
 from maxpane_dashboard.screens.surf import SURF_FULL_LAYOUT_COLUMNS
 
 
@@ -1405,10 +1406,25 @@ async def _markers_outside_the_activity_panel(width: int) -> int:
 # PANEL = 135``, describing the 3:2 seam with 41 columns of daylight between
 # them. Both moved with the seam.
 
-#: Columns a laptop gets at the 17 pt ``__main__`` forces on launch. The whole
-#: point of the seam re-measurement: at 3:2 the full layout needed 176 and was
-#: therefore unreachable here without ``--font-size``.
-LAPTOP_COLUMNS_AT_THE_FORCED_FONT = 169
+#: Column-points a maximized laptop terminal has to spend: columns times font
+#: size, which is very nearly constant because the window is already as wide as
+#: the display. Measured 169 columns at 17 pt, and the README's other quoted
+#: pair falls out of the same number -- 2873 / 14 == 205.2, i.e. the "about 205
+#: at 14 pt" it prints two lines later.
+LAPTOP_COLUMN_POINTS = 2873
+
+#: Columns a laptop gets at the font size ``__main__`` forces on launch. The
+#: whole point of the seam re-measurement: at 3:2 the full layout needed 176 and
+#: was therefore unreachable here without ``--font-size``.
+#:
+#: **Derived from ``_DEFAULT_FONT_SIZE``, not written down.** It was the bare
+#: literal ``169`` until final review I-3, which left the premise of
+#: ``test_the_full_layout_is_reachable_at_the_forced_font_size`` unpinned:
+#: raising the forced size to 24 pt would have dropped a real laptop to 119
+#: columns while the test happily went on rendering at 169 and passing, with
+#: the claim in its own name false. Now the same edit moves this number and
+#: the test measures the width the app actually produces.
+LAPTOP_COLUMNS_AT_THE_FORCED_FONT = LAPTOP_COLUMN_POINTS // _DEFAULT_FONT_SIZE
 
 #: The narrowest width at which **no** surf panel composites a ``‹ widen``,
 #: swept one column at a time over the real screen and pinned in both
@@ -1473,6 +1489,11 @@ async def test_the_full_layout_is_reachable_at_the_forced_font_size():
     panel one tier down, permanently, on the font size the app itself picks.
     A "full layout" no user reaches without passing ``--font-size 12`` is not
     a full layout, it is a footnote.
+
+    The width is *derived* from ``_DEFAULT_FONT_SIZE`` (see
+    ``LAPTOP_COLUMNS_AT_THE_FORCED_FONT``), so changing what the app forces
+    moves what this renders at instead of leaving the claim in the name
+    quietly false.
     """
     assert await _widen_markers(LAPTOP_COLUMNS_AT_THE_FORCED_FONT) == 0, (
         f"a panel is still shedding fields at {LAPTOP_COLUMNS_AT_THE_FORCED_FONT} "
@@ -1788,6 +1809,12 @@ async def test_the_hero_marker_is_dark_on_every_terminal_anyone_owns():
 # -- the activity panel's own width tiers (final-review I-1) -------------
 
 from maxpane_dashboard.widgets.surf.activity import (  # noqa: E402
+    FULL_WIDTH as ACTIVITY_FULL_WIDTH,
+)
+from maxpane_dashboard.widgets.surf.activity import (  # noqa: E402
+    _tier_for as _activity_tier_for,
+)
+from maxpane_dashboard.widgets.surf.activity import (  # noqa: E402
     WIDEN_HINTS as ACTIVITY_WIDEN_HINTS,
 )
 
@@ -1838,6 +1865,148 @@ async def _activity_panel(width: int) -> str:
         await screen._do_refresh()
         await pilot.pause()
         return _region_text(app, screen.query_one(SurfDevActivity))
+
+
+#: The two quantities the captured signal details carry, spelled here because
+#: every partial form of them below is derived from these strings rather than
+#: typed out. ``_sample_data`` builds the details that contain them.
+_SIGNAL_QUANTITIES = ("114,367", "15,745")
+
+
+async def _signals_panel(width: int) -> str:
+    """Composited text of the signals panel's own rectangle at *width*."""
+    manager = _FakeManager(payload=_widen_sweep_payload())
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        return _region_text(app, screen.query_one(SurfSignals))
+
+
+async def test_a_signal_detail_is_never_cut_through_a_number():
+    """``mint 114,…`` is the defect; ``mint …`` is the fix (final review I-3).
+
+    A detector detail is free text quoted from the announce channel, so it is
+    truncated with a visible ``…`` at every width -- that part is deliberate
+    and documented, and it is why this panel's ``‹ widen`` deliberately does
+    *not* light for it. What is not allowed is where the cut lands: at 100
+    columns it fell inside the bridge row's ``114,367`` and the burn row's
+    ``15,745``, putting ``mint 114,…`` and ``burn 15,…`` on screen. A reader
+    cannot tell 114 thousand from 114 million there, and nothing marks it.
+
+    The house rule is to shed a whole field instead, which is exactly the fix
+    the hero took for ``burned 15,74…``. Swept across every width where the
+    panel is narrow enough to cut, so it pins the *rule* and not one width.
+
+    Positively bound too: the details are still rendered and still truncated
+    here, so a widget that stopped showing details at all would not pass.
+    """
+    import re
+
+    # 92 is the narrowest width where the bridge row still has a detail budget
+    # at all (below it the head renders alone, which is the panel's own
+    # documented floor and not a cut).
+    for width in range(92, 130):
+        panel = await _signals_panel(width)
+        assert "…" in panel, f"nothing is truncated at {width} -- widen the sweep"
+        assert re.search(r"BRIDGE STAGE FIRED .* · \S", panel), (
+            f"the bridge row lost its detail entirely at {width} columns"
+        )
+        for quantity in _SIGNAL_QUANTITIES:
+            for cut in range(2, len(quantity)):
+                partial = f"{quantity[:cut]}…"
+                assert partial not in panel, (
+                    f"{partial!r} at {width} columns: the detail was cut "
+                    f"through {quantity}, which reads as a different number"
+                )
+
+
+async def test_a_whole_quantity_still_survives_where_it_fits():
+    """The other half: backing the cut off must not swallow an intact number.
+
+    Without this, dropping every trailing digit run unconditionally would
+    pass the test above and quietly cost the reader a figure that fitted.
+    """
+    wide = await _signals_panel(MEASURED_FULL_LAYOUT_COLUMNS)
+    assert "15,745" in wide, (
+        "the burn row's quantity no longer survives whole at the full width"
+    )
+
+
+async def _activity_usable_columns(width: int) -> int:
+    """Columns the activity log really has to spend, from a real render.
+
+    This is the number ``_tier_for`` selects on -- ``RichLog``'s scrollable
+    content region, i.e. the rail minus the panel's padding, the log's padding
+    and the log's permanent scrollbar gutter -- not the panel's region width.
+    """
+    from textual.widgets import RichLog
+
+    manager = _FakeManager(payload=_widen_sweep_payload())
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        panel = screen.query_one(SurfDevActivity)
+        return panel._log_width(panel.query_one("#surf-activity-log", RichLog))
+
+
+async def test_the_activity_rail_reaches_full_width_exactly_at_the_pinned_width():
+    """Why 152 is the floor: the rail hits ``FULL_WIDTH`` there and not before.
+
+    The rail is ``6fr`` of the 7:6 seam, so it gets the columns the feed's
+    ``floor(7W/13)`` leaves -- ``ceil(6W/13)`` -- and the log spends five of
+    them on two paddings and a permanent scrollbar gutter. That makes
+    ``ceil(6W/13) - 5`` usable columns, and ``>= FULL_WIDTH`` first holds at
+    ``W = 152``: ``ceil(912/13) - 5 == 71 - 5 == 66``, which *is*
+    ``FULL_WIDTH``. One column less and it is 65. That exact identity is why
+    the measured floor is 152 rather than a number anyone chose.
+
+    ``widgets/surf/activity.py`` documented this as ``0.46 * terminal - 4``,
+    i.e. 62/67/74 at 143/152/169 against the real 61/66/73 -- an off-by-one
+    that also hid the identity, because 67 is not ``FULL_WIDTH`` and 66 is
+    (final review I-2). The arithmetic below is written out independently of
+    the widget so a widget that starts lying agrees with nothing.
+    """
+    from math import ceil
+
+    for terminal in (120, 135, 143, 150,
+                     MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL,
+                     MEASURED_FULL_LAYOUT_COLUMNS, 160,
+                     LAPTOP_COLUMNS_AT_THE_FORCED_FONT, 200):
+        assert await _activity_usable_columns(terminal) == ceil(6 * terminal / 13) - 5, (
+            f"the rail's usable width at {terminal} columns is not "
+            "ceil(6W/13) - 5 any more -- re-derive the note in "
+            "widgets/surf/activity.py::_tier_for before trusting it"
+        )
+
+    # The identity itself, both directions, against the widget's own constant.
+    assert await _activity_usable_columns(MEASURED_FULL_LAYOUT_COLUMNS) == (
+        ACTIVITY_FULL_WIDTH
+    ), "the pinned width no longer hands the rail exactly its full row"
+    assert await _activity_usable_columns(MEASURED_FULL_LAYOUT_COLUMNS - 1) == (
+        ACTIVITY_FULL_WIDTH - 1
+    ), "the width below no longer falls one column short -- re-measure"
+
+    # ...and the note a reader lands on quotes the widths that were measured.
+    # Derived from the renders above, so re-deriving the formula wrong a second
+    # time reddens this instead of shipping.
+    doc = " ".join(_activity_tier_for.__doc__.split())
+    assert "0.46 * terminal - 4" not in doc, (
+        "the rail's usable width is ceil(6W/13) - 5; 0.46W - 4 is the "
+        "approximation that put 67 where the measured 66 == FULL_WIDTH is"
+    )
+    for terminal in (143, MEASURED_FULL_LAYOUT_COLUMNS,
+                     LAPTOP_COLUMNS_AT_THE_FORCED_FONT):
+        usable = await _activity_usable_columns(terminal)
+        assert f"{usable} at {terminal}" in doc, (
+            f"_tier_for's note does not say the rail has {usable} columns at "
+            f"{terminal}, which is what the screen renders"
+        )
 
 
 async def test_the_activity_panel_shows_every_column_at_its_own_clean_width():

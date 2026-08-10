@@ -32,15 +32,23 @@ _DEFAULT_FONT_SIZE = 17
 #: this number had ever gone **up**.
 #:
 #: And 152 since later the same day -- the first time it has come back **down**
-#: without a widget losing anything.  Nothing was re-cut or hidden: only the
-#: column *seam* moved, 3:2 -> 7:6.  The two binding panels are the announce
-#: feed (81 columns) and the dev-activity rail (71), so the narrowest terminal
-#: that satisfies both is 81 + 71 = 152, and a 3:2 seam simply handed the feed
-#: 0.60 W against the 0.538 it needed -- the rail reached 71 only at 176, and
-#: those 24 columns bought nothing.  Surf is still the dashboard that sets this
-#: number; FWA still clears every marker at 143.  Pinned in both directions
-#: against the real screen as ``screens/surf.py::SURF_FULL_LAYOUT_COLUMNS``:
-#: 151 lights one marker, 152 lights none.
+#: with no panel hidden and no field re-cut: only the column *seam* moved,
+#: 3:2 -> 7:6.  The two binding panels are the announce feed (81 columns) and
+#: the dev-activity rail (71), so the narrowest terminal that satisfies both is
+#: 81 + 71 = 152, and a 3:2 seam simply handed the feed 0.60 W against the
+#: 0.538 it needed -- the rail reached 71 only at 176.  Surf is still the
+#: dashboard that sets this number; FWA still clears every marker at 143.
+#: Pinned in both directions against the real screen as
+#: ``screens/surf.py::SURF_FULL_LAYOUT_COLUMNS``: 151 lights one marker, 152
+#: lights none.
+#:
+#: Free at and above 152, and **not below it**.  The feed's share of the
+#: terminal fell with the seam too, so it reaches its 81 columns at 151 where
+#: 3:2 reached them at 135: across **135–150** the announce feed renders one
+#: truncated line per post where the old seam wrapped them, and says so with
+#: its own ``‹ widen``.  Those 24 columns therefore bought the feed a wrapping
+#: tier in that band -- and the layout nothing, which is the trade this number
+#: records.
 #:
 #: Font size is the only lever most people have over this -- a window is
 #: already as wide as the display -- and at the forced 17 pt a laptop gets

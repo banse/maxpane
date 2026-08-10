@@ -161,12 +161,23 @@ def _tier_for(width: int) -> str:
 
     The real slot is the screen's right rail, 6fr of a 7:6 split minus this
     widget's padding, the log's padding and the log's permanent scrollbar
-    gutter: ``0.46 * terminal - 4`` usable columns, i.e. 62 at 143, 67 -- the
-    ``full`` tier at last -- at 152, and 74 at 169.  The rail was ``2fr`` of a
-    3:2 split until the seam moved on 2026-08-10, where the same widths gave
-    53/56/63 and ``full`` arrived only at 176; that 24-column gap is exactly
-    what re-seaming to 7:6 removed, and it is why this panel is the one that
-    sets ``FULL_LAYOUT_COLUMNS``.  It was a ``3fr`` slot of
+    gutter.  The feed takes ``floor(7W/13)`` and leaves the rail
+    ``ceil(6W/13)``, so this widget has **``ceil(6W/13) - 5``** usable
+    columns: 61 at 143, 65 at 151, 66 at 152 and 73 at 169.  The 66 is not a
+    coincidence -- it is :data:`FULL_WIDTH` exactly, and ``ceil(6W/13) - 5 >=
+    66`` first holds at ``W = 152``, which is the whole reason 152 is the
+    app's floor rather than a number someone picked.  Measured on the real
+    screen and pinned by
+    ``test_the_activity_rail_reaches_full_width_exactly_at_the_pinned_width``;
+    this note carried a ``0.46``-slope approximation of it (62/67/74) until
+    final review I-2 -- off by one everywhere that matters, and it rounded the
+    identity out of sight.
+
+    The rail was ``2fr`` of a 3:2 split until the seam moved on 2026-08-10,
+    i.e. ``ceil(2W/5) - 5``, where the same widths gave 53/56/63 and ``full``
+    arrived only at 176; that 24-column gap is exactly what re-seaming to 7:6
+    removed, and it is why this panel is the one that sets
+    ``FULL_LAYOUT_COLUMNS``.  It was a ``3fr`` slot of
     its own until 2026-08-10, where those same widths gave 80/96/101; the
     panel traded columns for being on screen at the same time as the announce
     feed instead of behind a ``c`` swap, and the narrower tier it now selects

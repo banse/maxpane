@@ -41,7 +41,9 @@ content and **51 usable**::
 The head is unshrinkable (glyph + full label + state word + age).  Whatever
 is left after it and the ``· `` separator (``SEPARATOR_COLS``) is the detail
 budget -- **17-18 columns worst case at the pinned width, ~37 on a short
-label** -- and the detail is cut to fit with a visible ``…``.
+label** -- and the detail is cut to fit with a visible ``…`` by
+``_cut_detail``, which never lands the cut inside a number: a quantity is shed
+whole rather than rendered as ``mint 114,…``.
 
 ``clipped``, which lights ``‹ widen`` in the title, is therefore set **only
 when the head itself does not fit**.  Testing the whole row would light the
@@ -102,6 +104,47 @@ MIN_DETAIL_COLS = 6
 #: The state vocabulary this widget knows.  Anything else -- including
 #: ``None`` -- is the unknown row, which is never OK (PRD §6.1).
 _KNOWN_STATES = ("fired", "watch", "ok")
+
+#: Characters a written quantity is made of, for the mid-number guard in
+#: :func:`_cut_detail`.  Group separators are in here as well as digits: a cut
+#: after the comma of ``114,367`` leaves ``114,…``, which is no better than
+#: ``114…``.
+_NUMBER_CHARS = "0123456789,."
+
+
+def _cut_detail(text: str, budget: int) -> str:
+    """Fit *text* into *budget* columns with a visible ``…``, never mid-number.
+
+    Truncating the detail is normal operation here (see the module docstring):
+    it quotes announce-channel prose that routinely runs 80-105 columns against
+    a panel with ~51, and it is why this panel's ``‹ widen`` is reserved for a
+    head that does not fit.  *Where* the cut lands is the part that is not free
+    -- ``mint 114,…`` renders 114,367 as something a reader cannot tell from
+    114 thousand or 114 million, with nothing on screen marking the loss.
+
+    So when the cut falls *between* two number characters -- the last kept and
+    the first dropped one are both digits or group separators -- the whole
+    trailing run goes with it: ``mint 114,367 IMD`` becomes ``mint…`` rather
+    than ``mint 114,…`` or ``mint 114…``.  Both spellings were reachable: the
+    budget that keeps ``114`` drops a *comma* first, so testing only the
+    dropped character for ``isdigit()`` misses exactly one budget per figure.
+
+    A quantity that fits is untouched -- ``burn 15,745 IMD`` cut after the
+    figure keeps it whole -- because the guard fires only on a cut *through* a
+    number.  This is the trade the hero made when it shed a whole field rather
+    than render ``burned 15,74…``, and the same house rule: a number is never
+    cut mid-digits.
+
+    Returns ``""`` when nothing but the number would have survived; the caller
+    renders the head alone rather than a bare ``…``.
+    """
+    if len(text) <= budget:
+        return text
+    kept = text[: budget - 1]
+    if kept and kept[-1] in _NUMBER_CHARS and text[budget - 1] in _NUMBER_CHARS:
+        kept = kept.rstrip(_NUMBER_CHARS)
+    kept = kept.rstrip()
+    return f"{kept}…" if kept else ""
 
 #: The six detector labels, PRD §3 spelling, PRD §3 order.  **Interface**:
 #: the screen tests and the app-level acceptance tests assert these exact
@@ -178,8 +221,12 @@ def _fmt_signal_row(label: str, state, detail, age_s, available=None) -> str:
         budget = int(available) - visible_len(head) - SEPARATOR_COLS
         if budget < MIN_DETAIL_COLS:
             return head
-        if len(flat) > budget:
-            flat = flat[: budget - 1].rstrip() + "…"
+        flat = _cut_detail(flat, budget)
+        if not flat:
+            # Only a bisected number would have fitted: the head renders
+            # alone, which is what this widget already does for a budget
+            # below MIN_DETAIL_COLS -- never a bare "…".
+            return head
 
     return f"{head} [dim]· {safe_markup(flat)}[/]"
 

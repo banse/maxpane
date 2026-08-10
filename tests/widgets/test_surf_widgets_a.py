@@ -453,6 +453,7 @@ from maxpane_dashboard.widgets.surf.signals import (  # noqa: E402
     SEPARATOR_COLS,
     WIDEN_HINT,
     SurfSignals,
+    _cut_detail,
     _fmt_signal_row,
     _head,
 )
@@ -664,6 +665,50 @@ async def test_signals_narrow_width_announces_clipping():
         app2._widget.update_data(**_FULL_SIGNALS)
         await pilot.pause()
         assert WIDEN_HINT not in _screen_text(app2)
+
+
+#: The real bridge-row detail, whose quantity the old cut bisected.
+_BRIDGE_DETAIL = "mint 114,367 IMD → frenpet.eth"
+
+
+def test_the_detail_cut_never_lands_inside_a_number():
+    """Every budget, one real detail: no proper prefix of the figure survives.
+
+    Swept rather than spot-checked, because the defect was one specific budget
+    landing one specific way -- ``mint 114,…`` at 100 terminal columns. The
+    property is the fix: at *no* budget may the panel show part of a number
+    and stop, because 114 reads as a different quantity from 114,367 and
+    nothing on the row marks the cut.
+    """
+    partials = tuple("114,367"[:cut] for cut in range(1, len("114,367")))
+    for budget in range(MIN_DETAIL_COLS, len(_BRIDGE_DETAIL) + 4):
+        cut = _cut_detail(_BRIDGE_DETAIL, budget)
+        assert len(cut) <= max(budget, 0), (budget, cut)
+        assert cut != "…", f"a bare ellipsis at budget {budget}"
+        if cut.endswith("…"):
+            assert not cut[:-1].endswith(partials), (
+                f"budget {budget} rendered {cut!r}, which is 114,367 cut "
+                "through the middle"
+            )
+    # The sweep is only worth something if it covers the budgets that used to
+    # bisect the figure -- one dropping a digit, one dropping the comma.
+    assert _cut_detail(_BRIDGE_DETAIL, 10) == "mint…"
+    assert _cut_detail(_BRIDGE_DETAIL, 9) == "mint…"
+
+
+def test_the_detail_cut_keeps_a_number_that_fits():
+    """The other direction: an intact quantity is never shed for the guard.
+
+    ``_cut_detail`` fires only on a cut *through* digits. A cut that lands
+    after the figure keeps it whole -- without this, "drop every trailing
+    number" would satisfy the sweep above while costing the reader figures
+    that fitted.
+    """
+    detail = "supply flat · last: burn 15,745 IMD"
+    assert _cut_detail(detail, len(detail)) == detail          # nothing to do
+    assert _cut_detail(detail, 32) == "supply flat · last: burn 15,745…"
+    # ...and one column narrower the cut falls inside the figure, so it goes.
+    assert _cut_detail(detail, 31) == "supply flat · last: burn…"
 
 
 def test_signals_row_truncation_is_pure_and_keeps_the_head():

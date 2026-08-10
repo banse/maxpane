@@ -154,15 +154,23 @@ first time it had gone **up** and the first time a dashboard other than FWA
 set it. Widths in between are not clipping: the panel names the columns it shed.
 
 Later the same day the seam itself moved, **3:2 → 7:6**, and the number came
-back **down: 176 → 152** — the first time it has fallen without a widget
-giving anything up. Nothing was hidden, shortened or re-cut; only the split
-between the two columns changed. The two binding panels are the announce feed
-(81 columns) and the dev-activity rail (71), so 81 + 71 = 152 is the
-arithmetic floor, and 3:2 had been handing the feed 0.60 W against the 0.538
-it needed — the rail only reached 71 at 176, so those 24 columns bought
-nothing. The full record, then: **198 → 172 → 143 → 176 → 152**, with FWA
-setting the first three and surf the last two. 152 is inside the ~169 a laptop
-gets at the forced 17 pt, so the full layout stopped requiring `--font-size`.
+back **down: 176 → 152** — the first time it has fallen without a panel being
+hidden or a field re-cut; only the split between the two columns changed. The
+two binding panels are the announce feed (81 columns) and the dev-activity
+rail (71), so 81 + 71 = 152 is the arithmetic floor, and 3:2 had been handing
+the feed 0.60 W against the 0.538 it needed — the rail only reached 71 at 176.
+
+**The move is free at and above 152, and not below it.** The feed's share fell
+with the seam, so it now reaches its 81 columns at 151 where 3:2 reached them
+at 135: between **135–150** columns the announce feed prints one truncated line
+per post where the old seam still wrapped them, and lights `‹ widen` to say so
+(README's width table lists it). Measured on the real screen, whole-screen
+marker counts at 135/143/150 went 1 → 2. So those 24 columns did buy something
+— the feed its wrapping tier in that band — and they bought the *layout*
+nothing, which is why trading them for 152 was right. The record, then:
+**198 → 172 → 143 → 176 → 152**, with FWA setting the first three and surf the
+last two. 152 is inside the ~169 a laptop gets at the forced 17 pt, so the full
+layout stopped requiring `--font-size`.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`.
