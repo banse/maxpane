@@ -200,15 +200,17 @@ def _tier_for(width: int) -> str:
     identity was load-bearing.  It is gone on purpose.  Sizing the wallet and
     kind cells to the producer's real vocabularies took the row 66 -> 58 (see
     the column budget above), so the panel now clears seven columns *below*
-    ``SurfFeed``, which is the binding constraint again.  Reconciling the
-    documented floor with that is a step of its own; this module deliberately
-    quotes no floor of the app's.
+    ``SurfFeed``, which is the binding constraint again.  That reconciliation
+    has since landed -- the surf screen documents 142 and the app 143, FWA's
+    number -- but this module still deliberately quotes no floor of the app's:
+    it is not this panel's to set any more, and it was the identity between
+    the two that made the last one rot.
 
     The rail was ``2fr`` of a 3:2 split until the seam moved on 2026-08-10,
     i.e. ``ceil(2W/5) - 5``, where the same widths gave 53/56/63 and ``full``
     arrived only at 176; that 24-column gap is exactly what re-seaming to 7:6
-    removed, and it is why this panel is the one that sets
-    ``FULL_LAYOUT_COLUMNS``.  It was a ``3fr`` slot of
+    removed, and it is why this panel set ``FULL_LAYOUT_COLUMNS`` for as long
+    as it did.  It no longer does.  It was a ``3fr`` slot of
     its own until 2026-08-10, where those same widths gave 80/96/101; the
     panel traded columns for being on screen at the same time as the announce
     feed instead of behind a ``c`` swap, and the narrower tier it now selects

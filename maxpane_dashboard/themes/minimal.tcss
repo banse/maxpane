@@ -1955,17 +1955,26 @@ SurfScreen #middle-row {
  * the bottom row uses.
  *
  * The seam is measured, not chosen. The left column's binding panel is the
- * feed (81 columns before it starts breaking a post); the right column's is
- * `SurfDevActivity` (71 columns of rail before it sheds a field). The
- * narrowest terminal that satisfies both is 81 + 71 = 152, and only a seam
- * near 81:71 collects it. This was `3fr`/`2fr` until 2026-08-10, which hands
- * the feed 0.60 W against the 0.538 it needs, so the rail reached 71 columns
- * only at 176 -- 24 columns wider than the layout requires and past the ~169
- * a laptop gets at the 17 pt `__main__` forces, i.e. the full layout was
- * unreachable at the app's own font size. Swept seam by seam over the real
- * screen (the table is in tests/screens/test_surf_screen.py): 3:2 -> 176,
- * 5:3 -> 187, 7:5 -> 169, 4:3 -> 164, 6:5 -> 155, 7:6 -> 152, 1:1 -> 162.
- * 152 is the floor; below ~1.14 the feed binds again and it climbs back. */
+ * feed (the columns it needs before it starts breaking a post); the right
+ * column's is `SurfDevActivity` (the rail it needs before it sheds a field).
+ * The narrowest terminal serving both is their sum, and only a seam near
+ * their ratio collects it.
+ *
+ * When 7:6 was picked those needs were 81 and 71, summing to 152. This was
+ * `3fr`/`2fr` until 2026-08-10, which hands the feed 0.60 W against the 0.538
+ * it needed, so the rail reached 71 columns only at 176 -- 24 columns wider
+ * than the layout required and past the ~169 a laptop gets at the 17 pt
+ * `__main__` forces, i.e. the full layout was unreachable at the app's own
+ * font size.
+ *
+ * Both needs have since fallen -- the feed to 76 columns, the rail to 63 --
+ * so the sum is 139 and 7:6 collects it at 142. Re-swept seam by seam over
+ * the real screen at the current widget widths (table in
+ * tests/screens/test_surf_screen.py): 3:2 -> 156, 5:3 -> 166, 7:5 -> 149,
+ * 4:3 -> 145, 5:4 -> 140, 11:9 -> 139, 7:6 -> 142, 1:1 -> 152. 139 is the
+ * floor now; 7:6 sits three columns above it, and those three columns buy
+ * nothing a user sees, because FWA's 143 is what the app documents. Leave
+ * the seam alone until one of the two needs moves again. */
 SurfFeed {
     width: 7fr;
     padding: 0 1;

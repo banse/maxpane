@@ -14,18 +14,31 @@ Layout: three content rows, every widget on screen at once::
 Both rows below the hero are split 7:6 on the same seam, so the two rows
 read as one grid rather than two unrelated bands.
 
-**The seam is a measurement.** It was 3:2 until 2026-08-10. The left
-column's binding panel is ``SurfFeed`` (81 columns before it breaks a post),
-the right column's is ``SurfDevActivity`` (71 columns of rail before it
-sheds a field), so the narrowest terminal serving both is 81 + 71 = 152 --
-but only a seam near 81:71 collects it. 3:2 hands the feed 0.60 W against
-the 0.538 it needs, so the rail reached 71 only at 176: 24 columns of waste,
-and past the ~169 a laptop gets at the 17 pt ``__main__`` forces on launch,
-i.e. the full layout was unreachable at the app's own font size. Every
-candidate seam was swept over the real screen (5:3 187 · 3:2 176 · 7:5 169 ·
-4:3 164 · 6:5 155 · 7:6 152 · 1:1 162); 152 is the floor, four seams reach
-it, 7:6 is the simplest. The table and both pins live in
-``tests/screens/test_surf_screen.py``.
+**The seam is a measurement, and both panels it balances have since got
+narrower.** It was 3:2 until 2026-08-10. The left column's binding panel is
+``SurfFeed``, the right column's is ``SurfDevActivity``, and what each needs
+is what the seam has to serve.
+
+*When 7:6 was chosen*, those needs were 81 and 71 columns, so the narrowest
+terminal serving both was 81 + 71 = 152 and only a seam near 81:71 collected
+it: 3:2 handed the feed 0.60 W against the 0.538 it needed, so the rail
+reached 71 only at 176 -- 24 columns of waste, and past the ~169 a laptop
+gets at the 17 pt ``__main__`` forces on launch, i.e. the full layout was
+unreachable at the app's own font size. Swept over the real screen, 152 was
+the floor and four seams reached it; 7:6 was the simplest.
+
+*Both needs then fell.* ``feed.FULL_TEXT_WIDTH`` came down 76 -> 71 (the feed
+now wraps in **76** columns of its own) and the activity row's cells were
+sized to the vocabularies their producer really emits (the rail now sheds a
+field below **63**). 76 + 63 = 139 is the floor today, collected by a seam
+near 76:63 -- re-swept over the real screen, table in
+``tests/screens/test_surf_screen.py``. **7:6 collects it at 142**, three
+columns above that floor and one *below* FWA's 143, which is what
+``__main__.FULL_LAYOUT_COLUMNS`` documents for the app as a whole. Those
+three columns are therefore not worth a re-seam today: spending them would
+not move a single number a user sees. The seam stays 7:6, on record, with
+the arithmetic that would justify moving it written down for whenever the
+feed's or the rail's need next changes.
 
 **Nothing is hidden.** Until 2026-08-10 the announce feed and the
 dev-activity panel shared the middle-left slot and ``c`` swapped them, which
@@ -173,10 +186,18 @@ ACTIVITY_MIN_HEIGHT = 7
 
 #: Measured against composited output, not estimated -- see tests.
 #:
-#: Reconciled to the measured **152** on 2026-08-10, re-swept column by column
-#: before the constant moved: 151 lights exactly one marker (the activity
-#: panel's), 152 lights none, and nothing above it lights one either. The
-#: number is quoted by ``__main__.FULL_LAYOUT_COLUMNS``, the ``--font-size``
+#: Reconciled to the measured **142** on 2026-08-10, re-swept column by column
+#: before the constant moved: 141 lights exactly one marker, 142 lights none,
+#: and every width from 142 to 200 lights none either.
+#:
+#: **The binding panel changed hands with this measurement.** Through the 176
+#: and 152 eras the last marker standing was ``SurfDevActivity``'s and the
+#: feed was clean well below it; sizing the activity row's cells to the
+#: vocabularies their producer emits took that panel's full row layout 66 ->
+#: 58, so it now clears from a **135**-column terminal and the marker at 141
+#: is the **announce feed's**. Any statement of the form "the activity panel
+#: is the one still asking for width" is from the old regime and is false.
+#: The number is quoted by ``__main__.FULL_LAYOUT_COLUMNS``, the ``--font-size``
 #: help text, the README width table and CLAUDE.md, and all five now agree.
 #: ``tests/screens/test_surf_screen.MEASURED_FULL_LAYOUT_COLUMNS`` holds the
 #: same number as an **independent literal** and pins it to the real screen in
@@ -186,34 +207,46 @@ ACTIVITY_MIN_HEIGHT = 7
 #: *below* it would clip, which is what
 #: ``test_the_documented_width_still_covers_the_measured_one`` forbids.
 #:
-#: The history, because the number has moved three times in three days. It
-#: was 135
-#: while ``SurfDevActivity`` had a ``3fr`` slot of its own (shared with the
-#: feed, behind a ``c`` swap that no longer exists). The three-row restructure
-#: traded that slot for a share of the right rail and the number went to 176 --
-#: not because the panel needs 176 columns, but because a **3:2** seam gives
-#: the rail only ``0.4 * W`` and the rail needs 71. Re-seaming to **7:6** hands
-#: the feed exactly the 0.538 it needs and the rail the rest, and 81 + 71 = 152
-#: falls out -- so the number came back **down**, 176 -> 152, without hiding
-#: anything. The whole seam sweep is in the screen docstring and, with the
-#: losing candidates, in the test module.
+#: The history, because the number has moved four times in three days:
+#: **135 -> 176 -> 152 -> 142**.
 #:
-#: 152 is inside the ~169 columns a laptop gets at the forced 17 pt, which was
-#: the point of re-seaming: at 176 the full layout was unreachable at the
-#: font size the app itself picks, and ``--font-size 12`` was the only way in.
+#: It was 135 while ``SurfDevActivity`` had a ``3fr`` slot of its own (shared
+#: with the feed, behind a ``c`` swap that no longer exists). The three-row
+#: restructure traded that slot for a share of the right rail and the number
+#: went to 176 -- not because the panel needs 176 columns, but because a
+#: **3:2** seam gives the rail only ``0.4 * W`` and the rail then needed 71.
+#: Re-seaming to **7:6** handed the feed the 0.538 it needed and the rail the
+#: rest, and 81 + 71 = 152 fell out -- the number came back **down**, 176 ->
+#: 152, without hiding anything.
+#:
+#: 142 is the same kind of move made on the other side of the seam: the panels
+#: got narrower rather than the split moving. ``feed.FULL_TEXT_WIDTH`` 76 -> 71
+#: took the feed's own need 81 -> 76, and the activity row's wallet and kind
+#: cells sized to ``{"dev", "ops"}`` and ``DEV_TX_KINDS`` took the rail's 71 ->
+#: 63. 76 + 63 = 139 is the floor a seam near 76:63 would collect; the settled
+#: **7:6** collects 142, three columns above it. Not worth re-seaming for:
+#: FWA's 143 is what the app documents, so those three columns buy nothing a
+#: user could see. The whole seam sweep is in the screen docstring and, with
+#: the losing candidates, in the test module.
+#:
+#: 142 is inside the ~169 columns a laptop gets at the forced 17 pt, as 152
+#: was; that headroom was the point of re-seaming, because at 176 the full
+#: layout was unreachable at the font size the app itself picks and
+#: ``--font-size 12`` was the only way in.
 #:
 #: The measured number deliberately EXCLUDES posts carrying an inherently
 #: unbreakable token (a URL glued to a raw tx hash, e.g. by a trailing
 #: period with no space -- the real nonce-13 capture's link is 91 columns).
 #: SurfFeed correctly truncates such a token and lights its own ``‹ widen``;
 #: *this particular capture* clears at 216 (194 before the re-seam, the feed
-#: being narrower now), and the next real post linking a transaction
+#: being narrower now -- unchanged by the 152 -> 142 move, which took nothing
+#: from the feed's column), and the next real post linking a transaction
 #: reproduces the shape at whatever width its own token needs. A fixture
 #: containing one therefore cannot be what "full layout" is measured against
 #: -- see ``test_a_linked_post_advertises_widen_at_the_full_layout_width``.
 #: Do not raise this toward 216 to silence a linked post's marker: that
 #: marker is correct, and 216 is a "full layout" nobody could reach.
-SURF_FULL_LAYOUT_COLUMNS = 152
+SURF_FULL_LAYOUT_COLUMNS = 142
 
 
 # -- format helpers ----------------------------------------------------
@@ -426,12 +459,15 @@ class SurfScreen(RefreshGuard, Screen):
     # paints it outside the rail's own rectangle.
     #
     # Both rows below the hero split 7:6 on the same seam: SurfFeed/SurfMarket
-    # take `7fr`, the rail/SurfNft `6fr`. Measured, not chosen -- the feed
-    # needs 81 columns for an unbroken post and the rail 71 before the
-    # activity panel sheds a field, so 152 is the floor and only a seam near
-    # 81:71 collects it. This was 3:2 until 2026-08-10, which over-fed the
-    # left column and pushed the full layout to 176. Equal shares are wrong in
-    # the other direction: 1:1 starves the feed and costs 162.
+    # take `7fr`, the rail/SurfNft `6fr`. Measured, not chosen -- the seam has
+    # to serve the feed's need for an unbroken post and the rail's before the
+    # activity panel sheds a field, and their sum is the floor. Those needs
+    # were 81 and 71 when 7:6 was picked (floor 152); they are 76 and 63 now
+    # (floor 139, collected at 142 by this seam). This was 3:2 until
+    # 2026-08-10, which over-fed the left column and pushed the full layout to
+    # 176 -- and still costs 156 today. Equal shares are wrong in the other
+    # direction: 1:1 starves the feed and costs 152. The dated sweep and the
+    # reason those last three columns stay unspent are in the module docstring.
     DEFAULT_CSS = """
     SurfScreen #title-bar {
         width: 100%;

@@ -17,44 +17,41 @@ _DEFAULT_FONT_SIZE = 17
 #: Columns the widest dashboard layout needs before the last ``‹ widen`` marker
 #: goes away.  Measured against the composited output, not estimated.
 #:
-#: It came down three times and has now gone back up once, and which dashboard
-#: sets it has changed.  198 while the FWA activity feed shared the bottom row
-#: (it took 3fr of 7 and left the chase board and settlement table ~55 columns
-#: each); 172 once that feed moved into the odds board's slot behind ``c``; and
-#: 143 once the buy-gate signal was shortened, which was what the last marker
-#: had been waiting on -- the signals panel, not a table, was FWA's binding
-#: constraint at the end.  FWA still clears every marker at 143.
+#: The record, appended to rather than rewritten, because which dashboard sets
+#: it has now changed twice: **198 -> 172 -> 143 -> 176 -> 152 -> 143**.
+#:
+#: 198 while the FWA activity feed shared the bottom row (it took 3fr of 7 and
+#: left the chase board and settlement table ~55 columns each); 172 once that
+#: feed moved into the odds board's slot behind ``c``; and 143 once the
+#: buy-gate signal was shortened, which was what the last marker had been
+#: waiting on -- the signals panel, not a table, was FWA's binding constraint
+#: at the end.
 #:
 #: Then 176 on 2026-08-10, and for the first time it was **surf** that set it,
 #: not FWA.  Surf's restructure put every widget on screen at once, which cost
 #: ``SurfDevActivity`` its own ``3fr`` slot; from a share of a ``2fr`` right
 #: rail it only reached its widest row layout at 176.  That was the first time
-#: this number had ever gone **up**.
+#: this number had ever gone **up**.  Then 152 later the same day, when the
+#: column *seam* moved 3:2 -> 7:6 and handed the rail the share the feed was
+#: not using.
 #:
-#: And 152 since later the same day -- the first time it has come back **down**
-#: with no panel hidden and no field re-cut: only the column *seam* moved,
-#: 3:2 -> 7:6.  The two binding panels are the announce feed (81 columns) and
-#: the dev-activity rail (71), so the narrowest terminal that satisfies both is
-#: 81 + 71 = 152, and a 3:2 seam simply handed the feed 0.60 W against the
-#: 0.538 it needed -- the rail reached 71 only at 176.  Surf is still the
-#: dashboard that sets this number; FWA still clears every marker at 143.
-#: Pinned in both directions against the real screen as
-#: ``screens/surf.py::SURF_FULL_LAYOUT_COLUMNS``: 151 lights one marker, 152
-#: lights none.
-#:
-#: The seam did cost the announce feed its wrapping tier below 152 for part of
-#: the same day -- its share fell with the seam, so it reached the 81 columns
-#: it then needed at 151 where 3:2 reached them at 135.  Widening the column
-#: back would have been the expensive fix (a 9:7 seam wraps from 144 and puts
-#: this number at 161); lowering the feed's own ``FULL_TEXT_WIDTH`` from 76 to
-#: 71 wraps from 142 and leaves this number at 152 untouched, because the
-#: panel that binds here is the dev-activity rail, not the feed.
+#: **And 143 again since 2026-08-10 -- FWA is the widest dashboard once more.**
+#: Nothing about FWA moved; surf came down under it.  Sizing the surf activity
+#: row's wallet and kind cells to the vocabularies their producer actually
+#: emits (``{"dev", "ops"}``, ``DEV_TX_KINDS``) took that panel's full row
+#: layout 66 -> 58 columns, so the rail it lives in sheds a field only below
+#: 63 where it used to shed below 71.  The panel binding the surf screen is
+#: the announce feed again, at **142** -- one column below FWA's 143.  Both
+#: pinned in both directions against the real screens: FWA lights one marker
+#: (``SIGNALS ‹ widen``) at 142 and none at 143, and
+#: ``screens/surf.py::SURF_FULL_LAYOUT_COLUMNS`` carries surf's own 142 with
+#: its sweep.
 #:
 #: Font size is the only lever most people have over this -- a window is
 #: already as wide as the display -- and at the forced 17 pt a laptop gets
-#: ~169.  152 is inside that, so the full layout is reachable again without
-#: passing ``--font-size`` at all, which is what the re-seam was for.
-FULL_LAYOUT_COLUMNS = 152
+#: ~169, comfortably past 143.  That was not always true: at 176 the full
+#: layout was unreachable without passing ``--font-size``.
+FULL_LAYOUT_COLUMNS = 143
 
 
 def _font_size(value: str) -> int:
@@ -91,7 +88,7 @@ def _maximize_terminal(font_size: int = _DEFAULT_FONT_SIZE) -> None:
     The font size is the whole reason this is configurable.  Every dashboard
     lays itself out in *columns*, and the widest tier needs
     :data:`FULL_LAYOUT_COLUMNS`; a maximized window on a laptop display gives
-    roughly 169 columns at 17 pt.  That clears the current number (152) but
+    roughly 169 columns at 17 pt.  That clears the current number (143) but
     did not clear the 176 that stood earlier the same day, and it still does
     not clear a *smaller* display's column count.
     Forcing 17 pt unconditionally therefore capped the layout and silently

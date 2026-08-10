@@ -130,16 +130,16 @@ last marker goes out at:
 
 | columns | what still shows |
 |--------:|------------------|
-| ≤ 141 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, FWA `SIGNALS ‹ widen` |
-| 142 | surf `DEV ACTIVITY ‹ widen for amounts`, FWA `SIGNALS ‹ widen` |
-| 143–151 | surf `DEV ACTIVITY ‹ widen for amounts` (FWA is already full) |
-| **≥ 152** | **nothing — full layout**, with one exception below |
+| ≤ 134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, FWA `SIGNALS ‹ widen` |
+| 135–141 | surf `ANNOUNCE FEED ‹ widen`, FWA `SIGNALS ‹ widen` |
+| 142 | FWA `SIGNALS ‹ widen` (surf is already full) |
+| **≥ 143** | **nothing — full layout**, with one exception below |
 
 The exception is a post, not a panel. When an announce post links a transaction, its own
 punctuation can glue the URL to the 66-character hash into a single token no column budget
 can break — the captured one is 91 columns wide — so surf's `ANNOUNCE FEED` truncates it
-and keeps its `‹ widen` lit above 152 (that particular post needs 216). The marker is
-right: the link really is cut. The table's 152 is the width at which every *layout* is
+and keeps its `‹ widen` lit above 143 (that particular post needs 216). The marker is
+right: the link really is cut. The table's 143 is the width at which every *layout* is
 whole, and the next post linking a transaction arrives with a token of its own length, so
 no fixed number can promise more than that.
 
@@ -148,7 +148,7 @@ only lever**: roughly 169 columns at 17 pt on a laptop screen, about 205 at
 14 pt. maxpane sets 17 pt on launch, so zooming out *beforehand* gets
 overwritten — pass `--font-size 13` (or export `MAXPANE_FONT_SIZE=13`) to
 change it, or `--font-size 0` to have maxpane leave your terminal alone
-entirely. At 17 pt a laptop lands at 169, which already clears the 152 the
+entirely. At 17 pt a laptop lands at 169, which already clears the 143 the
 full layout wants — you need `--font-size` for a smaller screen, not for the
 full layout.
 
@@ -188,27 +188,33 @@ the other, so a single manager owns the command.
 
 ### Terminal size
 
-**The widest layout wants 152 columns.** That is the width at which every widget on every dashboard
-can render its full column set for the data it holds today. **FWA wants 143**; the 152 belongs to
-**surf**, whose dev-activity panel shares the narrow right rail so that all six of its panels stay
-on screen at once. One thing 152 does not promise is a clean announce feed on every possible post:
-a post that links a transaction can carry a single unbreakable token wider than the panel, and the
-feed correctly truncates it and says so at any width (see the note under the table above).
+**The widest layout wants 143 columns.** That is the width at which every widget on every dashboard
+can render its full column set for the data it holds today. The 143 is **FWA's**, and it is FWA's
+again: surf set this number at 176 and then 152 for part of 2026-08-10, and has since come down to
+**142** — one column under FWA — so the app-wide number is back where FWA left it. One thing 143
+does not promise is a clean announce feed on every possible post: a post that links a transaction
+can carry a single unbreakable token wider than the panel, and the feed correctly truncates it and
+says so at any width (see the note under the table above).
 
-152 is inside the ~169 columns a laptop gets at the 17 pt maxpane sets on launch, so the full
+143 is inside the ~169 columns a laptop gets at the 17 pt maxpane sets on launch, so the full
 layout is reachable without touching `--font-size`. It briefly was not: surf's number stood at 176
 for part of 2026-08-10, until the seam between its two columns moved from 3:2 to 7:6 and handed the
-announce feed exactly the share it needed instead of 24 columns more. No panel was hidden and no
-field re-cut to get there — only the split moved — and at 152 and above nothing at all is given up.
+announce feed exactly the share it needed instead of 24 columns more. Only the split moved to get
+there, and at 152 and above nothing at all was given up.
 
-That move did briefly cost something below 152. The feed's share of the terminal fell with the
-seam, so it stopped wrapping posts until 151 where the 3:2 seam had wrapped them from 135, and
-between those widths it printed one truncated line per post. The fix was **not** to widen the
-column back: the feed decides for itself how narrow a column it will still wrap in, and lowering
-that threshold from 76 to 71 restored wrapping from **142** while costing the full layout
-nothing — 152 is set by the dev-activity rail, not by the feed. Widening the seam instead would
-have wrapped from 144 and pushed the full layout to 161. Wrapping a post in a narrow column
-spends rows rather than columns, and the feed is the panel this layout hands its spare rows to.
+What took surf the rest of the way down was the two panels either side of that seam getting
+narrower, not the seam moving again. The announce feed lowered its own wrapping threshold from 76
+to 71 columns, so it wraps posts from **142** instead of 151. The dev-activity panel was reserving
+12 columns for a wallet cell whose whole vocabulary is `dev` and `ops` and one column too few for
+its widest transaction kind, so it was both padded and cutting `fwa claim` mid-word; sizing both
+cells to what the data actually contains took the panel from 66 columns to 58 and it now clears
+from a 135-column terminal. That is why the table above no longer has a band where the dev-activity
+panel is the only thing still asking for width.
+
+One honest caveat on the seam. 7:6 was measured when the feed needed 81 columns and the rail 71;
+they need 76 and 63 now, which a seam nearer 76:63 would collect at 139 rather than 142. The three
+columns are real and deliberately unspent: the app-wide number is FWA's 143, so a surf screen
+clearing at 139 would not change a single width a user sees.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why

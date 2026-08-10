@@ -123,13 +123,21 @@ python -m maxpane_dashboard --font-size 0        # do not resize my terminal
 
 **Layout is a function of terminal columns.** Widgets pick a tier by width and
 advertise dropped columns as `‹ widen` in their title. The full layout needs
-**152 columns** (`__main__.FULL_LAYOUT_COLUMNS`, pinned by tests that render
-the real screens at that width). FWA needs **143**; the 152 is **surf**'s.
-Launch forces 17 pt — about 169 columns on a laptop — so the top tier was
-unreachable until `--font-size` / `MAXPANE_FONT_SIZE` existed; at 152 it is
-reachable again without one.
+**143 columns** (`__main__.FULL_LAYOUT_COLUMNS`, pinned by tests that render
+the real screens at that width). The 143 is **FWA**'s: surf held this number at
+176 and then 152, and now measures **142**, one column under FWA. Launch forces
+17 pt — about 169 columns on a laptop — so the top tier was unreachable until
+`--font-size` / `MAXPANE_FONT_SIZE` existed; at 143 it is reachable without one.
 
-152 clears every *layout*, not every possible string. Surf's announce feed
+The record, appended never rewritten: **198 → 172 → 143 → 176 → 152 → 143**.
+The first three are FWA's own (see the `c` paragraph below); 176 and 152 are
+surf's; and the last is FWA's again, reached without FWA moving at all — surf
+came down under it when the dev-activity row's cells were sized to the
+vocabularies its producer actually emits (`{dev, ops}`, `DEV_TX_KINDS`), taking
+that panel 66 → 58 columns and the surf screen 152 → 142. Which dashboard binds
+is itself a measurement; do not assume it from an older paragraph.
+
+143 clears every *layout*, not every possible string. Surf's announce feed
 still lights `‹ widen` there whenever a post links a transaction: the post's
 own punctuation glues the URL to the 66-char hash into one unbreakable token
 (the captured one is 91 columns and clears at 216). That marker is correct and
@@ -164,16 +172,36 @@ the feed 0.60 W against the 0.538 it needed — the rail only reached 71 at 176.
 obvious one.** The feed's share fell with the seam, so it reached the 81
 columns it then needed at 151 where 3:2 reached them at 135 — one truncated
 line per post in between. The instinct is to widen the feed's column back;
-**measure before you do, because that trade is bad.** A 9:7 seam wraps from
-144 and costs 9 columns of full-layout width (152 → 161), since the binding
-panel at 152 is the *dev-activity rail*, not the feed. The feed's own
-`FULL_TEXT_WIDTH` is the cheap lever: 76 → 71 wraps from **142** and leaves
-the full layout at 152 exactly (76/71/66 all measure 152). It buys the
-wrapping with *rows* instead of columns, and the feed is the panel this
-layout hands its spare rows to. The record, then:
-**198 → 172 → 143 → 176 → 152**, with FWA setting the first three and surf the
-last two. 152 is inside the ~169 a laptop gets at the forced 17 pt, so the full
-layout stopped requiring `--font-size`.
+**measure before you do.** Measured *in that era*, a 9:7 seam wrapped from 144
+and cost 9 columns of full-layout width (152 → 161), because the panel binding
+at 152 was the *dev-activity rail*, not the feed. The feed's own
+`FULL_TEXT_WIDTH` was the cheap lever instead: 76 → 71 wraps from **142** and
+left the full layout at 152 exactly. It buys the wrapping with *rows* instead
+of columns, and the feed is the panel this layout hands its spare rows to.
+
+**Then the number came down again, 152 → 142, and the binding panel changed
+hands.** `SurfDevActivity` was reserving a 12-column wallet cell for the
+two-word vocabulary its producer emits (`dev`/`ops`) and giving the kind cell
+one column less than `"fwa claim"` needs, so it was simultaneously padded and
+cutting a value mid-word. Sizing both cells to the producer's own vocabularies
+took the panel 66 → 58 columns; it now clears from a **135**-column terminal
+and the last marker standing on the surf screen is the **announce feed's**, at
+142. Anything above that reads "the dev-activity rail is what binds" — this
+file included, one paragraph up — is the old regime. Consequently
+`FULL_LAYOUT_COLUMNS` went **152 → 143**: FWA is the widest dashboard again,
+with surf one column under it. The full record:
+**198 → 172 → 143 → 176 → 152 → 143**, FWA setting the first three and the
+last, surf the two in between. 143 is inside the ~169 a laptop gets at the
+forced 17 pt, so the full layout still needs no `--font-size`.
+
+**The seam is now three columns off optimum, on purpose.** 7:6 was measured
+when the feed needed 81 columns and the rail 71; they need 76 and 63 today, so
+the two sum to 139 while 7:6 collects 142 (re-swept seam by seam in
+`tests/screens/test_surf_screen.py` — 11:9 and 23:19 reach 139, 9:7 now also
+costs 142, and 3:2 costs 156). Those three columns are not worth re-cutting a
+settled layout for: the app-wide number is FWA's 143, so surf clearing at 139
+would move nothing a user sees. Re-sweep before re-seaming, and only when one
+of the two panels' needs moves again.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`.

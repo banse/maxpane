@@ -76,11 +76,19 @@ FEED_TITLE = "ANNOUNCE FEED"
 #: bring the screen's full-layout width down from 176 to 152, which narrowed
 #: this panel's share: at 76 the feed only began wrapping at a 151-column
 #: terminal, so between 135 and 150 it showed one truncated line per post.
-#: The instinct was to widen the feed's column back, but that trade is bad --
-#: a 9:7 seam wraps from 144 and costs 9 columns of full-layout width (152 ->
-#: 161), because the *dev activity* panel is what binds at 152, not this one.
-#: Moving this threshold instead wraps from 142 and costs the full-layout
-#: width **nothing**; all three of 76/71/66 leave it at 152 (measured).
+#: The instinct was to widen the feed's column back, but that trade was bad --
+#: a 9:7 seam wrapped from 144 and cost 9 columns of full-layout width (152 ->
+#: 161), because the *dev activity* panel was what bound at 152, not this one.
+#: Moving this threshold instead wrapped from 142 and cost the full-layout
+#: width **nothing**; all three of 76/71/66 left it at 152 (measured then).
+#:
+#: **That free ride is over, and the paragraph above is the old regime.** The
+#: activity row's cells were sized to their producer's vocabularies, which
+#: took that panel 66 -> 58 columns, so it clears from 135 and *this* panel is
+#: what binds the screen. This threshold now sets the screen's full-layout
+#: width directly: re-measured on the real screen, 66 -> 135, **71 -> 142**,
+#: 76 -> 151. Lowering it is now the cheapest width there is; raising it is
+#: paid in full-layout columns, one for one.
 #:
 #: What it does cost is rows: a wrapped post is taller than a cut one, so at
 #: 143 columns the feed spends 9 rows on the two sweep posts where it spent 3.

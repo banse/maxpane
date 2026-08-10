@@ -2,7 +2,8 @@
 
 Every dashboard lays out in *columns*, and the widest layout needs
 ``FULL_LAYOUT_COLUMNS`` of them (198 when this file was written and FWA was
-the widest; 152 today, and it is surf's). A maximized window on a laptop
+the widest; 176 then 152 while surf was; 143 today, FWA's again). A maximized
+window on a laptop
 display gives roughly 169 at 17 pt, so ``‹ widen`` markers were permanently on
 screen -- and the app **forced 17 pt on every launch**, overriding whatever the
 user had set. Zooming out before starting did nothing, which made the hints
@@ -182,22 +183,18 @@ def _load_harness(relative: str):
     return module
 
 
-def test_the_documented_width_clears_every_dashboard(monkeypatch) -> None:
-    """``FULL_LAYOUT_COLUMNS`` must stay true, or the help text misleads.
+def _fwa_markers(width: int) -> int:
+    """Composited ``‹ widen`` count on the real FWA screen at *width*.
 
-    The help text promises "the widest dashboard layout needs N", so the claim
-    is about *every* dashboard, not one of them: at ``FULL_LAYOUT_COLUMNS`` no
-    screen may still be advertising a shed column.  FWA is checked because it
-    set this number for most of the project's life; surf because it sets it
-    now.  If a widget's tier table changes, this goes red instead of the help
-    text quietly becoming wrong.
+    Module-level because two tests need it now that FWA is the dashboard the
+    documented width is measured against again -- one for "clears", one for
+    "and not one column more".
     """
-    pytest.importorskip("textual")
     import asyncio
 
     fwa = _load_harness("screens/test_fwa_screen.py")
 
-    async def _fwa_markers(width: int) -> int:
+    async def _run() -> int:
         screen = fwa.FWAScreen(fwa._FakeManager(), poll_interval=30, name="fwa")
         app = fwa._ThemedHarness(screen)
         async with app.run_test(size=(width, 48)) as pilot:
@@ -206,9 +203,26 @@ def test_the_documented_width_clears_every_dashboard(monkeypatch) -> None:
             await pilot.pause()
             return fwa._screen_text(app).count("‹ widen")
 
+    return asyncio.run(_run())
+
+
+def test_the_documented_width_clears_every_dashboard(monkeypatch) -> None:
+    """``FULL_LAYOUT_COLUMNS`` must stay true, or the help text misleads.
+
+    The help text promises "the widest dashboard layout needs N", so the claim
+    is about *every* dashboard, not one of them: at ``FULL_LAYOUT_COLUMNS`` no
+    screen may still be advertising a shed column.  FWA is checked because it
+    sets this number -- as it did for most of the project's life, and does
+    again since surf came down under it; surf because it set it in between and
+    is the one that moves.  If a widget's tier table changes, this goes red
+    instead of the help text quietly becoming wrong.
+    """
+    pytest.importorskip("textual")
+    import asyncio
+
     surf = _load_harness("screens/test_surf_screen.py")
 
-    assert asyncio.run(_fwa_markers(FULL_LAYOUT_COLUMNS)) == 0, (
+    assert _fwa_markers(FULL_LAYOUT_COLUMNS) == 0, (
         f"{FULL_LAYOUT_COLUMNS} columns should clear every FWA widen marker"
     )
     assert asyncio.run(surf._widen_markers(FULL_LAYOUT_COLUMNS)) == 0, (
@@ -219,63 +233,63 @@ def test_the_documented_width_clears_every_dashboard(monkeypatch) -> None:
 def test_the_documented_width_is_tight_against_the_widest_dashboard() -> None:
     """The other half: the number is not padded *without a reason on record*.
 
-    This assertion used to be made against FWA (``FULL_LAYOUT_COLUMNS - 4``
-    still showed a marker), and that was right while FWA was the widest
-    layout.  It moved to surf when surf's dev-activity panel took the number
-    to 176, and it read ``surf._widen_markers(FULL_LAYOUT_COLUMNS - 1) > 0``.
+    **Which dashboard "widest" names is itself a measurement, and it has now
+    changed twice.**  It was FWA (``FULL_LAYOUT_COLUMNS - 4`` still showed a
+    marker); it moved to surf when surf's dev-activity panel took the number
+    to 176, and read ``surf._widen_markers(FULL_LAYOUT_COLUMNS - 1) > 0``
+    through the 176 and 152 eras; and it is FWA's again since 2026-08-10 --
+    not because FWA moved, but because surf came down *under* it.  Sizing the
+    surf activity row's wallet and kind cells to the vocabularies their
+    producer emits took ``widgets/surf/activity.FULL_WIDTH`` 66 -> 58, so that
+    panel clears from a 135-column terminal and ``SurfFeed``'s **142** is what
+    the surf screen measures -- one column below the **143** FWA has needed
+    since its buy-gate signal was shortened.
 
-    That form briefly stopped holding.  On 2026-08-10 the surf screen's column
-    seam moved 3:2 -> 7:6 and its full layout came down 176 -> 152, but the
-    seam commit deliberately touched no constant -- reconciling this one,
-    ``screens/surf.SURF_FULL_LAYOUT_COLUMNS``, the ``--font-size`` help text,
-    the README width table and CLAUDE.md is a step of its own -- so for one
-    commit the documented width was generous by 24 columns and ``_SLACK``
-    recorded exactly that.  That reconciliation landed and both read 152.
+    So the tightness is asserted where it lives: against FWA, in both
+    directions, both sides a real render.  Clean at the documented width,
+    still shedding one column below it.  Neither half is a constant compared
+    against itself -- ``FULL_LAYOUT_COLUMNS`` meets pixels both times -- and
+    if surf (or anything else) ever grows past FWA again, the second assertion
+    is what says so, because FWA will then be clean below the documented
+    number.
 
-    **It is open again, by 10, for the same staged reason.**  Sizing the surf
-    activity row's wallet and kind cells to the producer's real vocabularies
-    took ``widgets/surf/activity.FULL_WIDTH`` 66 -> 58, so that panel clears
-    from a 135-column terminal instead of 152 and ``SurfFeed``'s 142 is what
-    the surf screen now measures.  The five surfaces quoting 152 are
-    reconciled together, in their own commit; until then this records the
-    gap, and the direction assertions below keep it a *generous* one.
-
-    Generous would be safe; *short* is what clips.  The claim is therefore
-    made in two halves, neither of which is a constant compared against
-    itself:
-
-    * every dashboard must clear at the documented width (the test above), and
-    * the documented width must equal the widest dashboard's own measured
-      width -- a separate literal in the surf harness, which pins it to the
-      real screen in both directions right below.
-
-    ``_SLACK`` stays, at 0, because it is the thing that may only ever shrink:
-    a future re-measurement is allowed to leave the documented number
-    temporarily generous, and must say by how much.
+    The surf half stays as the record of *how far under* it now sits.
+    Generous would be safe; *short* is what clips, which is why the surf
+    screen's own measurement is pinned to its own render right below.
     """
     pytest.importorskip("textual")
     import asyncio
 
+    assert _fwa_markers(FULL_LAYOUT_COLUMNS) == 0, (
+        f"FWA sheds a column at {FULL_LAYOUT_COLUMNS}, the width the help text "
+        "promises clears every dashboard"
+    )
+    assert _fwa_markers(FULL_LAYOUT_COLUMNS - 1) > 0, (
+        f"FWA is already clean at {FULL_LAYOUT_COLUMNS - 1}: either the "
+        "documented width is padded, or some other dashboard is the widest "
+        "now and this assertion belongs against that one"
+    )
+
     surf = _load_harness("screens/test_surf_screen.py")
 
-    #: Columns by which the documented width currently exceeds the widest
-    #: dashboard's measured one.  Must only ever shrink -- 24 -> 0 -> 10 is
-    #: not a violation of that: each re-measurement re-opens it and the
-    #: reconciliation commit closes it, and the value is always the gap that
-    #: really exists rather than a tolerance chosen to make this pass.  It is
-    #: an ``==``, never a ``<=``, precisely so it cannot be quietly generous.
-    _SLACK = 10
+    #: Columns by which the documented width exceeds *surf's* measured one.
+    #: Not a tolerance: 24 -> 0 -> 10 -> 1 is the real gap at each step, and
+    #: it is an ``==``, never a ``<=``, precisely so it cannot be quietly
+    #: generous.  The first three were re-measurements waiting on their
+    #: reconciliation commit; this one is not -- surf simply is one column
+    #: narrower than FWA, which is the dashboard the number now comes from.
+    _SURF_SLACK = 1
 
     measured = surf.MEASURED_FULL_LAYOUT_COLUMNS
-    assert FULL_LAYOUT_COLUMNS - measured == _SLACK, (
-        f"the documented width is {FULL_LAYOUT_COLUMNS} and the widest "
-        f"dashboard measures {measured}: {FULL_LAYOUT_COLUMNS - measured} "
-        f"columns of slack, not the {_SLACK} on record. If the "
-        "reconciliation landed, set _SLACK to 0."
+    assert FULL_LAYOUT_COLUMNS - measured == _SURF_SLACK, (
+        f"the documented width is {FULL_LAYOUT_COLUMNS} and surf measures "
+        f"{measured}: {FULL_LAYOUT_COLUMNS - measured} columns of slack, not "
+        f"the {_SURF_SLACK} on record. If surf grew past the documented "
+        "width, reconcile the five surfaces; if it shrank, record the new gap"
     )
-    # The measured number is a real render, not a second literal: it is clean
-    # at that width and marked one column below it.
+    # Surf's own number is a real render too, not a second literal: clean at
+    # that width and marked one column below it.
     assert asyncio.run(surf._widen_markers(measured)) == 0
     assert asyncio.run(surf._widen_markers(measured - 1)) > 0, (
-        "the widest dashboard is clean below its measured width -- re-measure"
+        "surf is clean below its measured width -- re-measure"
     )

@@ -1397,26 +1397,40 @@ async def _markers_outside_the_activity_panel(width: int) -> int:
 #
 # Both lower rows split on one seam, and *where* that seam sits is the whole
 # full-layout width. It is a measurement, not a taste call: the left column's
-# binding panel is ``SurfFeed`` (81 columns before it breaks a post) and the
-# right column's is ``SurfDevActivity`` (71 columns of rail before it sheds a
-# field), so the narrowest terminal that satisfies both is 81 + 71 = 152 --
-# and only a seam near 81:71 collects it. 3:2 hands the feed 0.60 W against
-# the 0.538 it needs, so the rail reached 71 columns only at 176: 24 columns
-# wider than the layout requires, and past the ~169 a laptop gets at the 17 pt
-# MaxPane forces on launch. Swept seam by seam over the real screen, first
-# width at which no panel composites a marker:
+# binding panel is ``SurfFeed`` (the columns it needs before it breaks a post)
+# and the right column's is ``SurfDevActivity`` (the rail it needs before it
+# sheds a field), so the narrowest terminal serving both is their sum -- and
+# only a seam near their ratio collects it.
+#
+# **The two needs, and the sweep, are both dated. Re-measure before quoting.**
+#
+# *At the 3:2 -> 7:6 re-seam*, the needs were 81 and 71 (sum 152). 3:2 handed
+# the feed 0.60 W against the 0.538 it needed, so the rail reached 71 only at
+# 176: 24 columns wider than the layout required, and past the ~169 a laptop
+# gets at the 17 pt MaxPane forces on launch. Swept over the real screen then:
 #
 #     5:3 187 · 13:8 184 · 8:5 183 · 3:2 176 · 7:5 169 · 11:8 167 · 4:3 164
 #     1:1 162 · 9:7 161 · 5:4 158 · 11:9 156 · 12:11 156 · 6:5 155 · 10:9 154
 #     19:17 154 · 9:8 153 · 13:11 153 · 17:15 153 · 7:6 152 · 8:7 152
 #     23:20 152 · 81:71 152
 #
-# 152 is the floor and four seams reach it; **7:6** is the simplest of them
-# and is what both rows now use. Above ~1.19 the activity panel binds and the
-# number climbs; below ~1.14 the feed binds and it climbs again (1:1 costs
-# 162, all of it the feed's). The old rejection of 7:5 "because it starved the
-# feed at 135-138" was made against the 135 pin and does not survive the
-# re-measurement: 7:5 costs 169, it simply is not the best available.
+# *Today the needs are 76 and 63* -- ``feed.FULL_TEXT_WIDTH`` came down 76 ->
+# 71 (feed's need 81 -> 76) and the activity row's cells were sized to their
+# producer's vocabularies (rail's need 71 -> 63). Sum 139. Re-swept the same
+# way, patching both copies of the seam (``DEFAULT_CSS`` *and* the
+# ``minimal.tcss`` block, which outranks it -- patching one alone measures
+# nothing):
+#
+#     5:3 166 · 13:8 163 · 8:5 162 · 3:2 156 · 1:1 152 · 7:5 149 · 11:8 148
+#     12:11 146 · 4:3 145 · 10:9 145 · 17:15 144 · 8:7 143 · 9:7 142 · 7:6 142
+#     13:11 141 · 5:4 140 · 6:5 140 · 11:9 139 · 23:19 139 · 76:63 139
+#
+# So the floor moved 152 -> 139 and the seam that collects it moved with it:
+# ~1.21 now (76:63), not ~1.14-1.19. **7:6 costs 142, three columns above the
+# floor**, and the layout keeps it: ``__main__.FULL_LAYOUT_COLUMNS`` is FWA's
+# 143 again, so a surf screen that cleared at 139 instead of 142 would not
+# move one number a user sees. Re-seaming is what you do when one of the two
+# needs moves; recording the three columns is what you do meanwhile.
 #
 # These constants used to be ``FIRST_CLEAN_WIDTH`` (an alias for
 # ``SURF_FULL_LAYOUT_COLUMNS``) and ``FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_
@@ -1456,20 +1470,21 @@ LAPTOP_COLUMNS_AT_THE_FORCED_FONT = LAPTOP_COLUMN_POINTS // _DEFAULT_FONT_SIZE
 #: point is that a widget growing a column moves *this* one and the mismatch
 #: is what goes red.
 #:
-#: They were 24 apart for one commit: the 3:2 -> 7:6 re-seam brought the
-#: measurement down 176 -> 152 without touching the five surfaces quoting the
-#: old number, and ``test_the_documented_width_still_covers_the_measured_one``
-#: held the direction meanwhile (generous is safe; short clips). That
-#: reconciliation landed and both read 152.
+#: They have been apart twice, both times for one commit, both times because
+#: a re-measurement lands before the five surfaces that quote it: 24 apart
+#: when the 3:2 -> 7:6 re-seam brought the measurement 176 -> 152, and 10
+#: apart when sizing the activity row's wallet and kind cells to the
+#: producer's real vocabularies (``{"dev", "ops"}`` and ``DEV_TX_KINDS``)
+#: took ``activity.FULL_WIDTH`` 66 -> 58 and this measurement 152 -> 142.
+#: ``test_the_documented_width_still_covers_the_measured_one`` held the
+#: direction meanwhile (generous is safe; short clips). Both reconciliations
+#: landed; both constants read **142**.
 #:
-#: **They are 10 apart again, for the same staged reason.** Sizing the
-#: activity row's wallet and kind cells to the producer's real vocabularies
-#: (``{"dev", "ops"}`` and ``DEV_TX_KINDS``) took ``activity.FULL_WIDTH``
-#: 66 -> 58, so that panel clears from 135 instead of 152 and stops being the
-#: widest thing on the screen. ``SurfFeed`` is the binding constraint again
-#: and the measured width is its 142 -- swept one column at a time below.
-#: ``SURF_FULL_LAYOUT_COLUMNS`` still reads 152 until the surfaces quoting it
-#: are reconciled together.
+#: **The binding panel changed hands at 142 and stayed changed.** The activity
+#: panel clears from a 135-column terminal now -- seven columns below this --
+#: so the last marker standing at 141 is ``SurfFeed``'s. Every claim of the
+#: form "the activity panel is the one still buying width" belongs to the 176
+#: and 152 eras.
 MEASURED_FULL_LAYOUT_COLUMNS = 142
 
 #: The narrowest width at which every panel *except* the activity is clean --
@@ -1481,16 +1496,26 @@ MEASURED_FULL_LAYOUT_COLUMNS = 142
 #: panel still asking for width at all.
 MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL = 142
 
-#: How far the two columns may drift apart before the seam is worth re-cutting.
-#: Not a tolerance to widen when a measurement disappoints: it is the width a
-#: future seam could still recover, and every column of it is real. Lower it
+#: How far the *activity* column may drift above the feed's before the seam is
+#: worth re-cutting. Not a tolerance to widen when a measurement disappoints:
+#: it is width the rail is buying that the feed has stopped using. Lower it
 #: when a re-seam banks some; never raise it to make a number pass.
 #:
-#: **Zero**: the two columns now clear at the same width, so there is no
-#: recoverable width left and a ratchet above 0 would be a lie that lets the
-#: gap re-open in silence. It was 10 while the activity panel was buying
-#: those columns for itself; sizing its cells to the producer's vocabularies
-#: banked every one of them.
+#: **Zero**, and it stays zero: the activity panel clears seven columns below
+#: the feed, so it is buying nothing. A ratchet above 0 would let that gap
+#: re-open in silence.
+#:
+#: Read what it measures, though, and not more. This number is deliberately
+#: one-sided -- it subtracts the activity panel and nothing else -- so it goes
+#: blind exactly when the *feed* is the panel above the seam's balance point,
+#: which is the regime the screen is in now. The recoverable width today is
+#: **3 columns** (7:6 collects the layout at 142; a 76:63-shaped seam collects
+#: it at the 139 the two panels actually sum to), measured in the seam table
+#: above and not visible here at all. Those three columns are unspent on
+#: purpose: ``__main__.FULL_LAYOUT_COLUMNS`` is FWA's 143, so surf clearing at
+#: 139 rather than 142 would change nothing anyone sees. If the feed's or the
+#: rail's need moves again, re-sweep the table before re-seaming -- do not
+#: raise this constant to describe it.
 RECOVERABLE_SEAM_SLACK = 0
 
 #: Readable alias at the one site that wants to say "the width at which this
@@ -1561,6 +1586,13 @@ async def test_the_two_columns_now_clear_at_the_same_width():
 
     The gap may shrink freely; it may not grow, because a growing gap means
     one column is again buying width the other stopped using.
+
+    What this does **not** say: that the seam is optimal. It is one-sided by
+    construction -- it subtracts the activity panel, so it can only see the
+    rail overshooting the feed, never the feed overshooting the rail, which is
+    the direction the screen overshoots in today. The seam table above has
+    that number (3 columns, deliberately unspent); see
+    ``RECOVERABLE_SEAM_SLACK``.
     """
     assert await _markers_outside_the_activity_panel(
         MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL
@@ -1594,9 +1626,10 @@ async def test_the_two_columns_now_clear_at_the_same_width():
 async def test_the_documented_width_still_covers_the_measured_one():
     """``SURF_FULL_LAYOUT_COLUMNS`` may be generous; it may never be short.
 
-    It read 176 against a measured 152 for one commit, because reconciling it
-    reaches ``__main__``, the README and CLAUDE.md and belonged to a commit of
-    its own; both now read 152. The direction is what this pins either way: a
+    It read 176 against a measured 152 for one commit, then 152 against a
+    measured 142 for another, because reconciling it reaches ``__main__``, the
+    README and CLAUDE.md and belongs to a commit of its own each time; both
+    now read 142. The direction is what this pins either way: a
     documented width *below* the measured one is a width that clips, which is
     the failure this whole marker system exists to prevent. Kept as an
     inequality on purpose -- it must survive the next re-measurement landing
@@ -2290,7 +2323,8 @@ async def test_the_nft_panel_shows_every_figure_at_its_own_clean_width():
 
     107 is the measured boundary -- one column narrower the stats row no
     longer fits -- so this also pins that the panel is clean at every width
-    the dashboard is actually meant to run at, the pinned 152 included.
+    the dashboard is actually meant to run at, the pinned one (142 today,
+    read from the constant rather than retyped) included.
     Without it the sweep below is satisfied by a panel welded to its
     narrowest tier, which is the failure this codebase keeps recording.
 
