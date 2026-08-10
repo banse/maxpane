@@ -1231,11 +1231,16 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             ):
                 assert label in text, f"{label} vanished under outage"
             # The title bar names every failing group behind the house
-            # warning glyph. The word "degraded" was the prefix until
-            # 2026-08-12; the *names* are what matters and they come from
-            # the manager's own SOURCES, so they are derived here rather
-            # than re-typed -- a renamed group must fail loudly, not quietly
-            # match a word this row no longer prints.
+            # warning glyph (the prefix was the word "degraded" until
+            # 2026-08-12). What this pins is end-to-end and geometric: the
+            # *whole* six-name list reaches a pixel through the real app at
+            # 143x48, on a row that wraps out of existence rather than
+            # ellipsising -- see WORST_CASE_TITLE_COLUMNS, which measures it
+            # at 137. It does **not** pin the vocabulary: the double's
+            # `_degraded` is `sorted(SOURCES)` too, so a renamed group
+            # renames both sides and stays green here. The rename tripwire
+            # is test_degraded_sources_ride_the_house_warning_glyph_not_the_word
+            # in tests/screens/test_surf_screen.py, which spells the six out.
             from maxpane_dashboard.data.surf_manager import SOURCES
 
             assert "⚠ " + ", ".join(sorted(SOURCES)) in text, (

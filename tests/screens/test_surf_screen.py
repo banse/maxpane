@@ -533,6 +533,34 @@ def test_the_title_line_shouts_the_board_and_leaves_the_version_alone():
     assert not re.search(r"v\d+\.\d+", line), line
 
 
+async def test_the_status_bar_still_carries_the_version_to_a_pixel():
+    """The other half of dropping the title's version tail, on the screen.
+
+    The argument for taking ``· v0.6.0`` off the title bar was "the StatusBar
+    three rows down already renders it" -- and *nothing asserted that*. The
+    test above only pins the version's absence from the title line, so
+    deleting the label from ``widgets/status_bar.py`` left the whole suite
+    green with the version reaching no pixel anywhere in the TUI (the only
+    other reference, ``tests/test_cli_version.py``, is ``--version`` on
+    stdout, a different surface entirely).
+
+    Composited, both halves at once: present on the screen, absent from the
+    row that gave it up. A version rendered into a widget nobody composites
+    would satisfy the first assertion of a content-string test and none of
+    a user's.
+    """
+    async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, 46) as (app, _screen, _p):
+        text = _screen_text(app)
+        assert f"maxpane v{__version__}" in text, (
+            "the version reaches no pixel on this screen -- the title bar "
+            "gave its tail up to the StatusBar and the StatusBar dropped it"
+        )
+        assert f"v{__version__}" not in text.split("\n")[0], (
+            "the version came back to the title bar, which is the row that "
+            "cannot ellipsise"
+        )
+
+
 def test_the_initial_title_is_the_confirmed_wording():
     """Spelled out, not derived: ``SURF · Surfboard`` said the name twice.
 
@@ -1375,13 +1403,24 @@ async def test_the_row_marker_follows_a_live_resize_in_both_directions():
 
 
 #: A payload with every flag the title bar can carry lit at once: the LP owner
-#: warning and three degraded groups. Not a hypothetical -- ``degraded`` is a
-#: list the manager grows one entry per failing source group, and the LP flag
-#: is independent of it.
+#: warning and **every** degraded group. Not a hypothetical -- the manager's
+#: outermost guard writes ``payload["degraded"] = list(SOURCES)`` on a failed
+#: cycle (``data/surf_manager.py``), so all six at once is the state this row
+#: is *most* likely to be in when it matters, and the LP flag is independent
+#: of it.
+#:
+#: The list is taken from ``SOURCES`` rather than typed out: it was three
+#: names for one commit, which made ``WORST_CASE_TITLE_COLUMNS`` measure a
+#: case the manager never emits and left the one concrete mutation this
+#: fixture exists to catch -- *a longer degraded list* -- green. Sorted, so
+#: the payload is stable if the declaration order moves; the width does not
+#: depend on the order but the diff should not either.
 def _worst_case_title_payload() -> dict:
+    from maxpane_dashboard.data.surf_manager import SOURCES
+
     return _frozen_payload(
         feed_items=_representative_feed_items(),
-        degraded=["logs", "market", "nft"],
+        degraded=sorted(SOURCES),
         lp_owner_ok=False,
     )
 
@@ -1391,9 +1430,10 @@ async def test_the_row_marker_survives_a_title_bar_full_of_warnings():
 
     ``#title-bar`` is one row high and the ``Static`` *wraps*: everything past
     the first line reaches no pixel at all -- no ``…``, no scrollbar, nothing.
-    With three degraded groups and the LP warning the line ran 118 columns, so
-    at 100 the wrap fell inside the degraded list and took ``‹ taller`` (and
-    the version tail) with it. The rail was scrolling, DEV ACTIVITY's rows
+    With every degraded group and the LP warning the line runs 133 columns, so
+    at 100 the wrap falls inside the degraded list and used to take
+    ``‹ taller`` (and the version tail) with it. The rail was scrolling,
+    DEV ACTIVITY's rows
     were off screen, and the screen said so nowhere -- and only when a source
     was *also* down, which is precisely when a reader needs both.
 
@@ -1404,7 +1444,12 @@ async def test_the_row_marker_survives_a_title_bar_full_of_warnings():
     bottom.
     """
     payload = _worst_case_title_payload()
-    for width in (100, 120, 143, SURF_FULL_LAYOUT_COLUMNS):
+    # 100 is the narrowest terminal this project treats as real; 120 and 130
+    # are inside the band where the *tail* is being cut (see
+    # ``WORST_CASE_TITLE_COLUMNS``), which is exactly where the ordering has
+    # to hold. ``SURF_FULL_LAYOUT_COLUMNS`` is not spelled as 143 beside
+    # itself: two entries with the same value swept one width twice.
+    for width in (100, 120, 130, SURF_FULL_LAYOUT_COLUMNS):
         async with _screen_at(width, 30, payload=payload) as (app, screen, _p):
             assert screen.query_one(_RAIL).show_vertical_scrollbar is True, (
                 f"{width}x30 fits the rail after all -- pick a shorter height"
@@ -1427,18 +1472,29 @@ async def test_the_row_marker_survives_a_title_bar_full_of_warnings():
 
 #: The narrowest terminal on which the **whole** worst-case title bar reaches
 #: a pixel: the board's name, every figure, ``‹ taller``, the LP warning and
-#: three degraded groups, all on the one row of this screen that cannot
+#: **all six** degraded groups, all on the one row of this screen that cannot
 #: ellipsise. Swept over the real screen rather than counted -- ``⚠`` is not a
 #: one-column glyph on every width table, so the arithmetic is not the test.
 #:
-#: The line itself is 107 columns and the screen spends 4 on padding, so the
-#: terminal has to be **111**. It was **123** (a 119-column line) while the
-#: row ended ``· degraded: logs, market, nft · v0.6.0``: naming the board in
-#: full costs five columns, and dropping the duplicated version tail and
-#: shortening ``degraded: `` to ``⚠ `` give seventeen back. Twelve columns,
-#: on a row whose overflow is *silent* -- which is the whole reason the
-#: ordering inside ``_title_line`` had to be argued in the first place.
-WORST_CASE_TITLE_COLUMNS = 111
+#: The line is 133 columns and the screen spends 4 on padding, so the terminal
+#: has to be **137**. It read **111** for one commit, measured against a
+#: fixture carrying three degraded groups -- but ``SurfManager``'s outermost
+#: guard emits ``list(SOURCES)``, all six, and a full outage is precisely when
+#: this row is read. The fixture now derives its list from ``SOURCES``
+#: (:func:`_worst_case_title_payload`), so the number moves with the
+#: vocabulary instead of behind it.
+#:
+#: Still a saving, measured the same way both times: the old copy's six-group
+#: line (``SURF``, ``degraded: ``, the duplicated ``· v0.6.0`` tail) was 145
+#: columns and needed 149. Naming the board in full costs five, the glyph and
+#: the dropped tail give seventeen back. Twelve columns on a row whose
+#: overflow is *silent* -- the whole reason the ordering inside ``_title_line``
+#: had to be argued in the first place.
+#:
+#: ``SURF_FULL_LAYOUT_COLUMNS`` (143) clears this by six, so the full layout
+#: still shows the whole row under a total outage; nothing outside this file
+#: needs to move.
+WORST_CASE_TITLE_COLUMNS = 137
 
 
 async def test_the_worst_case_title_bar_keeps_its_whole_tail_from_here():
@@ -1446,22 +1502,38 @@ async def test_the_worst_case_title_bar_keeps_its_whole_tail_from_here():
 
     A wrapping ``height: 1`` ``Static`` loses its tail with no ``…`` and no
     scrollbar, so "where does it start losing it" is a real measurement and
-    not a detail -- and it moves whenever this row's copy moves.
+    not a detail -- and it moves whenever this row's copy *or the source
+    vocabulary* moves. The sentinel is the last name the row prints, read
+    from ``SOURCES``: hard-coding ``"nft"`` would keep passing if a seventh
+    group were appended after it, which is the mutation this measurement
+    exists to catch.
     """
+    from maxpane_dashboard.data.surf_manager import SOURCES
+
+    last_name = sorted(SOURCES)[-1]
     payload = _worst_case_title_payload()
     async with _screen_at(WORST_CASE_TITLE_COLUMNS, 30, payload=payload) as (
         app, _screen, _p
     ):
-        assert "nft" in _screen_text(app).split("\n")[0], (
+        assert last_name in _screen_text(app).split("\n")[0], (
             f"the tail is already gone at {WORST_CASE_TITLE_COLUMNS} columns"
         )
     async with _screen_at(WORST_CASE_TITLE_COLUMNS - 1, 30, payload=payload) as (
         app, _screen, _p
     ):
-        assert "nft" not in _screen_text(app).split("\n")[0], (
+        assert last_name not in _screen_text(app).split("\n")[0], (
             f"the whole line already fits at {WORST_CASE_TITLE_COLUMNS - 1} -- "
             "the copy got shorter, re-measure this"
         )
+
+    # The claim the number is *for*: at the width the whole dashboard is
+    # measured to need, a total outage still prints every group it names.
+    # Two independently swept constants, not one compared with itself.
+    assert WORST_CASE_TITLE_COLUMNS <= SURF_FULL_LAYOUT_COLUMNS, (
+        f"the worst-case title bar needs {WORST_CASE_TITLE_COLUMNS} columns "
+        f"but the surf layout is measured at {SURF_FULL_LAYOUT_COLUMNS}: at "
+        "the full layout a full outage would silently lose group names"
+    )
 
 
 #: A width where ``SurfDevActivity`` is genuinely below its widest tier, for

@@ -326,14 +326,25 @@ _SHED: dict[str, frozenset[str]] = _shed_sets()
 #: ``compact`` but only 21 at ``minimal`` and 16 at ``bare``.  A longer
 #: wording down there would be unreachable in every layout this widget has --
 #: a dead string, permanently replaced by :data:`SHORT_HINT` -- so the narrow
-#: tiers name the field they just gave up and leave the rest to the wider
-#: tiers a user passes through on the way down.  Pinned by
-#: ``test_market_widen_hints_all_fit_beside_the_title_at_their_own_tier``.
+#: tiers name the field they just gave up and leave the *earlier* tiers'
+#: losses to the wider titles a user passes through on the way down.
+#:
+#: What a tier may not do is drop two fields and name one.  ``minimal`` did:
+#: it takes the dollar spread **and** the supply sparkline, and said
+#: ``‹ widen: $ spread`` -- the bar went unnamed, which is the silent
+#: clipping the whole ladder exists to prevent.  ``, bar`` does not fit (22
+#: columns against 21, measured: it degrades the whole hint to
+#: :data:`SHORT_HINT`), so the separator is ``+``.  The ``$`` is load-bearing
+#: and stays: the *percentage* spread is still on screen at ``minimal``, so a
+#: hint reading ``spread`` would advertise something the user is looking at.
+#: Pinned by ``test_market_widen_hints_all_fit_beside_the_title_at_their_own_tier``
+#: (it fits) and ``test_market_every_tier_names_every_field_it_sheds``
+#: (it is complete).
 WIDEN_HINTS: dict[str, str] = {
     "full": "",
     "compact": "‹ widen for 24h volume and bridge flow",
     "narrow": "‹ widen: FP price, price bar, vol, flow",
-    "minimal": "‹ widen: $ spread",
+    "minimal": "‹ widen: $ spread+bar",
     "bare": "‹ widen: bridge",
 }
 

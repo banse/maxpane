@@ -399,9 +399,12 @@ def _title_line(data: dict, row_hint: bool = False) -> str:
     ``row_hint`` -- the height counterpart of a widget's ``‹ widen`` -- comes
     **first**, ahead of both warnings. It used to sit after the degraded list,
     which meant the one advertisement on this screen with no second home was
-    lost exactly when a source was also down: three degraded groups plus the
-    LP warning ran the line to 118 columns, and at 100 the wrap fell inside
-    the list. The warnings are each mirrored inside a panel (the LP flag is
+    lost exactly when a source was also down: the outermost guard emits
+    ``list(SOURCES)``, so a failed cycle plus the LP warning runs this line to
+    133 columns, and at 100 the wrap falls inside the list. It took only
+    three groups to reach past a 100-column terminal, and a full outage --
+    when the row is read most -- lights all six. The warnings are each
+    mirrored inside a panel (the LP flag is
     the hero's ``OWNER CHANGED`` box; a degraded group is that panel's own
     unavailable state), and nothing anywhere else says a row went off the
     bottom of the rail -- so if exactly one of the three has to survive a
@@ -411,9 +414,11 @@ def _title_line(data: dict, row_hint: bool = False) -> str:
     ``· v0.6.0``, which the StatusBar three rows down already renders -- nine
     columns of the one row on this screen that cannot ellipsise, spent saying
     something twice. Dropping it, and shortening ``degraded: `` to ``⚠ ``,
-    took the worst-case line 119 -> 107 columns even after ``SURF`` grew into
+    took the worst-case line 145 -> 133 columns even after ``SURF`` grew into
     ``SURFBOARD``; see
-    ``tests/screens/test_surf_screen.WORST_CASE_TITLE_COLUMNS``.
+    ``tests/screens/test_surf_screen.WORST_CASE_TITLE_COLUMNS``, and
+    ``test_the_status_bar_still_carries_the_version_to_a_pixel`` for the
+    other half of that argument -- the StatusBar has to actually render it.
     """
     feed_age = _fmt_age(data.get("feed_last_post_age_s"))
     line = (

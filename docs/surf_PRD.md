@@ -92,7 +92,7 @@ the title bar advertises rows lost off the bottom of the right rail with `‹ ta
 
 | Slot | Widget | Content |
 |---|---|---|
-| title bar | — | `SURF · IMD $x.xx · parity ±x.x% · feed #N (age)` + `‹ taller` + degraded flags + version |
+| title bar | — | `SURFBOARD · IMD $x.xx · parity ±x.x% · feed #N (age)` + `‹ taller` + `⚠ LP owner changed` + `⚠ <failing source groups>` — no version (see amendment 5) |
 | hero row (full width) | `SurfHero` | experiment status in four boxes: v4 hook NOT LIVE / LAUNCHED; LP position (IMD/WETH sides, owner=frenpet.eth sanity flag); gate CLOSED/OPEN + written x/2000; supply + burns observed since this install began (never an all-time figure — no keyless source; renders "no burn observed yet" until the first one) |
 | middle left | `SurfFeed` | announce feed: date · kind (`self` / `reply` / `action` / `fund`) · message. Full text at wide tiers, truncated + `‹ widen` below |
 | middle right rail, top | `SurfSignals` | the six detectors, FIRED rows styled loud |
@@ -100,7 +100,7 @@ the title bar advertises rows lost off the bottom of the right rail with `‹ ta
 | bottom left | `SurfMarket` | price, 24h Δ, volume, pool liquidity, FP↔IMD parity spread, price + supply sparklines (burn steps the supply down) |
 | bottom right | `SurfNft` | holders, transfers/24h, identities written on one row; dev holdings on their own (`dev holds N identities`); last realized Seaport sales; floor = explicit `n/a — no keyless source`, muted |
 
-Four amendments to this table were made after the dashboard was first built and run:
+Five amendments to this table were made after the dashboard was first built and run:
 
 1. **The hero spans the full width and the signals moved into a right rail.** The original
    grid put `SurfHero` and `SurfSignals` side by side on the hero row, which left the four
@@ -149,6 +149,21 @@ Four amendments to this table were made after the dashboard was first built and 
    hero's IDENTITY GATE box), then `transfers/24h`, with the holder count last standing.
    The panel's own clean width went 107 → 113; `SURF_FULL_LAYOUT_COLUMNS` did not move,
    because the market still binds at 143.
+5. **The title bar names the board and stops repeating the version** (2026-08-12). `SURF`
+   became `SURFBOARD`, `degraded: ` became the `⚠` this codebase already uses for
+   `⚠ feed unavailable`, and the ` · v0.6.0` tail went — the status bar three rows down
+   renders `maxpane v0.6.0 · <theme> · surf` and did already, which is now pinned by a
+   composited test rather than assumed. This row is a `height: 1` wrapping `Static`:
+   everything past its first line reaches **no pixel**, with no `…` and no scrollbar, so
+   its length is a real measurement and its *order* is its only priority mechanism.
+   `‹ taller` therefore rides in front of both warnings — it is the one advertisement on
+   this screen with no second home, and the degraded list is longest exactly when it is
+   needed. The worst case is not "a few groups": `SurfManager`'s outermost guard emits
+   `list(SOURCES)`, all six, so a full outage plus the LP flag plus `‹ taller` runs 133
+   columns and needs a **137**-column terminal (was 145/149 under the old copy). 143 clears
+   it. Measured in `tests/screens/test_surf_screen.WORST_CASE_TITLE_COLUMNS`, against a
+   fixture that derives its list from `SOURCES` so a seventh group re-opens the
+   measurement instead of hiding behind it.
 
 Counterparty rendering in `SurfDevActivity` (address-poisoning defense — live spoofs of
 both fee recipients exist in frenpet.eth's history today): known addresses render as

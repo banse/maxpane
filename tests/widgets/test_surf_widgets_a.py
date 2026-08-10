@@ -1371,7 +1371,7 @@ async def test_market_widen_hints_all_fit_beside_the_title_at_their_own_tier():
 _HINT_CLAIMS: dict[str, tuple[tuple[str, str], ...]] = {
     "compact": (("24h volume", "vol 24h"), ("bridge flow", "gap narrows")),
     "narrow": (("FP price", "FP  $0.7274"), ("price bar", "▁▁▁▂")),
-    "minimal": (("$ spread", "under FP"),),
+    "minimal": (("$ spread", "under FP"), ("bar", "▃▁▁█")),
     "bare": (("bridge", "IMD is FP bridged 1:1 from Base"),),
 }
 
@@ -1395,6 +1395,80 @@ async def test_market_each_widen_hint_names_a_field_that_actually_went():
                 f"{tier}'s hint offers {phrase!r} for widening, but it is on "
                 f"screen already:\n{body}"
             )
+
+
+#: Which shed field each claim above is *about*, so the claims can be checked
+#: for completeness and not merely for truth.  Keyed by the field name in the
+#: widget's ladder; the value is the claim's phrase in :data:`_HINT_CLAIMS`.
+#:
+#: The gap this closes: ``_HINT_CLAIMS`` asserted every claim was true and
+#: never that every loss was claimed, so ``minimal`` shed the ``$`` spread
+#: *and* the supply sparkline while naming one of them, and all 21 market
+#: tests stayed green.  A hint that names half of what went is the silent
+#: clipping this ladder exists to replace.
+_CLAIMED_FIELD: dict[str, str] = {
+    "vol": "24h volume",
+    "flow": "bridge flow",
+    "fp": "FP price",
+    "price_bar": "price bar",
+    "spread": "$ spread",
+    "supply_bar": "bar",
+    "mechanism": "bridge",
+}
+
+
+def _step_losses() -> dict[str, frozenset[str]]:
+    """What each tier sheds **at its own step**, from the test-owned ladder.
+
+    Differenced from :data:`_EXPECTED_LADDER` rather than read out of
+    ``market._TIER_STEPS``: the widget's steps are the thing under test, and
+    a test that derived them from the widget would compare the ladder with
+    itself and pin nothing.
+    """
+    out: dict[str, frozenset[str]] = {}
+    previous: frozenset[str] = frozenset()
+    for tier, cumulative in _EXPECTED_LADDER:
+        out[tier] = cumulative - previous
+        previous = cumulative
+    return out
+
+
+async def test_market_every_tier_names_every_field_it_sheds():
+    """No tier may drop a labelled field and leave it out of its own hint.
+
+    The other half of the test above, and the one that bites when the ladder
+    grows: a field added to a tier's step with no wording in
+    :data:`_CLAIMED_FIELD` fails here, and a wording that never reaches the
+    hint fails too.  Earlier tiers' losses are deliberately *not* required --
+    at 21 columns ``minimal`` cannot restate four fields, and a user narrows
+    through the wider titles that named them -- so this asserts the step, not
+    the cumulative set.
+    """
+    losses = _step_losses()
+    assert set(losses) == set(_market.TIERS)
+    assert losses["full"] == frozenset(), "the widest tier sheds nothing"
+
+    for tier, fields in losses.items():
+        hint = _market.WIDEN_HINTS[tier]
+        if not fields:
+            assert not hint, f"{tier} sheds nothing but advertises {hint!r}"
+            continue
+        assert hint, f"{tier} sheds {sorted(fields)} and says nothing"
+        for field in fields:
+            phrase = _CLAIMED_FIELD.get(field)
+            assert phrase, (
+                f"{tier} sheds {field!r} and no wording is recorded for it -- "
+                "add one here and to the hint, or the field goes unnamed"
+            )
+            assert phrase in hint, (
+                f"{tier} sheds {field!r} but its hint {hint!r} never names "
+                f"it ({phrase!r}) -- the column went silently"
+            )
+            # ...and the wording is one the truth test above also checks, so
+            # a phrase cannot be invented here to satisfy this test alone.
+            assert any(
+                phrase == claimed for claimed, _evidence in _HINT_CLAIMS[tier]
+            ), f"{phrase!r} is not among {tier}'s claims in _HINT_CLAIMS"
 
 
 #: The ladder, **spelled out here** rather than read from
