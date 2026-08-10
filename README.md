@@ -125,20 +125,23 @@ maxpane --version              # which build is this, and which Python runs it
 
 Widgets drop columns when their slot is too narrow and say so in the title —
 `ACTIVITY ‹ widen for amounts`, `CHASE BOARD ‹ widen: TOKEN`. That is terminal
-**width in columns**. Check yours with `tput cols`. The FWA dashboard clears
-each marker at:
+**width in columns**. Check yours with `tput cols`. Across every dashboard the
+last marker goes out at:
 
 | columns | what still shows |
 |--------:|------------------|
-| ≤ 142 | `SIGNALS ‹ widen` |
-| **≥ 143** | **nothing — full layout** |
+| ≤ 134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen`, FWA `SIGNALS ‹ widen` |
+| 135–142 | surf `DEV ACTIVITY ‹ widen`, FWA `SIGNALS ‹ widen` |
+| 143–175 | surf `DEV ACTIVITY ‹ widen` (FWA is already full) |
+| **≥ 176** | **nothing — full layout** |
 
 A maximized window is already as wide as your display, so **font size is the
 only lever**: roughly 169 columns at 17 pt on a laptop screen, about 205 at
 14 pt. maxpane sets 17 pt on launch, so zooming out *beforehand* gets
 overwritten — pass `--font-size 13` (or export `MAXPANE_FONT_SIZE=13`) to
 change it, or `--font-size 0` to have maxpane leave your terminal alone
-entirely.
+entirely. At 17 pt a laptop lands at 169, one tier short of the full layout,
+so reaching it means passing a smaller `--font-size`.
 
 ### Checking your version
 
@@ -176,12 +179,16 @@ the other, so a single manager owns the command.
 
 ### Terminal size
 
-**FWA wants 143 columns.** That is the width at which every widget can render its full column set.
+**The widest layout wants 176 columns.** That is the width at which every widget on every dashboard
+can render its full column set. **FWA wants 143**; the 176 belongs to **surf**, whose dev-activity
+panel shares the narrow right rail so that all six of its panels stay on screen at once.
 
-Press **`c`** to swap the odds board for the activity feed — they share the wide middle-left slot,
-so the bottom row belongs to the chase board and the settlement table alone. That split is why the
-requirement is 172 and not 198: with the feed in the bottom row, three widgets needing 79, 54 and 55
-columns had to share it, and none of them fit until the terminal was very wide.
+On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
+slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why
+FWA's requirement is 172 and not 198: with the feed in the bottom row, three widgets needing 79, 54
+and 55 columns had to share it, and none of them fit until the terminal was very wide. Shortening
+the buy-gate signal then took it from 172 to 143. TTT and Talismans use the same `c` pattern; surf
+does not, because nothing on it is hidden.
 
 Below that the widgets do not wrap or clip silently: each one drops its least important columns and
 says so in its own title with a `‹ widen` marker. That is deliberate, tested behaviour, not a bug —

@@ -142,22 +142,28 @@ ACTIVITY_MIN_HEIGHT = 7
 
 #: Measured against composited output, not estimated -- see tests.
 #:
-#: **This number is stale by one panel and deliberately left alone.** Since
-#: the 2026-08-10 three-row restructure it is the width at which every widget
-#: *except* ``SurfDevActivity`` comes up marker-free; the activity panel gave
-#: up a ``3fr`` slot of its own (it shared the feed's, behind a ``c`` swap)
-#: for a share of the ``2fr`` rail, and now reaches its widest row layout at
-#: **176**. Both numbers are pinned to the real screen in
-#: ``tests/screens/test_surf_screen.py``
-#: (``FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL`` and
-#: ``FIRST_CLEAN_WIDTH``). Raising this constant moves
-#: ``__main__.FULL_LAYOUT_COLUMNS``, its ``--font-size`` help text, the README
-#: width table and CLAUDE.md with it -- one owner, one change, not this one.
+#: **Re-measured 2026-08-10 after the three-row restructure: 135 -> 176.** It
+#: was 135 while ``SurfDevActivity`` had a ``3fr`` slot of its own (it shared
+#: the feed's, behind a ``c`` swap that no longer exists). The restructure
+#: traded that slot for a permanent share of the ``2fr`` right rail, where the
+#: panel gets roughly ``0.4 * W`` minus its own padding, the log's, and the
+#: log's scrollbar gutter -- against the 66 columns its widest row layout
+#: needs. It therefore now sets this number, and the number went up.
 #:
-#: 135 is still set by ``SurfFeed``, swept one column at a time over the real
-#: screen: the feed lights a marker at every width through 134 and is clean
-#: from 135 up, and the hero, signals, market and NFT panels clear theirs
-#: well below it (the hero's own marker is unreachable above 81 columns).
+#: Swept one column at a time over the real screen: **175 lights exactly one
+#: marker, the activity panel's, and 176 lights none**. The other five panels
+#: are clean far below it -- the feed, which used to set this constant, from
+#: 135 up; the hero, signals, market and NFT panels well below that (the
+#: hero's own marker is unreachable above 81 columns). Both numbers are pinned
+#: in both directions in ``tests/screens/test_surf_screen.py``
+#: (``FIRST_CLEAN_WIDTH`` and ``FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL``).
+#:
+#: 176 is past the ~169 columns a laptop gets at the forced 17 pt, which is
+#: not a reason to shave it: it is the reason ``--font-size`` exists. The
+#: widths in between are not a defect either -- they are the activity panel
+#: correctly naming the columns it shed. Raising this constant moved
+#: ``__main__.FULL_LAYOUT_COLUMNS`` 143 -> 176, its ``--font-size`` help text,
+#: the README width table and CLAUDE.md with it; they must stay in step.
 #:
 #: This number deliberately EXCLUDES posts carrying an inherently
 #: unbreakable token (a URL glued to a raw tx hash, e.g. by a trailing
@@ -171,7 +177,7 @@ ACTIVITY_MIN_HEIGHT = 7
 #: raise this toward 194 to silence a linked post's marker: that marker is
 #: correct, and 194 is past the ~169 columns a laptop gets at the forced
 #: 17 pt, i.e. a "full layout" nobody could reach.
-SURF_FULL_LAYOUT_COLUMNS = 135
+SURF_FULL_LAYOUT_COLUMNS = 176
 
 
 # -- format helpers ----------------------------------------------------

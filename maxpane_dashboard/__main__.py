@@ -17,16 +17,28 @@ _DEFAULT_FONT_SIZE = 17
 #: Columns the widest dashboard layout needs before the last ``‹ widen`` marker
 #: goes away.  Measured against the composited output, not estimated.
 #:
-#: It has come down twice.  198 while the FWA activity feed shared the bottom
-#: row (it took 3fr of 7 and left the chase board and settlement table ~55
-#: columns each); 172 once the feed moved into the odds board's slot behind
-#: ``c``; and 143 once the buy-gate signal was shortened, which was what the
-#: last marker had been waiting on -- the signals panel, not a table, was the
-#: binding constraint at the end.
+#: It came down three times and has now gone back up once, and which dashboard
+#: sets it has changed.  198 while the FWA activity feed shared the bottom row
+#: (it took 3fr of 7 and left the chase board and settlement table ~55 columns
+#: each); 172 once that feed moved into the odds board's slot behind ``c``; and
+#: 143 once the buy-gate signal was shortened, which was what the last marker
+#: had been waiting on -- the signals panel, not a table, was FWA's binding
+#: constraint at the end.  FWA still clears every marker at 143.
+#:
+#: 176 since 2026-08-10, and it is **surf** that needs it, not FWA.  Surf's
+#: restructure put every widget on screen at once, which cost ``SurfDevActivity``
+#: its own ``3fr`` slot; from a share of the ``2fr`` right rail it reaches its
+#: widest row layout at 176.  That is a deliberate trade -- permanent
+#: visibility for columns -- and the widths in between advertise it honestly,
+#: so the number is raised rather than the layout re-cut.  Pinned in both
+#: directions against the real screen as
+#: ``screens/surf.py::SURF_FULL_LAYOUT_COLUMNS``: 175 lights one marker, 176
+#: lights none.
 #:
 #: Font size is the only lever most people have over this -- a window is
-#: already as wide as the display.
-FULL_LAYOUT_COLUMNS = 143
+#: already as wide as the display -- and at the forced 17 pt a laptop gets
+#: ~169, so the full layout now genuinely requires ``--font-size``.
+FULL_LAYOUT_COLUMNS = 176
 
 
 def _font_size(value: str) -> int:
@@ -63,7 +75,8 @@ def _maximize_terminal(font_size: int = _DEFAULT_FONT_SIZE) -> None:
     The font size is the whole reason this is configurable.  Every dashboard
     lays itself out in *columns*, and the widest tier needs
     :data:`FULL_LAYOUT_COLUMNS`; a maximized window on a laptop display gives
-    roughly 169 columns at 17 pt, which is below three of the four thresholds.
+    roughly 169 columns at 17 pt, which is below that and below most of the
+    per-dashboard thresholds under it.
     Forcing 17 pt unconditionally therefore capped the layout and silently
     overrode whatever the user had chosen -- including a smaller size chosen
     *specifically* to fit the full layout, which made the ``‹ widen`` hints

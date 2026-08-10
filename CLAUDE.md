@@ -122,11 +122,12 @@ python -m maxpane_dashboard --font-size 0        # do not resize my terminal
 ```
 
 **Layout is a function of terminal columns.** Widgets pick a tier by width and
-advertise dropped columns as `‹ widen` in their title. FWA needs **143
-columns** for the full layout (`__main__.FULL_LAYOUT_COLUMNS`, pinned by a test
-that renders the real screen at that width). Launch forces 17 pt — about 169
-columns on a laptop — so the top tier was unreachable until `--font-size` /
-`MAXPANE_FONT_SIZE` existed.
+advertise dropped columns as `‹ widen` in their title. The full layout needs
+**176 columns** (`__main__.FULL_LAYOUT_COLUMNS`, pinned by tests that render
+the real screens at that width). FWA needs **143**; the 176 is **surf**'s.
+Launch forces 17 pt — about 169 columns on a laptop — so the top tier was
+unreachable until `--font-size` / `MAXPANE_FONT_SIZE` existed, and at 176 it
+still is without one.
 
 FWA binds `c` to swap the odds board and the activity feed in one slot, so the
 bottom row is the chase board and the settlement table alone. That took the
@@ -134,6 +135,15 @@ requirement from 198 to 172 (three widgets needing 79/54/55 columns cannot
 share one row until it is very wide); shortening the buy-gate signal took it to
 143, because by then the *signals panel* was the binding constraint, not a
 table. TTT and Talismans use the same `c` pattern.
+
+**Surf does not** — it used to, and the binding is gone. Its 2026-08-10
+restructure put all six panels on screen at once (hero full width; announce
+feed beside a rail of signals over dev activity; market beside IDENTITY.MD),
+so there is nothing left to swap. The cost is that `SurfDevActivity` now sizes
+against a `2fr` rail instead of a `3fr` slot and needs 176 for its widest row
+layout, which is what moved the app-wide number 143 → 176 — the first time it
+has gone **up**, and the first time a dashboard other than FWA has set it.
+Widths in between are not clipping: the panel names the columns it shed.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`.

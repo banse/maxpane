@@ -1193,6 +1193,16 @@ async def test_the_row_marker_follows_a_live_resize_in_both_directions():
         )
 
 
+#: A width where ``SurfDevActivity`` is genuinely below its widest tier, for
+#: the resize test below.  It must **not** be ``SURF_FULL_LAYOUT_COLUMNS``:
+#: that constant is by definition the width at which nothing is shed, so using
+#: it here made the "before" assertion vacuous the moment the constant was
+#: re-measured from 135 to 176 -- the panel already showed the amount column,
+#: and the test could no longer see a re-tier happen at all.  143 is a real
+#: laptop width and is inside the marked band pinned above.
+_NARROW_FOR_RE_TIER = 143
+
+
 async def test_the_activity_panel_re_tiers_when_the_terminal_is_resized():
     """``SurfDevActivity.on_resize`` outlived the ``c`` swap that motivated it.
 
@@ -1203,7 +1213,7 @@ async def test_the_activity_panel_re_tiers_when_the_terminal_is_resized():
     yesterday's tier -- padded, shrunken and marked -- until something
     re-renders them. Nothing else does.
     """
-    async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, 46) as (app, screen, pilot):
+    async with _screen_at(_NARROW_FOR_RE_TIER, 46) as (app, screen, pilot):
         activity = screen.query_one(SurfDevActivity)
         assert "0.310 ETH" not in _region_text(app, activity)
 
@@ -1291,74 +1301,69 @@ async def _markers_outside_the_activity_panel(width: int) -> int:
         return whole - panel.count("‹ widen")
 
 
-#: The narrowest width at which **every** panel is marker-free, measured on
-#: the real screen.  Set by ``SurfDevActivity``: in the right rail it gets a
-#: ``2fr`` share minus its own and the log's padding and the log's permanent
-#: scrollbar gutter, i.e. ``0.4 * W - 5`` usable columns against the 66 its
-#: widest row layout needs.
-#:
-#: It was 135 while the panel had a ``3fr`` slot to itself behind the ``c``
-#: swap.  Trading columns for permanent visibility is the point of the
-#: three-row layout, and the marker that appears in between is the panel
-#: correctly announcing which fields it shed -- not a defect, and emphatically
-#: not something to be silenced by widening the rail until the feed (which
-#: needs 81 columns before it starts breaking a post) starts breaking posts.
-FIRST_CLEAN_WIDTH = 176
+#: Readable alias for the width the constant now *is*: the narrowest at which
+#: **every** panel is marker-free.  Deliberately not a second literal -- a
+#: duplicated 176 here would drift from ``screens/surf.py`` the first time the
+#: layout moves, and the test below is what pins the number to the real screen
+#: in both directions anyway.
+FIRST_CLEAN_WIDTH = SURF_FULL_LAYOUT_COLUMNS
 
-#: The narrowest width at which every panel *except* the activity is clean --
-#: still exactly ``SURF_FULL_LAYOUT_COLUMNS``, and still set by ``SurfFeed``.
+#: The narrowest width at which every panel *except* the activity is clean.
+#: This is what ``SURF_FULL_LAYOUT_COLUMNS`` used to be, and it is still set by
+#: ``SurfFeed`` -- keeping it pinned is how the 41-column gap up to the real
+#: constant stays attributable to exactly one widget.
 FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL = 135
 
 
-async def test_the_pinned_width_still_clears_every_marker_but_the_activity():
-    """``SURF_FULL_LAYOUT_COLUMNS`` is unchanged and still means what it says.
+async def test_the_pinned_width_is_exactly_the_tight_one():
+    """``SURF_FULL_LAYOUT_COLUMNS``, measured on the real screen both ways.
 
-    The three-row layout moved ``SurfDevActivity`` into the rail, where it
-    reaches its widest row layout at 176 columns rather than 135.  The
-    constant is deliberately **not** raised here: re-measuring it belongs to
-    the stage that owns ``__main__.FULL_LAYOUT_COLUMNS``, the README width
-    table and CLAUDE.md, which have to move together or not at all.  What is
-    pinned now is the split claim -- at 135 the feed, hero, signals, market
-    and NFT panels are all clean, and the single marker on screen is the
-    activity panel's, in its own rectangle, naming what it shed.
+    Too high and the app documents a terminal wider than any panel needs; too
+    low and it documents one that clips.  The ``-1`` assertion is what keeps it
+    honest: a widget that quietly grows a column fails *here*, with the number
+    in hand, instead of making the documented width dishonest in silence.
+
+    Nothing here compares the constant with a copy of itself -- both sides are
+    renders of the real screen at ``SURF_FULL_LAYOUT_COLUMNS`` and one column
+    below it, so the constant is what is under test.
     """
-    assert await _markers_outside_the_activity_panel(SURF_FULL_LAYOUT_COLUMNS) == 0
-    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS) == 1
-
-
-async def test_the_pinned_width_is_exactly_the_tight_one_for_the_other_panels():
-    """The constant, pinned in both directions against what still sets it.
-
-    Too high and the app documents a terminal wider than those panels need;
-    too low and it documents one that clips.  The ``-1`` assertion is what
-    keeps it honest: a widget that quietly grows a column fails *here*, with
-    the number in hand, instead of making the documented width dishonest in
-    silence.
-    """
-    assert SURF_FULL_LAYOUT_COLUMNS == FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL, (
-        f"the constant says {SURF_FULL_LAYOUT_COLUMNS} but every panel bar the "
-        f"activity first comes up clean at "
-        f"{FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL} -- re-measure and pin both"
+    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS) == 0, (
+        f"a marker survives at {SURF_FULL_LAYOUT_COLUMNS} -- the documented "
+        "width clips, re-measure it"
     )
+    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS - 1) > 0, (
+        f"the screen is already clean at {SURF_FULL_LAYOUT_COLUMNS - 1} -- the "
+        "documented width is padded, re-measure it"
+    )
+
+
+async def test_the_activity_panel_alone_is_what_sets_the_pinned_width():
+    """Which widget owns the number, pinned so the next reader need not guess.
+
+    The other five panels clear at ``FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL``
+    (135, set by ``SurfFeed``), and every column between there and the constant
+    is bought for ``SurfDevActivity`` alone -- it traded a ``3fr`` slot of its
+    own for a share of the ``2fr`` rail so that all six panels stay on screen
+    at once.  The marker in between is that panel correctly announcing which
+    fields it shed; it is not a defect, and emphatically not something to
+    silence by widening the rail until the feed (which needs 81 columns before
+    it starts breaking a post) starts breaking posts.
+    """
+    assert FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL < SURF_FULL_LAYOUT_COLUMNS
+    # The other five are clean well below the constant, pinned both ways...
     assert await _markers_outside_the_activity_panel(
         FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL
     ) == 0
     assert await _markers_outside_the_activity_panel(
         FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL - 1
     ) > 0, "those panels are clean below the measured width -- re-measure it"
-
-
-async def test_the_whole_screen_first_comes_up_clean_at_the_measured_width():
-    """The hand-off number for the stage that re-measures the constant.
-
-    Pinned in both directions on the real screen, so it is a measurement and
-    not a guess: one column narrower the activity panel is still shedding its
-    amount column and saying so.
-    """
-    assert await _widen_markers(FIRST_CLEAN_WIDTH) == 0
-    assert await _widen_markers(FIRST_CLEAN_WIDTH - 1) > 0, (
-        "the screen is clean below the measured width -- re-measure it"
-    )
+    # ...and in the whole gap, the only marker on screen is the activity's.
+    for width in (FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL, 143, 169,
+                  SURF_FULL_LAYOUT_COLUMNS - 1):
+        assert await _widen_markers(width) == 1, f"more than one marker at {width}"
+        assert await _markers_outside_the_activity_panel(width) == 0, (
+            f"a panel other than the activity is marked at {width}"
+        )
 
 
 async def test_a_narrow_tier_advertises_rather_than_truncating_silently():

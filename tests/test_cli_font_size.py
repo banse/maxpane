@@ -1,11 +1,12 @@
 """``--font-size`` decides how many columns the dashboard gets.
 
-Every dashboard lays out in *columns*, and the widest FWA tier needs 198 of
-them. A maximized window on a laptop display gives roughly 169 at 17 pt, so
-three of the four ``‹ widen`` markers were permanently on screen -- and the
-app **forced 17 pt on every launch**, overriding whatever the user had set.
-Zooming out before starting did nothing, which made the hints look like they
-were lying about a layout that could not be reached.
+Every dashboard lays out in *columns*, and the widest layout needs
+``FULL_LAYOUT_COLUMNS`` of them (198 when this file was written and FWA was
+the widest; 176 today, and it is surf's). A maximized window on a laptop
+display gives roughly 169 at 17 pt, so ``‹ widen`` markers were permanently on
+screen -- and the app **forced 17 pt on every launch**, overriding whatever the
+user had set. Zooming out before starting did nothing, which made the hints
+look like they were lying about a layout that could not be reached.
 
 Pinned here: the flag reaches the terminal, ``0`` means "leave my terminal
 alone", the env var works, and a bad env var degrades rather than crashing the
@@ -169,38 +170,70 @@ def test_terminal_app_runs_no_osascript_at_zero(monkeypatch, capsys) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_documented_width_matches_the_layout(monkeypatch) -> None:
-    """``FULL_LAYOUT_COLUMNS`` must stay true, or the help text misleads.
-
-    Renders the real FWA screen one column below and at the threshold and
-    asserts the ``‹ widen`` markers disappear exactly there. If a widget's
-    tier table changes, this goes red instead of the help text quietly
-    becoming wrong.
-    """
-    pytest.importorskip("textual")
-    import asyncio
+def _load_harness(relative: str):
+    """Import a screen test module as a harness, without collecting it."""
     import importlib.util
     from pathlib import Path
 
-    path = Path(__file__).parent / "screens" / "test_fwa_screen.py"
-    spec = importlib.util.spec_from_file_location("_fwa_screen_harness", path)
-    harness = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(harness)
+    path = Path(__file__).parent / relative
+    spec = importlib.util.spec_from_file_location(f"_harness_{path.stem}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-    async def _widen_markers(width: int) -> int:
-        screen = harness.FWAScreen(
-            harness._FakeManager(), poll_interval=30, name="fwa"
-        )
-        app = harness._ThemedHarness(screen)
+
+def test_the_documented_width_clears_every_dashboard(monkeypatch) -> None:
+    """``FULL_LAYOUT_COLUMNS`` must stay true, or the help text misleads.
+
+    The help text promises "the widest dashboard layout needs N", so the claim
+    is about *every* dashboard, not one of them: at ``FULL_LAYOUT_COLUMNS`` no
+    screen may still be advertising a shed column.  FWA is checked because it
+    set this number for most of the project's life; surf because it sets it
+    now.  If a widget's tier table changes, this goes red instead of the help
+    text quietly becoming wrong.
+    """
+    pytest.importorskip("textual")
+    import asyncio
+
+    fwa = _load_harness("screens/test_fwa_screen.py")
+
+    async def _fwa_markers(width: int) -> int:
+        screen = fwa.FWAScreen(fwa._FakeManager(), poll_interval=30, name="fwa")
+        app = fwa._ThemedHarness(screen)
         async with app.run_test(size=(width, 48)) as pilot:
             await pilot.pause()
             await screen._do_refresh()
             await pilot.pause()
-            return harness._screen_text(app).count("‹ widen")
+            return fwa._screen_text(app).count("‹ widen")
 
-    assert asyncio.run(_widen_markers(FULL_LAYOUT_COLUMNS)) == 0, (
-        f"{FULL_LAYOUT_COLUMNS} columns should clear every widen marker"
+    surf = _load_harness("screens/test_surf_screen.py")
+
+    assert asyncio.run(_fwa_markers(FULL_LAYOUT_COLUMNS)) == 0, (
+        f"{FULL_LAYOUT_COLUMNS} columns should clear every FWA widen marker"
     )
-    assert asyncio.run(_widen_markers(FULL_LAYOUT_COLUMNS - 4)) > 0, (
-        "the documented width is higher than it needs to be"
+    assert asyncio.run(surf._widen_markers(FULL_LAYOUT_COLUMNS)) == 0, (
+        f"{FULL_LAYOUT_COLUMNS} columns should clear every surf widen marker"
+    )
+
+
+def test_the_documented_width_is_tight_against_the_widest_dashboard() -> None:
+    """The other half: the number is not padded either.
+
+    This assertion used to be made against FWA (``FULL_LAYOUT_COLUMNS - 4``
+    still showed a marker), and that was right while FWA was the widest
+    layout.  It is not any more -- FWA clears at 143 and the constant is 176 --
+    so asserting tightness against FWA would now be asserting something false
+    about a dashboard that is comfortably inside the documented width.  The
+    claim belongs to whichever dashboard *sets* the number, which is surf: one
+    column narrower, its dev-activity panel is still shedding a column and
+    saying so.  Deleting this half instead would let the constant be inflated
+    to any value at all without a test noticing.
+    """
+    pytest.importorskip("textual")
+    import asyncio
+
+    surf = _load_harness("screens/test_surf_screen.py")
+
+    assert asyncio.run(surf._widen_markers(FULL_LAYOUT_COLUMNS - 1)) > 0, (
+        "the documented width is higher than the widest dashboard needs"
     )
