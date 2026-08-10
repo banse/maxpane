@@ -597,7 +597,7 @@ async def test_refresh_renders_title_and_all_panels():
         assert "SIGNALS" in text
         assert "ANNOUNCE FEED" in text
         assert "MARKET" in text
-        assert "IDMD NFT" in text
+        assert "IDENTITY.MD" in text
         # The hook vocabulary the manager actually emits reaches the hero in
         # words. ``NOT_LIVE`` (underscore) is WP3's *fallback* headline for an
         # unrecognised value, so asserting its absence is the tripwire against
@@ -661,7 +661,7 @@ async def test_screen_survives_manager_exception():
         assert "Mission Control" not in text
         # Every widget is still mounted and rendering.
         assert "SIGNALS" in text
-        assert "IDMD NFT" in text
+        assert "IDENTITY.MD" in text
 
 
 async def test_screen_survives_all_none_payload():
@@ -736,7 +736,7 @@ async def test_the_market_and_nft_panels_are_unaffected_by_the_toggle():
         for _ in range(3):
             text = _screen_text(app)
             assert "MARKET" in text
-            assert "IDMD NFT" in text
+            assert "IDENTITY.MD" in text
             await pilot.press("c")
             await pilot.pause()
 

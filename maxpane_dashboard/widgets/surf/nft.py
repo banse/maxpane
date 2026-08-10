@@ -1,4 +1,4 @@
-"""IDMD NFT panel: holders, velocity, identities, honest floor, last sales.
+"""IDENTITY.MD panel: holders, velocity, identities, honest floor, last sales.
 
 Rows: title · stats · written · floor · last-sales block.
 
@@ -33,6 +33,14 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, mmdd
+
+#: Panel title.  The collection calls itself identity.md, which is what the
+#: NFT *is* -- an onchain identity record -- so the panel says that rather
+#: than the ticker.  Deliberately *not* imported by the tests that assert
+#: it: they spell the string out, so a rename reddens them and has to be
+#: made on purpose.  A test comparing this constant against itself would
+#: pass through any rename at all.
+PANEL_TITLE = "IDENTITY.MD"
 
 #: The explicit floor state.  Tested verbatim (PRD §5 nft group).
 FLOOR_UNAVAILABLE = "n/a — no keyless source"
@@ -81,7 +89,7 @@ class SurfNft(Vertical):
     """
 
     def compose(self) -> ComposeResult:
-        yield Static("IDMD NFT", classes="surf-nft-title")
+        yield Static(PANEL_TITLE, classes="surf-nft-title")
         yield Static("", classes="surf-nft-line", id="surf-nft-spacer")
         yield Static("", classes="surf-nft-line", id="surf-nft-stats")
         yield Static("", classes="surf-nft-line", id="surf-nft-written")

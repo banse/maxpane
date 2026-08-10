@@ -14,6 +14,7 @@ Composited-output assertions throughout; zero network.
 from __future__ import annotations
 
 import inspect
+import re
 
 from textual.app import App, ComposeResult
 
@@ -185,6 +186,45 @@ async def test_feed_narrow_tier_truncates_and_advertises_widen():
         assert "as always 0 promises." not in screen  # the tail is cut...
         assert "…" in screen                          # ...visibly
         assert WIDEN_HINT in screen                   # ...and announced
+
+
+async def test_feed_separates_posts_with_a_blank_line():
+    """Posts are multi-line and carry no other separator.
+
+    Without a blank row a long message runs straight into the next post's
+    date and the two read as one message -- which is exactly how the feed
+    looked on the first real screenshot of it.
+
+    Asserted on the composited rows, not on the markup list: a blank line
+    that never reaches a pixel would separate nothing. The date column is
+    the anchor because it is the first thing on a post's opening row.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 40)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_FEED_ITEMS)
+        await pilot.pause()
+        rows = [row.rstrip() for row in _screen_text(app).split("\n")]
+
+        # Row indices where a post begins: its date is the leading token.
+        starts = [
+            i for i, row in enumerate(rows)
+            if re.match(r"\s*\d\d-\d\d \d\d:\d\d\s", row)
+        ]
+        assert len(starts) >= 2, f"need two posts to test a separator, saw {starts}"
+
+        # Every post after the first is preceded by a blank row.
+        for i in starts[1:]:
+            assert not rows[i - 1].strip(), (
+                f"post at row {i} has no blank line above it: {rows[i - 1]!r}"
+            )
+
+        # And the separator is exactly one row -- two would waste a third of
+        # a short feed panel on whitespace.
+        for i in starts[1:]:
+            assert rows[i - 2].strip(), (
+                f"post at row {i} has two blank rows above it, not one"
+            )
 
 
 async def test_feed_onchain_newlines_are_flattened_to_one_logical_row():

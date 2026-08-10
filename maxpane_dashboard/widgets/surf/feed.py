@@ -314,6 +314,13 @@ class SurfFeed(Vertical):
             item_markup, clipped = rendered
             clipped_any = clipped_any or clipped
             lines.extend(item_markup)
+            # A blank line after every post. These are multi-line messages
+            # with no other separator, so without one a long post runs
+            # straight into the next post's date and the two read as a
+            # single message. After the last one too: the log scrolls, so a
+            # trailing blank costs nothing, and omitting it would drop the
+            # separator exactly when the final post is what got scrolled to.
+            lines.append("")
 
         self._set_title(nonce, age_s, clipped=clipped_any, unavailable=False)
         if not lines:
