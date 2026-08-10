@@ -134,8 +134,14 @@ The first three are FWA's own (see the `c` paragraph below); 176 and 152 are
 surf's; and the last is FWA's again, reached without FWA moving at all — surf
 came down under it when the dev-activity row's cells were sized to the
 vocabularies its producer actually emits (`{dev, ops}`, `DEV_TX_KINDS`), taking
-that panel 66 → 58 columns and the surf screen 152 → 142. Which dashboard binds
-is itself a measurement; do not assume it from an older paragraph.
+that panel 66 → 58 columns and the surf screen 152 → 142. Surf then went back
+to **143** on 2026-08-12 — level with FWA, not under it — when its market panel
+was re-measured against a *tight* IMD/FP peg: the dollar gap prints six
+decimals below $0.01, so the healthier the peg the wider the row, and 142 had
+been measured against a capture whose 2.75% spread prints the narrow case. The
+app-wide number is the max of the two and did not move. Which dashboard binds
+is itself a measurement; do not assume it from an older paragraph, and measure
+a data-dependent width against the state the data is normally in.
 
 143 clears every *layout*, not every possible string. Surf's announce feed
 still lights `‹ widen` there whenever a post links a transaction: the post's

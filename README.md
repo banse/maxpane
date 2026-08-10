@@ -130,9 +130,9 @@ last marker goes out at:
 
 | columns | what still shows |
 |--------:|------------------|
-| 109–134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, FWA `SIGNALS ‹ widen` |
-| 135–141 | surf `ANNOUNCE FEED ‹ widen`, FWA `SIGNALS ‹ widen` |
-| 142 | FWA `SIGNALS ‹ widen` (surf is already full) |
+| 109–134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
+| 135–141 | surf `ANNOUNCE FEED ‹ widen`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
+| 142 | surf `IMD MARKET ‹ widen for 24h volume and bridge flow`, FWA `SIGNALS ‹ widen` |
 | **≥ 143** | **nothing — full layout**, with one exception below |
 
 The table starts at 109 rather than running down to zero because narrower terminals light
@@ -141,6 +141,12 @@ to `‹ widen: time, kind, ETH` as the time and kind columns go too, and at 106 
 surf's `IDENTITY.MD ‹ widen for dev holdings` joins them. Every one of those is a panel
 saying what it dropped, which is the system working; the table lists the last few to go
 out, not every marker a narrow terminal can show.
+
+`IMD MARKET` is the one row that moves with the data rather than with your terminal. Its
+widest line carries the IMD/FP gap in dollars, and prices under a cent print with six
+decimals instead of four — so a **tighter** peg is a **wider** panel: `$0.007100` where a
+2.75% spread would print `$0.0200`. The table shows the wide case, which is also the
+normal one for a 1:1 bridge; on a day the peg is loose the marker goes out around 140.
 
 The exception is a post, not a panel. When an announce post links a transaction, its own
 punctuation can glue the URL to the 66-character hash into a single token no column budget
@@ -197,8 +203,10 @@ the other, so a single manager owns the command.
 
 **The widest layout wants 143 columns.** That is the width at which every widget on every dashboard
 can render its full column set for the data it holds today. The 143 is **FWA's**, and it is FWA's
-again: surf set this number at 176 and then 152 for part of 2026-08-10, and has since come down to
-**142** — one column under FWA — so the app-wide number is back where FWA left it. One thing 143
+again: surf set this number at 176 and then 152 for part of 2026-08-10, came down to 142, and now
+reads **143** as well — level with FWA rather than under it, because surf's `IMD MARKET` needs one
+more column than the announce feed once the IMD/FP peg is tight (see the note under the table
+above). Either way the app-wide number is the max of the two and has not moved. One thing 143
 does not promise is a clean announce feed on every possible post: a post that links a transaction
 can carry a single unbreakable token wider than the panel, and the feed correctly truncates it and
 says so at any width (see the note under the table above).
@@ -221,7 +229,8 @@ panel is the only thing still asking for width.
 One honest caveat on the seam. 7:6 was measured when the feed needed 81 columns and the rail 71;
 they need 76 and 63 now, which a seam nearer 76:63 would collect at 139 rather than 142. The three
 columns are real and deliberately unspent: the app-wide number is FWA's 143, so a surf screen
-clearing at 139 would not change a single width a user sees.
+clearing at 139 would not change a single width a user sees — and that seam is no longer what binds
+surf anyway, since the market panel in the row below it asks for 143.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why

@@ -190,23 +190,30 @@ ACTIVITY_MIN_HEIGHT = 7
 #: before the constant moved: 141 lights exactly one marker, 142 lights none,
 #: and every width from 142 to 200 lights none either.
 #:
-#: **Re-swept unchanged on 2026-08-11**, when ``SurfMarket`` gained the ``‹
-#: widen`` tiers it had never had. That panel's widest row is 71 rendered
-#: columns, so it is whole from a **140**-column terminal and sheds ``vol
-#: 24h`` at 139 -- two columns *below* the announce feed's edge, which is why
-#: the marker it can now light does not move this number. Swept again with the
-#: tiers in place, the whole-screen
-#: marker count now reads: 130-134 three (feed, market, activity), 135-139 two
-#: (feed, market), 140-141 one (feed alone), 142-200 none. The announce feed
-#: is still the panel that sets this number.
+#: **142 -> 143 on 2026-08-12**, and the sweep that said 142 was measuring the
+#: wrong state of ``SurfMarket``. That panel's binding row carries the IMD/FP
+#: dollar gap, and ``_fmt.fmt_price`` switches to six decimals below $0.01:
+#: the captured 2.75% spread renders ``$0.0200`` and the row needs 71 columns,
+#: while any *tighter* peg renders ``$0.007100`` and needs **73**. At IMD's
+#: $0.7074 that is every parity inside ±1.41% -- the ordinary state of a 1:1
+#: bridge -- so the friendlier number was the one measured and the margin it
+#: implied never existed. Re-swept against a tight peg, the whole-screen
+#: marker count reads: 130-134 three (feed, market, activity), 135-141 two
+#: (feed, market), 142 one (market alone), 143-200 none.
 #:
-#: **The binding panel changed hands with this measurement.** Through the 176
-#: and 152 eras the last marker standing was ``SurfDevActivity``'s and the
-#: feed was clean well below it; sizing the activity row's cells to the
-#: vocabularies their producer emits took that panel's full row layout 66 ->
-#: 58, so it now clears from a **135**-column terminal and the marker at 141
-#: is the **announce feed's**. Any statement of the form "the activity panel
-#: is the one still asking for width" is from the old regime and is false.
+#: **The market is the panel that sets this number now**, one column above the
+#: announce feed. It is not worth re-seaming for: the bottom row's 7:6 split
+#: is settled and ``__main__.FULL_LAYOUT_COLUMNS`` is FWA's 143 either way, so
+#: surf clearing at 143 rather than 142 is a width nobody can see the loss of.
+#:
+#: **The binding panel has changed hands twice.** Through the 176 and 152 eras
+#: the last marker standing was ``SurfDevActivity``'s and the feed was clean
+#: well below it; sizing the activity row's cells to the vocabularies their
+#: producer emits took that panel's full row layout 66 -> 58, so it clears
+#: from a **135**-column terminal and 142 was the **announce feed's** edge.
+#: At 143 it is ``SurfMarket``'s. Any statement of the form "the activity
+#: panel is the one still asking for width" is from the first regime and is
+#: false; "the feed is" belongs to the second.
 #: The number is quoted by ``__main__.FULL_LAYOUT_COLUMNS``, the ``--font-size``
 #: help text, the README width table and CLAUDE.md, and all five now agree.
 #: ``tests/screens/test_surf_screen.MEASURED_FULL_LAYOUT_COLUMNS`` holds the
@@ -217,8 +224,8 @@ ACTIVITY_MIN_HEIGHT = 7
 #: *below* it would clip, which is what
 #: ``test_the_documented_width_still_covers_the_measured_one`` forbids.
 #:
-#: The history, because the number has moved four times in three days:
-#: **135 -> 176 -> 152 -> 142**.
+#: The history, because the number has moved five times in four days:
+#: **135 -> 176 -> 152 -> 142 -> 143**.
 #:
 #: It was 135 while ``SurfDevActivity`` had a ``3fr`` slot of its own (shared
 #: with the feed, behind a ``c`` swap that no longer exists). The three-row
@@ -237,9 +244,10 @@ ACTIVITY_MIN_HEIGHT = 7
 #: **7:6** collects 142, three columns above it. Not worth re-seaming for:
 #: FWA's 143 is what the app documents, so those three columns buy nothing a
 #: user could see. The whole seam sweep is in the screen docstring and, with
-#: the losing candidates, in the test module.
+#: the losing candidates, in the test module. **That seam is no longer what
+#: binds** -- 143 comes from the *bottom* row, where the market takes 7/13.
 #:
-#: 142 is inside the ~169 columns a laptop gets at the forced 17 pt, as 152
+#: 143 is inside the ~169 columns a laptop gets at the forced 17 pt, as 152
 #: was; that headroom was the point of re-seaming, because at 176 the full
 #: layout was unreachable at the font size the app itself picks and
 #: ``--font-size 12`` was the only way in.
@@ -256,7 +264,7 @@ ACTIVITY_MIN_HEIGHT = 7
 #: -- see ``test_a_linked_post_advertises_widen_at_the_full_layout_width``.
 #: Do not raise this toward 216 to silence a linked post's marker: that
 #: marker is correct, and 216 is a "full layout" nobody could reach.
-SURF_FULL_LAYOUT_COLUMNS = 142
+SURF_FULL_LAYOUT_COLUMNS = 143
 
 
 # -- format helpers ----------------------------------------------------

@@ -19,6 +19,7 @@ is driven with ``MaxPaneApp`` swapped for a recorder, exactly the way
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 from typing import Any
 
@@ -738,6 +739,62 @@ def test_the_documented_width_is_not_promised_to_clear_every_post() -> None:
             f"{name} documents {FULL_LAYOUT_COLUMNS} columns as clearing every "
             "marker, which a post linking a transaction makes false"
         )
+
+
+#: The README width table names panels by their on-screen titles; this maps
+#: each back to the widget whose rectangle the marker has to be in.  Spelled
+#: out rather than derived from the widgets, because the *titles* are what a
+#: reader matches against and a renamed panel must redden here.
+_README_PANEL_TITLES = {
+    "ANNOUNCE FEED": "SurfFeed",
+    "DEV ACTIVITY": "SurfDevActivity",
+    "IMD MARKET": "SurfMarket",
+    "IDENTITY.MD": "SurfNft",
+    "SIGNALS": "SurfSignals",
+}
+
+
+def _readme_width_bands() -> list[tuple[tuple[int, ...], frozenset[str]]]:
+    """``(widths to check, surf panels the row names)`` per width-table row.
+
+    Parsed out of the README rather than restated here: the table is the
+    artefact under test, and a copy of it in this file would be one more
+    surface to drift.
+    """
+    lines = (REPO / "README.md").read_text(encoding="utf-8").splitlines()
+    start = next(i for i, l in enumerate(lines) if l.startswith("| columns |"))
+    bands = []
+    for line in lines[start + 2:]:
+        if not line.startswith("|"):
+            break
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        widths = tuple(int(n) for n in re.findall(r"\d+", cells[0]))
+        titles = re.findall(r"surf `([A-Z][A-Z .]*?) ‹ widen", cells[1])
+        bands.append((widths, frozenset(_README_PANEL_TITLES[t] for t in titles)))
+    assert bands, "the README width table did not parse -- did its shape change?"
+    return bands
+
+
+def test_the_readme_width_table_names_the_panels_that_are_really_lit() -> None:
+    """Every row of the table, rendered.  Nothing pinned the *contents* before.
+
+    The number at the bottom of the table was pinned from the day it was
+    written; which panels each band lists was not, so the rows went stale in
+    place -- for two days the table named no ``IMD MARKET`` at all while that
+    panel was the one lighting a marker in every band, and it put 135-141 in
+    one row when the feed and the market go out one column apart.
+
+    Both ends of each band are rendered, so a band that has silently split
+    fails rather than passing on its first column.
+    """
+    harness = _surf_screen_harness()
+    for widths, expected in _readme_width_bands():
+        for width in {widths[0], widths[-1]}:
+            lit = asyncio.run(harness._panels_asking_for_width(width))
+            assert lit == set(expected), (
+                f"at {width} columns the README says {sorted(expected)} and the "
+                f"screen lights {sorted(lit)}"
+            )
 
 
 #: Every surface that narrates the 3:2 -> 7:6 re-seam.  All three carried the

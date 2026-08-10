@@ -881,14 +881,35 @@ async def test_market_sparklines_start_at_a_column_derived_from_the_rows():
     field grew past it -- and then it would collide with, or ellipsise, the
     figure it was meant to sit beside.  So the widening half is the half
     that bites: a wider FP row must push both sparklines right together.
+
+    The **graphics** are checked as well as the labels.  ``price`` and
+    ``supply`` are six characters apart in length, so two labels starting in
+    one column says nothing about where the bars start -- dropping the label
+    padding shifts them a column apart and every label assertion stays green.
+    (The two bars do not *begin* together: a series shorter than the bar is
+    right-aligned inside it, which is the point.  What must coincide is the
+    column the bar field starts at.)
     """
+    bars = set("▁▂▃▄▅▆▇█")
+
+    def _bar_start(line: str) -> int:
+        return next(i for i, ch in enumerate(line) if ch in bars)
+
     widget = SurfMarket()
     app = _Harness(widget)
     async with app.run_test(size=(120, 14)) as pilot:
         widget.update_data(**_FULL_MARKET)
         await pilot.pause()
-        narrow = _line_with(app, "$0.7074").index("price")
-        assert narrow == _line_with(app, "vol 24h").index("supply")
+        price_line, token_line = _line_with(app, "$0.7074"), _line_with(app, "vol 24h")
+        narrow = price_line.index("price")
+        assert narrow == token_line.index("supply")
+
+        pad = _market._LABEL_WIDTH + 1
+        assert price_line.index("price") + pad == token_line.index("supply") + pad
+        assert _bar_start(price_line) == price_line.index("price") + pad, (
+            "the price bar does not start where the padded label leaves it -- "
+            "the two bar fields are a column apart"
+        )
 
         # A far longer left-hand field on the FP row -- absurd as a price,
         # ordinary as a layout input, and the one thing a constant cannot
@@ -999,6 +1020,61 @@ async def test_market_bridge_block_is_explicitly_unavailable_without_parity():
         assert "$0.00" not in panel
 
 
+async def test_market_never_shows_a_parity_the_prices_could_not_produce():
+    """A parity beside ``⚠ spread unavailable`` is a stale number shown live.
+
+    ``parity_pct`` and the two prices are three separate payload keys, so a
+    caller can hand this widget a percentage with no prices behind it -- a
+    recompute that outlived its inputs, or a cache read that half-succeeded.
+    The bridge block gates on all three; the parity cell must gate on the
+    same three, or the panel states a spread on the same screen as the
+    warning that no spread could be read.
+    """
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        for missing in ("imd_price_usd", "fp_price_usd"):
+            widget.update_data(**{**_FULL_MARKET, missing: None})
+            await pilot.pause()
+            panel = _screen_text(app)
+            assert "spread unavailable" in panel, missing
+            assert "-2.75%" not in panel, (
+                f"{missing} could not be read, yet the panel states a parity:"
+                f"\n{panel}"
+            )
+            assert "parity --" in panel, panel
+
+
+async def test_market_names_no_rich_side_a_rendered_figure_does_not_show():
+    """A direction is only named when the number on screen shows it.
+
+    ``0.727400001`` against ``0.7274`` is a gap of 1e-9: ``fmt_price`` renders
+    it ``$0.000000`` and the parity renders ``+0.00%``, so naming a rich side
+    beside them is a claim neither figure supports -- the same defect shape as
+    a zero standing in for a failed read.  Exact ``== 0`` is what let it
+    through: float subtraction of two live prices lands on zero almost never.
+    """
+    widget = SurfMarket()
+    app = _Harness(widget)
+    fp = _FULL_MARKET["fp_price_usd"]
+    imd = fp + 1e-9
+    async with app.run_test(size=(100, 14)) as pilot:
+        widget.update_data(
+            **{
+                **_FULL_MARKET,
+                "imd_price_usd": imd,
+                "parity_pct": (imd / fp - 1) * 100,
+            }
+        )
+        await pilot.pause()
+        panel = _screen_text(app)
+        assert "IMD level with FP" in panel, panel
+        assert "parity ● +0.00%" in panel, panel        # neutral glyph, not ▲
+        for invented in ("over FP", "under FP", "bridges in", "bridges back"):
+            assert invented not in panel, f"{invented!r} on a gap of 1e-9:\n{panel}"
+        assert "$0.000000" not in panel, panel
+
+
 async def test_market_bridge_block_says_level_rather_than_a_zero_spread():
     """Two identical prices are the one case with no rich side to name.
 
@@ -1017,6 +1093,27 @@ async def test_market_bridge_block_says_level_rather_than_a_zero_spread():
         assert "$0.00 " not in panel
         for direction in ("bridges back", "bridges in"):
             assert direction not in panel
+
+
+def test_market_epsilons_are_the_rounding_boundaries_of_their_own_formatters():
+    """Both thresholds are render boundaries, so pin them to what renders.
+
+    Written as "just below shows nothing, just above shows something" rather
+    than against the literals themselves: a test comparing ``_GAP_EPSILON``
+    with ``5e-7`` would pass through any change to ``fmt_price``'s precision
+    bands, which is the thing that decides where the boundary actually is.
+    """
+    from maxpane_dashboard.widgets.surf.market import (
+        _GAP_EPSILON,
+        _PARITY_EPSILON,
+        _fmt_parity,
+    )
+
+    assert set(_fmt.fmt_price(_GAP_EPSILON * 0.9)) <= set("$0.")
+    assert _fmt.fmt_price(_GAP_EPSILON * 1.1).strip("$0.") != ""
+
+    assert "0.00%" in _fmt_parity(_PARITY_EPSILON * 0.9)
+    assert "0.00%" not in _fmt_parity(_PARITY_EPSILON * 1.1)
 
 
 async def test_market_bridge_copy_never_advises_a_transaction():
@@ -1161,6 +1258,39 @@ async def test_market_widen_hints_all_fit_beside_the_title_at_their_own_tier():
         )
 
 
+#: What each hint's wording claims went, as the string that has to be gone
+#: from the body for the claim to be true.  A hint is free prose, so nothing
+#: connected it to the render: ``WIDEN_HINTS["minimal"] = "‹ widen: pool"``
+#: named a field that never sheds and left all 21 market tests green.
+_HINT_CLAIMS: dict[str, tuple[tuple[str, str], ...]] = {
+    "compact": (("24h volume", "vol 24h"), ("bridge flow", "gap narrows")),
+    "narrow": (("FP price", "FP $0.7274"), ("price bar", "▁▁▁▂")),
+    "minimal": (("$ spread", "under FP"),),
+    "bare": (("bridge", "IMD is FP bridged 1:1 from Base"),),
+}
+
+
+async def test_market_each_widen_hint_names_a_field_that_actually_went():
+    """The marker's job is to say *what* went; nothing checked that it did.
+
+    Both directions per claim: the wording is in the hint (so a rewritten
+    hint reddens here rather than silently describing something else), and
+    the thing it names is off the panel at that tier (so a hint can never
+    advertise a field the user is looking at).
+    """
+    assert set(_HINT_CLAIMS) == {t for t in _market.TIERS if _market.WIDEN_HINTS[t]}
+    for tier, claims in _HINT_CLAIMS.items():
+        hint = _market.WIDEN_HINTS[tier]
+        rows, _title = await _render_at(_FULL_MARKET, _tier_width(tier, _FULL_MARKET))
+        body = "\n".join(rows[1:])          # not the title: it *is* the hint
+        for phrase, evidence in claims:
+            assert phrase in hint, f"{tier}'s hint no longer says {phrase!r}"
+            assert evidence not in body, (
+                f"{tier}'s hint offers {phrase!r} for widening, but it is on "
+                f"screen already:\n{body}"
+            )
+
+
 #: The ladder, **spelled out here** rather than read from
 #: ``market._TIER_STEPS``: the order is an argument (how recoverable each
 #: field is from what survives, module docstring), so reordering it must be a
@@ -1216,20 +1346,44 @@ async def test_market_sheds_whole_labelled_fields_in_the_documented_order():
     assert seen == [name for name, _gone in _EXPECTED_LADDER]
 
 
-async def test_market_the_dollar_spread_and_its_caveat_are_one_field():
-    """``gross of fees`` may never outlive, or be outlived by, the number.
+async def test_market_the_dollar_spread_never_appears_without_its_caveat():
+    """``gross of fees`` may never be outlived by the number it qualifies.
 
     Bridge fees, gas on two chains and both pools' slippage are not knowable
     keylessly, so a dollar gap printed without that caveat is a gap a reader
-    can take for free money.  Shedding either half alone is the way that
-    happens, which is why they are one field.
+    can take for free money.
     """
     for tier in _market.TIERS:
         rows = "\n".join(
             (await _render_at(_FULL_MARKET, _tier_width(tier, _FULL_MARKET)))[0]
         )
-        assert ("under FP" in rows) == ("gross of fees" in rows), (
-            f"the {tier} tier separates the spread from its caveat:\n{rows}"
+        if "under FP" in rows:
+            assert "gross of fees" in rows, (
+                f"the {tier} tier states a dollar gap uncaveated:\n{rows}"
+            )
+
+
+async def test_market_never_states_a_spread_of_any_kind_without_the_caveat():
+    """The caveat qualifies *the spread*, not the dollar cell it started in.
+
+    ``parity ▼ -2.75%`` never sheds, so shedding the dollar cell used to take
+    the only ``gross of fees`` on the panel with it: a 100-column terminal
+    (49 columns of panel) rendered a 2.75% gap on a bridged pair with no fee
+    caveat anywhere on screen, which is the exact reading the caveat exists
+    to stop.  Swept over every width the panel has a tier for, because that
+    width is the common one and not an exotic edge.
+    """
+    lo = _tier_width("bare", _FULL_MARKET)
+    hi = _tier_width("full", _FULL_MARKET) + 6
+    for width in range(lo, hi):
+        rows, _title = await _render_at(_FULL_MARKET, width)
+        body = "\n".join(rows)
+        if "…" in body:
+            continue        # cut, and the title says so: another test's job
+        assert "-2.75%" in body, body
+        assert "gross of fees" in body, (
+            f"at {width} columns the panel states a spread with no caveat:"
+            f"\n{body}"
         )
 
 

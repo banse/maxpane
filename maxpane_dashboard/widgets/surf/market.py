@@ -48,18 +48,32 @@ Three things this block deliberately does not do:
   construction -- no signer, no calldata, nothing to advise *for*.  The
   copy describes a state and the direction that would close it, and says
   nothing about what anyone should do or earn.
-* **The spread is gross and says so.**  Bridge fees, mainnet and Base gas
-  and both pools' slippage are not knowable keylessly, so no net figure is
-  available at any price; ``gross of fees`` is what stops a 2% parity
-  being read as 2% free.  The dollar figure and that caveat are **one
-  field**: they are shed together or not at all (:data:`_TIER_STEPS`), so
-  no width can leave a bare gap on screen reading as free money.
-* **It degrades explicitly.**  ``parity_pct`` is ``None`` whenever either
-  price read fails, and then the whole block is
-  :data:`SPREAD_UNAVAILABLE` -- not a blank right-hand column (which reads
-  as *at parity*), not a zero, and never the last good spread presented as
-  live.  :data:`BRIDGE_MECHANISM` survives that state because it is not a
-  market read.
+* **The spread is gross and says so, in whichever form it is stated.**
+  Bridge fees, mainnet and Base gas and both pools' slippage are not
+  knowable keylessly, so no net figure is available at any price;
+  :data:`GROSS_CAVEAT` is what stops a 2% parity being read as 2% free.
+  It is **not a field of its own** and cannot be shed: it rides the dollar
+  cell while that cell exists and moves onto ``parity`` when the cell sheds
+  (:func:`_rows_for`).  Pairing it with the dollar figure *alone* was the
+  bug -- ``parity`` never sheds, so a 100-column terminal rendered
+  ``parity ▼ -2.75%`` on a bridged pair with no caveat anywhere, which is
+  not an exotic width but the common one.
+* **It degrades explicitly, and the whole panel shares one gate.**
+  ``parity_pct`` is ``None`` whenever either price read fails, and then the
+  block is :data:`SPREAD_UNAVAILABLE` -- not a blank right-hand column
+  (which reads as *at parity*), not a zero, and never the last good spread
+  presented as live.  The *parity cell* is gated on the same three keys in
+  :func:`_parts` rather than on its own value alone: they are three
+  separate payload keys, so a percentage can arrive with no prices behind
+  it, and rendering it would state a spread on the same panel as the
+  warning that no spread could be read.  :data:`BRIDGE_MECHANISM` survives
+  that state because it is not a market read.
+* **It names no direction a figure on screen does not show.**  The rich
+  side and the parity glyph are decided against :data:`_GAP_EPSILON` and
+  :data:`_PARITY_EPSILON`, the rounding boundaries of the two cells' own
+  formatters -- ``imd - fp == 0`` exactly is a test never true of two live
+  prices, and it let ``IMD $0.000000 over FP`` onto the panel beside
+  ``parity ▲ +0.00%``.
 
 ``None`` anywhere renders ``--``; a missing feed is never a zero price.
 
@@ -83,12 +97,22 @@ so an over-long row is cut with a visible ``…``.  That is half the house
 contract; the other half -- a word in the *title* naming what went -- this
 panel had none of until 2026-08-11, and it did not much matter while its
 widest row was ~33 columns.  Pairing the sparklines with their figures and
-adding the bridge block took that row to **71** rendered columns, i.e. from
-"fits anything" to a panel that is clean only from a **140**-column terminal
-against the 142 this screen is measured at.  Two columns of margin, on a row
-whose width moves with ``fmt_price``'s precision band -- a sub-cent IMD
-renders ``$0.000200`` where today's $0.7074 renders ``$0.0200`` and costs two
-more -- so the marker had stopped being theoretical.
+adding the bridge block took that row to **71** rendered columns against the
+captured 2.75% spread, i.e. from "fits anything" to a panel with two columns
+of margin at the width the screen was then measured at.
+
+**That margin was not there.**  The binding row's width moves with
+``fmt_price``'s precision band, and it moves the *wrong way*: the band
+switches to six decimals below $0.01, so a gap of $0.0071 renders
+``$0.007100`` where the capture's $0.0200 renders ``$0.0200`` -- two columns
+**more** for a *tighter* peg, which at $0.71 is any parity inside ±1.41% and
+therefore the normal state of a 1:1 bridge.  The full tier needs **73**, not
+71, and the surf screen was re-measured 142 -> **143** on 2026-08-12 for it
+(``screens/surf.SURF_FULL_LAYOUT_COLUMNS``; still inside the app-wide
+``__main__.FULL_LAYOUT_COLUMNS`` of 143, so no user-visible width moved).
+A payload measuring this panel must therefore carry a sub-cent gap: the
+capture's unusually wide spread renders the *narrow* case and clears one
+column early.
 
 So the panel now sheds **whole labelled fields** in a fixed order and the
 title names them (:data:`WIDEN_HINTS`, :data:`SHORT_HINT`).
@@ -120,15 +144,17 @@ tier:
    supply bar -- **55 -> 33**, the biggest step on the ladder.  Note what
    does *not* go here: ``parity ▼ -2.75%`` is the spread, stated as a
    percentage, and it is 18 columns, so the panel's job survives every tier;
-   what is shed is the dollar restatement.  Again measured: the supply bar
-   alone is 55 -> 55 while the spread cell is present, which is why the burn
+   what is shed is the dollar restatement.  Its *caveat* survives too, onto
+   the parity cell -- and costs nothing, because the mechanism sentence is
+   still the widest row at this tier.  Again measured: the supply bar alone
+   is 55 -> 55 while the spread cell is present, which is why the burn
    staircase is the last graphic standing.
 5. ``IMD is FP bridged 1:1 from Base`` -- the mechanism, last, because it is
-   what makes "parity" mean anything.  It saves five columns in the healthy
-   state (33 -> 28) and **28** in the unavailable one (56 -> 28), where it
-   shares its row with ``⚠ spread unavailable``: that warning is the reason
-   this tier exists at all, since a cut warning is the one thing worse than
-   a shed one.
+   what makes "parity" mean anything.  It saves two columns in the healthy
+   state (33 -> 31, the caveat now being what the parity row carries) and
+   **28** in the unavailable one (56 -> 28), where it shares its row with
+   ``⚠ spread unavailable``: that warning is the reason this tier exists at
+   all, since a cut warning is the one thing worse than a shed one.
 
 The tiers are picked by measuring **the very lines that are then rendered**
 (:func:`_tier_for` lays each candidate out with :func:`_lay_out` and takes
@@ -187,6 +213,23 @@ BRIDGE_MECHANISM = "IMD is FP bridged 1:1 from Base"
 #: The explicit unavailable state for the whole bridge block.  Rendered
 #: verbatim and asserted verbatim by the widget tests.
 SPREAD_UNAVAILABLE = "spread unavailable"
+
+#: The caveat that qualifies **the spread**, in whichever form the spread is
+#: currently on screen.  It rides the dollar cell while that cell exists and
+#: moves onto the parity cell when it sheds -- see :func:`_rows_for`.
+GROSS_CAVEAT = "gross of fees"
+
+#: Below this the dollar gap does not survive its own formatter: ``fmt_price``
+#: renders anything under it ``$0.000000``, so there is no figure on screen
+#: for a named rich side to rest on.  A rounding boundary, not a taste
+#: threshold -- pinned against ``fmt_price`` by
+#: ``test_market_gap_epsilon_is_the_width_of_its_own_formatter``.
+_GAP_EPSILON = 5e-7
+
+#: The same rule for the percentage: below this the cell's own ``.2f`` renders
+#: ``+0.00%``, and a ``▲`` beside ``+0.00%`` claims a direction the number
+#: does not show.
+_PARITY_EPSILON = 0.005
 
 #: The width ladder: ``(tier, fields this tier gives up)``, widest first and
 #: **cumulative** -- each tier has also given up everything above it.  The
@@ -269,13 +312,19 @@ def _fmt_change(value) -> str:
 
 
 def _fmt_parity(value) -> str:
-    """FP↔IMD parity spread; negative means IMD trades below FP."""
+    """FP↔IMD parity spread; negative means IMD trades below FP.
+
+    Availability is gated by :func:`_parts` on the same three payload keys as
+    the bridge block, so this cell cannot state a spread on the same panel as
+    ``⚠ spread unavailable``; ``None`` reaches here for a failed read of
+    *either* price as well as of the parity itself.
+    """
     v = as_float(value)
     if v is None:
         return f"[dim]parity {DASH}[/]"
-    if v > 0:
+    if v > _PARITY_EPSILON:
         return f"[dim]parity[/] [$success]▲ {v:+.2f}%[/]"
-    if v < 0:
+    if v < -_PARITY_EPSILON:
         return f"[dim]parity[/] [$error]▼ {v:+.2f}%[/]"
     return f"[dim]parity ● {v:+.2f}%[/]"
 
@@ -300,9 +349,11 @@ def _bridge_cells(imd_price_usd, fp_price_usd, parity_pct) -> tuple[str, str]:
     Both halves are derived from the same two live prices, so they cannot
     contradict each other: ``imd - fp`` and ``(imd/fp - 1) * 100`` share a
     sign for any positive FP price, which is the only case ``parity_pct``
-    returns a number for.  ``parity_pct`` is the availability gate -- it is
-    ``None`` exactly when the pair could not be read -- and the empty pair
-    is the caller's signal to render :data:`SPREAD_UNAVAILABLE` instead.
+    returns a number for.  All three keys are the availability gate -- a
+    percentage can arrive with no prices behind it -- and the empty pair is
+    the caller's signal to render :data:`SPREAD_UNAVAILABLE` instead **and**
+    to withhold the parity cell, which is derived from the same three reads
+    (:func:`_parts`).
     """
     imd = as_float(imd_price_usd)
     fp = as_float(fp_price_usd)
@@ -310,7 +361,10 @@ def _bridge_cells(imd_price_usd, fp_price_usd, parity_pct) -> tuple[str, str]:
         return "", ""
 
     delta = imd - fp
-    if delta == 0:
+    if abs(delta) < _GAP_EPSILON:
+        # Not ``== 0``: two live prices subtract to exactly zero almost never,
+        # and a gap that renders ``$0.000000`` names a rich side no figure on
+        # this panel shows.  :data:`_GAP_EPSILON` is that render boundary.
         return "[dim]IMD level with FP[/]", "[dim]no gap to close[/]"
     side = "over" if delta > 0 else "under"
     # Which flow narrows it: supply arriving on the rich side, or leaving
@@ -318,7 +372,7 @@ def _bridge_cells(imd_price_usd, fp_price_usd, parity_pct) -> tuple[str, str]:
     flow = "FP bridges in" if delta > 0 else "IMD bridges back"
     return (
         f"[dim]IMD[/] [bold]{fmt_price(abs(delta))}[/] "
-        f"[dim]{side} FP, gross of fees[/]",
+        f"[dim]{side} FP, {GROSS_CAVEAT}[/]",
         f"[dim]gap narrows as {flow}[/]",
     )
 
@@ -365,6 +419,11 @@ def _parts(
     fp = fmt_price(fp_price_usd)
     supply_points = coerce_points(supply_series)
     spread, direction = _bridge_cells(imd_price_usd, fp_price_usd, parity_pct)
+    # One gate for the whole panel.  ``_bridge_cells`` is empty exactly when
+    # any of the three market keys failed to read, so deriving the parity
+    # cell's availability from it is what stops ``parity ▼ -2.75%`` appearing
+    # beside ``⚠ spread unavailable`` -- three keys, one answer.
+    measurable = bool(spread)
 
     return {
         "price": f"[bold]{price}[/]" if price != DASH else f"[dim]{DASH}[/]",
@@ -372,7 +431,7 @@ def _parts(
         "vol": f"${fmt_compact(vol)}" if vol is not None else DASH,
         "pool": f"${fmt_compact(liq)}" if liq is not None else DASH,
         "fp": f"[dim]FP[/] {fp}" if fp != DASH else f"[dim]FP {DASH}[/]",
-        "parity": _fmt_parity(parity_pct),
+        "parity": _fmt_parity(parity_pct if measurable else None),
         "price_series": price_series,
         "supply_series": supply_series,
         "supply_last": fmt_compact(supply_points[-1][1]) if supply_points else "",
@@ -380,7 +439,11 @@ def _parts(
         "direction": direction,
         # ``spread`` is emptied by the tiers as well as by an outage, so the
         # bridge row needs a flag that means only "the pair could be read".
-        "measurable": bool(spread),
+        "measurable": measurable,
+        # True only while a *gap* is being stated, so the caveat follows the
+        # spread onto the parity cell without appearing beside "level with FP",
+        # where there is no gap to be gross about.
+        "gross": GROSS_CAVEAT in spread,
     }
 
 
@@ -418,9 +481,20 @@ def _rows_for(tier: str, parts: dict) -> list[tuple[str, str]]:
     bits = []
     if "fp" not in gone:
         bits.append(parts["fp"])
-    bits.append(parts["parity"])
+    parity = parts["parity"]
+    spread_shed = "spread" in gone
+    if spread_shed and parts["gross"]:
+        # The caveat qualifies the spread, and ``parity`` *is* the spread once
+        # the dollar cell has gone -- so it follows it here rather than being
+        # shed with the cell it started on.  Pairing it with the dollar figure
+        # alone left the narrow tiers stating a percentage gap on a bridged
+        # pair with no fee caveat anywhere, which is the reading it exists to
+        # stop.  It costs nothing at ``minimal`` (the mechanism sentence is
+        # still the widest row there) and three columns at ``bare``.
+        parity = f"{parity} [dim]{GROSS_CAVEAT}[/]"
+    bits.append(parity)
     left_parity = "  " + " [dim]·[/] ".join(bits)
-    right_parity = "" if "spread" in gone else parts["spread"]
+    right_parity = "" if spread_shed else parts["spread"]
 
     if "mechanism" in gone:
         # The mechanism is a claim about what IMD *is*, so it outlives every

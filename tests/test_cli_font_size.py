@@ -242,8 +242,14 @@ def test_the_documented_width_is_tight_against_the_widest_dashboard() -> None:
     surf activity row's wallet and kind cells to the vocabularies their
     producer emits took ``widgets/surf/activity.FULL_WIDTH`` 66 -> 58, so that
     panel clears from a 135-column terminal and ``SurfFeed``'s **142** is what
-    the surf screen measures -- one column below the **143** FWA has needed
+    the surf screen measured -- one column below the **143** FWA has needed
     since its buy-gate signal was shortened.
+
+    **Since 2026-08-12 the two are level at 143**, and the panel that binds
+    surf is ``SurfMarket``, not the feed: its dollar gap prints six decimals
+    below $0.01, so the *tighter* the IMD/FP peg the *wider* the row, and 142
+    had been measured against a capture whose 2.75% spread prints the narrow
+    case.  Nothing about FWA moved, and the documented number did not either.
 
     So the tightness is asserted where it lives: against FWA, in both
     directions, both sides a real render.  Clean at the documented width,
@@ -253,7 +259,7 @@ def test_the_documented_width_is_tight_against_the_widest_dashboard() -> None:
     is what says so, because FWA will then be clean below the documented
     number.
 
-    The surf half stays as the record of *how far under* it now sits.
+    The surf half stays as the record of *how far under* it sits -- zero.
     Generous would be safe; *short* is what clips, which is why the surf
     screen's own measurement is pinned to its own render right below.
     """
@@ -273,12 +279,17 @@ def test_the_documented_width_is_tight_against_the_widest_dashboard() -> None:
     surf = _load_harness("screens/test_surf_screen.py")
 
     #: Columns by which the documented width exceeds *surf's* measured one.
-    #: Not a tolerance: 24 -> 0 -> 10 -> 1 is the real gap at each step, and
-    #: it is an ``==``, never a ``<=``, precisely so it cannot be quietly
+    #: Not a tolerance: 24 -> 0 -> 10 -> 1 -> 0 is the real gap at each step,
+    #: and it is an ``==``, never a ``<=``, precisely so it cannot be quietly
     #: generous.  The first three were re-measurements waiting on their
-    #: reconciliation commit; this one is not -- surf simply is one column
-    #: narrower than FWA, which is the dashboard the number now comes from.
-    _SURF_SLACK = 1
+    #: reconciliation commit; the last two are not.  It is **zero** again
+    #: since 2026-08-12: surf's market panel was re-measured against a tight
+    #: IMD/FP peg (its dollar gap prints six decimals below $0.01, so the
+    #: healthier the peg the wider the row) and came out at 143, level with
+    #: FWA rather than one under it.  Two dashboards now set this number
+    #: together, which is why ``_fwa_markers`` above is asserted on its own:
+    #: either could shrink without the documented width moving.
+    _SURF_SLACK = 0
 
     measured = surf.MEASURED_FULL_LAYOUT_COLUMNS
     assert FULL_LAYOUT_COLUMNS - measured == _SURF_SLACK, (

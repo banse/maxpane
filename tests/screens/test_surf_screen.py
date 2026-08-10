@@ -1209,12 +1209,12 @@ async def test_the_market_panel_is_not_clipped_at_the_pinned_layout_width():
     """Nothing is cut here at the width the layout is measured at.
 
     Pairing the sparklines with their figures and adding the bridge block
-    took the panel's widest row from ~33 rendered columns to 71, i.e. from
-    "fits anything" to a panel that is clean only from a **140**-column
-    terminal against the 142 this layout is measured at. Two columns of
-    margin, on a row whose width moves with ``fmt_price``'s precision band --
-    a sub-cent IMD renders ``$0.000200`` where today's $0.7074 renders
-    ``$0.0200`` and costs two more.
+    took the panel's widest row from ~33 rendered columns to 71 against the
+    captured spread -- and to **73** against a tight one, because the row's
+    width moves with ``fmt_price``'s precision band and moves the wrong way:
+    a gap under $0.01 renders ``$0.007100`` where the capture's $0.0200
+    renders ``$0.0200``, so a *healthier* peg is a *wider* row. That is what
+    took this layout 142 -> 143; the margin the 71 suggested was never there.
 
     The panel grew its own tiers on 2026-08-11 (``widgets/surf/market.py``:
     five of them, measured off the rows it actually paints), so a narrower
@@ -1252,23 +1252,26 @@ async def test_the_market_advertises_its_own_shedding_on_the_real_screen():
     The widget tests drive ``SurfMarket`` in a bare harness where its content
     box is the whole app; here it is ``7fr`` of a 13-column seam inside a
     padded row, which is the geometry that actually decides how many columns
-    it gets -- and the geometry a widget test cannot see. **139 is the first
-    terminal width that costs the market a field** and it is three below the
-    142 this screen clears at, so the two halves of the contract are pinned
-    at both ends and one column apart:
+    it gets -- and the geometry a widget test cannot see. **142 is the first
+    terminal width that costs the market a field**, so the two halves of the
+    contract are pinned at both ends and one column apart:
 
-    * at 140 the panel is whole and unmarked;
-    * at 139 a field is gone, the marker names it, and no row is cut.
+    * at 143 the panel is whole and unmarked;
+    * at 142 a field is gone, the marker names it, and no row is cut.
 
-    Deliberately *not* derived from ``SURF_FULL_LAYOUT_COLUMNS``: the market
-    is not the panel that sets that number (the announce feed is), so tying
-    the two together would make this test pass through any regression that
-    moved them in step.
+    Deliberately *not* derived from ``SURF_FULL_LAYOUT_COLUMNS``, even now
+    that the two agree: an independent literal is what makes a widget that
+    grows a column fail *here*, with the number in hand, instead of moving
+    both sides of the comparison together and pinning nothing.
+
+    **The market is the panel that sets the layout width now**, against a
+    tight peg -- it is the last one asking for a column, one above the
+    announce feed. The guard below says so rather than letting the two drift.
     """
-    market_first_full_terminal = 140
-    assert market_first_full_terminal < MEASURED_FULL_LAYOUT_COLUMNS, (
-        "the market is now the panel that sets the full-layout width -- "
-        "re-measure it and correct every surface that names the feed"
+    market_first_full_terminal = 143
+    assert market_first_full_terminal == MEASURED_FULL_LAYOUT_COLUMNS, (
+        "the market is no longer the panel that sets the full-layout width -- "
+        "re-measure it and correct every surface that names the market"
     )
 
     async with _screen_at(market_first_full_terminal, 46) as (app, screen, _p):
@@ -1430,9 +1433,38 @@ def _representative_feed_items() -> list[dict]:
     ]
 
 
+#: An FP price putting the IMD/FP gap inside ``fmt_price``'s six-decimal band
+#: while leaving IMD at its captured price.  Derived, not invented: any gap
+#: under $0.01 renders ``$0.007100`` where the capture's $0.0200 renders
+#: ``$0.0200``, and the market panel's binding row is two columns **wider**
+#: for it.  At IMD's $0.7074 that band is every parity inside ±1.41%, i.e.
+#: the normal state of a 1:1 bridge -- the capture's 2.75% is the outlier.
+_TIGHT_PEG_FP_PRICE = 0.7145
+
+
+def _tight_peg(payload: dict) -> dict:
+    """*payload* with the IMD/FP pair at a sub-cent gap, parity recomputed."""
+    imd = payload["imd_price_usd"]
+    return {
+        **payload,
+        "fp_price_usd": _TIGHT_PEG_FP_PRICE,
+        "parity_pct": (imd / _TIGHT_PEG_FP_PRICE - 1) * 100,
+    }
+
+
 def _widen_sweep_payload() -> dict:
-    """The payload the full-layout-width measurement sweeps against."""
-    return _frozen_payload(feed_items=_representative_feed_items())
+    """The payload the full-layout-width measurement sweeps against.
+
+    Carries a **tight** peg, because ``SurfMarket``'s widest row is a
+    function of the spread and gets wider as the spread narrows: the dollar
+    gap is the one cell whose precision band moves, and the capture's
+    unusually wide 2.75% renders it two columns short of what a healthy 1:1
+    bridge renders. A width measured against the capture alone is a width the
+    panel exceeds in its ordinary state -- which is what
+    ``test_the_full_layout_width_covers_a_tight_peg_not_only_the_capture``
+    holds, and why this is not the raw capture.
+    """
+    return _tight_peg(_frozen_payload(feed_items=_representative_feed_items()))
 
 
 async def _widen_markers(width: int, payload: dict | None = None) -> int:
@@ -1453,6 +1485,33 @@ async def _widen_markers(width: int, payload: dict | None = None) -> int:
         await screen._do_refresh()
         await pilot.pause()
         return _screen_text(app).count("‹ widen")
+
+
+async def _panels_asking_for_width(width: int) -> set[str]:
+    """Which panels composite a ``‹ widen`` at *width*, by their own titles.
+
+    A count alone cannot say *whose* marker is the last one standing, and
+    that is the claim the sweep constants below are written around -- it has
+    changed hands three times (activity, feed, market) and was restated in
+    prose each time without a test that could contradict it.
+    """
+    manager = _FakeManager(payload=_widen_sweep_payload())
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        panels = (SurfHero, SurfFeed, SurfSignals, SurfDevActivity,
+                  SurfMarket, SurfNft)
+        marked = {
+            cls.__name__
+            for cls in panels
+            if "‹ widen" in _region_text(app, screen.query_one(cls))
+        }
+        # No panel outside that tuple may hide a marker from this helper.
+        assert len(marked) == _screen_text(app).count("‹ widen"), marked
+        return marked
 
 
 async def _markers_outside_the_activity_panel(width: int) -> int:
@@ -1562,23 +1621,30 @@ LAPTOP_COLUMNS_AT_THE_FORCED_FONT = LAPTOP_COLUMN_POINTS // _DEFAULT_FONT_SIZE
 #: took ``activity.FULL_WIDTH`` 66 -> 58 and this measurement 152 -> 142.
 #: ``test_the_documented_width_still_covers_the_measured_one`` held the
 #: direction meanwhile (generous is safe; short clips). Both reconciliations
-#: landed; both constants read **142**.
+#: landed; both constants read **143**.
 #:
-#: **The binding panel changed hands at 142 and stayed changed.** The activity
-#: panel clears from a 135-column terminal now -- seven columns below this --
-#: so the last marker standing at 141 is ``SurfFeed``'s. Every claim of the
-#: form "the activity panel is the one still buying width" belongs to the 176
-#: and 152 eras.
-MEASURED_FULL_LAYOUT_COLUMNS = 142
+#: **142 -> 143 on 2026-08-12, and the binding panel changed hands again.**
+#: The number was measured against the capture's 2.75% IMD/FP spread, which
+#: renders the *narrow* case of ``SurfMarket``'s binding row: ``fmt_price``
+#: switches to six decimals below $0.01, so a **tighter** peg -- every parity
+#: inside ±1.41% at IMD's $0.7074, i.e. the ordinary state of a 1:1 bridge --
+#: renders ``$0.007100`` for ``$0.0200`` and needs two columns more. The sweep
+#: payload carries a tight peg for exactly that reason (``_widen_sweep_
+#: payload``), and the market is now the last panel asking for a column: the
+#: announce feed clears at 142, the market at 143. The activity panel has
+#: cleared from 135 since its row was resized; every claim of the form "the
+#: activity panel is the one still buying width" belongs to the 176 and 152
+#: eras, and "the feed is the last one" to the 142 era.
+MEASURED_FULL_LAYOUT_COLUMNS = 143
 
 #: The narrowest width at which every panel *except* the activity is clean --
-#: i.e. the width ``SurfFeed`` alone asks for. It was 41 below the number
-#: above at the 3:2 seam (that gap *was* the defect), one below it at 7:6, and
-#: 10 below it after ``feed.FULL_TEXT_WIDTH`` dropped 76 -> 71 so the feed
-#: would wrap in a narrower column. It is now **equal** to it: the activity
-#: row's shrink handed those last 10 columns back, and the feed is the only
-#: panel still asking for width at all.
-MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL = 142
+#: i.e. the width the widest of the feed and the market asks for. It was 41
+#: below the number above at the 3:2 seam (that gap *was* the defect), one
+#: below it at 7:6, and 10 below it after ``feed.FULL_TEXT_WIDTH`` dropped
+#: 76 -> 71 so the feed would wrap in a narrower column. It is now **equal**
+#: to it, and stays equal for a second reason: the panel that sets it is the
+#: market, which is not in the activity's rectangle either.
+MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL = 143
 
 #: How far the *activity* column may drift above the feed's before the seam is
 #: worth re-cutting. Not a tolerance to widen when a measurement disappoints:
@@ -1633,6 +1699,32 @@ async def test_the_measured_full_layout_width_is_exactly_the_tight_one():
     )
 
 
+async def test_the_full_layout_width_covers_a_tight_peg_not_only_the_capture():
+    """The market's binding row is wider when the *peg is healthier*.
+
+    ``fmt_price`` renders a gap of $0.0200 at four decimals and a gap under
+    $0.01 at six, so ``IMD $0.007100 under FP`` is two columns wider than the
+    capture's ``IMD $0.0200 under FP`` -- and at IMD's $0.7074 that band is
+    every parity inside ±1.41%, i.e. what a 1:1 bridge looks like when it is
+    working. Measured against the capture alone this screen looks clean a
+    column early, which is what it did read (142) until 2026-08-12.
+
+    Both payloads are asserted, in opposite directions, so the constant
+    cannot be re-measured from the friendlier one by accident.
+    """
+    capture = _frozen_payload(feed_items=_representative_feed_items())
+    tight = _tight_peg(capture)
+
+    assert await _widen_markers(MEASURED_FULL_LAYOUT_COLUMNS - 1, payload=capture) == 0, (
+        "the capture no longer clears a column early -- if the market's row "
+        "stopped moving with the spread, simplify the sweep payload"
+    )
+    assert await _widen_markers(MEASURED_FULL_LAYOUT_COLUMNS - 1, payload=tight) > 0, (
+        "a tight peg is clean below the measured width -- re-measure it"
+    )
+    assert await _widen_markers(MEASURED_FULL_LAYOUT_COLUMNS, payload=tight) == 0
+
+
 async def test_the_full_layout_is_reachable_at_the_forced_font_size():
     """The prize. ``__main__`` forces 17 pt, which is ~169 columns on a laptop.
 
@@ -1664,9 +1756,13 @@ async def test_the_two_columns_now_clear_at_the_same_width():
     It is **zero** now, and from the other direction: sizing the activity
     row's wallet and kind cells to the producer's real vocabularies took
     ``activity.FULL_WIDTH`` 66 -> 58, and that panel now clears from 135 --
-    seven columns *below* the feed. The last panel asking for width is
-    ``SurfFeed``, which is what the two assertions at the bottom pin. If the
-    activity panel ever becomes the last one again, they say so by name.
+    eight columns *below* the last one asking for width.
+
+    That last one is ``SurfMarket`` as of 2026-08-12, not ``SurfFeed``: the
+    market's binding row is two columns wider against a tight peg than
+    against the captured spread, so it clears at 143 where the feed clears at
+    142. Pinned **by name** at the bottom, because a count cannot tell the
+    two apart and this claim has now been wrong twice in prose.
 
     The gap may shrink freely; it may not grow, because a growing gap means
     one column is again buying width the other stopped using.
@@ -1691,8 +1787,12 @@ async def test_the_two_columns_now_clear_at_the_same_width():
         "has already stopped using. Re-cut the seam for the feed's current "
         f"FULL_TEXT_WIDTH, or lower {RECOVERABLE_SEAM_SLACK} deliberately"
     )
-    # ...and the last marker standing is the *feed's* -- outside the activity
-    # panel, which by then has been clean for seven columns already.
+    # ...and the last marker standing is the *market's*, by name -- outside
+    # the activity panel, which by then has been clean for eight columns.
+    assert await _panels_asking_for_width(MEASURED_FULL_LAYOUT_COLUMNS - 1) == {
+        "SurfMarket"
+    }, "the panel that sets the full-layout width changed hands -- re-measure"
+    assert await _panels_asking_for_width(MEASURED_FULL_LAYOUT_COLUMNS) == set()
     assert await _widen_markers(MEASURED_FULL_LAYOUT_COLUMNS - 1) == 1
     assert await _markers_outside_the_activity_panel(
         MEASURED_FULL_LAYOUT_COLUMNS - 1

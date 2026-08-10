@@ -40,12 +40,17 @@ _DEFAULT_FONT_SIZE = 17
 #: row's wallet and kind cells to the vocabularies their producer actually
 #: emits (``{"dev", "ops"}``, ``DEV_TX_KINDS``) took that panel's full row
 #: layout 66 -> 58 columns, so the rail it lives in sheds a field only below
-#: 63 where it used to shed below 71.  The panel binding the surf screen is
-#: the announce feed again, at **142** -- one column below FWA's 143.  Both
-#: pinned in both directions against the real screens: FWA lights one marker
-#: (``SIGNALS ‹ widen``) at 142 and none at 143, and
-#: ``screens/surf.py::SURF_FULL_LAYOUT_COLUMNS`` carries surf's own 142 with
-#: its sweep.
+#: 63 where it used to shed below 71.  Both pinned in both directions against
+#: the real screens: FWA lights one marker (``SIGNALS ‹ widen``) at 142 and
+#: none at 143, and ``screens/surf.py::SURF_FULL_LAYOUT_COLUMNS`` carries
+#: surf's own number with its sweep.
+#:
+#: Surf read 142 for two days and reads **143** since 2026-08-12 -- level with
+#: FWA, not under it.  The panel binding it is ``SurfMarket``, whose IMD/FP
+#: dollar gap renders at six decimals below $0.01 and so needs *more* columns
+#: the *tighter* the peg is; 142 had been measured against a capture whose
+#: 2.75% spread renders the narrow case.  This number does not move for it:
+#: 143 was already FWA's, and it is the max of the two.
 #:
 #: Font size is the only lever most people have over this -- a window is
 #: already as wide as the display -- and at the forced 17 pt a laptop gets
