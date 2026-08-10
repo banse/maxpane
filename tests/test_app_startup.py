@@ -183,6 +183,54 @@ def test_every_game_choice_has_a_prefetch_manager() -> None:
         assert app._prefetch_manager(game_id) is not None, game_id
 
 
+def test_a_bare_app_prefetches_the_dashboard_the_menu_opens_on() -> None:
+    """``MaxPaneApp.__init__``'s own default is a registration surface too.
+
+    ``main()`` always passes ``initial_game=args.game``, so the CLI default
+    covers production -- but the constructor carries a *separate* hand-typed
+    literal, and it stayed ``"fwa"`` through the 2026-08-10 reorder that put
+    surf at menu position 1.  A bare ``MaxPaneApp()`` -- which this file and
+    ``test_surf_registration.py`` both build -- then warmed FWA's cache while
+    the menu opened on Surfboard, the exact menu/prefetch disagreement
+    ``test_the_default_game_is_the_first_menu_entry`` exists to forbid and
+    cannot see, because that test drives the CLI.  It also feeds the
+    ``if game_id is None: game_id = self._initial_game`` fallback.
+
+    Both sides are hand-authored in different files -- ``app.py``'s signature
+    default and ``GAMES[0]`` in ``screens/game_select.py`` -- so this compares
+    two surfaces, not a constant against itself.
+    """
+    menu_first = GAMES[0][1]
+
+    app = MaxPaneApp()  # no initial_game: the signature's own default
+    assert app._initial_game == menu_first, (
+        f"the constructor default preloads {app._initial_game!r} while the menu "
+        f"opens on {menu_first!r}"
+    )
+    assert app._current_game == menu_first
+    assert app._prefetch_manager(menu_first) is not None, (
+        f"{menu_first} opens the menu but has no prefetch manager"
+    )
+
+    for attr in MANAGER_ATTRS:
+        setattr(app, attr, BoomManager())
+
+    async def _run() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app._prefetch_manager(menu_first).calls >= 1, (
+                f"{menu_first} opens the menu but was never prefetched"
+            )
+            for _key, other, *_ in GAMES[1:]:
+                assert app._prefetch_manager(other).calls == 0, (
+                    f"{other} was prefetched instead of the menu's first entry"
+                )
+            assert app._exception is None
+        assert app.return_code != 1
+
+    asyncio.run(_run())
+
+
 # ---------------------------------------------------------------------------
 # MEDI-9: tab cycles games instead of moving focus
 # ---------------------------------------------------------------------------

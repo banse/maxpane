@@ -287,8 +287,17 @@ def test_the_default_game_is_the_first_menu_entry(monkeypatch) -> None:
     """
     captured = _run_cli(monkeypatch, [])
     assert captured["initial_game"] == GAMES[0][1]
-    # ...and, so this cannot pass vacuously if GAMES were ever emptied or the
-    # CLI stopped passing the flag through, the concrete value today.
+    # ...and the concrete value the user asked for.  This line is *not* the
+    # anti-vacuity guard it was once commented as: an emptied ``GAMES`` makes
+    # the assert above raise ``IndexError`` rather than pass, and a ``main()``
+    # that ignored ``args.game`` and hardcoded ``"surf"`` leaves both asserts
+    # green (that mutation is caught by
+    # ``test_cli_game_choices.py::test_reachable_games_still_work``, which
+    # drives every ``--game`` value rather than only the default).  What it
+    # does do is pin the settled decision -- surf first -- the same way
+    # ``SURF_ROW`` above pins the row verbatim: a *coordinated* reorder of both
+    # surfaces would otherwise pass silently.  Change it deliberately, with the
+    # order, or not at all.
     assert captured["initial_game"] == "surf"
 
 

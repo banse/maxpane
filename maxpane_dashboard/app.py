@@ -63,7 +63,13 @@ class MaxPaneApp(App):
         self,
         poll_interval: int = 30,
         theme: str = "matrix",
-        initial_game: str = "fwa",
+        # Sixth registration surface: kept a hand-typed literal, like
+        # _GAME_CYCLE below and __main__'s --game choices, so the test that
+        # compares it to GAMES[0] compares two surfaces rather than a constant
+        # against itself.  It must name the menu's *first* entry -- a bare
+        # MaxPaneApp() prefetches this while the menu opens on GAMES[0], and
+        # it is also the `game_id is None` fallback in _on_game_selected.
+        initial_game: str = "surf",
         wallet_address: str | None = None,
         **kwargs,
     ):

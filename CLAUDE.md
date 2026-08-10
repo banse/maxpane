@@ -97,14 +97,25 @@ Hidden from the selection pane, code and tests intact: `bakery` and `ocm` (hidde
 tests still pass), and three FrenPet variants (`frenpet_full`, `frenpet_wallet`,
 `frenpet_perf`). Ten themes are registered.
 
-**Hiding a dashboard touches five surfaces and they must agree**: `GAMES` in
+**Hiding a dashboard touches six surfaces and they must agree**: `GAMES` in
 `screens/game_select.py` (keys stay contiguous 1..N — a test asserts it), `_GAME_CYCLE` in
 `app.py`, the `--game` `choices` *and* `default` in `__main__.py`, plus this table and the
 README. Hiding the current default silently breaks launch, so check `default=` every time.
 Tests must derive game ids from `GAMES` rather than naming them: hardcoded ids turn a
 deliberate hide into a red suite.
 
-**Adding one touches the same five**, in the order app.py → `__main__.py` → `GAMES`: the
+**The sixth is `MaxPaneApp.__init__`'s own `initial_game=` default** (`app.py`), and it was
+missed by the 2026-08-10 reorder — this list said "five" and the reorder obeyed it. Production
+never saw it, because `__main__.py` always passes `initial_game=args.game`, but a bare
+`MaxPaneApp()` (tests build one) prefetched FWA while the menu opened on Surfboard. It is now
+pinned to `GAMES[0]` by
+`tests/test_app_startup.py::test_a_bare_app_prefetches_the_dashboard_the_menu_opens_on`. Like
+`_GAME_CYCLE` and the `--game` `choices`, it stays a **hand-typed literal rather than an import
+of `GAMES`** — deriving it would make that test compare a constant against itself and it could
+never fail again. Redundancy plus an agreement test is the pattern here; do not "simplify" any
+of the three into a derivation.
+
+**Adding one touches the same six**, in the order app.py → `__main__.py` → `GAMES`: the
 registration tests derive their expectations from `GAMES`, so growing that list first turns
 `tests/test_cli_game_choices.py` and `tests/test_app_startup.py` red until the wiring catches up.
 `tests/test_surf_registration.py` is the worked example.
