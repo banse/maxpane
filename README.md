@@ -130,10 +130,17 @@ last marker goes out at:
 
 | columns | what still shows |
 |--------:|------------------|
-| ≤ 134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, FWA `SIGNALS ‹ widen` |
+| 109–134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, FWA `SIGNALS ‹ widen` |
 | 135–141 | surf `ANNOUNCE FEED ‹ widen`, FWA `SIGNALS ‹ widen` |
 | 142 | FWA `SIGNALS ‹ widen` (surf is already full) |
 | **≥ 143** | **nothing — full layout**, with one exception below |
+
+The table starts at 109 rather than running down to zero because narrower terminals light
+*more* markers, not the same ones: below 109 surf's `DEV ACTIVITY` marker changes wording
+to `‹ widen: time, kind, ETH` as the time and kind columns go too, and at 106 and below
+surf's `IDENTITY.MD ‹ widen for dev holdings` joins them. Every one of those is a panel
+saying what it dropped, which is the system working; the table lists the last few to go
+out, not every marker a narrow terminal can show.
 
 The exception is a post, not a panel. When an announce post links a transaction, its own
 punctuation can glue the URL to the 66-character hash into a single token no column budget

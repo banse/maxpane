@@ -450,7 +450,7 @@ _DEV_ACTIVITY = [
     {
         "ts": 1786076603,
         "wallet_label": "ops",
-        "kind": "LP",
+        "kind": "lp",
         "counterparty": "NFPM",
         "counterparty_known": True,
         "value_eth": 33.25,
@@ -691,12 +691,110 @@ def test_activity_the_wallet_column_yields_before_the_address_window():
     from maxpane_dashboard.widgets.surf.activity import ADDR_COLS, MINIMAL_WIDTH
 
     row = _DEV_ACTIVITY[2]  # unknown counterparty, 8 ETH transfer
-    floor = 5 + 2 + ADDR_COLS  # "MM-DD" + gap + the window: the absolute floor
+    # "MM-DD" + gap + the window: the last width that still carries a date.
+    # It is *not* the absolute floor -- the date goes too, one column below,
+    # and ``test_activity_never_writes_a_row_wider_than_the_log_it_goes_in``
+    # sweeps from here to zero.
+    floor = 5 + 2 + ADDR_COLS
     for width in range(MINIMAL_WIDTH, floor - 1, -1):
         markup = _row_markup(row, "minimal", width)
         assert markup is not None
         assert "0x61CC704c…73f14E" in markup, f"window cut at width {width}"
         assert visible_len(markup) <= width, f"row overflows at width {width}"
+
+
+def test_activity_never_writes_a_row_wider_than_the_log_it_goes_in():
+    """``RichLog(wrap=False)`` shrinks silently, so the row must fit already.
+
+    The sweep above stopped at ``5 + 2 + ADDR_COLS`` -- 24, the last width
+    that works -- and the defect lived one column below it.  With the wallet
+    cell gone the row is *still* ``MM-DD`` + gap + window == 24 columns, and
+    the right rail hands this panel ``ceil(6W/13) - 5`` == 23 at a 59-60
+    column terminal.  ``write()`` then narrowed the line with no ``…``, no
+    marker and nothing in the title: ``0x61CC704c…73f14`` at 60 columns --
+    a truncated address that no longer looks truncated -- and at 40 the
+    ``…`` itself went, leaving ``0x61CC7``.
+
+    Two invariants, swept to zero over every tier and both counterparty
+    kinds, because the fitting arithmetic is per-cell and each dropped cell
+    also drops a ``_GAP``:
+
+    * a row that is rendered fits the width it was rendered for;
+    * a rendered *unknown* counterparty is the whole window, never a prefix
+      of it -- cut to ``0xF308`` both live spoofs collide with their targets.
+
+    Below the window's own width there is no field left to shed, so the row
+    is withheld (``None``) rather than cut, and the panel says so instead of
+    showing it (``test_activity_withholds_the_rows_it_cannot_render_whole``).
+    """
+    from maxpane_dashboard.widgets.markup_safety import visible_len
+    from maxpane_dashboard.widgets.surf.activity import FLOOR_WIDTH, MINIMAL_WIDTH
+
+    window = "0x61CC704c…73f14E"
+    unknown = _DEV_ACTIVITY[2]          # unknown counterparty, 8 ETH
+    known = _DEV_ACTIVITY[0]            # known label, 33.25 ETH
+    for tier in ("full", "compact", "minimal"):
+        for width in range(1, MINIMAL_WIDTH + 1):
+            for row in (unknown, known):
+                markup = _row_markup(row, tier, width)
+                if markup is None:
+                    continue
+                assert visible_len(markup) <= width, (
+                    f"{tier} row overflows a {width}-column log by "
+                    f"{visible_len(markup) - width}: RichLog will shrink it "
+                    f"with no ellipsis -- {markup!r}"
+                )
+            cut = _row_markup(unknown, tier, width)
+            if cut is not None:
+                assert window in cut, (
+                    f"the anti-poisoning window was cut at width {width} "
+                    f"({tier}): {cut!r}"
+                )
+
+    # ...and the floor is the window itself: at ``FLOOR_WIDTH`` every row
+    # still renders, one column below it the widest one cannot.  Without
+    # this the invariants above are satisfied by a widget that renders
+    # nothing at any width.
+    assert _row_markup(unknown, "minimal", FLOOR_WIDTH) is not None
+    assert window in _row_markup(unknown, "minimal", FLOOR_WIDTH)
+    assert _row_markup(unknown, "minimal", FLOOR_WIDTH - 1) is None
+
+
+def test_activity_the_wallet_cell_is_whole_or_gone_never_shrunk():
+    """Three columns against a two-member vocabulary have nothing to shrink.
+
+    ``_budget`` used to narrow the cell one column at a time
+    (``max(wallet_cols + spare, 0)``), so the widths just above the drop
+    rendered ``de`` and ``op`` -- cut with no ``…`` and nothing in the title,
+    which is the same silent-cut defect as the ``fwa clai`` one cell to the
+    right. Shedding it whole is what the module's own rule asks for, and it
+    is also what keeps two adjacent rows in the same columns.
+
+    On ``_budget`` rather than on pixels because it is the rule that is being
+    pinned, at every width and tier at once;
+    ``test_activity_columns_never_disagree_between_two_rows`` renders it.
+    """
+    from maxpane_dashboard.widgets.surf.activity import (
+        FULL_WIDTH,
+        _WALLET_COLS,
+        _budget,
+    )
+
+    seen = set()
+    for tier in ("full", "compact", "minimal"):
+        for width in range(1, FULL_WIDTH + 1):
+            for who, known in (("0x61CC704c…73f14E", False), ("NFPM", True)):
+                _keep, wallet_cols, _who = _budget(
+                    tier, width, 11, who, known, 12
+                )
+                assert wallet_cols in (0, _WALLET_COLS), (
+                    f"the wallet cell was shrunk to {wallet_cols} columns at "
+                    f"width {width} ({tier}): a cut label, not a shed one"
+                )
+                seen.add(wallet_cols)
+    # Both outcomes really occur, so the assertion is not vacuously true of a
+    # cell that is simply always there.
+    assert seen == {0, _WALLET_COLS}
 
 
 def test_activity_cells_are_sized_from_the_producers_own_vocabularies():
@@ -768,6 +866,11 @@ async def test_activity_spends_no_columns_between_the_wallet_and_the_kind():
     """
     from maxpane_dashboard.widgets.surf.activity import _GAP
 
+    # Both sides of the assertion below are built from ``_GAP``, so widening
+    # it would move them together and leave this green. Pinned here, once:
+    # two columns between cells is the design, not a derived quantity.
+    assert _GAP == 2
+
     widget = SurfDevActivity()
     app = _Harness(widget)
     async with app.run_test(size=(110, 20)) as pilot:
@@ -794,6 +897,123 @@ async def test_activity_spends_no_columns_between_the_wallet_and_the_kind():
             "the wallet cell still pads past its vocabulary, or the kind "
             f"cell still cuts 'fwa claim':\n{screen}"
         )
+
+
+#: Every hex run this panel may put on screen, as a regex. Asserting on the
+#: whole window as a literal would be satisfied by a panel that also renders
+#: a *prefix* of it somewhere -- and a prefix is precisely the defect: cut to
+#: ``0xF308`` the two live spoof addresses collide with the two real fee
+#: recipients they impersonate.
+#: ``*`` and not ``+``: the narrowest clip of all left a bare ``0x`` behind,
+#: which a ``+`` quantifier does not match at all.
+_HEX_RUN = re.compile(r"0x[0-9A-Fa-f…]*")
+
+
+async def _activity_lines(width: int, rows: list[dict]) -> list[str]:
+    """Composited rows of a standalone activity panel at *width* columns."""
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(width, 20)) as pilot:
+        widget.update_data(dev_activity=rows)
+        await pilot.pause()
+        return _screen_text(app).splitlines()
+
+
+async def test_activity_withholds_the_rows_it_cannot_render_whole():
+    """Narrower than the window, the panel says ``‹ widen`` -- it never cuts.
+
+    Composited, across every width from below the narrowest tier down to a
+    log too narrow for the address alone. The rule is the module's whole
+    reason to exist: **no hex run on this panel is ever a prefix of the
+    window**. Before the fix a 60-column terminal rendered
+    ``0x61CC704c…73f14`` and a 40-column one ``0x61CC7``, the second with
+    the ``…`` gone as well, so a truncated address stopped looking truncated.
+
+    Withholding is not the same as having nothing to show: ``no recent
+    activity`` at a width where rows exist would be a different lie, so it is
+    excluded by name.
+    """
+    from maxpane_dashboard.widgets.surf.activity import SHORT_HINT
+
+    window = "0x61CC704c…73f14E"
+    rows = [_DEV_ACTIVITY[0], _DEV_ACTIVITY[2]]  # a known label and the window
+    withheld = 0
+    for width in range(12, 34):
+        lines = await _activity_lines(width, rows)
+        text = "\n".join(lines)
+        for run in _HEX_RUN.findall(text):
+            assert run == window, (
+                f"{run!r} at {width} columns is a cut anti-poisoning window"
+            )
+        assert "no recent activity" not in text, (
+            f"{width} columns claims the wallets are quiet; they are not"
+        )
+        if window not in text:
+            withheld += 1
+            assert SHORT_HINT in text, (
+                f"the rows went at {width} columns with nothing said at all"
+            )
+    # ...and the sweep really does cross the floor, so the assertions above
+    # are not all being made about the same branch.
+    assert 0 < withheld < 22, (
+        f"{withheld} of 22 widths withheld their rows -- the sweep no longer "
+        "straddles the width where the window stops fitting"
+    )
+
+
+async def test_activity_columns_never_disagree_between_two_rows():
+    """One budget for the batch, not one per row.
+
+    ``_budget`` sized the wallet cell from *that row's* counterparty, so a
+    row whose window is 17 columns dropped the cell while the ``NFPM`` row
+    beside it kept it -- at 70 columns that put ``08-07  de  0x61CC…`` above
+    ``08-07  ops  NFPM``: two counterparty columns, three different wallet
+    widths, and ``dev``/``ops`` cut to two letters with no ``…``.
+    ``RichLog`` is composed ``wrap=False`` precisely so the columns line up
+    down the panel, which only holds if every row is fitted to the same plan.
+
+    Swept, because the disagreement only appears where one row can afford a
+    cell the other cannot.
+    """
+    rows = [_DEV_ACTIVITY[0], _DEV_ACTIVITY[1], _DEV_ACTIVITY[2]]
+    marks = ("NFPM", "OFT endpoint", "0x61CC704c…73f14E")
+    # From the narrowest terminal that still fits every row (a 17-column log
+    # -- the window alone, date and all) up through both tier boundaries. The
+    # disagreement lived at the bottom of this range, where the 17-column
+    # window can no longer afford a cell that ``NFPM`` beside it still can:
+    # the wallet cell below a 29-column log, the date below a 24-column one.
+    for width in sorted(set(range(20, 120, 2)) | {21, 27, 28, 30, 32, 49, 61,
+                                                  70, 143}):
+        lines = await _activity_lines(width, rows)
+        starts = {
+            mark: line.index(mark)
+            for mark in marks
+            for line in lines
+            if mark in line
+        }
+        assert len(starts) == len(marks), (
+            f"only {sorted(starts)} rendered at {width} columns"
+        )
+        assert len(set(starts.values())) == 1, (
+            f"the counterparty column moves between rows at {width} "
+            f"columns: {starts}"
+        )
+        # The wallet cell is all-or-nothing, so the labels agree too: either
+        # every row carries one whole or none does. A two-letter ``de`` is
+        # the silent cut this rules out.
+        labels = [bool(re.search(r"\d\d\s+(dev|ops)\s", line)) for line in lines
+                  if any(mark in line for mark in marks)]
+        assert len(set(labels)) == 1, (
+            f"some rows carry a wallet label at {width} columns and some do "
+            f"not: {lines}"
+        )
+        # ...and whole. A cell shrunk to two columns is cut on *every* row at
+        # once, so the agreement assertion above cannot see it: this looks at
+        # the cell's own text, immediately after the stamp and its gap.
+        for line in lines:
+            assert not re.search(r"\d\d {2}(?:de|d|op|o)(?= )", line), (
+                f"the wallet label is cut at {width} columns: {line!r}"
+            )
 
 
 async def test_activity_relays_out_on_resize_never_shrunk_by_richlog():

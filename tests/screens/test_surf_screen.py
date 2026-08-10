@@ -296,7 +296,7 @@ def _sample_data() -> dict:
             {
                 "ts": _TS_POST_13 - 300,
                 "wallet_label": "ops",
-                "kind": "LP",
+                "kind": "lp",
                 "counterparty": "NFPM",
                 "counterparty_known": True,
                 "value_eth": 33.25,
@@ -2056,7 +2056,7 @@ async def _activity_usable_columns(width: int) -> int:
 ACTIVITY_FIRST_FULL_TERMINAL = 135
 
 
-def test_the_activity_fixture_speaks_the_producers_wallet_vocabulary():
+def test_the_activity_fixture_speaks_the_producers_vocabularies():
     """The payload every width sweep above renders must be a real payload.
 
     Cross-layer on purpose: this file may import ``data/`` (the widget may
@@ -2071,9 +2071,29 @@ def test_the_activity_fixture_speaks_the_producers_wallet_vocabulary():
     Both directions: the fixture may only use labels the producer emits, and
     it must exercise *every* one of them, so a vocabulary that grows a third
     wallet cannot go unrendered by the sweeps.
+
+    The ``kind`` column is the same claim one cell to the right, and it had
+    the same defect: the LP row was spelled ``"LP"`` where the producer emits
+    ``"lp"``. Harmless on width (two columns either way) but every sweep in
+    this file was rendering a kind the pipeline never emits -- and the
+    widget's only kind branches are ``"dust"`` and ``"transfer"``, both
+    lower-case, so a case-folding change would have gone uncaught here.
+    One direction only: ``DEV_TX_KINDS`` has seven members and this payload
+    exists to measure widths, not to enumerate them -- ``tests/widgets/
+    test_surf_widgets_b.py::test_activity_cells_are_sized_from_the_producers
+    _own_vocabularies`` renders every one of them.
     """
-    from maxpane_dashboard.data.surf_client import _DEV_WALLET_LABELS
+    from maxpane_dashboard.data.surf_client import (
+        DEV_TX_KINDS,
+        _DEV_WALLET_LABELS,
+    )
     from maxpane_dashboard.data.surf_manager import DEV_WALLETS
+
+    kinds = {row["kind"] for row in _widen_sweep_payload()["dev_activity"]}
+    assert kinds <= set(DEV_TX_KINDS), (
+        f"the fixture sends kinds {sorted(kinds - set(DEV_TX_KINDS))}, which "
+        "the client never emits"
+    )
 
     produced = set(_DEV_WALLET_LABELS.values())
     used = {row["wallet_label"] for row in _widen_sweep_payload()["dev_activity"]}
@@ -2259,6 +2279,101 @@ async def test_the_narrow_activity_panel_never_cuts_the_poisoning_window():
     assert SHORT_HINT in panel, "three columns went with nothing said"
     # The fields that were shed to pay for it, and nothing half-rendered.
     assert "0.310 ETH" not in panel
+
+
+async def test_the_poisoning_window_survives_every_terminal_the_rail_allows():
+    """80 is not the bottom. Swept to a terminal narrower than the window.
+
+    The rail hands this panel ``ceil(6W/13) - 5`` columns, so the test above
+    measured one comfortable point of a curve that keeps falling. Below 61
+    the row -- ``MM-DD`` + gap + window, 24 columns, the wallet cell already
+    gone -- no longer fits the 23 the rail gives at W=59-60, and
+    ``RichLog(wrap=False)`` narrowed it at write time with no ``…``, no
+    marker and nothing in the title:
+
+    * **60 columns** rendered ``0x61CC704c…73f14`` -- one hex digit short;
+    * **50** rendered ``0x61CC704c…7``;
+    * **40** rendered ``0x61CC7``, the ``…`` gone too, so a truncated
+      address no longer looked truncated at all.
+
+    At a log width of 13 the live spoof pair both render ``0xF308`` -- the
+    single collision this panel's wide window exists to prevent, arrived at
+    by the panel itself.
+
+    The assertion is on every hex run in the panel's own rectangle rather
+    than on the window as a literal, because a *prefix* is the defect and
+    ``_ADDR_WINDOW not in panel`` cannot see one.
+    """
+    import re
+
+    from maxpane_dashboard.widgets.surf.activity import SHORT_HINT
+
+    # ``*`` and not ``+``: the narrowest clip left a bare ``0x`` behind,
+    # which a ``+`` quantifier does not match at all.
+    hex_run = re.compile(r"0x[0-9A-Fa-f…]*")
+    withheld = 0
+    for width in range(34, 82):
+        panel = await _activity_panel(width)
+        for run in hex_run.findall(panel):
+            assert run == _ADDR_WINDOW, (
+                f"{run!r} at {width} columns: the anti-poisoning window was "
+                "cut to make the row fit"
+            )
+        assert "no recent activity" not in panel, (
+            f"{width} columns reports the dev wallets quiet; they are not"
+        )
+        if _ADDR_WINDOW not in panel:
+            withheld += 1
+            assert SHORT_HINT in panel, (
+                f"the rows went at {width} columns with nothing said at all"
+            )
+    # Both branches really are exercised: the sweep straddles the width where
+    # the window stops fitting, so neither assertion above is vacuous.
+    assert 0 < withheld < 48, (
+        f"{withheld} of 48 widths withheld their rows -- re-derive the sweep"
+    )
+
+
+async def test_the_activity_panel_is_never_silent_about_a_shed_column():
+    """A shed column is announced at *every* width, not merely most of them.
+
+    The marker normally goes beside the title, and ``_set_title`` drops it
+    when the title bar itself is too narrow to hold it -- a Static with no
+    ``text-overflow`` wraps instead, pushing a row out of the log. That was
+    accepted while the band was unreachable; in the right rail it is not.
+    At 46 and 50 columns the rail leaves the log 17 and 19, narrow enough
+    that the ``MM-DD`` date goes, and the title bar (19 and 21 columns) can
+    hold neither the descriptive hint nor the 7-column bare one. Three
+    columns of date vanished with nothing said anywhere on the panel.
+
+    The fallback is the one the withheld-rows branch already uses: say it in
+    the log instead. Swept against the amount column, which is the last
+    thing to go, so the two branches are "everything is here, and nothing is
+    claimed" and "something went, and it is claimed".
+    """
+    from maxpane_dashboard.widgets.surf.activity import SHORT_HINT
+
+    # From 24: the rail leaves the log ``ceil(6W/13) - 5`` columns, which is
+    # exactly ``len(SHORT_HINT)`` there and less below it -- a terminal that
+    # cannot render the seven columns of the marker itself is past the point
+    # where any wording helps, and the rows are already withheld there
+    # (``test_the_poisoning_window_survives_every_terminal_the_rail_allows``).
+    clean = 0
+    for width in sorted(set(range(24, 146, 5)) | {46, 50, 55, 80, 108, 134,
+                                                  135, 143}):
+        panel = await _activity_panel(width)
+        if "0.310 ETH" in panel:
+            clean += 1
+            assert SHORT_HINT not in panel, (
+                f"{width} columns shows every column and still advertises a "
+                "loss -- a marker that is on everywhere means nothing"
+            )
+        else:
+            assert SHORT_HINT in panel, (
+                f"a column went at {width} columns with nothing said on the "
+                f"panel at all:\n{panel}"
+            )
+    assert clean, "the sweep never reaches a width where nothing is shed"
 
 
 # -- the NFT panel's own width tiers -------------------------------------

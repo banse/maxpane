@@ -1,10 +1,15 @@
 """Recent transactions of both dev wallets, poisoning-defended.
 
-One line per tx, newest first::
+One line per tx, newest first -- composited at the full tier::
 
-    08-07 04:23  ops           lp        NFPM  33.250 ETH
-    08-07 04:21  ops           bridge    OFT endpoint
-    07-17 04:12  ops           transfer  0x61CC704c…73f14E  8.000 ETH
+    08-07 06:26  dev  transfer   0x61CC704c…73f14E  0.310 ETH
+    08-07 06:22  ops  lp         NFPM  33.250 ETH
+    08-07 06:12  dev  bridge     OFT endpoint
+
+(The amount is not a padded column: ``_AMOUNT_COLS`` is a budget reserve,
+so the amount begins where its counterparty ends.  This example used to
+show a 12-column wallet cell and an 8-column kind cell, neither of which
+has been what the widget renders since 2026-08-10.)
 
 ``wallet_label`` is the producer's two-value vocabulary -- ``"dev"`` /
 ``"ops"``, from ``surf_client._DEV_WALLET_LABELS``, re-checked by the
@@ -55,15 +60,19 @@ tier than it used to at the same terminal width.  Every tier says what it
 shed; :data:`SHORT_HINT` covers the widths too narrow to say it in words.
 
 The row sheds whole fields as the width drops (see :func:`_tier_for`) and
-the title names the ones that went.  Two things are never traded away:
+the title names the ones that went.  The order is fixed (:func:`_budget`):
+the ``HH:MM`` half of the stamp, the amount, the kind, the wallet cell, and
+last the ``MM-DD`` date, which these rows need because they span months.
+Each goes *whole* -- a cell cut to ``de`` or ``fwa clai`` is the same silent
+defect one column to the left.
 
-* **the unknown-counterparty window** (``0x``+8+``…``+6, ``ADDR_COLS``).
-  Cut to the classic first-6/last-4 form both live spoofs collide with
-  their targets, which is the one failure this panel exists to prevent, so
-  the *wallet* column shrinks and then goes whole before a single hex digit
-  is cut (:func:`_budget`).
-* **the ``MM-DD`` date**, because these rows span months -- the ``HH:MM``
-  half is what goes at the narrowest tier.
+**One thing is never traded away: the unknown-counterparty window**
+(``0x``+8+``…``+6, ``ADDR_COLS``).  Cut to the classic first-6/last-4 form
+both live spoofs collide with their targets, which is the one failure this
+panel exists to prevent, so every other field goes before a single hex digit
+does -- and below :data:`FLOOR_WIDTH`, where there is no other field left,
+the rows are withheld and :data:`SHORT_HINT` is written in their place
+rather than cut to fit.
 """
 
 from __future__ import annotations
@@ -152,6 +161,23 @@ FULL_WIDTH = (
 COMPACT_WIDTH = FULL_WIDTH - _AMOUNT_COLS                            # 46
 MINIMAL_WIDTH = _STAMP_SHORT_COLS + _GAP + _WALLET_COLS + _GAP + ADDR_COLS  # 29
 
+#: Narrowest log a row can be *honestly* rendered in: the anti-poisoning
+#: window alone, every other field already shed.  Below it the only way to
+#: fit a row is to cut hex digits, which this panel never does, so the rows
+#: are withheld and :data:`SHORT_HINT` is written in their place.
+#:
+#: This floor is why :func:`_row_cols` exists.  The budget used to charge the
+#: row for *both* gaps whether or not the wallet cell was there, and never
+#: re-checked the result, so a dropped wallet left ``MM-DD`` + gap + window ==
+#: 24 columns going into a log the right rail had sized at 23 (``ceil(6W/13) -
+#: 5`` at a 59-60 column terminal).  ``RichLog(wrap=False)`` narrowed it at
+#: write time: ``0x61CC704c…73f14`` at 60 columns, ``0x61CC704c…7`` at 50 and
+#: ``0x61CC7`` at 40 -- the last with the ``…`` gone too, so a truncated
+#: address stopped looking truncated.  At a log width of 13 the live spoof
+#: pair both render ``0xF308``, which is the one collision this panel exists
+#: to prevent.
+FLOOR_WIDTH = ADDR_COLS                                              # 17
+
 #: Marker appended to the title when the layout had to shed a field.  Each
 #: one names what went, so the user knows what they are not looking at.
 #: ``DEV ACTIVITY`` + 2 + 24 == 38 columns for the longest of them, which the
@@ -227,40 +253,77 @@ def _tier_for(width: int) -> str:
     return "minimal"
 
 
+def _row_cols(tier: str, stamp_cols: int, wallet_cols: int, who_cols: int,
+              amount_cols: int) -> int:
+    """Rendered width of a row made of exactly these cells.
+
+    **A cell of zero width is absent, and an absent cell takes its ``_GAP``
+    with it.**  That is the arithmetic :func:`_budget` used to get wrong: it
+    charged the row for both gaps unconditionally and never re-measured the
+    result, so dropping the wallet cell neither freed the gap it had been
+    charged for nor proved the row now fitted.  See :data:`FLOOR_WIDTH` for
+    what that cost on screen.
+
+    The amount carries its own two leading spaces (see :func:`_row_fields`),
+    so it is added rather than joined.
+    """
+    present = [
+        cols
+        for cols in (
+            stamp_cols,
+            wallet_cols,
+            _KIND_COLS if tier != "minimal" else 0,
+            who_cols,
+        )
+        if cols
+    ]
+    return sum(present) + _GAP * (len(present) - 1) + amount_cols
+
+
 def _budget(tier: str, width: int, stamp_cols: int, who: str, known: bool,
-            amount_cols: int) -> tuple[int, str]:
-    """Fit one row to ``width``; returns ``(wallet_cols, who)``.
+            amount_cols: int, wallet_cols: int = _WALLET_COLS,
+            keep_stamp: bool = True) -> tuple[bool, int, str]:
+    """Fit one row to ``width``; returns ``(keep_stamp, wallet_cols, who)``.
 
     Order of sacrifice, after the tier has already dropped whole columns:
 
     1. a **known** label is cut with a visible ``…`` (down to
        ``_MIN_LABEL_COLS``) -- it is descriptive text;
-    2. the **wallet** cell shrinks, and then goes whole;
-    3. the **unknown-counterparty window** is never touched at all.
+    2. the **wallet** cell goes, whole.  It is three columns wide against a
+       two-member vocabulary, so there is nothing in it to shrink: cut to two
+       it renders ``de`` / ``op`` with no ``…``, which is the same silent-cut
+       defect one cell to the left;
+    3. the **``MM-DD`` date** goes, whole.  It outranks the ``HH:MM`` half
+       (which the ``minimal`` tier already dropped) and both the cells above,
+       but it does not outrank the window -- only widths below
+       :data:`FLOOR_WIDTH` ever reach here, and there the alternative is
+       cutting hex digits;
+    4. the **unknown-counterparty window** is never touched at all.
+
+    ``wallet_cols`` / ``keep_stamp`` are the *starting* plan, so a caller can
+    fit every row of a batch to one shared layout -- see
+    :meth:`SurfDevActivity._render_view`.  Passing a cell already dropped can
+    only ever leave this function more room, never less, so a batch plan is a
+    fixed point of it.
 
     ``width <= 0`` (not laid out yet) leaves everything at its natural size.
     """
-    wallet_cols = _WALLET_COLS
     if width <= 0:
-        return wallet_cols, who
+        return keep_stamp, wallet_cols, who
 
-    # Everything except the wallet cell, the counterparty and the amount.
-    fixed = stamp_cols + _GAP + _GAP
-    if tier != "minimal":
-        fixed += _KIND_COLS + _GAP
+    def needed(who_cols: int) -> int:
+        return _row_cols(tier, stamp_cols if keep_stamp else 0, wallet_cols,
+                         who_cols, amount_cols)
 
-    spare = width - (fixed + wallet_cols + len(who) + amount_cols)
-    if spare >= 0:
-        return wallet_cols, who
-
-    if known and len(who) > _MIN_LABEL_COLS:
-        room = max(len(who) + spare, _MIN_LABEL_COLS)
-        spare += len(who) - room
+    over = needed(len(who)) - width
+    if over > 0 and known and len(who) > _MIN_LABEL_COLS:
+        room = max(len(who) - over, _MIN_LABEL_COLS)
         who = who[: room - 1] + "…"
-
-    if spare < 0:
-        wallet_cols = max(wallet_cols + spare, 0)
-    return wallet_cols, who
+    if needed(len(who)) > width:
+        wallet_cols = 0
+    if needed(len(who)) > width:
+        keep_stamp = False
+    return keep_stamp, wallet_cols, who
 
 #: Mirrors ``surf_client._DUST_WEI = 10**9`` (1 gwei), converted to the ETH
 #: float unit this row's ``value_eth`` field carries -- ``value_eth`` is
@@ -275,14 +338,16 @@ def _budget(tier: str, width: int, stamp_cols: int, who: str, known: bool,
 _DUST_ETH = 10**9 / 10**18  # == 1e-9 ETH == 1 gwei == surf_client._DUST_WEI
 
 
-def _row_markup(row, tier: str = "full", width: int = 0) -> str | None:
-    """Format one activity row at ``tier``; ``None`` drops it.
+def _row_fields(row, tier: str) -> tuple[str, str, str, str, bool, str] | None:
+    """Decompose one row into its cells; ``None`` drops it.
 
     ``None`` means the row is malformed or poisonous and must never reach a
-    pixel.  ``width`` is the real number of columns the log can show; the
-    returned markup is guaranteed to fit it (see :func:`_budget`), so
-    ``RichLog.write()`` never has to shrink -- and therefore never clips
-    without a visible ``…``.
+    pixel -- a decision about *content*, taken before any decision about
+    width, so the panel can tell "nothing to show" from "no room to show it"
+    (:meth:`SurfDevActivity._render_view`).
+
+    Returns ``(stamp, wallet_label, kind, who, known, amount)``, all raw and
+    unescaped; the amount carries its own two leading spaces.
     """
     if not isinstance(row, dict):
         return None
@@ -303,27 +368,76 @@ def _row_markup(row, tier: str = "full", width: int = 0) -> str | None:
 
         ts = row.get("ts")
         stamp = mmdd(ts) if tier == "minimal" else f"{mmdd(ts)} {hhmm(ts)}"
-        who_raw = (
+        who = (
             str(row.get("counterparty") or DASH)
             if known
             else long_addr(row.get("counterparty"))
         )
         amount = f"  {value:,.3f} ETH" if (value and tier == "full") else ""
-
-        wallet_cols, who_raw = _budget(
-            tier, width, len(stamp), who_raw, known, len(amount)
+        return (
+            stamp,
+            str(row.get("wallet_label") or DASH),
+            kind or DASH,
+            who,
+            known,
+            amount,
         )
+    except Exception:
+        # A single malformed row must never take down the panel.
+        return None
+
+
+def _row_markup(row, tier: str = "full", width: int = 0,
+                wallet_cols: int = _WALLET_COLS,
+                keep_stamp: bool = True) -> str | None:
+    """Format one activity row at ``tier``; ``None`` drops it.
+
+    ``None`` means one of two things, and the caller must distinguish them:
+    the row is malformed or poisonous (:func:`_row_fields`), or ``width`` is
+    too narrow to render it without cutting the anti-poisoning window
+    (below :data:`FLOOR_WIDTH`).  Rendering nothing in the second case would
+    read as quiet wallets, so :meth:`SurfDevActivity._render_view` writes
+    :data:`SHORT_HINT` instead.
+
+    ``width`` is the real number of columns the log can show, and a markup
+    string that is returned is **guaranteed to fit it**, so
+    ``RichLog.write()`` never has to shrink -- and therefore never clips
+    without a visible ``…``.  ``wallet_cols`` / ``keep_stamp`` pass in a
+    layout shared by the whole batch (see :func:`_budget`).
+    """
+    fields = _row_fields(row, tier)
+    if fields is None:
+        return None
+    try:
+        stamp, label, kind, who, known, amount = fields
+        keep_stamp, wallet_cols, who = _budget(
+            tier, width, len(stamp), who, known, len(amount),
+            wallet_cols, keep_stamp,
+        )
+        cols = _row_cols(
+            tier, len(stamp) if keep_stamp else 0, wallet_cols, len(who),
+            len(amount),
+        )
+        if 0 < width < cols:
+            # Every field that may be shed has been, and the row is still
+            # too wide: what is left is the window, and the window never
+            # shrinks.  Withheld rather than cut.
+            return None
 
         # Pad raw, escape after -- padding an escaped string misaligns it.
-        cells = [stamp]
+        cells = []
+        if keep_stamp:
+            cells.append(stamp)
         if wallet_cols:
-            label = f"{str(row.get('wallet_label') or DASH)[:wallet_cols]:<{wallet_cols}}"
-            cells.append(f"[bold]{safe_markup(label)}[/]")
+            cells.append(
+                f"[bold]{safe_markup(f'{label[:wallet_cols]:<{wallet_cols}}')}[/]"
+            )
         if tier != "minimal":
-            kind_cell = f"{(kind or DASH)[:_KIND_COLS]:<{_KIND_COLS}}"
-            cells.append(f"[dim]{safe_markup(kind_cell)}[/]")
+            cells.append(
+                f"[dim]{safe_markup(f'{kind[:_KIND_COLS]:<{_KIND_COLS}}')}[/]"
+            )
         colour = "cyan" if known else "dim"
-        cells.append(f"[{colour}]{safe_markup(who_raw)}[/]")
+        cells.append(f"[{colour}]{safe_markup(who)}[/]")
         return (" " * _GAP).join(cells) + amount
     except Exception:
         # A single malformed row must never take down the panel.
@@ -402,27 +516,41 @@ class SurfDevActivity(Vertical):
             width = max(self.content_size.width - 3, 0)
         return width
 
-    def _set_title(self, hint: str = "") -> None:
+    def _set_title(self, hint: str = "") -> bool:
         """``DEV ACTIVITY  ‹ widen for amounts``, width permitting.
+
+        Returns whether the marker was placed, so the caller can say it
+        somewhere else when it was not.
 
         The hint is *appended*: the title itself never changes, so the screen
         tests' ``"DEV ACTIVITY" in text`` holds at every width.  It degrades
         to :data:`SHORT_HINT` rather than to nothing when the descriptive
-        wording will not fit beside the title -- silence is what this whole
-        module exists to prevent -- and only a panel too narrow for even that
-        goes unmarked, because this Static has no ``text-overflow`` and an
-        over-long title wraps onto a second line, pushing a row out of the log
-        instead of announcing anything.
+        wording will not fit beside the title, and a panel too narrow for even
+        that gets no marker *here* -- this Static has no ``text-overflow``, so
+        an over-long title wraps onto a second line and pushes a row out of
+        the log instead of announcing anything.
+
+        That last case is not an excuse to go silent, which is what this
+        module exists to prevent.  It was accepted while the panel had a
+        ``3fr`` slot that never got near it; the right rail reaches it at 46
+        and 50 columns, where the log is 17-19 wide, the ``MM-DD`` date is
+        shed and the title bar has 19-21 columns against the 21 the bare
+        marker needs.  ``False`` sends the marker into the log instead
+        (:meth:`_render_view`), which is where the withheld-rows state
+        already puts it.
         """
         title = self.query_one("#surf-act-title", Static)
         width = max(self.content_size.width - 2, 0)
         text = TITLE
+        placed = not hint
         if hint:
             for candidate in (hint, SHORT_HINT):
                 if not width or len(TITLE) + 2 + len(candidate) <= width:
                     text += f"  [yellow]{candidate}[/]"
+                    placed = True
                     break
         title.update(text)
+        return placed
 
     def _render_view(self) -> None:
         try:
@@ -446,17 +574,57 @@ class SurfDevActivity(Vertical):
 
         width = self._log_width(log)
         tier = _tier_for(width)
-        lines = [
-            m
-            for m in (_row_markup(row, tier, width) for row in rows)
-            if m is not None
-        ]
-        # No rows means nothing was shed, so nothing is advertised: a marker
-        # over "no recent activity" would point at columns that do not exist.
-        self._set_title(WIDEN_HINTS.get(tier, "") if lines else "")
-        if not lines:
+
+        # Which rows may be shown at all -- a content question, decided
+        # before any width question so "nothing to show" stays distinct from
+        # "no room to show it".
+        showable = [f for f in (_row_fields(row, tier) for row in rows)
+                    if f is not None]
+        if not showable:
+            # Nothing was shed, so nothing is advertised: a marker over "no
+            # recent activity" would point at columns that do not exist.
+            self._set_title("")
             log.write("[dim]  no recent activity[/]")
             return
+
+        # One layout for the whole batch.  ``RichLog`` is composed
+        # ``wrap=False`` so the cells line up down the panel, which only
+        # holds if every row is fitted to the same plan -- budgeting each row
+        # against its own counterparty put a 17-column window's row (wallet
+        # cell dropped) directly above an ``NFPM`` row that could still
+        # afford one, so the counterparty column moved between two adjacent
+        # lines.  The most constrained row sets the layout for all of them.
+        plans = [
+            _budget(tier, width, len(stamp), who, known, len(amount))
+            for stamp, _label, _kind, who, known, amount in showable
+        ]
+        keep_stamp = all(plan[0] for plan in plans)
+        wallet_cols = min(plan[1] for plan in plans)
+
+        lines = [
+            m
+            for m in (
+                _row_markup(row, tier, width, wallet_cols, keep_stamp)
+                for row in rows
+            )
+            if m is not None
+        ]
+        if len(lines) < len(showable):
+            # At least one row cannot be fitted without cutting its
+            # counterparty window.  Rendering the rest would hide exactly the
+            # rows this panel exists to show -- an unknown counterparty is
+            # always the widest one -- so they all wait for width, and the
+            # panel says so rather than reading as quiet wallets.
+            self._set_title(WIDEN_HINTS.get(tier, "") or SHORT_HINT)
+            log.write(f"[yellow]{SHORT_HINT}[/]")
+            return
+
+        hint = WIDEN_HINTS.get(tier, "")
+        if not self._set_title(hint):
+            # The title bar is too narrow to carry the marker. Say it in the
+            # log rather than not at all -- one row is a far smaller loss
+            # than a column that went unannounced.
+            log.write(f"[yellow]{SHORT_HINT}[/]")
         for line in lines:
             log.write(line)
         self.call_after_refresh(log.scroll_home, animate=False)
