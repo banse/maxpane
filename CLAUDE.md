@@ -123,16 +123,16 @@ python -m maxpane_dashboard --font-size 0        # do not resize my terminal
 
 **Layout is a function of terminal columns.** Widgets pick a tier by width and
 advertise dropped columns as `‹ widen` in their title. The full layout needs
-**176 columns** (`__main__.FULL_LAYOUT_COLUMNS`, pinned by tests that render
-the real screens at that width). FWA needs **143**; the 176 is **surf**'s.
+**152 columns** (`__main__.FULL_LAYOUT_COLUMNS`, pinned by tests that render
+the real screens at that width). FWA needs **143**; the 152 is **surf**'s.
 Launch forces 17 pt — about 169 columns on a laptop — so the top tier was
-unreachable until `--font-size` / `MAXPANE_FONT_SIZE` existed, and at 176 it
-still is without one.
+unreachable until `--font-size` / `MAXPANE_FONT_SIZE` existed; at 152 it is
+reachable again without one.
 
-176 clears every *layout*, not every possible string. Surf's announce feed
+152 clears every *layout*, not every possible string. Surf's announce feed
 still lights `‹ widen` there whenever a post links a transaction: the post's
 own punctuation glues the URL to the 66-char hash into one unbreakable token
-(the captured one is 91 columns and clears at 194). That marker is correct and
+(the captured one is 91 columns and clears at 216). That marker is correct and
 must not be silenced by raising the constant — the next such post brings its
 own length. The width sweep therefore measures against a fixture with that
 post removed, pinned by `test_a_linked_post_advertises_widen_at_the_full_layout_width`.
@@ -148,10 +148,21 @@ table. TTT and Talismans use the same `c` pattern.
 restructure put all six panels on screen at once (hero full width; announce
 feed beside a rail of signals over dev activity; market beside IDENTITY.MD),
 so there is nothing left to swap. The cost is that `SurfDevActivity` now sizes
-against a `2fr` rail instead of a `3fr` slot and needs 176 for its widest row
-layout, which is what moved the app-wide number 143 → 176 — the first time it
-has gone **up**, and the first time a dashboard other than FWA has set it.
-Widths in between are not clipping: the panel names the columns it shed.
+against a `2fr` rail instead of a `3fr` slot, and at a **3:2** seam it needed
+176 for its widest row layout — which moved the app-wide number 143 → 176, the
+first time it had gone **up** and the first time a dashboard other than FWA
+set it. Widths in between are not clipping: the panel names the columns it shed.
+
+Later the same day the seam itself moved, **3:2 → 7:6**, and the number came
+back **down: 176 → 152** — the first time it has fallen without a widget
+giving anything up. Nothing was hidden, shortened or re-cut; only the split
+between the two columns changed. The two binding panels are the announce feed
+(81 columns) and the dev-activity rail (71), so 81 + 71 = 152 is the
+arithmetic floor, and 3:2 had been handing the feed 0.60 W against the 0.538
+it needed — the rail only reached 71 at 176, so those 24 columns bought
+nothing. The full record, then: **198 → 172 → 143 → 176 → 152**, with FWA
+setting the first three and surf the last two. 152 is inside the ~169 a laptop
+gets at the forced 17 pt, so the full layout stopped requiring `--font-size`.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`.

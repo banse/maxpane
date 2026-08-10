@@ -1414,13 +1414,20 @@ LAPTOP_COLUMNS_AT_THE_FORCED_FONT = 169
 #: swept one column at a time over the real screen and pinned in both
 #: directions by ``test_the_measured_full_layout_width_is_exactly_the_tight_one``.
 #:
-#: Deliberately *not* ``SURF_FULL_LAYOUT_COLUMNS``: that constant still reads
-#: 176, the number the 3:2 seam needed, and reconciling it (with
-#: ``__main__.FULL_LAYOUT_COLUMNS``, the ``--font-size`` help text, the README
-#: width table and CLAUDE.md, which all quote it) is a step of its own. Until
-#: then the documented width is merely *generous* -- never short, which is the
-#: half that would clip, and which
-#: ``test_the_documented_width_still_covers_the_measured_one`` pins.
+#: Deliberately kept as an **independent literal** rather than an alias for
+#: ``SURF_FULL_LAYOUT_COLUMNS``, even now that the two agree. The source
+#: constant is quoted by ``__main__.FULL_LAYOUT_COLUMNS``, the ``--font-size``
+#: help text, the README width table and CLAUDE.md; this number is what the
+#: screen actually measures. Aliasing them would turn every cross-check below
+#: into a constant compared against itself, which pins nothing -- the whole
+#: point is that a widget growing a column moves *this* one and the mismatch
+#: is what goes red.
+#:
+#: They were 24 apart for one commit: the 3:2 -> 7:6 re-seam brought the
+#: measurement down 176 -> 152 without touching the five surfaces quoting the
+#: old number, and ``test_the_documented_width_still_covers_the_measured_one``
+#: held the direction meanwhile (generous is safe; short clips). The
+#: reconciliation has landed and both read 152.
 MEASURED_FULL_LAYOUT_COLUMNS = 152
 
 #: The narrowest width at which every panel *except* the activity is clean --
@@ -1505,11 +1512,13 @@ async def test_the_two_columns_now_clear_within_one_column_of_each_other():
 async def test_the_documented_width_still_covers_the_measured_one():
     """``SURF_FULL_LAYOUT_COLUMNS`` may be generous; it may never be short.
 
-    It still reads 176 while the layout needs 152, because reconciling it
-    reaches ``__main__``, the README and CLAUDE.md and belongs to one commit
-    of its own. What must hold meanwhile is the direction: a documented width
-    *below* the measured one is a width that clips, which is the failure this
-    whole marker system exists to prevent.
+    It read 176 against a measured 152 for one commit, because reconciling it
+    reaches ``__main__``, the README and CLAUDE.md and belonged to a commit of
+    its own; both now read 152. The direction is what this pins either way: a
+    documented width *below* the measured one is a width that clips, which is
+    the failure this whole marker system exists to prevent. Kept as an
+    inequality on purpose -- it must survive the next re-measurement landing
+    one commit ahead of the surfaces that quote it.
     """
     assert SURF_FULL_LAYOUT_COLUMNS >= MEASURED_FULL_LAYOUT_COLUMNS
     assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS) == 0
@@ -1986,7 +1995,7 @@ async def test_the_nft_panel_shows_every_figure_at_its_own_clean_width():
 
     107 is the measured boundary -- one column narrower the stats row no
     longer fits -- so this also pins that the panel is clean at every width
-    the dashboard is actually meant to run at, the pinned 176 included.
+    the dashboard is actually meant to run at, the pinned 152 included.
     Without it the sweep below is satisfied by a panel welded to its
     narrowest tier, which is the failure this codebase keeps recording.
 

@@ -173,29 +173,29 @@ ACTIVITY_MIN_HEIGHT = 7
 
 #: Measured against composited output, not estimated -- see tests.
 #:
-#: .. warning::
+#: Reconciled to the measured **152** on 2026-08-10, re-swept column by column
+#: before the constant moved: 151 lights exactly one marker (the activity
+#: panel's), 152 lights none, and nothing above it lights one either. The
+#: number is quoted by ``__main__.FULL_LAYOUT_COLUMNS``, the ``--font-size``
+#: help text, the README width table and CLAUDE.md, and all five now agree.
+#: ``tests/screens/test_surf_screen.MEASURED_FULL_LAYOUT_COLUMNS`` holds the
+#: same number as an **independent literal** and pins it to the real screen in
+#: both directions; keep it a separate literal, because a test that aliased it
+#: to this constant would compare a number against itself and pin nothing.
+#: A documented width *above* the measured one is merely generous -- one
+#: *below* it would clip, which is what
+#: ``test_the_documented_width_still_covers_the_measured_one`` forbids.
 #:
-#:    **This constant is 24 columns stale on purpose.** The layout measures
-#:    **152** as of 2026-08-10; this still says 176. The seam commit that
-#:    brought the number down deliberately changed no constant, because 176
-#:    is quoted by ``__main__.FULL_LAYOUT_COLUMNS``, the ``--font-size`` help
-#:    text, the README width table and CLAUDE.md, and moving five surfaces
-#:    together is a step of its own. **The measured number lives in
-#:    ``tests/screens/test_surf_screen.MEASURED_FULL_LAYOUT_COLUMNS``**, which
-#:    pins it to the real screen in both directions (152 clean, 151 marked).
-#:    Trust that one; this is an upper bound until the reconciliation lands.
-#:    A documented width *above* the measured one is merely generous -- one
-#:    *below* it would clip, which is what
-#:    ``test_the_documented_width_still_covers_the_measured_one`` forbids.
-#:
-#: The history, because the number has moved twice in three days. It was 135
+#: The history, because the number has moved three times in three days. It
+#: was 135
 #: while ``SurfDevActivity`` had a ``3fr`` slot of its own (shared with the
 #: feed, behind a ``c`` swap that no longer exists). The three-row restructure
 #: traded that slot for a share of the right rail and the number went to 176 --
 #: not because the panel needs 176 columns, but because a **3:2** seam gives
 #: the rail only ``0.4 * W`` and the rail needs 71. Re-seaming to **7:6** hands
 #: the feed exactly the 0.538 it needs and the rail the rest, and 81 + 71 = 152
-#: falls out. The whole seam sweep is in the screen docstring and, with the
+#: falls out -- so the number came back **down**, 176 -> 152, without hiding
+#: anything. The whole seam sweep is in the screen docstring and, with the
 #: losing candidates, in the test module.
 #:
 #: 152 is inside the ~169 columns a laptop gets at the forced 17 pt, which was
@@ -213,7 +213,7 @@ ACTIVITY_MIN_HEIGHT = 7
 #: -- see ``test_a_linked_post_advertises_widen_at_the_full_layout_width``.
 #: Do not raise this toward 216 to silence a linked post's marker: that
 #: marker is correct, and 216 is a "full layout" nobody could reach.
-SURF_FULL_LAYOUT_COLUMNS = 176
+SURF_FULL_LAYOUT_COLUMNS = 152
 
 
 # -- format helpers ----------------------------------------------------

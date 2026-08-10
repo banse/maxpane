@@ -25,20 +25,28 @@ _DEFAULT_FONT_SIZE = 17
 #: had been waiting on -- the signals panel, not a table, was FWA's binding
 #: constraint at the end.  FWA still clears every marker at 143.
 #:
-#: 176 since 2026-08-10, and it is **surf** that needs it, not FWA.  Surf's
-#: restructure put every widget on screen at once, which cost ``SurfDevActivity``
-#: its own ``3fr`` slot; from a share of the ``2fr`` right rail it reaches its
-#: widest row layout at 176.  That is a deliberate trade -- permanent
-#: visibility for columns -- and the widths in between advertise it honestly,
-#: so the number is raised rather than the layout re-cut.  Pinned in both
-#: directions against the real screen as
-#: ``screens/surf.py::SURF_FULL_LAYOUT_COLUMNS``: 175 lights one marker, 176
-#: lights none.
+#: Then 176 on 2026-08-10, and for the first time it was **surf** that set it,
+#: not FWA.  Surf's restructure put every widget on screen at once, which cost
+#: ``SurfDevActivity`` its own ``3fr`` slot; from a share of a ``2fr`` right
+#: rail it only reached its widest row layout at 176.  That was the first time
+#: this number had ever gone **up**.
+#:
+#: And 152 since later the same day -- the first time it has come back **down**
+#: without a widget losing anything.  Nothing was re-cut or hidden: only the
+#: column *seam* moved, 3:2 -> 7:6.  The two binding panels are the announce
+#: feed (81 columns) and the dev-activity rail (71), so the narrowest terminal
+#: that satisfies both is 81 + 71 = 152, and a 3:2 seam simply handed the feed
+#: 0.60 W against the 0.538 it needed -- the rail reached 71 only at 176, and
+#: those 24 columns bought nothing.  Surf is still the dashboard that sets this
+#: number; FWA still clears every marker at 143.  Pinned in both directions
+#: against the real screen as ``screens/surf.py::SURF_FULL_LAYOUT_COLUMNS``:
+#: 151 lights one marker, 152 lights none.
 #:
 #: Font size is the only lever most people have over this -- a window is
 #: already as wide as the display -- and at the forced 17 pt a laptop gets
-#: ~169, so the full layout now genuinely requires ``--font-size``.
-FULL_LAYOUT_COLUMNS = 176
+#: ~169.  152 is inside that, so the full layout is reachable again without
+#: passing ``--font-size`` at all, which is what the re-seam was for.
+FULL_LAYOUT_COLUMNS = 152
 
 
 def _font_size(value: str) -> int:
@@ -75,8 +83,9 @@ def _maximize_terminal(font_size: int = _DEFAULT_FONT_SIZE) -> None:
     The font size is the whole reason this is configurable.  Every dashboard
     lays itself out in *columns*, and the widest tier needs
     :data:`FULL_LAYOUT_COLUMNS`; a maximized window on a laptop display gives
-    roughly 169 columns at 17 pt, which is below that and below most of the
-    per-dashboard thresholds under it.
+    roughly 169 columns at 17 pt.  That clears the current number (152) but
+    did not clear the 176 that stood earlier the same day, and it still does
+    not clear a *smaller* display's column count.
     Forcing 17 pt unconditionally therefore capped the layout and silently
     overrode whatever the user had chosen -- including a smaller size chosen
     *specifically* to fit the full layout, which made the ``‹ widen`` hints

@@ -2,7 +2,7 @@
 
 Every dashboard lays out in *columns*, and the widest layout needs
 ``FULL_LAYOUT_COLUMNS`` of them (198 when this file was written and FWA was
-the widest; 176 today, and it is surf's). A maximized window on a laptop
+the widest; 152 today, and it is surf's). A maximized window on a laptop
 display gives roughly 169 at 17 pt, so ``‹ widen`` markers were permanently on
 screen -- and the app **forced 17 pt on every launch**, overriding whatever the
 user had set. Zooming out before starting did nothing, which made the hints
@@ -224,25 +224,28 @@ def test_the_documented_width_is_tight_against_the_widest_dashboard() -> None:
     layout.  It moved to surf when surf's dev-activity panel took the number
     to 176, and it read ``surf._widen_markers(FULL_LAYOUT_COLUMNS - 1) > 0``.
 
-    **That form no longer holds, and the slack is deliberate.**  On 2026-08-10
-    the surf screen's column seam moved 3:2 -> 7:6 and its full layout came
-    down 176 -> 152; the seam commit deliberately did not touch this constant,
+    That form briefly stopped holding.  On 2026-08-10 the surf screen's column
+    seam moved 3:2 -> 7:6 and its full layout came down 176 -> 152, but the
+    seam commit deliberately touched no constant -- reconciling this one,
     ``screens/surf.SURF_FULL_LAYOUT_COLUMNS``, the ``--font-size`` help text,
-    the README width table or CLAUDE.md, because reconciling those five
-    surfaces is a step of its own.  Until it lands the documented width is
-    generous by 24 columns.
+    the README width table and CLAUDE.md is a step of its own -- so for one
+    commit the documented width was generous by 24 columns and ``_SLACK``
+    recorded exactly that.  **The reconciliation has since landed**: both
+    constants read 152, ``_SLACK`` is back to 0, and the assertion below is
+    the strict form again.
 
-    Generous is safe; *short* is what clips.  So the tightness claim is kept
-    in the only form that is still true, and it is still a real bound rather
-    than "any value at all":
+    Generous would be safe; *short* is what clips.  The claim is therefore
+    made in two halves, neither of which is a constant compared against
+    itself:
 
     * every dashboard must clear at the documented width (the test above), and
-    * the documented width must not exceed the widest dashboard's own measured
-      width -- which the surf harness pins to the real screen in both
-      directions -- by more than the seam re-measurement left behind.
+    * the documented width must equal the widest dashboard's own measured
+      width -- a separate literal in the surf harness, which pins it to the
+      real screen in both directions right below.
 
-    When the reconciliation commit sets both constants to 152, ``_SLACK`` goes
-    to 0 and this test becomes the strict form again with no other edit.
+    ``_SLACK`` stays, at 0, because it is the thing that may only ever shrink:
+    a future re-measurement is allowed to leave the documented number
+    temporarily generous, and must say by how much.
     """
     pytest.importorskip("textual")
     import asyncio
@@ -251,7 +254,7 @@ def test_the_documented_width_is_tight_against_the_widest_dashboard() -> None:
 
     #: Columns by which the documented width currently exceeds the widest
     #: dashboard's measured one.  Must only ever shrink.
-    _SLACK = 24
+    _SLACK = 0
 
     measured = surf.MEASURED_FULL_LAYOUT_COLUMNS
     assert FULL_LAYOUT_COLUMNS - measured == _SLACK, (

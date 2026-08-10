@@ -130,16 +130,16 @@ last marker goes out at:
 
 | columns | what still shows |
 |--------:|------------------|
-| ≤ 134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen`, FWA `SIGNALS ‹ widen` |
-| 135–142 | surf `DEV ACTIVITY ‹ widen`, FWA `SIGNALS ‹ widen` |
-| 143–175 | surf `DEV ACTIVITY ‹ widen` (FWA is already full) |
-| **≥ 176** | **nothing — full layout**, with one exception below |
+| ≤ 142 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, FWA `SIGNALS ‹ widen` |
+| 143–150 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts` (FWA is already full) |
+| 151 | surf `DEV ACTIVITY ‹ widen for amounts` |
+| **≥ 152** | **nothing — full layout**, with one exception below |
 
 The exception is a post, not a panel. When an announce post links a transaction, its own
 punctuation can glue the URL to the 66-character hash into a single token no column budget
 can break — the captured one is 91 columns wide — so surf's `ANNOUNCE FEED` truncates it
-and keeps its `‹ widen` lit above 176 (that particular post needs 194). The marker is
-right: the link really is cut. The table's 176 is the width at which every *layout* is
+and keeps its `‹ widen` lit above 152 (that particular post needs 216). The marker is
+right: the link really is cut. The table's 152 is the width at which every *layout* is
 whole, and the next post linking a transaction arrives with a token of its own length, so
 no fixed number can promise more than that.
 
@@ -187,12 +187,18 @@ the other, so a single manager owns the command.
 
 ### Terminal size
 
-**The widest layout wants 176 columns.** That is the width at which every widget on every dashboard
-can render its full column set for the data it holds today. **FWA wants 143**; the 176 belongs to
+**The widest layout wants 152 columns.** That is the width at which every widget on every dashboard
+can render its full column set for the data it holds today. **FWA wants 143**; the 152 belongs to
 **surf**, whose dev-activity panel shares the narrow right rail so that all six of its panels stay
-on screen at once. One thing 176 does not promise is a clean announce feed on every possible post:
+on screen at once. One thing 152 does not promise is a clean announce feed on every possible post:
 a post that links a transaction can carry a single unbreakable token wider than the panel, and the
 feed correctly truncates it and says so at any width (see the note under the table above).
+
+152 is inside the ~169 columns a laptop gets at the 17 pt maxpane sets on launch, so the full
+layout is reachable without touching `--font-size`. It briefly was not: surf's number stood at 176
+for part of 2026-08-10, until the seam between its two columns moved from 3:2 to 7:6 and handed the
+announce feed exactly the share it needed instead of 24 columns more. Nothing was hidden or cut to
+get there — only the split moved.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why
