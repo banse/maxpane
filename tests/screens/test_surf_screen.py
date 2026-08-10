@@ -1147,7 +1147,14 @@ _ACTIVITY_ROWS = ("0x61CC704c…73f14E", "NFPM", "OFT endpoint")
 #: marker still leads the loss by exactly two rows, which is the property
 #: that matters and which ``test_the_marker_lights_before_the_first_line_is_
 #: actually_lost`` pins at both ends.
-FIRST_WHOLE_HEIGHT = 37
+#:
+#: **37 -> 38 later the same day**, and only the market paid: a second blank
+#: row went in under ``IMD MARKET``'s title, while ``IDENTITY.MD`` broke even
+#: on its own new blank by dropping ``_MAX_SALES`` 4 -> 3. The bottom row is
+#: as tall as its taller child, so a row added to the shorter panel would
+#: have cost nothing -- it was the market's, and the market was the taller
+#: one. Re-measured, not adjusted: the marker is dark from 38 and lit at 37.
+FIRST_WHOLE_HEIGHT = 38
 
 
 def _visible_panel(app, widget, clip) -> str:
@@ -1275,8 +1282,14 @@ async def test_the_market_keeps_its_figures_far_below_the_rail():
 
     Moving the market out of the scrolling rail and into the ``auto`` bottom
     row is what bought this: every figure is still composited ten rows below
-    the height the rail stops fitting, and the panel is still its full seven
-    rows rather than a title over nothing.
+    the height the rail stops fitting, and the panel is still its full height
+    rather than a title over nothing.
+
+    Eight rows, not the seven this pinned until 2026-08-11: a second blank
+    row went in under the title. The number is asserted rather than derived
+    from the widget so that a row appearing or vanishing has to be a
+    deliberate edit here -- counting ``compose``'s yields would agree with
+    itself through any change at all.
     """
     async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, 30) as (app, screen, _p):
         panel = _visible_panel(
@@ -1285,7 +1298,7 @@ async def test_the_market_keeps_its_figures_far_below_the_rail():
         assert all(field in panel for field in _MARKET_FIELDS), (
             f"the market lost {[f for f in _MARKET_FIELDS if f not in panel]}"
         )
-        assert screen.query_one(SurfMarket).region.height == 7
+        assert screen.query_one(SurfMarket).region.height == 8
         # ...and the rail's own loss is still advertised, in words.
         assert TALLER_HINT in _screen_text(app).split("\n")[0]
         assert screen.query_one(_RAIL).show_vertical_scrollbar is True

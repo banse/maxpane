@@ -113,8 +113,11 @@ PANEL_TITLE = "IDENTITY.MD"
 #: The explicit floor state.  Tested verbatim (PRD §5 nft group).
 FLOOR_UNAVAILABLE = "n/a — no keyless source"
 
-#: Sales lines rendered at most.
-_MAX_SALES = 4
+#: Sales lines rendered at most.  Three rather than four since the blank row
+#: above the block was added: the panel's height is what the screen's
+#: ``‹ taller`` marker is measured against, so a row spent on separation is
+#: paid for with a row of sales rather than taken from the rail below.
+_MAX_SALES = 3
 
 #: Marker appended to the title when the stats row had to shed a field, one
 #: per tier, naming what went.  They are terse for a measured reason: the
@@ -324,6 +327,10 @@ class SurfNft(Vertical):
         # field the row no longer carries.
         yield Static("", classes="surf-nft-line", id="surf-nft-dev")
         yield Static("", classes="surf-nft-line", id="surf-nft-floor")
+        # Blank row between the collection's figures and the sales block:
+        # they answer different questions, and the floor line above reads as
+        # part of the sales story without it.
+        yield Static("", classes="surf-nft-line", id="surf-nft-sales-gap")
         yield Static("", classes="surf-nft-line", id="surf-nft-sales-head")
         yield Static("", classes="surf-nft-line", id="surf-nft-sales")
 
@@ -442,10 +449,23 @@ class SurfNft(Vertical):
             widths += [len(head_plain), len(body_plain)]
         else:
             try:
-                rows = list(nft_last_sales)[:_MAX_SALES]
+                rows = list(nft_last_sales)
             except TypeError:
                 rows = []
-            lines = [l for l in (_sale_line(s) for s in rows) if l is not None]
+            # Cap the *renderable* rows, not the raw ones. Slicing first
+            # meant a malformed row consumed one of the slots and left the
+            # block short -- with ``_MAX_SALES`` at 3, three bad rows at the
+            # head emptied it entirely while good sales sat just behind
+            # them. The manager already skips a sale with no usable ``eth``
+            # rather than printing ``0.000``, so those rows are expected
+            # traffic, not corruption.
+            lines: list[tuple[str, str]] = []
+            for sale in rows:
+                line = _sale_line(sale)
+                if line is not None:
+                    lines.append(line)
+                    if len(lines) == _MAX_SALES:
+                        break
             head_plain, head_markup = _SALES_HEAD
             sales_head.update(head_markup)
             widths.append(len(head_plain))

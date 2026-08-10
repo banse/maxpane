@@ -1247,10 +1247,16 @@ async def test_nft_rows_are_stats_then_dev_holdings_then_floor_then_sales():
         await pilot.pause()
         lines = _screen_lines(app)
         first = next(i for i, line in enumerate(lines) if "holders" in line)
-        assert [line.strip() for line in lines[first : first + 4]] == [
+        assert [line.strip() for line in lines[first : first + 5]] == [
             "667 holders · 38 transfers/24h · 1/2000 written",
             "dev holds 3 identities",
             f"floor {FLOOR_UNAVAILABLE}",
+            # The blank row asked for on 2026-08-11: the collection's figures
+            # and the sales block answer different questions, and the floor
+            # line reads as part of the sales story without it. Asserted as
+            # an empty element of the sequence rather than skipped, so a row
+            # that quietly collapses fails here.
+            "",
             "last sales (Seaport)",
         ]
         # The old wording of the written row, which must not survive anywhere:
@@ -1428,6 +1434,46 @@ async def test_nft_no_args_and_all_none_render_dashes_never_zero():
         assert "0 holders" not in screen
         assert f"{FLOOR_UNAVAILABLE}" in screen
         assert "--" in screen
+
+
+async def test_nft_shows_three_sales_and_counts_the_ones_it_can_render():
+    """The cap counts *rendered* rows, not raw ones.
+
+    Slicing the raw list first let a malformed row eat one of the slots, so
+    the panel showed fewer sales than it had. At ``_MAX_SALES`` 4 that was
+    invisible -- there was a spare slot to absorb it -- and dropping to 3
+    exposed it: three bad rows at the head emptied the block while good
+    sales sat directly behind them. Both halves are asserted here because
+    the cap alone would pass on a list with no malformed rows at all.
+    """
+    widget = SurfNft()
+    app = _Harness(widget)
+    async with app.run_test(size=(90, 20)) as pilot:
+        clean = [
+            {"ts": 1786163591, "token_id": 100 + i, "eth": 0.2 + i / 100}
+            for i in range(6)
+        ]
+        widget.update_data(**{**_FULL_NFT, "nft_last_sales": clean})
+        await pilot.pause()
+        shown = [f"#{100 + i}" for i in range(6) if f"#{100 + i}" in _screen_text(app)]
+        assert shown == ["#100", "#101", "#102"], (
+            f"expected the three newest sales, got {shown}"
+        )
+
+        # Three unusable rows ahead of three good ones: the block must still
+        # fill, which is what slicing-before-skipping got wrong.
+        widget.update_data(
+            **{
+                **_FULL_NFT,
+                "nft_last_sales": [None, "junk", {"ts": None, "token_id": None,
+                                                  "eth": None}] + clean[:3],
+            }
+        )
+        await pilot.pause()
+        text = _screen_text(app)
+        assert all(f"#{100 + i}" in text for i in range(3)), (
+            "malformed rows consumed the sale slots instead of being skipped"
+        )
 
 
 async def test_nft_malformed_sale_rows_are_skipped():

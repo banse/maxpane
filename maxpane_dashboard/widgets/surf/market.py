@@ -246,6 +246,24 @@ ROW_LABELS: dict[str, str] = {"imd": "IMD", "fp": "FP"}
 #: on the panel that binds the whole screen's width.
 CHANGE_LABEL = "24h ±"
 
+#: The parity row's window.  A constant rather than an f-string literal for
+#: the same reason :data:`ROW_LABELS` is one: :func:`_window` pads these two
+#: to a common width so the ``▲``/``▼`` glyphs start in one column, and a
+#: label baked into its f-string could be re-worded without the padding
+#: following it.
+PARITY_LABEL = "parity"
+
+
+def _window(label: str) -> str:
+    """*label* padded so both windows' figures start in one column.
+
+    ``24h ±`` is a character shorter than ``parity``, so without this the
+    two rows' glyphs sat one column apart -- the same misalignment
+    :func:`_labelled` fixes for the figures above them, one field to the
+    right.  Derived from the two constants, never a hand-typed space.
+    """
+    return f"{label:<{max(len(CHANGE_LABEL), len(PARITY_LABEL))}}"
+
 
 def _labelled(key: str, figure: str) -> str:
     """``IMD $0.7074`` -- *figure* behind its label, padded to one column.
@@ -373,13 +391,14 @@ def _fmt_change(value) -> str:
     where a bare label says nothing and a zero would read as "unmoved".
     """
     v = as_float(value)
+    label = _window(CHANGE_LABEL)
     if v is None:
-        return f"[dim]{CHANGE_LABEL} {DASH}[/]"
+        return f"[dim]{label} {DASH}[/]"
     if v > 0:
-        return f"[dim]{CHANGE_LABEL}[/] [$success]▲ {v:+.2f}%[/]"
+        return f"[dim]{label}[/] [$success]▲ {v:+.2f}%[/]"
     if v < 0:
-        return f"[dim]{CHANGE_LABEL}[/] [$error]▼ {v:+.2f}%[/]"
-    return f"[dim]{CHANGE_LABEL} ● {v:+.2f}%[/]"
+        return f"[dim]{label}[/] [$error]▼ {v:+.2f}%[/]"
+    return f"[dim]{label} ● {v:+.2f}%[/]"
 
 
 def _fmt_parity(value) -> str:
@@ -391,13 +410,14 @@ def _fmt_parity(value) -> str:
     *either* price as well as of the parity itself.
     """
     v = as_float(value)
+    label = _window(PARITY_LABEL)
     if v is None:
-        return f"[dim]parity {DASH}[/]"
+        return f"[dim]{label} {DASH}[/]"
     if v > _PARITY_EPSILON:
-        return f"[dim]parity[/] [$success]▲ {v:+.2f}%[/]"
+        return f"[dim]{label}[/] [$success]▲ {v:+.2f}%[/]"
     if v < -_PARITY_EPSILON:
-        return f"[dim]parity[/] [$error]▼ {v:+.2f}%[/]"
-    return f"[dim]parity ● {v:+.2f}%[/]"
+        return f"[dim]{label}[/] [$error]▼ {v:+.2f}%[/]"
+    return f"[dim]{label} ● {v:+.2f}%[/]"
 
 
 def _spark(series) -> str:
@@ -647,6 +667,10 @@ class SurfMarket(Vertical):
             PANEL_TITLE, classes="surf-market-title", id="surf-mkt-title"
         )
         yield Static("", classes="surf-market-line", id="surf-mkt-spacer")
+        # A second blank row, so the title sits further off its figures than
+        # the figures sit off each other.  Rows are ``auto``-height, so this
+        # costs one terminal row and nothing horizontal.
+        yield Static("", classes="surf-market-line", id="surf-mkt-spacer-2")
         yield Static(_WAITING, classes="surf-market-line", id="surf-mkt-price")
         yield Static("", classes="surf-market-line", id="surf-mkt-vol")
         yield Static("", classes="surf-market-line", id="surf-mkt-gap")

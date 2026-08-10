@@ -873,13 +873,75 @@ def _line_with(app, needle: str) -> str:
 
 
 async def test_market_price_row_names_its_figure_and_its_window():
-    """``IMD $0.7074 · 24h ± ▲ +30.89%`` -- composited, not the markup."""
+    """``IMD $0.7074 · 24h ±  ▲ +30.89%`` -- composited, not the markup.
+
+    Two spaces after ``±``: the window labels are padded to a common width
+    so the glyphs line up with ``parity``'s one row down, the same way the
+    figures above them are padded to one column. Spelled out here rather
+    than built from the constant, so a change to the padding has to be a
+    deliberate edit to this string.
+    """
     widget = SurfMarket()
     app = _Harness(widget)
     async with app.run_test(size=(120, 14)) as pilot:
         widget.update_data(**_FULL_MARKET)
         await pilot.pause()
-        assert "IMD $0.7074 · 24h ± ▲ +30.89%" in _line_with(app, "$0.7074")
+        assert "IMD $0.7074 · 24h ±  ▲ +30.89%" in _line_with(app, "$0.7074")
+
+
+async def test_market_the_change_and_parity_glyphs_start_in_one_column():
+    """``24h ±`` and ``parity`` are padded to a common width, not hand-spaced.
+
+    The literals in the tests either side of this one pin *a* number of
+    spaces; none of them pins the property those spaces exist for, which is
+    that the two rows' ``▲``/``▼`` land in the same column. This measures
+    that in composited output, then re-words one label in memory and
+    measures again -- a hand-typed gap would keep the literals green while
+    the two glyphs drifted apart, which is exactly how the figures above
+    them were misaligned before ``_labelled`` was derived.
+    """
+    from maxpane_dashboard.widgets.surf import market as M
+
+    def _glyph_col(line: str) -> int:
+        """Column of whichever direction glyph this row happens to carry.
+
+        The two rows do not always point the same way -- the fixture's 24h
+        change is up and its parity is down -- so pinning one glyph would
+        make this test depend on the payload rather than on the padding.
+        """
+        cols = [line.index(g) for g in ("▲", "▼", "●") if g in line]
+        assert cols, f"no direction glyph in {line!r}"
+        return min(cols)
+
+    async def glyph_columns(app):
+        return (
+            _glyph_col(_line_with(app, "$0.7074")),
+            _glyph_col(_line_with(app, "parity")),
+        )
+
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 14)) as pilot:
+        widget.update_data(**_FULL_MARKET)
+        await pilot.pause()
+        change_col, parity_col = await glyph_columns(app)
+        assert change_col == parity_col, (
+            f"the 24h glyph is at column {change_col} and parity's at "
+            f"{parity_col}; the two windows are not padded to one width"
+        )
+
+        original = M.PARITY_LABEL
+        try:
+            M.PARITY_LABEL = "parity spread"
+            widget.update_data(**_FULL_MARKET)
+            await pilot.pause()
+            change_col, parity_col = await glyph_columns(app)
+            assert change_col == parity_col, (
+                "a longer parity label left the 24h window behind: the "
+                "padding is not derived from both labels"
+            )
+        finally:
+            M.PARITY_LABEL = original
 
 
 async def test_market_price_row_keeps_its_shape_when_the_change_turns_or_fails():
@@ -890,9 +952,9 @@ async def test_market_price_row_keeps_its_shape_when_the_change_turns_or_fails()
     never fall back to a zero, which on a 24h change reads as "unmoved".
     """
     expected = {
-        -3.80: "IMD $0.7074 · 24h ± ▼ -3.80%",
-        0.0: "IMD $0.7074 · 24h ± ● +0.00%",
-        None: "IMD $0.7074 · 24h ± --",
+        -3.80: "IMD $0.7074 · 24h ±  ▼ -3.80%",
+        0.0: "IMD $0.7074 · 24h ±  ● +0.00%",
+        None: "IMD $0.7074 · 24h ±  --",
     }
     widget = SurfMarket()
     app = _Harness(widget)
