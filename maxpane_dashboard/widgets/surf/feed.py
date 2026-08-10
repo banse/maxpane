@@ -70,7 +70,24 @@ from maxpane_dashboard.widgets.surf._fmt import DASH, fmt_age, hhmm, mmdd
 FEED_TITLE = "ANNOUNCE FEED"
 
 #: Columns at or above which messages render in full (wrapped).
-FULL_TEXT_WIDTH = 76
+#:
+#: Lowered 76 -> 71 on request, and the reason is worth recording because the
+#: obvious lever was the wrong one.  The columns were re-seamed 3:2 -> 7:6 to
+#: bring the screen's full-layout width down from 176 to 152, which narrowed
+#: this panel's share: at 76 the feed only began wrapping at a 151-column
+#: terminal, so between 135 and 150 it showed one truncated line per post.
+#: The instinct was to widen the feed's column back, but that trade is bad --
+#: a 9:7 seam wraps from 144 and costs 9 columns of full-layout width (152 ->
+#: 161), because the *dev activity* panel is what binds at 152, not this one.
+#: Moving this threshold instead wraps from 142 and costs the full-layout
+#: width **nothing**; all three of 76/71/66 leave it at 152 (measured).
+#:
+#: What it does cost is rows: a wrapped post is taller than a cut one, so at
+#: 143 columns the feed spends 9 rows on the two sweep posts where it spent 3.
+#: That is what wrapping *is*, and this panel is the one the layout hands all
+#: its slack height to, so it is the cheapest place in the screen to spend it.
+#: 66 would wrap from 132 if an even narrower terminal ever matters.
+FULL_TEXT_WIDTH = 71
 
 #: Marker appended to the title when a message had to be truncated.
 WIDEN_HINT = "‹ widen"

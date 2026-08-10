@@ -748,13 +748,20 @@ _SEAM_NARRATIVE_SURFACES = (
     "maxpane_dashboard/__main__.py",
 )
 
-#: The band where the new seam costs the announce feed its wrapped-post
-#: rendering: 3:2 gave the feed the 81 columns it needs from 135, 7:6 only from
-#: 151.  Spelled with an en dash to match the README's own width table.
-_FEED_REGRESSION_BAND = "135–150"
+#: The band where the 7:6 seam cost the announce feed its wrapped-post
+#: rendering before ``feed.FULL_TEXT_WIDTH`` came down 76 -> 71.  Kept as a
+#: *forbidden* string now: the band is closed, so a document still naming it
+#: is telling a reader about a limitation that no longer exists.
+_CLOSED_FEED_REGRESSION_BAND = "135–150"
 
 #: Sentences that say the re-seam was free *everywhere*.  Each was true of the
 #: layout and false of the feed, and each is what final review flagged.
+#:
+#: Still forbidden after the threshold fix, and this is the subtle part: the
+#: fix moved the feed's wrap edge to 142, but the old 3:2 seam wrapped from
+#: **135**.  So a 135-141 band survives where the previous layout wrapped and
+#: this one does not -- narrower than before and no longer worth naming in a
+#: width table, but "nothing was given up" is still not a true sentence.
 _UNQUALIFIED_FREE_CLAIMS = (
     "bought nothing",
     "without a widget giving anything up",
@@ -765,47 +772,54 @@ _UNQUALIFIED_FREE_CLAIMS = (
 )
 
 
-def test_the_docs_do_not_call_the_re_seam_free_below_the_full_width() -> None:
-    """Moving the seam bought 24 columns app-wide and cost the feed a tier.
+def test_the_docs_describe_the_feed_regression_as_closed() -> None:
+    """The 7:6 seam cost the feed a tier; lowering its own threshold fixed it.
 
-    Measured, not assumed.  One column below the documented width every
-    marker still standing belongs to the dev-activity panel -- that is the
-    balanced-seam claim, and it is tested next door.  Eight columns below it,
-    at the width FWA calls full, a *second* panel is shedding: the announce
-    feed, which the 3:2 seam left clean from 135 and 7:6 leaves clean only
-    from 151.  So "nothing was given up" is true at and above the full width
-    and false for every terminal in between, and three documents said it
-    without the qualifier.
-
-    Bound in both directions.  If a future change clears the feed at the width
-    below, the first assertion fails and tells you to delete the qualifier
+    This test replaces one that held the docs to naming a 135-150 band where
+    the feed printed one truncated line per post.  That band is closed --
+    ``feed.FULL_TEXT_WIDTH`` came down 76 -> 71, so the feed wraps from 142 --
+    and the old test said, in its own failure message, to drop the qualifier
     rather than leave three documents hedging something that stopped
-    happening.
+    happening.  This is that drop, with the direction reversed: the band is
+    now a *forbidden* string, because a document naming it describes a
+    limitation a reader will not meet.
+
+    The width it asserts is **measured on the real screen**, not read from
+    ``feed.FULL_TEXT_WIDTH``.  Deriving it from the constant would make the
+    docs agree with themselves through any regression at all.
     """
     harness = _surf_screen_harness()
     full = harness.MEASURED_FULL_LAYOUT_COLUMNS
 
-    # The last marker at full-1 is the activity panel's alone...
-    assert asyncio.run(harness._markers_outside_the_activity_panel(full - 1)) == 0
-    # ...and below the band's top a second panel is shedding too.
-    assert asyncio.run(harness._markers_outside_the_activity_panel(full - 2)) > 0, (
-        "the seam no longer costs a second panel anything below the full "
-        "width -- drop the qualifier from CLAUDE.md, README.md and "
-        "__main__.py instead of leaving them hedging"
-    )
+    # Every marker below the full width belongs to the activity rail alone:
+    # no second panel sheds anything on the way down to the feed's own width.
+    for width in (full - 1, full - 2, full - 9):
+        assert asyncio.run(harness._markers_outside_the_activity_panel(width)) == 0, (
+            f"a second panel is shedding at {width} columns again -- the docs "
+            "below claim only the rail does, and one of the two is now wrong"
+        )
+    # ...and one column below that, the feed is shedding again: the number the
+    # docs quote is the real edge, not a round one.
+    feed_edge = harness.MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL
+    assert asyncio.run(harness._markers_outside_the_activity_panel(feed_edge - 1)) > 0
 
     for name in _SEAM_NARRATIVE_SURFACES:
         text = (REPO / name).read_text(encoding="utf-8")
         for claim in _UNQUALIFIED_FREE_CLAIMS:
             assert claim not in text, (
-                f"{name} says {claim!r} of the 3:2 -> 7:6 re-seam, which is "
-                f"false at {_FEED_REGRESSION_BAND} columns: the announce feed "
-                "renders one truncated line per post there where the old seam "
-                "wrapped them"
+                f"{name} says {claim!r} of the 3:2 -> 7:6 re-seam. The feed's "
+                "wrap edge came back to 142, but the old seam wrapped from "
+                "135, so a 135-141 band survives where this layout truncates "
+                "and the old one did not"
             )
-        assert _FEED_REGRESSION_BAND in text, (
-            f"{name} narrates the re-seam without naming the "
-            f"{_FEED_REGRESSION_BAND} band it costs the announce feed"
+        assert _CLOSED_FEED_REGRESSION_BAND not in text, (
+            f"{name} still names the {_CLOSED_FEED_REGRESSION_BAND} band where "
+            "the announce feed printed one truncated line per post. That band "
+            f"closed when FULL_TEXT_WIDTH fell to wrap from {feed_edge}"
+        )
+        assert str(feed_edge) in text, (
+            f"{name} narrates the seam without naming {feed_edge}, the width "
+            "the announce feed actually wraps from now"
         )
 
 

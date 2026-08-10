@@ -42,13 +42,13 @@ _DEFAULT_FONT_SIZE = 17
 #: ``screens/surf.py::SURF_FULL_LAYOUT_COLUMNS``: 151 lights one marker, 152
 #: lights none.
 #:
-#: Free at and above 152, and **not below it**.  The feed's share of the
-#: terminal fell with the seam too, so it reaches its 81 columns at 151 where
-#: 3:2 reached them at 135: across **135–150** the announce feed renders one
-#: truncated line per post where the old seam wrapped them, and says so with
-#: its own ``‹ widen``.  Those 24 columns therefore bought the feed a wrapping
-#: tier in that band -- and the layout nothing, which is the trade this number
-#: records.
+#: The seam did cost the announce feed its wrapping tier below 152 for part of
+#: the same day -- its share fell with the seam, so it reached the 81 columns
+#: it then needed at 151 where 3:2 reached them at 135.  Widening the column
+#: back would have been the expensive fix (a 9:7 seam wraps from 144 and puts
+#: this number at 161); lowering the feed's own ``FULL_TEXT_WIDTH`` from 76 to
+#: 71 wraps from 142 and leaves this number at 152 untouched, because the
+#: panel that binds here is the dev-activity rail, not the feed.
 #:
 #: Font size is the only lever most people have over this -- a window is
 #: already as wide as the display -- and at the forced 17 pt a laptop gets

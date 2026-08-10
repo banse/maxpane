@@ -130,9 +130,9 @@ last marker goes out at:
 
 | columns | what still shows |
 |--------:|------------------|
-| ≤ 142 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, FWA `SIGNALS ‹ widen` |
-| 143–150 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts` (FWA is already full) |
-| 151 | surf `DEV ACTIVITY ‹ widen for amounts` |
+| ≤ 141 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, FWA `SIGNALS ‹ widen` |
+| 142 | surf `DEV ACTIVITY ‹ widen for amounts`, FWA `SIGNALS ‹ widen` |
+| 143–151 | surf `DEV ACTIVITY ‹ widen for amounts` (FWA is already full) |
 | **≥ 152** | **nothing — full layout**, with one exception below |
 
 The exception is a post, not a panel. When an announce post links a transaction, its own
@@ -200,12 +200,15 @@ layout is reachable without touching `--font-size`. It briefly was not: surf's n
 for part of 2026-08-10, until the seam between its two columns moved from 3:2 to 7:6 and handed the
 announce feed exactly the share it needed instead of 24 columns more. No panel was hidden and no
 field re-cut to get there — only the split moved — and at 152 and above nothing at all is given up.
-It is not free below that, though: the feed's share of the terminal fell with the seam, so between
-**135–150** columns the announce feed now prints one truncated line per post where the 3:2 seam
-still wrapped them whole. It lights `‹ widen` throughout that band and the table above lists it,
-which is the trade the move was worth making: the old seam bought those posts their wrapping at
-135–150 and bought the *layout* nothing, because the dev-activity rail stayed one tier down all
-the way to 176.
+
+That move did briefly cost something below 152. The feed's share of the terminal fell with the
+seam, so it stopped wrapping posts until 151 where the 3:2 seam had wrapped them from 135, and
+between those widths it printed one truncated line per post. The fix was **not** to widen the
+column back: the feed decides for itself how narrow a column it will still wrap in, and lowering
+that threshold from 76 to 71 restored wrapping from **142** while costing the full layout
+nothing — 152 is set by the dev-activity rail, not by the feed. Widening the seam instead would
+have wrapped from 144 and pushed the full layout to 161. Wrapping a post in a narrow column
+spends rows rather than columns, and the feed is the panel this layout hands its spare rows to.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why

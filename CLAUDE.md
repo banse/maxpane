@@ -160,14 +160,17 @@ two binding panels are the announce feed (81 columns) and the dev-activity
 rail (71), so 81 + 71 = 152 is the arithmetic floor, and 3:2 had been handing
 the feed 0.60 W against the 0.538 it needed — the rail only reached 71 at 176.
 
-**The move is free at and above 152, and not below it.** The feed's share fell
-with the seam, so it now reaches its 81 columns at 151 where 3:2 reached them
-at 135: between **135–150** columns the announce feed prints one truncated line
-per post where the old seam still wrapped them, and lights `‹ widen` to say so
-(README's width table lists it). Measured on the real screen, whole-screen
-marker counts at 135/143/150 went 1 → 2. So those 24 columns did buy something
-— the feed its wrapping tier in that band — and they bought the *layout*
-nothing, which is why trading them for 152 was right. The record, then:
+**The move cost the feed its wrapping tier below 152, and the fix was not the
+obvious one.** The feed's share fell with the seam, so it reached the 81
+columns it then needed at 151 where 3:2 reached them at 135 — one truncated
+line per post in between. The instinct is to widen the feed's column back;
+**measure before you do, because that trade is bad.** A 9:7 seam wraps from
+144 and costs 9 columns of full-layout width (152 → 161), since the binding
+panel at 152 is the *dev-activity rail*, not the feed. The feed's own
+`FULL_TEXT_WIDTH` is the cheap lever: 76 → 71 wraps from **142** and leaves
+the full layout at 152 exactly (76/71/66 all measure 152). It buys the
+wrapping with *rows* instead of columns, and the feed is the panel this
+layout hands its spare rows to. The record, then:
 **198 → 172 → 143 → 176 → 152**, with FWA setting the first three and surf the
 last two. 152 is inside the ~169 a laptop gets at the forced 17 pt, so the full
 layout stopped requiring `--font-size`.
