@@ -833,3 +833,207 @@ async def test_market_malformed_series_points_are_skipped_not_fatal():
         await pilot.pause()
         screen = _screen_text(app)
         assert "2.4M" in screen  # the valid points still render
+
+
+# -- SurfMarket: the two-column layout and the bridge block -------------
+#
+# The panel is ~77 columns in the bottom row at 143 and its left-hand fields
+# use barely 31 of them, so the sparklines moved up beside the rows they
+# belong to (price with price, supply with the IMD-token figures) and the
+# freed rows carry what the panel had never said out loud: IMD *is* FP,
+# bridged, and the parity percentage above is the spread between the two
+# sides of one asset.
+
+
+def _lines(app) -> list[str]:
+    """Composited rows, right-trimmed -- the panel is padded to the width."""
+    return [line.rstrip() for line in _screen_text(app).splitlines()]
+
+
+def _line_with(app, needle: str) -> str:
+    return next(line for line in _lines(app) if needle in line)
+
+
+async def test_market_puts_each_sparkline_on_the_row_it_belongs_to():
+    """Price beside the price, supply beside the volume/pool figures.
+
+    Both sparklines used to own a row of their own below rows that ended at
+    column 31 of 75, which is the free space this restructure spends.
+    """
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(80, 14)) as pilot:
+        widget.update_data(**_FULL_MARKET)
+        await pilot.pause()
+        price_row = _line_with(app, "$0.7074")
+        token_row = _line_with(app, "vol 24h")
+        assert "price" in price_row
+        assert {c for c in price_row} & set("▁▂▃▄▅▆▇█"), price_row
+        assert "supply" in token_row and "2.4M" in token_row
+        # ...and neither sparkline has a row to itself any more.
+        assert not [l for l in _lines(app) if l.strip().startswith(("price", "supply"))]
+
+
+async def test_market_sparklines_start_at_a_column_derived_from_the_rows():
+    """One column for both, and it follows the rendered left-hand fields.
+
+    A pinned constant would align the two sparklines just as well until a
+    field grew past it -- and then it would collide with, or ellipsise, the
+    figure it was meant to sit beside.  So the widening half is the half
+    that bites: a wider FP row must push both sparklines right together.
+    """
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 14)) as pilot:
+        widget.update_data(**_FULL_MARKET)
+        await pilot.pause()
+        narrow = _line_with(app, "$0.7074").index("price")
+        assert narrow == _line_with(app, "vol 24h").index("supply")
+
+        # A far longer left-hand field on the FP row -- absurd as a price,
+        # ordinary as a layout input, and the one thing a constant cannot
+        # survive.
+        widget.update_data(**{**_FULL_MARKET, "fp_price_usd": 123456789.12})
+        await pilot.pause()
+        wide = _line_with(app, "$0.7074").index("price")
+        assert wide == _line_with(app, "vol 24h").index("supply")
+        assert wide > narrow, (
+            f"the sparkline column stayed at {narrow} while the FP row grew "
+            "past it -- it is a constant, not a measurement"
+        )
+
+
+async def test_market_blank_row_separates_the_token_figures_from_the_bridge():
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(80, 14)) as pilot:
+        widget.update_data(**_FULL_MARKET)
+        await pilot.pause()
+        lines = _lines(app)
+        fp_row = next(i for i, l in enumerate(lines) if "FP $0.7274" in l)
+        assert lines[fp_row - 1].strip() == "", lines
+        assert lines[fp_row - 2].strip() != "", "the blank is padding, not a seam"
+
+
+async def test_market_bridge_block_names_the_mechanism_and_the_live_spread():
+    """One token on two chains, which side is rich, and by how much.
+
+    Every number is derived from the payload's own prices: the dollar figure
+    is recomputed here from the two prices rather than spelled out, so a
+    widget that printed a remembered spread would redden.
+    """
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        widget.update_data(**_FULL_MARKET)
+        await pilot.pause()
+        panel = _screen_text(app)
+        assert "IMD is FP bridged 1:1 from Base" in panel
+        spread = abs(_FULL_MARKET["imd_price_usd"] - _FULL_MARKET["fp_price_usd"])
+        assert f"${spread:.4f}" in panel                      # $0.0200/token
+        assert "under FP" in panel                            # IMD is the cheap side
+        assert "gross" in panel                               # fees are not in it
+        assert "bridges" in panel                             # the flow that closes it
+
+
+async def test_market_bridge_block_follows_the_side_the_live_prices_put_rich():
+    """The direction is read off the prices, not written into the widget.
+
+    ``parity_pct`` is pinned to the analytics definition it is computed with
+    upstream -- ``(imd/fp - 1) * 100`` -- so this test states the sign once,
+    in the module that owns it, and asserts the panel tells the same story
+    both ways round.  A hardcoded "IMD bridges back" passes the cheap half
+    and fails the rich one.
+    """
+    from maxpane_dashboard.analytics.surf_signals import parity_pct
+
+    fp = _FULL_MARKET["fp_price_usd"]
+    cheap = {**_FULL_MARKET, "parity_pct": parity_pct(0.7074, fp)}
+    rich = {**_FULL_MARKET, "imd_price_usd": 0.7674,
+            "parity_pct": parity_pct(0.7674, fp)}
+    assert cheap["parity_pct"] < 0 < rich["parity_pct"]
+
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        widget.update_data(**cheap)
+        await pilot.pause()
+        panel = _screen_text(app)
+        assert "under FP" in panel
+        assert "IMD bridges back" in panel      # burn on this side lifts IMD
+
+        widget.update_data(**rich)
+        await pilot.pause()
+        panel = _screen_text(app)
+        assert "over FP" in panel
+        assert "FP bridges in" in panel         # new supply on the rich side
+        assert "IMD bridges back" not in panel
+
+
+async def test_market_bridge_block_is_explicitly_unavailable_without_parity():
+    """No spread, no direction, no stale number -- and it says why in words.
+
+    ``parity_pct`` is ``None`` whenever either price read fails, and a block
+    about a spread that cannot be measured must not fall back to a blank
+    right-hand column (indistinguishable from "at parity") or to the last
+    good figure presented as live.
+    """
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        widget.update_data(**_FULL_MARKET)          # a good render first...
+        await pilot.pause()
+        widget.update_data(**{**_FULL_MARKET, "parity_pct": None})
+        await pilot.pause()
+        panel = _screen_text(app)
+        assert "spread unavailable" in panel
+        assert "IMD is FP bridged 1:1 from Base" in panel   # not a market read
+        for stale in ("under FP", "over FP", "bridges back", "bridges in"):
+            assert stale not in panel, f"{stale!r} survived the failed read"
+
+        # ...and the same with nothing at all in the payload.
+        widget.update_data(**_none_payload(widget))
+        await pilot.pause()
+        panel = _screen_text(app)
+        assert "spread unavailable" in panel
+        assert "$0.00" not in panel
+
+
+async def test_market_bridge_block_says_level_rather_than_a_zero_spread():
+    """Two identical prices are the one case with no rich side to name.
+
+    ``fmt_price(0)`` is ``$0.00``, and "IMD $0.00 under FP" would invent a
+    direction out of a spread that does not exist -- the same class of
+    statement as a dead feed rendering ``0``.
+    """
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        fp = _FULL_MARKET["fp_price_usd"]
+        widget.update_data(**{**_FULL_MARKET, "imd_price_usd": fp, "parity_pct": 0.0})
+        await pilot.pause()
+        panel = _screen_text(app)
+        assert "level with FP" in panel
+        assert "$0.00 " not in panel
+        for direction in ("bridges back", "bridges in"):
+            assert direction not in panel
+
+
+async def test_market_bridge_copy_never_advises_a_transaction():
+    """MaxPane is read-only by construction: it has no signer to advise for.
+
+    The block describes a state and the flow that would close it. Anything
+    imperative, or anything implying a payoff, is a different product.
+    """
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        for payload in (_FULL_MARKET, {**_FULL_MARKET, "imd_price_usd": 0.7674}):
+            widget.update_data(**payload)
+            await pilot.pause()
+            panel = _screen_text(app).lower()
+            for banned in (
+                "buy", "sell", "swap", "trade", "profit", "arb",
+                "opportunity", "should", "you ", "free", "risk-free",
+            ):
+                assert banned not in panel, f"the panel says {banned!r}"

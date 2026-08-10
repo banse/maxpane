@@ -1205,6 +1205,43 @@ async def test_the_market_keeps_its_figures_far_below_the_rail():
         assert screen.query_one(_RAIL).show_vertical_scrollbar is True
 
 
+async def test_the_market_panel_is_not_clipped_at_the_pinned_layout_width():
+    """The one panel on this screen with no ``‹ widen`` machinery at all.
+
+    Every other surf panel sheds a named field and says so; this one is a
+    column of ``text-overflow: ellipsis`` ``Static``\\ s, so an over-long row
+    is cut with a ``…`` and nothing anywhere names the loss. Until the marker
+    lands (deferred as Minor by review), *not overflowing* is the whole of the
+    contract, and it needs a test because the panel stopped being trivially
+    narrow: pairing the sparklines with their figures and adding the bridge
+    block took its widest row from ~33 rendered columns to 72, i.e. from
+    "fits anything" to 140 terminal columns against the 142 this layout is
+    measured at.
+
+    The binding row is the parity row -- ``FP $x · parity ±y%`` beside
+    ``IMD $d under FP, gross of fees`` -- and its width moves with
+    ``fmt_price``'s precision band: a sub-cent IMD renders ``$0.000200``
+    where today's $0.7074 renders ``$0.0200`` and costs two more columns.
+    So this is a two-to-three column margin, not a comfortable one, and the
+    stage that adds the marker should size for the wider band rather than
+    for the number measured here.
+    """
+    for width in (SURF_FULL_LAYOUT_COLUMNS, 143, 160):
+        async with _screen_at(width, 46) as (app, screen, _p):
+            panel = _visible_panel(
+                app, screen.query_one(SurfMarket), screen.query_one("#bottom-row")
+            )
+            assert "…" not in panel, (
+                f"at {width} columns the market is cut with nothing to say so:\n"
+                f"{panel}"
+            )
+            # The bridge block is the part that is newly wide, and the two
+            # ends of it are the two that must survive: what IMD is, and
+            # that the spread is gross.
+            assert "IMD is FP bridged 1:1 from Base" in panel
+            assert "gross of fees" in panel
+
+
 async def test_the_row_marker_follows_a_live_resize_in_both_directions():
     """Dragging the window is the common case, and it refetches nothing.
 
