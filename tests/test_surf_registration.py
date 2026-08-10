@@ -31,8 +31,11 @@ from maxpane_dashboard.screens.game_select import GAMES, GameSelectScreen
 REPO = Path(__file__).resolve().parents[1]
 
 #: The one menu row this WP adds, asserted verbatim so the copy cannot drift.
+#: The key was "7" until 2026-08-10, when surf was moved to the top of the
+#: menu; the row is still pinned verbatim because the *copy* is what must not
+#: drift, and the key is part of what a user reads off the screen.
 SURF_ROW = (
-    "7",
+    "1",
     "surf",
     "Surfboard",
     "The onchain adventures of surfsurf.eth",
@@ -273,15 +276,20 @@ def test_game_surf_is_accepted(monkeypatch) -> None:
     assert captured.get("ran") is True
 
 
-def test_the_default_game_is_still_fwa(monkeypatch) -> None:
-    """CLAUDE.md pins fwa as position 1 *and* the ``--game`` default.
+def test_the_default_game_is_the_first_menu_entry(monkeypatch) -> None:
+    """The prefetched dashboard is the one the menu opens on.
 
-    Adding a dashboard must never move it: hiding or displacing the default
-    silently breaks launch, which is why this assertion sits next to the one
-    that adds surf.
+    This pinned ``fwa`` by name until 2026-08-10, when surf took position 1 and
+    the default followed it.  Naming the winner again would only re-pin a
+    literal; what actually breaks launch is the two surfaces *disagreeing* --
+    the menu offering one dashboard first while ``--game``'s default warms
+    another's data -- so that is what is asserted, derived from ``GAMES``.
     """
     captured = _run_cli(monkeypatch, [])
-    assert captured["initial_game"] == "fwa"
+    assert captured["initial_game"] == GAMES[0][1]
+    # ...and, so this cannot pass vacuously if GAMES were ever emptied or the
+    # CLI stopped passing the flag through, the concrete value today.
+    assert captured["initial_game"] == "surf"
 
 
 def test_a_typo_is_still_rejected(monkeypatch) -> None:
@@ -295,7 +303,7 @@ def test_a_typo_is_still_rejected(monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_surf_is_menu_entry_seven() -> None:
+def test_surf_is_menu_entry_one() -> None:
     """The row is asserted verbatim so the copy cannot drift silently."""
     row = next((g for g in GAMES if g[1] == "surf"), None)
     assert row is not None, "surf is not registered in GAMES"
@@ -335,11 +343,12 @@ def test_the_cli_choices_are_exactly_the_menu(monkeypatch) -> None:
     assert seen["choices"] == [game_id for _key, game_id, *_ in GAMES]
 
 
-def test_pressing_seven_opens_the_surf_dashboard() -> None:
+def test_pressing_the_surf_key_opens_the_surf_dashboard() -> None:
     """The whole path: splash -> menu -> the key the row advertises.
 
-    The key is read out of ``GAMES`` rather than typed as "7", so a future
-    reorder moves this test with the menu instead of breaking it.
+    The key is read out of ``GAMES`` rather than typed, so the 2026-08-10
+    reorder that took surf from "7" to "1" moved this test with the menu
+    instead of breaking it -- only the name had to change.
     """
     from maxpane_dashboard.screens.surf import SurfScreen
 
@@ -364,7 +373,15 @@ def test_pressing_seven_opens_the_surf_dashboard() -> None:
 
 
 def test_the_menu_lists_the_surf_row() -> None:
-    """The row reaches the compositor -- not merely the GAMES list."""
+    """The row reaches the compositor -- not merely the GAMES list.
+
+    Asserted on **one composited line**, not as three independent substrings
+    of the whole screen.  The loose version searched the full text for
+    ``"[7]"`` and for ``"Surfboard"`` separately, so it stayed green with the
+    key on some *other* dashboard's row -- which is exactly the state the
+    2026-08-10 reorder could have left behind.  What a user has to be able to
+    do is read the key off the same line as the name.
+    """
 
     async def _run() -> None:
         app, _stubs = _stubbed_app("surf")
@@ -372,10 +389,15 @@ def test_the_menu_lists_the_surf_row() -> None:
             await pilot.pause()
             await pilot.press("space")
             await pilot.pause()
-            text = _screen_text(app)
-            assert "[7]" in text
-            assert SURF_ROW[2] in text          # Surfboard
-            assert "onchain adventures" in text  # from the description
+            row = next(
+                (l for l in _screen_text(app).splitlines() if SURF_ROW[2] in l), ""
+            )
+            assert row, f"{SURF_ROW[2]} never reached the compositor"
+            assert f"[{SURF_ROW[0]}]" in row, (
+                f"the Surfboard row renders as {row.strip()!r}, which does not "
+                f"advertise the key [{SURF_ROW[0]}] that GAMES gives it"
+            )
+            assert "onchain adventures" in row  # from the description
 
     asyncio.run(_run())
 
@@ -1030,7 +1052,7 @@ def _offline_app(manager) -> MaxPaneApp:
 
 @pytest.mark.parametrize("factory", [BoomManager, DeadSourcesManager])
 def test_offline_launch_of_surf_never_kills_the_app(factory) -> None:
-    """Splash -> menu -> [7] with the surf manager down: degraded, not dead."""
+    """Splash -> menu -> surf's key with its manager down: degraded, not dead."""
     key = next(k for k, game_id, *_ in GAMES if game_id == "surf")
 
     async def _run() -> None:

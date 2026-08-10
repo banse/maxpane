@@ -9,14 +9,15 @@ from textual.widgets import Static
 
 
 GAMES = [
-    ("1", "fwa", "Fake World Assets", "NFT gacha pool w/ inverse-weighted VRF draws on Ethereum"),
-    ("2", "base", "Base Trading", "Trending tokens, volume, signals on Base"),
-    ("3", "frenpet", "FrenPet", "Pet battles, leaderboard, activity on Base"),
+    ("1", "surf", "Surfboard", "The onchain adventures of surfsurf.eth"),
+    ("2", "fwa", "Fake World Assets", "NFT gacha pool w/ inverse-weighted VRF draws on Ethereum"),
+    ("3", "base", "Base Trading", "Trending tokens, volume, signals on Base"),
+    ("4", "frenpet", "FrenPet", "Pet battles, leaderboard, activity on Base"),
     # Temporarily hidden — code intact, restore by uncommenting:
     # ("_", "frenpet_full", "FrenPet Full", "General, Wallet, Pet views on Base"),
     # ("_", "frenpet_wallet", "FrenPet Wallet", "ETH rewards, pool share, APR on Base"),
     # ("_", "frenpet_perf", "FrenPet Performance", "Pet comparison, velocity, win rates on Base"),
-    ("4", "cattown", "Cat Town", "Fishing competition, KIBBLE economy on Base"),
+    ("5", "cattown", "Cat Town", "Fishing competition, KIBBLE economy on Base"),
     # Hidden — the game's backend is gone: wc2-agentic-dev-3o6un.ondigitalocean.app
     # is NXDOMAIN, so every fetch fails and the dashboard can only ever render its
     # unavailable state. Code and tests are intact (77 client tests); restore by
@@ -29,9 +30,8 @@ GAMES = [
     # below so they stay contiguous (tests/test_cli_game_choices.py asserts it).
     # ("_", "bakery", "Rugpull Bakery", "Bake cookies, boost, attack on Abstract"),
     # ("_", "ocm", "OCM", "Onchain Monsters staking, supply, burns on Ethereum"),
-    ("5", "ttt", "Ten Thousand Tokens", "NFT collection w/ UniV4 burn-to-launch on Ethereum"),
-    ("6", "talismans", "Talismans", "Core-conservation NFT collection on Ethereum"),
-    ("7", "surf", "Surfboard", "The onchain adventures of surfsurf.eth"),
+    ("6", "ttt", "Ten Thousand Tokens", "NFT collection w/ UniV4 burn-to-launch on Ethereum"),
+    ("7", "talismans", "Talismans", "Core-conservation NFT collection on Ethereum"),
 ]
 
 

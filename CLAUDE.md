@@ -81,15 +81,16 @@ scripts/                    one-shot tooling (ABI vendoring etc). Imported by no
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
-| 1 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
-| 2 | `base` | Base | trending tokens, volume, signals |
-| 3 | `frenpet` | Base | pet battles, leaderboard, activity |
-| 4 | `cattown` | Base | fishing competition, KIBBLE economy |
-| 5 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
-| 6 | `talismans` | Ethereum | core-conservation NFT collection |
-| 7 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel + launch detectors |
+| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel + launch detectors |
+| 2 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
+| 3 | `base` | Base | trending tokens, volume, signals |
+| 4 | `frenpet` | Base | pet battles, leaderboard, activity |
+| 5 | `cattown` | Base | fishing competition, KIBBLE economy |
+| 6 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
+| 7 | `talismans` | Ethereum | core-conservation NFT collection |
 
-`fwa` is position 1 and the `--game` default.
+`surf` is position 1 and the `--game` default; `fwa` moved to position 2 on 2026-08-10 and is
+no longer the dashboard whose data is prefetched at launch.
 
 Hidden from the selection pane, code and tests intact: `bakery` and `ocm` (hidden on request),
 `dota` (its backend is NXDOMAIN, so it could only ever render an unavailable state; 77 client
