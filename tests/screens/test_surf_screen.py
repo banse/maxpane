@@ -246,6 +246,20 @@ def _sample_data() -> dict:
         # -- activity --------------------------------------------------------
         # Newest first, the order WP4's ``_activity_rows`` emits and the order
         # WP3's table renders without re-sorting.
+        #
+        # ``wallet_label`` is ``"dev"``/``"ops"`` -- the *producer's* whole
+        # vocabulary (``surf_client._DEV_WALLET_LABELS``, passed through by
+        # ``surf_manager._activity_rows``), pinned against it by
+        # ``test_the_activity_fixture_speaks_the_producers_wallet_vocabulary``.
+        # It read ``"surfsurf.eth"``/``"frenpet.eth"`` until 2026-08-10, which
+        # the pipeline never emits: those are the ``KNOWN_LABELS`` spellings
+        # and they reach the user through the hero's ``owner ✓`` line instead.
+        # Two things hid it. The activity cell was 12 columns wide, exactly
+        # enough for ``surfsurf.eth``, so nothing looked wrong; and the
+        # manager's defence-in-depth sender re-check keys on ``DEV_WALLETS``,
+        # whose keys are ``dev``/``ops``, so an ENS-spelled label matched no
+        # entry and skipped the check entirely. Narrowing the cell to the real
+        # vocabulary rendered ``sur``/``fre`` and exposed both.
         "dev_activity": [
             {
                 # Unknown counterparty: the **full 42-char** address, which is
@@ -258,7 +272,7 @@ def _sample_data() -> dict:
                 # bless the first-6/last-4 short form the anti-poisoning rule
                 # exists to prevent. Renders dimmed as ``0x61CC704c…73f14E``.
                 "ts": _TS_POST_13 - 60,
-                "wallet_label": "surfsurf.eth",
+                "wallet_label": "dev",
                 "kind": "transfer",
                 "counterparty": _REAL_UNKNOWN,
                 "counterparty_known": False,
@@ -272,7 +286,7 @@ def _sample_data() -> dict:
                 # must never reach a pixel -- asserted in WP5.4's
                 # ``test_the_activity_view_defends_against_address_poisoning``.
                 "ts": _TS_POST_13 - 120,
-                "wallet_label": "frenpet.eth",
+                "wallet_label": "ops",
                 "kind": "transfer",
                 "counterparty": _SPOOF,
                 "counterparty_known": False,
@@ -281,7 +295,7 @@ def _sample_data() -> dict:
             },
             {
                 "ts": _TS_POST_13 - 300,
-                "wallet_label": "frenpet.eth",
+                "wallet_label": "ops",
                 "kind": "LP",
                 "counterparty": "NFPM",
                 "counterparty_known": True,
@@ -291,7 +305,7 @@ def _sample_data() -> dict:
             },
             {
                 "ts": _TS_POST_13 - 900,
-                "wallet_label": "surfsurf.eth",
+                "wallet_label": "dev",
                 "kind": "bridge",
                 "counterparty": "OFT endpoint",
                 "counterparty_known": True,
@@ -1271,9 +1285,12 @@ async def test_the_row_marker_survives_a_title_bar_full_of_warnings():
 #: that constant is by definition the width at which nothing is shed, so using
 #: it here made the "before" assertion vacuous the moment the constant was
 #: re-measured from 135 to 176 -- the panel already showed the amount column,
-#: and the test could no longer see a re-tier happen at all.  143 is a real
-#: laptop width and is inside the marked band pinned above.
-_NARROW_FOR_RE_TIER = 143
+#: and the test could no longer see a re-tier happen at all.  It was 143 while
+#: the full row needed 66 columns of rail; the row needs 58 now, so 143 is
+#: inside the *clean* band and re-tiers from nothing.  120 is a real terminal
+#: width, is inside the marked band pinned above, and leaves the panel a
+#: genuine tier below its widest.
+_NARROW_FOR_RE_TIER = 120
 
 
 async def test_the_activity_panel_re_tiers_when_the_terminal_is_resized():
@@ -1442,22 +1459,39 @@ LAPTOP_COLUMNS_AT_THE_FORCED_FONT = LAPTOP_COLUMN_POINTS // _DEFAULT_FONT_SIZE
 #: They were 24 apart for one commit: the 3:2 -> 7:6 re-seam brought the
 #: measurement down 176 -> 152 without touching the five surfaces quoting the
 #: old number, and ``test_the_documented_width_still_covers_the_measured_one``
-#: held the direction meanwhile (generous is safe; short clips). The
-#: reconciliation has landed and both read 152.
-MEASURED_FULL_LAYOUT_COLUMNS = 152
+#: held the direction meanwhile (generous is safe; short clips). That
+#: reconciliation landed and both read 152.
+#:
+#: **They are 10 apart again, for the same staged reason.** Sizing the
+#: activity row's wallet and kind cells to the producer's real vocabularies
+#: (``{"dev", "ops"}`` and ``DEV_TX_KINDS``) took ``activity.FULL_WIDTH``
+#: 66 -> 58, so that panel clears from 135 instead of 152 and stops being the
+#: widest thing on the screen. ``SurfFeed`` is the binding constraint again
+#: and the measured width is its 142 -- swept one column at a time below.
+#: ``SURF_FULL_LAYOUT_COLUMNS`` still reads 152 until the surfaces quoting it
+#: are reconciled together.
+MEASURED_FULL_LAYOUT_COLUMNS = 142
 
 #: The narrowest width at which every panel *except* the activity is clean --
 #: i.e. the width ``SurfFeed`` alone asks for. It was 41 below the number
-#: above at the 3:2 seam (that gap *was* the defect), one below it at 7:6,
-#: and is 10 below it now: lowering ``feed.FULL_TEXT_WIDTH`` 76 -> 71 let the
-#: feed wrap in a narrower column, so it stops asking for width sooner.
+#: above at the 3:2 seam (that gap *was* the defect), one below it at 7:6, and
+#: 10 below it after ``feed.FULL_TEXT_WIDTH`` dropped 76 -> 71 so the feed
+#: would wrap in a narrower column. It is now **equal** to it: the activity
+#: row's shrink handed those last 10 columns back, and the feed is the only
+#: panel still asking for width at all.
 MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL = 142
 
 #: How far the two columns may drift apart before the seam is worth re-cutting.
 #: Not a tolerance to widen when a measurement disappoints: it is the width a
 #: future seam could still recover, and every column of it is real. Lower it
 #: when a re-seam banks some; never raise it to make a number pass.
-RECOVERABLE_SEAM_SLACK = 10
+#:
+#: **Zero**: the two columns now clear at the same width, so there is no
+#: recoverable width left and a ratchet above 0 would be a lie that lets the
+#: gap re-open in silence. It was 10 while the activity panel was buying
+#: those columns for itself; sizing its cells to the producer's vocabularies
+#: banked every one of them.
+RECOVERABLE_SEAM_SLACK = 0
 
 #: Readable alias at the one site that wants to say "the width at which this
 #: panel has everything it needs".
@@ -1509,20 +1543,24 @@ async def test_the_full_layout_is_reachable_at_the_forced_font_size():
     )
 
 
-async def test_the_two_columns_now_clear_within_one_column_of_each_other():
-    """The rail is the only panel still buying width above the rest.
+async def test_the_two_columns_now_clear_at_the_same_width():
+    """No panel is buying width above the rest any more.
 
     At 3:2 the other five panels were clean from 135 and the activity panel
     only at 176: 41 columns bought for one widget, every one of them wasted
     on a feed that had already stopped needing them. The 7:6 seam closed that
-    to one column -- and then the feed's ``FULL_TEXT_WIDTH`` dropped 76 -> 71
-    so it would wrap in a narrower column, which re-opened a gap on purpose:
-    the left column now clears well before the right.
+    to one column; the feed's ``FULL_TEXT_WIDTH`` dropping 76 -> 71 re-opened
+    it to 10, deliberately, as width a future seam re-cut could spend.
 
-    That gap is *recoverable* width, not waste -- a seam re-cut for the feed's
-    new appetite would spend it -- so it is pinned rather than asserted away.
-    It may shrink freely; it may not grow, because a growing gap means one
-    column is again buying width the other stopped using.
+    It is **zero** now, and from the other direction: sizing the activity
+    row's wallet and kind cells to the producer's real vocabularies took
+    ``activity.FULL_WIDTH`` 66 -> 58, and that panel now clears from 135 --
+    seven columns *below* the feed. The last panel asking for width is
+    ``SurfFeed``, which is what the two assertions at the bottom pin. If the
+    activity panel ever becomes the last one again, they say so by name.
+
+    The gap may shrink freely; it may not grow, because a growing gap means
+    one column is again buying width the other stopped using.
     """
     assert await _markers_outside_the_activity_panel(
         MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL
@@ -1537,12 +1575,20 @@ async def test_the_two_columns_now_clear_within_one_column_of_each_other():
         "has already stopped using. Re-cut the seam for the feed's current "
         f"FULL_TEXT_WIDTH, or lower {RECOVERABLE_SEAM_SLACK} deliberately"
     )
-    # ...and the last marker standing is the activity panel's, not a fifth
-    # panel that crept into the gap while the seam moved.
+    # ...and the last marker standing is the *feed's* -- outside the activity
+    # panel, which by then has been clean for seven columns already.
     assert await _widen_markers(MEASURED_FULL_LAYOUT_COLUMNS - 1) == 1
     assert await _markers_outside_the_activity_panel(
         MEASURED_FULL_LAYOUT_COLUMNS - 1
-    ) == 0
+    ) == 1, (
+        "the activity panel is the last one asking for width again -- it "
+        f"should be clean from {ACTIVITY_FIRST_FULL_TERMINAL}, well below this"
+    )
+    # Said directly too, on that panel's own rectangle: the arithmetic above
+    # implies it, but only as long as both counts stay right.
+    assert "‹ widen" not in await _activity_panel(
+        MEASURED_FULL_LAYOUT_COLUMNS - 1
+    )
 
 
 async def test_the_documented_width_still_covers_the_measured_one():
@@ -1970,26 +2016,74 @@ async def _activity_usable_columns(width: int) -> int:
         return panel._log_width(panel.query_one("#surf-activity-log", RichLog))
 
 
-async def test_the_activity_rail_reaches_full_width_exactly_at_the_pinned_width():
-    """Why 152 is the floor: the rail hits ``FULL_WIDTH`` there and not before.
+#: The narrowest terminal at which the activity row fits whole -- i.e. at
+#: which the ETH amount column survives. Derived below from the rail formula
+#: and the widget's own ``FULL_WIDTH``, then pinned against a real render, so
+#: it is not a third literal to keep in step by hand.
+ACTIVITY_FIRST_FULL_TERMINAL = 135
+
+
+def test_the_activity_fixture_speaks_the_producers_wallet_vocabulary():
+    """The payload every width sweep above renders must be a real payload.
+
+    Cross-layer on purpose: this file may import ``data/`` (the widget may
+    not), and without that import the fixture is free to invent labels the
+    pipeline never emits -- which is exactly what it did. ``surfsurf.eth`` and
+    ``frenpet.eth`` sat here from WP5 until 2026-08-10, so every width
+    conclusion drawn from this payload was drawn against a 12-column label
+    where production sends three, and the manager's own sender re-check
+    (``surf_manager.DEV_WALLETS``, keyed ``dev``/``ops``) silently matched
+    nothing and skipped.
+
+    Both directions: the fixture may only use labels the producer emits, and
+    it must exercise *every* one of them, so a vocabulary that grows a third
+    wallet cannot go unrendered by the sweeps.
+    """
+    from maxpane_dashboard.data.surf_client import _DEV_WALLET_LABELS
+    from maxpane_dashboard.data.surf_manager import DEV_WALLETS
+
+    produced = set(_DEV_WALLET_LABELS.values())
+    used = {row["wallet_label"] for row in _widen_sweep_payload()["dev_activity"]}
+    assert used <= produced, (
+        f"the fixture sends wallet labels {sorted(used - produced)}, which "
+        "the client never emits -- the width sweeps are measuring a payload "
+        "production does not produce"
+    )
+    assert used == produced, (
+        f"the fixture never renders {sorted(produced - used)}: a label the "
+        "producer emits is missing from every width sweep in this file"
+    )
+    # ...and the manager's defence-in-depth re-check really does key on these
+    # same names, which is the half an ENS-spelled label quietly bypassed.
+    assert set(DEV_WALLETS) == produced
+
+
+async def test_the_activity_rail_reaches_full_width_well_below_the_pinned_width():
+    """Where the rail hits ``FULL_WIDTH`` -- 135 now, and 152 once.
 
     The rail is ``6fr`` of the 7:6 seam, so it gets the columns the feed's
     ``floor(7W/13)`` leaves -- ``ceil(6W/13)`` -- and the log spends five of
     them on two paddings and a permanent scrollbar gutter. That makes
-    ``ceil(6W/13) - 5`` usable columns, and ``>= FULL_WIDTH`` first holds at
-    ``W = 152``: ``ceil(912/13) - 5 == 71 - 5 == 66``, which *is*
-    ``FULL_WIDTH``. One column less and it is 65. That exact identity is why
-    the measured floor is 152 rather than a number anyone chose.
+    ``ceil(6W/13) - 5`` usable columns. The formula is the stable part and is
+    swept first; only where it crosses ``FULL_WIDTH`` moved.
 
-    ``widgets/surf/activity.py`` documented this as ``0.46 * terminal - 4``,
-    i.e. 62/67/74 at 143/152/169 against the real 61/66/73 -- an off-by-one
-    that also hid the identity, because 67 is not ``FULL_WIDTH`` and 66 is
-    (final review I-2). The arithmetic below is written out independently of
-    the widget so a widget that starts lying agrees with nothing.
+    It used to cross at exactly 152 (``ceil(912/13) - 5 == 66 ==
+    ACTIVITY_FULL_WIDTH``), and that identity was the app's whole documented
+    floor. Sizing the wallet cell to the producer's two-member vocabulary and
+    the kind cell to its widest member took the row 66 -> 58, so the crossing
+    moved down to 135 and this panel stopped being what sets the floor. Both
+    ends are pinned: a row that quietly grows a column again moves the
+    crossing back up and reddens here with the number in hand.
+
+    ``widgets/surf/activity.py`` documented the slope as ``0.46 * terminal -
+    4``, i.e. 62/67/74 at 143/152/169 against the real 61/66/73 -- an
+    off-by-one that also hid the identity (final review I-2). The arithmetic
+    below is written out independently of the widget so a widget that starts
+    lying agrees with nothing.
     """
     from math import ceil
 
-    for terminal in (120, 135, 143, 150,
+    for terminal in (120, ACTIVITY_FIRST_FULL_TERMINAL, 143, 150,
                      MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL,
                      MEASURED_FULL_LAYOUT_COLUMNS, 160,
                      LAPTOP_COLUMNS_AT_THE_FORCED_FONT, 200):
@@ -1999,13 +2093,21 @@ async def test_the_activity_rail_reaches_full_width_exactly_at_the_pinned_width(
             "widgets/surf/activity.py::_tier_for before trusting it"
         )
 
-    # The identity itself, both directions, against the widget's own constant.
-    assert await _activity_usable_columns(MEASURED_FULL_LAYOUT_COLUMNS) == (
+    # Where it crosses, both directions, against the widget's own constant.
+    assert await _activity_usable_columns(ACTIVITY_FIRST_FULL_TERMINAL) == (
         ACTIVITY_FULL_WIDTH
-    ), "the pinned width no longer hands the rail exactly its full row"
-    assert await _activity_usable_columns(MEASURED_FULL_LAYOUT_COLUMNS - 1) == (
+    ), "the rail no longer hands the panel exactly its full row at 135"
+    assert await _activity_usable_columns(ACTIVITY_FIRST_FULL_TERMINAL - 1) == (
         ACTIVITY_FULL_WIDTH - 1
     ), "the width below no longer falls one column short -- re-measure"
+    # ...and 135 really is the *first* such width, not merely one of them.
+    assert ACTIVITY_FIRST_FULL_TERMINAL == min(
+        w for w in range(60, 260) if ceil(6 * w / 13) - 5 >= ACTIVITY_FULL_WIDTH
+    )
+    # The panel is therefore clean well before the screen as a whole is, which
+    # is the shape this change produced and the reason the floor is now the
+    # feed's to set.
+    assert ACTIVITY_FIRST_FULL_TERMINAL < MEASURED_FULL_LAYOUT_COLUMNS
 
     # ...and the note a reader lands on quotes the widths that were measured.
     # Derived from the renders above, so re-deriving the formula wrong a second
@@ -2013,9 +2115,10 @@ async def test_the_activity_rail_reaches_full_width_exactly_at_the_pinned_width(
     doc = " ".join(_activity_tier_for.__doc__.split())
     assert "0.46 * terminal - 4" not in doc, (
         "the rail's usable width is ceil(6W/13) - 5; 0.46W - 4 is the "
-        "approximation that put 67 where the measured 66 == FULL_WIDTH is"
+        "approximation that put 67 where the measured 66 was"
     )
-    for terminal in (143, MEASURED_FULL_LAYOUT_COLUMNS,
+    for terminal in (ACTIVITY_FIRST_FULL_TERMINAL, 143,
+                     MEASURED_FULL_LAYOUT_COLUMNS,
                      LAPTOP_COLUMNS_AT_THE_FORCED_FONT):
         usable = await _activity_usable_columns(terminal)
         assert f"{usable} at {terminal}" in doc, (
@@ -2043,21 +2146,27 @@ async def test_the_activity_panel_shows_every_column_at_its_own_clean_width():
 
 
 async def test_the_activity_panel_never_drops_the_amount_column_in_silence():
-    """150 columns leaves the panel 70, one short of the 71 the full row needs.
+    """One column below the crossing the amount goes -- and is advertised.
 
-    Measured on the real screen: the ``0.310 ETH`` amount cannot fit, and
-    ``RichLog(wrap=False)`` shrinks the line at write time with no ``…`` and
-    nothing in the title. Shedding the column is correct; shedding it in
-    silence is the defect -- a user comparing a 180-column window with a
-    150-column one otherwise sees two different truths about one tx.
+    Measured on the real screen: at ``ACTIVITY_FIRST_FULL_TERMINAL - 1`` the
+    rail is one column short of the full row, the ``0.310 ETH`` amount cannot
+    fit, and ``RichLog(wrap=False)`` shrinks the line at write time with no
+    ``…`` and nothing in the title. Shedding the column is correct; shedding
+    it in silence is the defect -- a user comparing a 180-column window with a
+    narrow one otherwise sees two different truths about one tx.
+
+    This was asserted at 150 while the full row needed 66 columns of rail.
+    The row needs 58 now, so 150 is comfortably inside the *clean* band and
+    the boundary that means anything is the crossing itself.
     """
-    panel = await _activity_panel(150)
+    panel = await _activity_panel(ACTIVITY_FIRST_FULL_TERMINAL - 1)
     assert "0.310 ETH" not in panel, (
-        "the amount fits after all at 150 columns -- re-measure FULL_WIDTH"
+        f"the amount fits after all at {ACTIVITY_FIRST_FULL_TERMINAL - 1} "
+        "columns -- re-measure FULL_WIDTH"
     )
-    # ...and two columns wider it does, which is what makes 150 a boundary
+    # ...and one column wider it does, which is what makes this a boundary
     # rather than a width that happens to sit inside a wide marked band.
-    assert "0.310 ETH" in await _activity_panel(MEASURED_FULL_LAYOUT_COLUMNS)
+    assert "0.310 ETH" in await _activity_panel(ACTIVITY_FIRST_FULL_TERMINAL)
     assert _ACTIVITY_HINTS["compact"] in panel, (
         "the amount column vanished without the title saying so"
     )
@@ -2073,25 +2182,27 @@ async def test_the_activity_panel_names_the_columns_the_rail_costs_it():
     the time and kind columns as well as the amount. What is not negotiable
     is that the title names which fields went.
 
-    This used to be asserted at **143**, and the change is the seam's doing:
-    at 3:2 a 143-column terminal put the panel in its *minimal* tier, and at
-    7:6 the same terminal reaches the compact one -- the stamp and the kind
-    are back on a width people actually run. The minimal tier now starts
-    below 126, which is why this test had to move down to find it. Both ends
-    are pinned so the band cannot silently widen again.
+    This used to be asserted at **143**, then at **120**, and each move was
+    a real widening of the row's reach. At the 3:2 seam a 143-column terminal
+    put the panel in its *minimal* tier; 7:6 took that to compact. Sizing the
+    wallet and kind cells to the producer's vocabularies took the compact row
+    46 -> and the minimal band down again, so the tier only appears at 108.
+    Both ends are pinned so the band cannot silently widen back.
     """
-    panel = await _activity_panel(120)
+    panel = await _activity_panel(108)
     assert _ACTIVITY_HINTS["minimal"] in panel
     assert "0.310 ETH" not in panel and "transfer" not in panel
     assert _ADDR_WINDOW in panel
 
-    # The tier the seam bought back: 143 is no longer minimal.
-    wider = await _activity_panel(143)
-    assert _ACTIVITY_HINTS["minimal"] not in wider, (
-        "143 columns is back in the minimal tier -- the seam moved"
-    )
-    assert _ACTIVITY_HINTS["compact"] in wider
-    assert "transfer" in wider
+    # The tier the narrower cells bought back: 109 is no longer minimal, and
+    # neither is 120, which the old row spent entirely on padding.
+    for wider_width in (109, 120):
+        wider = await _activity_panel(wider_width)
+        assert _ACTIVITY_HINTS["minimal"] not in wider, (
+            f"{wider_width} columns is back in the minimal tier"
+        )
+        assert _ACTIVITY_HINTS["compact"] in wider
+        assert "transfer" in wider
 
 
 async def test_the_narrow_activity_panel_never_cuts_the_poisoning_window():

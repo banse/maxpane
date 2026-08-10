@@ -94,6 +94,16 @@ TITLE = "DEV ACTIVITY"
 # -- the column budget, in rendered columns ----------------------------
 #
 # Measured from the format strings in :func:`_row_markup`, not rounded.
+#
+# Two of the cells hold a value from a *closed vocabulary the producer owns*
+# (``data/surf_client.py``), and are sized to its widest member exactly.  A
+# widget may not import from ``data/``, so those two numbers are literals
+# here -- but a **test** may import both layers, and
+# ``test_activity_cells_are_sized_from_the_producers_own_vocabularies``
+# (tests/widgets/test_surf_widgets_b.py) asserts each cell against the real
+# vocabulary in both directions.  That test is what makes a cell this tight
+# safe: a producer that grows a longer label reddens there instead of
+# reaching a user as a truncated cell.
 
 #: ``MM-DD HH:MM`` and its narrow-tier ``MM-DD`` half.
 _STAMP_COLS = 11
@@ -102,12 +112,26 @@ _STAMP_SHORT_COLS = 5
 #: The gap between two cells.
 _GAP = 2
 
-#: ``wallet_label`` cell.  The producer emits ``"dev"``/``"ops"``, but the
-#: cell is padded so a longer label cannot reflow the columns.
-_WALLET_COLS = 12
+#: ``wallet_label`` cell: the widest member of the producer's *whole*
+#: vocabulary, ``surf_client._DEV_WALLET_LABELS`` == ``{"dev", "ops"}``, and
+#: the ``DASH`` this cell falls back to.  Three columns, not a column more.
+#:
+#: It was **12** -- padded, the comment said, "so a longer label cannot
+#: reflow the columns".  There is no longer label: the vocabulary is closed,
+#: two members wide, and the manager re-checks each one against the address
+#: it names.  Nine columns were therefore dead on every single row, and the
+#: user saw them as a gulf between the wallet and the kind column.
+_WALLET_COLS = 3
 
-#: ``kind`` cell (``transfer`` / ``bridge`` / ``LP`` ...).
-_KIND_COLS = 8
+#: ``kind`` cell: the widest member of ``surf_client.DEV_TX_KINDS`` ==
+#: ``{"deploy", "lp", "burn", "bridge", "fwa claim", "transfer", "other"}``,
+#: i.e. ``len("fwa claim")``.
+#:
+#: It was **8**, one short, so ``fwa claim`` rendered ``fwa clai`` -- cut
+#: mid-word, with no ``…`` and nothing in the title.  A silent cut is the
+#: defect this module exists to prevent, so the cell fits its widest real
+#: member and the row sheds whole fields instead (:func:`_budget`).
+_KIND_COLS = 9
 
 #: Widest amount cell these ETH values produce: ``"  33.250 ETH"``.
 _AMOUNT_COLS = 12
@@ -124,9 +148,9 @@ _MIN_LABEL_COLS = 6
 FULL_WIDTH = (
     _STAMP_COLS + _GAP + _WALLET_COLS + _GAP + _KIND_COLS + _GAP
     + ADDR_COLS + _AMOUNT_COLS
-)                                                                    # 66
-COMPACT_WIDTH = FULL_WIDTH - _AMOUNT_COLS                            # 54
-MINIMAL_WIDTH = _STAMP_SHORT_COLS + _GAP + _WALLET_COLS + _GAP + ADDR_COLS  # 38
+)                                                                    # 58
+COMPACT_WIDTH = FULL_WIDTH - _AMOUNT_COLS                            # 46
+MINIMAL_WIDTH = _STAMP_SHORT_COLS + _GAP + _WALLET_COLS + _GAP + ADDR_COLS  # 29
 
 #: Marker appended to the title when the layout had to shed a field.  Each
 #: one names what went, so the user knows what they are not looking at.
@@ -154,24 +178,31 @@ def _tier_for(width: int) -> str:
     ==========  =====  ==================================================
     Tier        Needs  Row
     ==========  =====  ==================================================
-    ``full``    66     ``MM-DD HH:MM  wallet  kind  who  0.310 ETH``
-    ``compact`` 54     ``MM-DD HH:MM  wallet  kind  who``
-    ``minimal`` 38     ``MM-DD  wallet  who``
+    ``full``    58     ``MM-DD HH:MM  wallet  kind  who  0.310 ETH``
+    ``compact`` 46     ``MM-DD HH:MM  wallet  kind  who``
+    ``minimal`` 29     ``MM-DD  wallet  who``
     ==========  =====  ==================================================
 
     The real slot is the screen's right rail, 6fr of a 7:6 split minus this
     widget's padding, the log's padding and the log's permanent scrollbar
     gutter.  The feed takes ``floor(7W/13)`` and leaves the rail
     ``ceil(6W/13)``, so this widget has **``ceil(6W/13) - 5``** usable
-    columns: 61 at 143, 65 at 151, 66 at 152 and 73 at 169.  The 66 is not a
-    coincidence -- it is :data:`FULL_WIDTH` exactly, and ``ceil(6W/13) - 5 >=
-    66`` first holds at ``W = 152``, which is the whole reason 152 is the
-    app's floor rather than a number someone picked.  Measured on the real
-    screen and pinned by
-    ``test_the_activity_rail_reaches_full_width_exactly_at_the_pinned_width``;
-    this note carried a ``0.46``-slope approximation of it (62/67/74) until
-    final review I-2 -- off by one everywhere that matters, and it rounded the
-    identity out of sight.
+    columns: 58 at 135, 61 at 142, 61 at 143 and 73 at 169.  ``ceil(6W/13) -
+    5 >= FULL_WIDTH`` therefore first holds at ``W = 135``.  Measured on the
+    real screen and pinned by
+    ``test_the_activity_rail_reaches_full_width_well_below_the_pinned_width``;
+    this note carried a ``0.46``-slope approximation of it until final review
+    I-2 -- off by one everywhere that matters.
+
+    That 135 used to be 152, and 152 was in turn the app's whole documented
+    floor, because this panel was the widest thing on the screen: the row
+    needed 66 columns, ``ceil(6W/13) - 5 >= 66`` first holds at 152, and the
+    identity was load-bearing.  It is gone on purpose.  Sizing the wallet and
+    kind cells to the producer's real vocabularies took the row 66 -> 58 (see
+    the column budget above), so the panel now clears seven columns *below*
+    ``SurfFeed``, which is the binding constraint again.  Reconciling the
+    documented floor with that is a step of its own; this module deliberately
+    quotes no floor of the app's.
 
     The rail was ``2fr`` of a 3:2 split until the seam moved on 2026-08-10,
     i.e. ``ceil(2W/5) - 5``, where the same widths gave 53/56/63 and ``full``

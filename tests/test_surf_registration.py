@@ -790,18 +790,26 @@ def test_the_docs_describe_the_feed_regression_as_closed() -> None:
     """
     harness = _surf_screen_harness()
     full = harness.MEASURED_FULL_LAYOUT_COLUMNS
-
-    # Every marker below the full width belongs to the activity rail alone:
-    # no second panel sheds anything on the way down to the feed's own width.
-    for width in (full - 1, full - 2, full - 9):
-        assert asyncio.run(harness._markers_outside_the_activity_panel(width)) == 0, (
-            f"a second panel is shedding at {width} columns again -- the docs "
-            "below claim only the rail does, and one of the two is now wrong"
-        )
-    # ...and one column below that, the feed is shedding again: the number the
-    # docs quote is the real edge, not a round one.
     feed_edge = harness.MEASURED_WIDTH_WITHOUT_THE_ACTIVITY_PANEL
+
+    # The feed is now the *last* panel asking for width, so the screen's full
+    # width simply is its wrap edge. This used to sweep the band above the
+    # edge asserting every marker in it was the activity rail's; that band is
+    # empty now (the rail clears from a 135-column terminal, seven columns
+    # below), and a sweep over an empty band proves nothing, so the identity
+    # is asserted instead.
+    assert full == feed_edge, (
+        f"the screen clears at {full} but the feed's own edge is {feed_edge}: "
+        "some panel is buying width above the feed again, and the docs below "
+        "claim none does"
+    )
+    assert asyncio.run(harness._widen_markers(full)) == 0
+    # ...and one column below it the feed is shedding again: the number the
+    # docs quote is the real edge, not a round one.
     assert asyncio.run(harness._markers_outside_the_activity_panel(feed_edge - 1)) > 0
+    # ...and it is the *only* thing shedding there, i.e. the activity rail --
+    # which set this width until its row shrank -- is already clean.
+    assert asyncio.run(harness._widen_markers(feed_edge - 1)) == 1
 
     for name in _SEAM_NARRATIVE_SURFACES:
         text = (REPO / name).read_text(encoding="utf-8")

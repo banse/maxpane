@@ -699,6 +699,103 @@ def test_activity_the_wallet_column_yields_before_the_address_window():
         assert visible_len(markup) <= width, f"row overflows at width {width}"
 
 
+def test_activity_cells_are_sized_from_the_producers_own_vocabularies():
+    """The cross-layer pin. **This is what makes the narrow cells safe.**
+
+    ``widgets/`` may not import from ``data/`` (CLAUDE.md), so
+    ``_WALLET_COLS`` and ``_KIND_COLS`` are literals in the widget. A *test*
+    may import both sides, and this one does: it is the only thing standing
+    between a producer that grows a longer label and a user discovering a
+    truncated cell.
+
+    Both defects it was written for were real. ``_WALLET_COLS`` was **12**
+    against a vocabulary of ``{"dev", "ops"}`` -- nine dead columns on every
+    row, which is the gap the user reported between the wallet and the kind
+    column. ``_KIND_COLS`` was **8** against a vocabulary containing
+    ``"fwa claim"``, so that kind rendered ``fwa clai``: cut mid-word, no
+    ``…``, nothing in the title. Equality in both directions on purpose --
+    ``>=`` re-admits the padding, ``<=`` re-admits the cut.
+    """
+    from maxpane_dashboard.data.surf_client import (
+        DEV_TX_KINDS,
+        _DEV_WALLET_LABELS,
+    )
+    from maxpane_dashboard.widgets.surf._fmt import DASH
+    from maxpane_dashboard.widgets.surf.activity import (
+        FULL_WIDTH,
+        _KIND_COLS,
+        _WALLET_COLS,
+    )
+
+    # ``DASH`` is what each cell falls back to when the field is missing, so
+    # it is part of the vocabulary the cell has to hold.
+    labels = set(_DEV_WALLET_LABELS.values()) | {DASH}
+    assert _WALLET_COLS == max(len(x) for x in labels), (
+        f"the wallet cell is {_WALLET_COLS} columns for a vocabulary whose "
+        f"widest member is {max(labels, key=len)!r}"
+    )
+    kinds = set(DEV_TX_KINDS) | {DASH}
+    assert _KIND_COLS == max(len(k) for k in kinds), (
+        f"the kind cell is {_KIND_COLS} columns for a vocabulary whose "
+        f"widest member is {max(kinds, key=len)!r}"
+    )
+
+    # ...and every member really does survive whole through the renderer, not
+    # merely fit an arithmetic check on the constants.
+    for kind in sorted(DEV_TX_KINDS):
+        markup = _row_markup(
+            {
+                "ts": 1786076603,
+                "wallet_label": "ops",
+                "kind": kind,
+                "counterparty": "NFPM",
+                "counterparty_known": True,
+                "value_eth": 1.0,
+            },
+            "full",
+            FULL_WIDTH,
+        )
+        assert markup is not None and kind in markup, f"{kind!r} was cut"
+
+
+async def test_activity_spends_no_columns_between_the_wallet_and_the_kind():
+    """The reported defect, on composited pixels rather than on a constant.
+
+    ``fwa claim`` is the widest kind the producer emits and ``ops`` a whole
+    member of the wallet vocabulary, so the two cells are exactly full here:
+    the only thing that may separate them is the one ``_GAP``. Rendered
+    before the fix this read ``ops`` + eleven spaces + ``fwa clai``.
+    """
+    from maxpane_dashboard.widgets.surf.activity import _GAP
+
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(110, 20)) as pilot:
+        widget.update_data(
+            dev_activity=[
+                {
+                    "ts": 1786076603,
+                    "wallet_label": "ops",
+                    "kind": "fwa claim",
+                    "counterparty": "FWA splitter",
+                    "counterparty_known": True,
+                    "value_eth": 1.5,
+                    "tx_hash": "0xfwa",
+                }
+            ]
+        )
+        await pilot.pause()
+        screen = _screen_text(app)
+        gap = " " * _GAP
+        # The whole run of cells, so a cell that is too *wide* fails here as
+        # well as one that is too narrow: an over-padded kind cell puts three
+        # spaces before the counterparty and this stops matching.
+        assert f"ops{gap}fwa claim{gap}FWA splitter{gap}1.500 ETH" in screen, (
+            "the wallet cell still pads past its vocabulary, or the kind "
+            f"cell still cuts 'fwa claim':\n{screen}"
+        )
+
+
 async def test_activity_relays_out_on_resize_never_shrunk_by_richlog():
     """The tier tracks the terminal, and the title tracks the tier."""
     widget = SurfDevActivity()
