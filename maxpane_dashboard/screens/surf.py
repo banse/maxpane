@@ -1,26 +1,39 @@
 """SurfScreen -- the surfsurf.eth Surfboard as a Textual Screen.
 
-Layout (the house pattern; the hero owns the top row outright and the
-signals ride a right-hand rail above the market)::
+Layout: three content rows, every widget on screen at once::
 
     #title-bar         SURF · IMD $x.xx · parity ±x.x% · feed #N (age)
     #hero-row          SurfHero (full width, four boxes)
-    #middle-row        SurfFeed (3fr)          | #surf-right-rail (2fr)
-                       SurfDevActivity (3fr)   |   SurfSignals (auto)
-                         -- one or the other,  |   SurfMarket  (auto)
-                            toggled with `c`   |
+    #middle-row        SurfFeed (3fr)   | #surf-right-rail (2fr)
+                                        |   SurfSignals     (auto)
+                                        |   SurfDevActivity (1fr)
     #separator
-    #bottom-row        SurfNft (full width)
+    #bottom-row        SurfMarket (3fr) | SurfNft (2fr)
     StatusBar
 
-Both rail children are ``auto`` and the rail scrolls, so the rail's content
-height is a constant fifteen rows. Below a 35-row terminal that no longer
-fits, and the title bar says so with ``TALLER_HINT`` -- the height half of
-the ``‹ widen`` contract. ``SurfMarket`` was ``1fr`` until 2026-08-09, and a
-``1fr`` child cannot overflow its scroll container: it shrinks. The market
-therefore shed one row per terminal row from 35 down without the rail ever
-overflowing, so nothing scrolled, nothing was marked, and by 30 rows the
-whole panel -- title included -- was simply not on the screen.
+Both rows below the hero are split 3:2 on the same seam, so the two rows
+read as one grid rather than two unrelated bands.
+
+**Nothing is hidden.** Until 2026-08-10 the announce feed and the
+dev-activity panel shared the middle-left slot and ``c`` swapped them, which
+meant half the dashboard's content was off screen at any moment and the
+status bar had to carry a ``view:`` word to say which half. The activity
+panel moved into the rail under the signals, the market moved down beside
+the NFT panel, and the key, its action, the status-bar indicator and their
+tests went with the slot they served. The market did not cost the bottom
+row a single row on the way: ``SurfNft`` is the taller of the two (its
+last-sales block runs to four lines), so an ``auto`` row sized to the NFT
+panel already had room for the market's seven.
+
+``SurfSignals`` is ``auto`` (a title, a spacer and six detector rows) and
+``SurfDevActivity`` takes the rest of the rail at ``1fr``, floored by
+``ACTIVITY_MIN_HEIGHT``. That floor is what keeps the rail's
+``overflow-y: auto`` honest: a ``1fr`` child cannot overflow its scroll
+container -- it shrinks -- so without a floor the activity panel would shed
+one row per terminal row down to a bare title with no scrollbar, no marker
+and no other trace anywhere on screen. That is exactly what ``SurfMarket``
+did from this same rail until 2026-08-09, and it is the reason the floor is
+declared rather than left to Textual.
 
 The hero was half a row wide until 2026-08-09 and shared it with the
 signals panel. Two things were wrong with that. Its four boxes had to
@@ -42,15 +55,10 @@ left roughly a fifth of the screen empty above the status bar.
 Deliberate choices, in the FWA screen's terms (see screens/fwa.py, whose
 docstring carries the full rationale):
 
-1. **``c`` toggles the announce feed and the dev-activity table** in the
-   middle-left slot. Both stay mounted and both are dispatched to on every
-   refresh, so toggling is a visibility flip with no refetch and no blank
-   first frame. The rail to their right is outside the swap, so it never
-   flickers.
-2. **Every widget update is individually guarded** -- one widget raising must
+1. **Every widget update is individually guarded** -- one widget raising must
    never cost the other five their refresh. A *manager* failure touches only
    the StatusBar and leaves the previous frame standing.
-3. **Degradation reaches the title bar** (``· degraded: …``), because the
+2. **Degradation reaches the title bar** (``· degraded: …``), because the
    shared StatusBar API has no ``set_degraded()``.
 
 The screen is clock-free: every time-derived string (``feed_last_post_age_s``,
@@ -103,35 +111,53 @@ _EMDASH = "—"
 INITIAL_TITLE = "SURF · Surfboard · Ethereum Mainnet"
 
 #: The row-wise counterpart of the widgets' ``‹ widen``: the right rail holds
-#: more than this terminal's height can show, so some of SIGNALS / IMD MARKET
-#: is scrolled off. It rides the **title bar** rather than a panel title
-#: because a panel title is itself the first thing a short rail loses -- at
-#: 143x31 the composited rail was the ``IMD MARKET`` heading alone, and at
-#: 143x30 not even that. Row 0 cannot be pushed off by anything.
+#: more than this terminal's height can show, so some of SIGNALS / DEV
+#: ACTIVITY is scrolled off. It rides the **title bar** rather than a panel
+#: title because a panel title is itself the first thing a short rail loses --
+#: when the market was still in this rail, 143x31 composited the ``IMD
+#: MARKET`` heading alone and 143x30 not even that. Row 0 cannot be pushed off
+#: by anything.
+#:
+#: It lights at or below 35 rows and is dark from 36 up -- the same threshold
+#: as before the market left the rail, because ``ACTIVITY_MIN_HEIGHT`` is the
+#: seven rows the market used to hold. Below 20 rows the bottom row goes off
+#: the end of a screen that has itself started scrolling; the marker is
+#: already lit long before that, so nothing is ever lost in silence.
 TALLER_HINT = "‹ taller"
 
 #: Sentinel staleness pushed to the StatusBar when the manager itself failed.
 MANAGER_FAILURE_SECONDS = 999
 
-#: Measured against composited output (both ``c`` views), not estimated --
-#: see tests. The width at which ordinary (non-token) feed content, and
-#: every other widget, show zero ``‹ widen`` markers in both views.
+#: The rail's floor for ``SurfDevActivity``: a title, a spacer and five rows
+#: -- the same seven rows ``SurfMarket`` occupied here until it moved to the
+#: bottom row, so the height at which ``TALLER_HINT`` lights has not moved
+#: either. A ``1fr`` child shrinks instead of overflowing its scroll
+#: container, so this floor is the only thing that turns "the rail is too
+#: short" into an overflow the screen can see and advertise; without it the
+#: panel silently thins to its title. **Restated as ``min-height`` in both
+#: stylesheets** -- CSS cannot read a Python constant, so
+#: ``test_the_activity_floor_is_the_same_number_in_both_stylesheets`` pins the
+#: three copies together.
+ACTIVITY_MIN_HEIGHT = 7
+
+#: Measured against composited output, not estimated -- see tests.
 #:
-#: 135 is set by ``SurfFeed``. Swept one column at a time over the real
-#: screen in both ``c`` views (125..145, then 150/169/200/240): the feed
-#: lights exactly one marker at every width through 134, both views are
-#: clean from 135 up, and nothing relights above it.
+#: **This number is stale by one panel and deliberately left alone.** Since
+#: the 2026-08-10 three-row restructure it is the width at which every widget
+#: *except* ``SurfDevActivity`` comes up marker-free; the activity panel gave
+#: up a ``3fr`` slot of its own (it shared the feed's, behind a ``c`` swap)
+#: for a share of the ``2fr`` rail, and now reaches its widest row layout at
+#: **176**. Both numbers are pinned to the real screen in
+#: ``tests/screens/test_surf_screen.py``
+#: (``FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL`` and
+#: ``FIRST_CLEAN_WIDTH``). Raising this constant moves
+#: ``__main__.FULL_LAYOUT_COLUMNS``, its ``--font-size`` help text, the README
+#: width table and CLAUDE.md with it -- one owner, one change, not this one.
 #:
-#: It was 139 before the 2026-08-09 restructure, and 139 was set by
-#: ``SurfHero``: four boxes across a ``3fr`` half of the row got 12 content
-#: columns at 135 and 13 -- ``hero.MINIMAL_WIDTH`` -- at 139, so a longer
-#: unrecognised ``hook_status`` could light a box marker at 137-138. A
-#: full-width hero row ends that whole class of sensitivity: each box now
-#: gets ~26 content columns at 135, which is the ``full`` tier (24) with
-#: headroom, and the hero's own marker is unreachable above 81 columns. The
-#: activity panel clears its full tier at 119 and the rail's two panels
-#: clear theirs inside a ``2fr`` share well below this, so the feed alone
-#: decides the number now.
+#: 135 is still set by ``SurfFeed``, swept one column at a time over the real
+#: screen: the feed lights a marker at every width through 134 and is clean
+#: from 135 up, and the hero, signals, market and NFT panels clear theirs
+#: well below it (the hero's own marker is unreachable above 81 columns).
 #:
 #: This number deliberately EXCLUDES posts carrying an inherently
 #: unbreakable token (a URL glued to a raw tx hash, e.g. by a trailing
@@ -288,9 +314,11 @@ def _title_line(data: dict, row_hint: bool = False) -> str:
 class SurfScreen(RefreshGuard, Screen):
     """surfsurf.eth Surfboard dashboard."""
 
+    #: No ``c``: the swap it drove died with the shared slot (see the module
+    #: docstring). A key that hides half the screen has nothing to offer a
+    #: layout whose whole point is that nothing is hidden.
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
-        Binding("c", "toggle_view", "Feed/Activity", show=True),
     ]
 
     #: Worker name for the guarded refresh (see RefreshGuard).
@@ -310,30 +338,37 @@ class SurfScreen(RefreshGuard, Screen):
     # space above the feed.
     #
     # `#middle-row` is the ONLY `1fr` row on the screen, so every row a
-    # taller terminal adds lands in the feed. `#bottom-row` is `auto`: the
-    # NFT panel has eight lines and used to be handed half the slack.
+    # taller terminal adds lands in the feed and the activity panel.
+    # `#bottom-row` is `auto`: the market's seven rows and the NFT panel's
+    # eight are content, not slack, and a `1fr` here used to hand them half
+    # the screen's spare rows.
     #
-    # SurfSignals and SurfMarket are BOTH `auto` inside the rail: a title
-    # plus six detector rows, and seven market rows. Neither may be `1fr`.
-    # SurfMarket was, and a `1fr` child cannot overflow its scroll container
-    # -- it shrinks -- so the rail's `overflow-y: auto` never fired for it
-    # and the market shed one row per terminal row from 35 down, reaching
-    # "title only" at 31 and nothing at all at 30, with no scrollbar and no
-    # marker. Two `auto` children give the rail a fixed 15-row content
-    # height, which is what makes the overflow, the scrollbar and the title
-    # bar's `‹ taller` all fire on the same row that the first line is lost.
-    # Any vertical padding on either costs the sixth detector row -- BURN --
+    # Inside the rail SurfSignals is `auto` -- a title, a spacer and six
+    # detector rows, exactly 8 -- and SurfDevActivity takes the remainder at
+    # `1fr` with a `min-height` floor. The floor is the load-bearing part: a
+    # `1fr` child cannot overflow its scroll container, it shrinks, so
+    # without one the activity panel would shed a row per terminal row down
+    # to a bare title with no scrollbar, no marker and no trace on screen.
+    # SurfMarket did precisely that from this rail until 2026-08-09.
+    # With the floor the rail's content height is a constant
+    # 8 + ACTIVITY_MIN_HEIGHT, which is what makes the overflow, the
+    # scrollbar and the title bar's `‹ taller` fire on the same terminal row.
+    #
+    # Vertical padding on SurfSignals costs the sixth detector row -- BURN --
     # while the panel still looks complete. tests/test_surf_registration.py
     # asserts all six reach the compositor.
     #
     # The rail scrolls (`overflow-y: auto`, at the stylesheet-wide
-    # `scrollbar-size: 1 1`) as the short-terminal guard: sizing the rows to
-    # their content means the rail is only as tall as the middle row, so
-    # below 35 terminal rows its 15 lines no longer fit. Scrolling is the
+    # `scrollbar-size: 1 1`) as the short-terminal guard. Scrolling is the
     # *affordance* -- nothing is dropped, it is all still reachable. The
-    # *advertisement* is `TALLER_HINT` on the title bar, because a two-cell
+    # *advertisement* is `TALLER_HINT` on the title bar, because a one-cell
     # scrollbar in a gutter names nothing, and at very short heights Textual
     # paints it outside the rail's own rectangle.
+    #
+    # Both rows below the hero split 3:2 on the same seam: SurfFeed/SurfMarket
+    # take `3fr`, the rail/SurfNft `2fr`. Equal shares would starve the feed
+    # (it needs ~81 columns for an unbroken post) to give width to two panels
+    # whose longest lines are ~35 and ~47.
     DEFAULT_CSS = """
     SurfScreen #title-bar {
         width: 100%;
@@ -357,10 +392,6 @@ class SurfScreen(RefreshGuard, Screen):
         width: 3fr;
         padding: 0 1;
     }
-    SurfScreen SurfDevActivity {
-        width: 3fr;
-        padding: 0 1;
-    }
     SurfScreen #surf-right-rail {
         width: 2fr;
         height: 1fr;
@@ -372,9 +403,10 @@ class SurfScreen(RefreshGuard, Screen):
         height: auto;
         padding: 0 1;
     }
-    SurfScreen SurfMarket {
+    SurfScreen SurfDevActivity {
         width: 1fr;
-        height: auto;
+        height: 1fr;
+        min-height: 7;
         padding: 0 1;
     }
     SurfScreen #separator {
@@ -386,8 +418,13 @@ class SurfScreen(RefreshGuard, Screen):
         height: auto;
         margin: 0 0 1 0;
     }
+    SurfScreen SurfMarket {
+        width: 3fr;
+        height: auto;
+        padding: 0 1;
+    }
     SurfScreen SurfNft {
-        width: 1fr;
+        width: 2fr;
         height: auto;
         padding: 0 1;
     }
@@ -404,36 +441,11 @@ class SurfScreen(RefreshGuard, Screen):
         self._data_manager = data_manager
         self._poll_interval = poll_interval
         self._refresh_timer = None
-        #: Which widget owns the middle-left slot: "feed" or "activity".
-        self._active_view: str = "feed"
         #: Last payload the title bar was built from, kept so a resize can
         #: rebuild the line with (or without) the row marker at no cost and
         #: without a refetch. ``None`` until the first payload lands, which
         #: is also the degraded-manager state -- see ``_render_title``.
         self._title_data: dict | None = None
-
-    # ------------------------------------------------------------------
-    # Actions / bindings
-    # ------------------------------------------------------------------
-
-    def action_toggle_view(self) -> None:
-        """Swap the announce feed and the dev-activity table in one slot.
-
-        Both widgets stay mounted and both keep being updated on every
-        refresh, so toggling is a pure visibility flip -- no refetch, no
-        repopulate, no empty frame.
-        """
-        self._active_view = "activity" if self._active_view == "feed" else "feed"
-        showing_feed = self._active_view == "feed"
-        try:
-            self.query_one(SurfFeed).display = showing_feed
-            self.query_one(SurfDevActivity).display = not showing_feed
-        except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
-            logger.debug("surf view toggle failed: %s", exc)
-        try:
-            self.query_one(StatusBar).set_active_view(self._active_view)
-        except Exception:
-            pass
 
     # ------------------------------------------------------------------
     # Layout
@@ -446,23 +458,19 @@ class SurfScreen(RefreshGuard, Screen):
             yield SurfHero()
 
         with Horizontal(id="middle-row"):
-            # Two views of one slot, toggled with ``c``. The activity table
-            # is created hidden rather than on demand so it keeps receiving
-            # every refresh and is already populated when toggled to.
             yield SurfFeed()
-            activity = SurfDevActivity()
-            activity.display = False
-            yield activity
-            # The right rail: signals on top, market underneath. Sibling of
-            # the two swapped views rather than a child of either, so ``c``
-            # cannot take it with it.
+            # The right rail: the six detectors on top, the dev wallets'
+            # transactions underneath. Both are permanently visible -- the
+            # activity panel used to live in the feed's slot behind a ``c``
+            # swap and was composed hidden.
             with Vertical(id="surf-right-rail"):
                 yield SurfSignals()
-                yield SurfMarket()
+                yield SurfDevActivity()
 
         yield Static("─" * 300, id="separator")
 
         with Horizontal(id="bottom-row"):
+            yield SurfMarket()
             yield SurfNft()
 
         yield StatusBar()
@@ -479,7 +487,9 @@ class SurfScreen(RefreshGuard, Screen):
         try:
             self.query_one(StatusBar).set_theme_name(self.app.theme)
             self.query_one(StatusBar).set_game_name("surf")
-            self.query_one(StatusBar).set_active_view(self._active_view)
+            # No set_active_view: no slot on this screen has two views, so a
+            # `view:` word on the shared bar would name something that does
+            # not exist.
         except Exception:
             pass
 
@@ -602,7 +612,7 @@ class SurfScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.debug("Failed to update SurfSignals: %s", exc)
 
-        # Announce feed (middle-row left slot, view A)
+        # Announce feed (middle row, left)
         try:
             self.query_one(SurfFeed).update_data(
                 feed_items=data.get("feed_items"),
@@ -612,7 +622,7 @@ class SurfScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.debug("Failed to update SurfFeed: %s", exc)
 
-        # Dev activity (middle-row left slot, view B -- hidden, still updated)
+        # Dev activity (middle row, right rail, under the signals)
         try:
             self.query_one(SurfDevActivity).update_data(
                 dev_activity=data.get("dev_activity"),
@@ -620,7 +630,7 @@ class SurfScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.debug("Failed to update SurfDevActivity: %s", exc)
 
-        # Market (right rail, bottom)
+        # Market (bottom row, left)
         try:
             self.query_one(SurfMarket).update_data(
                 imd_price_usd=data.get("imd_price_usd"),
@@ -635,7 +645,7 @@ class SurfScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.debug("Failed to update SurfMarket: %s", exc)
 
-        # NFT (bottom row)
+        # NFT (bottom row, right)
         try:
             self.query_one(SurfNft).update_data(
                 nft_holders=data.get("nft_holders"),

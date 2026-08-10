@@ -393,10 +393,20 @@ def test_surf_keys_covers_the_local_signature_map():
     assert not unconsumed, f"contract keys reach no widget: {sorted(unconsumed)}"
 
 
-def test_bindings_are_refresh_and_the_view_toggle():
-    """``c`` swaps the announce feed and the dev-activity table in one slot."""
+def test_refresh_is_the_only_binding():
+    """``c`` is gone: nothing is hidden, so nothing can be swapped in.
+
+    The key existed only because the announce feed and the dev-activity panel
+    shared one slot. Both are permanently on screen since the three-row
+    restructure, so a swap key would toggle two panels that are both already
+    visible -- and the status bar would advertise a "view" that is not a view.
+    """
     keys = {binding.key for binding in SurfScreen.BINDINGS}
-    assert keys == {"r", "c"}
+    assert keys == {"r"}
+    assert not hasattr(SurfScreen, "action_toggle_view"), (
+        "the swap action outlived its binding -- an action with no key is a "
+        "surface nobody can reach and nobody maintains"
+    )
 
 
 def test_the_initial_title_names_the_dashboard_the_menu_names():
@@ -431,15 +441,16 @@ async def test_screen_mounts_all_six_widgets():
 
         for cls in _WIDGET_CLASSES.values():
             screen.query_one(cls)
-        # Slot grid: the hero owns the top row alone; the middle row holds
-        # the swap pair plus the right rail; the bottom row the NFT panel.
+        # Slot grid: the hero owns the top row alone; the middle row is the
+        # feed beside a rail of SIGNALS over DEV ACTIVITY; the bottom row is
+        # the market beside the NFT panel.
         assert len(screen.query_one("#hero-row").children) == 1
-        assert len(screen.query_one("#middle-row").children) == 3
+        assert len(screen.query_one("#middle-row").children) == 2
         assert len(screen.query_one("#surf-right-rail").children) == 2
-        assert len(screen.query_one("#bottom-row").children) == 1
-        # The dev-activity view starts hidden; the feed starts showing.
-        assert screen.query_one(SurfFeed).display is True
-        assert screen.query_one(SurfDevActivity).display is False
+        assert len(screen.query_one("#bottom-row").children) == 2
+        # Nothing is hidden -- that is the whole point of the three-row grid.
+        for cls in _WIDGET_CLASSES.values():
+            assert screen.query_one(cls).display is True, f"{cls.__name__} is hidden"
         # WP5.3 wires ``_title_line`` into ``_do_refresh``, and RefreshGuard
         # fires that refresh on screen resume, so by the time ``pilot.pause()``
         # returns the placeholder ``INITIAL_TITLE`` has already been replaced
@@ -696,76 +707,73 @@ async def test_degraded_sources_reach_the_title_bar():
         assert "LP owner changed" in text
 
 
-# -- the feed / activity toggle -----------------------------------------
+# -- everything on screen at once ---------------------------------------
+#
+# The `c` swap is gone with the slot it swapped. These are what replaced its
+# three tests: the panels it used to alternate between are now both permanently
+# composited, side by side with the rail, and no key can take either away.
 
 
-async def test_c_swaps_the_feed_and_the_activity_table():
-    """One slot, two views, mutually exclusive at every step."""
-    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
-    app = _ThemedHarness(screen)
-    async with app.run_test(size=(200, 48)) as pilot:
-        await pilot.pause()
-        await screen._do_refresh()
-        await pilot.pause()
+async def test_the_feed_and_the_activity_panel_are_both_on_screen_at_once():
+    """The instruction, stated as an assertion: nothing is hidden.
 
-        text = _screen_text(app)
-        assert "ANNOUNCE FEED" in text and "DEV ACTIVITY" not in text
-        assert screen._active_view == "feed"
-
-        await pilot.press("c")
-        await pilot.pause()
-        text = _screen_text(app)
-        assert "DEV ACTIVITY" in text and "ANNOUNCE FEED" not in text
-        assert screen._active_view == "activity"
-
-        await pilot.press("c")
-        await pilot.pause()
-        text = _screen_text(app)
-        assert "ANNOUNCE FEED" in text and "DEV ACTIVITY" not in text
-        assert screen._active_view == "feed"
-
-
-async def test_the_market_and_nft_panels_are_unaffected_by_the_toggle():
-    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
-    app = _ThemedHarness(screen)
-    async with app.run_test(size=(200, 48)) as pilot:
-        await pilot.pause()
-        await screen._do_refresh()
-        await pilot.pause()
-
-        for _ in range(3):
-            text = _screen_text(app)
-            assert "MARKET" in text
-            assert "IDENTITY.MD" in text
-            await pilot.press("c")
-            await pilot.pause()
-
-
-async def test_the_hidden_view_still_receives_updates():
-    """Both widgets stay mounted and dispatched to, whichever is showing.
-
-    Creating the activity table on demand would leave it empty for a beat
-    after the first toggle, which reads as a bug. This asserts it has
-    content *before* it is ever shown.
+    Composited, not `display`: a panel mounted at zero height satisfies a
+    visibility flag while showing the user nothing.
     """
     screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(200, 48)) as pilot:
+    async with app.run_test(size=(150, 46)) as pilot:
         await pilot.pause()
-        calls = _record_dispatches(screen)
         await screen._do_refresh()
         await pilot.pause()
 
-        assert calls["SurfDevActivity"], "the hidden activity table was never updated"
-        assert calls["SurfFeed"]
+        text = _screen_text(app)
+        for title in ("ANNOUNCE FEED", "SIGNALS", "DEV ACTIVITY",
+                      "IMD MARKET", "IDENTITY.MD", "V4 HOOK"):
+            assert title in text, f"{title} is not on screen"
 
-        # and it renders immediately on the very first toggle
+
+async def test_no_key_can_hide_a_panel():
+    """`c` was the only key that could, and it is gone.
+
+    Pressing it now must be inert -- not "swap something else", not crash.
+    """
+    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(150, 46)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        before = _screen_text(app)
+
         await pilot.press("c")
         await pilot.pause()
-        assert "DEV ACTIVITY" in _screen_text(app)
+
+        assert _screen_text(app) == before, "`c` still changes the screen"
+        assert "DEV ACTIVITY" in before and "ANNOUNCE FEED" in before
 
 
-async def test_the_activity_view_defends_against_address_poisoning():
+async def test_the_status_bar_never_advertises_a_view():
+    """No slot has two views any more, so `view: …` would name nothing.
+
+    Asserted on the composited status bar, because the string is built inside
+    ``StatusBar._update_right`` -- a screen that kept calling
+    ``set_active_view`` would put a stale word on a bar this dashboard shares
+    with nine others.
+    """
+    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(150, 46)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        text = _screen_text(app)
+        assert "view:" not in text
+        assert "surf" in text.split("\n")[-1]   # the bar is otherwise intact
+
+
+async def test_the_activity_panel_defends_against_address_poisoning():
     """The anti-poisoning form survives all the way to the compositor.
 
     Two live shapes from frenpet.eth's history are in the payload: an
@@ -782,8 +790,6 @@ async def test_the_activity_view_defends_against_address_poisoning():
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        await pilot.press("c")          # the activity table owns the slot
-        await pilot.pause()
 
         text = _screen_text(app)
         assert "DEV ACTIVITY" in text
@@ -796,73 +802,14 @@ async def test_the_activity_view_defends_against_address_poisoning():
         assert "f60Ee6" not in text
 
 
-async def test_the_toggle_survives_a_missing_widget():
-    """A toggle must never take the screen down (it runs outside the
-    refresh path's per-widget try/except)."""
-    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
-    app = _ThemedHarness(screen)
-    async with app.run_test(size=(200, 48)) as pilot:
-        await pilot.pause()
-        screen.query_one(SurfFeed).remove()
-        await pilot.pause()
-
-        screen.action_toggle_view()  # must not raise
-        await pilot.pause()
-
-        assert screen._active_view == "activity"
-
-
-async def test_the_status_bar_names_the_active_view():
-    """Same affordance FWA, Talismans and TTT use, so `c` is discoverable."""
-    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
-    app = _ThemedHarness(screen)
-    async with app.run_test(size=(200, 48)) as pilot:
-        await pilot.pause()
-        seen = []
-        bar = screen.query_one(StatusBar)
-        original = bar.set_active_view
-        bar.set_active_view = lambda v: (seen.append(v), original(v))[1]
-
-        screen.action_toggle_view()
-        await pilot.pause()
-
-        assert seen == ["activity"]
-
-
-async def test_both_views_get_the_identical_slot():
-    """The toggle must not resize the panel underneath it.
-
-    Both views carry ``width: 3fr`` against SurfMarket's ``2fr``; give either
-    a different width and the layout jumps on every ``c`` press. Measured
-    under the real stylesheet rather than trusting the numbers to stay equal
-    (and it keeps holding after WP6 restates the block in minimal.tcss).
-    """
-    screen = SurfScreen(_FakeManager(), poll_interval=30, name="surf")
-    app = _ThemedHarness(screen)
-    async with app.run_test(size=(200, 48)) as pilot:
-        await pilot.pause()
-        await screen._do_refresh()
-        await pilot.pause()
-        feed_size = screen.query_one(SurfFeed).size
-
-        await pilot.press("c")
-        await pilot.pause()
-        act_size = screen.query_one(SurfDevActivity).size
-
-        assert (act_size.width, act_size.height) == (feed_size.width, feed_size.height), (
-            f"activity occupies {act_size} where the feed occupied "
-            f"{feed_size} -- the panel resizes on every toggle"
-        )
-        assert act_size.height > 1, "the activity table collapsed instead of filling the row"
-
-
-# -- the restructured layout --------------------------------------------
+# -- the three-row layout -----------------------------------------------
 #
-# The hero spans the full width on a row of its own; below it the ``c``-swapped
-# slot takes the left and a right rail stacks SIGNALS above IMD MARKET; the NFT
-# panel stays full width at the bottom. Every assertion below is geometric or
-# composited -- the arrangement is what the user asked for, so "the widget is
-# mounted" is not enough: it has to land where they put it.
+# The hero spans the full width on a row of its own; the middle row is the
+# announce feed beside a rail stacking SIGNALS over DEV ACTIVITY; the bottom
+# row is IMD MARKET beside IDENTITY.MD, on the same column seam as the row
+# above it. Every assertion below is geometric or composited -- the
+# arrangement is what the user asked for, so "the widget is mounted" is not
+# enough: it has to land where they put it.
 
 #: The rail id, spelled once. Scoped to ``SurfScreen`` in both stylesheets.
 _RAIL = "#surf-right-rail"
@@ -907,25 +854,56 @@ async def test_the_hero_owns_a_full_width_row_of_its_own():
         assert xs[-1] + hero.children[-1].region.width <= 150
 
 
-async def test_the_right_rail_stacks_the_signals_above_the_market():
-    """SIGNALS sits on top of IMD MARKET, both in the middle row's right rail."""
+async def test_the_right_rail_stacks_the_signals_above_the_dev_activity():
+    """SIGNALS sits on top of DEV ACTIVITY, both in the middle row's rail."""
     async with _screen_at(150, 46) as (app, screen, _pilot):
         rail = screen.query_one(_RAIL)
         signals = screen.query_one(SurfSignals)
-        market = screen.query_one(SurfMarket)
+        activity = screen.query_one(SurfDevActivity)
         feed = screen.query_one(SurfFeed)
 
-        assert [type(c).__name__ for c in rail.children] == ["SurfSignals", "SurfMarket"]
+        assert [type(c).__name__ for c in rail.children] == [
+            "SurfSignals", "SurfDevActivity",
+        ]
         # Stacked, not side by side: same column, signals strictly above.
-        assert signals.region.x == market.region.x == rail.region.x
-        assert signals.region.y + signals.region.height <= market.region.y
+        assert signals.region.x == activity.region.x == rail.region.x
+        assert signals.region.y + signals.region.height <= activity.region.y
         # ...and the whole rail is to the right of the feed, in one row.
         assert feed.region.x + feed.region.width <= rail.region.x
         assert feed.region.y == rail.region.y
 
         # Composited, not just geometric: both titles reach a pixel, in order.
         text = _screen_text(app)
-        assert text.index("SIGNALS") < text.index("IMD MARKET")
+        assert text.index("SIGNALS") < text.index("DEV ACTIVITY")
+
+
+async def test_the_bottom_row_puts_the_market_left_of_the_nft_panel():
+    """The third row, and it shares the middle row's column seam.
+
+    The seam is the point: two rows split 3:2 read as one grid, and a market
+    panel that started one column off from the feed above it would read as a
+    mistake even though every panel was present.
+    """
+    async with _screen_at(150, 46) as (app, screen, _pilot):
+        row = screen.query_one("#bottom-row")
+        market = screen.query_one(SurfMarket)
+        nft = screen.query_one(SurfNft)
+        feed = screen.query_one(SurfFeed)
+        rail = screen.query_one(_RAIL)
+
+        assert [type(c).__name__ for c in row.children] == ["SurfMarket", "SurfNft"]
+        # Side by side, market first, in one row, below the middle row.
+        assert market.region.y == nft.region.y
+        assert market.region.x + market.region.width <= nft.region.x
+        assert row.region.y >= rail.region.y + rail.region.height
+        # The seam: the market/NFT boundary is the feed/rail boundary.
+        assert market.region.width == feed.region.width
+        assert nft.region.x == rail.region.x
+
+        text = _screen_text(app)
+        assert text.index("IMD MARKET") < text.index("IDENTITY.MD")
+        # ...and both are below the rail's two panels.
+        assert text.index("DEV ACTIVITY") < text.index("IMD MARKET")
 
 
 async def test_the_hero_row_is_no_taller_than_the_hero():
@@ -1043,18 +1021,33 @@ async def test_a_terminal_too_short_for_six_detectors_says_so():
 #: reading the market as present long after it had gone.
 _MARKET_FIELDS = ("$0.7074", "vol 24h", "parity", "price ", "supply")
 
+#: The six detectors, in the order the panel renders them; BURN is last and so
+#: always the first to be scrolled off.
+_DETECTORS = ("NEW POST", "LP MIGRATION", "GATE OPEN", "NEW DEPLOY",
+              "BRIDGE STAGE", "BURN")
+
+#: The activity rows the sweep payload produces, once the dust row is dropped.
+#: Composited fragments, unique to that panel.
+_ACTIVITY_ROWS = ("0x61CC704c…73f14E", "NFPM", "OFT endpoint")
+
+#: The height at and above which the whole rail fits: ``SurfSignals`` is 8 rows
+#: (title, spacer, six detectors) and ``SurfDevActivity`` is floored at
+#: ``ACTIVITY_MIN_HEIGHT``, so the rail's content is a constant 15 and the
+#: other rows of the screen cost a fixed 21. Measured, not derived -- the
+#: arithmetic is here to explain the number, the sweep below is what pins it.
+FIRST_WHOLE_HEIGHT = 36
+
 
 def _visible_panel(app, widget, clip) -> str:
     """Composited text of *widget*'s rectangle, intersected with *clip*'s.
 
-    Two things ``_region_text`` below does not do, both of which this sweep
-    needs.  It assumes the whole region is on-screen, and at these heights
-    the market's region starts *below* the last composited row -- which is
-    the failure being measured, so it has to clip rather than raise.  And a
-    widget inside a scroll container keeps its full region even when the
-    container paints only part of it, so without intersecting the rail's
-    rectangle this would read the separator and the NFT panel underneath and
-    call them "the market".
+    Two things ``_region_text`` below does not do, both of which these sweeps
+    need.  It assumes the whole region is on-screen, and at these heights a
+    panel's region can start *below* the last composited row -- which is the
+    failure being measured, so it has to clip rather than raise.  And a widget
+    inside a scroll container keeps its full region even when the container
+    paints only part of it, so without intersecting the container's rectangle
+    this would read whatever is painted underneath and call it the panel.
     """
     lines = _screen_text(app).split("\n")
     region = widget.region.intersection(clip.region)
@@ -1064,82 +1057,116 @@ def _visible_panel(app, widget, clip) -> str:
     )
 
 
-async def test_a_short_terminal_never_sheds_a_market_row_in_silence():
+def _missing_at(app, screen) -> list[str]:
+    """Everything the three-row layout promises that is not composited.
+
+    Deliberately not "every row of every panel": the feed and the activity log
+    are scrolling ``RichLog``s that legitimately show fewer posts on a shorter
+    terminal, exactly as they do on a taller one with more posts. What is
+    promised is the *fixed* content -- the six detectors, the market's five
+    figures -- plus the activity panel's declared floor, which is what
+    ``ACTIVITY_MIN_HEIGHT`` exists to make measurable.
+    """
+    text = _screen_text(app)
+    market = _visible_panel(
+        app, screen.query_one(SurfMarket), screen.query_one("#bottom-row")
+    )
+    missing = [d for d in _DETECTORS if d not in text]
+    missing += [f"market {f}" for f in _MARKET_FIELDS if f not in market]
+    if "DEV ACTIVITY" not in text:
+        missing.append("DEV ACTIVITY")
+    missing += [f"activity {r}" for r in _ACTIVITY_ROWS if r not in text]
+    return missing
+
+
+async def test_every_panel_is_whole_on_a_terminal_that_fits_them():
+    """The positive half, at the height the rail first fits and well above it.
+
+    Without this the sweep below is satisfied by a marker welded permanently
+    to the title bar -- the failure mode this codebase keeps recording.
+    """
+    for height in (FIRST_WHOLE_HEIGHT, 46, 60):
+        async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, height) as (app, screen, _p):
+            assert _missing_at(app, screen) == [], (
+                f"at {SURF_FULL_LAYOUT_COLUMNS}x{height} the layout is short of "
+                f"{_missing_at(app, screen)}"
+            )
+            assert TALLER_HINT not in _screen_text(app), (
+                f"the row marker is lit at {SURF_FULL_LAYOUT_COLUMNS}x{height}, "
+                "where everything fits"
+            )
+            assert screen.query_one(_RAIL).show_vertical_scrollbar is False
+
+
+async def test_no_height_drops_content_without_saying_so():
     """The row-wise half of the ``‹ widen`` contract, swept height by height.
 
-    ``SurfMarket`` was ``height: 1fr`` inside the ``1fr`` rail, and a ``1fr``
-    child cannot overflow its scroll container -- it shrinks.  So the rail's
-    ``overflow-y: auto`` never fired *for the market*, and the panel shed one
-    row per terminal row from 35 down: at 143x31 the composited rail was the
-    ``IMD MARKET`` title and nothing else, at 143x30 not even that, with no
-    scrollbar, no marker and no other trace anywhere on screen.  The layout
-    this replaced rendered all five fields at the same 143x30, so it was a
-    regression, and no surf test rendered below 40 rows to catch it.
+    The contract is not "everything always fits" -- at 28 rows it cannot. It
+    is that a height which costs the screen a promised line must light the row
+    marker on the **title bar**: row 0, the one row a short terminal can never
+    push off, unlike the panel titles themselves.
 
-    The contract asserted here is not "everything always fits" -- at 28 rows
-    it cannot.  It is that a height which costs the market a row must light
-    the row marker on the **title bar**: row 0, the one row a short terminal
-    can never push off, unlike the panel titles themselves.
+    The sweep runs to 16 rows because the failure it guards moved. In the
+    two-row layout the market lived in the rail, shrank silently and was gone
+    by 31; here it sits in an ``auto`` bottom row and survives to 20, below
+    which the screen itself scrolls and the bottom row goes off the end. Both
+    ends of that range have to stay advertised.
     """
-    for height in range(40, 27, -1):
+    for height in range(40, 15, -1):
         async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, height) as (app, screen, _p):
-            panel = _visible_panel(
-                app, screen.query_one(SurfMarket), screen.query_one(_RAIL)
-            )
-            missing = [field for field in _MARKET_FIELDS if field not in panel]
+            missing = _missing_at(app, screen)
             lit = TALLER_HINT in _screen_text(app).split("\n")[0]
             if missing:
                 assert lit, (
-                    f"at {SURF_FULL_LAYOUT_COLUMNS}x{height} the market lost "
+                    f"at {SURF_FULL_LAYOUT_COLUMNS}x{height} the screen lost "
                     f"{missing} with nothing on screen to say so"
                 )
-            else:
-                # The two must move on the same row, not merely both exist:
-                # the rail's fixed fifteen-line content height is what makes
-                # "a line went off" and "the rail overflows" the same event.
-                assert not lit, (
-                    f"at {SURF_FULL_LAYOUT_COLUMNS}x{height} the whole market "
-                    "is composited but the row marker is lit anyway"
-                )
 
 
-async def test_the_row_marker_is_dark_on_a_terminal_that_fits_everything():
-    """The other half: a marker that is always on says nothing.
+async def test_the_marker_lights_before_the_first_line_is_actually_lost():
+    """It leads the loss by two rows, and that is the floor doing its job.
 
-    Paired with the sweep above -- that one alone is satisfied by a hint
-    welded permanently to the title bar, which is the failure mode this
-    codebase keeps recording.
+    ``SurfDevActivity`` is ``1fr`` in a scroll container, so it shrinks rather
+    than overflowing; ``min-height: ACTIVITY_MIN_HEIGHT`` is what converts
+    "the rail is one row short" into an overflow the screen can see. The two
+    rows of slack are the blank tail of that floor: at 35 and 34 the rail is
+    genuinely painting less than it holds, and by 33 a real activity row has
+    gone. A marker that lit at 33 instead would have let two heights of
+    silent shrinkage through, which is precisely how the market disappeared
+    from this rail before.
     """
-    for height in (46, 60):
-        async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, height) as (app, screen, _p):
-            panel = _visible_panel(
-                app, screen.query_one(SurfMarket), screen.query_one(_RAIL)
-            )
-            assert all(field in panel for field in _MARKET_FIELDS)
-            assert TALLER_HINT not in _screen_text(app), (
-                f"the row marker is lit at {SURF_FULL_LAYOUT_COLUMNS}x{height}, "
-                "where the whole rail fits"
-            )
+    async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, FIRST_WHOLE_HEIGHT - 1) as (
+        app, screen, _p
+    ):
+        assert TALLER_HINT in _screen_text(app).split("\n")[0]
+        assert screen.query_one(_RAIL).show_vertical_scrollbar is True
+        assert _missing_at(app, screen) == [], (
+            "the marker no longer leads the loss -- re-measure both numbers"
+        )
+
+    async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, 33) as (app, screen, _p):
+        assert _missing_at(app, screen), "33 rows fits everything after all"
 
 
-async def test_the_row_loss_is_advertised_in_words_not_only_by_a_scrollbar():
-    """143x30: the height the reviewers measured the whole market missing at.
+async def test_the_market_keeps_its_figures_far_below_the_rail():
+    """143x30: the height at which the old layout showed a blank rail.
 
-    The rail's two-cell scrollbar is the only thing that ever said anything
-    here, and it said it six rows too late (it first appeared at 29, by which
-    point every market field had been gone since 31) and in the wrong place:
-    at 143x20 it paints on the NFT panel, rows below the rail it belongs to.
-    A word on the title bar is the advertisement; the scrollbar is the
-    affordance that gets the content back.
+    Moving the market out of the scrolling rail and into the ``auto`` bottom
+    row is what bought this: every figure is still composited ten rows below
+    the height the rail stops fitting, and the panel is still its full seven
+    rows rather than a title over nothing.
     """
     async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, 30) as (app, screen, _p):
-        assert TALLER_HINT in _screen_text(app).split("\n")[0]
-        # ...and the content is still reachable, not dropped: the rail
-        # scrolls rather than the market silently shrinking to nothing.
-        assert screen.query_one(_RAIL).show_vertical_scrollbar is True
-        assert screen.query_one(SurfMarket).region.height == 7, (
-            "the market gave its rows back to the rail again"
+        panel = _visible_panel(
+            app, screen.query_one(SurfMarket), screen.query_one("#bottom-row")
         )
+        assert all(field in panel for field in _MARKET_FIELDS), (
+            f"the market lost {[f for f in _MARKET_FIELDS if f not in panel]}"
+        )
+        assert screen.query_one(SurfMarket).region.height == 7
+        # ...and the rail's own loss is still advertised, in words.
+        assert TALLER_HINT in _screen_text(app).split("\n")[0]
+        assert screen.query_one(_RAIL).show_vertical_scrollbar is True
 
 
 async def test_the_row_marker_follows_a_live_resize_in_both_directions():
@@ -1166,27 +1193,28 @@ async def test_the_row_marker_follows_a_live_resize_in_both_directions():
         )
 
 
-async def test_the_toggle_still_swaps_the_left_slot_only():
-    """`c` keeps its meaning after the move: the rail never flickers.
+async def test_the_activity_panel_re_tiers_when_the_terminal_is_resized():
+    """``SurfDevActivity.on_resize`` outlived the ``c`` swap that motivated it.
 
-    The activity table's first render happens at zero width (it is composed
-    hidden), so this also re-exercises the ``on_resize`` path in the new slot.
+    It was written because the panel was composed hidden and therefore first
+    rendered at zero width, where ``_tier_for`` optimistically picks ``full``.
+    That is gone, but the path is not: ``RichLog`` rows are formatted at write
+    time against the width they were written at, so a widened terminal shows
+    yesterday's tier -- padded, shrunken and marked -- until something
+    re-renders them. Nothing else does.
     """
-    async with _screen_at(150, 46) as (app, screen, pilot):
-        feed_region = screen.query_one(SurfFeed).region
-        rail_region = screen.query_one(_RAIL).region
-        signals_region = screen.query_one(SurfSignals).region
+    async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, 46) as (app, screen, pilot):
+        activity = screen.query_one(SurfDevActivity)
+        assert "0.310 ETH" not in _region_text(app, activity)
 
-        await pilot.press("c")
+        await pilot.resize_terminal(200, 46)
         await pilot.pause()
 
-        assert screen.query_one(SurfDevActivity).region == feed_region
-        assert screen.query_one(_RAIL).region == rail_region
-        assert screen.query_one(SurfSignals).region == signals_region
-        text = _screen_text(app)
-        assert "DEV ACTIVITY" in text and "ANNOUNCE FEED" not in text
-        # The rail is untouched by the swap.
-        assert "SIGNALS" in text and "IMD MARKET" in text
+        panel = _region_text(app, screen.query_one(SurfDevActivity))
+        assert "0.310 ETH" in panel, (
+            "the rows kept the narrow terminal's tier after it was widened"
+        )
+        assert "‹ widen" not in panel
 
 
 # -- the pinned full-layout width ---------------------------------------
@@ -1222,14 +1250,13 @@ def _widen_sweep_payload() -> dict:
     return _frozen_payload(feed_items=_representative_feed_items())
 
 
-async def _widen_markers(
-    width: int, view: str = "feed", payload: dict | None = None
-) -> int:
-    """Composited ``‹ widen`` count at *width*, in the requested ``c`` view.
+async def _widen_markers(width: int, payload: dict | None = None) -> int:
+    """Composited ``‹ widen`` count at *width*, whole screen.
 
     Defaults to the representative (no-unbreakable-token) payload; pass
-    ``payload=`` to measure against something else, e.g. the full sample
-    with the tx-linked post.
+    ``payload=`` to measure against something else, e.g. the full sample with
+    the tx-linked post.  There is no ``view`` argument any more: every panel
+    is composited at once, so one render measures the whole dashboard.
     """
     manager = _FakeManager(
         payload=payload if payload is not None else _widen_sweep_payload()
@@ -1240,58 +1267,103 @@ async def _widen_markers(
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        if view == "activity":
-            await pilot.press("c")
-            await pilot.pause()
         return _screen_text(app).count("‹ widen")
 
 
-async def test_the_pinned_width_clears_every_widen_marker():
-    """At ``SURF_FULL_LAYOUT_COLUMNS``, both views are marker-free for
-    representative content. (A tx-linked post is a separate, permanent
-    case -- see ``test_a_linked_post_advertises_widen_at_full_layout_width_forever``.)
+async def _markers_outside_the_activity_panel(width: int) -> int:
+    """The same count, minus the ones inside ``SurfDevActivity``'s rectangle.
+
+    The activity panel is the one widget the three-row layout genuinely
+    narrowed -- it swapped a ``3fr`` slot of its own for a share of the
+    ``2fr`` rail -- so it is the one panel whose marker is expected below
+    ``FIRST_CLEAN_WIDTH``.  Subtracting it is how the tests below still say
+    something about *the other five*.
     """
-    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS, "feed") == 0
-    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS, "activity") == 0
+    manager = _FakeManager(payload=_widen_sweep_payload())
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        whole = _screen_text(app).count("‹ widen")
+        panel = _region_text(app, screen.query_one(SurfDevActivity))
+        return whole - panel.count("‹ widen")
 
 
-#: The narrowest width at which *no* widget advertises a loss, measured on the
-#: real screen in both ``c`` views. Set by ``SurfFeed`` since the 2026-08-09
-#: restructure: the hero used to be the binding constraint at 139, but four
-#: boxes across the full width clear their widest tier at 127 and their marker
-#: is unreachable above 81, so the feed is now what decides this number.
-FIRST_CLEAN_WIDTH = 135
+#: The narrowest width at which **every** panel is marker-free, measured on
+#: the real screen.  Set by ``SurfDevActivity``: in the right rail it gets a
+#: ``2fr`` share minus its own and the log's padding and the log's permanent
+#: scrollbar gutter, i.e. ``0.4 * W - 5`` usable columns against the 66 its
+#: widest row layout needs.
+#:
+#: It was 135 while the panel had a ``3fr`` slot to itself behind the ``c``
+#: swap.  Trading columns for permanent visibility is the point of the
+#: three-row layout, and the marker that appears in between is the panel
+#: correctly announcing which fields it shed -- not a defect, and emphatically
+#: not something to be silenced by widening the rail until the feed (which
+#: needs 81 columns before it starts breaking a post) starts breaking posts.
+FIRST_CLEAN_WIDTH = 176
+
+#: The narrowest width at which every panel *except* the activity is clean --
+#: still exactly ``SURF_FULL_LAYOUT_COLUMNS``, and still set by ``SurfFeed``.
+FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL = 135
 
 
-async def test_the_pinned_width_is_exactly_the_tight_one():
-    """The constant is the measured width, pinned in both directions.
+async def test_the_pinned_width_still_clears_every_marker_but_the_activity():
+    """``SURF_FULL_LAYOUT_COLUMNS`` is unchanged and still means what it says.
 
-    The restructure left this test as a hand-off: the screen came up clean
-    at 135 while ``SURF_FULL_LAYOUT_COLUMNS`` still said 139, because the
-    hero -- which had set 139 across a ``3fr`` half-row -- stopped being the
-    binding constraint once it owned the full width. The re-measurement has
-    now landed and the two numbers agree again.
-
-    Both directions matter. Too high and the app documents a terminal wider
-    than the screen needs; too low and it documents one that clips. The
-    ``-1`` assertion is what keeps this honest: a widget that quietly grows
-    a column fails *here*, with the number in hand, instead of making the
-    documented width dishonest in silence.
+    The three-row layout moved ``SurfDevActivity`` into the rail, where it
+    reaches its widest row layout at 176 columns rather than 135.  The
+    constant is deliberately **not** raised here: re-measuring it belongs to
+    the stage that owns ``__main__.FULL_LAYOUT_COLUMNS``, the README width
+    table and CLAUDE.md, which have to move together or not at all.  What is
+    pinned now is the split claim -- at 135 the feed, hero, signals, market
+    and NFT panels are all clean, and the single marker on screen is the
+    activity panel's, in its own rectangle, naming what it shed.
     """
-    assert SURF_FULL_LAYOUT_COLUMNS == FIRST_CLEAN_WIDTH, (
-        f"the constant says {SURF_FULL_LAYOUT_COLUMNS} but the screen first "
-        f"comes up clean at {FIRST_CLEAN_WIDTH} -- re-measure and pin both"
+    assert await _markers_outside_the_activity_panel(SURF_FULL_LAYOUT_COLUMNS) == 0
+    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS) == 1
+
+
+async def test_the_pinned_width_is_exactly_the_tight_one_for_the_other_panels():
+    """The constant, pinned in both directions against what still sets it.
+
+    Too high and the app documents a terminal wider than those panels need;
+    too low and it documents one that clips.  The ``-1`` assertion is what
+    keeps it honest: a widget that quietly grows a column fails *here*, with
+    the number in hand, instead of making the documented width dishonest in
+    silence.
+    """
+    assert SURF_FULL_LAYOUT_COLUMNS == FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL, (
+        f"the constant says {SURF_FULL_LAYOUT_COLUMNS} but every panel bar the "
+        f"activity first comes up clean at "
+        f"{FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL} -- re-measure and pin both"
     )
-    assert await _widen_markers(FIRST_CLEAN_WIDTH, "feed") == 0
-    assert await _widen_markers(FIRST_CLEAN_WIDTH, "activity") == 0
-    assert await _widen_markers(FIRST_CLEAN_WIDTH - 1, "feed") > 0, (
+    assert await _markers_outside_the_activity_panel(
+        FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL
+    ) == 0
+    assert await _markers_outside_the_activity_panel(
+        FIRST_CLEAN_WIDTH_WITHOUT_THE_ACTIVITY_PANEL - 1
+    ) > 0, "those panels are clean below the measured width -- re-measure it"
+
+
+async def test_the_whole_screen_first_comes_up_clean_at_the_measured_width():
+    """The hand-off number for the stage that re-measures the constant.
+
+    Pinned in both directions on the real screen, so it is a measurement and
+    not a guess: one column narrower the activity panel is still shedding its
+    amount column and saying so.
+    """
+    assert await _widen_markers(FIRST_CLEAN_WIDTH) == 0
+    assert await _widen_markers(FIRST_CLEAN_WIDTH - 1) > 0, (
         "the screen is clean below the measured width -- re-measure it"
     )
 
 
 async def test_a_narrow_tier_advertises_rather_than_truncating_silently():
     """Well below the threshold every drop is announced, never silent."""
-    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS - 20, "feed") > 0
+    assert await _widen_markers(SURF_FULL_LAYOUT_COLUMNS - 20) > 0
 
 
 async def test_a_linked_post_advertises_widen_at_the_full_layout_width():
@@ -1314,14 +1386,12 @@ async def test_a_linked_post_advertises_widen_at_the_full_layout_width():
     settles the general case.
     """
     assert (
-        await _widen_markers(
-            SURF_FULL_LAYOUT_COLUMNS, "feed", payload=_frozen_payload()
-        )
+        await _widen_markers(SURF_FULL_LAYOUT_COLUMNS, payload=_frozen_payload())
         > 0
     )
     # Where it actually clears -- measured, not asserted from the comment.
-    assert await _widen_markers(190, "feed", payload=_frozen_payload()) > 0
-    assert await _widen_markers(194, "feed", payload=_frozen_payload()) == 0
+    assert await _widen_markers(190, payload=_frozen_payload()) > 0
+    assert await _widen_markers(194, payload=_frozen_payload()) == 0
 
 
 # -- the hero's own width tiers (final-review I-2) -----------------------
@@ -1515,14 +1585,16 @@ def test_the_activity_hints_are_the_strings_this_file_asserts_on():
     assert set(ACTIVITY_WIDEN_HINTS) == set(_ACTIVITY_HINTS) | {"full"}
 
 
-async def _activity_text(width: int) -> str:
-    """Composited screen text at *width*, with the dev-activity view showing.
+async def _activity_panel(width: int) -> str:
+    """Composited text of the activity panel's own rectangle at *width*.
 
-    The panel starts hidden (``display = False``), so this also exercises the
-    zero-width-then-shown path: the rows are first written while the log has
-    no size at all, and only ``on_resize`` can re-lay them out at the real
-    width. A widget that formats once in ``update_data`` and never again
-    fails these tests for that reason alone.
+    The panel's rectangle, not the whole screen: the NFT panel one row below
+    it renders ``38 transfers/24h``, so a whole-screen ``"transfer" in text``
+    -- which is what this file used to assert for "the kind column is
+    present" -- was true at every width, including the ones where the kind
+    column had been shed. Both panels are always composited now, so the
+    contamination is permanent and the fix is to stop reading the screen when
+    the claim is about one panel.
     """
     manager = _FakeManager(payload=_widen_sweep_payload())
     screen = SurfScreen(manager, poll_interval=30, name="surf")
@@ -1531,56 +1603,84 @@ async def _activity_text(width: int) -> str:
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        await pilot.press("c")
-        await pilot.pause()
-        return _screen_text(app)
+        return _region_text(app, screen.query_one(SurfDevActivity))
 
 
-async def test_the_activity_panel_shows_every_column_at_the_pinned_width():
-    """The positive half: at the pinned width nothing is shed and nothing is
-    advertised. Without this, the two tests below could be satisfied by a
+async def test_the_activity_panel_shows_every_column_at_its_own_clean_width():
+    """The positive half: at ``FIRST_CLEAN_WIDTH`` nothing is shed and nothing
+    is advertised. Without this, the tests below could be satisfied by a
     widget that simply always renders its narrowest tier."""
-    text = await _activity_text(SURF_FULL_LAYOUT_COLUMNS)
-    assert _ADDR_WINDOW in text
-    assert "0.310 ETH" in text          # the amount column is present...
-    assert "transfer" in text           # ...and so is the kind column
-    assert "‹ widen" not in text        # ...so there is nothing to advertise
+    panel = await _activity_panel(FIRST_CLEAN_WIDTH)
+    assert _ADDR_WINDOW in panel
+    assert "0.310 ETH" in panel          # the amount column is present...
+    assert "transfer" in panel           # ...and so is the kind column
+    # ...and the HH:MM half of the stamp, which the minimal tier sheds. The
+    # hour itself is local (``_fmt.hhmm``), so the shape is what is asserted.
+    import re
+
+    assert re.search(r"\d\d-\d\d \d\d:\d\d", panel), (
+        "the stamp lost its HH:MM half at the panel's own clean width"
+    )
+    assert "‹ widen" not in panel        # ...so there is nothing to advertise
 
 
 async def test_the_activity_panel_never_drops_the_amount_column_in_silence():
-    """100 columns leaves the log 55 usable against a 66-column row.
+    """150 columns leaves the log 55 usable against a 66-column row.
 
     Measured on the real screen: the ``0.310 ETH`` amount cannot fit, and
     ``RichLog(wrap=False)`` shrinks the line at write time with no ``…`` and
     nothing in the title. Shedding the column is correct; shedding it in
-    silence is the defect — a user comparing a 120-column window with a
-    100-column one otherwise sees two different truths about one tx.
+    silence is the defect -- a user comparing a 180-column window with a
+    150-column one otherwise sees two different truths about one tx.
     """
-    text = await _activity_text(100)
-    assert "0.310 ETH" not in text, (
-        "the amount fits after all at 100 columns -- re-measure FULL_WIDTH"
+    panel = await _activity_panel(150)
+    assert "0.310 ETH" not in panel, (
+        "the amount fits after all at 150 columns -- re-measure FULL_WIDTH"
     )
-    assert _ACTIVITY_HINTS["compact"] in text, (
+    assert _ACTIVITY_HINTS["compact"] in panel, (
         "the amount column vanished without the title saying so"
     )
-    # The column that was *not* shed is still there, whole.
-    assert _ADDR_WINDOW in text
+    # The columns that were *not* shed are still there, whole.
+    assert _ADDR_WINDOW in panel
+    assert "transfer" in panel
+
+
+async def test_the_activity_panel_names_the_columns_the_rail_costs_it():
+    """143 columns -- a terminal people actually run -- is the minimal tier.
+
+    The rail hands the panel ``0.4 * W - 5`` usable columns, which is 53 here
+    against the 54 its compact layout needs, so the time and kind columns go
+    too. That is the trade the three-row layout makes on purpose: permanent
+    visibility for narrower columns. What is *not* negotiable is that the
+    title says which fields went.
+    """
+    panel = await _activity_panel(143)
+    assert _ACTIVITY_HINTS["minimal"] in panel
+    assert "0.310 ETH" not in panel and "transfer" not in panel
+    assert _ADDR_WINDOW in panel
 
 
 async def test_the_narrow_activity_panel_never_cuts_the_poisoning_window():
-    """80 columns leaves the log 43 usable — and the window must survive.
+    """80 columns leaves the log 27 usable -- and the window must survive.
 
     This is the correctness half of I-1, not a cosmetic one. Cut to its first
     six characters both live spoof addresses render ``0xF308``, which is the
     exact collision the wide ``0x``+8+``…``+6 window exists to prevent. The
-    panel must shed whole fields — time, kind, amount — before it touches a
-    single hex digit, and say which ones went.
+    panel must shed whole fields -- time, kind, amount, and here the wallet
+    label as well -- before it touches a single hex digit, and say so.
+
+    At this width the panel is 30 columns and cannot fit the 24-column
+    descriptive hint beside its title, so it falls back to the bare marker
+    (``activity.SHORT_HINT``). That fallback exists because of this layout:
+    the panel's old ``3fr`` slot never got this narrow.
     """
-    text = await _activity_text(80)
-    assert _ADDR_WINDOW in text, "the anti-poisoning window was cut to fit"
-    assert _ACTIVITY_HINTS["minimal"] in text
+    from maxpane_dashboard.widgets.surf.activity import SHORT_HINT
+
+    panel = await _activity_panel(80)
+    assert _ADDR_WINDOW in panel, "the anti-poisoning window was cut to fit"
+    assert SHORT_HINT in panel, "three columns went with nothing said"
     # The fields that were shed to pay for it, and nothing half-rendered.
-    assert "0.310 ETH" not in text
+    assert "0.310 ETH" not in panel
 
 
 def test_surf_fits_inside_the_documented_app_width():
@@ -1869,52 +1969,4 @@ async def test_a_raising_refresh_lowers_the_guard_flag_and_the_next_tick_still_r
             await asyncio.sleep(0)
         await pilot.pause()
         assert screen._refresh_in_flight is False
-        assert "feed #14" in _plain(screen.query_one("#title-bar"))
-
-
-async def test_toggling_view_mid_refresh_does_not_corrupt_either_view():
-    """``c`` flips visibility instantly; the in-flight refresh still lands
-    into a single, consistent active view once it completes.
-
-    ``action_toggle_view`` never awaits a fetch -- it is a pure ``.display``
-    flip -- and ``_do_refresh``'s widget dispatch is a straight-line sequence
-    of synchronous ``update_data`` calls with no ``await`` between them,
-    so the two cannot interleave into a half-updated or doubly-visible
-    state. This proves it rather than assumes it: toggle while a refresh is
-    parked mid-fetch, let it land, and check exactly one panel is visible
-    and it carries the fetched data -- both before and after flipping back.
-    """
-    manager = _BlockingManager()
-    screen = SurfScreen(manager, poll_interval=30, name="surf")
-    app = _ThemedHarness(screen)
-    async with app.run_test(size=(200, 48)) as pilot:
-        await asyncio.wait_for(manager.entered.wait(), timeout=2)
-
-        # Toggle to the activity view while the initial refresh is still
-        # parked inside fetch_and_compute.
-        await pilot.press("c")
-        await pilot.pause()
-        assert screen._active_view == "activity"
-        assert screen.query_one(SurfDevActivity).display is True
-        assert screen.query_one(SurfFeed).display is False
-
-        manager.release.set()
-        for _ in range(50):
-            await asyncio.sleep(0)
-        await pilot.pause()
-
-        # Exactly one view visible once the refresh lands, and it carries
-        # the fetched payload, not stale or blank content.
-        assert screen.query_one(SurfDevActivity).display is True
-        assert screen.query_one(SurfFeed).display is False
-        text = _screen_text(app)
-        assert "DEV ACTIVITY" in text and "ANNOUNCE FEED" not in text
-
-        # Flip back -- the feed (never hidden from updates while it was
-        # invisible) shows the correct fixture content, proving the swap
-        # never desynced from the payload.
-        await pilot.press("c")
-        await pilot.pause()
-        text = _screen_text(app)
-        assert "ANNOUNCE FEED" in text and "DEV ACTIVITY" not in text
         assert "feed #14" in _plain(screen.query_one("#title-bar"))

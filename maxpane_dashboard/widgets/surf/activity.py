@@ -48,6 +48,12 @@ tier are therefore a package deal -- choosing the first without the second
 is what let this panel drop the ETH amount at 100 columns and cut the
 address window to ``0xF308`` at 80, silently, in both cases.
 
+The panel lives in the screen's right rail under ``SurfSignals`` (it shared
+the announce feed's slot behind a ``c`` swap until 2026-08-10), so it sees
+roughly ``0.4 * terminal - 5`` columns and legitimately selects a narrower
+tier than it used to at the same terminal width.  Every tier says what it
+shed; :data:`SHORT_HINT` covers the widths too narrow to say it in words.
+
 The row sheds whole fields as the width drops (see :func:`_tier_for`) and
 the title names the ones that went.  Two things are never traded away:
 
@@ -124,14 +130,22 @@ MINIMAL_WIDTH = _STAMP_SHORT_COLS + _GAP + _WALLET_COLS + _GAP + ADDR_COLS  # 38
 
 #: Marker appended to the title when the layout had to shed a field.  Each
 #: one names what went, so the user knows what they are not looking at.
-#: Kept short enough to sit beside ``TITLE`` in the narrowest panel that can
-#: select it (``DEV ACTIVITY`` + 2 + 24 == 38 columns, against ~44 at the
-#: 80-column terminal that first selects ``minimal``).
+#: ``DEV ACTIVITY`` + 2 + 24 == 38 columns for the longest of them, which the
+#: panel's old ``3fr`` slot always had.  In the right rail it does not below
+#: ~110 terminal columns, and :data:`SHORT_HINT` is the fallback there.
 WIDEN_HINTS = {
     "full": "",
     "compact": "‹ widen for amounts",
     "minimal": "‹ widen: time, kind, ETH",
 }
+
+#: Fallback marker for a panel too narrow to carry the descriptive hint beside
+#: its title.  It names nothing, which is a real loss -- but "columns were
+#: dropped here" is the contract, and going silent is not an option this
+#: codebase allows.  Reachable since the panel moved into the screen's right
+#: rail: at 80 terminal columns it is 30 wide against the 38 the minimal hint
+#: needs, where the old ``3fr`` slot was never below 46.
+SHORT_HINT = "‹ widen"
 
 
 def _tier_for(width: int) -> str:
@@ -145,11 +159,18 @@ def _tier_for(width: int) -> str:
     ``minimal`` 38     ``MM-DD  wallet  who``
     ==========  =====  ==================================================
 
-    The real slot is 3fr of a 3:2 split: 80 usable columns at a 139-column
-    terminal, 55 at 100 and 43 at 80.  ``width <= 0`` means "not laid out
-    yet" -- this panel starts hidden behind the ``c`` toggle, so that is the
-    *normal* first call -- and optimistically picks ``full``;
-    :meth:`SurfDevActivity.on_resize` re-lays it out once it has a size.
+    The real slot is the screen's right rail, 2fr of a 3:2 split minus this
+    widget's padding, the log's padding and the log's permanent scrollbar
+    gutter: ``0.4 * terminal - 5`` usable columns, i.e. 53 at 143, 63 at 169
+    and 66 -- the ``full`` tier at last -- at 176.  It was a ``3fr`` slot of
+    its own until 2026-08-10, where those same widths gave 80/96/101; the
+    panel traded columns for being on screen at the same time as the announce
+    feed instead of behind a ``c`` swap, and the narrower tier it now selects
+    is advertised in the title like any other shed column.
+
+    ``width <= 0`` means "not laid out yet" and optimistically picks
+    ``full``; :meth:`SurfDevActivity.on_resize` re-lays it out once it has a
+    size.
     """
     if width <= 0 or width >= FULL_WIDTH:
         return "full"
@@ -304,11 +325,14 @@ class SurfDevActivity(Vertical):
     def on_resize(self, _event=None) -> None:
         """Re-lay the rows out: the layout depends on the width.
 
-        This panel is created hidden behind the ``c`` toggle, so its first
-        ``update_data`` runs at zero width and picks the optimistic ``full``
-        tier.  Without this hook that guess would stand for the life of the
-        screen and every row would be silently shrunk by ``RichLog`` the
-        moment the panel was shown.
+        The rows are formatted at write time against the width they were
+        written at, and nothing else re-renders them, so without this hook a
+        widened or narrowed terminal would show the previous size's tier --
+        padded, or silently shrunk by ``RichLog`` -- for the life of the
+        screen.  It was written for a different reason (the panel used to be
+        composed hidden behind a ``c`` swap, so its first ``update_data`` ran
+        at zero width and picked the optimistic ``full`` tier); that reason is
+        gone and this one is not.
         """
         if self._payload:
             self._render_view()
@@ -334,16 +358,22 @@ class SurfDevActivity(Vertical):
         """``DEV ACTIVITY  ‹ widen for amounts``, width permitting.
 
         The hint is *appended*: the title itself never changes, so the screen
-        tests' ``"DEV ACTIVITY" in text`` holds at every width.  It is dropped
-        only when it genuinely cannot fit beside the title -- this Static has
-        no ``text-overflow``, so an over-long title would wrap onto a second
-        line and push a row out of the log instead of announcing anything.
+        tests' ``"DEV ACTIVITY" in text`` holds at every width.  It degrades
+        to :data:`SHORT_HINT` rather than to nothing when the descriptive
+        wording will not fit beside the title -- silence is what this whole
+        module exists to prevent -- and only a panel too narrow for even that
+        goes unmarked, because this Static has no ``text-overflow`` and an
+        over-long title wraps onto a second line, pushing a row out of the log
+        instead of announcing anything.
         """
         title = self.query_one("#surf-act-title", Static)
         width = max(self.content_size.width - 2, 0)
         text = TITLE
-        if hint and (not width or len(TITLE) + 2 + len(hint) <= width):
-            text += f"  [yellow]{hint}[/]"
+        if hint:
+            for candidate in (hint, SHORT_HINT):
+                if not width or len(TITLE) + 2 + len(candidate) <= width:
+                    text += f"  [yellow]{candidate}[/]"
+                    break
         title.update(text)
 
     def _render_view(self) -> None:

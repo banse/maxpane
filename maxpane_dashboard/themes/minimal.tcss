@@ -1943,29 +1943,32 @@ SurfHero {
 }
 
 /* The only `1fr` row on the screen, so every row a taller terminal adds is
- * handed to the feed instead of being stranded at the bottom. */
+ * handed to the feed and the activity panel instead of being stranded at the
+ * bottom. */
 SurfScreen #middle-row {
     height: 1fr;
     padding: 0 0;
     margin: 1 0 0 0;
 }
 
-/* The two views of the middle-left slot, toggled with `c`. Both carry the same
- * width so the swap does not reflow the row. */
-SurfFeed, SurfDevActivity {
+/* The middle row's left slot. `3fr` against the rail's `2fr`, the same seam
+ * the bottom row uses: the feed needs ~81 columns before it starts breaking a
+ * post, and the panels beside it do not. */
+SurfFeed {
     width: 3fr;
     padding: 0 1;
 }
 
-/* The right rail: SIGNALS above IMD MARKET. No padding of its own -- both
- * children already pad, and doubling it here would cost the market a column
- * on each side.
+/* The right rail: SIGNALS above DEV ACTIVITY. No padding of its own -- both
+ * children already pad, and doubling it here would cost the activity rows a
+ * column on each side, which they pay for out of the anti-poisoning address
+ * window.
  *
  * `overflow-y: auto` is the short-terminal guard, and the same answer the
  * bakery `SignalsPanel` above uses. The old layout gave the signals a fixed
  * ten-row band in the hero row, so all six detectors survived down to a
  * ~16-row terminal; sizing the rows to their content means the rail is only
- * as tall as the middle row, and below 35 rows its fifteen lines no longer
+ * as tall as the middle row, and below 36 rows its fifteen lines no longer
  * fit. Scrolling is the *affordance*: nothing is dropped, it is all still
  * reachable. The *advertisement* is `TALLER_HINT` on the title bar (see
  * screens/surf.py) -- a scrollbar in a gutter names nothing it took away,
@@ -1987,40 +1990,50 @@ SurfScreen #surf-right-rail {
  * look complete while one of the six advertised signals was simply absent.
  * That is the FWA coverage-badge bug (see the FWAHeroBox comment above) in a
  * different widget, and tests/test_surf_registration.py asserts all six reach
- * the compositor.
- *
- * `height: auto` rather than `1fr`, and the same for SurfMarket below: a
- * `1fr` child cannot overflow its scroll container -- it shrinks -- so the
- * rail's `overflow-y: auto` never fires for it. SurfMarket *was* `1fr` and
- * shed one row per terminal row from 35 down, reaching "IMD MARKET title
- * only" at 31 and a blank rail at 30, with no scrollbar, no marker and no
- * trace anywhere on screen. Two `auto` children give the rail a fixed
- * fifteen-row content height, which is what makes the overflow, the
- * scrollbar and the title bar's `‹ taller` all fire on the same terminal
- * row that the first line is lost on. */
+ * the compositor. */
 SurfSignals {
     width: 1fr;
     height: auto;
     padding: 0 1;
 }
 
-SurfMarket {
+/* The rail's lower half. `1fr` so it absorbs the rail's spare rows, and
+ * `min-height` because a `1fr` child cannot overflow its scroll container --
+ * it shrinks. `SurfMarket` was `1fr` in this rail with no floor and shed one
+ * row per terminal row from 35 down, reaching "title only" at 31 and a blank
+ * rail at 30, with no scrollbar, no marker and no trace anywhere on screen.
+ * The floor turns that silent thinning into an overflow, which is what makes
+ * the scrollbar and the title bar's `‹ taller` fire on the same terminal row
+ * the first line is lost on. 7 == `screens/surf.ACTIVITY_MIN_HEIGHT` (a title,
+ * a spacer and five rows); the two numbers are pinned to each other by
+ * tests/test_surf_registration.py, since CSS cannot read a Python constant. */
+SurfDevActivity {
     width: 1fr;
-    height: auto;
+    height: 1fr;
+    min-height: 7;
     padding: 0 1;
 }
 
-/* `auto`: the NFT panel is eight lines and used to be handed half the screen's
- * slack by the shared `#bottom-row { height: 1fr }` above, which left roughly
- * a fifth of the screen blank between the last sale and the status bar. */
+/* `auto`: the market's seven rows and the NFT panel's eight are content, not
+ * slack. The shared `#bottom-row { height: 1fr }` above used to hand them half
+ * the screen's spare rows, which left roughly a fifth of the screen blank
+ * between the last sale and the status bar. The row sizes to the taller of the
+ * two panels, which is the NFT one, so the market rides along for free. */
 SurfScreen #bottom-row {
     height: auto;
     padding: 0 0;
     margin: 0 0 1 0;
 }
 
+/* Same 3:2 seam as the middle row, so the two rows read as one grid. */
+SurfMarket {
+    width: 3fr;
+    height: auto;
+    padding: 0 1;
+}
+
 SurfNft {
-    width: 1fr;
+    width: 2fr;
     height: auto;
     padding: 0 1;
 }

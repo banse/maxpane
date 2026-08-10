@@ -726,6 +726,38 @@ async def test_activity_relays_out_on_resize_never_shrunk_by_richlog():
         assert "‹ widen" not in screen
 
 
+async def test_activity_a_panel_too_narrow_to_name_what_it_shed_still_says_so():
+    """A panel narrower than its own hint must not go silent.
+
+    The hint is appended to the title and dropped when it cannot fit beside
+    it, because this ``Static`` has no ``text-overflow`` and an over-long
+    title wraps onto a second line, pushing a row out of the log.  That was
+    harmless while the panel had a ``3fr`` slot -- ``DEV ACTIVITY`` plus the
+    24-column minimal hint needs 38, and the slot was wider than that at
+    every width the dashboard runs at.  In the right rail it is not: at 80
+    terminal columns the panel is 30 wide, sheds the time, kind and amount
+    columns, and used to say nothing at all about it.
+
+    The bare marker is the fallback: it names no field, but "something was
+    dropped here" is the contract, and it fits in seven columns.
+    """
+    from maxpane_dashboard.widgets.surf.activity import SHORT_HINT, WIDEN_HINTS
+
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(34, 20)) as pilot:
+        widget.update_data(dev_activity=_DEV_ACTIVITY)
+        await pilot.pause()
+        screen = _screen_text(app)
+
+        assert WIDEN_HINTS["minimal"] not in screen, (
+            "the descriptive hint fits after all at 34 columns -- re-measure"
+        )
+        assert SHORT_HINT in screen, "the panel shed three columns in silence"
+        # The fallback never costs the log a row: the title is still one line.
+        assert "0x61CC704c…73f14E" in screen
+
+
 async def test_activity_unavailable_vs_empty_vs_none_args():
     widget = SurfDevActivity()
     app = _Harness(widget)

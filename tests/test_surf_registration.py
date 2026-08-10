@@ -460,7 +460,15 @@ _SHORTHAND_DEFAULTS = {"padding": "0", "margin": "0"}
 
 #: What this comparison is about: the geometry. Colour and text properties
 #: belong to the theme and to the widgets' own DEFAULT_CSS.
-_STRUCTURAL = ("width", "height", "padding", "margin")
+#:
+#: ``min-height`` joined the list with the three-row layout: it is the floor
+#: under ``SurfDevActivity`` in the right rail, and it is load-bearing rather
+#: than decorative -- a ``1fr`` child of a scroll container shrinks instead of
+#: overflowing, so the floor is the only thing that turns "the rail is too
+#: short" into the overflow the title bar's ``‹ taller`` is built on. One copy
+#: carrying it and the other not would mean the marker fires under one
+#: stylesheet and never under the other.
+_STRUCTURAL = ("width", "height", "min-height", "padding", "margin")
 
 #: The two copies deliberately do **not** cover the same selector set, and
 #: both asymmetries are load-bearing:
@@ -570,6 +578,31 @@ def test_the_stylesheet_block_and_default_css_describe_one_layout() -> None:
                     f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
                     f"{right!r} in minimal.tcss"
                 )
+
+
+def test_the_activity_floor_is_the_same_number_in_both_stylesheets() -> None:
+    """Three copies of one number: the constant and both stylesheets.
+
+    ``screens/surf.ACTIVITY_MIN_HEIGHT`` documents the floor and the module
+    docstring reasons from it, but CSS cannot read a Python constant, so both
+    stylesheets restate it as a literal. Drift is invisible until a short
+    terminal renders: the marker would light at one height and the panel thin
+    out at another.
+    """
+    from maxpane_dashboard.screens.surf import ACTIVITY_MIN_HEIGHT, SurfScreen
+
+    for name, css in (
+        ("DEFAULT_CSS", SurfScreen.DEFAULT_CSS),
+        ("minimal.tcss", _surf_block()),
+    ):
+        declared = _rules(css)["SurfDevActivity"].get("min-height")
+        assert declared == str(ACTIVITY_MIN_HEIGHT), (
+            f"{name} floors SurfDevActivity at {declared!r} while "
+            f"ACTIVITY_MIN_HEIGHT is {ACTIVITY_MIN_HEIGHT}"
+        )
+        # ...and it is a floor under a `1fr`, not a fixed height: a fixed one
+        # would stop the panel absorbing the rail's spare rows.
+        assert _rules(css)["SurfDevActivity"]["height"] == "1fr", name
 
 
 def test_the_middle_row_is_the_only_one_that_grows() -> None:
