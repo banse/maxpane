@@ -166,3 +166,225 @@ TOPIC_PREIMAGES: dict[str, str] = {
     "TOPIC_SETTLED": "Settled(uint256,uint256,uint256,uint256)",
     "TOPIC_RESCUED": "Rescued(address,uint256)",
 }
+
+# --- Function selectors -----------------------------------------------------
+# Every literal below was produced with
+#   .venv/bin/python -c "from maxpane_dashboard.data.keccak import keccak256_hex; \
+#                        print(keccak256_hex(b'<signature>')[:10])"
+# and every one is recomputed in-test from the preimage beside it.  The
+# preimages themselves are checked against ``captures/source.sol``, and the 21
+# parameterless ones are checked against ``captures/batch.json`` — the real
+# round publicnode answered on 2026-08-16.  That cross-check is what makes this
+# table trustworthy with no network in the suite.
+#
+# ``isSettled()`` and ``ethNeededThisHour()`` BOTH returned ``0x0`` in that
+# round (not settled; grace, so nothing is needed).  Positional reasoning over
+# ``results.json`` therefore cannot tell them apart — always key by selector.
+
+# fast tier (8) — one batched eth_call round every 15 s
+SEL_IS_SETTLED = "0x3270bb5b"              # isSettled() -> bool
+SEL_CURRENT_HOUR = "0x020e185d"            # currentHour()
+SEL_CURRENT_HOUR_TOTAL = "0x78f251f3"      # currentHourTotal() -- 0 at every boundary
+SEL_ETH_NEEDED_THIS_HOUR = "0xa4586257"    # ethNeededThisHour() -- 0 all through grace
+SEL_TIME_LEFT_IN_HOUR = "0x7a7d6632"       # timeLeftInHour() -- hourDuration, never 0
+SEL_LAST_ACTIVE_HOUR = "0xa8a036f1"        # lastActiveHour() -> (hour, total)
+SEL_EARLY_MULTIPLIER_BPS = "0xd8631b3d"    # earlyMultiplierBps()
+SEL_STATS = "0xd80528ae"                   # stats() -> (volume, people, txs)
+
+# once tier (10) — the eight immutables, the constant, and the deployer
+SEL_LAUNCH_TIME = "0x790ca413"             # launchTime()
+SEL_HOURLY_THRESHOLD = "0x9d99a86d"        # hourlyThreshold()
+SEL_GRACE_PERIOD = "0xa06db7dc"            # gracePeriod()
+SEL_HOUR_DURATION = "0xda25efd9"           # hourDuration()
+SEL_MIN_DEPOSIT = "0x41b3d185"             # minDeposit()
+SEL_MIN_ESCALATION = "0x2c379609"          # minEscalation()
+SEL_CREDIT_CAP = "0x1ea0466e"              # creditCap()
+SEL_FIRST_JUDGED_HOUR = "0x2a9c657f"       # firstJudgedHour()
+SEL_POINTS_PER_ETH = "0xc99a340f"          # POINTS_PER_ETH()
+SEL_DEPLOYER = "0xd5f39488"                # deployer() -> address
+
+# cross-check (3) — the same three numbers stats() returns, from a *different*
+# storage read.  Their agreeing is what makes the slow-tier check meaningful.
+SEL_TOTAL_VOLUME = "0x5f81a57c"            # totalVolume()
+SEL_TOTAL_CONTRIBUTORS = "0xf251fc8c"      # totalContributors()
+SEL_TOTAL_TX_COUNT = "0x9b4f50e7"          # totalTxCount()
+
+# wallet tier (6) — only when MAXPANE_WALLET is set
+SEL_POINTS_OF = "0xcf6a4403"               # pointsOf(address)
+SEL_WEIGHT_OF = "0xdd4bc101"               # weightOf(address)
+SEL_CONTRIBUTED_BY = "0x64a8e570"          # contributedBy(address)
+SEL_TX_COUNT_OF = "0x662d7299"             # txCountOf(address)
+SEL_REQUIRED_NEXT = "0xa5f88754"           # requiredNext(address)
+#: ``firstHourOf(address) -> (hour, hasJoined)``.  **Two words.**  The raw
+#: ``contributors(address)`` struct getter carries a ``firstHour + 1`` offset and
+#: is deliberately NOT vendored, so no client can reach the un-shifted value:
+#: ``(0, false)`` for a stranger must never render as "joined in hour 0".
+SEL_FIRST_HOUR_OF = "0xc5148173"           # firstHourOf(address) -> (uint256, bool)
+
+#: ``previewPoints(uint256)`` — plan amendment A2.  The captured 21-call round
+#: holds only parameterless views, so the sqrt curve has no onchain witness at
+#: all; the ``once`` tier probes this with one encoded argument so the locally
+#: recomputed curve can be compared against the contract's own answer.  It is
+#: **not** a member of any ordered parameterless tuple: adding it there would
+#: shift every positional decode by one.
+SEL_PREVIEW_POINTS = "0x27ca8273"          # previewPoints(uint256)
+
+#: constant name -> the exact Solidity function signature it hashes.
+SELECTOR_PREIMAGES: dict[str, str] = {
+    "SEL_IS_SETTLED": "isSettled()",
+    "SEL_CURRENT_HOUR": "currentHour()",
+    "SEL_CURRENT_HOUR_TOTAL": "currentHourTotal()",
+    "SEL_ETH_NEEDED_THIS_HOUR": "ethNeededThisHour()",
+    "SEL_TIME_LEFT_IN_HOUR": "timeLeftInHour()",
+    "SEL_LAST_ACTIVE_HOUR": "lastActiveHour()",
+    "SEL_EARLY_MULTIPLIER_BPS": "earlyMultiplierBps()",
+    "SEL_STATS": "stats()",
+    "SEL_LAUNCH_TIME": "launchTime()",
+    "SEL_HOURLY_THRESHOLD": "hourlyThreshold()",
+    "SEL_GRACE_PERIOD": "gracePeriod()",
+    "SEL_HOUR_DURATION": "hourDuration()",
+    "SEL_MIN_DEPOSIT": "minDeposit()",
+    "SEL_MIN_ESCALATION": "minEscalation()",
+    "SEL_CREDIT_CAP": "creditCap()",
+    "SEL_FIRST_JUDGED_HOUR": "firstJudgedHour()",
+    "SEL_POINTS_PER_ETH": "POINTS_PER_ETH()",
+    "SEL_DEPLOYER": "deployer()",
+    "SEL_TOTAL_VOLUME": "totalVolume()",
+    "SEL_TOTAL_CONTRIBUTORS": "totalContributors()",
+    "SEL_TOTAL_TX_COUNT": "totalTxCount()",
+    "SEL_POINTS_OF": "pointsOf(address)",
+    "SEL_WEIGHT_OF": "weightOf(address)",
+    "SEL_CONTRIBUTED_BY": "contributedBy(address)",
+    "SEL_TX_COUNT_OF": "txCountOf(address)",
+    "SEL_REQUIRED_NEXT": "requiredNext(address)",
+    "SEL_FIRST_HOUR_OF": "firstHourOf(address)",
+    "SEL_PREVIEW_POINTS": "previewPoints(uint256)",
+}
+
+#: constant name -> how many 32-byte words the return data holds.
+#:
+#: **Three of these are not 1 and a scalar decode of any of them is a silent
+#: bug**: ``stats()`` is three words, ``lastActiveHour()`` and
+#: ``firstHourOf()`` are two.  Reading only the first word of ``firstHourOf()``
+#: throws away ``hasJoined``, which is the one thing that separates "deposited
+#: in hour 0" from "never deposited".
+VIEW_RETURN_WORDS: dict[str, int] = {
+    "SEL_IS_SETTLED": 1,
+    "SEL_CURRENT_HOUR": 1,
+    "SEL_CURRENT_HOUR_TOTAL": 1,
+    "SEL_ETH_NEEDED_THIS_HOUR": 1,
+    "SEL_TIME_LEFT_IN_HOUR": 1,
+    "SEL_LAST_ACTIVE_HOUR": 2,
+    "SEL_EARLY_MULTIPLIER_BPS": 1,
+    "SEL_STATS": 3,
+    "SEL_LAUNCH_TIME": 1,
+    "SEL_HOURLY_THRESHOLD": 1,
+    "SEL_GRACE_PERIOD": 1,
+    "SEL_HOUR_DURATION": 1,
+    "SEL_MIN_DEPOSIT": 1,
+    "SEL_MIN_ESCALATION": 1,
+    "SEL_CREDIT_CAP": 1,
+    "SEL_FIRST_JUDGED_HOUR": 1,
+    "SEL_POINTS_PER_ETH": 1,
+    "SEL_DEPLOYER": 1,
+    "SEL_TOTAL_VOLUME": 1,
+    "SEL_TOTAL_CONTRIBUTORS": 1,
+    "SEL_TOTAL_TX_COUNT": 1,
+    "SEL_POINTS_OF": 1,
+    "SEL_WEIGHT_OF": 1,
+    "SEL_CONTRIBUTED_BY": 1,
+    "SEL_TX_COUNT_OF": 1,
+    "SEL_REQUIRED_NEXT": 1,
+    "SEL_FIRST_HOUR_OF": 2,
+    "SEL_PREVIEW_POINTS": 1,
+}
+
+#: constant name -> the Solidity return types, in order.
+#:
+#: Two of these are not ``uint256`` and the difference matters at the seam:
+#: ``isSettled()`` is a ``bool`` (the model field is ``bool | None``, and
+#: ``False`` must never be confused with ``None``), ``deployer()`` is an
+#: ``address`` (decode with ``decode_address``, not ``decode_uint``), and
+#: ``firstHourOf()``'s second word is a ``bool``.
+VIEW_RETURN_TYPES: dict[str, tuple[str, ...]] = {
+    "SEL_IS_SETTLED": ("bool",),
+    "SEL_CURRENT_HOUR": ("uint256",),
+    "SEL_CURRENT_HOUR_TOTAL": ("uint256",),
+    "SEL_ETH_NEEDED_THIS_HOUR": ("uint256",),
+    "SEL_TIME_LEFT_IN_HOUR": ("uint256",),
+    "SEL_LAST_ACTIVE_HOUR": ("uint256", "uint256"),
+    "SEL_EARLY_MULTIPLIER_BPS": ("uint256",),
+    "SEL_STATS": ("uint256", "uint256", "uint256"),
+    "SEL_LAUNCH_TIME": ("uint256",),
+    "SEL_HOURLY_THRESHOLD": ("uint256",),
+    "SEL_GRACE_PERIOD": ("uint256",),
+    "SEL_HOUR_DURATION": ("uint256",),
+    "SEL_MIN_DEPOSIT": ("uint256",),
+    "SEL_MIN_ESCALATION": ("uint256",),
+    "SEL_CREDIT_CAP": ("uint256",),
+    "SEL_FIRST_JUDGED_HOUR": ("uint256",),
+    "SEL_POINTS_PER_ETH": ("uint256",),
+    "SEL_DEPLOYER": ("address",),
+    "SEL_TOTAL_VOLUME": ("uint256",),
+    "SEL_TOTAL_CONTRIBUTORS": ("uint256",),
+    "SEL_TOTAL_TX_COUNT": ("uint256",),
+    "SEL_POINTS_OF": ("uint256",),
+    "SEL_WEIGHT_OF": ("uint256",),
+    "SEL_CONTRIBUTED_BY": ("uint256",),
+    "SEL_TX_COUNT_OF": ("uint256",),
+    "SEL_REQUIRED_NEXT": ("uint256",),
+    "SEL_FIRST_HOUR_OF": ("uint256", "bool"),
+    "SEL_PREVIEW_POINTS": ("uint256",),
+}
+
+# --- The batch contract -----------------------------------------------------
+# THESE TUPLES ARE ORDERED AND THE ORDER IS THE CONTRACT.  WP2 sends them in
+# order and decodes positionally, so swapping two entries is a silent field
+# swap that no WP0 test can see (WP0's subject is the hashes, not the order).
+# WP2.4 owns the order test, re-asserted against VIEW_RETURN_WORDS.
+#
+# fast + once + cross-check == the 21 parameterless calls of captures/batch.json.
+
+#: The 15 s round: eight views, one batched ``eth_call``.
+FAST_VIEW_SELECTORS: tuple[tuple[str, str], ...] = (
+    ("SEL_IS_SETTLED", SEL_IS_SETTLED),
+    ("SEL_CURRENT_HOUR", SEL_CURRENT_HOUR),
+    ("SEL_CURRENT_HOUR_TOTAL", SEL_CURRENT_HOUR_TOTAL),
+    ("SEL_ETH_NEEDED_THIS_HOUR", SEL_ETH_NEEDED_THIS_HOUR),
+    ("SEL_TIME_LEFT_IN_HOUR", SEL_TIME_LEFT_IN_HOUR),
+    ("SEL_LAST_ACTIVE_HOUR", SEL_LAST_ACTIVE_HOUR),
+    ("SEL_EARLY_MULTIPLIER_BPS", SEL_EARLY_MULTIPLIER_BPS),
+    ("SEL_STATS", SEL_STATS),
+)
+
+#: Read once and cached forever: nothing on this contract can change them.
+ONCE_VIEW_SELECTORS: tuple[tuple[str, str], ...] = (
+    ("SEL_LAUNCH_TIME", SEL_LAUNCH_TIME),
+    ("SEL_HOURLY_THRESHOLD", SEL_HOURLY_THRESHOLD),
+    ("SEL_GRACE_PERIOD", SEL_GRACE_PERIOD),
+    ("SEL_HOUR_DURATION", SEL_HOUR_DURATION),
+    ("SEL_MIN_DEPOSIT", SEL_MIN_DEPOSIT),
+    ("SEL_MIN_ESCALATION", SEL_MIN_ESCALATION),
+    ("SEL_CREDIT_CAP", SEL_CREDIT_CAP),
+    ("SEL_FIRST_JUDGED_HOUR", SEL_FIRST_JUDGED_HOUR),
+    ("SEL_POINTS_PER_ETH", SEL_POINTS_PER_ETH),
+    ("SEL_DEPLOYER", SEL_DEPLOYER),
+)
+
+#: The slow tier's independent read of ``stats()``'s three numbers.
+CROSS_CHECK_VIEW_SELECTORS: tuple[tuple[str, str], ...] = (
+    ("SEL_TOTAL_VOLUME", SEL_TOTAL_VOLUME),
+    ("SEL_TOTAL_CONTRIBUTORS", SEL_TOTAL_CONTRIBUTORS),
+    ("SEL_TOTAL_TX_COUNT", SEL_TOTAL_TX_COUNT),
+)
+
+#: The six argument-taking calls, sent only when a wallet is configured.  Each
+#: is ``selector + encode_address(wallet)``.
+WALLET_VIEW_SELECTORS: tuple[tuple[str, str], ...] = (
+    ("SEL_POINTS_OF", SEL_POINTS_OF),
+    ("SEL_WEIGHT_OF", SEL_WEIGHT_OF),
+    ("SEL_CONTRIBUTED_BY", SEL_CONTRIBUTED_BY),
+    ("SEL_TX_COUNT_OF", SEL_TX_COUNT_OF),
+    ("SEL_REQUIRED_NEXT", SEL_REQUIRED_NEXT),
+    ("SEL_FIRST_HOUR_OF", SEL_FIRST_HOUR_OF),
+)

@@ -248,3 +248,248 @@ def test_the_announce_channel_is_labeled_because_it_is_on_the_list() -> None:
     )
     assert "0x" + first["topics"][1][-40:] == A.ANNOUNCE.lower()
     assert A.ANNOUNCE.lower() in A.KNOWN_LABELS
+
+
+# --------------------------------------------------------------------------
+# WP0.4 — the selector table
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name,preimage", sorted(A.SELECTOR_PREIMAGES.items()))
+def test_selector_matches_its_preimage(name: str, preimage: str) -> None:
+    assert getattr(A, name) == keccak256_hex(preimage.encode("ascii"))[:10]
+
+
+@pytest.mark.parametrize("name", sorted(A.SELECTOR_PREIMAGES))
+def test_every_selector_is_lowercase_4_byte_hex(name: str) -> None:
+    assert re.fullmatch(r"0x[0-9a-f]{8}", getattr(A, name)), name
+
+
+def test_every_selector_has_a_preimage_and_a_word_count_and_vice_versa() -> None:
+    names = {n for n in dir(A) if n.startswith("SEL_")}
+    assert set(A.SELECTOR_PREIMAGES) == names
+    assert set(A.VIEW_RETURN_WORDS) == names
+
+
+def test_the_selector_signatures_are_declared_by_the_verified_source() -> None:
+    """No invented view.  Every preimage names something ``source.sol`` has."""
+    src = capture_text("source.sol")
+    for const, sig in A.SELECTOR_PREIMAGES.items():
+        fname = sig.split("(")[0]
+        declared = re.search(
+            rf"\b(function|public\s+(constant|immutable)?\s*\w*\s*)\b.*\b{re.escape(fname)}\b",
+            src,
+        )
+        assert declared, f"{const}: source.sol declares no {fname}"
+
+
+def test_every_parameterless_selector_appears_in_the_captured_batch() -> None:
+    """The cross-check that makes the table trustworthy without a network.
+
+    ``captures/batch.json`` is the real 21-call round that publicnode answered.
+    Every parameterless selector this module vendors must be one of those 21,
+    and all 21 must be accounted for -- an unaccounted selector in the capture
+    is a view the research used and this module forgot.
+    """
+    sent = {c["params"][0]["data"] for c in capture("batch.json")}
+    assert len(sent) == 21
+    vendored = {
+        getattr(A, n) for n, p in A.SELECTOR_PREIMAGES.items() if p.endswith("()")
+    }
+    assert vendored == sent, (
+        f"vendored-not-captured: {sorted(vendored - sent)}; "
+        f"captured-not-vendored: {sorted(sent - vendored)}"
+    )
+
+
+def test_the_hour_boundary_views_table_agrees_with_the_recomputation() -> None:
+    """``hour_boundary_h1_h2.json`` carries its own id → selector → signature
+    table.  It is a *cross-check*, not an authority; recomputing every row from
+    its signature is what makes quoting it safe."""
+    views = capture("hour_boundary_h1_h2.json")["views"]
+    assert len(views) == 21
+    for row in views:
+        assert row["selector"] == keccak256_hex(row["signature"].encode("ascii"))[:10]
+    assert {row["selector"] for row in views} == {
+        getattr(A, n) for n, p in A.SELECTOR_PREIMAGES.items() if p.endswith("()")
+    }
+
+
+def test_the_two_views_that_both_returned_zero_are_told_apart_by_hash() -> None:
+    """``isSettled()`` and ``ethNeededThisHour()`` both answered 0x0 at capture
+    (not settled; grace, so nothing is needed).  Positional reasoning over
+    ``results.json`` therefore cannot distinguish them and must not be used --
+    the recomputed hash is the only discriminator, and this test is the record
+    that the question was asked."""
+    assert A.SEL_IS_SETTLED != A.SEL_ETH_NEEDED_THIS_HOUR
+    idx = {c["params"][0]["data"]: c["id"] for c in capture("batch.json")}
+    results = {r["id"]: r["result"] for r in capture("results.json")}
+    assert int(results[idx[A.SEL_IS_SETTLED]], 16) == 0
+    assert int(results[idx[A.SEL_ETH_NEEDED_THIS_HOUR]], 16) == 0
+
+
+def test_the_multi_word_views_are_declared_with_their_word_counts() -> None:
+    """A 2- or 3-word return decoded as 1 word silently drops fields."""
+    assert A.VIEW_RETURN_WORDS["SEL_LAST_ACTIVE_HOUR"] == 2
+    assert A.VIEW_RETURN_WORDS["SEL_STATS"] == 3
+    assert A.VIEW_RETURN_WORDS["SEL_FIRST_HOUR_OF"] == 2
+    assert A.VIEW_RETURN_WORDS["SEL_IS_SETTLED"] == 1
+
+
+def test_the_word_counts_are_recomputed_from_the_verified_source() -> None:
+    """Not remembered.  ``lastActiveHour() -> (hour, total)`` and
+    ``firstHourOf() -> (hour, hasJoined)`` are the two a scalar decode would
+    silently truncate; public state variables and constants have no ``returns``
+    clause at all and are one word by definition."""
+    src = capture_text("source.sol")
+    checked_multi = 0
+    for const, sig in A.SELECTOR_PREIMAGES.items():
+        fname = sig.split("(")[0]
+        match = re.search(
+            rf"function\s+{re.escape(fname)}\s*\([^)]*\)[^{{;]*?returns\s*\(([^)]*)\)",
+            src,
+        )
+        if match is None:
+            # A public immutable/constant/state variable: its generated getter
+            # returns exactly one word.
+            assert A.VIEW_RETURN_WORDS[const] == 1, const
+            continue
+        expected = len([p for p in match.group(1).split(",") if p.strip()])
+        assert A.VIEW_RETURN_WORDS[const] == expected, const
+        checked_multi += expected > 1
+    assert checked_multi == 3, "stats, lastActiveHour and firstHourOf"
+
+
+def test_the_bool_returning_view_is_declared_as_a_bool() -> None:
+    """``isSettled()`` returns ``bool``, not ``uint256``.  A decoder that reads
+    it as an int and a manager that stores it as one both work -- until
+    ``settled == 0`` gets confused with ``settled is None``."""
+    assert A.VIEW_RETURN_TYPES["SEL_IS_SETTLED"] == ("bool",)
+    assert A.VIEW_RETURN_TYPES["SEL_FIRST_HOUR_OF"] == ("uint256", "bool")
+    assert A.VIEW_RETURN_TYPES["SEL_DEPLOYER"] == ("address",)
+    assert set(A.VIEW_RETURN_TYPES) == set(A.SELECTOR_PREIMAGES)
+    for const, types in A.VIEW_RETURN_TYPES.items():
+        assert len(types) == A.VIEW_RETURN_WORDS[const], const
+
+
+def test_the_three_ordered_tuples_are_the_batch_contract() -> None:
+    """WP2 sends these in order and decodes positionally.
+
+    A reorder is a silent field swap, which is why the *order* test belongs to
+    WP2.4 (against ``VIEW_RETURN_WORDS``): reordering here leaves this suite
+    green on purpose, and the WP0 hand-off says so.
+    """
+    for tup in (A.FAST_VIEW_SELECTORS, A.ONCE_VIEW_SELECTORS, A.WALLET_VIEW_SELECTORS):
+        assert isinstance(tup, tuple) and tup
+        for name, selector in tup:
+            assert getattr(A, name) == selector
+            assert name in A.VIEW_RETURN_WORDS
+
+    fast = {n for n, _ in A.FAST_VIEW_SELECTORS}
+    once = {n for n, _ in A.ONCE_VIEW_SELECTORS}
+    wallet = {n for n, _ in A.WALLET_VIEW_SELECTORS}
+    cross = {n for n, _ in A.CROSS_CHECK_VIEW_SELECTORS}
+    assert fast.isdisjoint(once) and fast.isdisjoint(wallet) and once.isdisjoint(wallet)
+    assert cross.isdisjoint(fast | once | wallet)
+    assert len(fast) == 8
+    assert len(once) == 10
+    assert len(wallet) == 6
+    assert len(cross) == 3
+    # The three batched groups reconstruct the captured 21-call round exactly.
+    assert len(fast | once | cross) == 21
+    for name in wallet:
+        assert not A.SELECTOR_PREIMAGES[name].endswith("()")
+    for name in fast | once | cross:
+        assert A.SELECTOR_PREIMAGES[name].endswith("()")
+
+
+def test_the_fast_tier_is_the_eight_views_the_prd_names() -> None:
+    assert {n for n, _ in A.FAST_VIEW_SELECTORS} == {
+        "SEL_IS_SETTLED",
+        "SEL_CURRENT_HOUR",
+        "SEL_CURRENT_HOUR_TOTAL",
+        "SEL_ETH_NEEDED_THIS_HOUR",
+        "SEL_TIME_LEFT_IN_HOUR",
+        "SEL_LAST_ACTIVE_HOUR",
+        "SEL_EARLY_MULTIPLIER_BPS",
+        "SEL_STATS",
+    }
+
+
+def test_the_once_tier_is_the_eight_immutables_plus_the_constant_and_deployer() -> None:
+    """Read live, never hardcoded (CLAUDE.md).  The eight ``immutable`` config
+    values, ``POINTS_PER_ETH`` (a ``constant``) and ``deployer``."""
+    assert {n for n, _ in A.ONCE_VIEW_SELECTORS} == {
+        "SEL_LAUNCH_TIME",
+        "SEL_HOURLY_THRESHOLD",
+        "SEL_GRACE_PERIOD",
+        "SEL_HOUR_DURATION",
+        "SEL_MIN_DEPOSIT",
+        "SEL_MIN_ESCALATION",
+        "SEL_CREDIT_CAP",
+        "SEL_FIRST_JUDGED_HOUR",
+        "SEL_POINTS_PER_ETH",
+        "SEL_DEPLOYER",
+    }
+
+
+def test_the_cross_check_selectors_read_the_same_numbers_stats_returns() -> None:
+    """``totalVolume``/``totalContributors``/``totalTxCount`` are a *different*
+    storage read of ``stats()``'s three words.  That is the whole value of the
+    slow-tier cross-check, so the three are their own group rather than being
+    lumped into ``once``."""
+    assert {n for n, _ in A.CROSS_CHECK_VIEW_SELECTORS} == {
+        "SEL_TOTAL_VOLUME",
+        "SEL_TOTAL_CONTRIBUTORS",
+        "SEL_TOTAL_TX_COUNT",
+    }
+
+
+def test_the_wallet_tier_reads_first_hour_of_and_never_the_raw_struct() -> None:
+    """H6: ``contributors(address)`` carries a ``firstHour + 1`` offset.
+    ``firstHourOf()`` un-shifts it and returns ``(hour, hasJoined)``.  The raw
+    struct getter is deliberately **not** vendored, so no client can reach it."""
+    assert {n for n, _ in A.WALLET_VIEW_SELECTORS} == {
+        "SEL_POINTS_OF",
+        "SEL_WEIGHT_OF",
+        "SEL_CONTRIBUTED_BY",
+        "SEL_TX_COUNT_OF",
+        "SEL_REQUIRED_NEXT",
+        "SEL_FIRST_HOUR_OF",
+    }
+    assert "contributors(address)" not in set(A.SELECTOR_PREIMAGES.values())
+
+
+def test_preview_points_is_vendored_but_batched_with_nothing() -> None:
+    """Plan amendment A2: the 21-call round holds only parameterless views, so
+    the sqrt curve has no onchain witness.  WP1.6 captures one; the selector has
+    to exist before it can.  It takes a ``uint256``, so it is *not* a member of
+    any ordered parameterless tuple -- adding it there would shift every
+    positional decode by one."""
+    assert A.SELECTOR_PREIMAGES["SEL_PREVIEW_POINTS"] == "previewPoints(uint256)"
+    assert A.SEL_PREVIEW_POINTS not in {
+        c["params"][0]["data"] for c in capture("batch.json")
+    }
+    batched = {
+        n
+        for tup in (
+            A.FAST_VIEW_SELECTORS,
+            A.ONCE_VIEW_SELECTORS,
+            A.CROSS_CHECK_VIEW_SELECTORS,
+            A.WALLET_VIEW_SELECTORS,
+        )
+        for n, _ in tup
+    }
+    assert "SEL_PREVIEW_POINTS" not in batched
+
+
+def test_no_state_changing_selector_is_vendored() -> None:
+    """Read-only by hard constraint.  ``deposit()``, ``settle()`` and
+    ``rescue()`` have selectors; this module must not know them, so no curator
+    module can accidentally encode one."""
+    for banned in ("deposit()", "settle()", "rescue()"):
+        assert banned not in set(A.SELECTOR_PREIMAGES.values())
+        banned_sel = keccak256_hex(banned.encode("ascii"))[:10]
+        assert banned_sel not in {
+            getattr(A, n) for n in A.SELECTOR_PREIMAGES
+        }, f"{banned} selector is vendored"
