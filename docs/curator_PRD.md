@@ -131,9 +131,9 @@ view batch with preimages. ABI vendored under `abis/` from the verified source.
 | tier | period | contents |
 |---|---|---|
 | `fast` | 15 s | one batched eth_call round: `isSettled`, `currentHour`, `currentHourTotal`, `ethNeededThisHour`, `timeLeftInHour`, `lastActiveHour`, `earlyMultiplierBps`, `stats`; `eth_getBalance(contract)` (forced-ETH anomaly); + 6 YOU calls (`pointsOf`, `weightOf`, `contributedBy`, `txCountOf`, `firstHourOf`, `requiredNext`) when `MAXPANE_WALLET` set |
-| `medium` | 60 s | incremental `eth_getLogs` from last-seen block + 1; folded into the contributor table, hourly series, clusters; detects `Settled`/`Rescued`/`HourSaved` |
+| `medium` | 60 s | incremental `eth_getLogs` from last-seen block + 1; folded into the contributor table, hourly series, clusters; detects `Settled`/`Rescued`/`HourSaved`. Plus a bounded `eth_getBlockByNumber` batch on the **state** pool over the distinct blocks of the rendered activity window (amendment A4: neither Tenderly's `eth_getLogs` nor Blockscout's log items carry a block timestamp, so the feed's `HH:MM` has no other source; a missing stamp renders `--:--`, never `00:00`). Hour buckets need no timestamps — the hour is `Deposited`'s indexed second topic and its wall-clock is `launchTime + hour × hourDuration`, exact |
 | `slow` | 420 s | Blockscout cross-check of `stats()` vs folded totals; gap repair if the incremental fold ever skipped blocks across a failover |
-| `once` | ∞ | the 8 immutables + `Launched` event + `POINTS_PER_ETH` |
+| `once` | ∞ | the 8 immutables + `Launched` event + `POINTS_PER_ETH` + one `previewPoints(uint256)` probe (amendment A2: gives the locally recomputed sqrt curve an onchain witness — without it the curve is only *transcribed* from source) |
 
 First install backfills the full log history from block 25769870 (validated: one sweep).
 Failure never marks a tier fetched (`TIER_FAILURE_BACKOFF_SECONDS` per tier, house
@@ -218,10 +218,15 @@ blocks. Rendered as `⚑` "fan-out pattern" — pattern language only, never acc
   instance yet and ships as a clearly-marked synthetic fixture.
 - Phase coverage: GRACE / JUDGED / SETTLED each render from fixtures; the settled screen
   renders with a *final* framing, not staleness warnings.
-- **Prove-it-bites mutations** (house rule, mandatory for these): the settlement evidence
-  latch (mutate to re-read-through → red under simulated outage); the hour-boundary rule
-  (mutate the fold to consume `currentHourTotal` → a boundary fixture writes a zero → red);
-  the curve floor (mutate `//` to `round` → the 0.099875 cross-check goes red).
+- **Prove-it-bites mutations** (house rule, mandatory for these) — four, not three
+  (amendment A3: the original third item conflated two different pieces of code):
+  1. the settlement evidence latch (mutate to re-read-through → red under simulated outage);
+  2. the hour-boundary rule (mutate the fold to consume `currentHourTotal` → a boundary
+     fixture writes a zero → red);
+  3. the **weight** floor, `creditedDelta × earlyBps // 10_000` (mutate `//` to `round` → the
+     0.099875 cross-check goes red — that captured event witnesses *this* formula);
+  4. the **curve** floor, `points = isqrt(weight) × 1000 // 1e9` (mutate `isqrt` to
+     `int(math.sqrt(...))` → the differential against the contract's Newton loop goes red).
 - Composited-output assertions (`render_strips`) for every widget; a column-by-column width
   sweep pinning the measured full-layout number and the `‹ widen` markers below it.
 - Registration tests derive ids from `GAMES` (never hardcoded), mirroring
@@ -279,3 +284,20 @@ doomsday theme is §12 material.)
   of the folded contributor table (the per-event history can stay unfolded on disk).
 - A per-second ticking clock hero (widget-local timer fed by an injected anchor) — only if
   the poll-anchored MM:SS feels dead in real use.
+
+## 13. Amendments
+
+Applied 2026-08-17 after planning against the real captures and the verified source
+(`docs/curator_implementation_plan.md` §"Spec amendments proposed"). None changes scope.
+
+| # | change | why |
+|---|---|---|
+| A1 | none to this document — recorded as a fixture-calibration warning | `earlyMultiplierBps()` in the committed captures is `0x4c23` = **19491 bps = 1.9491×**. §1's 1.9342× (21:33 UTC) and the mechanics doc's 19975 bps first-deposit cross-check are both consistent; a fixture calibrated to a remembered "~1.99×" would silently miscompute every derived weight |
+| A2 | §5 `once` tier gains a `previewPoints(uint256)` probe | the 21-call captured round holds only parameterless views, so the sqrt curve had no onchain witness at all |
+| A3 | §8's three mandated mutations become four | the 0.099875 example witnesses the *weight* formula, not `_curve`'s integer sqrt — two different pieces of code, each needs its own proof |
+| A4 | §5 `medium` tier gains a bounded `eth_getBlockByNumber` batch | the activity feed's `HH:MM` had no specified provenance: Tenderly's `eth_getLogs` returns no `blockTimestamp` and Blockscout's log items carry none either (the `timestamp` visible in `bs_page_*.json` is `FirstDeposit`'s own data field) |
+
+One repo fact that confirms rather than changes §9.4: the contiguous-keys assertion does exist,
+but it lives in `tests/test_fwa_theme.py:490`
+(`keys == [str(i) for i in range(1, len(GAMES) + 1)]`), not in a registration test file — so the
+registration work package must run *that* file and must not duplicate the assertion.
