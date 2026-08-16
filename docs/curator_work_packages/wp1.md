@@ -81,7 +81,7 @@ someone has changed it to a count, **report it, do not fix it**, and hold the co
 
 **Steps:**
 
-- [ ] Write the script. Structure:
+- [x] Write the script. Structure:
       1. Constants: contract `0xcB0b0531e86A9aC36fa865ca8e3DbcCF047fDA91`, deploy block
          `25769870`, state URL `https://ethereum-rpc.publicnode.com`, logs URL
          `https://gateway.tenderly.co/public/mainnet`, logs fallback
@@ -106,18 +106,18 @@ someone has changed it to a count, **report it, do not fix it**, and hold the co
       10. Every failure appended to `errors` with its URL and message; the script **never
           aborts on a partial failure** — a bundle with three of four sections is worth
           infinitely more than no bundle at 20:58 UTC.
-- [ ] Add `--self-test`: performs only steps 3 and 6 (one `eth_blockNumber`) and prints
+- [x] Add `--self-test`: performs only steps 3 and 6 (one `eth_blockNumber`) and prints
       `OK <head>` or the HTTP status. This is what you run at 20:50 to prove the UA is
       accepted before the window opens.
-- [ ] Add `--dry-run`: does everything but write, printing a summary
+- [x] Add `--dry-run`: does everything but write, printing a summary
       (`21/21 views · 377 logs · balance 0 · isSettled=false`).
-- [ ] Create `tests/fixtures/curator/captures/live/README.md`: what a bundle is, what each
+- [x] Create `tests/fixtures/curator/captures/live/README.md`: what a bundle is, what each
       label means (`grace-late`, `hour-boundary`, `post-grace`, `judged-deficit`,
       `settlement`, `curve-probe`), and the **ledger table** WP1.7 maintains.
-- [ ] Verify the script is not importable by the package:
+- [x] Verify the script is not importable by the package:
       `.venv/bin/python -m pytest tests/data/test_curator_captures.py -k scripts -v`
       (WP0.1's scan).
-- [ ] Commit:
+- [x] Commit:
       `git add scripts/capture_curator_state.py tests/fixtures/curator/captures/live/README.md && git commit -m "feat(curator): add the one-shot keyless capture script for time-critical states"`
 
 **Done when:** `python3 scripts/capture_curator_state.py --self-test` prints `OK <block>` from
@@ -135,19 +135,19 @@ a clean checkout with no venv.
 
 **Steps:**
 
-- [ ] `python3 scripts/capture_curator_state.py --self-test` → `OK <head>`.
-- [ ] `python3 scripts/capture_curator_state.py --dry-run` → confirm 21/21 views answered and
+- [x] `python3 scripts/capture_curator_state.py --self-test` → `OK <head>`.
+- [x] `python3 scripts/capture_curator_state.py --dry-run` → confirm 21/21 views answered and
       the log sweep returned in one call.
-- [ ] Run for real with `--label grace-late`. This is a genuinely useful state on its own: it
+- [x] Run for real with `--label grace-late`. This is a genuinely useful state on its own: it
       is the **decayed end of the early-bird ramp**, where `earlyMultiplierBps()` is far below
       the captured 19491 but still above 10000, and where the deposit history is several times
       longer than the 226 rows the research captured.
-- [ ] Record in the ledger: instant, label, `currentHour`, `earlyBps`, `isSettled`,
+- [x] Record in the ledger: instant, label, `currentHour`, `earlyBps`, `isSettled`,
       `contributors`, `deposits`, log count.
-- [ ] Sanity-check the bundle by hand: `earlyBps` must be strictly between 10000 and the
+- [x] Sanity-check the bundle by hand: `earlyBps` must be strictly between 10000 and the
       captured 19491, and `currentHour` strictly greater than 1. If either is not, the script
       read the wrong contract — stop and report.
-- [ ] Commit: `test(curator): capture the late-grace state at <UTC instant>`
+- [x] Commit: `test(curator): capture the late-grace state at <UTC instant>`
 
 **Done when:** a real bundle is on disk and the rig is proven end to end.
 
@@ -291,7 +291,7 @@ from the chain. This capture is cheap, needs no timing, and can be run **today**
 
 **Steps:**
 
-- [ ] Add `--curve-probe` to the script: one batched `eth_call` array containing
+- [x] Add `--curve-probe` to the script: one batched `eth_call` array containing
       - `previewPoints(uint256)` for a spread of weights that exercises the floor:
         `0`, `1`, `10**9 - 1`, `10**9`, `10**18` (→ expect exactly 1000 points),
         `4 * 10**18` (→ 2000), `100 * 10**18` (→ 10000), `1000 * 10**18` (→ 31622),
@@ -303,11 +303,11 @@ from the chain. This capture is cheap, needs no timing, and can be run **today**
       The selector for `previewPoints(uint256)` is
       `keccak256("previewPoints(uint256)")[:4]` — compute it in the script from the literal
       string, so the script needs no vendored table.
-- [ ] Run with `--label curve-probe`. Verify by hand that `previewPoints(10**18) == 1000` and
+- [x] Run with `--label curve-probe`. Verify by hand that `previewPoints(10**18) == 1000` and
       `previewPoints(0) == 0`; if not, the ABI encoding of the argument is wrong (left-pad the
       uint to 32 bytes, no `0x` inside the data field).
-- [ ] Commit: `test(curator): capture previewPoints/pointsOf as the sqrt curve's witness`
-- [ ] Notify WP3: its curve test can now assert against a real return **in addition to** the
+- [x] Commit: `test(curator): capture previewPoints/pointsOf as the sqrt curve's witness`
+- [x] Notify WP3: its curve test can now assert against a real return **in addition to** the
       transcription differential. Do not delete the transcription test — it covers the whole
       input domain and the probe covers twelve points of it.
 
