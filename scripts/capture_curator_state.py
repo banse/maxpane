@@ -26,6 +26,10 @@ Deliberate properties, each of them a constraint rather than a preference:
 
 * **Stdlib only.**  No ``httpx``, no repo import, no venv.  ``python3`` is
   enough.  It is imported by nothing and imports nothing of ``maxpane_dashboard``.
+  Verified end to end on macOS's system ``/usr/bin/python3`` (3.9.6) from a
+  directory holding nothing but this file, as well as on 3.14 -- if the
+  fixtures are missing it falls back to its inlined selector table and says so
+  in the bundle's ``selector_source``.
 * **Read-only and keyless.**  ``eth_call`` / ``eth_getBalance`` /
   ``eth_blockNumber`` / ``eth_getLogs`` / ``eth_getBlockByNumber`` and one
   Blockscout GET.  It never builds calldata for a state change, never signs,

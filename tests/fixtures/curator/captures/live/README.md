@@ -20,7 +20,16 @@ python3 scripts/capture_curator_state.py --label curve-probe --curve-probe
 ```
 
 Keyless, read-only, stdlib-only: a bare `python3` from any checkout, no venv, no repo import,
-no API key, no signing, ever.
+no API key, no signing, ever. Proven by copying the single file into an empty directory and
+running it there with macOS's system `/usr/bin/python3` (3.9.6) — it answered 21/21 views and
+reported `selector_source: inlined`, its fallback table, because the fixtures were not there.
+
+One thing that is worth knowing before a timed run: on a host with no working IPv6 route, plain
+`urllib` waits out the connect timeout on **each** AAAA record these Cloudflare-fronted
+endpoints publish. Measured here: 40.08 s for a single `eth_blockNumber`, 3 m 41 s for a whole
+bundle, against 0.13 s and 1.3 s once the resolver's answer is reordered IPv4-first. The script
+does that reordering itself (`PREFER_IPV4`); if a capture ever feels inexplicably slow, that is
+the first thing to check, and `--self-test` will show it.
 
 ## What a bundle is
 
