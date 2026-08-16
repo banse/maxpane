@@ -100,3 +100,69 @@ KNOWN_LABELS: dict[str, str] = {
     ANNOUNCE.lower(): "announce channel",
     ZERO_ADDRESS.lower(): "zero address",
 }
+
+# --- Event topics -----------------------------------------------------------
+# Vendored hashes with their preimages beside them.  The preimages are not
+# decoration: ``tests/data/test_curator_addresses.py`` recomputes every value
+# from them with this repo's keccak, checks the preimage set against
+# ``captures/source.sol``, and checks it a third time against the vendored ABI —
+# so a matched pair of typos still fails.
+#
+# Indexed-ness does not enter a topic0 preimage; the *types* do.  Every one of
+# these is a canonical signature with ``indexed`` stripped and no argument names.
+#
+# Three of the six have never fired on chain as of 2026-08-16 21:14 UTC
+# (``HourSaved``, ``Settled``, ``Rescued``).  Their decoders therefore ship
+# against synthetic rows whose shape comes from the ABI; the test that asserts
+# their absence is the signal that a real fixture has become available.
+
+#: ``Launched`` — emitted once, in the creation block.  The ``once`` tier's
+#: config cross-check: it carries all seven constructor-time parameters.
+TOPIC_LAUNCHED = (
+    "0x1a3476a128c728610b72160c5eb1f2448c3acad2fbc009295ed69ac454493f59"
+)
+#: ``Deposited`` — the one event the whole archive is folded from.  Nine words;
+#: ``contributor`` and ``hour`` are indexed, so the hour comes off topic 2 and
+#: no timestamp is needed to bucket it.
+TOPIC_DEPOSITED = (
+    "0xb83850979ca63333b482bfe84d4d7cf15f9cc15c139b1e48bc44eb5446669cb3"
+)
+#: ``FirstDeposit`` — one per address, with a **1-based** monotonic ``index``
+#: (topic 2) that equals ``totalContributors`` at the time it fired.
+TOPIC_FIRST_DEPOSIT = (
+    "0xe5a1ae9630942d7510b794ac6b487f13176cf55b27415ad75303dd3109242918"
+)
+#: ``HourSaved`` — a deposit pushed an at-risk hour over the threshold.  Never
+#: fired: it needs a *judged* hour, and the game was still in grace at capture.
+#: It may never fire at all, and the signal row must render that explicitly
+#: rather than wait for a payload.
+TOPIC_HOUR_SAVED = (
+    "0xab7cfcae8770eb1969d60d0628eee780b803b3872fc3a2f3a261348cee262209"
+)
+#: ``Settled`` — the obituary, emitted once ever.  It is **not** the source of
+#: truth for the phase: ``settle()`` is permissionless and may lag death
+#: indefinitely, so the dashboard polls ``isSettled()`` and treats this log as
+#: the detail record that arrives later (PRD §3).
+TOPIC_SETTLED = (
+    "0x0b88c5bd74fc625a4f651904bf835063c6a449220be319924685261fb7709dd5"
+)
+#: ``Rescued`` — forced ETH swept out.  If it never fires, nothing was ever
+#: forced in, which is the expected case.
+TOPIC_RESCUED = (
+    "0x8aec0ce3dadffacf4b7a963e0fed1ff2e6151b4c95d4a65acafa9d1299630402"
+)
+
+#: constant name -> the exact Solidity event signature it hashes.
+TOPIC_PREIMAGES: dict[str, str] = {
+    "TOPIC_LAUNCHED": (
+        "Launched(uint256,uint256,uint256,uint256,uint256,uint256,uint256)"
+    ),
+    "TOPIC_DEPOSITED": (
+        "Deposited(address,uint256,uint256,uint256,uint256,uint256,"
+        "uint256,uint256,uint256)"
+    ),
+    "TOPIC_FIRST_DEPOSIT": "FirstDeposit(address,uint256,uint256)",
+    "TOPIC_HOUR_SAVED": "HourSaved(address,uint256,uint256)",
+    "TOPIC_SETTLED": "Settled(uint256,uint256,uint256,uint256)",
+    "TOPIC_RESCUED": "Rescued(address,uint256)",
+}

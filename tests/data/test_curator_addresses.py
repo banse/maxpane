@@ -13,6 +13,7 @@ from __future__ import annotations
 import inspect
 import json
 import re
+from pathlib import Path
 
 import pytest
 
@@ -125,3 +126,125 @@ def test_known_labels_is_a_lowercase_keyed_allowlist() -> None:
         assert key == key.lower(), key
         assert key in {a.lower() for a in A.LABELED_ADDRESSES}
         assert label and isinstance(label, str)
+
+
+# --------------------------------------------------------------------------
+# WP0.3 — event topics
+# --------------------------------------------------------------------------
+
+_VENDORED_ABI = (
+    Path(inspect.getfile(A)).resolve().parents[1]
+    / "abis"
+    / "curator"
+    / "whitelist_curator.json"
+)
+
+
+def _event_signatures_from_source() -> set[str]:
+    """Canonical event signatures parsed out of ``captures/source.sol``.
+
+    Indexed-ness does not enter topic0; the *types* do.  Everything between an
+    event's parentheses is split on commas and reduced to its leading type,
+    with ``indexed`` dropped.
+    """
+    src = capture_text("source.sol")
+    sigs = set()
+    for match in re.finditer(r"\bevent\s+(\w+)\s*\(([^;]*?)\)\s*;", src, re.DOTALL):
+        name, params = match.group(1), match.group(2)
+        types = []
+        for raw in params.split(","):
+            tokens = [t for t in raw.split() if t != "indexed"]
+            if tokens:
+                types.append(tokens[0])
+        sigs.add(f"{name}({','.join(types)})")
+    return sigs
+
+
+@pytest.mark.parametrize("name,preimage", sorted(A.TOPIC_PREIMAGES.items()))
+def test_topic_matches_its_preimage(name: str, preimage: str) -> None:
+    assert getattr(A, name) == keccak256_hex(preimage.encode("ascii"))
+
+
+def test_preimage_map_covers_exactly_the_topic_constants() -> None:
+    """A vendored hash with no preimage is unverifiable; a preimage with no
+    constant is dead weight.  Both are failures."""
+    names = {n for n in dir(A) if n.startswith("TOPIC_") and n != "TOPIC_PREIMAGES"}
+    assert set(A.TOPIC_PREIMAGES) == names
+
+
+def test_the_preimages_match_the_verified_source() -> None:
+    """``docs/curator_game_mechanics.md`` quotes the hashes abbreviated;
+    ``src/WhitelistCurator.sol`` is the authority.
+
+    Parsed out of the capture rather than retyped, so an argument-list edit in
+    a re-capture fails here instead of shipping a filter that matches nothing.
+    """
+    assert set(A.TOPIC_PREIMAGES.values()) == _event_signatures_from_source()
+
+
+def test_the_topics_the_abi_declares_are_the_topics_vendored() -> None:
+    """A third, independent derivation of the same six, off the vendored ABI."""
+    abi = json.loads(_VENDORED_ABI.read_text(encoding="utf-8"))
+    from_abi = {
+        f"{e['name']}({','.join(i['type'] for i in e['inputs'])})"
+        for e in abi
+        if e["type"] == "event"
+    }
+    assert from_abi == set(A.TOPIC_PREIMAGES.values())
+
+
+def test_the_topic_leading_bytes_cross_check_the_mechanics_doc() -> None:
+    """The doc quotes these abbreviated.  A mismatch means a wrong preimage --
+    and the *source* wins the argument, not the doc."""
+    assert A.TOPIC_DEPOSITED.startswith("0xb8385097")
+    assert A.TOPIC_FIRST_DEPOSIT.startswith("0xe5a1ae96")
+    assert A.TOPIC_HOUR_SAVED.startswith("0xab7cfcae")
+    assert A.TOPIC_SETTLED.startswith("0x0b88c5bd")
+    assert A.TOPIC_RESCUED.startswith("0x8aec0ce3")
+    assert A.TOPIC_LAUNCHED.startswith("0x1a3476a1")
+
+
+@pytest.mark.parametrize("name", sorted(A.TOPIC_PREIMAGES))
+def test_every_topic_is_lowercase_32_byte_hex(name: str) -> None:
+    value = getattr(A, name)
+    assert re.fullmatch(r"0x[0-9a-f]{64}", value), value
+
+
+def test_every_topic_appears_in_the_captured_log_sweep_or_is_documented_absent() -> None:
+    """Three of the six have never fired.  Say which, in the test."""
+    seen = {l["topics"][0] for l in capture("tenderly_logs.json")["result"]}
+    assert A.TOPIC_LAUNCHED in seen
+    assert A.TOPIC_DEPOSITED in seen
+    assert A.TOPIC_FIRST_DEPOSIT in seen
+    # Never fired as of 2026-08-16 21:14 UTC.  Their decoders therefore ship
+    # against synthetic rows whose *shape* comes from the ABI (see the plan's
+    # "synthetic until captured" table).  If one of these starts appearing,
+    # this test tells you a real fixture is now available.
+    assert A.TOPIC_HOUR_SAVED not in seen
+    assert A.TOPIC_SETTLED not in seen
+    assert A.TOPIC_RESCUED not in seen
+
+
+def test_the_creation_block_is_the_log_sweep_floor() -> None:
+    """The backfill starts at CREATION_BLOCK; ``Launched`` is in that block."""
+    logs = capture("tenderly_logs.json")["result"]
+    launched = [l for l in logs if l["topics"][0] == A.TOPIC_LAUNCHED]
+    assert len(launched) == 1
+    assert int(launched[0]["blockNumber"], 16) == A.CREATION_BLOCK
+    assert min(int(l["blockNumber"], 16) for l in logs) == A.CREATION_BLOCK
+
+
+def test_the_announce_channel_is_labeled_because_it_is_on_the_list() -> None:
+    """Not a surf import — a fact of *this* contract's history.
+
+    The announce EOA made deposit #1 (0.05 ETH at 19 975 bps, block 25 769 888),
+    so it appears in the leaderboard and the activity feed.  Labelling it is the
+    allowlist doing its job.
+    """
+    logs = capture("tenderly_logs.json")["result"]
+    deposits = [l for l in logs if l["topics"][0] == A.TOPIC_DEPOSITED]
+    first = min(
+        deposits, key=lambda l: (int(l["blockNumber"], 16), int(l["logIndex"], 16))
+    )
+    assert "0x" + first["topics"][1][-40:] == A.ANNOUNCE.lower()
+    assert A.ANNOUNCE.lower() in A.KNOWN_LABELS
