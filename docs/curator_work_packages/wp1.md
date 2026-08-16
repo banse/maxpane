@@ -173,9 +173,9 @@ the three and **retryable every hour until settlement** — so if you miss one, 
 
 **Steps:**
 
-- [ ] Compute the next boundary: `1786910327 + N*3600`. In wall-clock terms the crossings are
+- [x] Compute the next boundary: `1786910327 + N*3600`. In wall-clock terms the crossings are
       at **58 minutes 47 seconds past each hour, UTC**.
-- [ ] From `HH:58:40`, run
+- [x] From `HH:58:40`, run
       `python3 scripts/capture_curator_state.py --label hour-boundary` **repeatedly** (every
       ~10 s) through `HH:59:30`, until a bundle satisfies **all three**:
       - `currentHourTotal() == 0x0`
@@ -184,7 +184,7 @@ the three and **retryable every hour until settlement** — so if you miss one, 
       Keep only the first bundle that satisfies them plus the one immediately before it (the
       *pre*-boundary state makes the pair a before/after fixture, which is what the fold test
       actually wants).
-- [ ] Note the risk honestly in the ledger: if a deposit lands in the first seconds of the new
+- [x] Note the risk honestly in the ledger: if a deposit lands in the first seconds of the new
       hour, `currentHourTotal()` is already nonzero and the boundary is invisible. During a
       busy hour this can take several attempts; during a quiet one it is trivial. **A quiet
       hour is the better hunting ground** — and after grace ends, quiet hours are exactly what
