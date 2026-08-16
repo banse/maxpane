@@ -67,7 +67,7 @@ Maintained by hand (WP1.7 closes it out). Facts, including negative ones: a bund
 
 | bundle | UTC | label | what it records |
 |---|---|---|---|
-| _(filled in as captures land — see `MANIFEST.md` for the decoded rows)_ | | | |
+| `20260816T225006Z_grace-late.json` | 2026-08-16 22:50:06Z | `grace-late` | The rig proven end to end, and a genuinely new state: hour **2**, `earlyMultiplierBps()` decayed to **18812** (0x497c) from the 19491 of the 21:04 round, `isSettled()` false, `ethNeededThisHour()` 0 (grace). Scale has moved a long way past the research capture — **794** contributors, 1282 deposits, **12547.77 ETH** routed, **2077** logs in one sweep against the 377 of `../tenderly_logs.json`. Balance 0, so nothing has been force-fed. 21/21 views, no errors, `block_timestamps` for the newest 40 logs (15 distinct blocks) — the first capture that has them at all |
 
 ### Still synthetic
 
