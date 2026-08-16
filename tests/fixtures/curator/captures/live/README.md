@@ -92,6 +92,78 @@ python3 scripts/capture_curator_state.py --label hour-boundary \
 Keep polling for at least 30 s past the boundary: `eth_call` runs against the latest *block*,
 so `currentHour()` flips up to a block late and `timeLeftInHour()` steps in 12-second jumps.
 
+### The two windows on 2026-08-17 — a runbook
+
+Both are on the clock and neither can be retried in the form it happens. Read this, run the
+self-test first, and do not improvise at 20:58.
+
+**19:50 UTC — arm.** `python3 scripts/capture_curator_state.py --self-test` must print
+`OK <block>`. If it prints a 403 the User-Agent is the suspect (publicnode rejects
+python-urllib's default); nothing else about the run matters until this passes.
+
+**19:58:47 UTC — grace ends (capture B).**
+
+```bash
+python3 scripts/capture_curator_state.py --label post-grace --start-at 19:58:52
+```
+
+Check by hand that `earlyMultiplierBps()` decodes to exactly `0x2710` (10000). If it is still
+above, either the clock is off or `launchTime` is not 1786910327 — stop and report rather than
+relabelling the bundle. Then hunt the deficit, which is the perishable half:
+
+```bash
+python3 scripts/capture_curator_state.py --label judged-deficit \
+        --no-logs --no-blockscout --start-at 20:00:00 --every 300 --repeat 12
+```
+
+Keep the bundle with the smallest `timeLeftInHour()` that still has `ethNeededThisHour() > 0`;
+under 900 seconds is the red HOUR AT RISK fixture. If the hour simply fills, keep a bundle with
+`ethNeededThisHour() == 0` and `currentHour() >= 24` — "judged and safe" is also a state that
+has never been captured — and write in the ledger that no deficit was observed in that hour.
+
+**20:58:47 UTC — earliest possible settlement (capture C).** The transition is one-shot and
+unrepeatable; `isSettled()` is *derived*, so it flips with **no transaction and no log** unless
+somebody calls the permissionless `settle()`.
+
+```bash
+python3 scripts/capture_curator_state.py --label settlement \
+        --no-logs --no-blockscout --start-at 20:57:00 --every 60 --repeat 8
+```
+
+State-only on purpose: a full sweep is ~2 MB and settlement writes **nothing** to the log —
+the view is the whole event. The history sweep comes once, at the end.
+
+Keep both halves: the **last** bundle reading `isSettled() == 0x0` and the **first** reading
+`0x1`. The manager's latch test needs "not settled", then "settled", then an outage — one half
+alone does not exercise it. Then keep polling every ~30 minutes for a few hours in case someone
+calls `settle()`, so the `Settled` log lands in a bundle's `logs` array.
+
+If 20:58:47 passes and `isSettled()` is still false, the first judged hour survived. That is not
+a failed run — it is the game. Record it in the ledger and repeat at each following `HH:58:47`.
+
+**Once it is settled**, take one full-history sweep: it never changes again and it is the most
+valuable single artefact here.
+
+```bash
+python3 scripts/capture_curator_state.py --label settlement --logs-from 25769870
+```
+
+### Re-pointing the synthetic fixtures
+
+`rg "SYNTHETIC — re-point" tests/` is the whole checklist. **As of 2026-08-16 23:05 UTC it
+returns nothing**: the work packages that place those markers (the client, the signal layer,
+the screen) have not landed yet, so there is nothing to re-point. The markers appear as those
+suites are written, and each one names the bundle it is waiting for.
+
+Two rules for whoever closes it out:
+
+- **Run the test before changing any expected value.** If it passes unchanged against the real
+  bundle, the synthetic was faithful and the evidence just got upgraded for free. If it fails,
+  read *why* first — a synthetic that disagrees with the chain is a finding, and it belongs in
+  this ledger.
+- **Do not delete a marker to tidy the grep.** Some of them are permanently synthetic (below);
+  those stay, with the reason written down.
+
 ### Still synthetic
 
 Fixtures the build tests against that have no real payload yet, and why:
