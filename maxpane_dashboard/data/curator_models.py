@@ -70,6 +70,56 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# ===========================================================================
+# WP0 HAND-OFF — what wave 2 codes against (frozen 2026-08-17)
+# ===========================================================================
+#
+# Frozen names, all importable and all pinned by a test on both sides:
+#
+#   this module ................ PHASES, SIGNAL_ROWS, CURATOR_KEYS,
+#                                CURATOR_ROW_KEYS, CURATOR_SERIES_KEYS, and the
+#                                eight dataclasses: CuratorState, CuratorConfig,
+#                                WalletState, DepositEvent, LogSweep,
+#                                ContributorRow, HourBucket, SettlementRecord
+#   tests/data/test_curator_models.py ..... CONSTRUCTOR_KWARGS (import it and
+#                                assert the kwargs YOUR code passes)
+#   data/curator_addresses.py .. CURATOR / DEPLOYER / ANNOUNCE / ZERO_ADDRESS,
+#                                CREATION_TX / CREATION_BLOCK / LAUNCH_TIME,
+#                                LABELED_ADDRESSES / KNOWN_LABELS,
+#                                the six TOPIC_* + TOPIC_PREIMAGES,
+#                                the 28 SEL_* + SELECTOR_PREIMAGES +
+#                                VIEW_RETURN_WORDS + VIEW_RETURN_TYPES, and the
+#                                four ordered tuples FAST_/ONCE_/CROSS_CHECK_/
+#                                WALLET_VIEW_SELECTORS
+#   tests/curator_fixtures.py .. CAPTURES / LIVE / capture() / capture_text() /
+#                                live_bundles()
+#
+# Two bite-proofs are DEFERRED and belong to whoever lands the code:
+#   1. test_signal_output_keys_are_a_subset_of_curator_keys currently SKIPS.
+#      The day analytics/curator_signals.py exists, rename one entry of
+#      SIGNAL_OUTPUT_KEYS, run `-k subset -v` -> it must FAIL naming the key;
+#      restore -> green, NOT skipped.  If it still skips, importorskip's path is
+#      wrong and the guard has been dead the whole time.
+#   2. The ordered selector tuples' ORDER is not tested here on purpose —
+#      swapping two entries leaves the WP0 suite green.  WP2.4 owns that test,
+#      asserted against VIEW_RETURN_WORDS.
+#
+# Three things WP0 found where a doc and the chain disagreed.  The chain won:
+#   * CURATOR's EIP-55 checksum is 0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91.
+#     wp0.md quotes a hand-retyped variant that is not checksummed.
+#   * The sweep holds 231 Deposited logs, not 226 (1 + 231 + 145 = 377).
+#   * Every captured log carries a block timestamp (RPC: blockTimestamp;
+#     Blockscout: block_timestamp), so H14/A4's premise is false.  The
+#     eth_getBlockByNumber batch is a fallback, not the only provenance.
+#
+# Mark every synthetic fixture, from its first commit, with the literal
+#   # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+# so `rg "SYNTHETIC — re-point"` is the whole checklist.  Currently synthetic:
+# the quiet hour boundary (stale lastActiveHour), any post-grace state
+# (earlyBps == 10000), a judged hour with a deficit, the settled state and its
+# Settled log, a HourSaved row, a creditedDelta == 0 deposit, and a Rescued row.
+# ===========================================================================
+
 #: The three phases of the settlement state machine, in order.
 #:
 #: One tuple, imported by the analytics layer (which produces it), the manager

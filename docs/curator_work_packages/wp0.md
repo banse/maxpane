@@ -81,20 +81,20 @@ shared reader, and the **facts**.
 
 **Steps:**
 
-- [ ] Confirm the two ABI captures agree before choosing one:
+- [x] Confirm the two ABI captures agree before choosing one:
       `.venv/bin/python -c "import json;a=json.load(open('tests/fixtures/curator/captures/contract.json'));b=json.load(open('tests/fixtures/curator/captures/wc_abi.json'));print(type(a),type(b))"`
       Locate the ABI array inside each (Blockscout's smart-contracts response nests it under
       `abi`). If the two disagree, **stop and report** — two saves of one endpoint diverging
       means one is stale.
-- [ ] Write `scripts/vendor_curator_abi.py`: reads the capture, writes the ABI array to
+- [x] Write `scripts/vendor_curator_abi.py`: reads the capture, writes the ABI array to
       `maxpane_dashboard/abis/curator/whitelist_curator.json` with `indent=2` and a trailing
       newline. No network, no arguments beyond optional paths. Follow `abis/fwa/`'s layout
       (a per-protocol subdirectory).
-- [ ] Run it once. Confirm the output parses and holds every name `source.sol` declares:
+- [x] Run it once. Confirm the output parses and holds every name `source.sol` declares:
       6 events (`Launched`, `Deposited`, `FirstDeposit`, `HourSaved`, `Settled`, `Rescued`),
       10 errors, and the public/external functions incl. `contributors`, `totalVolume`,
       `totalContributors`, `totalTxCount`, `POINTS_PER_ETH` and the eight immutables' getters.
-- [ ] Add the first tests to `tests/data/test_curator_captures.py`:
+- [x] Add the first tests to `tests/data/test_curator_captures.py`:
       - `test_the_vendored_abi_matches_the_capture` — re-runs the extraction in memory and
         compares to the committed file, so a hand-edit fails.
       - `test_the_vendored_abi_declares_every_event_the_source_declares` — parses the event
@@ -102,8 +102,8 @@ shared reader, and the **facts**.
         `type == "event"` entries. This is what catches an ABI truncated mid-save.
       - `test_nothing_under_maxpane_dashboard_imports_scripts` — a scan, mirroring the FWA
         guardrail.
-- [ ] Run: `.venv/bin/python -m pytest tests/data/test_curator_captures.py -v`
-- [ ] Commit:
+- [x] Run: `.venv/bin/python -m pytest tests/data/test_curator_captures.py -v`
+- [x] Commit:
       `git add maxpane_dashboard/abis/curator scripts/vendor_curator_abi.py tests/data/test_curator_captures.py && git commit -m "feat(curator): vendor the WhitelistCurator ABI from the verified-source capture"`
 
 **Done when:** the ABI is on disk, reproducible from the capture, and proven complete against
@@ -131,7 +131,7 @@ dashboard is explicitly out of scope for this build.
 
 **Steps:**
 
-- [ ] Write the failing test `tests/data/test_curator_addresses.py` with the surf pattern:
+- [x] Write the failing test `tests/data/test_curator_addresses.py` with the surf pattern:
       a local `to_checksum()` built on this repo's keccak (never `hashlib.sha3_256`), a
       parametrised `test_every_address_is_checksummed`, and:
 
@@ -172,15 +172,15 @@ def test_module_imports_nothing_but_stdlib() -> None:
         assert banned not in source
 ```
 
-- [ ] Run and state the expected failure: `ModuleNotFoundError: No module named
+- [x] Run and state the expected failure: `ModuleNotFoundError: No module named
       'maxpane_dashboard.data.curator_addresses'`.
-- [ ] Write the module. Its docstring must carry the two hazards this file exists to contain:
+- [x] Write the module. Its docstring must carry the two hazards this file exists to contain:
       (a) the contract is **verified, non-upgradeable, unpaused, with no mutable parameter** —
       so unlike every other dashboard there is no "the owner changed it" failure mode, and the
       only privileged function is `rescue()`; (b) the balance of this address is **always
       forced ETH**, never deposits, because refunds happen in-transaction.
-- [ ] Run to green.
-- [ ] Commit:
+- [x] Run to green.
+- [x] Commit:
       `git add maxpane_dashboard/data/curator_addresses.py tests/data/test_curator_addresses.py && git commit -m "feat(curator): vendor the curator address constants with checksum-recomputing tests"`
 
 **Done when:** every constant is checksum-verified in-test and every deployment fact is read
@@ -213,7 +213,7 @@ do):**
 
 **Steps:**
 
-- [ ] Append the failing tests:
+- [x] Append the failing tests:
 
 ```python
 @pytest.mark.parametrize("name,preimage", sorted(A.TOPIC_PREIMAGES.items()))
@@ -254,20 +254,20 @@ def test_every_topic_appears_in_the_captured_log_sweep_or_is_documented_absent()
     assert A.TOPIC_RESCUED not in seen
 ```
 
-- [ ] Run and state the expected failure: `AttributeError: … has no attribute
+- [x] Run and state the expected failure: `AttributeError: … has no attribute
       'TOPIC_PREIMAGES'`.
-- [ ] Append the implementation. Compute each literal with
+- [x] Append the implementation. Compute each literal with
       `.venv/bin/python -c "from maxpane_dashboard.data.keccak import keccak256_hex; print(keccak256_hex(b'...'))"`
       and paste the result — do **not** copy the abbreviated forms from the mechanics doc.
       Cross-check the leading bytes against that doc's table (`Deposited` starts `0xb8385097`,
       `FirstDeposit` `0xe5a1ae96`, `HourSaved` `0xab7cfcae`, `Settled` `0x0b88c5bd`,
       `Rescued` `0x8aec0ce3`, `Launched` `0x1a3476a1`); a mismatch means a wrong preimage, and
       the *source* wins the argument.
-- [ ] Run to green.
-- [ ] **Prove the test bites** (decoder-shaped code, house rule): temporarily drop one
+- [x] Run to green.
+- [x] **Prove the test bites** (decoder-shaped code, house rule): temporarily drop one
       `uint256` from `TOPIC_PREIMAGES["TOPIC_DEPOSITED"]`, run
       `-k preimage` → `test_topic_matches_its_preimage[TOPIC_DEPOSITED-…]` FAILS. Restore.
-- [ ] Commit:
+- [x] Commit:
       `git add -u && git commit -m "feat(curator): vendor the six event topics, each recomputed from its preimage"`
 
 **Done when:** all six hashes are recomputed in-test from preimages that are themselves
@@ -307,7 +307,7 @@ checked against `source.sol`, and the three never-fired events are documented as
 
 **Steps:**
 
-- [ ] Append the failing tests:
+- [x] Append the failing tests:
 
 ```python
 @pytest.mark.parametrize("name,preimage", sorted(A.SELECTOR_PREIMAGES.items()))
@@ -355,20 +355,20 @@ def test_the_multi_word_views_are_declared_with_their_word_counts():
     assert A.VIEW_RETURN_WORDS["SEL_IS_SETTLED"] == 1
 ```
 
-- [ ] Run and state the expected failure.
-- [ ] Append the implementation: the `SEL_*` literals (each computed with `keccak256_hex`, not
+- [x] Run and state the expected failure.
+- [x] Append the implementation: the `SEL_*` literals (each computed with `keccak256_hex`, not
       remembered), `SELECTOR_PREIMAGES`, `VIEW_RETURN_WORDS`, and the three ordered tuples.
       **The ordered tuples are the batch contract**: WP2 sends them in order and decodes
       positionally, so a reorder is a silent field swap — a test in WP2 re-asserts the order
       against `VIEW_RETURN_WORDS`.
-- [ ] Run to green. The batch-coverage test is the one that matters; if it reports
+- [x] Run to green. The batch-coverage test is the one that matters; if it reports
       `captured-not-vendored`, recompute the missing preimage from `source.sol` rather than
       deleting the assertion.
-- [ ] **Prove it bites:** swap two entries in `FAST_VIEW_SELECTORS`; the WP0 tests stay green
+- [x] **Prove it bites:** swap two entries in `FAST_VIEW_SELECTORS`; the WP0 tests stay green
       (order is not their subject) — note this explicitly in the WP2 hand-off so WP2.4 owns
       the order test. Then corrupt one selector literal by a nibble →
       `test_selector_matches_its_preimage` and the batch-coverage test both FAIL. Restore.
-- [ ] Commit:
+- [x] Commit:
       `git add -u && git commit -m "feat(curator): vendor the view selector table, cross-checked against the captured batch"`
 
 **Done when:** all 21 captured selectors are vendored, each recomputed from a preimage, with
@@ -437,7 +437,7 @@ Produced dataclasses (all `@dataclass(frozen=True, slots=True)`, wei-native):
 
 **Steps:**
 
-- [ ] Write the failing test `tests/data/test_curator_models.py` with the surf structure:
+- [x] Write the failing test `tests/data/test_curator_models.py` with the surf structure:
       `test_models_are_frozen_dataclasses`, `CONSTRUCTOR_KWARGS`,
       `test_field_names_are_exactly_the_frozen_vocabulary`,
       `test_every_model_constructs_from_its_documented_kwargs`,
@@ -503,13 +503,13 @@ def test_no_flat_dict_key_masquerades_as_a_model_field():
         assert not clash, f"{model.__name__} carries flat-dict key(s) {clash}"
 ```
 
-- [ ] Run and state the expected failure: `ModuleNotFoundError`.
-- [ ] Write `maxpane_dashboard/data/curator_models.py`. The module docstring carries the unit,
+- [x] Run and state the expected failure: `ModuleNotFoundError`.
+- [x] Write `maxpane_dashboard/data/curator_models.py`. The module docstring carries the unit,
       naming, raw and outage disciplines (copy the four-paragraph shape from
       `data/surf_models.py`), plus the curator-specific paragraph on the three legitimate
       zeros and on why `has_joined` is a separate field.
-- [ ] Run to green.
-- [ ] Commit:
+- [x] Run to green.
+- [x] Commit:
       `git add maxpane_dashboard/data/curator_models.py tests/data/test_curator_models.py && git commit -m "feat(curator): freeze the curator data models as None-safe frozen dataclasses"`
 
 **Done when:** every model is frozen, wei-native, `None`-safe, and its field tuple is pinned by
@@ -564,7 +564,7 @@ health          degraded · as_of_hhmm · as_of ★   (epoch, for the screen's o
 
 **Steps:**
 
-- [ ] Append the failing tests:
+- [x] Append the failing tests:
 
 ```python
 def test_curator_keys_is_exactly_the_prd_contract():
@@ -615,15 +615,15 @@ def test_signal_output_keys_are_a_subset_of_curator_keys():
     assert not missing, f"signal keys absent from CURATOR_KEYS: {missing}"
 ```
 
-- [ ] Run: expect `ImportError: cannot import name 'CURATOR_KEYS'`, and the containment test
+- [x] Run: expect `ImportError: cannot import name 'CURATOR_KEYS'`, and the containment test
       reported **SKIPPED** (confirm with `-rs`).
-- [ ] Append the implementation, with a one-line comment per key naming its type and its
+- [x] Append the implementation, with a one-line comment per key naming its type and its
       unavailable rendering (the `SURF_KEYS` style). Every numeric is `float|int|None` and
       `None` renders the widget's unavailable state, never a 0.
-- [ ] Run to green (one skip).
-- [ ] Commit:
+- [x] Run to green (one skip).
+- [x] Commit:
       `git add -u && git commit -m "feat(curator): freeze CURATOR_KEYS, the row shapes and the phase vocabulary"`
-- [ ] **Deferred bite-proof, recorded on the WP0.8 checklist** — the day
+- [x] **Deferred bite-proof, recorded on the WP0.8 checklist** — the day
       `analytics/curator_signals.py` lands: rename one entry of `SIGNAL_OUTPUT_KEYS`, run
       `-k subset -v` → FAILS naming the key; restore → green (**not** skipped). If it still
       skips, the `importorskip` path is wrong and the guard has been dead the whole time.
@@ -652,10 +652,10 @@ owns it, instead of drifting through six work packages.
 
 **Steps:**
 
-- [ ] Write `tests/curator_fixtures.py` (model it on `tests/surf_fixtures.py`). `LIVE` points
+- [x] Write `tests/curator_fixtures.py` (model it on `tests/surf_fixtures.py`). `LIVE` points
       at `captures/live/` and `live_bundles()` returns a **sorted, possibly empty** list —
       empty is the normal state before WP1's first timed run, and no test may fail on it.
-- [ ] Add the ownership and hygiene guards to `tests/data/test_curator_captures.py`:
+- [x] Add the ownership and hygiene guards to `tests/data/test_curator_captures.py`:
 
 ```python
 #: The captures committed with the research session. Named, never counted:
@@ -701,7 +701,7 @@ def test_no_live_bundle_breaks_the_reader():
         assert json.loads(path.read_text("utf-8")) is not None, path.name
 ```
 
-- [ ] Append the **fact pins** — every number a later WP will quote:
+- [x] Append the **fact pins** — every number a later WP will quote:
 
 ```python
 def test_the_batch_round_decodes_to_the_documented_state():
@@ -828,16 +828,16 @@ def test_the_announce_channel_never_mentioned_the_curator():
     assert A.CURATOR.lower() not in blob
 ```
 
-- [ ] Add the required-set manifest to `tests/fixtures/curator/captures/README.md`: a short
+- [x] Add the required-set manifest to `tests/fixtures/curator/captures/README.md`: a short
       section stating that the sixteen JSON/sol files plus this README are the *required set*,
       that `live/` is WP1's and grows, and that the pins live in
       `tests/data/test_curator_captures.py`.
-- [ ] Run: `.venv/bin/python -m pytest tests/data/test_curator_captures.py -v`
-- [ ] **Prove the ownership guard bites:** `touch tests/fixtures/curator/stray.json`, run
+- [x] Run: `.venv/bin/python -m pytest tests/data/test_curator_captures.py -v`
+- [x] **Prove the ownership guard bites:** `touch tests/fixtures/curator/stray.json`, run
       `-k root` → FAILS naming the file. Delete it.
-- [ ] **Prove a fact pin bites:** temporarily change the expected `early_bps` to `19_900` →
+- [x] **Prove a fact pin bites:** temporarily change the expected `early_bps` to `19_900` →
       `test_the_batch_round_decodes_to_the_documented_state` FAILS. Restore.
-- [ ] Commit:
+- [x] Commit:
       `git add tests/curator_fixtures.py tests/data/test_curator_captures.py tests/fixtures/curator/captures/README.md && git commit -m "test(curator): add the shared capture reader and pin every fact the plan quotes"`
 
 **Done when:** every number this plan and the later WPs quote is asserted against a committed
@@ -851,17 +851,17 @@ payload, and the fixture root has one owner per directory.
 
 **Steps:**
 
-- [ ] Run the whole WP0 surface:
+- [x] Run the whole WP0 surface:
       `.venv/bin/python -m pytest tests/data/test_curator_addresses.py tests/data/test_curator_models.py tests/data/test_curator_captures.py -v`
       Expect green with exactly **one skip** (`test_signal_output_keys_are_a_subset_of_curator_keys`).
-- [ ] Run the full suite to prove WP0 disturbed nothing:
+- [x] Run the full suite to prove WP0 disturbed nothing:
       `.venv/bin/python -m pytest -q` — the pre-existing ~2100 tests stay green. WP0 adds
       files only; if anything else moved, find out why before signing off.
-- [ ] Confirm the structural no-network property:
+- [x] Confirm the structural no-network property:
       `.venv/bin/python -c "import maxpane_dashboard.data.curator_addresses, maxpane_dashboard.data.curator_models"`
       runs with no `httpx`/`textual` import (verify with `-X importtime` or by inspecting the
       module sources — the tests already assert it, this is the human check).
-- [ ] Write the **hand-off note** into the WP0 commit message body or a short comment at the
+- [x] Write the **hand-off note** into the WP0 commit message body or a short comment at the
       top of `curator_models.py`, listing for the parallel wave:
       1. the frozen names (`CURATOR_KEYS`, `CURATOR_ROW_KEYS`, `PHASES`, `SIGNAL_ROWS`,
          `CONSTRUCTOR_KWARGS`, the `SEL_*`/`TOPIC_*` tables and the three ordered selector
@@ -871,7 +871,7 @@ payload, and the fixture root has one owner per directory.
       3. the synthetic-fixture list from the index plan, so WP2/WP3/WP5 mark their synthetic
          fixtures with `# SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>`
          from the first commit rather than retrofitting the comment later.
-- [ ] Commit: `git commit --allow-empty -m "chore(curator): WP0 interface freeze signed off"`
+- [x] Commit: `git commit --allow-empty -m "chore(curator): WP0 interface freeze signed off"`
 
 **Done when:** the three suites are green with one documented skip, the full suite is
 unchanged, and the hand-off note exists. **Wave 2 may now start.**
