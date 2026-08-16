@@ -790,6 +790,7 @@ def capture(
     logs_from: int = DEPLOY_BLOCK,
     curve_probe: bool = False,
     skip_logs: bool = False,
+    skip_blockscout: bool = False,
     opener=urllib_opener,
     now=None,
     sleeper=time.sleep,
@@ -814,7 +815,9 @@ def capture(
             logs_from, urls=logs_urls, errors=errors, head=head, **kw
         )
     block_timestamps = fetch_block_timestamps(logs, url=state_url, errors=errors, **kw)
-    blockscout_page = fetch_blockscout(base=blockscout, errors=errors, **kw)
+    blockscout_page = None
+    if not skip_blockscout:
+        blockscout_page = fetch_blockscout(base=blockscout, errors=errors, **kw)
 
     bundle = {
         "label": label,
@@ -1003,6 +1006,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--no-logs", action="store_true",
                         help="skip the log sweep (fast repeated polling across a boundary)")
+    parser.add_argument("--no-blockscout", action="store_true",
+                        help="skip the Blockscout cross-check (keeps a poll series small)")
     parser.add_argument("--curve-probe", action="store_true",
                         help="also batch previewPoints/pointsOf/weightOf (WP1.6)")
     parser.add_argument("--dry-run", action="store_true",
@@ -1025,6 +1030,7 @@ def main(argv=None) -> int:
         logs_from=args.logs_from,
         curve_probe=args.curve_probe,
         skip_logs=args.no_logs,
+        skip_blockscout=args.no_blockscout,
     )
     line = summary_line(bundle)
 
