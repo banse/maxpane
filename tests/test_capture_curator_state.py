@@ -479,8 +479,9 @@ def test_the_capture_never_asks_for_a_key_and_never_writes_the_chain():
                 now=1787000000, sleeper=_no_sleep)
     for request in opener.requests:
         assert "Authorization" not in request["headers"]
-        assert "api" not in request["url"].split("//")[1].split("/")[0].lower() or \
-            "blockscout" in request["url"]
+        assert "?" not in request["url"], "a query string is where an API key would hide"
+        assert not any(word in request["url"].lower()
+                       for word in ("key=", "token", "apikey", "auth"))
         payload = request["payload"]
         calls = payload if isinstance(payload, list) else [payload] if payload else []
         for call in calls:
