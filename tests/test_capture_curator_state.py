@@ -581,6 +581,36 @@ def test_a_manifest_row_states_the_phase_facts_of_a_real_bundle():
     assert row.endswith("|\n")
 
 
+def test_the_row_that_records_death_is_the_one_that_stands_out():
+    # The night this matters, the operator is reading MANIFEST.md by eye to
+    # find the first bundle that flipped.
+    settled = {"label": "settlement", "captured_at": 1787000000,
+               "captured_at_utc": "2026-08-17T20:53:20Z", "logs": [], "errors": [],
+               "state": {cap.SEL_IS_SETTLED: {"name": "isSettled()", "result": WORD_ONE},
+                         cap.SEL_CURRENT_HOUR: {"name": "currentHour()",
+                                                "result": "0x" + f"{24:064x}"}}}
+    row = cap.manifest_row("x.json", settled)
+    assert "| **true** |" in row
+    assert cap.summarise(settled)["settled"] is True
+    assert "isSettled=true" in cap.summary_line(settled)
+
+
+def test_a_bundle_whose_state_round_failed_reads_as_unknown_not_as_zero():
+    # Every decoded column has to be able to say "I do not know" -- printing 0
+    # for a failed read is how an outage becomes a fact in the archive.
+    broken = {"label": "settlement", "captured_at": 1787000000,
+              "captured_at_utc": "2026-08-17T20:53:20Z", "state": {}, "logs": [],
+              "errors": [{"stage": "state", "url": cap.STATE_URL, "message": "HTTP 403"}]}
+    summary = cap.summarise(broken)
+    assert summary["settled"] is None
+    assert summary["current_hour"] is None
+    assert summary["views_answered"] == 0
+    row = cap.manifest_row("x.json", broken)
+    assert row.count("| ? |") >= 5
+    assert "| 0.0000 |" not in row and "| 0.00 |" not in row, "no fabricated zeroes"
+    assert "isSettled=?" in cap.summary_line(broken)
+
+
 def test_the_summary_line_names_the_states_an_operator_is_hunting():
     bundle = _committed_bundle("20260816T225143Z_curve-probe.json")
     line = cap.summary_line(bundle)
