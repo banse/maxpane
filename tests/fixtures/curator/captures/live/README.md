@@ -49,6 +49,21 @@ that actually answered 21/21 on publicnode) or from the script's inlined fallbac
 `MANIFEST.md` is the machine-written index: one row per bundle, appended never rewritten,
 decoded at write time. The bundle is the authority; the row is the search index.
 
+## One bundle, one instant — why that matters here
+
+The research captures in the parent directory were taken over a ten-minute window while the
+game was taking a deposit every few seconds, so **they do not agree with each other, and they
+are not supposed to**: `results.json` (21:04) reads `totalContributors() == 143` and
+`totalTxCount() == 222`, while `tenderly_logs.json` (21:13) holds **145** `FirstDeposit` and
+**231** `Deposited` rows. Both are correct; nine minutes passed.
+
+A test that folds the log sweep and asserts the fold against a *state* read from the other file
+is therefore off by two before it starts — worth knowing for H6, whose rule is
+"`FirstDeposit.index` maxes at exactly `totalContributors`". Cross-instant assertions belong on
+a bundle, where every section was fetched in the same second: in
+`20260816T225006Z_grace-late.json` the sweep and the views reconcile exactly, 1282 == 1282 and
+794 == 794.
+
 ## Labels
 
 | label | the state it is hunting |
