@@ -337,9 +337,118 @@ class SettlementRecord:
     total_volume_wei: int | None = None
 
 
+# ---------------------------------------------------------------------------
+# The flat manager contract
+# ---------------------------------------------------------------------------
+
+#: The exact key set of ``CuratorManager.fetch_and_compute()``.  PRD §5, made
+#: precise.
+#:
+#: Every numeric is ``float | int | None`` and ``None`` renders the widget's
+#: **unavailable** state, never a 0.  Every list defaults to ``[]`` meaning
+#: "read, nothing to show" -- a failed read reaches the user through
+#: ``degraded``, never through an empty table pretending to be an empty game.
+#:
+#: The manager builds exactly these keys, always all of them: a total failure
+#: returns the full contract with every value ``None``/``[]``, because a screen
+#: that has to guess whether a key exists is a screen with a silent fallback arm.
+CURATOR_KEYS: tuple[str, ...] = (
+    # ---- phase machine ------------------------------------------------------
+    "phase",                    # "grace" | "judged" | "settled" — one of PHASES
+    "settled",                  # bool | None — isSettled(); None is "unknown"
+    "settled_hour",             # int | None — from the Settled log, not the view
+    "settled_at_ts",            # int | None — the Settled log's own timestamp
+    "settled_observed_at",      # float | None — when the latch first saw True
+    "lived_desc",               # str | None — "lived 3 h 12 m" / "alive 4 h"
+    # ---- clock --------------------------------------------------------------
+    "current_hour",             # int | None — hour index since launch
+    "hour_fed_eth",             # float | None — folded from Deposited logs only
+    "hour_needed_eth",          # float | None — 0.0 in grace is REAL, not unknown
+    "hour_seconds_left",        # int | None — hourDuration at a boundary, never 0
+    "grace_seconds_left",       # int | None — 0 once grace is over
+    "grace_ends_utc",           # str | None — "2026-08-17 19:58:47Z"
+    # ---- curve --------------------------------------------------------------
+    "early_multiplier_x",       # float | None — earlyBps / 10 000, e.g. 1.9491
+    "points_per_eth_now",       # float | None — the effective rate right now
+    "survival_streak_hours",    # int | None — judged hours survived in a row
+    "closest_call_margin_eth",  # float | None — thinnest judged-hour margin
+    "closest_call_hour",        # int | None — the hour that margin belongs to
+    # ---- the list -----------------------------------------------------------
+    "contributors_total",       # int | None
+    "deposits_total",           # int | None
+    "volume_routed_eth",        # float | None — ROUTED, all of it refunded
+    "top_points",               # int | None — rank 1's score
+    # ---- signals ------------------------------------------------------------
+    "last_saved_hour",          # int | None — None means HourSaved never fired
+    "last_saved_wallet",        # str | None
+    "last_saved_age_s",         # float | None
+    "whale_amount_eth",         # float | None
+    "whale_wallet",             # str | None
+    "whale_age_s",              # float | None
+    "clusters_count",           # int | None — 0 is a real answer
+    "flagged_points_share_pct", # float | None
+    "forced_eth",               # float | None — ALWAYS forced ETH, never deposits
+    "rescued_total_eth",        # float | None — Rescued has never fired
+    "sig_settled_state",        # "ok" | "watch" | "fired" | None
+    "sig_at_risk_state",        # "ok" | "watch" | "fired" | None
+    # ---- YOU (all None when no wallet is configured) ------------------------
+    "you_rank",                 # int | None
+    "you_points",               # int | None
+    "you_credit_eth",           # float | None — the high-water mark, not gross
+    "you_required_next_eth",    # float | None — what the next deposit must beat
+    "you_marginal_points",      # int | None — points requiredNext would buy
+    # ---- rows ---------------------------------------------------------------
+    "leaderboard_rows",         # list[dict] — CURATOR_ROW_KEYS["leaderboard_rows"]
+    "activity_rows",            # list[dict] — CURATOR_ROW_KEYS["activity_rows"]
+    "closest_call_rows",        # list[dict] — CURATOR_ROW_KEYS["closest_call_rows"]
+    "cluster_rows",             # list[dict] — CURATOR_ROW_KEYS["cluster_rows"]
+    "volume_series",            # list[[ts, value]] — through coerce_points
+    "contributors_series",      # list[[ts, value]] — through coerce_points
+    # ---- health -------------------------------------------------------------
+    "degraded",                 # list[str] — group names ⊆ {state, logs, wallet}
+    "as_of_hhmm",               # str — the rendered freshness marker
+    "as_of",                    # float — epoch, for the screen's own bookkeeping
+)
+
+#: Row shapes for the four list-of-dict payloads.  Widgets index these keys
+#: directly, so adding one is a contract change, not an implementation detail.
+#:
+#: Every amount here is already ETH: the manager divided once, at the boundary.
+#: Nothing is called TVL, locked, at risk or capital — every wei this contract
+#: ever saw was refunded inside the same transaction, so the only honest word
+#: for the number is *routed*.
+CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
+    "leaderboard_rows": (
+        "rank", "address", "points", "credit_eth", "tx_count", "flagged",
+    ),
+    # ``ts`` is None when the block-timestamp batch failed -> renders "--:--".
+    # ``tx_hash`` + ``log_index`` are the de-dupe key (PRD §4).
+    "activity_rows": (
+        "ts", "address", "amount_eth", "credited_eth", "new_weight",
+        "tx_count", "hour", "kind", "tx_hash", "log_index",
+    ),
+    "closest_call_rows": ("hour", "volume_eth", "margin_eth", "savior"),
+    "cluster_rows": (
+        "size", "amount_eth", "first_block", "last_block", "points",
+        "points_share_pct",
+    ),
+}
+
+#: The two ``[timestamp, value]`` payloads.  They are **not** lists of dicts, so
+#: they get a name of their own rather than a column tuple that would tell a
+#: widget to index a 2-tuple by key.  Both load through
+#: ``data/series_points.coerce_points``, and both are fed **only** from folded
+#: ``Deposited`` logs — never from ``currentHourTotal()``, which zeroes at every
+#: hour boundary and would write that zero into the history for good.
+CURATOR_SERIES_KEYS: tuple[str, ...] = ("volume_series", "contributors_series")
+
+
 __all__ = [
     "PHASES",
     "SIGNAL_ROWS",
+    "CURATOR_KEYS",
+    "CURATOR_ROW_KEYS",
+    "CURATOR_SERIES_KEYS",
     "CuratorState",
     "CuratorConfig",
     "WalletState",

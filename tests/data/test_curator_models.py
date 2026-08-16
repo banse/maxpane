@@ -438,3 +438,217 @@ def test_no_flat_dict_key_masquerades_as_a_model_field() -> None:
     for model in ALL_MODELS:
         clash = flat_only & {f.name for f in dataclasses.fields(model)}
         assert not clash, f"{model.__name__} carries flat-dict key(s) {clash}"
+
+
+# --------------------------------------------------------------------------
+# WP0.6 — the flat manager contract
+# --------------------------------------------------------------------------
+
+from maxpane_dashboard.data.curator_models import (  # noqa: E402
+    CURATOR_KEYS,
+    CURATOR_ROW_KEYS,
+    CURATOR_SERIES_KEYS,
+    PHASES,
+    SIGNAL_ROWS,
+)
+
+#: PRD §5's key list, restated independently of the module so the two can
+#: actually disagree.  Copying ``CURATOR_KEYS`` in here would make this test
+#: compare a constant with itself.
+EXPECTED_KEYS = {
+    # phase machine
+    "phase",
+    "settled",
+    "settled_hour",
+    "settled_at_ts",
+    "settled_observed_at",
+    "lived_desc",
+    # clock
+    "current_hour",
+    "hour_fed_eth",
+    "hour_needed_eth",
+    "hour_seconds_left",
+    "grace_seconds_left",
+    "grace_ends_utc",
+    # curve
+    "early_multiplier_x",
+    "points_per_eth_now",
+    "survival_streak_hours",
+    "closest_call_margin_eth",
+    "closest_call_hour",
+    # list
+    "contributors_total",
+    "deposits_total",
+    "volume_routed_eth",
+    "top_points",
+    # signals
+    "last_saved_hour",
+    "last_saved_wallet",
+    "last_saved_age_s",
+    "whale_amount_eth",
+    "whale_wallet",
+    "whale_age_s",
+    "clusters_count",
+    "flagged_points_share_pct",
+    "forced_eth",
+    "rescued_total_eth",
+    "sig_settled_state",
+    "sig_at_risk_state",
+    # YOU
+    "you_rank",
+    "you_points",
+    "you_credit_eth",
+    "you_required_next_eth",
+    "you_marginal_points",
+    # rows
+    "leaderboard_rows",
+    "activity_rows",
+    "closest_call_rows",
+    "cluster_rows",
+    "volume_series",
+    "contributors_series",
+    # health
+    "degraded",
+    "as_of_hhmm",
+    "as_of",
+}
+
+
+def test_curator_keys_is_exactly_the_prd_contract() -> None:
+    assert set(CURATOR_KEYS) == EXPECTED_KEYS
+    assert len(CURATOR_KEYS) == len(set(CURATOR_KEYS))
+    assert isinstance(CURATOR_KEYS, tuple)
+
+
+def test_phases_are_the_three_the_prd_names() -> None:
+    assert PHASES == ("grace", "judged", "settled")
+
+
+def test_no_wei_key_leaks_into_the_flat_dict() -> None:
+    """The manager divides exactly once; the dict is the presentation boundary."""
+    assert not [k for k in CURATOR_KEYS if k.endswith("_wei")]
+
+
+def test_row_key_sets_match_the_prd() -> None:
+    assert CURATOR_ROW_KEYS["leaderboard_rows"] == (
+        "rank",
+        "address",
+        "points",
+        "credit_eth",
+        "tx_count",
+        "flagged",
+    )
+    assert CURATOR_ROW_KEYS["activity_rows"] == (
+        "ts",
+        "address",
+        "amount_eth",
+        "credited_eth",
+        "new_weight",
+        "tx_count",
+        "hour",
+        "kind",
+        "tx_hash",
+        "log_index",
+    )
+    assert CURATOR_ROW_KEYS["closest_call_rows"] == (
+        "hour",
+        "volume_eth",
+        "margin_eth",
+        "savior",
+    )
+    assert CURATOR_ROW_KEYS["cluster_rows"] == (
+        "size",
+        "amount_eth",
+        "first_block",
+        "last_block",
+        "points",
+        "points_share_pct",
+    )
+    assert set(CURATOR_ROW_KEYS) <= set(CURATOR_KEYS)
+
+
+def test_the_two_series_are_named_separately_from_the_row_payloads() -> None:
+    """``volume_series`` and ``contributors_series`` are ``[ts, value]`` pairs
+    that load through ``data/series_points.coerce_points`` -- not lists of
+    dicts.  Giving them a column tuple in ``CURATOR_ROW_KEYS`` would tell a
+    widget to index a 2-tuple by name, so they get their own name instead."""
+    assert CURATOR_SERIES_KEYS == ("volume_series", "contributors_series")
+    assert set(CURATOR_SERIES_KEYS) <= set(CURATOR_KEYS)
+    assert set(CURATOR_SERIES_KEYS).isdisjoint(CURATOR_ROW_KEYS)
+
+
+def test_every_list_payload_has_either_a_row_shape_or_a_series_declaration() -> None:
+    """The six list payloads of PRD §5, all accounted for, none twice."""
+    listish = {k for k in CURATOR_KEYS if k.endswith("_rows") or k.endswith("_series")}
+    assert listish == set(CURATOR_ROW_KEYS) | set(CURATOR_SERIES_KEYS)
+    assert len(listish) == 6
+
+
+def test_activity_rows_carry_the_dedupe_key() -> None:
+    """PRD §4: de-dupe by (tx, log index).  Both must be in the row shape or the
+    widget cannot do it, and a re-org replay renders every deposit twice."""
+    assert {"tx_hash", "log_index"} <= set(CURATOR_ROW_KEYS["activity_rows"])
+
+
+def test_no_row_shape_is_wei_denominated() -> None:
+    """Rows are rendered directly; the manager already divided."""
+    for name, cols in CURATOR_ROW_KEYS.items():
+        assert not [c for c in cols if c.endswith("_wei")], name
+
+
+def test_the_volume_column_is_never_called_tvl_or_locked() -> None:
+    """H4: every wei is refunded in-transaction, so volume is gas-priced, not
+    capital-priced.  A column named ``tvl`` would be a lie in the schema
+    itself, before any copy is written."""
+    banned = {"tvl", "locked", "at_risk", "capital", "balance", "deposited_eth"}
+    for name, cols in CURATOR_ROW_KEYS.items():
+        assert banned.isdisjoint(cols), name
+    assert banned.isdisjoint(CURATOR_KEYS)
+
+
+def test_the_signal_rows_are_the_seven_the_rail_renders() -> None:
+    assert SIGNAL_ROWS == (
+        "settled",
+        "at_risk",
+        "hour_saved",
+        "whale",
+        "clusters",
+        "forced_eth",
+        "rescued",
+    )
+    assert len(set(SIGNAL_ROWS)) == len(SIGNAL_ROWS)
+
+
+def test_the_two_judgement_rows_have_an_explicit_state_key() -> None:
+    """``sig_settled_state`` and ``sig_at_risk_state`` are colours, not numbers.
+
+    Every other rail row is rendered from an observation the manager already
+    emits; these two are the ones where the analytics layer has to decide, so
+    they need their own keys rather than being re-derived in the widget.
+    """
+    assert "sig_settled_state" in CURATOR_KEYS
+    assert "sig_at_risk_state" in CURATOR_KEYS
+
+
+def test_the_settlement_evidence_stamp_is_in_the_contract() -> None:
+    """H1: under a full outage after settlement was observed, the dashboard
+    still renders SETTLED -- the outage degrades the freshness marker, never
+    the phase.  ``settled_observed_at`` is what the marker is drawn from, and
+    it is distinct from ``settled_at_ts`` (the log's own word) and from
+    ``as_of`` (this refresh)."""
+    assert {"settled_observed_at", "settled_at_ts", "as_of"} <= set(CURATOR_KEYS)
+
+
+def test_signal_output_keys_are_a_subset_of_curator_keys() -> None:
+    """The only place the two frozen key surfaces are compared.
+
+    Skips until ``analytics/curator_signals.py`` lands; a skip here is the
+    intended state, not an outstanding failure.  WP0.8 records the deferred
+    bite-proof: rename one entry of ``SIGNAL_OUTPUT_KEYS``, run ``-k subset -v``
+    -> FAILS naming the key; restore -> green (**not** skipped).  If it still
+    skips, the ``importorskip`` path is wrong and the guard has been dead the
+    whole time.
+    """
+    sig = pytest.importorskip("maxpane_dashboard.analytics.curator_signals")
+    missing = sorted(set(sig.SIGNAL_OUTPUT_KEYS) - set(CURATOR_KEYS))
+    assert not missing, f"signal keys absent from CURATOR_KEYS: {missing}"
