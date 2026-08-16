@@ -17,6 +17,11 @@ else, from any checkout::
     python3 scripts/capture_curator_state.py --label post-grace
     python3 scripts/capture_curator_state.py --curve-probe --label curve-probe
 
+    # A whole timed window, unattended -- one command, no stopwatch.  Crossings
+    # are at launchTime + N*3600, i.e. HH:58:47 UTC:
+    python3 scripts/capture_curator_state.py --label hour-boundary \\
+            --no-logs --no-blockscout --start-at boundary --every 4 --repeat 30
+
 Deliberate properties, each of them a constraint rather than a preference:
 
 * **Stdlib only.**  No ``httpx``, no repo import, no venv.  ``python3`` is
@@ -989,6 +994,47 @@ def self_test(*, url: str = STATE_URL, opener=urllib_opener, sleeper=time.sleep)
     return 0
 
 
+def next_hour_boundary(now: float, launch: int = LAUNCH_TIME, hour: int = 3600) -> int:
+    """The next ``launchTime + N*hour`` instant strictly after *now*.
+
+    In wall-clock terms every crossing is at **58 minutes 47 seconds past the
+    hour, UTC**, but deriving it from ``launchTime`` is what keeps the script
+    right if the contract's own hour is ever read differently.
+    """
+    elapsed = int(now) - launch
+    return launch + (elapsed // hour + 1) * hour
+
+
+def parse_start_at(value: str, now: float) -> int:
+    """``HH:MM:SS`` (UTC), ``@EPOCH``, or ``boundary`` -> an epoch second.
+
+    ``HH:MM:SS`` means the next such instant: today if it is still ahead,
+    tomorrow otherwise.  Nobody typing at 20:57 wants yesterday.
+    """
+    text = value.strip()
+    if text == "boundary":
+        return next_hour_boundary(now)
+    if text.startswith("@"):
+        return int(text[1:])
+    parts = text.split(":")
+    if len(parts) not in (2, 3) or not all(part.isdigit() for part in parts):
+        raise ValueError(f"not a UTC time, @epoch or 'boundary': {value!r}")
+    hour, minute = int(parts[0]), int(parts[1])
+    second = int(parts[2]) if len(parts) == 3 else 0
+    midnight = int(now) - int(now) % 86400
+    target = midnight + hour * 3600 + minute * 60 + second
+    return target if target > now else target + 86400
+
+
+def wait_until(target: float, *, now=time.time, sleeper=time.sleep, tick: float = 1.0) -> None:
+    """Block until *target*, in small steps so a Ctrl-C lands promptly."""
+    while True:
+        remaining = target - now()
+        if remaining <= 0:
+            return
+        sleeper(min(tick, remaining))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="capture_curator_state.py",
@@ -1016,7 +1062,58 @@ def build_parser() -> argparse.ArgumentParser:
                         help="one eth_blockNumber; prints OK <head> or the failure")
     parser.add_argument("--out-dir", default=LIVE_DIR,
                         help="where bundles and MANIFEST.md are written")
+    parser.add_argument("--start-at", metavar="HH:MM:SS",
+                        help="wait for this UTC instant before the first capture; also "
+                             "accepts @EPOCH, or 'boundary' for the next launchTime+N*3600")
+    parser.add_argument("--every", type=float, default=0.0, metavar="SECONDS",
+                        help="seconds between captures when --repeat is above 1")
+    parser.add_argument("--repeat", type=int, default=1, metavar="N",
+                        help="take N captures (a window sweep: one command, unattended)")
     return parser
+
+
+def run_series(args, *, opener=urllib_opener, now=time.time, sleeper=time.sleep,
+               out=None, err=None) -> int:
+    """One capture, or a whole window sweep -- the timed part of the rig.
+
+    A window like the settlement boundary is one command rather than a person
+    with a stopwatch: ``--start-at 20:58:20 --every 5 --repeat 30``.  Slots are
+    computed from the start instant, not from the previous capture, so a slow
+    round trip does not walk the schedule off the boundary.
+    """
+    # Resolved per call, not bound at import: pytest's capture swaps the
+    # streams after this module is loaded.
+    out = sys.stdout if out is None else out
+    err = sys.stderr if err is None else err
+
+    start = now()
+    if args.start_at:
+        start = parse_start_at(args.start_at, start)
+        print(f"waiting until {utc_stamp(start)} ({int(start - now())} s)", file=err)
+        wait_until(start, now=now, sleeper=sleeper)
+
+    for index in range(max(1, args.repeat)):
+        if index:
+            wait_until(start + index * args.every, now=now, sleeper=sleeper)
+        bundle = capture(
+            label=args.label,
+            logs_from=args.logs_from,
+            curve_probe=args.curve_probe,
+            skip_logs=args.no_logs,
+            skip_blockscout=args.no_blockscout,
+            opener=opener,
+            now=now(),
+            sleeper=sleeper,
+        )
+        line = summary_line(bundle)
+        if args.dry_run:
+            print(f"[dry-run] {line}", file=out)
+        else:
+            path = write_bundle(bundle, directory=args.out_dir)
+            print(f"{os.path.relpath(path, REPO_ROOT)} — {line}", file=out)
+        for error in bundle["errors"]:
+            print(f"  ! {error['stage']}: {error['message']}", file=err)
+    return 0
 
 
 def main(argv=None) -> int:
@@ -1025,26 +1122,7 @@ def main(argv=None) -> int:
     if args.self_test:
         return self_test()
 
-    bundle = capture(
-        label=args.label,
-        logs_from=args.logs_from,
-        curve_probe=args.curve_probe,
-        skip_logs=args.no_logs,
-        skip_blockscout=args.no_blockscout,
-    )
-    line = summary_line(bundle)
-
-    if args.dry_run:
-        print(f"[dry-run] {line}")
-        for error in bundle["errors"]:
-            print(f"  ! {error['stage']}: {error['message']}", file=sys.stderr)
-        return 0
-
-    path = write_bundle(bundle, directory=args.out_dir)
-    print(f"{os.path.relpath(path, REPO_ROOT)} — {line}")
-    for error in bundle["errors"]:
-        print(f"  ! {error['stage']}: {error['message']}", file=sys.stderr)
-    return 0
+    return run_series(args)
 
 
 if __name__ == "__main__":

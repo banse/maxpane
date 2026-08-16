@@ -589,6 +589,112 @@ def test_the_summary_line_names_the_states_an_operator_is_hunting():
 
 
 # --------------------------------------------------------------------------
+# The timed window sweep.
+# --------------------------------------------------------------------------
+
+
+def test_the_next_boundary_is_derived_from_launch_time():
+    # Every crossing is at HH:58:47 UTC, but the arithmetic is launchTime's,
+    # not the wall clock's.
+    launch = 1786910327
+    assert cap.next_hour_boundary(launch) == launch + 3600
+    assert cap.next_hour_boundary(launch + 1) == launch + 3600
+    assert cap.next_hour_boundary(launch + 3599) == launch + 3600
+    assert cap.next_hour_boundary(launch + 3600) == launch + 7200
+    # 2026-08-17 20:58:47 UTC, the earliest possible settlement.
+    assert cap.next_hour_boundary(launch + 24 * 3600 + 5) == launch + 25 * 3600
+
+
+def test_a_wall_clock_start_never_resolves_into_the_past():
+    now = 1786910327  # 2026-08-16 19:58:47 UTC
+    assert cap.parse_start_at("20:58:20", now) == now + 3573
+    # Already gone today -> the same time tomorrow, never behind the operator.
+    assert cap.parse_start_at("19:00:00", now) > now
+    assert cap.parse_start_at("19:00:00", now) - now == 86400 - 3527
+    assert cap.parse_start_at("@1787000000", now) == 1787000000
+    assert cap.parse_start_at("boundary", now) == now + 3600
+    with pytest.raises(ValueError):
+        cap.parse_start_at("tea time", now)
+
+
+def test_waiting_sleeps_in_small_steps_and_returns_at_the_instant():
+    clock = {"t": 100.0}
+    slept = []
+
+    def sleeper(seconds):
+        slept.append(seconds)
+        clock["t"] += seconds
+
+    cap.wait_until(103.5, now=lambda: clock["t"], sleeper=sleeper)
+    assert sum(slept) == pytest.approx(3.5)
+    assert max(slept) <= 1.0, "a long sleep swallows Ctrl-C at the worst moment"
+    assert clock["t"] >= 103.5
+
+
+def test_a_past_target_does_not_wait_at_all():
+    cap.wait_until(10, now=lambda: 20, sleeper=lambda s: pytest.fail("slept anyway"))
+
+
+class _Args:
+    label = "hour-boundary"
+    logs_from = cap.DEPLOY_BLOCK
+    curve_probe = False
+    no_logs = True
+    no_blockscout = True
+    dry_run = True
+    out_dir = ""
+    start_at = None
+    every = 0.0
+    repeat = 1
+
+
+def test_a_window_sweep_is_one_command_and_does_not_drift(capsys):
+    # The slot is start + i*every, not "previous + every": a 3-second round
+    # trip must not walk a boundary sweep off the boundary.
+    clock = {"t": 1000.0}
+
+    def sleeper(seconds):
+        clock["t"] += seconds
+
+    def slow_opener(url, body, headers, timeout):
+        payload = json.loads(body.decode())
+        if isinstance(payload, list):
+            clock["t"] += 1.0  # the state round is what costs time
+            return 200, json.dumps(_batch_ok([WORD_ZERO] * len(payload))).encode()
+        if payload["method"] == "eth_blockNumber":
+            return 200, json.dumps(_ok("0x1")).encode()
+        return 200, json.dumps(_ok("0x0")).encode()
+
+    args = _Args()
+    args.every, args.repeat = 4.0, 3
+    cap.run_series(args, opener=slow_opener, now=lambda: clock["t"], sleeper=sleeper)
+    lines = [line for line in capsys.readouterr().out.splitlines() if line]
+    assert len(lines) == 3
+    # Slots at +0, +4, +8; the last capture costs one more second.  Scheduling
+    # from "previous + every" instead would land at +11.
+    assert clock["t"] == pytest.approx(1000.0 + 8.0 + 1.0)
+
+
+def test_a_sweep_waits_for_its_start_instant_before_the_first_capture(capsys):
+    clock = {"t": 1786910327.0}
+
+    def sleeper(seconds):
+        clock["t"] += seconds
+
+    def opener(url, body, headers, timeout):
+        payload = json.loads(body.decode())
+        if isinstance(payload, list):
+            return 200, json.dumps(_batch_ok([WORD_ZERO] * len(payload))).encode()
+        return 200, json.dumps(_ok("0x1")).encode()
+
+    args = _Args()
+    args.start_at = "20:58:20"
+    cap.run_series(args, opener=opener, now=lambda: clock["t"], sleeper=sleeper)
+    assert clock["t"] >= 1786910327 + 3573
+    assert "waiting until 2026-08-16T20:58:20Z" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------
 # Structure: standalone, keyless, read-only.
 # --------------------------------------------------------------------------
 
