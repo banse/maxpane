@@ -20,6 +20,13 @@ surface the screen and its tests use, exactly as ``widgets/surf`` and
 panel titles and every explicit unavailable line — so the screen tests
 import them instead of retyping the literals they assert against.
 
+One function rides along with them: :func:`measure_signals_width`, which
+answers "how many columns does the signal rail need for *this* payload".
+The rail is the widest panel in the package and the one a screen budgets its
+slot grid against, and that question has two answers — see
+``signals.SIGNALS_FULL_WIDTH``, which is the worst case over every magnitude
+the contract can produce and is **not** the number to size a slot from.
+
 These widgets take **primitives only** and import nothing from ``data/`` or
 ``analytics/`` (AST-pinned by ``tests/widgets/test_curator_widgets.py``), so
 this package is safe to import with no manager, no cache and no network.
@@ -54,6 +61,7 @@ from .signals import (
     SIGNALS_TITLE,
     UNKNOWN_GLYPH,
     CuratorSignals,
+    measure_signals_width,
 )
 from .sparklines import SPARKLINES_TITLE, WAITING, CuratorSparklines
 from .leaderboard import (
@@ -97,4 +105,5 @@ __all__ = [
     "CuratorLeaderboard",
     "CuratorSignals",
     "CuratorSparklines",
+    "measure_signals_width",
 ]

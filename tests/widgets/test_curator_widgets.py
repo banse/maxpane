@@ -1068,46 +1068,179 @@ async def test_the_forced_row_separates_a_zero_balance_from_an_unreadable_one():
     assert UNKNOWN_GLYPH in row
 
 
-def test_the_rail_publishes_the_width_it_was_measured_at():
-    """wp4.md hands WP6 a number to budget the slot grid against, and WP6
-    asserts against it without reading this source.  The first one was 76,
-    written from a row nobody measured; the YOU line is 80 columns of value
-    and the rows carry ``padding: 0 1``, so the rail needs 82.
+#: The capture's **rank-1** wallet, ``0x75d5…b074`` — 30 853 points, a 490.90
+#: ETH high-water mark and ``requiredNext = highWater + minEscalation``.  The
+#: widest real YOU row in
+#: ``tests/fixtures/curator/screen/grace_payload.json``, restated here so the
+#: widget suite stays free of the screen's fixtures; the values are asserted
+#: against that file by
+#: ``test_the_captured_rank_one_wallet_is_the_one_this_suite_measures``.
+def _signals_captured_you() -> dict:
+    return dict(
+        _signals_full(),
+        you_rank=1,
+        you_points=30_853,
+        you_credit_eth=490.9,
+        you_required_next_eth=491.0,
+        you_marginal_points=3,
+    )
 
-    Measured here from the builders themselves, so a copy edit anywhere in
-    the seven rows fails this rather than a reader's terminal.
+
+def _worst_case_signals() -> dict:
+    """The payload :data:`SIGNALS_FULL_WIDTH` is derived from.
+
+    Taken from the module rather than restated: the point of the composited
+    tests below is that the *rendered* rail agrees with the derivation, and a
+    second copy of the probe would let the two drift.
     """
     from maxpane_dashboard.widgets.curator import signals as sig_mod
 
-    payload = _signals_full()
-    widths = {}
-    for key, label in zip(sig_mod.SIGNAL_KEYS, SIGNAL_LABELS):
-        state, parts = sig_mod._BUILDERS[key](payload)
-        markup, starved = sig_mod._row(label, state, parts, 0)
-        assert not starved                      # width 0 = "not laid out yet"
-        widths[label] = _visible(markup)
+    return dict(sig_mod.WIDTH_PROBE)
 
-    assert max(widths.values()) == widths["YOU"] == 80, widths
-    assert SIGNALS_FULL_WIDTH == max(widths.values()) + 2
+
+def test_the_captured_rank_one_wallet_is_the_one_this_suite_measures():
+    """The restated YOU values above are the producer's, not a plausible
+    typing of them.  Without this the suite could re-measure the constant
+    against a wallet the manager never emits — the exact failure the constant
+    has already had twice."""
+    import json
+    from pathlib import Path
+
+    fixture = (
+        Path(__file__).resolve().parents[1]
+        / "fixtures" / "curator" / "screen" / "grace_payload.json"
+    )
+    payload = json.loads(fixture.read_text("utf-8"))
+    mine = _signals_captured_you()
+    for key in ("you_rank", "you_points", "you_credit_eth",
+                "you_required_next_eth", "you_marginal_points"):
+        assert mine[key] == payload[key], key
+
+
+def test_the_published_width_is_the_panels_worst_case_not_one_fixtures():
+    """**Three numbers have stood in this constant and only the third is a
+    property of the panel.**
+
+    76 came off an example row in a docstring; at 76 the rail rendered by
+    silently dropping ``next ≥ 4.10 ETH (+120 pts)``.  82 was measured — but
+    against ``_signals_full()``, an invented four-figure wallet — so WP6's
+    screen sweep, run against the capture's rank-1 wallet, needed **84** and
+    reported the disagreement.  Re-measuring against that better fixture
+    would have been the same mistake a third time: the YOU row's width is a
+    function of the *reader's own* credit and the reader is not on the
+    captured list.
+
+    So the constant is the worst case over the producer's whole vocabulary,
+    and this test pins the ordering that makes it one: it must clear the
+    invented wallet, the widest real wallet in the capture, and the two
+    numbers that were published before it.
+    """
+    from maxpane_dashboard.widgets.curator import signals as sig_mod
+
+    invented = sig_mod.measure_signals_width(_signals_full())
+    captured = sig_mod.measure_signals_width(_signals_captured_you())
+
+    assert invented == 82, invented          # the number wp4.md published
+    assert captured == 84, captured          # what WP6's screen sweep found
+    assert SIGNALS_FULL_WIDTH > captured > invented > 76
+    assert SIGNALS_FULL_WIDTH == sig_mod.measure_signals_width(
+        sig_mod.WIDTH_PROBE
+    )
+
+
+def test_the_width_probe_carries_every_field_at_its_widest():
+    """A probe is only worth the reasons behind its entries, so each one is
+    asserted against the bound it claims.
+
+    The point ceiling is the load-bearing one and it is the one a widget
+    cannot check for itself: ``widgets/`` may not import ``analytics/``, so
+    the literal lives in the widget and the agreement lives here — the
+    pattern this suite already uses for ``SIGNAL_ROWS`` and the cluster
+    fold's span.
+    """
+    from maxpane_dashboard.analytics.curator_signals import points_for_weight
+    from maxpane_dashboard.widgets.curator import _fmt
+    from maxpane_dashboard.widgets.curator import leaderboard as lb_mod
+    from maxpane_dashboard.widgets.curator import signals as sig_mod
+
+    # creditCap and POINTS_PER_ETH, from the capture's own `once` tier
+    # (tests/fixtures/curator/screen/README.md): 1000e18 and 1000.  Lifetime
+    # weight telescopes to at most 2 * creditCap -- the contract's own
+    # argument for the uint96 cast in `_credit`.
+    credit_cap_wei = 1000 * 10**18
+    ceiling = points_for_weight(2 * credit_cap_wei, 1000)
+    assert sig_mod.MAX_CURVE_POINTS == ceiling == 44_721
+    # ...and the leaderboard's own cell is sized from the same ceiling.
+    assert lb_mod._POINTS_COLS >= len(f"{ceiling:,}")
+
+    assert sig_mod._WIDEST_ETH == max(_fmt.COMPACT_ETH_PROBE)
+
+    # Every field of the widest *real* payload is inside the probe.
+    captured = _signals_captured_you()
+    probe = sig_mod.WIDTH_PROBE
+    for key in ("you_rank", "you_points", "you_credit_eth",
+                "you_required_next_eth", "you_marginal_points",
+                "whale_amount_eth", "clusters_count"):
+        assert probe[key] >= captured[key], key
+    # 2 291 wallets on the captured list; the probe is a decade past it.
+    assert probe["you_rank"] >= 10 * 2_291
+
+    # ...and a kwarg added to the rail cannot slip past the probe unmeasured.
+    kwargs = {
+        name
+        for name, p in inspect.signature(CuratorSignals.update_data)
+        .parameters.items()
+        if p.kind is not p.VAR_KEYWORD and name != "self"
+    }
+    assert set(probe) == kwargs, sorted(kwargs ^ set(probe))
 
 
 async def test_the_rail_needs_the_width_it_publishes():
-    """The other half, composited: at the published width the whole YOU row
-    reaches the screen, and one column under it the rail *says* it could
-    not.  Between 76 and 81 it used to drop ``next ≥ 4.10 ETH (+120 pts)`` —
-    the only actionable number on the rail — under a clean ``SIGNALS`` title,
-    so a WP6 width sweep would have called 76 a fit."""
+    """The other half, composited: at the published width the worst-case row
+    reaches the screen whole, and one column under it the rail *says* it
+    could not.
+
+    This is the assertion that bites when the derivation is wrong rather
+    than the probe — a forgotten ``padding: 0 1`` in the ``+ 2``, or a copy
+    edit that grows a row the probe does not exercise.  A test comparing the
+    constant to its own formula could not.
+    """
     fits = await _rendered(
-        CuratorSignals, size=(SIGNALS_FULL_WIDTH, 24), **_signals_full()
+        CuratorSignals, size=(SIGNALS_FULL_WIDTH, 24),
+        **_worst_case_signals(),
     )
-    assert "next ≥ 4.10 ETH (+120 pts)" in fits
+    assert "next ≥ 99,999.00 ETH (+44,721 pts)" in fits
     assert "widen" not in fits
 
-    for width in (SIGNALS_FULL_WIDTH - 1, 78, 76):
-        cut = await _rendered(CuratorSignals, size=(width, 24), **_signals_full())
-        assert "next ≥ 4.10 ETH" not in cut, width
-        # ...and the rail never loses a part in silence.
+    cut = await _rendered(
+        CuratorSignals, size=(SIGNALS_FULL_WIDTH - 1, 24),
+        **_worst_case_signals(),
+    )
+    assert "next ≥ 99,999.00 ETH" not in cut
+    assert "widen" in cut
+
+
+async def test_the_captured_wallet_starves_at_the_width_wp4_first_published():
+    """WP6's finding, pinned so it cannot come back.
+
+    At 82 — the constant as wp4.md published it — the rail renders the
+    capture's rank-1 wallet by dropping ``next ≥ 491.00 ETH``, the only
+    actionable number it carries.  It says so, which is why this was a
+    measurement error rather than a silent clip; the error was in the number
+    a screen would have budgeted from.
+    """
+    for width in (82, 83):
+        cut = await _rendered(
+            CuratorSignals, size=(width, 24), **_signals_captured_you()
+        )
+        assert "next ≥ 491.00 ETH" not in cut, width
         assert "widen" in cut, width
+
+    fits = await _rendered(
+        CuratorSignals, size=(84, 24), **_signals_captured_you()
+    )
+    assert "next ≥ 491.00 ETH (+3 pts)" in fits
+    assert "widen" not in fits
 
 
 async def test_a_narrow_rail_drops_parts_from_the_end_and_says_so_when_starved():

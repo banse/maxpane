@@ -51,9 +51,11 @@ half-rendered row is not self-describing, and the widest row here is the one
 carrying the reader's own next move.
 
 The rail needs :data:`SIGNALS_FULL_WIDTH` columns to render every part of
-every row.  That number is the widest thing in this package and the one WP6
-budgets its slot grid against, so it is pinned by a test that measures it
-rather than by prose that remembers it.
+every row **at every magnitude this contract can produce**, and
+:func:`measure_signals_width` answers the narrower question — what it needs
+for one payload in hand.  The two are different numbers and conflating them
+is what this module got wrong twice; :data:`SIGNALS_FULL_WIDTH`'s own
+docstring is the record.
 
 Primitives only — this module imports nothing from ``data/`` or ``analytics/``.
 """
@@ -66,6 +68,7 @@ from textual.css.query import QueryError
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.curator._fmt import (
+    COMPACT_ETH_PROBE,
     DASH,
     EMDASH,
     as_float,
@@ -156,20 +159,29 @@ NO_CLUSTERS = "no fan-out patterns"
 #: the two-column gap before the value.
 _HEAD_COLS = 2 + 1 + 1 + LABEL_COLS + 2
 
-#: Widget columns the rail needs for its widest row, ``padding: 0 1``
-#: included: :data:`_HEAD_COLS` + the 80-column YOU line's value + the two
-#: columns the rows' own padding takes.
+#: The widest ETH magnitude any cell in this package is sized against, reused
+#: rather than restated: ``_fmt`` documents why the tuple ends where it does.
+#: The rail renders ETH through :func:`fmt_eth`, so this magnitude costs nine
+#: columns here where ``fmt_eth_compact`` spends six.
+_WIDEST_ETH = max(COMPACT_ETH_PROBE)
+
+#: The highest score ``_curve`` can return on this deployment.
 #:
-#: **A measurement, not a budget.**  It is data-dependent — the YOU row is
-#: widest with a rank, a score, a credit *and* a ``requiredNext`` — so it is
-#: measured against the state the payload is normally in, the way CLAUDE.md
-#: requires for the surf market panel.  The wp4 hand-off published **76**
-#: here, from a row that was never measured; at 76 the rail rendered by
-#: silently dropping ``next ≥ 4.10 ETH (+120 pts)``.
-#: ``test_the_rail_needs_the_width_it_publishes`` re-measures it from the
-#: builders and renders at it, so a copy edit that outgrows it fails here
-#: rather than on a reader's terminal.
-SIGNALS_FULL_WIDTH = 82
+#: A **ceiling the contract guarantees**, not a headroom guess: a wallet's
+#: lifetime credit telescopes to at most ``creditCap`` (``_credit`` takes
+#: ``min(amount, cap) - min(old, cap)``, so the ladder sums to
+#: ``min(final high-water, cap)``), the early-bird multiplier tops out at 2×,
+#: and ``_curve`` is ``isqrt(weight) * POINTS_PER_ETH / 1e9``.  With
+#: ``creditCap == 1000e18`` and ``POINTS_PER_ETH == 1000`` that is
+#: ``isqrt(2e21) * 1000 // 1e9``.  ``leaderboard._POINTS_COLS`` is sized from
+#: the same ceiling; the suite asserts both against
+#: ``analytics.curator_signals.points_for_weight``, since a widget may not
+#: import it.
+MAX_CURVE_POINTS = 44_721
+
+#: :data:`SIGNALS_FULL_WIDTH` is defined at the foot of this module, because
+#: it is **derived** from :data:`WIDTH_PROBE` and the seven builders rather
+#: than typed.  Both live next to the builders they measure.
 
 
 def _state_of(value) -> str | None:
@@ -359,6 +371,112 @@ _BUILDERS = {
     "forced_eth": _forced_row,
     "you": _you_row,
 }
+
+
+# -- how wide the rail is ------------------------------------------------
+
+
+def measure_signals_width(payload: dict) -> int:
+    """Widget columns the rail needs to render **this** payload whole.
+
+    ``padding: 0 1`` on every row is the ``+ 2``; the rest is the widest row
+    the seven builders produce, measured at ``width=0`` (which
+    :func:`_row` reads as "not laid out yet" and therefore drops nothing).
+
+    Public because "what does the rail need?" has two answers and a consumer
+    usually wants this one.  :data:`SIGNALS_FULL_WIDTH` is the *worst case*
+    over every magnitude the contract can produce and is the wrong number to
+    size a slot from — a screen that budgeted it would be 20 columns wider
+    than any dashboard in this app.  A screen budgets against the state the
+    data is normally in and lets the ``‹ widen`` marker cover the tail, the
+    way CLAUDE.md's 143 clears every *layout* rather than every possible
+    string.
+    """
+    widest = 0
+    for key, label in zip(SIGNAL_KEYS, SIGNAL_LABELS):
+        state, parts = _BUILDERS[key](payload)
+        markup, _starved = _row(label, state, parts, 0)
+        widest = max(widest, visible_len(markup))
+    return widest + 2
+
+
+#: The widest value each field of the payload can carry — a **probe**, in the
+#: sense ``_fmt.COMPACT_ETH_PROBE`` is one, not a fixture and not a capture.
+#:
+#: Every entry has a reason, because a probe assembled from plausible-looking
+#: numbers is exactly the mistake it exists to correct:
+#:
+#: * the ETH amounts are ``max(COMPACT_ETH_PROBE)`` — the same magnitude the
+#:   rest of this package sizes its ETH cells from, already documented there
+#:   as "an order of magnitude past anything this game has routed".  Note the
+#:   rail renders them through :func:`_fmt.fmt_eth`, not ``fmt_eth_compact``,
+#:   so the same magnitude costs **nine** columns here and six in a table;
+#: * the point counts are ``44_721``, and that one is a **hard bound**, not
+#:   headroom: lifetime weight telescopes to at most ``2 * creditCap`` (the
+#:   contract's own argument for the ``uint96`` cast in ``_credit``), and
+#:   ``_curve`` is ``isqrt(weight) * POINTS_PER_ETH / 1e9``, so at this
+#:   deployment's 1000 ETH cap and ``POINTS_PER_ETH == 1000`` no wallet can
+#:   score past ``isqrt(2e21) * 1000 // 1e9``.  ``leaderboard._POINTS_COLS``
+#:   is sized from the same ceiling, and the test module asserts both against
+#:   ``analytics.curator_signals.points_for_weight`` — the widgets may not
+#:   import it, so the agreement lives in the suite;
+#: * ``you_rank`` is bounded by ``totalContributors``, which nothing bounds.
+#:   Five digits is a decade past the 2 291 wallets on the captured list, the
+#:   same headroom the ETH probe carries;
+#: * the hour indices are ~14 months of hours, the ages ~3 years, and
+#:   ``hour_seconds_left`` is 99 hours: ``hourDuration`` is an immutable, so
+#:   the countdown is not guaranteed to be the 3600 this deployment uses.
+WIDTH_PROBE = {
+    "phase": "judged",
+    "settled": True,
+    "settled_hour": 9_999,
+    "sig_settled_state": "fired",
+    "sig_at_risk_state": "fired",
+    "first_judged_hour": 9_999,
+    "hour_needed_eth": _WIDEST_ETH,
+    "hour_seconds_left": 359_999,
+    "last_saved_hour": 9_999,
+    "last_saved_wallet": "0x" + "a" * 40,
+    "last_saved_age_s": 999 * 86_400,
+    "whale_amount_eth": _WIDEST_ETH,
+    "whale_wallet": "0x" + "b" * 40,
+    "whale_age_s": 999 * 86_400,
+    "clusters_count": 9_999,
+    "flagged_points_share_pct": 100.0,
+    "forced_eth": _WIDEST_ETH,
+    "rescued_total_eth": _WIDEST_ETH,
+    "you_rank": 99_999,
+    "you_points": MAX_CURVE_POINTS,
+    "you_credit_eth": _WIDEST_ETH,
+    "you_required_next_eth": _WIDEST_ETH,
+    "you_marginal_points": MAX_CURVE_POINTS,
+}
+
+#: Widget columns the rail needs for the widest row it can **ever** render,
+#: ``padding: 0 1`` included.  Derived from :data:`WIDTH_PROBE` through the
+#: seven builders, so no example row can set it again — the ``dev``/``ops``
+#: lesson in CLAUDE.md, and the reason ``_fmt.COMPACT_ETH_COLS``,
+#: :data:`LABEL_COLS` and ``activity._KIND_COLS`` are all derived too.
+#:
+#: **Three numbers have stood here and the history is the documentation.**
+#: The wp4 hand-off published **76**, read off an example in a docstring; at
+#: 76 the rail rendered by silently dropping ``next ≥ 4.10 ETH (+120 pts)``,
+#: the only actionable number it carries.  That was corrected to **82** by
+#: measuring the builders — but against ``_signals_full()``, an invented
+#: four-figure wallet, so the number was still a fixture's and not the
+#: panel's: WP6's screen sweep, run against the capture's **rank-1** wallet
+#: (``490.90 credit`` / ``next ≥ 491.00 ETH``), needed **84** and reported it.
+#: Re-measuring against one *better* fixture would have repeated the mistake
+#: a third time, because the YOU row's width is a function of the reader's
+#: own credit and the reader is not on the captured list.  So the constant is
+#: now the worst case over the producer's whole vocabulary, and the answer
+#: for any particular payload comes from :func:`measure_signals_width`.
+#:
+#: It is **not** a slot budget.  No layout in this app is this wide, and none
+#: should grow to be: the marker is what covers a reader whose own credit
+#: outgrows the rail, exactly as surf's announce feed lights ``‹ widen`` at
+#: the full-layout width for a post that links a transaction.
+SIGNALS_FULL_WIDTH = measure_signals_width(WIDTH_PROBE)
 
 
 class CuratorSignals(Vertical):
