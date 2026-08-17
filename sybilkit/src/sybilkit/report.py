@@ -118,6 +118,13 @@ class DetectResult:
 
     ``clusters`` is ordered by ``points_share`` descending — widest operator
     first, which is the row the OPERATORS panel leads with.
+
+    ``analyzed`` is the population the producing ``detect`` run looked at
+    (lowercase), and it is what lets :meth:`wallet` return the *representable
+    negative* — analyzed, not linked — instead of collapsing it into the
+    stranger's ``None``.  ``detect`` sets it after construction; a hand-built
+    result defaults to ``frozenset()``, so its non-members read as "not
+    analyzed" — the safe default is never a confident clean.
     """
 
     __slots__ = (
@@ -126,6 +133,8 @@ class DetectResult:
         "flagged_points",
         "clean_points",
         "confidence_threshold",
+        "analyzed",
+        "_by_member",
     )
 
     def __init__(
@@ -144,21 +153,53 @@ class DetectResult:
         self.flagged_points = flagged_points
         self.clean_points = clean_points
         self.confidence_threshold = confidence_threshold
+        self.analyzed: frozenset[str] = frozenset()
+        self._by_member: dict[str, Cluster] = {
+            member: cluster
+            for cluster in self.clusters
+            for member in cluster.members
+        }
 
     def wallet(self, addr: str) -> WalletVerdict | None:
         """This wallet's verdict, or ``None`` if it was not analyzed.
 
-        WP1 fills this in.
+        Three honest answers, never collapsed:
+
+        * a cluster member — ``in_cluster=True`` with the cluster's reasons
+          and its graduated confidence (below-threshold clusters included:
+          linked-with-reasons is not the same word as "flagged");
+        * analyzed and not linked — ``in_cluster=False``, empty reasons,
+          confidence ``0.0`` (the representable negative);
+        * never analyzed — ``None``.  A stranger is not a wallet scored clean.
         """
-        raise NotImplementedError("WP1")
+        key = addr.lower()
+        cluster = self._by_member.get(key)
+        if cluster is not None:
+            return WalletVerdict(
+                in_cluster=True,
+                cluster_id=cluster.cluster_id,
+                reasons=cluster.reasons,
+                confidence=cluster.confidence,
+            )
+        if key in self.analyzed:
+            return WalletVerdict(
+                in_cluster=False, cluster_id=None, reasons=(), confidence=0.0
+            )
+        return None
 
     @property
     def flagged(self) -> set[str]:
         """Lowercase members of every cluster at or above the threshold.
 
-        WP1 fills this in.
+        Confidence stays graduated on both sides of the cut; the threshold
+        decides only what the word "flagged" covers.
         """
-        raise NotImplementedError("WP1")
+        return {
+            member
+            for cluster in self.clusters
+            if cluster.confidence >= self.confidence_threshold
+            for member in cluster.members
+        }
 
 
 __all__ = [

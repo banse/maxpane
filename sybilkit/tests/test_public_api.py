@@ -450,14 +450,16 @@ def test_detect_result_is_a_value_object_not_a_dataclass() -> None:
     assert isinstance(res.clusters, list)
 
 
-def test_detect_result_wallet_and_flagged_are_stubs_until_wp1() -> None:
+def test_detect_result_wallet_and_flagged_behave_on_the_empty_result() -> None:
+    """WP1 landed the bodies; the stub assertions this replaces were the only
+    lines allowed to change.  An empty result flags nobody and knows nobody —
+    the safe default for a wallet it never analyzed is ``None``, never a
+    zero-confidence verdict."""
     res = DetectResult(
         clusters=[], total_points=0, flagged_points=0, clean_points=0
     )
-    with pytest.raises(NotImplementedError, match="WP1"):
-        res.wallet("0x" + "11" * 20)
-    with pytest.raises(NotImplementedError, match="WP1"):
-        _ = res.flagged
+    assert res.wallet("0x" + "11" * 20) is None
+    assert res.flagged == set()
 
 
 def test_the_flagged_threshold_travels_with_the_result() -> None:
