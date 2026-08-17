@@ -792,7 +792,28 @@ class CuratorManager:
                     volume_wei=obituary["total_volume_wei"],
                 )
 
-        self._refold(config, last_block=_opt_int(getattr(sweep, "to_block", None)), now=now)
+        # The watermark is where the *next* sweep starts, so it may only move
+        # over a range every filter actually covered.  A sweep in which one
+        # topic filter died read that range for five groups and not for the
+        # sixth, and advancing past it would skip the sixth's rows **forever** —
+        # ``store_fold``'s own contract, and the failure the gap-repair tier
+        # exists because of.  ``last_block=None`` is its documented "rows in,
+        # watermark unchanged" combination: what arrived is kept, and the range
+        # is swept again next tick.
+        covered = not any(failed.values())
+        if not covered:
+            logger.warning(
+                "Curator sweep from block %d had a dead filter (%s); the rows it "
+                "did return are folded but the watermark stays put so the range "
+                "is re-read rather than skipped",
+                from_block,
+                ", ".join(sorted(g for g, dead in failed.items() if dead)),
+            )
+        self._refold(
+            config,
+            last_block=_opt_int(getattr(sweep, "to_block", None)) if covered else None,
+            now=now,
+        )
 
         groups_read = self._logs_read_groups() | {
             group for group, dead in failed.items() if not dead
@@ -817,7 +838,13 @@ class CuratorManager:
             )
             self._repair_from_block = None
             self._fold_stale = False
-        return {"ok": True, "swept": True, "from_block": from_block, "sweep": sweep}
+        return {
+            "ok": True,
+            "swept": True,
+            "from_block": from_block,
+            "sweep": sweep,
+            "failed": failed,
+        }
 
     def _refold(
         self, config: dict[str, Any] | None, *, last_block: int | None, now: float
@@ -992,15 +1019,34 @@ class CuratorManager:
 
     # -- the WP3 seam --------------------------------------------------------
 
-    def _log_reading(self, name: str, values: list, *, swept: bool) -> list | None:
+    def _log_reading(
+        self, name: str, values: list, *, swept: bool, failed: bool = False
+    ) -> list | None:
         """``[]`` when the read happened and found nothing; ``None`` when it did not.
 
         Collapsing the two makes a dead logs pool indistinguishable from a quiet
         chain — and *quiet* is the state that kills this contract, so the
         difference is the whole dashboard.
+
+        Three questions in order, and the order is the point:
+
+        1. **Do we hold rows?**  Then serve them.  The fold is accumulated and
+           is last-good by construction, behind the ``as of HH:MM`` marker.
+        2. **Did *this group's own filter* die in this sweep?**  Then ``None``.
+           ``swept`` is a fact about the sweep, not about the group: a sweep
+           whose ``deposits`` filter died still returns a ``LogSweep``, so
+           keying off it alone reads a dead filter as "read it, found nothing"
+           — the exact conflation 1ba8370 fixed one level up, reintroduced one
+           level down.  It only bites while a group has no history, which is to
+           say on the first run.
+        3. **Has anyone ever read this group?**  Then ``[]``: ``HourSaved`` and
+           ``Rescued`` have never fired on chain, so "read it, found nothing" is
+           the *expected* answer and must not render as an outage.
         """
         if values:
             return values
+        if failed:
+            return None
         if swept or name in self._logs_read_groups():
             return []
         return None
@@ -1012,6 +1058,7 @@ class CuratorManager:
         config: Any = None,
         logs: Any = None,
         wallet_state: Any = None,
+        log_groups_failed: Any = None,
     ) -> dict[str, Any]:
         """Everything ``build_signals`` reads, and only that.
 
@@ -1033,6 +1080,10 @@ class CuratorManager:
         """
         cfg = config if isinstance(config, dict) else {}
         swept = logs is not None
+        # Per-filter, not per-sweep.  Absent means "nothing is known to have
+        # failed", which is what a caller that cannot report partial failure is
+        # in fact claiming.
+        dead = log_groups_failed if isinstance(log_groups_failed, dict) else {}
         read: dict[str, Any] = {key: None for key in READING_KEYS}
 
         for key in FAST_TIER_PAYLOAD_KEYS:
@@ -1041,13 +1092,22 @@ class CuratorManager:
             read[key] = cfg.get(key)
 
         read["deposits"] = self._log_reading(
-            "deposits", self.cache.events(), swept=swept
+            "deposits",
+            self.cache.events(),
+            swept=swept,
+            failed=bool(dead.get("deposits")),
         )
         read["first_deposits"] = self._log_reading(
-            "first_deposits", self.cache.first_deposits(), swept=swept
+            "first_deposits",
+            self.cache.first_deposits(),
+            swept=swept,
+            failed=bool(dead.get("first_deposits")),
         )
         read["hour_saved"] = self._log_reading(
-            "hour_saved", self.cache.hour_saved(), swept=swept
+            "hour_saved",
+            self.cache.hour_saved(),
+            swept=swept,
+            failed=bool(dead.get("hour_saved")),
         )
         read["rescued_total_wei"] = self.cache.rescued_total_wei()
 
@@ -1099,6 +1159,7 @@ class CuratorManager:
             config=config,
             logs=logs_out.get("sweep"),
             wallet_state=wallet_state,
+            log_groups_failed=logs_out.get("failed"),
         )
         signals = _safe_call(build_signals, readings, now_ts=now, default=None)
         if not isinstance(signals, dict):

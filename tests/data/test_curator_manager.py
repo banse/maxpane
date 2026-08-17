@@ -802,6 +802,81 @@ def test_one_failed_log_group_degrades_only_its_own_keys(tmp_path, clock):
     assert "hour_saved" in manager._logs_read_groups()
 
 
+def _partial_sweep_client(dead_group: str) -> FakeClient:
+    """A sweep whose ``dead_group`` filter died while the others answered.
+
+    The client documents exactly this: ``fetch_logs`` returns a ``LogSweep``
+    unless *every* group failed, and ``log_group_failed`` is the only thing
+    that tells ``()`` apart from "this filter died".
+    """
+    import dataclasses as _dc
+
+    partial = _dc.replace(_sweep(), **{dead_group: ()})
+    client = FakeClient(
+        fetch_logs=lambda *_: partial, fetch_blockscout_logs=lambda *_: []
+    )
+    client.log_group_failed[dead_group] = True
+    return client
+
+
+def test_a_dead_deposits_filter_reads_as_unavailable_not_as_an_empty_game(tmp_path, clock):
+    """A sweep whose ``deposits`` filter died still returns a LogSweep, so
+    keying the None/[] distinction off the SWEEP rather than the GROUP reads
+    that filter as "read it, found nothing" -- the conflation 1ba8370 fixed one
+    level up, reintroduced one level down.  The widgets branch on it: [] renders
+    "no deposits yet" over a game with 231 of them."""
+    client = _partial_sweep_client("deposits")
+    manager = _manager(tmp_path, clock, client=client)
+    out = asyncio.run(manager.fetch_and_compute())
+
+    assert "deposits" not in manager._logs_read_groups()
+    assert out["leaderboard_rows"] is None
+    assert out["activity_rows"] is None
+    assert out["closest_call_rows"] is None
+    assert out["cluster_rows"] is None
+    assert SOURCE_LOGS in out["degraded"]
+
+
+def test_a_dead_filter_does_not_advance_the_watermark_past_its_range(tmp_path, clock):
+    """store_fold's contract: advancing on a failure skips that block range
+    FOREVER, and the leaderboard is then permanently wrong with no symptom.  A
+    sweep that read five groups and not the sixth has not covered its range."""
+    client = _partial_sweep_client("deposits")
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+
+    assert manager.cache.last_seen_block() is None           # never advanced
+    assert manager._sweep_from_block() == A.CREATION_BLOCK   # re-read, not skipped
+    assert len(manager.cache.first_deposits()) == 145        # what arrived is kept
+
+    # ...and once the filter recovers, the range is swept again and folded.
+    client.log_group_failed["deposits"] = False
+    client.answers["fetch_logs"] = lambda *_: _sweep()
+    clock.advance(60)
+    asyncio.run(manager._pool_logs({"medium"}, clock.now, CONFIG))
+    assert [args[0] for name, *args in client.calls if name == "fetch_logs"][-1] == (
+        A.CREATION_BLOCK
+    )
+    assert len(manager.cache.events()) == 231
+    assert manager.cache.last_seen_block() == 25_770_500
+
+
+def test_a_group_with_history_still_serves_it_when_its_filter_dies(tmp_path, clock):
+    """The other side of the same rule.  A transient dead filter must not blank
+    a fold we already hold -- that is what last-good behind `as of HH:MM` is
+    for, and it is the degradation matrix's row 2."""
+    client = FakeClient(fetch_logs=lambda *_: _sweep(), fetch_blockscout_logs=lambda *_: [])
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager.fetch_and_compute())
+
+    dead = _partial_sweep_client("deposits")
+    manager.client = dead
+    clock.advance(60)
+    out = asyncio.run(manager.fetch_and_compute())
+    assert len(out["leaderboard_rows"]) == 10
+    assert SOURCE_LOGS in out["degraded"]
+
+
 def test_a_settled_log_fills_the_obituary_without_creating_the_latch(tmp_path, clock):
     """# SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
     (WP1.3 capture C).  Settled has never fired on chain."""
