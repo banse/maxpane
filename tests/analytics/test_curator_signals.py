@@ -407,3 +407,182 @@ def test_lived_desc_is_none_when_it_cannot_be_measured() -> None:
     assert sig.lived_desc(None, LAUNCH + HOUR) is None
     assert sig.lived_desc(LAUNCH, None) is None
     assert sig.lived_desc(LAUNCH, LAUNCH - 60) is None
+
+
+# ===========================================================================
+# WP3.3 — the curve: integer sqrt with the contract's exact floor (H7)
+# ===========================================================================
+#
+# ``_contract_sqrt`` is a literal transcription of ``source.sol``'s ``_sqrt``:
+# the bit-length seed, exactly seven Newton iterations, and the final
+# ``result <= a / result ? result : result - 1`` correction.  It is the witness
+# and it lives here, never in production — production uses ``math.isqrt`` and
+# this differential is what proves the two agree.
+
+
+def _contract_log2(x: int) -> int:
+    r = 0
+    for bits in (128, 64, 32, 16, 8, 4, 2):
+        if x >> bits > 0:
+            x >>= bits
+            r += bits
+    if x >> 1 > 0:
+        r += 1
+    return r
+
+
+def _contract_sqrt(a: int) -> int:
+    if a == 0:
+        return 0
+    result = 1 << (_contract_log2(a) >> 1)
+    for _ in range(7):
+        result = (result + a // result) >> 1
+    return result if result <= a // result else result - 1
+
+
+def test_the_transcription_is_the_contracts_and_not_pythons() -> None:
+    """The witness has to be able to disagree.  Seeding + 7 iterations is not
+    'whatever isqrt does': drop an iteration and the two part company."""
+
+    def _under_iterated(a: int, rounds: int) -> int:
+        result = 1 << (_contract_log2(a) >> 1)
+        for _ in range(rounds):
+            result = (result + a // result) >> 1
+        return result if result <= a // result else result - 1
+
+    # Three rounds is not enough for a 2000 ETH weight, and four is not enough
+    # for a 256-bit one: the loop's length is load-bearing, so a transcription
+    # that quietly matched ``isqrt`` for structural reasons is ruled out.
+    assert _under_iterated(2000 * ETH, 3) != math.isqrt(2000 * ETH)
+    assert _under_iterated(1 << 255, 4) != math.isqrt(1 << 255)
+    assert _contract_sqrt(1 << 255) == math.isqrt(1 << 255)
+
+
+def test_the_production_sqrt_matches_the_contract_over_the_edges() -> None:
+    edges = [
+        0, 1, 2, 3, 4, 8,
+        10**9 - 1, 10**9, 10**9 + 1,
+        ETH, 4 * ETH, 100 * ETH, 1000 * ETH, 2000 * ETH,
+        (1 << 96) - 1, (1 << 96),
+    ]
+    for w in edges:
+        assert math.isqrt(w) == _contract_sqrt(w), w
+
+
+def test_the_production_curve_matches_the_contract_over_a_random_corpus() -> None:
+    """10 000 draws across the whole reachable weight range (0 .. 2000 ETH, the
+    hard ceiling: creditCap 1000 ETH x the 2x maximum multiplier).  Seeded, so
+    a failure is reproducible.
+
+    The differential runs through ``points_for_weight`` and not through
+    ``math.isqrt``: comparing the test's transcription to the standard library
+    proves nothing about the module under test, and a production ``sqrt`` that
+    went through float64 would sail straight past it.
+    """
+    rng = random.Random(20260816)
+    for _ in range(10_000):
+        w = rng.randrange(0, 2000 * ETH)
+        assert math.isqrt(w) == _contract_sqrt(w), w
+        expected = _contract_sqrt(w) * POINTS_PER_ETH // 10**9
+        assert sig.points_for_weight(w, POINTS_PER_ETH) == expected, w
+
+
+# Weights that read one point too high through float64, one per decade of the
+# reachable range.  Each is ``(k * 10**6)**2 - 1``: the true root is
+# ``k*10**6 - 1`` and the curve's ``// 1e9`` turns a one-wei error in the root
+# into a **one-point** error, which is the only way a float sqrt is visible at
+# all.  ``int(math.sqrt(w))`` returns ``k*10**6`` for every one of them.
+#
+# Searching for these took three attempts and the WP's own premise was wrong:
+# a random corpus of 10 000 draws does NOT find a float-sqrt defect (the
+# mismatch rate over 0..2000 ETH is under 1 in 200 000, and the ``// 1e9``
+# absorbs almost all of the ones that do occur).  The mutation is only
+# detectable against chosen witnesses, so they are pinned here by value.
+_FLOAT_SQRT_TRAPS = (
+    (50_175_999_999_999_999, 223),          # 0.050176 ETH — just above the floor
+    (99_999_999_999_999_999_999, 9_999),    # 100 ETH
+    (999_950_883_999_999_999_999, 31_621),  # ~1000 ETH, the credit cap
+    (1_999_967_840_999_999_999_999, 44_720),  # ~2000 ETH, the hard ceiling
+)
+
+
+def test_the_production_curve_survives_weights_a_float_sqrt_would_round_wrong() -> None:
+    """float64 has 53 bits of mantissa; a weight in wei has 71 bits at the top
+    of the reachable range.  On each of these the standard float path reads one
+    point too high — the contract reads the lower number and so must we."""
+    for weight, points in _FLOAT_SQRT_TRAPS:
+        assert sig.points_for_weight(weight, POINTS_PER_ETH) == points, weight
+        assert int(math.sqrt(weight)) * POINTS_PER_ETH // 10**9 == points + 1
+        assert _contract_sqrt(weight) * POINTS_PER_ETH // 10**9 == points
+
+
+def test_the_documented_curve_points() -> None:
+    """The mechanics doc's table, recomputed rather than trusted."""
+    assert sig.points_for_weight(1 * ETH, POINTS_PER_ETH) == 1_000
+    assert sig.points_for_weight(4 * ETH, POINTS_PER_ETH) == 2_000
+    assert sig.points_for_weight(100 * ETH, POINTS_PER_ETH) == 10_000
+    assert sig.points_for_weight(1000 * ETH, POINTS_PER_ETH) == 31_622
+    assert sig.points_for_weight(2000 * ETH, POINTS_PER_ETH) == 44_721
+    assert sig.points_for_weight(0, POINTS_PER_ETH) == 0
+
+
+def test_the_curve_matches_previewpoints_on_chain(curve_probe: dict) -> None:
+    """The onchain witness (WP1.6): ``previewPoints(uint256)`` answered for 12
+    weights in one keyless round, including the four values that floor to zero
+    points and the two that pin the ends of the reachable range."""
+    probed = [
+        (int(row["argument"]), int(row["result"], 16)) for row in curve_probe["weights"]
+    ]
+    assert len(probed) == 12
+    for weight, points in probed:
+        assert sig.points_for_weight(weight, POINTS_PER_ETH) == points, weight
+    # The shape the probe pins, spelled out so a re-capture cannot quietly
+    # change it: everything below 1e9 wei of weight is worth zero points.
+    assert dict(probed)[10**9 - 1] == 0 and dict(probed)[10**9] == 0
+    assert dict(probed)[ETH] == 1_000 and dict(probed)[2000 * ETH] == 44_721
+
+
+def test_the_curve_matches_pointsof_for_four_real_wallets(
+    curve_probe: dict, deposits: list[DepositEvent]
+) -> None:
+    """``pointsOf(addr)`` against the curve applied to the weight this suite
+    folds out of the logs — two independent paths to the same integer, one of
+    them the contract's own."""
+    weights = {
+        row["argument"].lower(): int(row["result"], 16)
+        for row in curve_probe["wallets"]
+        if row["name"].startswith("weightOf")
+    }
+    points = {
+        row["argument"].lower(): int(row["result"], 16)
+        for row in curve_probe["wallets"]
+        if row["name"].startswith("pointsOf")
+    }
+    assert len(weights) == 4 and len(points) == 4
+    for address, weight in weights.items():
+        assert _last_event_for(deposits, address).new_weight_wei == weight
+        assert sig.points_for_weight(weight, POINTS_PER_ETH) == points[address]
+
+
+def test_the_multiplication_happens_before_the_division() -> None:
+    """(isqrt(w) * points_per_eth) // 1e9 is not ((isqrt(w) // 1e9) * ppe).
+
+    The wrong order returns 0 for every weight below 1e18 — i.e. for the 53
+    wallets sitting at the 0.05 ETH minimum, a third of the captured list.
+    """
+    w = 999_999_999**2  # isqrt == 999_999_999, just under 1e9
+    assert sig.points_for_weight(w, POINTS_PER_ETH) == 999
+    assert (math.isqrt(w) // 10**9) * POINTS_PER_ETH == 0
+
+
+def test_points_per_eth_is_a_parameter_not_a_literal() -> None:
+    """CLAUDE.md rule 4: it is a contract constant, read on the `once` tier."""
+    assert sig.points_for_weight(ETH, 500) == 500
+    assert "1000" not in inspect.getsource(sig.points_for_weight)
+
+
+def test_the_curve_is_total_over_missing_and_nonsense_inputs() -> None:
+    assert sig.points_for_weight(None, POINTS_PER_ETH) is None
+    assert sig.points_for_weight(ETH, None) is None
+    assert sig.points_for_weight(-1, POINTS_PER_ETH) is None
+    assert sig.points_for_weight("0x1", POINTS_PER_ETH) is None

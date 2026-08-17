@@ -353,6 +353,33 @@ def lived_desc(
     return ("lived " if settled else "alive ") + " ".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# The curve (H7)
+# ---------------------------------------------------------------------------
+
+
+def points_for_weight(weight_wei: int | None, points_per_eth: int | None) -> int | None:
+    """The contract's ``_curve``: ``(sqrt(weight) * POINTS_PER_ETH) / 1e9``.
+
+    Integer throughout, and **the multiplication happens before the division**.
+    The other order collapses every weight under one ETH to zero, which is a
+    third of the captured list — the wallets sitting at the minimum deposit.
+
+    ``math.isqrt`` is exact; the contract's own bit-seeded Newton loop is
+    transcribed in the test suite and differentially compared against it over
+    the whole reachable range.  A float ``sqrt`` is not a substitute: 53 bits of
+    mantissa cannot hold a weight in wei.
+
+    ``points_per_eth`` is a parameter because it is a contract constant read on
+    the ``once`` tier — never a literal here (CLAUDE.md rule 4).
+    """
+    weight = _int_or_none(weight_wei)
+    rate = _int_or_none(points_per_eth)
+    if weight is None or rate is None or weight < 0 or rate < 0:
+        return None
+    return math.isqrt(weight) * rate // _SQRT_SCALE
+
+
 __all__ = [
     # tunables
     "WHALE_MIN_ETH",
@@ -378,4 +405,6 @@ __all__ = [
     "grace_seconds_left",
     "grace_ends_utc",
     "lived_desc",
+    # curve
+    "points_for_weight",
 ]
