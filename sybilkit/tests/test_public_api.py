@@ -510,12 +510,25 @@ def test_detect_config_defaults_are_the_measured_ones() -> None:
                        byte-identical rule cannot (499 runs / 7 369 wallets at
                        ±10%, against 281 / 3 779 byte-identical).
     ``confidence_threshold=0.5`` — the ``flagged`` cut, graduated either side.
+
+    Amended in WP1 fix round 1 (controller-authorized frozen-surface
+    amendments):
+
+    ``points_per_eth=1000`` — ruling R10: the curve rate is an explicit,
+    documented config field rather than a slot-invisible ``getattr`` on the
+    dataset.  1000 is the rate the committed population was swept at; a
+    caller that has read the live rate passes it here, visibly.
+    ``protocol_min_amount_wei=None`` — ruling R13: when set, byte-identical
+    groups AT the protocol minimum get no amount/split edge from
+    identicalness alone (everyone sends the minimum; it identifies nobody).
     """
     cfg = DetectConfig()
     assert cfg.min_size == 5
     assert cfg.min_families == 2
     assert cfg.near_amount_tol == 0.10
     assert cfg.confidence_threshold == 0.5
+    assert cfg.points_per_eth == 1000
+    assert cfg.protocol_min_amount_wei is None
     assert dataclasses.is_dataclass(DetectConfig)
     assert DetectConfig.__dataclass_params__.frozen is True
     assert tuple(f.name for f in dataclasses.fields(DetectConfig)) == (
@@ -523,6 +536,8 @@ def test_detect_config_defaults_are_the_measured_ones() -> None:
         "min_families",
         "near_amount_tol",
         "confidence_threshold",
+        "points_per_eth",
+        "protocol_min_amount_wei",
     )
 
 

@@ -60,7 +60,7 @@ class Edge:
 
 @dataclass(frozen=True, slots=True)
 class DetectConfig:
-    """The four knobs, with the measured defaults.
+    """The knobs, with the measured defaults.
 
     ``min_size = 5``
         Hop used ≥10 and LayerZero ≥20.  Five is the floor that still keeps
@@ -80,20 +80,32 @@ class DetectConfig:
     ``confidence_threshold = 0.5``
         The ``DetectResult.flagged`` cut.  Confidence stays graduated either
         side of it; the threshold decides only what the word "flagged" covers.
+
+    ``points_per_eth = 1000``
+        The curve rate every point fold uses (ruling R10).  An explicit,
+        documented field — never a slot-invisible attribute on the dataset —
+        so a caller that forgets to pass the live rate can be *seen* to have
+        forgotten.  1000 is the rate the committed population fixtures were
+        swept at; the curator preset (WP2) reads ``POINTS_PER_ETH`` live and
+        passes it here, with an agreement test.  Shares are rate-invariant;
+        absolute points are not.
+
+    ``protocol_min_amount_wei = None``
+        Ruling R13.  When set to the protocol's minimum deposit, groups that
+        are byte-identical **at that amount** get no amount/split edge from
+        identicalness alone — everyone sends the minimum, so the minimum
+        identifies nobody.  Sequence, cadence, gas and funding still apply
+        to those wallets in full.  ``None`` (the default) applies no
+        exemption; ``0`` is a real value, not an unset one.
     """
 
     min_size: int = 5
     min_families: int = 2
     near_amount_tol: float = 0.10
     confidence_threshold: float = 0.5
+    points_per_eth: int = 1000
+    protocol_min_amount_wei: int | None = None
 
-
-#: The rate the committed population fixture was swept at.  ``detect`` uses
-#: ``getattr(ds, "points_per_eth", DEFAULT_POINTS_PER_ETH)`` — a producer that
-#: has read the live rate carries it on a ``Dataset`` subclass and this
-#: default never applies; an offline run over committed data gets the rate
-#: that data was measured under.  Every *share* is rate-invariant either way.
-DEFAULT_POINTS_PER_ETH = 1000
 
 #: Freshness discounts, never convicts: a cluster of aged wallets keeps its
 #: families and loses a slice of confidence.  All-fresh → factor 1.0
@@ -203,7 +215,7 @@ def detect(ds: Dataset, config: DetectConfig = DetectConfig()) -> DetectResult:
     last_weight: dict[str, int] = {}
     for dep in ds.deposits:  # chain order: the last write is the final weight
         last_weight[dep.contributor] = dep.new_weight_wei
-    points_per_eth = getattr(ds, "points_per_eth", DEFAULT_POINTS_PER_ETH)
+    points_per_eth = config.points_per_eth
     total_points = sum(
         curve_points(w, points_per_eth) for w in last_weight.values()
     )
@@ -269,4 +281,4 @@ def detect(ds: Dataset, config: DetectConfig = DetectConfig()) -> DetectResult:
     return result
 
 
-__all__ = ["FAMILIES", "DEFAULT_POINTS_PER_ETH", "DetectConfig", "Edge", "detect"]
+__all__ = ["FAMILIES", "DetectConfig", "Edge", "detect"]

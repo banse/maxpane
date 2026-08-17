@@ -282,6 +282,24 @@ def test_a_single_block_coincidence_is_one_family_and_no_cluster() -> None:
     assert detect(ds, DetectConfig()).clusters == []
 
 
+def test_points_per_eth_travels_through_the_config() -> None:
+    """Review I5 / ruling R10: the curve rate is an explicit DetectConfig
+    field — no dataset attribute, no stringly getattr.  Doubling the rate
+    doubles every wei-exact fold (before the floor), and shares stay put."""
+    ds = _two_family_farm(fresh=True)
+    at_1000 = detect(ds, DetectConfig())
+    at_2000 = detect(ds, DetectConfig(points_per_eth=2000))
+    assert at_1000.total_points > 0
+    assert at_2000.total_points == sum(
+        curve_points(w, 2000)
+        for w in {d.contributor: d.new_weight_wei for d in ds.deposits}.values()
+    )
+    assert at_2000.clusters[0].points > at_1000.clusters[0].points
+    assert at_2000.clusters[0].points_share == at_1000.clusters[0].points_share
+    # and the dataset carries no rate for anything to read
+    assert not hasattr(ds, "points_per_eth")
+
+
 def test_the_gate_reads_its_thresholds_from_the_config() -> None:
     ds = _labeled()
     default = detect(ds, DetectConfig())
