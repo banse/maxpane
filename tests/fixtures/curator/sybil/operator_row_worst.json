@@ -1,0 +1,229 @@
+{
+ "synthetic": "SYNTHETIC — calibrated from docs/curator_sybil_data/, re-point at a live analysis bundle",
+ "note": "The OPERATORS panel's payload.  `worst` is the row WP4 and WP5 size against: the 1,995-wallet 0.45Ξ operator, 6.81% of all points at a 44.6x sqrt subsidy, with an over-provisioned four-reason list (plan §6 risk 6).  `rows` is the whole audited set -- 16 operators, 6,303 wallets, 43.25% of points -- for measuring the panel rather than one line.  Every number is derived from docs/curator_sybil_data/cluster_economics.json; every reason string is derived from the shape, fingerprint and funding evidence in same_amount_clusters.json / index_runs.json / tx_fingerprints.json / funding.json.",
+ "row_keys": [
+  "size",
+  "reasons",
+  "points",
+  "points_share_pct",
+  "sqrt_subsidy_x",
+  "conf"
+ ],
+ "worst": {
+  "size": 1995,
+  "reasons": [
+   "identical 0.45Ξ send ×1,995",
+   "consecutive join indices · ≤2-block spacing",
+   "uniform 0.1 gwei priority fee · one gas limit",
+   "shared funder chain"
+  ],
+  "points": 1811322,
+  "points_share_pct": 6.81,
+  "sqrt_subsidy_x": 44.6,
+  "conf": "high"
+ },
+ "rows": [
+  {
+   "size": 997,
+   "reasons": [
+    "identical 14Ξ send ×997",
+    "same-amount window · 2551-block span",
+    "one gas limit (150,000) across the sample",
+    "shared funder chain"
+   ],
+   "points": 4755046,
+   "points_share_pct": 17.89,
+   "sqrt_subsidy_x": 31.6,
+   "conf": "low"
+  },
+  {
+   "size": 769,
+   "reasons": [
+    "identical 10Ξ send ×769",
+    "same-amount window · 39-block span",
+    "uniform 0.1 gwei priority fee · one gas limit",
+    "shared funder chain"
+   ],
+   "points": 3245928,
+   "points_share_pct": 12.21,
+   "sqrt_subsidy_x": 27.7,
+   "conf": "high"
+  },
+  {
+   "size": 1995,
+   "reasons": [
+    "identical 0.45Ξ send ×1,995",
+    "same-amount window · 254-block span",
+    "uniform 0.1 gwei priority fee · one gas limit",
+    "shared funder chain"
+   ],
+   "points": 1811322,
+   "points_share_pct": 6.81,
+   "sqrt_subsidy_x": 44.6,
+   "conf": "high"
+  },
+  {
+   "size": 300,
+   "reasons": [
+    "identical 1.2Ξ send ×300",
+    "same-amount window · 186-block span",
+    "uniform 0.035 gwei priority fee · one gas limit",
+    "shared funder chain"
+   ],
+   "points": 454865,
+   "points_share_pct": 1.71,
+   "sqrt_subsidy_x": 17.3,
+   "conf": "high"
+  },
+  {
+   "size": 220,
+   "reasons": [
+    "identical 2.067Ξ send ×220",
+    "same-amount window · 542-block span",
+    "uniform 0.001 gwei priority fee · one gas limit",
+    "shared funder chain"
+   ],
+   "points": 345582,
+   "points_share_pct": 1.3,
+   "sqrt_subsidy_x": 14.8,
+   "conf": "high"
+  },
+  {
+   "size": 692,
+   "reasons": [
+    "identical 0.05Ξ send ×692",
+    "same-amount window · 2263-block span"
+   ],
+   "points": 190888,
+   "points_share_pct": 0.72,
+   "sqrt_subsidy_x": 26.2,
+   "conf": "low"
+  },
+  {
+   "size": 104,
+   "reasons": [
+    "identical 2.067Ξ send ×104",
+    "same-amount window · 227-block span",
+    "uniform 0.001 gwei priority fee · one gas limit",
+    "shared funder chain"
+   ],
+   "points": 178821,
+   "points_share_pct": 0.67,
+   "sqrt_subsidy_x": 10.2,
+   "conf": "high"
+  },
+  {
+   "size": 10,
+   "reasons": [
+    "identical 171.99Ξ send ×10",
+    "same-amount window · 39-block span",
+    "uniform 2 gwei priority fee · one gas limit"
+   ],
+   "points": 139218,
+   "points_share_pct": 0.52,
+   "sqrt_subsidy_x": 3.2,
+   "conf": "low"
+  },
+  {
+   "size": 321,
+   "reasons": [
+    "identical 0.1Ξ send ×321",
+    "same-amount window · 836-block span",
+    "one gas limit (91,600) across the sample",
+    "shared funder chain"
+   ],
+   "points": 111946,
+   "points_share_pct": 0.42,
+   "sqrt_subsidy_x": 17.9,
+   "conf": "high"
+  },
+  {
+   "size": 232,
+   "reasons": [
+    "identical 0.05Ξ send ×232",
+    "same-amount window · 720-block span"
+   ],
+   "points": 59482,
+   "points_share_pct": 0.22,
+   "sqrt_subsidy_x": 15.2,
+   "conf": "low"
+  },
+  {
+   "size": 163,
+   "reasons": [
+    "identical 0.05Ξ send ×163",
+    "same-amount window · 826-block span",
+    "shared funder chain"
+   ],
+   "points": 40206,
+   "points_share_pct": 0.15,
+   "sqrt_subsidy_x": 12.7,
+   "conf": "low"
+  },
+  {
+   "size": 100,
+   "reasons": [
+    "near-identical amounts ±10% ×100",
+    "consecutive join indices 12,058–12,157 · 1-block span",
+    "uniform 0.01 gwei priority fee · one gas limit",
+    "shared funder chain"
+   ],
+   "points": 37099,
+   "points_share_pct": 0.14,
+   "sqrt_subsidy_x": 10.0,
+   "conf": "high"
+  },
+  {
+   "size": 100,
+   "reasons": [
+    "near-identical amounts ±10% ×100",
+    "consecutive join indices 13,326–13,425 · 1-block span",
+    "uniform 0.03 gwei priority fee · one gas limit",
+    "shared funder chain"
+   ],
+   "points": 34140,
+   "points_share_pct": 0.13,
+   "sqrt_subsidy_x": 10.0,
+   "conf": "high"
+  },
+  {
+   "size": 100,
+   "reasons": [
+    "near-identical amounts ±10% ×100",
+    "consecutive join indices 13,795–13,894 · 1-block span",
+    "uniform 0.03 gwei priority fee · one gas limit",
+    "shared funder chain"
+   ],
+   "points": 31974,
+   "points_share_pct": 0.12,
+   "sqrt_subsidy_x": 10.0,
+   "conf": "high"
+  },
+  {
+   "size": 100,
+   "reasons": [
+    "near-identical amounts ±10% ×100",
+    "consecutive join indices 13,897–13,996 · 1-block span",
+    "uniform 0.03 gwei priority fee · one gas limit",
+    "shared funder chain"
+   ],
+   "points": 31431,
+   "points_share_pct": 0.12,
+   "sqrt_subsidy_x": 10.0,
+   "conf": "high"
+  },
+  {
+   "size": 100,
+   "reasons": [
+    "near-identical amounts ±10% ×100",
+    "consecutive join indices 14,001–14,100 · 1-block span",
+    "uniform 0.03 gwei priority fee · one gas limit",
+    "shared funder chain"
+   ],
+   "points": 30955,
+   "points_share_pct": 0.12,
+   "sqrt_subsidy_x": 10.0,
+   "conf": "high"
+  }
+ ]
+}

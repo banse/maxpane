@@ -43,6 +43,7 @@ packages = ["src/sybilkit"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # `src/` layout: the tests import the package from the source tree, so a
-# checkout needs no install to run them.  `.` puts `tests/` itself on the path
-# so `sybilkit_fixtures` imports without a package prefix.
+# checkout needs no install to run them.  `.` puts the distribution root on the
+# path, so the shared reader imports as `tests.sybilkit_fixtures` -- the same
+# spelling the maxpane suite uses for `tests.curator_fixtures`.
 pythonpath = ["src", "."]
