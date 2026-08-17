@@ -521,6 +521,9 @@ class CuratorManager:
         #: and the two are kept apart by clearing these on failure.
         self._fast_state: Any = None
         self._fast_wallet: Any = None
+        #: The detached slow-tier cross-check, or ``None`` when none is in
+        #: flight.  See :meth:`_spawn_crosscheck` for why it is not awaited.
+        self._crosscheck_task: Any = None
 
         try:
             self.cache.load()
@@ -536,14 +539,19 @@ class CuratorManager:
             logger.warning("Curator cache save failed: %s", exc)
 
     async def close(self) -> None:
-        """Close the client, then persist the cache.  Never raises.
+        """Stop the cross-check, close the client, then persist the cache.
 
-        In that order, and the save happens even when the close raises.  The
-        client owns sockets and the cache owns a file; closing first means no
-        in-flight response can still be folding rows into the structures the
-        save is walking, and saving in a ``finally`` means a client that throws
-        on the way out cannot cost the user the whole game's history.
+        Never raises.  In that order, and the save happens even when the close
+        raises.  The detached cross-check holds the same client, so it is
+        cancelled and awaited *first* -- closing sockets out from under a task
+        that is still paging is how a clean quit turns into a traceback on the
+        way down.  The client owns sockets and the cache owns a file; closing
+        before saving means no in-flight response can still be folding rows
+        into the structures the save is walking, and saving in a ``finally``
+        means a client that throws on the way out cannot cost the user the
+        whole game's history.
         """
+        await self._cancel_crosscheck()
         try:
             await self.client.close()
         except Exception as exc:  # noqa: BLE001
@@ -939,6 +947,88 @@ class CuratorManager:
 
     # -- the slow tier: the independent cross-check and gap repair -----------
 
+    def _spawn_crosscheck(
+        self, tiers: set[str], now: float, state: Any, config: dict[str, Any] | None
+    ) -> Any:
+        """Start the cross-check **detached**; never wait for it.
+
+        Awaiting it inside the cycle put the whole dashboard behind a read of
+        the contract's *entire* log history, on every launch and on every slow
+        tick.  Measured through the real app: first payload after **201.2 s**,
+        of which ``fetch_blockscout_logs`` was 202.6 of 203.8 s in cycle 0
+        while the next cycle took 0.8 s.  The fold that drives every panel was
+        ready in under a second and the reader watched an empty SIGNALS rail --
+        the doomsday clock this dashboard exists for -- for three and a half
+        minutes.  Blockscout pages 50 logs at a time and the contract is past
+        19 500 of them and climbing, so the wait grows with the game and the
+        slow tier's own 420 s period does not.
+
+        Nothing downstream needs the answer *this* cycle.  The cross-check
+        publishes no key: it either agrees with the fold or schedules a repair
+        sweep by setting ``_repair_from_block``, which the next medium tick
+        reads.  Skipping it entirely is already a supported, tested state
+        (``{"ok": None, "checked": False}``), so a payload built before it
+        lands is a payload this manager was always allowed to produce.
+
+        One at a time.  While a sweep is in flight the slow tier stays *due*
+        (only the call itself marks it), so every cycle offers again and the
+        guard here is what keeps a 200-second read from stacking up thirty
+        deep behind a 30-second poll.
+
+        ``now`` is the spawn time, deliberately: it stamps the last-good slot
+        and therefore the ``as of HH:MM`` marker, and a marker that claims the
+        *end* of a three-minute read is a marker claiming data is fresher than
+        it is.
+
+        **What this does not fix.**  The sweep still costs O(whole history)
+        every slow tick, and the history grows while :data:`TIER_SLOW`'s 420 s
+        period does not — at the launch-week rate the two cross over within a
+        day, after which the guard above simply runs one sweep after another in
+        the background.  That is bandwidth, not latency, and no reader waits on
+        it; a cross-check that pages only down to a persisted verified-to-block
+        watermark is the real answer and is PRD §12 material, not v1.
+        """
+        if TIER_SLOW not in tiers:
+            return None
+        running = self._crosscheck_task
+        if running is not None and not running.done():
+            logger.debug("Curator cross-check still in flight; not starting another")
+            return running
+        self._crosscheck_task = asyncio.ensure_future(
+            self._crosscheck_detached(tiers, now, state, config)
+        )
+        return self._crosscheck_task
+
+    async def _crosscheck_detached(
+        self, tiers: set[str], now: float, state: Any, config: dict[str, Any] | None
+    ) -> None:
+        """:meth:`_pool_crosscheck` with nobody to raise at.
+
+        A detached task's exception surfaces at garbage-collection time as an
+        "exception was never retrieved" line and never as a degraded source,
+        so it is caught here.  ``CancelledError`` is re-raised: that one is
+        :meth:`close` doing its job.
+        """
+        try:
+            await self._pool_crosscheck(tiers, now, state, config)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self._error_count += 1
+            logger.warning("Curator cross-check failed: %s", exc)
+
+    async def _cancel_crosscheck(self) -> None:
+        """Stop an in-flight cross-check and wait for it to actually be gone."""
+        task = self._crosscheck_task
+        self._crosscheck_task = None
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception) as exc:  # noqa: BLE001
+            logger.debug("curator cross-check stopped on close: %s", exc)
+
     async def _pool_crosscheck(
         self, tiers: set[str], now: float, state: Any, config: dict[str, Any] | None
     ) -> dict[str, Any]:
@@ -1189,7 +1279,10 @@ class CuratorManager:
             wallet_state = self._fast_wallet
 
         logs_out = await self._pool_logs(tiers, now, config)
-        await self._pool_crosscheck(tiers, now, state, config)
+        # Started, not awaited: it reads the whole log history over a second
+        # transport and takes minutes, while publishing no key.  See
+        # `_spawn_crosscheck`.
+        self._spawn_crosscheck(tiers, now, state, config)
 
         readings = self._readings(
             state=state,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 
 import pytest
 
@@ -16,6 +17,7 @@ from maxpane_dashboard.data import curator_addresses as A
 from maxpane_dashboard.data import curator_manager
 from maxpane_dashboard.data.curator_cache import (
     SERIES_INPUT_KEYS,
+    SLOT_BLOCKSCOUT,
     SLOT_LOGS,
     SLOT_STATE,
     SLOT_WALLET,
@@ -971,6 +973,140 @@ def test_the_slow_tier_repairs_a_gap_the_fold_missed(tmp_path, clock):
     assert len(manager.cache.events()) == 231
     assert manager._repair_from_block is None
     assert manager._fold_stale is False
+
+
+class _BlockingCrossCheck(FakeClient):
+    """A Blockscout read that does not answer until the test lets it.
+
+    Stands in for the real one, which pages the contract's entire log history
+    50 rows at a time: 19 500 logs and climbing, measured at 202.6 s.
+    """
+
+    def __init__(self, rows, **answers) -> None:
+        super().__init__(**answers)
+        self.rows = rows
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.crosschecks = 0
+
+    async def fetch_blockscout_logs(self, max_pages=400):
+        self.crosschecks += 1
+        self.started.set()
+        await self.release.wait()
+        return self.rows
+
+
+def _blocking_manager(tmp_path, clock, rows=()):
+    client = _BlockingCrossCheck(
+        list(rows),
+        fetch_logs=lambda *_: _sweep(),
+        fetch_state=_state(),
+        fetch_config=None,
+    )
+    return _manager(tmp_path, clock, client=client), client
+
+
+def test_the_payload_does_not_wait_for_the_cross_check(tmp_path, clock):
+    """First paint must not sit behind a read of the whole log history.
+
+    Measured through the real app before this changed: the first payload
+    arrived after 201.2 s, of which `fetch_blockscout_logs` was 202.6 of the
+    cycle's 203.8; the next cycle took 0.8 s.  Everything a panel renders was
+    ready in under a second and the reader watched an empty SIGNALS rail -- the
+    doomsday clock -- for three and a half minutes, on every launch, warm cache
+    included.
+
+    Nothing in the payload comes from the cross-check: it either agrees with
+    the fold or schedules a repair sweep for a later tick.
+    """
+    manager, client = _blocking_manager(tmp_path, clock)
+
+    async def _run() -> None:
+        # If this were awaited, the timeout is what would fire.
+        out = await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
+        assert set(out) == set(CURATOR_KEYS)
+        assert out["leaderboard_rows"], "the fold that drives every panel"
+
+        # ...and it really is running, rather than skipped.
+        await asyncio.wait_for(client.started.wait(), timeout=5)
+        assert not manager._crosscheck_task.done()
+
+        # A second cycle while it pages does not stack a second one up: the
+        # slow tier is still due, because only the call itself marks it.
+        await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
+        assert client.crosschecks == 1
+
+        client.release.set()
+        await asyncio.wait_for(manager._crosscheck_task, timeout=5)
+        assert manager.cache.last_good.get(SLOT_BLOCKSCOUT) is not None
+
+    asyncio.run(_run())
+
+
+def test_a_gap_found_after_the_payload_still_schedules_the_repair(tmp_path, clock):
+    """Detached, not dropped: the answer lands late and still does its job."""
+    missing = RPC_ROWS[2]
+    manager, client = _blocking_manager(tmp_path, clock, rows=[missing])
+    manager.client.answers["fetch_logs"] = lambda *_: _sweep(
+        [row for row in RPC_ROWS if row is not missing]
+    )
+
+    async def _run() -> None:
+        await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
+        assert len(manager.cache.events()) == 230
+        assert manager._repair_from_block is None      # not back yet
+        await asyncio.wait_for(client.started.wait(), timeout=5)
+
+        client.release.set()
+        await asyncio.wait_for(manager._crosscheck_task, timeout=5)
+        assert manager._repair_from_block == 25_769_888
+        assert manager._fold_stale is True
+        assert SOURCE_LOGS in manager._degraded()
+        assert "medium" in manager.cache.tiers_due(NOW)
+
+    asyncio.run(_run())
+
+
+def test_close_stops_an_in_flight_cross_check_before_the_sockets_go(tmp_path, clock):
+    """Quitting mid-sweep is the common case when the sweep takes minutes.
+
+    The task holds the same client, so it is cancelled and awaited before
+    ``close()`` touches it -- and the cache is still saved.
+    """
+    manager, client = _blocking_manager(tmp_path, clock)
+
+    async def _run() -> None:
+        await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
+        await asyncio.wait_for(client.started.wait(), timeout=5)
+        task = manager._crosscheck_task
+
+        await asyncio.wait_for(manager.close(), timeout=5)
+        assert task.done() and task.cancelled()
+        assert manager._crosscheck_task is None
+        assert client.closed is True
+        assert os.path.exists(manager.cache.path)
+
+    asyncio.run(_run())
+
+
+def test_a_cross_check_that_raises_costs_no_cycle(tmp_path, clock):
+    """A detached task has nobody to raise at, so it must not raise at all --
+    an unretrieved exception surfaces at GC time and never as a degraded
+    source."""
+    client = FakeClient(
+        fetch_logs=lambda *_: _sweep(),
+        fetch_state=_state(),
+        fetch_blockscout_logs=RuntimeError("blockscout gone"),
+    )
+    manager = _manager(tmp_path, clock, client=client)
+
+    async def _run() -> None:
+        out = await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
+        assert set(out) == set(CURATOR_KEYS)
+        await asyncio.wait_for(manager._crosscheck_task, timeout=5)
+        assert manager._crosscheck_task.exception() is None
+
+    asyncio.run(_run())
 
 
 def test_a_stats_mismatch_marks_the_fold_stale_rather_than_publishing(tmp_path, clock):
