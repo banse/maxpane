@@ -449,15 +449,21 @@ FAST_TIER_PAYLOAD_KEYS: tuple[str, ...] = (
     "forced_balance_wei",
 )
 
-#: The four row keys whose emptiness is a claim about the chain rather than
+#: The five row keys whose emptiness is a claim about the chain rather than
 #: about this install.  ``None`` = the source did not read; ``[]`` = it read and
 #: found nothing.  The series keys are deliberately absent: they are this
 #: cache's own history, and an empty one is a fact about the install.
+#:
+#: ``you_ladder_rows`` belongs here for the same reason as the other four and
+#: for a sharper one: an empty ladder rendered as fact says *you have never
+#: deposited* to somebody who has, which is the one claim on the wallet view a
+#: reader would act on.
 _SOURCE_BACKED_ROW_KEYS: tuple[str, ...] = (
     "leaderboard_rows",
     "activity_rows",
     "closest_call_rows",
     "cluster_rows",
+    "you_ladder_rows",
 )
 
 #: The ``once`` tier's readings, straight off :class:`CuratorConfig`.

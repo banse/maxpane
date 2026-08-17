@@ -223,7 +223,10 @@ the other, so a single manager owns the command.
 | `q` | Quit |
 
 Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap the two panels
-that share their bottom-right slot. **THE LIST also binds `w`**, which asks for the wallet its
+that share their bottom-right slot. **THE LIST binds `y`** for your own standing — every send you
+made with the multiplier it got, what each one actually credited, your share of all weight, and the
+single send that would pass the rank above you (`esc` goes back; the clock stays on screen either
+way). **It also binds `w`**, which asks for the wallet its
 YOU row is about — rank, points, credit, and the exact amount that wallet must send next to beat
 its own high-water mark. The address is validated, saved to `~/.maxpane/config.toml`, and picked
 up by every wallet-scoped dashboard on the next launch, so it is the easiest way to set one:

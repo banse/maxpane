@@ -519,6 +519,23 @@ CURATOR_KEYS: tuple[str, ...] = (
                                 #   kwarg row in wp4/wp6 is what needs the fix.
     "you_required_next_eth",    # float | None — what the next deposit must beat
     "you_marginal_points",      # int | None — points requiredNext would buy
+    # ---- YOU, the dedicated view (`y`) --------------------------------------
+    # Everything below is folded from data the fast tier and the log sweep
+    # already fetched; the view adds no request of its own.
+    "you_weight_eth",           # float | None — the curve's input, not the score
+    "you_tx_count",             # int | None — sends that counted, not attempts
+    "you_first_hour",           # int | None — 0 is a real hour (the launch one)
+    "you_joined_utc",           # str | None — launchTime + first_hour * 3600
+    "you_weight_share_pct",     # float | None — share of ALL weight, not of the
+                                #   top ten. The sqrt curve rewards splitting
+                                #   across wallets, so this is what one key
+                                #   holds, never what a person holds.
+    "you_ladder_rows",          # list[dict] — CURATOR_ROW_KEYS["you_ladder_rows"]
+    "you_next_rank",            # int | None — the rank above; None at rank 1
+    "you_next_rank_needs_eth",  # float | None — one send that would pass it.
+                                #   None at the credit cap: no send buys weight
+                                #   there, and a number would be a promise the
+                                #   contract will not keep.
     # ---- rows ---------------------------------------------------------------
     "leaderboard_rows",         # list[dict] — CURATOR_ROW_KEYS["leaderboard_rows"]
     "activity_rows",            # list[dict] — CURATOR_ROW_KEYS["activity_rows"]
@@ -550,6 +567,13 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "tx_count", "hour", "kind", "tx_hash", "log_index",
     ),
     "closest_call_rows": ("hour", "volume_eth", "margin_eth", "savior"),
+    # One row per send the reader made.  ``capped`` marks a deposit that
+    # credited nothing because it was above the 1000 ETH cap -- it still counted
+    # in full toward that hour's survival, so the 0 is a fact about the cap.
+    "you_ladder_rows": (
+        "hour", "amount_eth", "credited_eth", "weight_eth", "early_x", "capped",
+        "ts",
+    ),
     "cluster_rows": (
         "size", "amount_eth", "first_block", "last_block", "points",
         "points_share_pct",

@@ -202,6 +202,14 @@ SIGNAL_OUTPUT_KEYS: tuple[str, ...] = (
     "you_credit_eth",
     "you_required_next_eth",
     "you_marginal_points",
+    "you_weight_eth",
+    "you_tx_count",
+    "you_first_hour",
+    "you_joined_utc",
+    "you_weight_share_pct",
+    "you_ladder_rows",
+    "you_next_rank",
+    "you_next_rank_needs_eth",
     "leaderboard_rows",
     "activity_rows",
     "closest_call_rows",
@@ -1074,6 +1082,114 @@ def you_quote(
     return rank, points, credit_eth, _eth(required_next), marginal
 
 
+def you_ladder(
+    deposits: Any,
+    address: Any,
+    *,
+    credit_cap_wei: int | None,
+) -> list[dict]:
+    """The reader's own sends, oldest first, as they actually happened.
+
+    One row per ``Deposited`` the reader produced, carrying the multiplier they
+    got at that moment -- which is the number the activity feed cannot show,
+    because there it is one wallet's line among everyone else's.
+
+    ``capped`` is the honest name for a send that credited **nothing**: above
+    the 1000 ETH cap a deposit still counts in full toward the hour's survival
+    while adding no weight at all, so a row reading ``0 credit`` is a fact
+    about the cap, not a failed read.  Rows whose credited delta cannot be
+    recomputed leave it ``None`` rather than guessing a zero.
+    """
+    if not isinstance(address, str):
+        return []
+    key = address.lower()
+
+    rows: list[dict] = []
+    running_high_water = 0
+    for event in _usable_deposits(deposits):
+        contributor = getattr(event, "contributor", "")
+        mine = isinstance(contributor, str) and contributor.lower() == key
+        amount = _int_or_none(getattr(event, "amount_wei", None))
+        if amount is None:
+            continue
+        if not mine:
+            continue
+
+        # The event carries its own credited delta; the recomputation is the
+        # cross-check, and they have agreed on all 231 captured rows.
+        credited = _int_or_none(getattr(event, "credited_delta_wei", None))
+        if credited is None:
+            credited = credited_delta(amount, running_high_water, credit_cap_wei)
+        bps = _int_or_none(getattr(event, "early_bps", None))
+        added = _int_or_none(getattr(event, "weight_added_wei", None))
+        if added is None:
+            added = weight_added(credited, bps)
+
+        rows.append(
+            {
+                "hour": _int_or_none(getattr(event, "hour", None)),
+                "amount_eth": _eth(amount),
+                "credited_eth": _eth(credited),
+                "weight_eth": _eth(added),
+                "early_x": None if bps is None else bps / 10_000,
+                "capped": None if credited is None else (credited == 0 and amount > 0),
+                "ts": _int_or_none(getattr(event, "ts", None)),
+            }
+        )
+        running_high_water = max(running_high_water, amount)
+
+    return rows
+
+
+def cost_to_pass(
+    rank: int | None,
+    rows: Any,
+    *,
+    weight_wei: int | None,
+    high_water_wei: int | None,
+    early_bps: int | None,
+    credit_cap_wei: int | None,
+) -> tuple[int | None, float | None]:
+    """``(rank_above, the single send that would take it)`` -- or ``None``.
+
+    The fold ranks on points, then weight, then **who joined first**, so a tie
+    does not pass anybody: the target is ``weight_above + 1`` wei, not equality.
+
+    Everything then runs backwards through the same two primitives the contract
+    uses forwards.  ``weight_added`` floors, so reaching ``need`` of it takes
+    ``ceil(need * 10_000 / earlyBps)`` of credited delta; and credit telescopes
+    to the high-water mark, so the *send* is ``high_water + delta`` rather than
+    the delta itself.  A reader at the credit cap cannot buy weight at any
+    price and gets ``None`` -- the honest answer, where a number would be a
+    promise the contract will not keep.
+
+    Returns ``(None, None)`` for rank 1 (nobody above) and for a wallet not on
+    the list, whose first send is quoted by ``you_quote`` instead.
+    """
+    place = _int_or_none(rank)
+    weight = _int_or_none(weight_wei)
+    bps = _int_or_none(early_bps)
+    if place is None or place <= 1 or weight is None or bps is None or bps <= 0:
+        return None, None
+
+    table = [row for row in (rows or []) if _int_or_none(getattr(row, "weight_wei", None)) is not None]
+    if len(table) < place - 1:
+        return None, None
+    target = _int_or_none(getattr(table[place - 2], "weight_wei", None))
+    if target is None or target < weight:
+        return place - 1, None
+
+    need = target - weight + 1                      # strictly past, never level
+    delta = -(-need * 10_000 // bps)                # ceil, the floor's inverse
+    high_water = _int_or_none(high_water_wei) or 0
+    cap = _int_or_none(credit_cap_wei)
+    if cap is not None:
+        headroom = cap - min(high_water, cap)
+        if delta > headroom:
+            return place - 1, None                  # unreachable at any price
+    return place - 1, _eth(high_water + delta)
+
+
 # ---------------------------------------------------------------------------
 # build_signals: the one place the readings become the screen's numbers
 # ---------------------------------------------------------------------------
@@ -1409,6 +1525,60 @@ def build_signals(readings: Any, *, now_ts: float) -> dict:
         out["you_marginal_points"],
     ) = quote
 
+    # --- YOU, the dedicated view -------------------------------------------
+    # Folded from payloads already in hand.  Every field degrades on its own:
+    # a dead logs pool costs the ladder and the share, not the standing, which
+    # comes off the six wallet views on the other pool.
+    wallet_state = read.get("wallet_state")
+    address = getattr(wallet_state, "address", None)
+    weight_wei = _int_or_none(getattr(wallet_state, "weight_wei", None))
+    joined = getattr(wallet_state, "has_joined", None)
+
+    if joined is not False:
+        out["you_weight_eth"] = _eth(weight_wei)
+        out["you_tx_count"] = _int_or_none(getattr(wallet_state, "tx_count", None))
+        first_hour = _int_or_none(getattr(wallet_state, "first_hour", None))
+        out["you_first_hour"] = first_hour
+        joined_ts = _guard(
+            lambda: bucket_start_ts(first_hour, launch_time, hour_duration)
+        )
+        if joined_ts is not None:
+            out["you_joined_utc"] = datetime.fromtimestamp(
+                joined_ts, tz=timezone.utc
+            ).strftime("%Y-%m-%d %H:%M UTC")
+
+        # Share of ALL weight, folded from the same rows the leaderboard ranks.
+        # `None` when the fold has nothing: 0.0% would claim a share was
+        # measured and found to be nil.
+        total_weight = sum(
+            _int_or_none(getattr(row, "weight_wei", None)) or 0 for row in rows
+        )
+        if weight_wei is not None and total_weight > 0:
+            out["you_weight_share_pct"] = weight_wei * 100.0 / total_weight
+
+        out["you_ladder_rows"] = _guard(
+            lambda: you_ladder(read.get("deposits"), address,
+                               credit_cap_wei=credit_cap),
+            [],
+        )
+
+        (
+            out["you_next_rank"],
+            out["you_next_rank_needs_eth"],
+        ) = _guard(
+            lambda: cost_to_pass(
+                out["you_rank"],
+                rows,
+                weight_wei=weight_wei,
+                high_water_wei=_int_or_none(
+                    getattr(wallet_state, "contributed_wei", None)
+                ),
+                early_bps=early_bps,
+                credit_cap_wei=credit_cap,
+            ),
+            (None, None),
+        )
+
     return out
 
 
@@ -1459,6 +1629,8 @@ __all__ = [
     "cluster_members",
     "newest_whale",
     "you_quote",
+    "you_ladder",
+    "cost_to_pass",
     # the seam
     "build_signals",
 ]

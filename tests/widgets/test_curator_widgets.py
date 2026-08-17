@@ -54,6 +54,9 @@ from maxpane_dashboard.widgets.curator import (
     CuratorActivity,
     CuratorClosestCalls,
     CuratorClusters,
+    CuratorWalletLadder,
+    CuratorWalletNext,
+    CuratorWalletStanding,
     CuratorHero,
     CuratorLeaderboard,
     CuratorSignals,
@@ -1908,6 +1911,11 @@ _WIDGETS = (
     CuratorActivity,
     CuratorClosestCalls,
     CuratorClusters,
+    # The `y` view's three (PRD §13 A8).  Same seam, same guarantees: the
+    # screen splats the whole flat dict at them too.
+    CuratorWalletLadder,
+    CuratorWalletStanding,
+    CuratorWalletNext,
 )
 
 
@@ -2053,6 +2061,20 @@ def _full_payload() -> dict:
         you_credit_eth=3.6,
         you_required_next_eth=4.1,
         you_marginal_points=120,
+        # the `y` view (PRD §13 A8)
+        you_weight_eth=7.03,
+        you_tx_count=4,
+        you_first_hour=0,
+        you_joined_utc="2026-08-16 19:58 UTC",
+        you_weight_share_pct=0.42,
+        you_ladder_rows=[
+            {"hour": 0, "amount_eth": 1.1, "credited_eth": 1.1, "weight_eth": 2.13,
+             "early_x": 1.94, "capped": False, "ts": None},
+            {"hour": 1, "amount_eth": 1200.0, "credited_eth": 0.0, "weight_eth": 0.0,
+             "early_x": 1.91, "capped": True, "ts": None},
+        ],
+        you_next_rank=11,
+        you_next_rank_needs_eth=604.0,
         leaderboard_rows=_lb_rows(3),
         activity_rows=[_act_row(log_index=1), _act_row(log_index=2, tx_count=5)],
         closest_call_rows=_call_rows(),
@@ -2086,6 +2108,11 @@ _EXPECTED_ROWS = {
     "CuratorActivity": (("0x200e",), 2),
     "CuratorClosestCalls": (("h2",), 3),
     "CuratorClusters": (("9×",), 1),
+    # The `y` view.  The ladder's marker is the multiplier column, which only a
+    # data row carries; the two facts panels are label/value lines.
+    "CuratorWalletLadder": (("×",), 2),
+    "CuratorWalletStanding": (("rank", "pts", "weight"), 3),
+    "CuratorWalletNext": (("≥", "rank"), 2),
 }
 
 

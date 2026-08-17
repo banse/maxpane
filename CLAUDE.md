@@ -255,7 +255,10 @@ of the two panels' needs moves again.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Per-dashboard: `c` swaps the shared bottom-right slot (FWA, TTT, Talismans,
-curator) and **`w` on curator** prompts for the wallet its YOU row is about —
+curator); **`y` on curator** swaps the whole body for the reader's own
+standing — ladder, share, and what passing the rank above would cost — with the
+hero left in place so the doomsday clock never leaves the screen (`esc` backs
+out, one-way); and **`w` on curator** prompts for the wallet its YOU row is about —
 `WalletInputScreen` validates and persists to `~/.maxpane/config.toml`, so it
 is app-wide from the next launch. A runtime wallet switch is more than an
 assignment: `CuratorManager.set_wallet` also drops the wallet last-good (its

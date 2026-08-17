@@ -165,6 +165,9 @@ from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.curator import (
     CuratorActivity,
     CuratorClosestCalls,
+    CuratorWalletLadder,
+    CuratorWalletNext,
+    CuratorWalletStanding,
     CuratorClusters,
     CuratorHero,
     CuratorLeaderboard,
@@ -212,6 +215,18 @@ VIEW_CLOSEST = "closest"
 
 #: ids for the swap pair, so ``minimal.tcss`` (WP7) can place them by id and the
 #: toggle can query them without importing the classes twice.
+#: The two bodies `y` swaps.  Ids rather than classes: the screen queries them
+#: by id in one place each, and a class would invite a second member.
+DASHBOARD_BODY_ID = "curator-dashboard-body"
+WALLET_BODY_ID = "curator-wallet-body"
+
+#: The two modes.  `dashboard` is the game; `wallet` is the reader's own
+#: standing on it.  A third spelling anywhere is a silent fallback arm, the
+#: same rule PHASES keeps.
+MODE_DASHBOARD = "dashboard"
+MODE_WALLET = "wallet"
+MODES = (MODE_DASHBOARD, MODE_WALLET)
+
 CLOSEST_ID = "curator-closest-calls"
 CLUSTERS_ID = "curator-clusters"
 
@@ -299,6 +314,17 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     ),
     "CuratorClusters": (
         "cluster_rows", "clusters_count", "flagged_points_share_pct",
+    ),
+    # -- the `y` wallet view --------------------------------------------------
+    "CuratorWalletLadder": ("you_ladder_rows", "you_address"),
+    "CuratorWalletStanding": (
+        "you_rank", "you_points", "you_credit_eth", "you_weight_eth",
+        "you_tx_count", "you_weight_share_pct", "you_first_hour",
+        "you_joined_utc", "contributors_total",
+    ),
+    "CuratorWalletNext": (
+        "you_required_next_eth", "you_marginal_points", "you_rank",
+        "you_next_rank", "you_next_rank_needs_eth",
     ),
 }
 
@@ -433,6 +459,8 @@ class CuratorScreen(RefreshGuard, Screen):
         Binding("r", "refresh", "Refresh", show=False),
         Binding("c", "toggle_view", "Calls/Patterns", show=True),
         Binding("w", "set_wallet", "Wallet", show=True),
+        Binding("y", "toggle_mode", "You", show=True),
+        Binding("escape", "back_to_dashboard", "Back", show=False),
     ]
 
     #: Worker name for the guarded refresh (see RefreshGuard).
@@ -541,6 +569,45 @@ class CuratorScreen(RefreshGuard, Screen):
         height: 1fr;
         margin: 0 0 1 0;
     }
+    /* The `y` view.  Both bodies claim the same `1fr` so the hero above them
+       never moves on the toggle; the two facts panels are `auto` and size to
+       their own lines.  Restated in minimal.tcss, and
+       test_the_stylesheet_block_and_default_css_describe_one_layout compares
+       the two copies rule by rule. */
+    CuratorScreen #curator-dashboard-body {
+        height: 1fr;
+        width: 100%;
+    }
+    CuratorScreen #curator-wallet-body {
+        height: 1fr;
+        width: 100%;
+    }
+    CuratorScreen #wallet-top-row {
+        height: 1fr;
+        margin: 0 0 1 0;
+    }
+    CuratorScreen #wallet-bottom-row {
+        height: auto;
+    }
+    CuratorScreen #wallet-separator {
+        height: 1;
+    }
+    CuratorScreen CuratorWalletLadder {
+        width: 3fr;
+        height: 100%;
+        padding: 0 1;
+    }
+    CuratorScreen CuratorWalletStanding {
+        width: 2fr;
+        height: 100%;
+        padding: 0 1;
+    }
+    CuratorScreen CuratorWalletNext {
+        width: 100%;
+        height: auto;
+        min-height: 3;
+        padding: 0 1;
+    }
     CuratorScreen CuratorActivity {
         width: 5fr;
         height: auto;
@@ -579,6 +646,9 @@ class CuratorScreen(RefreshGuard, Screen):
         #: ``VIEW_CLOSEST``.  Starts on the unknown-phase default, which is
         #: also the grace default, so the first frame is never an empty table.
         self._active_view: str = _default_view(None)
+        #: Which body is on screen: MODE_DASHBOARD or MODE_WALLET.  The hero and
+        #: the title bar belong to neither and are always visible.
+        self._mode: str = MODE_DASHBOARD
         #: True once the reader has pressed ``c``.  From then on the
         #: phase-aware default stops applying: a panel that snaps back while
         #: you are reading it is worse than a suboptimal default.
@@ -599,27 +669,41 @@ class CuratorScreen(RefreshGuard, Screen):
         with Horizontal(id="hero-row"):
             yield CuratorHero()
 
-        with Horizontal(id="middle-row"):
-            yield CuratorLeaderboard()
-            with Vertical(id="curator-right-rail"):
-                yield CuratorSparklines()
-                yield CuratorSignals()
+        # Both bodies are composed once and one is hidden, for the same reason
+        # the two swap tables are: a body built on demand is blank for a beat
+        # after the keypress, which reads as a bug.  The hero and the title bar
+        # sit above both, so `y` never takes the doomsday clock off the screen.
+        with Vertical(id=DASHBOARD_BODY_ID):
+            with Horizontal(id="middle-row"):
+                yield CuratorLeaderboard()
+                with Vertical(id="curator-right-rail"):
+                    yield CuratorSparklines()
+                    yield CuratorSignals()
 
-        yield Static("─" * 300, id="separator")
+            yield Static("─" * 300, id="separator")
 
-        with Horizontal(id="bottom-row"):
-            yield CuratorActivity()
-            # Both swap tables live in the layout and both are dispatched to on
-            # every refresh; one is hidden at a time.  Creating one on demand
-            # would leave it blank for a beat after the first ``c``, which
-            # reads as a bug.
-            yield CuratorClosestCalls(id=CLOSEST_ID)
-            yield CuratorClusters(id=CLUSTERS_ID)
+            with Horizontal(id="bottom-row"):
+                yield CuratorActivity()
+                # Both swap tables live in the layout and both are dispatched to
+                # on every refresh; one is hidden at a time.  Creating one on
+                # demand would leave it blank for a beat after the first ``c``,
+                # which reads as a bug.
+                yield CuratorClosestCalls(id=CLOSEST_ID)
+                yield CuratorClusters(id=CLUSTERS_ID)
+
+        with Vertical(id=WALLET_BODY_ID):
+            with Horizontal(id="wallet-top-row"):
+                yield CuratorWalletLadder()
+                yield CuratorWalletStanding()
+            yield Static("─" * 300, id="wallet-separator")
+            with Horizontal(id="wallet-bottom-row"):
+                yield CuratorWalletNext()
 
         yield StatusBar()
 
     def on_mount(self) -> None:
         self._show_active_view()
+        self._show_mode()
 
     # ------------------------------------------------------------------
     # Actions / bindings
@@ -637,6 +721,32 @@ class CuratorScreen(RefreshGuard, Screen):
             self.query_one(StatusBar).set_active_view(self._active_view)
         except Exception:
             pass
+
+    def _show_mode(self) -> None:
+        """Apply :attr:`_mode` to the two bodies' visibility."""
+        wallet = self._mode == MODE_WALLET
+        try:
+            self.query_one(f"#{DASHBOARD_BODY_ID}").display = not wallet
+            self.query_one(f"#{WALLET_BODY_ID}").display = wallet
+        except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
+            logger.debug("Curator mode toggle failed: %s", exc)
+
+    def action_toggle_mode(self) -> None:
+        """``y`` -- swap the body between the game and the reader's own standing.
+
+        The hero row stays put in both, so the doomsday clock never leaves the
+        screen: this view is for deciding what to send, and that decision is
+        worthless without the clock it is racing.
+        """
+        self._mode = MODE_DASHBOARD if self._mode == MODE_WALLET else MODE_WALLET
+        self._show_mode()
+
+    def action_back_to_dashboard(self) -> None:
+        """``esc`` -- one-way, back to the game.  A no-op when already there,
+        so the key never swallows an escape the reader meant for something else."""
+        if self._mode != MODE_DASHBOARD:
+            self._mode = MODE_DASHBOARD
+            self._show_mode()
 
     def action_toggle_view(self) -> None:
         """Swap CLOSEST CALLS and FAN-OUT PATTERNS in the bottom-right slot.
@@ -821,6 +931,12 @@ class CuratorScreen(RefreshGuard, Screen):
             CuratorActivity,
             CuratorClosestCalls,
             CuratorClusters,
+            # Dispatched whether or not `y` is showing them, exactly like the
+            # two swap tables: a body that starts rendering only when it
+            # becomes visible is blank for a beat after the keypress.
+            CuratorWalletLadder,
+            CuratorWalletStanding,
+            CuratorWalletNext,
         ):
             self._dispatch(widget_cls, data)
 

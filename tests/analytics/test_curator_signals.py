@@ -2252,3 +2252,137 @@ def test_the_phase_vocabulary_is_re_exported_and_not_copied() -> None:
     from maxpane_dashboard.data import curator_models
 
     assert sig.PHASES is curator_models.PHASES
+
+
+# ---------------------------------------------------------------------------
+# The `y` view — you_ladder() and cost_to_pass()
+# ---------------------------------------------------------------------------
+
+#: The module already names this ETH; the new block below reads better with the
+#: short form, and one alias beats sprinkling 10**18 through the arithmetic.
+E = ETH
+
+_ME = "0x00000000000000000000000000000000000000aa"
+_SOMEBODY = "0x00000000000000000000000000000000000000bb"
+
+
+class _Row:
+    """A leaderboard row as the fold produces it — weight is all this math reads."""
+
+    def __init__(self, weight_wei: int) -> None:
+        self.weight_wei = weight_wei
+
+
+def test_the_ladder_holds_only_my_sends_in_chain_order():
+    events = [
+        _synthetic_deposit(hour=1, amount_wei=5 * E, contributor=_SOMEBODY,
+                           block_number=100, log_index=0),
+        _synthetic_deposit(hour=0, amount_wei=2 * E, contributor=_ME,
+                           block_number=90, log_index=1),
+        _synthetic_deposit(hour=2, amount_wei=9 * E, contributor=_ME,
+                           block_number=120, log_index=0),
+    ]
+    rows = sig.you_ladder(events, _ME, credit_cap_wei=1000 * E)
+    assert [row["hour"] for row in rows] == [0, 2]          # chain order, not list order
+    assert [row["amount_eth"] for row in rows] == [2.0, 9.0]
+
+
+def test_the_ladder_is_case_insensitive_about_my_own_address():
+    """`MAXPANE_WALLET` is typed by a human; the chain emits lowercase topics."""
+    events = [_synthetic_deposit(hour=0, amount_wei=E, contributor=_ME)]
+    assert sig.you_ladder(events, _ME.upper(), credit_cap_wei=1000 * E)
+
+
+def test_the_ladder_carries_the_multiplier_that_send_actually_got():
+    """Not today's multiplier: the early-bird decays per second, so the whole
+    point of the ladder is what each rung cost at the time."""
+    events = [
+        _synthetic_deposit(hour=0, amount_wei=E, contributor=_ME, early_bps=19_975,
+                           block_number=90),
+        _synthetic_deposit(hour=20, amount_wei=5 * E, contributor=_ME,
+                           early_bps=10_400, block_number=200),
+    ]
+    rows = sig.you_ladder(events, _ME, credit_cap_wei=1000 * E)
+    assert [row["early_x"] for row in rows] == [1.9975, 1.04]
+
+
+def test_an_above_cap_send_is_marked_capped_rather_than_credited_zero():
+    """A deposit past the 1000 ETH cap credits nothing while still counting in
+    full toward its hour's survival.  `capped` is the difference between that
+    and a decode that failed."""
+    events = [
+        _synthetic_deposit(hour=0, amount_wei=1200 * E, contributor=_ME,
+                           credited_delta_wei=0),
+    ]
+    row = sig.you_ladder(events, _ME, credit_cap_wei=1000 * E)[0]
+    assert row["capped"] is True
+    assert row["credited_eth"] == 0.0
+
+
+def test_a_normal_send_is_not_marked_capped():
+    events = [_synthetic_deposit(hour=0, amount_wei=E, contributor=_ME)]
+    assert sig.you_ladder(events, _ME, credit_cap_wei=1000 * E)[0]["capped"] is False
+
+
+def test_no_wallet_and_no_deposits_give_an_empty_ladder_not_a_crash():
+    assert sig.you_ladder([], _ME, credit_cap_wei=1000 * E) == []
+    assert sig.you_ladder(None, _ME, credit_cap_wei=1000 * E) == []
+    assert sig.you_ladder([], None, credit_cap_wei=1000 * E) == []
+
+
+def test_cost_to_pass_quotes_one_send_that_lands_strictly_above():
+    """The fold breaks ties on who joined first, so levelling with the wallet
+    above does not pass it: the target is its weight + 1 wei."""
+    rows = [_Row(500 * E), _Row(120 * E), _Row(100 * E)]
+    rank, needs = sig.cost_to_pass(
+        3, rows, weight_wei=100 * E, high_water_wei=60 * E,
+        early_bps=20_000, credit_cap_wei=1000 * E,
+    )
+    assert rank == 2
+    # 20 ETH of weight at 2.00x is 10 ETH of credited delta, and credit
+    # telescopes to the high-water mark: 60 + 10.
+    assert needs == 70.0
+
+
+def test_cost_to_pass_reverses_the_weight_floor_rather_than_rounding_it():
+    """`weight_added` floors, so the delta must be the ceiling of the inverse —
+    one wei short buys one wei too little weight and does not pass."""
+    rows = [_Row(100 * E + 1), _Row(100 * E)]
+    _rank, needs = sig.cost_to_pass(
+        2, rows, weight_wei=100 * E, high_water_wei=0,
+        early_bps=3, credit_cap_wei=1000 * E,
+    )
+    delta_wei = round(needs * 1e18)
+    assert sig.weight_added(delta_wei, 3) + 100 * E > 100 * E + 1
+    assert sig.weight_added(delta_wei - 1, 3) + 100 * E <= 100 * E + 1
+
+
+def test_rank_one_has_nobody_above_and_is_quoted_nothing():
+    rows = [_Row(500 * E), _Row(120 * E)]
+    assert sig.cost_to_pass(1, rows, weight_wei=500 * E, high_water_wei=400 * E,
+                            early_bps=20_000, credit_cap_wei=1000 * E) == (None, None)
+
+
+def test_a_wallet_at_the_credit_cap_is_quoted_no_price_at_all():
+    """Past the cap no deposit adds weight, so any number here would be a
+    promise the contract will not keep."""
+    rows = [_Row(5000 * E), _Row(100 * E)]
+    rank, needs = sig.cost_to_pass(
+        2, rows, weight_wei=100 * E, high_water_wei=1000 * E,
+        early_bps=20_000, credit_cap_wei=1000 * E,
+    )
+    assert rank == 1
+    assert needs is None
+
+
+def test_an_unranked_wallet_is_not_quoted_a_rank_to_pass():
+    """It has no place in the table; `you_quote`'s entry ticket is its number."""
+    rows = [_Row(500 * E)]
+    assert sig.cost_to_pass(None, rows, weight_wei=None, high_water_wei=None,
+                            early_bps=20_000, credit_cap_wei=1000 * E) == (None, None)
+
+
+def test_a_missing_multiplier_costs_the_quote_not_the_rank():
+    rows = [_Row(500 * E), _Row(100 * E)]
+    assert sig.cost_to_pass(2, rows, weight_wei=100 * E, high_water_wei=50 * E,
+                            early_bps=None, credit_cap_wei=1000 * E) == (None, None)

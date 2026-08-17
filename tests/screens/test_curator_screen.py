@@ -97,6 +97,17 @@ from maxpane_dashboard import __version__
 from maxpane_dashboard.analytics.curator_signals import MANAGER_OWNED_KEYS
 from maxpane_dashboard.data.curator_manager import SOURCES
 from maxpane_dashboard.data.curator_models import CURATOR_KEYS, PHASES
+from maxpane_dashboard.widgets.curator.wallet import (
+    AT_THE_CAP,
+    CAPPED_MARK,
+    LADDER_TITLE,
+    LADDER_UNAVAILABLE,
+    NEXT_TITLE,
+    NOT_ON_THE_LIST,
+    NO_LADDER,
+    STANDING_TITLE,
+    TOP_OF_THE_LIST,
+)
 from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 from maxpane_dashboard.screens.curator import (
     CLOSEST_ID,
@@ -111,6 +122,8 @@ from maxpane_dashboard.screens.curator import (
     VIEW_CLUSTERS,
     WIDGET_SIGNATURES,
     CuratorScreen,
+    MODE_DASHBOARD,
+    MODE_WALLET,
     _default_view,
     _fmt_degraded,
     _fmt_int,
@@ -123,6 +136,9 @@ from maxpane_dashboard.widgets.curator import (
     CuratorActivity,
     CuratorClosestCalls,
     CuratorClusters,
+    CuratorWalletLadder,
+    CuratorWalletNext,
+    CuratorWalletStanding,
     CuratorHero,
     CuratorLeaderboard,
     CuratorSignals,
@@ -154,6 +170,12 @@ _PANELS = (
     CuratorActivity,
     CuratorClosestCalls,
     CuratorClusters,
+    # The `y` view's three.  Listed here rather than in a second tuple because
+    # every totality and dispatch guarantee below is about the screen, not
+    # about whichever body happens to be visible.
+    CuratorWalletLadder,
+    CuratorWalletStanding,
+    CuratorWalletNext,
 )
 
 #: The window the width sweep scans.  Deliberately independent of
@@ -422,10 +444,16 @@ async def _first_clean_width(payload=None, view: str | None = None,
 # =======================================================================
 
 
-def test_bindings_are_refresh_the_view_toggle_and_the_wallet_prompt():
+def test_the_five_bindings_are_the_ones_this_screen_documents():
     """Hand-typed rather than derived: a set compared against itself could not
-    catch a binding that was added, renamed or lost."""
-    assert {binding.key for binding in CuratorScreen.BINDINGS} == {"r", "c", "w"}
+    catch a binding that was added, renamed or lost.
+
+    `r` refresh, `c` swap the bottom-right slot, `w` set the wallet,
+    `y` the wallet view, `escape` back out of it.
+    """
+    assert {binding.key for binding in CuratorScreen.BINDINGS} == {
+        "r", "c", "w", "y", "escape",
+    }
 
 
 def test_every_binding_has_the_action_it_names():
@@ -1547,3 +1575,184 @@ async def test_entering_a_different_wallet_does_cost_a_refresh(saved_wallets):
     )
     assert set_calls == [_WALLET]
     assert refreshes == 1
+
+
+# ---------------------------------------------------------------------------
+# The `y` view -- the reader's own standing on THE LIST
+# ---------------------------------------------------------------------------
+
+
+def _wallet_payload(**overrides) -> dict:
+    """The grace payload plus the folded YOU fields the view renders.
+
+    Values are the capture's own rank-1 wallet, so the numbers are consistent
+    with the leaderboard the other body shows.
+    """
+    payload = _grace_payload()
+    payload.update(
+        you_weight_eth=947.31,
+        you_tx_count=3,
+        you_first_hour=0,
+        you_joined_utc="2026-08-16 19:58 UTC",
+        you_weight_share_pct=2.94,
+        you_ladder_rows=[
+            {"hour": 0, "amount_eth": 1.1, "credited_eth": 1.1,
+             "weight_eth": 2.13, "early_x": 1.94, "capped": False, "ts": None},
+            {"hour": 0, "amount_eth": 63.5, "credited_eth": 62.4,
+             "weight_eth": 120.4, "early_x": 1.93, "capped": False, "ts": None},
+            {"hour": 1, "amount_eth": 1200.0, "credited_eth": 0.0,
+             "weight_eth": 0.0, "early_x": 1.91, "capped": True, "ts": None},
+        ],
+        you_next_rank=None,
+        you_next_rank_needs_eth=None,
+    )
+    payload.update(overrides)
+    return payload
+
+
+async def _wallet_view_text(payload=None, *, width=CURATOR_FULL_LAYOUT_COLUMNS,
+                            height=_TALL) -> str:
+    """Composite the screen with the `y` view showing."""
+    screen = _screen(payload if payload is not None else _wallet_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, height)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+        return _screen_text(app)
+
+
+async def test_y_swaps_the_body_and_keeps_the_clock_on_screen():
+    """The whole reason the hero sits outside both bodies: this view exists to
+    decide what to send, and that decision is worthless without the clock it is
+    racing."""
+    screen = _screen(_wallet_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        dashboard = _screen_text(app)
+        assert LEADERBOARD_TITLE in dashboard
+        assert LADDER_TITLE not in dashboard
+
+        await pilot.press("y")
+        await pilot.pause()
+        wallet = _screen_text(app)
+
+        assert screen._mode == MODE_WALLET
+        assert LADDER_TITLE in wallet and STANDING_TITLE in wallet
+        assert NEXT_TITLE in wallet
+        # The game's own panels are gone...
+        assert LEADERBOARD_TITLE not in wallet
+        assert ACTIVITY_TITLE not in wallet
+        # ...but the clock and the title bar are not.
+        assert "THE LIST" in wallet
+        assert "GRACE" in wallet
+
+
+async def test_y_toggles_back_and_escape_only_goes_one_way():
+    screen = _screen(_wallet_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        await pilot.press("y")
+        await pilot.pause()
+        assert screen._mode == MODE_WALLET
+        await pilot.press("y")
+        await pilot.pause()
+        assert screen._mode == MODE_DASHBOARD
+
+        await pilot.press("y")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert screen._mode == MODE_DASHBOARD
+        # Escape on the dashboard is a no-op, never a toggle back in.
+        await pilot.press("escape")
+        await pilot.pause()
+        assert screen._mode == MODE_DASHBOARD
+
+
+async def test_the_ladder_renders_every_send_with_the_multiplier_it_got():
+    text = await _wallet_view_text()
+    assert "1.94×" in text and "1.93×" in text        # the decay the reader paid
+    assert "63.50" in text
+
+
+async def test_a_capped_send_says_capped_rather_than_crediting_zero():
+    """Above the 1000 ETH cap a deposit credits nothing while still counting in
+    full toward its hour's survival.  A bare 0.00 in the credit column reads as
+    a decode that failed."""
+    text = await _wallet_view_text()
+    assert CAPPED_MARK in text
+
+
+async def test_the_standing_names_the_share_as_a_share_of_all_weight():
+    text = await _wallet_view_text()
+    assert "of all weight" in text
+    assert "rank 1" in text
+
+
+async def test_a_dead_logs_pool_costs_the_ladder_and_says_so():
+    """`None` is "the logs pool did not read", never "you never sent"."""
+    text = await _wallet_view_text(_wallet_payload(you_ladder_rows=None))
+    assert LADDER_UNAVAILABLE in text
+    assert NO_LADDER not in text
+
+
+async def test_a_wallet_that_never_deposited_is_not_a_wallet_scoring_zero():
+    text = await _wallet_view_text(
+        _wallet_payload(
+            you_rank=None, you_points=None, you_credit_eth=None,
+            you_weight_eth=None, you_tx_count=None, you_weight_share_pct=None,
+            you_ladder_rows=[], you_first_hour=None, you_joined_utc=None,
+        )
+    )
+    assert NOT_ON_THE_LIST in text
+    assert NO_LADDER in text
+    assert "rank 0" not in text
+
+
+async def test_rank_one_is_told_there_is_nobody_above():
+    text = await _wallet_view_text(_wallet_payload(you_rank=1))
+    assert TOP_OF_THE_LIST in text
+
+
+async def test_a_reachable_rank_above_is_quoted_as_one_send():
+    text = await _wallet_view_text(
+        _wallet_payload(you_rank=12, you_next_rank=11, you_next_rank_needs_eth=604.0)
+    )
+    assert "rank 11 needs" in text
+    assert "604.00" in text
+
+
+async def test_a_capped_wallet_is_told_no_send_buys_weight():
+    """The honest answer where a number would be a promise the contract will
+    not keep: past the credit cap no deposit adds weight at any price."""
+    text = await _wallet_view_text(
+        _wallet_payload(you_rank=12, you_next_rank=11, you_next_rank_needs_eth=None)
+    )
+    assert AT_THE_CAP in text
+
+
+async def test_the_wallet_view_clears_at_the_pinned_full_layout_width():
+    """Measured, not reasoned: the view must not push the screen's number up.
+
+    Swept independently of the pin, both bodies, so a `y` view that needed 150
+    columns could not hide behind a dashboard that clears at 138.
+    """
+    for width in range(CURATOR_FULL_LAYOUT_COLUMNS, _SWEEP_HI + 1):
+        text = await _wallet_view_text(width=width)
+        if "‹ widen" not in text:
+            assert width == CURATOR_FULL_LAYOUT_COLUMNS, (
+                f"the y view first clears at {width}, not the pinned "
+                f"{CURATOR_FULL_LAYOUT_COLUMNS}"
+            )
+            return
+    raise AssertionError("the y view never cleared inside the sweep window")

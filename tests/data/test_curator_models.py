@@ -515,6 +515,15 @@ EXPECTED_KEYS = {
     "you_credit_eth",
     "you_required_next_eth",
     "you_marginal_points",
+    # The `y` wallet view (PRD §13 A8) — folded from payloads already fetched.
+    "you_weight_eth",
+    "you_tx_count",
+    "you_first_hour",
+    "you_joined_utc",
+    "you_weight_share_pct",
+    "you_ladder_rows",
+    "you_next_rank",
+    "you_next_rank_needs_eth",
     # rows
     "leaderboard_rows",
     "activity_rows",
@@ -593,10 +602,14 @@ def test_the_two_series_are_named_separately_from_the_row_payloads() -> None:
 
 
 def test_every_list_payload_has_either_a_row_shape_or_a_series_declaration() -> None:
-    """The six list payloads of PRD §5, all accounted for, none twice."""
+    """The seven list payloads, all accounted for, none twice.
+
+    Six from PRD §5; the seventh is ``you_ladder_rows``, added with the `y`
+    wallet view (PRD §13 A8).
+    """
     listish = {k for k in CURATOR_KEYS if k.endswith("_rows") or k.endswith("_series")}
     assert listish == set(CURATOR_ROW_KEYS) | set(CURATOR_SERIES_KEYS)
-    assert len(listish) == 6
+    assert len(listish) == 7
 
 
 def test_activity_rows_carry_the_dedupe_key() -> None:

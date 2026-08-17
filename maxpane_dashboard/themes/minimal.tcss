@@ -2245,3 +2245,58 @@ CuratorClusters {
     height: auto;
     padding: 0 1;
 }
+
+/* ---------------------------------------------------------------------------
+ * THE LIST's `y` view -- the reader's own standing.
+ *
+ * Two bodies live under one hero: `#curator-dashboard-body` is the game,
+ * `#curator-wallet-body` is this. Exactly one is displayed, so both claim the
+ * same `1fr` of the screen's remaining height and the hero above them never
+ * moves when the reader presses `y`. A body sized `auto` here would resize the
+ * hero on the toggle, which is the same class of mistake as restating
+ * `#bottom-row { height: auto }` (see the note above it).
+ * ------------------------------------------------------------------------ */
+CuratorScreen #curator-dashboard-body {
+    height: 1fr;
+    width: 100%;
+}
+
+CuratorScreen #curator-wallet-body {
+    height: 1fr;
+    width: 100%;
+}
+
+/* The ladder is the wider half: five columns of numbers against the standing
+ * panel's four label/value lines. 3:2 measured, same method as #middle-row. */
+CuratorScreen #wallet-top-row {
+    height: 1fr;
+    margin: 0 0 1 0;
+}
+
+CuratorScreen #wallet-bottom-row {
+    height: auto;
+}
+
+CuratorScreen #wallet-separator {
+    color: $panel;
+    height: 1;
+}
+
+CuratorScreen CuratorWalletLadder {
+    width: 3fr;
+    height: 100%;
+    padding: 0 1;
+}
+
+CuratorScreen CuratorWalletStanding {
+    width: 2fr;
+    height: 100%;
+    padding: 0 1;
+}
+
+CuratorScreen CuratorWalletNext {
+    width: 100%;
+    height: auto;
+    min-height: 3;
+    padding: 0 1;
+}
