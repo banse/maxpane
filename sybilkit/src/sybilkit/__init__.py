@@ -39,6 +39,13 @@ Public surface (frozen in WP0, implemented in WP1/WP2)
 
 from __future__ import annotations
 
-# WP0.2 adds the model re-exports here; WP0.3 adds report/cluster/curve.  The
-# names above are the freeze; this list is what makes them importable.
-__all__: tuple[str, ...] = ()
+from .model import Dataset, Deposit, Funding, Tx
+
+# WP0.3 adds the report/cluster re-exports here.  The names in the docstring
+# are the freeze; this list is what makes them importable.
+__all__: tuple[str, ...] = (
+    "Dataset",
+    "Deposit",
+    "Tx",
+    "Funding",
+)
