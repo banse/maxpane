@@ -1772,3 +1772,332 @@ def test_the_you_quote_matches_on_address_case_insensitively(
         wallet, rows, points_per_eth=POINTS_PER_ETH, early_bps=19_491, credit_cap_wei=CREDIT_CAP
     )
     assert rank == 3
+
+
+# ===========================================================================
+# WP3.12 — build_signals() and the READING_KEYS seam
+# ===========================================================================
+
+#: The bundle's own instant — 2026-08-17 00:03:22Z, hour 4 of grace.
+BUNDLE_NOW = 1_786_925_002.0
+
+
+@pytest.fixture(scope="module")
+def full_readings(
+    bundle: dict, bundle_deposits: list[DepositEvent]
+) -> dict:
+    """Every reading, taken from ONE bundle whose state and logs were fetched
+    in the same second.  This is what WP5's ``_readings()`` must produce."""
+    state = bundle["state"]
+
+    def word(selector: str, index: int = 0) -> int:
+        raw = state[selector]["result"][2:]
+        return int(raw[index * 64 : (index + 1) * 64], 16)
+
+    first = [
+        _first_deposit_from_log(r) for r in _rows_of(bundle["logs"], TOPIC_FIRST_DEPOSIT)
+    ]
+    return {
+        "settled": bool(word("0x3270bb5b")),
+        "current_hour": word("0x020e185d"),
+        "hour_needed_wei": word("0xa4586257"),
+        "hour_seconds_left": word("0x7a7d6632"),
+        "early_bps": word("0xd8631b3d"),
+        "volume_wei": word("0xd80528ae", 0),
+        "contributors": word("0xd80528ae", 1),
+        "tx_count": word("0xd80528ae", 2),
+        "forced_balance_wei": int(bundle["balance"], 16),
+        "launch_time": word("0x790ca413"),
+        "grace_period": word("0xa06db7dc"),
+        "hour_duration": word("0xda25efd9"),
+        "hourly_threshold_wei": word("0x9d99a86d"),
+        "first_judged_hour": word("0x2a9c657f"),
+        "points_per_eth": word("0xc99a340f"),
+        "credit_cap_wei": word("0x1ea0466e"),
+        "deposits": bundle_deposits,
+        "first_deposits": first,
+        "hour_saved": [],
+        "rescued_total_wei": 0,
+        "settlement_record": None,
+        "wallet_state": None,
+    }
+
+
+def test_build_signals_emits_exactly_the_frozen_surface(full_readings: dict) -> None:
+    out = sig.build_signals(full_readings, now_ts=BUNDLE_NOW)
+    assert set(out) == set(sig.SIGNAL_OUTPUT_KEYS)
+
+
+def test_build_signals_accepts_exactly_the_frozen_readings(full_readings: dict) -> None:
+    """The seam WP5 produces.  Both directions, so neither side can drift: a
+    reading WP5 stops sending, and a reading this module stops reading."""
+    assert set(full_readings) == set(sig.READING_KEYS)
+
+
+def test_the_grace_payload_reproduces_the_bundle(full_readings: dict) -> None:
+    """One real instant, end to end: phase, clock, totals, rows and series."""
+    out = sig.build_signals(full_readings, now_ts=BUNDLE_NOW)
+
+    assert out["phase"] == "grace"
+    assert out["settled"] is False
+    assert out["current_hour"] == 4
+    assert out["hourly_threshold_eth"] == 5.0
+    assert out["first_judged_hour"] == 24
+    assert out["hour_needed_eth"] == 0.0  # REAL: zero all through grace
+    assert out["grace_ends_utc"] == "2026-08-17 19:58:47 UTC"
+    assert out["grace_seconds_left"] == 71_725
+    assert out["early_multiplier_x"] == pytest.approx(1.8303)
+
+    assert out["contributors_total"] == 2291
+    assert out["deposits_total"] == 2930
+    assert out["volume_routed_eth"] == pytest.approx(15_981.146536110048)
+    assert out["hour_fed_eth"] == pytest.approx(139.25130830753804)
+    assert out["forced_eth"] == 0.0
+    assert out["rescued_total_eth"] == 0.0
+
+    assert out["top_points"] == max(r["points"] for r in out["leaderboard_rows"])
+    assert len(out["leaderboard_rows"]) == sig.LEADERBOARD_LIMIT
+    assert out["leaderboard_rows"][0]["rank"] == 1
+    assert [tuple(r) for r in out["leaderboard_rows"]] == [
+        CURATOR_ROW_KEYS["leaderboard_rows"]
+    ] * len(out["leaderboard_rows"])
+
+    assert len(out["activity_rows"]) == sig.ACTIVITY_LIMIT
+    assert [tuple(r) for r in out["activity_rows"]] == [
+        CURATOR_ROW_KEYS["activity_rows"]
+    ] * len(out["activity_rows"])
+    assert {r["kind"] for r in out["activity_rows"]} <= set(CURATOR_ACTIVITY_KINDS)
+
+    assert len(out["volume_series"]) == 5 == len(out["contributors_series"])
+    assert out["volume_series"][0][0] == LAUNCH
+    assert out["volume_series"][1][0] == LAUNCH + HOUR
+    assert out["contributors_series"][-1][1] == 2291
+    assert sum(point[1] for point in out["volume_series"]) == pytest.approx(
+        out["volume_routed_eth"]
+    )
+
+
+def test_the_activity_feed_is_newest_first_and_names_the_first_deposits(
+    full_readings: dict,
+) -> None:
+    out = sig.build_signals(full_readings, now_ts=BUNDLE_NOW)
+    rows = out["activity_rows"]
+    assert [r["ts"] for r in rows] == sorted((r["ts"] for r in rows), reverse=True)
+    assert any(r["kind"] == "joined" for r in rows)
+    joined = [r for r in rows if r["kind"] == "joined"][0]
+    assert joined["tx_count"] == 1
+    assert joined["amount_eth"] > 0
+    assert joined["tx_hash"].startswith("0x") and isinstance(joined["log_index"], int)
+
+
+def test_during_grace_nothing_is_judged_and_the_signal_says_so(
+    full_readings: dict,
+) -> None:
+    out = sig.build_signals(full_readings, now_ts=BUNDLE_NOW)
+    assert out["survival_streak_hours"] == 0
+    assert out["closest_call_hour"] is None
+    assert out["closest_call_margin_eth"] is None
+    assert out["closest_call_rows"] == []
+    assert out["sig_at_risk_state"] == "ok"
+    assert out["sig_settled_state"] == "ok"
+
+
+def test_none_and_empty_mean_different_things_and_both_are_handled(
+    full_readings: dict,
+) -> None:
+    """None == the read failed; [] / () == the read succeeded and found
+    nothing.  HOUR AT RISK hinges on it: 0 ETH needed is a measurement and an
+    unreadable deficit is not."""
+    empty = sig.build_signals({**full_readings, "hour_needed_wei": 0}, now_ts=BUNDLE_NOW)
+    failed = sig.build_signals({**full_readings, "hour_needed_wei": None}, now_ts=BUNDLE_NOW)
+    assert empty["sig_at_risk_state"] == "ok"
+    assert empty["hour_needed_eth"] == 0.0
+    assert failed["hour_needed_eth"] is None
+    # …during grace the row is "n/a until hour 24" either way; post-grace the
+    # same pair is ok vs unknown:
+    judged = {**full_readings, "current_hour": 30, "first_judged_hour": 24}
+    after = LAUNCH + 30 * HOUR + 10
+    assert sig.build_signals({**judged, "hour_needed_wei": 0}, now_ts=after)[
+        "sig_at_risk_state"
+    ] == "ok"
+    assert sig.build_signals({**judged, "hour_needed_wei": None}, now_ts=after)[
+        "sig_at_risk_state"
+    ] is None
+
+
+def test_an_empty_log_read_is_not_the_same_as_a_failed_one(full_readings: dict) -> None:
+    empty = sig.build_signals({**full_readings, "deposits": []}, now_ts=BUNDLE_NOW)
+    failed = sig.build_signals({**full_readings, "deposits": None}, now_ts=BUNDLE_NOW)
+    assert empty["leaderboard_rows"] == [] and empty["top_points"] is None
+    assert empty["hour_fed_eth"] == 0.0
+    assert failed["leaderboard_rows"] == [] and failed["top_points"] is None
+    assert failed["hour_fed_eth"] is None
+    # The contract's own counters survive a dead logs tier — they are state.
+    assert failed["contributors_total"] == 2291
+
+
+def test_an_all_none_readings_dict_produces_the_full_surface_of_nones() -> None:
+    out = sig.build_signals({k: None for k in sig.READING_KEYS}, now_ts=BUNDLE_NOW)
+    assert set(out) == set(sig.SIGNAL_OUTPUT_KEYS)
+    assert all(value is None or value == [] for value in out.values()), {
+        k: v for k, v in out.items() if not (v is None or v == [])
+    }
+
+
+def test_build_signals_never_raises_on_hostile_input(full_readings: dict) -> None:
+    for bad in (
+        {},
+        {k: object() for k in sig.READING_KEYS},
+        {**full_readings, "current_hour": -1},
+        {**full_readings, "launch_time": "yesterday"},
+        {**full_readings, "deposits": [object(), None]},
+        None,
+        [],
+    ):
+        assert set(sig.build_signals(bad, now_ts=BUNDLE_NOW)) == set(sig.SIGNAL_OUTPUT_KEYS)
+
+
+def test_no_wei_denominated_value_reaches_the_flat_dict(full_readings: dict) -> None:
+    """The manager's contract is ETH floats.  A wei integer that escaped the
+    division renders as an 18-digit number and nobody notices until it does."""
+    out = sig.build_signals(full_readings, now_ts=BUNDLE_NOW)
+    assert not [k for k in out if k.endswith("_wei")]
+    for key in ("hour_fed_eth", "volume_routed_eth", "forced_eth", "hourly_threshold_eth"):
+        assert out[key] is None or out[key] < 10**9, key
+
+
+# --- the two states the chain has not reached yet --------------------------
+
+
+def _synthetic_case(name: str) -> dict:
+    return json.loads((SIGNALS_FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def _readings_from_case(case: dict) -> dict:
+    """Fill a synthetic case out to the full reading surface."""
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    hours = {int(h): v for h, v in case["hours"].items()}
+    deposits = [
+        _synthetic_deposit(
+            hour=hour,
+            amount_wei=volume,
+            contributor=f"0x{hour:040x}",
+            block_number=26_000_000 + hour,
+            early_bps=10_000,
+        )
+        for hour, volume in sorted(hours.items())
+    ]
+    readings = {key: None for key in sig.READING_KEYS}
+    readings.update(case["readings"])
+    readings["deposits"] = deposits
+    readings["first_deposits"] = []
+    return readings
+
+
+def test_a_judged_hour_with_a_live_deficit_watches_then_fires() -> None:
+    case = _synthetic_case("readings_judged_deficit.json")
+    assert "SYNTHETIC — re-point" in case["_synthetic"]
+    readings = _readings_from_case(case)
+    out = sig.build_signals(readings, now_ts=case["now_ts"])
+
+    assert out["phase"] == "judged"
+    assert out["early_multiplier_x"] == 1.0  # flat forever after grace
+    assert out["grace_seconds_left"] == 0
+    assert out["hour_needed_eth"] == pytest.approx(1.4)
+    assert out["sig_at_risk_state"] == "watch"
+    assert out["survival_streak_hours"] == 1
+    assert out["closest_call_hour"] == 24
+    assert out["closest_call_margin_eth"] == pytest.approx(0.2)
+    assert out["last_saved_hour"] == 24
+    assert out["last_saved_wallet"] == "0x00000000000000000000000000000000000000bb"
+    assert out["last_saved_age_s"] == pytest.approx(case["now_ts"] - 1_786_997_400)
+
+    urgent = sig.build_signals(
+        {**readings, "hour_seconds_left": 120}, now_ts=case["now_ts"]
+    )
+    assert urgent["sig_at_risk_state"] == "fired"
+
+
+def test_the_settled_state_is_terminal_and_survives_a_dead_rpc() -> None:
+    case = _synthetic_case("readings_settled.json")
+    readings = _readings_from_case(case)
+    readings["settlement_record"] = SettlementRecord(
+        settled=True,
+        block_number=26_000_100,
+        observed_at=case["observed_at"],
+        settled_hour=case["settled_hour"],
+        settled_at_ts=case["settled_at_ts"],
+    )
+    out = sig.build_signals(readings, now_ts=case["now_ts"])
+    assert out["phase"] == "settled"
+    assert out["settled"] is True
+    assert out["settled_hour"] == 27
+    assert out["settled_at_ts"] == case["settled_at_ts"]
+    assert out["settled_observed_at"] == case["observed_at"]
+    assert out["sig_settled_state"] == "fired"
+    assert out["sig_at_risk_state"] == "fired"
+    assert out["lived_desc"].startswith("lived ")
+
+    # The latch outlives the reading it was made from: a later refresh whose
+    # isSettled() call failed must not take the screen back to a live phase.
+    blind = sig.build_signals({**readings, "settled": None}, now_ts=case["now_ts"])
+    assert blind["phase"] == "settled" and blind["settled"] is True
+
+
+def test_a_long_settled_game_relaxes_its_colour_but_never_its_phase() -> None:
+    case = _synthetic_case("readings_settled.json")
+    readings = _readings_from_case(case)
+    readings["settlement_record"] = SettlementRecord(
+        settled=True,
+        block_number=26_000_100,
+        observed_at=case["observed_at"],
+        settled_hour=case["settled_hour"],
+        settled_at_ts=case["settled_at_ts"],
+    )
+    later = case["observed_at"] + sig.FIRED_TTL_S + 1
+    out = sig.build_signals(readings, now_ts=later)
+    assert out["phase"] == "settled"
+    assert out["sig_settled_state"] == "watch"
+    assert out["sig_settled_state"] in CURATOR_SIGNAL_STATES
+
+
+def test_a_live_game_reports_how_long_it_has_been_alive(full_readings: dict) -> None:
+    out = sig.build_signals(full_readings, now_ts=BUNDLE_NOW)
+    assert out["lived_desc"] == "alive 4 h 4 m"
+
+
+def test_the_you_row_reaches_the_flat_dict(full_readings: dict, rows) -> None:
+    top = rows[0]
+    wallet = WalletState(
+        address=top.address,
+        points=top.points,
+        weight_wei=top.weight_wei,
+        contributed_wei=top.credit_wei,
+        tx_count=top.tx_count,
+        first_hour=top.first_hour,
+        has_joined=True,
+        required_next_wei=top.credit_wei + 10**17,
+    )
+    out = sig.build_signals({**full_readings, "wallet_state": wallet}, now_ts=BUNDLE_NOW)
+    assert out["you_points"] == top.points
+    assert out["you_credit_eth"] == pytest.approx(461.1)
+    assert out["you_required_next_eth"] == pytest.approx(461.2)
+    assert out["you_marginal_points"] is not None
+    # Rank is against the WHOLE folded table, not the ten rows on screen.
+    assert out["you_rank"] is not None
+
+
+def test_the_flagged_flag_and_the_share_agree_with_the_cluster_rows(
+    full_readings: dict,
+) -> None:
+    out = sig.build_signals(full_readings, now_ts=BUNDLE_NOW)
+    assert out["clusters_count"] == len(
+        sig.find_clusters(full_readings["deposits"],
+                          sig.fold_deposits(full_readings["deposits"], [],
+                                            points_per_eth=POINTS_PER_ETH))
+    )
+    assert len(out["cluster_rows"]) <= sig.CLUSTER_LIMIT
+    assert 0.0 < out["flagged_points_share_pct"] < 100.0
+    assert any(row["flagged"] for row in out["leaderboard_rows"]) or all(
+        not row["flagged"] for row in out["leaderboard_rows"]
+    )

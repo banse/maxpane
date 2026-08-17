@@ -846,29 +846,9 @@ def find_clusters(
         row.points for row in rows if _int_or_none(getattr(row, "points", None)) is not None
     )
 
-    ladders: dict[str, int] = {}
-    for event in events:
-        key = event.contributor.lower()
-        ladders[key] = ladders.get(key, 0) + 1
-
-    singles = [event for event in events if ladders.get(event.contributor.lower()) == 1]
-
-    groups: dict[int, list[Any]] = {}
-    for event in singles:
-        groups.setdefault(event.amount_wei, []).append(event)
-
     found: list[dict] = []
-    for amount, members in groups.items():
-        if len(members) < min_size:
-            continue
-        members.sort(key=lambda e: e.block_number)
-        run: list[Any] = []
-        for event in members:
-            if run and event.block_number - run[0].block_number > max_block_span:
-                found.extend(_cluster_rows(run, amount, min_size, by_address, total_points))
-                run = []
-            run.append(event)
-        found.extend(_cluster_rows(run, amount, min_size, by_address, total_points))
+    for amount, run in _cluster_runs(events, min_size, max_block_span):
+        found.extend(_cluster_rows(run, amount, by_address, total_points))
 
     found.sort(
         key=lambda row: (
@@ -880,17 +860,70 @@ def find_clusters(
     return found
 
 
+def _cluster_runs(
+    events: list[Any], min_size: int, max_block_span: int
+) -> list[tuple[int, list[Any]]]:
+    """``(amount_wei, members)`` for every maximal run that clears the rule.
+
+    The one place the rule is implemented.  :func:`find_clusters` turns these
+    into rows and :func:`cluster_members` turns them into a set of addresses;
+    two copies of the grouping would be two rules that drift apart, and the
+    leaderboard's ``flagged`` column and the cluster table would then disagree
+    on screen about the same wallets.
+    """
+    ladders: dict[str, int] = {}
+    for event in events:
+        key = event.contributor.lower()
+        ladders[key] = ladders.get(key, 0) + 1
+
+    groups: dict[int, list[Any]] = {}
+    for event in events:
+        if ladders.get(event.contributor.lower()) != 1:
+            continue
+        groups.setdefault(event.amount_wei, []).append(event)
+
+    runs: list[tuple[int, list[Any]]] = []
+    for amount, members in groups.items():
+        if len(members) < min_size:
+            continue
+        members.sort(key=lambda e: e.block_number)
+        run: list[Any] = []
+        for event in members:
+            if run and event.block_number - run[0].block_number > max_block_span:
+                if len(run) >= min_size:
+                    runs.append((amount, run))
+                run = []
+            run.append(event)
+        if len(run) >= min_size:
+            runs.append((amount, run))
+    return runs
+
+
+def cluster_members(
+    deposits: Any,
+    *,
+    min_size: int = CLUSTER_MIN_SIZE,
+    max_block_span: int = CLUSTER_MAX_BLOCK_SPAN,
+) -> set[str]:
+    """The lowercase addresses that sit inside some fan-out run.
+
+    This is what the leaderboard's ``flagged`` column reads, and it comes off
+    the same grouping the cluster table does — see :func:`_cluster_runs`.
+    """
+    return {
+        event.contributor.lower()
+        for _amount, run in _cluster_runs(_usable_deposits(deposits), min_size, max_block_span)
+        for event in run
+    }
+
+
 def _cluster_rows(
     run: list[Any],
     amount_wei: int,
-    min_size: int,
     by_address: dict[str, Any],
     total_points: int,
 ) -> list[dict]:
-    """One row for a maximal run, or nothing if the run is too small."""
-    if len(run) < min_size:
-        return []
-
+    """One row for one maximal run."""
     scores = [
         _int_or_none(getattr(by_address.get(event.contributor.lower()), "points", None))
         for event in run
@@ -1041,6 +1074,332 @@ def you_quote(
     return rank, points, credit_eth, _eth(required_next), marginal
 
 
+# ---------------------------------------------------------------------------
+# build_signals: the one place the readings become the screen's numbers
+# ---------------------------------------------------------------------------
+
+
+def _guard(fn: Any, default: Any = None) -> Any:
+    """Run one sub-fold; a failure costs that fold and nothing else.
+
+    The manager wraps this whole call in ``safe_call``, but losing the
+    leaderboard because the fan-out grouping hiccuped is still wrong: each
+    group of keys degrades on its own, exactly like each read does.
+    """
+    try:
+        return fn()
+    except Exception:  # noqa: BLE001 — deliberately total at this boundary
+        return default
+
+
+def _rebuilt_with_saviors(buckets: list[HourBucket], saviors: dict[int, str]) -> list[HourBucket]:
+    if not saviors:
+        return buckets
+    return [
+        HourBucket(
+            hour=b.hour,
+            volume_wei=b.volume_wei,
+            deposits=b.deposits,
+            judged=b.judged,
+            saved_by=saviors.get(b.hour, b.saved_by),
+        )
+        for b in buckets
+    ]
+
+
+def _hour_saved_rows(raw: Any) -> list[dict]:
+    """``HourSaved`` events, newest hour first.  It has never fired on chain."""
+    rows: list[dict] = []
+    for entry in raw or []:
+        if not isinstance(entry, dict):
+            entry = {
+                "hour": getattr(entry, "hour", None),
+                "wallet": getattr(entry, "wallet", None),
+                "ts": getattr(entry, "ts", None),
+            }
+        hour = _int_or_none(entry.get("hour"))
+        wallet = entry.get("wallet") or entry.get("address")
+        if hour is None or not isinstance(wallet, str):
+            continue
+        rows.append({"hour": hour, "wallet": wallet, "ts": _num_or_none(entry.get("ts"))})
+    rows.sort(key=lambda row: row["hour"], reverse=True)
+    return rows
+
+
+def _activity_kind(event: Any, saved: set[tuple[str, int]]) -> str:
+    """One of :data:`CURATOR_ACTIVITY_KINDS`, and never a fourth spelling."""
+    if (event.contributor.lower(), event.hour) in saved:
+        return CURATOR_ACTIVITY_KINDS[2]  # "saved"
+    if event.tx_count == 1:
+        return CURATOR_ACTIVITY_KINDS[1]  # "joined" — this wallet's first
+    return CURATOR_ACTIVITY_KINDS[0]  # "deposit"
+
+
+def build_signals(readings: Any, *, now_ts: float) -> dict:
+    """Every derived key of the flat contract, from one dict of readings.
+
+    Emits **exactly** :data:`SIGNAL_OUTPUT_KEYS`, always all of them: a screen
+    that has to ask whether a key exists is a screen with a silent fallback arm.
+    The manager adds :data:`MANAGER_OWNED_KEYS` and nothing else.
+
+    This is also **the presentation boundary**: wei becomes ETH here, once, in
+    :func:`_eth`.  Nothing downstream divides again.
+
+    ``None`` in, ``None`` out — never a zero.  The three legitimate zeros of
+    this contract (a credited delta above the cap, a deficit during grace or on
+    a safe hour, an hour total at a boundary) travel through as the measurements
+    they are.
+    """
+    read = readings if isinstance(readings, dict) else {}
+    now = _num_or_none(now_ts)
+
+    out: dict[str, Any] = {key: None for key in SIGNAL_OUTPUT_KEYS}
+    for key in (
+        "leaderboard_rows",
+        "activity_rows",
+        "closest_call_rows",
+        "cluster_rows",
+        "volume_series",
+        "contributors_series",
+    ):
+        out[key] = []
+
+    # --- config, straight off the `once` tier ------------------------------
+    launch_time = _int_or_none(read.get("launch_time"))
+    grace_period = _int_or_none(read.get("grace_period"))
+    hour_duration = _int_or_none(read.get("hour_duration"))
+    threshold_wei = _int_or_none(read.get("hourly_threshold_wei"))
+    first_judged = _int_or_none(read.get("first_judged_hour"))
+    points_per_eth = _int_or_none(read.get("points_per_eth"))
+    credit_cap = _int_or_none(read.get("credit_cap_wei"))
+    early_bps = _int_or_none(read.get("early_bps"))
+    current_hour = _int_or_none(read.get("current_hour"))
+
+    out["hourly_threshold_eth"] = _eth(threshold_wei)
+    out["first_judged_hour"] = first_judged
+    out["current_hour"] = current_hour
+    out["hour_seconds_left"] = _int_or_none(read.get("hour_seconds_left"))
+    out["hour_needed_eth"] = _eth(read.get("hour_needed_wei"))
+    out["forced_eth"] = _eth(read.get("forced_balance_wei"))
+    out["rescued_total_eth"] = _eth(read.get("rescued_total_wei"))
+
+    if early_bps is not None:
+        out["early_multiplier_x"] = early_bps / _BPS
+        fresh = points_for_weight(weight_added(_WEI, early_bps), points_per_eth)
+        out["points_per_eth_now"] = None if fresh is None else float(fresh)
+
+    # --- the settlement latch beats the live read --------------------------
+    record = read.get("settlement_record")
+    latched = getattr(record, "settled", None) is True
+    live_settled = read.get("settled")
+    settled = True if latched else (live_settled if isinstance(live_settled, bool) else None)
+    out["settled"] = settled
+    if latched:
+        out["settled_hour"] = _int_or_none(getattr(record, "settled_hour", None))
+        out["settled_at_ts"] = _int_or_none(getattr(record, "settled_at_ts", None))
+        out["settled_observed_at"] = _num_or_none(getattr(record, "observed_at", None))
+
+    phase = _guard(
+        lambda: derive_phase(
+            now_ts=now,
+            launch_time=launch_time,
+            grace_period=grace_period,
+            settled=settled,
+            current_hour=current_hour,
+        )
+    )
+    out["phase"] = phase
+    out["grace_seconds_left"] = _guard(
+        lambda: grace_seconds_left(
+            now_ts=now, launch_time=launch_time, grace_period=grace_period
+        )
+    )
+    out["grace_ends_utc"] = _guard(lambda: grace_ends_utc(launch_time, grace_period))
+
+    ended_at = out["settled_at_ts"] or out["settled_observed_at"] or now
+    out["lived_desc"] = _guard(
+        lambda: lived_desc(launch_time, ended_at, settled=phase == "settled")
+    )
+
+    # --- the folds ---------------------------------------------------------
+    raw_deposits = read.get("deposits")
+    has_logs = isinstance(raw_deposits, (list, tuple))
+    rows = _guard(
+        lambda: fold_deposits(
+            raw_deposits, read.get("first_deposits"), points_per_eth=points_per_eth
+        ),
+        [],
+    )
+    buckets = _guard(
+        lambda: hourly_buckets(
+            raw_deposits,
+            launch_time=launch_time,
+            hour_duration=hour_duration,
+            first_judged_hour=first_judged,
+            hourly_threshold_wei=threshold_wei,
+        ),
+        [],
+    )
+    saved_rows = _guard(lambda: _hour_saved_rows(read.get("hour_saved")), [])
+    buckets = _guard(
+        lambda: _rebuilt_with_saviors(buckets, {row["hour"]: row["wallet"] for row in saved_rows}),
+        buckets,
+    )
+
+    if saved_rows:
+        newest = saved_rows[0]
+        out["last_saved_hour"] = newest["hour"]
+        out["last_saved_wallet"] = newest["wallet"]
+        if now is not None and newest["ts"] is not None:
+            out["last_saved_age_s"] = max(0.0, now - newest["ts"])
+
+    # --- totals: the contract's own counters first -------------------------
+    out["contributors_total"] = _int_or_none(read.get("contributors"))
+    out["deposits_total"] = _int_or_none(read.get("tx_count"))
+    out["volume_routed_eth"] = _eth(read.get("volume_wei"))
+    if out["contributors_total"] is None and has_logs:
+        out["contributors_total"] = len(rows)
+    if out["deposits_total"] is None and has_logs:
+        out["deposits_total"] = sum(b.deposits for b in buckets)
+    if out["volume_routed_eth"] is None and has_logs:
+        out["volume_routed_eth"] = _eth(sum(b.volume_wei for b in buckets))
+    if rows:
+        out["top_points"] = rows[0].points
+
+    if has_logs and current_hour is not None:
+        live = [b for b in buckets if b.hour == current_hour]
+        out["hour_fed_eth"] = _eth(live[0].volume_wei) if live else 0.0
+
+    # --- survival ----------------------------------------------------------
+    record_survival = _guard(
+        lambda: survival(
+            buckets,
+            current_hour=current_hour,
+            hourly_threshold_wei=threshold_wei,
+            first_judged_hour=first_judged,
+        ),
+        {},
+    )
+    out["survival_streak_hours"] = record_survival.get("streak_hours")
+    out["closest_call_hour"] = record_survival.get("closest_call_hour")
+    out["closest_call_margin_eth"] = _eth(record_survival.get("closest_call_margin_wei"))
+    out["closest_call_rows"] = [
+        {
+            "hour": hour,
+            "volume_eth": _eth(volume),
+            "margin_eth": _eth(margin),
+            "savior": savior,
+        }
+        for hour, volume, margin, savior in record_survival.get("closest_calls", [])[
+            :CLOSEST_CALL_LIMIT
+        ]
+    ]
+
+    # --- signal states -----------------------------------------------------
+    out["sig_at_risk_state"] = _guard(
+        lambda: at_risk_state(
+            phase=phase,
+            needed_wei=_int_or_none(read.get("hour_needed_wei")),
+            seconds_left=out["hour_seconds_left"],
+            first_judged_hour=first_judged,
+        )[0]
+    )
+    if settled is True:
+        observed = out["settled_observed_at"]
+        fresh = observed is None or now is None or (now - observed) < FIRED_TTL_S
+        out["sig_settled_state"] = STATE_FIRED if fresh else STATE_WATCH
+    elif settled is False:
+        out["sig_settled_state"] = STATE_OK
+
+    # --- whale -------------------------------------------------------------
+    whale = _guard(lambda: newest_whale(raw_deposits, now_ts=now))
+    if whale:
+        out["whale_amount_eth"] = _eth(whale["amount_wei"])
+        out["whale_wallet"] = whale["wallet"]
+        out["whale_age_s"] = whale["age_s"]
+
+    # --- fan-out patterns --------------------------------------------------
+    found = _guard(lambda: find_clusters(raw_deposits, rows), [])
+    flagged = _guard(lambda: cluster_members(raw_deposits), set())
+    if has_logs:
+        out["clusters_count"] = len(found)
+    out["cluster_rows"] = list(found[:CLUSTER_LIMIT])
+    shares = [row["points_share_pct"] for row in found]
+    if shares and all(share is not None for share in shares):
+        out["flagged_points_share_pct"] = sum(shares)
+
+    # --- rows --------------------------------------------------------------
+    out["leaderboard_rows"] = [
+        {
+            "rank": rank,
+            "address": row.address,
+            "points": row.points,
+            "credit_eth": _eth(row.credit_wei),
+            "tx_count": row.tx_count,
+            "flagged": row.address.lower() in flagged,
+        }
+        for rank, row in enumerate(rows[:LEADERBOARD_LIMIT], start=1)
+    ]
+
+    saved_keys = {(row["wallet"].lower(), row["hour"]) for row in saved_rows}
+    events = _guard(lambda: _usable_deposits(raw_deposits), [])
+    out["activity_rows"] = [
+        {
+            "ts": event.ts,
+            "address": event.contributor,
+            "amount_eth": _eth(event.amount_wei),
+            "credited_eth": _eth(event.credited_delta_wei),
+            "new_weight": _eth(event.new_weight_wei),
+            "tx_count": event.tx_count,
+            "hour": event.hour,
+            "kind": _activity_kind(event, saved_keys),
+            "tx_hash": getattr(event, "tx_hash", None),
+            "log_index": event.log_index,
+        }
+        for event in reversed(events[-ACTIVITY_LIMIT:])
+    ]
+
+    # --- series: from the folded buckets only ------------------------------
+    out["volume_series"] = [
+        [bucket_start_ts(b.hour, launch_time, hour_duration), _eth(b.volume_wei)]
+        for b in buckets
+        if bucket_start_ts(b.hour, launch_time, hour_duration) is not None
+    ]
+    joined_by_hour: dict[int, int] = {}
+    for row in rows:
+        if row.first_hour is not None:
+            joined_by_hour[row.first_hour] = joined_by_hour.get(row.first_hour, 0) + 1
+    running = 0
+    contributors_series: list[list[Any]] = []
+    for bucket in buckets:
+        running += joined_by_hour.get(bucket.hour, 0)
+        stamp = bucket_start_ts(bucket.hour, launch_time, hour_duration)
+        if stamp is not None:
+            contributors_series.append([stamp, running])
+    out["contributors_series"] = contributors_series
+
+    # --- YOU ---------------------------------------------------------------
+    quote = _guard(
+        lambda: you_quote(
+            read.get("wallet_state"),
+            rows,
+            points_per_eth=points_per_eth,
+            early_bps=early_bps,
+            credit_cap_wei=credit_cap,
+        ),
+        (None, None, None, None, None),
+    )
+    (
+        out["you_rank"],
+        out["you_points"],
+        out["you_credit_eth"],
+        out["you_required_next_eth"],
+        out["you_marginal_points"],
+    ) = quote
+
+    return out
+
+
 __all__ = [
     # tunables
     "WHALE_MIN_ETH",
@@ -1077,6 +1436,9 @@ __all__ = [
     "survival",
     "at_risk_state",
     "find_clusters",
+    "cluster_members",
     "newest_whale",
     "you_quote",
+    # the seam
+    "build_signals",
 ]
