@@ -798,6 +798,120 @@ def at_risk_state(
     return STATE_WATCH, detail
 
 
+# ---------------------------------------------------------------------------
+# The fan-out heuristic v1
+# ---------------------------------------------------------------------------
+
+
+def find_clusters(
+    deposits: Any,
+    contributors: Any,
+    *,
+    min_size: int = CLUSTER_MIN_SIZE,
+    max_block_span: int = CLUSTER_MAX_BLOCK_SPAN,
+) -> list[dict]:
+    """Groups of single-deposit wallets sending byte-identical amounts close
+    together — a **shape in the data**, reported as such.
+
+    The rule (PRD §5, all three parts a first guess): at least
+    ``min_size`` wallets whose *only* deposit is the same amount **to the wei**,
+    landing inside ``max_block_span`` blocks.  Wallets that deposited more than
+    once are excluded by construction: escalating against your own record is the
+    opposite of fanning out.
+
+    Amounts group on the **integer**.  Two sends one wei apart are equal as ETH
+    floats and are not equal on chain, and the whole point of the rule is that
+    the amounts match exactly.
+
+    The block bound is what keeps the rule meaningful: the wallets sitting at
+    the minimum deposit are identical in amount by definition, and without a
+    window they would form one group spanning the entire game.
+
+    ``points`` and ``points_share_pct`` are ``None`` — never ``0`` — when the
+    folded table has no score to report.  The pattern is still real; it just has
+    no number attached.
+    """
+    events = _usable_deposits(deposits)
+    if not events:
+        return []
+
+    rows = [
+        row
+        for row in (contributors or [])
+        if isinstance(getattr(row, "address", None), str)
+        and _int_or_none(getattr(row, "tx_count", None)) is not None
+    ]
+    by_address = {row.address.lower(): row for row in rows}
+    total_points = sum(
+        row.points for row in rows if _int_or_none(getattr(row, "points", None)) is not None
+    )
+
+    ladders: dict[str, int] = {}
+    for event in events:
+        key = event.contributor.lower()
+        ladders[key] = ladders.get(key, 0) + 1
+
+    singles = [event for event in events if ladders.get(event.contributor.lower()) == 1]
+
+    groups: dict[int, list[Any]] = {}
+    for event in singles:
+        groups.setdefault(event.amount_wei, []).append(event)
+
+    found: list[dict] = []
+    for amount, members in groups.items():
+        if len(members) < min_size:
+            continue
+        members.sort(key=lambda e: e.block_number)
+        run: list[Any] = []
+        for event in members:
+            if run and event.block_number - run[0].block_number > max_block_span:
+                found.extend(_cluster_rows(run, amount, min_size, by_address, total_points))
+                run = []
+            run.append(event)
+        found.extend(_cluster_rows(run, amount, min_size, by_address, total_points))
+
+    found.sort(
+        key=lambda row: (
+            -(row["points"] or 0),
+            -row["size"],
+            -row["last_block"],
+        )
+    )
+    return found
+
+
+def _cluster_rows(
+    run: list[Any],
+    amount_wei: int,
+    min_size: int,
+    by_address: dict[str, Any],
+    total_points: int,
+) -> list[dict]:
+    """One row for a maximal run, or nothing if the run is too small."""
+    if len(run) < min_size:
+        return []
+
+    scores = [
+        _int_or_none(getattr(by_address.get(event.contributor.lower()), "points", None))
+        for event in run
+    ]
+    points = None if any(score is None for score in scores) else sum(scores)
+    share = None
+    if points is not None and total_points > 0:
+        share = 100.0 * points / total_points
+
+    return [
+        {
+            "size": len(run),
+            "amount_eth": _eth(amount_wei),
+            "first_block": run[0].block_number,
+            "last_block": run[-1].block_number,
+            "points": points,
+            "points_share_pct": share,
+        }
+    ]
+
+
 __all__ = [
     # tunables
     "WHALE_MIN_ETH",
@@ -833,4 +947,5 @@ __all__ = [
     "bucket_start_ts",
     "survival",
     "at_risk_state",
+    "find_clusters",
 ]

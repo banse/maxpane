@@ -1406,3 +1406,168 @@ def test_every_state_it_returns_is_a_frozen_spelling() -> None:
                 assert isinstance(detail, str) and detail
                 seen.add(state)
     assert seen - {None} <= set(CURATOR_SIGNAL_STATES)
+
+
+# ===========================================================================
+# WP3.10 — the fan-out heuristic v1 (pattern language, never accusation)
+# ===========================================================================
+
+
+@pytest.fixture(scope="module")
+def clusters(
+    deposits: list[DepositEvent], rows: list[ContributorRow]
+) -> list[dict]:
+    return sig.find_clusters(deposits, rows)
+
+
+def test_the_real_fan_out_is_found(clusters: list[dict], deposits: list[DepositEvent]) -> None:
+    """9 wallets, exactly 60 ETH each, blocks 25 770 115-25 770 143 (span 28).
+    The contract's own doc comment predicts this shape; this is it in the data.
+    """
+    sixty = [c for c in clusters if c["amount_eth"] == 60.0]
+    assert len(sixty) == 1 and sixty[0]["size"] == 9
+    assert sixty[0]["first_block"] == 25_770_115
+    assert sixty[0]["last_block"] == 25_770_143
+
+    # …and independently: exactly nine addresses deposited exactly 60 ETH once.
+    per_wallet: dict[str, list[DepositEvent]] = defaultdict(list)
+    for ev in deposits:
+        per_wallet[ev.contributor].append(ev)
+    singles = [
+        ladder[0]
+        for ladder in per_wallet.values()
+        if len(ladder) == 1 and ladder[0].amount_wei == 60 * ETH
+    ]
+    assert len(singles) == 9
+
+
+def test_the_grinder_is_not_a_cluster(clusters: list[dict]) -> None:
+    """0xba7610… has 13 deposits.  Multi-deposit wallets are excluded by
+    construction: escalating against yourself is the opposite of fanning out,
+    and the ladder's amounts are all different anyway."""
+    assert not any(c["size"] > 12 for c in clusters)
+
+
+def test_a_multi_deposit_wallet_never_joins_a_group() -> None:
+    """Three identical amounts in one block window, but one sender came back
+    later — that leaves two single-deposit wallets, which is below the floor."""
+    events = [
+        _synthetic_deposit(
+            hour=0, amount_wei=7 * ETH, contributor=f"0x{i:040x}", block_number=100 + i
+        )
+        for i in range(3)
+    ]
+    events.append(
+        _synthetic_deposit(
+            hour=0,
+            amount_wei=9 * ETH,
+            contributor="0x" + f"{2:040x}",
+            block_number=110,
+            tx_count=2,
+        )
+    )
+    folded = sig.fold_deposits(events, [], points_per_eth=POINTS_PER_ETH)
+    assert sig.find_clusters(events, folded) == []
+
+
+def test_the_53_minimum_deposits_are_not_one_giant_cluster(clusters: list[dict]) -> None:
+    """53 wallets touched the 0.05 ETH minimum.  They are identical in amount
+    and would form one huge 'cluster' without the block-span bound — which
+    would flag a third of the list and mean nothing."""
+    minimums = [c for c in clusters if c["amount_eth"] == 0.05]
+    assert minimums, "the minimum-deposit runs are still found, just bounded"
+    assert all(c["size"] < 20 for c in minimums)
+    assert all(c["last_block"] - c["first_block"] <= sig.CLUSTER_MAX_BLOCK_SPAN for c in clusters)
+
+
+def test_amounts_are_compared_in_wei_not_in_eth_floats() -> None:
+    """``(10**18 + 1) / 1e18 == 1.0`` in float64.  Six wallets, two amounts one
+    wei apart, one block window: two groups of three, never one of six."""
+    events = [
+        _synthetic_deposit(
+            hour=0, amount_wei=ETH + (i % 2), contributor=f"0x{i:040x}", block_number=200 + i
+        )
+        for i in range(6)
+    ]
+    assert (ETH + 1) / 1e18 == 1.0  # the confusion this test exists for
+    folded = sig.fold_deposits(events, [], points_per_eth=POINTS_PER_ETH)
+    found = sig.find_clusters(events, folded)
+    assert sorted(c["size"] for c in found) == [3, 3]
+
+
+def test_a_cluster_of_exactly_three_is_found_and_of_two_is_not() -> None:
+    def _run(count: int, span: int = 4) -> list[dict]:
+        events = [
+            _synthetic_deposit(
+                hour=0,
+                amount_wei=2 * ETH,
+                contributor=f"0x{i:040x}",
+                block_number=300 + i * span,
+            )
+            for i in range(count)
+        ]
+        folded = sig.fold_deposits(events, [], points_per_eth=POINTS_PER_ETH)
+        return sig.find_clusters(events, folded)
+
+    assert _run(2) == []
+    assert [c["size"] for c in _run(3)] == [3]
+
+
+def test_a_group_wider_than_the_block_bound_splits_into_runs() -> None:
+    """Two tight runs 1000 blocks apart are two patterns, not one."""
+    events = [
+        _synthetic_deposit(
+            hour=0, amount_wei=2 * ETH, contributor=f"0x{i:040x}", block_number=block
+        )
+        for i, block in enumerate([400, 402, 404, 1400, 1402, 1404])
+    ]
+    folded = sig.fold_deposits(events, [], points_per_eth=POINTS_PER_ETH)
+    found = sig.find_clusters(events, folded)
+    assert sorted((c["size"], c["first_block"]) for c in found) == [(3, 400), (3, 1400)]
+
+
+def test_the_rows_carry_exactly_the_frozen_cluster_columns(clusters: list[dict]) -> None:
+    for row in clusters:
+        assert tuple(row) == CURATOR_ROW_KEYS["cluster_rows"]
+
+
+def test_the_points_and_share_come_from_the_folded_table(
+    clusters: list[dict], rows: list[ContributorRow], deposits: list[DepositEvent]
+) -> None:
+    sixty = [c for c in clusters if c["amount_eth"] == 60.0][0]
+    members = {
+        r.address
+        for r in rows
+        if r.tx_count == 1 and r.credit_wei == 60 * ETH
+    }
+    expected = sum(r.points for r in rows if r.address in members)
+    total = sum(r.points for r in rows)
+    assert sixty["points"] == expected
+    assert sixty["points_share_pct"] == pytest.approx(100.0 * expected / total)
+    assert 0.0 < sixty["points_share_pct"] < 100.0
+
+
+def test_the_share_is_none_rather_than_zero_when_points_are_unknown(
+    deposits: list[DepositEvent],
+) -> None:
+    """The curve constant is a chain read like any other.  Without it a cluster
+    is still a real pattern — it just has no score to report."""
+    folded = sig.fold_deposits(deposits, [], points_per_eth=None)
+    found = sig.find_clusters(deposits, folded)
+    assert found
+    assert all(c["points"] is None and c["points_share_pct"] is None for c in found)
+
+
+def test_the_output_carries_no_accusatory_vocabulary(clusters: list[dict]) -> None:
+    """PRD §5: pattern language only.  The contract's own docs delegate this
+    analysis to consumers; calling a wallet a cheat is a claim this data cannot
+    support."""
+    blob = json.dumps(clusters).lower() + inspect.getsource(sig).lower()
+    for word in ("sybil", "cheat", "fraud", "attack", "abuse", "farmer"):
+        assert word not in blob, word
+
+
+def test_find_clusters_is_total_over_empty_and_hostile_input() -> None:
+    assert sig.find_clusters([], []) == []
+    assert sig.find_clusters(None, None) == []
+    assert sig.find_clusters([object(), None], [object()]) == []
