@@ -55,6 +55,31 @@ is ``CuratorSignals``, the seven-row rail
 ``_panels_asking_for_width`` rather than by prose: on the surf screen the same
 claim changed hands three times and was restated in a paragraph each time with
 no test that could contradict it.
+
+Width is swept in two dimensions
+--------------------------------
+
+Every sweep here carries a ``height`` as well as a ``width``, and the pinned
+number is asserted at a **tall** terminal and a **short** one.  The first
+version of this module measured everything at 48 rows, and that was not a
+neutral choice: the rail scrolls, and below 42 rows its scrollbar used to take
+a column out of ``CuratorSignals`` -- the binding panel -- so the constant was
+one column short of the truth on every terminal a laptop actually has open.
+The gutter is reserved now (``scrollbar-gutter: stable``), which makes the
+requirement height-independent, and ``_HEIGHTS`` keeps it honest by measuring
+both anyway: a layout that starts depending on height again fails here rather
+than in a user's 40-row window.
+
+The rail's own rectangle
+------------------------
+
+Assertions about the seven detector rows are made against
+``_region_text(app, screen.query_one(CuratorSignals), screen)``, not against
+the whole screen.  Three of the seven labels are also printed by panels that
+are *not* the rail -- the title bar prints ``· SETTLED ·`` in the settled
+phase and the hero's CLOCK box prints ``SETTLED AT HOUR 28`` -- so a
+whole-screen search cannot tell a rail that lost its first row from one that
+kept it, in exactly the phase where that row is the headline.
 """
 
 from __future__ import annotations
@@ -78,6 +103,7 @@ from maxpane_dashboard.screens.curator import (
     MANAGER_FAILURE_SECONDS,
     META_KEYS,
     SCREEN_SUPPLIED,
+    TALLER_HINT,
     VIEW_CLOSEST,
     VIEW_CLUSTERS,
     WIDGET_SIGNATURES,
@@ -132,6 +158,29 @@ _PANELS = (
 #: agree with it by construction.
 _SWEEP_LO, _SWEEP_HI = 118, 160
 
+#: The terminal height every render defaults to: comfortably above
+#: :data:`RAIL_FULL_HEIGHT`, so a width assertion measures width alone.
+_TALL = 48
+
+#: A short terminal that still has to show the whole layout's *width*
+#: requirement.  It is below :data:`RAIL_FULL_HEIGHT`, so the rail is scrolling
+#: here -- precisely the state the one-dimensional sweep never reached -- and
+#: 30 rows is a real window, not a corner: a half-screen terminal on a laptop.
+_SHORT = 30
+
+#: Both, for the sweeps that must hold at either.
+_HEIGHTS = (_TALL, _SHORT)
+
+#: The terminal height at which ``#curator-right-rail`` stops scrolling, i.e.
+#: the first height that shows all seven detector rows without one.  Measured,
+#: not derived: the rail's content is a constant 14 rows (a four-row sparkline
+#: panel, its one-row margin, and a nine-row signal panel -- title, spacer,
+#: seven detector rows) and the rows above it in the screen's own layout take
+#: the rest.  ``TALLER_HINT`` lights at
+#: ``RAIL_FULL_HEIGHT - 1`` and is dark from here up, pinned in both
+#: directions by ``test_the_taller_hint_lights_exactly_when_the_rail_scrolls``.
+RAIL_FULL_HEIGHT = 42
+
 
 # -- payloads ------------------------------------------------------------
 
@@ -184,8 +233,9 @@ def _payload_for(phase: str, **overrides) -> dict:
     }[phase](**overrides)
 
 
-def _all_none_payload() -> dict:
-    """Every contract key present, every value ``None``.
+def _all_none_payload(**overrides) -> dict:
+    """Every contract key present, every value ``None`` -- under a full
+    ``degraded`` list, because that is the only way the manager emits one.
 
     **This is the specified outage path**, not an exception:
     ``CuratorManager.fetch_and_compute`` never raises and returns the full
@@ -193,8 +243,22 @@ def _all_none_payload() -> dict:
     (WP5's ``test_no_exception_escapes_when_every_call_raises``).  The
     ``raises=True`` double below is belt and braces for a mis-wired manager and
     must never be mistaken for the documented degradation contract.
+
+    ``degraded`` is **not** ``None`` here and that is the point.  The manager's
+    outermost guard publishes ``payload["degraded"] = sorted(SOURCES)``, and on
+    the ordinary path ``_degraded()`` returns a list that can never be ``None``
+    -- there is even a branch whose only job is to stop an all-``None`` payload
+    shipping under an empty one (``curator_manager`` publishes ``SOURCES`` into
+    ``_failed_groups`` when ``build_signals`` itself dies).  A bare
+    ``dict.fromkeys`` renders a title bar with no ``⚠`` at all: 49 unreadable
+    values wearing the face of a healthy picture, which is fiction of exactly
+    the kind this module's docstring forbids.  ``_fmt_degraded``'s tolerance of
+    ``None`` is pinned separately, on the pure helper.
     """
-    return dict.fromkeys(CURATOR_KEYS)
+    payload = dict.fromkeys(CURATOR_KEYS)
+    payload["degraded"] = sorted(SOURCES)
+    payload.update(overrides)
+    return payload
 
 
 # -- harness -------------------------------------------------------------
@@ -270,11 +334,17 @@ def _region_text(app, widget, clip) -> str:
 
 
 async def _render(payload=None, *, width: int = CURATOR_FULL_LAYOUT_COLUMNS,
-                  view: str | None = None, wallet=_WALLET) -> str:
-    """Boot the real screen at *width*, refresh once, return composited text."""
+                  height: int = _TALL, view: str | None = None,
+                  wallet=_WALLET) -> str:
+    """Boot the real screen at *width* x *height*, refresh, composite it.
+
+    ``height`` is a parameter rather than a constant because this layout's
+    width requirement was measured at one height for one release and that made
+    the pinned number true for a 48-row window and false for a 40-row one.
+    """
     screen = _screen(payload, wallet=wallet)
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(width, 48)) as pilot:
+    async with app.run_test(size=(width, height)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
@@ -284,13 +354,16 @@ async def _render(payload=None, *, width: int = CURATOR_FULL_LAYOUT_COLUMNS,
         return _screen_text(app)
 
 
-async def _widen_markers(width: int, payload=None, view: str | None = None) -> int:
+async def _widen_markers(width: int, payload=None, view: str | None = None,
+                         height: int = _TALL) -> int:
     """Composited ``‹ widen`` count at *width*, whole screen, cold boot."""
-    return (await _render(payload, width=width, view=view)).count("‹ widen")
+    return (await _render(payload, width=width, height=height,
+                          view=view)).count("‹ widen")
 
 
 async def _panels_asking_for_width(width: int, payload=None,
-                                   view: str | None = None) -> set[str]:
+                                   view: str | None = None,
+                                   height: int = _TALL) -> set[str]:
     """Which panels composite a ``‹ widen`` at *width*, by class name.
 
     A count alone cannot say *whose* marker is the last one standing, and that
@@ -298,7 +371,7 @@ async def _panels_asking_for_width(width: int, payload=None,
     """
     screen = _screen(payload)
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(width, 48)) as pilot:
+    async with app.run_test(size=(width, height)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
@@ -315,7 +388,8 @@ async def _panels_asking_for_width(width: int, payload=None,
         return marked
 
 
-async def _first_clean_width(payload=None, view: str | None = None) -> int | None:
+async def _first_clean_width(payload=None, view: str | None = None,
+                             height: int = _TALL) -> int | None:
     """The narrowest width in the sweep window with no marker anywhere.
 
     Resizes one running app rather than booting one per column: the panels all
@@ -325,7 +399,7 @@ async def _first_clean_width(payload=None, view: str | None = None) -> int | Non
     """
     screen = _screen(payload)
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(_SWEEP_LO, 48)) as pilot:
+    async with app.run_test(size=(_SWEEP_LO, height)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
@@ -333,7 +407,7 @@ async def _first_clean_width(payload=None, view: str | None = None) -> int | Non
             screen.action_toggle_view()
             await pilot.pause()
         for width in range(_SWEEP_LO, _SWEEP_HI + 1):
-            await pilot.resize_terminal(width, 48)
+            await pilot.resize_terminal(width, height)
             await pilot.pause()
             if _screen_text(app).count("‹ widen") == 0:
                 return width
@@ -360,7 +434,7 @@ def test_the_initial_title_names_the_subject_before_the_first_payload():
 async def test_screen_mounts_all_seven_widgets():
     screen = _screen()
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         assert len(screen.query_one("#hero-row").children) == 1
         assert len(screen.query_one("#middle-row").children) == 2
@@ -514,7 +588,7 @@ async def test_every_widget_receives_exactly_its_signature():
     """``set(kwargs) == set(signature)``: an extra and a missing both fail."""
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         seen = _record_dispatches(screen)
         await screen._do_refresh()
@@ -529,7 +603,7 @@ async def test_no_contract_key_reaches_no_widget():
     """Totality, measured on a live dispatch rather than on the map alone."""
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         seen = _record_dispatches(screen)
         await screen._do_refresh()
@@ -545,7 +619,7 @@ async def test_the_screen_supplied_wallet_reaches_the_leaderboard():
     produce; the screen passes the configured wallet straight through."""
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         seen = _record_dispatches(screen)
         await screen._do_refresh()
@@ -560,6 +634,11 @@ async def test_an_all_none_payload_renders_unavailable_not_zeros():
     assert "0 wallets" not in text
     assert "hour 0" not in text
     assert "phase —" in text
+    # ... and the reader is told *which* sources went quiet.  The manager can
+    # only emit 49 None values alongside a full ``degraded`` list, so a title
+    # bar with no warning glyph here would be the one frame on this screen
+    # that looks healthy while nothing on it was read.
+    assert "⚠ logs, state, wallet" in text
     # The panels are present and say so, rather than being blank.
     for title in (LEADERBOARD_TITLE, SIGNALS_TITLE, ACTIVITY_TITLE):
         assert title in text
@@ -572,7 +651,7 @@ async def test_a_raising_manager_touches_only_the_status_bar():
     ``_all_none_payload``).  The previous frame must stay on screen."""
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
@@ -595,7 +674,7 @@ async def test_the_managers_error_count_reaches_the_status_bar():
     screen = _screen(_grace_payload())
     screen._data_manager._error_count = 4
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
@@ -605,7 +684,7 @@ async def test_the_managers_error_count_reaches_the_status_bar():
 async def test_a_widget_that_raises_does_not_cost_the_other_six():
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
 
         def boom(**_kwargs):
@@ -623,7 +702,7 @@ async def test_a_widget_that_raises_does_not_cost_the_other_six():
 async def test_a_manager_returning_a_non_dict_is_ignored_rather_than_rendered():
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
@@ -659,7 +738,7 @@ async def test_the_default_flips_once_and_does_not_fight_the_user():
     back while you are reading it is worse than a suboptimal default."""
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
@@ -698,7 +777,7 @@ async def test_the_default_flips_once_and_does_not_fight_the_user():
 async def test_the_default_moves_with_the_phase_until_the_user_speaks():
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
@@ -716,7 +795,7 @@ async def test_the_hidden_view_still_receives_updates():
     visibility flip with no refetch and no blank first frame."""
     screen = _screen(_judged_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         seen = _record_dispatches(screen)
         await screen._do_refresh()
@@ -735,7 +814,7 @@ async def test_both_views_occupy_the_identical_slot():
     """Give either a different width and the layout jumps on every ``c``."""
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
@@ -750,7 +829,7 @@ async def test_both_views_occupy_the_identical_slot():
 async def test_the_toggle_survives_a_missing_widget():
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         await screen.query_one(CuratorClusters).remove()
         await pilot.pause()
@@ -762,7 +841,7 @@ async def test_the_toggle_survives_a_missing_widget():
 async def test_the_status_bar_names_the_active_view():
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
@@ -827,13 +906,136 @@ async def test_the_settled_screen_under_a_total_outage_keeps_the_phase():
     assert "as of" in text
 
 
+async def _rail_text(payload=None, *, width: int = CURATOR_FULL_LAYOUT_COLUMNS,
+                     height: int = _TALL) -> str:
+    """Composited text **inside ``CuratorSignals``' own rectangle**.
+
+    The whole-screen composite cannot answer "did the rail render this row":
+    ``SETTLED`` is printed by the title bar and by the hero's CLOCK box in the
+    settled phase, so a rail that dropped its first row entirely leaves a
+    whole-screen search green in the very phase where that row is the
+    headline.  (Verified by mutation: deleting ``settled`` from
+    ``SIGNAL_KEYS``/``SIGNAL_LABELS`` leaves the old assertion passing for
+    ``settled`` and failing only for the other two phases.)
+    """
+    screen = _screen(payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, height)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        return _region_text(app, screen.query_one(CuratorSignals), screen)
+
+
 async def test_all_seven_detector_rows_reach_the_compositor_in_every_phase():
     """The rail is inside a column with a fixed top; YOU is last and goes
-    first if the rail is ever starved of rows."""
+    first if the rail is ever starved of rows.
+
+    Asserted inside the rail's own rectangle -- see ``_rail_text``."""
     for phase in PHASES:
-        text = await _render(_payload_for(phase))
+        text = await _rail_text(_payload_for(phase))
         for label in SIGNAL_LABELS:
             assert label in text, (label, phase)
+
+
+async def test_a_rail_row_lost_off_the_bottom_is_named_on_the_title_bar():
+    """The failure ``TALLER_HINT`` exists for, demonstrated end to end.
+
+    Below :data:`RAIL_FULL_HEIGHT` the rail scrolls and its last rows -- YOU
+    first, the one row carrying an actionable number -- stop reaching the
+    compositor.  Nothing else on the screen says so: the scrollbar is one cell
+    in a gutter, and at very short heights Textual paints it outside the
+    rail's rectangle entirely.
+    """
+    height = RAIL_FULL_HEIGHT - 2
+    rail = await _rail_text(_grace_payload(), height=height)
+    assert SIGNAL_LABELS[-1] == "YOU"
+    assert "YOU" not in rail, "expected the last rail row to be below the fold"
+
+    text = await _render(_grace_payload(), height=height)
+    assert TALLER_HINT in text, "a row went off the bottom with nothing saying so"
+
+
+async def test_the_taller_hint_lights_exactly_when_the_rail_scrolls():
+    """Pinned in both directions, the way surf pins its own 36 rows.
+
+    A marker that is always lit is noise and a marker that is never lit is
+    dead code; the row it turns on at is the measurement.
+    """
+    lit = await _render(_grace_payload(), height=RAIL_FULL_HEIGHT - 1)
+    dark = await _render(_grace_payload(), height=RAIL_FULL_HEIGHT)
+    assert TALLER_HINT in lit
+    assert TALLER_HINT not in dark
+    # ... and the height it turns on at is exactly the height the seventh row
+    # stops reaching the compositor, so the marker never lags the loss.
+    assert "YOU" in await _rail_text(_grace_payload(), height=RAIL_FULL_HEIGHT)
+    assert "YOU" not in await _rail_text(
+        _grace_payload(), height=RAIL_FULL_HEIGHT - 1
+    )
+
+
+async def test_the_taller_hint_tracks_a_resize_rather_than_the_last_refresh():
+    """``on_resize`` re-renders the title; a marker written only by
+    ``_do_refresh`` would be stale until the next 30-second tick -- lit on a
+    terminal that now fits, dark on one that no longer does."""
+    screen = _screen(_grace_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        assert TALLER_HINT not in _screen_text(app)
+
+        await pilot.resize_terminal(
+            CURATOR_FULL_LAYOUT_COLUMNS, RAIL_FULL_HEIGHT - 1
+        )
+        await pilot.pause()
+        await pilot.pause()
+        assert TALLER_HINT in _screen_text(app), "no refresh ran; the resize must"
+
+        await pilot.resize_terminal(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)
+        await pilot.pause()
+        await pilot.pause()
+        assert TALLER_HINT not in _screen_text(app)
+        # ... and the payload's own fields are still on the line, i.e. the
+        # re-render recomposed the title rather than replacing it.
+        assert "THE LIST · hour 4 · GRACE" in _screen_text(app)
+
+
+async def test_the_taller_hint_rides_ahead_of_the_degraded_list():
+    """Order is the only priority mechanism a one-row Static has.
+
+    Every degraded group is mirrored by its own panel's unavailable state and
+    the version is mirrored by the StatusBar; a lost rail row is named here
+    and nowhere else, so it goes first.
+    """
+    line = _title_line(_settled_payload(degraded=sorted(SOURCES)), row_hint=True)
+    assert line.index(TALLER_HINT) < line.index("⚠") < line.index(f"v{__version__}")
+
+
+async def test_the_initial_title_takes_the_marker_too():
+    """A screen whose first payload has not landed is still a screen whose
+    rail may be cut, so ``INITIAL_TITLE`` carries the marker as well.
+
+    The manager here never returns, which is the only way to hold a booted
+    screen in that state: ``on_screen_resume`` fires an initial refresh and the
+    frozen payload otherwise lands within one ``pause()``.
+    """
+    manager = _BlockingManager(_grace_payload())          # never released
+    screen = CuratorScreen(manager, poll_interval=30, name="curator",
+                           wallet=_WALLET)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        assert INITIAL_TITLE in _screen_text(app)
+        assert TALLER_HINT not in _screen_text(app)
+        await pilot.resize_terminal(
+            CURATOR_FULL_LAYOUT_COLUMNS, RAIL_FULL_HEIGHT - 1
+        )
+        await pilot.pause()
+        await pilot.pause()
+        text = _screen_text(app)
+        assert INITIAL_TITLE in text and TALLER_HINT in text
 
 
 async def test_the_phase_word_is_the_analytics_layers_and_not_a_guess():
@@ -853,6 +1055,48 @@ async def test_the_measured_width_clears_every_marker():
 
 async def test_the_measured_width_is_tight_not_padded():
     assert await _widen_markers(CURATOR_FULL_LAYOUT_COLUMNS - 1) > 0
+
+
+async def test_the_measured_width_holds_at_a_short_terminal_too():
+    """The second dimension, and the one this sweep was missing.
+
+    ``#curator-right-rail`` scrolls, so on a terminal under
+    :data:`RAIL_FULL_HEIGHT` rows its scrollbar wants a column -- and it would
+    take that column out of ``CuratorSignals``, the panel that binds this
+    width.  Measured at 48 rows alone, ``CURATOR_FULL_LAYOUT_COLUMNS`` was
+    therefore true for a full-screen terminal and one column short of the
+    truth for a half-screen one: the pin cleared at 48 rows and lit
+    ``‹ widen`` at 40.  The gutter is reserved now, and this asserts the
+    number at a height where the scrollbar is actually engaged.
+    """
+    for height in _HEIGHTS:
+        assert await _widen_markers(
+            CURATOR_FULL_LAYOUT_COLUMNS, height=height
+        ) == 0, height
+        assert await _widen_markers(
+            CURATOR_FULL_LAYOUT_COLUMNS - 1, height=height
+        ) > 0, height
+
+
+async def test_the_width_requirement_does_not_move_with_the_terminal_height():
+    """The property the reserved gutter buys, asserted on the binding panel.
+
+    ``CuratorSignals``' inner width is what every column of this sweep is
+    really measuring; if it ever changes with the terminal's height again, the
+    pinned constant becomes a function of the window the sweep was run in.
+    """
+    widths = {}
+    for height in (_SHORT, RAIL_FULL_HEIGHT - 1, RAIL_FULL_HEIGHT, _TALL):
+        screen = _screen(_grace_payload())
+        app = _ThemedHarness(screen)
+        async with app.run_test(
+            size=(CURATOR_FULL_LAYOUT_COLUMNS, height)
+        ) as pilot:
+            await pilot.pause()
+            await screen._do_refresh()
+            await pilot.pause()
+            widths[height] = screen.query_one(CuratorSignals).size.width
+    assert len(set(widths.values())) == 1, widths
 
 
 async def test_both_c_views_clear_at_the_same_width():
@@ -876,8 +1120,9 @@ async def test_the_widest_phase_is_the_one_measured():
     per_phase = {}
     for phase in PHASES:
         widths = [
-            await _first_clean_width(_payload_for(phase), view=view)
+            await _first_clean_width(_payload_for(phase), view=view, height=height)
             for view in (VIEW_CLUSTERS, VIEW_CLOSEST)
+            for height in _HEIGHTS
         ]
         assert None not in widths, (phase, widths)
         per_phase[phase] = max(widths)
@@ -892,10 +1137,13 @@ async def test_the_binding_panel_is_the_signal_rail():
     """Which panel is the last one asking for a column is itself a
     measurement.  On the surf screen that claim changed hands three times and
     was restated in prose each time with nothing that could contradict it."""
-    assert await _panels_asking_for_width(
-        CURATOR_FULL_LAYOUT_COLUMNS - 1
-    ) == {"CuratorSignals"}
-    assert await _panels_asking_for_width(CURATOR_FULL_LAYOUT_COLUMNS) == set()
+    for height in _HEIGHTS:
+        assert await _panels_asking_for_width(
+            CURATOR_FULL_LAYOUT_COLUMNS - 1, height=height
+        ) == {"CuratorSignals"}, height
+        assert await _panels_asking_for_width(
+            CURATOR_FULL_LAYOUT_COLUMNS, height=height
+        ) == set(), height
 
 
 async def test_a_resize_sweep_and_a_cold_boot_agree():
@@ -936,28 +1184,39 @@ async def test_nothing_clips_dark_below_the_measured_width():
 #: pixel: the settled phase (longest phase word plus a two-digit hour), **all
 #: three** ``SOURCES`` degraded -- the state the manager's outermost guard
 #: actually emits, ``payload["degraded"] = sorted(SOURCES)`` -- the
-#: ``as of HH:MM`` marker and the version tail.
+#: ``as of HH:MM`` marker, the ``‹ taller`` row marker and the version tail.
 #:
 #: ``#title-bar`` is a ``height: 1`` ``Static`` that **wraps out of existence**
 #: rather than ellipsising, so a lost tail leaves no ``…`` and no trace.  That
-#: is why this is swept over the real screen rather than counted: the line is
-#: 75 characters and needs **79 columns**, because ``⚠`` is not a one-column
-#: glyph on every width table and the centred ``Static`` rounds.  The
-#: arithmetic is not the test.
+#: is why this is swept over the real screen rather than counted: ``⚠`` is not
+#: a one-column glyph on every width table and the centred ``Static`` rounds.
+#: The arithmetic is not the test.
+#:
+#: **The row marker is part of the worst case, and it was not always here.**
+#: This constant was 79 while the line's longest form was the settled outage
+#: alone; ``TALLER_HINT`` only lights on a terminal shorter than
+#: :data:`RAIL_FULL_HEIGHT`, and a short terminal is exactly where a wrapped
+#: tail is most likely -- so the worst case is measured *with* it, on a short
+#: terminal, rather than on the one state where the marker happens to be dark.
 #:
 #: **It moves with the version string.**  The tail is `` · v{__version__}`` and
 #: this was swept at ``v0.6.1``; a release that makes that string longer moves
 #: this constant.  That is the pin doing its job -- re-measure, do not derive.
-WORST_CASE_TITLE_COLUMNS = 79
+WORST_CASE_TITLE_COLUMNS = 90
+
+#: The height the worst case is measured at: one row short of a rail that
+#: fits, so ``TALLER_HINT`` is lit.
+_WORST_CASE_HEIGHT = RAIL_FULL_HEIGHT - 1
 
 
 def _worst_case_title() -> str:
-    return _title_line(_settled_payload(degraded=sorted(SOURCES)))
+    return _title_line(_settled_payload(degraded=sorted(SOURCES)), row_hint=True)
 
 
 async def test_the_whole_worst_case_title_reaches_the_compositor():
     payload = _settled_payload(degraded=sorted(SOURCES))
-    text = await _render(payload, width=WORST_CASE_TITLE_COLUMNS)
+    text = await _render(payload, width=WORST_CASE_TITLE_COLUMNS,
+                         height=_WORST_CASE_HEIGHT)
     assert _worst_case_title() in text
 
 
@@ -968,7 +1227,8 @@ async def test_one_column_narrower_loses_the_tail_silently():
     a padded number would let the tail start disappearing with the suite green.
     """
     payload = _settled_payload(degraded=sorted(SOURCES))
-    text = await _render(payload, width=WORST_CASE_TITLE_COLUMNS - 1)
+    text = await _render(payload, width=WORST_CASE_TITLE_COLUMNS - 1,
+                         height=_WORST_CASE_HEIGHT)
     assert _worst_case_title() not in text
     # ... and it goes quietly: no ellipsis, no marker, nothing on the row says
     # a field was lost.  That silence is the whole reason for the constant.
@@ -976,9 +1236,11 @@ async def test_one_column_narrower_loses_the_tail_silently():
 
 
 def test_the_worst_case_title_is_the_state_the_manager_really_emits():
-    """Not a hypothetical: a failed cycle publishes every group at once."""
+    """Not a hypothetical: a failed cycle publishes every group at once, and
+    a rail that does not fit is a terminal size, not a fault."""
     assert "⚠ logs, state, wallet" in _worst_case_title()
     assert "SETTLED" in _worst_case_title()
+    assert TALLER_HINT in _worst_case_title()
     assert _worst_case_title().endswith(f"v{__version__}")
 
 
@@ -1032,7 +1294,7 @@ async def test_an_overrun_tick_is_skipped_never_queued():
     manager = _BlockingManager(_grace_payload())
     screen = CuratorScreen(manager, poll_interval=30, name="curator", wallet=_WALLET)
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         screen.start_refresh()
         await manager.entered.wait()
@@ -1057,7 +1319,7 @@ async def test_an_overrun_tick_is_skipped_never_queued():
 async def test_the_interval_timer_starts_and_stops_with_the_screen():
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
         screen.on_screen_resume()
         await pilot.pause()

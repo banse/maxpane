@@ -62,12 +62,12 @@ Five things here are deliberate rather than incidental.
    an error state, and the title bar carries no ``ERROR`` / ``no data`` copy
    for it.
 
-Minimum terminal width: 137 columns
+Minimum terminal width: 138 columns
 -----------------------------------
 
 Measured against composited output over **three phases x two ``c`` views**,
 column by column, not estimated (:data:`CURATOR_FULL_LAYOUT_COLUMNS`).  The
-last panel asking for a column at 136 is ``CuratorSignals``, the seven-row
+last panel asking for a column at 137 is ``CuratorSignals``, the seven-row
 rail, and it is the panel this layout's seams were cut around --
 ``tests/screens/test_curator_screen.py`` pins that fact with
 ``_panels_asking_for_width`` rather than leaving it to this paragraph, because
@@ -78,26 +78,59 @@ test that could contradict it.
 ``#bottom-row`` 5:3, and neither is the ratio the plan sketched (3:2 and 1:1).
 Measured on this screen, in **content** columns, the four panels that can bind
 need ``CuratorLeaderboard`` 48, ``CuratorSignals`` 84, ``CuratorActivity`` 77
-and ``CuratorClusters`` 45; adding each slot's own ``padding: 0 1`` makes the
-arithmetic floors 136 for the middle row and 126 for the bottom one, and only a
-seam near each pair's own ratio collects them.  The sketched 3:2 middle seam
-would have handed the rail 0.40 W against the 0.63 it needs -- **205** columns,
-62 over the app-wide number, with the YOU row silently amputating its
-``next ≥`` tail the whole way down.  A 1:1 bottom row costs the activity feed
-its full line until 158.
+and ``CuratorClusters`` 45; adding each slot's own ``padding: 0 1`` -- and the
+rail's reserved scrollbar gutter -- makes the arithmetic floors 137 for the
+middle row and 126 for the bottom one, and only a seam near each pair's own
+ratio collects them.  The sketched 3:2 middle seam would have handed the rail
+0.40 W against the 0.63 it needs -- past **180** columns, with the YOU row
+silently amputating its ``next ≥`` tail the whole way down.  A 1:1 bottom row
+costs the activity feed its full line until 158.
 
-The middle seam was re-swept ratio by ratio and 3:5 is **one column off
-optimum, on purpose**: 10:17, 7:12, 13:22 and 17:29 all reach 136 while 3:5
-reaches 137, 4:7 costs 138, 5:8 costs 139 and 1:2 costs 150.  One column buys
-nothing a reader sees -- the app-wide number is FWA's 143 either way -- and it
-is not worth an odd seam.  Re-sweep before re-seaming, and only when one of
-those four panel needs moves.
+The middle seam was re-swept ratio by ratio -- and swept **again** when the
+gutter was reserved, because every one of these numbers is a column wider with
+it.  3:5 is **one column off optimum, on purpose**: 10:17, 7:12, 13:22 and
+17:29 all reach 137 while 3:5 reaches 138, 4:7 also costs 138, 5:8 costs 140,
+1:2 costs 150 and 1:1 costs 173.  One column buys nothing a reader sees -- the
+app-wide number is FWA's 143 either way -- and it is not worth an odd seam.
+Re-sweep before re-seaming, and only when one of those four panel needs moves.
 
-143 clears every layout here with 6 columns to spare, so
+143 clears every layout here with 5 columns to spare, so
 ``__main__.FULL_LAYOUT_COLUMNS`` does not move: FWA's 143 stays the binder.
-Below 137 nothing clips dark -- each panel names the columns it shed with a
+Below 138 nothing clips dark -- each panel names the columns it shed with a
 ``‹ widen`` marker in its own title, and the marker is the point.  It is never
 silenced by raising a constant.
+
+**138, not 137, and the extra column is the rail's scrollbar gutter.**  The
+first pin here was 137, swept at one terminal height (48 rows) -- and the
+width of this layout was a function of the *height* it was measured at.
+``#curator-right-rail`` scrolls, its content is a constant 14 rows, and below
+42 rows the scrollbar engaged and took a column off ``CuratorSignals``, the
+binding panel: 137 cleared on a 48-row terminal and lit ``‹ widen`` on a
+40-row one.  The gutter is now **reserved** (``scrollbar-gutter: stable``), so
+the rail's inner width no longer moves with the terminal's height and the
+number is one column larger at *every* height rather than right at one of
+them.  ``test_the_measured_width_holds_at_a_short_terminal_too`` sweeps both a
+tall and a short terminal, so the constant can never again be calibrated
+against one generous window.
+
+Minimum terminal height, and how the loss is advertised
+-------------------------------------------------------
+
+The rail needs **14 rows** -- a four-row sparkline panel, the one-row margin
+under it, and a nine-row signal panel (title, spacer, seven detector rows) --
+and gets them from a 42-row terminal.  Below that it scrolls, and scrolling
+alone names nothing: a one-cell scrollbar in a reserved gutter says which
+*panel* is short in neither words nor rows, and the rows it hides go from the
+bottom -- YOU first, then FORCED ETH, then FARM.  So the title bar advertises
+it with :data:`TALLER_HINT`, the height counterpart of a widget's
+``‹ widen``, exactly as ``screens/surf.py`` does for the same rail construct.
+The marker is driven off the rail's own ``show_vertical_scrollbar`` rather
+than re-derived arithmetic, so the scrollbar and the marker can never
+disagree, and it is re-rendered from ``on_resize`` (deferred with
+``call_after_refresh``, because the ``Resize`` message arrives before the rail
+has been re-laid-out and reading it early answers for the previous height).
+``test_the_taller_hint_lights_exactly_when_the_rail_scrolls`` pins the row it
+lights at in both directions.
 
 **``CuratorSignals`` needs 84 content columns here while
 ``widgets/curator/signals.SIGNALS_FULL_WIDTH`` publishes 82.**  Not a
@@ -151,6 +184,25 @@ INITIAL_TITLE = "THE LIST · WhitelistCurator · Ethereum Mainnet"
 #: Sentinel staleness pushed to the StatusBar when the manager itself failed.
 MANAGER_FAILURE_SECONDS = 999
 
+#: The height counterpart of a widget's ``‹ widen``: the right rail holds more
+#: rows than this terminal can show, so its last detector rows -- YOU first --
+#: are only reachable by scrolling.
+#:
+#: The rail's content is a constant 14 rows and it gets them from a **42**-row
+#: terminal; at 41 the scrollbar engages and YOU goes below the fold.  A
+#: one-cell scrollbar in a gutter names neither the panel nor the loss, which
+#: is why ``screens/surf.py`` grew the same marker for the same rail construct
+#: -- and at very short heights Textual paints that scrollbar outside the
+#: rail's own rectangle, so it is not even reliably *visible*.
+#:
+#: ``_title_line`` puts it ahead of the degraded list and the version tail:
+#: ``#title-bar`` is one row that wraps out of existence rather than
+#: ellipsising, a degraded group is mirrored inside each panel's own
+#: unavailable state, the version is mirrored by the StatusBar three rows
+#: down, and **nothing anywhere else says a row went off the bottom of the
+#: rail**.  Of the three tail fields it is the one that has to survive.
+TALLER_HINT = "‹ taller"
+
 #: The two occupants of the bottom-right slot, as :attr:`CuratorScreen._active_view`
 #: spells them.  Not the widget class names: the StatusBar renders this word.
 VIEW_CLUSTERS = "clusters"
@@ -169,7 +221,14 @@ CLUSTERS_ID = "curator-clusters"
 #: It stays at or under ``__main__.FULL_LAYOUT_COLUMNS`` (FWA's 143) by
 #: *shedding columns with a marker*, never by raising the app-wide constant;
 #: ``test_curator_fits_inside_the_documented_app_width`` is the tripwire.
-CURATOR_FULL_LAYOUT_COLUMNS = 137
+#:
+#: **Swept at two terminal heights, not one.**  This was 137 for as long as it
+#: was measured only on a 48-row terminal: the rail's scrollbar used to eat a
+#: column off the binding panel below 42 rows, so the pinned number was true
+#: for a tall window and false for a short one.  The gutter is reserved now
+#: (see ``DEFAULT_CSS`` and the module docstring) and the sweep carries the
+#: height dimension with it.
+CURATOR_FULL_LAYOUT_COLUMNS = 138
 
 #: The three flat-dict keys the screen consumes itself and never dispatches to
 #: a widget.  Exactly ``curator_signals.MANAGER_OWNED_KEYS``; the agreement is
@@ -292,10 +351,11 @@ def _fmt_degraded(sources) -> str:
     return " · ⚠ " + ", ".join(names)
 
 
-def _title_line(data: dict) -> str:
+def _title_line(data: dict, row_hint: bool = False) -> str:
     """Compose the meta row (PRD §4).
 
-    ``THE LIST · hour N · PHASE · as of HH:MM [· ⚠ groups] · vX.Y.Z``
+    ``THE LIST · hour N · PHASE · as of HH:MM [· ‹ taller] [· ⚠ groups] ·
+    vX.Y.Z``
 
     Ordered by what must survive a narrow terminal, because ``#title-bar`` is
     a ``height: 1`` ``Static`` that **wraps out of existence** rather than
@@ -303,6 +363,13 @@ def _title_line(data: dict) -> str:
     no ``…`` and no trace.  So the warning precedes the version tail, and the
     version tail -- the one field on this row that is also rendered by the
     StatusBar three rows down -- is the first thing lost.
+
+    ``row_hint`` (:data:`TALLER_HINT`) comes ahead of *both*: it is the only
+    advertisement on this screen with no second home, while every degraded
+    group is mirrored by its own panel's unavailable state.  It is written in
+    plain text rather than surf's ``[yellow]`` markup because nothing else on
+    this line carries markup, and a plain line is one a test can compare
+    against composited output character for character.
 
     Nothing here is an alarm about settlement.  A settled contract is the
     product's terminal state, so the phase word simply reads ``SETTLED`` and
@@ -316,6 +383,9 @@ def _title_line(data: dict) -> str:
 
     as_of = data.get("as_of_hhmm")
     line += f" · as of {as_of}" if as_of else f" · as of {_EMDASH}"
+
+    if row_hint:
+        line += f" · {TALLER_HINT}"
 
     line += _fmt_degraded(data.get("degraded"))
     line += f" · v{__version__}"
@@ -365,12 +435,24 @@ class CuratorScreen(RefreshGuard, Screen):
     # `#curator-right-rail` carries no vertical padding for the same reason
     # one step further down: the rail holds a **seven**-row signal panel whose
     # last row is YOU, and a fixed-height column loses its last row first.
+    # It scrolls (`overflow-y: auto`) as the short-terminal guard -- scrolling
+    # is the affordance, nothing is unreachable -- and the *advertisement* is
+    # `TALLER_HINT` on the title bar, because a one-cell scrollbar names
+    # nothing and Textual paints it outside the rail's rectangle at very short
+    # heights.
+    #
+    # `scrollbar-gutter: stable` is load-bearing, not cosmetic. Without it the
+    # scrollbar takes its column out of `CuratorSignals` -- the panel that
+    # binds the full-layout width -- only on terminals under 42 rows, so this
+    # layout's *width* requirement moved with its *height* and the pinned
+    # number was true at 48 rows and one column short at 40. Reserving the
+    # gutter spends that column at every height instead of at one of them.
     #
     # The two seams are measured, not chosen.  `#middle-row` is 3:5 because
     # ``CuratorLeaderboard`` needs 48 content columns and ``CuratorSignals``
     # needs 84 against the widest real wallet in the capture; with each slot's
-    # own `padding: 0 1` that sums to 136, and only a seam near 50:86 collects
-    # it.  `#bottom-row` is 5:3 because ``CuratorActivity`` needs 77 and the
+    # own `padding: 0 1` and the rail's reserved gutter that sums to 137, and
+    # only a seam near 50:87 collects it.  `#bottom-row` is 5:3 because ``CuratorActivity`` needs 77 and the
     # wider of the two swap tables (``CuratorClusters``) needs 45; floor 126,
     # comfortably inside the middle row's.  The column-by-column sweep and the
     # seam-by-seam sweep behind both are in
@@ -407,6 +489,7 @@ class CuratorScreen(RefreshGuard, Screen):
         width: 5fr;
         height: 1fr;
         overflow-y: auto;
+        scrollbar-gutter: stable;
         scrollbar-size: 1 1;
     }
     CuratorScreen CuratorSparklines {
@@ -471,6 +554,11 @@ class CuratorScreen(RefreshGuard, Screen):
         #: phase-aware default stops applying: a panel that snaps back while
         #: you are reading it is worse than a suboptimal default.
         self._user_chose_view: bool = False
+        #: The last payload the title bar was composed from, kept so
+        #: :meth:`_render_title` can re-compose the same line with a different
+        #: ``‹ taller`` state when only the terminal's height changed.
+        #: ``None`` until the first refresh lands.
+        self._title_data: dict | None = None
 
     # ------------------------------------------------------------------
     # Layout
@@ -569,6 +657,48 @@ class CuratorScreen(RefreshGuard, Screen):
             self._refresh_timer.stop()
             self._refresh_timer = None
 
+    def on_resize(self, _event=None) -> None:
+        """Keep the ``‹ taller`` marker honest when the terminal is resized.
+
+        Deferred to after the next refresh: the ``Resize`` message arrives
+        *before* the rail has been re-laid-out, so reading its scroll state
+        here would answer for the previous height and the marker would lag one
+        resize behind -- lit on a terminal that now fits, dark on one that no
+        longer does.  Both are worse than no marker at all.
+        """
+        self.call_after_refresh(self._render_title)
+
+    def _rail_is_cut(self) -> bool:
+        """Does the right rail hold more rows than this height can show?
+
+        ``show_vertical_scrollbar`` is the rail's own answer, and it is what
+        the layout already turns the loss into; asking it rather than
+        re-deriving the arithmetic keeps the marker and the scrollbar from
+        ever disagreeing.
+        """
+        try:
+            return bool(
+                self.query_one("#curator-right-rail").show_vertical_scrollbar
+            )
+        except Exception:  # noqa: BLE001 -- not composed yet, or torn down
+            return False
+
+    def _render_title(self) -> None:
+        """(Re)compose the title bar from the last payload plus the marker."""
+        cut = self._rail_is_cut()
+        if self._title_data is None:
+            # No payload yet -- or the manager raised and there never will be
+            # one.  The marker simply goes on the end here; there is no
+            # degraded list and no version tail on this line for it to have to
+            # precede.
+            line = INITIAL_TITLE + (f" · {TALLER_HINT}" if cut else "")
+        else:
+            line = _title_line(self._title_data, row_hint=cut)
+        try:
+            self.query_one("#title-bar", Static).update(line)
+        except Exception as exc:  # noqa: BLE001 -- a title must never crash
+            logger.debug("Failed to update title bar: %s", exc)
+
     # ------------------------------------------------------------------
     # Refresh flow
     # ------------------------------------------------------------------
@@ -612,11 +742,11 @@ class CuratorScreen(RefreshGuard, Screen):
             logger.debug("Curator refresh returned %r, not a dict", type(data))
             return
 
-        # Title bar
-        try:
-            self.query_one("#title-bar", Static).update(_title_line(data))
-        except Exception as exc:
-            logger.debug("Failed to update title bar: %s", exc)
+        # Title bar.  Composed through ``_render_title`` so the payload and
+        # the ``‹ taller`` marker are always read together: a refresh that
+        # wrote the line itself would drop a marker a resize had just lit.
+        self._title_data = data
+        self._render_title()
 
         # The swap slot's phase-aware default, before the tables are filled so
         # the frame the reader sees is already the right one.
