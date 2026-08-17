@@ -401,8 +401,19 @@ class CuratorCache:
         #: rows, so this is the only place the rest of the game exists.
         self._events: list[DepositEvent] = []
         self._event_keys: set[tuple[str, int]] = set()
-        #: How many events the cap has dropped this process.  Surfaced so a
-        #: truncated history is discoverable rather than silently short.
+        #: How many events the cap has dropped from this cache — **persisted**,
+        #: so it means the same thing after a relaunch as it does inside one
+        #: process.  Surfaced so a truncated history is discoverable rather than
+        #: silently short.
+        #:
+        #: It has to survive the file, because the manager's cross-check reads
+        #: it (``seen = len(events()) + dropped_events``) to decide whether the
+        #: fold is short against the contract's own counter, which never forgets.
+        #: As a per-process counter it reset to 0 on every launch, so the first
+        #: cross-check after a restart declared the fold short, scheduled a full
+        #: re-sweep from the creation block, re-dropped the same overflow and
+        #: published ``degraded`` — once per launch, forever, from the day the
+        #: cap first trips.
         self.dropped_events: int = 0
         self._first_deposits: list[dict] = []
         self._hour_saved: list[dict] = []
@@ -989,6 +1000,15 @@ class CuratorCache:
             "settlement": self._settlement_to_dict(),
             "settled_event": dict(self._obituary) if self._obituary else None,
             "events": [_event_to_dict(e) for e in self._events],
+            # Persisted with the events it belongs to: the retained rows are a
+            # lower bound on the history and this is how much lower.  Adding a
+            # key does not move `_SCHEMA_VERSION` -- an older file simply has
+            # none and restores the 0 it always had.
+            "dropped_events": int(self.dropped_events),
+            # Persisted with the events it belongs to: the retained rows are a
+            # lower bound on the history and this is how much lower.  Adding a
+            # key does not move `_SCHEMA_VERSION` -- an older file simply has
+            # none and restores the 0 it always had.
             "first_deposits": [dict(row) for row in self._first_deposits],
             "hour_saved": [dict(row) for row in self._hour_saved],
             "rescued_total_wei": self._rescued_total_wei,
@@ -1118,6 +1138,13 @@ class CuratorCache:
                     dropped,
                     target,
                 )
+            # Assigned, not accumulated: this is a *restore* of one file's
+            # counter onto a fresh cache (the manager loads once, in
+            # ``__init__``), so loading the same file twice must not double it.
+            # A negative, a bool or a non-number is not a count and leaves the 0.
+            saved_drop = _opt_int(payload.get("dropped_events"))
+            if saved_drop is not None and saved_drop > 0:
+                self.dropped_events = saved_drop
         except Exception as exc:  # noqa: BLE001
             logger.warning("Curator events block bad: %s", exc)
 

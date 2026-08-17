@@ -1034,6 +1034,42 @@ def test_the_history_cap_does_not_make_the_fold_look_permanently_short(tmp_path,
     assert manager2._fold_stale is True
 
 
+def test_the_history_cap_still_does_not_condemn_the_fold_after_a_relaunch(
+    tmp_path, clock, monkeypatch
+):
+    """The same guarantee, across the persistence boundary.
+
+    The in-process fix (`seen = retained + dropped_events`) died at the file:
+    `dropped_events` was not persisted, so the *second* launch compared 100
+    retained rows against a contract counter of 231 and did what the first
+    launch was fixed not to do -- full re-sweep from the creation block, every
+    launch, forever.  The live contract passes 25 000 deposits about fifteen
+    hours after launch, i.e. shortly after the first judged hour.
+    """
+    from maxpane_dashboard.data import curator_cache as cc
+
+    monkeypatch.setattr(cc, "MAX_PERSISTED_EVENTS", 100)
+    client = FakeClient(
+        fetch_logs=lambda *_: _sweep(), fetch_blockscout_logs=lambda *_: []
+    )
+    first = _manager(tmp_path, clock, client=client)
+    asyncio.run(first._pool_logs({"medium"}, NOW, CONFIG))
+    assert (len(first.cache.events()), first.cache.dropped_events) == (100, 131)
+    first.save_cache()
+
+    # A new process, same cache file, no sweep yet.
+    relaunched = _manager(tmp_path, clock, client=client)
+    assert len(relaunched.cache.events()) == 100
+    assert relaunched.cache.dropped_events == 131
+
+    covered = _state(tx_count=222, block_number=25_770_400)
+    out = asyncio.run(relaunched._pool_crosscheck({"slow"}, NOW, covered, CONFIG))
+    assert out["gap_block"] is None
+    assert relaunched._fold_stale is False
+    assert relaunched._repair_from_block is None
+    assert SOURCE_LOGS not in relaunched._degraded()
+
+
 def test_a_dead_cross_check_does_not_condemn_the_fold(tmp_path, clock):
     """Blockscout being down is not the logs pool being down: the fold still
     stands on the RPC sweep, and claiming a gap we cannot see would be worse

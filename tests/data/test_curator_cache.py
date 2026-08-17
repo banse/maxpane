@@ -705,6 +705,59 @@ def test_the_event_cap_drops_the_oldest_and_counts_the_drop(cache):
     assert kept[0].log_index == 5                            # the oldest went
 
 
+def test_the_drop_count_survives_a_relaunch(tmp_path, clock, monkeypatch):
+    """``dropped_events`` is persisted, because a *relaunch* is where the
+    manager's cross-check reads it.
+
+    ``seen = len(events()) + dropped_events`` is what stops the history cap
+    from declaring the fold permanently short against a contract counter that
+    never forgets.  As a per-process counter that arithmetic was right inside
+    one process and wrong across the file: the reloaded cache reported 0
+    dropped, so every launch after the cap first trips would schedule a full
+    re-sweep from the creation block, re-drop the same overflow and publish a
+    ``degraded`` that could not clear.
+    """
+    monkeypatch.setattr(curator_cache, "MAX_PERSISTED_EVENTS", 25)
+    path = str(tmp_path / "curator_cache.json")
+
+    first = CuratorCache(path=path, clock=clock)
+    first.store_events([_deposit(0, 10**18, index=i) for i in range(30)])
+    assert (len(first.events()), first.dropped_events) == (25, 5)
+    first.save()
+
+    second = CuratorCache(path=path, clock=clock)
+    second.load()
+    assert len(second.events()) == 25
+    assert second.dropped_events == 5, (
+        "the drop count did not survive the file; the fold now reads as 25 "
+        "seen against a contract counter of 30 and re-sweeps from the "
+        "creation block on every launch"
+    )
+    # The same total the cross-check computes, on both sides of the restart.
+    assert len(second.events()) + second.dropped_events == 30
+
+    # Loading is a restore, not an accumulation.
+    second.load()
+    assert second.dropped_events == 5
+
+
+@pytest.mark.parametrize("bad", [None, True, -3, "5", 2.0])
+def test_a_bad_drop_count_in_the_file_leaves_the_counter_at_zero(tmp_path, clock, bad):
+    """One malformed value costs its own field, never the load."""
+    path = pathlib.Path(tmp_path / "curator_cache.json")
+    seed = CuratorCache(path=str(path), clock=clock)
+    seed.store_events(_deposits_hour_0_and_1())
+    seed.save()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["dropped_events"] = bad
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    cache = CuratorCache(path=str(path), clock=clock)
+    cache.load()
+    assert cache.dropped_events == 0
+    assert len(cache.events()) == 2  # the rest of the file still loaded
+
+
 def test_the_raw_history_round_trips_and_a_broken_row_is_dropped(tmp_path, clock):
     path = str(tmp_path / "curator_cache.json")
     cache = CuratorCache(path=path, clock=clock)
