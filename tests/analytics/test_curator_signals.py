@@ -243,3 +243,167 @@ def test_the_tunable_constants_are_named_and_documented_as_guesses() -> None:
 def test_every_public_name_is_exported() -> None:
     for name in sig.__all__:
         assert hasattr(sig, name), name
+
+
+# ===========================================================================
+# WP3.2 — derive_phase() and the clock fields
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    "now,settled,expected",
+    [
+        (LAUNCH, False, "grace"),
+        (GRACE_END - 1, False, "grace"),
+        (GRACE_END, False, "judged"),  # the boundary belongs to judged
+        (GRACE_END + 1, False, "judged"),
+        (FIRST_JUDGED_COMPLETE, True, "settled"),
+        (LAUNCH + 60, True, "settled"),  # settled always wins
+    ],
+)
+def test_the_phase_machine(now: int, settled: bool, expected: str) -> None:
+    assert (
+        sig.derive_phase(
+            now_ts=now,
+            launch_time=LAUNCH,
+            grace_period=GRACE,
+            settled=settled,
+            current_hour=(now - LAUNCH) // HOUR,
+        )
+        == expected
+    )
+
+
+def test_every_phase_it_can_return_is_one_of_the_three_frozen_spellings() -> None:
+    """A fourth spelling is a silent fallback arm nothing branches on."""
+    seen = set()
+    for now in range(LAUNCH - HOUR, LAUNCH + 30 * HOUR, 907):
+        for settled in (True, False, None):
+            seen.add(
+                sig.derive_phase(
+                    now_ts=now,
+                    launch_time=LAUNCH,
+                    grace_period=GRACE,
+                    settled=settled,
+                    current_hour=(now - LAUNCH) // HOUR,
+                )
+            )
+    assert seen - {None} <= set(PHASES)
+    assert seen == {"grace", "judged", "settled", None}
+
+
+def test_settled_wins_over_every_other_input() -> None:
+    """SETTLED is terminal and one-way: the contract enforces it.  No clock
+    value, no missing field and no later reading may take the screen back to a
+    live phase."""
+    assert (
+        sig.derive_phase(
+            now_ts=LAUNCH,
+            launch_time=LAUNCH,
+            grace_period=GRACE,
+            settled=True,
+            current_hour=0,
+        )
+        == "settled"
+    )
+    assert (
+        sig.derive_phase(
+            now_ts=None,
+            launch_time=None,
+            grace_period=None,
+            settled=True,
+            current_hour=None,
+        )
+        == "settled"
+    )
+
+
+def test_an_unknown_settled_flag_does_not_invent_a_phase() -> None:
+    """settled=None means the read failed.  Guessing 'judged' from the clock
+    would render a live game on a possibly-dead contract — the exact hazard the
+    PRD names.  The answer is None and the hero renders unavailable."""
+    assert (
+        sig.derive_phase(
+            now_ts=GRACE_END + 60,
+            launch_time=LAUNCH,
+            grace_period=GRACE,
+            settled=None,
+            current_hour=24,
+        )
+        is None
+    )
+
+
+def test_a_missing_immutable_does_not_invent_a_phase() -> None:
+    """The `once` tier can fail too.  Without launchTime there is no clock, and
+    a phase guessed from a half-read contract is worse than no phase."""
+    for kwargs in (
+        {"launch_time": None, "grace_period": GRACE},
+        {"launch_time": LAUNCH, "grace_period": None},
+    ):
+        assert (
+            sig.derive_phase(
+                now_ts=GRACE_END + 60, settled=False, current_hour=24, **kwargs
+            )
+            is None
+        )
+
+
+def test_hour_zero_is_never_judged_whatever_the_grace_period_says() -> None:
+    """``_isShort`` opens with ``if (hour == 0) return false``.  A zero-length
+    grace period is not a configuration this deployment has, but the phase
+    machine must not be the piece that disagrees with the contract about it."""
+    assert (
+        sig.derive_phase(
+            now_ts=LAUNCH + 5,
+            launch_time=LAUNCH,
+            grace_period=0,
+            settled=False,
+            current_hour=0,
+        )
+        == "grace"
+    )
+
+
+def test_grace_seconds_left_counts_down_and_never_goes_negative() -> None:
+    assert (
+        sig.grace_seconds_left(now_ts=LAUNCH, launch_time=LAUNCH, grace_period=GRACE)
+        == GRACE
+    )
+    assert (
+        sig.grace_seconds_left(
+            now_ts=GRACE_END - 5_000, launch_time=LAUNCH, grace_period=GRACE
+        )
+        == 5_000
+    )
+    assert (
+        sig.grace_seconds_left(
+            now_ts=GRACE_END + 5_000, launch_time=LAUNCH, grace_period=GRACE
+        )
+        == 0
+    )
+    assert (
+        sig.grace_seconds_left(now_ts=GRACE_END, launch_time=None, grace_period=GRACE)
+        is None
+    )
+
+
+def test_grace_ends_utc_is_the_absolute_instant_the_hero_prints() -> None:
+    assert sig.grace_ends_utc(LAUNCH, GRACE) == "2026-08-17 19:58:47 UTC"
+    assert sig.grace_ends_utc(None, GRACE) is None
+    assert sig.grace_ends_utc(LAUNCH, None) is None
+
+
+def test_lived_desc_says_lived_when_the_game_is_over_and_alive_while_it_runs() -> None:
+    assert sig.lived_desc(LAUNCH, LAUNCH + 3 * HOUR + 12 * 60, settled=True) == "lived 3 h 12 m"
+    assert sig.lived_desc(LAUNCH, LAUNCH + 4 * HOUR, settled=False) == "alive 4 h"
+    assert sig.lived_desc(LAUNCH, LAUNCH + 26 * HOUR, settled=True) == "lived 1 d 2 h"
+    assert sig.lived_desc(LAUNCH, LAUNCH + 24 * HOUR, settled=True) == "lived 1 d"
+    assert sig.lived_desc(LAUNCH, LAUNCH + 90, settled=False) == "alive 1 m"
+
+
+def test_lived_desc_is_none_when_it_cannot_be_measured() -> None:
+    """Not "lived 0 m" — a duration nobody read is not a duration of zero."""
+    assert sig.lived_desc(None, LAUNCH + HOUR) is None
+    assert sig.lived_desc(LAUNCH, None) is None
+    assert sig.lived_desc(LAUNCH, LAUNCH - 60) is None

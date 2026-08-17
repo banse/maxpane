@@ -211,6 +211,148 @@ SIGNAL_OUTPUT_KEYS: tuple[str, ...] = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Coercion — every entry point is total over hostile input
+# ---------------------------------------------------------------------------
+
+
+def _int_or_none(value: Any) -> int | None:
+    """An ``int`` if the value is one, else ``None``.
+
+    ``bool`` is rejected on purpose: ``True`` is not the hour 1, and a ``False``
+    that slipped into a numeric field is a decode bug, not a zero.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _num_or_none(value: Any) -> float | None:
+    """A finite number as ``float``, else ``None``."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if number != number or number in (float("inf"), float("-inf")):
+        return None
+    return number
+
+
+def _eth(wei: Any) -> float | None:
+    """The one division in the whole dashboard: wei -> ETH, at the boundary."""
+    amount = _int_or_none(wei)
+    if amount is None:
+        return None
+    return amount / _WEI
+
+
+# ---------------------------------------------------------------------------
+# The phase machine and the clock fields
+# ---------------------------------------------------------------------------
+
+
+def derive_phase(
+    *,
+    now_ts: float | None,
+    launch_time: int | None,
+    grace_period: int | None,
+    settled: bool | None,
+    current_hour: int | None,
+) -> str | None:
+    """One of :data:`PHASES`, or ``None`` when it cannot be known.
+
+    Three rules, in this order:
+
+    1. **Settled wins over everything.**  The predicate the contract enforces is
+       one-way (deposits revert ``AlreadySettled`` once any judged hour fails),
+       so no clock value and no later reading may take the screen back to a live
+       phase.  It answers ``"settled"`` even with every other input missing.
+    2. **Unknown is ``None``, never a guess.**  ``settled is None`` means the
+       read failed; deriving ``"judged"`` from the clock would render a live
+       game on a contract that may already be dead.
+    3. Otherwise the grace boundary decides, and **the boundary itself belongs
+       to ``judged``** — ``earlyMultiplierBps()`` goes flat at exactly
+       ``launchTime + gracePeriod`` and ``firstJudgedHour`` is that same
+       instant's hour.
+
+    ``current_hour`` is not a second clock; it carries the one fact the elapsed
+    seconds cannot: ``_isShort`` opens with ``if (hour == 0) return false``, so
+    hour 0 is never judged whatever the configuration says.
+    """
+    if settled is True:
+        return "settled"
+    if settled is not False:
+        return None
+
+    now = _num_or_none(now_ts)
+    launch = _int_or_none(launch_time)
+    grace = _int_or_none(grace_period)
+    if now is None or launch is None or grace is None:
+        return None
+
+    if _int_or_none(current_hour) == 0:
+        return "grace"
+    return "judged" if now - launch >= grace else "grace"
+
+
+def grace_seconds_left(
+    *, now_ts: float | None, launch_time: int | None, grace_period: int | None
+) -> int | None:
+    """Seconds until judging begins — ``0`` once grace is over, never negative.
+
+    ``0`` here is a measurement ("grace is finished"); ``None`` is "we could not
+    read the clock".  The hero renders those two very differently.
+    """
+    now = _num_or_none(now_ts)
+    launch = _int_or_none(launch_time)
+    grace = _int_or_none(grace_period)
+    if now is None or launch is None or grace is None:
+        return None
+    return max(0, int(launch + grace - now))
+
+
+def grace_ends_utc(launch_time: int | None, grace_period: int | None) -> str | None:
+    """The absolute instant grace ends, as the hero prints it.
+
+    A countdown alone is unreadable at a glance and unquotable in a screenshot;
+    the absolute instant is what a reader can act on.
+    """
+    launch = _int_or_none(launch_time)
+    grace = _int_or_none(grace_period)
+    if launch is None or grace is None:
+        return None
+    stamp = datetime.fromtimestamp(launch + grace, tz=timezone.utc)
+    return stamp.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def lived_desc(
+    launch_time: int | None, end_ts: float | None, *, settled: bool = False
+) -> str | None:
+    """``"lived 3 h 12 m"`` for a finished game, ``"alive 4 h"`` for a live one.
+
+    ``None`` when either end of the interval is unknown, or when the interval
+    runs backwards: a duration nobody could measure is not a duration of zero.
+    """
+    launch = _int_or_none(launch_time)
+    end = _num_or_none(end_ts)
+    if launch is None or end is None:
+        return None
+    seconds = int(end - launch)
+    if seconds < 0:
+        return None
+
+    days, rest = divmod(seconds, 86_400)
+    hours, rest = divmod(rest, 3_600)
+    minutes = rest // 60
+
+    if days:
+        parts = [f"{days} d"] + ([f"{hours} h"] if hours else [])
+    elif hours:
+        parts = [f"{hours} h"] + ([f"{minutes} m"] if minutes else [])
+    else:
+        parts = [f"{minutes} m"]
+    return ("lived " if settled else "alive ") + " ".join(parts)
+
+
 __all__ = [
     # tunables
     "WHALE_MIN_ETH",
@@ -231,4 +373,9 @@ __all__ = [
     "READING_KEYS",
     "SIGNAL_OUTPUT_KEYS",
     "MANAGER_OWNED_KEYS",
+    # phase machine and clock
+    "derive_phase",
+    "grace_seconds_left",
+    "grace_ends_utc",
+    "lived_desc",
 ]
