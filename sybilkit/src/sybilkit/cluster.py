@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .model import Dataset
-from .report import DetectResult
+from .report import DetectResult, Reason
 
 #: The five independent signal families, and the **authority** for the name of
 #: each.  ``cluster.py`` owns this tuple because ``cluster.py`` is what counts
@@ -35,6 +35,26 @@ from .report import DetectResult
 #: * ``gas``      — priority-fee / max-fee / gas-limit / tx-type uniformity
 #: * ``funding``  — first-funder graph; peel chains; funder ∈ cluster
 FAMILIES: tuple[str, ...] = ("amount", "sequence", "cadence", "gas", "funding")
+
+
+@dataclass(frozen=True, slots=True)
+class Edge:
+    """One pairwise link between two lowercase addresses.
+
+    The combiner unions edges, so a signal describing a *group* emits a
+    **spanning chain** over the group's sorted members rather than a clique —
+    identical connectivity, linear cost, and the whole population stays
+    analyzable in one pass.  ``family`` is one of :data:`FAMILIES` (what the
+    ≥2-family gate counts); ``strength`` is the graduated weight the cluster's
+    multiplicative confidence is built from; ``reason`` is the pattern-language
+    sentence that reaches the screen.
+    """
+
+    a: str
+    b: str
+    family: str
+    strength: float
+    reason: Reason
 
 
 @dataclass(frozen=True, slots=True)
