@@ -459,9 +459,19 @@ class CuratorScreen(RefreshGuard, Screen):
     # ``tests/screens/test_curator_screen.py``; re-sweep before re-seaming, and
     # only when one of those four panel needs moves.
     #
-    # `#middle-row` is the only `1fr` row, so every row a taller terminal adds
-    # lands in the leaderboard and the rail rather than in the tables below,
-    # which are `auto` and size to their own content.
+    # `#middle-row` and `#bottom-row` are BOTH `1fr`, and the second one is a
+    # WP7 correction to this comment rather than a preference.  Every
+    # measurement in this file was taken under `themes/minimal.tcss`, whose
+    # shared `#bottom-row { height: 1fr }` (line 126) outranks DEFAULT_CSS the
+    # way an app stylesheet always does -- so `auto` here was never what
+    # rendered, and restating `auto` in the curator block made it render for
+    # the first time: `CuratorActivity` is `height: auto` over a full deposit
+    # window, so the row grew to 47 rows, starved `#middle-row` to 1, and
+    # SIGNALS and YOU stopped reaching the compositor entirely (a screen
+    # scrollbar then ate two columns and the width sweep "passed" at 136 with
+    # the whole rail gone).  `1fr` in both copies is the geometry that was
+    # actually measured; the two slots inside each row stay `auto` and size to
+    # their own content.
     DEFAULT_CSS = """
     CuratorScreen #title-bar {
         width: 100%;
@@ -509,7 +519,7 @@ class CuratorScreen(RefreshGuard, Screen):
         padding: 0 2;
     }
     CuratorScreen #bottom-row {
-        height: auto;
+        height: 1fr;
         margin: 0 0 1 0;
     }
     CuratorScreen CuratorActivity {

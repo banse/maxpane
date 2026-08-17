@@ -58,6 +58,7 @@ MANAGER_ATTRS = [
     "_talismans_manager",
     "_fwa_manager",
     "_surf_manager",
+    "_curator_manager",
 ]
 
 

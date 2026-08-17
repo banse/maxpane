@@ -2090,3 +2090,158 @@ SurfFeed > RichLog,
 SurfDevActivity > RichLog {
     height: 1fr;
 }
+
+/* ── Curator screen (THE LIST) ────────────────────────────────────────── */
+
+/* Structure only, restating CuratorScreen.DEFAULT_CSS. An app stylesheet
+ * always outranks DEFAULT_CSS in Textual, so anything this block leaves out is
+ * not "inherited from the screen" -- it is whatever this file already says for
+ * the shared ids (#title-bar, #middle-row, #separator, #bottom-row, lines
+ * 12-130). Same reasoning, and same failure mode, as the FWA and surf blocks
+ * above. The two copies are asserted to agree
+ * (tests/test_curator_registration.py); edit both or neither.
+ *
+ * The id rules are scoped to `CuratorScreen` on purpose. `#hero-row` and
+ * `#curator-right-rail` have no shared rule today, and an unscoped rule for
+ * either would silently become law for the next dashboard that picks the same
+ * id -- while the shared `#middle-row` / `#bottom-row` rules above ARE law for
+ * ten other screens, so the curator overrides have to be scoped to beat them
+ * here and nowhere else. The `Curator*` widget types stay unscoped: those
+ * seven types are mounted by this screen and nothing else.
+ *
+ * Colour belongs in a Theme, not here: this stylesheet is shared by all ten
+ * themes, so naming a theme-specific variable would raise a parse error under
+ * the other nine. THE LIST gets no theme of its own in v1 (PRD §10) and reads
+ * correctly under all ten, which is what the parametrised render test asserts.
+ *
+ * `#title-bar` and `#separator` are deliberately NOT restated here. The shared
+ * rules already style both ids for every screen, and the curator screen's
+ * measured worst-case title (WORST_CASE_TITLE_COLUMNS = 90) was swept with the
+ * shared `padding: 0 2` in force. Restating them would give a shared rule a
+ * second owner -- the surf block's documented asymmetry.
+ *
+ * No widget-internal class belongs here either (.curator-lb-*,
+ * .curator-signals-*, .curator-spark-*, .curator-activity-title, .curator-cc-*,
+ * .curator-cl-*, #curator-hero-boxes, CuratorHeroBox, #curator-hero-note): all
+ * of them are owned by the seven widget modules' own DEFAULT_CSS, none of them
+ * collides with a shared selector, and restating one would give that rule two
+ * owners for no gain.
+ */
+
+/* `auto`, not a pinned height, and NO vertical padding. CuratorHero is a
+ * height-8 widget: three height-7 boxes over the one-row EOA subtitle. A
+ * single row of vertical padding here clips the subtitle -- or the boxes'
+ * bottom border -- off the screen, which is the FWA hero coverage-badge bug
+ * exactly, and against `auto` it would also silently pad the row back out. */
+CuratorScreen #hero-row {
+    height: auto;
+    margin: 1 0 0 0;
+}
+
+/* The hero owns the whole top row: three boxes across the full width. */
+CuratorHero {
+    width: 1fr;
+    padding: 0 1;
+}
+
+/* The only `1fr` row above the separator, so the rows a taller terminal adds
+ * land in the leaderboard and the rail rather than in the tables below. */
+CuratorScreen #middle-row {
+    height: 1fr;
+    margin: 1 0 0 0;
+}
+
+/* The middle row's seam is 3:5, measured rather than chosen: CuratorLeaderboard
+ * needs 48 content columns and CuratorSignals needs 84 against the widest real
+ * wallet in the capture; with each slot's own `padding: 0 1` and the rail's
+ * reserved scrollbar gutter that sums to 137, and only a seam near 50:87
+ * collects it. Re-swept with the gutter in force
+ * (tests/screens/test_curator_screen.py): 10:17, 7:12, 13:22 and 17:29 reach
+ * 137; 3:5 and 4:7 reach 138; 5:8 costs 140; 1:2 costs 150; 1:1 costs 173.
+ * Re-sweep before re-seaming, and only when one of those two needs moves. */
+CuratorLeaderboard {
+    width: 3fr;
+    padding: 0 1;
+}
+
+/* The right rail: VOLUME sparklines above SIGNALS. No padding of its own --
+ * both children already pad -- and no VERTICAL padding for the reason one step
+ * further down than the hero's: the rail holds a *seven*-row signal panel
+ * whose last row is YOU, and a fixed-height column loses its last row first.
+ *
+ * `overflow-y: auto` is the short-terminal guard; scrolling is the affordance
+ * (nothing is unreachable) and the *advertisement* is `TALLER_HINT` on the
+ * title bar, because a one-cell scrollbar names nothing it took away and
+ * Textual paints it outside the rail's rectangle at very short heights.
+ *
+ * `scrollbar-gutter: stable` is load-bearing, not cosmetic (commit 98b8ae6).
+ * Without it the scrollbar takes its column out of CuratorSignals -- the panel
+ * that binds this layout's width -- only on terminals under 42 rows, so the
+ * *width* requirement moved with the *height* and the pinned 138 was true at
+ * 48 rows and one column short at 40. Reserving the gutter spends that column
+ * at every height instead of at one of them. */
+CuratorScreen #curator-right-rail {
+    width: 5fr;
+    height: 1fr;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-size: 1 1;
+}
+
+/* `margin: 0 0 1 0` is the one blank row between the rail's two panels; it
+ * collapses into the rail's scroll extent like any other row, which keeps the
+ * `‹ taller` marker honest about it. */
+CuratorSparklines {
+    width: 1fr;
+    height: auto;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+/* Horizontal padding only. CuratorSignals sizes to a title plus seven detector
+ * rows and vertical padding drops the seventh, which is YOU: the panel would
+ * still look complete while one of the seven advertised rows was simply
+ * absent. That is the FWA coverage-badge bug in a different widget. */
+CuratorSignals {
+    width: 1fr;
+    height: auto;
+    padding: 0 1;
+}
+
+/* `1fr`, NOT `auto`, and it is the surf block's choice inverted on purpose.
+ * Both of this row's slots are `height: auto`, and CuratorActivity's own
+ * content is a full deposit window: given `auto` the row sizes to it, takes
+ * 47 of the screen's rows, and starves `#middle-row` down to a single row --
+ * SIGNALS and YOU then never reach the compositor at all, a screen scrollbar
+ * appears and eats two columns, and the width sweep "passes" at 136 with the
+ * whole rail gone. `1fr` splits the spare rows between the two rows instead,
+ * which is the geometry every measurement in WP6 was taken against. */
+CuratorScreen #bottom-row {
+    height: 1fr;
+    margin: 0 0 1 0;
+}
+
+/* The bottom row's seam is 5:3, also measured: CuratorActivity needs 77
+ * columns and the wider of the two swap tables (CuratorClusters) needs 45, a
+ * floor of 126 -- comfortably inside the middle row's 138, so this row follows
+ * that seam rather than setting it. */
+CuratorActivity {
+    width: 5fr;
+    height: auto;
+    padding: 0 1;
+}
+
+/* The `c` pair. Both are mounted and both are dispatched to on every refresh;
+ * exactly one is visible at a time, so they share one slot and therefore share
+ * one width. Identical geometry is what makes the swap invisible. */
+CuratorClosestCalls {
+    width: 3fr;
+    height: auto;
+    padding: 0 1;
+}
+
+CuratorClusters {
+    width: 3fr;
+    height: auto;
+    padding: 0 1;
+}
