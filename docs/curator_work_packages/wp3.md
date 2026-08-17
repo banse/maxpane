@@ -41,7 +41,7 @@ and the named constants: `WHALE_MIN_ETH = 25.0`, `WHALE_WINDOW_S = 3600.0`,
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_the_module_is_pure():
@@ -68,8 +68,8 @@ def test_the_tunable_constants_are_named_and_documented_as_guesses():
     assert "first guess" in src.lower()
 ```
 
-- [ ] Implement the skeleton.
-- [ ] Commit: `feat(curator): analytics skeleton with the frozen signal surface`
+- [x] Implement the skeleton.
+- [x] Commit: `feat(curator): analytics skeleton with the frozen signal surface`
 
 ---
 
@@ -82,7 +82,7 @@ one of `PHASES`, and the clock helpers `grace_seconds_left`, `grace_ends_utc`,
 
 **Steps:**
 
-- [ ] Failing tests, calibrated on the pinned instants (WP0.7):
+- [x] Failing tests, calibrated on the pinned instants (WP0.7):
 
 ```python
 LAUNCH = 1_786_910_327            # 2026-08-16 19:58:47Z
@@ -129,10 +129,10 @@ def test_grace_ends_utc_is_the_absolute_instant_the_hero_prints():
     assert grace_ends_utc(LAUNCH, 86_400) == "2026-08-17 19:58:47 UTC"
 ```
 
-- [ ] Implement.
-- [ ] **Prove it bites:** make `derive_phase` fall back to `"judged"` when `settled is None` →
+- [x] Implement.
+- [x] **Prove it bites:** make `derive_phase` fall back to `"judged"` when `settled is None` →
       `test_an_unknown_settled_flag_does_not_invent_a_phase` FAILS. Restore.
-- [ ] Commit: `feat(curator): phase machine with a settled-wins, unknown-is-None contract`
+- [x] Commit: `feat(curator): phase machine with a settled-wins, unknown-is-None contract`
 
 ---
 
@@ -147,11 +147,11 @@ other order loses the low digits of every non-round weight.
 
 **Steps:**
 
-- [ ] Write `_contract_sqrt(a)` **in the test file**: a literal transcription of the contract's
+- [x] Write `_contract_sqrt(a)` **in the test file**: a literal transcription of the contract's
       seeded Newton loop, including `result = 1 << (log2(a) >> 1)`, exactly seven iterations,
       and the final `return result if result <= a // result else result - 1`. This is the
       witness. It lives in the test, never in production.
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_the_production_sqrt_matches_the_contract_over_the_edges():
@@ -199,8 +199,8 @@ def test_points_per_eth_is_a_parameter_not_a_literal():
     assert "1000" not in inspect.getsource(points_for_weight)
 ```
 
-- [ ] Implement with `math.isqrt`.
-- [ ] **Mandated prove-it-bites #3 (PRD §8, the curve floor):**
+- [x] Implement with `math.isqrt`.
+- [x] **Mandated prove-it-bites #3 (PRD §8, the curve floor):**
       1. Change the production body's `//` to `round(... / ...)` →
          `test_the_documented_curve_points` FAILS at `1000 * 10**18` (31622 → 31623). Restore.
       2. Change `math.isqrt(w)` to `int(math.sqrt(w))` → the randomized differential FAILS
@@ -209,11 +209,11 @@ def test_points_per_eth_is_a_parameter_not_a_literal():
       3. Swap the operand order to `(math.isqrt(w) // 10**9) * points_per_eth` →
          `test_the_multiplication_happens_before_the_division` FAILS. Restore.
       Record all three in the WP3 sign-off note; WP7.12 audits them.
-- [ ] **When WP1.6's curve probe lands**, add `test_the_curve_matches_previewPoints_on_chain`
+- [x] **When WP1.6's curve probe lands**, add `test_the_curve_matches_previewPoints_on_chain`
       against the captured returns and mark it as the onchain witness. Until then, this task's
       commit message must say "validated by transcription", not "validated against chain".
       Mark the placeholder `# SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>`.
-- [ ] Commit: `feat(curator): integer sqrt curve floored exactly like the contract`
+- [x] Commit: `feat(curator): integer sqrt curve floored exactly like the contract`
 
 ---
 
@@ -224,7 +224,7 @@ def test_points_per_eth_is_a_parameter_not_a_literal():
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_the_captured_first_deposit_to_the_wei():
@@ -250,12 +250,12 @@ def test_a_zero_credited_delta_yields_zero_weight_and_does_not_raise():
     assert weight_added(0, 20_000) == 0
 ```
 
-- [ ] Implement.
-- [ ] **Mandated prove-it-bites (PRD §8's third mutation, correctly aimed — see the index
+- [x] Implement.
+- [x] **Mandated prove-it-bites (PRD §8's third mutation, correctly aimed — see the index
       plan's amendment 3):** change `//` to `round(a * b / 10_000)` →
       `test_the_division_floors` FAILS at `weight_added(1, 19_999)` and the 226-row
       differential FAILS on the first non-exact row. Restore.
-- [ ] Commit: `feat(curator): weight formula, floored, differential-tested on 226 events`
+- [x] Commit: `feat(curator): weight formula, floored, differential-tested on 226 events`
 
 ---
 
@@ -266,17 +266,17 @@ def test_a_zero_credited_delta_yields_zero_weight_and_does_not_raise():
 
 **Steps:**
 
-- [ ] Failing tests: the source's exact semantics —
+- [x] Failing tests: the source's exact semantics —
       `min(amount, cap) - min(old, cap)`, floored at 0; a first deposit credits its whole
       amount; an escalation credits only the increment; **an amount above the cap credits
       zero when the old high-water is already at the cap**; the telescoping identity (a ladder
       of escalations sums to `min(final, cap)`), asserted over the real 13-deposit grinder
       ladder in the captures.
-- [ ] The cap fixture is **synthetic by necessity** — the largest real send is 461.1 ETH
+- [x] The cap fixture is **synthetic by necessity** — the largest real send is 461.1 ETH
       against a 1000 ETH cap (WP0.7 pins that). Mark it
       `# SYNTHETIC — permanent: no >1000 ETH deposit exists on chain` and give it its own test
       asserting the *pair* of consequences: zero weight **and** full hourly volume credit.
-- [ ] Add the guardrail:
+- [x] Add the guardrail:
 
 ```python
 def test_nothing_in_this_module_divides_by_credited_delta():
@@ -288,7 +288,7 @@ def test_nothing_in_this_module_divides_by_credited_delta():
     assert "/ delta" not in src and "// delta" not in src
 ```
 
-- [ ] Commit: `feat(curator): cap-aware credited delta with the zero-delta case`
+- [x] Commit: `feat(curator): cap-aware credited delta with the zero-delta case`
 
 ---
 
@@ -300,7 +300,7 @@ by points descending, ties broken by weight then by first-deposit index (determi
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_the_fold_uses_the_events_running_totals_not_a_re_derivation():
@@ -351,8 +351,8 @@ def test_an_empty_history_folds_to_an_empty_list_not_a_crash():
     assert fold_deposits([], [], points_per_eth=1000) == []
 ```
 
-- [ ] Implement.
-- [ ] Commit: `feat(curator): fold the contributor table from the events' running totals`
+- [x] Implement.
+- [x] Commit: `feat(curator): fold the contributor table from the events' running totals`
 
 ---
 
@@ -366,7 +366,7 @@ silent hour are different facts, and a silent judged hour is what kills the game
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_the_hour_comes_from_the_indexed_topic_not_from_a_timestamp():
@@ -410,13 +410,13 @@ def test_the_captured_hours_reproduce_the_research_reading():
     assert sum(b.volume_wei for b in buckets) == 0x560119983627C22D4F  # == totalVolume
 ```
 
-- [ ] Implement.
-- [ ] **Mandated prove-it-bites #2 (PRD §8, the hour-boundary rule) — part one.** The
+- [x] Implement.
+- [x] **Mandated prove-it-bites #2 (PRD §8, the hour-boundary rule) — part one.** The
       structural half lives here: add a `current_hour_total_wei` parameter and let the last
       bucket take it → `test_the_function_signature_admits_no_state_reading` FAILS. Restore.
       The behavioural half (a boundary fixture writing a zero into the persisted series) is
       WP5.3's, because the writing happens in the cache.
-- [ ] Commit: `feat(curator): hourly buckets folded from the indexed hour topic alone`
+- [x] Commit: `feat(curator): hourly buckets folded from the indexed hour topic alone`
 
 ---
 
@@ -429,7 +429,7 @@ def test_the_captured_hours_reproduce_the_research_reading():
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_the_in_progress_hour_is_never_judged():
@@ -468,8 +468,8 @@ def test_the_streak_counts_consecutive_survived_judged_hours():
     ...
 ```
 
-- [ ] Implement.
-- [ ] Commit: `feat(curator): survival streak and closest-call fold over judged hours`
+- [x] Implement.
+- [x] Commit: `feat(curator): survival streak and closest-call fold over judged hours`
 
 ---
 
@@ -481,17 +481,17 @@ returning `(state, detail)` where state ∈ `{"ok", "watch", "fired", None}`.
 
 **Steps:**
 
-- [ ] Failing tests: in `grace`, always `("ok", "n/a until hour 24")` — never blank, and the
+- [x] Failing tests: in `grace`, always `("ok", "n/a until hour 24")` — never blank, and the
       hour number comes from `first_judged_hour`, never a literal 24; in `judged` with
       `needed_wei == 0` → `ok`; `needed_wei > 0` and `seconds_left >= 900` → `watch`
       ("hour needs X ETH"); `needed_wei > 0` and `seconds_left < 900` → `fired`;
       `needed_wei is None` → `(None, …)` and **never** `watch` — a failed read must not light
       an alarm; in `settled` → an explicit terminal state, not `ok`.
-- [ ] Implement.
-- [ ] **Prove it bites:** treat `needed_wei is None` as `> 0` →
+- [x] Implement.
+- [x] **Prove it bites:** treat `needed_wei is None` as `> 0` →
       the failed-read test FAILS. Restore. (This is the "a dead RPC screams that the game is
       dying" bug.)
-- [ ] Commit: `feat(curator): HOUR AT RISK with a None-never-alarms contract`
+- [x] Commit: `feat(curator): HOUR AT RISK with a None-never-alarms contract`
 
 ---
 
@@ -506,7 +506,7 @@ never accusation.**
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_the_real_fan_out_is_found():
@@ -555,9 +555,9 @@ def test_a_cluster_of_exactly_three_is_found_and_of_two_is_not():
     ...
 ```
 
-- [ ] Implement. Group on `(amount_wei,)` over single-deposit wallets, then split each group
+- [x] Implement. Group on `(amount_wei,)` over single-deposit wallets, then split each group
       into maximal runs whose block span is ≤ 32.
-- [ ] Commit: `feat(curator): fan-out cluster heuristic with pattern-only language`
+- [x] Commit: `feat(curator): fan-out cluster heuristic with pattern-only language`
 
 ---
 
@@ -569,7 +569,7 @@ def test_a_cluster_of_exactly_three_is_found_and_of_two_is_not():
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
       - whale: the largest single deposit inside the window and ≥ 25 ETH; nothing when the
         window is empty (`None`, not 0); a deposit with `ts is None` (WP2.8's failed stamp) is
         **excluded from the window** rather than treated as now — a missing timestamp must not
@@ -584,8 +584,8 @@ def test_a_cluster_of_exactly_three_is_found_and_of_two_is_not():
         legitimately);
       - every YOU field is `None` when `MAXPANE_WALLET` is unset — the manager passes
         `wallet_state=None` and the function must not raise.
-- [ ] Implement.
-- [ ] Commit: `feat(curator): whale detection and the YOU marginal-points quote`
+- [x] Implement.
+- [x] Commit: `feat(curator): whale detection and the YOU marginal-points quote`
 
 ---
 
@@ -596,7 +596,7 @@ def test_a_cluster_of_exactly_three_is_found_and_of_two_is_not():
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_build_signals_emits_exactly_the_frozen_surface():
@@ -632,13 +632,98 @@ def test_build_signals_never_raises_on_hostile_input():
         assert set(build_signals(bad, now_ts=NOW)) == set(SIGNAL_OUTPUT_KEYS)
 ```
 
-- [ ] Implement, routing each sub-fold through its own small helper so a failure in one
+- [x] Implement, routing each sub-fold through its own small helper so a failure in one
       degrades one key (the manager wraps the whole call in `data/safe_call.safe_call`, but
       losing seven rows because the cluster fold hiccuped is still wrong).
-- [ ] Run the whole file and the full suite.
-- [ ] Write the WP5 hand-off note: `READING_KEYS` verbatim, with each key's outage encoding.
-- [ ] Commit: `feat(curator): build_signals over the frozen readings seam`
+- [x] Run the whole file and the full suite.
+- [x] Write the WP5 hand-off note: `READING_KEYS` verbatim, with each key's outage encoding.
+- [x] Commit: `feat(curator): build_signals over the frozen readings seam`
 
 **Done when:** every fold is tested against the 226 captured events with `==`, the three
 mutations in WP3.3/WP3.4/WP3.7 were each watched go red, and `READING_KEYS` is pinned on this
 side of the seam.
+
+
+---
+
+## Sign-off — WP3 landed 2026-08-17
+
+All twelve tasks, strict TDD, tests written from the committed captures before
+the implementation. **132 tests** in `tests/analytics/test_curator_signals.py`;
+the full suite is green (3978 passed at the time of the WP3.12 commit).
+
+### The mandated prove-it-bites (WP7.12 audits these)
+
+| # | mutation | what went red |
+|---|---|---|
+| WP3.2 | `derive_phase` falls back to `"judged"` when `settled is None` | `test_an_unknown_settled_flag_does_not_invent_a_phase` **and** `test_every_phase_it_can_return_is_one_of_the_three_frozen_spellings` |
+| WP3.3 #1 | curve `//` → `round(... / ...)` | `test_the_documented_curve_points` (31 622 → 31 623), the onchain `previewPoints` witness, and `test_the_multiplication_happens_before_the_division` |
+| WP3.3 #2 | `math.isqrt` → `int(math.sqrt(...))` | `test_the_production_curve_survives_weights_a_float_sqrt_would_round_wrong` |
+| WP3.3 #3 | operand order → `(isqrt(w) // 1e9) * ppe` | `test_the_multiplication_happens_before_the_division` + both onchain witnesses |
+| WP3.4 | weight `//` → `round(a * b / 10_000)` | `test_the_division_floors` and the 3161-row differential |
+| WP3.6 | drop the `(block_number, log_index)` sort | `test_the_fold_is_deterministic_under_input_reordering` |
+| WP3.7 | add a `current_hour_total_wei` parameter and let the last bucket take it | `test_the_function_signature_admits_no_state_reading` |
+| WP3.9 | treat `needed_wei is None` as a deficit | `test_a_failed_read_is_unknown_and_never_lights_an_alarm` |
+| WP0 deferred | rename one `SIGNAL_OUTPUT_KEYS` entry (`top_points` → `top_pointz`) | `tests/data/test_curator_models.py::test_signal_output_keys_are_a_subset_of_curator_keys` — it flipped SKIPPED → PASSED when the module landed, and FAILS naming the key. The guard is live. |
+
+**WP3.3 #2 did not bite as written and had to be re-aimed.** The task's
+randomized differential compares `math.isqrt` to the test's transcription — two
+things that are both outside the module under test — so a float `sqrt` in
+production sailed straight past it. Worse, the WP's premise is wrong: over
+0..2000 ETH the float mismatch rate is **under 1 in 200 000**, and the curve's
+`// 1e9` absorbs almost every mismatch that does occur (a ±1 wei error in the
+root only moves a point when the root is a multiple of 10^6). The differential
+now runs *through* `points_for_weight`, and four chosen witnesses are pinned by
+value — `(k * 10**6)**2 - 1` for k = 224, 10 000, 31 622, 44 721, one per decade
+of the reachable range.
+
+### Numbers that came from the captures, not from this file
+
+`wp3.md`'s hex literals for the hourly fold (`0x27D2C90DCE228AE5B0`,
+`0x560119983627C22D4F`) and its `226` / `len(rows) == 145, sum == 226` counters
+belong to an earlier, 226-row reading of the sweep. Recomputed from the
+committed bytes: **231** deposits, 145 contributors, hour 0 =
+851.887546893889652639 ETH, hour 1 = 778.611705271950173616 ETH, total
+1630.499252165839826255 ETH. The bundle
+`captures/live/20260817T000322Z_grace-late.json` reconciles wei-exact against
+the contract's own counters in a single instant (2291 contributors, 2930
+deposits, 15 981.146536110048548095 ETH, and the fold reproduces
+`currentHourTotal()` for the in-progress hour).
+
+The curve now has its onchain witness: `previewPoints()` over 12 weights and
+`pointsOf`/`weightOf` over 4 real wallets, all 20 answered, all equal to
+`(isqrt(w) * 1000) // 10**9` — and the fold's weight for those 4 wallets equals
+`weightOf()` to the wei.
+
+### Deviations from this file, and why
+
+1. **`survival()` takes an optional `first_judged_hour=`.** Without it the fold
+   cannot tell a silent judged hour from an hour outside the judged window, and
+   the silent hours past the last deposit are exactly the ones that kill the
+   contract. The signature in this file still works; the keyword is additive.
+2. **`find_clusters` does not expose member addresses** (this file's
+   `test_the_grinder_is_not_a_cluster` reads `c["addresses"]`). `cluster_rows`
+   is a frozen row shape and adding a column is a contract change. Membership is
+   its own function, `cluster_members()`, and both read one grouping
+   (`_cluster_runs`) so the leaderboard's `flagged` column and the cluster table
+   can never disagree on screen.
+3. **WP3.12's `judged_buckets` reading does not exist.** `sig_at_risk_state`
+   hinges on `hour_needed_wei`, not on a bucket list, so the None-vs-empty test
+   is written against the reading that actually decides it — plus a second test
+   pinning None-vs-empty on `deposits`.
+4. **The H12 countdown formatter lives in WP4, not here.** No flat-dict key
+   carries a countdown *string*, and widgets may not import `analytics/`, so a
+   formatter here would be dead code. This module passes `hour_seconds_left`
+   through untouched and `at_risk_state` is tested at 3600, 900, 899 and 1.
+   **WP4 owns the format and must render 3600 as `60:00`, never `00:00`.**
+5. **`at_risk_state`'s `detail` does not cross the flat-dict boundary** — there
+   is no `sig_at_risk_detail` key. The state does; WP4 composes the row text
+   from `hour_needed_eth` / `hour_seconds_left` / `first_judged_hour`.
+
+### Still synthetic (`rg "SYNTHETIC — re-point"`)
+
+`tests/fixtures/curator/signals/readings_judged_deficit.json` (capture B) and
+`readings_settled.json` (capture C), plus the marked comments in the test file
+for the flat post-grace multiplier, the deficit states and the settled state.
+The cap-exceeding deposit is marked **permanently** synthetic: the largest real
+send is 461.1 ETH against a 1000 ETH cap.
