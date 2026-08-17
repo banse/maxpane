@@ -950,3 +950,123 @@ def test_the_analysis_row_shapes_carry_no_accusatory_column_name() -> None:
             assert not (banned & set(column.split("_"))), f"{name}.{column}"
     for key in CURATOR_KEYS:
         assert not (banned & set(key.split("_"))), key
+
+
+# ==========================================================================
+# WP0.5 — the routing table (the screen-dispatch contract)
+# ==========================================================================
+#
+# Which widget renders each new key (implementation plan §3.3).  It lives HERE,
+# in the test file, and not in production, for one reason: `screens/curator.py`
+# owns `WIDGET_SIGNATURES` and that file is WP4's.  WP0 may not edit it.  But
+# WP4 (which wires the dispatch) and WP5 (which writes two of the widgets) are
+# in different waves and must not have to talk, so the map they both code
+# against is frozen here and both import it.
+#
+# Values are TUPLES because two keys reach more than one widget:
+# `analysis_as_of_hhmm` stamps all three analysis panels (each degrades
+# independently, so each prints its own marker), and `you_clean_rank` is read
+# by the CLEANED LIST panel *and* by the wallet-standing line, which prints it
+# beside the raw rank ("#412 raw, #47 clean").
+#
+# `leaderboard_rows["link_conf"]` is deliberately absent: it is a row sub-key,
+# not a top-level key, so it needs no dispatch entry -- `CuratorLeaderboard`
+# already receives `leaderboard_rows`.
+
+#: The three panels WP4 creates for `MODE_ANALYSIS`.
+WP4_ANALYSIS_WIDGETS = ("CuratorOperators", "CuratorSegments", "CuratorCleanList")
+
+#: The shipped widgets the analysis keys also reach.  Both exist today.
+WP5_EXISTING_WIDGETS = ("CuratorWalletStanding", "CuratorLeaderboard")
+
+ANALYSIS_KEY_ROUTING: dict[str, tuple[str, ...]] = {
+    # ---- OPERATORS -------------------------------------------------------
+    "operator_rows": ("CuratorOperators",),
+    "operators_count": ("CuratorOperators",),
+    # Already a shipped key, re-routed rather than re-added (PRD §7).  It
+    # currently feeds the FARM rail row from Tier A; WHICH producer wins once
+    # the library's stronger number exists is WP3's decision (plan §6.2), and
+    # either way the OPERATORS panel is where the analysis view renders it.
+    "flagged_points_share_pct": ("CuratorOperators",),
+    # ---- SEGMENTS --------------------------------------------------------
+    "segment_rows": ("CuratorSegments",),
+    # ---- CLEANED LIST ----------------------------------------------------
+    "clean_list_rows": ("CuratorCleanList",),
+    "clean_points": ("CuratorCleanList",),
+    "clean_contributors": ("CuratorCleanList",),
+    # ---- two keys, more than one home ------------------------------------
+    "analysis_as_of_hhmm": WP4_ANALYSIS_WIDGETS,
+    "you_clean_rank": ("CuratorCleanList", "CuratorWalletStanding"),
+    # ---- the `y` view's linked line (WP5 renders, WP4 wires) -------------
+    "you_linked_state": ("CuratorWalletStanding",),
+    "you_linked_reasons": ("CuratorWalletStanding",),
+    "you_linked_group_size": ("CuratorWalletStanding",),
+}
+
+
+def test_every_new_key_has_a_home_widget() -> None:
+    """Totality: the screen's dispatch test will require CURATOR_KEYS - dispatched
+    - META_KEYS == {}.  Each new top-level key must therefore reach a widget.
+    analysis_as_of_hhmm reaches all three analysis panels."""
+    homed = set(ANALYSIS_KEY_ROUTING)
+    new = {k for k in CURATOR_KEYS if k in {
+        "operator_rows","segment_rows","clean_list_rows","operators_count",
+        "clean_points","clean_contributors","analysis_as_of_hhmm",
+        "you_linked_state","you_linked_reasons","you_linked_group_size","you_clean_rank"}}
+    assert new <= homed
+
+
+def test_the_routing_table_only_routes_keys_that_exist() -> None:
+    """The other direction.  A key routed here but absent from ``CURATOR_KEYS``
+    is a widget WP4 would wire to a payload entry the manager never builds --
+    a kwarg that is ``None`` forever and a panel that is dark behind a green
+    suite."""
+    assert set(ANALYSIS_KEY_ROUTING) <= set(CURATOR_KEYS)
+
+
+def test_every_route_is_a_tuple_of_widget_class_names() -> None:
+    """Tuples, not bare strings, and pinned as such.
+
+    Two of the twelve routes have more than one destination, and a ``str``
+    value would iterate as characters -- a bug that reads as a widget called
+    ``C``.  Making *every* value a tuple is what stops WP4 writing the
+    single-destination case one way and the multi-destination case another.
+    """
+    for key, widgets in ANALYSIS_KEY_ROUTING.items():
+        assert isinstance(widgets, tuple), key
+        assert widgets, f"{key} routes nowhere"
+        assert len(set(widgets)) == len(widgets), key
+        for name in widgets:
+            assert isinstance(name, str) and name.startswith("Curator"), (key, name)
+
+
+def test_the_routed_widgets_are_the_five_the_plan_names() -> None:
+    """Three panels WP4 creates plus two shipped widgets WP5 extends -- and no
+    sixth, which would be a widget nobody has been told to write."""
+    routed = {name for names in ANALYSIS_KEY_ROUTING.values() for name in names}
+    assert routed == set(WP4_ANALYSIS_WIDGETS) | {"CuratorWalletStanding"}
+    # `CuratorLeaderboard` is in WP5_EXISTING_WIDGETS but not in the routing
+    # table on purpose: it renders `link_conf`, which is a sub-key of a row
+    # payload it already receives, so it needs no new dispatch entry.
+    assert "CuratorLeaderboard" not in routed
+    assert "link_conf" not in CURATOR_KEYS
+    assert "link_conf" in CURATOR_ROW_KEYS["leaderboard_rows"]
+
+
+def test_the_two_shipped_widgets_the_table_names_really_exist() -> None:
+    """A typo in either name would only surface in WP4's wave, in a file WP0
+    cannot see.  They are importable today, so it can surface now."""
+    from maxpane_dashboard.widgets.curator import leaderboard, wallet
+
+    for module, name in ((wallet, "CuratorWalletStanding"),
+                         (leaderboard, "CuratorLeaderboard")):
+        assert hasattr(module, name), name
+    assert set(WP5_EXISTING_WIDGETS) == {"CuratorWalletStanding", "CuratorLeaderboard"}
+
+
+def test_each_analysis_panel_gets_its_own_freshness_marker() -> None:
+    """PRD §5: "each degrades independently, each shows `as of HH:MM`".  All
+    three therefore route `analysis_as_of_hhmm`; a single shared header would
+    make one panel's outage invisible behind another panel's success."""
+    assert ANALYSIS_KEY_ROUTING["analysis_as_of_hhmm"] == WP4_ANALYSIS_WIDGETS
+    assert len(WP4_ANALYSIS_WIDGETS) == 3
