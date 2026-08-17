@@ -169,9 +169,18 @@ def test_no_model_field_defaults_to_zero() -> None:
     for model in ALL_MODELS:
         for field in dataclasses.fields(model):
             if field.default is not dataclasses.MISSING:
-                assert field.default in (None, False, ()), (
-                    f"{model.__name__}.{field.name} defaults to {field.default!r}"
-                )
+                # IDENTITY, not membership.  ``0 in (None, False, ())`` is True
+                # -- ``0 == False`` in Python -- so the membership form this
+                # test used to be written in could not fail on the one value it
+                # exists to catch, and a ``block_number: int | None = 0`` was
+                # invisible to the whole repo.  ``== ()`` stays an equality
+                # because ``0 == ()`` is False and tuple identity is not
+                # guaranteed.
+                assert (
+                    field.default is None
+                    or field.default is False
+                    or field.default == ()
+                ), f"{model.__name__}.{field.name} defaults to {field.default!r}"
             assert field.default_factory is dataclasses.MISSING, (
                 f"{model.__name__}.{field.name} has a mutable default factory"
             )
@@ -445,9 +454,12 @@ def test_no_flat_dict_key_masquerades_as_a_model_field() -> None:
 # --------------------------------------------------------------------------
 
 from maxpane_dashboard.data.curator_models import (  # noqa: E402
+    CURATOR_ACTIVITY_KINDS,
+    CURATOR_DEGRADED_GROUPS,
     CURATOR_KEYS,
     CURATOR_ROW_KEYS,
     CURATOR_SERIES_KEYS,
+    CURATOR_SIGNAL_STATES,
     PHASES,
     SIGNAL_ROWS,
 )
@@ -470,6 +482,9 @@ EXPECTED_KEYS = {
     "hour_seconds_left",
     "grace_seconds_left",
     "grace_ends_utc",
+    # config the widgets render rather than branch on
+    "hourly_threshold_eth",
+    "first_judged_hour",
     # curve
     "early_multiplier_x",
     "points_per_eth_now",
@@ -607,6 +622,13 @@ def test_the_volume_column_is_never_called_tvl_or_locked() -> None:
 
 
 def test_the_signal_rows_are_the_seven_the_rail_renders() -> None:
+    """PRD §4's rail, in order:
+    ``SETTLED · HOUR AT RISK · HOUR SAVED · WHALE · FARM · FORCED ETH · YOU``.
+
+    This tuple used to end in ``rescued``, which no spec the widget author reads
+    has ever contained -- PRD §4, wp4.md:231 and wp6.md:300 all end in YOU.  An
+    eight-label rail built from a seven-label test is a row that never renders.
+    """
     assert SIGNAL_ROWS == (
         "settled",
         "at_risk",
@@ -614,9 +636,99 @@ def test_the_signal_rows_are_the_seven_the_rail_renders() -> None:
         "whale",
         "clusters",
         "forced_eth",
-        "rescued",
+        "you",
     )
     assert len(set(SIGNAL_ROWS)) == len(SIGNAL_ROWS)
+
+
+def test_the_rail_has_no_rescued_row_but_rescued_is_still_a_key() -> None:
+    """``rescued_total_eth`` renders *inside* the FORCED ETH row.
+
+    Forced in, swept out: one anomaly with two numbers.  Spending a row on it
+    would make an eighth in a rail that already loses its last row first, and
+    ``Rescued`` has never fired -- so the dedicated row would be empty in every
+    state anyone can currently observe.
+    """
+    assert "rescued" not in SIGNAL_ROWS
+    assert "rescued_total_eth" in CURATOR_KEYS
+    assert "forced_eth" in SIGNAL_ROWS and "forced_eth" in CURATOR_KEYS
+
+
+def test_the_you_row_is_last_and_has_keys_to_render() -> None:
+    """The FWA coverage-badge position.  A rail in a fixed-height column loses
+    its last row first, and the last row is the reader's own standing -- so the
+    row is both the most personal and the most likely to vanish."""
+    assert SIGNAL_ROWS[-1] == "you"
+    assert {
+        "you_rank",
+        "you_points",
+        "you_credit_eth",
+        "you_required_next_eth",
+        "you_marginal_points",
+    } <= set(CURATOR_KEYS)
+
+
+def test_the_hourly_threshold_is_a_key_because_it_cannot_be_derived() -> None:
+    """CLAUDE.md hard constraint 4: read it live, never hardcode the documented
+    5.00.
+
+    Two widgets render the number -- the hero clock's ``fed X.XX/5.00 ETH`` and
+    the volume sparkline's labelled survival bar -- and it is **not** recoverable
+    from the two keys beside it.  ``ethNeededThisHour()`` (source.sol:547)
+    returns 0 for the whole grace period and again whenever a judged hour is
+    already safe, so ``hour_fed_eth + hour_needed_eth`` equals the threshold
+    only while an hour is short.  The counter-example is pinned against the
+    committed batch round in
+    ``test_curator_captures.py::test_the_hourly_threshold_is_not_recoverable_from_the_two_keys_beside_it``
+    (734.61 ETH fed, 0 needed, a 5 ETH bar).
+    """
+    assert "hourly_threshold_eth" in CURATOR_KEYS
+    assert {"hour_fed_eth", "hour_needed_eth"} <= set(CURATOR_KEYS)
+    assert not [k for k in CURATOR_KEYS if k.endswith("_wei")]
+
+
+def test_the_first_judged_hour_is_a_key_because_the_widgets_print_it() -> None:
+    """``n/a until hour 24`` (HOUR AT RISK during grace) and the closest-calls
+    empty state both print the number.  ``gracePeriod // hourDuration`` gives it,
+    but neither operand is in the flat dict either -- so with no key the widget
+    types the 24, which is the constraint-4 violation the ``once`` tier exists to
+    prevent."""
+    assert "first_judged_hour" in CURATOR_KEYS
+    assert "grace_period" not in CURATOR_KEYS
+    assert "hour_duration" not in CURATOR_KEYS
+
+
+def test_the_activity_kind_vocabulary_is_frozen_not_remembered() -> None:
+    """The ``dev``/``ops`` lesson (CLAUDE.md), applied one wave early.
+
+    ``CURATOR_ROW_KEYS`` freezes that a row has a ``kind``; this freezes what
+    goes in it.  The widget sizes a fixed-width cell from this tuple in wave 2
+    and the producer fills it in wave 3 -- a wave apart, with no shared name,
+    a producer emitting ``first_deposit`` cuts the cell mid-word and both suites
+    stay green.
+    """
+    assert CURATOR_ACTIVITY_KINDS == ("deposit", "joined", "saved")
+    assert "kind" in CURATOR_ROW_KEYS["activity_rows"]
+    assert len(set(CURATOR_ACTIVITY_KINDS)) == len(CURATOR_ACTIVITY_KINDS)
+    # What the consumer actually sizes to.  Stated here so a widening of the
+    # vocabulary shows up as a column cost, in this file, at review time.
+    assert max(len(k) for k in CURATOR_ACTIVITY_KINDS) == 7
+
+
+def test_the_signal_state_vocabulary_is_frozen_and_excludes_none() -> None:
+    """``None`` is the fourth state and it is deliberately NOT in the tuple:
+    it means "the analytics layer could not judge", which renders the
+    unavailable state, never a quiet ``ok``."""
+    assert CURATOR_SIGNAL_STATES == ("ok", "watch", "fired")
+    assert None not in CURATOR_SIGNAL_STATES
+    assert {"sig_settled_state", "sig_at_risk_state"} <= set(CURATOR_KEYS)
+
+
+def test_the_degraded_group_vocabulary_is_frozen() -> None:
+    """PRD §5: ``degraded`` group names ⊆ {state, logs, wallet}.  The title bar
+    renders them verbatim, so an unlisted spelling reaches the user as-is."""
+    assert set(CURATOR_DEGRADED_GROUPS) == {"state", "logs", "wallet"}
+    assert "degraded" in CURATOR_KEYS
 
 
 def test_the_two_judgement_rows_have_an_explicit_state_key() -> None:

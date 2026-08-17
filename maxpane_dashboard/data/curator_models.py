@@ -77,7 +77,9 @@ from dataclasses import dataclass
 # Frozen names, all importable and all pinned by a test on both sides:
 #
 #   this module ................ PHASES, SIGNAL_ROWS, CURATOR_KEYS,
-#                                CURATOR_ROW_KEYS, CURATOR_SERIES_KEYS, and the
+#                                CURATOR_ROW_KEYS, CURATOR_SERIES_KEYS,
+#                                CURATOR_ACTIVITY_KINDS, CURATOR_SIGNAL_STATES,
+#                                CURATOR_DEGRADED_GROUPS, and the
 #                                eight dataclasses: CuratorState, CuratorConfig,
 #                                WalletState, DepositEvent, LogSweep,
 #                                ContributorRow, HourBucket, SettlementRecord
@@ -104,6 +106,37 @@ from dataclasses import dataclass
 #      swapping two entries leaves the WP0 suite green.  WP2.4 owns that test,
 #      asserted against VIEW_RETURN_WORDS.
 #
+# ---------------------------------------------------------------------------
+# AMENDED 2026-08-17 after review.  Five things moved AFTER the first freeze;
+# if you read the briefs before this date, read these five instead:
+#
+#   1. CURATOR_KEYS GAINED `hourly_threshold_eth` and `first_judged_hour`.
+#      Both are chain values two widgets are specified to RENDER, and neither
+#      existed on any frozen surface — so wp4.md:412's `_SCREEN_SUPPLIED` was
+#      about to make a widget hardcode "5.00" and "24".  wp4/wp6 owners:
+#      `_SCREEN_SUPPLIED` is now exactly `{you_address}` (a CLI value, the one
+#      legitimate non-chain kwarg); drop the other two from it and dispatch them
+#      from the payload like every other key.  The manager divides
+#      CuratorConfig.hourly_threshold_wei once; first_judged_hour passes
+#      straight through.
+#   2. SIGNAL_ROWS's seventh row is `you`, not `rescued`.  PRD §4, wp4.md:231
+#      and wp6.md:300 all end the rail in YOU and none of them has a RESCUED
+#      row; `rescued_total_eth` renders inside FORCED ETH.
+#   3. `you_credit_eth` STAYS in CURATOR_KEYS (PRD §5 names it) but reaches no
+#      widget in wp6.md:31's kwarg table, so WP6.1's totality assertion
+#      (CURATOR_KEYS − dispatched − META_KEYS is empty) is red as written.
+#      Add it to CuratorSignals' row: the honest YOU line is
+#      `rank · pts · credit · next ≥`.  Do NOT close the gap by deleting the key.
+#   4. VIEW_RETURN_TYPES was wrong for the three cross-check counters:
+#      totalVolume is uint128 and totalContributors/totalTxCount are uint64
+#      (packed slot), not uint256.  Only 3 of the 28 entries had been pinned;
+#      all 28 are now recomputed from source.sol and from the vendored ABI.
+#   5. CURATOR_ACTIVITY_KINDS / CURATOR_SIGNAL_STATES / CURATOR_DEGRADED_GROUPS
+#      are new.  WP4 sizes the activity feed's `kind` cell from the first one
+#      (test-side import) instead of retyping ("deposit", "joined", "saved");
+#      WP3/WP5 assert their producers emit only these.
+# ---------------------------------------------------------------------------
+#
 # Three things WP0 found where a doc and the chain disagreed.  The chain won:
 #   * CURATOR's EIP-55 checksum is 0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91.
 #     wp0.md quotes a hand-retyped variant that is not checksummed.
@@ -128,9 +161,25 @@ from dataclasses import dataclass
 #: silent fallback arm.
 PHASES: tuple[str, ...] = ("grace", "judged", "settled")
 
-#: The seven signal-rail rows, in render order.  ``sig_settled_state`` and
-#: ``sig_at_risk_state`` are the two whose colour is a judgement rather than a
-#: number; the rest are observations.
+#: The seven signal-rail rows, in render order: PRD §4's
+#: ``SETTLED · HOUR AT RISK · HOUR SAVED · WHALE · FARM · FORCED ETH · YOU``.
+#: ``sig_settled_state`` and ``sig_at_risk_state`` are the two whose colour is a
+#: judgement rather than a number; the rest are observations.
+#:
+#: **``you`` is last and that is the hazardous position**: a rail inside a
+#: fixed-height column loses its last row first (the FWA coverage-badge bug), so
+#: the row that carries the reader's own standing is the one that silently
+#: disappears.  WP4 pins all seven against the compositor.
+#:
+#: There is deliberately **no ``rescued`` row**.  This tuple used to end in one,
+#: which contradicted every spec the widget author reads and would have shipped
+#: an eight-label rail against a seven-label test.  ``rescued_total_eth`` is a
+#: real key and it renders **inside the FORCED ETH row** — forced in, swept out,
+#: one anomaly with two numbers — rather than spending a row of a rail that is
+#: already one row from clipping.
+#:
+#: Widgets may not import ``data/`` (CLAUDE.md), so this tuple is read by
+#: *tests* and by the manager, never by ``widgets/curator/*`` itself.
 SIGNAL_ROWS: tuple[str, ...] = (
     "settled",
     "at_risk",
@@ -138,7 +187,7 @@ SIGNAL_ROWS: tuple[str, ...] = (
     "whale",
     "clusters",
     "forced_eth",
-    "rescued",
+    "you",
 )
 
 
@@ -417,6 +466,24 @@ CURATOR_KEYS: tuple[str, ...] = (
     "hour_seconds_left",        # int | None — hourDuration at a boundary, never 0
     "grace_seconds_left",       # int | None — 0 once grace is over
     "grace_ends_utc",           # str | None — "2026-08-17 19:58:47Z"
+    # ---- config, read live off the `once` tier ------------------------------
+    # Two chain constants the widgets have to RENDER, not merely branch on.
+    # Neither is recoverable from any other key, and CLAUDE.md forbids a widget
+    # hardcoding the documented value:
+    "hourly_threshold_eth",     # float | None ★ — the "/5.00 ETH" denominator
+                                #   of the hero clock and the sparkline's
+                                #   survival bar.  NOT derivable from
+                                #   hour_fed_eth + hour_needed_eth:
+                                #   ethNeededThisHour() returns 0 all through
+                                #   grace AND whenever a judged hour is already
+                                #   safe (source.sol:547), so the sum equals the
+                                #   threshold only while an hour is short.
+    "first_judged_hour",        # int | None ★ — hourlyThreshold's first bite.
+                                #   The literal 24 in "n/a until hour 24"
+                                #   (HOUR AT RISK during grace) and in
+                                #   "no judged hours yet".  gracePeriod //
+                                #   hourDuration on this deployment, but neither
+                                #   operand is in the flat dict either.
     # ---- curve --------------------------------------------------------------
     "early_multiplier_x",       # float | None — earlyBps / 10 000, e.g. 1.9491
     "points_per_eth_now",       # float | None — the effective rate right now
@@ -444,7 +511,12 @@ CURATOR_KEYS: tuple[str, ...] = (
     # ---- YOU (all None when no wallet is configured) ------------------------
     "you_rank",                 # int | None
     "you_points",               # int | None
-    "you_credit_eth",           # float | None — the high-water mark, not gross
+    "you_credit_eth",           # float | None — the high-water mark, not gross.
+                                #   PRD §5 names it; PRD §4's rail line
+                                #   ("rank · pts · next ≥ X.XX ETH") forgot it.
+                                #   The key stays — the honest YOU row is
+                                #   rank · pts · credit · next ≥ — and the rail's
+                                #   kwarg row in wp4/wp6 is what needs the fix.
     "you_required_next_eth",    # float | None — what the next deposit must beat
     "you_marginal_points",      # int | None — points requiredNext would buy
     # ---- rows ---------------------------------------------------------------
@@ -484,6 +556,32 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+#: The exact ``kind`` values the activity-row producer emits — the vocabulary,
+#: not just the column name.
+#:
+#: ``CURATOR_ROW_KEYS`` freezes that a row *has* a ``kind``; without this tuple
+#: nothing freezes what goes in it, and the two sides are written a wave apart:
+#: the widget sizes a fixed-width cell in wave 2, the producer fills it in wave
+#: 3.  That is exactly the ``dev``/``ops`` defect CLAUDE.md records — a cell
+#: sized to a remembered vocabulary is simultaneously padded and cutting a value
+#: mid-word, and both suites stay green while it happens.
+#:
+#: The consumer sizes from ``max(len(k) for k in CURATOR_ACTIVITY_KINDS)`` (a
+#: **test-side** import; widgets may not import ``data/``) and the producer
+#: asserts membership.  Adding a value is a contract change that costs columns.
+CURATOR_ACTIVITY_KINDS: tuple[str, ...] = ("deposit", "joined", "saved")
+
+#: The only three values ``sig_settled_state`` / ``sig_at_risk_state`` may hold,
+#: besides ``None`` (= unknown, which renders the unavailable state, never
+#: "ok").  A colour vocabulary is as size- and branch-sensitive as the kinds
+#: above: a fourth spelling from the analytics layer is a silent fallback arm.
+CURATOR_SIGNAL_STATES: tuple[str, ...] = ("ok", "watch", "fired")
+
+#: The only group names that may appear in ``degraded``.  The title bar renders
+#: them verbatim ("⚠ logs, state, wallet"), so an unlisted spelling reaches the
+#: user as-is.
+CURATOR_DEGRADED_GROUPS: tuple[str, ...] = ("state", "logs", "wallet")
+
 #: The two ``[timestamp, value]`` payloads.  They are **not** lists of dicts, so
 #: they get a name of their own rather than a column tuple that would tell a
 #: widget to index a 2-tuple by key.  Both load through
@@ -499,6 +597,9 @@ __all__ = [
     "CURATOR_KEYS",
     "CURATOR_ROW_KEYS",
     "CURATOR_SERIES_KEYS",
+    "CURATOR_ACTIVITY_KINDS",
+    "CURATOR_SIGNAL_STATES",
+    "CURATOR_DEGRADED_GROUPS",
     "CuratorState",
     "CuratorConfig",
     "WalletState",
