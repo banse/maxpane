@@ -8,7 +8,6 @@ in ``test_cluster.py``, where the producer lives.
 
 from __future__ import annotations
 
-import pytest
 
 from sybilkit.report import (
     DEFAULT_CONFIDENCE_THRESHOLD,

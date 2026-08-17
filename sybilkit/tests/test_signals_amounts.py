@@ -14,7 +14,6 @@ Calibration facts these tests lean on, all measured on the committed fixtures:
 
 from __future__ import annotations
 
-import pytest
 
 from sybilkit import DetectConfig
 from sybilkit.signals.amounts import amount_edges

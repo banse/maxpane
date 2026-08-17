@@ -110,11 +110,12 @@ class DetectResult:
 
     A small value object rather than a dataclass, because it has behaviour:
     :meth:`wallet` is a lookup and :attr:`flagged` is derived from the
-    threshold.  The four counters are its whole state, and each is an ``int``
-    rather than an ``int | None`` — a detector that ran always knows how many
-    points it looked at.  A run that could *not* happen produces no
-    ``DetectResult`` at all; the caller reports that as its own unavailable
-    state.
+    threshold.  Its state is the cluster list, the three point counters, the
+    threshold, the ``analyzed`` population and a private member index; each
+    counter is an ``int`` rather than an ``int | None`` — a detector that ran
+    always knows how many points it looked at.  A run that could *not* happen
+    produces no ``DetectResult`` at all; the caller reports that as its own
+    unavailable state.
 
     ``clusters`` is ordered by ``points_share`` descending — widest operator
     first, which is the row the OPERATORS panel leads with.
