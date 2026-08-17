@@ -492,12 +492,14 @@ class CuratorWalletAddress(_FactsPanel):
         return lines
 
 
-#: The three states ``you_linked_state`` may hold, ``None`` (= the sweep has
-#: not run) aside.  A **fourth spelling is a silent fallback arm**, and the arm
-#: this one would fall into is the reassuring one — so anything not in here
-#: renders :data:`UNKNOWN_VALUE`, exactly as the hero treats a phase word it
-#: does not know.  The widget may not import ``data/``, so the literal lives
-#: here and the agreement with the contract lives in the suite.
+#: The two verdicts ``you_linked_state`` may hold; ``None`` — the sweep has
+#: not run — is the third state and is deliberately **not** in here.  A
+#: **third spelling is a silent fallback arm**, and the arm this one would
+#: fall into is the reassuring one, so anything not in this tuple renders
+#: :data:`UNKNOWN_VALUE`, exactly as the hero treats a phase word it does not
+#: know.  Unlike ``CURATOR_SIGNAL_STATES`` the contract freezes no tuple for
+#: this vocabulary, so there is nothing for the suite to agree against: the
+#: two spellings are ``CURATOR_KEYS``' own comment on ``you_linked_state``.
 LINKED_STATES: tuple[str, ...] = ("clean", "linked")
 
 
