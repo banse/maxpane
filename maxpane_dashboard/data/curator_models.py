@@ -151,6 +151,59 @@ from dataclasses import dataclass
 # the quiet hour boundary (stale lastActiveHour), any post-grace state
 # (earlyBps == 10000), a judged hour with a deficit, the settled state and its
 # Settled log, a HourSaved row, a creditedDelta == 0 deposit, and a Rescued row.
+#
+# ---------------------------------------------------------------------------
+# SYBIL EXPANSION 2026-08-17 — WP0 of the second curator build.
+#
+# The linked-wallet / fan-out analysis (docs/curator_sybil_PRD.md,
+# docs/curator_sybil_implementation_plan.md) adds ELEVEN keys and THREE row
+# shapes to the contract above, plus one additive sub-key on
+# `leaderboard_rows`.  Wave 1 (WP1 core ∥ WP5 wallet widgets) and wave 2 (WP2
+# io/cli ∥ WP4 third view) all code against them without talking.
+#
+#   new keys ... operator_rows, segment_rows, clean_list_rows,
+#                operators_count, clean_points, clean_contributors,
+#                analysis_as_of_hhmm, you_linked_state, you_linked_reasons,
+#                you_linked_group_size, you_clean_rank
+#   new rows ... operator_rows / segment_rows / clean_list_rows
+#   new sub-key  leaderboard_rows["link_conf"]  ("high"|"low"|"clean"|None)
+#
+# Four things about it that a later agent will otherwise re-litigate:
+#
+#   1. THE NEW KEYS ARE NOT IN `analytics/curator_signals.SIGNAL_OUTPUT_KEYS`,
+#      and must never be added there.  The manager fills them AFTER
+#      `build_signals`, exactly the way it merges ENS names — so
+#      `curator_signals.py` stays byte-identical to what shipped, its
+#      forbidden-word source scan is never touched, and its `flagged=True`
+#      tests stay green.  `test_the_new_analysis_keys_are_not_in_the_signal_
+#      surface` is the guardrail.
+#   2. `flagged_points_share_pct` is REUSED, not duplicated (PRD §7).  It is
+#      currently Tier-A's (`find_clusters`, the FARM rail row); the OPERATORS
+#      panel wants the library's stronger ≥2-family number.  WHICH ONE WINS IS
+#      WP3's decision, not WP0's — the plan (§6 risk 2) recommends the
+#      library's once the sweep has last-good, falling back to Tier-A's before
+#      that, so FARM and OPERATORS agree.
+#   3. `clean_list_export_path` is DELIBERATELY ABSENT (plan §6 risk 1).  The
+#      export is an `e` keypress inside the view, the path is screen-supplied
+#      like `you_address`, and a manager key for it would couple a read-only
+#      data layer to a file write.
+#   4. `flagged` (bool) STAYS on `leaderboard_rows`.  PRD §6's "the flag
+#      upgrades to confidence-graded" is implemented additively, for reason 1.
+#
+# Nothing else in this file moved.  The eight dataclasses, PHASES, SIGNAL_ROWS,
+# CURATOR_ACTIVITY_KINDS, CURATOR_SIGNAL_STATES, CURATOR_DEGRADED_GROUPS and
+# CURATOR_SERIES_KEYS are all exactly as the first freeze left them —
+# in particular the analysis sweep folds its failures into the EXISTING `logs`
+# degraded group (plan §6 risk 7), so the title bar's frozen group vocabulary
+# is untouched.
+#
+# The routing table (which widget renders which new key) is pinned as
+# `ANALYSIS_KEY_ROUTING` in tests/data/test_curator_models.py — in the test,
+# not here, because `screens/curator.py` is WP4's file and WP0 may not edit it.
+# The worst-case rows WP4/WP5 size against live in
+# tests/fixtures/curator/sybil/; the datasets they are calibrated from are
+# pinned in tests/data/test_curator_sybil_data.py.
+# ---------------------------------------------------------------------------
 # ===========================================================================
 
 #: The three phases of the settlement state machine, in order.
@@ -549,25 +602,80 @@ CURATOR_KEYS: tuple[str, ...] = (
     "cluster_rows",             # list[dict] — CURATOR_ROW_KEYS["cluster_rows"]
     "volume_series",            # list[[ts, value]] — through coerce_points
     "contributors_series",      # list[[ts, value]] — through coerce_points
+    # ---- linked-wallet analysis (MODE_ANALYSIS, the `f` view) ---------------
+    # Produced by the manager's adapter AFTER build_signals, from the detached
+    # B+C sweep's last-good — never by analytics/curator_signals (see the note
+    # under CURATOR_ROW_KEYS).  Every one of them is `None` until that sweep
+    # has published once, and `None` here is "could not analyze", which the
+    # three panels render as their own unavailable state.
+    "operator_rows",            # list[dict] — CURATOR_ROW_KEYS["operator_rows"]
+    "segment_rows",             # list[dict] — CURATOR_ROW_KEYS["segment_rows"]
+    "clean_list_rows",          # list[dict] — CURATOR_ROW_KEYS["clean_list_rows"]
+    "operators_count",          # int | None ★ — 0 is "analyzed, none linked",
+                                #   a real answer; None is "could not analyze".
+                                #   The FARM-row defect is exactly this pair
+                                #   collapsing, so both must be representable.
+    "clean_points",             # int | None — total points with the linked
+                                #   groups removed.  0 would mean the whole
+                                #   list is linked, which is an answer too.
+    "clean_contributors",       # int | None — survivor count
+    "analysis_as_of_hhmm",      # str | None — the B+C sweep's OWN freshness
+                                #   marker.  Separate from `as_of_hhmm`
+                                #   because the sweep is detached and long-TTL:
+                                #   one marker for both tiers would present an
+                                #   hours-old analysis as live.
+    # ---- YOU, linkage (all None when no wallet is configured) ---------------
+    "you_linked_state",         # str | None — "clean" | "linked".  None is
+                                #   "the sweep has not run", and must render
+                                #   `-- unknown`, NEVER a confident "clean".
+    "you_linked_reasons",       # list[str] — pattern-language phrases;
+                                #   [] is "analyzed, not linked"
+    "you_linked_group_size",    # int | None — size of the group, when linked
+    "you_clean_rank",           # int | None — rank in the de-sybilled list.
+                                #   Rendered beside `you_rank`, never instead
+                                #   of it: "#412 raw, #47 with clear farms
+                                #   removed" is the whole point.
     # ---- health -------------------------------------------------------------
     "degraded",                 # list[str] — group names ⊆ {state, logs, wallet}
     "as_of_hhmm",               # str — the rendered freshness marker
     "as_of",                    # float — epoch, for the screen's own bookkeeping
 )
 
-#: Row shapes for the four list-of-dict payloads.  Widgets index these keys
+#: Row shapes for the eight list-of-dict payloads.  Widgets index these keys
 #: directly, so adding one is a contract change, not an implementation detail.
 #:
 #: Every amount here is already ETH: the manager divided once, at the boundary.
 #: Nothing is called TVL, locked, at risk or capital — every wei this contract
 #: ever saw was refunded inside the same transaction, so the only honest word
 #: for the number is *routed*.
+#:
+#: Nothing here is called a sybil, a cheat or a farm either, and that is a
+#: schema rule rather than a copy rule: a column name reaches the screen as a
+#: ``DataTable`` header long before any widget author gets a say.  The linked
+#: groups are ``operator_rows``; the 44.6× number is ``sqrt_subsidy_x``, which
+#: names a property of the curve (it pays ``sqrt(k)`` for splitting one
+#: bankroll across ``k`` wallets) rather than an accusation about a person.
 CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
     "leaderboard_rows": (
         "rank", "address", "points", "credit_eth", "tx_count", "flagged",
         # Verified reverse ENS for `address`, or None.  Rendered in the
         # address cell's own width, so a name never widens the table.
         "name",
+        # "high" | "low" | "clean" | None  ->  ⚑ / ◌ / (empty) / ?
+        #
+        # ADDITIVE, and appended rather than folded into `flagged`.  PRD §6
+        # calls this "the flag upgrades to confidence-graded", which reads like
+        # a type change on `flagged` -- but `flagged` is filled by
+        # analytics/curator_signals.py, and that module must stay EXACTLY as
+        # shipped (PRD §2; its source is forbidden-word-scanned).  So the bool
+        # stays, the grade is a new sub-key merged in by the manager the way
+        # `name` is merged by `_label_with_ens`, and the widget grades off
+        # `link_conf` when it is present and off `flagged` when it is not.
+        #
+        # None is "the analysis sweep has not run", rendered `?` -- never an
+        # empty cell, which is the *clean* rendering and would be a confident
+        # negative drawn from a missing read.
+        "link_conf",
     ),
     # ``ts`` is None when the block-timestamp batch failed -> renders "--:--".
     # ``tx_hash`` + ``log_index`` are the de-dupe key (PRD §4).
@@ -594,6 +702,35 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "size", "amount_eth", "first_block", "last_block", "points",
         "points_share_pct",
     ),
+    # ---- the analysis view's three panels ---------------------------------
+    # One row per linked-wallet group, widest first.  `reasons` is a
+    # list[str] of pattern-language phrases ("identical 0.45Ξ send ×1,995",
+    # "shared funder chain") -- already escaped copy, not a code, because the
+    # panel renders them verbatim and the reader is meant to judge the shape
+    # rather than trust a score.
+    #
+    # `conf` is "high" | "low" | None and renders as a filled/hollow marker,
+    # never a raw number: 0.87 on a screen reads as a verdict with a decimal
+    # point.  `sqrt_subsidy_x` is the curve's own multiple (44.6× for the
+    # widest real operator), and `points_share_pct` is already a percentage --
+    # the library reports a share in [0,1] and the manager multiplies once.
+    "operator_rows": (
+        "size", "reasons", "points", "points_share_pct", "sqrt_subsidy_x",
+        "conf",
+    ),
+    # Adam's segments: whale *operators* by combined credit, the index-1000
+    # early cohort, per-hour join bands, per-multiplier bands.  `detail` is a
+    # free pattern-language string the panel prints after the numbers.
+    #
+    # `points_share_pct` is `float | None` here and the None is load-bearing:
+    # some bands (a per-hour join band, say) have a contributor count but no
+    # attributable points share, and a 0.0 there would read as "this hour
+    # scored nothing".
+    "segment_rows": ("label", "contributors", "points_share_pct", "detail"),
+    # The de-sybilled list.  `clean_rank` is the survivor rank, which is NOT
+    # `rank` -- the two are rendered side by side ("#412 raw, #47 clean") and
+    # one name for both would make that line impossible to write.
+    "clean_list_rows": ("clean_rank", "address", "points", "credit_eth", "name"),
 }
 
 #: The exact ``kind`` values the activity-row producer emits — the vocabulary,

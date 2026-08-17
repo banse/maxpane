@@ -535,6 +535,20 @@ EXPECTED_KEYS = {
     "cluster_rows",
     "volume_series",
     "contributors_series",
+    # The linked-wallet analysis view (`f`), added by the sybil expansion
+    # (docs/curator_sybil_PRD.md §7).  All eleven are manager-adapter-produced
+    # from the detached B+C sweep's last-good, never emitted by build_signals.
+    "operator_rows",
+    "segment_rows",
+    "clean_list_rows",
+    "operators_count",
+    "clean_points",
+    "clean_contributors",
+    "analysis_as_of_hhmm",
+    "you_linked_state",
+    "you_linked_reasons",
+    "you_linked_group_size",
+    "you_clean_rank",
     # health
     "degraded",
     "as_of_hhmm",
@@ -568,6 +582,9 @@ def test_row_key_sets_match_the_prd() -> None:
         # Verified reverse ENS for `address` (PRD §13 A9).  Rendered inside the
         # address cell's own width, so a name can never widen the table.
         "name",
+        # The confidence-graded link marker (sybil PRD §6), appended so every
+        # shipped column keeps its position and `flagged` keeps its type.
+        "link_conf",
     )
     assert CURATOR_ROW_KEYS["activity_rows"] == (
         "ts",
@@ -611,14 +628,31 @@ def test_the_two_series_are_named_separately_from_the_row_payloads() -> None:
 
 
 def test_every_list_payload_has_either_a_row_shape_or_a_series_declaration() -> None:
-    """The seven list payloads, all accounted for, none twice.
+    """The ten list payloads, all accounted for, none twice.
 
-    Six from PRD §5; the seventh is ``you_ladder_rows``, added with the `y`
-    wallet view (PRD §13 A8).
+    Six from PRD §5; the seventh is ``you_ladder_rows``, added with the `y``
+    wallet view (PRD §13 A8); the last three are the analysis view's panels
+    (sybil PRD §7).
+
+    Enumerated rather than counted.  The count this test used to carry was a
+    literal ``7``, and the honest way to grow it is to name the payloads that
+    exist — a bumped number says a payload was added, this says *which*, and it
+    still fails if one is added without a shape.
     """
     listish = {k for k in CURATOR_KEYS if k.endswith("_rows") or k.endswith("_series")}
     assert listish == set(CURATOR_ROW_KEYS) | set(CURATOR_SERIES_KEYS)
-    assert len(listish) == 7
+    assert listish == {
+        "leaderboard_rows",
+        "activity_rows",
+        "closest_call_rows",
+        "cluster_rows",
+        "you_ladder_rows",
+        "operator_rows",
+        "segment_rows",
+        "clean_list_rows",
+        "volume_series",
+        "contributors_series",
+    }
 
 
 def test_activity_rows_carry_the_dedupe_key() -> None:
@@ -786,3 +820,133 @@ def test_signal_output_keys_are_a_subset_of_curator_keys() -> None:
     sig = pytest.importorskip("maxpane_dashboard.analytics.curator_signals")
     missing = sorted(set(sig.SIGNAL_OUTPUT_KEYS) - set(CURATOR_KEYS))
     assert not missing, f"signal keys absent from CURATOR_KEYS: {missing}"
+
+
+# ==========================================================================
+# WP0 (sybil expansion, 2026-08-17) — the analysis surface
+# ==========================================================================
+#
+# The keys the sybil / fan-out build adds.  Written out literally here rather
+# than imported from anywhere: this file is the independent restatement, and a
+# shared constant would let one edit move both sides at once.
+
+
+def test_curator_keys_gained_exactly_the_analysis_surface() -> None:
+    """The new keys are present, and no shipped key was removed."""
+    new = {
+        "operator_rows", "segment_rows", "clean_list_rows", "operators_count",
+        "clean_points", "clean_contributors", "analysis_as_of_hhmm",
+        "you_linked_state", "you_linked_reasons", "you_linked_group_size",
+        "you_clean_rank",
+    }
+    assert new <= set(CURATOR_KEYS)
+    assert "clean_list_export_path" not in CURATOR_KEYS   # screen-owned (plan §6.1)
+    assert len(CURATOR_KEYS) == len(set(CURATOR_KEYS))    # still no duplicate
+    # `flagged_points_share_pct` is REUSED, not re-added (PRD §7, plan §6.2).
+    assert "flagged_points_share_pct" in CURATOR_KEYS
+    assert "linked_points_share_pct" not in CURATOR_KEYS
+
+
+def test_the_new_analysis_keys_are_not_in_the_signal_surface() -> None:
+    """They are manager-adapter-produced (the ENS-merge precedent), NOT emitted
+    by build_signals -- so analytics/curator_signals.py stays exactly as shipped
+    and its forbidden-word source scan is never touched.  Guarded with
+    importorskip so WP0 is green before the analytics module is read."""
+    sig = pytest.importorskip("maxpane_dashboard.analytics.curator_signals")
+    analysis = {
+        "operator_rows", "segment_rows", "clean_list_rows", "operators_count",
+        "clean_points", "clean_contributors", "analysis_as_of_hhmm",
+        "you_linked_state", "you_linked_reasons", "you_linked_group_size",
+        "you_clean_rank",
+    }
+    assert analysis.isdisjoint(set(sig.SIGNAL_OUTPUT_KEYS))
+    # The module that must not learn the word: it fills `flagged` (the Tier-A
+    # bool) and nothing graded.  `link_conf` is the manager's merge.
+    assert "link_conf" not in set(sig.SIGNAL_OUTPUT_KEYS)
+
+
+def test_the_new_row_shapes_are_frozen() -> None:
+    assert CURATOR_ROW_KEYS["operator_rows"] == (
+        "size", "reasons", "points", "points_share_pct", "sqrt_subsidy_x", "conf")
+    assert CURATOR_ROW_KEYS["segment_rows"] == (
+        "label", "contributors", "points_share_pct", "detail")
+    assert CURATOR_ROW_KEYS["clean_list_rows"] == (
+        "clean_rank", "address", "points", "credit_eth", "name")
+    assert set(CURATOR_ROW_KEYS) <= set(CURATOR_KEYS)
+
+
+def test_the_leaderboard_gained_a_confidence_grade_without_dropping_the_bool() -> None:
+    """PRD §6: the flag upgrades to graded.  `flagged` (Tier-A bool) STAYS so
+    curator_signals.py is untouched; `link_conf` is the additive graded grade."""
+    lb = CURATOR_ROW_KEYS["leaderboard_rows"]
+    assert "flagged" in lb and "link_conf" in lb
+    # Additive means *appended*: every shipped column keeps its position, so a
+    # widget that indexes the tuple rather than the dict is not resequenced.
+    assert lb[:-1] == (
+        "rank", "address", "points", "credit_eth", "tx_count", "flagged", "name"
+    )
+    assert lb[-1] == "link_conf"
+
+
+def test_the_analysis_freshness_marker_is_its_own_key() -> None:
+    """The B+C sweep is detached and long-TTL, so its last-good is minutes or
+    hours older than the fast tier's.  Rendering both behind one `as_of_hhmm`
+    would present a stale analysis as live -- CLAUDE.md's "never a stale number
+    presented as live".  `analysis_as_of_hhmm` is `str | None`; None is "the
+    sweep has not published yet", which the three panels render as their own
+    unavailable state, never as "analyzed, nothing linked"."""
+    assert "analysis_as_of_hhmm" in CURATOR_KEYS
+    assert "as_of_hhmm" in CURATOR_KEYS
+    assert "analysis_as_of" not in CURATOR_KEYS  # one marker, not two clocks
+
+
+def test_the_analysed_zero_is_representable_separately_from_the_failure() -> None:
+    """The FARM-row defect, designed out.
+
+    `operators_count == 0` is "analyzed, nothing linked" -- a real answer.
+    `operators_count is None` is "could not analyze".  Both must exist as top
+    level keys or the widget cannot tell them apart, and it renders confident
+    and green through an outage.  `clean_points` / `clean_contributors` carry
+    the same distinction for the CLEANED LIST panel, and `you_linked_reasons`
+    carries it for the wallet line: `[]` is analyzed-and-clean, and the
+    unknown case is `you_linked_state is None`.
+    """
+    for key in ("operators_count", "clean_points", "clean_contributors",
+                "you_linked_group_size", "you_clean_rank"):
+        assert key in CURATOR_KEYS
+    assert "you_linked_state" in CURATOR_KEYS
+    assert "you_linked_reasons" in CURATOR_KEYS
+
+
+def test_no_new_key_is_wei_denominated_or_named_after_capital() -> None:
+    """The two house rules the new surface has to keep: the manager divided
+    once at the boundary, and no wei this contract ever saw was capital."""
+    new = {
+        "operator_rows", "segment_rows", "clean_list_rows", "operators_count",
+        "clean_points", "clean_contributors", "analysis_as_of_hhmm",
+        "you_linked_state", "you_linked_reasons", "you_linked_group_size",
+        "you_clean_rank",
+    }
+    assert not [k for k in new if k.endswith("_wei")]
+    banned = {"tvl", "locked", "at_risk", "capital", "balance", "deposited_eth"}
+    assert banned.isdisjoint(new)
+    for name in ("operator_rows", "segment_rows", "clean_list_rows"):
+        assert not [c for c in CURATOR_ROW_KEYS[name] if c.endswith("_wei")], name
+        assert banned.isdisjoint(CURATOR_ROW_KEYS[name]), name
+
+
+def test_the_analysis_row_shapes_carry_no_accusatory_column_name() -> None:
+    """PRD §2/§8: pattern-language only, and the schema is written before any
+    copy is.  A column called `sybil_score` would put the word on the screen by
+    way of a DataTable header long before a widget author got a say.
+
+    `sqrt_subsidy_x` is the honest name for the 44.6x number: it is what the
+    sqrt curve pays for splitting one bankroll across k wallets, a property of
+    the curve rather than an accusation about a person.
+    """
+    banned = {"sybil", "cheat", "fraud", "attack", "abuse", "wash", "farm", "bot"}
+    for name in ("operator_rows", "segment_rows", "clean_list_rows"):
+        for column in CURATOR_ROW_KEYS[name]:
+            assert not (banned & set(column.split("_"))), f"{name}.{column}"
+    for key in CURATOR_KEYS:
+        assert not (banned & set(key.split("_"))), key
