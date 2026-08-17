@@ -1,0 +1,364 @@
+{
+ "_source": "tests/fixtures/curator/captures/batch.json + results.json, verbatim. The real 21-call parameterless round publicnode answered on 2026-08-16 at ~21:12 UTC. Requests and responses are kept as two arrays IN THE ORDER THEY WERE SENT AND SERVED; they correlate by `id`, never by position -- isSettled() and ethNeededThisHour() both answered 0x0.",
+ "requests": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0xc99a340f"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0x1ea0466e"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0x020e185d"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0x78f251f3"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0xd5f39488"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0xd8631b3d"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0xa4586257"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 8,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0x2a9c657f"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 9,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0xa06db7dc"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 10,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0xda25efd9"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 11,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0x9d99a86d"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 12,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0x3270bb5b"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 13,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0xa8a036f1"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 14,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0x790ca413"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 15,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0x41b3d185"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 16,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0x2c379609"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 17,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0xd80528ae"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 18,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0x7a7d6632"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 19,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0xf251fc8c"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 20,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0x9b4f50e7"
+    },
+    "latest"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 21,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+     "data": "0x5f81a57c"
+    },
+    "latest"
+   ]
+  }
+ ],
+ "responses": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "result": "0x00000000000000000000000000000000000000000000000000000000000003e8"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "result": "0x00000000000000000000000000000000000000000000003635c9adc5dea00000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "result": "0x000000000000000000000000000000000000000000000027d2c90dce228ae5b0"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "result": "0x000000000000000000000000047f606fd5b2baa5f5c6c4ab8958e45cb6b054b7"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000004c23"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 8,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000018"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 9,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000015180"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 10,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000e10"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 11,
+   "result": "0x0000000000000000000000000000000000000000000000004563918244f40000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 12,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 13,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000027d2c90dce228ae5b0"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 14,
+   "result": "0x000000000000000000000000000000000000000000000000000000006a821677"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 15,
+   "result": "0x00000000000000000000000000000000000000000000000000b1a2bc2ec50000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 16,
+   "result": "0x000000000000000000000000000000000000000000000000016345785d8a0000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 17,
+   "result": "0x0000000000000000000000000000000000000000000000560119983627c22d4f000000000000000000000000000000000000000000000000000000000000008f00000000000000000000000000000000000000000000000000000000000000de"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 18,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000aec"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 19,
+   "result": "0x000000000000000000000000000000000000000000000000000000000000008f"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 20,
+   "result": "0x00000000000000000000000000000000000000000000000000000000000000de"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 21,
+   "result": "0x0000000000000000000000000000000000000000000000560119983627c22d4f"
+  }
+ ]
+}

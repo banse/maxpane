@@ -507,3 +507,292 @@ def test_a_shrunk_sweep_still_starts_where_it_was_asked_to() -> None:
     ))
     assert out == []
     assert [w[0] for w in windows[:3]] == [5_000, 5_000, 5_000]
+
+
+# ===========================================================================
+# WP2.4 — the fast view round and the immutable config
+# ===========================================================================
+
+#: The 2026-08-16 21:12 UTC round, keyed by selector.  Built from the committed
+#: request/response arrays BY ``id`` — never by position: ``isSettled()`` and
+#: ``ethNeededThisHour()`` both answered ``0x0`` in this round, so positional
+#: reasoning over ``results.json`` cannot tell those two apart.
+def _captured_round() -> dict[str, str]:
+    blob = client_fixture("state_batch.json")
+    by_id = {r["id"]: r for r in blob["responses"]}
+    return {
+        req["params"][0]["data"]: by_id[req["id"]]["result"]
+        for req in blob["requests"]
+    }
+
+
+CAPTURED_ROUND = _captured_round()
+
+#: A plausible head for the captured round.  Any int; the state's own height is
+#: what is under test, not its value.
+CAPTURED_HEAD = 25770231
+
+
+def _view_handler(
+    answers: dict[str, str],
+    *,
+    errors: frozenset[str] = frozenset(),
+    head: int | None = CAPTURED_HEAD,
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Answer an ``eth_call`` batch by SELECTOR, and ``eth_blockNumber``."""
+
+    def one(entry: dict) -> dict:
+        if entry["method"] == "eth_blockNumber":
+            if head is None:
+                return {"jsonrpc": "2.0", "id": entry["id"],
+                        "error": {"code": -32000, "message": "no head"}}
+            return {"jsonrpc": "2.0", "id": entry["id"], "result": hex(head)}
+        data = entry["params"][0]["data"]
+        selector = data[:10]
+        if selector in errors:
+            return {"jsonrpc": "2.0", "id": entry["id"],
+                    "error": {"code": -32000, "message": "execution reverted"}}
+        if data not in answers and selector not in answers:
+            return {"jsonrpc": "2.0", "id": entry["id"],
+                    "error": {"code": -32000, "message": f"unknown {data}"}}
+        return {"jsonrpc": "2.0", "id": entry["id"],
+                "result": answers.get(data, answers.get(selector))}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if isinstance(payload, list):
+            return httpx.Response(200, json=[one(e) for e in payload])
+        return httpx.Response(200, json=one(payload))
+
+    return handler
+
+
+def _state(**kw: Any) -> Any:
+    return asyncio.run(_client(_view_handler(CAPTURED_ROUND, **kw)).fetch_state())
+
+
+def test_fetch_state_decodes_the_captured_round() -> None:
+    """Every field, against the real 2026-08-16 21:12 UTC payload."""
+    st = _state()
+    assert st.settled is False              # a bool, not 0
+    assert st.current_hour == 1
+    assert st.current_hour_total_wei == 0x27D2C90DCE228AE5B0
+    assert st.hour_needed_wei == 0          # grace: a real 0, not a failed read
+    assert st.hour_seconds_left == 2796
+    assert st.last_active_hour == 1
+    assert st.last_active_hour_total_wei == st.current_hour_total_wei
+    assert st.early_bps == 19_491           # 1.9491x, NOT ~1.99x
+    assert (st.volume_wei, st.contributors, st.tx_count) == (
+        0x560119983627C22D4F, 143, 222,
+    )
+    assert st.block_number == CAPTURED_HEAD
+
+
+def test_the_balance_is_never_folded_into_the_state_round() -> None:
+    """H5: every wei of a deposit is refunded in-transaction, so this balance is
+    ALWAYS forced ETH and never a deposit.  ``fetch_state`` leaves it ``None``
+    and ``fetch_balance`` is its own read, so nothing can reach a volume, a TVL
+    or a hero total by accident."""
+    assert _state().forced_balance_wei is None
+
+
+def test_is_settled_decodes_to_a_bool_not_an_int() -> None:
+    """``settled is False`` and ``settled is None`` must be different things.
+    An int ``0`` here would make ``if not settled`` true for a failed read too,
+    and the phase machine would render a live game as unknown-or-running with
+    no way to tell which."""
+    assert _state().settled is False
+    assert _state(errors=frozenset({A.SEL_IS_SETTLED})).settled is None
+
+
+def test_a_real_zero_survives_and_a_failed_read_does_not_become_one() -> None:
+    """The two zeros of the fast tier, side by side.  ``ethNeededThisHour()``
+    answers a genuine 0 all through grace; the same field after a failed entry
+    must be ``None``, or HOUR AT RISK reads a dead endpoint as a safe hour."""
+    assert _state().hour_needed_wei == 0
+    assert _state(errors=frozenset({A.SEL_ETH_NEEDED_THIS_HOUR})).hour_needed_wei \
+        is None
+
+
+def test_the_multi_word_views_are_decoded_to_their_full_width() -> None:
+    """``lastActiveHour()`` is 2 words and ``stats()`` is 3.  Decoding word 0
+    only would silently drop the hour total and both counters — and the hour
+    total is half of the boundary hazard."""
+    st = _state()
+    assert st.last_active_hour_total_wei == 0x27D2C90DCE228AE5B0
+    assert st.contributors == 143 and st.tx_count == 222
+    # ... and the decoder itself agrees with the frozen width table.
+    for name, _sel in A.FAST_VIEW_SELECTORS:
+        raw = CAPTURED_ROUND[_sel]
+        assert len(curator_client.decode_view(name, raw)) == \
+            A.VIEW_RETURN_WORDS[name], name
+
+
+def test_a_short_return_decodes_to_none_rather_than_to_zeros() -> None:
+    """A reverted ``eth_call`` comes back as ``0x``.  Decoding that as a word of
+    zeros manufactures a reading out of a failure — and for ``stats()`` it would
+    manufacture three."""
+    assert curator_client.decode_view("SEL_STATS", "0x") is None
+    one_word = "0x" + "00" * 32
+    assert curator_client.decode_view("SEL_STATS", one_word) is None
+    assert curator_client.decode_view("SEL_CURRENT_HOUR", one_word) == (0,)
+
+
+def test_the_batch_is_sent_in_the_frozen_order() -> None:
+    """WP0.4 left the ORDER unpinned on purpose; this is where it is pinned.
+
+    The expectation below is **hand-typed, not derived from
+    ``FAST_VIEW_SELECTORS``**.  Deriving it would compare a constant against
+    itself and the test could never fail again: the client builds its batch FROM
+    that tuple, so both sides would move together.  Redundancy plus an agreement
+    test is the house pattern (CLAUDE.md, on ``_GAME_CYCLE``).
+
+    One correction to what wp2.md expected of this test.  It says a reorder
+    should also make ``test_fetch_state_decodes_the_captured_round`` fail "with
+    two fields transposed".  It does not, and that was verified by swapping
+    ``SEL_CURRENT_HOUR`` and ``SEL_EARLY_MULTIPLIER_BPS`` in memory and re-running
+    both: only this test went red.  The reason is that ``_decode_round`` keys its
+    output by selector NAME while indexing the reply by position, and the reply
+    was already re-aligned by ``id``, so a name and its result travel together
+    and a reorder is self-consistent end to end.  That is the safer arrangement
+    and it stays — which is precisely why this test has to exist and has to be
+    hand-typed: with the decode immune, an accidental reorder would otherwise be
+    invisible everywhere, including in the correspondence between these
+    selectors and ``captures/batch.json``'s 21-call round.
+    """
+    expected_names = [
+        "SEL_IS_SETTLED", "SEL_CURRENT_HOUR", "SEL_CURRENT_HOUR_TOTAL",
+        "SEL_ETH_NEEDED_THIS_HOUR", "SEL_TIME_LEFT_IN_HOUR",
+        "SEL_LAST_ACTIVE_HOUR", "SEL_EARLY_MULTIPLIER_BPS", "SEL_STATS",
+    ]
+    expected_selectors = [
+        "0x3270bb5b", "0x020e185d", "0x78f251f3", "0xa4586257",
+        "0x7a7d6632", "0xa8a036f1", "0xd8631b3d", "0xd80528ae",
+    ]
+    expected_words = [1, 1, 1, 1, 1, 2, 1, 3]
+
+    assert [n for n, _s in A.FAST_VIEW_SELECTORS] == expected_names
+    assert [s for _n, s in A.FAST_VIEW_SELECTORS] == expected_selectors
+    assert [A.VIEW_RETURN_WORDS[n] for n in expected_names] == expected_words
+
+    client, transport = _recording_client(_view_handler(CAPTURED_ROUND))
+    asyncio.run(client.fetch_state())
+    sent = [p for _u, _m, p, _h in transport.requests if isinstance(p, list)][0]
+    assert [c["params"][0]["data"] for c in sent[:-1]] == expected_selectors
+    assert sent[-1]["method"] == "eth_blockNumber"
+    assert all(c["params"][0]["to"] == A.CURATOR for c in sent[:-1])
+
+
+def test_the_whole_fast_tier_is_one_round_trip() -> None:
+    """Eight views plus the height in ONE batch array.  A height fetched
+    separately can describe a different block from the state it labels."""
+    client, transport = _recording_client(_view_handler(CAPTURED_ROUND))
+    asyncio.run(client.fetch_state())
+    assert len(transport.requests) == 1
+
+
+def test_one_failed_entry_degrades_one_field() -> None:
+    st = _state(errors=frozenset({A.SEL_EARLY_MULTIPLIER_BPS}))
+    assert st.early_bps is None
+    assert st.current_hour == 1          # everything else survived
+    assert st.contributors == 143
+
+
+def test_a_partial_state_round_still_reports_itself_degraded() -> None:
+    """Three views answered and one did not is the NORMAL failure here, and the
+    reader is entitled to see it marked — a hole with no marker is a stale
+    number presented as live."""
+    client = _client(_view_handler(
+        CAPTURED_ROUND, errors=frozenset({A.SEL_STATS})))
+    st = asyncio.run(client.fetch_state())
+    assert st is not None and st.volume_wei is None
+    assert client.state_failed is True
+
+
+def test_a_clean_state_round_clears_the_degradation_flag() -> None:
+    client = _client(_view_handler(CAPTURED_ROUND))
+    client.state_failed = True           # left over from a previous cycle
+    asyncio.run(client.fetch_state())
+    assert client.state_failed is False
+
+
+def test_a_failed_height_does_not_fail_the_state() -> None:
+    """The height labels the reading; losing the label does not lose the
+    reading, and a ``0`` height would read as genesis."""
+    st = _state(head=None)
+    assert st.block_number is None and st.current_hour == 1
+
+
+def test_a_dead_pool_returns_none_not_a_zeroed_state() -> None:
+    client = _offline_client()
+    assert asyncio.run(client.fetch_state()) is None
+    assert client.state_failed is True
+
+
+def test_fetch_config_decodes_the_ten_once_tier_views() -> None:
+    """Read LIVE off the chain, never from the pins in ``curator_addresses``.
+    Docs drift; chains do not."""
+    cfg = asyncio.run(_client(_view_handler(CAPTURED_ROUND)).fetch_config())
+    assert cfg.launch_time == 1_786_910_327
+    assert cfg.hourly_threshold_wei == 5 * 10**18
+    assert cfg.grace_period == 86_400
+    assert cfg.hour_duration == 3_600
+    assert cfg.min_deposit_wei == 5 * 10**16
+    assert cfg.min_escalation_wei == 10**17
+    assert cfg.credit_cap_wei == 1_000 * 10**18
+    assert cfg.first_judged_hour == 24
+    assert cfg.points_per_eth == 1_000
+    assert cfg.deployer == A.DEPLOYER.lower()
+
+
+def test_the_deployer_is_decoded_as_an_address_not_as_a_number() -> None:
+    """The one non-uint in the ``once`` tier.  ``decode_uint`` would render it
+    as a 154-digit integer and the allowlist lookup would never match."""
+    cfg = asyncio.run(_client(_view_handler(CAPTURED_ROUND)).fetch_config())
+    assert isinstance(cfg.deployer, str)
+    assert cfg.deployer.startswith("0x") and len(cfg.deployer) == 42
+
+
+def test_the_config_batch_is_sent_in_the_frozen_order() -> None:
+    """Same reasoning as the fast tier, and the same hand-typed expectation."""
+    expected = [
+        "0x790ca413", "0x9d99a86d", "0xa06db7dc", "0xda25efd9", "0x41b3d185",
+        "0x2c379609", "0x1ea0466e", "0x2a9c657f", "0xc99a340f", "0xd5f39488",
+    ]
+    assert [s for _n, s in A.ONCE_VIEW_SELECTORS] == expected
+    client, transport = _recording_client(_view_handler(CAPTURED_ROUND))
+    asyncio.run(client.fetch_config())
+    sent = [p for _u, _m, p, _h in transport.requests if isinstance(p, list)][0]
+    assert [c["params"][0]["data"] for c in sent] == expected
+
+
+def test_one_failed_config_entry_degrades_one_field() -> None:
+    client = _client(_view_handler(
+        CAPTURED_ROUND, errors=frozenset({A.SEL_CREDIT_CAP})))
+    cfg = asyncio.run(client.fetch_config())
+    assert cfg.credit_cap_wei is None
+    assert cfg.hourly_threshold_wei == 5 * 10**18
+    assert client.config_failed is True
+
+
+def test_a_dead_pool_returns_no_config_rather_than_a_default_one() -> None:
+    client = _offline_client()
+    assert asyncio.run(client.fetch_config()) is None
+    assert client.config_failed is True
+
+
+def test_no_documented_config_value_is_hardcoded_in_the_client() -> None:
+    """CLAUDE.md rule 4: read values live, never hardcode a documented one.
+
+    The eight immutables are ``immutable`` and ``POINTS_PER_ETH`` is a
+    ``constant``, so a fallback would look harmless for as long as it happened
+    to be right — which, on this repo's record, is until it isn't (a documented
+    5% fee that is 1% on chain; a "4.0x" ratio that measured 3.885, 3.49 and
+    2.956 on three consecutive days).
+    """
+    src = inspect.getsource(curator_client)
+    literals = {int(tok.replace("_", ""))
+                for tok in re.findall(r"\b\d[\d_]*\b", src)}
+    for banned in (86_400, 3_600, 5_000_000_000_000_000_000,
+                   1_000_000_000_000_000_000_000, 1_000, 19_491):
+        assert banned not in literals, f"{banned} is a chain value, read it live"

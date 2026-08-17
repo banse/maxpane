@@ -74,6 +74,12 @@ from maxpane_dashboard.data.evm_abi import (
     encode_address,
     strip0x,
 )
+from maxpane_dashboard.data.curator_models import (
+    CuratorConfig,
+    CuratorState,
+    LogSweep,
+    WalletState,
+)
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
@@ -591,6 +597,138 @@ class CuratorClient(OwnedHttpClient):
             rows.extend(r for r in result if isinstance(r, dict))
             cursor = end + 1
         return rows
+
+    # ------------------------------------------------------------------
+    # View batches
+    # ------------------------------------------------------------------
+
+    def _view_calls(
+        self, selectors: tuple[tuple[str, str], ...], argument: str = ""
+    ) -> list[tuple[str, list]]:
+        """One ``eth_call`` per selector, in the tuple's frozen order.
+
+        *argument* is appended to each selector already ABI-encoded (no inner
+        ``0x``: an inner prefix makes the node reject the payload — FWA's
+        Multicall3 lesson applies to plain ``eth_call`` data too).
+        """
+        return [
+            ("eth_call", [{"to": A.CURATOR, "data": sel + argument}, "latest"])
+            for _name, sel in selectors
+        ]
+
+    @staticmethod
+    def _decode_round(
+        selectors: tuple[tuple[str, str], ...], results: list[Any]
+    ) -> dict[str, tuple[Any, ...] | None]:
+        """Positional decode of a view round into ``{SEL_NAME: words | None}``.
+
+        Positional because the batch was **sent** in this order; the reply was
+        already re-aligned by ``id`` inside ``_rpc_state_batch``.
+        """
+        return {
+            name: decode_view(name, results[i])
+            for i, (name, _sel) in enumerate(selectors)
+        }
+
+    async def fetch_state(self) -> CuratorState | None:
+        """The fast tier: eight views and the height, in ONE batch array.
+
+        ``eth_blockNumber`` is the last entry of the *same* array rather than a
+        second round trip, so the state and the height describe the same block.
+        Fetch the height separately and a reorg or a rotated endpoint can hand
+        back a block the eight views never saw.
+
+        Every field degrades on its own: one reverted or dropped entry is that
+        field's ``None``, never the round's.  ``None`` overall only when no
+        endpoint served the array at all — a zeroed :class:`CuratorState` would
+        render a live game as a dead one.
+
+        ``forced_balance_wei`` is deliberately left ``None`` here; it is
+        :meth:`fetch_balance`'s, and the manager folds it in with
+        ``dataclasses.replace``.  Keeping it out of this round is what stops the
+        contract's balance — which is *always* forced ETH — being mistaken for
+        a volume by anything that reads a state object.
+        """
+        self.state_failed = False
+        calls = self._view_calls(A.FAST_VIEW_SELECTORS)
+        calls.append(("eth_blockNumber", []))
+        try:
+            results = await self._rpc_state_batch(calls)
+        except RuntimeError as exc:  # malformed-request short-circuit
+            logger.warning("fetch_state: %s", exc)
+            self.state_failed = True
+            return None
+        if results is None:
+            self.state_failed = True
+            return None
+
+        words = self._decode_round(A.FAST_VIEW_SELECTORS, results)
+        self.state_failed = any(v is None for v in words.values())
+
+        def word(name: str, idx: int = 0) -> Any:
+            got = words.get(name)
+            return None if got is None else got[idx]
+
+        return CuratorState(
+            settled=word("SEL_IS_SETTLED"),
+            current_hour=word("SEL_CURRENT_HOUR"),
+            current_hour_total_wei=word("SEL_CURRENT_HOUR_TOTAL"),
+            hour_needed_wei=word("SEL_ETH_NEEDED_THIS_HOUR"),
+            hour_seconds_left=word("SEL_TIME_LEFT_IN_HOUR"),
+            last_active_hour=word("SEL_LAST_ACTIVE_HOUR", 0),
+            last_active_hour_total_wei=word("SEL_LAST_ACTIVE_HOUR", 1),
+            early_bps=word("SEL_EARLY_MULTIPLIER_BPS"),
+            volume_wei=word("SEL_STATS", 0),
+            contributors=word("SEL_STATS", 1),
+            tx_count=word("SEL_STATS", 2),
+            forced_balance_wei=None,  # fetch_balance()'s, on purpose — see above
+            block_number=_hex_to_int(results[-1]),
+        )
+
+    async def fetch_config(self) -> CuratorConfig | None:
+        """The ``once`` tier: eight immutables, one constant, one address.
+
+        Read **live**.  ``curator_addresses`` pins the same numbers so a test
+        can prove the live read agrees, but nothing here falls back to a pin:
+        the whole point of the pin is to be checked, and a fallback that is
+        right until it isn't is how a documented 5 % fee ships against a 1 %
+        chain (CLAUDE.md rule 4).
+
+        Nothing on this contract can change these — there is no owner power
+        that reaches a parameter — so the caller may cache the result forever.
+        """
+        self.config_failed = False
+        try:
+            results = await self._rpc_state_batch(
+                self._view_calls(A.ONCE_VIEW_SELECTORS)
+            )
+        except RuntimeError as exc:
+            logger.warning("fetch_config: %s", exc)
+            self.config_failed = True
+            return None
+        if results is None:
+            self.config_failed = True
+            return None
+
+        words = self._decode_round(A.ONCE_VIEW_SELECTORS, results)
+        self.config_failed = any(v is None for v in words.values())
+
+        def word(name: str) -> Any:
+            got = words.get(name)
+            return None if got is None else got[0]
+
+        return CuratorConfig(
+            launch_time=word("SEL_LAUNCH_TIME"),
+            hourly_threshold_wei=word("SEL_HOURLY_THRESHOLD"),
+            grace_period=word("SEL_GRACE_PERIOD"),
+            hour_duration=word("SEL_HOUR_DURATION"),
+            min_deposit_wei=word("SEL_MIN_DEPOSIT"),
+            min_escalation_wei=word("SEL_MIN_ESCALATION"),
+            credit_cap_wei=word("SEL_CREDIT_CAP"),
+            first_judged_hour=word("SEL_FIRST_JUDGED_HOUR"),
+            points_per_eth=word("SEL_POINTS_PER_ETH"),
+            deployer=word("SEL_DEPLOYER"),
+        )
 
 
 __all__ = [
