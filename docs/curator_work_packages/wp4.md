@@ -484,7 +484,8 @@ records that set, so WP6.1's totality assertion has a starting point.
 | `CLUSTERS_UNAVAILABLE` | `clusters unavailable` | `cluster_rows is None` |
 | `CLUSTERS_EMPTY` | `no fan-out patterns found` | `cluster_rows == []` |
 | `WAITING` | `waiting for data...` | either series has < 2 usable points — **the one place `None` and `[]` render the same**, because neither can be drawn |
-| `PHASE_UNAVAILABLE` | `phase unavailable` | `phase` is `None` or not one of `PHASES` |
+| `PHASE_UNAVAILABLE` | `phase unavailable` | `phase` is `None` or not one of `PHASES` — the hero's CLOCK box **and** the rail's `HOUR AT RISK` row, which used to fall through to the judged branch and call an unjudged hour `hour is safe` |
+| `UNKNOWN_GLYPH` | `○` | a signal state that could not be read. `ok` is `●`, `watch` is `◐`, `fired` is `▶`; all four differ, so the rail reads in greyscale and colour is never the sole carrier |
 | `NEVER_SAVED` | `none yet` | HOUR SAVED has never fired |
 | `NO_WALLET` | `set MAXPANE_WALLET` | every `you_*` key is `None` |
 | `DASH` / `EMDASH` / `NO_STAMP` | `--` / `—` / `--:--` | "could not read" / "deliberately nothing" / "no block stamp" |
@@ -494,25 +495,59 @@ records that set, so WP6.1's totality assertion has a starting point.
 Every panel appends `‹ widen: <what it shed>` to its **title** (never replaces
 the title, so `TITLE in text` holds at every width), degrading to a bare
 `‹ widen` when the descriptive form does not fit, and moving the bare marker
-into the panel's note line when even that does not fit the title bar. The hero
-is the exception: its boxes carry the marker in their **bottom border**
+into the panel's note line when even that does not fit the title bar (the
+sparkline panel has no note line and uses its spacer row). The hero is the
+exception: its boxes carry the marker in their **bottom border**
 (`border_subtitle`), because a hero box has five content lines and no sixth.
+
+**The marker fires on the first loss, not the last.** The rail raises it when
+*any* part of *any* row is dropped, and the sparkline panel raises it when the
+survival-bar label goes, two tiers before the trend value does. Both used to
+wait for total loss, which made a half-rendered row indistinguishable from a
+payload that had nothing more to say — the failure mode the tiers exist to
+prevent. A shrinking sparkline is still not a loss: it is a smaller window, not
+a hidden column.
 
 Measured widths, so WP6 can budget the slot grid before it renders anything:
 
-| panel | needs (content columns) | sheds, in order |
+| panel | needs (widget columns) | sheds, in order |
 |---|---|---|
 | hero box | 26 (×3 boxes + borders/margins → ~90 for the row) | wording, then the grace date, then the parenthetical |
 | leaderboard | 48 | `TX`, then `CREDIT` |
-| sparklines | ~46 for both rows at full width | the bar label, then the spark's width, then the trend value |
-| signals rail | **76** for the full YOU line (`rank · pts · credit · next ≥ X (+N pts)`) | parts from the end of each row |
-| activity | 70 | delta wording, delta, `tx#`, then `kind` |
+| sparklines | 46 for both rows at full width | the bar label, then the spark's width, then the trend value |
+| signals rail | **82** — import `SIGNALS_FULL_WIDTH`, do not retype it | parts from the end of each row |
+| activity | 74 (+3 for the panel: `padding: 0 1` and `RichLog`'s reserved gutter → a 77-column terminal) | delta wording, delta, `tx#`, then `kind` |
 | closest calls | 42 | `VOLUME`, then `SAVIOR` |
-| clusters | 42 | the block window, then `POINTS` |
+| clusters | 45 | the block window, then `POINTS` |
 
 The signals rail is the widest thing in this package and it is the panel to
 measure the seam against. **Measure, do not reason** — and re-measure after any
 copy edit, exactly as the surf screen's seam sweep does.
+
+**Three of those numbers were wrong when this table was first written, and the
+way they were wrong is the point.** Each was taken from the example row in its
+own module docstring instead of from the widest row its producer can emit:
+
+* the rail said **76**. The full YOU line — `rank 12 · 1,234 pts · 3.60 credit
+  · next ≥ 4.10 ETH (+120 pts)` — is 80 columns of value, and the rows carry
+  `padding: 0 1`, so the widget needs **82**. At 76–81 the rail "fitted" by
+  amputating the only actionable number it carries, and `_row()` raised no
+  marker because it only reported a loss when *every* part was dropped. A width
+  sweep could not have caught it. `SIGNALS_FULL_WIDTH` is now exported and
+  pinned by `test_the_rail_publishes_the_width_it_was_measured_at`, which
+  re-measures it from the seven builders — import the constant rather than
+  copying 82 into the screen;
+* the feed said **70**, from `(+2.80 credit → 7.03 wt)`. The captured 461.1 ETH
+  whale renders `(+461.10 credit → 899.00 wt)`, 28 columns, and the row needs
+  **74**;
+* the cluster table said **42**, from the single captured `9× 60.00Ξ ·
+  28 blocks`. Ten wallets or more is 22 columns of pattern, so the tier is
+  **45**.
+
+All three cells are now derived — `_fmt.COMPACT_ETH_COLS`, measured off
+`fmt_eth_compact` itself, plus `clusters.MAX_BLOCK_SPAN` — so an example row
+can no longer set a width. WP6 should still re-measure rather than trust this
+table: that is what this paragraph is a record of.
 
 ### Three things WP6 and WP7 must know
 
