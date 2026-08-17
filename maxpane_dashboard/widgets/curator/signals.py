@@ -179,9 +179,9 @@ _WIDEST_ETH = max(COMPACT_ETH_PROBE)
 #: import it.
 MAX_CURVE_POINTS = 44_721
 
-#: :data:`SIGNALS_FULL_WIDTH` is defined at the foot of this module, because
-#: it is **derived** from :data:`WIDTH_PROBE` and the seven builders rather
-#: than typed.  Both live next to the builders they measure.
+# SIGNALS_FULL_WIDTH is defined at the foot of this module, because it is
+# *derived* from WIDTH_PROBE through the seven builders rather than typed.
+# Both live next to the builders they measure.
 
 
 def _state_of(value) -> str | None:
