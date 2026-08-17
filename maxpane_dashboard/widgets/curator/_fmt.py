@@ -40,6 +40,8 @@ __all__ = [
     "DASH",
     "EMDASH",
     "ADDR_COLS",
+    "COMPACT_ETH_COLS",
+    "COMPACT_ETH_PROBE",
     "NO_STAMP",
     "as_float",
     "fmt_eth",
@@ -110,7 +112,13 @@ def fmt_eth(value, places: int = 2) -> str:
 
 
 def fmt_eth_compact(value) -> str:
-    """ETH at any magnitude this game produces, in at most six columns.
+    """ETH at any magnitude this game produces, in :data:`COMPACT_ETH_COLS`.
+
+    The width is **measured** — see :data:`COMPACT_ETH_PROBE` — and it is not
+    a universal bound: the K/M/B forms reach *seven* columns at and above
+    999,999 (``fmt_eth_compact(999999.0) == "1000.0K"``), a magnitude no
+    field on this contract can carry.  Cells are sized from the probe, never
+    from a remembered adjective.
 
     ``sparkline_common.fmt_compact`` is the house compact formatter and is
     used above 1000, but it renders **everything below 1.0 with zero decimal
@@ -140,6 +148,27 @@ def fmt_eth_compact(value) -> str:
         return f"{v:,.2f}"
     # Delegated to the house helper, never re-implemented (MEDI-36).
     return fmt_compact(v)
+
+
+#: Every magnitude :func:`fmt_eth_compact` is handed on this contract, as a
+#: probe rather than a remembered adjective.  ``minDeposit`` (0.05), the
+#: captured feed amounts (3.60, the 9×60 fan-out, the 461.10 whale and the
+#: 899.00 weight it produced), the two-decimal form's widest point (999.99),
+#: the 1000 ETH credit cap, the routed total (8401) and a cumulative weight
+#: an order of magnitude past anything this game has routed.
+#:
+#: The two-decimal form is the *widest* of these, not the largest number:
+#: ``999.99`` is six columns where ``99,999`` compacts to ``100.0K``, also
+#: six.  Sizing a cell to "the biggest value" gets this backwards.
+COMPACT_ETH_PROBE = (
+    0.0, 0.05, 3.6, 60.0, 461.1, 899.0, 999.99, 1000.0, 8401.0, 99_999.0,
+)
+
+#: Measured width of the widest string :func:`fmt_eth_compact` can return for
+#: this contract's magnitudes.  Six.  Every ETH cell in this package is sized
+#: from it — the ``dev``/``ops`` lesson in CLAUDE.md, where a cell sized to
+#: the *small* example cut a real value mid-word with nothing in the title.
+COMPACT_ETH_COLS = max(len(fmt_eth_compact(v)) for v in COMPACT_ETH_PROBE)
 
 
 def fmt_age(seconds) -> str:

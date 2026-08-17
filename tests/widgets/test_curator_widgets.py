@@ -45,8 +45,11 @@ from maxpane_dashboard.widgets.curator import (
     NEVER_SAVED,
     NO_JUDGED_HOURS,
     NO_WALLET,
+    PHASE_UNAVAILABLE,
     SIGNAL_LABELS,
+    SIGNALS_FULL_WIDTH,
     SPARKLINES_TITLE,
+    UNKNOWN_GLYPH,
     WAITING,
     CuratorActivity,
     CuratorClosestCalls,
@@ -755,22 +758,51 @@ async def test_the_trend_arrow_is_the_shared_one():
     assert "▲" in text
 
 
-async def test_a_narrow_rail_sheds_the_bar_label_before_the_sparkline():
-    """Order of sacrifice: the bar label (a constant a reader learns once),
-    then the spark's width, then the trend value.  The row label never goes —
-    a nameless sparkline is decoration."""
+async def _spark_at(width: int) -> str:
     widget = CuratorSparklines()
     app = _Harness(widget)
-    async with app.run_test(size=(38, 8)) as pilot:
+    async with app.run_test(size=(width, 8)) as pilot:
         widget.update_data(
             volume_series=_volume_series(),
             contributors_series=_contributors_series(),
             hourly_threshold_eth=5.0,
         )
         await pilot.pause()
-        text = _screen_text(app)
+        return _screen_text(app)
+
+
+async def test_a_narrow_rail_sheds_the_bar_label_before_the_sparkline():
+    """Order of sacrifice: the bar label (a constant a reader learns once),
+    then the spark's width, then the trend value.  The row label never goes —
+    a nameless sparkline is decoration."""
+    text = await _spark_at(38)
     assert "VOL/h" in text and "WALLETS" in text
     assert "ETH bar" not in text
+
+
+@pytest.mark.parametrize("width", (44, 40, 38, 34))
+async def test_the_shed_bar_label_is_announced_and_not_dropped_in_silence(width):
+    """The bar label is not free to lose: the module's own docstring calls it
+    "the only reason the volume line means anything", because a sparkline's
+    scale is relative to its own window and the survival threshold is the
+    only thing an hour's volume is judged against.
+
+    Between 38 and 45 columns it used to disappear under a clean ``TRENDS``:
+    the marker fired only when the *trend value* went, two tiers later.  A
+    shed column that is not announced is indistinguishable from data that is
+    not there — wp4.md's ground rule, and this panel was the one exception.
+    """
+    text = await _spark_at(width)
+    assert "ETH bar" not in text          # it really is shed at this width
+    assert "widen" in text                # ...and the title says so
+
+
+async def test_the_bar_label_and_the_marker_are_never_both_present():
+    """The complement: a marker that is always on says nothing (the
+    fwa_signals trap), so the widest tier carries no marker at all."""
+    text = await _spark_at(60)
+    assert "5.00 ETH bar" in text
+    assert "widen" not in text
 
 
 # ===========================================================================
@@ -960,6 +992,124 @@ async def test_every_state_carries_a_glyph_or_a_word_not_only_a_colour():
     assert any(glyph in text for glyph in ("▶", "◐", "●"))
 
 
+def test_the_four_states_have_four_distinct_glyphs_so_the_rail_reads_grey():
+    """The rail's docstring promises colour is never the sole carrier.  It
+    was, for the ``ok``/unknown pair: both mapped to ``●`` and only the style
+    token separated them, so a reader in greyscale — or a colour-blind one —
+    saw a healthy dot for a reading nobody made."""
+    from maxpane_dashboard.widgets.curator import signals as sig_mod
+
+    glyphs = [sig_mod._STATE_STYLE[state][0]
+              for state in (None, "ok", "watch", "fired")]
+    assert len(set(glyphs)) == 4, glyphs
+    assert sig_mod._STATE_STYLE[None][0] == UNKNOWN_GLYPH != sig_mod._STATE_STYLE["ok"][0]
+
+
+@pytest.mark.parametrize("value", (None, "", "garbage", "OK!", 0, 3))
+async def test_an_unreadable_state_word_never_borrows_the_ok_or_fired_glyph(value):
+    """``_state_of``'s fallback is the whole state→colour mapping's only
+    guard and nothing asserted it: two independent mutations of it (unknown →
+    ``ok``, unknown → ``fired``) left the entire suite green, so an
+    unreadable signal could have rendered as a green healthy dot or a red
+    alarm and no test would have noticed.
+
+    Asserted on the composited glyph rather than on the style token: the
+    glyph is what a reader actually resolves, and it is what makes the
+    docstring's greyscale promise true.  The grace arm is the vehicle because
+    it returns the state word bare, with no "unknown" word beside it to make
+    the mistake visible.
+    """
+    text = await _rendered(
+        CuratorSignals, phase="grace", first_judged_hour=24,
+        sig_at_risk_state=value,
+    )
+    row = next(line for line in text.splitlines() if "HOUR AT RISK" in line)
+    assert UNKNOWN_GLYPH in row, (value, row)
+    for borrowed in ("●", "◐", "▶"):
+        assert borrowed not in row, (value, borrowed, row)
+
+
+async def test_an_unreadable_phase_never_calls_an_unjudged_hour_safe():
+    """``phase`` is ``None`` whenever ``isSettled()`` or the ``once`` tier
+    failed — and ``ethNeededThisHour()`` answers **0** all the way through
+    grace, so falling through to the judged branch rendered a green
+    ``hour is safe`` about an hour nobody has judged.  The hero already
+    handles this input correctly and ``analytics.at_risk_state`` returns
+    ``(None, "phase unavailable")`` for it; this row used to be the one
+    surface that contradicted both."""
+    for phase in (None, "", "frozen"):
+        text = await _rendered(
+            CuratorSignals, phase=phase, hour_needed_eth=0.0,
+            hour_seconds_left=900,
+        )
+        row = next(line for line in text.splitlines() if "HOUR AT RISK" in line)
+        assert "hour is safe" not in row, phase
+        assert PHASE_UNAVAILABLE in row, phase
+        assert UNKNOWN_GLYPH in row, phase
+
+
+async def test_the_forced_row_separates_a_zero_balance_from_an_unreadable_one():
+    """The twin of ``test_a_judged_hour_distinguishes_a_zero_deficit_from_an
+    _unknown_one``, and the one row in the family that was missing it: the
+    mutation ``if forced is None: forced = 0.0`` left the suite green, and it
+    renders a failed balance read as the healthy em dash with a green glyph —
+    on the row whose entire purpose is anomaly detection.
+
+    The general guard ``test_no_widget_renders_a_bare_zero_for_a_missing
+    _value`` cannot reach it: the false-healthy render is ``—``, not a zero.
+    """
+    zero = await _rendered(CuratorSignals, forced_eth=0.0)
+    row = next(line for line in zero.splitlines() if "FORCED ETH" in line)
+    assert EMDASH in row
+
+    unknown = await _rendered(CuratorSignals, forced_eth=None)
+    row = next(line for line in unknown.splitlines() if "FORCED ETH" in line)
+    assert EMDASH not in row and "unknown" in row
+    assert UNKNOWN_GLYPH in row
+
+
+def test_the_rail_publishes_the_width_it_was_measured_at():
+    """wp4.md hands WP6 a number to budget the slot grid against, and WP6
+    asserts against it without reading this source.  The first one was 76,
+    written from a row nobody measured; the YOU line is 80 columns of value
+    and the rows carry ``padding: 0 1``, so the rail needs 82.
+
+    Measured here from the builders themselves, so a copy edit anywhere in
+    the seven rows fails this rather than a reader's terminal.
+    """
+    from maxpane_dashboard.widgets.curator import signals as sig_mod
+
+    payload = _signals_full()
+    widths = {}
+    for key, label in zip(sig_mod.SIGNAL_KEYS, SIGNAL_LABELS):
+        state, parts = sig_mod._BUILDERS[key](payload)
+        markup, starved = sig_mod._row(label, state, parts, 0)
+        assert not starved                      # width 0 = "not laid out yet"
+        widths[label] = _visible(markup)
+
+    assert max(widths.values()) == widths["YOU"] == 80, widths
+    assert SIGNALS_FULL_WIDTH == max(widths.values()) + 2
+
+
+async def test_the_rail_needs_the_width_it_publishes():
+    """The other half, composited: at the published width the whole YOU row
+    reaches the screen, and one column under it the rail *says* it could
+    not.  Between 76 and 81 it used to drop ``next ≥ 4.10 ETH (+120 pts)`` —
+    the only actionable number on the rail — under a clean ``SIGNALS`` title,
+    so a WP6 width sweep would have called 76 a fit."""
+    fits = await _rendered(
+        CuratorSignals, size=(SIGNALS_FULL_WIDTH, 24), **_signals_full()
+    )
+    assert "next ≥ 4.10 ETH (+120 pts)" in fits
+    assert "widen" not in fits
+
+    for width in (SIGNALS_FULL_WIDTH - 1, 78, 76):
+        cut = await _rendered(CuratorSignals, size=(width, 24), **_signals_full())
+        assert "next ≥ 4.10 ETH" not in cut, width
+        # ...and the rail never loses a part in silence.
+        assert "widen" in cut, width
+
+
 async def test_a_narrow_rail_drops_parts_from_the_end_and_says_so_when_starved():
     widget = CuratorSignals()
     app = _Harness(widget)
@@ -1112,23 +1262,97 @@ async def test_a_hostile_kind_or_address_renders_literally():
     assert "[/x]" in text
 
 
-@pytest.mark.parametrize(
-    "width,shed",
-    [(143, ""), (75, ""), (65, "credit wording"), (50, "credit + weight"),
-     (40, "credit, weight, tx"), (32, "kind, credit, weight, tx")],
-)
-async def test_narrow_feeds_announce_the_fields_they_shed(width, shed):
+def _widest_act_row() -> dict:
+    """The widest row the producer can emit, and a real one.
+
+    The 461.1 ETH deposit is the largest send in the 2026-08-16 captures and
+    it took the leaderboard's top wallet to 899.00 weight, so its delta cell
+    is ``(+461.10 credit → 899.00 wt)`` — 28 columns, where the *sample* row
+    in the module docstring is 24.  Every width assertion below measures
+    against this row: the tiers were sized against the sample, so the panel
+    clipped its own headline event dark at four widths and reported nothing.
+    """
+    return _act_row(
+        address="0x381fe4861234567890abcdef1234567890abCDEF",
+        amount_eth=461.1, credited_eth=461.1, new_weight=899.0, tx_count=12,
+    )
+
+
+async def _feed_at(width: int, rows) -> str:
     widget = CuratorActivity()
     app = _Harness(widget)
     async with app.run_test(size=(width, 12)) as pilot:
-        widget.update_data(activity_rows=_act_rows())
+        widget.update_data(activity_rows=rows)
         await pilot.pause()
-        text = _screen_text(app)
+        return _screen_text(app)
+
+
+@pytest.mark.parametrize(
+    "width,shed",
+    [(143, ""), (78, ""), (70, "credit wording"), (50, "credit + weight"),
+     (40, "credit, weight, tx"), (32, "kind, credit, weight, tx")],
+)
+async def test_narrow_feeds_announce_the_fields_they_shed(width, shed):
+    text = await _feed_at(width, _act_rows())
     assert "0x200e" in text          # the identifying cell never goes
     if shed:
         assert "widen" in text
     else:
         assert "widen" not in text
+
+
+@pytest.mark.parametrize(
+    "width,tail",
+    [(143, "(+461.10 credit → 899.00 wt)  tx#12"),
+     (77, "(+461.10 credit → 899.00 wt)  tx#12"),   # the full tier's floor
+     (67, "(+461.10 → 899.00)  tx#12"),             # compact's
+     (47, "461.10Ξ  tx#12"),                        # narrow's
+     (39, "461.10Ξ"),                               # minimal's
+     (32, "461.10Ξ")],                              # floor's
+)
+async def test_the_largest_captured_deposit_survives_every_tier_boundary(
+    width, tail
+):
+    """``RichLog`` is composed ``wrap=False``, so ``write()`` narrows an
+    over-wide line at write time with **no** ``…`` and nothing in the title.
+    A tier whose declared cost is under what its own row needs therefore
+    clips in perfect silence — which is the single failure the tiers exist to
+    prevent, and it is what a sweep run against the narrow sample row cannot
+    see.  Each width here is the narrowest terminal its tier claims to fit.
+    """
+    text = await _feed_at(width, [_widest_act_row()])
+    assert tail in text, width
+
+
+@pytest.mark.parametrize("width", (73, 74, 75, 76))
+async def test_the_widths_that_used_to_clip_the_whale_row_now_announce_it(width):
+    """The regression, pinned at the widths that had it.  ``FULL_WIDTH`` was
+    70 where this row needs 74, so 73-76 rendered the full layout and let
+    ``write()`` eat the ``tx#12`` — no ``…``, no marker, no way for a reader
+    to know the cell was there.  Now they drop to the compact tier and say
+    so."""
+    text = await _feed_at(width, [_widest_act_row()])
+    assert "widen" in text
+    assert "tx#12" in text            # the cell that used to be eaten
+
+
+def test_the_feeds_cells_are_sized_from_the_formatter_not_from_an_example():
+    """``COMPACT_ETH_COLS`` is measured off ``fmt_eth_compact`` itself, so a
+    cell cannot be sized to whichever row the author had on screen."""
+    from maxpane_dashboard.widgets.curator import activity as act_mod
+    from maxpane_dashboard.widgets.curator._fmt import (
+        COMPACT_ETH_COLS,
+        COMPACT_ETH_PROBE,
+    )
+
+    assert COMPACT_ETH_COLS == max(len(fmt_eth_compact(v))
+                                   for v in COMPACT_ETH_PROBE) == 6
+    # ...and it is not a universal bound; the probe is the contract's range.
+    assert len(fmt_eth_compact(999_999.0)) == 7
+    widest = _widest_act_row()
+    assert len(act_mod._delta_cell(widest, "full")) == act_mod._DELTA_COLS == 28
+    assert len(act_mod._delta_cell(widest, "compact")) <= act_mod._DELTA_SHORT_COLS
+    assert act_mod.FULL_WIDTH == 74
 
 
 # ===========================================================================
@@ -1232,6 +1456,49 @@ async def test_the_captured_fan_out_renders_as_its_shape():
     text = await _rendered(CuratorClusters, cluster_rows=_cluster_rows())
     assert "9× 60.00Ξ · 28 blocks" in text
     assert "69,705" in text and "12.4%" in text
+
+
+def test_the_pattern_cell_is_sized_to_the_shapes_the_fold_can_emit():
+    """The ``dev``/``ops`` lesson, in the direction that cuts.
+
+    ``_PATTERN_COLS`` was 21 — the width of the *one* captured example,
+    ``9× 60.00Ξ · 28 blocks``.  The fold emits any ``size`` from
+    ``CLUSTER_MIN_SIZE`` up to every wallet on THE LIST and any span up to
+    ``CLUSTER_MAX_BLOCK_SPAN``, so ten wallets is already 22 columns.  The
+    widget may not import ``analytics/``; this is the agreement half.
+    """
+    from maxpane_dashboard.analytics.curator_signals import (
+        CLUSTER_MAX_BLOCK_SPAN,
+        CLUSTER_MIN_SIZE,
+    )
+    from maxpane_dashboard.widgets.curator import clusters as cl_mod
+
+    assert cl_mod.MAX_BLOCK_SPAN == CLUSTER_MAX_BLOCK_SPAN
+    widest = {"size": 252, "amount_eth": 999.99, "first_block": 0,
+              "last_block": CLUSTER_MAX_BLOCK_SPAN, "points": 1,
+              "points_share_pct": 1.0}
+    assert len(cl_mod._row_values(widest, True)["pattern"]) <= cl_mod._PATTERN_COLS
+    assert (len(cl_mod._row_values(widest, False)["pattern"])
+            <= cl_mod._PATTERN_SHORT_COLS)
+    smallest = {**widest, "size": CLUSTER_MIN_SIZE, "amount_eth": 0.05,
+                "last_block": CLUSTER_MIN_SIZE}
+    assert len(cl_mod._row_values(smallest, True)["pattern"]) <= cl_mod._PATTERN_COLS
+
+
+@pytest.mark.parametrize("size,span", [(10, 32), (12, 32), (100, 32), (252, 28)])
+async def test_a_fan_out_wider_than_the_captured_one_is_not_cut_mid_word(
+    size, span
+):
+    """At 80 columns a twelve-wallet cluster used to read ``· 32 block`` —
+    the trailing ``s`` eaten by the ``DataTable``, on the panel's headline
+    value, at full width, with no ``‹ widen``.  Nine wallets fit, so the whole
+    suite was green over the one shape that did."""
+    rows = [{"size": size, "amount_eth": 60.0, "first_block": 0,
+             "last_block": span, "points": 69705, "points_share_pct": 12.4}]
+    text = await _rendered(CuratorClusters, cluster_rows=rows, clusters_count=1,
+                           size=(80, 14))
+    assert f"{size}× 60.00Ξ · {span} blocks" in text
+    assert "widen" not in text
 
 
 async def test_the_share_column_dashes_rather_than_claiming_zero():

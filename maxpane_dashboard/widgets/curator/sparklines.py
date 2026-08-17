@@ -47,6 +47,7 @@ from maxpane_dashboard.widgets.curator._fmt import (
     fmt_eth_compact,
     fmt_points,
 )
+from maxpane_dashboard.widgets.curator._table import WIDEN_HINT, title_with_hint
 from maxpane_dashboard.widgets.markup_safety import visible_len
 from maxpane_dashboard.widgets.sparkline_common import (
     SPARK_WIDTH,
@@ -62,8 +63,14 @@ SPARKLINES_TITLE = "TRENDS"
 #: from either a dead fold or a game one hour old (see the module docstring).
 WAITING = "waiting for data..."
 
-#: Marker appended to the title when even the narrowest line did not fit.
-WIDEN_HINT = "‹ widen"
+#: Marker appended to the title, naming what the row gave up.  The bar label
+#: has one of its own: it used to shed *silently* between 38 and 45 columns —
+#: the title stayed a bare ``TRENDS`` while ``· 5.00 ETH bar`` disappeared,
+#: which is the one thing this module's docstring says the volume line cannot
+#: mean anything without.  Both markers degrade to the bare
+#: ``_table.WIDEN_HINT`` when the title bar cannot carry the descriptive form.
+WIDEN_BAR = "‹ widen: bar"
+WIDEN_VALUE = "‹ widen: bar + value"
 
 #: Row labels, sized to the wider of the two.
 _LABELS = ("VOL/h", "WALLETS")
@@ -92,6 +99,10 @@ def _plan(width: int, tails: list[str]) -> tuple[int, bool, bool]:
     a reader learns once), then the spark shrinks to :data:`_MIN_SPARK`, then
     the trend value goes.  The row label never goes — a nameless sparkline is
     decoration.
+
+    Both losses are *announced* by the caller (:data:`WIDEN_BAR` /
+    :data:`WIDEN_VALUE`).  "A constant a reader learns once" is a reason to
+    shed the label first, never a reason to shed it quietly.
     """
     if width <= 0:
         return SPARK_WIDTH, True, True
@@ -184,6 +195,19 @@ class CuratorSparklines(Vertical):
 
     # -- rendering ---------------------------------------------------------
 
+    def _set_marker_fallback(self, placed: bool) -> None:
+        """Put the bare marker on the spacer line when the title cannot hold it.
+
+        The three ``DataTable`` panels use their note line for this; this one
+        has no note, so the blank line between the title and the two spark
+        rows carries it.  Going silent is not an option this codebase allows.
+        """
+        try:
+            spacer = self.query_one("#curator-spark-spacer", Static)
+        except Exception:
+            return
+        spacer.update("" if placed else f"[yellow]{WIDEN_HINT}[/]")
+
     def _render_view(self) -> None:
         try:
             volume_row = self.query_one("#curator-spark-volume", Static)
@@ -224,11 +248,17 @@ class CuratorSparklines(Vertical):
             _spark_row(_LABELS[1], data.get("contributors_series"), people_tail,
                        spark_cols)
         )
-        # The marker fires only when the value itself had to go: a shorter
-        # sparkline is a smaller window, not a hidden column, and a marker
-        # that is always on says nothing (the fwa_signals trap).
-        title.update(
-            f"{SPARKLINES_TITLE}  [yellow]{WIDEN_HINT}[/]"
-            if not keep_value
-            else SPARKLINES_TITLE
-        )
+        # The marker fires for **either** loss.  A shorter sparkline is still
+        # not one — it is a smaller window, not a hidden column, and a marker
+        # that is always on says nothing (the fwa_signals trap) — but the bar
+        # label and the trend value are columns, and a shed column that is
+        # not announced is indistinguishable from data that is not there.
+        if not keep_value:
+            hint = WIDEN_VALUE
+        elif not keep_suffix:
+            hint = WIDEN_BAR
+        else:
+            hint = ""
+        text, placed = title_with_hint(SPARKLINES_TITLE, hint, width)
+        title.update(text)
+        self._set_marker_fallback(placed or not hint)

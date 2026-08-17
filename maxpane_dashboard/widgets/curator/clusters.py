@@ -36,7 +36,7 @@ Width behaviour
 =========  ====  ==========================================
 Tier       Cost  Columns
 =========  ====  ==========================================
-full        42   PATTERN (with the block window) POINTS SHARE
+full        45   PATTERN (with the block window) POINTS SHARE
 compact     33   PATTERN POINTS SHARE
 minimal     23   PATTERN SHARE
 =========  ====  ==========================================
@@ -55,6 +55,7 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.curator._fmt import (
+    COMPACT_ETH_COLS,
     DASH,
     as_float,
     fmt_eth_compact,
@@ -81,16 +82,38 @@ CLUSTERS_EMPTY = "no fan-out patterns found"
 #: Rows rendered.
 MAX_ROWS = 8
 
-#: ``9× 60.00Ξ · 28 blocks`` measured; and the form without the window.
-_PATTERN_COLS = 21
-_PATTERN_SHORT_COLS = 12
+#: The producer's widest ``size``, in columns.  A cluster holds at least
+#: ``CLUSTER_MIN_SIZE`` (3) wallets and at most every wallet on THE LIST —
+#: 252 at capture time — so three digits is the vocabulary, not the nine of
+#: the one captured example.
+MAX_SIZE_COLS = 3
+
+#: ``CLUSTER_MAX_BLOCK_SPAN`` from ``analytics/curator_signals``, restated
+#: because widgets may not import ``analytics/``; the agreement is asserted
+#: from the test side, the ``_GAME_CYCLE`` pattern CLAUDE.md documents.  The
+#: fold cannot emit a wider window, so two digits is the whole vocabulary.
+MAX_BLOCK_SPAN = 32
+
+#: The pattern cell, **derived from what the fold can emit** rather than from
+#: the one captured row.
+#:
+#: This was a hand-typed 21, which is exactly ``9× 60.00Ξ · 28 blocks`` — the
+#: single captured example.  Ten wallets or more is 22, and ``DataTable`` cut
+#: it to ``· 32 block`` — the trailing ``s`` gone, mid-word, on the panel's
+#: headline value, at full width, with no ``‹ widen``.  That is the
+#: ``dev``/``ops`` defect in CLAUDE.md in the direction that cuts, and the
+#: fix is the same one: size the cell from the producer's vocabulary.
+_PATTERN_COLS = len(
+    f"{'9' * MAX_SIZE_COLS}× {'9' * COMPACT_ETH_COLS}Ξ · {MAX_BLOCK_SPAN} blocks"
+)                                                                          # 24
+_PATTERN_SHORT_COLS = len(f"{'9' * MAX_SIZE_COLS}× {'9' * COMPACT_ETH_COLS}Ξ")  # 12
 _POINTS_COLS = 8
 _SHARE_COLS = 7
 
 _TIERS = (
     (
         "full",
-        42,
+        45,
         (
             ("pattern", "PATTERN", _PATTERN_COLS),
             ("points", "POINTS", _POINTS_COLS),

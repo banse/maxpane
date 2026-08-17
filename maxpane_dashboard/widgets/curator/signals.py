@@ -46,8 +46,14 @@ Width behaviour
 Each row is a fixed head (glyph + padded label) and a value made of ``·``
 separated parts.  The head never shrinks — it is the row's identity.  Parts
 are dropped from the **end** when the value does not fit, and the title
-grows ``‹ widen`` only when a row was left with nothing but its head, which
-is the one loss a reader cannot see for themselves.
+grows ``‹ widen`` whenever **any** part was dropped from **any** row: a
+half-rendered row is not self-describing, and the widest row here is the one
+carrying the reader's own next move.
+
+The rail needs :data:`SIGNALS_FULL_WIDTH` columns to render every part of
+every row.  That number is the widest thing in this package and the one WP6
+budgets its slot grid against, so it is pinned by a test that measures it
+rather than by prose that remembers it.
 
 Primitives only — this module imports nothing from ``data/`` or ``analytics/``.
 """
@@ -70,6 +76,7 @@ from maxpane_dashboard.widgets.curator._fmt import (
     fmt_points,
     short_addr,
 )
+from maxpane_dashboard.widgets.curator.hero import PHASE_UNAVAILABLE, PHASES
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
 
 #: Panel title.  The hint is appended, never substituted.
@@ -122,12 +129,22 @@ SIGNAL_STATES = ("ok", "watch", "fired")
 
 #: Glyph and style per state.  The glyph is what carries the state in
 #: greyscale; the colour is redundant on purpose.
+#:
+#: Unknown had ``●`` — the **same** glyph as ``ok`` — so on the two rows that
+#: carry no "unknown" word (``at_risk`` during grace, and after settlement)
+#: colour really was the sole carrier, which this module's docstring promises
+#: it never is.  A hollow ``○`` is the honest one: unknown is the absence of
+#: the reading ``ok`` asserts, and it now reads as that in greyscale.
 _STATE_STYLE = {
     "fired": ("▶", "bold $error"),
     "watch": ("◐", "$warning"),
     "ok": ("●", "$success"),
-    None: ("●", "dim"),
+    None: ("○", "dim"),
 }
+
+#: The unknown glyph, named so tests and the screen assert it rather than
+#: retyping a character that is one code point from ``●``.
+UNKNOWN_GLYPH = _STATE_STYLE[None][0]
 
 #: Explicit never-fired / no-wallet copy, tested verbatim.
 NEVER_SAVED = "none yet"
@@ -138,6 +155,21 @@ NO_CLUSTERS = "no fan-out patterns"
 #: Head furniture: two leading spaces, the glyph, a space, the label cell and
 #: the two-column gap before the value.
 _HEAD_COLS = 2 + 1 + 1 + LABEL_COLS + 2
+
+#: Widget columns the rail needs for its widest row, ``padding: 0 1``
+#: included: :data:`_HEAD_COLS` + the 80-column YOU line's value + the two
+#: columns the rows' own padding takes.
+#:
+#: **A measurement, not a budget.**  It is data-dependent — the YOU row is
+#: widest with a rank, a score, a credit *and* a ``requiredNext`` — so it is
+#: measured against the state the payload is normally in, the way CLAUDE.md
+#: requires for the surf market panel.  The wp4 hand-off published **76**
+#: here, from a row that was never measured; at 76 the rail rendered by
+#: silently dropping ``next ≥ 4.10 ETH (+120 pts)``.
+#: ``test_the_rail_needs_the_width_it_publishes`` re-measures it from the
+#: builders and renders at it, so a copy edit that outgrows it fails here
+#: rather than on a reader's terminal.
+SIGNALS_FULL_WIDTH = 82
 
 
 def _state_of(value) -> str | None:
@@ -155,9 +187,17 @@ def _row(label: str, state, parts: list[str], width: int) -> tuple[str, bool]:
     """``(markup, starved)`` — the head plus as many parts as fit.
 
     Parts are dropped from the end, because they are written
-    most-important-first.  ``starved`` is True when *every* part had to go:
-    that is the only loss the reader cannot infer from what is left, and it
-    is what lights the title's marker.
+    most-important-first.  ``starved`` is True when **any** part had to go.
+
+    It used to be "when *every* part had to go", on the reasoning that a
+    half-row is legible on its own.  It is not: the YOU row's last part is
+    ``next ≥ 4.10 ETH (+120 pts)``, the only actionable number the rail
+    carries, and between 76 and 81 columns it vanished with the title still
+    reading a clean ``SIGNALS``.  A partially amputated row is
+    indistinguishable from a wallet the manager has no ``requiredNext`` for,
+    which is the exact confusion every explicit state in this package exists
+    to prevent — and a width sweep cannot catch it, because the rail "fits"
+    by amputating itself.
     """
     head = _head(label, state)
     usable = [p for p in parts if p]
@@ -170,7 +210,7 @@ def _row(label: str, state, parts: list[str], width: int) -> tuple[str, bool]:
             kept.pop()
     if not kept:
         return head, True
-    return f"{head}  {' · '.join(kept)}", False
+    return f"{head}  {' · '.join(kept)}", len(kept) < len(usable)
 
 
 # -- the seven builders --------------------------------------------------
@@ -203,6 +243,15 @@ def _at_risk_row(data: dict) -> tuple[str | None, list[str]]:
         # 0 needed during grace is REAL, and it is not "safe" -- the hour is
         # not judged yet.  Never blank, never green.
         return state, [f"n/a until hour {hour}"]
+    if phase not in PHASES:
+        # The arm this row was missing.  ``phase`` is None whenever
+        # ``isSettled()`` or the ``once`` tier failed, and the judged branch
+        # below reads ``ethNeededThisHour()``, which answers **0** all the
+        # way through grace -- so falling through to it rendered a green
+        # "hour is safe" for an hour nobody has judged.  The analytics layer
+        # answers ``(None, "phase unavailable")`` on the same input; the
+        # widget now agrees with it instead of contradicting it.
+        return None, [PHASE_UNAVAILABLE]
     needed = as_float(data.get("hour_needed_eth"))
     left = data.get("hour_seconds_left")
     if needed is None:

@@ -54,8 +54,8 @@ Width behaviour
 =========  ====  ================================================
 Tier       Cost  Row
 =========  ====  ================================================
-full        70   stamp kind addr amount (+credit → wt) tx
-compact     60   ...with the delta's words dropped: ``(+2.80 → 7.03)``
+full        74   stamp kind addr amount (+credit → wt) tx
+compact     64   ...with the delta's words dropped: ``(+2.80 → 7.03)``
 narrow      44   ...delta gone
 minimal     36   ...tx gone
 floor       27   ...kind gone
@@ -65,6 +65,14 @@ floor       27   ...kind gone
 over-wide line **at write time** with no ``…`` and nothing in the title — so
 ``wrap=False`` and a width tier are a package deal.  Every tier below the
 widest names what it shed in the panel title.
+
+**Every cost above is measured against the widest row the producer can
+emit, not against the example in this docstring.**  The two are not the
+same row: the sample line above is 68 columns and the captured 461.1 ETH
+whale is 74, so a tier sized to the sample clipped the whale dark at four
+widths where the panel reported no marker at all.  ``_DELTA_COLS`` and
+``AMOUNT_COLS`` are therefore derived from ``COMPACT_ETH_COLS``, which is
+itself measured off ``fmt_eth_compact``.
 
 Rich markup, not Textual markup: ``RichLog.write`` parses with Rich's own
 ``Text.from_markup``, which does not know Textual's ``$token`` extension and
@@ -80,6 +88,7 @@ from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.widgets.curator._fmt import (
     ADDR_COLS,
+    COMPACT_ETH_COLS,
     DASH,
     as_float,
     fmt_eth_compact,
@@ -111,8 +120,12 @@ STAMP_COLS = 5
 #: ``test_the_kind_cell_is_sized_to_the_vocabulary_its_producer_emits``.
 KIND_COLS = 7
 
-#: ``fmt_eth_compact``'s measured worst case (``999.99``) plus the Ξ.
-AMOUNT_COLS = 7
+#: ``fmt_eth_compact``'s measured worst case plus the Ξ.  ``COMPACT_ETH_COLS``
+#: is measured off the formatter over ``COMPACT_ETH_PROBE`` rather than
+#: remembered: this constant used to be a hand-typed 7 justified by
+#: "``999.99`` plus the Ξ", which happened to agree, while its two siblings
+#: below did not.
+AMOUNT_COLS = COMPACT_ETH_COLS + 1                                       # 7
 
 #: ``tx#999`` — the ladder is a per-wallet escalation count, not a global one.
 TX_COLS = 6
@@ -120,16 +133,27 @@ TX_COLS = 6
 #: Gap between two cells.
 _GAP = 2
 
-#: Widest delta form, ``(+461.10 credit → 899.00 wt)`` measured at the
-#: largest real send in the captures; and its wordless narrow form.
-_DELTA_COLS = 24
-_DELTA_SHORT_COLS = 14
+#: The delta cell, at both tiers, **derived from the formatter** rather than
+#: from an example row.
+#:
+#: These were 24 and 14, and 24 was documented as
+#: ``(+461.10 credit → 899.00 wt)`` "measured at the largest real send in the
+#: captures".  That literal is **28** columns; 24 is the width of the small
+#: example one line up in the docstring, ``(+2.80 credit → 7.03 wt)``.  The
+#: consequence was not a cosmetic four columns: ``FULL_WIDTH`` came out 70
+#: where the whale row needs 74, ``RichLog`` is composed ``wrap=False`` so
+#: ``write()`` narrows the line at write time with no ``…``, and the tier
+#: check said "full fits" — so the largest deposit the game has ever seen
+#: rendered with its ``tx#`` cut off and nothing in the title.  Building both
+#: widths out of ``COMPACT_ETH_COLS`` makes an example row unable to set them.
+_DELTA_COLS = len(f"(+{'9' * COMPACT_ETH_COLS} credit → {'9' * COMPACT_ETH_COLS} wt)")
+_DELTA_SHORT_COLS = len(f"(+{'9' * COMPACT_ETH_COLS} → {'9' * COMPACT_ETH_COLS})")
 
 FULL_WIDTH = (
     STAMP_COLS + _GAP + KIND_COLS + _GAP + ADDR_COLS + _GAP + AMOUNT_COLS
     + _GAP + _DELTA_COLS + _GAP + TX_COLS
-)                                                                        # 70
-COMPACT_WIDTH = FULL_WIDTH - (_DELTA_COLS - _DELTA_SHORT_COLS)           # 60
+)                                                                        # 74
+COMPACT_WIDTH = FULL_WIDTH - (_DELTA_COLS - _DELTA_SHORT_COLS)           # 64
 NARROW_WIDTH = COMPACT_WIDTH - _GAP - _DELTA_SHORT_COLS                  # 44
 MINIMAL_WIDTH = NARROW_WIDTH - _GAP - TX_COLS                            # 36
 FLOOR_WIDTH = MINIMAL_WIDTH - _GAP - KIND_COLS                           # 27

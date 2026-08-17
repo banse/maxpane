@@ -50,7 +50,9 @@ from .signals import (
     NO_WALLET,
     SIGNAL_KEYS,
     SIGNAL_LABELS,
+    SIGNALS_FULL_WIDTH,
     SIGNALS_TITLE,
+    UNKNOWN_GLYPH,
     CuratorSignals,
 )
 from .sparklines import SPARKLINES_TITLE, WAITING, CuratorSparklines
@@ -85,10 +87,12 @@ __all__ = [
     "NEVER_SAVED",
     "NO_JUDGED_HOURS",
     "NO_WALLET",
+    "SIGNALS_FULL_WIDTH",
     "SIGNALS_TITLE",
     "SIGNAL_KEYS",
     "SIGNAL_LABELS",
     "SPARKLINES_TITLE",
+    "UNKNOWN_GLYPH",
     "WAITING",
     "CuratorLeaderboard",
     "CuratorSignals",
