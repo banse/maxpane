@@ -676,3 +676,99 @@ def test_weight_added_is_total_over_missing_inputs() -> None:
     assert sig.weight_added(None, 19_975) is None
     assert sig.weight_added(10**18, None) is None
     assert sig.weight_added(-1, 19_975) is None
+
+
+# ===========================================================================
+# WP3.5 — credited_delta() and the cap case (H3)
+# ===========================================================================
+
+#: The grinder: 13 deposits from one address in the captured sweep, the longest
+#: escalation ladder on chain at capture time.
+GRINDER = "0xba76105002555307564e7b873369fd4f4fd61abb"
+
+
+def test_a_first_deposit_credits_its_whole_amount() -> None:
+    assert sig.credited_delta(5 * 10**16, 0, CREDIT_CAP) == 5 * 10**16
+
+
+def test_an_escalation_credits_only_the_increment() -> None:
+    """``_credit`` is high-water based: you are paid for beating your own
+    record, not for sending again."""
+    assert sig.credited_delta(3 * ETH, 1 * ETH, CREDIT_CAP) == 2 * ETH
+
+
+def test_a_deposit_below_the_high_water_credits_nothing_and_does_not_go_negative() -> None:
+    """The contract cannot reach this (``MustEscalate`` reverts first), which is
+    exactly why the fold must not produce a negative number if a log ever
+    arrives out of order."""
+    assert sig.credited_delta(1 * ETH, 3 * ETH, CREDIT_CAP) == 0
+
+
+def test_the_cap_truncates_both_ends() -> None:
+    """``min(amount, cap) - min(old, cap)``, and the ``min`` is on both sides:
+    a wallet crossing the cap is credited only up to it."""
+    assert sig.credited_delta(1500 * ETH, 0, CREDIT_CAP) == CREDIT_CAP
+    assert sig.credited_delta(1500 * ETH, 900 * ETH, CREDIT_CAP) == 100 * ETH
+
+
+def test_a_deposit_above_the_cap_from_a_wallet_already_at_it_credits_zero() -> None:
+    """H3.  Zero credit, zero weight — and the raw amount still counts in full
+    toward the hour's survival, which is the pair of consequences that makes
+    ``weight is proportional to volume`` false on this contract.
+    """
+    # SYNTHETIC — permanent: no >1000 ETH deposit exists on chain (the largest
+    # real send in the captures is 461.1 ETH against a 1000 ETH cap).
+    amount = 1200 * ETH
+    delta = sig.credited_delta(amount, CREDIT_CAP, CREDIT_CAP)
+    assert delta == 0
+    assert sig.weight_added(delta, 20_000) == 0
+    # The other half of the pair — the hour still banks the raw 1200 ETH — is
+    # asserted against the fold in
+    # ``test_a_cap_exceeding_deposit_still_fills_its_hour_in_full`` (WP3.7),
+    # which is where the hourly total is actually computed.
+
+
+def test_credit_telescopes_over_the_real_grinder_ladder(
+    deposits: list[DepositEvent],
+) -> None:
+    """13 deposits from one address: the credited deltas sum to the final
+    high-water mark, exactly, because ``amount`` *is* the new high-water."""
+    ladder = [d for d in deposits if d.contributor == GRINDER]
+    assert len(ladder) == 13
+    high_water = 0
+    total = 0
+    for step in ladder:
+        delta = sig.credited_delta(step.amount_wei, high_water, CREDIT_CAP)
+        assert delta == step.credited_delta_wei
+        total += delta
+        high_water = step.amount_wei
+    assert total == min(ladder[-1].amount_wei, CREDIT_CAP)
+
+
+def test_the_telescoping_identity_holds_for_every_captured_wallet(
+    deposits: list[DepositEvent],
+) -> None:
+    """All 145 of them, ladders and one-shots alike."""
+    per_wallet: dict[str, list[DepositEvent]] = defaultdict(list)
+    for ev in deposits:
+        per_wallet[ev.contributor].append(ev)
+    assert len(per_wallet) == 145
+    for address, ladder in per_wallet.items():
+        assert sum(e.credited_delta_wei for e in ladder) == min(
+            ladder[-1].amount_wei, CREDIT_CAP
+        ), address
+
+
+def test_credited_delta_is_total_over_missing_inputs() -> None:
+    assert sig.credited_delta(None, 0, CREDIT_CAP) is None
+    assert sig.credited_delta(ETH, None, CREDIT_CAP) is None
+    assert sig.credited_delta(ETH, 0, None) is None
+
+
+def test_nothing_in_this_module_divides_by_credited_delta() -> None:
+    """H3.  ``weight is proportional to volume`` is false on this contract, and
+    the tempting normalisation is a ZeroDivisionError waiting for the first
+    whale."""
+    src = inspect.getsource(sig)
+    assert "/ credited" not in src and "// credited" not in src
+    assert "/ delta" not in src and "// delta" not in src

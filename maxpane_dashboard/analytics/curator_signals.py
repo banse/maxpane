@@ -404,6 +404,33 @@ def weight_added(credited_delta_wei: int | None, early_bps: int | None) -> int |
     return delta * bps // _BPS
 
 
+def credited_delta(
+    amount_wei: int | None, old_high_water_wei: int | None, credit_cap_wei: int | None
+) -> int | None:
+    """``_credit``'s cap arithmetic: ``min(amount, cap) - min(old, cap)``, ≥ 0.
+
+    The ``min`` is on **both** ends, which is what makes the ladder telescope:
+    a wallet's lifetime credit is ``min(final high-water, cap)`` however many
+    escalations it took to get there, and ``amount`` *is* the new high-water by
+    construction.
+
+    Three answers are zero and none of them is a failure: a wallet already at
+    the cap, a re-send below the existing mark (which the contract rejects, but
+    an out-of-order log must not turn into a negative), and a first deposit of
+    nothing.  Nothing anywhere may divide by this value.
+    """
+    amount = _int_or_none(amount_wei)
+    old = _int_or_none(old_high_water_wei)
+    cap = _int_or_none(credit_cap_wei)
+    if amount is None or old is None or cap is None:
+        return None
+    if amount < 0 or old < 0 or cap < 0:
+        return None
+    capped_new = min(amount, cap)
+    capped_old = min(old, cap)
+    return capped_new - capped_old if capped_new > capped_old else 0
+
+
 __all__ = [
     # tunables
     "WHALE_MIN_ETH",
@@ -432,4 +459,5 @@ __all__ = [
     # curve
     "points_for_weight",
     "weight_added",
+    "credited_delta",
 ]
