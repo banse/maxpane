@@ -556,7 +556,30 @@ def _standing_state(payload: dict) -> dict:
         "linked_state": payload.get("you_linked_state"),
         "linked_reasons": payload.get("you_linked_reasons"),
         "linked_group_size": payload.get("you_linked_group_size"),
+        "clean_rank": payload.get("you_clean_rank"),
     }
+
+
+def _clean_rank_parts(clean_rank, state) -> list[str]:
+    """The ``clean`` line's value — the rank with the linked groups removed.
+
+    ``None`` carries **two** facts and the widget can only tell them apart by
+    the state beside it: WP3's contract makes a removed wallet's clean rank
+    ``None``, and so is the clean rank of every wallet before the sweep has
+    ever run.  "removed" is an answer; "-- unknown" is the absence of one, and
+    collapsing them is the FARM-row defect repeated on the reader's own line.
+
+    What it must never do is echo the raw rank.  Two identical numbers under
+    each other read as "the farms cost you nothing" — a finding, drawn from a
+    computation nobody performed.
+    """
+    if isinstance(clean_rank, int) and not isinstance(clean_rank, bool):
+        # `#47` alone is a second number with no relation to the first; the
+        # suffix is what makes the pair a sentence.
+        return [f"#{clean_rank:,} {CLEAN_RANK_SUFFIX}"]
+    if state == "linked":
+        return [CLEAN_RANK_REMOVED]
+    return [UNKNOWN_VALUE]
 
 
 def _standing_lines(data: dict) -> list[tuple]:
@@ -611,6 +634,11 @@ def _standing_lines(data: dict) -> list[tuple]:
 
     return [
         ("rank", [place]),
+        # Beside the raw rank and directly under it: PRD §6's "#412 raw, #47
+        # with clear farms removed" is one thought, and the gap between the
+        # two numbers is the whole of what it says.
+        ("clean", _clean_rank_parts(data.get("clean_rank"),
+                                    data.get("linked_state"))),
         ("score", score),
         ("banked", banked),
         ("share", share_parts),
@@ -642,6 +670,7 @@ class CuratorWalletStanding(_FactsPanel):
         you_linked_state=None,
         you_linked_reasons=None,
         you_linked_group_size=None,
+        you_clean_rank=None,
         **_kwargs,
     ) -> None:
         self._payload = _standing_state(
@@ -658,6 +687,7 @@ class CuratorWalletStanding(_FactsPanel):
                 "you_linked_state": you_linked_state,
                 "you_linked_reasons": you_linked_reasons,
                 "you_linked_group_size": you_linked_group_size,
+                "you_clean_rank": you_clean_rank,
             }
         )
         self._seen = True

@@ -2498,3 +2498,104 @@ async def test_a_nonsense_reasons_payload_costs_the_reasons_and_not_the_panel():
             **_standing_full())
         assert "1,995" in text, reasons
         assert "412" in text, reasons          # the rest of the panel survived
+
+
+# ===========================================================================
+# WP5.2 — CuratorWalletStanding: the clean-rank line
+#
+# PRD §6: "you're #412 raw, #47 with clear farms removed."  Beside the raw
+# rank, never instead of it -- the whole value of the number is the gap.
+# ===========================================================================
+
+
+def _facts_line(text: str, label: str) -> str:
+    """The one composited line of a facts panel that starts with ``label``.
+
+    The linkage lines are asserted against **their own line**, not against
+    the whole panel: "unknown" appears somewhere on this panel in three
+    different states, and a substring test over the panel would pass while
+    the wrong line carried it.
+    """
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(label):
+            return stripped
+    raise AssertionError(f"no {label!r} line rendered in:\n{text}")
+
+
+async def test_the_clean_rank_renders_beside_the_raw_rank():
+    from maxpane_dashboard.widgets.curator.wallet import CLEAN_RANK_SUFFIX
+
+    text = await _rendered(CuratorWalletStanding, you_clean_rank=47,
+                           you_linked_state="clean", you_linked_reasons=[],
+                           **_standing_full())
+    assert "412 of 10,643" in text                 # the raw rank survives
+    assert f"#47 {CLEAN_RANK_SUFFIX}" in text
+
+
+async def test_the_clean_rank_is_unknown_before_the_analysis_runs():
+    """``None`` with a raw rank in hand is "the sweep has not run", and the
+    one thing it must never do is echo the raw rank: two identical numbers
+    read as "the farms cost you nothing", which is a finding."""
+    from maxpane_dashboard.widgets.curator.wallet import CLEAN_RANK_SUFFIX
+
+    text = await _rendered(CuratorWalletStanding, you_clean_rank=None,
+                           you_linked_state=None, **_standing_full())
+    assert "412 of 10,643" in text
+    assert "unknown" in _facts_line(text, "clean")
+    assert f"#412 {CLEAN_RANK_SUFFIX}" not in text
+
+
+async def test_a_linked_reader_is_removed_rather_than_unknown():
+    """Both are ``you_clean_rank is None`` and they are different facts:
+    WP3's contract makes the removed wallets ``None``-for-removed, so the
+    widget tells the two apart by ``you_linked_state`` or not at all."""
+    from maxpane_dashboard.widgets.curator.wallet import (
+        CLEAN_RANK_REMOVED,
+        UNKNOWN_VALUE,
+    )
+
+    removed = _facts_line(
+        await _rendered(
+            CuratorWalletStanding, you_clean_rank=None,
+            you_linked_state="linked", you_linked_group_size=1995,
+            you_linked_reasons=["same funder"], **_standing_full()),
+        "clean",
+    )
+    unknown = _facts_line(
+        await _rendered(
+            CuratorWalletStanding, you_clean_rank=None,
+            you_linked_state=None, **_standing_full()),
+        "clean",
+    )
+    cleared = _facts_line(
+        await _rendered(
+            CuratorWalletStanding, you_clean_rank=None,
+            you_linked_state="clean", you_linked_reasons=[],
+            **_standing_full()),
+        "clean",
+    )
+
+    assert CLEAN_RANK_REMOVED in removed
+    assert "unknown" not in removed
+    assert UNKNOWN_VALUE in unknown
+    # Analyzed and clear, but no rank came back: still unknown, never
+    # "removed" -- this reader was not removed from anything.
+    assert UNKNOWN_VALUE in cleared
+    assert CLEAN_RANK_REMOVED not in cleared
+
+
+async def test_the_clean_rank_line_says_what_the_number_is_a_rank_in():
+    """A bare ``#47`` under a ``rank 412`` line is two numbers and no
+    relation.  The suffix is the only thing that makes the pair readable."""
+    from maxpane_dashboard.widgets.curator.wallet import CLEAN_RANK_SUFFIX
+
+    line = _facts_line(
+        await _rendered(CuratorWalletStanding, you_clean_rank=47,
+                        you_linked_state="clean", you_linked_reasons=[],
+                        **_standing_full()),
+        "clean",
+    )
+    assert CLEAN_RANK_SUFFIX in line
+    for word in ("sybil", "cheat", "fraud", "attack", "abuse", "wash"):
+        assert word not in line.lower(), word
