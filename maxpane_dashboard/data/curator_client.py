@@ -345,9 +345,10 @@ class CuratorClient(OwnedHttpClient):
         # (``state`` / ``logs`` / ``wallet``); this module renders nothing.
 
         #: ``fetch_state()`` failed in whole (returned ``None``) or in part (a
-        #: batch entry errored, so one field is ``None`` while the rest are
-        #: real).  Partial counts: a missing ``earlyMultiplierBps`` is a hole
-        #: the reader is entitled to see marked.
+        #: view errored, so one field is ``None`` while the rest are real).
+        #: Partial counts: a missing ``earlyMultiplierBps`` is a hole the reader
+        #: is entitled to see marked.  A missing **height** does not — the
+        #: height labels the reading and losing the label loses no reading.
         self.state_failed: bool = False
         #: ``fetch_config()``, same contract.  Separate from ``state_failed``
         #: because the ``once`` tier is read on a different schedule; the

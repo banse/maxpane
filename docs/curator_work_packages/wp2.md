@@ -59,7 +59,7 @@ failures.
 
 **Steps:**
 
-- [ ] Write the failing tests:
+- [x] Write the failing tests:
 
 ```python
 def test_the_client_sends_a_real_user_agent():
@@ -111,12 +111,12 @@ def test_no_module_level_string_looks_like_a_key():
         assert banned not in src, banned
 ```
 
-- [ ] Run: expect `ModuleNotFoundError`.
-- [ ] Write the skeleton. The module docstring states the two-pool rule, the UA hazard, and
+- [x] Run: expect `ModuleNotFoundError`.
+- [x] Write the skeleton. The module docstring states the two-pool rule, the UA hazard, and
       the "this contract has three legitimate zeros" rule with the three named.
-- [ ] Run to green.
-- [ ] **Prove it bites:** delete the UA from the header dict → `test_the_client_sends_a_real_user_agent` FAILS. Restore.
-- [ ] Commit: `feat(curator): client skeleton with two endpoint pools and a real User-Agent`
+- [x] Run to green.
+- [x] **Prove it bites:** delete the UA from the header dict → `test_the_client_sends_a_real_user_agent` FAILS. Restore.
+- [x] Commit: `feat(curator): client skeleton with two endpoint pools and a real User-Agent`
 
 ---
 
@@ -129,15 +129,15 @@ endpoint failed to serve the array).
 
 **Steps:**
 
-- [ ] Failing tests: id-alignment (a provider that returns the array **out of order** must
+- [x] Failing tests: id-alignment (a provider that returns the array **out of order** must
       still map correctly — the surf client maps by `id`, and a test shuffles the response);
       one errored entry → that slot `None` and the rest intact; a non-list reply → rotate; a
       `ENDPOINT_DEAD_CODES` status → rotate without retrying; a malformed-request error →
       short-circuit the whole chain (it fails identically everywhere).
-- [ ] Implement, mirroring `surf_client._rpc_state_batch`.
-- [ ] **Prove it bites:** change the errored-entry branch to write `0` instead of leaving
+- [x] Implement, mirroring `surf_client._rpc_state_batch`.
+- [x] **Prove it bites:** change the errored-entry branch to write `0` instead of leaving
       `None` → the "a failed leg is None" test FAILS. Restore.
-- [ ] Commit: `feat(curator): batched state RPC with per-entry None-never-zero semantics`
+- [x] Commit: `feat(curator): batched state RPC with per-entry None-never-zero semantics`
 
 ---
 
@@ -148,7 +148,7 @@ endpoint failed to serve the array).
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_a_routing_message_fails_over_even_though_its_code_is_reused():
@@ -178,14 +178,14 @@ def test_a_suggested_range_is_never_followed():
     assert len(windows) <= _LOG_MAX_SHRINKS + 1     # bounded, never a livelock
 ```
 
-- [ ] Implement, mirroring `surf_client._rpc_logs` — including classifying the JSON `error`
+- [x] Implement, mirroring `surf_client._rpc_logs` — including classifying the JSON `error`
       body **before** `raise_for_status`, because drpc wraps its shrinkable range cap in an
       HTTP 400 and status-first handling demotes the one recoverable error to an opaque
       transport failure.
-- [ ] **Prove it bites:** move the `_is_range_limitation` check after `raise_for_status` →
+- [x] **Prove it bites:** move the `_is_range_limitation` check after `raise_for_status` →
       `test_a_suggested_range_is_never_followed` FAILS (the range error becomes an
       `HTTPStatusError`). Restore.
-- [ ] Commit: `feat(curator): logs RPC with message-text classification and bounded shrinking`
+- [x] Commit: `feat(curator): logs RPC with message-text classification and bounded shrinking`
 
 ---
 
@@ -198,9 +198,9 @@ ten `once`-tier views).
 
 **Steps:**
 
-- [ ] Slice `tests/fixtures/curator/client/state_batch.json` out of
+- [x] Slice `tests/fixtures/curator/client/state_batch.json` out of
       `captures/batch.json` + `captures/results.json` — the full round, response order intact.
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_fetch_state_decodes_the_captured_round():
@@ -256,14 +256,14 @@ def test_a_dead_pool_returns_none_not_a_zeroed_state():
     assert asyncio.run(_client_all_endpoints_down().fetch_state()) is None
 ```
 
-- [ ] Implement. `fetch_config()` reads the eight immutables + `POINTS_PER_ETH` + `deployer()`
+- [x] Implement. `fetch_config()` reads the eight immutables + `POINTS_PER_ETH` + `deployer()`
       and **must not** fall back to any constant in `curator_addresses` — `CLAUDE.md` rule 4.
       A test asserts the module contains no literal `86400`, `3600`, `5000000000000000000`,
       `1000` used as a config value (a scan with the same shape as FWA's guardrail).
-- [ ] **Prove it bites:** swap two entries of `FAST_VIEW_SELECTORS` →
+- [x] **Prove it bites:** swap two entries of `FAST_VIEW_SELECTORS` →
       `test_the_batch_is_sent_in_the_frozen_order` FAILS **and** the decode test FAILS with
       two fields transposed. Restore.
-- [ ] Commit: `feat(curator): decode the fast view round and the immutable config`
+- [x] Commit: `feat(curator): decode the fast view round and the immutable config`
 
 ---
 
@@ -275,7 +275,7 @@ in one batch: `pointsOf`, `weightOf`, `contributedBy`, `txCountOf`, `firstHourOf
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_first_hour_of_un_shifts_and_reports_joined_separately():
@@ -306,8 +306,8 @@ def test_an_address_argument_is_left_padded_without_an_inner_0x():
     assert data.count("0x") == 1 and len(data) == 10 + 64
 ```
 
-- [ ] Implement using `evm_abi.encode_address`.
-- [ ] Commit: `feat(curator): per-wallet view batch with firstHourOf un-shifting`
+- [x] Implement using `evm_abi.encode_address`.
+- [x] Commit: `feat(curator): per-wallet view batch with firstHourOf un-shifting`
 
 ---
 
@@ -317,16 +317,16 @@ def test_an_address_argument_is_left_padded_without_an_inner_0x():
 
 **Steps:**
 
-- [ ] Failing tests: a `0x0` balance decodes to `0` (the **expected** state, not a failure);
+- [x] Failing tests: a `0x0` balance decodes to `0` (the **expected** state, not a failure);
       a nonzero balance decodes to the integer; a dead pool gives `None`. Plus a docstring
       test-by-assertion that the value is only ever surfaced as an anomaly:
       `test_the_balance_is_never_folded_into_a_volume` — the client exposes it as its own
       return, not as a `CuratorState` volume field.
-- [ ] Implement `eth_getBalance(CURATOR, "latest")` on the state pool. The docstring states
+- [x] Implement `eth_getBalance(CURATOR, "latest")` on the state pool. The docstring states
       H5: refunds happen in-transaction, so between transactions this balance is **always
       exactly zero**; any nonzero value is forced ETH (selfdestruct or a block builder naming
       the contract as fee recipient) and never a deposit.
-- [ ] Commit: `feat(curator): read the contract balance as the forced-ETH anomaly`
+- [x] Commit: `feat(curator): read the contract balance as the forced-ETH anomaly`
 
 ---
 
@@ -338,12 +338,12 @@ out-of-band `log_group_failed: dict[str, bool]` reset at the **start** of every 
 
 **Steps:**
 
-- [ ] Slice `tests/fixtures/curator/client/logs_full_sweep.json` from
+- [x] Slice `tests/fixtures/curator/client/logs_full_sweep.json` from
       `captures/tenderly_logs.json` (all 377 rows, untrimmed — the pagination and grouping are
       what is under test), plus `logs_empty.json` and `logs_settled_row.json`
       (**`# SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>`**, shape
       taken from the ABI).
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_the_full_history_sweep_groups_every_event():
@@ -389,11 +389,11 @@ def test_the_deposit_hour_comes_from_the_indexed_topic():
     assert int(sweep.deposits[0]["topics"][2], 16) >= 0
 ```
 
-- [ ] Implement. One `eth_getLogs` per topic0 (six filters) **or** one address-scoped filter
+- [x] Implement. One `eth_getLogs` per topic0 (six filters) **or** one address-scoped filter
       with a topic0 `OR` array and local grouping — measure which the endpoints accept and pick
       one; the research proved a single address-scoped sweep returns all 377 in one call, so
       prefer that and group locally, falling back to per-topic filters on a range error.
-- [ ] Commit: `feat(curator): group the six curator event types out of one address sweep`
+- [x] Commit: `feat(curator): group the six curator event types out of one address sweep`
 
 ---
 
@@ -409,15 +409,15 @@ source. Hour buckets need none — the hour is an indexed topic and its wall-clo
 
 **Steps:**
 
-- [ ] Failing tests: distinct blocks only (25 rows over 9 blocks → 9 calls); bounded by
+- [x] Failing tests: distinct blocks only (25 rows over 9 blocks → 9 calls); bounded by
       `MAX_TIMESTAMP_BLOCKS` (default 40 — the rendered activity window, not the whole
       history); a failed entry yields **no key** for that block rather than a 0; an empty input
       makes zero requests; the batch uses `eth_getBlockByNumber(block, false)` (no
       transactions).
-- [ ] Implement on the **state** pool (batched array, same machinery as WP2.2).
-- [ ] **Prove it bites:** make a failed entry write `0` → the "no key rather than a 0" test
+- [x] Implement on the **state** pool (batched array, same machinery as WP2.2).
+- [x] **Prove it bites:** make a failed entry write `0` → the "no key rather than a 0" test
       FAILS. Restore. (A `0` here renders `1970-01-01 00:00`, which looks like data.)
-- [ ] Commit: `feat(curator): bounded block-timestamp batch for the activity feed`
+- [x] Commit: `feat(curator): bounded block-timestamp batch for the activity feed`
 
 ---
 
@@ -429,14 +429,14 @@ source. Hour buckets need none — the hour is an indexed topic and its wall-clo
 
 **Steps:**
 
-- [ ] Slice all eight `captures/bs_page_*.json` into `tests/fixtures/curator/client/`.
-- [ ] Failing tests: pagination follows `next_page_params` until exhausted or `max_pages`;
+- [x] Slice all eight `captures/bs_page_*.json` into `tests/fixtures/curator/client/`.
+- [x] Failing tests: pagination follows `next_page_params` until exhausted or `max_pages`;
       hitting the bound with a cursor still present sets `blockscout_truncated`; the returned
       rows reconcile with the RPC sweep the way WP0.7 pinned (376 ⊂ 377, exactly one extra on
       the RPC side, explained by the two pulls being seconds apart); a 4xx returns `None`, not
       `[]` (an empty list would read as "the contract has no logs").
-- [ ] Implement with `_get_json`.
-- [ ] Commit: `feat(curator): Blockscout log pagination as the RPC sweep's cross-check`
+- [x] Implement with `_get_json`.
+- [x] Commit: `feat(curator): Blockscout log pagination as the RPC sweep's cross-check`
 
 ---
 
@@ -444,7 +444,7 @@ source. Hour buckets need none — the hour is an indexed topic and its wall-clo
 
 **Steps:**
 
-- [ ] Add the structural test the house requires:
+- [x] Add the structural test the house requires:
 
 ```python
 def test_no_client_method_opens_a_socket():
@@ -472,10 +472,10 @@ def test_the_module_builds_no_http_client_of_its_own():
     assert src.count("httpx.AsyncClient(") == 1     # only the constructor's
 ```
 
-- [ ] Add the truncation/degradation surface: `state_failed`, `logs_failed`,
+- [x] Add the truncation/degradation surface: `state_failed`, `logs_failed`,
       `wallet_failed`, `blockscout_truncated`, `log_group_failed` — all reset at the start of
       the call they describe, all documented as "true right now", never "true once, ever".
-- [ ] Commit: `test(curator): prove the client opens no socket and reports its own degradation`
+- [x] Commit: `test(curator): prove the client opens no socket and reports its own degradation`
 
 ---
 
@@ -483,15 +483,64 @@ def test_the_module_builds_no_http_client_of_its_own():
 
 **Steps:**
 
-- [ ] `close()` comes from `OwnedHttpClient`; add a test that an **injected** client is not
+- [x] `close()` comes from `OwnedHttpClient`; add a test that an **injected** client is not
       closed (it belongs to the caller) and an owned one is.
-- [ ] Run the whole file: `.venv/bin/python -m pytest tests/data/test_curator_client.py -v`
-- [ ] Run the full suite: `.venv/bin/python -m pytest -q` — nothing outside curator may move.
-- [ ] Write the hand-off note for WP5 (in the final commit body): the exact method signatures,
+- [x] Run the whole file: `.venv/bin/python -m pytest tests/data/test_curator_client.py -v`
+- [x] Run the full suite: `.venv/bin/python -m pytest -q` — nothing outside curator may move.
+- [x] Write the hand-off note for WP5 (in the final commit body): the exact method signatures,
       which return `None` vs a model vs a dict, the names and reset semantics of the six
       degradation flags, and the one thing WP5 must not assume — **`LogSweep`'s empty tuples
       are ambiguous without `log_group_failed`**.
-- [ ] Commit: `feat(curator): client lifecycle and the manager hand-off`
+- [x] Commit: `feat(curator): client lifecycle and the manager hand-off`
 
 **Done when:** every public coroutine is tested against a committed payload, no test opens a
 socket, and the degradation surface is documented for WP5.
+
+---
+
+## Landed 2026-08-17 — what differs from the instructions above
+
+All eleven tasks are implemented and committed; 95 tests in
+`tests/data/test_curator_client.py`, full suite green. Five places where the
+code deliberately differs from this file, each with the reason:
+
+1. **`test_no_client_method_opens_a_socket` (WP2.10) cannot hold as written.**
+   The sketch raises `AssertionError` in the handler and then asserts the call
+   *returned*. `httpx.MockTransport` does not wrap a handler exception and
+   `AssertionError` is caught by none of the client's `except` clauses, so it
+   propagates and the assertion is unreachable. Split into three: an
+   `httpx.ConnectError` transport proves degrade-to-`None`, the recorded
+   requests prove everything went through the injected transport, and
+   `test_the_module_builds_no_http_client_of_its_own` closes the `PriceClient`
+   hole. Paths that must issue *no* request keep the raising double.
+
+2. **A reorder of `FAST_VIEW_SELECTORS` does NOT break the decode.** WP2.4's
+   bite-proof predicts two transposed fields; verified in memory, only
+   `test_the_batch_is_sent_in_the_frozen_order` goes red. `_decode_round` keys
+   its output by selector *name* while indexing the reply by position, and the
+   reply was already re-aligned by `id`, so name and value travel together.
+   That is the safer arrangement and it stays — which is exactly why the order
+   test has to be **hand-typed** rather than derived from the tuple.
+
+3. **The big captures are read in place, not copied into
+   `tests/fixtures/curator/client/`.** WP2.7 and WP2.9 ask for slices of
+   `tenderly_logs.json` (328 KB) and the eight `bs_page_*.json` (790 KB); a
+   byte-for-byte copy is a second source of truth that can drift from a set the
+   brief declares read-only. `tests.curator_fixtures.capture()` reads them
+   where they live. `client/` holds only what does not exist on chain:
+   `state_batch.json` (a genuine 7 KB slice, requests+responses, correlated by
+   `id`), `logs_settled_row.json` (**SYNTHETIC**) and `logs_empty.json`.
+
+4. **231 Deposited rows, not 226** (WP2.7's snippet quotes the pre-correction
+   number). The test writes the arithmetic out — `1 + 231 + 145 == 377`.
+
+5. **`_get_logs_shrinking` does not copy `surf_client`'s shrink.** Surf raises
+   `fromBlock`, which is right for a rolling recent window and wrong for a
+   backfill: the blocks it walks past are this contract's whole early history.
+   This one narrows the right edge and re-issues the same cursor; two tests pin
+   that the covered block set is exactly the requested range.
+
+Also added beyond the brief: `config_failed` (the sixth degradation flag —
+WP2.10 lists five and WP2.11 promises six), a de-dupe on `(transactionHash,
+logIndex)` in the log grouping, and `fetch_wallet` rejecting an unusable
+address with zero requests.

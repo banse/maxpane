@@ -719,8 +719,14 @@ def test_a_clean_state_round_clears_the_degradation_flag() -> None:
 def test_a_failed_height_does_not_fail_the_state() -> None:
     """The height labels the reading; losing the label does not lose the
     reading, and a ``0`` height would read as genesis."""
-    st = _state(head=None)
+    client = _client(_view_handler(CAPTURED_ROUND, head=None))
+    st = asyncio.run(client.fetch_state())
     assert st.block_number is None and st.current_hour == 1
+    assert client.state_failed is False, (
+        "a missing height is not a missing reading — marking the whole state "
+        "degraded for it would light the warning on every refresh a fallback "
+        "endpoint answered"
+    )
 
 
 def test_a_dead_pool_returns_none_not_a_zeroed_state() -> None:
@@ -1590,3 +1596,45 @@ def test_each_flag_is_reset_at_the_start_of_the_call_it_describes(
     setattr(client, flag, True)
     asyncio.run(getattr(client, name)(*args))
     assert getattr(client, flag) is False, f"{name} left {flag} stale"
+
+
+# ===========================================================================
+# WP2.11 — lifecycle
+# ===========================================================================
+
+
+def test_an_injected_client_is_not_closed_by_us() -> None:
+    """It belongs to the caller.  Closing it is how one dashboard's refresh
+    tears down the HTTP client another dashboard is still using — the whole
+    reason ``OwnedHttpClient`` tracks ownership at all."""
+    injected = httpx.AsyncClient(transport=httpx.MockTransport(_rpc_ok("0x0")))
+    client = CuratorClient(http_client=injected)
+    assert client._owns_client is False
+    asyncio.run(client.close())
+    assert injected.is_closed is False
+    asyncio.run(injected.aclose())
+
+
+def test_a_client_we_built_is_closed() -> None:
+    client = CuratorClient()
+    assert client._owns_client is True
+    asyncio.run(client.close())
+    assert client._client.is_closed is True
+
+
+def test_the_context_manager_closes_only_what_it_owns() -> None:
+    async def owned() -> httpx.AsyncClient:
+        async with CuratorClient() as client:
+            return client._client
+
+    assert asyncio.run(owned()).is_closed is True
+
+    injected = httpx.AsyncClient(transport=httpx.MockTransport(_rpc_ok("0x0")))
+
+    async def borrowed() -> None:
+        async with CuratorClient(http_client=injected):
+            pass
+
+    asyncio.run(borrowed())
+    assert injected.is_closed is False
+    asyncio.run(injected.aclose())
