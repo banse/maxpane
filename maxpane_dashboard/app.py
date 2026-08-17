@@ -10,6 +10,7 @@ from textual.binding import Binding
 
 from maxpane_dashboard.data.base_manager import BaseManager
 from maxpane_dashboard.data.cattown_manager import CatTownManager
+from maxpane_dashboard.data.curator_manager import CuratorManager
 from maxpane_dashboard.data.dota_manager import DOTAManager
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
 from maxpane_dashboard.data.fwa_manager import FWAManager
@@ -21,6 +22,7 @@ from maxpane_dashboard.data.ttt_manager import TTTManager
 from maxpane_dashboard.screens.bakery import BakeryScreen
 from maxpane_dashboard.screens.base_terminal import BaseTerminalScreen
 from maxpane_dashboard.screens.cattown import CatTownScreen
+from maxpane_dashboard.screens.curator import CuratorScreen
 from maxpane_dashboard.screens.dota import DOTAScreen
 from maxpane_dashboard.screens.frenpet import FrenPetScreen
 from maxpane_dashboard.screens.frenpet_full import FrenPetFullScreen
@@ -102,6 +104,17 @@ class MaxPaneApp(App):
         self._ttt_manager = TTTManager(poll_interval=poll_interval)
         self._talismans_manager = TalismansManager(poll_interval=poll_interval)
         self._surf_manager = SurfManager(poll_interval=poll_interval)
+        # THE LIST's YOU row is wallet-scoped, so the curator manager is one of
+        # the few that takes the address.  It normalises with ``wallet or None``,
+        # so the empty string ``get_wallet()`` returns when nothing is
+        # configured is safe to pass straight through.  The screen is built
+        # later, in _launch_game, where this local is out of scope -- it reads
+        # the address back off ``self._curator_manager.wallet`` rather than the
+        # app keeping a second copy that could drift.
+        self._curator_manager = CuratorManager(
+            poll_interval=poll_interval,
+            wallet=wallet_address,
+        )
         # FWAManager builds its own market client with coingecko_min_spacing=6.0
         # (COINGECKO_MIN_SPACING); do not pass one in here.
         self._fwa_manager = FWAManager(poll_interval=poll_interval)
@@ -162,6 +175,7 @@ class MaxPaneApp(App):
             "ttt": self._ttt_manager,
             "talismans": self._talismans_manager,
             "surf": self._surf_manager,
+            "curator": self._curator_manager,
             "fwa": self._fwa_manager,
         }.get(game_id)
 
@@ -197,7 +211,16 @@ class MaxPaneApp(App):
     # temporarily hidden from cycling — code intact, restore by re-adding them.
     # "dota" is omitted: its game backend is NXDOMAIN. The manager, screen and
     # shutdown wiring below are intact so it can be restored by re-adding the id.
-    _GAME_CYCLE = ["surf", "fwa", "base", "frenpet", "cattown", "ttt", "talismans"]
+    _GAME_CYCLE = [
+        "surf",
+        "curator",
+        "fwa",
+        "base",
+        "frenpet",
+        "cattown",
+        "ttt",
+        "talismans",
+    ]
 
     def _launch_game(self, game_id: str, *, first: bool = False) -> None:
         """Install and switch to a game screen.
@@ -303,6 +326,17 @@ class MaxPaneApp(App):
                         name="surf",
                     ),
                     name="surf",
+                )
+        elif game_id == "curator":
+            if not self.is_screen_installed("curator"):
+                self.install_screen(
+                    CuratorScreen(
+                        self._curator_manager,
+                        self.poll_interval,
+                        name="curator",
+                        wallet=self._curator_manager.wallet,
+                    ),
+                    name="curator",
                 )
         else:
             return
@@ -459,4 +493,8 @@ class MaxPaneApp(App):
             await self._surf_manager.close()
         except Exception as exc:
             logger.warning("Error during surf shutdown: %s", exc)
+        try:
+            await self._curator_manager.close()
+        except Exception as exc:
+            logger.warning("Error during curator shutdown: %s", exc)
         self.exit()
