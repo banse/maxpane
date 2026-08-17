@@ -82,6 +82,15 @@ USER_AGENT = "maxpane-capture/1.0 (+https://pypi.org/project/maxpane)"
 TIMEOUT_SECONDS = 20
 RETRY_BACKOFF_SECONDS = (1.0, 3.0)  # two retries, in this order
 
+#: How far a wall-clock ``--start-at`` may sit in the past and still mean
+#: "start now" rather than "the same time tomorrow".  Typing
+#: ``--start-at 20:57:00`` at 20:57:30 is the *normal* way a timed window gets
+#: run, and reading those thirty seconds as an 86 370-second wait is how the
+#: settlement capture would be lost -- silently, behind one line of stderr.
+#: Six hours is far wider than any lateness a runbook produces and far narrower
+#: than a genuine "tomorrow at this time".
+PAST_START_GRACE_SECONDS = 6 * 3600
+
 #: How many of the newest logs get their block timestamp resolved.  Tenderly's
 #: ``eth_getLogs`` carries no ``blockTimestamp`` and Blockscout's log items do
 #: not either, so the activity feed's HH:MM has to come from a bounded
@@ -556,6 +565,29 @@ def load_selectors(batch_path: str = BATCH_FIXTURE):
     return [sel for sel, _ in VIEWS], "inlined"
 
 
+def _batch_entry(by_id: dict, call_id: int, *, url: str, errors: list, stage: str):
+    """The response for *call_id*, or ``(None, message)`` with the miss recorded.
+
+    A batch answered HTTP 200 with **fewer items than calls**, or with the ids
+    renumbered, is the one shape that can otherwise write ``result: None`` for
+    every view while ``errors`` stays empty -- an archived bundle asserting a
+    clean capture that never happened.  A 403 is loud; a short batch was
+    silent.  An unanswered id is a failure like any other, and so is a
+    ``{"jsonrpc": "2.0", "id": 3}`` carrying neither ``result`` nor ``error``.
+    """
+    item = by_id.get(call_id)
+    if item is None:
+        message = f"no response for id {call_id} in the batch"
+    else:
+        message = _rpc_error_text(item)
+        if not message and "result" not in item:
+            message = f"no result for id {call_id} in the batch"
+        if not message:
+            return item, ""
+    errors.append({"stage": stage, "url": url, "message": message})
+    return None, message
+
+
 def fetch_state(selectors, *, url: str = STATE_URL, errors: list, **kw):
     """One batched ``eth_call`` round over the parameterless views."""
     calls = [
@@ -575,12 +607,12 @@ def fetch_state(selectors, *, url: str = STATE_URL, errors: list, **kw):
         return state
     by_id = {item.get("id"): item for item in responses}
     for index, sel in enumerate(selectors):
-        item = by_id.get(index + 1, {})
         entry = {"name": SELECTOR_NAMES.get(sel, "unknown()")}
-        error = _rpc_error_text(item)
+        item, error = _batch_entry(
+            by_id, index + 1, url=url, errors=errors, stage=f"state {sel}"
+        )
         if error:
             entry["error"] = error
-            errors.append({"stage": f"state {sel}", "url": url, "message": error})
         else:
             entry["result"] = item.get("result")
         state[sel] = entry
@@ -662,7 +694,15 @@ def _sweep(url: str, from_block: int, to_block, *, errors: list, depth: int = 0,
             second = _sweep(url, middle + 1, to_block, errors=errors, depth=depth + 1, **kw)
             return first + second
         raise
-    return result if isinstance(result, list) else []
+    if not isinstance(result, list):
+        # Same silence as a short batch: a 200 with no ``result`` array used to
+        # become ``logs: []`` with an empty ``errors`` list and an endpoint
+        # named as though it had answered.  An empty sweep is a real state --
+        # an unreadable one is not, and the other host may still know.
+        raise CaptureError(
+            f"eth_getLogs answered 200 with {type(result).__name__}, not a list", url=url
+        )
+    return result
 
 
 def fetch_block_timestamps(logs, *, url: str = STATE_URL, errors: list,
@@ -699,14 +739,20 @@ def fetch_block_timestamps(logs, *, url: str = STATE_URL, errors: list,
         return stamps
     by_id = {item.get("id"): item for item in responses}
     for index, number in enumerate(blocks):
-        item = by_id.get(index + 1, {})
-        error = _rpc_error_text(item)
+        item, error = _batch_entry(
+            by_id, index + 1, url=url, errors=errors, stage=f"block {number}"
+        )
         if error:
-            errors.append({"stage": f"block {number}", "url": url, "message": error})
             continue
         block = item.get("result")
         if isinstance(block, dict) and isinstance(block.get("timestamp"), str):
             stamps[number] = block["timestamp"]
+        else:
+            # The map stays sparse -- a missing stamp renders ``--:--`` and a
+            # zero would render 00:00 -- but the gap is stated, not implied by
+            # a key that is simply absent.
+            errors.append({"stage": f"block {number}", "url": url,
+                           "message": f"no timestamp in the header for block {number}"})
     return stamps
 
 
@@ -765,15 +811,15 @@ def fetch_curve_probe(*, url: str = STATE_URL, errors: list,
         return probe
     by_id = {item.get("id"): item for item in responses}
     for bucket, call_id, signature, sel, argument, note in plan:
-        item = by_id.get(call_id, {})
         entry = {"name": signature, "selector": sel, "argument": argument}
         if note:
             entry["note"] = note
-        error = _rpc_error_text(item)
+        item, error = _batch_entry(
+            by_id, call_id, url=url, errors=errors,
+            stage=f"curve {signature}({argument})",
+        )
         if error:
             entry["error"] = error
-            errors.append({"stage": f"curve {signature}({argument})", "url": url,
-                           "message": error})
         else:
             entry["result"] = item.get("result")
         probe[bucket].append(entry)
@@ -1012,8 +1058,22 @@ def next_hour_boundary(now: float, launch: int = LAUNCH_TIME, hour: int = 3600) 
 def parse_start_at(value: str, now: float) -> int:
     """``HH:MM:SS`` (UTC), ``@EPOCH``, or ``boundary`` -> an epoch second.
 
-    ``HH:MM:SS`` means the next such instant: today if it is still ahead,
-    tomorrow otherwise.  Nobody typing at 20:57 wants yesterday.
+    ``HH:MM:SS`` resolves to the instant with that wall-clock time inside the
+    window ``[now - PAST_START_GRACE_SECONDS, now + 24 h - grace)`` -- the next
+    such instant, **except** that one which has only just gone stays in the
+    past, and the caller then starts immediately (``wait_until`` returns at
+    once for a target behind it).
+
+    This is not a nicety.  The rule it replaces was "today if still ahead,
+    tomorrow otherwise", which turned a command fired one second late into a
+    ~24-hour wait: ``parse_start_at("20:57:00", 20:57:30Z)`` resolved to
+    *tomorrow's* 20:57:00, printed one line of stderr and blocked for 86 370
+    seconds.  The settlement transition happens once, at 20:58:47 UTC, with no
+    transaction and no log; an operator eight seconds late must still capture
+    it.  Only a time more than six hours behind is read as tomorrow's, and the
+    mirror case -- a time that has just gone as midnight passed, so today's
+    copy of it is nearly a day ahead -- is pulled back to yesterday's for the
+    same reason.
     """
     text = value.strip()
     if text == "boundary":
@@ -1027,7 +1087,12 @@ def parse_start_at(value: str, now: float) -> int:
     second = int(parts[2]) if len(parts) == 3 else 0
     midnight = int(now) - int(now) % 86400
     target = midnight + hour * 3600 + minute * 60 + second
-    return target if target > now else target + 86400
+    earliest = int(now) - PAST_START_GRACE_SECONDS
+    while target < earliest:
+        target += 86400
+    while target - 86400 >= earliest:
+        target -= 86400
+    return target
 
 
 def wait_until(target: float, *, now=time.time, sleeper=time.sleep, tick: float = 1.0) -> None:
@@ -1068,7 +1133,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="where bundles and MANIFEST.md are written")
     parser.add_argument("--start-at", metavar="HH:MM:SS",
                         help="wait for this UTC instant before the first capture; also "
-                             "accepts @EPOCH, or 'boundary' for the next launchTime+N*3600")
+                             "accepts @EPOCH, or 'boundary' for the next launchTime+N*3600. "
+                             "An instant that has already gone (by up to 6 h) captures "
+                             "immediately and says so — being late never costs a window")
     parser.add_argument("--every", type=float, default=0.0, metavar="SECONDS",
                         help="seconds between captures when --repeat is above 1")
     parser.add_argument("--repeat", type=int, default=1, metavar="N",
@@ -1084,6 +1151,11 @@ def run_series(args, *, opener=urllib_opener, now=time.time, sleeper=time.sleep,
     with a stopwatch: ``--start-at 20:58:20 --every 5 --repeat 30``.  Slots are
     computed from the start instant, not from the previous capture, so a slow
     round trip does not walk the schedule off the boundary.
+
+    A start instant that has **already gone** never waits: it says so on
+    stderr and captures immediately, re-anchoring the grid to the real start so
+    that a late operator still gets every capture asked for rather than
+    spending the first few slots on time that is already behind them.
     """
     # Resolved per call, not bound at import: pytest's capture swaps the
     # streams after this module is loaded.
@@ -1092,9 +1164,18 @@ def run_series(args, *, opener=urllib_opener, now=time.time, sleeper=time.sleep,
 
     start = now()
     if args.start_at:
-        start = parse_start_at(args.start_at, start)
-        print(f"waiting until {utc_stamp(start)} ({int(start - now())} s)", file=err)
-        wait_until(start, now=now, sleeper=sleeper)
+        target = parse_start_at(args.start_at, start)
+        late = start - target
+        if late > 0:
+            print(
+                f"start instant {utc_stamp(target)} passed {int(late)} s ago "
+                f"— capturing now",
+                file=err,
+            )
+        else:
+            print(f"waiting until {utc_stamp(target)} ({int(target - start)} s)", file=err)
+            wait_until(target, now=now, sleeper=sleeper)
+            start = target
 
     for index in range(max(1, args.repeat)):
         if index:

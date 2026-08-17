@@ -303,6 +303,93 @@ def test_one_reverting_view_does_not_lose_the_other_twenty():
     assert len(errors) == 1 and errors[0]["url"] == cap.STATE_URL
 
 
+def test_a_short_batch_is_recorded_as_an_error_not_as_a_silent_none():
+    # The one path that could write a genuinely silent empty bundle: HTTP 200
+    # with fewer items than calls.  Every view came back `result: None` while
+    # `errors` stayed `[]`, so the archived bundle asserted a clean capture
+    # that never happened -- and the manifest row said `err = 0` with every
+    # decoded column `?`.  A 403 was loud; this was not.
+    selectors = ["0x3270bb5b", "0x020e185d", "0xd8631b3d"]
+    opener = Recorder({cap.STATE_URL: [{"jsonrpc": "2.0", "id": 2, "result": WORD_ONE}]})
+    errors = []
+    state = cap.fetch_state(selectors, errors=errors, opener=opener, sleeper=_no_sleep)
+    assert state["0x020e185d"]["result"] == WORD_ONE, "the answered view survives"
+    assert "result" not in state["0x3270bb5b"]
+    assert "no response for id 1" in state["0x3270bb5b"]["error"]
+    assert "no response for id 3" in state["0xd8631b3d"]["error"]
+    assert [error["stage"] for error in errors] == ["state 0x3270bb5b", "state 0xd8631b3d"]
+    assert all(error["url"] == cap.STATE_URL for error in errors)
+
+
+def test_a_response_carrying_neither_result_nor_error_is_a_miss_too():
+    # A renumbered or truncated item is one shape; `{"jsonrpc": .., "id": 1}`
+    # is the other, and it reaches the same `result: None`.
+    opener = Recorder({cap.STATE_URL: [{"jsonrpc": "2.0", "id": 1}]})
+    errors = []
+    state = cap.fetch_state(["0x3270bb5b"], errors=errors, opener=opener, sleeper=_no_sleep)
+    assert "result" not in state["0x3270bb5b"]
+    assert "no result for id 1" in state["0x3270bb5b"]["error"]
+    assert len(errors) == 1
+
+
+def test_an_unanswered_block_and_an_unstamped_header_both_reach_the_error_list():
+    logs = [{"blockNumber": "0x10"}, {"blockNumber": "0x11"}]
+    opener = Recorder({cap.STATE_URL: [{"jsonrpc": "2.0", "id": 2, "result": None}]})
+    errors = []
+    stamps = cap.fetch_block_timestamps(logs, errors=errors, opener=opener, sleeper=_no_sleep)
+    assert stamps == {}, "still sparse -- a missing stamp renders --:--, never 00:00"
+    assert "no response for id 1" in errors[0]["message"]
+    assert "no timestamp" in errors[1]["message"], "a null block is a gap, not a silence"
+    assert len(errors) == 2
+
+
+def test_a_short_curve_batch_names_the_call_that_went_unanswered():
+    weights = (0, 10**18)
+    wallets = (("0x" + "11" * 20, "a wallet"),)
+    opener = Recorder({cap.STATE_URL: [{"jsonrpc": "2.0", "id": 1, "result": WORD_ZERO}]})
+    errors = []
+    probe = cap.fetch_curve_probe(
+        errors=errors, weights=weights, wallets=wallets, opener=opener, sleeper=_no_sleep,
+    )
+    assert probe["weights"][0]["result"] == WORD_ZERO
+    assert "no response for id 2" in probe["weights"][1]["error"]
+    assert len(errors) == 3, "one unanswered previewPoints, one pointsOf, one weightOf"
+    assert errors[0]["stage"] == f"curve previewPoints(uint256)({10**18})"
+
+
+def test_a_bundle_from_a_short_batch_does_not_claim_a_clean_capture():
+    # `errors: []` in a committed archive is a claim.  It has to be true.
+    opener = _full_transport()
+    opener.answers[cap.STATE_URL] = lambda payload: (
+        [] if isinstance(payload, list) else _ok("0x189378e")
+    )
+    bundle = cap.capture(label="settlement", skip_logs=True, skip_blockscout=True,
+                         opener=opener, now=1787000000, sleeper=_no_sleep)
+    assert len(bundle["state"]) == 21
+    assert bundle["errors"], "21 unanswered views must not archive as a clean bundle"
+    assert cap.summarise(bundle)["views_answered"] == 0
+    assert "21 error(s)" in cap.summary_line(bundle)
+    assert cap.manifest_row("x.json", bundle).endswith("| 21 |\n"), "the err column bites"
+
+
+def test_a_log_pool_answering_200_with_no_array_fails_over_rather_than_reading_empty():
+    # `logs: []` is a real state (a fresh contract); an unreadable answer is
+    # not, and it used to become one, with `logs_endpoint` naming the host that
+    # never actually answered.
+    opener = Recorder({
+        cap.LOGS_URL: {"jsonrpc": "2.0", "id": 1},
+        cap.LOGS_FALLBACK_URL: _ok([{"blockNumber": "0x1", "topics": []}]),
+    })
+    errors = []
+    logs, endpoint = cap.fetch_logs(
+        cap.DEPLOY_BLOCK, to_block=cap.DEPLOY_BLOCK + 10, errors=errors,
+        opener=opener, sleeper=_no_sleep,
+    )
+    assert endpoint == cap.LOGS_FALLBACK_URL
+    assert len(logs) == 1
+    assert "not a list" in errors[0]["message"]
+
+
 def test_the_log_sweep_fails_over_to_the_second_host_on_a_routing_message():
     # drpc answers -32602 for "can't route", and tenderly answers -32602 for a
     # range complaint.  The code is worthless; the words decide.  H10.
@@ -636,16 +723,59 @@ def test_the_next_boundary_is_derived_from_launch_time():
     assert cap.next_hour_boundary(launch + 24 * 3600 + 5) == launch + 25 * 3600
 
 
-def test_a_wall_clock_start_never_resolves_into_the_past():
+def _utc(text):
+    """``"2026-08-17 20:57:30"`` -> an epoch second, UTC, no tz database."""
+    import calendar
+    import time as _time
+
+    return calendar.timegm(_time.strptime(text, "%Y-%m-%d %H:%M:%S"))
+
+
+def test_a_wall_clock_start_still_ahead_is_todays_instant():
     now = 1786910327  # 2026-08-16 19:58:47 UTC
+    assert _utc("2026-08-16 19:58:47") == now
     assert cap.parse_start_at("20:58:20", now) == now + 3573
-    # Already gone today -> the same time tomorrow, never behind the operator.
-    assert cap.parse_start_at("19:00:00", now) > now
-    assert cap.parse_start_at("19:00:00", now) - now == 86400 - 3527
     assert cap.parse_start_at("@1787000000", now) == 1787000000
     assert cap.parse_start_at("boundary", now) == now + 3600
     with pytest.raises(ValueError):
         cap.parse_start_at("tea time", now)
+
+
+def test_a_start_instant_that_has_just_gone_means_now_not_tomorrow():
+    # The most expensive bug this rig could have had.  The runbook says to type
+    # `--start-at 20:57:00` at 20:57 and `--start-at 19:58:52` at 19:58; firing
+    # either one second late used to resolve to the SAME TIME TOMORROW, print
+    # one line of stderr and block for ~86 400 s.  The settlement transition
+    # happens once, at 20:58:47 UTC, with no transaction and no log.
+    for target, wall, missed_by in (
+        ("20:57:00", "2026-08-17 20:57:30", 30),      # capture C, 30 s late
+        ("19:58:52", "2026-08-17 19:59:10", 18),      # capture B, 18 s late
+        ("20:00:00", "2026-08-17 20:01:00", 60),      # the deficit poll
+        ("22:58:22", "2026-08-17 23:00:00", 98),      # an hour-boundary sweep
+    ):
+        now = _utc(wall)
+        resolved = cap.parse_start_at(target, now)
+        assert now - resolved == missed_by, f"{target} typed at {wall}"
+        assert resolved < now + 60, "a missed start must never arm a day-long wait"
+
+
+def test_only_a_time_hours_behind_is_read_as_tomorrows():
+    # The rollover is still there for the case it was written for: a time far
+    # enough back to be nobody's "I am a bit late".
+    now = _utc("2026-08-17 20:00:00")
+    assert cap.parse_start_at("19:00:00", now) == now - 3600      # an hour ago -> now
+    assert cap.parse_start_at("13:59:59", now) == now - 21601 + 86400  # 6 h 0 m 1 s -> tomorrow
+    assert cap.parse_start_at("14:00:01", now) == now - 21599     # 5 h 59 m 59 s -> now
+    assert cap.PAST_START_GRACE_SECONDS == 6 * 3600
+
+
+def test_a_start_that_went_as_midnight_passed_is_not_a_day_away():
+    # The mirror of the same bug: the crossings are at HH:58:47, so 23:58:22 is
+    # a real sweep instant.  Typed 98 s late, "today's 23:58:22" is 23 h 58 m
+    # AHEAD -- which is the day-long wait wearing a different hat.
+    now = _utc("2026-08-18 00:00:00")
+    assert cap.parse_start_at("23:58:22", now) == _utc("2026-08-17 23:58:22")
+    assert cap.parse_start_at("23:58:22", now) < now
 
 
 def test_waiting_sleeps_in_small_steps_and_returns_at_the_instant():
@@ -723,6 +853,36 @@ def test_a_sweep_waits_for_its_start_instant_before_the_first_capture(capsys):
     cap.run_series(args, opener=opener, now=lambda: clock["t"], sleeper=sleeper)
     assert clock["t"] >= 1786910327 + 3573
     assert "waiting until 2026-08-16T20:58:20Z" in capsys.readouterr().err
+
+
+def test_a_sweep_fired_late_captures_now_and_still_takes_every_capture(capsys):
+    # 20:57:30 on settlement night, typing the runbook's own command thirty
+    # seconds late.  It must capture immediately and say so -- not arm a
+    # 86 370-second wait behind one line of stderr and lose the transition.
+    clock = {"t": float(_utc("2026-08-17 20:57:30"))}
+
+    def sleeper(seconds):
+        clock["t"] += seconds
+
+    def opener(url, body, headers, timeout):
+        payload = json.loads(body.decode())
+        if isinstance(payload, list):
+            return 200, json.dumps(_batch_ok([WORD_ZERO] * len(payload))).encode()
+        return 200, json.dumps(_ok("0x1")).encode()
+
+    args = _Args()
+    args.label, args.start_at = "settlement", "20:57:00"
+    args.every, args.repeat = 4.0, 3
+    cap.run_series(args, opener=opener, now=lambda: clock["t"], sleeper=sleeper)
+
+    captured = capsys.readouterr()
+    assert len([line for line in captured.out.splitlines() if line]) == 3
+    assert "passed 30 s ago" in captured.err
+    assert "20:57:00Z" in captured.err
+    # The grid re-anchors to the real start, so the whole sweep is 8 s of
+    # spacing -- and nothing anywhere near a day.
+    assert clock["t"] == pytest.approx(_utc("2026-08-17 20:57:30") + 8.0)
+    assert clock["t"] < _utc("2026-08-17 20:58:47"), "still ahead of the boundary"
 
 
 # --------------------------------------------------------------------------

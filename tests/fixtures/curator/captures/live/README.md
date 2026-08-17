@@ -52,6 +52,18 @@ the client will see.
 | `curve_probe` | present only with `--curve-probe`: `previewPoints(uint256)` over 12 weights, `pointsOf`/`weightOf` over 4 real wallets |
 | `errors` | every failure, with stage, URL and message. **A partial bundle is still committed** — three sections beat no bundle at the only instant it could have been taken |
 
+`errors: []` is a **claim**, and as of 2026-08-17 it is a true one. A batch answered HTTP 200
+with items missing or renumbered used to write `result: null` for every unanswered view and
+append nothing, so an archived bundle asserted a clean capture that never happened and its
+manifest row read `err = 0` with every decoded column `?`. A 403 was loud; a short batch was
+not. Each unanswered id is now an error of its own (`no response for id 7 in the batch`), as is
+a `result`-less item, a block header with no timestamp, and an `eth_getLogs` that answers 200
+with something other than an array — that last one used to become `logs: []` with the host
+named as though it had answered, instead of failing over to the other pool. Read the `err`
+column of `MANIFEST.md` before trusting a row's blanks: `?` with `err = 0` means the view
+honestly had nothing to say, `?` with `err > 0` means the capture is partial and the bundle
+names why.
+
 `selector_source` says whether the 21 selectors came from the committed `batch.json` (the list
 that actually answered 21/21 on publicnode) or from the script's inlined fallback copy.
 
@@ -117,6 +129,27 @@ python3 scripts/capture_curator_state.py --label hour-boundary \
 
 Keep polling for at least 30 s past the boundary: `eth_call` runs against the latest *block*,
 so `currentHour()` flips up to a block late and `timeLeftInHour()` steps in 12-second jumps.
+
+### `--start-at`, and what happens when you are late
+
+Three forms, all UTC: `HH:MM:SS`, `@<epoch>`, and `boundary` (the next `launchTime + N*3600`,
+i.e. the next `HH:58:47` — derived from `launchTime`, not from the wall clock).
+
+**Being late never costs a window.** An `HH:MM:SS` that has already gone by up to six hours
+means *start now*: the script prints `start instant 20:57:00Z passed 30 s ago — capturing now`
+and fires immediately, then spaces the remaining `--repeat` captures by `--every` from that
+real start. Only a time more than six hours behind is read as tomorrow's, and a time that went
+by as midnight passed is read as yesterday's rather than as a wait of nearly a day.
+
+That is a fix, not a description of how it always behaved: until 2026-08-17 a start instant
+one second in the past resolved to *the same time tomorrow*, printed one line of stderr and
+blocked for ~86 400 s. Firing the settlement command a few seconds late would have lost
+capture C forever — the transition is one-shot, and it flips with no transaction and no log.
+Pinned by `test_a_start_instant_that_has_just_gone_means_now_not_tomorrow` and
+`test_a_sweep_fired_late_captures_now_and_still_takes_every_capture`.
+
+If you are already inside the window and want no arithmetic at all, drop `--start-at`
+altogether: the sweep starts at once and `--every`/`--repeat` still hold the grid.
 
 ### The two windows on 2026-08-17 — a runbook
 
