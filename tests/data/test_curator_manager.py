@@ -23,6 +23,7 @@ from maxpane_dashboard.data.curator_cache import (
     SLOT_WALLET,
     CuratorCache,
 )
+from tests.curator_fixtures import CAPTURE_A, state_from_bundle
 from maxpane_dashboard.data import ens
 from maxpane_dashboard.data.curator_cache import TIER_FAST
 from maxpane_dashboard.data.curator_manager import (
@@ -374,24 +375,27 @@ def test_the_manager_never_names_a_live_hour_view_at_all(tmp_path, clock):
 
 
 def test_a_quiet_crossing_cannot_overwrite_a_folded_bucket(tmp_path, clock):
-    """The behavioural half.  Replay a healthy cycle, then a crossing where the
-    live hour total has legitimately dropped to 0 while the previous hour is
-    still the last active one, and force a refold.  The series must not move:
-    hour 1's volume is the logs' answer, and a state poll has no vote.
+    """The behavioural half.  Replay a healthy cycle, then **the chain's own
+    quiet crossing**, and force a refold.  The series must not move: the hour's
+    volume is the logs' answer, and a state poll has no vote.
 
-    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
-    # (WP1.3 capture A, the quiet hour crossing).  The synthetic is the
-    # captured healthy state with two words changed; the real pair is the same
-    # two words changed by the chain.
+    Re-pointed 2026-08-17 at capture A -- the state this test used to describe
+    with two hand-changed words, now the words the chain wrote at 15:58:52 UTC:
+    ``currentHour`` 20, ``currentHourTotal`` 0, ``lastActiveHour`` still 19 with
+    11,322.19 ETH in it.  Decoded through the client's own ``decode_view``, so
+    the bytes travel the production path.
     """
+    real = state_from_bundle(CAPTURE_A)
+    assert real.current_hour_total_wei == 0
+    assert real.last_active_hour < real.current_hour
+    assert real.last_active_hour_total_wei > 0
+
     client = _scenario_client({"state": True, "logs": True, "wallet": False})
     manager = _manager(tmp_path, clock, client=client)
     healthy = asyncio.run(manager.fetch_and_compute())
     assert healthy["volume_series"] and healthy["volume_series"][-1][1] > 0
 
-    client.answers["fetch_state"] = _state(
-        current_hour=2, current_hour_total_wei=0, last_active_hour=1
-    )
+    client.answers["fetch_state"] = real
     clock.advance(60)
     manager.cache.mark_failed("medium", clock.now, retry_after=0.0)   # force a refold
     crossed = asyncio.run(manager.fetch_and_compute())

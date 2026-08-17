@@ -31,6 +31,35 @@ bundle, against 0.13 s and 1.3 s once the resolver's answer is reordered IPv4-fi
 does that reordering itself (`PREFER_IPV4`); if a capture ever feels inexplicably slow, that is
 the first thing to check, and `--self-test` will show it.
 
+## Capture A — landed 2026-08-17 15:58:52 UTC
+
+`20260817T155852Z_hour-boundary.json` (and the sample four seconds after it) is
+the **quiet crossing**: `currentHour` 20 while `lastActiveHour` still names 19
+with 11,322.19 ETH in it, and `currentHourTotal` reading 0. That pair is what a
+state-poll sparkline would draw as the game dying at the top of every hour.
+
+It was hunted at every crossing from 2026-08-16 21:58 UTC and missed each time —
+during grace the game never left an hour quiet for the seconds it takes to read
+one. Post-grace it took a single attempt, which is the mechanism this whole
+dashboard is about showing up in its own capture log.
+
+Pinned by `tests/data/test_curator_captures.py::test_capture_a_really_holds_the_state_it_was_hunted_for`
+and consumed by the manager's boundary test through
+`tests.curator_fixtures.state_from_bundle`, which decodes it with the client's
+own `decode_view` so the bytes travel the production path.
+
+## Capture C — still open, and one-shot forever
+
+`isSettled()` is **derived**: it flips with no transaction and no log, so there
+is nothing to go back and read afterwards. Both halves are wanted — the last
+bundle reading false and the first reading true.
+
+`scripts/watch_curator_settlement.py` is scheduled hourly (a launchd agent,
+`com.maxpane.curator-watch`, firing at HH:56 local) and sweeps each crossing at
+5-second resolution, keeping only a quiet crossing, a settlement pair, or a
+named window. Everything else is deleted, so a month of watching costs
+kilobytes.
+
 ## What a bundle is
 
 One JSON object per file, self-describing, named for the UTC instant it was taken

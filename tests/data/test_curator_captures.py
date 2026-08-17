@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.curator_fixtures import CAPTURES, capture, capture_text
+from tests.curator_fixtures import CAPTURE_A, state_from_bundle, CAPTURES, capture, capture_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PKG = _REPO_ROOT / "maxpane_dashboard"
@@ -672,3 +672,47 @@ def test_the_announce_channel_never_posted_about_the_curator() -> None:
     ]
     for post in posts:
         assert A.CURATOR.lower() not in json.dumps(post).lower()
+
+
+# ---------------------------------------------------------------------------
+# Capture A — the quiet hour crossing (2026-08-17 15:58:52 UTC)
+# ---------------------------------------------------------------------------
+
+
+def test_capture_a_really_holds_the_state_it_was_hunted_for():
+    """The pin for the bundle every boundary test now leans on.
+
+    Hunted at every crossing from 2026-08-16 21:58 UTC and missed each time:
+    during grace the game never left an hour quiet for the seconds it takes to
+    read one, so `currentHourTotal` was already nonzero by the first sample.
+    Post-grace it took one attempt -- which is the mechanism the whole
+    dashboard is about, showing up in its own capture log.
+    """
+    state = state_from_bundle(CAPTURE_A)
+
+    # The three words that make it state A rather than an ordinary crossing.
+    assert state.current_hour_total_wei == 0
+    assert state.last_active_hour == state.current_hour - 1
+    assert state.last_active_hour_total_wei == 11_322_186_485_534_950_891_932
+
+    # ...and the rest of the round is a live, healthy game, so nothing here is
+    # an artefact of a broken read.
+    assert state.settled is False
+    assert state.volume_wei > 0 and state.contributors > 0
+    assert state.early_bps > 10_000          # still inside the grace decay
+
+
+def test_the_boundary_pair_is_the_one_a_state_poll_would_render_as_a_crash():
+    """11,322 ETH in the hour that just closed, 0 in the one that just opened.
+
+    A sparkline fed from the live view draws that as the game dying at the top
+    of every hour -- and the zero would be *persisted*, so the corruption
+    outlives the boundary that produced it.
+    """
+    state = state_from_bundle(CAPTURE_A)
+    closed = state.last_active_hour_total_wei / 10**18
+    opened = state.current_hour_total_wei / 10**18
+
+    assert closed > 10_000 and opened == 0.0
+    # The drop a naive reader would report, in the units they would report it.
+    assert (closed - opened) / closed > 0.999
