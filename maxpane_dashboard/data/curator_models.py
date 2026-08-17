@@ -152,6 +152,15 @@ from dataclasses import dataclass
 # (earlyBps == 10000), a judged hour with a deficit, the settled state and its
 # Settled log, a HourSaved row, a creditedDelta == 0 deposit, and a Rescued row.
 #
+# LEDGER AMENDMENT (2026-08-17, sybil expansion): the three analysis slices in
+# tests/fixtures/curator/sybil/ carry a DIFFERENT marker —
+#   SYNTHETIC — calibrated from docs/curator_sybil_data/, re-point at a live
+#   analysis bundle
+# because what they are re-pointed at is a WP3 analysis bundle rather than a
+# capture.  `rg "SYNTHETIC — re-point"` therefore does NOT find them.  The
+# grep that finds **both** generations is `rg "SYNTHETIC —"`, and that is the
+# one WP6 should close the ledger with.
+#
 # ---------------------------------------------------------------------------
 # SYBIL EXPANSION 2026-08-17 — WP0 of the second curator build.
 #
