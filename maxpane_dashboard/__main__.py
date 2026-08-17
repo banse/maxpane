@@ -253,7 +253,7 @@ def main():
     parser.add_argument(
         "--game",
         default="surf",
-        choices=["surf", "fwa", "base", "frenpet", "cattown", "ttt", "talismans"],
+        choices=["surf", "curator", "fwa", "base", "frenpet", "cattown", "ttt", "talismans"],
         help=(
             "Which game dashboard to preload (default: surf). The game "
             "selection menu still appears at startup; this only warms that "

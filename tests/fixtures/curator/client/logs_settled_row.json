@@ -1,0 +1,51 @@
+{
+ "_comment": "SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>. HourSaved, Settled and Rescued have never fired on chain; these three rows carry the ABI's shape (indexed-ness from maxpane_dashboard/abis/curator/whitelist_curator.json) so the client's GROUPING can be tested. Nothing here is a chain fact and no decoder reads the data words - decoding is WP3/WP5's.",
+ "rows": [
+  {
+   "address": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+   "topics": [
+    "0xab7cfcae8770eb1969d60d0628eee780b803b3872fc3a2f3a261348cee262209",
+    "0x000000000000000000000000200e710acaa6a93bbc77146026328c40f1d60fb1",
+    "0x0000000000000000000000000000000000000000000000000000000000000017"
+   ],
+   "data": "0x00000000000000000000000000000000000000000000000045871874b4b50000",
+   "blockNumber": "0x189523c",
+   "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+   "transactionIndex": "0x3",
+   "blockHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "logIndex": "0x7",
+   "blockTimestamp": "0x6a8367f7",
+   "removed": false
+  },
+  {
+   "address": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+   "topics": [
+    "0x8aec0ce3dadffacf4b7a963e0fed1ff2e6151b4c95d4a65acafa9d1299630402",
+    "0x000000000000000000000000047f606fd5b2baa5f5c6c4ab8958e45cb6b054b7"
+   ],
+   "data": "0x00000000000000000000000000000000000000000000000000038d7ea4c68000",
+   "blockNumber": "0x189535e",
+   "transactionHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+   "transactionIndex": "0x9",
+   "blockHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "logIndex": "0x2",
+   "blockTimestamp": "0x6a83758f",
+   "removed": false
+  },
+  {
+   "address": "0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91",
+   "topics": [
+    "0x0b88c5bd74fc625a4f651904bf835063c6a449220be319924685261fb7709dd5",
+    "0x0000000000000000000000000000000000000000000000000000000000000018"
+   ],
+   "data": "0x000000000000000000000000000000000000000000000000000000006a837607000000000000000000000000000000000000000000000000000000000000050200000000000000000000000000000000000000000000029d394a5d6305440000",
+   "blockNumber": "0x1895368",
+   "transactionHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+   "transactionIndex": "0x1",
+   "blockHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "logIndex": "0x4",
+   "blockTimestamp": "0x6a837607",
+   "removed": false
+  }
+ ]
+}

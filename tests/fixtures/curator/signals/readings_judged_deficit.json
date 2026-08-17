@@ -1,0 +1,28 @@
+{
+  "_synthetic": "# SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>",
+  "_why": "No judged hour exists on chain yet; the first one completes 2026-08-17 20:58:47 UTC. This is hour 26 running 1.4 ETH short with 30 minutes left (still `watch`; the same case at 120 s left is `fired`), after two hours that survived.",
+  "now_ts": 1787003400,
+  "readings": {
+    "settled": false,
+    "current_hour": 25,
+    "hour_needed_wei": 1400000000000000000,
+    "hour_seconds_left": 1800,
+    "early_bps": 10000,
+    "volume_wei": 16000000000000000000000,
+    "contributors": 2300,
+    "tx_count": 2950,
+    "forced_balance_wei": 0,
+    "launch_time": 1786910327,
+    "grace_period": 86400,
+    "hour_duration": 3600,
+    "hourly_threshold_wei": 5000000000000000000,
+    "first_judged_hour": 24,
+    "points_per_eth": 1000,
+    "credit_cap_wei": 1000000000000000000000,
+    "rescued_total_wei": 0,
+    "hour_saved": [
+      {"hour": 24, "wallet": "0x00000000000000000000000000000000000000bb", "ts": 1786997400}
+    ]
+  },
+  "hours": {"24": 5200000000000000000, "25": 3600000000000000000}
+}

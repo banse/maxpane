@@ -77,20 +77,22 @@ scripts/                    one-shot tooling (ABI vendoring etc). Imported by no
 (render primitives only). Widgets never import from `data/` or `analytics/`; they receive
 `str`/`int`/`float`/`bool`/`dict`/`list[dict]`.
 
-## The seven visible dashboards
+## The eight visible dashboards
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
 | 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel + launch detectors |
-| 2 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
-| 3 | `base` | Base | trending tokens, volume, signals |
-| 4 | `frenpet` | Base | pet battles, leaderboard, activity |
-| 5 | `cattown` | Base | fishing competition, KIBBLE economy |
-| 6 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
-| 7 | `talismans` | Ethereum | core-conservation NFT collection |
+| 2 | `curator` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock |
+| 3 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
+| 4 | `base` | Base | trending tokens, volume, signals |
+| 5 | `frenpet` | Base | pet battles, leaderboard, activity |
+| 6 | `cattown` | Base | fishing competition, KIBBLE economy |
+| 7 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
+| 8 | `talismans` | Ethereum | core-conservation NFT collection |
 
-`surf` is position 1 and the `--game` default; `fwa` moved to position 2 on 2026-08-10 and is
-no longer the dashboard whose data is prefetched at launch.
+`surf` is position 1 and the `--game` default; `fwa` moved to position 2 on 2026-08-10, and
+`curator` took position 2 from it on 2026-08-17. Neither is the dashboard whose data is
+prefetched at launch — that is still `surf`, and it is meant to stay that way.
 
 Hidden from the selection pane, code and tests intact: `bakery` and `ocm` (hidden on request),
 `dota` (its backend is NXDOMAIN, so it could only ever render an unavailable state; 77 client
@@ -118,7 +120,22 @@ of the three into a derivation.
 **Adding one touches the same six**, in the order app.py → `__main__.py` → `GAMES`: the
 registration tests derive their expectations from `GAMES`, so growing that list first turns
 `tests/test_cli_game_choices.py` and `tests/test_app_startup.py` red until the wiring catches up.
-`tests/test_surf_registration.py` is the worked example.
+There are two worked examples and they are different shapes.
+`tests/test_surf_registration.py` is the **append** — surf went in at position 1 and no other
+key moved. `tests/test_curator_registration.py` is the **position-2 insert**: every key below
+it shifted, the CLAUDE.md and README tables renumbered with it, and the hardcoded lists in the
+tests had to grow too: `ALL_GAMES` in `tests/test_app_startup.py`, and **`MANAGER_ATTRS`, which
+exists in four files** — `tests/test_app_startup.py`, `tests/test_surf_registration.py`,
+`tests/test_game_select_quit.py` and `tests/test_curator_registration.py`. Grow every copy
+(`rg -n MANAGER_ATTRS tests/`): an ungrown one leaves a **real** manager inside `run_test()`,
+and the `q` those tests press awaits its real `close()`, so a headless "zero network" suite
+overwrites the developer's own `~/.maxpane/<game>_cache.json` with an empty one. Three of the
+four were grown for the curator and the fourth was not, which is exactly how it happened; the
+copies stay hardcoded (a derived list cannot see a manager that was never built) and
+`tests/test_curator_registration.py::test_every_copy_of_manager_attrs_names_every_manager_the_app_builds`
+is the agreement test that finds the next missed one — it discovers the copies by walking
+`tests/`, so a fifth file is covered the day it is written. Prefer the insert's example when
+the new dashboard is not going at the end.
 
 ## Build & run
 
@@ -154,6 +171,21 @@ been measured against a capture whose 2.75% spread prints the narrow case. The
 app-wide number is the max of the two and did not move. Which dashboard binds
 is itself a measurement; do not assume it from an older paragraph, and measure
 a data-dependent width against the state the data is normally in.
+
+**Curator measures 138** and moves nothing. Dashboard eight arrived on
+2026-08-17 five columns under FWA's 143, so `FULL_LAYOUT_COLUMNS` is
+untouched and the record above is **not** appended to — that record tracks
+changes to the app-wide number, not every dashboard's own. The binding panel
+is `CuratorSignals`, the rail's seven-row detector list ending in YOU;
+`CuratorLeaderboard` clears at 134, `CuratorActivity` at 127 and
+`CuratorClusters` at 123. The number is **height-independent**, and only
+because `#curator-right-rail` reserves its scrollbar gutter
+(`scrollbar-gutter: stable`): without that, the scrollbar took its column out
+of `CuratorSignals` only on terminals under 42 rows, so this layout's *width*
+requirement moved with its *height* and one pin was true at 48 rows and one
+column short at 40. The sweep lives in `tests/screens/test_curator_screen.py`
+and starts deliberately away from the pin, since a sweep that began at the
+constant would agree with it by construction.
 
 143 clears every *layout*, not every possible string. Surf's announce feed
 still lights `‹ widen` there whenever a post links a transaction: the post's
@@ -222,6 +254,17 @@ would move nothing a user sees. Re-sweep before re-seaming, and only when one
 of the two panels' needs moves again.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
+Per-dashboard: `c` swaps the shared bottom-right slot (FWA, TTT, Talismans,
+curator); **`y` on curator** swaps the whole body for the reader's own
+standing — ladder, share, and what passing the rank above would cost — with the
+hero left in place so the doomsday clock never leaves the screen (`esc` backs
+out, one-way); and **`w` on curator** prompts for the wallet its YOU row is about —
+`WalletInputScreen` validates and persists to `~/.maxpane/config.toml`, so it
+is app-wide from the next launch. A runtime wallet switch is more than an
+assignment: `CuratorManager.set_wallet` also drops the wallet last-good (its
+payload names the *old* address) and expires the fast tier, because a tier
+with 12 of its 15 seconds left is "fresh" and the row would stay dark after a
+keypress that looked like it worked.
 Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`.
 
 **`__version__` comes from installed distribution metadata**, not from a
@@ -270,6 +313,24 @@ so the corruption outlives the outage. Never write a sentinel into a history ser
 
 **A dead source degrades to an explicit unavailable state.** Never a crash, never a blank panel,
 and never a stale number presented as live. Serve last-good behind an `as of HH:MM` marker.
+And check the widget can *tell*: a row whose real negative has no representable value —
+"no whale in the last hour", "it has never fired" — renders `None` identically for "we looked
+and there was nothing" and "we could not look", so it reads confident and green through an
+outage. Curator's rail shipped that way: FARM said `-- unknown` off `clusters_count is None`
+while HOUR SAVED and WHALE, folded from the same dead group, said `none yet`. Either give the
+value a representable zero or hand the widget the `degraded` list.
+
+**ENS names are third-party strings, and the widest kind.** Reverse resolution
+lives in `data/ens.py` and is keyless; use it through a client's own multicall so
+it inherits that dashboard's pool. Two rules it exists to keep: the **forward
+check** is not optional (a reverse record needs nobody's permission, so an
+unverified lookup lets any address claim `vitalik.eth`), and a **miss is not an
+empty name** — most wallets have no record, and without recording the misses
+every one of them is re-resolved on every tick forever. `ens.NameStore` holds
+both TTLs. Rendering one costs columns: curator caps a name at 12 (`NAME_COLS`,
+exactly `surfsurf.eth`) because 15 moved its full layout 138 → 144, past the
+app-wide 143 — measure before widening an identity cell, and show the whole name
+only where there is room for it.
 
 **Escape every third-party string before it reaches markup or a `DataTable`.** Use
 `widgets/markup_safety.safe_markup`. Textual defers `Text.from_markup` into the message pump, so

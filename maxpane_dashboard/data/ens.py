@@ -28,7 +28,7 @@ raises.
 from __future__ import annotations
 
 import logging
-from typing import Awaitable, Callable, Iterable, Sequence
+from typing import Any, Awaitable, Callable, Iterable, Mapping, Sequence
 
 from maxpane_dashboard.data.evm_abi import decode_address, decode_string, strip0x
 from maxpane_dashboard.data.keccak import keccak256, keccak256_text
@@ -119,6 +119,101 @@ def _plausible_name(name: str | None) -> bool:
     if not name or "." not in name or len(name) > 255:
         return False
     return all(label for label in name.split("."))
+
+
+#: A miss expires faster than a name: an address that registers one must be able
+#: to pick it up without waiting out the long TTL.
+MISS_TTL_SECONDS = 60 * 60
+
+
+class NameStore:
+    """TTL store for verified names and for known misses.
+
+    Extracted here so the next dashboard does not write a fourth copy of it --
+    ``fwa_cache`` has the original and predates this class; it is deliberately
+    left alone rather than refactored under a live dashboard.  Two rules, both
+    learned there:
+
+    * **A name expires.**  It can be transferred or allowed to lapse, and
+      labelling an address with someone else's former name is worse than showing
+      the hex.
+    * **A miss is not an empty name.**  Most wallets have no reverse record, and
+      without recording the misses every one of them is re-queried on every
+      tick, because "absent from the map" and "never asked" look identical.
+      A miss carries its own shorter TTL so a new registration is picked up.
+
+    An empty resolution is never stored as a name, so an RPC failure cannot
+    erase a good one -- entries age out instead.
+    """
+
+    def __init__(self, clock: Callable[[], float]) -> None:
+        self._clock = clock
+        self.names: dict[str, tuple[str, float]] = {}
+        self.misses: dict[str, float] = {}
+
+    def _now(self, ts: float | None = None) -> float:
+        return float(self._clock()) if ts is None else float(ts)
+
+    def set_names(self, names: Mapping[str, str], *, ts: float | None = None) -> None:
+        stamp = self._now(ts)
+        for addr, name in (names or {}).items():
+            if not isinstance(addr, str) or not isinstance(name, str) or not name:
+                continue
+            key = addr.lower()
+            self.names[key] = (name, stamp)
+            self.misses.pop(key, None)
+
+    def names_fresh(self, ttl_seconds: float, now: float | None = None) -> dict[str, str]:
+        cutoff = self._now(now) - float(ttl_seconds)
+        return {a: n for a, (n, ts) in self.names.items() if ts >= cutoff}
+
+    def note_misses(self, addresses: Iterable[str], *, ts: float | None = None) -> None:
+        stamp = self._now(ts)
+        for addr in addresses or ():
+            if isinstance(addr, str) and addr:
+                key = addr.lower()
+                if key not in self.names:
+                    self.misses[key] = stamp
+
+    def misses_fresh(self, ttl_seconds: float, now: float | None = None) -> set[str]:
+        cutoff = self._now(now) - float(ttl_seconds)
+        return {addr for addr, ts in self.misses.items() if ts >= cutoff}
+
+    def as_dict(self) -> dict:
+        """Serialisable form for a cache file."""
+        return {
+            "names": {a: [n, ts] for a, (n, ts) in self.names.items()},
+            "misses": dict(self.misses),
+        }
+
+    def load(self, blob: Any) -> None:
+        """Restore from :meth:`as_dict`, dropping anything malformed.
+
+        Fail-soft per entry: one bad row in a cache file must not cost the rest,
+        and it must never raise on the startup path.
+        """
+        if not isinstance(blob, dict):
+            return
+        raw_names = blob.get("names")
+        if isinstance(raw_names, dict):
+            for addr, pair in raw_names.items():
+                if not isinstance(addr, str) or not isinstance(pair, (list, tuple)):
+                    continue
+                if len(pair) != 2 or not isinstance(pair[0], str):
+                    continue
+                try:
+                    self.names[addr.lower()] = (pair[0], float(pair[1]))
+                except (TypeError, ValueError):
+                    continue
+        raw_misses = blob.get("misses")
+        if isinstance(raw_misses, dict):
+            for addr, ts in raw_misses.items():
+                if not isinstance(addr, str):
+                    continue
+                try:
+                    self.misses[addr.lower()] = float(ts)
+                except (TypeError, ValueError):
+                    continue
 
 
 MulticallFn = Callable[[Sequence[tuple[str, str]]], Awaitable[Sequence[tuple[bool, str]]]]
@@ -218,6 +313,8 @@ __all__ = [
     "ENS_REGISTRY",
     "MAX_ADDRESSES",
     "namehash",
+    "NameStore",
+    "MISS_TTL_SECONDS",
     "resolve_names",
     "reverse_name",
     "reverse_node",
