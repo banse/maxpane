@@ -3441,3 +3441,149 @@ async def test_a_narrow_segments_table_sheds_the_detail_first():
     assert "largest operators" in text
     assert "43.2%" in text
     assert "send shapes" not in text        # the detail column is gone
+
+
+# -- WP4.3: CuratorCleanList ------------------------------------------------
+
+
+async def test_the_clean_totals_and_the_survivor_count_render():
+    """PRD §5.3.  The panel receives the clean side of the contract —
+    `clean_points` and `clean_contributors` — and says what the numbers are
+    *after*: the removal of the linked groups."""
+    from maxpane_dashboard.widgets.curator.cleaned_list import CuratorCleanList
+
+    env = _clean_envelope()
+    text = await _rendered(
+        CuratorCleanList,
+        clean_list_rows=env["rows"],
+        clean_points=env["totals"]["clean_points"],
+        clean_contributors=env["totals"]["clean_contributors"],
+        analysis_as_of_hhmm="22:41",
+    )
+    assert "9,273" in text                  # the survivor count
+    assert "15,086,837" in text             # the clean points
+    assert "linked groups removed" in text  # what the numbers are after
+    assert "as of 22:41" in text
+
+
+async def test_your_clean_rank_renders_and_the_unset_state_names_the_fix():
+    from maxpane_dashboard.widgets.curator.cleaned_list import (
+        YOU_CLEAN_UNSET,
+        CuratorCleanList,
+    )
+
+    env = _clean_envelope()
+    ranked = await _rendered(
+        CuratorCleanList, clean_list_rows=env["rows"], you_clean_rank=47
+    )
+    assert "you #47" in ranked
+    assert YOU_CLEAN_UNSET not in ranked
+
+    unset = await _rendered(
+        CuratorCleanList, clean_list_rows=env["rows"], you_clean_rank=None
+    )
+    assert YOU_CLEAN_UNSET in unset
+    assert "#47" not in unset
+
+
+async def test_the_export_path_renders_only_after_the_screen_reports_a_write():
+    """`mark_exported` is the screen's receipt for the `e` write (the
+    `mark_pending` precedent) — the widget renders the path it is handed and
+    never writes anything itself; `clean_list_export_path` is deliberately
+    not an `update_data` kwarg (controller ruling R4)."""
+    import inspect as _inspect
+
+    from maxpane_dashboard.widgets.curator.cleaned_list import CuratorCleanList
+
+    assert "clean_list_export_path" not in _inspect.signature(
+        CuratorCleanList.update_data
+    ).parameters
+
+    env = _clean_envelope()
+    widget = CuratorCleanList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 24)) as pilot:
+        widget.update_data(clean_list_rows=env["rows"])
+        await pilot.pause()
+        before = _screen_text(app)
+        widget.mark_exported("/somewhere/.maxpane/curator_clean_list.json")
+        await pilot.pause()
+        after = _screen_text(app)
+        # ...and a later refresh does not un-say it: the file is still there.
+        widget.update_data(clean_list_rows=env["rows"])
+        await pilot.pause()
+        refreshed = _screen_text(app)
+
+    assert "curator_clean_list.json" not in before
+    assert "/somewhere/.maxpane/curator_clean_list.json" in after
+    assert "/somewhere/.maxpane/curator_clean_list.json" in refreshed
+
+
+async def test_clean_list_none_is_unavailable_and_empty_is_a_real_negative():
+    from maxpane_dashboard.widgets.curator.cleaned_list import (
+        CLEAN_LIST_EMPTY,
+        CLEAN_LIST_UNAVAILABLE,
+        CuratorCleanList,
+    )
+
+    dead = await _rendered(CuratorCleanList, clean_list_rows=None)
+    empty = await _rendered(CuratorCleanList, clean_list_rows=[])
+    assert CLEAN_LIST_UNAVAILABLE in dead and CLEAN_LIST_EMPTY not in dead
+    assert CLEAN_LIST_EMPTY in empty and CLEAN_LIST_UNAVAILABLE not in empty
+
+
+async def test_the_clean_list_panel_uses_pattern_language_only():
+    """The panel's own copy of the forbidden-word test (PRD §8)."""
+    from maxpane_dashboard.widgets.curator.cleaned_list import CuratorCleanList
+
+    env = _clean_envelope()
+    text = await _rendered(
+        CuratorCleanList,
+        clean_list_rows=env["rows"],
+        clean_points=env["totals"]["clean_points"],
+        clean_contributors=env["totals"]["clean_contributors"],
+        you_clean_rank=47,
+        analysis_as_of_hhmm="22:41",
+    )
+    for word in ("sybil", "cheat", "fraud", "attack", "abuse", "wash"):
+        assert word not in text.lower(), word
+
+
+async def test_a_clean_list_name_is_escaped_and_capped_like_the_leaderboard():
+    """The identity cell is the leaderboard's exactly: a verified name over
+    the address, NAME_COLS wide, escaped — a stranger's 255-char or hostile
+    registration must neither widen the table nor raise."""
+    from maxpane_dashboard.widgets.curator._fmt import NAME_COLS
+    from maxpane_dashboard.widgets.curator.cleaned_list import CuratorCleanList
+
+    rows = [
+        {"clean_rank": 1, "address": "0x" + "ab" * 20, "points": 100,
+         "credit_eth": 1.0, "name": "[/x]"},
+        {"clean_rank": 2, "address": "0x" + "cd" * 20, "points": 90,
+         "credit_eth": 1.0, "name": "a-very-long-name-indeed.eth"},
+    ]
+    text = await _rendered(CuratorCleanList, clean_list_rows=rows)
+    assert "[/x]" in text
+    assert "a-very-long-name-indeed.eth" not in text
+    assert f"{'a-very-long-name-indeed.eth'[: NAME_COLS - 1]}…" in text
+
+
+async def test_the_worst_case_clean_row_renders_rank_identity_and_score():
+    from maxpane_dashboard.widgets.curator.cleaned_list import (
+        MAX_ROWS as CLEAN_MAX_ROWS,
+        CuratorCleanList,
+    )
+
+    env = _clean_envelope()
+    # The slice's NAME_COLS probe (`surfsurf.eth` on a 0xff…ff address) is its
+    # LAST row — below the row cap by construction — so it is folded into the
+    # rendered slice rather than silently never rendered.
+    probe = env["rows"][-1]
+    assert probe["name"] == "surfsurf.eth"
+    rows = env["rows"][: CLEAN_MAX_ROWS - 1] + [probe]
+    text = await _rendered(CuratorCleanList, clean_list_rows=rows)
+    assert "#1" in text
+    assert "0x2fe4…7b58" in text            # short_addr, both ends kept
+    assert "36,924" in text                 # the top survivor's score
+    assert "surfsurf.eth" in text           # the probe row's verified name
+    assert "#9,273" in text                 # ...under its own clean rank
