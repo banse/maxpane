@@ -938,6 +938,71 @@ class CuratorManager:
             self.cache.mark_failed(TIER_MEDIUM, now, retry_after=0.0)
         return {"ok": rows is not None, "checked": True, "gap_block": gap_block}
 
+    # -- the WP3 seam --------------------------------------------------------
+
+    def _log_reading(self, name: str, values: list, *, swept: bool) -> list | None:
+        """``[]`` when the read happened and found nothing; ``None`` when it did not.
+
+        Collapsing the two makes a dead logs pool indistinguishable from a quiet
+        chain — and *quiet* is the state that kills this contract, so the
+        difference is the whole dashboard.
+        """
+        if values:
+            return values
+        if swept or name in self._logs_read_groups():
+            return []
+        return None
+
+    def _readings(
+        self,
+        *,
+        state: Any = None,
+        config: Any = None,
+        logs: Any = None,
+        wallet_state: Any = None,
+    ) -> dict[str, Any]:
+        """Everything ``build_signals`` reads, and only that.
+
+        Three provenances, deliberately different:
+
+        * **fast-tier values are live-only.**  A dead state pool means the
+          clock, the phase truth, ``earlyBps`` and the forced-ETH row are
+          ``None`` and render *unavailable* — not a stale number wearing a live
+          face (PRD §11's degradation matrix, row 1).
+        * **config comes from the cache**, because immutables cannot go stale.
+          Reading them once and remembering is not staleness, it is what
+          ``once`` means.
+        * **log-derived values come from the accumulated fold**, which *is*
+          last-good and is served behind the ``as of HH:MM`` marker.  The sweep
+          is incremental, so this is the only place the game's history exists.
+
+        The settlement record is the latch, not a read: it beats whatever
+        ``isSettled()`` said this cycle (H1).
+        """
+        cfg = config if isinstance(config, dict) else {}
+        swept = logs is not None
+        read: dict[str, Any] = {key: None for key in READING_KEYS}
+
+        for key in FAST_TIER_PAYLOAD_KEYS:
+            read[key] = getattr(state, key, None)
+        for key in CONFIG_PAYLOAD_KEYS:
+            read[key] = cfg.get(key)
+
+        read["deposits"] = self._log_reading(
+            "deposits", self.cache.events(), swept=swept
+        )
+        read["first_deposits"] = self._log_reading(
+            "first_deposits", self.cache.first_deposits(), swept=swept
+        )
+        read["hour_saved"] = self._log_reading(
+            "hour_saved", self.cache.hour_saved(), swept=swept
+        )
+        read["rescued_total_wei"] = self.cache.rescued_total_wei()
+
+        read["settlement_record"] = self.cache.settlement_record()
+        read["wallet_state"] = wallet_state
+        return read
+
     def _client_degradation(self) -> set[str]:
         """The groups the client's own flags implicate.
 

@@ -924,3 +924,78 @@ def test_a_partial_wallet_read_is_a_failure_not_a_half_truth(tmp_path, clock):
     manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
     asyncio.run(manager._pool_wallet(NOW))
     assert SOURCE_WALLET in manager._degraded()
+
+
+# ---------------------------------------------------------------------------
+# WP5.11 — the readings seam
+# ---------------------------------------------------------------------------
+
+
+def test_readings_emits_exactly_the_frozen_reading_keys(tmp_path, clock):
+    from maxpane_dashboard.analytics.curator_signals import READING_KEYS
+
+    manager = _manager(tmp_path, clock)
+    assert set(manager._readings()) == set(READING_KEYS)
+    assert set(manager._readings(state=_state(), config=CONFIG, logs=_sweep())) == set(
+        READING_KEYS
+    )
+
+
+def test_the_outage_encoding_is_held_constant(tmp_path, clock):
+    """None == the read failed.  [] == the read succeeded and found nothing.
+    Collapsing them makes a dead logs pool indistinguishable from a quiet
+    chain -- and 'quiet' is the state that kills this contract."""
+    manager = _manager(tmp_path, clock)
+    dead = manager._readings(logs=None)
+    quiet = manager._readings(logs=LogSweep(from_block=1, to_block=2))
+    assert dead["deposits"] is None
+    assert dead["first_deposits"] is None
+    assert dead["hour_saved"] is None
+    assert quiet["deposits"] == []
+    assert quiet["hour_saved"] == []
+
+
+def test_a_group_read_once_keeps_reading_empty_rather_than_dead(tmp_path, clock):
+    """HourSaved and Rescued have never fired on chain: 'read it, found
+    nothing' is the expected answer and must not render as an outage."""
+    client = FakeClient(fetch_logs=lambda *_: _sweep())
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+    later = manager._readings(logs=None)
+    assert later["hour_saved"] == []
+    assert len(later["deposits"]) == 231
+
+
+def test_the_fast_tier_readings_are_live_only_and_never_stale(tmp_path, clock):
+    """PRD §11 row 1: a dead state pool means the clock, the phase truth and
+    earlyBps render unavailable -- never a stale number wearing a live face."""
+    manager = _manager(tmp_path, clock)
+    manager.cache.store_last_good(SLOT_STATE, {"current_hour": 4}, ts=NOW)
+    read = manager._readings(state=None)
+    for key in FAST_TIER_PAYLOAD_KEYS:
+        assert read[key] is None, key
+
+
+def test_config_is_served_from_the_cache_because_immutables_cannot_go_stale(tmp_path, clock):
+    manager = _manager(tmp_path, clock)
+    read = manager._readings(config=CONFIG)
+    assert read["launch_time"] == A.LAUNCH_TIME
+    assert read["points_per_eth"] == 1000
+    assert read["credit_cap_wei"] == 1000 * 10**18
+
+
+def test_the_three_legitimate_zeros_survive_the_seam(tmp_path, clock):
+    """currentHourTotal at a boundary, ethNeededThisHour in grace, and a
+    creditedDelta above the cap are all measurements, not outages."""
+    manager = _manager(tmp_path, clock)
+    read = manager._readings(state=_state(hour_needed_wei=0), config=CONFIG)
+    assert read["hour_needed_wei"] == 0
+    assert read["hour_needed_wei"] is not None
+
+
+def test_the_latch_reaches_the_seam_even_when_the_live_read_is_gone(tmp_path, clock):
+    manager = _manager(tmp_path, clock)
+    manager.cache.observe_settlement(True, block_number=25_776_000, now=NOW)
+    read = manager._readings(state=None)
+    assert read["settled"] is None                      # the live read is gone
+    assert read["settlement_record"].settled is True    # the evidence is not
