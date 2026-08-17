@@ -514,17 +514,24 @@ async def test_a_narrow_hero_announces_the_columns_it_shed():
 
 #: Shapes come from CURATOR_ROW_KEYS["leaderboard_rows"]; magnitudes from the
 #: 2026-08-16 capture (rank 1 credit 461.1 ETH, the 9x60 ETH fan-out at 4-12).
+#:
+#: ``link_conf`` is ``None`` on all three, and that is the state the dashboard
+#: is in until the linkage sweep first completes: WP3's adapter seeds the
+#: sub-key on every row and fills it later, so ``None`` is the shipped-today
+#: reading rather than a missing field.  The tests that care about a grade set
+#: their own; leaving these ungraded is what keeps the Tier-A fallback (R5)
+#: exercised by every other leaderboard test in this file.
 def _lb_rows(count: int = 3) -> list[dict]:
     base = [
         {"rank": 1, "address": "0x381fe4861234567890abcdef1234567890abCDEF",
          "points": 21473, "credit_eth": 461.1, "tx_count": 7, "flagged": False,
-         "name": None},
+         "name": None, "link_conf": None},
         {"rank": 2, "address": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
          "points": 13038, "credit_eth": 170.0, "tx_count": 3, "flagged": False,
-         "name": "surfsurf.eth"},
+         "name": "surfsurf.eth", "link_conf": None},
         {"rank": 4, "address": "0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91",
          "points": 7745, "credit_eth": 60.0, "tx_count": 1, "flagged": True,
-         "name": None},
+         "name": None, "link_conf": None},
     ]
     out = []
     for i in range(count):
@@ -2599,3 +2606,157 @@ async def test_the_clean_rank_line_says_what_the_number_is_a_rank_in():
     assert CLEAN_RANK_SUFFIX in line
     for word in ("sybil", "cheat", "fraud", "attack", "abuse", "wash"):
         assert word not in line.lower(), word
+
+
+# ===========================================================================
+# WP5.3 — CuratorLeaderboard: the confidence-graded flag
+#
+# `link_conf` is additive: `flagged` stays, because the bool is filled by
+# analytics/curator_signals.py and that module must stay byte-identical to
+# what shipped.  So the cell grades off the new sub-key when it has one and
+# off the shipped bool when it does not -- and the ruled semantics of the
+# fallback are the R5 controller ruling, not the brief's first sketch: a
+# Tier-A-flagged wallet must not LOSE its `⚑` the day the graded column
+# arrives, because the `c` view's cluster table is still flagging it.
+# ===========================================================================
+
+
+def _plain(markup: str) -> str:
+    """``[yellow]⚑[/]`` -> ``⚑`` — what a reader in greyscale is left with."""
+    import re
+
+    return re.sub(r"\[[^\]]*\]", "", markup)
+
+
+def test_the_flag_has_four_distinct_glyphs():
+    """Colour is never the sole carrier; a reader in greyscale must tell the
+    four apart (the CuratorSignals precedent).
+
+    The four are asserted over what ``_link_glyph`` can actually *emit*,
+    including through the Tier-A fallback, rather than over a table of
+    constants that nothing has to use.
+    """
+    from maxpane_dashboard.widgets.curator import leaderboard as lb
+
+    assert len({lb.LINK_HIGH, lb.LINK_LOW, lb.LINK_CLEAN, lb.LINK_UNKNOWN}) == 4
+
+    reachable = {
+        _plain(lb._link_glyph(conf, flagged))
+        for conf in ("high", "low", "clean", None, "nonsense")
+        for flagged in (True, False, None)
+    }
+    assert reachable == {lb.LINK_HIGH, lb.LINK_LOW, lb.LINK_CLEAN,
+                         lb.LINK_UNKNOWN}, sorted(reachable)
+
+
+def test_the_graded_cell_falls_back_to_the_shipped_tier_a_cell(): 
+    """R5, as a truth table.  ``link_conf`` wins where it has an opinion; a
+    grade this widget cannot read hands the cell back to the bool, which is
+    the answer a *different* fold really did produce."""
+    from maxpane_dashboard.widgets.curator import leaderboard as lb
+
+    table = {
+        # (link_conf, flagged): the glyph a reader sees
+        ("high", True): lb.LINK_HIGH,
+        ("high", None): lb.LINK_HIGH,
+        ("low", True): lb.LINK_LOW,          # the grade outranks the bool
+        ("low", None): lb.LINK_LOW,
+        ("clean", False): lb.LINK_CLEAN,
+        ("clean", True): lb.LINK_CLEAN,
+        (None, True): lb.LINK_HIGH,          # the shipped flag never blanks
+        (None, False): lb.LINK_CLEAN,
+        (None, None): lb.LINK_UNKNOWN,       # fold-not-run, not clean
+        ("nonsense", None): lb.LINK_UNKNOWN,
+    }
+    for (conf, flagged), expected in table.items():
+        assert _plain(lb._link_glyph(conf, flagged)) == expected, (conf, flagged)
+
+
+async def test_link_conf_grades_the_flag():
+    row = _lb_rows(1)[0]
+    rows = [
+        {**row, "rank": 1, "link_conf": "high", "flagged": True},
+        {**row, "rank": 2, "link_conf": "low", "flagged": True},
+        {**row, "rank": 3, "link_conf": "clean", "flagged": False},
+        {**row, "rank": 4, "link_conf": None, "flagged": None},
+    ]
+    text = await _rendered(CuratorLeaderboard, leaderboard_rows=rows, size=(143, 30))
+    # header + the one high row: the `low` row's Tier-A `True` did NOT put a
+    # second flag on the board.
+    assert text.count("⚑") == 2, text
+    assert "◌" in text
+    assert "?" in text
+
+
+async def test_a_tier_a_flag_survives_the_day_the_graded_column_arrives():
+    """R5.  Before the sweep has ever run every ``link_conf`` is ``None``,
+    and the Tier-A bool is still the only linkage answer on the dashboard --
+    the `c` view's cluster table is drawn from it.  A graded cell that
+    rendered `?` there would contradict the panel next to it and take a
+    shipped flag off the board."""
+    flagged = await _rendered(
+        CuratorLeaderboard,
+        leaderboard_rows=[{**_lb_rows(1)[0], "flagged": True, "link_conf": None}],
+    )
+    assert flagged.count("⚑") == 2          # header + the row
+    assert "?" not in flagged
+
+    # ...and `?` is what a row NEITHER fold could judge reads.
+    unknown = await _rendered(
+        CuratorLeaderboard,
+        leaderboard_rows=[{**_lb_rows(1)[0], "flagged": None, "link_conf": None}],
+    )
+    assert "?" in unknown and unknown.count("⚑") == 1
+
+
+async def test_an_unreadable_grade_is_never_rendered_as_clean():
+    """A fifth spelling from the producer must not land in the empty cell,
+    which is the *clean* rendering -- the same rule the signal rail keeps for
+    a state word it does not know."""
+    text = await _rendered(
+        CuratorLeaderboard,
+        leaderboard_rows=[{**_lb_rows(1)[0], "link_conf": "medium",
+                           "flagged": None}],
+    )
+    assert "?" in text
+
+
+async def test_a_hostile_link_conf_cannot_reach_markup():
+    """The grade is a payload string like any other, and it is never
+    rendered -- only mapped.  Pinned so a later "show the confidence word"
+    edit cannot quietly hand `Text.from_markup` a stranger's string."""
+    text = await _rendered(
+        CuratorLeaderboard,
+        leaderboard_rows=[{**_lb_rows(1)[0], "link_conf": "[/x][bold]owned[/]",
+                           "flagged": None}],
+    )
+    assert "owned" not in text and "[/x]" not in text
+    assert "?" in text
+    assert "0x381f" in text          # the row itself still rendered
+
+
+def test_the_flag_column_is_in_every_width_tier():
+    """PRD §6: the flag column never sheds.  It is the one column a reader
+    cannot reconstruct from anything else on the screen -- TX and CREDIT are
+    both derivable from the rows around them, and a linkage grade is not."""
+    from maxpane_dashboard.widgets.curator import leaderboard as lb
+
+    for name, _cost, columns, _hint in lb._TIERS:
+        assert "flag" in {key for key, _header, _width in columns}, name
+
+
+@pytest.mark.parametrize("width", (143, 60, 46, 36))
+async def test_the_graded_flag_reaches_the_screen_at_every_declared_tier(width):
+    """Structural presence in the tier is not the same as a glyph on a
+    pixel: the narrowest tier is 33 columns and the marker has to survive
+    the compositor there too."""
+    widget = CuratorLeaderboard()
+    app = _Harness(widget)
+    async with app.run_test(size=(width, 20)) as pilot:
+        widget.update_data(
+            leaderboard_rows=[{**_lb_rows(1)[0], "link_conf": "high",
+                               "flagged": True}]
+        )
+        await pilot.pause()
+        text = _screen_text(app)
+    assert text.count("⚑") == 2, (width, text)

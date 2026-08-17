@@ -15,9 +15,14 @@ Three rendering rules this dashboard makes load-bearing:
   high-water mark; the gross it routed is larger for anyone who escalated,
   and every wei of both was refunded in-transaction.  The column is headed
   ``CREDIT`` and never ``ETH``, ``VALUE`` or anything that reads as held.
-* **``flagged`` has three states.**  ``True`` is ``⚑``, ``False`` is an
-  empty cell (a real negative), and ``None`` is ``?`` — the cluster fold did
-  not run, which is not the same as "clean".
+* **The flag has four states and four glyphs.**  ``link_conf`` grades it —
+  ``"high"`` is ``⚑``, ``"low"`` is ``◌``, ``"clean"`` is an empty cell (a
+  real negative) — and where there is no grade the shipped Tier-A bool still
+  answers: ``True`` is ``⚑``, ``False`` empty, ``None`` is ``?``, the fold
+  did not run, which is not the same as "clean".  ``?`` therefore means
+  *neither* fold could judge the row, never "the new one has not run yet";
+  see :func:`_link_glyph` for why that fallback is the ruled behaviour and
+  not an oversight.
 
 The wallet's own row is emphasised when ``you_address`` matches, compared
 **case-insensitively**: addresses reach this dashboard checksummed from
@@ -143,11 +148,72 @@ def _same_wallet(address, you_address) -> bool:
     return str(address).strip().lower() == str(you_address).strip().lower()
 
 
+#: The four glyphs the flag column can show, as plain text.  Four, and
+#: **distinct in greyscale**: colour is never the sole carrier on this
+#: dashboard, and a reader who cannot tell "linked, high confidence" from
+#: "not analyzed" is reading the column backwards half the time.
+#:
+#: They are constants rather than literals in a dict so the suite can name
+#: them, and so the empty cell is a *decision* with a name rather than a
+#: stray ``""`` — it is the one glyph that says "we looked and found
+#: nothing", and it is one keystroke from meaning "we did not look".
+LINK_HIGH = "⚑"
+LINK_LOW = "◌"
+LINK_CLEAN = ""
+LINK_UNKNOWN = "?"
+
+#: ``link_conf`` -> markup.  Only the three spellings the contract freezes;
+#: everything else (``None`` included) goes to the Tier-A fallback below.
+_LINK_GLYPH = {
+    "high": f"[yellow]{LINK_HIGH}[/]",
+    "low": f"[dim]{LINK_LOW}[/]",
+    "clean": LINK_CLEAN,
+}
+
+
 def _flag_cell(flagged) -> str:
-    """``⚑`` / empty / ``?`` — flagged, clean, and "the fold did not run"."""
+    """``⚑`` / empty / ``?`` — flagged, clean, and "the fold did not run".
+
+    Tier A's answer, and still the whole answer wherever the linkage sweep
+    has not produced one: see :func:`_link_glyph`.
+    """
     if flagged is None:
-        return "[dim]?[/]"
-    return "[yellow]⚑[/]" if flagged else ""
+        return f"[dim]{LINK_UNKNOWN}[/]"
+    return f"[yellow]{LINK_HIGH}[/]" if flagged else LINK_CLEAN
+
+
+def _link_glyph(link_conf, flagged) -> str:
+    """The graded marker: ``link_conf`` where there is one, the bool where
+    there is not.
+
+    ``link_conf`` is **additive** (``CURATOR_ROW_KEYS`` documents why: the
+    bool is produced by a module that must stay byte-identical to what
+    shipped), so the two answers coexist on every row and this function is
+    where they are reconciled.  The ruling that shapes it:
+
+    * a grade the widget can read **wins**, including ``"low"`` over a
+      Tier-A ``True`` — the stronger fold's ``◌`` is a more precise
+      statement than the weaker fold's ``⚑``, and showing both would put two
+      marks on one wallet;
+    * ``None`` — which is *every* row until the sweep first runs — falls
+      back to :func:`_flag_cell`.  Rendering ``?`` there instead would take
+      a flag off the board that the ``c`` view's cluster table is still
+      showing, and two panels contradicting each other about the same wallet
+      is worse than either answer alone.  ``?`` is still what a row reads
+      when **neither** fold could judge it, which is the honest case it is
+      for;
+    * a spelling this widget does not know is handed to the same fallback:
+      it is not evidence of anything, and the one cell it must never land in
+      is the empty one, which means *clean*.
+
+    The grade itself is never rendered — only mapped — so no producer string
+    reaches markup from here.
+    """
+    # `isinstance` first: an unhashable payload (a list, a dict) raises on a
+    # dict lookup, and a malformed grade must cost the *grade*, not the row.
+    if isinstance(link_conf, str) and link_conf in _LINK_GLYPH:
+        return _LINK_GLYPH[link_conf]
+    return _flag_cell(flagged)
 
 
 def _row_values(row: dict, index: int, you: bool) -> dict:
@@ -180,7 +246,7 @@ def _row_values(row: dict, index: int, you: bool) -> dict:
         "points": points,
         "credit": credit,
         "tx": tx_str,
-        "flag": _flag_cell(row.get("flagged")),
+        "flag": _link_glyph(row.get("link_conf"), row.get("flagged")),
     }
     if you:
         for key in ("rank", "wallet", "points", "credit", "tx"):
