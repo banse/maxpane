@@ -1173,6 +1173,14 @@ def test_the_width_probe_carries_every_field_at_its_widest():
     # ...and the leaderboard's own cell is sized from the same ceiling.
     assert lb_mod._POINTS_COLS >= len(f"{ceiling:,}")
 
+    # The cluster table's POINTS cell is the same ceiling times the largest
+    # cluster that module admits: a row's `points` is the SUM over its
+    # members (`_cluster_rows`), which a per-wallet ceiling does not bound.
+    from maxpane_dashboard.widgets.curator import clusters as cl_mod
+
+    assert cl_mod.MAX_CLUSTER_POINTS == (10**cl_mod.MAX_SIZE_COLS - 1) * ceiling
+    assert cl_mod._POINTS_COLS >= len(f"{cl_mod.MAX_CLUSTER_POINTS:,}")
+
     assert sig_mod._WIDEST_ETH == max(_fmt.COMPACT_ETH_PROBE)
 
     # Every field of the widest *real* payload is inside the probe.
@@ -1704,13 +1712,39 @@ async def test_a_fan_out_wider_than_the_captured_one_is_not_cut_mid_word(
     """At 80 columns a twelve-wallet cluster used to read ``· 32 block`` —
     the trailing ``s`` eaten by the ``DataTable``, on the panel's headline
     value, at full width, with no ``‹ widen``.  Nine wallets fit, so the whole
-    suite was green over the one shape that did."""
+    suite was green over the one shape that did.
+
+    The ``points`` here is the **live** board's top row (2 663 784 on
+    2026-08-17), not the capture's 69 705: every clusters fixture in this file
+    used to carry a value that happened to fit ``_POINTS_COLS`` at 8, so this
+    test was green while the panel cut its own headline number.
+    """
     rows = [{"size": size, "amount_eth": 60.0, "first_block": 0,
-             "last_block": span, "points": 69705, "points_share_pct": 12.4}]
+             "last_block": span, "points": 2_663_784, "points_share_pct": 12.4}]
     text = await _rendered(CuratorClusters, cluster_rows=rows, clusters_count=1,
                            size=(80, 14))
     assert f"{size}× 60.00Ξ · {span} blocks" in text
+    assert "2,663,784" in text
     assert "widen" not in text
+
+
+@pytest.mark.parametrize("width", [80, 120, 138, 143, 200, 250])
+async def test_the_points_cell_holds_the_widest_sum_the_fold_can_emit(width):
+    """A cell width is fixed; a panel's width is not, so a cell that is one
+    column short cuts at **every** terminal size and no ``‹ widen`` fires --
+    the marker reports shed *columns*, not truncated ones.
+
+    The row is the ceiling itself: the largest cluster this module admits, at
+    the highest score the curve can return per wallet.
+    """
+    from maxpane_dashboard.widgets.curator import clusters as cl_mod
+
+    rows = [{"size": 10**cl_mod.MAX_SIZE_COLS - 1, "amount_eth": 10.0,
+             "first_block": 0, "last_block": cl_mod.MAX_BLOCK_SPAN,
+             "points": cl_mod.MAX_CLUSTER_POINTS, "points_share_pct": 100.0}]
+    text = await _rendered(CuratorClusters, cluster_rows=rows, clusters_count=1,
+                           size=(width, 14))
+    assert f"{cl_mod.MAX_CLUSTER_POINTS:,}" in text, text
 
 
 async def test_the_share_column_dashes_rather_than_claiming_zero():

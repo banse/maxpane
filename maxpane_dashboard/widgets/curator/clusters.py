@@ -36,10 +36,14 @@ Width behaviour
 =========  ====  ==========================================
 Tier       Cost  Columns
 =========  ====  ==========================================
-full        45   PATTERN (with the block window) POINTS SHARE
-compact     33   PATTERN POINTS SHARE
+full        47   PATTERN (with the block window) POINTS SHARE
+compact     35   PATTERN POINTS SHARE
 minimal     23   PATTERN SHARE
 =========  ====  ==========================================
+
+Every cell width here is *derived* from what the fold can emit, and the two
+costs above moved 45 → 47 and 33 → 35 the day the last hand-typed one
+(``_POINTS_COLS``) was: see its note.
 
 The block window sheds first — it is provenance, and the pattern itself is
 the finding.  ``SHARE`` never sheds: a cluster's size means nothing without
@@ -69,6 +73,7 @@ from maxpane_dashboard.widgets.curator._table import (
     pick_tier,
     title_with_hint,
 )
+from maxpane_dashboard.widgets.curator.signals import MAX_CURVE_POINTS
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 #: Panel title.  A hint is appended, never substituted.
@@ -107,13 +112,29 @@ _PATTERN_COLS = len(
     f"{'9' * MAX_SIZE_COLS}× {'9' * COMPACT_ETH_COLS}Ξ · {MAX_BLOCK_SPAN} blocks"
 )                                                                          # 24
 _PATTERN_SHORT_COLS = len(f"{'9' * MAX_SIZE_COLS}× {'9' * COMPACT_ETH_COLS}Ξ")  # 12
-_POINTS_COLS = 8
+#: The points cell, derived from the same two bounds the pattern cell uses.
+#:
+#: This was a hand-typed 8 — the last hand-typed cell width in this module —
+#: and it cut the panel's headline value at **every** width, marker-free: the
+#: live board's top row holds 2,663,784 points and rendered ``2,663,78`` at
+#: 138, 143, 200 and 250 columns.  No terminal was wide enough to fix it,
+#: because a fixed cell width does not grow with the panel.
+#:
+#: A cluster's ``points`` is the **sum** over its members (``_cluster_rows``
+#: in ``analytics/curator_signals``), so its ceiling is the largest cluster
+#: this module admits — ``MAX_SIZE_COLS`` digits of ``size``, the same bound
+#: the pattern cell is built from — times the highest score the curve can
+#: return for one wallet.  The suite asserts that ceiling against
+#: ``analytics.curator_signals.points_for_weight``, since a widget may not
+#: import ``analytics/``.
+MAX_CLUSTER_POINTS = (10**MAX_SIZE_COLS - 1) * MAX_CURVE_POINTS
+_POINTS_COLS = len(f"{MAX_CLUSTER_POINTS:,}")                              # 10
 _SHARE_COLS = 7
 
 _TIERS = (
     (
         "full",
-        45,
+        47,
         (
             ("pattern", "PATTERN", _PATTERN_COLS),
             ("points", "POINTS", _POINTS_COLS),
@@ -123,7 +144,7 @@ _TIERS = (
     ),
     (
         "compact",
-        33,
+        35,
         (
             ("pattern", "PATTERN", _PATTERN_SHORT_COLS),
             ("points", "POINTS", _POINTS_COLS),
