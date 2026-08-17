@@ -165,6 +165,30 @@ def test_topic_matches_its_preimage(name: str, preimage: str) -> None:
     assert getattr(A, name) == keccak256_hex(preimage.encode("ascii"))
 
 
+def _screaming_snake(name: str) -> str:
+    """``ethNeededThisHour`` -> ``ETH_NEEDED_THIS_HOUR``; ``Launched`` ->
+    ``LAUNCHED``.  A Solidity ``constant`` is already SCREAMING_SNAKE and passes
+    through untouched."""
+    if name == name.upper():
+        return name
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).upper()
+
+
+@pytest.mark.parametrize("name,preimage", sorted(A.TOPIC_PREIMAGES.items()))
+def test_every_topic_constant_is_named_after_its_own_event(
+    name: str, preimage: str
+) -> None:
+    """Binds the constant NAME to the signature, which nothing else here does.
+
+    Every other check in this file derives from ``TOPIC_PREIMAGES``, so two
+    same-shaped entries can be swapped *with each other* -- hash and preimage
+    moving together -- and stay self-consistent through all of them.  The
+    constant name is the only thing outside that loop, and it is what the client
+    wires by.
+    """
+    assert name == "TOPIC_" + _screaming_snake(preimage.split("(")[0])
+
+
 def test_preimage_map_covers_exactly_the_topic_constants() -> None:
     """A vendored hash with no preimage is unverifiable; a preimage with no
     constant is dead weight.  Both are failures."""
@@ -258,6 +282,46 @@ def test_the_announce_channel_is_labeled_because_it_is_on_the_list() -> None:
 @pytest.mark.parametrize("name,preimage", sorted(A.SELECTOR_PREIMAGES.items()))
 def test_selector_matches_its_preimage(name: str, preimage: str) -> None:
     assert getattr(A, name) == keccak256_hex(preimage.encode("ascii"))[:10]
+
+
+@pytest.mark.parametrize("name,preimage", sorted(A.SELECTOR_PREIMAGES.items()))
+def test_every_selector_constant_is_named_after_its_own_view(
+    name: str, preimage: str
+) -> None:
+    """The one assertion that closes the self-consistent swap.
+
+    Everything else in this file derives from ``SELECTOR_PREIMAGES``, so a
+    matched swap of two entries -- selector A given B's hash *and* B's preimage,
+    and vice versa -- satisfies all of them at once.  It was demonstrated twice:
+
+    * ``isSettled()`` <-> ``ethNeededThisHour()``.  Both answered ``0x0`` at
+      capture, so even the fact pin that exists to tell them apart could not:
+      it asserts only that the two selectors differ and that both decode to 0.
+      Downstream, ``CuratorState.settled`` would be fed the hour's deficit and
+      the first post-grace short hour would latch the settlement evidence record
+      on a live game -- and H1's latch never re-reads through it.
+    * ``pointsOf(address)`` <-> ``weightOf(address)``.  No argument-taking view
+      was ever captured, so the six wallet selectors have no value witness at
+      all; the name binding is the *only* defence available for them.
+
+    The constant name is the one thing not derived from the map, and it is what
+    every client wires by.  ``POINTS_PER_ETH`` is a Solidity ``constant``, so its
+    name is already SCREAMING_SNAKE and needs no transform -- the next test pins
+    that it is the only such exception.
+    """
+    assert name == "SEL_" + _screaming_snake(preimage.split("(")[0])
+
+
+def test_the_uppercase_naming_exemption_is_only_points_per_eth() -> None:
+    """``_screaming_snake`` passes an already-uppercase Solidity constant
+    through untouched, which is a hole big enough for one more name to hide in.
+    Name the exemption so a second one has to be argued for."""
+    passthrough = sorted(
+        const
+        for const, sig in A.SELECTOR_PREIMAGES.items()
+        if (fname := sig.split("(")[0]) == fname.upper()
+    )
+    assert passthrough == ["SEL_POINTS_PER_ETH"]
 
 
 @pytest.mark.parametrize("name", sorted(A.SELECTOR_PREIMAGES))
@@ -370,6 +434,80 @@ def test_the_bool_returning_view_is_declared_as_a_bool() -> None:
     assert set(A.VIEW_RETURN_TYPES) == set(A.SELECTOR_PREIMAGES)
     for const, types in A.VIEW_RETURN_TYPES.items():
         assert len(types) == A.VIEW_RETURN_WORDS[const], const
+
+
+def _return_types_from_source(fname: str) -> tuple[str, ...] | None:
+    """The leading token of each part of ``returns (...)``, or the declared type
+    of a public state variable / immutable / constant, which has no clause."""
+    src = capture_text("source.sol")
+    match = re.search(
+        rf"function\s+{re.escape(fname)}\s*\([^)]*\)[^{{;]*?returns\s*\(([^)]*)\)",
+        src,
+    )
+    if match is not None:
+        return tuple(p.split()[0] for p in match.group(1).split(",") if p.strip())
+    declared = re.search(
+        rf"\b(\w+)\s+public\s+(?:constant\s+|immutable\s+)?{re.escape(fname)}\b", src
+    )
+    return (declared.group(1),) if declared else None
+
+
+def test_the_return_types_are_recomputed_from_the_verified_source() -> None:
+    """All 28, not the 3 that used to be pinned by hand.
+
+    ``VIEW_RETURN_TYPES`` is a *decode-instruction* table: it says whether a word
+    is an address, a bool or a number.  Pinning three entries left the other 25
+    free to be anything, and three of them were wrong -- the packed counters
+    ``totalVolume`` (``uint128``) and ``totalContributors`` / ``totalTxCount``
+    (``uint64``) were all declared ``uint256`` because nobody looked.
+
+    The same ``returns (...)`` group that ``test_the_word_counts_...`` already
+    counts carries the types; they were being thrown away.  Public state
+    variables, immutables and constants have no clause at all, so their type
+    comes from the declaration line -- which is exactly where the three wrong
+    ones live (``source.sol`` lines 124-128).
+    """
+    for const, sig in A.SELECTOR_PREIMAGES.items():
+        found = _return_types_from_source(sig.split("(")[0])
+        assert found is not None, f"{const}: source.sol declares no {sig}"
+        assert A.VIEW_RETURN_TYPES[const] == found, const
+
+
+def test_the_return_types_agree_with_the_vendored_abi() -> None:
+    """A second, independent derivation -- the compiler's own answer.
+
+    ``source.sol`` is text a regex has to interpret; the ABI is what solc
+    emitted from it.  The two agreeing is what makes the table safe to decode
+    against.
+    """
+    abi = json.loads(_VENDORED_ABI.read_text(encoding="utf-8"))
+    outputs = {
+        e["name"]: tuple(o["type"] for o in e.get("outputs", ()))
+        for e in abi
+        if e["type"] == "function"
+    }
+    for const, sig in A.SELECTOR_PREIMAGES.items():
+        fname = sig.split("(")[0]
+        assert fname in outputs, f"{const}: the vendored ABI has no {fname}"
+        assert A.VIEW_RETURN_TYPES[const] == outputs[fname], const
+
+
+def test_every_declared_return_type_is_bool_address_or_a_uint() -> None:
+    """The decoder branches on two names and treats the rest as one case.
+
+    Every ``uintN`` arrives left-padded in the same 32-byte word, so a client
+    needs no per-width arm -- but it does need to know that ``bool`` and
+    ``address`` are the only two spellings that are not a number, and that the
+    set is closed.  A ``bytes32`` or a dynamic type appearing here would be a
+    decode the positional batch cannot do at all.
+    """
+    for const, types in A.VIEW_RETURN_TYPES.items():
+        for t in types:
+            assert t in ("bool", "address") or re.fullmatch(r"uint\d+", t), (
+                const,
+                t,
+            )
+    assert {"bool", "address"} < {t for ts in A.VIEW_RETURN_TYPES.values() for t in ts}
 
 
 def test_the_three_ordered_tuples_are_the_batch_contract() -> None:

@@ -205,9 +205,13 @@ SEL_DEPLOYER = "0xd5f39488"                # deployer() -> address
 
 # cross-check (3) — the same three numbers stats() returns, from a *different*
 # storage read.  Their agreeing is what makes the slow-tier check meaningful.
-SEL_TOTAL_VOLUME = "0x5f81a57c"            # totalVolume()
-SEL_TOTAL_CONTRIBUTORS = "0xf251fc8c"      # totalContributors()
-SEL_TOTAL_TX_COUNT = "0x9b4f50e7"          # totalTxCount()
+# All three are PACKED state variables and their getters return the narrow type,
+# not uint256 (see VIEW_RETURN_TYPES); stats() widens the same three on the way
+# out.  Every uintN still arrives left-padded in one word, so the decode is the
+# same — the width matters only to anyone reasoning about overflow.
+SEL_TOTAL_VOLUME = "0x5f81a57c"            # totalVolume()  -> uint128
+SEL_TOTAL_CONTRIBUTORS = "0xf251fc8c"      # totalContributors() -> uint64
+SEL_TOTAL_TX_COUNT = "0x9b4f50e7"          # totalTxCount() -> uint64
 
 # wallet tier (6) — only when MAXPANE_WALLET is set
 SEL_POINTS_OF = "0xcf6a4403"               # pointsOf(address)
@@ -299,13 +303,27 @@ VIEW_RETURN_WORDS: dict[str, int] = {
     "SEL_PREVIEW_POINTS": 1,
 }
 
-#: constant name -> the Solidity return types, in order.
+#: constant name -> the Solidity return types, in order.  **A decode-instruction
+#: table**, and every one of the 28 entries is recomputed from ``source.sol`` by
+#: ``test_the_return_types_are_recomputed_from_the_verified_source`` and again
+#: from the vendored ABI — pinning three of them by hand left the other 25 free
+#: to be wrong, and three of them *were*.
 #:
-#: Two of these are not ``uint256`` and the difference matters at the seam:
-#: ``isSettled()`` is a ``bool`` (the model field is ``bool | None``, and
-#: ``False`` must never be confused with ``None``), ``deployer()`` is an
-#: ``address`` (decode with ``decode_address``, not ``decode_uint``), and
-#: ``firstHourOf()``'s second word is a ``bool``.
+#: Only two spellings need special handling at the seam.  ``bool``:
+#: ``isSettled()`` and ``firstHourOf()``'s second word — the model field is
+#: ``bool | None`` and ``False`` must never be confused with ``None``.
+#: ``address``: ``deployer()`` — ``decode_address``, not ``decode_uint``.
+#: **Every remaining type is some ``uintN`` and they all decode identically**,
+#: left-padded into one 32-byte word, so a decoder branches on the two names
+#: above and treats the rest as one case (asserted by
+#: ``test_every_declared_return_type_is_bool_address_or_a_uint``).
+#:
+#: The three counters are **not** ``uint256`` and this file used to say they
+#: were: ``totalVolume`` is a ``uint128`` and ``totalContributors`` /
+#: ``totalTxCount`` are ``uint64`` (``source.sol`` lines 124-128), packed into
+#: one storage slot.  ``stats()`` widens all three to ``uint256`` on the way out,
+#: which is why the cross-check group and ``stats()`` disagree here while
+#: agreeing on every value.
 VIEW_RETURN_TYPES: dict[str, tuple[str, ...]] = {
     "SEL_IS_SETTLED": ("bool",),
     "SEL_CURRENT_HOUR": ("uint256",),
@@ -325,9 +343,10 @@ VIEW_RETURN_TYPES: dict[str, tuple[str, ...]] = {
     "SEL_FIRST_JUDGED_HOUR": ("uint256",),
     "SEL_POINTS_PER_ETH": ("uint256",),
     "SEL_DEPLOYER": ("address",),
-    "SEL_TOTAL_VOLUME": ("uint256",),
-    "SEL_TOTAL_CONTRIBUTORS": ("uint256",),
-    "SEL_TOTAL_TX_COUNT": ("uint256",),
+    # Packed counters — narrower than stats()'s widened uint256s.  See above.
+    "SEL_TOTAL_VOLUME": ("uint128",),
+    "SEL_TOTAL_CONTRIBUTORS": ("uint64",),
+    "SEL_TOTAL_TX_COUNT": ("uint64",),
     "SEL_POINTS_OF": ("uint256",),
     "SEL_WEIGHT_OF": ("uint256",),
     "SEL_CONTRIBUTED_BY": ("uint256",),
