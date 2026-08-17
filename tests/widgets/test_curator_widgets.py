@@ -2363,3 +2363,138 @@ async def test_a_verified_name_replaces_the_hex_in_the_signal_rows():
         whale_age_s=120,
     )
     assert "surfsurf.eth" in text
+
+
+# ===========================================================================
+# WP5.1 — CuratorWalletStanding: the `linked` line
+#
+# The `y` view's own answer to "am I in one of the groups the FARM row
+# counts".  Three states and they are three different facts: analyzed and
+# clear, analyzed and linked, and **not analyzed**, which is the one a
+# reassuring default would turn into a lie.
+# ===========================================================================
+
+
+def _standing_full() -> dict:
+    """The standing panel's non-linkage kwargs, at PRD §6's own numbers.
+
+    The four linkage kwargs are deliberately **absent**: every test below
+    sets the one it is about, and a default here would have the honesty
+    tests asserting against a value they did not choose.
+
+    SYNTHETIC — the reader's own standing has no capture and cannot have
+    one: the wallet these numbers describe is whoever runs the dashboard.
+    The magnitudes are PRD §6's worked example (``#412 raw, #47 with clear
+    farms removed``, on a list of 10,643), which is also the example the
+    clean-rank line below is measured against.
+    """
+    return dict(
+        you_rank=412,
+        you_points=1234,
+        you_credit_eth=3.6,
+        you_weight_eth=7.03,
+        you_tx_count=4,
+        you_weight_share_pct=0.42,
+        you_first_hour=0,
+        you_joined_utc="2026-08-16 19:58 UTC",
+        contributors_total=10_643,
+    )
+
+
+async def test_the_linked_line_reads_unknown_before_the_analysis_runs():
+    """``None`` is "the sweep has not run", never a confident "clean".
+
+    This is the honesty rule of the whole work package: a green "not linked"
+    off an analysis that never ran is a lie in the reassuring direction, and
+    the reader has no way to tell it from an answer.
+    """
+    text = await _rendered(CuratorWalletStanding, you_linked_state=None,
+                           **_standing_full())
+    assert "unknown" in text
+    assert "not linked" not in text          # never a confident negative
+
+
+async def test_a_clean_wallet_says_not_linked():
+    """The representable negative: the sweep ran and found no group."""
+    text = await _rendered(CuratorWalletStanding, you_linked_state="clean",
+                           you_linked_reasons=[], **_standing_full())
+    assert "not linked to any group" in text
+
+
+async def test_a_linked_wallet_shows_pattern_language_reasons():
+    text = await _rendered(
+        CuratorWalletStanding, you_linked_state="linked",
+        you_linked_group_size=1995,
+        you_linked_reasons=["identical 0.45Ξ send", "same funder"],
+        **_standing_full())
+    assert "1,995" in text and "same funder" in text
+    for word in ("sybil", "cheat", "fraud", "attack", "abuse", "wash"):
+        assert word not in text.lower(), word
+
+
+async def test_the_standing_panel_uses_pattern_language_in_every_state():
+    """The panel's own forbidden-word test, over every state it can reach and
+    over the widest reasons the analysis fixtures actually hold.
+
+    ``CuratorClusters`` and ``CuratorSignals`` each have one of these; this
+    panel now renders producer-supplied phrases too, so it needs its own.
+    The reasons come from the committed worst-case slice rather than from a
+    plausible typing of one — the same rule the width probe below follows.
+    """
+    from tests.curator_sybil_fixtures import row_payloads
+
+    reasons = [
+        reason
+        for _label, row in row_payloads("operator_row_worst.json")
+        for reason in (row.get("reasons") or [])
+    ]
+    assert reasons, "the worst-case slice carried no reasons to scan"
+
+    for state, kwargs in (
+        (None, {}),
+        ("clean", {"you_linked_reasons": []}),
+        ("linked", {"you_linked_group_size": 1995,
+                    "you_linked_reasons": reasons}),
+    ):
+        text = await _rendered(
+            CuratorWalletStanding, you_linked_state=state,
+            size=(300, 24), **kwargs, **_standing_full(),
+        )
+        for word in ("sybil", "cheat", "fraud", "attack", "abuse", "wash"):
+            assert word not in text.lower(), (state, word)
+
+
+async def test_an_unreadable_linked_state_is_unknown_rather_than_clean():
+    """A fourth spelling from the producer is a silent fallback arm — and the
+    arm it would fall into here is the reassuring one.  ``PHASES`` has the
+    same guard on the hero, for the same reason."""
+    text = await _rendered(CuratorWalletStanding, you_linked_state="linkedish",
+                           **_standing_full())
+    assert "unknown" in text
+    assert "not linked" not in text
+    assert "linkedish" not in text
+
+
+async def test_a_hostile_linkage_reason_cannot_reach_markup():
+    """Reasons are producer strings and the producer folds attacker-chosen
+    data; Textual defers ``Text.from_markup`` into the message pump, so a
+    malformed one raises outside the screen's try/except and kills the app."""
+    text = await _rendered(
+        CuratorWalletStanding, you_linked_state="linked",
+        you_linked_group_size=12,
+        you_linked_reasons=["[/x][bold red]owned[/]"],
+        size=(200, 24), **_standing_full())
+    assert "[/x]" in text or "owned" in text
+    assert text.strip(), "a markup-hostile reason blanked the panel"
+
+
+async def test_a_nonsense_reasons_payload_costs_the_reasons_and_not_the_panel():
+    """``None``/a dict/a bare string where ``list[str]`` was promised: the
+    line degrades to what it can still say, the panel keeps rendering."""
+    for reasons in (None, {"a": 1}, 7, ["", "   ", None]):
+        text = await _rendered(
+            CuratorWalletStanding, you_linked_state="linked",
+            you_linked_group_size=1995, you_linked_reasons=reasons,
+            **_standing_full())
+        assert "1,995" in text, reasons
+        assert "412" in text, reasons          # the rest of the panel survived

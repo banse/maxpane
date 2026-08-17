@@ -71,6 +71,14 @@ __all__ = [
     "NO_WALLET_SET",
     "NO_ENS",
     "ENS_PENDING",
+    "UNKNOWN_VALUE",
+    "NOT_LINKED",
+    "LINKED_UNSIZED",
+    "CLEAN_RANK_SUFFIX",
+    "CLEAN_RANK_REMOVED",
+    "STANDING_WIDTH_PROBE",
+    "STANDING_FULL_WIDTH",
+    "measure_standing_width",
     "CuratorWalletLadder",
     "CuratorWalletStanding",
     "CuratorWalletNext",
@@ -105,6 +113,28 @@ NO_ENS = "no ENS record"
 #: that has not happened -- and it is wrong for exactly the reader who just
 #: typed a wallet that does have a name.
 ENS_PENDING = "resolving…"
+#: "We looked and could not tell" — the same two words the signal rail spends
+#: on the same fact, deliberately not a second spelling of it.  It is the
+#: rendering of ``None`` for **both** linkage lines, and the reason neither of
+#: them may fall back to its reassuring arm.
+UNKNOWN_VALUE = f"{DASH} unknown"
+#: The linkage sweep ran and this wallet is in no group.  A *representable*
+#: negative, which is what makes ``UNKNOWN_VALUE`` distinguishable: the FARM
+#: rail row shipped with "none yet" and "-- unknown" folded into one string,
+#: and a reader could not tell an answer from an outage.
+NOT_LINKED = "not linked to any group"
+#: Linked, with a group size that would not read.  Neither "not linked" nor a
+#: number invented to stand in for one.
+LINKED_UNSIZED = "in a group of unknown size"
+#: What the clean rank is a rank *in* — PRD §6's "#412 raw, #47 with clear
+#: farms removed", minus the word "clear", which the panel has no evidence for
+#: on any particular wallet.  Pattern language: a farm is a shape in the
+#: deposit data, not an accusation about a person.
+CLEAN_RANK_SUFFIX = "with farms removed"
+#: The reader is themselves one of the removed wallets, so there is no number
+#: to print — and a dash here would read as a failed computation rather than
+#: as the answer it is.
+CLEAN_RANK_REMOVED = "removed as a linked wallet"
 #: The minimum legal send buys points but not the place above.
 HOLDS_RANK = "not enough to move up"
 TAKES_RANK = "enough to move up"
@@ -447,8 +477,154 @@ class CuratorWalletAddress(_FactsPanel):
         return lines
 
 
+#: The three states ``you_linked_state`` may hold, ``None`` (= the sweep has
+#: not run) aside.  A **fourth spelling is a silent fallback arm**, and the arm
+#: this one would fall into is the reassuring one — so anything not in here
+#: renders :data:`UNKNOWN_VALUE`, exactly as the hero treats a phase word it
+#: does not know.  The widget may not import ``data/``, so the literal lives
+#: here and the agreement with the contract lives in the suite.
+LINKED_STATES: tuple[str, ...] = ("clean", "linked")
+
+
+def _reason_parts(reasons) -> list[str]:
+    """The producer's pattern-language phrases, hardened, never raising.
+
+    Whitespace is collapsed the way ``short_label`` collapses it: a newline
+    inside a reason would break a line/value layout that assumes one row per
+    line, and it arrives from a fold over data an attacker chooses.  A payload
+    that is not a list of strings costs the *reasons*, never the panel.
+    """
+    if isinstance(reasons, str):        # a bare phrase, not a list of chars
+        candidates: list = [reasons]
+    else:
+        try:
+            candidates = list(reasons or [])
+        except TypeError:
+            candidates = []
+    return [
+        " ".join(reason.split())
+        for reason in candidates
+        if isinstance(reason, str) and reason.strip()
+    ]
+
+
+def _linked_parts(state, group_size, reasons) -> list[str]:
+    """The ``linked`` line's value: the group, then why it is a group.
+
+    Three states, three sentences, and the ``None`` one is the whole reason
+    this line exists in this shape.  A wallet the sweep has not looked at must
+    not read as a wallet the sweep cleared: the reassuring rendering is the
+    dangerous one here, and it is the one a "default to clean" would produce
+    on every dashboard that has never finished an analysis.
+    """
+    if state not in LINKED_STATES:
+        # `None`, and every spelling this widget does not know.
+        return [UNKNOWN_VALUE]
+    if state == "clean":
+        # Reasons are `[]` for a clean wallet by contract; a producer that
+        # sent some anyway is contradicting itself, and the verdict wins.
+        return [NOT_LINKED]
+
+    size = group_size if isinstance(group_size, int) and not isinstance(
+        group_size, bool
+    ) and group_size > 0 else None
+    head = f"{size:,}-wallet group" if size is not None else LINKED_UNSIZED
+    # Parts, not one joined string: `_FactsPanel` sheds from the end, so a
+    # narrow rail keeps the group and drops the evidence rather than cutting
+    # a phrase mid-word.  The group size is the part a reader acts on.
+    return [head, *_reason_parts(reasons)]
+
+
+def _standing_state(payload: dict) -> dict:
+    """The flat manager dict projected onto this panel's own short keys.
+
+    One projection, used by :meth:`CuratorWalletStanding.update_data` and by
+    :func:`measure_standing_width`, so the width the module publishes is
+    measured through the very builder that renders — a second copy is how a
+    published width stops describing the panel it names.
+    """
+    return {
+        "rank": payload.get("you_rank"),
+        "points": payload.get("you_points"),
+        "credit": payload.get("you_credit_eth"),
+        "weight": payload.get("you_weight_eth"),
+        "sends": payload.get("you_tx_count"),
+        "share": payload.get("you_weight_share_pct"),
+        "first_hour": payload.get("you_first_hour"),
+        "joined": payload.get("you_joined_utc"),
+        "total": payload.get("contributors_total"),
+        "linked_state": payload.get("you_linked_state"),
+        "linked_reasons": payload.get("you_linked_reasons"),
+        "linked_group_size": payload.get("you_linked_group_size"),
+    }
+
+
+def _standing_lines(data: dict) -> list[tuple]:
+    """This panel's label/value lines, pure — see :class:`_FactsPanel`."""
+    rank = data.get("rank")
+    total = data.get("total")
+
+    if isinstance(rank, int):
+        place = f"{rank}" + (f" of {total:,}" if isinstance(total, int) else "")
+    elif rank is None and data.get("points") is None:
+        # A stranger, not a zero.  See the module docstring.
+        place = NOT_ON_THE_LIST
+    else:
+        place = DASH
+
+    # Two short lines rather than one long one: measured at the panel's
+    # 2fr share of 138 columns, a single score line sheds its tail and
+    # lights the marker on a screen that is not actually too narrow.
+    score = [f"{fmt_points(data.get('points'))} pts"]
+    credit = as_float(data.get("credit"))
+    if credit is not None:
+        score.append(f"{fmt_eth(credit)} credit")
+
+    banked: list[str] = []
+    weight = as_float(data.get("weight"))
+    if weight is not None:
+        banked.append(f"{fmt_eth(weight)} weight")
+    sends = data.get("sends")
+    if isinstance(sends, int):
+        banked.append(f"{sends} send{'' if sends == 1 else 's'}")
+    if not banked:
+        banked = [DASH]
+
+    share = as_float(data.get("share"))
+    share_parts = [f"{fmt_pct(share)} of all weight" if share is not None else DASH]
+
+    joined = data.get("joined")
+    hour = data.get("first_hour")
+    joined_parts: list[str] = []
+    if isinstance(hour, int):
+        joined_parts.append(f"hour {hour}")
+    if isinstance(joined, str) and joined.strip():
+        joined_parts.append(joined.strip())
+    if not joined_parts:
+        joined_parts = [DASH]
+
+    linked_parts = _linked_parts(
+        data.get("linked_state"),
+        data.get("linked_group_size"),
+        data.get("linked_reasons"),
+    )
+
+    return [
+        ("rank", [place]),
+        ("score", score),
+        ("banked", banked),
+        ("share", share_parts),
+        ("joined", joined_parts),
+        # Last, and that is deliberate: it is the only line here whose value
+        # comes from a producer rather than from the contract, so it is the
+        # one that grows, and the shedding contract works from the end.
+        ("linked", linked_parts),
+    ]
+
+
 class CuratorWalletStanding(_FactsPanel):
-    """Rank, score, credit, share of all weight, and when this wallet joined."""
+    """Rank, score, credit, share of all weight, when this wallet joined —
+    and whether it is one of the wallets the linkage sweep grouped."""
 
     TITLE = STANDING_TITLE
 
@@ -463,73 +639,32 @@ class CuratorWalletStanding(_FactsPanel):
         you_first_hour=None,
         you_joined_utc=None,
         contributors_total=None,
+        you_linked_state=None,
+        you_linked_reasons=None,
+        you_linked_group_size=None,
         **_kwargs,
     ) -> None:
-        self._payload = {
-            "rank": you_rank,
-            "points": you_points,
-            "credit": you_credit_eth,
-            "weight": you_weight_eth,
-            "sends": you_tx_count,
-            "share": you_weight_share_pct,
-            "first_hour": you_first_hour,
-            "joined": you_joined_utc,
-            "total": contributors_total,
-        }
+        self._payload = _standing_state(
+            {
+                "you_rank": you_rank,
+                "you_points": you_points,
+                "you_credit_eth": you_credit_eth,
+                "you_weight_eth": you_weight_eth,
+                "you_tx_count": you_tx_count,
+                "you_weight_share_pct": you_weight_share_pct,
+                "you_first_hour": you_first_hour,
+                "you_joined_utc": you_joined_utc,
+                "contributors_total": contributors_total,
+                "you_linked_state": you_linked_state,
+                "you_linked_reasons": you_linked_reasons,
+                "you_linked_group_size": you_linked_group_size,
+            }
+        )
         self._seen = True
         self._render_view()
 
-    def _lines(self) -> list[tuple[str, list[str]]]:
-        data = self._payload
-        rank = data.get("rank")
-        total = data.get("total")
-
-        if isinstance(rank, int):
-            place = f"{rank}" + (f" of {total:,}" if isinstance(total, int) else "")
-        elif rank is None and data.get("points") is None:
-            # A stranger, not a zero.  See the module docstring.
-            place = NOT_ON_THE_LIST
-        else:
-            place = DASH
-
-        # Two short lines rather than one long one: measured at the panel's
-        # 2fr share of 138 columns, a single score line sheds its tail and
-        # lights the marker on a screen that is not actually too narrow.
-        score = [f"{fmt_points(data.get('points'))} pts"]
-        credit = as_float(data.get("credit"))
-        if credit is not None:
-            score.append(f"{fmt_eth(credit)} credit")
-
-        banked: list[str] = []
-        weight = as_float(data.get("weight"))
-        if weight is not None:
-            banked.append(f"{fmt_eth(weight)} weight")
-        sends = data.get("sends")
-        if isinstance(sends, int):
-            banked.append(f"{sends} send{'' if sends == 1 else 's'}")
-        if not banked:
-            banked = [DASH]
-
-        share = as_float(data.get("share"))
-        share_parts = [f"{fmt_pct(share)} of all weight" if share is not None else DASH]
-
-        joined = data.get("joined")
-        hour = data.get("first_hour")
-        joined_parts: list[str] = []
-        if isinstance(hour, int):
-            joined_parts.append(f"hour {hour}")
-        if isinstance(joined, str) and joined.strip():
-            joined_parts.append(joined.strip())
-        if not joined_parts:
-            joined_parts = [DASH]
-
-        return [
-            ("rank", [place]),
-            ("score", score),
-            ("banked", banked),
-            ("share", share_parts),
-            ("joined", joined_parts),
-        ]
+    def _lines(self) -> list[tuple]:
+        return _standing_lines(self._payload)
 
 
 class CuratorWalletNext(_FactsPanel):
