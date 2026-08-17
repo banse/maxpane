@@ -26,6 +26,12 @@ this package is safe to import with no manager, no cache and no network.
 """
 
 from ._fmt import ADDR_COLS, DASH, EMDASH, NO_STAMP
+from .activity import (
+    ACTIVITY_EMPTY,
+    ACTIVITY_TITLE,
+    ACTIVITY_UNAVAILABLE,
+    CuratorActivity,
+)
 from .hero import PHASE_UNAVAILABLE, CuratorHero
 from .signals import (
     NEVER_SAVED,
@@ -48,10 +54,14 @@ __all__ = [
     "DASH",
     "EMDASH",
     "NO_STAMP",
+    "ACTIVITY_EMPTY",
+    "ACTIVITY_TITLE",
+    "ACTIVITY_UNAVAILABLE",
     "LEADERBOARD_EMPTY",
     "LEADERBOARD_TITLE",
     "LEADERBOARD_UNAVAILABLE",
     "PHASE_UNAVAILABLE",
+    "CuratorActivity",
     "CuratorHero",
     "NEVER_SAVED",
     "NO_WALLET",

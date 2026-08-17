@@ -298,7 +298,7 @@ def test_the_you_row_is_absent_not_zeroed_when_no_wallet_is_configured():
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_rows_are_deduped_by_tx_hash_and_log_index():
@@ -337,12 +337,12 @@ def test_a_none_list_and_an_empty_list_render_differently():
     assert "no deposits yet" in _rendered(activity, activity_rows=[])
 ```
 
-- [ ] Implement with a `RichLog`, newest-first, `safe_markup` on every interpolated value, and
+- [x] Implement with a `RichLog`, newest-first, `safe_markup` on every interpolated value, and
       a documented row cap.
-- [ ] **Prove it bites:** drop `log_index` from the de-dupe key and feed two logs from one
+- [x] **Prove it bites:** drop `log_index` from the de-dupe key and feed two logs from one
       transaction (real: a `HourSaved` and a `Deposited` share a tx) → the de-dupe test FAILS
       **and** a legitimate second row disappears. Restore, and keep both assertions.
-- [ ] Commit: `feat(curator): activity feed with (tx, log index) de-duplication`
+- [x] Commit: `feat(curator): activity feed with (tx, log index) de-duplication`
 
 ---
 

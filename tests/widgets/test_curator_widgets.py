@@ -34,6 +34,8 @@ import pytest
 from textual.app import App, ComposeResult
 
 from maxpane_dashboard.widgets.curator import (
+    ACTIVITY_EMPTY,
+    ACTIVITY_UNAVAILABLE,
     LEADERBOARD_EMPTY,
     LEADERBOARD_TITLE,
     LEADERBOARD_UNAVAILABLE,
@@ -42,6 +44,7 @@ from maxpane_dashboard.widgets.curator import (
     SIGNAL_LABELS,
     SPARKLINES_TITLE,
     WAITING,
+    CuratorActivity,
     CuratorHero,
     CuratorLeaderboard,
     CuratorSignals,
@@ -961,3 +964,162 @@ async def test_a_narrow_rail_drops_parts_from_the_end_and_says_so_when_starved()
     for label in SIGNAL_LABELS:
         assert label in text, label          # the head never shrinks
     assert "widen" in text
+
+
+# ===========================================================================
+# WP4.6 — CuratorActivity
+# ===========================================================================
+
+
+def _act_row(**over) -> dict:
+    """One ``Deposited`` row, shaped by CURATOR_ROW_KEYS["activity_rows"].
+
+    The numbers are the captured witness of the weight formula: the announce
+    EOA's deposit #1, 0.05 ETH at 19975 bps -> 0.099875 weight, block
+    25769888.  The tx hash is that row's, truncated to a plausible shape.
+    """
+    row = {
+        "ts": 1786910400,
+        "address": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+        "amount_eth": 3.6,
+        "credited_eth": 2.8,
+        "new_weight": 7.03,
+        "tx_count": 4,
+        "hour": 1,
+        "kind": "deposit",
+        "tx_hash": "0x240bf1a800000000000000000000000000000000000000000000000000000001",
+        "log_index": 12,
+    }
+    row.update(over)
+    return row
+
+
+def _act_rows() -> list[dict]:
+    return [_act_row()]
+
+
+def test_the_activity_columns_are_the_frozen_row_keys():
+    from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS
+
+    assert set(_act_row()) == set(CURATOR_ROW_KEYS["activity_rows"])
+
+
+def test_the_kind_cell_is_sized_to_the_vocabulary_its_producer_emits():
+    """The dev/ops lesson (CLAUDE.md).  The producer emits exactly
+    {deposit, joined, saved}; a cell wider than 'deposit' is padding on every
+    row and a cell narrower is a value cut mid-word."""
+    from maxpane_dashboard.data.curator_models import CURATOR_ACTIVITY_KINDS
+    from maxpane_dashboard.widgets.curator import activity as act_mod
+
+    assert act_mod.KIND_COLS == max(len(k) for k in CURATOR_ACTIVITY_KINDS)
+
+
+async def test_rows_are_deduped_by_tx_hash_and_log_index():
+    """PRD §4.  A re-org replay or an overlapping incremental sweep resends
+    rows; without the pair as the key, every deposit renders twice and the
+    feed silently doubles the game's apparent activity."""
+    dup = _act_rows() + _act_rows()
+    text = await _rendered(CuratorActivity, activity_rows=dup)
+    assert text.count("tx#4") == 1
+
+
+async def test_two_logs_from_one_transaction_both_survive_the_dedupe():
+    """The other half, and the reason the key is a *pair*: a wallet's first
+    deposit emits ``Deposited`` and ``FirstDeposit`` in one transaction, and
+    a saving deposit emits ``HourSaved`` with it.  Keying on the hash alone
+    deletes a real row while still failing to catch a replay."""
+    same_tx = [
+        _act_row(kind="deposit", log_index=12, tx_count=4),
+        _act_row(kind="joined", log_index=13, tx_count=4,
+                 amount_eth=0.05, credited_eth=0.05, new_weight=0.099875),
+    ]
+    text = await _rendered(CuratorActivity, activity_rows=same_tx)
+    assert "deposit" in text and "joined" in text
+
+
+async def test_a_missing_timestamp_renders_dashes_not_the_epoch():
+    """WP2.8's stamp can fail.  ``ts=None`` renders ``--:--``; a 0 would
+    render ``00:00`` on 1970-01-01, which looks like data."""
+    text = await _rendered(CuratorActivity, activity_rows=[_act_row(ts=None)])
+    assert NO_STAMP in text and "00:00" not in text
+    zero = await _rendered(CuratorActivity, activity_rows=[_act_row(ts=0)])
+    assert NO_STAMP in zero and "00:00" not in zero
+
+
+async def test_every_formatting_step_degrades_independently():
+    """MEDI-37: one unparseable field costs its own cell, not the row and not
+    the panel."""
+    broken = _act_row(amount_eth="not a number", new_weight=None,
+                      tx_count="seven")
+    text = await _rendered(CuratorActivity, activity_rows=[broken])
+    assert "0x200e" in text            # the row still rendered
+    assert "not a number" not in text and "seven" not in text
+
+
+async def test_a_zero_credit_is_a_real_reading_and_not_an_unknown_one():
+    """H3: a deposit above the 1000 ETH cap credits nothing and still counts
+    fully toward the hour's survival.  ``+0.00`` is the answer; ``--`` is
+    what a failed read looks like, and nothing divides by either."""
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    # (no deposit above the cap has ever landed; the largest is 461.1 ETH)
+    capped = _act_row(amount_eth=1200.0, credited_eth=0.0, new_weight=1000.0)
+    text = await _rendered(CuratorActivity, activity_rows=[capped])
+    assert "+0.000 credit" in text or "+0.00 credit" in text
+    unknown = await _rendered(
+        CuratorActivity, activity_rows=[_act_row(credited_eth=None)]
+    )
+    assert f"{DASH} credit" in unknown
+
+
+async def test_a_none_list_and_an_empty_list_render_differently():
+    dead = await _rendered(CuratorActivity, activity_rows=None)
+    empty = await _rendered(CuratorActivity, activity_rows=[])
+    assert ACTIVITY_UNAVAILABLE in dead
+    assert ACTIVITY_EMPTY in empty
+    assert ACTIVITY_EMPTY not in dead and ACTIVITY_UNAVAILABLE not in empty
+
+
+async def test_the_first_deposit_and_saved_rows_are_tagged_in_words():
+    """Colour is never the sole carrier: the kind cell spells it out."""
+    rows = [
+        _act_row(kind="saved", log_index=1),
+        _act_row(kind="joined", log_index=2),
+        _act_row(kind="deposit", log_index=3),
+    ]
+    text = await _rendered(CuratorActivity, activity_rows=rows)
+    for kind in ("saved", "joined", "deposit"):
+        assert kind in text, kind
+
+
+async def test_the_feed_caps_its_rows_and_says_so_in_code():
+    from maxpane_dashboard.widgets.curator import activity as act_mod
+
+    many = [_act_row(log_index=i, tx_count=i) for i in range(60)]
+    text = await _rendered(CuratorActivity, activity_rows=many, size=(143, 40))
+    rendered = [line for line in text.splitlines() if "0x200e" in line]
+    assert len(rendered) == act_mod.MAX_ROWS == 25
+
+
+async def test_a_hostile_kind_or_address_renders_literally():
+    row = _act_row(kind="[/x]", address="[/x]")
+    text = await _rendered(CuratorActivity, activity_rows=[row])
+    assert "[/x]" in text
+
+
+@pytest.mark.parametrize(
+    "width,shed",
+    [(143, ""), (75, ""), (65, "credit wording"), (50, "credit + weight"),
+     (40, "credit, weight, tx"), (32, "kind, credit, weight, tx")],
+)
+async def test_narrow_feeds_announce_the_fields_they_shed(width, shed):
+    widget = CuratorActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(width, 12)) as pilot:
+        widget.update_data(activity_rows=_act_rows())
+        await pilot.pause()
+        text = _screen_text(app)
+    assert "0x200e" in text          # the identifying cell never goes
+    if shed:
+        assert "widen" in text
+    else:
+        assert "widen" not in text
