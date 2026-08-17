@@ -925,6 +925,63 @@ class CuratorClient(OwnedHttpClient):
             launched=tuple(grouped["launched"]),
         )
 
+    async def fetch_block_timestamps(
+        self, block_numbers: Iterable[int]
+    ) -> dict[int, int]:
+        """``{block_number: unix_seconds}`` for the blocks we could read.
+
+        **A fallback, not the provenance.**  H14 and PRD amendment A4 assumed
+        tenderly's ``eth_getLogs`` returned no ``blockTimestamp`` and Blockscout's
+        log items carried only a block number; wave 1 disproved both — every one
+        of the 377 RPC rows carries ``blockTimestamp`` and every one of the 376
+        Blockscout items carries ``block_timestamp``.  So the activity feed reads
+        the stamp it was handed, and this batch exists only for an endpoint that
+        omits the field.  A client that discards a stamp and re-fetches it pays a
+        round trip for nothing.
+
+        Hour buckets need none of this at all: the hour is ``Deposited``'s
+        indexed second topic and its wall clock is
+        ``launchTime + hour * hourDuration``, exact by construction.
+
+        Distinct blocks only, and bounded to the newest
+        :data:`MAX_TIMESTAMP_BLOCKS` — the rendered activity window, not the
+        whole history, which grows for as long as the game survives.
+
+        A block we could not read is **absent from the result**, never mapped to
+        ``0``: a ``0`` renders ``1970-01-01 00:00``, which looks like data, where
+        an absent key renders ``--:--``, which is the truth.  An empty input
+        makes **no request**.
+        """
+        wanted: list[int] = []
+        for raw in block_numbers or ():
+            if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+                continue
+            if raw not in wanted:
+                wanted.append(raw)
+        if not wanted:
+            return {}
+        wanted.sort()
+        wanted = wanted[-MAX_TIMESTAMP_BLOCKS:]
+
+        try:
+            results = await self._rpc_state_batch(
+                [("eth_getBlockByNumber", [hex(n), False]) for n in wanted]
+            )
+        except RuntimeError as exc:  # malformed-request short-circuit
+            logger.warning("fetch_block_timestamps: %s", exc)
+            return {}
+        if results is None:
+            return {}
+
+        stamps: dict[int, int] = {}
+        for number, result in zip(wanted, results):
+            if not isinstance(result, dict):
+                continue  # no key — never a 0
+            ts = _hex_to_int(result.get("timestamp"))
+            if ts is not None:
+                stamps[number] = ts
+        return stamps
+
 
 __all__ = [
     "CuratorClient",

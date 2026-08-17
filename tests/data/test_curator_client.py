@@ -1248,3 +1248,104 @@ def test_a_row_repeated_across_pages_is_counted_once() -> None:
     client = _client(_logs_handler(FULL_SWEEP_ROWS), log_page_blocks=100)
     sweep = asyncio.run(client.fetch_logs(A.CREATION_BLOCK, A.CREATION_BLOCK + 999))
     assert len(sweep.deposits) == 231
+
+
+# ===========================================================================
+# WP2.8 — block timestamps, the FALLBACK provenance for the activity feed
+# ===========================================================================
+
+
+def _blocks_handler(
+    *, missing: frozenset[int] = frozenset(),
+) -> Callable[[httpx.Request], httpx.Response]:
+    """``eth_getBlockByNumber`` answering ``timestamp = number * 12``."""
+
+    def one(entry: dict) -> dict:
+        number = int(entry["params"][0], 16)
+        if number in missing:
+            return {"jsonrpc": "2.0", "id": entry["id"],
+                    "error": {"code": -32000, "message": "unknown block"}}
+        return {"jsonrpc": "2.0", "id": entry["id"],
+                "result": {"number": hex(number), "timestamp": hex(number * 12)}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if isinstance(payload, list):
+            return httpx.Response(200, json=[one(e) for e in payload])
+        return httpx.Response(200, json=one(payload))
+
+    return handler
+
+
+def test_only_distinct_blocks_are_asked_for() -> None:
+    """25 activity rows sit in far fewer blocks — the captured sweep puts
+    several deposits in one.  Asking per ROW would multiply the batch by four
+    for byte-identical answers."""
+    blocks = [25_770_000 + (i % 9) for i in range(25)]
+    client, transport = _recording_client(_blocks_handler())
+    stamps = asyncio.run(client.fetch_block_timestamps(blocks))
+    sent = [p for _u, _m, p, _h in transport.requests if isinstance(p, list)][0]
+    assert len(sent) == 9
+    assert len(stamps) == 9
+    assert stamps[25_770_000] == 25_770_000 * 12
+
+
+def test_the_batch_asks_for_headers_without_transactions() -> None:
+    """``eth_getBlockByNumber(block, false)``.  ``true`` returns every
+    transaction object in the block — megabytes, for one integer."""
+    client, transport = _recording_client(_blocks_handler())
+    asyncio.run(client.fetch_block_timestamps([25_770_000]))
+    sent = [p for _u, _m, p, _h in transport.requests if isinstance(p, list)][0]
+    assert sent[0]["method"] == "eth_getBlockByNumber"
+    assert sent[0]["params"] == [hex(25_770_000), False]
+
+
+def test_the_batch_is_bounded_to_the_rendered_window() -> None:
+    """The activity feed shows a window, not the history.  Unbounded, this grows
+    with the game and eventually becomes the most expensive call in the app —
+    for a field that is only a FALLBACK (every captured log row already carries
+    ``blockTimestamp``)."""
+    blocks = list(range(25_770_000, 25_770_000 + 250))
+    client, transport = _recording_client(_blocks_handler())
+    stamps = asyncio.run(client.fetch_block_timestamps(blocks))
+    sent = [p for _u, _m, p, _h in transport.requests if isinstance(p, list)][0]
+    assert len(sent) == curator_client.MAX_TIMESTAMP_BLOCKS
+    # ...and it keeps the NEWEST, which is the end of the feed the reader sees.
+    assert max(stamps) == 25_770_249
+    assert min(stamps) == 25_770_250 - curator_client.MAX_TIMESTAMP_BLOCKS
+
+
+def test_a_failed_entry_yields_no_key_rather_than_a_zero() -> None:
+    """A ``0`` here renders ``1970-01-01 00:00``, which looks like data.  An
+    absent key renders ``--:--``, which is the truth."""
+    client = _client(_blocks_handler(missing=frozenset({25_770_001})))
+    stamps = asyncio.run(client.fetch_block_timestamps([25_770_000, 25_770_001]))
+    assert 25_770_001 not in stamps
+    assert stamps == {25_770_000: 25_770_000 * 12}
+
+
+def test_an_empty_input_makes_no_request_at_all() -> None:
+    """The everyday case once the feed reads stamps off the log rows: nothing to
+    fall back for, so nothing to pay."""
+    client = _raising_client()
+    assert asyncio.run(client.fetch_block_timestamps([])) == {}
+
+
+def test_an_unreadable_block_number_is_dropped_before_the_request() -> None:
+    client = _client(_blocks_handler())
+    stamps = asyncio.run(client.fetch_block_timestamps(
+        [25_770_000, None, "later", -1]))  # type: ignore[list-item]
+    assert stamps == {25_770_000: 25_770_000 * 12}
+
+
+def test_a_dead_pool_yields_an_empty_map_not_invented_stamps() -> None:
+    assert asyncio.run(
+        _offline_client().fetch_block_timestamps([25_770_000])) == {}
+
+
+def test_the_timestamp_batch_goes_to_the_state_pool() -> None:
+    """It is ``eth_getBlockByNumber``, not ``eth_getLogs``: publicnode batches it
+    happily and the logs pool has no business seeing it."""
+    client, transport = _recording_client(_blocks_handler())
+    asyncio.run(client.fetch_block_timestamps([25_770_000]))
+    assert STATE_PRIMARY_HOST in transport.requests[0][0]
