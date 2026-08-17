@@ -44,7 +44,6 @@ from maxpane_dashboard.widgets.curator.hero import (
     EOA_SUBTITLE_SHORT,
     EOA_SUBTITLE_TINY,
     CuratorHeroBox,
-    _lines as _hero_lines,
     _tier_for,
 )
 from maxpane_dashboard.widgets.curator._table import (
@@ -58,6 +57,7 @@ from maxpane_dashboard.widgets.curator._table import (
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 __all__ = [
+    "WALLET_TITLE",
     "LADDER_TITLE",
     "STANDING_TITLE",
     "NEXT_TITLE",
@@ -68,14 +68,18 @@ __all__ = [
     "CAPPED_MARK",
     "AT_THE_CAP",
     "TOP_OF_THE_LIST",
+    "NO_WALLET_SET",
+    "NO_ENS",
     "CuratorWalletLadder",
     "CuratorWalletStanding",
     "CuratorWalletNext",
     "CuratorWalletTarget",
+    "CuratorWalletAddress",
     "CuratorWalletHero",
     "HERO_BOX_IDS",
 ]
 
+WALLET_TITLE = "YOUR WALLET"
 LADDER_TITLE = "YOUR LADDER"
 STANDING_TITLE = "YOUR STANDING"
 NEXT_TITLE = "YOUR NEXT MOVE"
@@ -87,6 +91,11 @@ NO_LADDER = "no sends from this wallet yet"
 NOT_ON_THE_LIST = "not on the list yet"
 LADDER_UNAVAILABLE = "ladder unavailable"
 TOP_OF_THE_LIST = "nobody above you"
+#: No wallet configured -- the panel names the two ways to fix it, the same
+#: pair the signals rail's YOU row names.
+NO_WALLET_SET = "press w · or set MAXPANE_WALLET"
+#: A wallet with no reverse ENS record, which is most of them.
+NO_ENS = "no ENS record"
 #: The minimum legal send buys points but not the place above.
 HOLDS_RANK = "not enough to move up"
 TAKES_RANK = "enough to move up"
@@ -118,6 +127,7 @@ _EARLY_COLS = 6
 #: 44,721 is the ceiling this deployment's cap allows (see leaderboard's own
 #: note), so six columns hold every score with the thousands separator.
 _PTS_COLS = 6
+_RANK_COLS = 6
 
 _LADDER_COLUMNS = (
     ("hour", "HOUR", _HOUR_COLS),
@@ -126,6 +136,7 @@ _LADDER_COLUMNS = (
     ("weight", "WEIGHT", _WEIGHT_COLS),
     ("early", "MULT", _EARLY_COLS),
     ("points", "PTS", _PTS_COLS),
+    ("rank", "RANK", _RANK_COLS),
 )
 
 #: Widest first.  Columns are shed from the *derived* end: the score after a
@@ -134,7 +145,8 @@ _LADDER_COLUMNS = (
 _LADDER_TIERS = tuple(
     (name, tier_cost(_LADDER_COLUMNS[:keep]), _LADDER_COLUMNS[:keep], hint)
     for name, keep, hint in (
-        ("full", 6, ""),
+        ("full", 7, ""),
+        ("no-rank", 6, "‹ widen for rank"),
         ("no-points", 5, "‹ widen for pts"),
         ("no-weight", 4, "‹ widen for weight"),
         ("sent-only", 3, "‹ widen for credit"),
@@ -164,6 +176,8 @@ def _ladder_values(row: dict) -> dict:
         "weight": fmt_eth(row.get("weight_eth")),
         "early": _early_x(row.get("early_x")),
         "points": fmt_points(row.get("points")),
+        # `--` when the history was capped: see `analytics.you_ladder`.
+        "rank": f"#{rank:,}" if isinstance((rank := row.get("rank")), int) else DASH,
     }
 
 
@@ -370,6 +384,39 @@ class CuratorWalletLadder(Vertical):
             table.add_row(*cells(values, columns, default=DASH))
 
 
+class CuratorWalletAddress(_FactsPanel):
+    """Which wallet this whole view is about — the address, and its ENS if any.
+
+    Every other panel here describes *a* wallet without ever naming it; with
+    two wallets configured on two machines the pages are indistinguishable.
+    This one names it, and it is the only place the ENS name is shown **whole**:
+    the tables cap a name at the address cell's width so a stranger's 200-column
+    name cannot widen a measured layout, but here there is room, and a
+    truncated name is exactly the case where a reader needs the full one.
+    """
+
+    TITLE = WALLET_TITLE
+
+    def update_data(self, you_address=None, you_ens=None, **_kwargs) -> None:
+        self._payload = {"address": you_address, "ens": you_ens}
+        self._seen = True
+        self._render_view()
+
+    def _lines(self) -> list[tuple]:
+        address = self._payload.get("address")
+        name = self._payload.get("ens")
+        if not isinstance(address, str) or not address.strip():
+            # Not "wallet --": nothing is configured, and the fix is a keypress.
+            return [("wallet", [NO_WALLET_SET])]
+
+        lines: list[tuple] = [("wallet", [address.strip().lower()])]
+        # `no ENS record` rather than a dash: most wallets have none, and the
+        # blank would read as a lookup that failed.
+        lines.append(("ens", [name.strip() if isinstance(name, str) and name.strip()
+                              else NO_ENS]))
+        return lines
+
+
 class CuratorWalletStanding(_FactsPanel):
     """Rank, score, credit, share of all weight, and when this wallet joined."""
 
@@ -571,6 +618,17 @@ HERO_BOX_IDS = (
 )
 
 
+def _wallet_hero_lines(title: str, big: str, *rest: str) -> list[str]:
+    """Five rows: title, a blank, the loud line, then up to two details.
+
+    The box is seven rows with its border, so five is the budget.  The game's
+    hero spends it on three detail lines; these boxes have at most two, so the
+    spare row buys the blank under the title rather than sitting at the bottom.
+    """
+    body = list(rest[:2]) + [""] * (2 - len(rest[:2]))
+    return [f"[dim]{title}[/]", "", big, *body]
+
+
 def _hero_rank_lines(data: dict, tier: str) -> list[str]:
     """Where this wallet sits, and out of how many."""
     rank = data.get("rank")
@@ -578,9 +636,9 @@ def _hero_rank_lines(data: dict, tier: str) -> list[str]:
     if not isinstance(rank, int):
         # Not on the list is not rank zero, and a failed read is not either.
         note = NOT_ON_THE_LIST if data.get("points") is None else DASH
-        return _hero_lines("YOUR RANK", f"[dim]{EMDASH}[/]", f"[dim]{note}[/]")
+        return _wallet_hero_lines("YOUR RANK", f"[dim]{EMDASH}[/]", f"[dim]{note}[/]")
     of = f"of {total:,} wallets" if isinstance(total, int) else ""
-    return _hero_lines("YOUR RANK", f"[bold]#{rank:,}[/]", f"[dim]{of}[/]")
+    return _wallet_hero_lines("YOUR RANK", f"[bold]#{rank:,}[/]", f"[dim]{of}[/]")
 
 
 def _hero_score_lines(data: dict, tier: str) -> list[str]:
@@ -596,7 +654,7 @@ def _hero_score_lines(data: dict, tier: str) -> list[str]:
         rest.append(f"[dim]{fmt_pct(share)} of all weight[/]")
     if not rest:
         rest = [f"[dim]{NOT_ON_THE_LIST}[/]"]
-    return _hero_lines("YOUR SCORE", big, *rest)
+    return _wallet_hero_lines("YOUR SCORE", big, *rest)
 
 
 def _hero_next_lines(data: dict, tier: str) -> list[str]:
@@ -618,7 +676,7 @@ def _hero_next_lines(data: dict, tier: str) -> list[str]:
         rest.append(f"[dim]{HOLDS_RANK}[/]")
     if not rest:
         rest = [f"[dim]{DASH}[/]"]
-    return _hero_lines("YOUR NEXT SEND", big, *rest)
+    return _wallet_hero_lines("YOUR NEXT SEND", big, *rest)
 
 
 _HERO_BUILDERS = {

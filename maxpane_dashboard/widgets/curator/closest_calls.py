@@ -87,6 +87,8 @@ from maxpane_dashboard.widgets.curator._fmt import (
     as_float,
     fmt_eth_compact,
     short_addr,
+    NAME_COLS,
+    short_label,
 )
 from maxpane_dashboard.widgets.curator._table import (
     WIDEN_HINT,
@@ -114,22 +116,22 @@ _MARGIN_COLS = 9
 _TIERS = (
     (
         "full",
-        42,
+        43,
         (
             ("hour", "HOUR", _HOUR_COLS),
             ("volume", "VOLUME", _VOLUME_COLS),
             ("margin", "MARGIN", _MARGIN_COLS),
-            ("savior", "SAVIOR", ADDR_COLS),
+            ("savior", "SAVIOR", NAME_COLS),
         ),
         "",
     ),
     (
         "compact",
-        31,
+        32,
         (
             ("hour", "HOUR", _HOUR_COLS),
             ("margin", "MARGIN", _MARGIN_COLS),
-            ("savior", "SAVIOR", ADDR_COLS),
+            ("savior", "SAVIOR", NAME_COLS),
         ),
         "‹ widen: VOLUME",
     ),
@@ -168,7 +170,9 @@ def _row_values(row: dict) -> dict:
     margin_str = f"{fmt_eth_compact(margin)}" if margin is not None else DASH
     savior = row.get("savior")
     savior_str = (
-        safe_markup(short_addr(savior)) if savior else f"[dim]{EMDASH}[/]"
+        safe_markup(short_label(row.get("savior_name"), savior))
+        if savior
+        else f"[dim]{EMDASH}[/]"
     )
     tight = margin is not None and margin <= 0.0
     return {
@@ -183,8 +187,11 @@ class CuratorClosestCalls(Vertical):
     """Judged hours ranked by margin, with an explicit pre-judging state."""
 
     DEFAULT_CSS = """
+    /* A blank row under the title and another above the table header (the note
+       carries the second one).  Rows are what this slot has spare. */
     CuratorClosestCalls > .curator-cc-title {
         width: 100%;
+        margin: 0 0 1 0;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
@@ -196,6 +203,7 @@ class CuratorClosestCalls(Vertical):
         width: 100%;
         height: auto;
         min-height: 1;
+        margin: 0 0 1 0;
         padding: 0 1;
     }
     CuratorClosestCalls > DataTable {

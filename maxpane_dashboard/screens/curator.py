@@ -169,6 +169,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletNext,
     CuratorWalletStanding,
     CuratorWalletTarget,
+    CuratorWalletAddress,
     CuratorWalletHero,
     CuratorClusters,
     CuratorHero,
@@ -296,6 +297,7 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "volume_series", "contributors_series", "hourly_threshold_eth",
     ),
     "CuratorSignals": (
+        "whale_ens", "last_saved_ens",
         "phase", "settled", "settled_hour", "sig_settled_state",
         "sig_at_risk_state", "first_judged_hour", "hour_needed_eth",
         "hour_seconds_left", "last_saved_hour", "last_saved_wallet",
@@ -325,6 +327,7 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "you_required_next_eth", "you_marginal_points", "you_next_send_passes",
         "contributors_total",
     ),
+    "CuratorWalletAddress": ("you_address", "you_ens"),
     "CuratorWalletLadder": ("you_ladder_rows", "you_address"),
     "CuratorWalletStanding": (
         "you_rank", "you_points", "you_credit_eth", "you_weight_eth",
@@ -615,6 +618,12 @@ class CuratorScreen(RefreshGuard, Screen):
     }
     /* In the rail: full width, sized to their own lines, one blank row between
        panels so the three do not read as one block. */
+    CuratorScreen CuratorWalletAddress {
+        width: 100%;
+        height: auto;
+        margin: 0 0 2 0;
+        padding: 0 1;
+    }
     CuratorScreen CuratorWalletStanding {
         width: 100%;
         height: auto;
@@ -728,6 +737,7 @@ class CuratorScreen(RefreshGuard, Screen):
                 # stand, what the next send must be, what it gets you -- and
                 # the ladder is the tall thing they are read against.
                 with Vertical(id="curator-wallet-rail"):
+                    yield CuratorWalletAddress()
                     yield CuratorWalletStanding()
                     yield CuratorWalletNext()
                     yield CuratorWalletTarget()
@@ -980,6 +990,7 @@ class CuratorScreen(RefreshGuard, Screen):
             # two swap tables: a body that starts rendering only when it
             # becomes visible is blank for a beat after the keypress.
             CuratorWalletHero,
+            CuratorWalletAddress,
             CuratorWalletLadder,
             CuratorWalletStanding,
             CuratorWalletNext,

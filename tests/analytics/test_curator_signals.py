@@ -1901,6 +1901,10 @@ def full_readings(
         _first_deposit_from_log(r) for r in _rows_of(bundle["logs"], TOPIC_FIRST_DEPOSIT)
     ]
     return {
+        # The bundle is a full sweep from the creation block, so nothing was
+        # ever dropped to the cap -- which is what makes a historical rank
+        # computable (see `you_ladder`).
+        "history_complete": True,
         "settled": bool(word("0x3270bb5b")),
         "current_hour": word("0x020e185d"),
         "hour_needed_wei": word("0xa4586257"),

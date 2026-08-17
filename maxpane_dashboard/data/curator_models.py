@@ -497,10 +497,12 @@ CURATOR_KEYS: tuple[str, ...] = (
     "top_points",               # int | None — rank 1's score
     # ---- signals ------------------------------------------------------------
     "last_saved_hour",          # int | None — None means HourSaved never fired
-    "last_saved_wallet",        # str | None
+    "last_saved_wallet",
+    "last_saved_ens",           # str | None — verified name for last_saved_wallet        # str | None
     "last_saved_age_s",         # float | None
     "whale_amount_eth",         # float | None
-    "whale_wallet",             # str | None
+    "whale_wallet",
+    "whale_ens",                # str | None — verified name for whale_wallet             # str | None
     "whale_age_s",              # float | None
     "clusters_count",           # int | None — 0 is a real answer
     "flagged_points_share_pct", # float | None
@@ -532,6 +534,7 @@ CURATOR_KEYS: tuple[str, ...] = (
                                 #   holds, never what a person holds.
     "you_ladder_rows",          # list[dict] — CURATOR_ROW_KEYS["you_ladder_rows"]
     "you_next_rank",            # int | None — the rank above; None at rank 1
+    "you_ens",                  # str | None — verified reverse ENS, or None
     "you_next_send_passes",     # bool | None — does the MINIMUM legal send
                                 #   already pass the rank above?  None is "we
                                 #   could not tell", never "no".
@@ -562,14 +565,19 @@ CURATOR_KEYS: tuple[str, ...] = (
 CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
     "leaderboard_rows": (
         "rank", "address", "points", "credit_eth", "tx_count", "flagged",
+        # Verified reverse ENS for `address`, or None.  Rendered in the
+        # address cell's own width, so a name never widens the table.
+        "name",
     ),
     # ``ts`` is None when the block-timestamp batch failed -> renders "--:--".
     # ``tx_hash`` + ``log_index`` are the de-dupe key (PRD §4).
     "activity_rows": (
         "ts", "address", "amount_eth", "credited_eth", "new_weight",
-        "tx_count", "hour", "kind", "tx_hash", "log_index",
+        "tx_count", "hour", "kind", "tx_hash", "log_index", "name",
     ),
-    "closest_call_rows": ("hour", "volume_eth", "margin_eth", "savior"),
+    "closest_call_rows": (
+        "hour", "volume_eth", "margin_eth", "savior", "savior_name",
+    ),
     # One row per send the reader made.  ``capped`` marks a deposit that
     # credited nothing because it was above the 1000 ETH cap -- it still counted
     # in full toward that hour's survival, so the 0 is a fact about the cap.
@@ -577,6 +585,9 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "hour", "amount_eth", "credited_eth", "weight_eth", "early_x", "capped",
         # The running score after that rung, off the event's own new_weight.
         "points",
+        # The place this wallet stood in right after it -- None when the event
+        # history has dropped rows, where the number would flatter the reader.
+        "rank",
         "ts",
     ),
     "cluster_rows": (

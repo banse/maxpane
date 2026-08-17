@@ -499,9 +499,11 @@ EXPECTED_KEYS = {
     # signals
     "last_saved_hour",
     "last_saved_wallet",
+    "last_saved_ens",
     "last_saved_age_s",
     "whale_amount_eth",
     "whale_wallet",
+    "whale_ens",
     "whale_age_s",
     "clusters_count",
     "flagged_points_share_pct",
@@ -525,6 +527,7 @@ EXPECTED_KEYS = {
     "you_next_rank",
     "you_next_rank_needs_eth",
     "you_next_send_passes",
+    "you_ens",
     # rows
     "leaderboard_rows",
     "activity_rows",
@@ -562,6 +565,9 @@ def test_row_key_sets_match_the_prd() -> None:
         "credit_eth",
         "tx_count",
         "flagged",
+        # Verified reverse ENS for `address` (PRD §13 A9).  Rendered inside the
+        # address cell's own width, so a name can never widen the table.
+        "name",
     )
     assert CURATOR_ROW_KEYS["activity_rows"] == (
         "ts",
@@ -574,12 +580,14 @@ def test_row_key_sets_match_the_prd() -> None:
         "kind",
         "tx_hash",
         "log_index",
+        "name",
     )
     assert CURATOR_ROW_KEYS["closest_call_rows"] == (
         "hour",
         "volume_eth",
         "margin_eth",
         "savior",
+        "savior_name",
     )
     assert CURATOR_ROW_KEYS["cluster_rows"] == (
         "size",

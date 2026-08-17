@@ -72,6 +72,7 @@ import dataclasses
 import logging
 import time
 from datetime import datetime, timezone
+from collections.abc import Mapping
 from typing import Any
 
 from maxpane_dashboard.analytics.curator_signals import (
@@ -82,6 +83,7 @@ from maxpane_dashboard.analytics.curator_signals import (
     hourly_buckets,
 )
 from maxpane_dashboard.data import curator_addresses as A
+from maxpane_dashboard.data import ens
 from maxpane_dashboard.data.curator_cache import (
     DEFAULT_CACHE_PATH,
     SLOT_BLOCKSCOUT,
@@ -1210,6 +1212,11 @@ class CuratorManager:
         for key in CONFIG_PAYLOAD_KEYS:
             read[key] = cfg.get(key)
 
+        # Whether a *historical* rank is computable at all: the cap drops the
+        # oldest rows, and a rank counted over what survived would count fewer
+        # competitors than existed.  See `analytics.you_ladder`.
+        read["history_complete"] = self.cache.dropped_events == 0
+
         read["deposits"] = self._log_reading(
             "deposits",
             self.cache.events(),
@@ -1372,9 +1379,94 @@ class CuratorManager:
             if stored:
                 payload[key] = stored
 
+        await self._label_with_ens(payload, now)
+
         payload["degraded"] = self._degraded()
         self._stamp(payload)
         return self._finalise(payload)
+
+    # -- reverse ENS (PRD §13 A9) --------------------------------------------
+
+    def _rendered_addresses(self, payload: Mapping[str, Any]) -> list[str]:
+        """Every address this payload will put on screen, and nothing else.
+
+        Resolving the whole contributor table would be thousands of addresses
+        for ten visible rows.  The set is: the leaderboard's rows, the activity
+        feed's, the two signal wallets, the savior column, and the reader's own.
+        """
+        out: list[str] = []
+        for key in ("leaderboard_rows", "activity_rows"):
+            for row in payload.get(key) or ():
+                if isinstance(row, dict) and isinstance(row.get("address"), str):
+                    out.append(row["address"])
+        for row in payload.get("closest_call_rows") or ():
+            if isinstance(row, dict) and isinstance(row.get("savior"), str):
+                out.append(row["savior"])
+        for key in ("whale_wallet", "last_saved_wallet"):
+            value = payload.get(key)
+            if isinstance(value, str):
+                out.append(value)
+        if isinstance(self.wallet, str):
+            out.append(self.wallet)
+        return out
+
+    async def _label_with_ens(self, payload: dict[str, Any], now: float) -> None:
+        """Attach verified reverse-ENS names to the addresses being rendered.
+
+        Cosmetic by construction: every failure path here leaves the payload
+        exactly as it was, and every widget falls back to the shortened hex.
+        Nothing is resolved twice -- a fresh name and a fresh *miss* both mean
+        "do not ask" (see :class:`ens.NameStore`), and without the miss half
+        most wallets would be re-queried on every tick forever, because most
+        wallets have no reverse record.
+        """
+        known = self.cache.ens.names_fresh(ens.DEFAULT_TTL_SECONDS, now)
+        misses = self.cache.ens.misses_fresh(ens.MISS_TTL_SECONDS, now)
+
+        wanted: list[str] = []
+        seen: set[str] = set()
+        for addr in self._rendered_addresses(payload):
+            key = addr.lower()
+            if key in known or key in misses or key in seen:
+                continue
+            seen.add(key)
+            wanted.append(addr)
+
+        if wanted:
+            resolved = await self._guard(
+                lambda: self.client.fetch_ens_names(wanted), "fetch_ens_names"
+            ) or {}
+            if resolved:
+                _safe_call(self.cache.ens.set_names, resolved, ts=now)
+                known = {**known, **{a.lower(): n for a, n in resolved.items()}}
+            # Everything asked for and not answered has no name.  Recorded so
+            # the next cycle does not ask again; a shorter TTL lets a wallet
+            # that registers one be picked up.
+            _safe_call(
+                self.cache.ens.note_misses,
+                [a for a in wanted if a.lower() not in known],
+                ts=now,
+            )
+
+        if not known:
+            return
+
+        for key in ("leaderboard_rows", "activity_rows"):
+            for row in payload.get(key) or ():
+                if isinstance(row, dict) and isinstance(row.get("address"), str):
+                    row["name"] = known.get(row["address"].lower())
+        for row in payload.get("closest_call_rows") or ():
+            if isinstance(row, dict) and isinstance(row.get("savior"), str):
+                row["savior_name"] = known.get(row["savior"].lower())
+        for src, dst in (
+            ("whale_wallet", "whale_ens"),
+            ("last_saved_wallet", "last_saved_ens"),
+        ):
+            value = payload.get(src)
+            if isinstance(value, str):
+                payload[dst] = known.get(value.lower())
+        if isinstance(self.wallet, str):
+            payload["you_ens"] = known.get(self.wallet.lower())
 
     def _stamp(self, payload: dict[str, Any]) -> None:
         """Fill the freshness marker from the newest *successful* read.

@@ -23,6 +23,7 @@ from maxpane_dashboard.data.curator_cache import (
     SLOT_WALLET,
     CuratorCache,
 )
+from maxpane_dashboard.data import ens
 from maxpane_dashboard.data.curator_cache import TIER_FAST
 from maxpane_dashboard.data.curator_manager import (
     FAST_TIER_PAYLOAD_KEYS,
@@ -120,6 +121,9 @@ class FakeClient:
 
     async def fetch_block_timestamps(self, block_numbers):
         return self._answer("fetch_block_timestamps", tuple(block_numbers)) or {}
+
+    async def fetch_ens_names(self, addresses, **_kw):
+        return self._answer("fetch_ens_names", tuple(addresses)) or {}
 
     async def fetch_blockscout_logs(self, max_pages=400):
         return self._answer("fetch_blockscout_logs", max_pages)
@@ -1843,3 +1847,114 @@ def test_clearing_the_wallet_makes_the_next_cycle_read_nothing(tmp_path, clock):
     assert asyncio.run(manager._pool_wallet(NOW)) is None
     assert client.calls == []
     assert SOURCE_WALLET not in manager._degraded()
+
+
+# ---------------------------------------------------------------------------
+# Reverse ENS labelling (PRD §13 A9)
+# ---------------------------------------------------------------------------
+
+
+def _payload_with_addresses(manager) -> dict:
+    return {
+        "leaderboard_rows": [{"address": WALLET, "name": None}],
+        "activity_rows": [{"address": OTHER_WALLET, "name": None}],
+        "closest_call_rows": [{"savior": WALLET, "savior_name": None}],
+        "whale_wallet": OTHER_WALLET,
+        "last_saved_wallet": WALLET,
+    }
+
+
+def test_only_the_addresses_on_screen_are_resolved(tmp_path, clock):
+    """The contributor table is thousands of wallets for ten visible rows."""
+    manager = _manager(tmp_path, clock, wallet=WALLET)
+    payload = _payload_with_addresses(manager)
+    payload["leaderboard_rows"].append({"address": "0x" + "11" * 20, "name": None})
+
+    wanted = manager._rendered_addresses(payload)
+
+    assert set(a.lower() for a in wanted) == {
+        WALLET.lower(), OTHER_WALLET.lower(), "0x" + "11" * 20,
+    }
+
+
+def test_a_resolved_name_reaches_every_place_that_address_renders(tmp_path, clock):
+    client = FakeClient(fetch_ens_names=lambda addrs: {WALLET.lower(): "surfsurf.eth"})
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+    payload = _payload_with_addresses(manager)
+
+    asyncio.run(manager._label_with_ens(payload, NOW))
+
+    assert payload["leaderboard_rows"][0]["name"] == "surfsurf.eth"
+    assert payload["closest_call_rows"][0]["savior_name"] == "surfsurf.eth"
+    assert payload["last_saved_ens"] == "surfsurf.eth"
+    assert payload["you_ens"] == "surfsurf.eth"
+    # ...and an address with no name is left alone rather than mislabelled.
+    assert payload["activity_rows"][0]["name"] is None
+    assert payload.get("whale_ens") is None
+
+
+def test_a_failed_resolution_leaves_every_row_exactly_as_it_was(tmp_path, clock):
+    """Names are decoration: the failure costs the label, never the row."""
+    client = FakeClient(fetch_ens_names=RuntimeError("all endpoints down"))
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+    payload = _payload_with_addresses(manager)
+
+    asyncio.run(manager._label_with_ens(payload, NOW))
+
+    assert payload["leaderboard_rows"][0]["name"] is None
+    assert payload["you_ens"] is None if "you_ens" in payload else True
+
+
+def test_an_address_with_no_name_is_asked_once_not_every_tick(tmp_path, clock):
+    """Most wallets have no reverse record.  Without the miss half, every one of
+    them is re-queried forever, because "absent from the map" and "never asked"
+    look identical."""
+    asked: list[list[str]] = []
+
+    def resolve(addrs):
+        asked.append(list(addrs))
+        return {}
+
+    client = FakeClient(fetch_ens_names=resolve)
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+
+    asyncio.run(manager._label_with_ens(_payload_with_addresses(manager), NOW))
+    asyncio.run(manager._label_with_ens(_payload_with_addresses(manager), NOW + 30))
+
+    assert len(asked) == 1, "a known miss was asked again"
+
+
+def test_a_known_miss_expires_so_a_new_registration_is_picked_up(tmp_path, clock):
+    asked: list[list[str]] = []
+
+    def resolve(addrs):
+        asked.append(list(addrs))
+        return {}
+
+    client = FakeClient(fetch_ens_names=resolve)
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+
+    asyncio.run(manager._label_with_ens(_payload_with_addresses(manager), NOW))
+    later = NOW + ens.MISS_TTL_SECONDS + 1
+    asyncio.run(manager._label_with_ens(_payload_with_addresses(manager), later))
+
+    assert len(asked) == 2
+
+
+def test_a_fresh_name_is_not_re_resolved(tmp_path, clock):
+    asked: list[list[str]] = []
+
+    def resolve(addrs):
+        asked.append(list(addrs))
+        return {a.lower(): "surfsurf.eth" for a in addrs}
+
+    client = FakeClient(fetch_ens_names=resolve)
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+
+    asyncio.run(manager._label_with_ens(_payload_with_addresses(manager), NOW))
+    payload = _payload_with_addresses(manager)
+    asyncio.run(manager._label_with_ens(payload, NOW + 60))
+
+    assert len(asked) == 1
+    # ...and the cached name still labels the second payload.
+    assert payload["leaderboard_rows"][0]["name"] == "surfsurf.eth"

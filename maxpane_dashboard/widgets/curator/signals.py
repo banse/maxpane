@@ -79,6 +79,7 @@ from maxpane_dashboard.widgets.curator._fmt import (
     fmt_pct,
     fmt_points,
     short_addr,
+    short_label,
 )
 from maxpane_dashboard.widgets.curator.hero import PHASE_UNAVAILABLE, PHASES
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
@@ -320,7 +321,9 @@ def _hour_saved_row(data: dict) -> tuple[str | None, list[str]]:
     wallet = data.get("last_saved_wallet")
     parts = [f"hour {hour}"]
     if wallet:
-        parts.append(f"by {safe_markup(short_addr(wallet))}")
+        parts.append(
+            f"by {safe_markup(short_label(data.get('last_saved_ens'), wallet))}"
+        )
     age = fmt_age(data.get("last_saved_age_s"))
     if age != DASH:
         parts.append(f"{age} ago")
@@ -339,7 +342,7 @@ def _whale_row(data: dict) -> tuple[str | None, list[str]]:
     parts = [f"[bold]{fmt_eth(amount)} ETH[/]"]
     wallet = data.get("whale_wallet")
     if wallet:
-        parts.append(safe_markup(short_addr(wallet)))
+        parts.append(safe_markup(short_label(data.get("whale_ens"), wallet)))
     age = fmt_age(data.get("whale_age_s"))
     if age != DASH:
         parts.append(f"{age} ago")
@@ -467,6 +470,11 @@ def measure_signals_width(payload: dict) -> int:
 #:   ``hour_seconds_left`` is 99 hours: ``hourDuration`` is an immutable, so
 #:   the countdown is not guaranteed to be the 3600 this deployment uses.
 WIDTH_PROBE = {
+    # `short_label` caps a name at ADDR_COLS, so the widest a name can render is
+    # exactly as wide as the hex it replaces -- which is why ENS cannot move any
+    # measured width on this screen (PRD §13 A9).
+    "whale_ens": "w" * 11,
+    "last_saved_ens": "s" * 11,
     "phase": "judged",
     "settled": True,
     "settled_hour": 9_999,
@@ -569,9 +577,11 @@ class CuratorSignals(Vertical):
         hour_seconds_left=None,
         last_saved_hour=None,
         last_saved_wallet=None,
+        last_saved_ens=None,
         last_saved_age_s=None,
         whale_amount_eth=None,
         whale_wallet=None,
+        whale_ens=None,
         whale_age_s=None,
         clusters_count=None,
         flagged_points_share_pct=None,
@@ -602,9 +612,11 @@ class CuratorSignals(Vertical):
             "hour_seconds_left": hour_seconds_left,
             "last_saved_hour": last_saved_hour,
             "last_saved_wallet": last_saved_wallet,
+            "last_saved_ens": last_saved_ens,
             "last_saved_age_s": last_saved_age_s,
             "whale_amount_eth": whale_amount_eth,
             "whale_wallet": whale_wallet,
+            "whale_ens": whale_ens,
             "whale_age_s": whale_age_s,
             "clusters_count": clusters_count,
             "flagged_points_share_pct": flagged_points_share_pct,

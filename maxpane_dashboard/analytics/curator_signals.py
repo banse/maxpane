@@ -142,6 +142,9 @@ READING_KEYS: tuple[str, ...] = (
     "points_per_eth",         # int | None
     "credit_cap_wei",         # int | None
     # --- logs tier ---------------------------------------------------------
+    #: True when the event history has never dropped a row to the cap, which is
+    #: what makes a *historical* rank computable at all (see `you_ladder`).
+    "history_complete",       # bool | None
     "deposits",               # list[DepositEvent] | None — [] is a read that found none
     "first_deposits",         # list[dict] | None — {"contributor", "index", "ts"}
     "hour_saved",             # list[dict] | None — {"hour", "wallet", "ts"}
@@ -187,9 +190,11 @@ SIGNAL_OUTPUT_KEYS: tuple[str, ...] = (
     "top_points",
     "last_saved_hour",
     "last_saved_wallet",
+    "last_saved_ens",
     "last_saved_age_s",
     "whale_amount_eth",
     "whale_wallet",
+    "whale_ens",
     "whale_age_s",
     "clusters_count",
     "flagged_points_share_pct",
@@ -211,6 +216,7 @@ SIGNAL_OUTPUT_KEYS: tuple[str, ...] = (
     "you_next_rank",
     "you_next_rank_needs_eth",
     "you_next_send_passes",
+    "you_ens",
     "leaderboard_rows",
     "activity_rows",
     "closest_call_rows",
@@ -1083,12 +1089,19 @@ def you_quote(
     return rank, points, credit_eth, _eth(required_next), marginal
 
 
+def _rank_at(weights: dict[str, int], key: str) -> int:
+    """Places above *key* in *weights*, plus one -- the rank at that instant."""
+    mine = weights[key]
+    return 1 + sum(1 for weight in weights.values() if weight > mine)
+
+
 def you_ladder(
     deposits: Any,
     address: Any,
     *,
     credit_cap_wei: int | None,
     points_per_eth: int | None = None,
+    history_complete: bool = False,
 ) -> list[dict]:
     """The reader's own sends, oldest first, as they actually happened.
 
@@ -1101,6 +1114,15 @@ def you_ladder(
     while adding no weight at all, so a row reading ``0 credit`` is a fact
     about the cap, not a failed read.  Rows whose credited delta cannot be
     recomputed leave it ``None`` rather than guessing a zero.
+
+    ``rank`` -- the place this wallet stood in *right after* that rung -- is
+    filled only when ``history_complete``, which the manager sets from
+    ``cache.dropped_events == 0``.  Computed over a capped history it would
+    count fewer competitors than existed and flatter the reader with a rank
+    they never held, so a short history renders ``--`` instead.  It is a rank
+    by weight at that moment; the fold's tie-break on who joined first is not
+    reconstructed, and ties are rare enough that a shared place is the honest
+    answer anyway.
     """
     if not isinstance(address, str):
         return []
@@ -1108,9 +1130,17 @@ def you_ladder(
 
     rows: list[dict] = []
     running_high_water = 0
+    # Every wallet's running weight, off each event's own ``new_weight_wei`` --
+    # exact, and no re-derivation.  Only read when a row is ours, so the scan
+    # costs (my sends x wallets) rather than (all sends x wallets).
+    weights: dict[str, int] = {}
     for event in _usable_deposits(deposits):
         contributor = getattr(event, "contributor", "")
         mine = isinstance(contributor, str) and contributor.lower() == key
+        if isinstance(contributor, str):
+            running = _int_or_none(getattr(event, "new_weight_wei", None))
+            if running is not None:
+                weights[contributor.lower()] = running
         amount = _int_or_none(getattr(event, "amount_wei", None))
         if amount is None:
             continue
@@ -1141,6 +1171,11 @@ def you_ladder(
                 "points": points_for_weight(
                     _int_or_none(getattr(event, "new_weight_wei", None)),
                     points_per_eth,
+                ),
+                "rank": (
+                    _rank_at(weights, key)
+                    if history_complete and key in weights
+                    else None
                 ),
                 "ts": _int_or_none(getattr(event, "ts", None)),
             }
@@ -1430,6 +1465,7 @@ def build_signals(readings: Any, *, now_ts: float) -> dict:
             "volume_eth": _eth(volume),
             "margin_eth": _eth(margin),
             "savior": savior,
+            "savior_name": None,
         }
         for hour, volume, margin, savior in record_survival.get("closest_calls", [])[
             :CLOSEST_CALL_LIMIT
@@ -1478,6 +1514,9 @@ def build_signals(readings: Any, *, now_ts: float) -> dict:
             "credit_eth": _eth(row.credit_wei),
             "tx_count": row.tx_count,
             "flagged": row.address.lower() in flagged,
+            # Filled in by the manager, which is the only layer with a client;
+            # the column exists here so the row shape is whole either way.
+            "name": None,
         }
         for rank, row in enumerate(rows[:LEADERBOARD_LIMIT], start=1)
     ]
@@ -1496,6 +1535,7 @@ def build_signals(readings: Any, *, now_ts: float) -> dict:
             "kind": _activity_kind(event, saved_keys),
             "tx_hash": getattr(event, "tx_hash", None),
             "log_index": event.log_index,
+            "name": None,
         }
         for event in reversed(events[-ACTIVITY_LIMIT:])
     ]
@@ -1572,7 +1612,8 @@ def build_signals(readings: Any, *, now_ts: float) -> dict:
         out["you_ladder_rows"] = _guard(
             lambda: you_ladder(read.get("deposits"), address,
                                credit_cap_wei=credit_cap,
-                               points_per_eth=points_per_eth),
+                               points_per_eth=points_per_eth,
+                               history_complete=bool(read.get("history_complete"))),
             [],
         )
 

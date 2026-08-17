@@ -57,6 +57,8 @@ from maxpane_dashboard.widgets.curator._fmt import (
     fmt_eth_compact,
     fmt_points,
     short_addr,
+    NAME_COLS,
+    short_label,
 )
 from maxpane_dashboard.widgets.curator._table import (
     WIDEN_HINT,
@@ -97,10 +99,10 @@ _FLAG_COLS = 2
 _TIERS = (
     (
         "full",
-        48,
+        49,
         (
             ("rank", "#", _RANK_COLS),
-            ("wallet", "WALLET", ADDR_COLS),
+            ("wallet", "WALLET", NAME_COLS),
             ("points", "POINTS", _POINTS_COLS),
             ("credit", "CREDIT", _CREDIT_COLS),
             ("tx", "TX", _TX_COLS),
@@ -110,10 +112,10 @@ _TIERS = (
     ),
     (
         "compact",
-        42,
+        43,
         (
             ("rank", "#", _RANK_COLS),
-            ("wallet", "WALLET", ADDR_COLS),
+            ("wallet", "WALLET", NAME_COLS),
             ("points", "POINTS", _POINTS_COLS),
             ("credit", "CREDIT", _CREDIT_COLS),
             ("flag", "⚑", _FLAG_COLS),
@@ -122,10 +124,10 @@ _TIERS = (
     ),
     (
         "minimal",
-        32,
+        33,
         (
             ("rank", "#", _RANK_COLS),
-            ("wallet", "WALLET", ADDR_COLS),
+            ("wallet", "WALLET", NAME_COLS),
             ("points", "POINTS", _POINTS_COLS),
             ("flag", "⚑", _FLAG_COLS),
         ),
@@ -163,7 +165,7 @@ def _row_values(row: dict, index: int, you: bool) -> dict:
         # A glyph AND weight, never colour alone.
         rank_str = f"▸{rank_str}"
 
-    wallet = safe_markup(short_addr(row.get("address")))
+    wallet = safe_markup(short_label(row.get("name"), row.get("address")))
     points = fmt_points(row.get("points"))
     credit = fmt_eth_compact(row.get("credit_eth"))
     tx_count = row.get("tx_count")

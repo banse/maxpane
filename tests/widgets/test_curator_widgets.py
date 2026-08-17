@@ -34,6 +34,8 @@ import pytest
 from textual.app import App, ComposeResult
 
 from maxpane_dashboard.widgets.curator import (
+    NO_ENS,
+    NO_WALLET_SET,
     ACTIVITY_EMPTY,
     ACTIVITY_UNAVAILABLE,
     CLOSEST_CALLS_UNAVAILABLE,
@@ -58,6 +60,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletNext,
     CuratorWalletStanding,
     CuratorWalletTarget,
+    CuratorWalletAddress,
     CuratorWalletHero,
     CuratorHero,
     CuratorLeaderboard,
@@ -514,11 +517,14 @@ async def test_a_narrow_hero_announces_the_columns_it_shed():
 def _lb_rows(count: int = 3) -> list[dict]:
     base = [
         {"rank": 1, "address": "0x381fe4861234567890abcdef1234567890abCDEF",
-         "points": 21473, "credit_eth": 461.1, "tx_count": 7, "flagged": False},
+         "points": 21473, "credit_eth": 461.1, "tx_count": 7, "flagged": False,
+         "name": None},
         {"rank": 2, "address": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
-         "points": 13038, "credit_eth": 170.0, "tx_count": 3, "flagged": False},
+         "points": 13038, "credit_eth": 170.0, "tx_count": 3, "flagged": False,
+         "name": "surfsurf.eth"},
         {"rank": 4, "address": "0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91",
-         "points": 7745, "credit_eth": 60.0, "tx_count": 1, "flagged": True},
+         "points": 7745, "credit_eth": 60.0, "tx_count": 1, "flagged": True,
+         "name": None},
     ]
     out = []
     for i in range(count):
@@ -549,7 +555,9 @@ async def test_at_most_ten_rows_reach_the_board():
     text = await _rendered(
         CuratorLeaderboard, leaderboard_rows=_lb_rows(25), size=(143, 30)
     )
-    ranks = [line for line in text.splitlines() if "0x" in line]
+    # Rows render an identity, which is a name when the wallet has one -- the
+    # fixture mixes both, the way the chain does.
+    ranks = [line for line in text.splitlines() if "0x" in line or ".eth" in line]
     assert len(ranks) == 10
 
 
@@ -1359,6 +1367,7 @@ def _act_row(**over) -> dict:
         "tx_count": 4,
         "hour": 1,
         "kind": "deposit",
+        "name": None,
         "tx_hash": "0x240bf1a800000000000000000000000000000000000000000000000000000001",
         "log_index": 12,
     }
@@ -1505,8 +1514,8 @@ async def _feed_at(width: int, rows) -> str:
 
 @pytest.mark.parametrize(
     "width,shed",
-    [(143, ""), (78, ""), (70, "credit wording"), (50, "credit + weight"),
-     (40, "credit, weight, tx"), (32, "kind, credit, weight, tx")],
+    [(143, ""), (79, ""), (71, "credit wording"), (51, "credit + weight"),
+     (41, "credit, weight, tx"), (33, "kind, credit, weight, tx")],
 )
 async def test_narrow_feeds_announce_the_fields_they_shed(width, shed):
     text = await _feed_at(width, _act_rows())
@@ -1519,12 +1528,15 @@ async def test_narrow_feeds_announce_the_fields_they_shed(width, shed):
 
 @pytest.mark.parametrize(
     "width,tail",
+    # Each boundary is ONE column wider than it was: the identity cell holds a
+    # name now (PRD §13 A9).  The tails are unchanged, which is the point --
+    # the largest real deposit still survives every tier.
     [(143, "(+461.10 credit → 899.00 wt)  tx#12"),
-     (77, "(+461.10 credit → 899.00 wt)  tx#12"),   # the full tier's floor
-     (67, "(+461.10 → 899.00)  tx#12"),             # compact's
-     (47, "461.10Ξ  tx#12"),                        # narrow's
-     (39, "461.10Ξ"),                               # minimal's
-     (32, "461.10Ξ")],                              # floor's
+     (78, "(+461.10 credit → 899.00 wt)  tx#12"),   # the full tier's floor
+     (68, "(+461.10 → 899.00)  tx#12"),             # compact's
+     (48, "461.10Ξ  tx#12"),                        # narrow's
+     (40, "461.10Ξ"),                               # minimal's
+     (33, "461.10Ξ")],                              # floor's
 )
 async def test_the_largest_captured_deposit_survives_every_tier_boundary(
     width, tail
@@ -1568,7 +1580,12 @@ def test_the_feeds_cells_are_sized_from_the_formatter_not_from_an_example():
     widest = _widest_act_row()
     assert len(act_mod._delta_cell(widest, "full")) == act_mod._DELTA_COLS == 28
     assert len(act_mod._delta_cell(widest, "compact")) <= act_mod._DELTA_SHORT_COLS
-    assert act_mod.FULL_WIDTH == 74
+    # 75, not 74: the identity cell holds a NAME now (PRD §13 A9) and
+    # `surfsurf.eth` is one column wider than a truncated address.  One is all
+    # the screen can afford -- see NAME_COLS' own note for the sweep.
+    from maxpane_dashboard.widgets.curator._fmt import ADDR_COLS, NAME_COLS
+    assert NAME_COLS - ADDR_COLS == 1
+    assert act_mod.FULL_WIDTH == 75
 
 
 # ===========================================================================
@@ -1580,10 +1597,13 @@ def _call_rows() -> list[dict]:
     # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
     # (no hour has been judged yet; capture B is the window)
     return [
-        {"hour": 26, "volume_eth": 5.42, "margin_eth": 0.42, "savior": None},
-        {"hour": 25, "volume_eth": 61.0, "margin_eth": 56.0, "savior": None},
+        {"hour": 26, "volume_eth": 5.42, "margin_eth": 0.42, "savior": None,
+         "savior_name": None},
+        {"hour": 25, "volume_eth": 61.0, "margin_eth": 56.0, "savior": None,
+         "savior_name": None},
         {"hour": 24, "volume_eth": 5.0, "margin_eth": 0.0,
-         "savior": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1"},
+         "savior": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+         "savior_name": "surfsurf.eth"},
     ]
 
 
@@ -1916,6 +1936,7 @@ _WIDGETS = (
     # The `y` view's four panels and its own hero (PRD §13 A8).  Same seam,
     # same guarantees: the screen splats the whole flat dict at them too.
     CuratorWalletHero,
+    CuratorWalletAddress,
     CuratorWalletLadder,
     CuratorWalletStanding,
     CuratorWalletTarget,
@@ -2090,6 +2111,9 @@ def _full_payload() -> dict:
         as_of_hhmm="22:58",
         as_of=1787000341.0,
         you_address="0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91",
+        you_ens="surfsurf.eth",
+        whale_ens=None,
+        last_saved_ens=None,
     )
 
 
@@ -2107,7 +2131,9 @@ def test_the_full_payload_is_exactly_the_frozen_contract():
 #: its rows passes a smoke test.
 _EXPECTED_ROWS = {
     "CuratorHero": (("THE LIST",), 1),
-    "CuratorLeaderboard": (("0x",), 3),
+    # One of the three fixture rows carries a verified ENS name, so the
+    # marker is "a row rendered an identity", not "a row rendered hex".
+    "CuratorLeaderboard": (("0x", ".eth"), 3),
     "CuratorSparklines": (("▲", "▼", "●"), 2),
     "CuratorSignals": (("▶", "◐", "●"), 7),   # the rail's last row is YOU
     "CuratorActivity": (("0x200e",), 2),
@@ -2120,6 +2146,7 @@ _EXPECTED_ROWS = {
     "CuratorWalletNext": (("≥", "ETH"), 2),
     "CuratorWalletTarget": (("pts", "rank"), 2),
     "CuratorWalletHero": (("YOUR", "#", "pts"), 3),
+    "CuratorWalletAddress": (("wallet", "ens"), 2),
 }
 
 
@@ -2252,3 +2279,87 @@ def test_hints_replace_tab_switch_and_the_cycle_age_but_never_the_errors():
     assert "updated" not in text
     assert "4 errors" in text
     assert "30s poll" in text
+
+
+# ===========================================================================
+# CuratorWalletAddress — which wallet this view is about (PRD §13 A9)
+# ===========================================================================
+
+
+async def test_the_wallet_panel_names_the_address_in_full():
+    """Every other panel describes *a* wallet without naming it; with two
+    wallets configured on two machines the pages are indistinguishable."""
+    address = "0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7"
+    text = await _rendered(CuratorWalletAddress, you_address=address,
+                           you_ens="surfsurf.eth")
+    assert address.lower() in text
+    assert "surfsurf.eth" in text
+
+
+async def test_the_wallet_panel_shows_a_long_name_whole():
+    """The one place with room for it: the tables cap a name at the identity
+    cell's width, and a truncated name is exactly when the full one is wanted."""
+    long_name = "a-very-long-ens-name-indeed.eth"
+    text = await _rendered(CuratorWalletAddress, you_address="0x" + "ab" * 20,
+                           you_ens=long_name, size=(60, 10))
+    assert long_name in text
+
+
+async def test_a_wallet_with_no_ens_says_so_rather_than_dashing():
+    """Most wallets have no reverse record; a dash reads as a lookup that
+    failed."""
+    text = await _rendered(CuratorWalletAddress, you_address="0x" + "ab" * 20)
+    assert NO_ENS in text
+
+
+async def test_no_wallet_configured_names_the_two_ways_to_fix_it():
+    text = await _rendered(CuratorWalletAddress)
+    assert NO_WALLET_SET in text
+    assert "0x" not in text
+
+
+async def test_a_hostile_ens_name_cannot_reach_markup():
+    """ENS names are the most attacker-controlled strings on this screen:
+    anyone can set a reverse record to `[/x]` and no permission is needed."""
+    text = await _rendered(CuratorWalletAddress, you_address="0x" + "ab" * 20,
+                           you_ens="[/x][bold red]owned[/]", size=(60, 10))
+    assert "[/x]" in text or "owned" in text     # rendered as text, not markup
+    assert text.strip(), "a markup-hostile name blanked the panel"
+
+
+def test_a_name_never_widens_a_table_cell():
+    """Every width on this screen was measured against an identity cell of a
+    fixed size.  A 255-character name that grew the cell would make every one
+    of those measurements fiction."""
+    from maxpane_dashboard.widgets.curator._fmt import NAME_COLS, short_label
+
+    for name in ("surfsurf.eth", "a" * 255, "x" * (NAME_COLS + 1), "ok.eth"):
+        assert len(short_label(name, "0x" + "ab" * 20)) <= NAME_COLS, name
+
+
+def test_the_identity_cell_holds_the_names_people_actually_have():
+    """12 columns is `surfsurf.eth` exactly -- the measurement that set it."""
+    from maxpane_dashboard.widgets.curator._fmt import NAME_COLS, short_label
+
+    assert NAME_COLS == len("surfsurf.eth")
+    assert short_label("surfsurf.eth", None) == "surfsurf.eth"
+    assert short_label("vitalik.eth", None) == "vitalik.eth"
+
+
+async def test_a_verified_name_replaces_the_hex_in_the_leaderboard():
+    rows = _lb_rows(3)
+    text = await _rendered(CuratorLeaderboard, leaderboard_rows=rows)
+    assert "surfsurf.eth" in text
+    # ...and the wallets without one still render their address.
+    assert "0x381f" in text
+
+
+async def test_a_verified_name_replaces_the_hex_in_the_signal_rows():
+    text = await _rendered(
+        CuratorSignals,
+        whale_amount_eth=42.0,
+        whale_wallet="0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+        whale_ens="surfsurf.eth",
+        whale_age_s=120,
+    )
+    assert "surfsurf.eth" in text

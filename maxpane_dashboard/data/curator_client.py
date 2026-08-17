@@ -62,16 +62,19 @@ import asyncio
 import logging
 import time
 from collections.abc import Iterable
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 from urllib.parse import urlparse
 
 import httpx
 
 from maxpane_dashboard.data import curator_addresses as A
+from maxpane_dashboard.data import ens
 from maxpane_dashboard.data.evm_abi import (
     decode_address,
+    decode_aggregate3_result,
     decode_uint,
     encode_address,
+    encode_aggregate3,
     strip0x,
 )
 from maxpane_dashboard.data.curator_models import (
@@ -132,6 +135,15 @@ _REQUEST_HEADERS = {
     "Accept": "application/json",
     "User-Agent": USER_AGENT,
 }
+
+#: Multicall3, same address on every chain it is deployed to.  Only ENS uses
+#: it here: the contract's own views batch natively through a JSON-RPC array,
+#: which needs no onchain aggregator at all.
+MULTICALL3 = "0xca11bde05977b3631167028862be2a173976ca11"
+
+#: Sub-calls per aggregate3.  ENS resolution is four rounds over the rendered
+#: addresses, so this bounds the biggest of them.
+MULTICALL_MAX_CALLS = 200
 
 _MAX_RETRIES = 2
 _BACKOFF_SECONDS = (0.5, 1.5)
@@ -824,6 +836,62 @@ class CuratorClient(OwnedHttpClient):
             has_joined=word("SEL_FIRST_HOUR_OF", 1),
             required_next_wei=word("SEL_REQUIRED_NEXT"),
         )
+
+    async def _multicall(
+        self, calls: Sequence[tuple[str, str]]
+    ) -> list[tuple[bool, str]]:
+        """Batch ``eth_call``s through Multicall3 ``aggregate3``, on the state pool.
+
+        Every sub-call runs with ``allowFailure=True`` so one dead target cannot
+        kill the batch, and the result list is **always** as long as *calls* --
+        a chunk that fails wholesale is padded with ``(False, "0x")`` so the
+        caller's zip stays aligned with its request.  ENS resolution is the only
+        caller and it is cosmetic, so nothing here raises.
+        """
+        if not calls:
+            return []
+        out: list[tuple[bool, str]] = []
+        for start in range(0, len(calls), MULTICALL_MAX_CALLS):
+            chunk = list(calls[start : start + MULTICALL_MAX_CALLS])
+            data = encode_aggregate3([(t, cd, True) for (t, cd) in chunk])
+            try:
+                raw = await self._rpc_state(
+                    "eth_call", [{"to": MULTICALL3, "data": data}, "latest"]
+                )
+            except Exception as exc:  # noqa: BLE001 -- degrade, never escape
+                logger.warning("curator multicall(%d) failed: %s", len(chunk), exc)
+                out.extend((False, "0x") for _ in chunk)
+                continue
+            decoded = decode_aggregate3_result(raw) if isinstance(raw, str) else []
+            if len(decoded) != len(chunk):
+                logger.warning(
+                    "curator multicall returned %d results for %d calls",
+                    len(decoded),
+                    len(chunk),
+                )
+                decoded = list(decoded[: len(chunk)])
+                decoded += [(False, "0x")] * (len(chunk) - len(decoded))
+            out.extend(decoded)
+        return out
+
+    async def fetch_ens_names(
+        self, addresses: Sequence[str], *, limit: int = ens.MAX_ADDRESSES
+    ) -> dict[str, str]:
+        """Reverse-resolve addresses to **forward-verified** ENS names.
+
+        Thin pass-through to :func:`maxpane_dashboard.data.ens.resolve_names`
+        with this client's multicall, so ENS inherits this dashboard's endpoint
+        pool and failure handling.  The forward check is not optional: a reverse
+        record needs no permission from the name's owner, so an unverified
+        reverse lookup lets any address label itself `vitalik.eth`.
+
+        Cosmetic by construction -- an empty dict means "render the hex".
+        """
+        try:
+            return await ens.resolve_names(addresses, self._multicall, limit=limit)
+        except Exception as exc:  # noqa: BLE001 -- names are decoration
+            logger.warning("curator ENS batch failed: %s", exc)
+            return {}
 
     async def fetch_balance(self) -> int | None:
         """The contract's ETH balance — **the forced-ETH anomaly, not a total**.

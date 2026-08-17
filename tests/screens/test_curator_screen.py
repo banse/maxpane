@@ -147,6 +147,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletNext,
     CuratorWalletStanding,
     CuratorWalletTarget,
+    CuratorWalletAddress,
     CuratorWalletHero,
     CuratorHero,
     CuratorLeaderboard,
@@ -179,9 +180,11 @@ _PANELS = (
     CuratorActivity,
     CuratorClosestCalls,
     CuratorClusters,
-    # The `y` view's three.  Listed here rather than in a second tuple because
-    # every totality and dispatch guarantee below is about the screen, not
-    # about whichever body happens to be visible.
+    # The `y` view's own hero and five panels.  Listed here rather than in a
+    # second tuple because every totality and dispatch guarantee below is about
+    # the screen, not about whichever body happens to be visible.
+    CuratorWalletHero,
+    CuratorWalletAddress,
     CuratorWalletLadder,
     CuratorWalletStanding,
     CuratorWalletTarget,
@@ -1937,15 +1940,20 @@ async def test_the_ladder_shows_the_score_after_each_rung():
     assert "1,459" in text and "29,540" in text
 
 
-async def test_the_pts_column_is_the_first_the_ladder_sheds():
-    """It is the derived one: the score after a rung can be read off the
-    leaderboard, the multiplier that rung got cannot be read anywhere else."""
+async def test_the_ladder_sheds_its_derived_columns_first():
+    """Rank, then score, then never the multiplier: the further a column is
+    from the event itself, the sooner it goes."""
     from maxpane_dashboard.widgets.curator.wallet import _LADDER_TIERS
 
-    widest, second = _LADDER_TIERS[0], _LADDER_TIERS[1]
-    assert [c[0] for c in widest[2]][-1] == "points"
-    assert "points" not in [c[0] for c in second[2]]
-    assert "pts" in second[3]
+    widest, second, third = _LADDER_TIERS[0], _LADDER_TIERS[1], _LADDER_TIERS[2]
+    # Shed most-derived first: the rank at that instant is a fold over every
+    # other wallet, the score after a rung is a curve over one, and the
+    # multiplier that rung got is readable nowhere else at all.
+    assert [c[0] for c in widest[2]][-2:] == ["points", "rank"]
+    assert "rank" not in [c[0] for c in second[2]]
+    assert "rank" in second[3]
+    assert "points" not in [c[0] for c in third[2]]
+    assert "pts" in third[3]
 
 
 def _segment_style(app, needle: str):

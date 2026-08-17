@@ -200,8 +200,12 @@ class CuratorClusters(Vertical):
     """Fan-out patterns, in pattern language, with a real empty state."""
 
     DEFAULT_CSS = """
+    /* `margin-bottom: 1` on both the title and the note: a blank row under the
+       title and another above the table header.  This slot has spare rows and
+       no spare columns, so air is the cheap thing to spend here. */
     CuratorClusters > .curator-cl-title {
         width: 100%;
+        margin: 0 0 1 0;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
@@ -209,6 +213,7 @@ class CuratorClusters(Vertical):
     CuratorClusters > .curator-cl-note {
         width: 100%;
         height: 1;
+        margin: 0 0 1 0;
         padding: 0 1;
         text-wrap: nowrap;
         text-overflow: ellipsis;

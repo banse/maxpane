@@ -320,6 +320,18 @@ outage. Curator's rail shipped that way: FARM said `-- unknown` off `clusters_co
 while HOUR SAVED and WHALE, folded from the same dead group, said `none yet`. Either give the
 value a representable zero or hand the widget the `degraded` list.
 
+**ENS names are third-party strings, and the widest kind.** Reverse resolution
+lives in `data/ens.py` and is keyless; use it through a client's own multicall so
+it inherits that dashboard's pool. Two rules it exists to keep: the **forward
+check** is not optional (a reverse record needs nobody's permission, so an
+unverified lookup lets any address claim `vitalik.eth`), and a **miss is not an
+empty name** — most wallets have no record, and without recording the misses
+every one of them is re-resolved on every tick forever. `ens.NameStore` holds
+both TTLs. Rendering one costs columns: curator caps a name at 12 (`NAME_COLS`,
+exactly `surfsurf.eth`) because 15 moved its full layout 138 → 144, past the
+app-wide 143 — measure before widening an identity cell, and show the whole name
+only where there is room for it.
+
 **Escape every third-party string before it reaches markup or a `DataTable`.** Use
 `widgets/markup_safety.safe_markup`. Textual defers `Text.from_markup` into the message pump, so
 a malformed name raises *outside* the screen's `try/except` and kills the app. Token symbols are

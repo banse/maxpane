@@ -1674,6 +1674,9 @@ PUBLIC_CALLS: tuple[tuple[str, tuple], ...] = (
     ("fetch_logs", (A.CREATION_BLOCK,)),
     ("fetch_block_timestamps", ([25_770_000],)),
     ("fetch_blockscout_logs", ()),
+    # Reverse ENS (PRD §13 A9).  Cosmetic, but it rides the same pool and the
+    # same failure handling, so it belongs in every structural test below.
+    ("fetch_ens_names", ([LEADER_1],)),
 )
 
 
@@ -1832,3 +1835,78 @@ def test_the_context_manager_closes_only_what_it_owns() -> None:
     asyncio.run(borrowed())
     assert injected.is_closed is False
     asyncio.run(injected.aclose())
+
+
+# ---------------------------------------------------------------------------
+# fetch_ens_names — reverse ENS through this client's own pool (PRD §13 A9)
+# ---------------------------------------------------------------------------
+#
+# The resolution itself is `data/ens.py`'s and is tested in `test_ens.py`,
+# including the forward check that stops an address labelling itself
+# `vitalik.eth`.  What belongs here is the wiring: the batch goes out on the
+# STATE pool through Multicall3, a failure degrades to `{}`, and the result list
+# stays aligned with the request even when a chunk dies.
+
+
+def test_ens_names_degrade_to_nothing_on_a_total_outage():
+    """Names are decoration: an outage costs the label, never the row."""
+    client = _offline_client()
+    assert asyncio.run(client.fetch_ens_names(["0x" + "ab" * 20])) == {}
+
+
+def test_ens_names_ask_nothing_when_there_is_nothing_to_ask():
+    """No addresses, no requests -- proven with the raising double."""
+    client = _raising_client()
+    assert asyncio.run(client.fetch_ens_names([])) == {}
+
+
+def test_the_ens_batch_goes_to_multicall3_on_the_state_pool():
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append((str(request.url), body["params"][0]["to"]))
+        # Empty resolver for every address: stage 1 finds nothing and the
+        # resolver stops there, which is the common real answer.
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"],
+                                        "result": "0x" + "00" * 32})
+
+    client = _client(handler)
+    out = asyncio.run(client.fetch_ens_names(["0x" + "ab" * 20]))
+    assert out == {}
+    assert seen, "no request was made"
+    url, target = seen[0]
+    assert target == curator_client.MULTICALL3
+    assert url in client._state_rpcs, "ENS must ride the state pool, not the logs pool"
+
+
+def test_a_dead_multicall_chunk_keeps_the_result_list_aligned():
+    """The caller zips results against its own request list, so a chunk that
+    fails wholesale must pad rather than shorten -- otherwise every name after
+    it is attached to the wrong address."""
+    client = _offline_client()
+    calls = [("0x" + "11" * 20, "0xdeadbeef")] * 3
+    out = asyncio.run(client._multicall(calls))
+    assert out == [(False, "0x")] * 3
+
+
+def test_a_short_multicall_reply_is_padded_not_zipped_short():
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        # One result for a two-call batch: a real provider bug, and the shape
+        # that silently mislabels wallets if it is trusted.
+        one = (
+            "0x"
+            + "20".rjust(64, "0")
+            + "1".rjust(64, "0")
+            + "40".rjust(64, "0")
+            + "1".rjust(64, "0")
+            + "20".rjust(64, "0")
+            + "00" * 32
+        )
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"],
+                                        "result": one})
+
+    client = _client(handler)
+    out = asyncio.run(client._multicall([("0x" + "11" * 20, "0x00")] * 2))
+    assert len(out) == 2

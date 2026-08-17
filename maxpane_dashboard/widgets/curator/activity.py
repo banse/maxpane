@@ -88,12 +88,14 @@ from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.widgets.curator._fmt import (
     ADDR_COLS,
+    NAME_COLS,
     COMPACT_ETH_COLS,
     DASH,
     as_float,
     fmt_eth_compact,
     hhmm,
     short_addr,
+    short_label,
 )
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
@@ -150,7 +152,7 @@ _DELTA_COLS = len(f"(+{'9' * COMPACT_ETH_COLS} credit → {'9' * COMPACT_ETH_COL
 _DELTA_SHORT_COLS = len(f"(+{'9' * COMPACT_ETH_COLS} → {'9' * COMPACT_ETH_COLS})")
 
 FULL_WIDTH = (
-    STAMP_COLS + _GAP + KIND_COLS + _GAP + ADDR_COLS + _GAP + AMOUNT_COLS
+    STAMP_COLS + _GAP + KIND_COLS + _GAP + NAME_COLS + _GAP + AMOUNT_COLS
     + _GAP + _DELTA_COLS + _GAP + TX_COLS
 )                                                                        # 74
 COMPACT_WIDTH = FULL_WIDTH - (_DELTA_COLS - _DELTA_SHORT_COLS)           # 64
@@ -238,7 +240,8 @@ def _row_markup(row: dict, tier: str) -> str | None:
         kind = str(row.get("kind") or "").strip().lower()
         colour = _KIND_COLOUR.get(kind, "dim")
         stamp = hhmm(row.get("ts"))
-        address = safe_markup(short_addr(row.get("address")))
+        # A verified ENS name in the address cell's own width (PRD §13 A9).
+        address = safe_markup(short_label(row.get("name"), row.get("address")))
         amount = _amount_cell(row)
 
         cells = [f"[dim]{stamp:<{STAMP_COLS}}[/]"]

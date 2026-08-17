@@ -55,6 +55,7 @@ from maxpane_dashboard.data.curator_models import (
     DepositEvent,
     SettlementRecord,
 )
+from maxpane_dashboard.data import ens
 from maxpane_dashboard.data.series_points import (
     CLOCK_SKEW_TOLERANCE_SECONDS,
     coerce_points,
@@ -421,6 +422,10 @@ class CuratorCache:
         self._fold: list[ContributorRow] = []
         self._last_seen_block: int | None = None
         self._clusters: list[dict] = []
+        #: Verified reverse-ENS names and known misses (:class:`ens.NameStore`).
+        #: Shared implementation rather than a fourth private copy of the same
+        #: TTL logic -- see that class for why a miss is not an empty name.
+        self.ens = ens.NameStore(self._clock)
 
     # -- clock ---------------------------------------------------------------
 
@@ -1045,6 +1050,11 @@ class CuratorCache:
                 {k: v for k, v in row.items() if k != "points_share_pct"}
                 for row in self._clusters
             ],
+            # Verified ENS names and known misses, with their own TTLs (PRD §13
+            # A9).  Persisted so a relaunch does not re-resolve every rendered
+            # wallet; adding the key does not move `_SCHEMA_VERSION`, since an
+            # older file simply has none and starts empty.
+            "ens": self.ens.as_dict(),
         }
 
     def save(self, path: str | None = None) -> None:
@@ -1144,6 +1154,11 @@ class CuratorCache:
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Curator series block bad: %s", exc)
+
+        try:
+            self.ens.load(payload.get("ens"))
+        except Exception as exc:  # noqa: BLE001 -- names are decoration
+            logger.warning("Curator ENS block bad: %s", exc)
 
         try:
             dropped = 0

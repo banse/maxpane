@@ -40,6 +40,7 @@ __all__ = [
     "DASH",
     "EMDASH",
     "ADDR_COLS",
+    "NAME_COLS",
     "COMPACT_ETH_COLS",
     "COMPACT_ETH_PROBE",
     "NO_STAMP",
@@ -52,6 +53,7 @@ __all__ = [
     "fmt_pct",
     "hhmm",
     "short_addr",
+    "short_label",
 ]
 
 #: Unknown scalar.  Two columns, so a dashed cell never re-flows a table.
@@ -73,6 +75,21 @@ EMDASH = "—"
 #: two dead columns on every row of every table (the ``dev``/``ops`` defect
 #: in CLAUDE.md, which cost the surf dev-activity panel nine).
 ADDR_COLS = 11
+
+#: The identity cell's width wherever a **name** may appear.  Exactly ONE column
+#: wider than the hex it replaces, and both halves of that are measurements:
+#:
+#: * twelve is what `surfsurf.eth` needs, and a name truncated to eleven
+#:   (`surfsurf.e…`) is worse than the address it replaced -- neither a name you
+#:   can read nor an address you can match;
+#: * thirteen is what the screen cannot afford.  Swept: at 15 the full layout
+#:   goes 138 -> 144, past the app-wide 143 that FWA sets, because this cell is
+#:   in three panels and two of them share a row.  12 leaves the measured 138
+#:   exactly where it was.
+#:
+#: A longer name ellipsises here and is shown whole in the wallet view's own
+#: panel, which is the one place with room for it.
+NAME_COLS = 12
 
 #: The activity feed's missing-timestamp cell.  A log row whose block stamp
 #: could not be read renders this, **never** ``00:00`` — an epoch-zero stamp
@@ -262,6 +279,30 @@ def hhmm(timestamp) -> str:
     except (TypeError, ValueError, OSError, OverflowError):
         return NO_STAMP
     return f"{t.tm_hour:02d}:{t.tm_min:02d}"
+
+
+def short_label(name, address) -> str:
+    """A verified ENS name if there is one, else :func:`short_addr`.
+
+    **Exactly :data:`ADDR_COLS` columns or fewer, always.**  A name is
+    attacker-supplied and can be 255 characters, so it is truncated to the
+    address cell's own width rather than allowed to widen a table -- every
+    width in this dashboard was measured against a hex address, and a panel
+    that grows when a stranger registers a long name is a panel whose measured
+    width was fiction.  The full name has room in the wallet view's own panel,
+    which is where it is shown whole.
+
+    Returns raw, unescaped text: names are the most attacker-controlled strings
+    on this screen and the caller escapes, the same contract ``short_addr``
+    keeps.
+    """
+    if isinstance(name, str):
+        cleaned = " ".join(name.split())
+        if cleaned:
+            if len(cleaned) <= NAME_COLS:
+                return cleaned
+            return f"{cleaned[: NAME_COLS - 1]}…"
+    return short_addr(address)
 
 
 def short_addr(value) -> str:
