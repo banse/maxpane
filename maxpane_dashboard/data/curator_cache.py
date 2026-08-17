@@ -222,6 +222,13 @@ def _stamp(value: Any) -> float | None:
     return ts
 
 
+def _opt_int(value: Any) -> int | None:
+    """An ``int`` if the value is one, else ``None``.  ``bool`` is not one."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 def _pair(entry: Any) -> tuple[float, Any] | None:
     """One ``(timestamp, value)`` bucket, or ``None`` when it is not one."""
     if not isinstance(entry, (list, tuple)) or len(entry) != 2:
@@ -257,6 +264,13 @@ class CuratorCache:
         self._series: dict[str, dict[float, float]] = {
             name: {} for name in SERIES_NAMES
         }
+        #: The settlement latch: the first ``isSettled() == True`` observation
+        #: with its evidence.  Once set, never re-read through and never
+        #: cleared.
+        self._settlement: SettlementRecord | None = None
+        #: The ``Settled`` log's four words, filed whether or not the latch
+        #: exists yet.  It is the obituary, not the verdict.
+        self._obituary: dict[str, Any] = {}
 
     # -- clock ---------------------------------------------------------------
 
@@ -491,6 +505,130 @@ class CuratorCache:
         points = sorted(self._series[name].items())
         return [[float(ts), float(value)] for ts, value in points[-MAX_SERIES_POINTS:]]
 
+    # -- the settlement evidence latch (H1) ----------------------------------
+
+    def observe_settlement(
+        self,
+        settled: Any,
+        *,
+        block_number: int | None,
+        now: float | None = None,
+    ) -> SettlementRecord | None:
+        """Fold one ``isSettled()`` observation into the latch.
+
+        The **first** ``True`` is written down with its evidence —
+        ``{value, block_number, observed_at}`` — and never re-read through.
+        From then on the dashboard renders SETTLED through any outage: an
+        outage degrades the *freshness* marker, never the phase.
+
+        A later ``False`` or ``None`` **cannot** clear it.  The contract's own
+        predicate is one-way (``_settled || _isShort(currentHour())``, and
+        deposits revert ``AlreadySettled`` afterwards), so a later ``False`` can
+        only be a bad read, a wrong endpoint or a fork; a ``None`` is an outage,
+        which is the case this latch exists for.  Unlike surf's hook detector
+        this cannot be griefed: it reads a predicate the contract enforces, not
+        an attacker-emittable log.
+
+        Only ``True`` latches.  ``False`` is a real, useful reading — the game
+        is running — but it is *live state*, not evidence, and writing a
+        ``settled=False`` record would give the phase machine a second source of
+        truth to disagree with.
+
+        Returns the record in force, or ``None`` while nothing has been latched.
+        """
+        if self._settlement is None and settled is True:
+            self._settlement = SettlementRecord(
+                settled=True,
+                block_number=_opt_int(block_number),
+                observed_at=self._now(now),
+            )
+            logger.warning(
+                "THE LIST settled: latched at block %s, observed at %s",
+                self._settlement.block_number,
+                self._settlement.observed_at,
+            )
+        return self.settlement_record()
+
+    def settlement_record(self) -> SettlementRecord | None:
+        """The latched observation, with the obituary filled in if it arrived.
+
+        Reads the **persisted record**, never a live value: making this
+        transparent to the current read is the exact mutation PRD §8 mandates
+        proving against, because it silently re-couples the phase to the state
+        pool it was decoupled from.
+        """
+        if self._settlement is None:
+            return None
+        if not self._obituary:
+            return self._settlement
+        return SettlementRecord(
+            settled=self._settlement.settled,
+            block_number=self._settlement.block_number,
+            observed_at=self._settlement.observed_at,
+            settled_hour=self._obituary.get("settled_hour"),
+            settled_at_ts=self._obituary.get("settled_at_ts"),
+            total_contributors=self._obituary.get("total_contributors"),
+            total_volume_wei=self._obituary.get("total_volume_wei"),
+        )
+
+    def record_settled_event(
+        self,
+        hour: Any = None,
+        ts: Any = None,
+        contributors: Any = None,
+        volume_wei: Any = None,
+    ) -> None:
+        """File the ``Settled`` log's four words — the obituary, not the latch.
+
+        A ``Settled`` log with no prior view observation must **not** create the
+        latch: the event is evidence about the past and the view is evidence
+        about now.  In practice they agree, but ``settle()`` is permissionless
+        and its log is the one piece of this that a third party emits at a time
+        of their choosing, so a log-only latch is the hazard PRD §3 names one
+        level down.  The obituary waits here until the view confirms.
+        """
+        self._obituary = {
+            "settled_hour": _opt_int(hour),
+            "settled_at_ts": _opt_int(ts),
+            "total_contributors": _opt_int(contributors),
+            "total_volume_wei": _opt_int(volume_wei),
+        }
+
+    def _settlement_to_dict(self) -> dict[str, Any] | None:
+        record = self._settlement
+        if record is None:
+            return None
+        return {
+            "settled": bool(record.settled),
+            "block_number": record.block_number,
+            "observed_at": float(record.observed_at),
+        }
+
+    def _load_settlement(self, raw: Any) -> None:
+        """Re-validate a persisted record rather than believing it.
+
+        The surf ``hook_status`` lesson: never trust the boolean a file happened
+        to contain.  A record without both evidence fields, or carrying a
+        non-bool verdict, is discarded — a latch restored from corruption would
+        pin the hero to SETTLED for the life of the file.
+        """
+        self._settlement = None
+        if not isinstance(raw, Mapping):
+            return
+        if raw.get("settled") is not True:
+            return
+        if "block_number" not in raw or "observed_at" not in raw:
+            return
+        block = raw.get("block_number")
+        if block is not None and (isinstance(block, bool) or not isinstance(block, int)):
+            return
+        observed = _stamp(raw.get("observed_at"))
+        if observed is None:
+            return
+        self._settlement = SettlementRecord(
+            settled=True, block_number=_opt_int(block), observed_at=observed
+        )
+
     # -- persistence ---------------------------------------------------------
 
     def _payload(self) -> dict[str, Any]:
@@ -501,6 +639,8 @@ class CuratorCache:
                 slot: entry.to_dict() for slot, entry in self.last_good.items()
             },
             "series": {name: self.get_series(name) for name in SERIES_NAMES},
+            "settlement": self._settlement_to_dict(),
+            "settled_event": dict(self._obituary) if self._obituary else None,
         }
 
     def save(self, path: str | None = None) -> None:
@@ -600,6 +740,24 @@ class CuratorCache:
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Curator series block bad: %s", exc)
+
+        try:
+            self._load_settlement(payload.get("settlement"))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Curator settlement block bad: %s", exc)
+            self._settlement = None
+
+        try:
+            event = payload.get("settled_event")
+            if isinstance(event, Mapping):
+                self.record_settled_event(
+                    hour=event.get("settled_hour"),
+                    ts=event.get("settled_at_ts"),
+                    contributors=event.get("total_contributors"),
+                    volume_wei=event.get("total_volume_wei"),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Curator settled-event block bad: %s", exc)
 
         logger.info(
             "Loaded the curator cache from %s: %d last-good slot(s), %d volume point(s)",

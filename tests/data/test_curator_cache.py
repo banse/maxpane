@@ -510,3 +510,110 @@ def test_the_series_survive_a_save_load_round_trip(tmp_path, clock):
         [LAUNCH_TIME + HOUR, 730.0],
     ]
     assert restored.get_series("contributors_series") == [[LAUNCH_TIME + HOUR, 2.0]]
+
+
+# ---------------------------------------------------------------------------
+# WP5.4 — the settlement evidence latch (H1)
+# ---------------------------------------------------------------------------
+
+
+def test_the_first_true_observation_is_persisted_with_its_evidence(cache):
+    rec = cache.observe_settlement(True, block_number=25_776_000, now=NOW)
+    assert rec.settled is True and rec.block_number == 25_776_000
+    assert rec.observed_at == NOW
+
+
+def test_a_false_observation_never_clears_a_true_one(cache):
+    """One-way by construction, and the contract agrees: isSettled() is
+    ``_settled || _isShort(currentHour())`` and never returns false again.  A
+    later false can only be a bad read, a wrong endpoint, or a fork."""
+    cache.observe_settlement(True, block_number=1, now=NOW)
+    cache.observe_settlement(False, block_number=2, now=NOW + 15)
+    assert cache.settlement_record().settled is True
+    assert cache.settlement_record().block_number == 1
+    assert cache.settlement_record().observed_at == NOW
+
+
+def test_a_none_observation_never_clears_a_true_one(cache):
+    """The outage case, which is the whole point."""
+    cache.observe_settlement(True, block_number=1, now=NOW)
+    cache.observe_settlement(None, block_number=None, now=NOW + 15)
+    assert cache.settlement_record().settled is True
+
+
+def test_a_false_reading_never_creates_a_record(cache):
+    """``False`` is a real reading — the game is running — but it is live state,
+    not evidence.  A ``settled=False`` record would hand the phase machine a
+    second source of truth to disagree with."""
+    assert cache.observe_settlement(False, block_number=25_770_000, now=NOW) is None
+    assert cache.observe_settlement(None, block_number=None, now=NOW) is None
+    assert cache.settlement_record() is None
+
+
+def test_the_latch_survives_a_save_load_round_trip(tmp_path, clock):
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.observe_settlement(True, block_number=25_776_000, now=NOW)
+    cache.record_settled_event(hour=24, ts=1_787_000_400, contributors=300,
+                              volume_wei=9 * 10**21)
+    cache.save()
+
+    restored = CuratorCache(path=path, clock=clock)
+    restored.load(now=NOW + 3600)
+    rec = restored.settlement_record()
+    assert rec.settled is True
+    assert rec.block_number == 25_776_000
+    assert rec.observed_at == NOW
+    assert rec.settled_hour == 24
+    assert rec.total_volume_wei == 9 * 10**21
+
+
+def test_a_persisted_record_is_re_validated_not_trusted(tmp_path, clock):
+    """The surf hook_status lesson: never trust the boolean a file happened to
+    contain.  A record missing block_number or observed_at, or carrying a
+    non-bool, is discarded rather than believed."""
+    for junk in (
+        {"settled": True},
+        {"settled": "yes", "block_number": 1, "observed_at": NOW},
+        {"settled": True, "block_number": "x", "observed_at": NOW},
+        {"settled": True, "block_number": 1},
+        {"settled": True, "block_number": 1, "observed_at": None},
+        {"settled": False, "block_number": 1, "observed_at": NOW},
+        {"settled": 1, "block_number": 1, "observed_at": NOW},
+        "settled!",
+    ):
+        path = _write(tmp_path, _file(tmp_path, settlement=junk))
+        cache = CuratorCache(path=path, clock=clock)
+        cache.load(now=NOW)
+        assert cache.settlement_record() is None, junk
+
+
+def test_the_settled_event_fills_the_obituary_without_creating_the_latch(cache):
+    """A Settled log with no prior view observation must NOT set the latch:
+    the event is evidence about the past, the view is evidence about now.  (In
+    practice they agree -- but a log-only latch is the exact hazard the PRD
+    names, one level down.)"""
+    cache.record_settled_event(hour=24, ts=1_787_000_400, contributors=300,
+                               volume_wei=9 * 10**21)
+    assert cache.settlement_record() is None
+    cache.observe_settlement(True, block_number=25_776_000, now=NOW)
+    rec = cache.settlement_record()
+    assert rec.settled_hour == 24 and rec.total_contributors == 300
+
+
+def test_the_obituary_stays_none_rather_than_zero_when_the_log_never_fires(cache):
+    """PRD §11: settled from the view with the Settled log absent -> the
+    obituary fields are None, not 0."""
+    cache.observe_settlement(True, block_number=25_776_000, now=NOW)
+    rec = cache.settlement_record()
+    assert rec.settled_hour is None
+    assert rec.settled_at_ts is None
+    assert rec.total_contributors is None
+    assert rec.total_volume_wei is None
+
+
+def test_an_observation_with_an_unreadable_height_still_latches(cache):
+    """The phase truth outranks its label: losing the block number loses the
+    evidence's precision, not the verdict."""
+    rec = cache.observe_settlement(True, block_number=None, now=NOW)
+    assert rec.settled is True and rec.block_number is None
