@@ -526,13 +526,16 @@ def test_detect_config_defaults_are_the_measured_ones() -> None:
     )
 
 
-def test_detect_has_the_frozen_signature_and_is_a_stub_until_wp1() -> None:
+def test_detect_has_the_frozen_signature_and_runs_on_the_empty_dataset() -> None:
     params = inspect.signature(detect).parameters
     assert list(params) == ["ds", "config"]
     assert params["config"].default == DetectConfig()
+    # WP1 landed the body; the stub assertion this replaces was the only part
+    # of this test allowed to change.
     ds = Dataset(deposits=(), first_index={}, txs={}, funding={})
-    with pytest.raises(NotImplementedError, match="WP1"):
-        detect(ds)
+    res = detect(ds)
+    assert res.clusters == []
+    assert (res.total_points, res.flagged_points, res.clean_points) == (0, 0, 0)
 
 
 def test_the_whole_prd_public_surface_imports_from_the_package_root() -> None:

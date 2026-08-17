@@ -1,0 +1,337 @@
+"""WP1.5 — ``detect``: union-find, the ≥2-family gate, graduated confidence.
+
+The named tests from the work-package brief appear verbatim; around them sit
+the detect-level identities (the wei-exact fold, cluster points as summed
+member curve points) and the whole-population smoke (controller ruling 4).
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+
+from sybilkit import Dataset, DetectConfig, detect
+from sybilkit.curve import curve_points
+from sybilkit.labels import CEX_HOT_WALLETS
+
+from tests.conftest import build_labeled_dataset, build_population_dataset
+from tests.sybilkit_fixtures import labeled_subset
+
+# ---------------------------------------------------------------------------
+# helpers the brief's verbatim tests call
+# ---------------------------------------------------------------------------
+
+_LAB = labeled_subset()
+_MIN_CROWD = {
+    m["address"].lower()
+    for m in _LAB["members"]
+    if m["cluster"] in ("amt_0.05_h7", "amt_0.05_h15", "amt_0.05_h17")
+}
+
+
+def _labeled() -> Dataset:
+    return build_labeled_dataset()
+
+
+def _control_addresses() -> set[str]:
+    return {c["address"].lower() for c in _LAB["controls"]}
+
+
+def _amount_only_fixture() -> Dataset:
+    """The 0.05 minimum crowd, tier A only: identical round amounts and
+    nothing else — no txs, no funding, and at sample density no sequence or
+    cadence can fire."""
+    deposits = []
+    firsts = []
+    for m in _LAB["members"]:
+        if m["address"].lower() not in _MIN_CROWD:
+            continue
+        firsts.append({"contributor": m["address"], "index": m["first_index"]})
+        for dep in m["deposits"]:
+            deposits.append({"contributor": m["address"], **dep})
+    return Dataset.from_events(deposits, firsts)
+
+
+from functools import lru_cache
+
+
+@lru_cache(maxsize=1)
+def _shape_amounts() -> dict[str, int]:
+    """First-deposit amount per contributor, off the full population — which
+    contains every labeled address, so one map serves both datasets."""
+    out: dict[str, int] = {}
+    for dep in build_population_dataset().deposits:  # chain-ordered
+        out.setdefault(dep.contributor, dep.amount_wei)
+    return out
+
+
+def _shape(c) -> str:
+    """A cluster's dominant first-deposit amount as a short ETH string."""
+    amounts = Counter(_shape_amounts()[m] for m in c.members)
+    wei = amounts.most_common(1)[0][0]
+    whole, frac = divmod(wei, 10**18)
+    text = f"{whole}.{frac:018d}".rstrip("0")
+    return text + "0" if text.endswith(".") else text
+
+
+# ---------------------------------------------------------------------------
+# the brief's named tests, verbatim
+# ---------------------------------------------------------------------------
+
+
+def test_one_family_never_convicts():
+    """PRD §3.1.  A component joined only by identical amounts -- with no
+    sequence, cadence, gas or funding corroboration -- is below min_families and
+    is not a cluster."""
+    ds = _amount_only_fixture()   # the 0.05 minimum crowd
+    assert detect(ds, DetectConfig(min_families=2)).clusters == []
+
+
+def test_min_size_keeps_one_human_few_wallets_out():
+    assert all(c.size >= 5 for c in detect(_labeled(), DetectConfig()).clusters)
+
+
+def test_the_16_audited_operators_are_each_found():
+    res = detect(_labeled(), DetectConfig())
+    found = {_shape(c) for c in res.clusters}
+    for shape in ("0.45", "14.0", "10.0", "1.2", "2.067"):
+        assert shape in found
+
+
+def test_no_control_is_flagged():
+    res = detect(_labeled(), DetectConfig())
+    assert res.flagged.isdisjoint(_control_addresses())
+
+
+def test_confidence_is_graduated_not_binary():
+    res = detect(_labeled(), DetectConfig())
+    confs = sorted({round(c.confidence, 2) for c in res.clusters})
+    assert len(confs) >= 2 and all(0.0 <= c <= 1.0 for c in confs)
+
+
+def test_freshness_discounts_never_convicts():
+    """A fresh-nonce-only signal cannot lift a one-family component to a
+    cluster (research §5: 55% of controls are nonce-0).
+
+    The 0.05 crowd *with* its transaction fingerprints: most of those wallets
+    are nonce-0, their fee fingerprints are diverse (no gas family), and
+    freshness must stay a discount on confidence — never an edge, never a
+    family, never a conviction."""
+    deposits, firsts, txs = [], [], []
+    for m in _LAB["members"]:
+        if m["address"].lower() not in _MIN_CROWD:
+            continue
+        firsts.append({"contributor": m["address"], "index": m["first_index"]})
+        for dep in m["deposits"]:
+            deposits.append({"contributor": m["address"], **dep})
+        txs.append(m["tx"])
+    ds = Dataset.from_events(deposits, firsts, txs=txs)
+    assert detect(ds, DetectConfig()).clusters == []
+
+
+# ---------------------------------------------------------------------------
+# freshness discounts (the positive half), and the gate under config
+# ---------------------------------------------------------------------------
+
+
+def _two_family_farm(*, fresh: bool) -> Dataset:
+    amount = 3_333_000_000_000_000_001  # odd, byte-identical
+    deposits, txs = [], []
+    for i in range(6):
+        addr = f"0x{i + 1:040x}"
+        tx_hash = "0x" + f"{i + 1:064x}"
+        deposits.append(
+            {
+                "contributor": addr,
+                "hour": 1,
+                "amount_wei": amount,
+                "credited_delta_wei": amount,
+                "weight_added_wei": amount,
+                "new_weight_wei": amount,
+                "tx_count": 1,
+                "block_number": 1000 + i * 100,
+                "tx_hash": tx_hash,
+                "log_index": i,
+            }
+        )
+        txs.append(
+            {
+                "tx_hash": tx_hash,
+                "nonce": 0 if fresh else 40 + i,
+                "max_priority_fee_wei": 100_000_000,
+                "max_fee_wei": 150_000_000,
+                "gas_limit": 91_600,
+                "tx_type": 2,
+            }
+        )
+    return Dataset.from_events(deposits, [], txs=txs)
+
+
+def test_freshness_is_a_discount_on_confidence() -> None:
+    """Same two-family farm, one all-fresh and one all-aged: the aged copy is
+    still a cluster (the gate never moves) at strictly lower confidence."""
+    fresh = detect(_two_family_farm(fresh=True), DetectConfig())
+    aged = detect(_two_family_farm(fresh=False), DetectConfig())
+    assert len(fresh.clusters) == len(aged.clusters) == 1
+    assert aged.clusters[0].confidence < fresh.clusters[0].confidence
+    assert aged.clusters[0].members == fresh.clusters[0].members
+
+
+def test_a_shared_cex_funder_cannot_be_the_second_family() -> None:
+    """WP1.7's end-to-end half: a one-family amount group whose members all
+    share a Binance hot-wallet funder must not become a cluster."""
+    amount = 3_333_000_000_000_000_001
+    deposits, funding = [], []
+    binance = next(iter(CEX_HOT_WALLETS))
+    for i in range(6):
+        addr = f"0x{i + 1:040x}"
+        deposits.append(
+            {
+                "contributor": addr,
+                "hour": 1,
+                "amount_wei": amount,
+                "credited_delta_wei": amount,
+                "weight_added_wei": amount,
+                "new_weight_wei": amount,
+                "tx_count": 1,
+                "block_number": 1000 + i * 100,
+                "tx_hash": "0x" + f"{i + 1:064x}",
+                "log_index": i,
+            }
+        )
+        funding.append({"address": addr, "funder": binance, "hops": 1})
+    ds = Dataset.from_events(deposits, [], funding=funding)
+    assert detect(ds, DetectConfig()).clusters == []
+
+
+def test_the_gate_reads_its_thresholds_from_the_config() -> None:
+    ds = _labeled()
+    default = detect(ds, DetectConfig())
+    loose = detect(ds, DetectConfig(min_families=1))
+    strict = detect(ds, DetectConfig(min_size=25))
+    assert len(loose.clusters) > len(default.clusters)
+    assert all(c.size >= 25 for c in strict.clusters)
+
+
+# ---------------------------------------------------------------------------
+# detect-level identities
+# ---------------------------------------------------------------------------
+
+
+def test_total_points_is_the_wei_exact_fold_and_the_counters_balance() -> None:
+    ds = _labeled()
+    res = detect(ds, DetectConfig())
+    last_weight: dict[str, int] = {}
+    for dep in ds.deposits:  # chain-ordered: the last write is the final weight
+        last_weight[dep.contributor] = dep.new_weight_wei
+    expected = sum(curve_points(w, 1000) for w in last_weight.values())
+    assert res.total_points == expected
+    assert res.flagged_points + res.clean_points == res.total_points
+
+
+def test_cluster_points_are_the_summed_member_curve_points() -> None:
+    """The WP1.6 summation identity, pinned where the summation lives; its
+    mutation bite drops a member from the sum."""
+    ds = _labeled()
+    res = detect(ds, DetectConfig())
+    last_weight: dict[str, int] = {}
+    for dep in ds.deposits:
+        last_weight[dep.contributor] = dep.new_weight_wei
+    assert res.clusters
+    for c in res.clusters:
+        assert c.points == sum(curve_points(last_weight[m], 1000) for m in c.members)
+        assert c.points_share == c.points / res.total_points
+        assert c.size == len(c.members)
+        assert all(m == m.lower() for m in c.members)
+
+
+def test_flagged_points_are_the_flagged_clusters_points() -> None:
+    res = detect(_labeled(), DetectConfig())
+    expected = sum(
+        c.points for c in res.clusters if c.confidence >= res.confidence_threshold
+    )
+    assert res.flagged_points == expected
+
+
+def test_span_blocks_is_the_first_deposit_block_span() -> None:
+    ds = _labeled()
+    res = detect(ds, DetectConfig())
+    first_block: dict[str, int] = {}
+    for dep in ds.deposits:
+        first_block.setdefault(dep.contributor, dep.block_number)
+    for c in res.clusters:
+        blocks = [first_block[m] for m in c.members]
+        assert c.span_blocks == max(blocks) - min(blocks)
+
+
+def test_wallet_answers_all_three_ways_from_a_real_run() -> None:
+    ds = _labeled()
+    res = detect(ds, DetectConfig())
+    member = next(iter(res.flagged))
+    verdict = res.wallet(member)
+    assert verdict.in_cluster is True and verdict.reasons
+    control = next(iter(_control_addresses()))
+    clean = res.wallet(control)
+    assert clean is not None and clean.in_cluster is False  # analyzed, not linked
+    assert res.wallet("0x" + "77" * 20) is None  # never analyzed
+
+
+def test_two_runs_over_one_dataset_return_equal_results() -> None:
+    ds = _labeled()
+    a, b = detect(ds, DetectConfig()), detect(ds, DetectConfig())
+    assert a.clusters == b.clusters
+    assert (a.total_points, a.flagged_points, a.clean_points) == (
+        b.total_points,
+        b.flagged_points,
+        b.clean_points,
+    )
+
+
+def test_reasons_are_pattern_language_never_verdicts() -> None:
+    res = detect(_labeled(), DetectConfig())
+    families = set()
+    for c in res.clusters:
+        assert len({r.family for r in c.reasons}) >= 2
+        families |= {r.family for r in c.reasons}
+        for r in c.reasons:
+            lowered = r.human_string.lower()
+            for verdict_word in ("sybil", "fraud", "cheat", "guilty"):
+                assert verdict_word not in lowered
+    assert "amount" in families
+
+
+def test_an_empty_dataset_detects_nothing_and_says_so() -> None:
+    res = detect(Dataset(deposits=(), first_index={}, txs={}, funding={}))
+    assert res.clusters == []
+    assert (res.total_points, res.flagged_points, res.clean_points) == (0, 0, 0)
+
+
+# ---------------------------------------------------------------------------
+# the whole-population smoke (controller ruling 4): tier A only, one pass
+# ---------------------------------------------------------------------------
+
+
+def test_the_whole_population_tier_a_smoke() -> None:
+    ds = build_population_dataset()
+    res = detect(ds, DetectConfig())
+
+    # the wei-exact fold over all 15 576 contributors
+    assert res.total_points == 26_585_740
+    assert res.flagged_points + res.clean_points == res.total_points
+
+    # the flagged share lands in a sane band; tier A alone overshoots the
+    # research's 43.25% all-tier conservative floor because whole round-amount
+    # crowds carry amount+cadence.  Measured on this implementation: see the
+    # WP1 report (the exact number is recorded there, not over-pinned here).
+    share = res.flagged_points / res.total_points
+    assert 0.30 <= share <= 0.70
+
+    # the three named operators are found
+    found = {_shape(c) for c in res.clusters}
+    for shape in ("0.45", "14.0", "10.0"):
+        assert shape in found
+
+    # and the wave sizes are the audited magnitudes, not fragments
+    sizes = {_shape(c): c.size for c in res.clusters}
+    assert sizes["0.45"] >= 1900
+    assert sizes["14.0"] >= 950
+    assert sizes["10.0"] >= 700
