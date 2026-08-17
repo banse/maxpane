@@ -59,6 +59,7 @@ from maxpane_dashboard.widgets.curator._fmt import (
     short_addr,
 )
 from maxpane_dashboard.widgets.curator._table import (
+    WIDEN_HINT,
     cells,
     install_columns,
     pick_tier,
@@ -249,13 +250,19 @@ class CuratorLeaderboard(Vertical):
         return columns
 
     def _set_note(self, text: str) -> None:
+        """The explicit-state line, prefixed with the widen marker when the
+        title bar was too narrow to carry it (:func:`title_with_hint`)."""
+        if not getattr(self, "_hint_placed", True):
+            marker = f"[yellow]{WIDEN_HINT}[/]"
+            text = f"{marker} {text}" if text else marker
         self.query_one("#curator-lb-note", Static).update(text)
 
     def _set_title(self) -> None:
+        """Title plus the widen marker; the note carries it when it does not fit."""
         width = max(self.content_size.width - 2, 0)
-        self.query_one("#curator-lb-title", Static).update(
-            title_with_hint(LEADERBOARD_TITLE, self._hint, width)
-        )
+        text, placed = title_with_hint(LEADERBOARD_TITLE, self._hint, width)
+        self.query_one("#curator-lb-title", Static).update(text)
+        self._hint_placed = placed or not self._hint
 
     # -- rendering ---------------------------------------------------------
 

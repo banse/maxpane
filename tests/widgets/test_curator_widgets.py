@@ -36,15 +36,21 @@ from textual.app import App, ComposeResult
 from maxpane_dashboard.widgets.curator import (
     ACTIVITY_EMPTY,
     ACTIVITY_UNAVAILABLE,
+    CLOSEST_CALLS_UNAVAILABLE,
+    CLUSTERS_EMPTY,
+    CLUSTERS_UNAVAILABLE,
     LEADERBOARD_EMPTY,
     LEADERBOARD_TITLE,
     LEADERBOARD_UNAVAILABLE,
     NEVER_SAVED,
+    NO_JUDGED_HOURS,
     NO_WALLET,
     SIGNAL_LABELS,
     SPARKLINES_TITLE,
     WAITING,
     CuratorActivity,
+    CuratorClosestCalls,
+    CuratorClusters,
     CuratorHero,
     CuratorLeaderboard,
     CuratorSignals,
@@ -1123,3 +1129,180 @@ async def test_narrow_feeds_announce_the_fields_they_shed(width, shed):
         assert "widen" in text
     else:
         assert "widen" not in text
+
+
+# ===========================================================================
+# WP4.7 — CuratorClosestCalls
+# ===========================================================================
+
+
+def _call_rows() -> list[dict]:
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    # (no hour has been judged yet; capture B is the window)
+    return [
+        {"hour": 26, "volume_eth": 5.42, "margin_eth": 0.42, "savior": None},
+        {"hour": 25, "volume_eth": 61.0, "margin_eth": 56.0, "savior": None},
+        {"hour": 24, "volume_eth": 5.0, "margin_eth": 0.0,
+         "savior": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1"},
+    ]
+
+
+def test_the_closest_call_columns_are_the_frozen_row_keys():
+    from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS
+
+    assert set(_call_rows()[0]) == set(CURATOR_ROW_KEYS["closest_call_rows"])
+
+
+async def test_closest_calls_ascend_by_margin():
+    text = await _rendered(CuratorClosestCalls, closest_call_rows=_call_rows())
+    rows = [line for line in text.splitlines() if line.strip().startswith("h")]
+    order = [line.split()[0] for line in rows]
+    assert order == ["h24", "h26", "h25"]
+
+
+async def test_a_zero_margin_is_a_number_not_a_dash():
+    """An hour that survived by nothing at all is the tightest possible call
+    and the most interesting row this board can show."""
+    text = await _rendered(CuratorClosestCalls, closest_call_rows=_call_rows())
+    assert "0.000" in text or "0.00" in text
+
+
+async def test_an_unsaved_hour_renders_an_em_dash_in_the_savior_column():
+    """``HourSaved`` has never fired on chain.  The column says "nobody
+    pulled this hour back", which is a fact, rather than going blank."""
+    text = await _rendered(
+        CuratorClosestCalls,
+        closest_call_rows=[{"hour": 26, "volume_eth": 5.42, "margin_eth": 0.42,
+                            "savior": None}],
+    )
+    assert EMDASH in text
+
+
+async def test_the_pre_judging_state_names_the_instant_from_the_payload():
+    """PRD §4's exact state, with the instant read live — a hardcoded date
+    would be wrong the moment this dashboard outlives the deployment."""
+    text = await _rendered(
+        CuratorClosestCalls,
+        closest_call_rows=[],
+        first_judged_hour=24,
+        grace_ends_utc="2026-08-17 19:58:47Z",
+    )
+    assert f"{NO_JUDGED_HOURS} — judging begins 2026-08-17 19:58:47Z" in text
+
+
+async def test_a_none_list_is_not_the_pre_judging_state():
+    dead = await _rendered(CuratorClosestCalls, closest_call_rows=None,
+                           grace_ends_utc="2026-08-17 19:58:47Z")
+    assert CLOSEST_CALLS_UNAVAILABLE in dead
+    assert NO_JUDGED_HOURS not in dead
+
+
+async def test_a_row_with_an_unreadable_margin_sorts_last_not_first():
+    """The top of this board is a claim about how close the game came to
+    ending; a missing measurement is not evidence of a close call."""
+    rows = _call_rows() + [{"hour": 30, "volume_eth": None, "margin_eth": None,
+                            "savior": None}]
+    text = await _rendered(CuratorClosestCalls, closest_call_rows=rows)
+    ordered = [line.split()[0] for line in text.splitlines()
+               if line.strip().startswith("h")]
+    assert ordered[-1] == "h30"
+
+
+# ===========================================================================
+# WP4.8 — CuratorClusters
+# ===========================================================================
+
+
+def _cluster_rows() -> list[dict]:
+    """The real 2026-08-16 fan-out: ranks 4-12, nine wallets, 60 ETH each,
+    inside a six-minute window (about 28 blocks)."""
+    return [
+        {"size": 9, "amount_eth": 60.0, "first_block": 25769888,
+         "last_block": 25769916, "points": 69705, "points_share_pct": 12.4},
+    ]
+
+
+def test_the_cluster_columns_are_the_frozen_row_keys():
+    from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS
+
+    assert set(_cluster_rows()[0]) == set(CURATOR_ROW_KEYS["cluster_rows"])
+
+
+async def test_the_captured_fan_out_renders_as_its_shape():
+    text = await _rendered(CuratorClusters, cluster_rows=_cluster_rows())
+    assert "9× 60.00Ξ · 28 blocks" in text
+    assert "69,705" in text and "12.4%" in text
+
+
+async def test_the_share_column_dashes_rather_than_claiming_zero():
+    """``points_share_pct`` is None when total points are unknown — a
+    division refused, not a zero measured.  ``0.0%`` there would assert that
+    these wallets hold none of the score."""
+    text = await _rendered(
+        CuratorClusters,
+        cluster_rows=[{**_cluster_rows()[0], "points_share_pct": None}],
+    )
+    assert "0.0%" not in text
+    assert DASH in text
+
+
+async def test_an_empty_cluster_list_is_a_real_negative():
+    empty = await _rendered(CuratorClusters, cluster_rows=[], clusters_count=0)
+    dead = await _rendered(CuratorClusters, cluster_rows=None)
+    assert CLUSTERS_EMPTY in empty
+    assert CLUSTERS_UNAVAILABLE in dead
+    assert CLUSTERS_EMPTY not in dead and CLUSTERS_UNAVAILABLE not in empty
+
+
+async def test_the_cluster_panel_uses_pattern_language_only():
+    """The same forbidden-word list the analytics layer is held to (WP3.10):
+    one person spreading a deposit and nine people copying a trade produce
+    identical logs, so intent is not something this panel may assert."""
+    text = await _rendered(
+        CuratorClusters, cluster_rows=_cluster_rows(), clusters_count=1,
+        flagged_points_share_pct=12.4,
+    )
+    assert "fan-out" in text.lower()
+    for word in ("sybil", "cheat", "fraud", "attack", "wash", "abuse"):
+        assert word not in text.lower(), word
+
+
+async def test_the_cluster_summary_counts_the_groups_and_their_share():
+    text = await _rendered(
+        CuratorClusters, cluster_rows=_cluster_rows(), clusters_count=1,
+        flagged_points_share_pct=12.4,
+    )
+    assert "1 fan-out group" in text and "12.4% of all points" in text
+
+
+@pytest.mark.parametrize(
+    "width,shed",
+    [(60, ""), (36, "block window"), (26, "block window + POINTS")],
+)
+async def test_a_narrow_cluster_table_sheds_the_block_window_first(width, shed):
+    widget = CuratorClusters()
+    app = _Harness(widget)
+    async with app.run_test(size=(width, 14)) as pilot:
+        widget.update_data(cluster_rows=_cluster_rows(), clusters_count=1)
+        await pilot.pause()
+        text = _screen_text(app)
+    assert "9× 60.00Ξ" in text          # the finding itself never sheds
+    if shed:
+        assert "widen" in text and "blocks" not in text
+    else:
+        assert "widen" not in text and "28 blocks" in text
+
+
+async def test_a_shed_column_is_announced_even_when_the_title_bar_is_too_narrow():
+    """Going silent is not an option: below the width the descriptive hint
+    needs, the marker moves into the note line rather than disappearing.
+    Reached by the cluster panel at 26 columns, where "FAN-OUT PATTERNS" plus
+    the bare marker is one column over budget."""
+    for cls in (CuratorLeaderboard, CuratorClosestCalls, CuratorClusters):
+        widget = cls()
+        app = _Harness(widget)
+        async with app.run_test(size=(26, 14)) as pilot:
+            widget.update_data()
+            await pilot.pause()
+            text = _screen_text(app)
+        assert "widen" in text, cls.__name__

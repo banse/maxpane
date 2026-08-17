@@ -353,15 +353,15 @@ grace_ends_utc=None, **_kwargs)`.
 
 **Steps:**
 
-- [ ] Failing tests: rows ascend by margin; the savior column renders `—` when the hour was
+- [x] Failing tests: rows ascend by margin; the savior column renders `—` when the hour was
       never at risk (no `HourSaved`); an **empty** list during grace renders the PRD's exact
       explicit state `no judged hours yet — judging begins <UTC>` with the instant taken from
       `grace_ends_utc`, never a hardcoded date; a `None` list renders `closest calls
       unavailable`; a margin of exactly `0.00` renders as a number, not as `—` (an hour that
       survived by nothing is the tightest possible call and the most interesting row on the
       board).
-- [ ] Implement.
-- [ ] Commit: `feat(curator): closest-calls table with an explicit pre-judging state`
+- [x] Implement.
+- [x] Commit: `feat(curator): closest-calls table with an explicit pre-judging state`
 
 ---
 
@@ -372,14 +372,14 @@ flagged_points_share_pct=None, **_kwargs)`.
 
 **Steps:**
 
-- [ ] Failing tests: renders the captured 9×60Ξ cluster as `9× 60.00Ξ · 28 blocks`; the
+- [x] Failing tests: renders the captured 9×60Ξ cluster as `9× 60.00Ξ · 28 blocks`; the
       points-share column is a percentage of total points, `—` when total points is unknown
       (never a division by zero, never a `0.0%` that means "we could not compute it"); an
       empty list renders `no fan-out patterns found` — a real, meaningful negative — and a
       `None` renders `clusters unavailable`; pattern-only language, asserted by the same
       forbidden-word list WP3.10 uses; width tiers shed the block-window column first.
-- [ ] Implement.
-- [ ] Commit: `feat(curator): cluster table with pattern-only language and a real empty state`
+- [x] Implement.
+- [x] Commit: `feat(curator): cluster table with pattern-only language and a real empty state`
 
 ---
 

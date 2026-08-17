@@ -1,0 +1,289 @@
+"""Fan-out patterns in the deposit data (PRD §4, the other half of the ``c`` slot).
+
+One row per cluster: the shape, the block window it landed in, the points it
+holds together and its share of all points::
+
+    9× 60.00Ξ · 28 blocks    69,705    12.4%
+
+The captured example is real: ranks 4-12 of the 2026-08-16 leaderboard were
+nine wallets that each sent exactly 60 ETH inside a six-minute window — the
+shape the sqrt curve rewards and the one the contract's own documentation
+predicts a consumer will look for.
+
+Pattern language only
+---------------------
+
+``fan-out`` describes what is in the event data.  ``sybil``, ``farm``
+(as a verb), ``cheat``, ``fraud`` and ``attack`` describe an intent this
+dashboard cannot read and has no standing to assert: one person spreading a
+deposit and nine people copying a trade produce identical logs.  The same
+forbidden-word list guards the analytics layer (WP3.10) and this panel, and
+it is asserted on the rendered output, not on the source.
+
+The share column is a percentage or a dash — never ``0.0%``
+------------------------------------------------------------
+
+``points_share_pct`` is ``None`` whenever total points are unknown, which is
+a division this dashboard refuses to perform rather than approximate.
+``0.0%`` there would assert that these wallets hold none of the score, which
+is a measurement nobody made.  (The dash is ``--``, the package's "we could
+not read this"; ``—`` is reserved for "there is deliberately nothing here",
+which is the FORCED ETH row's healthy state and not this.)
+
+Width behaviour
+---------------
+
+=========  ====  ==========================================
+Tier       Cost  Columns
+=========  ====  ==========================================
+full        42   PATTERN (with the block window) POINTS SHARE
+compact     33   PATTERN POINTS SHARE
+minimal     23   PATTERN SHARE
+=========  ====  ==========================================
+
+The block window sheds first — it is provenance, and the pattern itself is
+the finding.  ``SHARE`` never sheds: a cluster's size means nothing without
+what fraction of the board it holds.
+
+Primitives only — this module imports nothing from ``data/`` or ``analytics/``.
+"""
+
+from __future__ import annotations
+
+from textual.app import ComposeResult
+from textual.containers import Vertical
+from textual.widgets import DataTable, Static
+
+from maxpane_dashboard.widgets.curator._fmt import (
+    DASH,
+    as_float,
+    fmt_eth_compact,
+    fmt_pct,
+    fmt_points,
+)
+from maxpane_dashboard.widgets.curator._table import (
+    WIDEN_HINT,
+    cells,
+    install_columns,
+    pick_tier,
+    title_with_hint,
+)
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+
+#: Panel title.  A hint is appended, never substituted.
+CLUSTERS_TITLE = "FAN-OUT PATTERNS"
+
+#: The explicit states, tested verbatim and deliberately different: one is a
+#: real, meaningful negative and the other is a failure.
+CLUSTERS_UNAVAILABLE = "clusters unavailable"
+CLUSTERS_EMPTY = "no fan-out patterns found"
+
+#: Rows rendered.
+MAX_ROWS = 8
+
+#: ``9× 60.00Ξ · 28 blocks`` measured; and the form without the window.
+_PATTERN_COLS = 21
+_PATTERN_SHORT_COLS = 12
+_POINTS_COLS = 8
+_SHARE_COLS = 7
+
+_TIERS = (
+    (
+        "full",
+        42,
+        (
+            ("pattern", "PATTERN", _PATTERN_COLS),
+            ("points", "POINTS", _POINTS_COLS),
+            ("share", "SHARE", _SHARE_COLS),
+        ),
+        "",
+    ),
+    (
+        "compact",
+        33,
+        (
+            ("pattern", "PATTERN", _PATTERN_SHORT_COLS),
+            ("points", "POINTS", _POINTS_COLS),
+            ("share", "SHARE", _SHARE_COLS),
+        ),
+        "‹ widen: block window",
+    ),
+    (
+        "minimal",
+        23,
+        (
+            ("pattern", "PATTERN", _PATTERN_SHORT_COLS),
+            ("share", "SHARE", _SHARE_COLS),
+        ),
+        "‹ widen: block window + POINTS",
+    ),
+)
+
+
+def _block_window(row: dict) -> int | None:
+    """``last_block - first_block``, or ``None`` when either is unreadable."""
+    try:
+        first = int(row["first_block"])
+        last = int(row["last_block"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    span = last - first
+    return span if span >= 0 else None
+
+
+def _row_values(row: dict, with_window: bool) -> dict:
+    size = row.get("size")
+    try:
+        size_str = f"{int(size)}×"
+    except (TypeError, ValueError):
+        size_str = f"{DASH}×"
+    amount = as_float(row.get("amount_eth"))
+    pattern = f"{size_str} {fmt_eth_compact(amount)}Ξ"
+    if with_window:
+        span = _block_window(row)
+        pattern += f" · {span} blocks" if span is not None else f" · {DASH} blocks"
+    share = row.get("points_share_pct")
+    return {
+        "pattern": safe_markup(pattern),
+        "points": fmt_points(row.get("points")),
+        # None means total points were unknown -- a division refused, not a
+        # zero measured.
+        "share": fmt_pct(share) if share is not None else DASH,
+    }
+
+
+class CuratorClusters(Vertical):
+    """Fan-out patterns, in pattern language, with a real empty state."""
+
+    DEFAULT_CSS = """
+    CuratorClusters > .curator-cl-title {
+        width: 100%;
+        padding: 0 1;
+        text-style: bold;
+        color: $text-muted;
+    }
+    CuratorClusters > .curator-cl-note {
+        width: 100%;
+        height: 1;
+        padding: 0 1;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+    }
+    CuratorClusters > DataTable {
+        height: 1fr;
+    }
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._payload: dict = {}
+        self._columns: tuple = ()
+        self._hint: str = ""
+
+    def compose(self) -> ComposeResult:
+        yield Static(CLUSTERS_TITLE, classes="curator-cl-title", id="curator-cl-title")
+        yield Static("", classes="curator-cl-note", id="curator-cl-note")
+        yield DataTable(id="curator-cl-table", classes="curator-cl-table")
+
+    def on_mount(self) -> None:
+        table = self.query_one("#curator-cl-table", DataTable)
+        table.cursor_type = "row"
+        table.zebra_stripes = True
+        columns = self._apply_columns(table)
+        table.add_row(*cells({"pattern": "[dim]…[/]"}, columns, default=""))
+
+    def on_resize(self, _event=None) -> None:
+        if self._payload:
+            self._render_view()
+
+    # -- layout ------------------------------------------------------------
+
+    def _apply_columns(self, table: DataTable) -> tuple:
+        width = table.content_size.width or self.content_size.width
+        name, columns, hint = pick_tier(_TIERS, width)
+        install_columns(table, columns, self._columns)
+        self._columns = columns
+        self._hint = hint
+        self._tier = name
+        return columns
+
+    def _set_title(self) -> None:
+        """Title plus the widen marker; the note carries it when it does not fit."""
+        width = max(self.content_size.width - 2, 0)
+        text, placed = title_with_hint(CLUSTERS_TITLE, self._hint, width)
+        self.query_one("#curator-cl-title", Static).update(text)
+        self._hint_placed = placed or not self._hint
+
+    def _set_note(self, text: str) -> None:
+        """The explicit-state line, prefixed with the widen marker when the
+        title bar was too narrow to carry it (:func:`title_with_hint`)."""
+        if not getattr(self, "_hint_placed", True):
+            marker = f"[yellow]{WIDEN_HINT}[/]"
+            text = f"{marker} {text}" if text else marker
+        self.query_one("#curator-cl-note", Static).update(text)
+
+    # -- rendering ---------------------------------------------------------
+
+    def update_data(
+        self,
+        cluster_rows=None,
+        clusters_count=None,
+        flagged_points_share_pct=None,
+        **_kwargs,
+    ) -> None:
+        """Refresh the table and its one-line summary."""
+        self._payload = {
+            "rows": cluster_rows,
+            "count": clusters_count,
+            "share": flagged_points_share_pct,
+            "seen": True,
+        }
+        self._render_view()
+
+    def _summary(self) -> str:
+        count = self._payload.get("count")
+        share = self._payload.get("share")
+        if not isinstance(count, int):
+            return ""
+        plural = "" if count == 1 else "s"
+        text = f"{count} fan-out group{plural}"
+        if share is not None:
+            text += f" · {fmt_pct(share)} of all points"
+        return f"[dim]{text}[/]"
+
+    def _render_view(self) -> None:
+        try:
+            table = self.query_one("#curator-cl-table", DataTable)
+        except Exception:  # not composed yet
+            return
+        if not self._payload:
+            return
+
+        columns = self._apply_columns(table)
+        self._set_title()
+
+        rows = self._payload["rows"]
+        if rows is None:
+            self._set_note(f"[$warning]⚠ {CLUSTERS_UNAVAILABLE}[/]")
+            table.add_row(*cells({}, columns, default=DASH))
+            return
+
+        try:
+            usable = [r for r in list(rows) if isinstance(r, dict)]
+        except TypeError:
+            usable = []
+
+        if not usable:
+            # A real negative: the fold ran and the shape is not there.
+            self._set_note(f"[dim]{CLUSTERS_EMPTY}[/]")
+            table.add_row(*cells({}, columns, default=DASH))
+            return
+
+        self._set_note(self._summary())
+        with_window = getattr(self, "_tier", "full") == "full"
+        for row in usable[:MAX_ROWS]:
+            try:
+                values = _row_values(row, with_window)
+            except Exception:
+                values = {"pattern": f"[dim]{DASH}[/]"}
+            table.add_row(*cells(values, columns, default=DASH))

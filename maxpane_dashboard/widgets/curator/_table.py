@@ -92,18 +92,24 @@ def width_of(columns, key: str, fallback: int) -> int:
     return fallback
 
 
-def title_with_hint(title: str, hint: str, width: int) -> str:
-    """``TITLE  ‹ widen: TX`` — inside ``width``, degrading rather than going dark.
+def title_with_hint(title: str, hint: str, width: int) -> tuple[str, bool]:
+    """``(markup, placed)`` — the title with as much of the hint as fits.
 
     The title itself is never abbreviated (the screen tests look for it, and
     so does a reader scanning the row); the *hint* degrades to the bare
-    :data:`WIDEN_HINT` and, only when even that will not fit, is dropped from
-    the title so the caller can put it somewhere else.
+    :data:`WIDEN_HINT`.
+
+    ``placed`` is False when even that did not fit, and the caller **must**
+    put the marker somewhere else — the note line.  Going silent is not an
+    option this codebase allows: a shed column that is not announced is
+    indistinguishable from data that is not there, which is the whole reason
+    the tiers exist.  A 26-column cluster panel reaches this case, so it is
+    not theoretical.
     """
     if not hint:
-        return title
+        return title, True
     for candidate in (hint, WIDEN_HINT):
         text = f"{title}  [yellow]{candidate}[/]"
         if width <= 0 or visible_len(text) <= width:
-            return text
-    return title
+            return text, True
+    return title, False
