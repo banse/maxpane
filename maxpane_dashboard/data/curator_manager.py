@@ -901,11 +901,18 @@ class CuratorManager:
                 (event.tx_hash.lower(), event.log_index)
                 for event in self.cache.events()
             }
+            watermark = self.cache.last_seen_block()
             for row in rows:
                 event = decode_deposit(row)
                 if event is None:
                     continue
                 if (event.tx_hash.lower(), event.log_index) in known:
+                    continue
+                if watermark is None or event.block_number > watermark:
+                    # Newer than anything we have swept is not a gap: the two
+                    # sources are read minutes apart and Blockscout is often
+                    # ahead. Only a row *inside* the range we claim to have
+                    # folded is evidence that we missed something.
                     continue
                 gap_block = (
                     event.block_number

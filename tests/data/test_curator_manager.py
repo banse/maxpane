@@ -1157,3 +1157,21 @@ def test_the_series_survive_a_restart_and_reach_the_payload(tmp_path, clock):
     again = asyncio.run(second.fetch_and_compute())
     assert again["volume_series"] == series
     assert again["degraded"] == [SOURCE_LOGS, SOURCE_STATE]
+
+
+def test_a_blockscout_row_newer_than_the_sweep_is_not_a_gap(tmp_path, clock):
+    """The two sources are read minutes apart on different transports and
+    Blockscout is often ahead.  Only a row INSIDE the range we claim to have
+    folded is evidence that we missed something -- otherwise every cross-check
+    would condemn the fold for being one block younger."""
+    newer = dict(RPC_ROWS[2], blockNumber=hex(25_999_999),
+                 transactionHash="0x" + "ee" * 32, logIndex="0x1")
+    client = FakeClient(
+        fetch_logs=lambda *_: _sweep(to_block=25_770_500),
+        fetch_blockscout_logs=lambda *_: [newer],
+    )
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+    out = asyncio.run(manager._pool_crosscheck({"slow"}, NOW, _state(), CONFIG))
+    assert out["gap_block"] is None
+    assert manager._fold_stale is False
