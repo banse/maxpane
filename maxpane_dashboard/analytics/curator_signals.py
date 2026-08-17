@@ -569,6 +569,82 @@ def fold_deposits(
     return rows
 
 
+def bucket_start_ts(
+    hour: int | None, launch_time: int | None, hour_duration: int | None
+) -> int | None:
+    """An hour bucket's wall clock: ``launch_time + hour * hour_duration``.
+
+    Exact by construction, which is the whole reason the series needs no block
+    timestamps: the hour is an indexed topic on the event itself.
+    """
+    index = _int_or_none(hour)
+    launch = _int_or_none(launch_time)
+    duration = _int_or_none(hour_duration)
+    if index is None or launch is None or duration is None or index < 0:
+        return None
+    return launch + index * duration
+
+
+def hourly_buckets(
+    deposits: Any,
+    *,
+    launch_time: int | None,
+    hour_duration: int | None,
+    first_judged_hour: int | None,
+    hourly_threshold_wei: int | None,
+) -> list[HourBucket]:
+    """The hourly history, folded from ``Deposited`` logs and nothing else.
+
+    **There is no parameter through which a state read could enter** (H2), and
+    that is deliberate: the fast tier's hour-total view returns 0 at every hour
+    boundary while its companion still names the previous bucket, so a series
+    fed from that tier writes a crash into the history which outlives the
+    boundary that produced it.  The hour comes off the event's indexed second
+    topic instead.
+
+    The series is **dense**: a silent hour is present with ``volume_wei=0``.  A
+    missing hour and a silent hour are different facts, and a silent judged hour
+    is the fact that ends the game.
+
+    ``judged`` is conservative here — it is false for every hour before
+    ``first_judged_hour``, false for the highest hour observed (the one deposits
+    are still landing in; ``_isShort`` returns false while the live hour is the
+    active one), and false throughout when the threshold or the first judged
+    hour could not be read, because "judged" is a judgement and without the bar
+    there is none.  :func:`survival` re-derives it against the
+    injected ``current_hour``, which is the authority.
+    """
+    events = _usable_deposits(deposits)
+    if not events:
+        return []
+
+    volumes: dict[int, int] = {}
+    counts: dict[int, int] = {}
+    for event in events:
+        hour = event.hour
+        if hour < 0:
+            continue
+        volumes[hour] = volumes.get(hour, 0) + event.amount_wei
+        counts[hour] = counts.get(hour, 0) + 1
+    if not volumes:
+        return []
+
+    highest = max(volumes)
+    judging_from = _int_or_none(first_judged_hour)
+    threshold = _int_or_none(hourly_threshold_wei)
+    can_judge = judging_from is not None and threshold is not None
+
+    return [
+        HourBucket(
+            hour=hour,
+            volume_wei=volumes.get(hour, 0),
+            deposits=counts.get(hour, 0),
+            judged=bool(can_judge and hour >= judging_from and hour < highest),
+        )
+        for hour in range(0, highest + 1)
+    ]
+
+
 __all__ = [
     # tunables
     "WHALE_MIN_ETH",
@@ -600,4 +676,6 @@ __all__ = [
     "credited_delta",
     # folds
     "fold_deposits",
+    "hourly_buckets",
+    "bucket_start_ts",
 ]

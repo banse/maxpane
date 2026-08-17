@@ -914,3 +914,210 @@ def test_the_fold_ignores_rows_it_cannot_read(
     must cost one row — never the table."""
     hostile = [None, object(), {"contributor": "0x1"}, *deposits]
     assert sig.fold_deposits(hostile, first_deposits, points_per_eth=POINTS_PER_ETH) == rows
+
+
+# ===========================================================================
+# WP3.7 — hourly_buckets(): the series that never touches state (H2)
+# ===========================================================================
+
+
+def _synthetic_deposit(
+    *,
+    hour: int,
+    amount_wei: int,
+    contributor: str = "0x00000000000000000000000000000000000000aa",
+    credited_delta_wei: int | None = None,
+    early_bps: int = 10_000,
+    block_number: int = 26_000_000,
+    log_index: int = 0,
+    tx_count: int = 1,
+    new_weight_wei: int | None = None,
+    ts: float | None = None,
+) -> DepositEvent:
+    """A hand-built event for a shape the chain has not produced yet.
+
+    Every call site says which shape and why; nothing here is used where a real
+    captured row exists.
+    """
+    credited = amount_wei if credited_delta_wei is None else credited_delta_wei
+    weight = sig.weight_added(credited, early_bps) or 0
+    return DepositEvent(
+        contributor=contributor,
+        hour=hour,
+        amount_wei=amount_wei,
+        credited_delta_wei=credited,
+        weight_added_wei=weight,
+        new_weight_wei=weight if new_weight_wei is None else new_weight_wei,
+        tx_count=tx_count,
+        hour_total_wei=amount_wei,
+        early_bps=early_bps,
+        block_number=block_number,
+        tx_hash="0x" + f"{block_number:064x}"[:64],
+        log_index=log_index,
+        ts=ts,
+    )
+
+
+def _buckets(events: list[DepositEvent], **over: Any) -> list[HourBucket]:
+    kwargs: dict[str, Any] = {
+        "launch_time": LAUNCH,
+        "hour_duration": HOUR,
+        "first_judged_hour": FIRST_JUDGED_HOUR,
+        "hourly_threshold_wei": THRESHOLD,
+    }
+    kwargs.update(over)
+    return sig.hourly_buckets(events, **kwargs)
+
+
+def test_the_hour_comes_from_the_indexed_topic_not_from_a_timestamp(
+    deposits: list[DepositEvent],
+) -> None:
+    """The hour is ``topics[2]``; the wall clock is
+    ``launch_time + hour * hour_duration``, exact by construction.  The
+    captured rows *do* carry a block timestamp (H14 was refuted), and the fold
+    still does not read it — a stamp is for the activity feed, never for a
+    bucket boundary."""
+    buckets = _buckets(deposits)
+    assert sig.bucket_start_ts(1, LAUNCH, HOUR) == LAUNCH + HOUR
+    assert sig.bucket_start_ts(0, LAUNCH, HOUR) == LAUNCH
+    assert {b.hour for b in buckets} == {0, 1}
+
+
+def test_the_function_signature_admits_no_state_reading() -> None:
+    """H2, made structural.  ``currentHourTotal`` cannot enter this fold
+    because there is no parameter for it to enter through, and the source names
+    none."""
+    params = set(inspect.signature(sig.hourly_buckets).parameters)
+    assert params == {
+        "deposits",
+        "launch_time",
+        "hour_duration",
+        "first_judged_hour",
+        "hourly_threshold_wei",
+    }
+    src = inspect.getsource(sig.hourly_buckets)
+    for banned in ("current_hour_total", "currentHourTotal", "last_active_hour"):
+        assert banned not in src, banned
+
+
+def test_the_captured_hours_reproduce_the_sweep_to_the_wei(
+    deposits: list[DepositEvent],
+) -> None:
+    """Hour 0 quiet then violent, hour 1 still climbing when the sweep was
+    taken.  Recomputed from the committed bytes, not quoted: wp3.md's hex
+    literals belong to an earlier, 226-row reading of this window."""
+    buckets = _buckets(deposits)
+    assert [b.volume_wei for b in buckets] == [
+        851_887_546_893_889_652_639,
+        778_611_705_271_950_173_616,
+    ]
+    assert [b.deposits for b in buckets] == [149, 82]
+    assert sum(b.volume_wei for b in buckets) == 1_630_499_252_165_839_826_255
+
+
+def test_the_fold_reconciles_with_the_contracts_own_totals_in_one_instant(
+    bundle: dict, bundle_deposits: list[DepositEvent]
+) -> None:
+    """The bundle's state and logs were read in the same second, so this is a
+    real reconciliation rather than two snapshots being compared.
+
+    It also pins the half of H2 that is easy to get backwards: the fold
+    reproduces ``currentHourTotal()`` for the **in-progress** hour too — the
+    view is not wrong, it just zeroes at the boundary, which is why history is
+    never fed from it.
+    """
+    buckets = _buckets(bundle_deposits)
+    state = bundle["state"]
+    assert sum(b.volume_wei for b in buckets) == int(state["0x5f81a57c"]["result"], 16)
+    assert sum(b.deposits for b in buckets) == int(state["0x9b4f50e7"]["result"], 16)
+
+    current_hour = int(state["0x020e185d"]["result"], 16)
+    current_total = int(state["0x78f251f3"]["result"], 16)
+    live = [b for b in buckets if b.hour == current_hour][0]
+    assert live.volume_wei == current_total == 139_251_308_307_538_029_715
+
+    last_active_hour = int(state["0xa8a036f1"]["result"][2:66], 16)
+    last_active_total = int(state["0xa8a036f1"]["result"][66:], 16)
+    assert [b for b in buckets if b.hour == last_active_hour][0].volume_wei == last_active_total
+
+
+def test_silent_hours_are_present_with_a_zero_not_absent() -> None:
+    """A gap in the series renders as a join between two peaks; a zero renders
+    as the silence that kills the game."""
+    sparse = [
+        _synthetic_deposit(hour=0, amount_wei=ETH, block_number=1, log_index=0),
+        _synthetic_deposit(hour=3, amount_wei=ETH, block_number=2, log_index=0),
+    ]
+    buckets = _buckets(sparse)
+    assert [b.hour for b in buckets] == [0, 1, 2, 3]
+    assert [b.volume_wei for b in buckets] == [ETH, 0, 0, ETH]
+    assert [b.deposits for b in buckets] == [1, 0, 0, 1]
+
+
+def test_only_hours_at_or_after_first_judged_hour_are_marked_judged() -> None:
+    events = [
+        _synthetic_deposit(hour=h, amount_wei=ETH, block_number=100 + h, log_index=0)
+        for h in (0, 23, 24, 25, 26)
+    ]
+    buckets = {b.hour: b for b in _buckets(events)}
+    assert all(buckets[h].judged is False for h in range(0, 24))
+    assert buckets[24].judged is True and buckets[25].judged is True
+
+
+def test_the_highest_hour_is_never_marked_judged(
+) -> None:
+    """H13 at the fold level: the hour deposits are still landing in is the
+    hour you are living in, and ``_isShort`` returns false while
+    ``lastActive == hour``.  ``survival()`` re-derives this against the injected
+    ``current_hour``, which is the authority; the fold is the conservative half.
+    """
+    events = [
+        _synthetic_deposit(hour=h, amount_wei=ETH, block_number=100 + h, log_index=0)
+        for h in (24, 25, 26)
+    ]
+    buckets = {b.hour: b for b in _buckets(events)}
+    assert buckets[24].judged is True
+    assert buckets[25].judged is True
+    assert buckets[26].judged is False
+
+
+def test_no_hour_is_judged_when_the_threshold_could_not_be_read() -> None:
+    """``judged`` is a judgement, and without the bar there is no judgement.
+    ``False`` here is not "it survived" — it is "not judged", which is what the
+    field means."""
+    events = [
+        _synthetic_deposit(hour=h, amount_wei=ETH, block_number=100 + h, log_index=0)
+        for h in (24, 25, 26)
+    ]
+    assert all(b.judged is False for b in _buckets(events, hourly_threshold_wei=None))
+    assert all(b.judged is False for b in _buckets(events, first_judged_hour=None))
+
+
+def test_a_cap_exceeding_deposit_still_fills_its_hour_in_full() -> None:
+    """H3's other half (the first is in WP3.5): credited zero, weight zero, and
+    the hour banks every wei of the raw amount."""
+    # SYNTHETIC — permanent: no >1000 ETH deposit exists on chain.
+    amount = 1200 * ETH
+    event = _synthetic_deposit(hour=30, amount_wei=amount, credited_delta_wei=0)
+    assert event.credited_delta_wei == 0 and event.weight_added_wei == 0
+    bucket = [b for b in _buckets([event]) if b.hour == 30][0]
+    assert bucket.volume_wei == amount
+    assert bucket.deposits == 1
+
+
+def test_an_empty_or_unreadable_history_folds_to_an_empty_list() -> None:
+    assert _buckets([]) == []
+    assert sig.hourly_buckets(
+        None,
+        launch_time=LAUNCH,
+        hour_duration=HOUR,
+        first_judged_hour=FIRST_JUDGED_HOUR,
+        hourly_threshold_wei=THRESHOLD,
+    ) == []
+
+
+def test_bucket_start_ts_is_none_when_the_immutables_are_unknown() -> None:
+    assert sig.bucket_start_ts(3, None, HOUR) is None
+    assert sig.bucket_start_ts(3, LAUNCH, None) is None
+    assert sig.bucket_start_ts(None, LAUNCH, HOUR) is None
+    assert sig.bucket_start_ts(3, LAUNCH, HOUR) == LAUNCH + 3 * HOUR
