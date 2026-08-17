@@ -1400,7 +1400,15 @@ def build_signals(readings: Any, *, now_ts: float) -> dict:
     return out
 
 
+#: Re-exported so a consumer of this module has one import site for the phase
+#: vocabulary it is about to branch on.  It is ``curator_models``' tuple,
+#: not a copy — a second spelling of "settled" is exactly the fallback arm the
+#: single tuple exists to prevent.
+PHASES = PHASES
+
+
 __all__ = [
+    "PHASES",
     # tunables
     "WHALE_MIN_ETH",
     "WHALE_WINDOW_S",

@@ -2101,3 +2101,11 @@ def test_the_flagged_flag_and_the_share_agree_with_the_cluster_rows(
     assert any(row["flagged"] for row in out["leaderboard_rows"]) or all(
         not row["flagged"] for row in out["leaderboard_rows"]
     )
+
+
+def test_the_phase_vocabulary_is_re_exported_and_not_copied() -> None:
+    """One import site for a consumer, and the same object — a second spelling
+    of "settled" is the fallback arm the single tuple exists to prevent."""
+    from maxpane_dashboard.data import curator_models
+
+    assert sig.PHASES is curator_models.PHASES
