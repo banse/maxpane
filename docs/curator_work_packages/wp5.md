@@ -501,7 +501,20 @@ still reads SETTLED with every endpoint dead.
 
 **Landed.** `data/curator_cache.py`, `data/curator_manager.py`,
 `tests/data/test_curator_{cache,manager,degradation}.py`. Curator WP5 tests: 55 cache +
-67 manager + 12 degradation = **134**, all green, with the full suite green alongside.
+68 manager + 12 degradation = **135**. Full suite **4166 passed, 0 failed, 0 skipped**
+(225 s), tree clean.
+
+**The hand-off WP6 and WP7 code against:**
+`CuratorManager(poll_interval=30, *, client=None, cache=None, wallet=None, clock=time.time,
+cache_path=DEFAULT_CACHE_PATH)` — `poll_interval` stays first-positional so `app.py`'s
+`CuratorManager(poll_interval=poll_interval)` reads like every other dashboard's.
+`await fetch_and_compute() -> dict` returns **exactly** the 49 `CURATOR_KEYS` and **never
+raises**, so WP6's `raises=True` double is belt and braces rather than the outage path.
+`await close()` closes the client and then saves the cache (and saves even if the close
+raises); `save_cache()` is the synchronous half. `degraded` is a sorted sublist of
+`SOURCES == ("state", "logs", "wallet")` — the strings the title bar renders verbatim.
+`as_of` is an epoch float and `as_of_hhmm` the rendered `HH:MM`; both are `None` until
+something has actually answered, and they move only on a **successful** read.
 
 **The gap the wave-2 gate found, and nobody owned:** nothing in the tree turned a raw log
 row into a `DepositEvent`. Six decoders now live in `curator_manager.py`, next to their
