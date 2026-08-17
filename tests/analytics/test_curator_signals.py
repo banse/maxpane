@@ -1571,3 +1571,204 @@ def test_find_clusters_is_total_over_empty_and_hostile_input() -> None:
     assert sig.find_clusters([], []) == []
     assert sig.find_clusters(None, None) == []
     assert sig.find_clusters([object(), None], [object()]) == []
+
+
+# ===========================================================================
+# WP3.11 — WHALE and the YOU quote
+# ===========================================================================
+
+NOW = 1_786_920_000.0  # 2026-08-16 22:40:00Z, inside the captured window
+
+
+def test_the_whale_is_the_largest_deposit_in_the_window(
+    deposits: list[DepositEvent],
+) -> None:
+    """The captured sweep's last hour holds several sends over 25 ETH; the row
+    names the biggest one, not the newest."""
+    newest_ts = max(d.ts for d in deposits if d.ts is not None)
+    whale = sig.newest_whale(deposits, now_ts=newest_ts + 60)
+    assert whale is not None
+    inside = [d for d in deposits if d.ts is not None and newest_ts + 60 - d.ts <= 3600]
+    assert whale["amount_wei"] == max(d.amount_wei for d in inside)
+    assert whale["amount_wei"] >= int(sig.WHALE_MIN_ETH * ETH)
+    assert whale["wallet"] == max(inside, key=lambda d: d.amount_wei).contributor
+    assert whale["age_s"] == pytest.approx(newest_ts + 60 - max(inside, key=lambda d: d.amount_wei).ts)
+
+
+def test_an_empty_window_reports_nothing_rather_than_zero(
+    deposits: list[DepositEvent],
+) -> None:
+    """``None`` means "no whale in the last hour"; a 0 ETH whale is not a
+    thing, and a zero here would render as one."""
+    newest_ts = max(d.ts for d in deposits if d.ts is not None)
+    assert sig.newest_whale(deposits, now_ts=newest_ts + 86_400) is None
+    assert sig.newest_whale([], now_ts=NOW) is None
+    assert sig.newest_whale(None, now_ts=NOW) is None
+
+
+def test_a_deposit_below_the_threshold_is_not_a_whale() -> None:
+    small = _synthetic_deposit(hour=0, amount_wei=24 * ETH, ts=NOW - 10)
+    assert sig.newest_whale([small], now_ts=NOW) is None
+    big = _synthetic_deposit(hour=0, amount_wei=25 * ETH, ts=NOW - 10, log_index=1)
+    assert sig.newest_whale([big], now_ts=NOW)["amount_wei"] == 25 * ETH
+
+
+def test_a_deposit_with_no_timestamp_is_excluded_from_the_window() -> None:
+    """WP2.8's failed stamp.  A missing timestamp must not promote an old
+    deposit into the last hour — that would invent a whale out of an outage."""
+    stampless = _synthetic_deposit(hour=0, amount_wei=900 * ETH, ts=None)
+    assert sig.newest_whale([stampless], now_ts=NOW) is None
+
+
+def test_the_whale_window_and_floor_are_injectable() -> None:
+    """PRD §12: both are first guesses, so both are parameters — a re-tune is
+    an argument change, not an edit."""
+    old = _synthetic_deposit(hour=0, amount_wei=30 * ETH, ts=NOW - 7200)
+    assert sig.newest_whale([old], now_ts=NOW) is None
+    assert sig.newest_whale([old], now_ts=NOW, window_s=10_800)["amount_wei"] == 30 * ETH
+    assert sig.newest_whale([old], now_ts=NOW, window_s=10_800, min_eth=31.0) is None
+
+
+def _wallet(address: str, **over: Any) -> WalletState:
+    base: dict[str, Any] = {
+        "address": address,
+        "points": None,
+        "weight_wei": None,
+        "contributed_wei": None,
+        "tx_count": None,
+        "first_hour": None,
+        "has_joined": True,
+        "required_next_wei": None,
+    }
+    base.update(over)
+    return WalletState(**base)
+
+
+def test_the_you_quote_ranks_against_the_folded_table(rows: list[ContributorRow]) -> None:
+    top = rows[0]
+    wallet = _wallet(
+        top.address,
+        points=top.points,
+        weight_wei=top.weight_wei,
+        contributed_wei=top.credit_wei,
+        tx_count=top.tx_count,
+        first_hour=top.first_hour,
+        required_next_wei=top.credit_wei + 10**17,
+    )
+    rank, points, credit_eth, required_eth, marginal = sig.you_quote(
+        wallet,
+        rows,
+        points_per_eth=POINTS_PER_ETH,
+        early_bps=19_491,
+        credit_cap_wei=CREDIT_CAP,
+    )
+    assert rank == 1
+    assert points == 30_035
+    assert credit_eth == pytest.approx(461.1)
+    assert required_eth == pytest.approx(461.2)
+    # The next legal send credits 0.1 ETH, which at 1.9491x is 0.19491 ETH of
+    # weight on top of 902.10737 — recomputed here through the same primitives
+    # the contract uses, not copied from the answer.
+    expected = sig.points_for_weight(
+        top.weight_wei + sig.weight_added(10**17, 19_491), POINTS_PER_ETH
+    )
+    assert marginal == expected - 30_035
+    assert marginal >= 0
+
+
+def test_a_wallet_that_has_never_played_is_not_a_zero_score(
+    rows: list[ContributorRow],
+) -> None:
+    """``rank —, 0 pts`` reads like a wallet with a zero score rather than one
+    that has never deposited.  Points are None; what IS known — the entry
+    ticket and what it would buy — is reported."""
+    stranger = _wallet(
+        "0x00000000000000000000000000000000000000cc",
+        points=0,
+        weight_wei=0,
+        contributed_wei=0,
+        tx_count=0,
+        first_hour=0,
+        has_joined=False,
+        required_next_wei=5 * 10**16,
+    )
+    rank, points, credit_eth, required_eth, marginal = sig.you_quote(
+        stranger,
+        rows,
+        points_per_eth=POINTS_PER_ETH,
+        early_bps=19_491,
+        credit_cap_wei=CREDIT_CAP,
+    )
+    assert rank is None
+    assert points is None
+    assert credit_eth is None
+    assert required_eth == pytest.approx(0.05)
+    assert marginal == sig.points_for_weight(
+        sig.weight_added(5 * 10**16, 19_491), POINTS_PER_ETH
+    )
+    assert marginal == 312
+
+
+def test_a_wallet_already_at_the_cap_buys_no_further_points(
+    rows: list[ContributorRow],
+) -> None:
+    """Legitimately 0 — not unknown, not an error.  The cap is where the curve
+    stops paying and the honest quote says so."""
+    # SYNTHETIC — permanent: no wallet has reached the 1000 ETH cap on chain.
+    capped = _wallet(
+        "0x00000000000000000000000000000000000000dd",
+        points=31_622,
+        weight_wei=1000 * ETH,
+        contributed_wei=CREDIT_CAP,
+        tx_count=1,
+        first_hour=0,
+        required_next_wei=CREDIT_CAP + 10**17,
+    )
+    _rank, _points, _credit, _required, marginal = sig.you_quote(
+        capped,
+        rows,
+        points_per_eth=POINTS_PER_ETH,
+        early_bps=10_000,
+        credit_cap_wei=CREDIT_CAP,
+    )
+    assert marginal == 0
+
+
+def test_no_wallet_configured_means_every_you_field_is_none(
+    rows: list[ContributorRow],
+) -> None:
+    """``MAXPANE_WALLET`` unset: the manager passes ``wallet_state=None`` and
+    this must not raise."""
+    assert sig.you_quote(
+        None, rows, points_per_eth=POINTS_PER_ETH, early_bps=19_491, credit_cap_wei=CREDIT_CAP
+    ) == (None, None, None, None, None)
+
+
+def test_the_you_quote_degrades_field_by_field(rows: list[ContributorRow]) -> None:
+    """One failed sub-call costs one field.  A wallet whose ``requiredNext``
+    read failed still has a rank."""
+    top = rows[0]
+    wallet = _wallet(
+        top.address,
+        points=top.points,
+        weight_wei=top.weight_wei,
+        contributed_wei=top.credit_wei,
+        required_next_wei=None,
+    )
+    rank, points, credit_eth, required_eth, marginal = sig.you_quote(
+        wallet, rows, points_per_eth=POINTS_PER_ETH, early_bps=19_491, credit_cap_wei=CREDIT_CAP
+    )
+    assert rank == 1 and points == 30_035 and credit_eth == pytest.approx(461.1)
+    assert required_eth is None and marginal is None
+
+
+def test_the_you_quote_matches_on_address_case_insensitively(
+    rows: list[ContributorRow],
+) -> None:
+    """The client checksums; the logs do not.  A rank that depends on which
+    endpoint answered is not a rank."""
+    wallet = _wallet(rows[2].address.upper().replace("0X", "0x"), points=rows[2].points)
+    rank, *_ = sig.you_quote(
+        wallet, rows, points_per_eth=POINTS_PER_ETH, early_bps=19_491, credit_cap_wei=CREDIT_CAP
+    )
+    assert rank == 3

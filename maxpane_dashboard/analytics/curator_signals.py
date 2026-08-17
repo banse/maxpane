@@ -912,6 +912,135 @@ def _cluster_rows(
     ]
 
 
+# ---------------------------------------------------------------------------
+# WHALE and the YOU quote
+# ---------------------------------------------------------------------------
+
+
+def newest_whale(
+    deposits: Any,
+    *,
+    now_ts: float | None,
+    min_eth: float = WHALE_MIN_ETH,
+    window_s: float = WHALE_WINDOW_S,
+) -> dict | None:
+    """The largest single deposit of at least ``min_eth`` in the last
+    ``window_s`` seconds, or ``None`` when there was none.
+
+    ``None`` is "no whale in the window" — never a zero, which would render as a
+    whale of nothing.
+
+    **A deposit whose timestamp could not be read is excluded**, not treated as
+    now.  Admitting it would let an outage promote an old send into the last
+    hour and invent an event that did not happen.
+
+    Both bounds are parameters because both are first guesses (PRD §12): a
+    re-tune is an argument, not an edit.
+    """
+    now = _num_or_none(now_ts)
+    window = _num_or_none(window_s)
+    floor_eth = _num_or_none(min_eth)
+    if now is None or window is None or floor_eth is None:
+        return None
+
+    floor_wei = int(floor_eth * _WEI)
+    candidates = []
+    for event in _usable_deposits(deposits):
+        stamp = _num_or_none(getattr(event, "ts", None))
+        if stamp is None or not 0 <= now - stamp <= window:
+            continue
+        if event.amount_wei < floor_wei:
+            continue
+        candidates.append(event)
+
+    if not candidates:
+        return None
+
+    best = max(candidates, key=lambda e: (e.amount_wei, e.block_number, e.log_index))
+    return {
+        "amount_wei": best.amount_wei,
+        "wallet": best.contributor,
+        "age_s": max(0.0, now - float(best.ts)),
+        "block_number": best.block_number,
+        "tx_hash": getattr(best, "tx_hash", None),
+    }
+
+
+def you_quote(
+    wallet_state: Any,
+    rows: Any,
+    *,
+    points_per_eth: int | None,
+    early_bps: int | None,
+    credit_cap_wei: int | None,
+) -> tuple[int | None, int | None, float | None, float | None, int | None]:
+    """``(rank, points, credit_eth, required_next_eth, marginal_points)``.
+
+    **A wallet that has never deposited is not a wallet with a score of zero.**
+    Its rank and points are ``None`` and the widget renders "not on the list
+    yet"; what *is* known — the entry ticket and the points it would buy — is
+    still reported, because that is the one number a reader in that position
+    wants.
+
+    ``marginal_points`` is what the next **legal** send buys: the escalation
+    minimum run through the same three primitives the contract uses
+    (``credited_delta`` -> ``weight_added`` -> the curve), on top of the weight
+    already banked.  For a wallet at the credit cap it is legitimately ``0``.
+
+    Every field degrades on its own: a failed ``requiredNext`` read costs the
+    quote, not the rank.
+    """
+    blank: tuple[None, None, None, None, None] = (None, None, None, None, None)
+    if wallet_state is None:
+        return blank
+
+    address = getattr(wallet_state, "address", None)
+    if not isinstance(address, str):
+        return blank
+    key = address.lower()
+
+    table = [
+        row
+        for row in (rows or [])
+        if isinstance(getattr(row, "address", None), str)
+    ]
+    rank = None
+    for index, row in enumerate(table, start=1):
+        if row.address.lower() == key:
+            rank = index
+            break
+
+    joined = getattr(wallet_state, "has_joined", None)
+    weight = _int_or_none(getattr(wallet_state, "weight_wei", None))
+    high_water = _int_or_none(getattr(wallet_state, "contributed_wei", None))
+    required_next = _int_or_none(getattr(wallet_state, "required_next_wei", None))
+
+    chain_points = _int_or_none(getattr(wallet_state, "points", None))
+    points = chain_points if chain_points is not None else points_for_weight(weight, points_per_eth)
+
+    if joined is False:
+        # A stranger: the chain answers 0 to every wallet view, and a 0 here
+        # would render as a played-and-scored-nothing row.
+        rank = None
+        points = None
+        credit_eth = None
+    else:
+        credit_eth = _eth(high_water)
+
+    marginal = None
+    if required_next is not None and weight is not None:
+        delta = credited_delta(required_next, high_water if high_water is not None else 0,
+                               credit_cap_wei)
+        added = weight_added(delta, early_bps)
+        if added is not None:
+            after = points_for_weight(weight + added, points_per_eth)
+            before = points_for_weight(weight, points_per_eth)
+            if after is not None and before is not None:
+                marginal = after - before
+
+    return rank, points, credit_eth, _eth(required_next), marginal
+
+
 __all__ = [
     # tunables
     "WHALE_MIN_ETH",
@@ -948,4 +1077,6 @@ __all__ = [
     "survival",
     "at_risk_state",
     "find_clusters",
+    "newest_whale",
+    "you_quote",
 ]
