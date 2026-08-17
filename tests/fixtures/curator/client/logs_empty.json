@@ -1,0 +1,4 @@
+{
+ "_comment": "A successful eth_getLogs that matched nothing. Not synthetic in the hazardous sense - an empty result is a shape every endpoint serves - but committed so the 'read, nothing matched' path has a payload of its own rather than an inline [].",
+ "rows": []
+}

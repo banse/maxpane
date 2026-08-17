@@ -806,6 +806,125 @@ class CuratorClient(OwnedHttpClient):
             return None
         return _hex_to_int(raw)
 
+    # ------------------------------------------------------------------
+    # Logs
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _group_rows(rows: Iterable[dict]) -> dict[str, list[dict]]:
+        """Bucket raw log rows by topic0, **verbatim**.
+
+        Nothing is normalised, re-keyed or pruned: the decoders live downstream
+        so they have exactly one caller and one hostile-input suite, and every
+        field a decoder might want has to survive the trip.  ``logIndex`` and
+        ``blockTimestamp`` especially — PRD §4 de-dupes activity rows by
+        ``(tx_hash, log_index)``, and wave 1 proved every captured row already
+        carries its own timestamp, so discarding it buys a round trip to
+        re-fetch what we were handed.
+
+        Rows are de-duplicated on ``(transactionHash, logIndex)`` — the same key
+        PRD §4 de-dupes on.  Pages do not overlap by construction, but a retried
+        page or an endpoint that overlaps its own window would otherwise double
+        every deposit in the leaderboard.  A row from another address is dropped:
+        the filter is address-scoped, so anything else did not come from this
+        contract however it got into the reply.
+        """
+        grouped: dict[str, list[dict]] = {g: [] for g in LOG_GROUPS}
+        seen: set[tuple[str, str]] = set()
+        curator = A.CURATOR.lower()
+        for row in rows:
+            if str(row.get("address", curator)).lower() != curator:
+                continue
+            topics = row.get("topics") or []
+            if not topics:
+                continue
+            group = _TOPIC_TO_GROUP.get(str(topics[0]).lower())
+            if group is None:
+                continue  # not one of ours; the decoders never see it
+            key = (str(row.get("transactionHash", "")).lower(),
+                   str(row.get("logIndex", "")).lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            grouped[group].append(row)
+        return grouped
+
+    async def fetch_logs(
+        self, from_block: int, to_block: int | str = "latest"
+    ) -> LogSweep | None:
+        """Every curator event in ``[from_block, to_block]``, grouped, raw.
+
+        LOGS POOL ONLY.  One address-scoped filter with a topic0 ``OR`` array is
+        the cheap path — the research proved it returns all 377 historical rows
+        in a single call — and the six per-topic filters are the fallback for an
+        endpoint that refuses an array.  Grouping is local either way.
+
+        ``()`` for a group means "read, nothing matched" **or** "this one filter
+        failed", and a frozen tuple cannot hold ``None``, so the distinction
+        travels out-of-band in :attr:`log_group_failed`, reset at the START of
+        this call.  Three of the six events (``HourSaved``, ``Settled``,
+        ``Rescued``) have never fired on chain and may never; their rows render
+        an explicit never-fired state, and reading that state off ``()`` alone —
+        without the dict — would report a dead ``Settled`` filter as "the game is
+        alive".
+
+        ``None`` only when *every* group failed.
+        """
+        self.log_group_failed = {g: False for g in LOG_GROUPS}
+        self.logs_failed = False
+
+        head: int | None
+        if isinstance(to_block, int):
+            head = to_block
+        else:
+            try:
+                head = _hex_to_int(await self._rpc_logs("eth_blockNumber", []))
+            except RuntimeError as exc:
+                logger.warning("fetch_logs head: %s", exc)
+                head = None
+            if head is None:
+                # No filter was even attempted, so every group is exactly as
+                # unread as the head itself.
+                self.log_group_failed = {g: True for g in LOG_GROUPS}
+                self.logs_failed = True
+                return None
+
+        combined = await self._get_logs_shrinking(
+            {"address": A.CURATOR, "topics": [list(_GROUP_TO_TOPIC.values())]},
+            from_block, head, group="all",
+        )
+        if combined is not None:
+            grouped = self._group_rows(combined)
+        else:
+            logger.warning(
+                "fetch_logs: the combined topic0 sweep failed; falling back to "
+                "one filter per event"
+            )
+            grouped = {g: [] for g in LOG_GROUPS}
+            for group, topic in _GROUP_TO_TOPIC.items():
+                rows = await self._get_logs_shrinking(
+                    {"address": A.CURATOR, "topics": [topic]},
+                    from_block, head, group=group,
+                )
+                if rows is None:
+                    self.log_group_failed[group] = True
+                    continue
+                grouped[group] = self._group_rows(rows)[group]
+            if all(self.log_group_failed.values()):
+                self.logs_failed = True
+                return None
+
+        return LogSweep(
+            from_block=from_block,
+            to_block=head,
+            deposits=tuple(grouped["deposits"]),
+            first_deposits=tuple(grouped["first_deposits"]),
+            hour_saved=tuple(grouped["hour_saved"]),
+            settled=tuple(grouped["settled"]),
+            rescued=tuple(grouped["rescued"]),
+            launched=tuple(grouped["launched"]),
+        )
+
 
 __all__ = [
     "CuratorClient",

@@ -1005,3 +1005,246 @@ def test_the_balance_read_goes_to_the_state_pool() -> None:
     assert STATE_PRIMARY_HOST in url
     assert payload["method"] == "eth_getBalance"
     assert payload["params"] == [A.CURATOR, "latest"]
+
+
+# ===========================================================================
+# WP2.7 — the six event groups out of one address sweep
+# ===========================================================================
+
+#: The 377 rows tenderly served for the whole history on 2026-08-16, read in
+#: place out of WP0's capture (the file is the full JSON-RPC envelope; the rows
+#: live under ``result``).
+FULL_SWEEP_ROWS = capture("tenderly_logs.json")["result"]
+
+#: A head comfortably above the last captured log, so one page covers the lot.
+SWEEP_HEAD = 25_770_400
+
+
+def _logs_handler(
+    rows: list[dict],
+    *,
+    fail_topics: frozenset[str] = frozenset(),
+    fail_combined: bool = False,
+    head: int | None = SWEEP_HEAD,
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Serve *rows* for an address sweep, filtered when a topic0 is asked for.
+
+    ``fail_combined`` makes the topic0-OR sweep fail so the per-topic fallback
+    is what answers; ``fail_topics`` fails individual per-topic filters.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        rid = payload["id"]
+        if payload["method"] == "eth_blockNumber":
+            if head is None:
+                return httpx.Response(200, json={
+                    "jsonrpc": "2.0", "id": rid,
+                    "error": {"code": -32000, "message": "no head"}})
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": rid,
+                                             "result": hex(head)})
+        topics = (payload["params"][0].get("topics") or [[]])[0]
+        wanted = topics if isinstance(topics, list) else [topics]
+        if (len(wanted) > 1 and fail_combined) or (
+            len(wanted) == 1 and wanted[0] in fail_topics
+        ):
+            return httpx.Response(200, json={
+                "jsonrpc": "2.0", "id": rid,
+                "error": {"code": -32000, "message": "filter unavailable"}})
+        keep = {t.lower() for t in wanted}
+        return httpx.Response(200, json={
+            "jsonrpc": "2.0", "id": rid,
+            "result": [r for r in rows if r["topics"][0].lower() in keep]})
+
+    return handler
+
+
+def test_the_full_history_sweep_groups_every_event() -> None:
+    """The counts are the capture's own, re-derived here rather than quoted:
+    wave 1 found the plan's 226 was wrong (it is 231), so the arithmetic is
+    written out where a re-capture would move it."""
+    client = _client(_logs_handler(FULL_SWEEP_ROWS))
+    sweep = asyncio.run(client.fetch_logs(A.CREATION_BLOCK))
+    assert len(FULL_SWEEP_ROWS) == 377
+    assert len(sweep.deposits) == 231
+    assert len(sweep.first_deposits) == 145
+    assert len(sweep.launched) == 1
+    assert 1 + 231 + 145 == 377
+    assert sweep.hour_saved == () and sweep.settled == () and sweep.rescued == ()
+    # ...and () for a group that never fired is NOT the same as a failed filter:
+    assert not any(client.log_group_failed.values())
+    assert client.logs_failed is False
+    assert (sweep.from_block, sweep.to_block) == (A.CREATION_BLOCK, SWEEP_HEAD)
+
+
+def test_one_address_scoped_sweep_answers_all_six_groups() -> None:
+    """The research proved a single address-scoped filter with a topic0 OR array
+    returns all 377 rows in one call.  Six per-topic filters would be six round
+    trips on every refresh for the same bytes."""
+    client, transport = _recording_client(_logs_handler(FULL_SWEEP_ROWS))
+    asyncio.run(client.fetch_logs(A.CREATION_BLOCK))
+    get_logs = [p for _u, _m, p, _h in transport.requests
+                if isinstance(p, dict) and p["method"] == "eth_getLogs"]
+    assert len(get_logs) == 1
+    flt = get_logs[0]["params"][0]
+    assert flt["address"] == A.CURATOR
+    assert sorted(t.lower() for t in flt["topics"][0]) == sorted(
+        t.lower() for t in (A.TOPIC_LAUNCHED, A.TOPIC_DEPOSITED,
+                            A.TOPIC_FIRST_DEPOSIT, A.TOPIC_HOUR_SAVED,
+                            A.TOPIC_SETTLED, A.TOPIC_RESCUED)
+    )
+
+
+def test_the_sweep_goes_to_the_logs_pool_and_never_to_publicnode() -> None:
+    client, transport = _recording_client(_logs_handler(FULL_SWEEP_ROWS))
+    asyncio.run(client.fetch_logs(A.CREATION_BLOCK))
+    assert transport.requests
+    assert all(STATE_PRIMARY_HOST not in url for url, *_rest in transport.requests)
+
+
+def test_a_raw_row_survives_grouping_untouched() -> None:
+    """The decoders are WP3/WP5's; this client normalises nothing away.
+
+    ``logIndex`` in particular: PRD §4 de-dupes activity rows by (tx, log
+    index), and a client that dropped it would make that impossible while every
+    test stayed green.  ``blockTimestamp`` likewise — wave 1 proved every
+    captured row carries one, and discarding it costs a round trip to re-fetch
+    what we were already handed.
+    """
+    sweep = asyncio.run(_client(_logs_handler(FULL_SWEEP_ROWS))
+                        .fetch_logs(A.CREATION_BLOCK))
+    row = sweep.deposits[0]
+    assert {"topics", "data", "blockNumber", "transactionHash", "logIndex",
+            "blockTimestamp"} <= set(row)
+    assert len(row["topics"]) == 3          # topic0 + contributor + hour
+    assert row in FULL_SWEEP_ROWS           # identity, not a rebuilt copy
+
+
+def test_the_deposit_hour_comes_from_the_indexed_topic() -> None:
+    """H2's foundation: the hour is ``topics[2]``, so the hourly series needs no
+    timestamp and no state read.  A client that only exposed ``data`` would push
+    the fold back onto ``currentHourTotal()``, which zeroes at every boundary."""
+    sweep = asyncio.run(_client(_logs_handler(FULL_SWEEP_ROWS))
+                        .fetch_logs(A.CREATION_BLOCK))
+    hours = {int(r["topics"][2], 16) for r in sweep.deposits}
+    assert hours and min(hours) >= 0
+    assert hours == {0, 1}, "the 2026-08-16 capture spans hours 0 and 1 only"
+
+
+def test_a_group_that_never_fired_reads_as_empty_and_not_failed() -> None:
+    """HourSaved, Settled and Rescued have never fired.  Their rows must render
+    an explicit never-fired state, which needs ``()`` **and** a ``False`` in the
+    failure dict — either alone is ambiguous."""
+    client = _client(_logs_handler(FULL_SWEEP_ROWS))
+    sweep = asyncio.run(client.fetch_logs(A.CREATION_BLOCK))
+    for group in ("hour_saved", "settled", "rescued"):
+        assert getattr(sweep, group) == ()
+        assert client.log_group_failed[group] is False
+
+
+def test_the_endgame_rows_group_correctly_when_they_finally_fire() -> None:
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    # HourSaved / Settled / Rescued have never fired on chain; capture C's
+    # window is 2026-08-17 20:58:47 UTC at the earliest and it is one-shot.
+    # Only the ABI's indexed-ness is asserted here, never a value.
+    rows = client_fixture("logs_settled_row.json")["rows"]
+    client = _client(_logs_handler(rows))
+    sweep = asyncio.run(client.fetch_logs(A.CREATION_BLOCK))
+    assert len(sweep.settled) == 1
+    assert len(sweep.hour_saved) == 1
+    assert len(sweep.rescued) == 1
+    assert sweep.deposits == () and sweep.launched == ()
+    assert not any(client.log_group_failed.values())
+
+
+def test_an_empty_sweep_is_a_reading_not_a_failure() -> None:
+    rows = client_fixture("logs_empty.json")["rows"]
+    client = _client(_logs_handler(rows))
+    sweep = asyncio.run(client.fetch_logs(A.CREATION_BLOCK))
+    assert sweep is not None
+    assert all(getattr(sweep, g) == () for g in curator_client.LOG_GROUPS)
+    assert not any(client.log_group_failed.values())
+    assert client.logs_failed is False
+
+
+def test_one_failed_group_is_reported_out_of_band_not_as_an_empty_tuple() -> None:
+    """A frozen tuple cannot hold ``None``, so ``()`` is ambiguous on its own.
+    The dict is what resolves it — and without it a dead ``Settled`` filter
+    would read as "the game is alive"."""
+    client = _client(_logs_handler(
+        FULL_SWEEP_ROWS, fail_combined=True,
+        fail_topics=frozenset({A.TOPIC_SETTLED}),
+    ))
+    sweep = asyncio.run(client.fetch_logs(A.CREATION_BLOCK))
+    assert sweep.settled == ()
+    assert client.log_group_failed["settled"] is True
+    assert len(sweep.deposits) == 231           # the healthy groups still landed
+    assert client.log_group_failed["deposits"] is False
+    assert client.logs_failed is False          # partial, not total
+
+
+def test_the_combined_sweep_falls_back_to_per_topic_filters() -> None:
+    """One filter is the cheap path, not the only one.  An endpoint that refuses
+    a topic0 OR array must not cost the whole sweep."""
+    client, transport = _recording_client(
+        _logs_handler(FULL_SWEEP_ROWS, fail_combined=True))
+    sweep = asyncio.run(client.fetch_logs(A.CREATION_BLOCK))
+    assert len(sweep.deposits) == 231 and len(sweep.first_deposits) == 145
+    assert not any(client.log_group_failed.values())
+    get_logs = [p for _u, _m, p, _h in transport.requests
+                if isinstance(p, dict) and p["method"] == "eth_getLogs"]
+    filters = [p["params"][0]["topics"][0] for p in get_logs]
+    # The OR array is tried first (once per endpoint — it rotates before it
+    # gives up), then exactly one scalar filter per event.
+    assert isinstance(filters[0], list)
+    scalars = [t for t in filters if isinstance(t, str)]
+    assert sorted(scalars) == sorted(
+        t.lower() for t in (A.TOPIC_LAUNCHED, A.TOPIC_DEPOSITED,
+                            A.TOPIC_FIRST_DEPOSIT, A.TOPIC_HOUR_SAVED,
+                            A.TOPIC_SETTLED, A.TOPIC_RESCUED)
+    )
+
+
+def test_every_group_failing_returns_none_not_a_hollow_sweep() -> None:
+    client = _offline_client()
+    assert asyncio.run(client.fetch_logs(A.CREATION_BLOCK)) is None
+    assert client.logs_failed is True
+    assert all(client.log_group_failed.values())
+
+
+def test_a_dead_head_read_fails_every_group_rather_than_none_of_them() -> None:
+    """No filter was even attempted, so every group is exactly as unread as the
+    head itself.  Leaving them ``False`` would report a sweep that never
+    happened as clean."""
+    client = _client(_logs_handler(FULL_SWEEP_ROWS, head=None))
+    assert asyncio.run(client.fetch_logs(A.CREATION_BLOCK)) is None
+    assert all(client.log_group_failed.values())
+
+
+def test_an_explicit_to_block_costs_no_head_read() -> None:
+    """The incremental tier already knows where it stopped."""
+    client, transport = _recording_client(_logs_handler(FULL_SWEEP_ROWS))
+    sweep = asyncio.run(client.fetch_logs(A.CREATION_BLOCK, SWEEP_HEAD))
+    assert sweep.to_block == SWEEP_HEAD
+    assert not any(p["method"] == "eth_blockNumber"
+                   for _u, _m, p, _h in transport.requests if isinstance(p, dict))
+
+
+def test_the_failure_dict_is_reset_at_the_start_of_every_call() -> None:
+    """"True right now", never "true once, ever".  A flag left standing from a
+    previous cycle degrades a healthy dashboard until restart."""
+    client = _client(_logs_handler(FULL_SWEEP_ROWS))
+    client.log_group_failed = {g: True for g in curator_client.LOG_GROUPS}
+    client.logs_failed = True
+    asyncio.run(client.fetch_logs(A.CREATION_BLOCK))
+    assert not any(client.log_group_failed.values())
+    assert client.logs_failed is False
+
+
+def test_a_row_repeated_across_pages_is_counted_once() -> None:
+    """Pages are half-open by construction, but a retried page or an endpoint
+    that overlaps its own window would otherwise double every deposit in the
+    leaderboard.  (tx hash, log index) is the same key PRD §4 de-dupes on."""
+    client = _client(_logs_handler(FULL_SWEEP_ROWS), log_page_blocks=100)
+    sweep = asyncio.run(client.fetch_logs(A.CREATION_BLOCK, A.CREATION_BLOCK + 999))
+    assert len(sweep.deposits) == 231
