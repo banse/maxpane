@@ -326,7 +326,7 @@ for four real wallets.
 
 **Steps:**
 
-- [ ] `rg "SYNTHETIC — re-point" tests/` — that is the whole checklist.
+- [x] `rg "SYNTHETIC — re-point" tests/` — that is the whole checklist.
 - [ ] For each hit whose real payload has landed:
       1. Point the fixture at the live bundle.
       2. **Run the test before changing any expected value.** If it passes unchanged, the
@@ -339,7 +339,7 @@ for four real wallets.
       the >1000 ETH deposit), leave the comment in place and state in the ledger that it is
       permanent-synthetic with the reason. Do not silently delete a marker to tidy the grep.
 - [ ] Update the index plan's synthetic table so its status column matches the ledger exactly.
-- [ ] Run the affected suites and the full suite:
+- [x] Run the affected suites and the full suite:
       `.venv/bin/python -m pytest -q`
 - [ ] Commit: `test(curator): re-point <n> fixtures at real captures and close the ledger`
 
