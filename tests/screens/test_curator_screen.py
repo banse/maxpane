@@ -110,6 +110,9 @@ from maxpane_dashboard.widgets.curator.wallet import (
     TAKES_RANK,
     LABEL_COLS,
     NOT_ON_THE_LIST,
+    ENS_PENDING,
+    NO_ENS,
+    NO_WALLET_SET,
     NO_LADDER,
     STANDING_TITLE,
     TOP_OF_THE_LIST,
@@ -2002,3 +2005,212 @@ async def test_the_curator_status_line_names_its_own_two_keys():
     assert "updated" not in text        # traded for the hints
     assert "quit" in text and "refresh" in text and "menu" in text
     assert "poll" in text
+
+
+# ---------------------------------------------------------------------------
+# `y` with no wallet configured — ask first, then show what was asked for
+# ---------------------------------------------------------------------------
+
+
+def _no_wallet_screen():
+    """The wallet view's payload with every YOU field unread, wallet unset."""
+    payload = _wallet_payload(
+        you_rank=None, you_points=None, you_credit_eth=None, you_weight_eth=None,
+        you_tx_count=None, you_weight_share_pct=None, you_required_next_eth=None,
+        you_marginal_points=None, you_ladder_rows=[], you_ens=None,
+    )
+    manager = _WalletManager()
+    manager._payload = payload
+    manager._no_wallet = payload
+    return CuratorScreen(manager, poll_interval=30, name="curator", wallet=None)
+
+
+async def test_y_with_no_wallet_asks_for_one_instead_of_opening_six_dashes(
+    saved_wallets,
+):
+    """Every panel over there is about a wallet.  Opening it empty would leave
+    the reader to guess that a *different* key is the one they wanted."""
+    screen = _no_wallet_screen()
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+
+        assert isinstance(app.screen, WalletInputScreen)
+        assert screen._mode == MODE_DASHBOARD, "the empty view was opened anyway"
+
+
+async def test_entering_an_address_from_y_opens_the_view_that_was_asked_for(
+    saved_wallets,
+):
+    screen = _no_wallet_screen()
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+        app.screen.query_one("#wi-input", Input).value = _WALLET
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert screen._mode == MODE_WALLET
+        assert screen._wallet == _WALLET
+        assert screen._data_manager.set_calls == [_WALLET]
+        assert saved_wallets == [_WALLET]
+        assert LADDER_TITLE in _screen_text(app)
+
+
+async def test_escaping_the_prompt_from_y_leaves_the_reader_where_they_were(
+    saved_wallets,
+):
+    screen = _no_wallet_screen()
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert screen._mode == MODE_DASHBOARD
+        assert screen._wallet is None
+        assert screen._data_manager.set_calls == []
+        assert LEADERBOARD_TITLE in _screen_text(app)
+
+
+async def test_w_alone_sets_the_wallet_without_changing_the_view(saved_wallets):
+    """`w` answers "which wallet", `y` answers "show me mine".  Only the second
+    one is a request to change what is on screen."""
+    screen = _no_wallet_screen()
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        app.screen.query_one("#wi-input", Input).value = _WALLET
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert screen._wallet == _WALLET
+        assert screen._mode == MODE_DASHBOARD
+
+
+async def test_y_with_a_wallet_already_set_opens_the_view_directly(saved_wallets):
+    screen = _screen(_wallet_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, WalletInputScreen)
+        assert screen._mode == MODE_WALLET
+
+
+async def test_the_you_row_says_what_the_key_does_not_just_which_key():
+    """`press w` alone told a reader to press something without saying what it
+    would set."""
+    payload = _grace_payload()
+    for key in ("you_rank", "you_points", "you_credit_eth",
+                "you_required_next_eth", "you_marginal_points"):
+        payload[key] = None
+    text = await _rail_text(payload)
+
+    assert "no wallet set" in text
+    assert "press w to set one" in text
+
+
+async def test_a_narrow_rail_sheds_the_env_var_hint_before_the_keypress():
+    """Parts drop from the end, so the fix a reader can act on outlives the one
+    they cannot do from here."""
+    payload = _grace_payload()
+    for key in ("you_rank", "you_points", "you_credit_eth",
+                "you_required_next_eth", "you_marginal_points"):
+        payload[key] = None
+    text = await _rail_text(payload, width=120)
+
+    assert "press w to set one" in text
+    assert "MAXPANE_WALLET" not in text
+
+
+async def test_the_address_appears_the_instant_it_is_typed(saved_wallets):
+    """The YOU numbers cannot arrive until the fast tier re-reads, but the
+    address is known immediately -- and a panel still saying "press w to set
+    one" right after you set one reads as a keypress that did not work.
+
+    Driven through a manager that **never returns**, so the only thing that can
+    put the address on screen is the repaint the keypress does itself.  With an
+    instant manager this passes either way, which is how it was written the
+    first time and why it did not bite.
+    """
+    payload = _wallet_payload(
+        you_rank=None, you_points=None, you_credit_eth=None, you_weight_eth=None,
+        you_tx_count=None, you_weight_share_pct=None, you_required_next_eth=None,
+        you_marginal_points=None, you_ladder_rows=[], you_ens=None,
+    )
+    manager = _BlockingManager(payload)
+    manager.set_wallet = lambda address: True
+    screen = CuratorScreen(manager, poll_interval=30, name="curator", wallet=None)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        manager.release.set()
+        await screen._do_refresh()          # one payload lands, no wallet in it
+        await pilot.pause()
+        manager.release.clear()             # from here nothing else can arrive
+
+        await pilot.press("y")
+        await pilot.pause()
+        app.screen.query_one("#wi-input", Input).value = _WALLET
+        await pilot.press("enter")
+        await pilot.pause()
+
+        text = _screen_text(app)
+        assert _WALLET.lower() in text, "the address waited for a refresh"
+        assert NO_WALLET_SET not in text
+        manager.release.set()
+
+
+def test_the_two_no_wallet_messages_are_the_same_instruction():
+    """One screen, one wording.  Two spellings of one instruction is how a
+    reader learns to distrust both."""
+    assert "press w to set one" in NO_WALLET_SET
+    assert "press w to set one" in NO_WALLET
+
+
+async def test_a_freshly_typed_wallet_says_resolving_not_no_ens_record(saved_wallets):
+    """`no ENS record` is a claim, and it is wrong for exactly the reader who
+    just typed a wallet that does have a name."""
+    payload = _wallet_payload(you_ens=None)
+    manager = _BlockingManager(payload)
+    manager.set_wallet = lambda address: True
+    screen = CuratorScreen(manager, poll_interval=30, name="curator", wallet=None)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        manager.release.set()
+        await screen._do_refresh()
+        await pilot.pause()
+        manager.release.clear()
+
+        await pilot.press("y")
+        await pilot.pause()
+        app.screen.query_one("#wi-input", Input).value = _WALLET
+        await pilot.press("enter")
+        await pilot.pause()
+
+        text = _screen_text(app)
+        assert ENS_PENDING in text
+        assert NO_ENS not in text
+        manager.release.set()

@@ -167,12 +167,24 @@ LOGS_GROUP = "logs"
 #: Explicit never-fired / no-wallet copy, tested verbatim.
 NEVER_SAVED = "none yet"
 NO_WHALE = "none this hour"
-#: Names the key *before* the environment variable: since the screen grew its
-#: ``w`` binding, pressing it is the fix a reader can act on without leaving
-#: the app, and it persists to ``~/.maxpane/config.toml`` either way.  Both are
-#: named because the env var still wins over the file, so it is the one that
-#: explains a wallet the reader did not expect.
-NO_WALLET = "press w · or set MAXPANE_WALLET"
+#: The no-wallet YOU row, in three parts so a narrow rail sheds the least
+#: useful one first (parts drop from the end).
+#:
+#: The state comes first because it is what the row *is*; then the fix, which
+#: says what the key does rather than only naming it -- ``press w`` alone told a
+#: reader to press something without saying what it would set; then the
+#: environment variable, which is last because it is the slowest fix and the
+#: only one you cannot do from here.  It stays named at all because it
+#: **overrides** the saved file, so it is what explains a wallet the reader did
+#: not expect.
+NO_WALLET_PARTS = (
+    "no wallet set",
+    "press w to set one",
+    "or MAXPANE_WALLET",
+)
+
+#: The whole line, for the callers and tests that want one string.
+NO_WALLET = " · ".join(NO_WALLET_PARTS)
 NO_CLUSTERS = "no fan-out patterns"
 
 #: Head furniture: two leading spaces, the glyph, a space, the label cell and
@@ -388,7 +400,7 @@ def _you_row(data: dict) -> tuple[str | None, list[str]]:
     if all(data.get(key) is None for key in keys):
         # No wallet configured.  "rank --, 0 pts" would read as a wallet with
         # no score, which is a claim about somebody.
-        return None, [NO_WALLET]
+        return None, list(NO_WALLET_PARTS)
     rank = data.get("you_rank")
     parts = [f"rank {int(rank)}" if isinstance(rank, int) else f"rank {DASH}"]
     parts.append(f"{fmt_points(data.get('you_points'))} pts")

@@ -70,6 +70,7 @@ __all__ = [
     "TOP_OF_THE_LIST",
     "NO_WALLET_SET",
     "NO_ENS",
+    "ENS_PENDING",
     "CuratorWalletLadder",
     "CuratorWalletStanding",
     "CuratorWalletNext",
@@ -93,9 +94,17 @@ LADDER_UNAVAILABLE = "ladder unavailable"
 TOP_OF_THE_LIST = "nobody above you"
 #: No wallet configured -- the panel names the two ways to fix it, the same
 #: pair the signals rail's YOU row names.
-NO_WALLET_SET = "press w · or set MAXPANE_WALLET"
+#: Kept in step with the signals rail's YOU row, which says the same thing in
+#: the same words -- two spellings of one instruction on one screen is how a
+#: reader learns to distrust both.
+NO_WALLET_SET = "no wallet set · press w to set one"
 #: A wallet with no reverse ENS record, which is most of them.
 NO_ENS = "no ENS record"
+#: Set for the moment between "you typed an address" and "the next refresh
+#: resolved it".  `NO_ENS` there would be a confident negative about a lookup
+#: that has not happened -- and it is wrong for exactly the reader who just
+#: typed a wallet that does have a name.
+ENS_PENDING = "resolving…"
 #: The minimum legal send buys points but not the place above.
 HOLDS_RANK = "not enough to move up"
 TAKES_RANK = "enough to move up"
@@ -398,7 +407,24 @@ class CuratorWalletAddress(_FactsPanel):
     TITLE = WALLET_TITLE
 
     def update_data(self, you_address=None, you_ens=None, **_kwargs) -> None:
-        self._payload = {"address": you_address, "ens": you_ens}
+        """The normal path: a payload the manager computed for this address.
+
+        Always clears the pending state -- this payload IS the lookup's answer,
+        so a ``None`` name here means "no record" rather than "not yet asked".
+        """
+        self._payload = {"address": you_address, "ens": you_ens, "pending": False}
+        self._seen = True
+        self._render_view()
+
+    def mark_pending(self, address: str | None) -> None:
+        """Show *address* before any payload has been computed for it.
+
+        Not a kwarg on :meth:`update_data`, because it is not data the manager
+        produces: it is the screen saying "the reader just typed this, and the
+        lookup has not run".  A structural test forbids a widget kwarg that is
+        not a ``CURATOR_KEYS`` entry, and it is right to.
+        """
+        self._payload = {"address": address, "ens": None, "pending": True}
         self._seen = True
         self._render_view()
 
@@ -412,8 +438,12 @@ class CuratorWalletAddress(_FactsPanel):
         lines: list[tuple] = [("wallet", [address.strip().lower()])]
         # `no ENS record` rather than a dash: most wallets have none, and the
         # blank would read as a lookup that failed.
-        lines.append(("ens", [name.strip() if isinstance(name, str) and name.strip()
-                              else NO_ENS]))
+        if isinstance(name, str) and name.strip():
+            lines.append(("ens", [name.strip()]))
+        else:
+            # `no ENS record` is a claim; make it only after looking.
+            lines.append(("ens", [ENS_PENDING if self._payload.get("pending")
+                                  else NO_ENS]))
         return lines
 
 

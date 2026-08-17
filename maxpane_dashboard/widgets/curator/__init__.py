@@ -61,6 +61,7 @@ from .wallet import (
     WALLET_TITLE,
     NO_WALLET_SET,
     NO_ENS,
+    ENS_PENDING,
 )
 from .closest_calls import (
     CLOSEST_CALLS_TITLE,
@@ -78,6 +79,7 @@ from .hero import PHASE_UNAVAILABLE, CuratorHero
 from .signals import (
     NEVER_SAVED,
     NO_WALLET,
+    NO_WALLET_PARTS,
     SIGNAL_KEYS,
     SIGNAL_LABELS,
     SIGNALS_FULL_WIDTH,
@@ -127,6 +129,7 @@ __all__ = [
     "WALLET_TITLE",
     "NO_WALLET_SET",
     "NO_ENS",
+    "ENS_PENDING",
     "HOLDS_RANK",
     "TAKES_RANK",
     "NO_LADDER",
@@ -140,6 +143,7 @@ __all__ = [
     "NEVER_SAVED",
     "NO_JUDGED_HOURS",
     "NO_WALLET",
+    "NO_WALLET_PARTS",
     "SIGNALS_FULL_WIDTH",
     "SIGNALS_TITLE",
     "SIGNAL_KEYS",

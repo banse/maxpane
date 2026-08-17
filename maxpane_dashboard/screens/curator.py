@@ -792,8 +792,26 @@ class CuratorScreen(RefreshGuard, Screen):
         The hero row stays put in both, so the doomsday clock never leaves the
         screen: this view is for deciding what to send, and that decision is
         worthless without the clock it is racing.
+
+        **With no wallet configured this asks for one first.**  Every panel over
+        there is about a wallet, so the view would otherwise open as six panels
+        of ``--`` and leave the reader to guess that a *different* key is what
+        they wanted.  Entering an address opens the view they asked for;
+        escaping leaves them where they were.
         """
-        self._mode = MODE_DASHBOARD if self._mode == MODE_WALLET else MODE_WALLET
+        if self._mode == MODE_WALLET:
+            self._mode = MODE_DASHBOARD
+            self._show_mode()
+            return
+        if self._wallet is None:
+            self.app.push_screen(
+                WalletInputScreen(),
+                callback=lambda address: self._wallet_entered(
+                    address, then_show_wallet=True
+                ),
+            )
+            return
+        self._mode = MODE_WALLET
         self._show_mode()
 
     def action_back_to_dashboard(self) -> None:
@@ -827,7 +845,9 @@ class CuratorScreen(RefreshGuard, Screen):
         """
         self.app.push_screen(WalletInputScreen(), callback=self._wallet_entered)
 
-    def _wallet_entered(self, address: str | None) -> None:
+    def _wallet_entered(
+        self, address: str | None, *, then_show_wallet: bool = False
+    ) -> None:
         """Callback from ``WalletInputScreen``: ``None`` means escape.
 
         Both halves have to move or the keypress lies: the **manager** owns the
@@ -836,11 +856,34 @@ class CuratorScreen(RefreshGuard, Screen):
         ``you_address``, which is what the leaderboard emphasises and what the
         rail prints.  Only then is a refresh worth spending: unchanged means the
         reader re-typed the address they already had.
+
+        ``then_show_wallet`` is the ``y``-with-no-wallet path: the reader asked
+        for the wallet view and was asked for an address on the way, so landing
+        back on the dashboard would be answering a question they did not ask.
+        An escape still leaves them where they were.
         """
         if not address:
             return
         moved = self._data_manager.set_wallet(address)
         self._wallet = address or None
+        # Paint the address NOW rather than at the end of the next cycle.  The
+        # YOU numbers cannot arrive until the fast tier re-reads, but the
+        # *address* is known the instant it is typed, and a panel that still
+        # says "press w to set one" right after you set one reads as a keypress
+        # that did not work.
+        try:
+            # Not through `_dispatch`: the stale payload's `you_ens` is None for
+            # the *previous* wallet, and rendering that as "no ENS record" is a
+            # confident negative about a lookup that has not happened yet.
+            self.query_one(CuratorWalletAddress).mark_pending(self._wallet)
+        except Exception as exc:  # noqa: BLE001 -- a repaint is never load-bearing
+            logger.debug("Could not repaint the wallet panel: %s", exc)
+        if self._title_data is not None:
+            for widget_cls in (CuratorWalletLadder, CuratorLeaderboard):
+                self._dispatch(widget_cls, self._title_data)
+        if then_show_wallet:
+            self._mode = MODE_WALLET
+            self._show_mode()
         if moved:
             self.action_refresh()
 
