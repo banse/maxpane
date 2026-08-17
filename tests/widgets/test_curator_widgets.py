@@ -33,7 +33,13 @@ from pathlib import Path
 import pytest
 from textual.app import App, ComposeResult
 
-from maxpane_dashboard.widgets.curator import CuratorHero
+from maxpane_dashboard.widgets.curator import (
+    LEADERBOARD_EMPTY,
+    LEADERBOARD_TITLE,
+    LEADERBOARD_UNAVAILABLE,
+    CuratorHero,
+    CuratorLeaderboard,
+)
 from maxpane_dashboard.widgets.curator._fmt import (
     ADDR_COLS,
     DASH,
@@ -473,3 +479,157 @@ async def test_a_narrow_hero_announces_the_columns_it_shed():
         await pilot.pause()
         text = _screen_text(app)
     assert "‹ widen" in text
+
+
+# ===========================================================================
+# WP4.3 — CuratorLeaderboard
+# ===========================================================================
+
+#: Shapes come from CURATOR_ROW_KEYS["leaderboard_rows"]; magnitudes from the
+#: 2026-08-16 capture (rank 1 credit 461.1 ETH, the 9x60 ETH fan-out at 4-12).
+def _lb_rows(count: int = 3) -> list[dict]:
+    base = [
+        {"rank": 1, "address": "0x381fe4861234567890abcdef1234567890abCDEF",
+         "points": 21473, "credit_eth": 461.1, "tx_count": 7, "flagged": False},
+        {"rank": 2, "address": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+         "points": 13038, "credit_eth": 170.0, "tx_count": 3, "flagged": False},
+        {"rank": 4, "address": "0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91",
+         "points": 7745, "credit_eth": 60.0, "tx_count": 1, "flagged": True},
+    ]
+    out = []
+    for i in range(count):
+        row = dict(base[i % len(base)])
+        row["rank"] = i + 1
+        out.append(row)
+    return out
+
+
+def test_the_leaderboard_columns_are_the_frozen_row_keys():
+    """A column reading a key the producer does not emit renders ``--``
+    forever with a green suite behind it."""
+    from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS
+
+    assert set(_lb_rows(3)[0]) == set(CURATOR_ROW_KEYS["leaderboard_rows"])
+
+
+async def test_a_none_list_and_an_empty_list_render_different_states():
+    """``None`` is a dead fold; ``[]`` is a game with no contributors."""
+    dead = await _rendered(CuratorLeaderboard, leaderboard_rows=None)
+    empty = await _rendered(CuratorLeaderboard, leaderboard_rows=[])
+    assert LEADERBOARD_UNAVAILABLE in dead
+    assert LEADERBOARD_EMPTY in empty
+    assert LEADERBOARD_EMPTY not in dead and LEADERBOARD_UNAVAILABLE not in empty
+
+
+async def test_at_most_ten_rows_reach_the_board():
+    text = await _rendered(
+        CuratorLeaderboard, leaderboard_rows=_lb_rows(25), size=(143, 30)
+    )
+    ranks = [line for line in text.splitlines() if "0x" in line]
+    assert len(ranks) == 10
+
+
+async def test_the_your_own_row_is_emphasised_case_insensitively():
+    """Addresses arrive checksummed from eth_call and lowercase from a log
+    topic.  A case-sensitive match fires for one of those and not the other,
+    and the reader's own row silently stops being marked."""
+    rows = _lb_rows(3)
+    for you in (rows[1]["address"], rows[1]["address"].lower(),
+                rows[1]["address"].upper()):
+        text = await _rendered(
+            CuratorLeaderboard, leaderboard_rows=rows, you_address=you
+        )
+        assert "▸" in text, you
+    plain = await _rendered(CuratorLeaderboard, leaderboard_rows=rows)
+    assert "▸" not in plain
+
+
+async def test_the_cluster_flag_has_three_states_not_two():
+    """``False`` is "the fold ran and this wallet is not in a cluster";
+    ``None`` is "the fold did not run".  Rendering both as blank would claim
+    a clean board we never computed."""
+    rows = _lb_rows(3)
+    # The column header is itself a flag glyph, so the assertions count
+    # occurrences rather than testing for presence.
+    flagged = await _rendered(CuratorLeaderboard, leaderboard_rows=rows)
+    assert flagged.count("⚑") >= 2          # header + the flagged row
+    unknown = await _rendered(
+        CuratorLeaderboard,
+        leaderboard_rows=[{**r, "flagged": None} for r in rows],
+    )
+    assert unknown.count("⚑") == 1          # header only
+    assert "?" in unknown
+    clean = await _rendered(
+        CuratorLeaderboard,
+        leaderboard_rows=[{**r, "flagged": False} for r in rows],
+    )
+    assert clean.count("⚑") == 1 and "?" not in clean
+
+
+async def test_a_hostile_address_string_renders_literally():
+    """No real address is ``[/x]`` — but a mangled payload is, and Textual
+    defers ``Text.from_markup`` into the message pump, so the MarkupError
+    would land outside the screen's try/except and kill the app."""
+    rows = [{"rank": 1, "address": "[/x]", "points": 1, "credit_eth": 1.0,
+             "tx_count": 1, "flagged": False}]
+    text = await _rendered(CuratorLeaderboard, leaderboard_rows=rows)
+    assert "[/x]" in text
+
+
+async def test_a_malformed_row_costs_its_own_row_and_not_the_panel():
+    rows = [{"rank": "nonsense", "address": None, "points": "x",
+             "credit_eth": "y", "tx_count": None, "flagged": False},
+            _lb_rows(1)[0]]
+    text = await _rendered(CuratorLeaderboard, leaderboard_rows=rows)
+    assert "0x381f" in text          # the good row still rendered
+    assert "nonsense" not in text
+
+
+@pytest.mark.parametrize(
+    "width,expect_hint",
+    [(143, ""), (60, ""), (46, "‹ widen: TX"), (36, "‹ widen: TX + CREDIT")],
+)
+async def test_narrow_boards_announce_the_columns_they_shed(width, expect_hint):
+    widget = CuratorLeaderboard()
+    app = _Harness(widget)
+    async with app.run_test(size=(width, 20)) as pilot:
+        widget.update_data(leaderboard_rows=_lb_rows(3))
+        await pilot.pause()
+        text = _screen_text(app)
+    if expect_hint:
+        assert "widen" in text
+    else:
+        assert "widen" not in text
+    assert "0x381f" in text          # never clipped away entirely
+
+
+# ===========================================================================
+# Cross-table guards (all three DataTable panels)
+# ===========================================================================
+
+
+def test_every_declared_tier_cost_is_the_measured_one():
+    """A hand-typed cost that drifts low makes a panel choose a layout it
+    cannot render — and then clip in silence, which is the one thing the
+    width tiers exist to prevent."""
+    from maxpane_dashboard.widgets.curator import closest_calls as cc_mod
+    from maxpane_dashboard.widgets.curator import clusters as cl_mod
+    from maxpane_dashboard.widgets.curator import leaderboard as lb_mod
+    from maxpane_dashboard.widgets.curator._table import tier_cost
+
+    for module in (lb_mod, cc_mod, cl_mod):
+        for name, cost, columns, _hint in module._TIERS:
+            assert cost == tier_cost(columns), (module.__name__, name)
+
+
+def test_tier_costs_descend_so_a_narrow_panel_can_reach_the_narrow_layout():
+    from maxpane_dashboard.widgets.curator import closest_calls as cc_mod
+    from maxpane_dashboard.widgets.curator import clusters as cl_mod
+    from maxpane_dashboard.widgets.curator import leaderboard as lb_mod
+
+    for module in (lb_mod, cc_mod, cl_mod):
+        costs = [cost for _n, cost, _c, _h in module._TIERS]
+        assert costs == sorted(costs, reverse=True), module.__name__
+        assert module._TIERS[0][3] == "", "the widest tier sheds nothing"
+        for _n, _c, _cols, hint in module._TIERS[1:]:
+            assert hint, "every narrower tier names what it dropped"

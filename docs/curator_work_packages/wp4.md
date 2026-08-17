@@ -192,7 +192,7 @@ count, `⚑`.
 
 **Steps:**
 
-- [ ] Failing tests: 10 rows max; a `None` list renders `leaderboard unavailable` and an empty
+- [x] Failing tests: 10 rows max; a `None` list renders `leaderboard unavailable` and an empty
       list renders `no contributors yet` (**different strings**, asserted separately); the
       wallet's own row is emphasised when `you_address` matches, case-insensitively (addresses
       arrive checksummed from one source and lowercase from another); `⚑` appears only for
@@ -200,11 +200,11 @@ count, `⚑`.
       a mangled payload can be) renders literally rather than raising `MarkupError`; width
       tiers shed the tx-count column first, then credit, each announced in the title with
       `‹ widen`.
-- [ ] Implement with a `DataTable`, `safe_markup` on every cell, and `visible_len` from
+- [x] Implement with a `DataTable`, `safe_markup` on every cell, and `visible_len` from
       `markup_safety` for any title-width decision.
-- [ ] **Prove it bites:** remove one `safe_markup` call and pass `"[/x]"` as an address →
+- [x] **Prove it bites:** remove one `safe_markup` call and pass `"[/x]"` as an address →
       the hostile-string test FAILS (`MarkupError` out of the message pump). Restore.
-- [ ] Commit: `feat(curator): leaderboard with cluster flags and announced width tiers`
+- [x] Commit: `feat(curator): leaderboard with cluster flags and announced width tiers`
 
 ---
 
