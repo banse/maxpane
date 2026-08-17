@@ -103,7 +103,7 @@ from maxpane_dashboard.data.curator_models import (
     DepositEvent,
 )
 from maxpane_dashboard.data.evm_abi import addr_from_topic, strip0x
-from maxpane_dashboard.data.safe_call import safe_call
+from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 
 logger = logging.getLogger(__name__)
 
@@ -827,12 +827,12 @@ class CuratorManager:
         Every fold is a pure function of the events, so this is idempotent and
         the cheapest correct thing: a sweep that recovers a missed range simply
         produces the right answer next cycle instead of patching a running
-        total.  The analytics calls go through ``safe_call`` so a fold bug costs
+        total.  The analytics calls go through ``_safe_call`` so a fold bug costs
         one number rather than the cycle.
         """
         cfg = config or {}
         events = self.cache.events()
-        rows = safe_call(
+        rows = _safe_call(
             fold_deposits,
             events,
             self.cache.first_deposits(),
@@ -841,7 +841,7 @@ class CuratorManager:
         )
         self.cache.store_fold(rows, last_block=last_block, now=now)
 
-        buckets = safe_call(
+        buckets = _safe_call(
             hourly_buckets,
             events,
             launch_time=cfg.get("launch_time"),
@@ -855,7 +855,7 @@ class CuratorManager:
         # than inventing a timeline.
         pairs = []
         for bucket in buckets or ():
-            stamp = safe_call(
+            stamp = _safe_call(
                 bucket_start_ts,
                 bucket.hour,
                 cfg.get("launch_time"),
@@ -1059,7 +1059,7 @@ class CuratorManager:
             logs=logs_out.get("sweep"),
             wallet_state=wallet_state,
         )
-        signals = safe_call(build_signals, readings, now_ts=now, default=None)
+        signals = _safe_call(build_signals, readings, now_ts=now, default=None)
         if not isinstance(signals, dict):
             logger.warning("build_signals returned %r — publishing the blank contract", signals)
             payload = self._blank_payload()
