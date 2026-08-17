@@ -23,6 +23,7 @@ from maxpane_dashboard.data.curator_cache import (
     SLOT_WALLET,
     CuratorCache,
 )
+from maxpane_dashboard.data.curator_cache import TIER_FAST
 from maxpane_dashboard.data.curator_manager import (
     FAST_TIER_PAYLOAD_KEYS,
     decode_deposit,
@@ -1724,3 +1725,121 @@ def test_a_blockscout_row_newer_than_the_sweep_is_not_a_gap(tmp_path, clock):
     out = asyncio.run(manager._pool_crosscheck({"slow"}, NOW, _state(), CONFIG))
     assert out["gap_block"] is None
     assert manager._fold_stale is False
+
+
+# ---------------------------------------------------------------------------
+# set_wallet() — the runtime switch behind the screen's `w` key
+# ---------------------------------------------------------------------------
+
+OTHER_WALLET = "0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7"
+
+
+def test_set_wallet_moves_the_address_and_says_so(tmp_path, clock):
+    manager = _manager(tmp_path, clock)
+    assert manager.wallet is None
+
+    assert manager.set_wallet(WALLET) is True
+    assert manager.wallet == WALLET
+
+
+def test_set_wallet_normalises_empty_to_none_and_treats_it_as_no_change(tmp_path, clock):
+    """`""` and `None` both mean *no wallet*, so neither is a switch away from
+    the other -- a refetch and a dropped last-good would both be waste."""
+    manager = _manager(tmp_path, clock)
+    assert manager.set_wallet("") is False
+    assert manager.wallet is None
+
+    manager.set_wallet(WALLET)
+    assert manager.set_wallet("") is True
+    assert manager.wallet is None
+
+
+def test_re_typing_the_same_address_is_a_no_op(tmp_path, clock):
+    manager = _manager(tmp_path, clock)
+    manager.set_wallet(WALLET)
+    manager.cache.store_last_good(SLOT_WALLET, {"address": WALLET})
+    manager.cache.mark_fetched(TIER_FAST)
+
+    assert manager.set_wallet(WALLET) is False
+
+    # Nothing was thrown away for a keypress that changed nothing.
+    assert manager.cache.get_last_good(SLOT_WALLET) is not None
+    assert manager.cache.is_fresh(TIER_FAST) is True
+
+
+def test_switching_wallets_cannot_leave_the_previous_wallets_row_on_screen(tmp_path, clock):
+    """The bug this exists to prevent: `_fast_wallet` is re-served for the rest
+    of the fast tier's TTL, so without clearing it the old wallet's rank, credit
+    and `next >=` render for up to 15 s under the *new* address."""
+    manager = _manager(tmp_path, clock, wallet=WALLET)
+    manager._fast_wallet = _wallet_state(address=WALLET, points=30_035)
+
+    manager.set_wallet(OTHER_WALLET)
+
+    assert manager._fast_wallet is None
+
+
+def test_switching_wallets_drops_the_previous_wallets_last_good(tmp_path, clock):
+    """Its payload is literally `{"address": <the old one>}`.  Served behind an
+    `as of HH:MM` marker it would say "stale" while the number says "yours"."""
+    manager = _manager(tmp_path, clock, wallet=WALLET)
+    manager.cache.store_last_good(SLOT_WALLET, {"address": WALLET})
+
+    manager.set_wallet(OTHER_WALLET)
+
+    assert manager.cache.get_last_good(SLOT_WALLET) is None
+
+
+def test_a_switched_wallet_reads_degraded_until_something_is_read_about_it(tmp_path, clock):
+    """Not "healthy and empty" -- that would render rank -- for an address
+    nobody has asked about yet.  Dropping the old last-good is what produces
+    this, and it is why `set_wallet` does not bother clearing the old address's
+    entry in `_failed_groups`: `_degraded` already degrades a group with no
+    last-good, so the two are indistinguishable here."""
+    client = FakeClient(fetch_wallet=lambda address: _wallet_state(address=address))
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+    manager.cache.store_last_good(SLOT_WALLET, {"address": WALLET})
+    manager._note(SOURCE_WALLET, ok=True)
+    assert SOURCE_WALLET not in manager._degraded()
+
+    manager.set_wallet(OTHER_WALLET)
+    assert SOURCE_WALLET in manager._degraded()
+
+    asyncio.run(manager._pool_wallet(NOW))
+    assert SOURCE_WALLET not in manager._degraded()
+
+
+def test_switching_wallets_expires_the_fast_tier_so_the_next_cycle_refetches(tmp_path, clock):
+    """Without this the keypress looks like it worked and the row stays dark:
+    a tier with 12 of its 15 seconds left is "fresh", so nothing is fetched."""
+    manager = _manager(tmp_path, clock, wallet=WALLET)
+    manager.cache.mark_fetched(TIER_FAST)
+    assert manager.cache.is_fresh(TIER_FAST) is True
+
+    manager.set_wallet(OTHER_WALLET)
+
+    assert manager.cache.is_due(TIER_FAST) is True
+
+
+def test_the_new_wallet_is_the_one_the_next_cycle_actually_reads(tmp_path, clock):
+    """End to end through the real pool: the six YOU views are called with the
+    address the reader just set, not the one the manager was constructed with."""
+    client = FakeClient(fetch_wallet=lambda address: _wallet_state(address=address))
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+
+    manager.set_wallet(OTHER_WALLET)
+    state = asyncio.run(manager._pool_wallet(NOW))
+
+    assert ("fetch_wallet", OTHER_WALLET) in client.calls
+    assert ("fetch_wallet", WALLET) not in client.calls
+    assert state.address == OTHER_WALLET
+
+
+def test_clearing_the_wallet_makes_the_next_cycle_read_nothing(tmp_path, clock):
+    client = FakeClient(fetch_wallet=_wallet_state())
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+
+    assert manager.set_wallet(None) is True
+    assert asyncio.run(manager._pool_wallet(NOW)) is None
+    assert client.calls == []
+    assert SOURCE_WALLET not in manager._degraded()

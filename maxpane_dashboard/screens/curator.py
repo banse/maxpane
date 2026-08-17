@@ -157,6 +157,8 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
+from maxpane_dashboard.screens.wallet_input import WalletInputScreen
+
 from maxpane_dashboard import __version__
 from maxpane_dashboard.data.curator_models import PHASES
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard
@@ -430,6 +432,7 @@ class CuratorScreen(RefreshGuard, Screen):
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
         Binding("c", "toggle_view", "Calls/Patterns", show=True),
+        Binding("w", "set_wallet", "Wallet", show=True),
     ]
 
     #: Worker name for the guarded refresh (see RefreshGuard).
@@ -646,6 +649,35 @@ class CuratorScreen(RefreshGuard, Screen):
         )
         self._user_chose_view = True
         self._show_active_view()
+
+    def action_set_wallet(self) -> None:
+        """``w`` -- prompt for the wallet the YOU row is about.
+
+        The YOU row is the only actionable number on this screen and it is dark
+        until somebody names an address, so the screen offers the prompt rather
+        than only naming an environment variable it cannot set.
+        ``WalletInputScreen`` validates the address and persists it to
+        ``~/.maxpane/config.toml``, so the choice outlives the process and every
+        wallet-scoped dashboard picks it up on the next launch.
+        """
+        self.app.push_screen(WalletInputScreen(), callback=self._wallet_entered)
+
+    def _wallet_entered(self, address: str | None) -> None:
+        """Callback from ``WalletInputScreen``: ``None`` means escape.
+
+        Both halves have to move or the keypress lies: the **manager** owns the
+        six YOU reads (and the stale state a switch invalidates -- see
+        ``CuratorManager.set_wallet``), while the **screen** owns
+        ``you_address``, which is what the leaderboard emphasises and what the
+        rail prints.  Only then is a refresh worth spending: unchanged means the
+        reader re-typed the address they already had.
+        """
+        if not address:
+            return
+        moved = self._data_manager.set_wallet(address)
+        self._wallet = address or None
+        if moved:
+            self.action_refresh()
 
     def _apply_phase_default(self, phase) -> None:
         """Move the slot to the phase's default -- unless the reader has chosen.

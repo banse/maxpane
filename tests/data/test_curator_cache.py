@@ -897,3 +897,75 @@ def test_the_flagged_points_share_is_recomputed_on_load_never_restored(tmp_path,
 def test_junk_cluster_rows_are_dropped_rather_than_rendered(cache):
     cache.store_clusters(["junk", {"size": 3}, _cluster(1, 2), None])
     assert len(cache.clusters()) == 1
+
+
+# ---------------------------------------------------------------------------
+# expire() / drop_last_good() — the runtime wallet switch (the `w` key)
+# ---------------------------------------------------------------------------
+
+
+def test_expire_makes_a_fresh_tier_due_without_touching_its_provenance(cache, clock):
+    """The point of the method: refetch now, but keep `as of` honest.
+
+    `mark_failed` also makes a tier come due *eventually*, and using it here
+    would be wrong in both directions — it spaces the retry by the backoff, and
+    it says the last attempt failed when it succeeded.
+    """
+    cache.mark_fetched(TIER_FAST)
+    assert cache.is_fresh(TIER_FAST) is True
+    fetched_at = cache.last_fetch_ts(TIER_FAST)
+
+    cache.expire(TIER_FAST)
+
+    assert cache.is_due(TIER_FAST) is True
+    assert cache.seconds_until_due(TIER_FAST) == 0.0
+    assert TIER_FAST in cache.tiers_due()
+    # Provenance survives: expiring is not a fetch and not a failure.
+    assert cache.last_fetch_ts(TIER_FAST) == fetched_at
+
+
+def test_expire_leaves_every_other_tier_alone(cache):
+    for tier in TIERS:
+        cache.mark_fetched(tier)
+    cache.expire(TIER_FAST)
+    assert cache.tiers_due() == (TIER_FAST,)
+
+
+def test_expire_is_idempotent_and_refuses_an_unknown_tier(cache):
+    cache.expire(TIER_FAST)
+    cache.expire(TIER_FAST)          # never fetched, expired twice: still fine
+    assert cache.is_due(TIER_FAST) is True
+    with pytest.raises(ValueError, match="unknown curator refresh tier"):
+        cache.expire("wallet")       # a slot name, not a tier
+
+
+def test_drop_last_good_forgets_the_payload_and_its_stamp(cache, clock):
+    cache.store_last_good(SLOT_WALLET, {"address": "0x" + "ab" * 20})
+    assert cache.get_last_good(SLOT_WALLET) is not None
+
+    cache.drop_last_good(SLOT_WALLET)
+
+    assert cache.get_last_good(SLOT_WALLET) is None
+    assert cache.as_of_ts(SLOT_WALLET) is None
+    assert cache.age_of(SLOT_WALLET) is None
+
+
+def test_drop_last_good_leaves_the_other_slots_and_the_newest_stamp(cache, clock):
+    cache.store_last_good(SLOT_STATE, {"hour": 14})
+    clock.advance(60)
+    cache.store_last_good(SLOT_WALLET, {"address": "0x" + "cd" * 20})
+    newest_before = cache.newest_as_of()
+
+    cache.drop_last_good(SLOT_WALLET)
+
+    assert cache.get_last_good(SLOT_STATE) is not None
+    # The dropped slot was the freshest, so the screen's `as of` must fall back
+    # to the state read rather than keeping a stamp with nothing behind it.
+    assert cache.newest_as_of() < newest_before
+
+
+def test_drop_last_good_is_idempotent_and_refuses_an_unknown_slot(cache):
+    cache.drop_last_good(SLOT_WALLET)
+    cache.drop_last_good(SLOT_WALLET)
+    with pytest.raises(ValueError, match="unknown curator slot"):
+        cache.drop_last_good(TIER_FAST)   # a tier name, not a slot

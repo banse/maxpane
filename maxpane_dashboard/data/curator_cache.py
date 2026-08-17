@@ -490,6 +490,33 @@ class CuratorCache:
         )
         self._tier_next_due[tier] = self._now(now) + max(0.0, backoff)
 
+    def expire(self, tier: str) -> None:
+        """Make ``tier`` due immediately, as if it had never been fetched.
+
+        For a **configuration change that invalidates what the tier fetched** —
+        today, the reader setting a different wallet, which makes the whole
+        wallet half of the fast tier's answers belong to somebody else.  It is
+        not the failure path: :meth:`mark_failed` owns those, and it *spaces*
+        the retry where this one un-spaces it.  ``_tier_last_fetch`` is left
+        alone for the same reason it is in ``mark_failed`` — expiring a tier is
+        not a fetch, and ``as of`` provenance must keep pointing at the real
+        one.
+        """
+        self._check_tier(tier)
+        self._tier_next_due.pop(tier, None)
+
+    def drop_last_good(self, slot: str) -> None:
+        """Forget ``slot``'s last-good payload entirely.
+
+        The counterpart to :meth:`expire`: when a payload stops being *about*
+        the thing the reader is now looking at, serving it behind an
+        ``as of HH:MM`` marker is worse than serving nothing, because the marker
+        says "stale" while the number says "yours".  Idempotent — dropping an
+        empty slot is not an error.
+        """
+        self._check_slot(slot)
+        self.last_good.pop(slot, None)
+
     def seconds_until_due(self, tier: str, now: float | None = None) -> float:
         self._check_tier(tier)
         due_at = self._tier_next_due.get(tier)

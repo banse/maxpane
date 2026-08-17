@@ -89,12 +89,15 @@ import inspect
 import json
 from pathlib import Path
 
+import pytest
 from textual.app import App
+from textual.widgets import Input
 
 from maxpane_dashboard import __version__
 from maxpane_dashboard.analytics.curator_signals import MANAGER_OWNED_KEYS
 from maxpane_dashboard.data.curator_manager import SOURCES
 from maxpane_dashboard.data.curator_models import CURATOR_KEYS, PHASES
+from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 from maxpane_dashboard.screens.curator import (
     CLOSEST_ID,
     CLUSTERS_ID,
@@ -419,8 +422,17 @@ async def _first_clean_width(payload=None, view: str | None = None,
 # =======================================================================
 
 
-def test_bindings_are_refresh_and_the_view_toggle():
-    assert {binding.key for binding in CuratorScreen.BINDINGS} == {"r", "c"}
+def test_bindings_are_refresh_the_view_toggle_and_the_wallet_prompt():
+    """Hand-typed rather than derived: a set compared against itself could not
+    catch a binding that was added, renamed or lost."""
+    assert {binding.key for binding in CuratorScreen.BINDINGS} == {"r", "c", "w"}
+
+
+def test_every_binding_has_the_action_it_names():
+    """A `Binding` naming a missing action fails silently at keypress time --
+    Textual logs and moves on, so the key simply does nothing."""
+    for binding in CuratorScreen.BINDINGS:
+        assert hasattr(CuratorScreen, f"action_{binding.action}"), binding.key
 
 
 def test_the_worker_name_is_the_screens_own():
@@ -1352,3 +1364,186 @@ async def test_the_interval_timer_starts_and_stops_with_the_screen():
         assert screen._refresh_timer is not None
         screen.on_screen_suspend()
         assert screen._refresh_timer is None
+
+
+# ---------------------------------------------------------------------------
+# The `w` key -- naming the wallet the YOU row is about, from inside the app
+# ---------------------------------------------------------------------------
+#
+# The YOU row is the only actionable number on this screen and it is dark until
+# somebody names an address, so `w` prompts for one.  These tests drive the real
+# `WalletInputScreen` through the pilot rather than calling the callback
+# directly: the callback is trivial and the wiring is what breaks.
+#
+# `save_wallet` is monkeypatched in every one of them.  It writes
+# `~/.maxpane/config.toml`, and a "zero network, zero side effect" suite that
+# rewrites the developer's own config is precisely the failure this repo found
+# in `MANAGER_ATTRS` and wrote into CLAUDE.md.
+
+
+class _WalletManager(_FakeManager):
+    """A manager whose YOU keys arrive only once a wallet has been set.
+
+    That is what the real one does: `set_wallet` expires the fast tier, and the
+    next cycle's six YOU reads populate the row.
+    """
+
+    def __init__(self) -> None:
+        self._no_wallet = _grace_payload(
+            you_rank=None, you_points=None, you_credit_eth=None,
+            you_required_next_eth=None, you_marginal_points=None,
+        )
+        super().__init__(payload=self._no_wallet)
+        self.set_calls: list[str | None] = []
+
+    def set_wallet(self, address: str | None) -> bool:
+        self.set_calls.append(address)
+        moved = (address or None) != getattr(self, "_wallet", None)
+        self._wallet = address or None
+        self._payload = _grace_payload() if self._wallet else self._no_wallet
+        return moved
+
+
+@pytest.fixture()
+def saved_wallets(monkeypatch) -> list[str]:
+    """Capture what `WalletInputScreen` would persist, writing no file."""
+    saved: list[str] = []
+    monkeypatch.setattr(
+        "maxpane_dashboard.screens.wallet_input.save_wallet", saved.append
+    )
+    monkeypatch.setattr(
+        "maxpane_dashboard.screens.wallet_input.get_wallet", lambda: ""
+    )
+    return saved
+
+
+async def test_w_opens_the_wallet_prompt(saved_wallets):
+    screen = _screen(_grace_payload(), wallet=None)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        assert isinstance(app.screen, WalletInputScreen)
+
+
+async def test_the_you_row_goes_from_no_wallet_to_a_real_rank(saved_wallets):
+    """The whole point of the key, asserted on composited output at both ends."""
+    manager = _WalletManager()
+    screen = CuratorScreen(manager, poll_interval=30, name="curator", wallet=None)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        before = _region_text(app, screen.query_one(CuratorSignals), screen)
+        assert NO_WALLET in before
+        assert "rank 1" not in before
+
+        await pilot.press("w")
+        await pilot.pause()
+        app.screen.query_one("#wi-input", Input).value = _WALLET
+        await pilot.press("enter")
+        await pilot.pause()
+        await screen._do_refresh()          # the refresh the key scheduled
+        await pilot.pause()
+
+        after = _region_text(app, screen.query_one(CuratorSignals), screen)
+        assert NO_WALLET not in after
+        assert "rank 1" in after
+        # Both halves moved: the manager owns the six YOU reads, the screen owns
+        # `you_address`, which is what the leaderboard emphasises.
+        assert manager.set_calls == [_WALLET]
+        assert screen._wallet == _WALLET
+        # Persisted, so the choice outlives the process -- without touching the
+        # real config file.
+        assert saved_wallets == [_WALLET]
+
+
+async def test_escaping_the_prompt_changes_nothing(saved_wallets):
+    manager = _WalletManager()
+    screen = CuratorScreen(manager, poll_interval=30, name="curator", wallet=None)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert manager.set_calls == []
+        assert screen._wallet is None
+        assert saved_wallets == []
+        text = _region_text(app, screen.query_one(CuratorSignals), screen)
+        assert NO_WALLET in text
+
+
+async def test_an_invalid_address_never_reaches_the_manager(saved_wallets):
+    """`WalletInputScreen` validates and stays open; the row must not change on
+    the strength of something that is not an address."""
+    manager = _WalletManager()
+    screen = CuratorScreen(manager, poll_interval=30, name="curator", wallet=None)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        app.screen.query_one("#wi-input", Input).value = "0xnothex"
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert isinstance(app.screen, WalletInputScreen)   # still open
+        assert manager.set_calls == []
+        assert saved_wallets == []
+
+
+async def _refreshes_after_entering(address, *, starting_wallet):
+    """Count the refreshes the *keypress* asks for, entering *address*.
+
+    Counts `action_refresh` rather than the manager's cycles: RefreshGuard runs
+    its own startup refresh and its own interval timer, so a cycle count would
+    be measuring the guard, not the decision this test is about.
+    """
+    manager = _WalletManager()
+    manager._wallet = starting_wallet
+    manager._payload = _grace_payload() if starting_wallet else manager._no_wallet
+    screen = CuratorScreen(
+        manager, poll_interval=30, name="curator", wallet=starting_wallet
+    )
+    asked: list[int] = []
+    original = screen.action_refresh
+    screen.action_refresh = lambda: (asked.append(1), original())[1]  # type: ignore[method-assign]
+
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        app.screen.query_one("#wi-input", Input).value = address
+        await pilot.press("enter")
+        await pilot.pause()
+    return len(asked), manager.set_calls
+
+
+async def test_re_entering_the_same_wallet_costs_no_refresh(saved_wallets):
+    """`set_wallet` returns False for an unchanged address, and the screen
+    spends a refresh only when something actually moved."""
+    refreshes, set_calls = await _refreshes_after_entering(
+        _WALLET, starting_wallet=_WALLET
+    )
+    assert set_calls == [_WALLET]          # the manager was still told
+    assert refreshes == 0                  # but nothing was refetched
+
+
+async def test_entering_a_different_wallet_does_cost_a_refresh(saved_wallets):
+    """The other half of the pair: without it, the test above passes just as
+    well on a screen that never refreshes at all."""
+    refreshes, set_calls = await _refreshes_after_entering(
+        _WALLET, starting_wallet=None
+    )
+    assert set_calls == [_WALLET]
+    assert refreshes == 1

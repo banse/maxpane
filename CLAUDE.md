@@ -254,6 +254,14 @@ would move nothing a user sees. Re-sweep before re-seaming, and only when one
 of the two panels' needs moves again.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
+Per-dashboard: `c` swaps the shared bottom-right slot (FWA, TTT, Talismans,
+curator) and **`w` on curator** prompts for the wallet its YOU row is about —
+`WalletInputScreen` validates and persists to `~/.maxpane/config.toml`, so it
+is app-wide from the next launch. A runtime wallet switch is more than an
+assignment: `CuratorManager.set_wallet` also drops the wallet last-good (its
+payload names the *old* address) and expires the fast tier, because a tier
+with 12 of its 15 seconds left is "fresh" and the row would stay dark after a
+keypress that looked like it worked.
 Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`.
 
 **`__version__` comes from installed distribution metadata**, not from a

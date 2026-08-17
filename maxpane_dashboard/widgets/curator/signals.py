@@ -38,7 +38,8 @@ What each row refuses to say
   the analysis to consumers rather than asserting intent.
 * **YOU** with every field ``None`` means no wallet is configured, not a
   wallet with no score.  ``rank --, 0 pts`` would be a claim about somebody;
-  the honest render names the environment variable instead.
+  the honest render names the way to fix it instead -- the screen's ``w`` key,
+  and the environment variable that overrides whatever it saves.
 
 Width behaviour
 ---------------
@@ -165,7 +166,12 @@ LOGS_GROUP = "logs"
 #: Explicit never-fired / no-wallet copy, tested verbatim.
 NEVER_SAVED = "none yet"
 NO_WHALE = "none this hour"
-NO_WALLET = "set MAXPANE_WALLET"
+#: Names the key *before* the environment variable: since the screen grew its
+#: ``w`` binding, pressing it is the fix a reader can act on without leaving
+#: the app, and it persists to ``~/.maxpane/config.toml`` either way.  Both are
+#: named because the env var still wins over the file, so it is the one that
+#: explains a wallet the reader did not expect.
+NO_WALLET = "press w · or set MAXPANE_WALLET"
 NO_CLUSTERS = "no fan-out patterns"
 
 #: Head furniture: two leading spaces, the glyph, a space, the label cell and

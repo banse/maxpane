@@ -222,6 +222,17 @@ the other, so a single manager owns the command.
 | `t` | Cycle theme |
 | `q` | Quit |
 
+Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap the two panels
+that share their bottom-right slot. **THE LIST also binds `w`**, which asks for the wallet its
+YOU row is about — rank, points, credit, and the exact amount that wallet must send next to beat
+its own high-water mark. The address is validated, saved to `~/.maxpane/config.toml`, and picked
+up by every wallet-scoped dashboard on the next launch, so it is the easiest way to set one:
+
+```bash
+maxpane --game curator --wallet 0xYourAddress   # or press w once, inside the app
+MAXPANE_WALLET=0xYourAddress maxpane            # the env var overrides the saved file
+```
+
 ### Terminal size
 
 **The widest layout wants 143 columns.** That is the width at which every widget on every dashboard

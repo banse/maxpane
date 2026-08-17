@@ -1230,6 +1230,47 @@ class CuratorManager:
 
     # -- public API ----------------------------------------------------------
 
+    def set_wallet(self, address: str | None) -> bool:
+        """Point the YOU row at a different wallet.  Returns whether it moved.
+
+        The constructor is still the normal way in (``--wallet`` /
+        ``MAXPANE_WALLET``); this is the reader changing their mind at runtime,
+        from the screen's ``w`` key.  It is deliberately more than
+        ``self.wallet = address``, because three pieces of state are *about the
+        old address* and each would otherwise render under the new one:
+
+        * ``_fast_wallet`` — the within-TTL re-serve.  Left alone, the previous
+          wallet's rank, credit and "next ≥" survive on screen under somebody
+          else's address for up to one fast tier;
+        * the ``wallet`` last-good slot, whose payload is literally
+          ``{"address": <the old one>}`` — dropped rather than re-served behind
+          an ``as of`` marker.
+
+        Dropping that slot also settles the stale-failure question, which is why
+        ``_failed_groups`` is **not** touched here: :meth:`_degraded` degrades a
+        group whose last-good is absent, so between the switch and the first
+        successful read the new wallet reads as degraded either way — which is
+        the honest state, since nothing has been read about it yet.  Discarding
+        the old address's failure as well would change nothing observable, and
+        this repo does not keep code no test can pin.
+
+        The fast tier is then expired so the next cycle actually refetches: a
+        tier with 12 of its 15 seconds left is "fresh", and without this the row
+        stays empty after a keypress that looked like it worked.
+
+        A no-op when the address is unchanged (including ``""``/``None`` both
+        meaning *no wallet*), so a reader who re-types the same address does not
+        pay a refetch or lose their last-good.
+        """
+        normalised = address or None
+        if normalised == self.wallet:
+            return False
+        self.wallet = normalised
+        self._fast_wallet = None
+        self.cache.drop_last_good(SLOT_WALLET)
+        self.cache.expire(TIER_FAST)
+        return True
+
     async def fetch_and_compute(self) -> dict[str, Any]:
         """Run one refresh cycle and return the flat dashboard dict.
 
