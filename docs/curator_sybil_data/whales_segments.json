@@ -1,0 +1,326 @@
+{
+  "top20_by_credit": [
+    {
+      "contributor": "0xe781b28e02ed5fc4b989905cb6848d318f4735fd",
+      "index": 14344,
+      "credit_eth": 1000.0,
+      "weight_eth": 1139.9,
+      "points": 33762,
+      "n_deposits": 1,
+      "hours_active": [
+        20
+      ],
+      "ladder_amounts_eth": [
+        4040.0
+      ]
+    },
+    {
+      "contributor": "0x1aa780bb10425b86bcf05ecbb7953f9a93729ed9",
+      "index": 9463,
+      "credit_eth": 806.1,
+      "weight_eth": 1105.72737,
+      "points": 33252,
+      "n_deposits": 1,
+      "hours_active": [
+        15
+      ],
+      "ladder_amounts_eth": [
+        806.1
+      ]
+    },
+    {
+      "contributor": "0x2fe4093c894749e596f458764c377bf4f1337b58",
+      "index": 5665,
+      "credit_eth": 786.0,
+      "weight_eth": 1363.3962,
+      "points": 36924,
+      "n_deposits": 2,
+      "hours_active": [
+        6
+      ],
+      "ladder_amounts_eth": [
+        1.0,
+        786.0
+      ]
+    },
+    {
+      "contributor": "0x383f42b5de515c564641f65f5da3bd8b4a35b4b4",
+      "index": 3174,
+      "credit_eth": 620.0,
+      "weight_eth": 1125.424,
+      "points": 33547,
+      "n_deposits": 1,
+      "hours_active": [
+        4
+      ],
+      "ladder_amounts_eth": [
+        620.0
+      ]
+    },
+    {
+      "contributor": "0x75d51517b90cc5c8873c631ddc177a1bfd96b074",
+      "index": 218,
+      "credit_eth": 490.9,
+      "weight_eth": 951.92881,
+      "points": 30853,
+      "n_deposits": 12,
+      "hours_active": [
+        1
+      ],
+      "ladder_amounts_eth": [
+        1.0,
+        450.0,
+        480.0,
+        490.0,
+        490.1,
+        490.2,
+        490.3,
+        490.4,
+        490.5,
+        490.6,
+        490.7,
+        490.9
+      ]
+    },
+    {
+      "contributor": "0x5d13fd37e8758030a6a10857c0cb699b2bff7a83",
+      "index": 247,
+      "credit_eth": 490.0,
+      "weight_eth": 947.905,
+      "points": 30788,
+      "n_deposits": 1,
+      "hours_active": [
+        1
+      ],
+      "ladder_amounts_eth": [
+        490.0
+      ]
+    },
+    {
+      "contributor": "0x2d3fd4eb27e1ff622eb699c1b10cc7663be70ab5",
+      "index": 317,
+      "credit_eth": 490.0,
+      "weight_eth": 944.23,
+      "points": 30728,
+      "n_deposits": 1,
+      "hours_active": [
+        1
+      ],
+      "ladder_amounts_eth": [
+        490.0
+      ]
+    },
+    {
+      "contributor": "0x381fe486d87c7f2633c777f1b5be3105a2a51744",
+      "index": 47,
+      "credit_eth": 461.1,
+      "weight_eth": 902.10737,
+      "points": 30035,
+      "n_deposits": 2,
+      "hours_active": [
+        0,
+        1
+      ],
+      "ladder_amounts_eth": [
+        1.1,
+        461.1
+      ]
+    },
+    {
+      "contributor": "0x000461a73d3985eef4923655782aa5d0de75c111",
+      "index": 241,
+      "credit_eth": 317.1,
+      "weight_eth": 613.90542,
+      "points": 24777,
+      "n_deposits": 2,
+      "hours_active": [
+        1
+      ],
+      "ladder_amounts_eth": [
+        317.0,
+        317.1
+      ]
+    },
+    {
+      "contributor": "0x193e75b60a4ca8bc842dc28604afc6c41afe972a",
+      "index": 229,
+      "credit_eth": 271.0,
+      "weight_eth": 522.6394,
+      "points": 22861,
+      "n_deposits": 2,
+      "hours_active": [
+        1
+      ],
+      "ladder_amounts_eth": [
+        5.0,
+        271.0
+      ]
+    },
+    {
+      "contributor": "0xd891769ecec9dc911441a15b1a090cc9af1d9eee",
+      "index": 14771,
+      "credit_eth": 217.5,
+      "weight_eth": 236.0542,
+      "points": 15364,
+      "n_deposits": 2,
+      "hours_active": [
+        21
+      ],
+      "ladder_amounts_eth": [
+        0.5,
+        217.5
+      ]
+    },
+    {
+      "contributor": "0x9572cbe40ff2ed3dd1a4c0fa1c4a89bae0decccb",
+      "index": 14712,
+      "credit_eth": 205.0,
+      "weight_eth": 225.09,
+      "points": 15002,
+      "n_deposits": 1,
+      "hours_active": [
+        21
+      ],
+      "ladder_amounts_eth": [
+        205.0
+      ]
+    },
+    {
+      "contributor": "0xd8222670b20761708d32a6a9b5e2f3a266d9673d",
+      "index": 134,
+      "credit_eth": 193.0,
+      "weight_eth": 338.5654,
+      "points": 18400,
+      "n_deposits": 2,
+      "hours_active": [
+        1,
+        5
+      ],
+      "ladder_amounts_eth": [
+        1.0,
+        193.0
+      ]
+    },
+    {
+      "contributor": "0xd15031d0942634ccac10274e68945a23d2720922",
+      "index": 14450,
+      "credit_eth": 171.99,
+      "weight_eth": 194.331501,
+      "points": 13940,
+      "n_deposits": 1,
+      "hours_active": [
+        20
+      ],
+      "ladder_amounts_eth": [
+        171.99
+      ]
+    },
+    {
+      "contributor": "0x626a4912f9671ecb7ff42c85f0392fd437875d51",
+      "index": 14458,
+      "credit_eth": 171.99,
+      "weight_eth": 194.193909,
+      "points": 13935,
+      "n_deposits": 1,
+      "hours_active": [
+        20
+      ],
+      "ladder_amounts_eth": [
+        171.99
+      ]
+    },
+    {
+      "contributor": "0x4fb24fb1cdf7a990fa8df38f78c1d49f1f74bea3",
+      "index": 14467,
+      "credit_eth": 171.99,
+      "weight_eth": 194.073516,
+      "points": 13931,
+      "n_deposits": 1,
+      "hours_active": [
+        20
+      ],
+      "ladder_amounts_eth": [
+        171.99
+      ]
+    },
+    {
+      "contributor": "0x3e89d442c94c8760029bc952ec2068194a4fa7cb",
+      "index": 14474,
+      "credit_eth": 171.99,
+      "weight_eth": 193.970322,
+      "points": 13927,
+      "n_deposits": 1,
+      "hours_active": [
+        20
+      ],
+      "ladder_amounts_eth": [
+        171.99
+      ]
+    },
+    {
+      "contributor": "0x6c59ee4552f44dd93841a2b39304c3ed7e1935b4",
+      "index": 14484,
+      "credit_eth": 171.99,
+      "weight_eth": 193.815531,
+      "points": 13921,
+      "n_deposits": 1,
+      "hours_active": [
+        20
+      ],
+      "ladder_amounts_eth": [
+        171.99
+      ]
+    },
+    {
+      "contributor": "0xcecc592a6c188f3b59ea0fc06f4f4fbb42e637d8",
+      "index": 14489,
+      "credit_eth": 171.99,
+      "weight_eth": 193.729536,
+      "points": 13918,
+      "n_deposits": 1,
+      "hours_active": [
+        20
+      ],
+      "ladder_amounts_eth": [
+        171.99
+      ]
+    },
+    {
+      "contributor": "0x1b6020630c59b1ca6f2391c102f8614a2380ebd1",
+      "index": 14493,
+      "credit_eth": 171.99,
+      "weight_eth": 193.66074,
+      "points": 13916,
+      "n_deposits": 1,
+      "hours_active": [
+        20
+      ],
+      "ladder_amounts_eth": [
+        171.99
+      ]
+    }
+  ],
+  "whales_800plus_credit": {
+    "count": 2,
+    "sum_credit_eth": 1806.1,
+    "sum_points": 67014,
+    "points_share_pct": 0.252
+  },
+  "index_1_1000": {
+    "count": 1000,
+    "weight_share_pct": 10.96,
+    "points_share_pct": 7.61,
+    "points": 2024397
+  },
+  "rest": {
+    "count": 14576,
+    "points_share_pct": 92.39
+  },
+  "joined_hour_22_23": {
+    "count": 742,
+    "sum_credit_eth": 1391.8,
+    "sum_points": 634538,
+    "points_share_pct": 2.39
+  },
+  "total_points": 26585740
+}

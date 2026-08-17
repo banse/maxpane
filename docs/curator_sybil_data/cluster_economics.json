@@ -1,0 +1,146 @@
+[
+  {
+    "cluster": "amt_0.45_h3",
+    "wallets": 1995,
+    "eth_in": 897.75,
+    "points": 1811322,
+    "share_pct": 6.81,
+    "points_if_one_wallet": 40573,
+    "sybil_multiplier": 44.6
+  },
+  {
+    "cluster": "amt_14.0_h4",
+    "wallets": 997,
+    "eth_in": 13958.0,
+    "points": 4755046,
+    "share_pct": 17.89,
+    "points_if_one_wallet": 150683,
+    "sybil_multiplier": 31.6
+  },
+  {
+    "cluster": "amt_10.0_h5",
+    "wallets": 769,
+    "eth_in": 7690.0,
+    "points": 3245928,
+    "share_pct": 12.21,
+    "points_if_one_wallet": 117065,
+    "sybil_multiplier": 27.7
+  },
+  {
+    "cluster": "amt_0.05_h7",
+    "wallets": 692,
+    "eth_in": 34.6,
+    "points": 190888,
+    "share_pct": 0.72,
+    "points_if_one_wallet": 7272,
+    "sybil_multiplier": 26.2
+  },
+  {
+    "cluster": "amt_0.1_h17",
+    "wallets": 321,
+    "eth_in": 32.1,
+    "points": 111946,
+    "share_pct": 0.42,
+    "points_if_one_wallet": 6257,
+    "sybil_multiplier": 17.9
+  },
+  {
+    "cluster": "amt_1.2_h1",
+    "wallets": 300,
+    "eth_in": 360.0,
+    "points": 454865,
+    "share_pct": 1.71,
+    "points_if_one_wallet": 26270,
+    "sybil_multiplier": 17.3
+  },
+  {
+    "cluster": "amt_0.05_h15",
+    "wallets": 232,
+    "eth_in": 11.6,
+    "points": 59482,
+    "share_pct": 0.22,
+    "points_if_one_wallet": 3913,
+    "sybil_multiplier": 15.2
+  },
+  {
+    "cluster": "amt_2.067_h18",
+    "wallets": 220,
+    "eth_in": 454.74,
+    "points": 345582,
+    "share_pct": 1.3,
+    "points_if_one_wallet": 23307,
+    "sybil_multiplier": 14.8
+  },
+  {
+    "cluster": "amt_0.05_h17",
+    "wallets": 163,
+    "eth_in": 8.15,
+    "points": 40206,
+    "share_pct": 0.15,
+    "points_if_one_wallet": 3156,
+    "sybil_multiplier": 12.7
+  },
+  {
+    "cluster": "amt_2.067_h13",
+    "wallets": 104,
+    "eth_in": 214.97,
+    "points": 178821,
+    "share_pct": 0.67,
+    "points_if_one_wallet": 17540,
+    "sybil_multiplier": 10.2
+  },
+  {
+    "cluster": "amt_171.99_h20",
+    "wallets": 10,
+    "eth_in": 1719.9,
+    "points": 139218,
+    "share_pct": 0.52,
+    "points_if_one_wallet": 44026,
+    "sybil_multiplier": 3.2
+  },
+  {
+    "cluster": "idxrun_12058",
+    "wallets": 100,
+    "eth_in": 11.7,
+    "points": 37099,
+    "share_pct": 0.14,
+    "points_if_one_wallet": 3715,
+    "sybil_multiplier": 10.0
+  },
+  {
+    "cluster": "idxrun_13326",
+    "wallets": 100,
+    "eth_in": 10.12,
+    "points": 34140,
+    "share_pct": 0.13,
+    "points_if_one_wallet": 3419,
+    "sybil_multiplier": 10.0
+  },
+  {
+    "cluster": "idxrun_13795",
+    "wallets": 100,
+    "eth_in": 8.9,
+    "points": 31974,
+    "share_pct": 0.12,
+    "points_if_one_wallet": 3202,
+    "sybil_multiplier": 10.0
+  },
+  {
+    "cluster": "idxrun_13897",
+    "wallets": 100,
+    "eth_in": 8.61,
+    "points": 31431,
+    "share_pct": 0.12,
+    "points_if_one_wallet": 3148,
+    "sybil_multiplier": 10.0
+  },
+  {
+    "cluster": "idxrun_14001",
+    "wallets": 100,
+    "eth_in": 8.36,
+    "points": 30955,
+    "share_pct": 0.12,
+    "points_if_one_wallet": 3100,
+    "sybil_multiplier": 10.0
+  }
+]

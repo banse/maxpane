@@ -1,0 +1,15 @@
+{
+  "latest_block": 25776962,
+  "is_settled": false,
+  "n_deposits": 22319,
+  "n_first_deposits": 15576,
+  "n_settled_logs": 0,
+  "settled_logs": [],
+  "stats_volume_wei": 114234690818134620874547,
+  "stats_contributors": 15589,
+  "stats_txs": 22334,
+  "sum_amount_wei": 114228960019135394537509,
+  "distinct_contributors_in_deposits": 15576,
+  "max_first_deposit_index": 15576,
+  "sweep_utc": "2026-08-17 19:44:40"
+}

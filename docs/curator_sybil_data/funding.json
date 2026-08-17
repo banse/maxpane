@@ -1,0 +1,1854 @@
+{
+  "stage1": {
+    "0xd2ccffd69539c31c424931ba843ee36e4a33f8ec": {
+      "funder": "0x332f73dd1e40dd9581444dbdc0bb6547fadbf954",
+      "fund_block": 25771131,
+      "fund_value_eth": 0.4873925828014729,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.45_h3"
+    },
+    "0x9d965ae9db9a2135a87dd5c54b56bfa42a4a34fa": {
+      "funder": "0x73cb6a9a37badcba9ef4871d9301360eb69d472f",
+      "fund_block": 25770985,
+      "fund_value_eth": 0.5113999991922069,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.45_h3"
+    },
+    "0x04dad31a421913528b0f3be42b8b476b93cb0c20": {
+      "funder": "0x021e3dc5ecc5083d38c498fccc24f76ae1ad8468",
+      "fund_block": 25771023,
+      "fund_value_eth": 0.5056976798327483,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.45_h3"
+    },
+    "0xe7485fab669ce951cf4976ac777ad53b9961deb6": {
+      "funder": "0xfad2990b35d61729c666d32275071f1b7df9df73",
+      "fund_block": 25771008,
+      "fund_value_eth": 0.5082659862524611,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.45_h3"
+    },
+    "0x9ca9ecb130445f5339216efa3042a98f23da11f7": {
+      "funder": "0xa32425c67b2e4f9f8e7408165fe9d79950f787f6",
+      "fund_block": 25771156,
+      "fund_value_eth": 0.48055111790772126,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.45_h3"
+    },
+    "0xdab44544a91ee3dae4fe1526d4726140db9c6e27": {
+      "funder": "0x0e9003b8de0e6a86d86b4fb0a59bf4f9760bd5af",
+      "fund_block": 25771011,
+      "fund_value_eth": 0.5076714245222302,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.45_h3"
+    },
+    "0x4e5e218ea4d19f7f26f13666ad6e1a2889b91bb8": {
+      "funder": "0x7a396d26870a6a799860173921da5bc1a8dc8914",
+      "fund_block": 25771120,
+      "fund_value_eth": 0.4905842210080885,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.45_h3"
+    },
+    "0x645295a7ff82f56e672dc3b586df304e45745cb2": {
+      "funder": "0xf578ff5320ee4f8b1d57156752cfa0d0fb10b56e",
+      "fund_block": 25770989,
+      "fund_value_eth": 0.5102094880556509,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.45_h3"
+    },
+    "0xaee9f0c9460b15fbd65cdc8c1c5d119980b6c32d": {
+      "funder": "0x2b8598e393945044844c2247b015a7bf069bd92d",
+      "fund_block": 25771134,
+      "fund_value_eth": 0.48729634751481604,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.45_h3"
+    },
+    "0xa5811807004aefafd5d631f82b0c6b3843f173d9": {
+      "funder": "0xd2a952fe64ef24c3311e75771a1fd429a3034e47",
+      "fund_block": 25771090,
+      "fund_value_eth": 0.4955938345460021,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.45_h3"
+    },
+    "0x7dd6a12edad29bf353333efd27899ec7febdfb79": {
+      "funder": "0x12896ad690cdd4d396e2ea9088c28c3c8c30fa9c",
+      "fund_block": 25772189,
+      "fund_value_eth": 14.103536608867996,
+      "n_txs": 4,
+      "note": null,
+      "group": "amt_14.0_h4"
+    },
+    "0x10d9e1a59d295160cbc1f22a6ba001949cac09b2": {
+      "funder": "0x5e9afa40f3ab680c19d8b93ec8d8ac7d3c1fe238",
+      "fund_block": 25773046,
+      "fund_value_eth": 14.101823834157976,
+      "n_txs": 4,
+      "note": null,
+      "group": "amt_14.0_h4"
+    },
+    "0x35d1f9626f7161a029b58e3e881f91f0889235e1": {
+      "funder": "0x590393da68b03747510e9cf8d11036f644b3e109",
+      "fund_block": 25772095,
+      "fund_value_eth": 14.103730677879634,
+      "n_txs": 4,
+      "note": null,
+      "group": "amt_14.0_h4"
+    },
+    "0xf8c4f50292c2af1a9950e2c7cc48c20a5bfb8519": {
+      "funder": "0x7c8671dfa51ab3360b6b50013883d5cd068274d9",
+      "fund_block": 25773694,
+      "fund_value_eth": 14.100416237891213,
+      "n_txs": 4,
+      "note": null,
+      "group": "amt_14.0_h4"
+    },
+    "0xc5d923311ee0e2812c54e75929425d34c77c3241": {
+      "funder": "0x50b574e3d55fe2384511369eae1e10e4407f758f",
+      "fund_block": 25771508,
+      "fund_value_eth": 14.104798000466452,
+      "n_txs": 4,
+      "note": null,
+      "group": "amt_14.0_h4"
+    },
+    "0x408285f4fb2a01f4bcda0e3a9e105db0116c1072": {
+      "funder": "0x5078b2302a84206c5998e85b22042477e6f2b0be",
+      "fund_block": 25773292,
+      "fund_value_eth": 14.101298106010008,
+      "n_txs": 4,
+      "note": null,
+      "group": "amt_14.0_h4"
+    },
+    "0x3c2d9ac61009ba174957440860b0aadc348831cf": {
+      "funder": "0x64101975e3618a0f11cb16341a4a47bfca552c03",
+      "fund_block": 25773649,
+      "fund_value_eth": 14.100530231870266,
+      "n_txs": 4,
+      "note": null,
+      "group": "amt_14.0_h4"
+    },
+    "0xe8eab8af3fb3c3600805784e4c1f6f2ba425e122": {
+      "funder": "0xe712ac593278021d7a191ea835cdeab8173a685b",
+      "fund_block": 25773165,
+      "fund_value_eth": 14.101579869740275,
+      "n_txs": 4,
+      "note": null,
+      "group": "amt_14.0_h4"
+    },
+    "0x9791dfc9743967ea07e842b8c6325ee31d7c2b5f": {
+      "funder": "0x8866e9cc0f2fd8b9e7a32f36cc1097b8652d373c",
+      "fund_block": 25773112,
+      "fund_value_eth": 14.101689367740882,
+      "n_txs": 5,
+      "note": null,
+      "group": "amt_14.0_h4"
+    },
+    "0x1f42aa4386f2308aa517956e1cc8398884964939": {
+      "funder": "0x974e8571fa429a5390f4734e221537fb8dd30d9d",
+      "fund_block": 25773145,
+      "fund_value_eth": 14.101627503397312,
+      "n_txs": 4,
+      "note": null,
+      "group": "amt_14.0_h4"
+    },
+    "0x817ff03427a03cad0cb4571ad149bdd99055161b": {
+      "funder": "0x1311c0b8246bd6599c0163b55d82712b9f22a4da",
+      "fund_block": 25771438,
+      "fund_value_eth": 10.004249077807243,
+      "n_txs": 5,
+      "note": null,
+      "group": "amt_10.0_h5"
+    },
+    "0xdd5a4e437de8191818dbf0ba8175ff1030c8c069": {
+      "funder": "0xcf4fe99768e0b2258e5dea21cc740363a58d76df",
+      "fund_block": 25771418,
+      "fund_value_eth": 10.00917151076032,
+      "n_txs": 8,
+      "note": null,
+      "group": "amt_10.0_h5"
+    },
+    "0x2dafa9aebdbacced7eb86f6fdafad02b65fdcd2a": {
+      "funder": "0x9e71e488f060527da1a2bcfd87df9509d3a20f8b",
+      "fund_block": 25771447,
+      "fund_value_eth": 10.00152980508084,
+      "n_txs": 5,
+      "note": null,
+      "group": "amt_10.0_h5"
+    },
+    "0xdc561272bc059e50b1367aec5fee24f54977b4e8": {
+      "funder": "0x057f0f92f471c0e93d93b9ef7fdac13aedcb71a6",
+      "fund_block": 25771438,
+      "fund_value_eth": 10.004379681003176,
+      "n_txs": 9,
+      "note": null,
+      "group": "amt_10.0_h5"
+    },
+    "0x32e5e7bc2cc2b94a684c5bd6158bf5d625de74a7": {
+      "funder": "0x2a8e2dd82b3584a9c7ad6bf6411a60f23de715c4",
+      "fund_block": 25771445,
+      "fund_value_eth": 10.002298931849904,
+      "n_txs": 5,
+      "note": null,
+      "group": "amt_10.0_h5"
+    },
+    "0x0c5092a7293cc61c128a7efd0af53ffd9ebb6356": {
+      "funder": "0x38f125620bb4c418cd82d9e75cf61df48345ac6c",
+      "fund_block": 25771418,
+      "fund_value_eth": 10.008932589388053,
+      "n_txs": 7,
+      "note": null,
+      "group": "amt_10.0_h5"
+    },
+    "0x974979577afe0fca61db168f3680e9fae0c35a42": {
+      "funder": "0xad39a6ee3cb015cb51d8da910ba5bece7ec681ad",
+      "fund_block": 25771436,
+      "fund_value_eth": 10.004932094587458,
+      "n_txs": 5,
+      "note": null,
+      "group": "amt_10.0_h5"
+    },
+    "0x01f9c0763734ffdbe22f51569b39c4da5c86050b": {
+      "funder": "0xa516d9a3c928b4ccf7a1f34d039da1c0925002fd",
+      "fund_block": 25771417,
+      "fund_value_eth": 10.00943263907036,
+      "n_txs": 5,
+      "note": null,
+      "group": "amt_10.0_h5"
+    },
+    "0x021a2c475504e3644be310afd2549ff3a9c4eab7": {
+      "funder": "0x5a7cf0d9cfe8834e300adda1c8b901d11b9e029c",
+      "fund_block": 25771416,
+      "fund_value_eth": 10.00958902673096,
+      "n_txs": 6,
+      "note": null,
+      "group": "amt_10.0_h5"
+    },
+    "0xc93594a73114fafc1092593d03b672a76da05c5f": {
+      "funder": "0x5a3fb83bf8f9f29b308646d801e18c9455e933de",
+      "fund_block": 25771437,
+      "fund_value_eth": 10.004576194605669,
+      "n_txs": 5,
+      "note": null,
+      "group": "amt_10.0_h5"
+    },
+    "0x5bef493efc3acc42f3c6af93cd942c7a2fc520fb": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h7"
+    },
+    "0xb9f60d902a34dcda05fd012c0bd42ff87b1d2825": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h7"
+    },
+    "0x2b2951ddf365eadd6a50b16d9df5cd2b450f2aaf": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h7"
+    },
+    "0x2bbd8c0f4a513d78ace35fbeaa03095c5e21243a": {
+      "funder": "0x0d0707963952f2fba59dd06f2b425ace40b492fe",
+      "fund_block": 19051844,
+      "fund_value_eth": 2.183973,
+      "n_txs": 18,
+      "note": null,
+      "group": "amt_0.05_h7"
+    },
+    "0xe5ec07ca42e9e6120d2b123ab2adcc078641e293": {
+      "funder": "0xbc771dad664e33404f5215c56d10b4c88fa768ad",
+      "fund_block": 25772464,
+      "fund_value_eth": 0.05990054738644058,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.05_h7"
+    },
+    "0xa8c58d05adcba21395b8d26c1a1441a0e2217427": {
+      "funder": "0x8d928fcb4a9ba04cd712a64e0a84e228d0dd472b",
+      "fund_block": 25772914,
+      "fund_value_eth": 0.2741943473142763,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.05_h7"
+    },
+    "0x1861c238d4bd776101ae1b57fcc07adeb6f90d1f": {
+      "funder": "0x5a54191f061af40690a9dc6a52e9b41491552e42",
+      "fund_block": 24956483,
+      "fund_value_eth": 1e-05,
+      "n_txs": 5,
+      "note": null,
+      "group": "amt_0.05_h7"
+    },
+    "0x3c12ba2b6d6a1f1bc754315d30ebd65f954a7530": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h7"
+    },
+    "0x830d8bbe48737f1352574959db6cc5ef0812b514": {
+      "funder": "0x7035953962ff2b25cc387a3b91075d38afd6f952",
+      "fund_block": 25772622,
+      "fund_value_eth": 0.0634810817904848,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.05_h7"
+    },
+    "0x7ac4ac2ec0c1cb1cb7cc1cdbf827dd26ca6c2fca": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h7"
+    },
+    "0x2774aa8c7228a51fa1a463dc31092f6aac849c4c": {
+      "funder": "0xe2610d128173b4a78e6bcdf03d721f37dc74f56a",
+      "fund_block": 25775227,
+      "fund_value_eth": 0.11979258934643891,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.1_h17"
+    },
+    "0x6921c19a4195afd3aac896cfc53275ed0a213a53": {
+      "funder": "0x5dd5bcbbe1321c0c3ca049711a8759caf5c83ee5",
+      "fund_block": 25775841,
+      "fund_value_eth": 0.11873973959416845,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.1_h17"
+    },
+    "0x6633c6793f460dda2170722b79aa0624682ca0cb": {
+      "funder": "0x0e241ca04d32334772310f3f88da87b2f26ca286",
+      "fund_block": 25775375,
+      "fund_value_eth": 0.11991655983550961,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.1_h17"
+    },
+    "0xf04ffa150c7d35a779cb77cfa5385130db53cd05": {
+      "funder": "0x84ff2dd205a8bc5b07847d2076f1f05586853f18",
+      "fund_block": 25775741,
+      "fund_value_eth": 0.11931194846468336,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.1_h17"
+    },
+    "0x5b51f2454b63042292b83336f8efd1f22a30ae96": {
+      "funder": "0xc0d3c42da4a9960710b2ba6b4467af4451e1162c",
+      "fund_block": 25775370,
+      "fund_value_eth": 0.11994899031035766,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.1_h17"
+    },
+    "0x78ac186b7ed3f247b2dff7207d95c02755ac7eff": {
+      "funder": "0x863a89b3718cb344fb718d1d37e8e5ba4bffefff",
+      "fund_block": 25775221,
+      "fund_value_eth": 0.1198149527980821,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.1_h17"
+    },
+    "0xecfe1996f730f37876acf6a777cc7459e9754a21": {
+      "funder": "0xd3bdd0bd0ed7eb7429c79a41d6553697137594e9",
+      "fund_block": 25775296,
+      "fund_value_eth": 0.11944292226405737,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.1_h17"
+    },
+    "0x7d6f8657aadc2f3e272f1b9765dcaafe30c7b57c": {
+      "funder": "0x9183fed30f2460fb849c065d185f22ca5c65b590",
+      "fund_block": 25775658,
+      "fund_value_eth": 0.11984718914800009,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.1_h17"
+    },
+    "0x20b3adac1964fc7c56e4e5aea8eac00ca3539fba": {
+      "funder": "0xa86c54dd0f1635268ec139ea02a91af93a792279",
+      "fund_block": 25775726,
+      "fund_value_eth": 0.11944171095495155,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.1_h17"
+    },
+    "0x0e527e4f64647cb85c9fa7402db687d1542002ae": {
+      "funder": "0x7074174860106c1c3e825552891aa728abbdc460",
+      "fund_block": 25775832,
+      "fund_value_eth": 0.11878093315204251,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.1_h17"
+    },
+    "0x11e00308377e08e226059098e0e6fdfcac0585d3": {
+      "funder": "0x20ae518ec504174d57d0c7525cda202819d4c663",
+      "fund_block": 25770426,
+      "fund_value_eth": 1.2999677736385131,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_1.2_h1"
+    },
+    "0x84286b7d56a53952a3df3874d322323a1825241d": {
+      "funder": "0x4bd8dbb336410be6ce4a1e8c1189a6eb86e4c3d4",
+      "fund_block": 25770502,
+      "fund_value_eth": 1.298813775814066,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_1.2_h1"
+    },
+    "0x95d701e28331a7ebff657d2357cd92bfb7aa30f9": {
+      "funder": "0xbcfcd1fc27fd008ba70d46f23b2f6175df3bb10f",
+      "fund_block": 25770474,
+      "fund_value_eth": 1.2993536389246558,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_1.2_h1"
+    },
+    "0x290f80134ce39f9fd4504ff9366b485829090987": {
+      "funder": "0x919e3638e799f52fb46b5de7a5829971d7eb75e2",
+      "fund_block": 25770546,
+      "fund_value_eth": 1.2982048489643323,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_1.2_h1"
+    },
+    "0x0933e82b1f39f103b1afb4b2bd96b826469b5549": {
+      "funder": "0x8d5c8b567b9959be2ba43cc8e308439db7e5d642",
+      "fund_block": 25770484,
+      "fund_value_eth": 1.2992894026067148,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_1.2_h1"
+    },
+    "0xb089143ce5df13f87e25f80dfcc05ea785755ed2": {
+      "funder": "0xb65c1e1384c912a1b7932bca46da9b9c8fd17247",
+      "fund_block": 25770441,
+      "fund_value_eth": 1.299715284557042,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_1.2_h1"
+    },
+    "0x56540e2cc2bd105bcb7303f676b264601db9986b": {
+      "funder": "0xa4b0cca87564bbcbffed0dd0e85dba82cd6e2157",
+      "fund_block": 25770434,
+      "fund_value_eth": 1.299849212239322,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_1.2_h1"
+    },
+    "0x67b7d1b38171d7f223b2aec934b1dd23acb24412": {
+      "funder": "0x3484b0efa2ba237e0ce574b0247a339ada659c50",
+      "fund_block": 25770407,
+      "fund_value_eth": 1.3002935297871725,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_1.2_h1"
+    },
+    "0xd1f768c2b90ca75ca06501c4d8aaeff6c3aca385": {
+      "funder": "0x6d2556533a49380f6d358d376cef6a7a22c7fadc",
+      "fund_block": 25770410,
+      "fund_value_eth": 1.3002602589503585,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_1.2_h1"
+    },
+    "0x53c249fb0a3dce911874eb9ef625e9283fd84176": {
+      "funder": "0x810954e3fda002973812ab00c58bb6b97a6a0f9c",
+      "fund_block": 25770436,
+      "fund_value_eth": 1.2998256143066915,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_1.2_h1"
+    },
+    "0x6b53f93f735130bf5259631be3b2d56521e983c2": {
+      "funder": "0x96f5303fb79f63dba11f88f018140893cb2ecd59",
+      "fund_block": 25774744,
+      "fund_value_eth": 0.09979883433167275,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.05_h15"
+    },
+    "0x0618e9f6fcb21291383cbf43cf7e93f622e7f236": {
+      "funder": "0x348e3c09717bd3a0419fbec450608797752bc64f",
+      "fund_block": 25774929,
+      "fund_value_eth": 0.0996957412165699,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.05_h15"
+    },
+    "0x76a76d20c3524b31f4f0b20c974c71f4546cb617": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h15"
+    },
+    "0xfb10a2331932f23649c1b04272efd33f88aa17c1": {
+      "funder": "0x370a7e2d300c14d79d4a7ee07aaca46c4b3012cf",
+      "fund_block": 25774930,
+      "fund_value_eth": 0.05133126300856509,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.05_h15"
+    },
+    "0x8d3da90fb9dfd5c928a5b3ca00d8db3a5150b119": {
+      "funder": "0x28c6c06298d514db089934071355e5743bf21d60",
+      "fund_block": 25101643,
+      "fund_value_eth": 0.02274634,
+      "n_txs": 25,
+      "note": null,
+      "group": "amt_0.05_h15"
+    },
+    "0x1e250b2d05cf3038550bd521511d2a563abe5976": {
+      "funder": "0x0618e9f6fcb21291383cbf43cf7e93f622e7f236",
+      "fund_block": 25774931,
+      "fund_value_eth": 0.09968626329187721,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.05_h15"
+    },
+    "0x753cc680ae0b9ba7836064b3f9fd262d4918da81": {
+      "funder": "0x73f7e54d4b44d707eef75465640809767449713a",
+      "fund_block": 25774725,
+      "fund_value_eth": 0.09988391635711487,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.05_h15"
+    },
+    "0x34880764fc2ac0a930fc22d640f677fe436ed686": {
+      "funder": "0x6fcd637acb5a86607a150464e3fd40e52c8cfa22",
+      "fund_block": 25774794,
+      "fund_value_eth": 0.09980872199333247,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.05_h15"
+    },
+    "0x6aaba08551442ac26815bb8c00a4c069547624dc": {
+      "funder": "0xf7858da8a6617f7c6d0ff2bcafdb6d2eedf64840",
+      "fund_block": 21628130,
+      "fund_value_eth": 0.011,
+      "n_txs": 18,
+      "note": null,
+      "group": "amt_0.05_h15"
+    },
+    "0x5d9f7dcbe537d75967160f8f8f2015bce8de5e84": {
+      "funder": "0x93107350d9a3c4c8b4f5fc528a77058134ebcc71",
+      "fund_block": 25774925,
+      "fund_value_eth": 0.09971627838480396,
+      "n_txs": 3,
+      "note": null,
+      "group": "amt_0.05_h15"
+    },
+    "0x7f01d1b4d72471b46f62b2ccfcf61bc48401410b": {
+      "funder": "0xbaf9115a4cf788029f6235b26427b2e0bade45c9",
+      "fund_block": 25775841,
+      "fund_value_eth": 2.067,
+      "n_txs": 6,
+      "note": null,
+      "group": "amt_2.067_h18"
+    },
+    "0x80524c49128fd280994f47f72452261da04d740f": {
+      "funder": "0x3889c08e42f583acef5bc41b58ca8748df72326e",
+      "fund_block": 25775825,
+      "fund_value_eth": 2.067,
+      "n_txs": 6,
+      "note": null,
+      "group": "amt_2.067_h18"
+    },
+    "0xef511b7fc4ad9557e8f5536dd5ab4505f4141ca0": {
+      "funder": "0xb0151eacfba866340cc3295940806c02e60eb62d",
+      "fund_block": 25775536,
+      "fund_value_eth": 2.067,
+      "n_txs": 17,
+      "note": null,
+      "group": "amt_2.067_h18"
+    },
+    "0x5f28f51283df3ca18ec628739f2a1205090f79ac": {
+      "funder": "0x5d4c94a4f613dc348e97da6ee7d0d715e0cb0d52",
+      "fund_block": 25775694,
+      "fund_value_eth": 2.067,
+      "n_txs": 6,
+      "note": null,
+      "group": "amt_2.067_h18"
+    },
+    "0xbbe0861bb0df89f261d6c8f13ed21a00c69bf4fd": {
+      "funder": "0x3e04f000ec6789255d2a9bfe9a75f4b8d31102c7",
+      "fund_block": 25775523,
+      "fund_value_eth": 2.067,
+      "n_txs": 17,
+      "note": null,
+      "group": "amt_2.067_h18"
+    },
+    "0xfa80a574ac47d5f877156f55b794024291903779": {
+      "funder": "0x7031f9eb4258319b00d15dd74439448f6365ce5a",
+      "fund_block": 25775529,
+      "fund_value_eth": 2.067,
+      "n_txs": 17,
+      "note": null,
+      "group": "amt_2.067_h18"
+    },
+    "0x4e70cbfd32ea827a68dfaf189b7b0a6617ec3cba": {
+      "funder": "0xdaa7f1c28a150a9acf6a59e5ee3c333ea758a4fd",
+      "fund_block": 25775666,
+      "fund_value_eth": 2.067,
+      "n_txs": 6,
+      "note": null,
+      "group": "amt_2.067_h18"
+    },
+    "0xa8e4251c083b878ed27cb35ac81ef509d874627f": {
+      "funder": "0xff20946f61208c47de53e98bb28612694d0250cd",
+      "fund_block": 25775406,
+      "fund_value_eth": 2.067,
+      "n_txs": 18,
+      "note": null,
+      "group": "amt_2.067_h18"
+    },
+    "0xb5b51b2ceb0ded65a26ca9f0f9e2efd30e49112d": {
+      "funder": "0x7e9f1c10fbe95c4cf3fe85b74e70ac6d4a01e913",
+      "fund_block": 25775796,
+      "fund_value_eth": 2.067,
+      "n_txs": 6,
+      "note": null,
+      "group": "amt_2.067_h18"
+    },
+    "0xafd5dc19766c4b95937453c3a3addc910586224d": {
+      "funder": "0x604af893d71d5aa315c63a468d8e3838b6872053",
+      "fund_block": 25775417,
+      "fund_value_eth": 2.067,
+      "n_txs": 18,
+      "note": null,
+      "group": "amt_2.067_h18"
+    },
+    "0xc13ccf23e4e4709e41fc468a8c7e353c69bf94ef": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h17"
+    },
+    "0xdbad6eb198299314c873d7f6bbb0508233cc0442": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h17"
+    },
+    "0x8a970e58a24a62f233e70358b407ce310479b08e": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h17"
+    },
+    "0xa9d99a805cbdf362b03cd78651180b96c1c3837d": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h17"
+    },
+    "0x6a7cae7fcdec0c60ae47bb01b92573f4025636bd": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h17"
+    },
+    "0x39bd81d937466b4f5183336f515406f4ceebf075": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h17"
+    },
+    "0x7728c62c7e79cb81e06a3f83932e11770d84065b": {
+      "funder": "0x92acb740e633dec1af3c898356fa18156931191d",
+      "fund_block": 25775829,
+      "fund_value_eth": 0.05186389823591725,
+      "n_txs": 4,
+      "note": null,
+      "group": "amt_0.05_h17"
+    },
+    "0xb468d876afa4a635263269a0dc0dbedc75037387": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h17"
+    },
+    "0xe9066a1ed187b09e95bc3e51f521ae6e5fc78cc5": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h17"
+    },
+    "0x4940655c4a1f379ff78af413debe961dc21e74f2": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_0.05_h17"
+    },
+    "0x94f8a6b36204d2badc8e6dc86ba18daf696f6e3e": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_2.067_h13"
+    },
+    "0xcf1edabc82404dc22cfd6451eb01ca071ad80610": {
+      "funder": "0x2bdde3b669072a33e136494cf794a05c97741f54",
+      "fund_block": 25774024,
+      "fund_value_eth": 2.067,
+      "n_txs": 26,
+      "note": null,
+      "group": "amt_2.067_h13"
+    },
+    "0x93189e035e9a1b5ad51ed37b7c66322ecec42742": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_2.067_h13"
+    },
+    "0x6135a1794d04ad3c65b0fb9dbeff5af72b1c89b9": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_2.067_h13"
+    },
+    "0x3e495a0224e4cd83cb8afe2fe09bec057fa71af2": {
+      "funder": "0xa0f534fa2505c6eea82dfc8c15680b46de7add59",
+      "fund_block": 25773954,
+      "fund_value_eth": 2.067,
+      "n_txs": 25,
+      "note": null,
+      "group": "amt_2.067_h13"
+    },
+    "0xdf3d109b79a52982d46109a55a522e4f6637d68e": {
+      "funder": "0x8688111616fe58f8fe59cc2c18d3924cc60995fd",
+      "fund_block": 25774050,
+      "fund_value_eth": 2.067,
+      "n_txs": 26,
+      "note": null,
+      "group": "amt_2.067_h13"
+    },
+    "0x11bcb107728d16c2e31cce04afba65837d456278": {
+      "funder": "0xd2d615e50289de6e9fcb6abdf0dac0fb4b324ad8",
+      "fund_block": 25774035,
+      "fund_value_eth": 2.067,
+      "n_txs": 27,
+      "note": null,
+      "group": "amt_2.067_h13"
+    },
+    "0xbbf7a92033575aade2de90c9b13c9d286a94de94": {
+      "funder": "0x5d4034ad9eb5540182ef97a2eff8321dcc6461fe",
+      "fund_block": 25774017,
+      "fund_value_eth": 2.067,
+      "n_txs": 26,
+      "note": null,
+      "group": "amt_2.067_h13"
+    },
+    "0xb7c1d554f81baf5f2025daa44075777bec8b6110": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_2.067_h13"
+    },
+    "0xe97ac795eb2a0873f6370f5dbbb5c81722c2c212": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_2.067_h13"
+    },
+    "0x960ec7ae46757506e11e34dac9d503c68e39bf84": {
+      "funder": "0x5aaa461fe9088f4fdffbdfc5e915877e4be30df2",
+      "fund_block": 25775756,
+      "fund_value_eth": 0.11871322092080122,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_12058"
+    },
+    "0xe5241d189cb9d1bf217ac01ad4af0ad42f4f3c6c": {
+      "funder": "0xaeca4f81ac3084cefa1adea4e35fd3bff613034b",
+      "fund_block": 25775756,
+      "fund_value_eth": 0.1188042102161367,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_12058"
+    },
+    "0x08dc9140dc664cfff35380ee02992f1de9ac5ea5": {
+      "funder": "0xcc453573db64029f54fb25e35d846dd35e936659",
+      "fund_block": 25775757,
+      "fund_value_eth": 0.11795557465002861,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_12058"
+    },
+    "0xc6fb9c3999ca38212f60a3f96417b7b62e6c0d09": {
+      "funder": "0x554ce81ab678bb0a5cbdeb7f6daee72a37e38ee0",
+      "fund_block": 25775757,
+      "fund_value_eth": 0.1172267174629017,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_12058"
+    },
+    "0x5aaa461fe9088f4fdffbdfc5e915877e4be30df2": {
+      "funder": "0x56d6a90540e9c8b031e69484a6a780d843e57e1c",
+      "fund_block": 25775756,
+      "fund_value_eth": 0.11874399928706529,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_12058"
+    },
+    "0x676888253bbb8eecb6acde0d52819f6975f784b1": {
+      "funder": "0x6f847dfd17027db92d86841af72ed3ab2ee970bd",
+      "fund_block": 25775757,
+      "fund_value_eth": 0.11680023115768469,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_12058"
+    },
+    "0xadb3534f669f7c8b21b8e982dcbf2805f233c616": {
+      "funder": "0xf01b21c2aaed8ce2c826537a2b3300b665abcaee",
+      "fund_block": 25775757,
+      "fund_value_eth": 0.11786408403305537,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_12058"
+    },
+    "0x8b4dcf6dfb0f1be9d57dee1ce5578eee499813f3": {
+      "funder": "0x7ab4467e22bac466b2d1625f8702968e14c7259a",
+      "fund_block": 25775757,
+      "fund_value_eth": 0.11768105175067277,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_12058"
+    },
+    "0xcc453573db64029f54fb25e35d846dd35e936659": {
+      "funder": "0xfeb53b111a79dafd88c257a81a99a621c10ef087",
+      "fund_block": 25775757,
+      "fund_value_eth": 0.11798616503217321,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_12058"
+    },
+    "0xb8a15428312cd2fbcab98524e8b40ed5b653860a": {
+      "funder": "0xbb9968699991b41d75770e8843b8d9055fd881f3",
+      "fund_block": 25775757,
+      "fund_value_eth": 0.1178029684928776,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_12058"
+    },
+    "0x49b930b7d60a1dfd4eec18f67e4d269f16532e83": {
+      "funder": "0x8686657d676a8fda6e1e175368c0380c9529042c",
+      "fund_block": 25775936,
+      "fund_value_eth": 0.10158315006077445,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13326"
+    },
+    "0xe132f42139a7f2f31c0c91d7e8d5ef1adab8f23d": {
+      "funder": "0xd89bdb3c46b60a5b035761cf96d9b9d5adaf1af1",
+      "fund_block": 25775936,
+      "fund_value_eth": 0.10122372418390232,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13326"
+    },
+    "0x76dc8b818c68619930ae7a152cc8db64bf09e18b": {
+      "funder": "0x08d09db01fa3074722cd38962ebc4ee59744321c",
+      "fund_block": 25775935,
+      "fund_value_eth": 0.10345400969981369,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13326"
+    },
+    "0xb72c32eab8c8a80141d9ab37198d20b73d30e5db": {
+      "funder": "0xdef769af87aebec5ba5f92de83238701f4514949",
+      "fund_block": 25775936,
+      "fund_value_eth": 0.10116846385285728,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13326"
+    },
+    "0x922e7719df793dafb0b93bbd5da0f8cab307a963": {
+      "funder": "0x8ef15347be5fbac61f591df42b932a32e0cb4300",
+      "fund_block": 25775935,
+      "fund_value_eth": 0.10249145450919912,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13326"
+    },
+    "0xa973df78f4f3dfef84006673a81a28b9027dc249": {
+      "funder": "0x4aad39ce62edc8efe85d161e12db960ed981bd3f",
+      "fund_block": 25775936,
+      "fund_value_eth": 0.10103022774047468,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13326"
+    },
+    "0x663151ccc3294e46b08ac661adbee976c6cc61c3": {
+      "funder": "0xdf7ee52bb7159206af32e9dc1151061e9cb4d03b",
+      "fund_block": 25775935,
+      "fund_value_eth": 0.1023810466531347,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13326"
+    },
+    "0xfc737d699efe367d8f83c88e50af790eaf653d92": {
+      "funder": "0x3168b37f845fa91513e238610e3e624f23fabfcc",
+      "fund_block": 25775935,
+      "fund_value_eth": 0.10337083846364606,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13326"
+    },
+    "0x6a07f91b3d05d550612f77fecdd393065f700e9e": {
+      "funder": "0xae50def1035ecb0339ba22a01b24b1ee6de5bc64",
+      "fund_block": 25775935,
+      "fund_value_eth": 0.1024365079712629,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13326"
+    },
+    "0x7f4d803cda560ae7210dcf4c7b2521c80e601ef2": {
+      "funder": "0x3a00cbaeaa03f830b6ada357ff82cef59383e946",
+      "fund_block": 25775935,
+      "fund_value_eth": 0.10260175023569088,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13326"
+    },
+    "0xa3281ec5552170ed60f5a7b72406c37a64616553": {
+      "funder": "0x78c2ef8fd01c5d13bed1ab4b5877b695dd972079",
+      "fund_block": 25775955,
+      "fund_value_eth": 0.0895291653290274,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13795"
+    },
+    "0x436f4f5aec257578348a2a179a1478688609a699": {
+      "funder": "0xef92cfa174eb98ec90e2d3dde0ebdb52f9fc88f6",
+      "fund_block": 25775955,
+      "fund_value_eth": 0.08858980018963578,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13795"
+    },
+    "0x4498145a180c48410e369c8b94826d0f69d6760a": {
+      "funder": "0x8be2800be5e1856aabe1d59c849a89c097dafc9a",
+      "fund_block": 25775954,
+      "fund_value_eth": 0.09121163201512186,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13795"
+    },
+    "0x6cfb59e8bb80268c6ecedfcf1c6fb72d32be84bf": {
+      "funder": "0xe01fe4d1adef2b4ee87c5b2a5cb070ee635c31b3",
+      "fund_block": 25775955,
+      "fund_value_eth": 0.08864468596900484,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13795"
+    },
+    "0x68b36888263ea189336d4002b1df64d66e207318": {
+      "funder": "0xd4dc96b12866a134c8227fb86ee78f5506d76a89",
+      "fund_block": 25775955,
+      "fund_value_eth": 0.08939129620950524,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13795"
+    },
+    "0x5c5ed08a2a2ec4e462cf91fc9c538a033a192b82": {
+      "funder": "0xdebb002e6c61814edc26fb899e91fb60ea181e38",
+      "fund_block": 25775955,
+      "fund_value_eth": 0.0890036662098226,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13795"
+    },
+    "0xe38877512fc13700aae10b5f5cbbc5a351e4c724": {
+      "funder": "0x5f278910c7b3058204e6adf174233520db9d3fc7",
+      "fund_block": 25775954,
+      "fund_value_eth": 0.0905758288238855,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13795"
+    },
+    "0x8941524eb0cea3ad391a89263dfb16d7ec273821": {
+      "funder": "0x64a283b5ff1de13f443ff03073e8d895c39dc7e2",
+      "fund_block": 25775955,
+      "fund_value_eth": 0.08892175207389029,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13795"
+    },
+    "0x41460461e78a6e2275bb531a0fb3d1f516c7d60f": {
+      "funder": "0xb1f0e6475775cbc3bbbbea1b60240bb5fb13c05c",
+      "fund_block": 25775955,
+      "fund_value_eth": 0.08883830650277016,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13795"
+    },
+    "0x17ca9d2e58578ce5e08930c2857c5418e6c9e442": {
+      "funder": "0x65160aadd480e383381315cb1ea9afb60beaba10",
+      "fund_block": 25775954,
+      "fund_value_eth": 0.09010776747517134,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13795"
+    },
+    "0xf2f4b5e51ed58cc3a24aa72a016330b297794d13": {
+      "funder": "0x814250b7f78cf6431763d3c97ae8731cdaf536cf",
+      "fund_block": 25775962,
+      "fund_value_eth": 0.08627388852242611,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13897"
+    },
+    "0x269eee33b71d8140f1579d468fa21909680216f7": {
+      "funder": "0xa0d099f6886ada7a82ef26977d29dd5688720278",
+      "fund_block": 25775962,
+      "fund_value_eth": 0.08635707703661022,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13897"
+    },
+    "0x938c9237249736ef477068c73daa50cf659cb3ab": {
+      "funder": "0x4b8c1afff2f54f217d439a8037ac815f5ed37fcf",
+      "fund_block": 25775961,
+      "fund_value_eth": 0.08809281473642008,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13897"
+    },
+    "0xd4410d9bcf53cd9a8208f5cd23e4b6d2e14b1a42": {
+      "funder": "0x946b30b0129b4a81a160058d4ed90bca1f07551a",
+      "fund_block": 25775961,
+      "fund_value_eth": 0.08779015682251756,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13897"
+    },
+    "0x42d2d46de628858fc84d2c25d46615b32d91937a": {
+      "funder": "0x4821a9ffa4ab871002b9ee58e5df8ce0686de537",
+      "fund_block": 25775961,
+      "fund_value_eth": 0.08784489455932776,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13897"
+    },
+    "0xd6cc7cd060d35030997cfa7381660e31fd69c643": {
+      "funder": "0x3317f769e8a52b1bf79e24a6817911934b064685",
+      "fund_block": 25775962,
+      "fund_value_eth": 0.086605640020515,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13897"
+    },
+    "0x4e9e81d5b17909adc3bf75921f7859551a923b00": {
+      "funder": "0xd86f68ff8ad17abad8d5d90eeb2266babe577227",
+      "fund_block": 25775961,
+      "fund_value_eth": 0.087597422500155,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13897"
+    },
+    "0x0c1a24e87712d2a37eb652e86c16ee5c6c0656ab": {
+      "funder": "0x346ffa0559813096a5795c569c1aa16be8693c23",
+      "fund_block": 25775961,
+      "fund_value_eth": 0.08723941836695125,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13897"
+    },
+    "0xe69fc0bc742cc4e99a49541c0866f74f00a21849": {
+      "funder": "0x3e24ec1a700408d7516f146d3d9902b8d2912581",
+      "fund_block": 25775961,
+      "fund_value_eth": 0.08715603384559253,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13897"
+    },
+    "0x39a0cae6b372af4f5e4c914cab06d41e77f4750b": {
+      "funder": "0x66f7e5ee6b5b9ca706333ad2ac79c5e0899dff3c",
+      "fund_block": 25775962,
+      "fund_value_eth": 0.08602582526284704,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_13897"
+    },
+    "0xde20b0aa51d5ec1367956bf3a32ba6b242e1e779": {
+      "funder": "0x8534c6b1bca92c06d988a5cb79b0b101b80ae9c2",
+      "fund_block": 25775965,
+      "fund_value_eth": 0.08437506749807809,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_14001"
+    },
+    "0x58bae2aca3565a300ca9cfe85c8472aef56ea06c": {
+      "funder": "0x6f2ddbdc4f58479fcda042da4f301ae50527abcc",
+      "fund_block": 25775966,
+      "fund_value_eth": 0.08299339783484791,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_14001"
+    },
+    "0xb18b0c18517ad1473628e0d241d109f721128cf2": {
+      "funder": "0x557037dcad25c6be1091b5ad18bb865864d9dc6b",
+      "fund_block": 25775966,
+      "fund_value_eth": 0.08348948028669519,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_14001"
+    },
+    "0x963ce7dd4ee2c9df0e96d2b414cd2a73f6d00e1a": {
+      "funder": "0xf182e5689cec91789332a3eed91f5b24d1ef89b5",
+      "fund_block": 25775965,
+      "fund_value_eth": 0.08555880886244921,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_14001"
+    },
+    "0x9596117be07d39a208b93b7c587eb865c0e3c0ac": {
+      "funder": "0x2c22b9413e6d1e919c95faafe214a1f6306459bb",
+      "fund_block": 25775966,
+      "fund_value_eth": 0.08326913121568114,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_14001"
+    },
+    "0xc73992a5edbb39a870ddfb4f91b897a3a86160e0": {
+      "funder": "0x606eae222d433b43bd74a483de9687c6e748d731",
+      "fund_block": 25775965,
+      "fund_value_eth": 0.08569603782979592,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_14001"
+    },
+    "0xae444771dcc70cecc96cf3576e91fb1c3118d97a": {
+      "funder": "0x3345072c1da9ffe4639be083bcd44c4d1b8841ea",
+      "fund_block": 25775965,
+      "fund_value_eth": 0.0849813209535446,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_14001"
+    },
+    "0x50658bd79f0ea8e217a237b40951753917ab377f": {
+      "funder": "0xbf62cff0e3d982a5b494bb0c9faeb72b93c90622",
+      "fund_block": 25775966,
+      "fund_value_eth": 0.08398814795556221,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_14001"
+    },
+    "0x1030256ceb3e7e943c89cacfffe1b1e8aef07780": {
+      "funder": "0x3edf67fc981dcb5be469f08f5acaf551e81d7015",
+      "fund_block": 25775966,
+      "fund_value_eth": 0.08335202271388006,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_14001"
+    },
+    "0x6f047008e90660d69c94a7ba0c589561dea2f2d7": {
+      "funder": "0x76abe78b419b3b991ce0240efe38f427922cd2f7",
+      "fund_block": 25775966,
+      "fund_value_eth": 0.08426450447794968,
+      "n_txs": 4,
+      "note": null,
+      "group": "idxrun_14001"
+    },
+    "0xd15031d0942634ccac10274e68945a23d2720922": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_171.99_h20"
+    },
+    "0x626a4912f9671ecb7ff42c85f0392fd437875d51": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_171.99_h20"
+    },
+    "0x4fb24fb1cdf7a990fa8df38f78c1d49f1f74bea3": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_171.99_h20"
+    },
+    "0x3e89d442c94c8760029bc952ec2068194a4fa7cb": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_171.99_h20"
+    },
+    "0x6c59ee4552f44dd93841a2b39304c3ed7e1935b4": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_171.99_h20"
+    },
+    "0xcecc592a6c188f3b59ea0fc06f4f4fbb42e637d8": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_171.99_h20"
+    },
+    "0x1b6020630c59b1ca6f2391c102f8614a2380ebd1": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_171.99_h20"
+    },
+    "0x225c94b665f915ef85e6fd7f6fb2ff514daa6733": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_171.99_h20"
+    },
+    "0x85a8fa8eae4d5ce10cc287da19030a87174491aa": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_171.99_h20"
+    },
+    "0x918f37cf78dbeedcd5c7bdb2dbbe122980ac11b6": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "amt_171.99_h20"
+    },
+    "0xcfbc157a9b55f20bac56bd2a3a08b228bcd66965": {
+      "funder": "0xada5bb90d0de0bd1b6f3938708f49295a8d1f7cb",
+      "fund_block": 25688318,
+      "fund_value_eth": 0.000563626608223196,
+      "n_txs": 49,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x54c54e57eb1c282d77f845b2c36795f406076326": {
+      "funder": "0x91604f590d66ace8975eed6bd16cf55647d1c499",
+      "fund_block": 23800004,
+      "fund_value_eth": 0.000204208366361999,
+      "n_txs": 7,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xfe64d57de60a1b85c8b29bea4bba0d192e999ccd": {
+      "funder": "0x37fcbe9253be7d60e690b5faa0d89eed17e70124",
+      "fund_block": 25772512,
+      "fund_value_eth": 1.0986973885696532,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xe9abc481c4c47e89892ad96d9705b8c56509b9df": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "CONTROL"
+    },
+    "0x8d928fcb4a9ba04cd712a64e0a84e228d0dd472b": {
+      "funder": "0xe1dd85cdc584127a263aa11fb46448d99c1f5b5a",
+      "fund_block": 25772900,
+      "fund_value_eth": 0.2742159485835101,
+      "n_txs": 5,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x630b616f1acdf9f525095a4fd069f18c74ed46e4": {
+      "funder": "0x9e36a75a8e05981a97b6fc5487d978c9527cebe4",
+      "fund_block": 25776646,
+      "fund_value_eth": 0.15438351455161617,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xf245a6a0fed0251987492aac3f8fd1e93496ed87": {
+      "funder": "0x5f51ef64802e1ecfb55553b0aa932156958b3822",
+      "fund_block": 25775953,
+      "fund_value_eth": 0.09195474833456727,
+      "n_txs": 4,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x14f3e12ec1e2eca942f41370d0c74e59954d043c": {
+      "funder": "0x730410901c9aed37b382d815c4423b1d8c7e4047",
+      "fund_block": 25775940,
+      "fund_value_eth": 0.09816182331962395,
+      "n_txs": 4,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x9aea942502f2595580b85879dfe74cc90a416de2": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "CONTROL"
+    },
+    "0x1d255519bfd83c1f2472c570fa715f183606e9d1": {
+      "funder": "0xb0c48ce21d67ac8c3f8339ea407c43530c90def3",
+      "fund_block": 25771314,
+      "fund_value_eth": 1.6402692461386628,
+      "n_txs": 25,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x9acf4a160f39569ef2e6c242a5232cc272c5400a": {
+      "funder": "0xd39dd82c1e9453941834b5e871ee7bb566a51df0",
+      "fund_block": 25772333,
+      "fund_value_eth": 2.999976448711528,
+      "n_txs": 4,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xa2cc490990fa63514171234154bd4fa35464620a": {
+      "funder": "0xa5385ca8d1b7f91094e66c546edd40d371fc633c",
+      "fund_block": 25776072,
+      "fund_value_eth": 0.11969863007416479,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x58e3f35a7d1a35f409d951fc333798ce8c7753bd": {
+      "funder": "0x8cb1ea40766977512a29d1e7d87efd833c3e001d",
+      "fund_block": 25771536,
+      "fund_value_eth": 0.522,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xcb7843ef5626ba6dee4cb51217c6e05f073b1fe3": {
+      "funder": "0xa9ac43f5b5e38155a288d1a01d2cbc4478e14573",
+      "fund_block": 25775474,
+      "fund_value_eth": 2.49797277,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x57257333c914bee9495f0a1d6da5c8d19f42f171": {
+      "funder": "0xae43ca0a1ffa3b8ba525fc15e6d51ac387d0831b",
+      "fund_block": 25775940,
+      "fund_value_eth": 0.09932031340981268,
+      "n_txs": 4,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xc97d5c509e31a0f85c2e15cde1d73b5ab2aa362b": {
+      "funder": "0x2783bb680f0a517a061f7701024af00d6abcf597",
+      "fund_block": 25775739,
+      "fund_value_eth": 0.12332702569318171,
+      "n_txs": 4,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xac1925e9d4e72c8a51b3dabfed9dc3465c6b74e1": {
+      "funder": "0x4b4e14a3773ee558b6597070797fd51eb48606e5",
+      "fund_block": 16520851,
+      "fund_value_eth": 0.01,
+      "n_txs": 23,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x87c4bc4354a19262d41075cc6003c551b5505b64": {
+      "funder": "0xa4c0942b65cd661df2e50e57526eee4c79b05bae",
+      "fund_block": 25774745,
+      "fund_value_eth": 0.18420829805706998,
+      "n_txs": 4,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x9dd4a75e971b177b154463a1cd3ccdc216c3b66e": {
+      "funder": "0xeb2a8b1cac0af4ccb886db2f6ec28b6d5c5ccd92",
+      "fund_block": 25775960,
+      "fund_value_eth": 0.20364528886390915,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xaf40616ff8ddbfa86529b7d4c62804666b5368c1": {
+      "funder": "0xf7858da8a6617f7c6d0ff2bcafdb6d2eedf64840",
+      "fund_block": 20635036,
+      "fund_value_eth": 0.57625,
+      "n_txs": 10,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x959dafc0e7860a720b45d47439e0527509663f1c": {
+      "funder": "0xde0840091a2fa18b693bdcb284b7b66cba97ca6d",
+      "fund_block": 25773393,
+      "fund_value_eth": 2.9996877842714875,
+      "n_txs": 5,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xc1b19ab741d173bd86f06abacdd06360f5cf4a4c": {
+      "funder": "0xa0ae4fd2ab6558dd171a9f14199e96f20b9880b2",
+      "fund_block": 25772099,
+      "fund_value_eth": 0.001,
+      "n_txs": 16,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x593ba460e331600913559dbc1397880ccb4a1103": {
+      "funder": "0xedbde20bb69735fc09b1b9ee26fcb3cea3a54e39",
+      "fund_block": 22405684,
+      "fund_value_eth": 0.0028,
+      "n_txs": 21,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x21e082def06eff602096868d9d5b8ff98826451f": {
+      "funder": "0x2020ae234fc04bf078e1f5a233e9d0166f8388c1",
+      "fund_block": 25771317,
+      "fund_value_eth": 1.641302037731165,
+      "n_txs": 22,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x29a741fb96a69e206f7fcfa7688c3f4cc6ec13d9": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "CONTROL"
+    },
+    "0x8667db7b15d102206bbc8ae2ecdd37bd17fa26d5": {
+      "funder": "0xf3f745d390e09b601d2e4bba06df0fff87119c60",
+      "fund_block": 25775316,
+      "fund_value_eth": 14.403324028444315,
+      "n_txs": 5,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x524610631b61d12913017e18ac8bdc3cc9551f85": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "CONTROL"
+    },
+    "0xff4250a5c2206df15f1b91796d70ba1d70cea86e": {
+      "funder": "0x7fd43f9b37b549a1dd98fd791d8a1ce11f725140",
+      "fund_block": 25772553,
+      "fund_value_eth": 0.09963781519961279,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xa11f8a00e78a5f6de3b5f31ee3aae4ffaab8d445": {
+      "funder": "0x974413b8c1d9eeb96758f9d4b5093ea12b3eef54",
+      "fund_block": 25511354,
+      "fund_value_eth": 0.0549,
+      "n_txs": 25,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x4958d47ee570bc4c1f21ee331dc8af74577c5d60": {
+      "funder": "0x8077ff2c8ff8497f03bd39fe49747b6722cf9cdd",
+      "fund_block": 25775640,
+      "fund_value_eth": 102.76574651914333,
+      "n_txs": 4,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x47220738eb754b17d31b4a00004a3cb5727a9079": {
+      "funder": "0x5066f59531d3ea51fe838c59f87672206c519611",
+      "fund_block": 25776610,
+      "fund_value_eth": 0.3037942878450649,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xac6a82b7c8315b214376e7e89e1910b125bef995": {
+      "funder": "0xcd7db733414a2d7769e53872ad92359f1ba16469",
+      "fund_block": 25772461,
+      "fund_value_eth": 2.9999487211943316,
+      "n_txs": 4,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xf27200b37aa4f2fb221ef24213a483e9e091e81e": {
+      "funder": "0x169a1ea0e6d5f699955a9e5841875d64641569bb",
+      "fund_block": 25771416,
+      "fund_value_eth": 1.4999378868859916,
+      "n_txs": 17,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xa8925c65c5c6f159a4648e9812a49c0c9d94b822": {
+      "funder": "0xbe0f31f1b172a4ce5f39fd1935175ab3b6d98fe5",
+      "fund_block": null,
+      "fund_value_eth": 1e-09,
+      "n_txs": 16,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x584313319d0bfead2a9d98a7154f5dcb5a62887f": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "CONTROL"
+    },
+    "0xc73be663435f95c7da7f77ab495b8fe2257b91bd": {
+      "funder": "0x5babe600b9fcd5fb7b66c0611bf4896d967b23a1",
+      "fund_block": 21048684,
+      "fund_value_eth": 0.001933119741156697,
+      "n_txs": 8,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x17270e795924637b944e55aae80bd00077c62b9b": {
+      "funder": "0x908de3bc7159aa329cd14ad2069fb67831168bb7",
+      "fund_block": 25775172,
+      "fund_value_eth": 102.67998587543266,
+      "n_txs": 10,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x9f09107eaaa703438c35966179650bd63adcabf3": {
+      "funder": "0xfcd04b9fc47e6afb2c9e757a4b92e6194fdb563a",
+      "fund_block": 25776535,
+      "fund_value_eth": 0.15465444802496697,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x4772b76d24ef1b2602c8ab934991377ede809fae": {
+      "funder": "0xca25ea0fe3c0502d5dfcfaa2a083b9b252ab0e0f",
+      "fund_block": 25776818,
+      "fund_value_eth": 0.1540393878320532,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xe0dc9e88e5251109b7ead6ae5558d37167794b7a": {
+      "funder": "0x4976a4a02f38326660d17bf34b431dc6e2eb2327",
+      "fund_block": 22951442,
+      "fund_value_eth": 0.0047,
+      "n_txs": 38,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xd3aeec36faad85af257883fef2dda5d1ce157b94": {
+      "funder": "0x5eaa530ee1e4a36967190d0456c386b080ae7075",
+      "fund_block": 25775768,
+      "fund_value_eth": 0.10706502844811747,
+      "n_txs": 4,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x6590f58c12e736b81e11d5b03e94d10e8e04e8e5": {
+      "funder": "0x0a081d04834cd19a5dc350da86f541c6048459ad",
+      "fund_block": 25771428,
+      "fund_value_eth": 1.4993704003778454,
+      "n_txs": 14,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x0e9a09271a6500d3622f6fb06aeddf5a3c37aa79": {
+      "funder": null,
+      "note": "no_incoming_eth",
+      "n_txs": 2,
+      "group": "CONTROL"
+    },
+    "0x56a14650e5abbc73026dabe7bde006dd20bdf79d": {
+      "funder": null,
+      "note": "no_incoming_eth",
+      "n_txs": 2,
+      "group": "CONTROL"
+    },
+    "0xa924c80b1d205a18a1bd8a88ae0a70c20054b268": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "CONTROL"
+    },
+    "0x1cfbe2f74f62d82ef02d2d7616e8539a952b9c7b": {
+      "funder": "0x7a0aa3a4987fd2c57c2e3217063f0500598f5108",
+      "fund_block": 25775768,
+      "fund_value_eth": 0.10742987169210996,
+      "n_txs": 4,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x71c8cd0d18c0f8b3f7ed36a4dd4c3b20888752f7": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "CONTROL"
+    },
+    "0x754503cbcd31c3fc8badb99741cd59d709a8030f": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "CONTROL"
+    },
+    "0xe7b27bd74f522afa05732ba82b2f46a38d4be098": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "CONTROL"
+    },
+    "0xf7ff37c9cb1357313a5f2be437a63f6daba2badc": {
+      "funder": "0x20fadded9b850c5c48c12e6f5ad6305d4666e2dc",
+      "fund_block": 25774333,
+      "fund_value_eth": 14.41213643332689,
+      "n_txs": 6,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xce1c4656ea738ba3a6a6f6ba84bd12fc89697577": {
+      "funder": "0x2405293589cb509fcc7dccf760e06598cd7b7c35",
+      "fund_block": 25776550,
+      "fund_value_eth": 0.15462100537583906,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x2805ddf1dfedeca06752907f493f5a5c9bb2c902": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "CONTROL"
+    },
+    "0x0be8be55083de0ecb69bb3df43cd8420080a4682": {
+      "funder": "0x1ab4973a48dc892cd9971ece8e01dcc7688f8f23",
+      "fund_block": 25776536,
+      "fund_value_eth": 1.2998,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x04d6509be0b4831bdeafa1e38ab147e4a170b8b6": {
+      "funder": "0x85c7872a5fba31f987ef5f76d9ad3f5f0942db4f",
+      "fund_block": 25771271,
+      "fund_value_eth": 1.6045751702906417,
+      "n_txs": 30,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x4ec19c6cdde06cdaf779c8eaceb192e3436af7ef": {
+      "funder": "0x2003ec0fff9636584b0f14f2fcd03717cc33deb1",
+      "fund_block": 19286426,
+      "fund_value_eth": 0.1672245007599734,
+      "n_txs": 24,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x4a6193062c2d137d8e40e623022760acde8d2957": {
+      "funder": "0xf76fa2cd9dc00f427ab6bae8f8797bb3ef9d3bc1",
+      "fund_block": 25775758,
+      "fund_value_eth": 0.11531021775604926,
+      "n_txs": 4,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0xddd59910118fd53a48bd65a001a9d0c2040e330d": {
+      "funder": "0xf3031323a89bf0fe9968b07842cee7d7b7cb7b3f",
+      "fund_block": 25771516,
+      "fund_value_eth": 1.4968485290972806,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x1e7615714fe138c0f156a1545d30cfd8c049d749": {
+      "funder": "0xe8d9c98f7884f7f5f6ed8127ba15b27b0f3aceb4",
+      "fund_block": 25771466,
+      "fund_value_eth": 0.05564386226878711,
+      "n_txs": 3,
+      "note": null,
+      "group": "CONTROL"
+    },
+    "0x05963bdcf393c93f40f6e769ca2561adbf6a1c59": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+",
+      "group": "CONTROL"
+    },
+    "0x4ddde781583fc45f1c3497f70424f57cb623f61e": {
+      "funder": "0x91d64170b37ca692d1a81aa75e5aeb629f946885",
+      "fund_block": 25775587,
+      "fund_value_eth": 102.76619902196491,
+      "n_txs": 4,
+      "note": null,
+      "group": "CONTROL"
+    }
+  },
+  "stage2_funder_of_funder": {
+    "0xf7858da8a6617f7c6d0ff2bcafdb6d2eedf64840": {
+      "funder": null,
+      "note": "aged_50plus_txs",
+      "n_txs": "50+"
+    }
+  },
+  "total_lookups": 221,
+  "shared_funders": {
+    "0xf7858da8a6617f7c6d0ff2bcafdb6d2eedf64840": [
+      "0x6aaba08551442ac26815bb8c00a4c069547624dc",
+      "0xaf40616ff8ddbfa86529b7d4c62804666b5368c1"
+    ]
+  },
+  "funder_is_contributor": {
+    "0xd2ccffd69539c31c424931ba843ee36e4a33f8ec": "0x332f73dd1e40dd9581444dbdc0bb6547fadbf954",
+    "0x9d965ae9db9a2135a87dd5c54b56bfa42a4a34fa": "0x73cb6a9a37badcba9ef4871d9301360eb69d472f",
+    "0x04dad31a421913528b0f3be42b8b476b93cb0c20": "0x021e3dc5ecc5083d38c498fccc24f76ae1ad8468",
+    "0xe7485fab669ce951cf4976ac777ad53b9961deb6": "0xfad2990b35d61729c666d32275071f1b7df9df73",
+    "0x9ca9ecb130445f5339216efa3042a98f23da11f7": "0xa32425c67b2e4f9f8e7408165fe9d79950f787f6",
+    "0xdab44544a91ee3dae4fe1526d4726140db9c6e27": "0x0e9003b8de0e6a86d86b4fb0a59bf4f9760bd5af",
+    "0x4e5e218ea4d19f7f26f13666ad6e1a2889b91bb8": "0x7a396d26870a6a799860173921da5bc1a8dc8914",
+    "0x645295a7ff82f56e672dc3b586df304e45745cb2": "0xf578ff5320ee4f8b1d57156752cfa0d0fb10b56e",
+    "0xaee9f0c9460b15fbd65cdc8c1c5d119980b6c32d": "0x2b8598e393945044844c2247b015a7bf069bd92d",
+    "0xa5811807004aefafd5d631f82b0c6b3843f173d9": "0xd2a952fe64ef24c3311e75771a1fd429a3034e47",
+    "0x7dd6a12edad29bf353333efd27899ec7febdfb79": "0x12896ad690cdd4d396e2ea9088c28c3c8c30fa9c",
+    "0x10d9e1a59d295160cbc1f22a6ba001949cac09b2": "0x5e9afa40f3ab680c19d8b93ec8d8ac7d3c1fe238",
+    "0x35d1f9626f7161a029b58e3e881f91f0889235e1": "0x590393da68b03747510e9cf8d11036f644b3e109",
+    "0xf8c4f50292c2af1a9950e2c7cc48c20a5bfb8519": "0x7c8671dfa51ab3360b6b50013883d5cd068274d9",
+    "0xc5d923311ee0e2812c54e75929425d34c77c3241": "0x50b574e3d55fe2384511369eae1e10e4407f758f",
+    "0x408285f4fb2a01f4bcda0e3a9e105db0116c1072": "0x5078b2302a84206c5998e85b22042477e6f2b0be",
+    "0x3c2d9ac61009ba174957440860b0aadc348831cf": "0x64101975e3618a0f11cb16341a4a47bfca552c03",
+    "0xe8eab8af3fb3c3600805784e4c1f6f2ba425e122": "0xe712ac593278021d7a191ea835cdeab8173a685b",
+    "0x9791dfc9743967ea07e842b8c6325ee31d7c2b5f": "0x8866e9cc0f2fd8b9e7a32f36cc1097b8652d373c",
+    "0x1f42aa4386f2308aa517956e1cc8398884964939": "0x974e8571fa429a5390f4734e221537fb8dd30d9d",
+    "0x817ff03427a03cad0cb4571ad149bdd99055161b": "0x1311c0b8246bd6599c0163b55d82712b9f22a4da",
+    "0xdd5a4e437de8191818dbf0ba8175ff1030c8c069": "0xcf4fe99768e0b2258e5dea21cc740363a58d76df",
+    "0x2dafa9aebdbacced7eb86f6fdafad02b65fdcd2a": "0x9e71e488f060527da1a2bcfd87df9509d3a20f8b",
+    "0xdc561272bc059e50b1367aec5fee24f54977b4e8": "0x057f0f92f471c0e93d93b9ef7fdac13aedcb71a6",
+    "0x32e5e7bc2cc2b94a684c5bd6158bf5d625de74a7": "0x2a8e2dd82b3584a9c7ad6bf6411a60f23de715c4",
+    "0x0c5092a7293cc61c128a7efd0af53ffd9ebb6356": "0x38f125620bb4c418cd82d9e75cf61df48345ac6c",
+    "0x974979577afe0fca61db168f3680e9fae0c35a42": "0xad39a6ee3cb015cb51d8da910ba5bece7ec681ad",
+    "0x01f9c0763734ffdbe22f51569b39c4da5c86050b": "0xa516d9a3c928b4ccf7a1f34d039da1c0925002fd",
+    "0x021a2c475504e3644be310afd2549ff3a9c4eab7": "0x5a7cf0d9cfe8834e300adda1c8b901d11b9e029c",
+    "0xc93594a73114fafc1092593d03b672a76da05c5f": "0x5a3fb83bf8f9f29b308646d801e18c9455e933de",
+    "0xa8c58d05adcba21395b8d26c1a1441a0e2217427": "0x8d928fcb4a9ba04cd712a64e0a84e228d0dd472b",
+    "0x1861c238d4bd776101ae1b57fcc07adeb6f90d1f": "0x5a54191f061af40690a9dc6a52e9b41491552e42",
+    "0x830d8bbe48737f1352574959db6cc5ef0812b514": "0x7035953962ff2b25cc387a3b91075d38afd6f952",
+    "0x2774aa8c7228a51fa1a463dc31092f6aac849c4c": "0xe2610d128173b4a78e6bcdf03d721f37dc74f56a",
+    "0x6921c19a4195afd3aac896cfc53275ed0a213a53": "0x5dd5bcbbe1321c0c3ca049711a8759caf5c83ee5",
+    "0x6633c6793f460dda2170722b79aa0624682ca0cb": "0x0e241ca04d32334772310f3f88da87b2f26ca286",
+    "0xf04ffa150c7d35a779cb77cfa5385130db53cd05": "0x84ff2dd205a8bc5b07847d2076f1f05586853f18",
+    "0x5b51f2454b63042292b83336f8efd1f22a30ae96": "0xc0d3c42da4a9960710b2ba6b4467af4451e1162c",
+    "0x78ac186b7ed3f247b2dff7207d95c02755ac7eff": "0x863a89b3718cb344fb718d1d37e8e5ba4bffefff",
+    "0xecfe1996f730f37876acf6a777cc7459e9754a21": "0xd3bdd0bd0ed7eb7429c79a41d6553697137594e9",
+    "0x7d6f8657aadc2f3e272f1b9765dcaafe30c7b57c": "0x9183fed30f2460fb849c065d185f22ca5c65b590",
+    "0x20b3adac1964fc7c56e4e5aea8eac00ca3539fba": "0xa86c54dd0f1635268ec139ea02a91af93a792279",
+    "0x0e527e4f64647cb85c9fa7402db687d1542002ae": "0x7074174860106c1c3e825552891aa728abbdc460",
+    "0x11e00308377e08e226059098e0e6fdfcac0585d3": "0x20ae518ec504174d57d0c7525cda202819d4c663",
+    "0x84286b7d56a53952a3df3874d322323a1825241d": "0x4bd8dbb336410be6ce4a1e8c1189a6eb86e4c3d4",
+    "0x95d701e28331a7ebff657d2357cd92bfb7aa30f9": "0xbcfcd1fc27fd008ba70d46f23b2f6175df3bb10f",
+    "0x290f80134ce39f9fd4504ff9366b485829090987": "0x919e3638e799f52fb46b5de7a5829971d7eb75e2",
+    "0x0933e82b1f39f103b1afb4b2bd96b826469b5549": "0x8d5c8b567b9959be2ba43cc8e308439db7e5d642",
+    "0xb089143ce5df13f87e25f80dfcc05ea785755ed2": "0xb65c1e1384c912a1b7932bca46da9b9c8fd17247",
+    "0x56540e2cc2bd105bcb7303f676b264601db9986b": "0xa4b0cca87564bbcbffed0dd0e85dba82cd6e2157",
+    "0x67b7d1b38171d7f223b2aec934b1dd23acb24412": "0x3484b0efa2ba237e0ce574b0247a339ada659c50",
+    "0xd1f768c2b90ca75ca06501c4d8aaeff6c3aca385": "0x6d2556533a49380f6d358d376cef6a7a22c7fadc",
+    "0x53c249fb0a3dce911874eb9ef625e9283fd84176": "0x810954e3fda002973812ab00c58bb6b97a6a0f9c",
+    "0x6b53f93f735130bf5259631be3b2d56521e983c2": "0x96f5303fb79f63dba11f88f018140893cb2ecd59",
+    "0x0618e9f6fcb21291383cbf43cf7e93f622e7f236": "0x348e3c09717bd3a0419fbec450608797752bc64f",
+    "0x1e250b2d05cf3038550bd521511d2a563abe5976": "0x0618e9f6fcb21291383cbf43cf7e93f622e7f236",
+    "0x753cc680ae0b9ba7836064b3f9fd262d4918da81": "0x73f7e54d4b44d707eef75465640809767449713a",
+    "0x34880764fc2ac0a930fc22d640f677fe436ed686": "0x6fcd637acb5a86607a150464e3fd40e52c8cfa22",
+    "0x5d9f7dcbe537d75967160f8f8f2015bce8de5e84": "0x93107350d9a3c4c8b4f5fc528a77058134ebcc71",
+    "0x7f01d1b4d72471b46f62b2ccfcf61bc48401410b": "0xbaf9115a4cf788029f6235b26427b2e0bade45c9",
+    "0x80524c49128fd280994f47f72452261da04d740f": "0x3889c08e42f583acef5bc41b58ca8748df72326e",
+    "0xef511b7fc4ad9557e8f5536dd5ab4505f4141ca0": "0xb0151eacfba866340cc3295940806c02e60eb62d",
+    "0x5f28f51283df3ca18ec628739f2a1205090f79ac": "0x5d4c94a4f613dc348e97da6ee7d0d715e0cb0d52",
+    "0xbbe0861bb0df89f261d6c8f13ed21a00c69bf4fd": "0x3e04f000ec6789255d2a9bfe9a75f4b8d31102c7",
+    "0xfa80a574ac47d5f877156f55b794024291903779": "0x7031f9eb4258319b00d15dd74439448f6365ce5a",
+    "0x4e70cbfd32ea827a68dfaf189b7b0a6617ec3cba": "0xdaa7f1c28a150a9acf6a59e5ee3c333ea758a4fd",
+    "0xa8e4251c083b878ed27cb35ac81ef509d874627f": "0xff20946f61208c47de53e98bb28612694d0250cd",
+    "0xb5b51b2ceb0ded65a26ca9f0f9e2efd30e49112d": "0x7e9f1c10fbe95c4cf3fe85b74e70ac6d4a01e913",
+    "0xafd5dc19766c4b95937453c3a3addc910586224d": "0x604af893d71d5aa315c63a468d8e3838b6872053",
+    "0x7728c62c7e79cb81e06a3f83932e11770d84065b": "0x92acb740e633dec1af3c898356fa18156931191d",
+    "0xcf1edabc82404dc22cfd6451eb01ca071ad80610": "0x2bdde3b669072a33e136494cf794a05c97741f54",
+    "0x3e495a0224e4cd83cb8afe2fe09bec057fa71af2": "0xa0f534fa2505c6eea82dfc8c15680b46de7add59",
+    "0xdf3d109b79a52982d46109a55a522e4f6637d68e": "0x8688111616fe58f8fe59cc2c18d3924cc60995fd",
+    "0x11bcb107728d16c2e31cce04afba65837d456278": "0xd2d615e50289de6e9fcb6abdf0dac0fb4b324ad8",
+    "0xbbf7a92033575aade2de90c9b13c9d286a94de94": "0x5d4034ad9eb5540182ef97a2eff8321dcc6461fe",
+    "0x960ec7ae46757506e11e34dac9d503c68e39bf84": "0x5aaa461fe9088f4fdffbdfc5e915877e4be30df2",
+    "0xe5241d189cb9d1bf217ac01ad4af0ad42f4f3c6c": "0xaeca4f81ac3084cefa1adea4e35fd3bff613034b",
+    "0x08dc9140dc664cfff35380ee02992f1de9ac5ea5": "0xcc453573db64029f54fb25e35d846dd35e936659",
+    "0xc6fb9c3999ca38212f60a3f96417b7b62e6c0d09": "0x554ce81ab678bb0a5cbdeb7f6daee72a37e38ee0",
+    "0x5aaa461fe9088f4fdffbdfc5e915877e4be30df2": "0x56d6a90540e9c8b031e69484a6a780d843e57e1c",
+    "0x676888253bbb8eecb6acde0d52819f6975f784b1": "0x6f847dfd17027db92d86841af72ed3ab2ee970bd",
+    "0xadb3534f669f7c8b21b8e982dcbf2805f233c616": "0xf01b21c2aaed8ce2c826537a2b3300b665abcaee",
+    "0x8b4dcf6dfb0f1be9d57dee1ce5578eee499813f3": "0x7ab4467e22bac466b2d1625f8702968e14c7259a",
+    "0xcc453573db64029f54fb25e35d846dd35e936659": "0xfeb53b111a79dafd88c257a81a99a621c10ef087",
+    "0xb8a15428312cd2fbcab98524e8b40ed5b653860a": "0xbb9968699991b41d75770e8843b8d9055fd881f3",
+    "0x49b930b7d60a1dfd4eec18f67e4d269f16532e83": "0x8686657d676a8fda6e1e175368c0380c9529042c",
+    "0xe132f42139a7f2f31c0c91d7e8d5ef1adab8f23d": "0xd89bdb3c46b60a5b035761cf96d9b9d5adaf1af1",
+    "0x76dc8b818c68619930ae7a152cc8db64bf09e18b": "0x08d09db01fa3074722cd38962ebc4ee59744321c",
+    "0xb72c32eab8c8a80141d9ab37198d20b73d30e5db": "0xdef769af87aebec5ba5f92de83238701f4514949",
+    "0x922e7719df793dafb0b93bbd5da0f8cab307a963": "0x8ef15347be5fbac61f591df42b932a32e0cb4300",
+    "0xa973df78f4f3dfef84006673a81a28b9027dc249": "0x4aad39ce62edc8efe85d161e12db960ed981bd3f",
+    "0x663151ccc3294e46b08ac661adbee976c6cc61c3": "0xdf7ee52bb7159206af32e9dc1151061e9cb4d03b",
+    "0xfc737d699efe367d8f83c88e50af790eaf653d92": "0x3168b37f845fa91513e238610e3e624f23fabfcc",
+    "0x6a07f91b3d05d550612f77fecdd393065f700e9e": "0xae50def1035ecb0339ba22a01b24b1ee6de5bc64",
+    "0x7f4d803cda560ae7210dcf4c7b2521c80e601ef2": "0x3a00cbaeaa03f830b6ada357ff82cef59383e946",
+    "0xa3281ec5552170ed60f5a7b72406c37a64616553": "0x78c2ef8fd01c5d13bed1ab4b5877b695dd972079",
+    "0x436f4f5aec257578348a2a179a1478688609a699": "0xef92cfa174eb98ec90e2d3dde0ebdb52f9fc88f6",
+    "0x4498145a180c48410e369c8b94826d0f69d6760a": "0x8be2800be5e1856aabe1d59c849a89c097dafc9a",
+    "0x6cfb59e8bb80268c6ecedfcf1c6fb72d32be84bf": "0xe01fe4d1adef2b4ee87c5b2a5cb070ee635c31b3",
+    "0x68b36888263ea189336d4002b1df64d66e207318": "0xd4dc96b12866a134c8227fb86ee78f5506d76a89",
+    "0x5c5ed08a2a2ec4e462cf91fc9c538a033a192b82": "0xdebb002e6c61814edc26fb899e91fb60ea181e38",
+    "0xe38877512fc13700aae10b5f5cbbc5a351e4c724": "0x5f278910c7b3058204e6adf174233520db9d3fc7",
+    "0x8941524eb0cea3ad391a89263dfb16d7ec273821": "0x64a283b5ff1de13f443ff03073e8d895c39dc7e2",
+    "0x41460461e78a6e2275bb531a0fb3d1f516c7d60f": "0xb1f0e6475775cbc3bbbbea1b60240bb5fb13c05c",
+    "0x17ca9d2e58578ce5e08930c2857c5418e6c9e442": "0x65160aadd480e383381315cb1ea9afb60beaba10",
+    "0xf2f4b5e51ed58cc3a24aa72a016330b297794d13": "0x814250b7f78cf6431763d3c97ae8731cdaf536cf",
+    "0x269eee33b71d8140f1579d468fa21909680216f7": "0xa0d099f6886ada7a82ef26977d29dd5688720278",
+    "0x938c9237249736ef477068c73daa50cf659cb3ab": "0x4b8c1afff2f54f217d439a8037ac815f5ed37fcf",
+    "0xd4410d9bcf53cd9a8208f5cd23e4b6d2e14b1a42": "0x946b30b0129b4a81a160058d4ed90bca1f07551a",
+    "0x42d2d46de628858fc84d2c25d46615b32d91937a": "0x4821a9ffa4ab871002b9ee58e5df8ce0686de537",
+    "0xd6cc7cd060d35030997cfa7381660e31fd69c643": "0x3317f769e8a52b1bf79e24a6817911934b064685",
+    "0x4e9e81d5b17909adc3bf75921f7859551a923b00": "0xd86f68ff8ad17abad8d5d90eeb2266babe577227",
+    "0x0c1a24e87712d2a37eb652e86c16ee5c6c0656ab": "0x346ffa0559813096a5795c569c1aa16be8693c23",
+    "0xe69fc0bc742cc4e99a49541c0866f74f00a21849": "0x3e24ec1a700408d7516f146d3d9902b8d2912581",
+    "0x39a0cae6b372af4f5e4c914cab06d41e77f4750b": "0x66f7e5ee6b5b9ca706333ad2ac79c5e0899dff3c",
+    "0xde20b0aa51d5ec1367956bf3a32ba6b242e1e779": "0x8534c6b1bca92c06d988a5cb79b0b101b80ae9c2",
+    "0x58bae2aca3565a300ca9cfe85c8472aef56ea06c": "0x6f2ddbdc4f58479fcda042da4f301ae50527abcc",
+    "0xb18b0c18517ad1473628e0d241d109f721128cf2": "0x557037dcad25c6be1091b5ad18bb865864d9dc6b",
+    "0x963ce7dd4ee2c9df0e96d2b414cd2a73f6d00e1a": "0xf182e5689cec91789332a3eed91f5b24d1ef89b5",
+    "0x9596117be07d39a208b93b7c587eb865c0e3c0ac": "0x2c22b9413e6d1e919c95faafe214a1f6306459bb",
+    "0xc73992a5edbb39a870ddfb4f91b897a3a86160e0": "0x606eae222d433b43bd74a483de9687c6e748d731",
+    "0xae444771dcc70cecc96cf3576e91fb1c3118d97a": "0x3345072c1da9ffe4639be083bcd44c4d1b8841ea",
+    "0x50658bd79f0ea8e217a237b40951753917ab377f": "0xbf62cff0e3d982a5b494bb0c9faeb72b93c90622",
+    "0x1030256ceb3e7e943c89cacfffe1b1e8aef07780": "0x3edf67fc981dcb5be469f08f5acaf551e81d7015",
+    "0x6f047008e90660d69c94a7ba0c589561dea2f2d7": "0x76abe78b419b3b991ce0240efe38f427922cd2f7",
+    "0xfe64d57de60a1b85c8b29bea4bba0d192e999ccd": "0x37fcbe9253be7d60e690b5faa0d89eed17e70124",
+    "0x8d928fcb4a9ba04cd712a64e0a84e228d0dd472b": "0xe1dd85cdc584127a263aa11fb46448d99c1f5b5a",
+    "0x630b616f1acdf9f525095a4fd069f18c74ed46e4": "0x9e36a75a8e05981a97b6fc5487d978c9527cebe4",
+    "0xf245a6a0fed0251987492aac3f8fd1e93496ed87": "0x5f51ef64802e1ecfb55553b0aa932156958b3822",
+    "0x14f3e12ec1e2eca942f41370d0c74e59954d043c": "0x730410901c9aed37b382d815c4423b1d8c7e4047",
+    "0x1d255519bfd83c1f2472c570fa715f183606e9d1": "0xb0c48ce21d67ac8c3f8339ea407c43530c90def3",
+    "0x9acf4a160f39569ef2e6c242a5232cc272c5400a": "0xd39dd82c1e9453941834b5e871ee7bb566a51df0",
+    "0xa2cc490990fa63514171234154bd4fa35464620a": "0xa5385ca8d1b7f91094e66c546edd40d371fc633c",
+    "0x57257333c914bee9495f0a1d6da5c8d19f42f171": "0xae43ca0a1ffa3b8ba525fc15e6d51ac387d0831b",
+    "0xc97d5c509e31a0f85c2e15cde1d73b5ab2aa362b": "0x2783bb680f0a517a061f7701024af00d6abcf597",
+    "0x87c4bc4354a19262d41075cc6003c551b5505b64": "0xa4c0942b65cd661df2e50e57526eee4c79b05bae",
+    "0x9dd4a75e971b177b154463a1cd3ccdc216c3b66e": "0xeb2a8b1cac0af4ccb886db2f6ec28b6d5c5ccd92",
+    "0x959dafc0e7860a720b45d47439e0527509663f1c": "0xde0840091a2fa18b693bdcb284b7b66cba97ca6d",
+    "0x593ba460e331600913559dbc1397880ccb4a1103": "0xedbde20bb69735fc09b1b9ee26fcb3cea3a54e39",
+    "0x21e082def06eff602096868d9d5b8ff98826451f": "0x2020ae234fc04bf078e1f5a233e9d0166f8388c1",
+    "0x8667db7b15d102206bbc8ae2ecdd37bd17fa26d5": "0xf3f745d390e09b601d2e4bba06df0fff87119c60",
+    "0xff4250a5c2206df15f1b91796d70ba1d70cea86e": "0x7fd43f9b37b549a1dd98fd791d8a1ce11f725140",
+    "0x4958d47ee570bc4c1f21ee331dc8af74577c5d60": "0x8077ff2c8ff8497f03bd39fe49747b6722cf9cdd",
+    "0x47220738eb754b17d31b4a00004a3cb5727a9079": "0x5066f59531d3ea51fe838c59f87672206c519611",
+    "0xac6a82b7c8315b214376e7e89e1910b125bef995": "0xcd7db733414a2d7769e53872ad92359f1ba16469",
+    "0xf27200b37aa4f2fb221ef24213a483e9e091e81e": "0x169a1ea0e6d5f699955a9e5841875d64641569bb",
+    "0x17270e795924637b944e55aae80bd00077c62b9b": "0x908de3bc7159aa329cd14ad2069fb67831168bb7",
+    "0x9f09107eaaa703438c35966179650bd63adcabf3": "0xfcd04b9fc47e6afb2c9e757a4b92e6194fdb563a",
+    "0x4772b76d24ef1b2602c8ab934991377ede809fae": "0xca25ea0fe3c0502d5dfcfaa2a083b9b252ab0e0f",
+    "0xd3aeec36faad85af257883fef2dda5d1ce157b94": "0x5eaa530ee1e4a36967190d0456c386b080ae7075",
+    "0x6590f58c12e736b81e11d5b03e94d10e8e04e8e5": "0x0a081d04834cd19a5dc350da86f541c6048459ad",
+    "0x1cfbe2f74f62d82ef02d2d7616e8539a952b9c7b": "0x7a0aa3a4987fd2c57c2e3217063f0500598f5108",
+    "0xf7ff37c9cb1357313a5f2be437a63f6daba2badc": "0x20fadded9b850c5c48c12e6f5ad6305d4666e2dc",
+    "0xce1c4656ea738ba3a6a6f6ba84bd12fc89697577": "0x2405293589cb509fcc7dccf760e06598cd7b7c35",
+    "0x04d6509be0b4831bdeafa1e38ab147e4a170b8b6": "0x85c7872a5fba31f987ef5f76d9ad3f5f0942db4f",
+    "0x4ec19c6cdde06cdaf779c8eaceb192e3436af7ef": "0x2003ec0fff9636584b0f14f2fcd03717cc33deb1",
+    "0x4a6193062c2d137d8e40e623022760acde8d2957": "0xf76fa2cd9dc00f427ab6bae8f8797bb3ef9d3bc1",
+    "0xddd59910118fd53a48bd65a001a9d0c2040e330d": "0xf3031323a89bf0fe9968b07842cee7d7b7cb7b3f",
+    "0x1e7615714fe138c0f156a1545d30cfd8c049d749": "0xe8d9c98f7884f7f5f6ed8127ba15b27b0f3aceb4",
+    "0x4ddde781583fc45f1c3497f70424f57cb623f61e": "0x91d64170b37ca692d1a81aa75e5aeb629f946885"
+  }
+}
