@@ -59,9 +59,21 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_PATH = str(Path.home() / ".maxpane" / "curator_cache.json")
 
-#: Bumped only when a *shape* changes.  A file written by a newer MaxPane loads
-#: nothing rather than being half-understood.
+#: Bumped only when a *shape* changes.  A file whose version is absent, older or
+#: newer loads **nothing** rather than being half-understood: a
+#: partially-understood schema is not safer than an empty cache, and this file
+#: has no legacy readers to be kind to.
 _SCHEMA_VERSION = 1
+
+#: Longest history either series keeps: 30 days of hourly points.  The game may
+#: outlive that (H15); the oldest points are dropped, never the newest.
+MAX_SERIES_POINTS = 720
+
+#: Wei per ETH.  The **only** division site outside
+#: ``analytics.curator_signals``: the series are persisted in the presentation
+#: unit the sparklines render, and dividing twice is how a number silently
+#: becomes 1e-18 of itself.
+_WEI = 10**18
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +123,21 @@ SLOTS: tuple[str, ...] = (
     SLOT_CONFIG,
     SLOT_BLOCKSCOUT,
 )
+
+
+# ---------------------------------------------------------------------------
+# The two persisted series (CURATOR_SERIES_KEYS)
+# ---------------------------------------------------------------------------
+
+SERIES_VOLUME = "volume_series"
+SERIES_CONTRIBUTORS = "contributors_series"
+
+SERIES_NAMES: tuple[str, ...] = (SERIES_VOLUME, SERIES_CONTRIBUTORS)
+
+#: The *inputs* the series writers consume, named so the manager's disjointness
+#: test (H2) can assert against them rather than reason about them.  Neither is
+#: a state reading, and neither can become one without this tuple changing.
+SERIES_INPUT_KEYS: tuple[str, ...] = ("buckets", "contributor_total")
 
 
 class LastGood:
@@ -202,6 +229,13 @@ class CuratorCache:
         self._tier_last_fetch: dict[str, float] = {}
         self._tier_next_due: dict[str, float] = {}
         self.last_good: dict[str, LastGood] = {}
+        #: ``{series name: {bucket start ts: value}}``.  A dict rather than a
+        #: deque because every cycle re-records the whole folded history: an
+        #: upsert keyed by the bucket's own wall clock is idempotent, keeps the
+        #: series ascending and can never grow a duplicate hour.
+        self._series: dict[str, dict[float, float]] = {
+            name: {} for name in SERIES_NAMES
+        }
 
     # -- clock ---------------------------------------------------------------
 
@@ -333,8 +367,151 @@ class CuratorCache:
         stamps = [entry.ts for entry in self.last_good.values()]
         return max(stamps) if stamps else None
 
+    # -- series --------------------------------------------------------------
+
+    @staticmethod
+    def _check_series(name: str) -> str:
+        if name not in SERIES_NAMES:
+            raise ValueError(
+                f"unknown curator series {name!r}; expected one of {SERIES_NAMES}"
+            )
+        return name
+
+    def get_series(self, name: str) -> list[list[float]]:
+        """``[[bucket_ts, value], …]`` oldest first — the sparkline shape.
+
+        Bounded to the newest :data:`MAX_SERIES_POINTS`; the values are already
+        in presentation units (ETH for volume, a count for contributors), so
+        nothing downstream divides again.
+        """
+        self._check_series(name)
+        points = sorted(self._series[name].items())
+        return [[float(ts), float(value)] for ts, value in points[-MAX_SERIES_POINTS:]]
+
+    # -- persistence ---------------------------------------------------------
+
+    def _payload(self) -> dict[str, Any]:
+        return {
+            "version": _SCHEMA_VERSION,
+            "saved_at": self._now(),
+            "last_good": {
+                slot: entry.to_dict() for slot, entry in self.last_good.items()
+            },
+            "series": {name: self.get_series(name) for name in SERIES_NAMES},
+        }
+
+    def save(self, path: str | None = None) -> None:
+        """Persist to disk via atomic temp-then-rename.  Never raises.
+
+        Temp + rename, so a kill mid-write leaves the previous file intact: a
+        half-written JSON document is a cache that loads nothing, and the fold
+        it holds is the whole leaderboard.
+
+        The tier marks are deliberately **not** persisted.  After a restart
+        every tier is due, because the chain moved while the process was down
+        and the one number this dashboard exists to be current about is an hour
+        deadline.
+        """
+        target = str(path or self.path)
+        tmp = target + ".tmp"
+        try:
+            os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump(self._payload(), handle)
+            os.replace(tmp, target)
+            logger.info(
+                "Curator cache saved to %s (%d last-good slot(s))",
+                target,
+                len(self.last_good),
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            logger.warning("Failed to save the curator cache: %s", exc)
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+    def load(self, path: str | None = None, *, now: float | None = None) -> None:
+        """Restore saved state.  Silent no-op on a missing or corrupt file.
+
+        Per-section ``try``/``except``: one bad block never costs the others and
+        nothing here raises into the manager's constructor.  Series points are
+        validated one at a time through
+        :func:`~maxpane_dashboard.data.series_points.coerce_points`, so a single
+        ``null`` costs that sample rather than every dashboard's startup — the
+        bug that once aborted MaxPane for users who owned no curator cache at
+        all.
+        """
+        target = str(path or self.path)
+        try:
+            with open(target, encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            logger.info("No curator cache to load (%s): %s", target, exc)
+            return
+        if not isinstance(payload, dict):
+            logger.warning("Curator cache %s has an unexpected shape, skipping", target)
+            return
+
+        version = payload.get("version")
+        if isinstance(version, bool) or not isinstance(version, int) or version != _SCHEMA_VERSION:
+            # Absent, older or newer: all three are "written by something whose
+            # shapes this reader has not agreed with".  Loading nothing is the
+            # same degradation every corrupt file gets, and it is honest —
+            # guessing at a section whose shape may have moved is how a fold
+            # comes back subtly wrong with no symptom.
+            logger.warning(
+                "Curator cache %s carries schema %r, not %r — loading nothing",
+                target,
+                version,
+                _SCHEMA_VERSION,
+            )
+            return
+
+        reference = self._now(now)
+
+        try:
+            for slot, data in (payload.get("last_good") or {}).items():
+                if slot not in SLOTS or not isinstance(data, dict):
+                    continue
+                try:
+                    self.last_good[str(slot)] = LastGood.from_dict(data, now=reference)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Skipping bad curator last-good slot %s: %s", slot, exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Curator last_good block bad: %s", exc)
+
+        try:
+            dropped_total = 0
+            for name, raw in (payload.get("series") or {}).items():
+                if name not in SERIES_NAMES:
+                    continue
+                good, dropped = coerce_points(raw, now=reference)
+                dropped_total += dropped
+                self._series[str(name)] = {float(ts): float(v) for ts, v in good}
+            if dropped_total:
+                logger.warning(
+                    "Skipped %d unusable point(s) while loading the curator cache %s",
+                    dropped_total,
+                    target,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Curator series block bad: %s", exc)
+
+        logger.info(
+            "Loaded the curator cache from %s: %d last-good slot(s), %d volume point(s)",
+            target,
+            len(self.last_good),
+            len(self._series[SERIES_VOLUME]),
+        )
+
 
 __all__ = [
+    "MAX_SERIES_POINTS",
+    "SERIES_CONTRIBUTORS",
+    "SERIES_INPUT_KEYS",
+    "SERIES_NAMES",
+    "SERIES_VOLUME",
     "CuratorCache",
     "DEFAULT_CACHE_PATH",
     "LastGood",

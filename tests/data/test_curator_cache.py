@@ -6,9 +6,15 @@ every expiry is driven by advancing it.
 
 from __future__ import annotations
 
+import inspect
+import json
+import os
+import pathlib
+
 import pytest
 
 from maxpane_dashboard.data import curator_cache
+from maxpane_dashboard.data.series_points import CLOCK_SKEW_TOLERANCE_SECONDS
 from maxpane_dashboard.data.curator_cache import (
     SLOTS,
     SLOT_BLOCKSCOUT,
@@ -193,3 +199,147 @@ def test_the_cache_never_calls_time_time_internally():
     # ``clock`` parameter.  Anywhere else is a clock a test cannot control.
     assert body.count("time.time") == 1
     assert "clock: Callable[[], float] = time.time" in body
+
+
+# ---------------------------------------------------------------------------
+# WP5.2 — persistence, schema version, coerce_points
+# ---------------------------------------------------------------------------
+
+
+def _write(tmp_path, payload) -> str:
+    target = tmp_path / "curator_cache.json"
+    target.write_text(json.dumps(payload), encoding="utf-8")
+    return str(target)
+
+
+def _file(tmp_path, **sections) -> dict:
+    base = {"version": 1, "saved_at": NOW, "last_good": {}, "series": {}}
+    base.update(sections)
+    return base
+
+
+def test_a_single_null_in_a_series_does_not_abort_the_load(tmp_path, clock):
+    """The bug that once broke startup for EVERY dashboard, not just the one
+    owning the file.  A corrupt point is dropped and counted, never fatal."""
+    path = _write(
+        tmp_path,
+        _file(
+            tmp_path,
+            series={"volume_series": [[1, 2], [3, None], "junk", [5, 6]]},
+        ),
+    )
+    cache = CuratorCache(path=path, clock=clock)
+    cache.load(now=NOW)
+    assert cache.get_series("volume_series") == [[1.0, 2.0], [5.0, 6.0]]
+
+
+def test_every_persisted_series_goes_through_coerce_points():
+    src = inspect.getsource(curator_cache)
+    assert "coerce_points" in src
+    assert "float(pt[1])" not in src        # the hand-rolled version that broke
+
+
+def test_a_future_dated_point_is_dropped_and_a_slightly_fast_clock_is_not(tmp_path, clock):
+    """``CLOCK_SKEW_TOLERANCE_SECONDS``: a machine whose clock runs a minute
+    fast must not throw away the samples it just wrote itself."""
+    slightly_fast = NOW + 60
+    far_future = NOW + 10 * CLOCK_SKEW_TOLERANCE_SECONDS
+    path = _write(
+        tmp_path,
+        _file(
+            tmp_path,
+            series={"volume_series": [[NOW - 3600, 1.0], [slightly_fast, 2.0], [far_future, 3.0]]},
+        ),
+    )
+    cache = CuratorCache(path=path, clock=clock)
+    cache.load(now=NOW)
+    kept = [ts for ts, _v in cache.get_series("volume_series")]
+    assert kept == [NOW - 3600, slightly_fast]
+
+
+def test_an_unknown_schema_version_loads_nothing_rather_than_guessing(tmp_path, clock):
+    for version in (None, 0, 2, "1", True):
+        payload = _file(tmp_path, series={"volume_series": [[NOW - 60, 7.0]]})
+        payload["version"] = version
+        path = _write(tmp_path, payload)
+        cache = CuratorCache(path=path, clock=clock)
+        cache.load(now=NOW)
+        assert cache.get_series("volume_series") == [], f"schema {version!r} was trusted"
+
+
+def test_save_is_atomic(tmp_path, clock, monkeypatch):
+    """temp + rename, so a kill mid-write leaves the previous file intact."""
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.store_last_good(SLOT_STATE, {"settled": False}, ts=NOW)
+    cache.save()
+    good = pathlib.Path(path).read_text(encoding="utf-8")
+
+    real_replace = os.replace
+
+    def _die(src, dst):
+        raise OSError("killed mid-write")
+
+    monkeypatch.setattr(curator_cache.os, "replace", _die)
+    cache.store_last_good(SLOT_STATE, {"settled": True}, ts=NOW + 15)
+    cache.save()                       # must not raise
+    monkeypatch.setattr(curator_cache.os, "replace", real_replace)
+
+    assert pathlib.Path(path).read_text(encoding="utf-8") == good
+    assert not (tmp_path / "curator_cache.json.tmp").exists()
+
+
+def test_a_missing_or_unreadable_cache_file_is_silently_an_empty_cache(tmp_path, clock):
+    missing = CuratorCache(path=str(tmp_path / "nope.json"), clock=clock)
+    missing.load(now=NOW)
+    assert missing.get_series("volume_series") == []
+    assert missing.newest_as_of() is None
+
+    broken_path = tmp_path / "broken.json"
+    broken_path.write_text("{not json at all", encoding="utf-8")
+    broken = CuratorCache(path=str(broken_path), clock=clock)
+    broken.load(now=NOW)
+    assert broken.get_series("volume_series") == []
+
+    listy = tmp_path / "listy.json"
+    listy.write_text("[1, 2, 3]", encoding="utf-8")
+    other = CuratorCache(path=str(listy), clock=clock)
+    other.load(now=NOW)
+    assert other.get_series("volume_series") == []
+
+
+def test_a_last_good_slot_with_no_usable_stamp_is_dropped_not_defaulted(tmp_path, clock):
+    payload = _file(
+        tmp_path,
+        last_good={
+            SLOT_STATE: {"payload": {"a": 1}},                       # no ts
+            SLOT_LOGS: {"payload": {"b": 2}, "ts": "yesterday"},      # unusable ts
+            SLOT_CONFIG: {"payload": {"c": 3}, "ts": NOW + 86400},    # future
+            SLOT_WALLET: {"payload": {"d": 4}, "ts": NOW - 30},       # good
+            "market": {"payload": {"e": 5}, "ts": NOW - 30},          # unknown slot
+        },
+    )
+    cache = CuratorCache(path=_write(tmp_path, payload), clock=clock)
+    cache.load(now=NOW)
+    assert cache.get_last_good(SLOT_STATE) is None
+    assert cache.get_last_good(SLOT_LOGS) is None
+    assert cache.get_last_good(SLOT_CONFIG) is None
+    assert cache.get_last_good(SLOT_WALLET).payload == {"d": 4}
+    assert set(cache.last_good) == {SLOT_WALLET}
+
+
+def test_a_round_trip_preserves_the_last_good_slots_and_the_series(tmp_path, clock):
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.store_last_good(SLOT_STATE, {"settled": False, "hour": 4}, ts=NOW - 10)
+    cache._series["volume_series"] = {NOW - 7200: 851.89, NOW - 3600: 9987.26}
+    cache.save()
+
+    restored = CuratorCache(path=path, clock=clock)
+    restored.load(now=NOW)
+    assert restored.get_last_good(SLOT_STATE).payload == {"settled": False, "hour": 4}
+    assert restored.as_of_ts(SLOT_STATE) == NOW - 10
+    assert restored.get_series("volume_series") == [
+        [NOW - 7200, 851.89],
+        [NOW - 3600, 9987.26],
+    ]
