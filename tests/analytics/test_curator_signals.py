@@ -44,6 +44,7 @@ import pytest
 from maxpane_dashboard.analytics import curator_signals as sig
 from maxpane_dashboard.data.curator_models import (
     CURATOR_ACTIVITY_KINDS,
+    CURATOR_ANALYSIS_KEYS,
     CURATOR_KEYS,
     CURATOR_ROW_KEYS,
     CURATOR_SIGNAL_STATES,
@@ -221,11 +222,32 @@ def test_signal_output_keys_is_a_hand_typed_literal_not_a_derivation() -> None:
 
 
 def test_the_output_surface_is_the_flat_contract_minus_the_managers_own_keys() -> None:
-    """The manager adds exactly three keys of its own — the health markers it
-    is the only module that can know.  Everything else on the screen is
-    computed here, which is what makes WP5 a wiring job."""
-    assert set(CURATOR_KEYS) - set(sig.SIGNAL_OUTPUT_KEYS) == set(sig.MANAGER_OWNED_KEYS)
+    """Three producers fill the flat dict, and between them they fill all of it.
+
+    ``build_signals`` emits ``SIGNAL_OUTPUT_KEYS``.  The manager adds
+    ``MANAGER_OWNED_KEYS`` — the three health markers it is the only module
+    that can know.  Since the sybil expansion (2026-08-17) the manager's
+    **analysis adapter** adds ``CURATOR_ANALYSIS_KEYS``, the eleven keys of the
+    linked-wallet view, filled from a detached long-TTL sweep after
+    ``build_signals`` has already run — exactly the way ENS names are merged in.
+
+    The equality is still exact, and still bites in both directions: a key
+    added to ``CURATOR_KEYS`` with no producer fails here, and so does a key
+    that leaves ``SIGNAL_OUTPUT_KEYS``.  ``CURATOR_ANALYSIS_KEYS`` is
+    **imported**, never hand-listed, so this test cannot drift from the
+    contract module — while ``curator_signals.py`` itself stays byte-identical
+    to what shipped (PRD §2: its Tier-A behaviour is out of scope and its
+    source is forbidden-word-scanned).
+    """
+    assert set(CURATOR_KEYS) - set(sig.SIGNAL_OUTPUT_KEYS) == set(
+        sig.MANAGER_OWNED_KEYS
+    ) | set(CURATOR_ANALYSIS_KEYS)
     assert sig.MANAGER_OWNED_KEYS == ("degraded", "as_of_hhmm", "as_of")
+    # The two manager-side surfaces stay disjoint: a health marker is not an
+    # analysis key and vice versa, so "which producer owns this" has one answer.
+    assert set(sig.MANAGER_OWNED_KEYS).isdisjoint(CURATOR_ANALYSIS_KEYS)
+    # And neither of them is something build_signals also emits.
+    assert set(CURATOR_ANALYSIS_KEYS).isdisjoint(sig.SIGNAL_OUTPUT_KEYS)
 
 
 def test_the_tunable_constants_are_named_and_documented_as_guesses() -> None:
@@ -1965,9 +1987,31 @@ def test_the_grace_payload_reproduces_the_bundle(full_readings: dict) -> None:
     assert out["top_points"] == max(r["points"] for r in out["leaderboard_rows"])
     assert len(out["leaderboard_rows"]) == sig.LEADERBOARD_LIMIT
     assert out["leaderboard_rows"][0]["rank"] == 1
-    assert [tuple(r) for r in out["leaderboard_rows"]] == [
-        CURATOR_ROW_KEYS["leaderboard_rows"]
-    ] * len(out["leaderboard_rows"])
+    # The frozen row shape MINUS `link_conf`.
+    #
+    # `name` is in the frozen tuple and IS emitted here, as an explicit `None`
+    # placeholder that the manager's `_label_with_ens` later fills.
+    # `link_conf` (the confidence-graded link marker, sybil PRD §6) gets no
+    # such placeholder: giving it one would mean editing this module, and this
+    # module stays byte-identical to what shipped (PRD §2).  The manager's
+    # analysis adapter seeds the key on every row instead -- WP3.
+    #
+    # Still exact, so it still bites both ways: if someone later teaches
+    # `build_signals` to emit `link_conf`, this equality fails and the decision
+    # gets made deliberately rather than by drift.
+    expected_columns = tuple(
+        column
+        for column in CURATOR_ROW_KEYS["leaderboard_rows"]
+        if column != "link_conf"
+    )
+    # ...and the subtraction must not be silently vacuous: if `link_conf` ever
+    # leaves the frozen tuple, `expected_columns` would quietly become the whole
+    # tuple again and this test would stop testing anything.
+    assert "link_conf" in CURATOR_ROW_KEYS["leaderboard_rows"]
+    assert len(expected_columns) == len(CURATOR_ROW_KEYS["leaderboard_rows"]) - 1
+    assert [tuple(r) for r in out["leaderboard_rows"]] == [expected_columns] * len(
+        out["leaderboard_rows"]
+    )
 
     assert len(out["activity_rows"]) == sig.ACTIVITY_LIMIT
     assert [tuple(r) for r in out["activity_rows"]] == [

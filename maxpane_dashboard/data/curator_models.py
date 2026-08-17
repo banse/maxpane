@@ -174,6 +174,10 @@ from dataclasses import dataclass
 #                operators_count, clean_points, clean_contributors,
 #                analysis_as_of_hhmm, you_linked_state, you_linked_reasons,
 #                you_linked_group_size, you_clean_rank
+#                — and they are exported as CURATOR_ANALYSIS_KEYS, because the
+#                  analytics suite's output-surface guard needs to name the
+#                  third producer of this dict without opening the analytics
+#                  module.  Import the tuple; never re-type the eleven.
 #   new rows ... operator_rows / segment_rows / clean_list_rows
 #   new sub-key  leaderboard_rows["link_conf"]  ("high"|"low"|"clean"|None)
 #
@@ -213,10 +217,11 @@ from dataclasses import dataclass
 # tests/fixtures/curator/sybil/; the datasets they are calibrated from are
 # pinned in tests/data/test_curator_sybil_data.py:
 #
-#   operator_row_worst.json ... `worst` is the row to size against: 1,995
-#                               wallets, 6.81% of points, 44.6x sqrt subsidy,
-#                               conf "high", four reasons, longest phrase 45
-#                               characters.  `rows` is all 16 operators.
+#   operator_row_worst.json ... `worst_cluster` + `worst` (the 0.45 operator:
+#                               1,995 wallets, 6.81% of points, 44.6x sqrt
+#                               subsidy, conf "high", four reasons) + `rows`,
+#                               all 16 operators.  `worst` IS its own entry in
+#                               `rows`, not a second opinion about it.
 #   segment_rows_worst.json ... 12 derived bands + `degraded_row`, the one
 #                               carrying `points_share_pct: None`.
 #   clean_list_rows_worst.json  top 20 survivors + `totals` + a NAME_COLS(12)
@@ -224,6 +229,23 @@ from dataclasses import dataclass
 #   labeled_subset.json ....... 160 members + 60 controls, self-contained
 #                               enough to run a detect() offline; byte-
 #                               identical to sybilkit/tests/fixtures/.
+#
+# SIZE THE COLUMNS FROM THESE, and read them through
+# `tests/curator_sybil_fixtures.worst_case_envelope()` / `row_payloads()` --
+# NOT `worst_case_rows()`, which cannot see `worst` or `degraded_row`.  The
+# maxima are over the WHOLE envelope and are pinned by
+# `test_the_widest_strings_the_analysis_panels_must_fit`:
+#
+#   operator reason string ......... 53  ("consecutive join indices
+#                                    14,001–14,100 · 1-block span" -- an
+#                                    index-run operator in `rows`, NOT the 45
+#                                    of `worst`'s own longest phrase)
+#   reasons per row ................  4      joined length ............. 150
+#   segment label .................. 33
+#   segment detail ................. 56  (in `degraded_row`, outside `rows`;
+#                                    the widest string in the whole set --
+#                                    `rows` alone stops at 44)
+#   clean-list name ................ 12  (NAME_COLS)   address ......... 42
 #
 # And the sybilkit side of the freeze, all importable and signature-pinned by
 # sybilkit/tests/test_public_api.py, all raising NotImplementedError("WP1"):
@@ -246,53 +268,48 @@ from dataclasses import dataclass
 #   sybilkit/tests/sybilkit_fixtures.py ... load() / slices() / labeled_subset()
 #
 # ---------------------------------------------------------------------------
-# THE EXPECTED RED SET WAVE 1 INHERITS — 7 tests, all deliberate.
+# THE EXPECTED RED SET WAVE 1 INHERITS — 5 tests, all deliberate, all UI.
 #
 # Adding keys to a contract whose consumers assert TOTALITY reddens every
 # consumer until it catches up.  That is the mechanism working, not a defect,
 # and it is what tells each later WP exactly what to build.  Measured
-# 2026-08-17: the whole suite is 4477 passed / 7 failed, and the same five
-# curator files were 659/659 green at 4f08e6e, so these seven and nothing else
+# 2026-08-18: the whole suite is 4485 passed / 5 failed, and the same five
+# curator files were 659/659 green at 4f08e6e, so these five and nothing else
 # moved.  DO NOT skip, xfail, or "fix" them from another work package.
 #
-#  1. tests/analytics/test_curator_signals.py
-#       ::test_the_output_surface_is_the_flat_contract_minus_the_managers_own_keys
-#     Asserts CURATOR_KEYS - SIGNAL_OUTPUT_KEYS == MANAGER_OWNED_KEYS.  All 11
-#     new keys are manager-owned; MANAGER_OWNED_KEYS names only the three
-#     health markers.  ** WP3 closes it **, and the choice is WP3's: amend the
-#     TEST to `== set(MANAGER_OWNED_KEYS) | <the 11>` (keeps
-#     curator_signals.py byte-identical, which the plan asks for), or extend
-#     MANAGER_OWNED_KEYS itself — that tuple lists names the MANAGER owns
-#     rather than anything build_signals emits, so extending it adds no
-#     analysis logic and no forbidden word to the scanned module.
-#
-#  2. tests/analytics/test_curator_signals.py
-#       ::test_the_grace_payload_reproduces_the_bundle
-#     Asserts every build_signals leaderboard row's key tuple equals
-#     CURATOR_ROW_KEYS["leaderboard_rows"], which now ends in `link_conf`.
-#     Note the precedent this exposes: build_signals emits `"name": None` as a
-#     PLACEHOLDER (curator_signals.py:1519 and :1538) and `_label_with_ens`
-#     fills it — so `name` is in the tuple even though the manager owns the
-#     value.  `link_conf` has no placeholder and cannot get one without
-#     editing curator_signals.py.  ** WP3 closes it ** by setting
-#     `row["link_conf"] = None` in the adapter merge and amending this test to
-#     compare against the shipped columns plus an explicit "and the manager
-#     adds link_conf" assertion.
-#
-#  3. tests/screens/test_curator_screen.py::test_curator_keys_covers_the_local_signature_map
-#  4. tests/screens/test_curator_screen.py::test_no_contract_key_reaches_no_widget
+#  1. tests/screens/test_curator_screen.py::test_curator_keys_covers_the_local_signature_map
+#  2. tests/screens/test_curator_screen.py::test_no_contract_key_reaches_no_widget
 #     Both name the same 11 orphans (CURATOR_KEYS - dispatched - META_KEYS).
 #     ** WP4 closes both ** by wiring WIDGET_SIGNATURES from
 #     ANALYSIS_KEY_ROUTING in tests/data/test_curator_models.py.
 #
-#  5. tests/widgets/test_curator_widgets.py::test_the_leaderboard_columns_are_the_frozen_row_keys
+#  3. tests/widgets/test_curator_widgets.py::test_the_leaderboard_columns_are_the_frozen_row_keys
 #     The widget's row builder has no `link_conf` column.  ** WP5 closes it. **
-#  6. tests/widgets/test_curator_widgets.py::test_the_keys_no_widget_reads_are_named_here_rather_than_forgotten
+#  4. tests/widgets/test_curator_widgets.py::test_the_keys_no_widget_reads_are_named_here_rather_than_forgotten
 #     The 11 keys reach no widget in the widgets package.  ** WP4 (the three
 #     new panels) and WP5 (the wallet-standing lines) close it together. **
-#  7. tests/widgets/test_curator_widgets.py::test_the_full_payload_is_exactly_the_frozen_contract
+#  5. tests/widgets/test_curator_widgets.py::test_the_full_payload_is_exactly_the_frozen_contract
 #     That suite's `_full_payload()` helper needs the 11 new keys.  ** WP4 or
 #     WP5, whichever touches the helper first. **
+#
+# TWO ANALYTICS REDS WERE CLOSED IN WP0 (controller rulings R8/R9, fix round 1)
+# and neither of them touched analytics/curator_signals.py, which is still
+# byte-identical to what shipped — `git diff main -- .../curator_signals.py` is
+# empty, and a test asserts SIGNAL_OUTPUT_KEYS is not derived from CURATOR_KEYS.
+#
+#   * test_the_output_surface_is_the_flat_contract_minus_the_managers_own_keys
+#     now asserts CURATOR_KEYS - SIGNAL_OUTPUT_KEYS ==
+#     MANAGER_OWNED_KEYS | CURATOR_ANALYSIS_KEYS, importing the tuple from
+#     THIS module.  Three producers, one exact equality, still biting both
+#     ways.  That is why CURATOR_ANALYSIS_KEYS exists.
+#   * test_the_grace_payload_reproduces_the_bundle now compares build_signals'
+#     leaderboard rows against the frozen tuple MINUS `link_conf`, and asserts
+#     `link_conf` is still IN the frozen tuple so the subtraction cannot go
+#     vacuous.  The precedent it exposes is WP3's to honour: build_signals
+#     emits `"name": None` as a PLACEHOLDER (curator_signals.py:1519, :1538)
+#     which `_label_with_ens` fills, so `name` is in the tuple even though the
+#     manager owns the value.  `link_conf` gets NO placeholder — WP3's adapter
+#     merge must seed `row["link_conf"] = None` on every row itself.
 #
 # ONE PREDICTION IN THE WP0 BRIEF IS WRONG, and WP3 should know why.
 # `tests/data/test_curator_manager.py::test_it_returns_exactly_curator_keys_always`
@@ -832,6 +849,39 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
     "clean_list_rows": ("clean_rank", "address", "points", "credit_eth", "name"),
 }
 
+#: The eleven keys the **manager's analysis adapter** produces, and the only
+#: keys in ``CURATOR_KEYS`` that ``build_signals`` does not emit besides
+#: ``curator_signals.MANAGER_OWNED_KEYS`` (``degraded``, ``as_of_hhmm``,
+#: ``as_of``).
+#:
+#: It exists so the analytics suite's output-surface guard can stay an exact
+#: equality —
+#: ``CURATOR_KEYS − SIGNAL_OUTPUT_KEYS == MANAGER_OWNED_KEYS | CURATOR_ANALYSIS_KEYS``
+#: — **without** ``analytics/curator_signals.py`` being edited.  That module
+#: must stay byte-identical to what shipped (PRD §2): its source is
+#: forbidden-word-scanned, and its Tier-A behaviour is explicitly out of scope
+#: for this build.  Putting the names *here*, in the contract module both sides
+#: already import, is what lets the guard keep biting on both directions of
+#: drift while the analytics module is never opened.
+#:
+#: Hand-typed rather than filtered out of ``CURATOR_KEYS``: a derivation would
+#: make ``test_the_analysis_keys_are_exactly_the_eleven_the_adapter_fills``
+#: compare a constant against itself, and the same redundancy rule already
+#: applies to ``SIGNAL_OUTPUT_KEYS`` one module over.
+CURATOR_ANALYSIS_KEYS: tuple[str, ...] = (
+    "operator_rows",
+    "segment_rows",
+    "clean_list_rows",
+    "operators_count",
+    "clean_points",
+    "clean_contributors",
+    "analysis_as_of_hhmm",
+    "you_linked_state",
+    "you_linked_reasons",
+    "you_linked_group_size",
+    "you_clean_rank",
+)
+
 #: The exact ``kind`` values the activity-row producer emits — the vocabulary,
 #: not just the column name.
 #:
@@ -872,6 +922,7 @@ __all__ = [
     "SIGNAL_ROWS",
     "CURATOR_KEYS",
     "CURATOR_ROW_KEYS",
+    "CURATOR_ANALYSIS_KEYS",
     "CURATOR_SERIES_KEYS",
     "CURATOR_ACTIVITY_KINDS",
     "CURATOR_SIGNAL_STATES",

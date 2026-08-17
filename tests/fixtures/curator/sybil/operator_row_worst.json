@@ -9,6 +9,7 @@
   "sqrt_subsidy_x",
   "conf"
  ],
+ "worst_cluster": "amt_0.45_h3",
  "worst": {
   "size": 1995,
   "reasons": [
@@ -53,7 +54,7 @@
    "size": 1995,
    "reasons": [
     "identical 0.45Ξ send ×1,995",
-    "same-amount window · 254-block span",
+    "consecutive join indices · ≤2-block spacing",
     "uniform 0.1 gwei priority fee · one gas limit",
     "shared funder chain"
    ],

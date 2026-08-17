@@ -13,7 +13,7 @@ not yet settled). Nothing here touches the network.
 | file | what it is | derived from |
 |---|---|---|
 | `labeled_subset.json` | the benchmark subset: 16 audited operators × 10 sampled members + 60 controls, each with deposits, join index, tx fingerprint and funder | `suspects.json` + `tx_fingerprints.json` + `funding.json` + `deposits.json.gz` + `first_deposits.json.gz` + `same_amount_clusters.json` + `index_runs.json` |
-| `operator_row_worst.json` | the OPERATORS panel payload — `worst` (the row to size against) + all 16 rows | `cluster_economics.json` (+ the shape/fingerprint/funding files for the reason strings) |
+| `operator_row_worst.json` | the OPERATORS panel payload — `worst_cluster` + `worst` (the row to size against, which **is** its own entry in `rows`) + all 16 rows | `cluster_economics.json` (+ the shape/fingerprint/funding files for the reason strings) |
 | `segment_rows_worst.json` | the SEGMENTS panel payload — 12 derived bands + one explicit unavailable row | `whales_segments.json`, `population.json`, `deposits.json.gz` |
 | `clean_list_rows_worst.json` | the CLEANED LIST payload — top 20 survivors + totals + a name-width probe | `deposits.json.gz`, `cluster_economics.json` |
 
@@ -26,6 +26,33 @@ was one column short the moment the peg got healthy. The widest real operator is
 **1 995 wallets holding 6.81% of all points at a 44.6× sqrt subsidy**, its
 reason list deliberately over-provisioned to four pattern-language phrases
 (implementation plan §6 risk 6), and that is what the columns have to fit.
+
+## Read the envelope, not just `rows`
+
+Each slice is an **envelope**, and the two widest payloads in the set live
+*outside* its `rows` list. Size columns with
+`tests/curator_sybil_fixtures.worst_case_envelope()` / `row_payloads()`, never
+with `worst_case_rows()` alone.
+
+| what | max | where it is |
+|---|---|---|
+| operator reason string | **53** | `rows` — an index-run operator, *not* `worst`, whose own longest phrase is only 45 |
+| reasons per row / joined length | 4 / 150 | `rows` ∪ `worst` |
+| segment `label` | 33 | `rows` |
+| segment `detail` | **56** | `degraded_row`, outside `rows`; `rows` alone stops at 44 |
+| clean-list `name` / `address` | 12 (`NAME_COLS`) / 42 | `rows` |
+
+Both maxima above were wrong when measured on a partial view, which is the
+`dev`/`ops` defect CLAUDE.md records — a cell simultaneously padded for one row
+and cutting another mid-word, with both suites green. They are pinned in
+`tests/data/test_curator_sybil_data.py::test_the_widest_strings_the_analysis_panels_must_fit`
+and restated in the hand-off block in `data/curator_models.py`.
+
+`worst` is **the same object** as its entry in `rows` (`worst_cluster` names
+which operator). It was not, at first: the generated row for the 0.45 operator
+named the same-amount window while `worst` named the consecutive-index run.
+Both are real evidence about that cluster, but two lists for one operator is how
+WP4 sizes against one and WP3 produces the other with both suites green.
 
 ## The synthetic ledger
 
@@ -49,7 +76,9 @@ so in their own file's `note`:
 
 * `segment_rows_worst.json` → `degraded_row` — a band whose `points_share_pct`
   is `null`. The data *has* that share; the row exists so WP4 can pin that a
-  `None` renders as unknown and never as `0.0%`.
+  `None` renders as unknown and never as `0.0%`. It is also the widest string
+  in the whole set (56 columns), so a sweep that skips it under-sizes the
+  `detail` column by twelve.
 * `clean_list_rows_worst.json` → the last row of `rows`, a synthetic
   `0xff…ff` address carrying `surfsurf.eth` (exactly `NAME_COLS` = 12
   characters). Every real address in the file has `name: null`, because no

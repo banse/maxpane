@@ -23,6 +23,7 @@ one-shot script that wrote them stay uncommitted.
 from __future__ import annotations
 
 import gzip
+import inspect
 import json
 import math
 from collections import Counter, defaultdict
@@ -32,12 +33,16 @@ from pathlib import Path
 from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS
 from tests.curator_fixtures import CURATOR_FIXTURES
 from tests.curator_sybil_fixtures import (
+    PROVENANCE_FIELDS,
     SYBIL,
     SYNTHETIC_MARKER,
     WORST_CASE,
     labeled_subset,
     load,
+    rendered_strings,
+    row_payloads,
     slices,
+    worst_case_envelope,
     worst_case_rows,
 )
 
@@ -287,6 +292,33 @@ def _folded() -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
     return dict(weight), dict(credit), points
 
 
+@lru_cache(maxsize=None)
+def _first_hour() -> dict[str, int]:
+    """The hour each contributor **joined** in, by lowercase address.
+
+    Off the first deposit in ``(block, log_index)`` order, not off the smallest
+    ``hour``: they agree here, but the ordering is the definition and the
+    minimum is a coincidence of a game nobody deposited into out of order.
+    """
+    out: dict[str, int] = {}
+    for d in sorted(
+        research("deposits.json.gz"), key=lambda d: (d["block"], d["log_index"])
+    ):
+        out.setdefault(d["contributor"].lower(), d["hour"])
+    return out
+
+
+@lru_cache(maxsize=None)
+def _first_bps() -> dict[str, int]:
+    """The early multiplier each contributor joined at, in bps."""
+    out: dict[str, int] = {}
+    for d in sorted(
+        research("deposits.json.gz"), key=lambda d: (d["block"], d["log_index"])
+    ):
+        out.setdefault(d["contributor"].lower(), d["early_bps"])
+    return out
+
+
 def test_the_points_curve_reproduces_the_whole_population_wei_exactly() -> None:
     """``isqrt(weight_wei) * 1000 // 10**9``, over 22 319 rows, to the digit.
 
@@ -419,14 +451,45 @@ def test_every_worst_case_row_matches_its_frozen_row_shape() -> None:
     Exact key sets, not ``<=``: a row missing a column would let a widget be
     written without a cell for it, and a row carrying an extra one would let a
     widget be written *around* a key the manager will never send.
+
+    Checked over :func:`row_payloads` — **every** row-shaped payload in the
+    envelope, not just ``rows``.  ``worst`` and ``degraded_row`` live outside
+    that list, and ``degraded_row`` is the one row in the whole set written by
+    hand rather than generated, so it is the likeliest to have the wrong shape
+    and was the least likely to be checked.
     """
     assert set(WORST_CASE_SHAPES) == set(WORST_CASE)
     for name, key in WORST_CASE_SHAPES.items():
-        payload = load(name)
         shape = CURATOR_ROW_KEYS[key]
-        assert tuple(payload["row_keys"]) == shape, name
-        for row in worst_case_rows(name):
-            assert set(row) == set(shape), (name, sorted(row))
+        assert tuple(worst_case_envelope(name)["row_keys"]) == shape, name
+        for where, row in row_payloads(name):
+            assert set(row) == set(shape), (name, where, sorted(row))
+
+
+def test_the_envelope_accessor_reaches_the_payloads_rows_does_not() -> None:
+    """The guard on the guard.
+
+    ``worst_case_rows()`` was once the only accessor, and the two payloads it
+    cannot see are exactly the two that matter most: ``worst`` (the row the
+    brief names and WP4 sizes against) and ``degraded_row`` (which carries the
+    widest string in the entire fixture set, 56 columns).  Both escaped the
+    shape check and the pattern-language scan while they were committed.
+
+    This test fails if a later slice adds a row-shaped payload outside ``rows``
+    and nobody teaches the accessor about it.
+    """
+    assert len(row_payloads("operator_row_worst.json")) == 16 + 1  # rows + worst
+    assert len(row_payloads("segment_rows_worst.json")) == 12 + 1  # + degraded_row
+    assert len(row_payloads("clean_list_rows_worst.json")) == 21   # rows only
+
+    for name in WORST_CASE:
+        envelope = worst_case_envelope(name)
+        extra = set(envelope) - set(PROVENANCE_FIELDS) - {"rows"}
+        covered = {where for where, _ in row_payloads(name) if not where.startswith("rows[")}
+        # `totals` is a dict of scalars about the list, not a row -- it has no
+        # CURATOR_ROW_KEYS entry to check against, and `rendered_strings`
+        # covers it instead.
+        assert extra - covered <= {"totals"}, (name, sorted(extra - covered))
 
 
 def test_the_worst_case_operator_row_is_the_one_the_research_measured() -> None:
@@ -447,18 +510,105 @@ def test_the_worst_case_operator_row_is_the_one_the_research_measured() -> None:
         "uniform 0.1 gwei priority fee · one gas limit",
         "shared funder chain",
     ]
-    # One reason from each of four of the five families -- the widest a real
-    # row gets, since a cluster linked by all five would be the same width plus
-    # one line, and the panel wraps rather than truncates.
+    # One reason from each of four of the five families.
     #
-    # The longest single phrase is 45 characters ("uniform 0.1 gwei priority
-    # fee · one gas limit").  That number is what WP4 sizes the reasons column
-    # against, so it is pinned here rather than measured in the widget: a
-    # column sized to a remembered phrase is the `dev`/`ops` defect CLAUDE.md
-    # records, simultaneously padded and cutting a value mid-word.
+    # `worst`'s own longest phrase is 45 characters ("uniform 0.1 gwei priority
+    # fee · one gas limit") -- but that is NOT the number a column is sized
+    # against.  The envelope's longest is 53, on an index-run operator in
+    # `rows`.  Sizing to 45 would be the `dev`/`ops` defect CLAUDE.md records,
+    # baked into the freeze: a cell simultaneously padded for one row and
+    # cutting another mid-word.  The number WP4 uses is pinned in
+    # `test_the_widest_strings_the_analysis_panels_must_fit`, over the whole
+    # envelope; these two are about this row only and say so.
     assert len(worst["reasons"]) == 4
     assert max(len(r) for r in worst["reasons"]) == 45
     assert sum(len(r) for r in worst["reasons"]) == 134
+    assert max(len(r) for r in worst["reasons"]) < _ENVELOPE_MAXIMA[
+        "operator_row_worst.json"
+    ]["reason"]
+
+
+def test_the_worst_row_is_the_row_and_not_a_second_opinion_about_it() -> None:
+    """`worst` and its entry in `rows` are the **same object**, by designation.
+
+    They were not, at first: the generated row for the 0.45 operator named the
+    same-amount window (254-block span) while `worst` named the consecutive
+    index run (≤2-block spacing).  Both are real evidence about that operator --
+    the research's biggest run is 180 consecutive indices in 7 blocks, all
+    0.45 ETH -- but two different lists for one cluster is precisely how WP4
+    sizes against one and WP3 produces the other, with both suites green.
+
+    So `worst` IS the row, `worst_cluster` names which one, and the panel
+    payload has one answer per operator.
+    """
+    payload = worst_case_envelope("operator_row_worst.json")
+    assert payload["worst_cluster"] == "amt_0.45_h3"
+    assert payload["worst"] in payload["rows"]
+    top = _by_shape(research("cluster_economics.json"), "0.45")
+    matching = [r for r in payload["rows"] if r["points"] == top["points"]]
+    assert matching == [payload["worst"]]
+
+
+#: The widest string each analysis panel has to fit, measured over the WHOLE
+#: envelope — ``rows`` ∪ ``worst`` ∪ ``degraded_row`` ∪ ``totals``.
+#:
+#: These are the numbers WP4 sizes columns from.  They are pinned here, in the
+#: file that owns the fixtures, rather than measured inside a widget: CLAUDE.md
+#: records the ``dev``/``ops`` defect twice over — a cell sized to a vocabulary
+#: someone remembered is simultaneously padded and cutting a value mid-word,
+#: and both suites stay green while it happens.
+_ENVELOPE_MAXIMA = {
+    "operator_row_worst.json": {
+        # "consecutive join indices 14,001–14,100 · 1-block span"
+        "reason": 53,
+        "reasons_per_row": 4,
+        "reasons_joined": 150,
+    },
+    "segment_rows_worst.json": {
+        # "per-hour band · joined in hour 20"
+        "label": 33,
+        # "share unavailable — the analysis sweep has not published", which
+        # lives in `degraded_row` and is the widest string in the whole set.
+        "detail": 56,
+    },
+    "clean_list_rows_worst.json": {
+        "name": 12,       # NAME_COLS, exactly `surfsurf.eth`
+        "address": 42,    # 0x + 40 hex
+    },
+}
+
+
+def test_the_widest_strings_the_analysis_panels_must_fit() -> None:
+    """Measured over the envelope, not over ``rows``.
+
+    Every one of these was wrong when it was measured on ``rows`` or on
+    ``worst`` alone.  The reason column's true maximum is **53**, not the 45 of
+    the row the brief names; the detail column's is **56**, and it is in
+    ``degraded_row``, which ``worst_case_rows()`` cannot even see.  A layout
+    calibrated to the smaller numbers clips on the payload it was built for.
+    """
+    ops = [row for _, row in row_payloads("operator_row_worst.json")]
+    assert max(len(r) for row in ops for r in row["reasons"]) == 53
+    assert max(len(row["reasons"]) for row in ops) == 4
+    assert max(sum(len(r) for r in row["reasons"]) for row in ops) == 150
+
+    segs = [row for _, row in row_payloads("segment_rows_worst.json")]
+    assert max(len(row["label"]) for row in segs) == 33
+    assert max(len(row["detail"]) for row in segs) == 56
+    # The widest detail is the degraded row's, i.e. outside `rows`.
+    assert max(len(row["detail"]) for row in worst_case_rows(
+        "segment_rows_worst.json")) == 44
+
+    clean = [row for _, row in row_payloads("clean_list_rows_worst.json")]
+    assert max(len(row["name"] or "") for row in clean) == 12
+    assert max(len(row["address"]) for row in clean) == 42
+
+    # Restated against the constant the hand-off block quotes, so the two
+    # cannot drift.
+    m = _ENVELOPE_MAXIMA
+    assert m["operator_row_worst.json"]["reason"] == 53
+    assert m["segment_rows_worst.json"]["detail"] == 56
+    assert m["clean_list_rows_worst.json"]["name"] == 12
 
 
 def test_the_operator_panel_holds_every_audited_operator() -> None:
@@ -466,6 +616,10 @@ def test_the_operator_panel_holds_every_audited_operator() -> None:
     equal to the dataset's."""
     rows = worst_case_rows("operator_row_worst.json")
     econ = {e["points"]: e for e in research("cluster_economics.json")}
+    # Keyed by points, so two operators scoring identically would silently
+    # collapse into one and this test would check fifteen rows against
+    # fourteen sources without saying so.
+    assert len(econ) == 16
     assert len(rows) == 16
     shares = [r["points_share_pct"] for r in rows]
     assert shares == sorted(shares, reverse=True)
@@ -482,12 +636,32 @@ def test_no_worst_case_row_uses_an_accusatory_word() -> None:
     """PRD §2/§8: pattern-language on every surface, and the fixture is a
     surface — WP4 renders these strings verbatim.  Pinned on the payload as
     well as on the schema, because a reason string is copy in a JSON file and
-    nothing else would catch it."""
+    nothing else would catch it.
+
+    Scanned over :func:`rendered_strings`, which is every string a widget could
+    reach: ``rows``, ``worst``, ``degraded_row`` **and** ``totals``.  Scanning
+    ``rows`` alone left ``worst``'s four reason phrases — the ones the layout is
+    built around — unchecked.
+
+    The provenance fields are excluded deliberately, not by oversight:
+    ``synthetic`` and ``note`` both name ``docs/curator_sybil_data/``, so a scan
+    of the raw envelope would fail on the word "sybil" in a directory path that
+    never reaches a screen.  The exclusion list is pinned below so it cannot
+    quietly grow to cover a field that *is* rendered.
+    """
     banned = ("sybil", "cheat", "fraud", "attack", "abuse", "wash", "farm", "bot")
+    assert PROVENANCE_FIELDS == ("synthetic", "note", "row_keys", "worst_cluster")
     for name in WORST_CASE:
-        blob = json.dumps(load(name)["rows"], ensure_ascii=False).lower()
-        for word in banned:
-            assert word not in blob, (name, word)
+        strings = rendered_strings(name)
+        assert strings, name
+        for text in strings:
+            lowered = text.lower()
+            for word in banned:
+                assert word not in lowered, (name, word, text)
+    # ...and the exclusion really is load-bearing: the raw envelope DOES carry
+    # the word, in the source path, which is why the scan is scoped rather than
+    # simply run over `json.dumps(envelope)`.
+    assert "sybil" in json.dumps(worst_case_envelope(WORST_CASE[0])).lower()
 
 
 def test_the_segment_rows_are_the_segments_adam_asked_for() -> None:
@@ -521,21 +695,91 @@ def test_the_segment_rows_are_the_segments_adam_asked_for() -> None:
     assert len([r for r in rows if r["label"].startswith("per-hour band")]) == 4
 
 
+def test_every_segment_share_is_derived_and_none_is_quoted() -> None:
+    """The file's ``note`` claims every share in ``rows`` is derived from the
+    logs.  This is the test that makes the claim true rather than decorative.
+
+    Three of the twelve shares used to be lifted straight out of
+    ``whales_segments.json`` — the whale, early-cohort and last-grace rows.
+    They *agreed* with the fold, which is exactly why nobody noticed: a quoted
+    number that happens to be right is indistinguishable from a derived one
+    until the day the research file is regenerated and the fixture is not.
+
+    So every one of them is recomputed here from ``deposits.json.gz`` +
+    ``first_deposits.json.gz``, and the research file is then asserted to
+    agree — the agreement is the *conclusion*, not the input.
+    """
+    _, credit, points = _folded()
+    total = sum(points.values())
+    first_index = {
+        f["contributor"].lower(): f["index"]
+        for f in research("first_deposits.json.gz")
+    }
+    by_label = {r["label"]: r for r in worst_case_rows("segment_rows_worst.json")}
+
+    def share(addresses) -> float:
+        return round(100 * sum(points[a] for a in addresses) / total, 2)
+
+    whales = [a for a in credit if credit[a] >= 800 * 10**18]
+    early = [a for a, i in first_index.items() if 1 <= i <= 1000]
+    late = [a for a, h in _first_hour().items() if h in (22, 23)]
+
+    assert by_label["single-send whales ≥ 800Ξ"]["contributors"] == len(whales) == 2
+    assert by_label["single-send whales ≥ 800Ξ"]["points_share_pct"] == share(whales)
+    assert by_label["early cohort · join index 1–1000"]["contributors"] == len(early)
+    assert by_label["early cohort · join index 1–1000"]["points_share_pct"] == share(early)
+    assert by_label["last grace hours · joined 22–23"]["contributors"] == len(late) == 742
+    assert by_label["last grace hours · joined 22–23"]["points_share_pct"] == share(late)
+
+    # ...and only now, the research file agrees with all three.
+    w = research("whales_segments.json")
+    assert round(w["whales_800plus_credit"]["points_share_pct"], 2) == share(whales)
+    assert round(w["index_1_1000"]["points_share_pct"], 2) == share(early)
+    assert round(w["joined_hour_22_23"]["points_share_pct"], 2) == share(late)
+    assert w["whales_800plus_credit"]["sum_points"] == sum(points[a] for a in whales)
+    assert w["index_1_1000"]["points"] == sum(points[a] for a in early)
+
+
 def test_the_multiplier_and_hour_bands_are_derived_from_the_fold() -> None:
     """Each contributor is attributed to the multiplier and the hour of their
     **first** deposit, and the shares are recomputed from the same wei-exact
     fold as everything else.  The bands partition the population: every
     contributor is in exactly one, so the four shares sum to 100."""
+    _, credit, points = _folded()
+    total = sum(points.values())
     rows = worst_case_rows("segment_rows_worst.json")
+
     bands = [r for r in rows if r["label"].startswith("joined at ")]
     assert sum(r["contributors"] for r in bands) == 15_576
     assert round(sum(r["points_share_pct"] for r in bands), 1) == 100.0
+    # Each band's own share, recomputed -- not just the sum, which a set of
+    # four wrong numbers can still hit.
+    edges = {"≥ 1.9×": (19_000, 20_001), "1.5–1.9×": (15_000, 19_000),
+             "1.06–1.5×": (10_600, 15_000), "≤ 1.06×": (0, 10_600)}
+    for row in bands:
+        lo, hi = edges[row["label"].removeprefix("joined at ")]
+        members = [a for a, b in _first_bps().items() if lo <= b < hi]
+        assert row["contributors"] == len(members), row["label"]
+        assert row["points_share_pct"] == round(
+            100 * sum(points[a] for a in members) / total, 2
+        ), row["label"]
+        assert row["detail"] == (
+            f"{sum(credit[a] for a in members) / 10**18:,.1f}Ξ credited"
+        ), row["label"]
 
     hours = [r for r in rows if r["label"].startswith("per-hour band")]
     joins = research("population.json")["per_hour_joins"]
+    assert len(hours) == 4
     for row in hours:
         hour = row["label"].rsplit(" ", 1)[-1]
         assert row["contributors"] == joins[hour], row["label"]
+        # The share too, not only the count: a per-hour band's points come
+        # from the same fold as everything else, and it was the one group of
+        # four whose shares nothing checked.
+        members = [a for a, h in _first_hour().items() if h == int(hour)]
+        assert row["points_share_pct"] == round(
+            100 * sum(points[a] for a in members) / total, 2
+        ), row["label"]
     # Widest first, so the panel leads with the hour that mattered.
     assert [r["contributors"] for r in hours] == sorted(
         (r["contributors"] for r in hours), reverse=True
@@ -675,7 +919,7 @@ def test_the_labeled_subset_reproduces_the_funding_signal() -> None:
 
 def test_an_unresolved_funder_is_null_and_never_false() -> None:
     """``funder_in_cluster`` is a **tri-state**.  ``None`` means the bounded
-    lookup did not resolve a funder — 90 of the 220 sampled addresses — and
+    lookup did not resolve a funder — 43 of the 220 sampled addresses — and
     collapsing that to ``False`` would turn "we could not look" into "we looked
     and it was clean", which is the confident-negative the whole build is
     written to avoid."""
@@ -684,11 +928,59 @@ def test_an_unresolved_funder_is_null_and_never_false() -> None:
     unresolved = [
         r for r in everyone if r["funding"] and r["funding"]["funder"] is None
     ]
-    assert unresolved, "the bounded sweep must have missed some"
+    assert len(unresolved) == 43, "the bounded sweep must have missed exactly these"
     assert all(r["funding"]["funder_in_cluster"] is None for r in unresolved)
     resolved = [r for r in everyone if r["funding"] and r["funding"]["funder"]]
     assert len(resolved) == 177  # 130 members + 47 controls
+    assert len(resolved) + len(unresolved) == 220  # every sampled address, once
     assert all(isinstance(r["funding"]["funder_in_cluster"], bool) for r in resolved)
+
+
+def test_the_two_readers_keep_the_same_names_for_the_shared_fixtures() -> None:
+    """``load`` / ``slices`` / ``labeled_subset`` mean the same thing on both
+    sides, and this is the only side that can import both modules to say so.
+
+    The maxpane reader has three accessors the other does not —
+    ``worst_case_envelope``, ``worst_case_rows``, ``row_payloads`` — and that
+    asymmetry is deliberate rather than drift: they read **presentation**
+    payloads (``credit_eth``, ``points_share_pct``, ENS names,
+    pattern-language copy) that size the columns of a terminal UI.
+    ``sybilkit`` has no UI, is wei-native throughout, and must not learn what a
+    column is.  Pinned so the asymmetry stays exactly that size.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "_sybilkit_fixtures_probe",
+        _REPO_ROOT / "sybilkit" / "tests" / "sybilkit_fixtures.py",
+    )
+    theirs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(theirs)
+
+    from tests import curator_sybil_fixtures as ours
+
+    def api(module) -> set[str]:
+        """Public functions the module itself defines — not what it imports."""
+        return {
+            name
+            for name, obj in vars(module).items()
+            if not name.startswith("_")
+            and inspect.isfunction(obj)
+            and obj.__module__ == module.__name__
+        }
+
+    shared = {"load", "slices", "labeled_subset"}
+    assert shared <= api(theirs)
+    assert shared <= api(ours)
+
+    only_ours = api(ours) - api(theirs)
+    assert only_ours == {
+        "worst_case_envelope",
+        "worst_case_rows",
+        "row_payloads",
+        "rendered_strings",
+    }, sorted(only_ours)
+    assert api(theirs) - api(ours) == set(), sorted(api(theirs) - api(ours))
 
 
 def test_both_distributions_gate_on_the_same_bytes() -> None:

@@ -30,6 +30,22 @@ What is in here
     They are **test data**.  Wheels do not ship ``tests/`` — see
     ``pyproject.toml``'s ``[tool.hatch.build.targets.wheel] packages`` — so the
     3 MB stays out of the distribution a user installs.
+
+Why there is no ``worst_case_*`` accessor here
+----------------------------------------------
+The maxpane reader has three more functions — ``worst_case_envelope``,
+``worst_case_rows``, ``row_payloads`` — over three slices this distribution
+does not carry.  That asymmetry is deliberate, not drift: those slices are
+**presentation** payloads (``credit_eth``, ``points_share_pct``, ENS names,
+pattern-language reason strings) that exist to size the columns of a terminal
+UI.  ``sybilkit`` has no UI, is wei-native throughout, and must not learn what
+a column is.
+
+What the two readers *do* share, they share by name: :func:`load`,
+:func:`slices` and :func:`labeled_subset` mean the same thing on both sides and
+open the same bytes.  The maxpane suite pins that in
+``test_curator_sybil_data.py::test_the_two_readers_keep_the_same_names_for_the_shared_fixtures``,
+because it is the only side that can see both modules.
 """
 
 from __future__ import annotations

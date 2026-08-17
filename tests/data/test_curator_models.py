@@ -455,6 +455,7 @@ def test_no_flat_dict_key_masquerades_as_a_model_field() -> None:
 
 from maxpane_dashboard.data.curator_models import (  # noqa: E402
     CURATOR_ACTIVITY_KINDS,
+    CURATOR_ANALYSIS_KEYS,
     CURATOR_DEGRADED_GROUPS,
     CURATOR_KEYS,
     CURATOR_ROW_KEYS,
@@ -630,7 +631,7 @@ def test_the_two_series_are_named_separately_from_the_row_payloads() -> None:
 def test_every_list_payload_has_either_a_row_shape_or_a_series_declaration() -> None:
     """The ten list payloads, all accounted for, none twice.
 
-    Six from PRD §5; the seventh is ``you_ladder_rows``, added with the `y``
+    Six from PRD §5; the seventh is ``you_ladder_rows``, added with the ``y``
     wallet view (PRD §13 A8); the last three are the analysis view's panels
     (sybil PRD §7).
 
@@ -845,6 +846,34 @@ def test_curator_keys_gained_exactly_the_analysis_surface() -> None:
     # `flagged_points_share_pct` is REUSED, not re-added (PRD §7, plan §6.2).
     assert "flagged_points_share_pct" in CURATOR_KEYS
     assert "linked_points_share_pct" not in CURATOR_KEYS
+
+
+def test_the_analysis_keys_are_exactly_the_eleven_the_adapter_fills() -> None:
+    """``CURATOR_ANALYSIS_KEYS`` — the third producer of the flat dict.
+
+    ``build_signals`` emits ``SIGNAL_OUTPUT_KEYS``; the manager emits
+    ``MANAGER_OWNED_KEYS`` (the three health markers); and the manager's
+    **analysis adapter** emits exactly these eleven.  Naming them lets the
+    analytics suite's output-surface guard stay an exact equality on all three
+    without ``analytics/curator_signals.py`` being opened — that module stays
+    byte-identical to what shipped (PRD §2).
+
+    Restated literally here rather than filtered out of ``CURATOR_KEYS``: a
+    derivation would compare the tuple against itself and could never fail.
+    """
+    assert set(CURATOR_ANALYSIS_KEYS) == {
+        "operator_rows", "segment_rows", "clean_list_rows", "operators_count",
+        "clean_points", "clean_contributors", "analysis_as_of_hhmm",
+        "you_linked_state", "you_linked_reasons", "you_linked_group_size",
+        "you_clean_rank",
+    }
+    assert len(CURATOR_ANALYSIS_KEYS) == len(set(CURATOR_ANALYSIS_KEYS)) == 11
+    assert set(CURATOR_ANALYSIS_KEYS) <= set(CURATOR_KEYS)
+    assert isinstance(CURATOR_ANALYSIS_KEYS, tuple)
+    # `flagged_points_share_pct` is REUSED, so it is a signal-surface key that
+    # the adapter may later override -- not one of the eleven it creates.  The
+    # override decision is WP3's (plan §6.2); the split of ownership is not.
+    assert "flagged_points_share_pct" not in CURATOR_ANALYSIS_KEYS
 
 
 def test_the_new_analysis_keys_are_not_in_the_signal_surface() -> None:
