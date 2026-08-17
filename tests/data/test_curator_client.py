@@ -1459,3 +1459,134 @@ def test_the_cross_check_is_a_rest_get_and_never_touches_the_rpc_pools() -> None
         # publicnode's 403 is a UA problem, but the header is unconditional and
         # the REST leg must not be the one place it goes missing.
         assert "maxpane" in headers.get("user-agent", "").lower()
+
+
+# ===========================================================================
+# WP2.10 — structural no-network proof and the degradation surface
+# ===========================================================================
+
+#: Every public coroutine, with arguments that make it do real work.
+PUBLIC_CALLS: tuple[tuple[str, tuple], ...] = (
+    ("fetch_state", ()),
+    ("fetch_config", ()),
+    ("fetch_balance", ()),
+    ("fetch_wallet", (LEADER_1,)),
+    ("fetch_logs", (A.CREATION_BLOCK,)),
+    ("fetch_block_timestamps", ([25_770_000],)),
+    ("fetch_blockscout_logs", ()),
+)
+
+
+def test_every_public_coroutine_is_covered_by_this_file() -> None:
+    """The list above is hand-typed, so it has to be checked against reality —
+    otherwise a method added next month is exempt from every structural test
+    below while the suite stays green."""
+    public = {
+        name for name, member in inspect.getmembers(
+            CuratorClient, inspect.iscoroutinefunction)
+        if name.startswith("fetch_")
+    }
+    assert public == {name for name, _args in PUBLIC_CALLS}
+
+
+def test_no_client_method_opens_a_socket() -> None:
+    """Injected transport fails every request; every public coroutine is driven.
+
+    Structural, not incidental: a method added later that builds its own
+    ``httpx.AsyncClient`` (the ``PriceClient`` trap surf documented) bypasses
+    every mock in this file and would be caught only in CI, or not at all.
+
+    One deviation from wp2.md's sketch, which used a handler raising
+    ``AssertionError`` and then asserted the call *returned*.  Those two cannot
+    both hold: ``MockTransport`` does not wrap a handler exception and
+    ``AssertionError`` is caught by none of the client's ``except`` clauses, so
+    the sketch's assertion is unreachable — the error propagates instead.  The
+    fix keeps both halves honest.  ``httpx.ConnectError`` here proves the
+    degrade-to-``None`` contract, ``seen`` proves every request really went
+    through the injected transport (no socket), and
+    ``test_the_module_builds_no_http_client_of_its_own`` closes the hole the
+    ``AssertionError`` version was reaching for.  Paths that must issue no
+    request at all are pinned separately, with ``_raising_client``.
+    """
+    seen: list[str] = []
+
+    def boom(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        raise httpx.ConnectError(f"no sockets here: {request.url}",
+                                 request=request)
+
+    client = _client(boom)
+    for name, args in PUBLIC_CALLS:
+        result = asyncio.run(getattr(client, name)(*args))
+        assert result in (None, {}, []), f"{name} returned {result!r}"
+    assert seen, "nothing was attempted at all — the test proved nothing"
+
+
+def test_the_module_builds_no_http_client_of_its_own() -> None:
+    src = inspect.getsource(curator_client)
+    assert src.count("httpx.AsyncClient(") == 1     # only the constructor's
+    assert "MockTransport" not in src
+    assert "httpx.Client(" not in src               # no sync client either
+
+
+def test_the_degradation_surface_is_exactly_six_flags() -> None:
+    """Hand-typed against the docstring's promise.  A seventh flag that the
+    manager does not know about degrades nothing, and a renamed one degrades
+    nothing while looking like it does."""
+    client = CuratorClient()
+    assert client.state_failed is False
+    assert client.config_failed is False
+    assert client.logs_failed is False
+    assert client.wallet_failed is False
+    assert client.blockscout_truncated is False
+    assert client.log_group_failed == {g: False for g in curator_client.LOG_GROUPS}
+    flags = {n for n, v in vars(client).items()
+             if not n.startswith("_") and isinstance(v, (bool, dict))}
+    assert flags == {"state_failed", "config_failed", "logs_failed",
+                     "wallet_failed", "blockscout_truncated", "log_group_failed"}
+
+
+def test_the_log_groups_are_exactly_the_log_sweep_fields() -> None:
+    """``log_group_failed``'s keys ARE ``LogSweep``'s group fields — that is the
+    whole point of the out-of-band channel.  A key that names no field resolves
+    no ambiguity, and a field with no key stays ambiguous forever."""
+    from dataclasses import fields
+
+    from maxpane_dashboard.data.curator_models import LogSweep
+
+    tuple_fields = {f.name for f in fields(LogSweep)
+                    if f.name not in ("from_block", "to_block")}
+    assert set(curator_client.LOG_GROUPS) == tuple_fields
+
+
+@pytest.mark.parametrize("name,args,flag", [
+    ("fetch_state", (), "state_failed"),
+    ("fetch_config", (), "config_failed"),
+    ("fetch_wallet", (LEADER_1,), "wallet_failed"),
+    ("fetch_logs", (A.CREATION_BLOCK,), "logs_failed"),
+    ("fetch_blockscout_logs", (), "blockscout_truncated"),
+])
+def test_each_flag_is_reset_at_the_start_of_the_call_it_describes(
+    name: str, args: tuple, flag: str
+) -> None:
+    """"True right now", never "true once, ever".  A flag left standing from a
+    previous cycle marks a recovered dashboard degraded until restart, and the
+    reader has no way to tell that from a real outage."""
+    answers = dict(CAPTURED_ROUND)
+    answers.update(_wallet_answers())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return _blockscout_handler(BS_PAGES)(request)
+        payload = json.loads(request.content)
+        method = (payload[0] if isinstance(payload, list) else payload)["method"]
+        if method == "eth_getLogs" or (
+            method == "eth_blockNumber" and not isinstance(payload, list)
+        ):
+            return _logs_handler(FULL_SWEEP_ROWS)(request)
+        return _view_handler(answers)(request)
+
+    client = _client(handler)
+    setattr(client, flag, True)
+    asyncio.run(getattr(client, name)(*args))
+    assert getattr(client, flag) is False, f"{name} left {flag} stale"
