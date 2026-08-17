@@ -1,0 +1,736 @@
+{
+ "activity_rows": [
+  {
+   "address": "0xf80f4a11eeab430aa02f87d49a6db32c90d00194",
+   "amount_eth": 0.45,
+   "credited_eth": 0.1,
+   "hour": 4,
+   "kind": "deposit",
+   "log_index": 218,
+   "new_weight": 0.828325,
+   "ts": 1786924991.0,
+   "tx_count": 5,
+   "tx_hash": "0xa30c059cd8f66985d37f3502e5a4802936f2fde7004f6f40df304c977a555a45"
+  },
+  {
+   "address": "0xf80f4a11eeab430aa02f87d49a6db32c90d00194",
+   "amount_eth": 0.35,
+   "credited_eth": 0.1,
+   "hour": 4,
+   "kind": "deposit",
+   "log_index": 387,
+   "new_weight": 0.645295,
+   "ts": 1786924979.0,
+   "tx_count": 4,
+   "tx_hash": "0xf86e9bee674622482ae39e44fa40556ba734edd068b7addc832558007f1d3f14"
+  },
+  {
+   "address": "0xaa9828d2c5c68ee616645b9860bbc7894528d1f1",
+   "amount_eth": 1.25,
+   "credited_eth": 0.1,
+   "hour": 4,
+   "kind": "deposit",
+   "log_index": 386,
+   "new_weight": 2.290505,
+   "ts": 1786924979.0,
+   "tx_count": 13,
+   "tx_hash": "0x8849b894de4769580e78ae0bcc7423edc3baf1052e4201f648d3ef5e35ebc63f"
+  },
+  {
+   "address": "0x5ef2b08073570164df381db63c3496727eaf3a16",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 123,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x6a5e3db8897957a2abebeb9bcee5f83027cdde4c25ae1849ad68a26495b5bd98"
+  },
+  {
+   "address": "0x82213eaf911ee911657f22e2ec82c75dc353e817",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 121,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0xb14eeb09b734829476807047c62028d3d9632c83bf7a323198e3e3a81b2c1732"
+  },
+  {
+   "address": "0xd103ec597cf8e25e5924350660c647e36d04a66e",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 119,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0xd295442029b8ea7c0d0ca327c2a289b590557123a79580aa9a8a5cc63d5a1041"
+  },
+  {
+   "address": "0x3fadfecfd9aea4505bb84cabde2c817e8e3519f1",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 117,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x5dc05eb7d7cd83313f746c59350d1d5976e82f9bd050aabb7cc3f78dc3c9be80"
+  },
+  {
+   "address": "0xafb50abf5d1aab668808e6539ac1519475a36cd9",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 115,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0xd946a1130a8bba224f9fa5a619fd92e6635e9789a564e2cc85b469b9fa29c82f"
+  },
+  {
+   "address": "0x8981e37f5ad00d3c0c86b424dab3cb7056dc2420",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 113,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0xf72c4dd15276682f78749f605bbd2d9265353239a38f4757cddc5bc524c9c0e0"
+  },
+  {
+   "address": "0xce18b228587e0a50bb640477d2bfbc32eb2b66dc",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 111,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x0dc9705d69dbf403d2c1a6968d8031e6e66e2198a1173bd766744ff3753ae243"
+  },
+  {
+   "address": "0xaeefc571332f9621d13dc8cac0729f34f79489a6",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 109,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0xb44f3be81335a96de8a7cf99617e66cf3f22c7d2a9e37626f705a7b174cbdcc5"
+  },
+  {
+   "address": "0x6bcb09120b56294a52f8e56c3552e127187d3021",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 107,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0xe25c9c618f1c266714ce00159189ab2a09cc61f7b08aec1dcb014f84a6651d66"
+  },
+  {
+   "address": "0xe545e36c341cd6f4707660ffe2a9672c36757f08",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 105,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x092c3910e36c335c55cde0164c58cb40184a563efbc9d36a7ae6e37ae3e54d0d"
+  },
+  {
+   "address": "0x9883a5d9b48269c81e86eb3d778b8dd30c1a0e25",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 103,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0xb5cc2f4b73733389f34aba8534c3f0d3b1c4edb93055519d12c63097a3f521b0"
+  },
+  {
+   "address": "0x9ead44f96b0d760b781ca1d97f2e058375de143d",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 101,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x3f35288f0f1bbe2387b07eb4745526beb332562791c6351773e1fbed823cfeca"
+  },
+  {
+   "address": "0x5efb045047e7ee519f39538014bebd2a67ebf892",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 99,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x159b08a097d62203c390ced85aeebf2435ec61b6dca97461e8646353185d3821"
+  },
+  {
+   "address": "0xc63449bf1bb626cd8bbeec575c477a582178b9f6",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 97,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x2f5188ce2b4e9d3fe50cde947f46c45a9c7a6d8b7757f214658876765e54a044"
+  },
+  {
+   "address": "0x8730379c6b221138ae9527876ddf7bbd867c62e6",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 95,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x4f16c5dc7a0e2d857a6bbf37533d2a6e06cebb82f6ad56467ad393c68c5169ad"
+  },
+  {
+   "address": "0x75e52f3b41b5c883ec65d5fe71ce36b86440b566",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 93,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x85153e154e883613576a3177e2c444ce4ee9ad71047363b1d257f4de3fc06965"
+  },
+  {
+   "address": "0xbc6d4d3f550c42cde72df1069ff6d66d2f236a08",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 91,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x425a4f724a551130b0f43b2302e930b0aa107915168254557bcfe23982df9bb6"
+  },
+  {
+   "address": "0x18ea35f16e1121446ea8be9ae804b34438f0015b",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 89,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x103a12c1068fbf3c580e4bc09a14b67d7c611911e9f344a91bbadb3add2a8e21"
+  },
+  {
+   "address": "0x31865fdcb8677489aec499e46e47cb9ff080cc87",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 87,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x33b3622092e6d09bb968f5d2b786c88fe25e6dfc046ccfa3bb3df00c2a7a3851"
+  },
+  {
+   "address": "0xddad362bdbbc36ec83ad0d05036b93db5eab09e6",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 85,
+   "new_weight": 0.823725,
+   "ts": 1786924979.0,
+   "tx_count": 1,
+   "tx_hash": "0x92266a28ffe4247107055ff1d30a21ae06ed8e63d9d3aa6fc0226078d6b1a66b"
+  },
+  {
+   "address": "0xf80f4a11eeab430aa02f87d49a6db32c90d00194",
+   "amount_eth": 0.25,
+   "credited_eth": 0.1,
+   "hour": 4,
+   "kind": "deposit",
+   "log_index": 161,
+   "new_weight": 0.462245,
+   "ts": 1786924967.0,
+   "tx_count": 3,
+   "tx_hash": "0x2bd57376a63bf3bf2b3ed9c9b0994277f00c8b48b77130f3274c51b3c5b35f12"
+  },
+  {
+   "address": "0xf3d332f9995a3b524c33b5e97b8edbe7aeb676f9",
+   "amount_eth": 0.55,
+   "credited_eth": 0.1,
+   "hour": 4,
+   "kind": "deposit",
+   "log_index": 93,
+   "new_weight": 1.00729,
+   "ts": 1786924967.0,
+   "tx_count": 6,
+   "tx_hash": "0x1977fd64b22399f4b43f56d46447d415f95408e90142e68135e48fc0cb0bbd9c"
+  },
+  {
+   "address": "0xaa9828d2c5c68ee616645b9860bbc7894528d1f1",
+   "amount_eth": 1.15,
+   "credited_eth": 0.1,
+   "hour": 4,
+   "kind": "deposit",
+   "log_index": 92,
+   "new_weight": 2.107455,
+   "ts": 1786924967.0,
+   "tx_count": 12,
+   "tx_hash": "0xb7f0ec7dc6025035791aefe45b198e98aa40324ca3be04422c4ab137630e6f4f"
+  },
+  {
+   "address": "0xf3d332f9995a3b524c33b5e97b8edbe7aeb676f9",
+   "amount_eth": 0.45,
+   "credited_eth": 0.1,
+   "hour": 4,
+   "kind": "deposit",
+   "log_index": 308,
+   "new_weight": 0.82423,
+   "ts": 1786924955.0,
+   "tx_count": 5,
+   "tx_hash": "0x9f58d24ef12f2a47d90670486eb35e4deb3e069ca3df9de3044d6c0b88ccfb39"
+  },
+  {
+   "address": "0x6572dde843329784cfde812cc45c89de8e97036f",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 39,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0x58d8244f797b254c43f94763cb73a72bbf84d770cf174220c07d357b78a1854c"
+  },
+  {
+   "address": "0x26ce45a9d3511218fef2a59a48fbf1e9acef18c7",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 37,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0x3436973db8431d6eef4aa64f9b3543c8d7b6a769ab11afbdb5a6ebc828af2200"
+  },
+  {
+   "address": "0x9865361ca9ed142e4bcab6c16211285389e0c258",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 35,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0xb744951dd59f4371e0139935b02221ea1bda1777388a99b265f294b71adfbaf0"
+  },
+  {
+   "address": "0xa16d4cdb14584e7b9bb963b2b5d6663b131f5c1c",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 33,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0x9fcd851b2b2a519845b41e08785dfb8d6c37f6d9dd85f5f3a1a2f9f61b51bdeb"
+  },
+  {
+   "address": "0xfb2f7a7fc89b2d7ef1ae36e8284933038c96e218",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 31,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0x9fbe784170a8d085de799adeb8cb93a3361fa9df4f9d8cac301f4368479c8482"
+  },
+  {
+   "address": "0x0f9b9e272e9812dfc8f1758fa85601bda4317ee2",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 29,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0x6557c14d339bfaa6e79672385d83ae18a85a9e52300f8e4d3d51c0a5159da570"
+  },
+  {
+   "address": "0x90c947b1d8519ae39080ab4b77469c6f260ebf1e",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 27,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0xa93711a8d6ba7f63a2ccd06cc6b935b103c9521a0c736b322db8bbde3b96aa4e"
+  },
+  {
+   "address": "0xa0d97151953b4a09d377db53c8664dafaf7177f7",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 25,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0x6ea6bd2acb0d76cd72d73694860024f9fcd9069e0b115394fff40900da2dd72a"
+  },
+  {
+   "address": "0x0db75629d42d0896303a75af58947ee9c79eb61f",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 23,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0x510e419b5e4526b84d85a35986f09034d5acbba578f2b13217a44682a08b779a"
+  },
+  {
+   "address": "0xc0d6991752d350c2437a9c74c2dae16a446495b9",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 21,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0x8e736abc0b1ca8c41c5c55566d5d404001457244eb24398a8f52554e4ceca81f"
+  },
+  {
+   "address": "0x86e0bcc49792e9b7dcfb1d19ed547c676589d60b",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 19,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0xf2acf863006decf82fa5d10713f32aed7e2a3eb6b3e7bf002f5074ca9d3afa9b"
+  },
+  {
+   "address": "0x80901f70d101d284e976aaa25782b601ec09fca7",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 17,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0x9124ef94c6eed53635c2ee2950408dd636f4354d96ee49b371da7166c9dfc6ce"
+  },
+  {
+   "address": "0xd5bbb77173fac592cfdd3e703ae172cc84c9a89b",
+   "amount_eth": 0.45,
+   "credited_eth": 0.45,
+   "hour": 4,
+   "kind": "joined",
+   "log_index": 15,
+   "new_weight": 0.823815,
+   "ts": 1786924955.0,
+   "tx_count": 1,
+   "tx_hash": "0xca90862206e77ed3d9e00a55ade72c57d08fb85df7dc58fe4db9fe785be70dc7"
+  }
+ ],
+ "as_of": 1786925002.0,
+ "as_of_hhmm": "00:03",
+ "closest_call_hour": null,
+ "closest_call_margin_eth": null,
+ "closest_call_rows": [],
+ "cluster_rows": [
+  {
+   "amount_eth": 0.45,
+   "first_block": 25770977,
+   "last_block": 25771009,
+   "points": 473440,
+   "points_share_pct": 14.30918094869652,
+   "size": 520
+  },
+  {
+   "amount_eth": 0.45,
+   "first_block": 25771011,
+   "last_block": 25771043,
+   "points": 309140,
+   "points_share_pct": 9.343401906218407,
+   "size": 340
+  },
+  {
+   "amount_eth": 0.45,
+   "first_block": 25771044,
+   "last_block": 25771076,
+   "points": 161684,
+   "points_share_pct": 4.886713443116442,
+   "size": 178
+  },
+  {
+   "amount_eth": 1.2,
+   "first_block": 25770401,
+   "last_block": 25770431,
+   "points": 106335,
+   "points_share_pct": 3.213853405245954,
+   "size": 70
+  },
+  {
+   "amount_eth": 1.2,
+   "first_block": 25770470,
+   "last_block": 25770502,
+   "points": 106055,
+   "points_share_pct": 3.205390726415194,
+   "size": 70
+  },
+  {
+   "amount_eth": 60.0,
+   "first_block": 25770115,
+   "last_block": 25770143,
+   "points": 97691,
+   "points_share_pct": 2.9525984201992053,
+   "size": 9
+  },
+  {
+   "amount_eth": 0.45,
+   "first_block": 25771077,
+   "last_block": 25771088,
+   "points": 90700,
+   "points_share_pct": 2.741303464106908,
+   "size": 100
+  },
+  {
+   "amount_eth": 1.2,
+   "first_block": 25770434,
+   "last_block": 25770466,
+   "points": 83455,
+   "points_share_pct": 2.522331649360992,
+   "size": 55
+  },
+  {
+   "amount_eth": 1.2,
+   "first_block": 25770505,
+   "last_block": 25770535,
+   "points": 83240,
+   "points_share_pct": 2.515833520973087,
+   "size": 55
+  },
+  {
+   "amount_eth": 70.0,
+   "first_block": 25770815,
+   "last_block": 25770843,
+   "points": 80018,
+   "points_share_pct": 2.418452266713413,
+   "size": 7
+  }
+ ],
+ "clusters_count": 62,
+ "contributors_series": [
+  [
+   1786910327,
+   96
+  ],
+  [
+   1786913927,
+   516
+  ],
+  [
+   1786917527,
+   816
+  ],
+  [
+   1786921127,
+   2108
+  ],
+  [
+   1786924727,
+   2291
+  ]
+ ],
+ "contributors_total": 2291,
+ "current_hour": 4,
+ "degraded": [],
+ "deposits_total": 2930,
+ "early_multiplier_x": 1.8303,
+ "first_judged_hour": 24,
+ "flagged_points_share_pct": 64.08025037439795,
+ "forced_eth": 0.0,
+ "grace_ends_utc": "2026-08-17 19:58:47 UTC",
+ "grace_seconds_left": 71725,
+ "hour_fed_eth": 139.25130830753804,
+ "hour_needed_eth": 0.0,
+ "hour_seconds_left": 3336,
+ "hourly_threshold_eth": 5.0,
+ "last_saved_age_s": null,
+ "last_saved_hour": null,
+ "last_saved_wallet": null,
+ "leaderboard_rows": [
+  {
+   "address": "0x75d51517b90cc5c8873c631ddc177a1bfd96b074",
+   "credit_eth": 490.9,
+   "flagged": false,
+   "points": 30853,
+   "rank": 1,
+   "tx_count": 12
+  },
+  {
+   "address": "0x5d13fd37e8758030a6a10857c0cb699b2bff7a83",
+   "credit_eth": 490.0,
+   "flagged": false,
+   "points": 30788,
+   "rank": 2,
+   "tx_count": 1
+  },
+  {
+   "address": "0x2d3fd4eb27e1ff622eb699c1b10cc7663be70ab5",
+   "credit_eth": 490.0,
+   "flagged": false,
+   "points": 30728,
+   "rank": 3,
+   "tx_count": 1
+  },
+  {
+   "address": "0x381fe486d87c7f2633c777f1b5be3105a2a51744",
+   "credit_eth": 461.1,
+   "flagged": false,
+   "points": 30035,
+   "rank": 4,
+   "tx_count": 2
+  },
+  {
+   "address": "0x000461a73d3985eef4923655782aa5d0de75c111",
+   "credit_eth": 317.1,
+   "flagged": false,
+   "points": 24777,
+   "rank": 5,
+   "tx_count": 2
+  },
+  {
+   "address": "0x193e75b60a4ca8bc842dc28604afc6c41afe972a",
+   "credit_eth": 271.0,
+   "flagged": false,
+   "points": 22861,
+   "rank": 6,
+   "tx_count": 2
+  },
+  {
+   "address": "0xbb24cda09cb5a838ec93bae56278dc799f34feb4",
+   "credit_eth": 170.0,
+   "flagged": false,
+   "points": 18264,
+   "rank": 7,
+   "tx_count": 3
+  },
+  {
+   "address": "0x82c4426b73929c9b2a373b3a902ae7471abf0914",
+   "credit_eth": 136.0,
+   "flagged": false,
+   "points": 16159,
+   "rank": 8,
+   "tx_count": 8
+  },
+  {
+   "address": "0xad468e8336182e2cec7022f3434f91227c33a723",
+   "credit_eth": 138.0,
+   "flagged": false,
+   "points": 16000,
+   "rank": 9,
+   "tx_count": 1
+  },
+  {
+   "address": "0x7f2fc61aab7ae63eb8192bb7ec36709917707f7a",
+   "credit_eth": 126.0,
+   "flagged": false,
+   "points": 15589,
+   "rank": 10,
+   "tx_count": 1
+  }
+ ],
+ "lived_desc": "alive 4 h 4 m",
+ "phase": "grace",
+ "points_per_eth_now": 1352.0,
+ "rescued_total_eth": 0.0,
+ "settled": false,
+ "settled_at_ts": null,
+ "settled_hour": null,
+ "settled_observed_at": null,
+ "sig_at_risk_state": "ok",
+ "sig_settled_state": "ok",
+ "survival_streak_hours": 0,
+ "top_points": 30853,
+ "volume_routed_eth": 15981.146536110049,
+ "volume_series": [
+  [
+   1786910327,
+   851.8875468938896
+  ],
+  [
+   1786913927,
+   9987.263970125228
+  ],
+  [
+   1786917527,
+   2263.828567276738
+  ],
+  [
+   1786921127,
+   2738.915143506654
+  ],
+  [
+   1786924727,
+   139.25130830753804
+  ]
+ ],
+ "whale_age_s": 2171.0,
+ "whale_amount_eth": 138.0,
+ "whale_wallet": "0xad468e8336182e2cec7022f3434f91227c33a723",
+ "you_credit_eth": 490.9,
+ "you_marginal_points": 3,
+ "you_points": 30853,
+ "you_rank": 1,
+ "you_required_next_eth": 491.0
+}
