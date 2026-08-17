@@ -66,6 +66,51 @@ def near(a: int, b: int, tol_bps: int) -> bool:
     return abs(a - b) * 10_000 <= tol_bps * max(a, b)
 
 
+def tier_a_components(ds: Dataset, cfg) -> list[set[str]]:
+    """The behavioural pre-components: union-find over every tier-A edge
+    (amount, split, sequence, cadence).
+
+    This is what "funder ∈ same cluster" and "the component collapses to one
+    fingerprint" are measured against.  ``gas`` and ``funding`` call it when
+    the combiner has not handed them its own components; the corroborating
+    families can therefore never *merge* groups — they only strengthen what
+    the tier-A families already drew.
+
+    Imported lazily to keep this package's import graph acyclic (the signal
+    modules import their shared helpers from here).
+    """
+    from .amounts import amount_edges
+    from .cadence import cadence_edges
+    from .sequence import sequence_edges
+    from .split import split_edges
+
+    parent: dict[str, str] = {}
+
+    def find(x: str) -> str:
+        parent.setdefault(x, x)
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:
+            parent[x], x = root, parent[x]
+        return root
+
+    for edges in (
+        amount_edges(ds, cfg),
+        split_edges(ds, cfg),
+        sequence_edges(ds, cfg),
+        cadence_edges(ds, cfg),
+    ):
+        for e in edges:
+            ra, rb = find(e.a), find(e.b)
+            if ra != rb:
+                parent[rb] = ra
+    components: dict[str, set[str]] = {}
+    for node in list(parent):
+        components.setdefault(find(node), set()).add(node)
+    return list(components.values())
+
+
 def eth_str(amount_wei: int) -> str:
     """A wei amount as a short ETH string for pattern-language reasons.
 
