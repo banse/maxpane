@@ -215,10 +215,12 @@ gzipped, or trimmed to the event types the tests fold.
 
 ### Re-pointing the synthetic fixtures
 
-`rg "SYNTHETIC — re-point" tests/` is the whole checklist. **As of 2026-08-16 23:05 UTC it
-returns nothing**: the work packages that place those markers (the client, the signal layer,
-the screen) have not landed yet, so there is nothing to re-point. The markers appear as those
-suites are written, and each one names the bundle it is waiting for.
+`rg "SYNTHETIC — re-point" tests/` is the whole checklist. It returned nothing on
+2026-08-16 23:05 UTC only because the suites that place the markers had not been written yet;
+~~as of that timestamp there is nothing to re-point~~ — **as of 2026-08-17 it returns 33
+matches**, and the inventory below (WP7.13) says what each one is waiting for. Each marker
+names the bundle it needs, and the convention is exact so the grep stays the whole checklist:
+do not reword it, and do not delete one to tidy the output.
 
 Two rules for whoever closes it out:
 
@@ -235,10 +237,42 @@ Fixtures the build tests against that have no real payload yet, and why:
 
 | fixture | status |
 |---|---|
-| hour-boundary with a **stale** `lastActiveHour` | waiting on a quiet crossing (the busy one is already captured in `../hour_boundary_h1_h2.json`) |
-| post-grace flat multiplier | window opens 2026-08-17 19:58:47 UTC |
-| judged hour with a deficit | needs a judged hour that is short with time left on it |
-| settled state + the `Settled` log | earliest 2026-08-17 20:58:47 UTC; one-shot, unrepeatable |
-| `HourSaved` log row | **may never fire** — it needs a judged hour to cross the threshold from below. If the game dies at hour 24 the event never exists. Do not block on it |
-| `Rescued` log row | needs someone to force-feed ETH and the deployer to sweep it; realistically never |
-| `creditedDelta == 0` deposit | needs a single send above the 1000 ETH cap; the largest real one is 461.1 ETH. Do not wait for it |
+| hour-boundary with a **stale** `lastActiveHour` | waiting on a quiet crossing (the busy one is already captured in `../hour_boundary_h1_h2.json`). Missed three times — 21:58:47, 22:58:47, 23:58:47 — all busy |
+| post-grace flat multiplier | window opens 2026-08-17 19:58:47 UTC — **still ahead** |
+| judged hour with a deficit | needs a judged hour that is short with time left on it; earliest 2026-08-17 20:58:47 UTC |
+| settled state + the `Settled` log | earliest 2026-08-17 20:58:47 UTC; one-shot, unrepeatable — **still ahead** |
+| `HourSaved` log row | **PERMANENT-SYNTHETIC unless it fires.** It needs a judged hour to cross the threshold from below; if the game dies at hour 24 the event never exists. Do not block on it |
+| `Rescued` log row | **PERMANENT-SYNTHETIC.** Needs someone to force-feed ETH *and* the deployer to sweep it; realistically never |
+| `creditedDelta == 0` deposit | **PERMANENT-SYNTHETIC in practice.** Needs a single send above the 1000 ETH cap; the largest real one is 461.1 ETH. Do not wait for it |
+| judged hours generally (streak, closest call) | **structurally synthetic until 20:58:47 UTC** — no hour on this contract has ever been judged, so every `HourBucket(judged=True)` in the suite is hand-built |
+
+### The marker inventory — WP7.13, 2026-08-17
+
+That grep returns **33** matches. Nothing was re-pointed, because
+**no bundle for capture A, B or C exists**: the newest bundle here is `20260817T000322Z`, both
+of the 2026-08-17 windows (19:58:47 and 20:58:47 UTC) were still ahead when this was written,
+and the quiet crossing has been missed at three consecutive boundaries. Every marker therefore
+stays exactly as its owning work package wrote it — the convention is what makes the grep the
+whole checklist, and a marker deleted to tidy the output is a fixture that silently stops being
+tracked.
+
+What each one is waiting for, so the next agent does not have to re-derive it:
+
+| waiting on | markers | where |
+|---|---:|---|
+| **A** — quiet crossing (`currentHourTotal == 0` with a stale `lastActiveHour`) | 3 | `data/test_curator_cache.py:425` `test_the_boundary_fixture_writes_no_zero`; `data/test_curator_manager.py:375` `test_a_quiet_crossing_cannot_overwrite_a_folded_bucket`; `data/test_curator_manager.py:1220` `test_a_silent_hour_reaches_the_series_as_a_zero_rather_than_a_hole` |
+| **B** — post-grace / judged hour with a deficit | 15 | `analytics/test_curator_signals.py:668, 1236, 1434, 1448, 2062, 2121, 2142`; `widgets/test_curator_widgets.py:278, 458, 814, 1497, 1907`; `screens/test_curator_screen.py:194, 215`; `fixtures/curator/signals/readings_judged_deficit.json` |
+| **C** — settlement transition + the `Settled` log | 6 | `analytics/test_curator_signals.py:1483`; `widgets/test_curator_widgets.py:303`; `screens/test_curator_screen.py:196, 222`; `data/test_curator_manager.py:926`; `fixtures/curator/signals/readings_settled.json` |
+| **permanent-synthetic** — the event may never fire, or the deposit may never land | 3 | `data/test_curator_manager.py:614` `test_the_settled_and_hour_saved_decoders_read_their_synthetic_rows` (`HourSaved`); `data/test_curator_client.py:1299` `test_the_endgame_rows_group_correctly_when_they_finally_fire` + `fixtures/curator/client/logs_settled_row.json` (`HourSaved`/`Settled`/`Rescued` shapes, taken from the ABI); `widgets/test_curator_widgets.py:1352` `test_a_zero_credit_is_a_real_reading_and_not_an_unknown_one` (a deposit above the 1000 ETH cap) |
+| **prose** — the convention documented, not a fixture | 6 | this file; `fixtures/curator/screen/README.md:74-75`; `fixtures/curator/signals/README.md:17,19`; `analytics/test_curator_signals.py:2142`'s own assertion that the marker is present in the fixture |
+
+The permanent-synthetic four already carry their reason where they live — `logs_settled_row.json`'s
+`_comment` states plainly that `HourSaved`, `Settled` and `Rescued` have never fired and that the
+rows carry the ABI's *shape* only, and the widget test's follow-up comment names the 461.1 ETH
+largest real deposit. They keep their markers on purpose: the marker is what proves the fixture is
+still being watched, and `HourSaved` would be re-pointable the day one finally fires.
+
+**One gap closed since the plan was written:** `previewPoints`/`pointsOf` were captured
+(`20260816T225143Z_curve-probe.json`, 20 of 20 calls matching `(isqrt(w) * rate) // 1e9`), so the
+sqrt curve is validated **against chain**, not by transcription. No marker was waiting on it, which
+is why the count did not fall.

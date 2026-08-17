@@ -222,7 +222,7 @@ states are irreplaceable once missed, and two of the three windows are **today**
 
 | # | state | how to recognise it | window | if missed |
 |---|---|---|---|---|
-| **A** | hour boundary, **no deposit yet** | `currentHourTotal() == 0` **while** `lastActiveHour()` still names the previous hour, `timeLeftInHour()` ≈ 3600 | any `HH:58:47` → next-hour crossing, until settlement; cheapest of the three, retryable hourly. **The crossing itself is already captured** (`hour_boundary_h1_h2.json`, 2026-08-16 21:58:47 UTC) — what is missing is a *quiet* crossing, i.e. one where no deposit lands in the first seconds | the stale-`lastActiveHour` decode path has no real fixture; the volume-drop half of the hazard is covered |
+| **A** | hour boundary, **no deposit yet** | `currentHourTotal() == 0` **while** `lastActiveHour()` still names the previous hour, `timeLeftInHour()` ≈ 3600 | any `HH:58:47` → next-hour crossing, until settlement; cheapest of the three, retryable hourly. **The crossing itself is already captured** (`hour_boundary_h1_h2.json`, 2026-08-16 21:58:47 UTC) — what is missing is a *quiet* crossing, i.e. one where no deposit lands in the first seconds. **Missed at three consecutive boundaries** (21:58:47, 22:58:47, 23:58:47) — during grace a deposit lands within seconds of every crossing, so the quiet state simply does not exist yet; it becomes the *normal* case after grace | the stale-`lastActiveHour` decode path has no real fixture; the volume-drop half of the hazard is covered |
 | **B** | post-grace, judged hour in progress | `earlyMultiplierBps() == 10000` exactly, `currentHour() >= 24`, `ethNeededThisHour()` can be > 0 | opens **2026-08-17 19:58:47 UTC**; the flat-multiplier state persists, but a *judged hour with a live deficit* may be brief | JUDGED phase, HOUR AT RISK yellow/red and the flat-multiplier branch are all fixture-less |
 | **C** | settlement transition | `isSettled() == true`; a `Settled` log if anyone calls `settle()`; a `HourSaved` log if one ever fires | earliest **2026-08-17 20:58:47 UTC**; the *transition* is one-shot and unrepeatable forever | SETTLED is the terminal product state and would ship tested only against synthetics; `HourSaved` may never fire at all |
 
@@ -248,11 +248,22 @@ State this plainly to whoever picks up the work, and keep the table current:
 | `HourSaved` log row | **synthetic** — never fired on chain as of the captures | capture **C**, only if one ever fires. It may not; say so rather than waiting. |
 | `creditedDelta == 0` deposit (above the 1000 ETH cap) | **synthetic, permanently plausible** — the largest real send is 461.1 ETH | a >1000 ETH deposit lands. Do not wait for it. |
 | `Rescued` log row | **synthetic** — forced ETH is an anomaly that may never occur | never, realistically |
-| `previewPoints(weight)` / `pointsOf(addr)` returns | **absent** — the 21-call round has no argument-taking view in it | WP1.6 captures them; until then the sqrt curve is validated by differential test against a transcription of the contract's own Newton loop (WP3.3) |
+| `previewPoints(weight)` / `pointsOf(addr)` returns | **REAL, captured 2026-08-16 22:51:43Z** — `captures/live/20260816T225143Z_curve-probe.json`, 20 of 20 calls answered and every one equal to `(isqrt(w) * rate) // 1e9` computed locally | done (WP1.6). The curve is validated **against chain**, not by transcription |
 
 **Tests that must be re-pointed when a real payload lands** are marked in their owning WP with
 the literal comment `# SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>`
-so `rg "SYNTHETIC — re-point"` is the whole checklist. WP7.13 closes it out.
+so `rg "SYNTHETIC — re-point"` is the whole checklist.
+
+**WP7.13 closed it out on 2026-08-17, and closed it *open*.** The grep returns **33** matches
+and **none of them was re-pointed**, because no bundle for capture A, B or C exists: the newest
+live bundle is `20260817T000322Z`, both of the 2026-08-17 windows (19:58:47 and 20:58:47 UTC)
+were still ahead, and the quiet crossing has now been missed at three consecutive boundaries —
+21:58:47, 22:58:47 and 23:58:47 — each time because a deposit landed within seconds of the
+boundary, which is the *normal* state during grace. Nothing is wrong with the rig. The per-marker
+inventory, classified as waiting-on-A (3), waiting-on-B (15), waiting-on-C (6),
+permanent-synthetic (3) and prose (6), lives in
+`tests/fixtures/curator/captures/live/README.md` under "The marker inventory". Every marker
+stays; deleting one to tidy the grep is how a fixture stops being tracked.
 
 ---
 
@@ -286,11 +297,17 @@ A hazard with no test is not handled.
 Not blockers. Each is a decision the implementer confirms against the live chain rather than
 an assumption the plan hides.
 
-- **The sqrt curve has no committed onchain cross-check.** The 21-call round holds only
-  parameterless views, so `previewPoints(weight)` and `pointsOf(addr)` were never captured.
-  WP3.3 validates against a transcription of the contract's own loop — a genuine differential,
-  not a tautology — and WP1.6 closes the gap with a real capture whenever it runs. Until then,
-  say "validated by transcription", not "validated against chain".
+- **~~The sqrt curve has no committed onchain cross-check~~ — CLOSED 2026-08-16 22:51:43Z.**
+  The premise was right when it was written: the 21-call round holds only parameterless views.
+  WP1.6 then ran, and `captures/live/20260816T225143Z_curve-probe.json` holds
+  `previewPoints(uint256)` for twelve weights and `pointsOf`/`weightOf` for four real wallets —
+  20 of 20 calls answered, every return equal to `(isqrt(weight) * rate) // 1e9` computed
+  locally, with `0`, `1`, `1e9-1` and `1e9` all flooring to **0 points** (the floor is real, not
+  a rounding artefact). It is now correct to say **"validated against chain"**, and
+  `test_the_curve_matches_previewpoints_on_chain` is the assertion. WP3.3's transcription of the
+  contract's own Newton loop stays as the second, independent witness. The *runtime* half of
+  amendment A2 was struck rather than built (PRD §13): a client method for `SEL_PREVIEW_POINTS`
+  would fetch, every session, a number no widget renders.
 - **`HourSaved` may never fire.** It requires a judged hour to cross the threshold from below.
   If the game dies at hour 24 the event never exists, and the signal row must render its
   explicit never-fired state rather than waiting for a payload. Do not block on capture C's
@@ -361,9 +378,12 @@ PRD §11's success criteria, verified by WP7's integration tasks:
    composited output; the settled screen renders a **final** framing, not a staleness warning.
 3. Under a full outage after settlement was observed, the dashboard still renders SETTLED —
    the outage degrades the freshness marker, never the phase.
-4. The three mandated prove-it-bites mutations (settlement latch, hour-boundary fold, curve
-   floor) were each performed, watched go red, and restored, with the evidence recorded in
-   WP7.12.
+4. The **four** mandated prove-it-bites mutations — settlement latch, hour-boundary fold,
+   curve floor and weight floor, the fourth split out by amendment 3 above — were each
+   performed, watched go red, and restored, with the evidence recorded in WP7.12. **Done
+   2026-08-17**, eight mutations in total (the latch and the fold each needed two halves to
+   reach their tests, and the curve floor has three variants); every one reddened a *named*
+   test and `git status --short` was empty after each restore.
 5. The full layout is **measured** at ≤ 143 columns, so `__main__.FULL_LAYOUT_COLUMNS` does
    not move; below it every shed column is advertised with `‹ widen` and nothing clips dark.
 6. The six registration surfaces agree: `--game curator` launches, menu key `2` opens it,
@@ -371,3 +391,57 @@ PRD §11's success criteria, verified by WP7's integration tasks:
    `default="surf"` are unchanged and verified.
 7. Keyless end-to-end on a fresh install, backfill included: zero API keys, zero signing
    paths, zero network access in the test suite.
+
+---
+
+## Status at the close of WP7 — 2026-08-17
+
+All eight work packages landed. This section is the plan's own reconciliation: what is true
+now, and what in the document above was already struck rather than deleted.
+
+**Shipped.** `--game curator` is registered on all six agreeing surfaces (`app.py` wiring +
+`_GAME_CYCLE`, `MaxPaneApp.__init__`'s `initial_game` verified untouched, `__main__.py`'s
+`--game` choices, `GAMES` at menu key **2** with 3..8 renumbered, CLAUDE.md's eight-row table,
+README's table and usage block), plus the curator block appended at the end of
+`themes/minimal.tcss`. Suite: **4287 passed, 0 failed**; `cargo test` 17 passed, untouched.
+
+**Definition of done, item by item.**
+
+1. Green, and `cargo test` untouched — yes. The only pre-existing tests that changed are the
+   registration ones: `tests/test_app_startup.py` (`ALL_GAMES`, `MANAGER_ATTRS`),
+   `tests/test_surf_registration.py` (`MANAGER_ATTRS`) and `tests/test_fwa_theme.py`'s
+   append-only stylesheet guard, which every previous dashboard also moved.
+2. GRACE, JUDGED and SETTLED each render through the real screen on composited output — yes,
+   and the settled framing is an archive, not a staleness warning.
+3. SETTLED survives a total outage — yes, and the mutation that breaks it is recorded.
+4. Four mutations, eight applications, each reddening a named test — yes.
+5. Measured **138** columns, so `FULL_LAYOUT_COLUMNS` did not move from FWA's 143 — yes.
+6. The six surfaces agree; `surf` is still `GAMES[0]`, still the `--game` default and still the
+   bare-app prefetch — yes, pinned in two files.
+7. Keyless end-to-end — yes. `rg -i "api_key|apikey|x-api-key|Authorization|keystore|
+   private_key"` over the whole package returns **zero** hits, and the guardrail scans in
+   `tests/test_curator_registration.py` keep it that way.
+
+**Verified against the live chain on 2026-08-17** (grace hour 11-12), not just against
+fixtures: the top three folded leaderboard rows equal `pointsOf(address)` read straight off
+publicnode — 36,924 / 33,547 / 30,853, wei-exact — which validates the sqrt curve, the weight
+fold and the leaderboard end to end. `contributors_total` / `deposits_total` track `stats()`
+live rather than the fold. `FORCED ETH` renders `—`. The countdown to 19:58:47 UTC is exact.
+
+**Two findings from the smoke run, reported and not fixed** (they belong to WP2/WP4/WP5):
+
+- **First paint costs about three minutes.** `fetch_blockscout_logs` takes ~196 s of a ~190 s
+  first cycle, paginating 10,000+ logs; the cache does not help, because the cost is the REST
+  cross-check and not the backfill. It is TTL'd, so the second cycle is 0.8 s — but the manager
+  publishes one flat dict per cycle, so the screen shows "Loading..." until the slow tier
+  returns. H15 anticipated unbounded growth; the scale arrived faster than the plan assumed
+  (145 contributors and 231 deposits at capture, 8,000+ and 10,000+ thirteen hours later).
+- **The YOU row cannot tell "no wallet configured" from "the wallet read failed."** Both
+  produce five `None` `you_*` keys, so under an outage the row reads `set MAXPANE_WALLET` at a
+  user who has set it. The title bar does say `⚠ … wallet`, so the degradation is advertised —
+  the row's own copy is what is wrong. A `you_configured` flag in the flat dict would close it.
+
+**Still open, and deliberately.** The synthetic-fixture ledger closed *open*: 33 markers, none
+re-pointed, because captures A, B and C had not happened yet — see "Synthetic until captured"
+above and the marker inventory in `tests/fixtures/curator/captures/live/README.md`. The WHALE
+and cluster constants are still first guesses (PRD §12). What the list gates is still unknown.
