@@ -84,33 +84,33 @@ ids `#title-bar #hero-row #middle-row #curator-right-rail #separator #bottom-row
 
 **Steps:**
 
-- [ ] Read `screens/fwa.py` end to end (the `c` swap's rationale is in its docstring) and skim
+- [x] Read `screens/fwa.py` end to end (the `c` swap's rationale is in its docstring) and skim
       `screens/talismans.py` for the second example and `screens/surf.py` for the rail.
-- [ ] Write the failing test module: the `_FakeManager` (never touches the network,
+- [x] Write the failing test module: the `_FakeManager` (never touches the network,
       `raises=True` available as a *defensive* double), `_Harness` and `_ThemedHarness`
       (the latter loads the real `minimal.tcss`, which is valid before WP7 adds a curator
       block — `DEFAULT_CSS` stays in charge and keeps passing after), `_screen_text` via
       `_compositor.render_strips()`, `_frozen_payload(**overrides)` built from
       `{k: sample.get(k) for k in CURATOR_KEYS}`, `_all_none_payload()`, and three phase
       payloads `_grace_payload()` / `_judged_payload()` / `_settled_payload()`.
-- [ ] The fixture's captures-derived constants, all from WP0.7's pins:
+- [x] The fixture's captures-derived constants, all from WP0.7's pins:
       `LAUNCH = 1_786_910_327`, `GRACE_END = 1_786_996_727`,
       `FIRST_JUDGED_COMPLETE = 1_787_000_327`, hour-1 volume `730.31…` ETH (from
       `0x27d2c90dce228ae5b0`), `contributors_total = 145`, `deposits_total = 226`,
       `volume_routed_eth` from `0x560119983627C22D4F`, `early_multiplier_x = 1.9491`,
       top wallet `0x381fe486…` at credit 461.1 ETH and ≈30 035 points, and the 9×60Ξ cluster
       at blocks 25 770 115–25 770 143.
-- [ ] First tests: `test_bindings_are_refresh_and_the_view_toggle` (`{"r", "c"}`);
+- [x] First tests: `test_bindings_are_refresh_and_the_view_toggle` (`{"r", "c"}`);
       `test_screen_mounts_all_seven_widgets` (hero row 1 child, middle row 2, rail 2,
       bottom row 3 with exactly one of the swap pair displayed);
       `test_curator_keys_covers_the_local_signature_map` (dispatched ⊆ `CURATOR_KEYS`, and
       `CURATOR_KEYS − dispatched − META_KEYS` is empty).
-- [ ] Run: expect `ModuleNotFoundError: … screens.curator`.
-- [ ] Implement the skeleton. `DEFAULT_CSS` is a **structural fallback only** — WP7 restates it
+- [x] Run: expect `ModuleNotFoundError: … screens.curator`.
+- [x] Implement the skeleton. `DEFAULT_CSS` is a **structural fallback only** — WP7 restates it
       in `minimal.tcss`. **No vertical padding on `#hero-row` or `#curator-right-rail`**: the
       rail holds a seven-row signal panel and the FWA coverage-badge clipping bug is exactly
       one `padding: 1 2` away.
-- [ ] Run to green. Commit:
+- [x] Run to green. Commit:
       `feat(curator): screen skeleton with the seven-widget slot grid`
 
 ---
@@ -122,7 +122,7 @@ ids `#title-bar #hero-row #middle-row #curator-right-rail #separator #bottom-row
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_the_title_names_the_phase_in_words():
@@ -158,11 +158,11 @@ def test_the_settled_title_carries_the_observation_time_not_a_staleness_alarm():
         assert wrong not in line
 ```
 
-- [ ] Implement, ordering the line so warnings precede the version tail: `#title-bar` is one
+- [x] Implement, ordering the line so warnings precede the version tail: `#title-bar` is one
       row high and the tail is what gets clipped.
-- [ ] **Prove it bites:** make `_fmt_eth` coerce `None` to `0.0` →
+- [x] **Prove it bites:** make `_fmt_eth` coerce `None` to `0.0` →
       `test_all_none_shows_emdashes_never_zeros` FAILS. Restore.
-- [ ] Commit: `feat(curator): phase-aware title line with the warning-glyph degradation`
+- [x] Commit: `feat(curator): phase-aware title line with the warning-glyph degradation`
 
 ---
 
@@ -170,21 +170,21 @@ def test_the_settled_title_carries_the_observation_time_not_a_staleness_alarm():
 
 **Steps:**
 
-- [ ] Failing tests: `_record_dispatches` wraps every widget's `update_data` and asserts each
+- [x] Failing tests: `_record_dispatches` wraps every widget's `update_data` and asserts each
       received **exactly** its signature's kwargs (`set(kwargs) == set(signature)`, so an extra
       and a missing both fail by name); nothing in `CURATOR_KEYS` reaches no widget;
       the all-`None` payload renders explicit unavailable states with no `0.00 ETH`,
       no `0 wallets`, no `hour 0`; a raising manager touches only the StatusBar
       (`MANAGER_FAILURE_SECONDS = 999`) and leaves the previous frame standing.
-- [ ] State plainly in the test module docstring: **the specified outage path is the all-`None`
+- [x] State plainly in the test module docstring: **the specified outage path is the all-`None`
       payload, not an exception.** WP5 guarantees `fetch_and_compute` never raises and pins it
       with `test_no_exception_escapes_when_every_call_raises`. The `raises=True` double is belt
       and braces for a mis-wired manager and must never become the documented outage contract.
-- [ ] Implement the guarded dispatch (one `try/except` per widget, the `screens/surf.py` shape).
-- [ ] **Prove it bites:** delete one kwarg from the `CuratorSignals` dispatch → the dispatch
+- [x] Implement the guarded dispatch (one `try/except` per widget, the `screens/surf.py` shape).
+- [x] **Prove it bites:** delete one kwarg from the `CuratorSignals` dispatch → the dispatch
       test FAILS naming it. Delete the whole `CuratorClusters` block → it FAILS with
       `contract keys reach no widget: [...]`. Restore both.
-- [ ] Commit: `feat(curator): dispatch CURATOR_KEYS to widgets with per-widget guards`
+- [x] Commit: `feat(curator): dispatch CURATOR_KEYS to widgets with per-widget guards`
 
 ---
 
@@ -195,7 +195,7 @@ completes, then **CLOSEST CALLS**; `c` toggles either way at any time.
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_the_default_view_follows_the_phase():
@@ -244,12 +244,12 @@ def test_the_status_bar_names_the_active_view():
     ...
 ```
 
-- [ ] Implement `action_toggle_view()` plus `_user_chose_view: bool` (set by the action, never
+- [x] Implement `action_toggle_view()` plus `_user_chose_view: bool` (set by the action, never
       by a refresh) and `_apply_phase_default(phase)` called from `_do_refresh` only while
       `_user_chose_view` is false.
-- [ ] **Prove it bites:** let `_apply_phase_default` run unconditionally → the
+- [x] **Prove it bites:** let `_apply_phase_default` run unconditionally → the
       "does not fight the user" test FAILS. Restore.
-- [ ] Commit: `feat(curator): c swaps clusters and closest calls with a phase-aware default`
+- [x] Commit: `feat(curator): c swaps clusters and closest calls with a phase-aware default`
 
 ---
 
@@ -257,7 +257,7 @@ def test_the_status_bar_names_the_active_view():
 
 **Steps:**
 
-- [ ] Three composited tests, one per phase, at the pinned size:
+- [x] Three composited tests, one per phase, at the pinned size:
 
 ```python
 async def test_the_grace_screen_renders_the_countdown_and_the_curve():
@@ -302,9 +302,9 @@ async def test_all_seven_detector_rows_reach_the_compositor_in_every_phase():
             assert label in text, (label, payload["phase"])
 ```
 
-- [ ] Mark the judged and settled payloads
+- [x] Mark the judged and settled payloads
       `# SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>` (WP1.4 / WP1.5).
-- [ ] Commit: `test(curator): all three phases rendered through the compositor`
+- [x] Commit: `test(curator): all three phases rendered through the compositor`
 
 ---
 
@@ -316,11 +316,11 @@ with `‹ widen`**; the constant does not rise.
 
 **Steps:**
 
-- [ ] Add the helpers the surf suite proved worth having:
+- [x] Add the helpers the surf suite proved worth having:
       `_widen_markers(width, payload=None) -> int` (composited count over the whole screen) and
       `_panels_asking_for_width(width) -> set[str]` (which panel's rectangle each marker is in,
       with `assert len(marked) == text.count("‹ widen")` so no panel can hide one).
-- [ ] Write the tests **against the constant**, so a wrong pin turns them red rather than
+- [x] Write the tests **against the constant**, so a wrong pin turns them red rather than
       documenting fiction:
 
 ```python
@@ -365,7 +365,7 @@ def test_curator_fits_inside_the_documented_app_width():
     )
 ```
 
-- [ ] **Run the sweep.** Column by column, over the real screen, in all three phases and both
+- [x] **Run the sweep.** Column by column, over the real screen, in all three phases and both
       `c` views (throwaway; do not commit it):
 
 ```bash
@@ -389,18 +389,18 @@ for w in range(110, 181):
 EOF
 ```
 
-- [ ] Pin the printed number and replace the `provisional` comment with
+- [x] Pin the printed number and replace the `provisional` comment with
       `#: Measured against composited output (three phases x two c views), not estimated.`
       Record in the module docstring **which panel was the last one asking for a column** —
       that fact has changed hands three times on the surf screen and was restated in prose
       each time with no test that could contradict it. Here it is pinned by
       `_panels_asking_for_width`.
-- [ ] **If the number exceeds 143**, do not raise anything: go back to the widest panel and
+- [x] **If the number exceeds 143**, do not raise anything: go back to the widest panel and
       shed a column with `‹ widen`, then re-sweep. Only if that is genuinely impossible does
       `test_curator_fits_inside_the_documented_app_width` stay red **by design**, with the
       number recorded in the WP7 hand-off for WP7.7 to raise `FULL_LAYOUT_COLUMNS`, the README
       width table and the `--font-size` help text together.
-- [ ] Commit: `feat(curator): pin the measured full-layout width across phases and views`
+- [x] Commit: `feat(curator): pin the measured full-layout width across phases and views`
 
 ---
 
@@ -408,15 +408,15 @@ EOF
 
 **Steps:**
 
-- [ ] Measure `WORST_CASE_TITLE_COLUMNS`: the longest title the manager can actually emit —
+- [x] Measure `WORST_CASE_TITLE_COLUMNS`: the longest title the manager can actually emit —
       the **settled** phase (longest phase word plus the hour), all three `SOURCES` degraded
       (built from the real tuple, not typed out), the `as of HH:MM` marker and the version
       tail. `#title-bar` is a `height: 1` `Static` that **wraps out of existence** rather than
       ellipsising, so a lost tail is silent.
-- [ ] Pin it in both directions (whole tail present at N, absent at N−1) and assert
+- [x] Pin it in both directions (whole tail present at N, absent at N−1) and assert
       `WORST_CASE_TITLE_COLUMNS <= CURATOR_FULL_LAYOUT_COLUMNS` — two independently swept
       constants, never one compared with itself.
-- [ ] Commit: `test(curator): measure the worst-case title bar and prove it fits`
+- [x] Commit: `test(curator): measure the worst-case title bar and prove it fits`
 
 ---
 
@@ -424,19 +424,19 @@ EOF
 
 **Steps:**
 
-- [ ] Structural test: `RefreshGuard` precedes `Screen` in the MRO;
+- [x] Structural test: `RefreshGuard` precedes `Screen` in the MRO;
       `REFRESH_WORKER_NAME == "curator-refresh"`.
-- [ ] Event-driven overrun test with a `_BlockingManager` (no sleeps beyond bare
+- [x] Event-driven overrun test with a `_BlockingManager` (no sleeps beyond bare
       `asyncio.sleep(0)` yields): a tick landing mid-refresh is **skipped**, `_refresh_skipped`
       increments, `manager.calls` stays 1, `_refresh_in_flight` lowers, and the completed
       refresh actually rendered.
-- [ ] **Prove it bites:** comment out the `if self._refresh_in_flight:` early return in
+- [x] **Prove it bites:** comment out the `if self._refresh_in_flight:` early return in
       `screens/refresh_guard.py`, watch the overrun test go red, and **restore the file
       exactly** — this WP does not own it; `git diff` must be empty for that path afterwards.
-- [ ] Run the generic suite too and confirm its auto-discovery picks `CuratorScreen` up:
+- [x] Run the generic suite too and confirm its auto-discovery picks `CuratorScreen` up:
       `.venv/bin/python -m pytest tests/screens/test_refresh_guard.py tests/screens/test_curator_screen.py -v`
-- [ ] Run `.venv/bin/python -m pytest tests/screens/ -q` — nothing outside curator may move.
-- [ ] Write the WP7 hand-off note:
+- [x] Run `.venv/bin/python -m pytest tests/screens/ -q` — nothing outside curator may move.
+- [x] Write the WP7 hand-off note:
       1. copy `CuratorScreen.DEFAULT_CSS` into `minimal.tcss` as a
          `/* ── Curator screen ── */` block, FWA-style, **with no vertical padding on
          `#hero-row` or `#curator-right-rail`**;
@@ -446,7 +446,126 @@ EOF
          the registration tests;
       4. WP7's offline-launch acceptance criterion should use an **all-`None` payload**, not a
          raising manager — the latter models a programming error, not an outage.
-- [ ] Commit: `test(curator): prove skip-not-queue refresh scheduling on the curator screen`
+- [x] Commit: `test(curator): prove skip-not-queue refresh scheduling on the curator screen`
 
 **Done when:** all three phases render through the compositor, the width is swept and pinned
 with the binding panel named, and the screen drops overrun ticks instead of queueing them.
+
+---
+
+## Sign-off — WP6, 2026-08-17
+
+**Landed:** `maxpane_dashboard/screens/curator.py`,
+`tests/screens/test_curator_screen.py` (55 tests, all green),
+`tests/fixtures/curator/screen/{grace,judged,settled}_payload.json` +
+`README.md`. Nothing outside those paths was touched; `git diff` is empty for
+`screens/refresh_guard.py` after the mandated mutation.
+
+### The measured numbers
+
+| constant | value | how |
+|---|---|---|
+| `CURATOR_FULL_LAYOUT_COLUMNS` | **137** | column-by-column over the real screen, three phases × two `c` views |
+| `WORST_CASE_TITLE_COLUMNS` | **79** | swept separately; the line is 75 characters but `⚠` is not one column and the centred `Static` rounds |
+
+`137 ≤ 143`, so **`__main__.FULL_LAYOUT_COLUMNS` does not move** — FWA's 143
+stays the binder and WP7 has nothing to raise.
+
+**The last panel asking for a column at 136 is `CuratorSignals`**, the
+seven-row rail, pinned by `_panels_asking_for_width`, not by prose. The other
+panels clear at: leaderboard 134, activity 127, both swap tables and the
+sparklines below 125, hero never.
+
+**Both seams are measurements and neither is the ratio this file sketched.**
+`#middle-row` is **3:5** (not 3:2) and `#bottom-row` **5:3** (not 1:1). The
+sketched 3:2 would have needed **205** columns — `CuratorSignals` needs 84
+content columns and 3:2 hands the rail 0.40 W — with the YOU row silently
+amputating its `next ≥ … ETH` tail the whole way down, which is the one
+actionable number the rail carries. 1:1 on the bottom row costs the activity
+feed its full line until 158. Middle-seam sweep: 10:17 / 7:12 / 13:22 / 17:29
+reach 136, **3:5 reaches 137**, 4:7 → 138, 5:8 → 139, 1:2 → 150. 3:5 is one
+column off optimum on purpose: one column buys nothing a reader sees when the
+app-wide number is 143, and it is not worth an odd seam.
+
+### The five prove-it-bites mutations (each watched red, each restored)
+
+1. `_fmt_int(None)` → `"0"` — `test_all_none_shows_emdashes_never_zeros` red
+   (`hour 0` in the title) plus the helper test. (wp6.2 named `_fmt_eth`; that
+   helper turned out to be dead on this title line and was removed — see
+   deviations.)
+2. `you_credit_eth` dropped from the `CuratorSignals` dispatch — three tests
+   red, two naming the key.
+3. The whole `CuratorClusters` entry dropped — `contract keys reach no widget:
+   ['cluster_rows']`.
+4. `_apply_phase_default` unconditional — `test_the_default_flips_once_and_does
+   _not_fight_the_user` red.
+5. `if self._refresh_in_flight:` commented out in
+   `screens/refresh_guard.py` — `test_an_overrun_tick_is_skipped_never_queued`
+   red; file restored byte for byte.
+
+**Mutation 4 did not bite on the first attempt, and that is a finding.** As
+this file specified it, the reader toggles *from* the grace default (clusters →
+closest) and the phase then becomes `judged`, whose default is *also* closest —
+so a screen re-applying the default on every refresh passed. The test now also
+drives the reader **against** the phase default (judged → clusters) and holds
+it across two more phase-carrying refreshes. Anyone copying that test shape to
+another dashboard should copy the second half.
+
+### Deviations from this file, and why
+
+- **`_fmt_eth` and `_fmt_age` are not in the module.** WP6.2 listed them, but
+  the title line PRD §4 specifies carries no ETH amount and no age, so both
+  would have been dead formatters with no call site — which is how a formatter
+  drifts out of agreement with the thing it formats. `_num`, `_fmt_int`,
+  `_fmt_degraded`, `_phase_word` and `_title_line` are all live and tested.
+- **Rendered strings.** wp6.md's expected hero headline `GRACE —` is not what
+  WP4 renders: the CLOCK box prints `GRACE` on its own line with
+  `judging begins in HH:MM:SS` under it. Same for the sample hour numbers —
+  the judged/settled fixtures sit at **hour 28**, not 24, because they are the
+  real hours 0–4 replayed one grace period later. Reported, not restyled.
+- **The `‹ widen` count is asserted, `CuratorClosestCalls`'s empty note is
+  not.** At this slot's width WP4's note ellipsises its own tail
+  (`… · hour 24`) *visibly*, without a marker. Visible, so not clipping dark;
+  reported to WP4 below rather than worked around here.
+- **Commits.** Three, not eight: the screen and its tests are two files written
+  against one another, and eight commits over the same two blobs would have
+  been a ledger, not a history. The task order is preserved inside the second
+  commit's message.
+
+### Notes for WP4 (report, not a change request)
+
+- `SIGNALS_FULL_WIDTH` publishes **82**; on this screen the rail needs **84**
+  content columns before its last marker clears. Not a defect — the number is
+  the YOU row's and the YOU row's width is a function of the reader's own
+  credit. This sweep uses the capture's **rank-1** wallet
+  (`490.90 credit` / `next ≥ 491.00 ETH`), two columns wider than the wallet
+  WP4 measured. If the published constant is meant to be worst-case, 84 is the
+  number.
+- `CuratorClosestCalls._empty_note` ellipsises without a `‹ widen`, unlike the
+  panel's table rows. The lost tail is `· hour N`, i.e. exactly the fact the
+  empty state exists to tell.
+
+### Hand-off to WP7
+
+1. **Copy `CuratorScreen.DEFAULT_CSS` into `themes/minimal.tcss`** as a
+   `/* ── Curator screen ── */` block, FWA-style. **No vertical padding on
+   `#hero-row` or `#curator-right-rail`**: the hero is a height-8 widget
+   (three height-7 boxes over the EOA subtitle) and the rail carries a
+   seven-row signal panel whose last row is YOU. One row of vertical padding on
+   either is the FWA coverage-badge clipping bug. Keep the `3fr`/`5fr` and
+   `5fr`/`3fr` seams — they are measured, and the sweep that produced them is
+   in the test module.
+2. **`FULL_LAYOUT_COLUMNS` needs no change.** 137 ≤ 143.
+3. **`tests/screens/test_curator_screen.py::_FakeManager` is import-safe and
+   reusable** by the registration tests (no network, no clock, no cache file).
+   `_grace_payload()` / `_judged_payload()` / `_settled_payload()` and
+   `_all_none_payload()` come with it.
+4. **The offline-launch acceptance criterion should use an all-`None`
+   payload**, not a raising manager: `fetch_and_compute` never raises, so a
+   raising double models a programming error rather than an outage.
+5. **App wiring** (`app.py`): `CuratorScreen(manager, poll_interval=…,
+   name="curator", wallet=…)`. The `wallet` kwarg is the only non-standard one
+   — it feeds `you_address` on the leaderboard and the screen never reads the
+   environment itself. `q` must close the manager (`await manager.close()`).
+6. The two `# SYNTHETIC — re-point` markers in the test module (judged and
+   settled loaders) join WP7.13's `rg` checklist.
