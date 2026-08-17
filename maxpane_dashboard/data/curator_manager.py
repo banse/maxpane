@@ -449,6 +449,17 @@ FAST_TIER_PAYLOAD_KEYS: tuple[str, ...] = (
     "forced_balance_wei",
 )
 
+#: The four row keys whose emptiness is a claim about the chain rather than
+#: about this install.  ``None`` = the source did not read; ``[]`` = it read and
+#: found nothing.  The series keys are deliberately absent: they are this
+#: cache's own history, and an empty one is a fact about the install.
+_SOURCE_BACKED_ROW_KEYS: tuple[str, ...] = (
+    "leaderboard_rows",
+    "activity_rows",
+    "closest_call_rows",
+    "cluster_rows",
+)
+
 #: The ``once`` tier's readings, straight off :class:`CuratorConfig`.
 CONFIG_PAYLOAD_KEYS: tuple[str, ...] = (
     "launch_time",
@@ -1002,6 +1013,139 @@ class CuratorManager:
         read["settlement_record"] = self.cache.settlement_record()
         read["wallet_state"] = wallet_state
         return read
+
+    # -- public API ----------------------------------------------------------
+
+    async def fetch_and_compute(self) -> dict[str, Any]:
+        """Run one refresh cycle and return the flat dashboard dict.
+
+        **No exception escapes.**  A total failure still returns the full key
+        set with every value ``None`` and ``degraded`` naming what died,
+        because a widget can render an explicit unavailable state but cannot
+        render a traceback.  The screen's own ``try``/``except`` is belt and
+        braces for a mis-wired manager, never the documented outage path.
+        """
+        try:
+            return await self._cycle()
+        except Exception as exc:  # noqa: BLE001 — the outermost guard
+            self._error_count += 1
+            logger.exception("Curator refresh cycle failed outright: %s", exc)
+            payload = self._blank_payload()
+            payload["degraded"] = sorted(SOURCES)
+            self._stamp(payload)
+            return payload
+
+    async def _cycle(self) -> dict[str, Any]:
+        now = float(self._clock())
+        self._cycle_count += 1
+        tiers = set(self.cache.tiers_due(now))
+
+        # The immutables first: the fold and the series both need the launch
+        # anchor, and everything else is independent of them.
+        config = await self._pool_config(tiers, now)
+
+        # Both halves of the fast tier ride the same pool and the same tick.
+        state_out, wallet_state = await asyncio.gather(
+            self._pool_state(now), self._pool_wallet(now)
+        )
+        state = state_out.get("state")
+
+        logs_out = await self._pool_logs(tiers, now, config)
+        await self._pool_crosscheck(tiers, now, state, config)
+
+        readings = self._readings(
+            state=state,
+            config=config,
+            logs=logs_out.get("sweep"),
+            wallet_state=wallet_state,
+        )
+        signals = safe_call(build_signals, readings, now_ts=now, default=None)
+        if not isinstance(signals, dict):
+            logger.warning("build_signals returned %r — publishing the blank contract", signals)
+            payload = self._blank_payload()
+        else:
+            payload = dict(signals)
+
+        # ``build_signals`` defaults its six list keys to ``[]`` — total over
+        # hostile input, which is right for it and wrong for the four
+        # SOURCE-BACKED ones here.  WP0 froze "a None list means the source is
+        # dead, [] means genuinely nothing", and the widgets branch on it: left
+        # as ``[]``, a dead logs pool would assert that nobody has ever
+        # deposited.  The distinction is only knowable at this seam, because
+        # only the manager knows whether the read happened.
+        if readings.get("deposits") is None:
+            for key in _SOURCE_BACKED_ROW_KEYS:
+                if not payload.get(key):
+                    payload[key] = None
+
+        # The persisted series outlive one cycle's fold: they hold the hours
+        # whose events the history cap has since dropped, and they survive a
+        # restart. An empty one is left as ``build_signals`` produced it.
+        for key in CURATOR_SERIES_KEYS:
+            stored = self.cache.get_series(key)
+            if stored:
+                payload[key] = stored
+
+        payload["degraded"] = self._degraded()
+        self._stamp(payload)
+        return self._finalise(payload)
+
+    def _stamp(self, payload: dict[str, Any]) -> None:
+        """Fill the freshness marker from the newest *successful* read.
+
+        It moves only when something actually answered, which is what makes the
+        settlement case honest: after the endpoints die the phase word stays
+        SETTLED and this marker is what freezes, so the reader can see exactly
+        how old the picture is.
+        """
+        stamp = None
+        try:
+            stamp = self.cache.newest_as_of()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("curator as-of lookup failed: %s", exc)
+        payload["as_of"] = stamp
+        payload["as_of_hhmm"] = (
+            time.strftime("%H:%M", time.localtime(stamp)) if stamp else None
+        )
+
+    # -- contract enforcement ------------------------------------------------
+
+    def _finalise(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Return exactly :data:`CURATOR_KEYS`, no more and no less.
+
+        A key this manager invents is dropped and logged rather than shipped: a
+        screen that has to ask whether a key exists is a screen with a silent
+        fallback arm.
+        """
+        out = self._blank_payload()
+        for key, value in data.items():
+            if key in out:
+                out[key] = value
+            else:
+                logger.error(
+                    "CuratorManager produced %r, which is not in CURATOR_KEYS — dropped",
+                    key,
+                )
+        return out
+
+    def _blank_payload(self) -> dict[str, Any]:
+        """Every key present, every source down, nothing invented.
+
+        The four **source-backed** row keys stay ``None``.  WP0 froze the pair
+        of meanings and the widgets act on them: a ``None`` list means *source
+        dead* and renders the unavailable state, while ``[]`` means *genuinely
+        nothing* and renders "no deposits yet".  Seeding ``[]`` here would make
+        a dead logs pool assert that nobody has ever deposited.
+
+        The two **series** keys are different and stay ``[]``: they are this
+        cache's own history rather than a source's answer, and an empty history
+        is a fact about this install, not about the network.
+        """
+        payload: dict[str, Any] = dict.fromkeys(CURATOR_KEYS)
+        payload["degraded"] = []
+        for key in CURATOR_SERIES_KEYS:
+            payload[key] = []
+        return payload
 
     def _client_degradation(self) -> set[str]:
         """The groups the client's own flags implicate.

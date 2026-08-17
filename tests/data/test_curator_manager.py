@@ -39,6 +39,7 @@ from maxpane_dashboard.data.curator_manager import (
 from tests.curator_fixtures import capture
 from maxpane_dashboard.data.curator_models import (
     CURATOR_DEGRADED_GROUPS,
+    CURATOR_KEYS,
     CuratorConfig,
     CuratorState,
     LogSweep,
@@ -999,3 +1000,160 @@ def test_the_latch_reaches_the_seam_even_when_the_live_read_is_gone(tmp_path, cl
     read = manager._readings(state=None)
     assert read["settled"] is None                      # the live read is gone
     assert read["settlement_record"].settled is True    # the evidence is not
+
+
+# ---------------------------------------------------------------------------
+# WP5.12 — fetch_and_compute: the flat contract
+# ---------------------------------------------------------------------------
+
+#: Every combination of the three source groups answering or dying.
+_EVERY_FAILURE_COMBINATION = [
+    {"state": s, "logs": lg, "wallet": w}
+    for s in (True, False)
+    for lg in (True, False)
+    for w in (True, False)
+]
+
+
+def _scenario_client(scenario) -> FakeClient:
+    return FakeClient(
+        fetch_state=_state() if scenario["state"] else None,
+        fetch_balance=0 if scenario["state"] else None,
+        fetch_config=CuratorConfig(
+            launch_time=A.LAUNCH_TIME,
+            hourly_threshold_wei=5 * 10**18,
+            grace_period=86_400,
+            hour_duration=3_600,
+            min_deposit_wei=5 * 10**16,
+            min_escalation_wei=10**17,
+            credit_cap_wei=1000 * 10**18,
+            first_judged_hour=24,
+            points_per_eth=1000,
+            deployer=A.DEPLOYER,
+        ) if scenario["state"] else None,
+        fetch_logs=(lambda *_: _sweep()) if scenario["logs"] else (lambda *_: None),
+        fetch_blockscout_logs=lambda *_: [],
+        fetch_wallet=_wallet_state() if scenario["wallet"] else None,
+    )
+
+
+def test_it_returns_exactly_curator_keys_always(tmp_path, clock):
+    for index, scenario in enumerate(_EVERY_FAILURE_COMBINATION):
+        manager = _manager(
+            tmp_path / f"s{index}", clock,
+            client=_scenario_client(scenario), wallet=WALLET,
+        )
+        out = asyncio.run(manager.fetch_and_compute())
+        assert set(out) == set(CURATOR_KEYS), scenario
+
+
+def test_no_exception_escapes_when_every_call_raises(tmp_path, clock):
+    client = FakeClient(
+        fetch_state=RuntimeError("state pool gone"),
+        fetch_balance=RuntimeError("balance gone"),
+        fetch_config=RuntimeError("config gone"),
+        fetch_logs=RuntimeError("logs pool gone"),
+        fetch_blockscout_logs=RuntimeError("blockscout gone"),
+        fetch_wallet=RuntimeError("wallet gone"),
+    )
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+    out = asyncio.run(manager.fetch_and_compute())
+    assert set(out) == set(CURATOR_KEYS)
+    assert out["degraded"] == sorted(SOURCES)
+    assert out["phase"] is None
+    assert out["contributors_total"] is None
+    assert out["leaderboard_rows"] is None
+
+
+def test_the_manager_divides_to_eth_exactly_once(tmp_path, clock):
+    """Models are wei-native; the dict is the presentation boundary.  Two
+    divisions is how a number becomes 1e-18 of itself, silently.
+
+    ``build_signals`` owns that division and the cache's series writer owns the
+    only other one, so this module's own count is ZERO -- and a division
+    appearing here is exactly the second one.
+    """
+    _EXPECTED_DIVISION_SITES = 0
+    src = inspect.getsource(curator_manager)
+    assert src.count("/ _WEI") + src.count("/ 10**18") == _EXPECTED_DIVISION_SITES
+    assert "_eth(" not in src
+
+
+def test_a_key_the_manager_invents_is_dropped_and_logged(tmp_path, clock, caplog):
+    """_finalise returns exactly CURATOR_KEYS -- the surf pattern."""
+    manager = _manager(tmp_path, clock)
+    with caplog.at_level("ERROR"):
+        out = manager._finalise({"phase": "grace", "hour_fed_eth": 1.5, "invented": 9})
+    assert set(out) == set(CURATOR_KEYS)
+    assert out["phase"] == "grace"
+    assert "invented" in caplog.text
+
+
+def test_the_blank_payload_distinguishes_dead_sources_from_empty_ones(tmp_path, clock):
+    """A None list means 'source dead'; [] means 'genuinely nothing'.  On a
+    blank payload the ROW keys stay None (we did not look) while the SERIES
+    keys are [] (an empty history is a fact about this install, not about the
+    network)."""
+    manager = _manager(tmp_path, clock)
+    blank = manager._blank_payload()
+    for key in ("leaderboard_rows", "activity_rows", "closest_call_rows", "cluster_rows"):
+        assert blank[key] is None
+    for key in ("volume_series", "contributors_series"):
+        assert blank[key] == []
+    assert blank["degraded"] == []
+
+
+def test_a_healthy_cycle_publishes_the_chain_values_it_read(tmp_path, clock):
+    manager = _manager(
+        tmp_path, clock, client=_scenario_client({"state": True, "logs": True, "wallet": True}),
+        wallet=WALLET,
+    )
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["degraded"] == []
+    assert out["phase"] == "grace"
+    assert out["current_hour"] == 4
+    assert out["contributors_total"] == 143            # the contract's own counter
+    assert out["hourly_threshold_eth"] == 5.0          # read live, never hardcoded
+    assert out["first_judged_hour"] == 24
+    assert out["early_multiplier_x"] == pytest.approx(1.9491)
+    assert len(out["leaderboard_rows"]) == 10
+    assert out["volume_series"][0][0] == A.LAUNCH_TIME
+    assert out["as_of_hhmm"] is not None
+    assert out["you_required_next_eth"] == pytest.approx(4.1)
+
+
+def test_a_nonzero_balance_never_reaches_a_volume_field(tmp_path, clock):
+    """H5.  1.5 ETH of forced ETH is an anomaly -- somebody selfdestructed into
+    a contract that refunds every wei in-tx -- and it belongs to exactly one
+    key.  volume is ROUTED, and the hour total is folded from logs."""
+    client = _scenario_client({"state": True, "logs": True, "wallet": False})
+    client.answers["fetch_balance"] = 1_500_000_000_000_000_000
+    manager = _manager(tmp_path, clock, client=client)
+    out = asyncio.run(manager.fetch_and_compute())
+
+    assert out["forced_eth"] == 1.5
+    assert out["volume_routed_eth"] == 8401.0          # stats(), not the balance
+    assert out["hour_fed_eth"] != 1.5
+    for key in ("volume_routed_eth", "hour_fed_eth", "top_points", "contributors_total"):
+        assert out[key] != 1.5, key
+
+
+def test_the_series_survive_a_restart_and_reach_the_payload(tmp_path, clock):
+    path = tmp_path / "curator_cache.json"
+    client = _scenario_client({"state": True, "logs": True, "wallet": False})
+    first = CuratorManager(
+        client=client, cache=CuratorCache(path=str(path), clock=clock), clock=clock
+    )
+    out = asyncio.run(first.fetch_and_compute())
+    series = out["volume_series"]
+    assert series
+    asyncio.run(first.close())
+
+    dead = FakeClient(fetch_state=None, fetch_balance=None, fetch_config=None,
+                      fetch_logs=lambda *_: None, fetch_blockscout_logs=lambda *_: None)
+    second = CuratorManager(
+        client=dead, cache=CuratorCache(path=str(path), clock=clock), clock=clock
+    )
+    again = asyncio.run(second.fetch_and_compute())
+    assert again["volume_series"] == series
+    assert again["degraded"] == [SOURCE_LOGS, SOURCE_STATE]
