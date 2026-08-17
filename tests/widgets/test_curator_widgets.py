@@ -657,9 +657,26 @@ def test_every_declared_tier_cost_is_the_measured_one():
     from maxpane_dashboard.widgets.curator import leaderboard as lb_mod
     from maxpane_dashboard.widgets.curator._table import tier_cost
 
-    for module in (lb_mod, cc_mod, cl_mod):
+    for module in (lb_mod, cc_mod, cl_mod, *_analysis_tier_modules()):
         for name, cost, columns, _hint in module._TIERS:
             assert cost == tier_cost(columns), (module.__name__, name)
+
+
+def _analysis_tier_modules():
+    """The `f` view's tiered-table modules, one per panel as they land."""
+    from maxpane_dashboard.widgets.curator import operators as op_mod
+
+    modules = [op_mod]
+    for name in ("segments", "cleaned_list"):
+        try:
+            modules.append(
+                __import__(
+                    f"maxpane_dashboard.widgets.curator.{name}", fromlist=["_TIERS"]
+                )
+            )
+        except ModuleNotFoundError:  # pragma: no cover - pre-WP4.2/4.3 only
+            pass
+    return tuple(modules)
 
 
 def test_tier_costs_descend_so_a_narrow_panel_can_reach_the_narrow_layout():
@@ -667,7 +684,7 @@ def test_tier_costs_descend_so_a_narrow_panel_can_reach_the_narrow_layout():
     from maxpane_dashboard.widgets.curator import clusters as cl_mod
     from maxpane_dashboard.widgets.curator import leaderboard as lb_mod
 
-    for module in (lb_mod, cc_mod, cl_mod):
+    for module in (lb_mod, cc_mod, cl_mod, *_analysis_tier_modules()):
         costs = [cost for _n, cost, _c, _h in module._TIERS]
         assert costs == sorted(costs, reverse=True), module.__name__
         assert module._TIERS[0][3] == "", "the widest tier sheds nothing"
@@ -3115,3 +3132,219 @@ def test_the_standing_panel_is_the_same_height_in_every_linkage_state():
 #    file is not WP5's to edit.  WP4 owns it (it exports the three new
 #    panels) and should add them there if the screen wants the package root.
 # ===========================================================================
+
+
+# ===========================================================================
+# WP4 (sybil expansion) — the three analysis panels
+#
+# OPERATORS / SEGMENTS / CLEANED LIST, the `f` view's body.  Sized against the
+# committed worst-case slices, never toy rows, and read through the envelope
+# accessors: two of the widest payloads (`worst`, `degraded_row`) live outside
+# `rows` and a sweep driven by `worst_case_rows` alone never sees them.
+#
+# Imports are function-local in this section on purpose: the tests were
+# written before the modules existed (TDD), and a module-level import would
+# have taken the whole file's collection down with it rather than failing
+# exactly the tests that describe the missing widget.
+# ===========================================================================
+
+
+def _operator_envelope() -> dict:
+    from tests.curator_sybil_fixtures import worst_case_envelope
+
+    return worst_case_envelope("operator_row_worst.json")
+
+
+def _segment_envelope() -> dict:
+    from tests.curator_sybil_fixtures import worst_case_envelope
+
+    return worst_case_envelope("segment_rows_worst.json")
+
+
+def _clean_envelope() -> dict:
+    from tests.curator_sybil_fixtures import worst_case_envelope
+
+    return worst_case_envelope("clean_list_rows_worst.json")
+
+
+def _operator_row(**over) -> dict:
+    """One well-formed operator row, small on purpose — the worst-case tests
+    read the envelope; this is for the branch tests that need a knob."""
+    row = {
+        "size": 10,
+        "reasons": ["identical 6Ξ send ×10"],
+        "points": 31_622,
+        "points_share_pct": 1.2,
+        "sqrt_subsidy_x": 3.2,
+        "conf": "low",
+    }
+    row.update(over)
+    return row
+
+
+# -- WP4.1: CuratorOperators ------------------------------------------------
+
+
+async def test_the_worst_case_operator_renders_its_size_share_and_subsidy():
+    """The row the columns have to fit: 1,995 wallets, 6.81% of all points,
+    44.6× sqrt subsidy, four reasons.  `worst` is its own entry in `rows`."""
+    from maxpane_dashboard.widgets.curator.operators import CuratorOperators
+
+    env = _operator_envelope()
+    text = await _rendered(
+        CuratorOperators,
+        operator_rows=env["rows"][:6],
+        operators_count=len(env["rows"]),
+        flagged_points_share_pct=43.25,
+        analysis_as_of_hhmm="22:41",
+    )
+    assert "1,995 linked" in text
+    assert "6.8%" in text
+    assert "44.6×" in text
+    # The strongest reason renders whole, not clipped mid-word.
+    assert "identical 0.45Ξ send ×1,995" in text
+    # The one-line summary: the count and the share, both from the payload.
+    assert "16 linked groups" in text
+    assert "43.2% of all points" in text
+
+
+async def test_conf_renders_as_a_glyph_never_a_word_or_a_number():
+    """PRD §5.1: confidence is a filled/hollow marker consistent with the
+    leaderboard's flag vocabulary.  A raw number reads as a verdict with a
+    decimal point, and the grade word itself must never reach the screen."""
+    from maxpane_dashboard.widgets.curator.leaderboard import (
+        LINK_HIGH,
+        LINK_LOW,
+        LINK_UNKNOWN,
+    )
+    from maxpane_dashboard.widgets.curator.operators import CuratorOperators
+
+    rows = [
+        _operator_row(size=10, conf="high"),
+        _operator_row(size=11, conf="low"),
+        _operator_row(size=12, conf=None),
+        _operator_row(size=13, conf=0.87),  # a raw score is not a grade
+    ]
+    text = await _rendered(
+        CuratorOperators, operator_rows=rows, operators_count=4
+    )
+    assert LINK_HIGH in text and LINK_LOW in text and LINK_UNKNOWN in text
+    assert "high" not in text and "low" not in text
+    assert "0.87" not in text
+
+
+async def test_operators_none_is_unavailable_and_zero_is_a_real_negative():
+    """The FARM-row precedent, on the analysis panel it feeds: `None` is
+    "could not analyze" and `0` is "analyzed, none linked".  Collapsing them
+    renders confident and green through an outage."""
+    from maxpane_dashboard.widgets.curator.operators import (
+        OPERATORS_EMPTY,
+        OPERATORS_UNAVAILABLE,
+        CuratorOperators,
+    )
+
+    dead = await _rendered(
+        CuratorOperators, operator_rows=None, operators_count=None
+    )
+    empty = await _rendered(
+        CuratorOperators, operator_rows=[], operators_count=0
+    )
+    assert OPERATORS_UNAVAILABLE in dead and OPERATORS_EMPTY not in dead
+    assert OPERATORS_EMPTY in empty and OPERATORS_UNAVAILABLE not in empty
+
+
+async def test_the_operators_panel_shows_its_own_freshness_marker():
+    """`analysis_as_of_hhmm` is the detached sweep's OWN marker, separate from
+    the fast tier's `as of` — one marker for both tiers would present an
+    hours-old analysis as live."""
+    from maxpane_dashboard.widgets.curator.operators import CuratorOperators
+
+    env = _operator_envelope()
+    text = await _rendered(
+        CuratorOperators,
+        operator_rows=env["rows"][:3],
+        operators_count=16,
+        analysis_as_of_hhmm="22:41",
+    )
+    assert "as of 22:41" in text
+
+
+async def test_the_operators_panel_uses_pattern_language_only():
+    """The panel's own copy of the forbidden-word test (PRD §8), over the
+    committed worst-case rows — the state the panel normally renders."""
+    from maxpane_dashboard.widgets.curator.operators import CuratorOperators
+
+    env = _operator_envelope()
+    text = await _rendered(
+        CuratorOperators,
+        operator_rows=env["rows"][:6],
+        operators_count=len(env["rows"]),
+        flagged_points_share_pct=43.25,
+        analysis_as_of_hhmm="22:41",
+    )
+    assert "linked" in text.lower()
+    for word in ("sybil", "cheat", "fraud", "attack", "abuse", "wash"):
+        assert word not in text.lower(), word
+
+
+async def test_a_hostile_operator_reason_renders_literally():
+    """`reasons` strings are producer copy today and third-party-shaped
+    forever; `[/x]` must render as text, never raise a deferred MarkupError."""
+    from maxpane_dashboard.widgets.curator.operators import CuratorOperators
+
+    text = await _rendered(
+        CuratorOperators,
+        operator_rows=[_operator_row(reasons=["[/x]"])],
+        operators_count=1,
+    )
+    assert "[/x]" in text
+
+
+@pytest.mark.parametrize(
+    "width,tier",
+    [(138, "full"), (130, "no-sqrt"), (120, "no-points"), (100, "brief")],
+)
+async def test_a_narrow_operators_table_sheds_the_subsidy_column_first(
+    width, tier
+):
+    """The derived columns go first — the subsidy multiple, then the points —
+    and every shed is announced; the size, the evidence and the share are the
+    finding and never shed."""
+    from maxpane_dashboard.widgets.curator.operators import CuratorOperators
+
+    env = _operator_envelope()
+    widget = CuratorOperators()
+    app = _Harness(widget)
+    async with app.run_test(size=(width, 20)) as pilot:
+        widget.update_data(
+            operator_rows=env["rows"][:4], operators_count=len(env["rows"])
+        )
+        await pilot.pause()
+        text = _screen_text(app)
+    assert "1,995 linked" in text          # the finding itself never sheds
+    assert "17.9%" in text                 # nor the share
+    if tier == "full":
+        assert "widen" not in text and "44.6×" in text
+    else:
+        assert "widen" in text and "44.6×" not in text
+    if tier in ("no-points", "brief"):
+        # The hint *names* POINTS, so assert on the value: rows[0] holds
+        # 4,755,046 points and that number must be gone with its column.
+        assert "4,755,046" not in text
+    else:
+        assert "4,755,046" in text
+
+
+async def test_reasons_wider_than_the_cell_shed_whole_phrases_visibly():
+    """The widest joined evidence in the slices is 159 columns — wider than
+    any cell this layout can afford — so phrases are dropped from the end
+    behind a visible `…`, never cut mid-word by the table in silence."""
+    from maxpane_dashboard.widgets.curator.operators import CuratorOperators
+
+    env = _operator_envelope()
+    widest = max(env["rows"], key=lambda r: len(" · ".join(r["reasons"])))
+    text = await _rendered(
+        CuratorOperators, operator_rows=[widest], operators_count=1
+    )
+    assert "…" in text
+    assert widest["reasons"][0] in text    # the strongest phrase stays whole
