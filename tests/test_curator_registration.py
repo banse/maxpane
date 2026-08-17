@@ -862,3 +862,290 @@ def test_the_docs_record_the_measured_curator_width() -> None:
     assert str(CURATOR_FULL_LAYOUT_COLUMNS) in text, (
         f"CLAUDE.md never states curator's measured {CURATOR_FULL_LAYOUT_COLUMNS}"
     )
+
+
+# ---------------------------------------------------------------------------
+# WP7.12 -- the static guardrails
+# ---------------------------------------------------------------------------
+#
+# Five scans that never rot.  Each one is a hazard from the implementation
+# plan's table whose enforcement is "a rule about the source", not "a value in
+# a fixture" -- so they are cheap, they cannot go stale with the chain, and
+# they fail on the day someone reintroduces the shape rather than on the day a
+# user sees the consequence.  The four mandated *mutation* proofs are not here:
+# a mutation proof is an act, and its record is the WP7.12 commit body.
+
+#: Every production module THE LIST is made of.
+CURATOR_PRODUCTION = sorted(
+    [
+        REPO / "maxpane_dashboard" / "analytics" / "curator_signals.py",
+        REPO / "maxpane_dashboard" / "screens" / "curator.py",
+        *(REPO / "maxpane_dashboard" / "data").glob("curator_*.py"),
+        *(REPO / "maxpane_dashboard" / "widgets" / "curator").glob("*.py"),
+    ]
+)
+
+#: Every test module that exercises it.
+CURATOR_TESTS = sorted(
+    [
+        REPO / "tests" / "analytics" / "test_curator_signals.py",
+        REPO / "tests" / "screens" / "test_curator_screen.py",
+        REPO / "tests" / "widgets" / "test_curator_widgets.py",
+        REPO / "tests" / "test_curator_registration.py",
+        *(REPO / "tests" / "data").glob("test_curator_*.py"),
+    ]
+)
+
+
+def test_the_guardrail_scans_are_looking_at_real_files() -> None:
+    """The vacuity guard for every scan below.
+
+    A glob that stops matching turns five tests green at once and silently.
+    """
+    assert len(CURATOR_PRODUCTION) >= 15, [p.name for p in CURATOR_PRODUCTION]
+    assert len(CURATOR_TESTS) >= 7, [p.name for p in CURATOR_TESTS]
+    for path in CURATOR_PRODUCTION + CURATOR_TESTS:
+        assert path.is_file(), path
+
+
+def _tree(path: Path) -> ast.Module:
+    return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+
+def _rendered_strings(path: Path):
+    """Every string literal that is not a docstring, with its line number.
+
+    Comments never enter the AST at all, and docstrings are dropped here, so
+    what is left is the text that can actually reach a screen.  Scanning the
+    raw file instead would fail on every module that *explains* the hazard it
+    is avoiding -- which all of these do.
+    """
+    tree = _tree(path)
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                             ast.AsyncFunctionDef)):
+            body = getattr(node, "body", None)
+            if body and isinstance(body[0], ast.Expr) and \
+                    isinstance(body[0].value, ast.Constant) and \
+                    isinstance(body[0].value.value, str):
+                docstrings.add(id(body[0].value))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                and id(node) not in docstrings:
+            yield node.lineno, node.value
+
+
+def test_no_curator_module_divides_by_credited_delta() -> None:
+    """H3: ``creditedDelta == 0`` is legitimate, so it may never be a divisor.
+
+    A deposit whose new high-water mark is already above the 1000 ETH credit
+    cap credits nothing and still counts in full toward the hour's survival.
+    Anything that divides by it turns that legitimate zero into a crash or a
+    NaN on the one deposit that matters most.
+    """
+    for path in CURATOR_PRODUCTION:
+        for node in ast.walk(_tree(path)):
+            divisor = None
+            if isinstance(node, ast.BinOp) and isinstance(
+                node.op, (ast.Div, ast.FloorDiv, ast.Mod)
+            ):
+                divisor = node.right
+            elif isinstance(node, ast.AugAssign) and isinstance(
+                node.op, (ast.Div, ast.FloorDiv, ast.Mod)
+            ):
+                divisor = node.value
+            if divisor is None:
+                continue
+            text = ast.unparse(divisor)
+            assert "credited" not in text.lower(), (
+                f"{path.name}:{node.lineno} divides by {text} -- creditedDelta "
+                "is legitimately zero (H3)"
+            )
+
+
+#: The one place ``AT RISK`` is allowed: the mandated detector label.  Matched
+#: on the *whole string*, not the phrase, because the hazard is the wording
+#: sitting next to a volume figure -- a row whose entire text is the label is
+#: the label.
+_MANDATED_AT_RISK = {"HOUR AT RISK"}
+
+#: Words that would turn gas-priced flow into a claim about money at stake.
+_CAPITAL_WORDS = (r"\btvl\b", r"\blocked\b", r"\bat risk\b", r"\bcapital\b")
+
+
+def test_no_curator_surface_labels_volume_as_tvl_or_capital() -> None:
+    """H4: every wei is refunded inside the same transaction.
+
+    The number under THE LIST is gas-priced flow, not money at stake, so
+    ``TVL`` / ``locked`` / ``at risk`` / ``capital`` beside it would not be
+    loose wording -- it would be a false claim about money, read by somebody
+    deciding whether to send 60 ETH.  The copy reads
+    ``routed (all refunded)``.
+
+    Scanned over *rendered* strings only.  ``HOUR AT RISK`` is the mandated
+    detector label and is allowed as a whole string; the one honest capital
+    sentence is the EOA subtitle, and it says the contract keeps none of it.
+    """
+    surfaces = [
+        p for p in CURATOR_PRODUCTION
+        if "widgets" in p.parts or p.name in ("curator.py", "curator_manager.py")
+    ]
+    assert surfaces, "the H4 scan matched no surface files"
+    for path in surfaces:
+        for lineno, text in _rendered_strings(path):
+            if text.strip() in _MANDATED_AT_RISK:
+                continue
+            lowered = text.lower()
+            for pattern in _CAPITAL_WORDS:
+                assert not re.search(pattern, lowered), (
+                    f"{path.name}:{lineno} renders {text!r}, which claims "
+                    "money is at stake; every wei is refunded in-tx (H4)"
+                )
+
+
+def test_no_curator_module_hardcodes_a_contract_parameter() -> None:
+    """CLAUDE.md rule 4: read values live, never hardcode a documented one.
+
+    The eight immutables plus ``POINTS_PER_ETH`` come off the ``once`` tier.
+    ``curator_addresses`` pins ``LAUNCH_TIME`` so a test can prove the live
+    read agrees -- it is a **pin, not a source** -- and this asserts nothing
+    else ever reads it, which is the difference between a cross-check and a
+    fallback that is right until it isn't.
+    """
+    from maxpane_dashboard.data import curator_client
+
+    for path in CURATOR_PRODUCTION:
+        if path.name == "curator_addresses.py":
+            continue
+        # Read off the AST, so a module may *name* the pin in a comment (and
+        # curator_models.py does, explaining where it lives) without being
+        # accused of reading it.  ``SEL_LAUNCH_TIME`` is the selector -- every
+        # module may name that, because using it IS reading the chain.
+        for node in ast.walk(_tree(path)):
+            if isinstance(node, ast.Name):
+                assert node.id != "LAUNCH_TIME", (
+                    f"{path.name}:{node.lineno} reads the pinned launchTime "
+                    "instead of the chain's"
+                )
+            elif isinstance(node, ast.Attribute):
+                assert node.attr != "LAUNCH_TIME", (
+                    f"{path.name}:{node.lineno} reads the pinned launchTime "
+                    "instead of the chain's"
+                )
+            elif isinstance(node, ast.Constant) and node.value == 1786910327:
+                pytest.fail(
+                    f"{path.name}:{node.lineno} hardcodes the launchTime literal"
+                )
+
+    # ...and every one of the nine really is on the once tier.
+    import inspect
+
+    config_src = inspect.getsource(curator_client.CuratorClient.fetch_config)
+    for selector in (
+        "SEL_LAUNCH_TIME", "SEL_HOURLY_THRESHOLD", "SEL_GRACE_PERIOD",
+        "SEL_HOUR_DURATION", "SEL_MIN_DEPOSIT", "SEL_MIN_ESCALATION",
+        "SEL_CREDIT_CAP", "SEL_FIRST_JUDGED_HOUR", "SEL_POINTS_PER_ETH",
+    ):
+        assert selector in config_src, f"fetch_config never reads {selector}"
+
+
+#: Tokens that only appear in code that holds a key or signs something.
+_KEY_TOKENS = (
+    "api_key", "apikey", "x-api-key", "authorization", "bearer ",
+    "private_key", "privatekey", "keystore", "mnemonic", "secret_key",
+    "eth_sendrawtransaction", "eth_signtransaction", "personal_sign",
+    "signtransaction",
+)
+
+#: Libraries that exist to sign or to hold a key.
+_SIGNING_IMPORTS = ("eth_account", "web3", "eth_keys", "eth_keyfile", "coincurve")
+
+
+def test_no_curator_module_imports_a_signer_or_a_keystore() -> None:
+    """Hard constraint 1 and 2: read-only and keyless, structurally.
+
+    Scanned over the raw source rather than the AST -- unlike the H4 scan,
+    there is no legitimate reason for any of these tokens to appear even in a
+    comment here, and the whole package currently has zero hits for any of
+    them.
+    """
+    for path in CURATOR_PRODUCTION:
+        lowered = path.read_text(encoding="utf-8").lower()
+        for token in _KEY_TOKENS:
+            assert token not in lowered, f"{path.name} mentions {token!r}"
+        for node in ast.walk(_tree(path)):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            for name in names:
+                root = name.split(".")[0]
+                assert root not in _SIGNING_IMPORTS, (
+                    f"{path.name} imports {name} -- there is no signer in this repo"
+                )
+
+
+def test_no_curator_module_names_a_banned_rpc_host() -> None:
+    """H11: dead, keyed or sunset endpoints, refused at construction.
+
+    The frozenset is the enforcement; this asserts no URL anywhere in the
+    curator code slips past it, including in a comment or a docstring, where a
+    "try this one next" note is how a banned host comes back.
+    """
+    from maxpane_dashboard.data.curator_client import (
+        _BANNED_HOST_SUFFIXES,
+        _BANNED_RPC_HOSTS,
+    )
+
+    assert _BANNED_RPC_HOSTS and _BANNED_HOST_SUFFIXES
+
+    for path in CURATOR_PRODUCTION:
+        source = path.read_text(encoding="utf-8")
+        for lineno, line in enumerate(source.splitlines(), 1):
+            for url in re.findall(r"https?://([^/\s\"')]+)", line):
+                host = url.lower().split("@")[-1].split(":")[0]
+                assert host not in _BANNED_RPC_HOSTS, (
+                    f"{path.name}:{lineno} points at the banned host {host}"
+                )
+                assert not host.endswith(_BANNED_HOST_SUFFIXES), (
+                    f"{path.name}:{lineno} points at {host}, which needs a key"
+                )
+
+
+def test_no_curator_test_can_touch_the_network() -> None:
+    """Hard constraint 3, asserted structurally rather than hoped for.
+
+    Every ``httpx.AsyncClient`` a curator test builds must be handed a
+    transport -- a client without one has a live connection pool, and the
+    difference between a suite that cannot reach the network and one that
+    merely happens not to is a fixture going stale.
+    """
+    # Matched on parsed call expressions, not on text: this very file names
+    # each of them as data, and a textual scan would accuse itself.
+    forbidden = {
+        "socket.socket", "socket.create_connection", "urlopen",
+        "urllib.request.urlopen", "requests.get", "requests.post",
+        "aiohttp.ClientSession",
+    }
+    for path in CURATOR_TESTS:
+        source = path.read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(source, filename=str(path))):
+            if isinstance(node, ast.Call):
+                assert ast.unparse(node.func) not in forbidden, (
+                    f"{path.name}:{node.lineno} opens a real connection"
+                )
+        # Parsed, not grepped: test_curator_client.py contains the *string*
+        # "httpx.AsyncClient(" inside an assertion about its own source, and a
+        # textual scan reads that as a construction.
+        for node in ast.walk(ast.parse(source, filename=str(path))):
+            if not isinstance(node, ast.Call):
+                continue
+            if ast.unparse(node.func) not in ("httpx.AsyncClient", "AsyncClient"):
+                continue
+            keywords = {kw.arg for kw in node.keywords}
+            assert "transport" in keywords, (
+                f"{path.name}:{node.lineno} builds an httpx.AsyncClient with "
+                "no injected transport -- that client can reach the network"
+            )
