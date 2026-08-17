@@ -143,7 +143,8 @@ def detect(ds: Dataset, config: DetectConfig = DetectConfig()) -> DetectResult:
     3. a component survives only with ``>= config.min_families`` **distinct**
        families and ``>= config.min_size`` members — one family never
        convicts, however loudly;
-    4. confidence is the product of the per-family best strengths times a
+    4. confidence is **noisy-OR** over the per-family best strengths —
+       ``1 − Π(1 − strength)``, so corroboration accumulates upward — times a
        freshness factor (all-aged wallets discount to
        :data:`FRESHNESS_FLOOR`), clamped to [0, 1] — graduated, never binary.
     """
@@ -215,9 +216,14 @@ def detect(ds: Dataset, config: DetectConfig = DetectConfig()) -> DetectResult:
         reasons = tuple(
             sorted(families.values(), key=lambda r: (-r.strength, r.family))
         )
-        confidence = 1.0
+        # Noisy-OR over the distinct families' best strengths (ruling R11):
+        # confidence = 1 − Π(1 − strength).  Corroboration accumulates
+        # *upward* — a per-family product would make a cluster less convicted
+        # for every extra family that agreed, which is backwards.
+        complement = 1.0
         for reason in reasons:
-            confidence *= reason.strength
+            complement *= 1.0 - reason.strength
+        confidence = 1.0 - complement
         nonces = [
             tx.nonce
             for member in members

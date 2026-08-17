@@ -166,6 +166,57 @@ def _two_family_farm(*, fresh: bool) -> Dataset:
     return Dataset.from_events(deposits, [], txs=txs)
 
 
+def test_confidence_is_noisy_or_so_corroboration_accumulates_upward() -> None:
+    """Review I2 / ruling R11: confidence = 1 − Π(1 − strength_f) over the
+    distinct families' best strengths.  A per-family product would *lower*
+    confidence with every extra family — gaining evidence must never cost
+    conviction.  The two-family farm here carries amount 0.9 (odd exact) and
+    gas 0.85: noisy-OR says 0.985; adding a funding chain (0.95) must raise
+    it, not sink it."""
+    two = detect(_two_family_farm(fresh=True), DetectConfig())
+    assert len(two.clusters) == 1
+    assert round(two.clusters[0].confidence, 9) == round(1 - 0.1 * 0.15, 9)
+
+    # the same farm with a peel chain on top: strictly more confident
+    amount = 3_333_000_000_000_000_001
+    deposits, txs, funding = [], [], []
+    addrs = [f"0x{i + 1:040x}" for i in range(6)]
+    for i, addr in enumerate(addrs):
+        tx_hash = "0x" + f"{i + 1:064x}"
+        deposits.append(
+            {
+                "contributor": addr,
+                "hour": 1,
+                "amount_wei": amount,
+                "credited_delta_wei": amount,
+                "weight_added_wei": amount,
+                "new_weight_wei": amount,
+                "tx_count": 1,
+                "block_number": 1000 + i * 100,
+                "tx_hash": tx_hash,
+                "log_index": i,
+            }
+        )
+        txs.append(
+            {
+                "tx_hash": tx_hash,
+                "nonce": 0,
+                "max_priority_fee_wei": 100_000_000,
+                "max_fee_wei": 150_000_000,
+                "gas_limit": 91_600,
+                "tx_type": 2,
+            }
+        )
+        if i:
+            funding.append({"address": addr, "funder": addrs[i - 1], "hops": 1})
+    three = detect(
+        Dataset.from_events(deposits, [], txs=txs, funding=funding), DetectConfig()
+    )
+    assert len(three.clusters) == 1
+    assert three.clusters[0].confidence > two.clusters[0].confidence
+    assert three.clusters[0].confidence <= 1.0
+
+
 def test_freshness_is_a_discount_on_confidence() -> None:
     """Same two-family farm, one all-fresh and one all-aged: the aged copy is
     still a cluster (the gate never moves) at strictly lower confidence."""
