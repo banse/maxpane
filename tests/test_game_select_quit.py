@@ -34,6 +34,14 @@ from maxpane_dashboard.app import MaxPaneApp
 from maxpane_dashboard.screens.game_select import GAMES, GameSelectScreen
 
 #: Attribute names of every manager the app builds in ``__init__``.
+#:
+#: One of **four** hardcoded copies under ``tests/`` (this file,
+#: ``test_app_startup.py``, ``test_surf_registration.py``,
+#: ``test_curator_registration.py``), all of which must grow when a dashboard
+#: is added.  This copy was the one missed for the curator, and a real manager
+#: then quit by writing the developer's own cache; the agreement test that
+#: makes the redundancy safe is
+#: ``test_curator_registration.py::test_every_copy_of_manager_attrs_names_every_manager_the_app_builds``.
 MANAGER_ATTRS = [
     "_bakery_manager",
     "_frenpet_manager",
@@ -48,6 +56,7 @@ MANAGER_ATTRS = [
     "_talismans_manager",
     "_fwa_manager",
     "_surf_manager",
+    "_curator_manager",
 ]
 
 #: A game whose screen mounts without a wallet or any network call.

@@ -123,10 +123,18 @@ registration tests derive their expectations from `GAMES`, so growing that list 
 There are two worked examples and they are different shapes.
 `tests/test_surf_registration.py` is the **append** — surf went in at position 1 and no other
 key moved. `tests/test_curator_registration.py` is the **position-2 insert**: every key below
-it shifted, the CLAUDE.md and README tables renumbered with it, and the two hardcoded lists in
-`tests/test_app_startup.py` (`ALL_GAMES` and `MANAGER_ATTRS`, both hardcoded on purpose) had to
-grow too — without the second, a real manager survives inside `run_test()` and the headless
-suite starts writing the developer's own `~/.maxpane/` cache. Prefer the insert's example when
+it shifted, the CLAUDE.md and README tables renumbered with it, and the hardcoded lists in the
+tests had to grow too: `ALL_GAMES` in `tests/test_app_startup.py`, and **`MANAGER_ATTRS`, which
+exists in four files** — `tests/test_app_startup.py`, `tests/test_surf_registration.py`,
+`tests/test_game_select_quit.py` and `tests/test_curator_registration.py`. Grow every copy
+(`rg -n MANAGER_ATTRS tests/`): an ungrown one leaves a **real** manager inside `run_test()`,
+and the `q` those tests press awaits its real `close()`, so a headless "zero network" suite
+overwrites the developer's own `~/.maxpane/<game>_cache.json` with an empty one. Three of the
+four were grown for the curator and the fourth was not, which is exactly how it happened; the
+copies stay hardcoded (a derived list cannot see a manager that was never built) and
+`tests/test_curator_registration.py::test_every_copy_of_manager_attrs_names_every_manager_the_app_builds`
+is the agreement test that finds the next missed one — it discovers the copies by walking
+`tests/`, so a fifth file is covered the day it is written. Prefer the insert's example when
 the new dashboard is not going at the end.
 
 ## Build & run

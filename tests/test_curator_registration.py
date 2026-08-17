@@ -181,6 +181,68 @@ def test_every_manager_attribute_exists_on_a_fresh_app() -> None:
         assert getattr(app, attr, None) is not None, f"{attr} was never built"
 
 
+def _manager_attrs_literals() -> dict[str, list[str]]:
+    """Every module-level ``MANAGER_ATTRS`` literal under ``tests/``, by path.
+
+    Found by walking the tree rather than by importing four modules by name,
+    because the failure below is precisely "a copy nobody remembered": a fifth
+    file that grows one is covered the day it is written.
+    """
+    found: dict[str, list[str]] = {}
+    for path in sorted((REPO / "tests").rglob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):  # pragma: no cover - a broken test file
+            continue
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if "MANAGER_ATTRS" not in names or not isinstance(node.value, ast.List):
+                continue
+            found[str(path.relative_to(REPO))] = [
+                el.value
+                for el in node.value.elts
+                if isinstance(el, ast.Constant) and isinstance(el.value, str)
+            ]
+    return found
+
+
+def test_every_copy_of_manager_attrs_names_every_manager_the_app_builds() -> None:
+    """The stub list is hardcoded in **four** test modules, and a dashboard is
+    added by growing all of them.
+
+    Wave 5 grew three and missed the fourth: ``tests/test_game_select_quit.py``
+    kept a list ending at ``_surf_manager``, so a **real** ``CuratorManager``
+    survived into ``run_test()`` and the ``q`` it presses awaited its real
+    ``close()`` -- which saves the cache.  Five headless tests that document
+    "zero network" therefore rewrote the developer's own
+    ``~/.maxpane/curator_cache.json`` (7.5 MB of folded deposit history) with
+    an empty 299-byte one, and the LOW-19 close-once guarantee silently stopped
+    covering dashboard eight.
+
+    Hardcoding the lists is right -- a list derived from the app cannot see a
+    manager that was never built (see ``MANAGER_ATTRS`` above) -- so this is
+    the agreement half of that redundancy, the ``_GAME_CYCLE`` pattern
+    CLAUDE.md documents.  It is deliberately not "the four copies are equal to
+    each other": four copies that agree and are all short would pass that.
+    """
+    app = MaxPaneApp()
+    built = {name for name in vars(app) if name.endswith("_manager")}
+    assert "_curator_manager" in built  # the app half, so this cannot pass empty
+
+    copies = _manager_attrs_literals()
+    assert len(copies) >= 4, f"expected four copies of MANAGER_ATTRS, found {sorted(copies)}"
+    for path, attrs in copies.items():
+        assert set(attrs) == built, (
+            f"{path}'s MANAGER_ATTRS disagrees with the managers "
+            f"MaxPaneApp.__init__ builds: missing {sorted(built - set(attrs))}, "
+            f"unknown {sorted(set(attrs) - built)}. Every copy must be grown "
+            "when a dashboard is added -- an ungrown one leaves a REAL manager "
+            "in a headless test, which quits by writing the user's own cache."
+        )
+
+
 def test_the_curator_manager_takes_the_poll_interval() -> None:
     """The app hands its poll interval on, like every other game."""
     app = MaxPaneApp(poll_interval=45)
