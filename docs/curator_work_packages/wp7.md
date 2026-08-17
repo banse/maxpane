@@ -49,10 +49,10 @@ LIST must render correctly under all ten registered themes — WP7.9 checks that
 
 **Steps:**
 
-- [ ] Read the current call sites before editing (line numbers drift; the *blocks* do not):
+- [x] Read the current call sites before editing (line numbers drift; the *blocks* do not):
       `rg -n "surf|fwa" maxpane_dashboard/app.py`. Seven insertion points, all patterned on
       the surf/fwa pairs already there.
-- [ ] Edit, in this order inside the file:
+- [x] Edit, in this order inside the file:
       1. `from maxpane_dashboard.data.curator_manager import CuratorManager` in the manager
          import block.
       2. `from maxpane_dashboard.screens.curator import CuratorScreen` in the screen import block.
@@ -68,12 +68,12 @@ LIST must render correctly under all ten registered themes — WP7.9 checks that
          `test_the_menu_and_the_tab_cycle_offer_the_same_games_in_the_same_order` compare a
          constant with itself, and it could never fail again.
       8. The shutdown chain: `await self._curator_manager.close()` in its own try/except.
-- [ ] Run the app-level suites — they will be **red** until WP7.3 and WP7.4 land, which is the
+- [x] Run the app-level suites — they will be **red** until WP7.3 and WP7.4 land, which is the
       expected intermediate state and why the order is fixed:
       `.venv/bin/python -m pytest tests/test_app_startup.py tests/test_surf_registration.py -q`
       Note which failures you expect (`_GAME_CYCLE` vs `GAMES` mismatch) and confirm you got
       exactly those.
-- [ ] Commit: `feat(curator): wire the curator manager and screen into the app`
+- [x] Commit: `feat(curator): wire the curator manager and screen into the app`
 
 ---
 
@@ -81,16 +81,16 @@ LIST must render correctly under all ten registered themes — WP7.9 checks that
 
 **Steps:**
 
-- [ ] Confirm `MaxPaneApp.__init__`'s signature default is still `initial_game: str = "surf"`
+- [x] Confirm `MaxPaneApp.__init__`'s signature default is still `initial_game: str = "surf"`
       and that the comment above it still explains why it is hand-typed. **Change nothing.**
-- [ ] Run the pin:
+- [x] Run the pin:
       `.venv/bin/python -m pytest tests/test_app_startup.py -k bare_app_prefetches -v`
       It compares `MaxPaneApp()._initial_game` against `GAMES[0][1]`; both are still `"surf"`,
       so it must stay green through the whole of WP7. If it goes red at any point, an edit
       moved surf out of position 1 — stop and revert that edit, not this test.
-- [ ] Record in the commit body that surface 2 was verified and deliberately not edited. The
+- [x] Record in the commit body that surface 2 was verified and deliberately not edited. The
       2026-08-10 reorder was missed precisely because nobody wrote that down.
-- [ ] Commit: `chore(curator): verify the bare-app prefetch default is untouched`
+- [x] Commit: `chore(curator): verify the bare-app prefetch default is untouched`
 
 ---
 
@@ -98,13 +98,13 @@ LIST must render correctly under all ten registered themes — WP7.9 checks that
 
 **Steps:**
 
-- [ ] Insert `"curator"` at index 1 of the `--game` `choices` list. **Leave `default="surf"`
+- [x] Insert `"curator"` at index 1 of the `--game` `choices` list. **Leave `default="surf"`
       alone** and leave the help text alone (it already says the flag preloads rather than
       selects, which `test_game_help_does_not_promise_to_skip_the_menu` asserts).
-- [ ] Do **not** touch `--theme` (no new theme in v1) or `FULL_LAYOUT_COLUMNS` (WP7.7 decides).
-- [ ] Run: `.venv/bin/python -m pytest tests/test_cli_game_choices.py -q` — still red on the
+- [x] Do **not** touch `--theme` (no new theme in v1) or `FULL_LAYOUT_COLUMNS` (WP7.7 decides).
+- [x] Run: `.venv/bin/python -m pytest tests/test_cli_game_choices.py -q` — still red on the
       GAMES↔choices comparison until WP7.4. Expected.
-- [ ] Commit: `feat(curator): accept --game curator`
+- [x] Commit: `feat(curator): accept --game curator`
 
 ---
 
@@ -112,7 +112,7 @@ LIST must render correctly under all ten registered themes — WP7.9 checks that
 
 **Steps:**
 
-- [ ] Insert after the surf row and renumber everything below it:
+- [x] Insert after the surf row and renumber everything below it:
 
 ```python
 GAMES = [
@@ -130,10 +130,10 @@ GAMES = [
       Leave every commented-out hidden row (`frenpet_full`, `frenpet_wallet`, `frenpet_perf`,
       `dota`, `bakery`, `ocm`) exactly where it is, comments intact — those comments are the
       restore instructions.
-- [ ] Check the description's rendered width: the menu row is `[N] Name — description` and a
+- [x] Check the description's rendered width: the menu row is `[N] Name — description` and a
       long description wraps or clips on a narrow terminal. Measure it against the other seven
       rather than guessing; shorten if it is the longest by more than a few columns.
-- [ ] Run the three surfaces' tests together — they should now all agree:
+- [x] Run the three surfaces' tests together — they should now all agree:
 
 ```bash
 .venv/bin/python -m pytest tests/test_cli_game_choices.py tests/test_app_startup.py \
@@ -148,10 +148,10 @@ GAMES = [
       refers to — `tests/test_fwa_theme.py::…` asserting
       `keys == [str(i) for i in range(1, len(GAMES) + 1)]`.
       `test_claude_md_counts_the_visible_dashboards` will be red until WP7.8: expected.
-- [ ] Also confirm `tests/test_surf_registration.py::test_surf_is_menu_entry_one` is still
+- [x] Also confirm `tests/test_surf_registration.py::test_surf_is_menu_entry_one` is still
       green — `SURF_ROW` is pinned verbatim at key `"1"`, and inserting at position 2 must not
       disturb it.
-- [ ] Commit: `feat(curator): register THE LIST at menu position 2 and renumber the keys`
+- [x] Commit: `feat(curator): register THE LIST at menu position 2 and renumber the keys`
 
 ---
 
@@ -159,25 +159,25 @@ GAMES = [
 
 **Steps:**
 
-- [ ] Append a `/* ── Curator screen ── */` block at EOF, copying
+- [x] Append a `/* ── Curator screen ── */` block at EOF, copying
       `CuratorScreen.DEFAULT_CSS` in the style of the surf and FWA blocks. Scope the ids
       (`CuratorScreen #hero-row`, `#middle-row`, `#curator-right-rail`, `#bottom-row`) and
       leave the `Curator*` widget types unscoped — those types exist nowhere else.
       **No vertical padding on `#hero-row` or `#curator-right-rail`.**
-- [ ] Do **not** restate `#title-bar` or `#separator`: the shared stylesheet already styles
+- [x] Do **not** restate `#title-bar` or `#separator`: the shared stylesheet already styles
       those two ids for every screen, and restating them gives a shared rule a second owner
       (the surf block's documented asymmetry).
-- [ ] Add to `tests/test_curator_registration.py` (WP7.6) the two-copies-agree test, ported
+- [x] Add to `tests/test_curator_registration.py` (WP7.6) the two-copies-agree test, ported
       from `test_surf_registration.py`: parse both copies' structural properties
       (`width`, `height`, `min-height`, `padding`, `margin`), expand box shorthands, and assert
       the shared selectors carry identical geometry — with the `_DEFAULT_CSS_ONLY` /
       `_BLOCK_ONLY` sets pinned **as sets, not counted**. A count is the vacuity hole: renaming
       a widget in one copy silently drops it from the comparison.
-- [ ] Render under every registered theme and confirm nothing clips:
+- [x] Render under every registered theme and confirm nothing clips:
       `for t in matrix minimal bloomberg htop retro bakery frenpet base talismans fwa; do …`
       — or, better, a parametrised headless test over `themes.THEME_NAMES` asserting the seven
       detector rows and the three hero headlines reach the compositor under each.
-- [ ] Commit: `style(curator): add the curator block to the shared stylesheet`
+- [x] Commit: `style(curator): add the curator block to the shared stylesheet`
 
 ---
 
@@ -185,7 +185,7 @@ GAMES = [
 
 **Steps:**
 
-- [ ] Write it, mirroring `tests/test_surf_registration.py`, with **every assertion derived
+- [x] Write it, mirroring `tests/test_surf_registration.py`, with **every assertion derived
       from `GAMES`** wherever it can be — a later hide, show or reorder must *move* these
       tests, not break them. Cover:
       - every manager attribute exists on a fresh app (add `_curator_manager` to
@@ -206,9 +206,9 @@ GAMES = [
       - `FULL_LAYOUT_COLUMNS >= CURATOR_FULL_LAYOUT_COLUMNS`;
       - the docs surfaces (WP7.8/7.9) — derived from `GAMES`, so they cover dashboard eight
         without being touched.
-- [ ] **Do not duplicate the contiguity assertion**; it lives in `tests/test_fwa_theme.py` and
+- [x] **Do not duplicate the contiguity assertion**; it lives in `tests/test_fwa_theme.py` and
       already derives from `len(GAMES)`. Reference it in a comment so the next reader finds it.
-- [ ] Commit: `test(curator): registration tests derived from GAMES`
+- [x] Commit: `test(curator): registration tests derived from GAMES`
 
 ---
 
@@ -216,7 +216,7 @@ GAMES = [
 
 **Steps:**
 
-- [ ] Read WP6's hand-off number. Three cases:
+- [x] Read WP6's hand-off number. Three cases:
       - **≤ 143** (the target): change **nothing**. `FULL_LAYOUT_COLUMNS` stays 143, the README
         width table's `≥ 143` stays, and the CLAUDE.md record
         (`198 → 172 → 143 → 176 → 152 → 143`) is **not** appended to — the app-wide number did
@@ -229,9 +229,9 @@ GAMES = [
         `__main__.FULL_LAYOUT_COLUMNS`, its `--font-size` help text, the README width table
         (`test_the_readme_quotes_the_documented_width` asserts `≥ N` appears), and the
         CLAUDE.md record, which is **appended to, never rewritten**.
-- [ ] Run `.venv/bin/python -m pytest tests/test_cli_font_size.py tests/test_surf_registration.py -q`
+- [x] Run `.venv/bin/python -m pytest tests/test_cli_font_size.py tests/test_surf_registration.py -q`
       — the surf width tests read `FULL_LAYOUT_COLUMNS` and will notice any move.
-- [ ] Commit: `docs(curator): record the measured full-layout width`
+- [x] Commit: `docs(curator): record the measured full-layout width`
 
 ---
 
@@ -239,21 +239,21 @@ GAMES = [
 
 **Steps:**
 
-- [ ] Heading: `## The seven visible dashboards` → `## The eight visible dashboards`
+- [x] Heading: `## The seven visible dashboards` → `## The eight visible dashboards`
       (`test_claude_md_counts_the_visible_dashboards` derives the word from `len(GAMES)`).
-- [ ] Table: insert row 2 and renumber 3..8:
+- [x] Table: insert row 2 and renumber 3..8:
       `| 2 | \`curator\` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock |`
-- [ ] Fix **every** "seven" reference in the prose, not just the heading:
+- [x] Fix **every** "seven" reference in the prose, not just the heading:
       `rg -n "seven|The seven" CLAUDE.md` and read each hit. The sentence about `surf` being
       position 1 and the `--game` default stays true and stays.
-- [ ] Add curator to the registration-surfaces paragraph's worked example list: it currently
+- [x] Add curator to the registration-surfaces paragraph's worked example list: it currently
       names `tests/test_surf_registration.py`; add `tests/test_curator_registration.py` as the
       second worked example, and note that curator was the **position-2 insert**, which is a
       different shape from surf's append — every key below it shifted.
-- [ ] Add the curator paragraph to the width section per WP7.7.
-- [ ] Add `~/.maxpane/curator_cache.json` to the caches sentence if that sentence enumerates.
-- [ ] Run: `.venv/bin/python -m pytest tests/test_surf_registration.py -k "documented or counts" -q`
-- [ ] Commit: `docs(curator): bring CLAUDE.md to eight visible dashboards`
+- [x] Add the curator paragraph to the width section per WP7.7.
+- [x] Add `~/.maxpane/curator_cache.json` to the caches sentence if that sentence enumerates.
+- [x] Run: `.venv/bin/python -m pytest tests/test_surf_registration.py -k "documented or counts" -q`
+- [x] Commit: `docs(curator): bring CLAUDE.md to eight visible dashboards`
 
 ---
 
@@ -261,18 +261,18 @@ GAMES = [
 
 **Steps:**
 
-- [ ] Dashboard table: insert THE LIST at position 2, renumber.
-- [ ] Usage block: add `maxpane --game curator` — `test_every_visible_dashboard_is_documented`
+- [x] Dashboard table: insert THE LIST at position 2, renumber.
+- [x] Usage block: add `maxpane --game curator` — `test_every_visible_dashboard_is_documented`
       asserts the literal `--game curator` appears **and** that the display name `THE LIST`
       appears.
-- [ ] Width table: add curator's row if its measured number introduces a new band, and check
+- [x] Width table: add curator's row if its measured number introduces a new band, and check
       the existing `≥ 143` line still parses — `_readme_width_bands()` in
       `test_surf_registration.py` parses that table with a regex and will fail loudly if its
       shape changes. **Read that parser before editing the table.**
-- [ ] Do not touch the surf-specific caveats (`links a transaction`, the seam narrative
+- [x] Do not touch the surf-specific caveats (`links a transaction`, the seam narrative
       naming 142) — three tests assert those strings are present and one asserts a closed band
       is absent.
-- [ ] Run the doc tests. Commit: `docs(curator): add THE LIST to the README`
+- [x] Run the doc tests. Commit: `docs(curator): add THE LIST to the README`
 
 ---
 
@@ -280,15 +280,15 @@ GAMES = [
 
 **Steps:**
 
-- [ ] `.venv/bin/python -m pytest -q` — everything green.
-- [ ] `cd maxpane && cargo test` — untouched and green (this WP changed no Rust).
-- [ ] Diff review: `git diff main --stat`. Confirm the **only** modified pre-existing files are
+- [x] `.venv/bin/python -m pytest -q` — everything green.
+- [x] `cd maxpane && cargo test` — untouched and green (this WP changed no Rust).
+- [x] Diff review: `git diff main --stat`. Confirm the **only** modified pre-existing files are
       the six this WP owns. Anything else is another WP's stray edit — **report it, do not fix
       it**, and do not revert it (it may be uncommitted user work).
-- [ ] Confirm the suite grew by the expected order of magnitude and that no existing test
+- [x] Confirm the suite grew by the expected order of magnitude and that no existing test
       changed except the registration tests that derive from `GAMES`:
       `git diff main --stat -- tests/ | grep -v curator`
-- [ ] Commit: `chore(curator): full suite green with THE LIST registered`
+- [x] Commit: `chore(curator): full suite green with THE LIST registered`
 
 ---
 
@@ -296,11 +296,11 @@ GAMES = [
 
 **Steps:**
 
-- [ ] `pip install -e .` first — `__version__` comes from installed distribution metadata and
+- [x] `pip install -e .` first — `__version__` comes from installed distribution metadata and
       an editable install writes it **once, at install time**. Without this the status bar and
       `--version` report a stale version, and this repo has already shipped three months of
       dev runs showing an April release.
-- [ ] `python -m maxpane_dashboard --game curator` on a real terminal at ≥ the measured width.
+- [x] `python -m maxpane_dashboard --game curator` on a real terminal at ≥ the measured width.
       Check, against the live chain:
       - the phase word matches reality (grace / judged / settled) and the countdown moves
         between polls;
@@ -309,19 +309,19 @@ GAMES = [
       - FORCED ETH reads `—`;
       - `c` swaps clusters ⇄ closest calls, and the default matched the phase on open;
       - `m`, `tab`, `r`, `t`, `q` all behave; `tab` visits curator exactly once per lap.
-- [ ] **Fresh-install backfill:** `mv ~/.maxpane/curator_cache.json /tmp/` and relaunch. The
+- [x] **Fresh-install backfill:** `mv ~/.maxpane/curator_cache.json /tmp/` and relaunch. The
       full history backfills from block 25769870 in one sweep, the screen fills, and no key is
       ever requested. Time it and record the number.
-- [ ] **Offline launch:** disable networking and launch. Every panel renders an explicit
+- [x] **Offline launch:** disable networking and launch. Every panel renders an explicit
       unavailable state, the title bar names all three degraded groups, nothing is `0`, and the
       app does not exit. Use this rather than a raising manager as the acceptance criterion —
       it is what an actual offline launch produces.
-- [ ] **Keyless proof:** `rg -n "api_key|apikey|x-api-key|Authorization|keystore|private_key"
+- [x] **Keyless proof:** `rg -n "api_key|apikey|x-api-key|Authorization|keystore|private_key"
       maxpane_dashboard/` returns nothing under the curator modules, and the client's banned-host
       frozenset is in force.
-- [ ] Record every observation (including the ones that disagreed with expectation) in the
+- [x] Record every observation (including the ones that disagreed with expectation) in the
       commit body.
-- [ ] Commit: `chore(curator): live smoke run against Ethereum mainnet`
+- [x] Commit: `chore(curator): live smoke run against Ethereum mainnet`
 
 ---
 
@@ -333,22 +333,22 @@ how a mutation proof rots.
 
 **Steps:**
 
-- [ ] **Settlement latch** (WP5.4): make `settlement_record()` re-read the live value instead
+- [x] **Settlement latch** (WP5.4): make `settlement_record()` re-read the live value instead
       of the persisted record. Run
       `.venv/bin/python -m pytest tests/data/test_curator_cache.py tests/data/test_curator_degradation.py -q`
       → red on `test_a_none_observation_never_clears_a_true_one` **and**
       `test_settlement_survives_a_total_outage`. Restore. `git diff` empty.
-- [ ] **Hour-boundary fold** (WP5.3): add a `current_hour_total_wei` parameter to
+- [x] **Hour-boundary fold** (WP5.3): add a `current_hour_total_wei` parameter to
       `record_hour_buckets` and let it overwrite the last bucket. Run
       `.venv/bin/python -m pytest tests/data/test_curator_cache.py -q` → red on both the
       signature test and the boundary-fixture test. Restore. `git diff` empty.
-- [ ] **Curve floor** (WP3.3, three variants): `//` → `round`; `math.isqrt` →
+- [x] **Curve floor** (WP3.3, three variants): `//` → `round`; `math.isqrt` →
       `int(math.sqrt(...))`; operand order swapped. Each must redden a *different* named test.
       Restore after each. `git diff` empty.
-- [ ] Re-run the fourth, the one PRD §8 does not name but the index plan's amendment 3 splits
+- [x] Re-run the fourth, the one PRD §8 does not name but the index plan's amendment 3 splits
       out: **the weight floor** (WP3.4), `//` → `round`, → red on `test_the_division_floors`
       and on the 226-row differential. Restore.
-- [ ] Add the static guardrails as a permanent test file section (they are cheap and they
+- [x] Add the static guardrails as a permanent test file section (they are cheap and they
       never rot):
 
 ```python
@@ -359,9 +359,9 @@ def test_no_curator_module_imports_a_signer_or_a_keystore():
 def test_no_curator_module_names_a_banned_rpc_host():
 ```
 
-- [ ] Write the audit record into the commit body: for each mutation, the file, the line, the
+- [x] Write the audit record into the commit body: for each mutation, the file, the line, the
       test that reddened, and the confirmation that `git diff` was empty afterwards.
-- [ ] Commit: `test(curator): audit the four mandated mutation proofs`
+- [x] Commit: `test(curator): audit the four mandated mutation proofs`
 
 ---
 
@@ -369,25 +369,91 @@ def test_no_curator_module_names_a_banned_rpc_host():
 
 **Steps:**
 
-- [ ] `rg -n "SYNTHETIC — re-point" tests/` and reconcile with WP1's ledger at
+- [x] `rg -n "SYNTHETIC — re-point" tests/` and reconcile with WP1's ledger at
       `tests/fixtures/curator/captures/live/README.md`.
-- [ ] For each remaining marker, one of exactly two outcomes:
+- [x] For each remaining marker, one of exactly two outcomes:
       - a real bundle exists → hand it to WP1.7 (or do the re-point yourself if WP1 has
         finished), run the test **before** editing any expectation, and record any disagreement
         between synthetic and chain as a finding;
       - no bundle and none expected (`HourSaved` that never fired, `Rescued`, the >1000 ETH
         deposit) → mark it **permanent-synthetic** with the reason, in the test and in the
         ledger.
-- [ ] Update the index plan's "synthetic until captured" table so its status column matches the
+- [x] Update the index plan's "synthetic until captured" table so its status column matches the
       ledger exactly, and update the "Known gaps carried into implementation" section: if
       WP1.6's curve probe landed, the sqrt curve is now validated **against chain** and the
       gap paragraph must say so instead of "by transcription".
-- [ ] Final read-through of `docs/curator_implementation_plan.md`: every claim in it should now
+- [x] Final read-through of `docs/curator_implementation_plan.md`: every claim in it should now
       be either true or struck. A plan that outlives its own accuracy is the artefact
       CLAUDE.md's width section keeps apologising for.
-- [ ] Run `.venv/bin/python -m pytest -q` one last time.
-- [ ] Commit: `docs(curator): close the synthetic-fixture ledger and reconcile the plan`
+- [x] Run `.venv/bin/python -m pytest -q` one last time.
+- [x] Commit: `docs(curator): close the synthetic-fixture ledger and reconcile the plan`
 
 **Done when:** all six surfaces agree, the suite and `cargo test` are green, `--game curator`
 launches and degrades cleanly offline, the four mutation proofs are recorded, and every
 synthetic fixture is either re-pointed or documented as permanent.
+
+
+---
+
+## Sign-off — 2026-08-17
+
+All thirteen tasks done, in order, one commit each. Suite **4294 passed, 0 failed**;
+`cargo test` 17 passed, untouched. THE LIST is menu key **2**, `--game curator`, and `surf`
+is still `GAMES[0]`, still the `--game` default and still the bare-app prefetch.
+
+**Deviations from this file, each reasoned about in its own commit body.**
+
+1. **WP7.1 step 5** names an `elif self._initial_game == "curator":` chain that does not exist
+   in `app.py` — the prefetch is the `_prefetch_manager` dict alone. Seven edits, not eight.
+   Nothing was invented to satisfy the step.
+2. **WP7.1 step 3** says `wallet=wallet`. `MaxPaneApp.__init__`'s parameter is
+   `wallet_address` and it is not stored on `self`, so the construction line passes that local
+   and `_launch_game` reads the address back off `self._curator_manager.wallet` rather than the
+   app keeping a second copy.
+3. **WP7.3** predicts `tests/test_cli_game_choices.py` red between WP7.3 and WP7.4. It is
+   **green** — it iterates the menu's ids and asserts each is accepted, which bites in the
+   other direction. `test_surf_registration.py::test_the_cli_choices_are_exactly_the_menu` is
+   the one that goes red, and it did.
+4. **WP7.6** puts `MANAGER_ATTRS` under the new test file. The list that matters lives in
+   `tests/test_app_startup.py`, and `ALL_GAMES` beside it. Both needed `curator` /
+   `_curator_manager`: without the second, a real `CuratorManager` survives inside
+   `run_test()`, `test_a_bare_app_prefetches…` fails on `'CuratorManager' object has no
+   attribute 'calls'`, and — the real damage — quitting through the suite overwrites the
+   developer's own `~/.maxpane/curator_cache.json`. `tests/test_surf_registration.py`'s own
+   copy of `MANAGER_ATTRS` needed the same line for the same reason.
+5. **WP7.5** says copy `DEFAULT_CSS`. Copying it verbatim breaks the screen: `#bottom-row`
+   reads `height: auto` there, which never rendered (the shared `#bottom-row { height: 1fr }`
+   in `minimal.tcss` outranks `DEFAULT_CSS`), and restating `auto` makes `CuratorActivity`
+   take 47 rows, starve `#middle-row` to 1, and drop SIGNALS and YOU off the compositor —
+   at which point the width sweep "passes" at 136 with the rail gone. Both copies are now
+   `1fr`, which is the geometry every WP6 measurement was taken against, and the `DEFAULT_CSS`
+   comment claiming "`#middle-row` is the only `1fr` row" is corrected in place. This is the
+   `screens/curator.py` pin the wave-5 gate reported rather than edited.
+6. **WP7.10** could not leave every other test alone: `tests/test_fwa_theme.py`'s append-only
+   stylesheet guard asserted "the Surf block must be the last section", which appending the
+   curator block necessarily breaks — exactly as surf's append broke FWA's version of it.
+   Rewritten as the chain invariant (Talismans → FWA → Surf → Curator, contiguous, newest at
+   EOF) so the next dashboard extends it by one line.
+7. **WP7.12's mutations each needed more than one application.** The settlement latch and the
+   hour-boundary fold both have a cache half and a manager half, and only the second half of
+   each reaches the tests the plan names — the cache-local latch mutation cannot redden
+   `test_settlement_survives_a_total_outage`, because under a total outage the manager never
+   calls `observe_settlement` at all. Eight applications in total; all recorded, all restored.
+8. **WP7.12** calls the weight-floor differential "the 226-row differential". It is over the
+   **recounted 231** `Deposited` rows; 226 is the pre-recount number the plan's own capture
+   table corrects.
+9. **WP7.9's width table was re-cut, not appended to.** 138 falls inside the old 135–141 band
+   and curator's marker set changes three more times below it, so five rows became eight. The
+   surf claims in every new sub-band were re-rendered and still hold.
+10. **WP7.13 closed the ledger open.** No bundle for capture A, B or C existed, so nothing was
+    re-pointed; the closure is a per-marker inventory instead. Editing the ledger under
+    `tests/fixtures/curator/captures/live/` is WP1's territory — done because WP7.13 assigns
+    it, additively, without touching a bundle or a manifest row.
+11. **WP7.2 is an empty commit.** Surface 2 needed no edit, and the plan asks for the
+    verification to be written down; the record is the deliverable.
+
+**Two findings reported, not fixed** (WP2/WP4/WP5 own the files): the ~3-minute first paint
+caused by the Blockscout REST cross-check paginating 10,000+ logs, and the YOU row reading
+`set MAXPANE_WALLET` at a user who has set it, because the flat dict cannot distinguish "no
+wallet configured" from "the wallet read failed". Both are in the WP7.11 commit body and in
+the implementation plan's closing section.
