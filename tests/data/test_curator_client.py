@@ -44,7 +44,7 @@ from maxpane_dashboard.data import curator_addresses as A
 from maxpane_dashboard.data import curator_client
 from maxpane_dashboard.data.curator_client import CuratorClient
 
-from tests.curator_fixtures import capture
+from tests.curator_fixtures import capture, live_bundles
 
 CLIENT_FIXTURES = Path(__file__).parent.parent / "fixtures" / "curator" / "client"
 
@@ -452,6 +452,153 @@ def test_a_suggested_range_is_never_followed() -> None:
     assert spans[1] <= spans[0] // 2 + 1
     assert len(windows) <= curator_client._LOG_MAX_SHRINKS + 1
     assert suggested not in windows, "the provider's suggested range was adopted"
+
+
+#: Real result-count / response-size caps, in the words the providers use.
+#: None of them says "block range" — that is exactly why they were missed.
+RESULT_CAP_MESSAGES = (
+    "query returned more than 10000 results",
+    "Log response size exceeded",
+    "requested too many results",
+    "query exceeds max results 20000",
+    "result limit of 10000 reached",
+)
+
+
+@pytest.mark.parametrize("message", RESULT_CAP_MESSAGES)
+def test_a_result_count_cap_is_shrinkable_not_merely_an_endpoint_limitation(
+    message: str,
+) -> None:
+    """A page can be too big in **rows** as well as in blocks, and only the
+    block phrasing was classified.
+
+    ``surf_client``'s pattern list — the copy-source — is block-range phrasing
+    only, which is right for a low-volume announce channel that cannot fill a
+    result cap.  This contract emits ~4.3 logs a block (5222 rows over 1219
+    blocks in ``captures/live/20260817T000322Z_grace-late.json``), so it fills
+    one.  Classified as merely "this endpoint can't", a result cap **rotates**:
+    both log endpoints exhaust, the combined sweep dies, all six per-topic
+    fallbacks die on the same cap, and ``fetch_logs`` returns ``None`` — the
+    whole log tier unavailable where halving the window would have worked.
+    """
+    err = {"code": -32005, "message": message}
+    assert curator_client._is_range_limitation(err), (
+        f"{message!r} is a shrinkable cap, not a reason to rotate"
+    )
+
+
+@pytest.mark.parametrize("message", RESULT_CAP_MESSAGES)
+def test_a_result_cap_halves_the_window_instead_of_killing_the_sweep(
+    message: str,
+) -> None:
+    """End to end, through ``_get_logs_shrinking``: the cap clears once the
+    window is small enough, and the rows come back."""
+    windows: list[tuple[int, int]] = []
+    served: list[tuple[int, int]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        flt = payload["params"][0]
+        lo, hi = int(flt["fromBlock"], 16), int(flt["toBlock"], 16)
+        windows.append((lo, hi))
+        if hi - lo + 1 > 500:  # the provider's cap, in blocks for the double
+            return httpx.Response(200, json={
+                "jsonrpc": "2.0", "id": payload["id"],
+                "error": {"code": -32005, "message": message},
+            })
+        served.append((lo, hi))
+        return httpx.Response(200, json={
+            "jsonrpc": "2.0", "id": payload["id"],
+            "result": [{"blockNumber": hex(lo), "logIndex": "0x0"}],
+        })
+
+    client = _client(handler, log_page_blocks=4_000)
+    out = asyncio.run(client._get_logs_shrinking(
+        {"address": A.CURATOR}, 1_000, 5_000, group="deposits"
+    ))
+    assert out is not None, "a result cap took the sweep to unavailable"
+    spans = [hi - lo for lo, hi in windows]
+    assert spans[1] <= spans[0] // 2 + 1, "the window did not halve"
+    assert spans[2] <= spans[1] // 2 + 1
+    covered: set[int] = set()
+    for lo, hi in served:
+        covered |= set(range(lo, hi + 1))
+    assert covered == set(range(1_000, 5_001)), "shrinking lost blocks"
+
+
+def test_a_result_cap_does_not_take_the_whole_log_tier_to_unavailable() -> None:
+    """The consequence the classification bug actually had, at ``fetch_logs``
+    level: leaderboard, activity, hourly series, streak and closest calls all
+    hang off this one sweep."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] != "eth_getLogs":
+            return httpx.Response(200, json={
+                "jsonrpc": "2.0", "id": payload["id"], "result": hex(A.CREATION_BLOCK + 900),
+            })
+        flt = payload["params"][0]
+        lo, hi = int(flt["fromBlock"], 16), int(flt["toBlock"], 16)
+        if hi - lo + 1 > 600:
+            return httpx.Response(200, json={
+                "jsonrpc": "2.0", "id": payload["id"],
+                "error": {"code": -32005,
+                          "message": "query returned more than 10000 results"},
+            })
+        return httpx.Response(200, json={
+            "jsonrpc": "2.0", "id": payload["id"], "result": [],
+        })
+
+    client = _client(handler, log_page_blocks=2_000)
+    sweep = asyncio.run(client.fetch_logs(A.CREATION_BLOCK))
+    assert sweep is not None
+    assert client.logs_failed is False
+    assert not any(client.log_group_failed.values())
+
+
+def test_a_full_page_cannot_fill_a_ten_thousand_result_cap() -> None:
+    """``LOG_PAGE_BLOCKS`` is sized against this contract's log DENSITY, not
+    against drpc's block cap alone.
+
+    Two ceilings bind a page and they are in different units.  The 9000 blocks
+    inherited from ``surf_client`` is comfortably inside every block cap and
+    hopelessly outside the common 10,000-**result** one: at the density WP1
+    measured, 9000 blocks is ~38,000 rows.  The density is re-derived here from
+    the committed bundles so a denser capture re-opens the decision rather than
+    silently invalidating it.
+    """
+    best = 0.0
+    for path in live_bundles():
+        with open(path, encoding="utf-8") as fh:
+            bundle = json.load(fh)
+        logs, head = bundle.get("logs"), bundle.get("chain_head")
+        start = bundle.get("logs_from_block")
+        if not isinstance(logs, list) or not logs or not isinstance(head, int):
+            continue
+        lo = int(start, 16) if isinstance(start, str) else start
+        if not isinstance(lo, int) or head <= lo:
+            continue
+        best = max(best, len(logs) / (head - lo + 1))
+    if best == 0.0:  # pragma: no cover — no timed bundle has landed yet
+        pytest.skip("no live bundle carries a log sweep to measure against")
+
+    rows_per_page = curator_client.LOG_PAGE_BLOCKS * best
+    assert rows_per_page < 10_000, (
+        f"{curator_client.LOG_PAGE_BLOCKS} blocks x {best:.2f} logs/block = "
+        f"{rows_per_page:.0f} rows in one eth_getLogs page, over the common "
+        "10k result cap — every backfill would start by burning its shrink "
+        "budget"
+    )
+
+
+def test_a_rate_limit_still_rotates_rather_than_shrinking() -> None:
+    """The widened pattern list must not swallow the errors that a narrower
+    window cannot fix: a rate limit or an auth wall is the next endpoint's
+    problem, not a smaller page's."""
+    for message in ("rate limit exceeded", "unauthorized: authentication "
+                    "required for this method", "capacity exceeded"):
+        err = {"code": -32005, "message": message}
+        assert not curator_client._is_range_limitation(err), message
+        assert curator_client._looks_like_endpoint_limitation(err), message
 
 
 def test_a_paged_sweep_covers_every_block_and_never_drops_the_bottom() -> None:
@@ -1409,9 +1556,56 @@ def test_the_page_bound_with_a_cursor_still_open_reports_truncation() -> None:
     close: a caller cannot tell "that is everything" from "we stopped asking",
     and the cross-check would then report a phantom gap against the RPC sweep."""
     client = _client(_blockscout_handler(BS_PAGES))
-    rows = asyncio.run(client.fetch_blockscout_logs(max_pages=3))
-    assert len(rows) == 150
+    assert asyncio.run(client.fetch_blockscout_logs(max_pages=3)) is None
     assert client.blockscout_truncated is True
+
+
+def test_a_truncated_cross_check_is_never_handed_back_as_a_list() -> None:
+    """The page *bound* and a page *failure* are the same hazard and must give
+    the same answer.  They did not: a failed page returned ``None`` ("partial is
+    worse than nothing for this particular method") while the bound returned the
+    partial rows — 150 of 376 here, and in production 400 of 5222+, because
+    ``MAX_BLOCKSCOUT_PAGES`` was 8 and the history passed 400 rows on capture
+    day.  Anything that diffed that list against the RPC sweep would invent
+    thousands of missing logs.
+
+    The flag stays set so the caller can still tell the two ``None``\\ s apart —
+    a dead source versus a history that outgrew the pager's budget.
+    """
+    truncated = _client(_blockscout_handler(BS_PAGES))
+    outage = _client(_blockscout_handler(BS_PAGES, status=404))
+    assert asyncio.run(truncated.fetch_blockscout_logs(max_pages=3)) is None
+    assert asyncio.run(outage.fetch_blockscout_logs()) is None
+    assert truncated.blockscout_truncated is True
+    assert outage.blockscout_truncated is False
+
+
+def test_the_page_bound_clears_the_history_the_live_bundles_measured() -> None:
+    """``MAX_BLOCKSCOUT_PAGES`` is a runaway guard, not a size estimate.
+
+    Eight pages covered the whole history at capture (376 rows over 8 pages of
+    50) and stopped covering it about ninety minutes later.  This re-derives the
+    requirement from WP1's committed bundles rather than trusting the paragraph
+    that made 8 look permanent: at 50 items a page, 5222 rows is 105 pages.
+    """
+    rows = 0
+    for path in live_bundles():
+        with open(path, encoding="utf-8") as fh:
+            bundle = json.load(fh)
+        logs = bundle.get("logs")
+        if isinstance(logs, list):
+            rows = max(rows, len(logs))
+    if rows == 0:  # pragma: no cover — no timed bundle has landed yet
+        pytest.skip("no live bundle carries a log sweep to measure against")
+
+    page = 50  # Blockscout's own page size, in every committed bs_page_*.json
+    assert all(len(p["items"]) <= page for p in BS_PAGES)
+    needed = -(-rows // page)
+    assert curator_client.MAX_BLOCKSCOUT_PAGES > needed, (
+        f"the measured history is {rows} rows = {needed} pages, but the pager "
+        f"stops at {curator_client.MAX_BLOCKSCOUT_PAGES}; every cross-check "
+        "would truncate and the reconciliation is impossible"
+    )
 
 
 def test_the_truncation_flag_is_reset_at_the_start_of_every_call() -> None:

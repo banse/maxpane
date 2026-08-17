@@ -139,10 +139,22 @@ _REQUEST_TIMEOUT = 15.0
 #: publicnode 429s under unpaced bursts; measured in ``fwa_client``.
 _INTER_CALL_DELAY = 0.12
 
-#: One ``eth_getLogs`` page.  Under drpc's hard 10k cap, and the whole curator
-#: history is a few hundred blocks today — this exists so the backfill still
-#: terminates honestly if the game runs for weeks.
-LOG_PAGE_BLOCKS = 9000
+#: One ``eth_getLogs`` page, in **blocks** — sized against this contract's
+#: measured log *density*, not against the block cap alone.
+#:
+#: Two ceilings bind a page and they are in different units.  drpc's is a hard
+#: 10k **block** range; the more common one across keyless providers is a 10k
+#: **result** cap, and that is the one this subject reaches first: WP1's
+#: ``captures/live/20260817T000322Z_grace-late.json`` holds 5222 rows over
+#: blocks 25769870..25771089, i.e. **~4.3 logs per block**, so a 9000-block page
+#: (the value inherited from ``surf_client``, whose announce channel emits
+#: orders of magnitude less) would ask for ~38,000 rows in one call the moment
+#: the history is that long.  2000 blocks is ~8,600 rows at that density —
+#: inside both caps with headroom, and the bounded halving below is the net if
+#: density rises further.  ``test_a_full_page_cannot_fill_a_ten_thousand_result_cap``
+#: re-derives the density from the committed bundles, so a denser capture
+#: re-opens this decision instead of silently invalidating it.
+LOG_PAGE_BLOCKS = 2000
 _LOG_MIN_WINDOW = 300
 _LOG_MAX_SHRINKS = 3
 
@@ -151,9 +163,20 @@ _LOG_MAX_SHRINKS = 3
 #: this batch must stay small enough to be free when it is needed at all.
 MAX_TIMESTAMP_BLOCKS = 40
 
-#: Blockscout log pages to follow in one cross-check.  Eight covered the whole
-#: history at capture (376 rows over 8 pages).
-MAX_BLOCKSCOUT_PAGES = 8
+#: Blockscout log pages to follow in one cross-check — a **runaway guard**, not
+#: a size estimate, and deliberately far above anything measured.
+#:
+#: The number that was here was 8, chosen because eight pages of 50 covered the
+#: whole history at capture time (376 rows, 21:14 UTC on 2026-08-16).  It was
+#: true for about ninety minutes: WP1's live bundles carry 2077 log rows at
+#: 22:50:06Z and 5222 at 00:03:22Z, so at 50 items a page the history was
+#: already 105 pages before the day was out and every production call would have
+#: returned 400 of 5222 with :attr:`CuratorClient.blockscout_truncated` set —
+#: 8% of the history, offered to a method whose entire job is to be diffed
+#: against the RPC sweep.  Do not read this constant as a fact about the
+#: history's size; it is only the point at which we stop asking, and hitting it
+#: now degrades to ``None`` rather than to a partial list.
+MAX_BLOCKSCOUT_PAGES = 400
 
 #: ``LogSweep``'s group fields, and the keys of :attr:`log_group_failed`.
 LOG_GROUPS: tuple[str, ...] = (
@@ -196,9 +219,26 @@ _ENDPOINT_LIMITATION_PATTERNS = (
     "can't route", "cannot route", "route your request",
 )
 
-#: The shrinkable class only: "your block range is too wide".
+#: The shrinkable class only — "you asked for too much in one call".
+#:
+#: Providers say that in two units and both are recovered the same way, by
+#: halving the window: a **block-range** cap ("limited to a 10000 block range")
+#: and a **result-count / response-size** cap ("query returned more than 10000
+#: results", "response size exceeded").  ``surf_client`` lists only the first
+#: set, which is correct for its subject — a low-volume announce channel that
+#: cannot fill a result cap.  This contract emits ~4.3 logs per block
+#: (5222 rows over blocks 25769870..25771089, ``captures/live/
+#: 20260817T000322Z_grace-late.json``), so a full-history page is squarely in
+#: result-cap territory and a result cap classified as merely "this endpoint
+#: can't" rotates, exhausts both log endpoints, and takes the entire log tier —
+#: leaderboard, activity, hourly series, streak, closest calls — to unavailable
+#: instead of paging down.
 _RANGE_LIMITATION_PATTERNS = (
+    # Block-range phrasing.
     "limited to", "block range", "range is too large", "ranges over",
+    # Result-count / response-size phrasing: the same hazard, a different unit.
+    "more than", "too many results", "max results", "maximum results",
+    "result limit", "query returned", "response size",
 )
 
 _MALFORMED_REQUEST_CODES = {-32600, -32601, -32602, -32604, -32700}
@@ -359,7 +399,10 @@ class CuratorClient(OwnedHttpClient):
         #: ``fetch_wallet()`` failed in whole or in part.
         self.wallet_failed: bool = False
         #: ``fetch_blockscout_logs()`` hit its page bound while the server was
-        #: still handing back a cursor — more rows existed than we fetched.
+        #: still handing back a cursor — more rows existed than we fetched, so
+        #: the call returned ``None`` rather than a list that must not be
+        #: diffed.  This flag is what tells that ``None`` apart from an outage's
+        #: ``None``: it is a budget problem, not a source problem.
         self.blockscout_truncated: bool = False
         #: Per-group failure for the most recent ``fetch_logs()``, keyed by the
         #: exact :class:`LogSweep` field each group feeds.  This is the
@@ -1021,17 +1064,29 @@ class CuratorClient(OwnedHttpClient):
 
         Two return values that are easy to conflate and must not be:
 
-        * ``None`` — we could not read it.  A ``[]`` here would read as "the
-          contract has no logs", which is the one conclusion an outage must
-          never reach, so **any** page failing returns ``None``.  Partial is
-          worse than nothing for this particular method: these rows exist to be
-          diffed, and half of them diff into hundreds of phantom missing logs
-          and a gap repair that re-fetches the whole history.
+        * ``None`` — we could not read it *completely*.  A ``[]`` here would
+          read as "the contract has no logs", which is the one conclusion an
+          outage must never reach, so **any** page failing returns ``None``.
+          Partial is worse than nothing for this particular method: these rows
+          exist to be diffed, and half of them diff into hundreds of phantom
+          missing logs and a gap repair that re-fetches the whole history.
         * ``[]`` — read fine, nothing there.
+
+        **Truncation takes the same answer as a page failure, and that symmetry
+        is the fix for a real bug.**  This method used to return the partial
+        rows when it ran out of pages, while returning ``None`` when a page
+        *failed* — the identical hazard answered two opposite ways.  With
+        :data:`MAX_BLOCKSCOUT_PAGES` at 8 that path was not hypothetical: it was
+        every production call within two hours of capture (see the constant's
+        note).  A truncated list must never be diffed against the RPC sweep, so
+        it is no longer handed out at all.
 
         :attr:`blockscout_truncated` (reset at the START of every call) is True
         only when *max_pages* was exhausted while the server was still handing
         back a cursor: more rows existed than this sweep was willing to fetch.
+        It is what separates the two ``None``\\ s for the caller — "the source is
+        down" from "the history outgrew the pager's budget" — and it is the only
+        one of the two that is a *configuration* problem.
         """
         self.blockscout_truncated = False
         url = f"{self._blockscout}/addresses/{A.CURATOR}/logs"
@@ -1050,11 +1105,12 @@ class CuratorClient(OwnedHttpClient):
                 return rows
             params = nxt  # the server's cursor, verbatim, as query params
         logger.warning(
-            "blockscout logs: hit the %d-page bound with a cursor still open; "
-            "returning %d partial rows", max_pages, len(rows),
+            "blockscout logs: hit the %d-page bound with a cursor still open "
+            "after %d rows; reporting unavailable rather than a partial "
+            "cross-check that would diff into phantom gaps", max_pages, len(rows),
         )
         self.blockscout_truncated = True
-        return rows
+        return None
 
 
 __all__ = [
