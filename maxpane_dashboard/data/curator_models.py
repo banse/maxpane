@@ -202,7 +202,97 @@ from dataclasses import dataclass
 # not here, because `screens/curator.py` is WP4's file and WP0 may not edit it.
 # The worst-case rows WP4/WP5 size against live in
 # tests/fixtures/curator/sybil/; the datasets they are calibrated from are
-# pinned in tests/data/test_curator_sybil_data.py.
+# pinned in tests/data/test_curator_sybil_data.py:
+#
+#   operator_row_worst.json ... `worst` is the row to size against: 1,995
+#                               wallets, 6.81% of points, 44.6x sqrt subsidy,
+#                               conf "high", four reasons, longest phrase 45
+#                               characters.  `rows` is all 16 operators.
+#   segment_rows_worst.json ... 12 derived bands + `degraded_row`, the one
+#                               carrying `points_share_pct: None`.
+#   clean_list_rows_worst.json  top 20 survivors + `totals` + a NAME_COLS(12)
+#                               width probe on a synthetic 0xff..ff address.
+#   labeled_subset.json ....... 160 members + 60 controls, self-contained
+#                               enough to run a detect() offline; byte-
+#                               identical to sybilkit/tests/fixtures/.
+#
+# And the sybilkit side of the freeze, all importable and signature-pinned by
+# sybilkit/tests/test_public_api.py, all raising NotImplementedError("WP1"):
+#
+#   sybilkit ................... Dataset, detect, DetectConfig, DetectResult,
+#                                Deposit, Tx, Funding, Cluster, Reason,
+#                                WalletVerdict
+#   sybilkit.cluster ........... FAMILIES (the authority for the five family
+#                                names), DetectConfig(min_size=5,
+#                                min_families=2, near_amount_tol=0.10,
+#                                confidence_threshold=0.5), detect(ds, config)
+#   sybilkit.curve ............. curve_points(weight_wei, points_per_eth) —
+#                                its own module because Cluster.points needs
+#                                the curve in wave 1; WP2's curator preset
+#                                re-exports THIS one, never a second copy
+#   sybilkit.report ............ DEFAULT_CONFIDENCE_THRESHOLD, and
+#                                DetectResult(clusters, total_points,
+#                                flagged_points, clean_points, *,
+#                                confidence_threshold=…)
+#   sybilkit/tests/sybilkit_fixtures.py ... load() / slices() / labeled_subset()
+#
+# ---------------------------------------------------------------------------
+# THE EXPECTED RED SET WAVE 1 INHERITS — 7 tests, all deliberate.
+#
+# Adding keys to a contract whose consumers assert TOTALITY reddens every
+# consumer until it catches up.  That is the mechanism working, not a defect,
+# and it is what tells each later WP exactly what to build.  Measured
+# 2026-08-17: the whole suite is 4477 passed / 7 failed, and the same five
+# curator files were 659/659 green at 4f08e6e, so these seven and nothing else
+# moved.  DO NOT skip, xfail, or "fix" them from another work package.
+#
+#  1. tests/analytics/test_curator_signals.py
+#       ::test_the_output_surface_is_the_flat_contract_minus_the_managers_own_keys
+#     Asserts CURATOR_KEYS - SIGNAL_OUTPUT_KEYS == MANAGER_OWNED_KEYS.  All 11
+#     new keys are manager-owned; MANAGER_OWNED_KEYS names only the three
+#     health markers.  ** WP3 closes it **, and the choice is WP3's: amend the
+#     TEST to `== set(MANAGER_OWNED_KEYS) | <the 11>` (keeps
+#     curator_signals.py byte-identical, which the plan asks for), or extend
+#     MANAGER_OWNED_KEYS itself — that tuple lists names the MANAGER owns
+#     rather than anything build_signals emits, so extending it adds no
+#     analysis logic and no forbidden word to the scanned module.
+#
+#  2. tests/analytics/test_curator_signals.py
+#       ::test_the_grace_payload_reproduces_the_bundle
+#     Asserts every build_signals leaderboard row's key tuple equals
+#     CURATOR_ROW_KEYS["leaderboard_rows"], which now ends in `link_conf`.
+#     Note the precedent this exposes: build_signals emits `"name": None` as a
+#     PLACEHOLDER (curator_signals.py:1519 and :1538) and `_label_with_ens`
+#     fills it — so `name` is in the tuple even though the manager owns the
+#     value.  `link_conf` has no placeholder and cannot get one without
+#     editing curator_signals.py.  ** WP3 closes it ** by setting
+#     `row["link_conf"] = None` in the adapter merge and amending this test to
+#     compare against the shipped columns plus an explicit "and the manager
+#     adds link_conf" assertion.
+#
+#  3. tests/screens/test_curator_screen.py::test_curator_keys_covers_the_local_signature_map
+#  4. tests/screens/test_curator_screen.py::test_no_contract_key_reaches_no_widget
+#     Both name the same 11 orphans (CURATOR_KEYS - dispatched - META_KEYS).
+#     ** WP4 closes both ** by wiring WIDGET_SIGNATURES from
+#     ANALYSIS_KEY_ROUTING in tests/data/test_curator_models.py.
+#
+#  5. tests/widgets/test_curator_widgets.py::test_the_leaderboard_columns_are_the_frozen_row_keys
+#     The widget's row builder has no `link_conf` column.  ** WP5 closes it. **
+#  6. tests/widgets/test_curator_widgets.py::test_the_keys_no_widget_reads_are_named_here_rather_than_forgotten
+#     The 11 keys reach no widget in the widgets package.  ** WP4 (the three
+#     new panels) and WP5 (the wallet-standing lines) close it together. **
+#  7. tests/widgets/test_curator_widgets.py::test_the_full_payload_is_exactly_the_frozen_contract
+#     That suite's `_full_payload()` helper needs the 11 new keys.  ** WP4 or
+#     WP5, whichever touches the helper first. **
+#
+# ONE PREDICTION IN THE WP0 BRIEF IS WRONG, and WP3 should know why.
+# `tests/data/test_curator_manager.py::test_it_returns_exactly_curator_keys_always`
+# was expected to redden and DOES NOT.  `CuratorManager._finalise` builds from
+# `_blank_payload()`, which is derived from CURATOR_KEYS, so the manager
+# already returns all 11 new keys — as `None`, from an analysis that has never
+# run.  WP3 therefore inherits no red there, and must write its own test that
+# the keys are FILLED rather than merely present: the totality test cannot
+# tell the difference and stays green either way.
 # ---------------------------------------------------------------------------
 # ===========================================================================
 
