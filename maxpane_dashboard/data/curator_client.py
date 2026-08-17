@@ -781,6 +781,31 @@ class CuratorClient(OwnedHttpClient):
             required_next_wei=word("SEL_REQUIRED_NEXT"),
         )
 
+    async def fetch_balance(self) -> int | None:
+        """The contract's ETH balance — **the forced-ETH anomaly, not a total**.
+
+        H5: ``deposit()`` refunds every wei inside the same transaction, so
+        between transactions this balance is exactly ``0``, and every live
+        bundle captured so far reads ``0x0``.  Any nonzero value arrived by
+        ``selfdestruct`` or by a block builder naming the contract as fee
+        recipient.  It is never a deposit, never revenue, and never part of a
+        volume, a TVL or a hero total; it feeds the ``forced_eth`` row alone and
+        the expected rendering is an em dash.
+
+        It is returned as a bare ``int`` rather than folded into
+        :class:`CuratorState` so that nothing can reach it by reading a state
+        object and mistake it for money the contract holds.  ``0`` is the
+        healthy answer and ``None`` is "we could not read it" — the distinction
+        matters more here than anywhere else in this module, because the
+        expected value *is* the sentinel a careless client would invent.
+        """
+        try:
+            raw = await self._rpc_state("eth_getBalance", [A.CURATOR, "latest"])
+        except RuntimeError as exc:
+            logger.warning("fetch_balance: %s", exc)
+            return None
+        return _hex_to_int(raw)
+
 
 __all__ = [
     "CuratorClient",

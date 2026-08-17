@@ -933,3 +933,75 @@ def test_an_unusable_address_costs_no_request_at_all() -> None:
         client = _raising_client()
         assert asyncio.run(client.fetch_wallet(bad)) is None
         assert client.wallet_failed is True
+
+
+# ===========================================================================
+# WP2.6 — the contract balance, which is never a balance
+# ===========================================================================
+
+
+def test_a_zero_balance_is_the_expected_reading_not_a_failure() -> None:
+    """H5.  Every wei of a deposit is refunded inside the same transaction, so
+    between transactions this balance is **exactly zero** — and every live
+    bundle captured so far reads ``0x0``.  A ``None`` here would mark the normal
+    state as unavailable and light an anomaly row that has nothing behind it."""
+    assert asyncio.run(_client(_rpc_ok("0x0")).fetch_balance()) == 0
+
+
+def test_the_captured_bundles_agree_that_the_balance_is_zero() -> None:
+    """Provenance for the paragraph above, read out of WP1's bundles rather
+    than asserted from memory.  Skipped, never failed, when no bundle carries
+    the field — ``captures/live/`` grows while this suite is being written."""
+    from tests.curator_fixtures import live_bundles
+
+    seen = []
+    for path in live_bundles():
+        body = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(body, dict) and "balance" in body:
+            seen.append(body["balance"])
+    if not seen:
+        pytest.skip("no live bundle carries a balance yet")
+    assert all(_hex(v) == 0 for v in seen if v is not None), seen
+
+
+def _hex(value: Any) -> int | None:
+    return None if not isinstance(value, str) else int(value, 16)
+
+
+def test_a_nonzero_balance_decodes_to_forced_wei() -> None:
+    """Anything nonzero got here by ``selfdestruct`` or by a builder naming the
+    contract as fee recipient.  It is an anomaly to surface, not income."""
+    assert asyncio.run(
+        _client(_rpc_ok("0x16345785d8a0000")).fetch_balance()
+    ) == 10**17
+
+
+def test_a_dead_pool_gives_no_balance_rather_than_zero() -> None:
+    """The one place the distinction bites hardest: ``0`` is the *expected*
+    reading, so an outage coerced to ``0`` is indistinguishable from health."""
+    assert asyncio.run(_offline_client().fetch_balance()) is None
+
+
+def test_the_balance_is_never_folded_into_a_volume() -> None:
+    """Structural, not stylistic: the balance leaves this module as its own
+    ``int`` return, and no client method fills ``CuratorState``'s volume — or
+    even its own ``forced_balance_wei`` — from it.  Nothing downstream can add
+    forced ETH to a routed total by reading a state object."""
+    client = _client(_view_handler(CAPTURED_ROUND))
+    st = asyncio.run(client.fetch_state())
+    assert st.forced_balance_wei is None
+    assert st.volume_wei == 0x560119983627C22D4F  # stats(), untouched
+    body = inspect.getsource(curator_client.CuratorClient.fetch_balance).replace(
+        curator_client.CuratorClient.fetch_balance.__doc__ or "", ""
+    )
+    assert "CuratorState" not in body, "the balance leaked into a state object"
+
+
+def test_the_balance_read_goes_to_the_state_pool() -> None:
+    """``eth_getBalance`` is state, and the pools do not cross."""
+    client, transport = _recording_client(_rpc_ok("0x0"))
+    asyncio.run(client.fetch_balance())
+    url, _m, payload, _h = transport.requests[0]
+    assert STATE_PRIMARY_HOST in url
+    assert payload["method"] == "eth_getBalance"
+    assert payload["params"] == [A.CURATOR, "latest"]
