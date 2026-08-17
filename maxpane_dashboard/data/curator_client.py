@@ -489,6 +489,109 @@ class CuratorClient(OwnedHttpClient):
         logger.warning("state batch failed on every endpoint: %s", last_err)
         return None
 
+    async def _rpc_logs(self, method: str, params: list) -> Any:
+        """One JSON-RPC call on the LOGS pool.
+
+        Raises :class:`_LogRangeError` when the *message* says the window is too
+        wide — the caller halves its own window; a provider's suggested range is
+        never adopted.  Other endpoint limitations rotate; a malformed request
+        raises without rotating.
+
+        The JSON ``error`` body is classified **before** ``raise_for_status``:
+        drpc wraps its shrinkable range cap in an HTTP 400, and status-first
+        handling demotes the one recoverable error in the set to an opaque
+        transport failure (``talismans_client`` learned this live).
+        """
+        self._request_id += 1
+        payload = jsonrpc_payload(self._request_id, method, params)
+        last_err: BaseException | None = None
+        for url in self._log_rpcs:
+            for attempt in range(_MAX_RETRIES):
+                try:
+                    resp = await self._post_rpc(url, payload)
+                    if resp.status_code in ENDPOINT_DEAD_CODES:
+                        last_err = RuntimeError(f"{url} -> {resp.status_code}")
+                        break
+                    body: Any = None
+                    try:
+                        body = resp.json()
+                    except ValueError:
+                        pass
+                    if isinstance(body, dict) and body.get("error"):
+                        err = body["error"]
+                        if _is_range_limitation(err):
+                            raise _LogRangeError(str(err))
+                        if _looks_like_endpoint_limitation(err):
+                            last_err = RuntimeError(f"{url}: {err}")
+                            break
+                        raise RuntimeError(f"malformed request: {err}")
+                    resp.raise_for_status()
+                    return body.get("result") if isinstance(body, dict) else None
+                except _LogRangeError:
+                    raise
+                except (httpx.HTTPError, ValueError) as exc:
+                    last_err = exc
+                    if attempt < _MAX_RETRIES - 1:
+                        await asyncio.sleep(self._backoff_seconds[attempt])
+        raise RuntimeError(f"all log endpoints failed: {last_err}")
+
+    async def _get_logs_shrinking(
+        self, base_filter: dict, from_block: int, to_block: int, *, group: str
+    ) -> list[dict] | None:
+        """Every log matching *base_filter* over ``[from_block, to_block]``.
+
+        Paged at :data:`LOG_PAGE_BLOCKS`, with bounded halving on a range error.
+        Two rules, and the second is where ``surf_client``'s version must not be
+        copied verbatim:
+
+        * A provider's *suggested* range is never adopted — one of them
+          decrements a single block per round trip and livelocks a verbatim
+          follower.  We halve our own span, at most ``_LOG_MAX_SHRINKS`` times,
+          then fail honestly.
+        * Shrinking narrows the window's **right** edge and re-issues the same
+          cursor.  ``surf_client`` shrinks by raising ``fromBlock``, which is
+          correct for a rolling recent window and catastrophic for a backfill:
+          the blocks it walks past are this contract's whole early history and
+          nothing ever asks for them again.
+
+        ``None`` on any failure — a partial backfill silently presented as a
+        complete one is a leaderboard missing contributors.  *group* is a label
+        for the log line only; the caller owns turning ``None`` into
+        ``log_group_failed[group] = True``.
+        """
+        rows: list[dict] = []
+        span = max(int(self._log_page_blocks), 1)
+        cursor = from_block
+        shrinks = 0
+        while cursor <= to_block:
+            end = min(cursor + span - 1, to_block)
+            flt = dict(base_filter)
+            flt["fromBlock"] = hex(cursor)
+            flt["toBlock"] = hex(end)
+            try:
+                result = await self._rpc_logs("eth_getLogs", [flt])
+            except _LogRangeError as exc:
+                if shrinks >= _LOG_MAX_SHRINKS or span <= _LOG_MIN_WINDOW:
+                    logger.warning(
+                        "getLogs shrink exhausted for %s: still range-limited "
+                        "at a %d-block span after %d attempt(s) — %s",
+                        group, span, shrinks + 1, exc,
+                    )
+                    return None
+                shrinks += 1
+                span = max(span // 2, _LOG_MIN_WINDOW)
+                continue  # same cursor, narrower window
+            except RuntimeError as exc:
+                logger.warning("getLogs failed for %s: %s", group, exc)
+                return None
+            if not isinstance(result, list):
+                logger.warning("getLogs for %s returned %s, not a list",
+                               group, type(result).__name__)
+                return None
+            rows.extend(r for r in result if isinstance(r, dict))
+            cursor = end + 1
+        return rows
+
 
 __all__ = [
     "CuratorClient",

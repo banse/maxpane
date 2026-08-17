@@ -335,3 +335,175 @@ def test_a_total_batch_outage_returns_none_not_a_list_of_zeros() -> None:
     assert asyncio.run(
         _offline_client()._rpc_state_batch([("eth_blockNumber", [])])
     ) is None
+
+
+# ===========================================================================
+# WP2.3 — the logs pool, message-text classification, bounded shrinking
+# ===========================================================================
+
+
+def _log_error_handler(
+    err_for_host: dict[str, dict], rows: list[dict] | None = None,
+    status_for_host: dict[str, int] | None = None,
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Per-host canned JSON-RPC errors; any other host answers *rows*."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        host = request.url.host
+        if host in err_for_host:
+            return httpx.Response(
+                (status_for_host or {}).get(host, 200),
+                json={"jsonrpc": "2.0", "id": payload["id"],
+                      "error": err_for_host[host]},
+            )
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": payload["id"],
+                                         "result": rows if rows is not None else []})
+
+    return handler
+
+
+def test_a_routing_message_fails_over_even_though_its_code_is_reused() -> None:
+    """drpc's real failure: "Can't route your request..." arrives with a code
+    other providers spend on a malformed request.  Classifying on the CODE
+    sends a healthy query to the bin; classifying on the TEXT fails over."""
+    seen: list[str] = []
+    rows = [{"topics": [A.TOPIC_DEPOSITED], "data": "0x"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        payload = json.loads(request.content)
+        if len(seen) == 1:
+            return httpx.Response(200, json={
+                "jsonrpc": "2.0", "id": payload["id"],
+                "error": {"code": -32602,
+                          "message": "Can't route your request. Try again later."},
+            })
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": payload["id"],
+                                         "result": rows})
+
+    out = asyncio.run(_client(handler)._rpc_logs("eth_getLogs", [{}]))
+    assert out == rows
+    assert len(set(seen)) == 2, "it never left the endpoint that could not route"
+
+
+def test_a_genuinely_malformed_request_short_circuits_the_chain() -> None:
+    """Same code, different text.  Rotating on our own bug triples the request
+    count and hides it."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        payload = json.loads(request.content)
+        return httpx.Response(200, json={
+            "jsonrpc": "2.0", "id": payload["id"],
+            "error": {"code": -32602, "message": "invalid argument 0"},
+        })
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(_client(handler)._rpc_logs("eth_getLogs", [{}]))
+    assert len(seen) == 1, "a malformed request was tried on a second endpoint"
+
+
+def test_a_range_error_is_classified_before_raise_for_status() -> None:
+    """drpc wraps its shrinkable range cap in an HTTP 400.  Status-first
+    handling demotes the one recoverable error in the set to an opaque
+    transport failure, and the sweep then fails instead of shrinking."""
+    err = {"code": -32602, "message": "block range is too large, limited to 1000"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        return httpx.Response(400, json={"jsonrpc": "2.0", "id": payload["id"],
+                                         "error": err})
+
+    with pytest.raises(curator_client._LogRangeError):
+        asyncio.run(_client(handler)._rpc_logs("eth_getLogs", [{}]))
+
+
+def test_a_suggested_range_is_never_followed() -> None:
+    """One provider decrements a single block per round trip and livelocks
+    anything that obeys it.  The window halves instead, boundedly."""
+    windows: list[tuple[int, int]] = []
+    suggested = (0x189378E, 0x189378F)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        flt = payload["params"][0]
+        windows.append((int(flt["fromBlock"], 16), int(flt["toBlock"], 16)))
+        return httpx.Response(200, json={
+            "jsonrpc": "2.0", "id": payload["id"],
+            "error": {
+                "code": -32005,
+                "message": (
+                    "block range is too large; try a suggested range of "
+                    f"{suggested[0]}-{suggested[1]}"
+                ),
+            },
+        })
+
+    client = _client(handler)
+    out = asyncio.run(client._get_logs_shrinking(
+        {"address": A.CURATOR}, 0, 100_000, group="deposits"
+    ))
+    assert out is None, "an unshrinkable sweep must fail honestly, never guess"
+
+    spans = [b - a for a, b in windows]
+    assert spans == sorted(spans, reverse=True)
+    assert spans[1] <= spans[0] // 2 + 1
+    assert len(windows) <= curator_client._LOG_MAX_SHRINKS + 1
+    assert suggested not in windows, "the provider's suggested range was adopted"
+
+
+def test_a_paged_sweep_covers_every_block_and_never_drops_the_bottom() -> None:
+    """The shrink must not walk the window's LEFT edge forward.
+
+    ``surf_client`` shrinks by raising ``fromBlock`` — correct for a recent
+    window, catastrophic for a backfill, where the blocks it walks past are the
+    contract's whole early history and nothing ever asks for them again.
+    """
+    windows: list[tuple[int, int]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        flt = payload["params"][0]
+        windows.append((int(flt["fromBlock"], 16), int(flt["toBlock"], 16)))
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": payload["id"],
+                                         "result": []})
+
+    client = _client(handler, log_page_blocks=100)
+    asyncio.run(client._get_logs_shrinking(
+        {"address": A.CURATOR}, 1_000, 1_249, group="deposits"
+    ))
+    assert windows[0][0] == 1_000
+    assert windows[-1][1] == 1_249
+    covered: set[int] = set()
+    for lo, hi in windows:
+        covered |= set(range(lo, hi + 1))
+    assert covered == set(range(1_000, 1_250))
+
+
+def test_a_shrunk_sweep_still_starts_where_it_was_asked_to() -> None:
+    """Same rule, on the shrinking path: the retry re-issues the SAME cursor
+    with a narrower span, it does not skip ahead."""
+    windows: list[tuple[int, int]] = []
+    state = {"errors_left": 2}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        flt = payload["params"][0]
+        windows.append((int(flt["fromBlock"], 16), int(flt["toBlock"], 16)))
+        if state["errors_left"] > 0:
+            state["errors_left"] -= 1
+            return httpx.Response(200, json={
+                "jsonrpc": "2.0", "id": payload["id"],
+                "error": {"code": -32005, "message": "block range is too large"},
+            })
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": payload["id"],
+                                         "result": []})
+
+    client = _client(handler, log_page_blocks=1_000)
+    out = asyncio.run(client._get_logs_shrinking(
+        {"address": A.CURATOR}, 5_000, 5_400, group="deposits"
+    ))
+    assert out == []
+    assert [w[0] for w in windows[:3]] == [5_000, 5_000, 5_000]
