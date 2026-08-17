@@ -61,6 +61,61 @@ def tol_bps_of(near_amount_tol: float) -> int:
     return round(near_amount_tol * 10_000)
 
 
+#: A "round" amount is a whole multiple of 0.01 ETH — a value a human picks.
+ROUND_WEI = 10**16
+
+#: Round-amount groups split where the gap between neighbouring deposit hours
+#: exceeds this — one wave, one window.
+MAX_HOUR_GAP = 1
+
+
+def identical_amount_windows(
+    ds: Dataset, cfg
+) -> list[tuple[int, list[tuple[int, int, str]]]]:
+    """Byte-identical single-deposit groups under the ONE window discipline.
+
+    Both amount-family signals (``amounts`` exact groups and ``split``) walk
+    these, so neither can weld a crowd the other would have split
+    (review I4 / ruling R13a):
+
+    * an **odd** amount (``% ROUND_WEI != 0``) is one global group — the
+      machine fingerprint reaches across waves;
+    * a **round** amount splits into contiguous-hour wave windows
+      (hour gap > :data:`MAX_HOUR_GAP` starts a new one);
+    * the **protocol minimum** (``cfg.protocol_min_amount_wei``, when set)
+      yields no group at all — everyone sends the minimum, so identicalness
+      at the minimum identifies nobody (ruling R13b).
+
+    Yields ``(amount_wei, window)`` with each window a sorted list of
+    ``(hour, block_number, address)`` and ``len(window) >= 2``.
+    """
+    by_amount: dict[int, list[tuple[int, int, str]]] = {}
+    for addr, dep in single_first_rows(ds).items():
+        by_amount.setdefault(dep.amount_wei, []).append(
+            (dep.hour, dep.block_number, addr)
+        )
+    windows: list[tuple[int, list[tuple[int, int, str]]]] = []
+    exempt = cfg.protocol_min_amount_wei
+    for amount, rows in sorted(by_amount.items()):
+        if len(rows) < 2 or (exempt is not None and amount == exempt):
+            continue
+        rows.sort()
+        if amount % ROUND_WEI:
+            windows.append((amount, rows))
+            continue
+        window = [rows[0]]
+        for row in rows[1:]:
+            if row[0] - window[-1][0] > MAX_HOUR_GAP:
+                if len(window) >= 2:
+                    windows.append((amount, window))
+                window = [row]
+            else:
+                window.append(row)
+        if len(window) >= 2:
+            windows.append((amount, window))
+    return windows
+
+
 def near(a: int, b: int, tol_bps: int) -> bool:
     """±tol comparison computed in integers — no float touches a wei value."""
     return abs(a - b) * 10_000 <= tol_bps * max(a, b)

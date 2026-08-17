@@ -63,6 +63,49 @@ def test_a_human_scale_pot_does_not_fire() -> None:
     assert split_edges(ds, CFG) == []
 
 
+def test_split_follows_the_amount_windows_never_all_time(population_ds) -> None:
+    """Review I4 / ruling R13(a): split must chain inside the same wave
+    windows amounts.py enforces.  Two 30-wallet 1.0Ξ waves eighteen hours
+    apart are 60 Ξ all-time but 30 Ξ per wave — below the pot floor, so no
+    edge; the same 60 wallets in ONE wave clear it."""
+    amt = 10**18
+    def rows(n, hour, block0, salt):
+        return [
+            {
+                "contributor": f"0x{salt:02x}{i:038x}",
+                "hour": hour + (i % 2),
+                "amount_wei": amt,
+                "credited_delta_wei": amt,
+                "weight_added_wei": amt,
+                "new_weight_wei": amt,
+                "tx_count": 1,
+                "block_number": block0 + i,
+                "tx_hash": f"0x{salt:02x}{i:062x}",
+                "log_index": i,
+            }
+            for i in range(n)
+        ]
+    split_waves = Dataset.from_events(rows(30, 1, 1000, 0xAA) + rows(30, 20, 7000, 0xBB), [])
+    assert split_edges(split_waves, CFG) == []
+    one_wave = Dataset.from_events(rows(60, 1, 1000, 0xAA), [])
+    assert split_edges(one_wave, CFG)
+
+
+def test_the_protocol_minimum_is_not_split_evidence(population_ds) -> None:
+    """Ruling R13(b): with the protocol minimum declared, the ~1,468-wallet
+    0.05 crowd (73.4 Ξ all-time) stops being a split group — everyone sends
+    the minimum, so the minimum identifies nobody."""
+    from sybilkit import DetectConfig
+
+    with_min = DetectConfig(protocol_min_amount_wei=50_000_000_000_000_000)
+    for e in split_edges(population_ds, with_min):
+        assert "0.05Ξ" not in e.reason.human_string
+    # without the declaration the crowd still welds — the knob is the fix
+    assert any(
+        "0.05Ξ" in e.reason.human_string for e in split_edges(population_ds, CFG)
+    )
+
+
 def test_the_reason_names_the_split_shape(population_ds) -> None:
     edges = split_edges(population_ds, CFG)
     assert any("W/k" in e.reason.human_string for e in edges)

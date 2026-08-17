@@ -152,6 +152,31 @@ def test_an_odd_amount_reaches_across_windows(labeled_ds, labeled_truth) -> None
     assert both <= comp
 
 
+def test_the_protocol_minimum_identicalness_is_not_amount_evidence(
+    labeled_ds, labeled_truth
+) -> None:
+    """Ruling R13: with ``protocol_min_amount_wei`` set, byte-identical 0.05
+    groups emit no amount edge from identicalness alone — while every other
+    amount keeps its groups, and near-identical jitter is untouched."""
+    from sybilkit import DetectConfig
+
+    with_min = DetectConfig(protocol_min_amount_wei=50_000_000_000_000_000)
+    edges = amount_edges(labeled_ds, with_min)
+    crowd = {
+        a
+        for a, cl in labeled_truth["cluster_of"].items()
+        if cl in ("amt_0.05_h7", "amt_0.05_h15", "amt_0.05_h17")
+    }
+    exact = [e for e in edges if "near" not in e.reason.human_string]
+    for e in exact:
+        assert e.a not in crowd and e.b not in crowd
+    # the 0.45 farm still groups, and the jitter batch still joins via near
+    farm = labeled_truth["members_of"]["amt_0.45_h3"]
+    assert farm <= component_containing(edges, next(iter(farm)))
+    jitter = labeled_truth["members_of"]["idxrun_13326"]
+    assert max(len(component_containing(edges, m) & jitter) for m in jitter) >= 5
+
+
 def test_no_edges_from_an_empty_dataset() -> None:
     from sybilkit import Dataset
 

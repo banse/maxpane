@@ -434,6 +434,31 @@ def test_an_empty_dataset_detects_nothing_and_says_so() -> None:
     assert (res.total_points, res.flagged_points, res.clean_points) == (0, 0, 0)
 
 
+def test_the_protocol_minimum_crowd_is_not_flagged_wholesale_on_tier_a() -> None:
+    """Review I4 / ruling R13: with the protocol minimum declared, the
+    1,468-wallet 0.05 crowd stops being one welded amount component.
+    Measured: 272 of them still flag — via consecutive-index runs and
+    repeated byte-identical bursts, i.e. genuinely farm-shaped sub-groups —
+    which is the point: the minimum alone convicts nobody, behaviour still
+    can."""
+    ds = build_population_dataset()
+    minimum = 50_000_000_000_000_000
+    counts: dict[str, list] = {}
+    for d in ds.deposits:
+        counts.setdefault(d.contributor, []).append(d)
+    crowd = {
+        c for c, rows in counts.items()
+        if len(rows) == 1 and rows[0].amount_wei == minimum
+    }
+    assert len(crowd) == 1468
+    res = detect(ds, DetectConfig(protocol_min_amount_wei=minimum))
+    flagged_minimum = res.flagged & crowd
+    assert len(flagged_minimum) <= 400  # measured 272; wholesale would be 1468
+    # and without the declaration the crowd still welds -- the knob is load-bearing
+    wholesale = detect(ds, DetectConfig())
+    assert len(wholesale.flagged & crowd) == 1468
+
+
 # ---------------------------------------------------------------------------
 # the whole-population smoke (controller ruling 4): tier A only, one pass
 # ---------------------------------------------------------------------------
@@ -448,9 +473,11 @@ def test_the_whole_population_tier_a_smoke() -> None:
     assert res.flagged_points + res.clean_points == res.total_points
 
     # the flagged share lands in a sane band; tier A alone overshoots the
-    # research's 43.25% all-tier conservative floor because whole round-amount
-    # crowds carry amount+cadence.  Measured on this implementation: see the
-    # WP1 report (the exact number is recorded there, not over-pinned here).
+    # research's 43.25% all-tier conservative floor because the big real
+    # farms (14.0/10.0/0.45) alone carry ~39% and the round-amount crowds
+    # add the rest.  Measured after fix round 1: 0.5609 under this default
+    # config, 0.5479 with protocol_min_amount_wei set (recorded in the WP1
+    # report; band-asserted here, not over-pinned).
     share = res.flagged_points / res.total_points
     assert 0.30 <= share <= 0.70
 
