@@ -764,3 +764,83 @@ def test_an_unread_rescued_total_stays_none(cache):
     assert cache.rescued_total_wei() is None
     cache.store_rescued_total(None)
     assert cache.rescued_total_wei() is None
+
+
+# ---------------------------------------------------------------------------
+# WP5.6 — cluster (fan-out pattern) state
+# ---------------------------------------------------------------------------
+
+
+def _cluster(first_block: int, last_block: int, *, share=12.5) -> dict:
+    return {
+        "size": 9,
+        "amount_eth": 60.0,
+        "first_block": first_block,
+        "last_block": last_block,
+        "points": 8_100,
+        "points_share_pct": share,
+    }
+
+
+def test_clusters_persist_and_reload(tmp_path, clock):
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.store_events(_deposits_hour_0_and_1())
+    inside = cache.events()[0].block_number
+    cache.store_clusters([_cluster(inside, inside + 4)])
+    cache.save()
+
+    restored = CuratorCache(path=path, clock=clock)
+    restored.load(now=NOW)
+    rows = restored.clusters()
+    assert len(rows) == 1
+    assert rows[0]["size"] == 9 and rows[0]["points"] == 8_100
+    assert rows[0]["first_block"] == inside
+
+
+def test_a_cluster_outside_the_retained_history_is_dropped_not_rendered(tmp_path, clock):
+    """The rows that evidenced it are gone; a flag nothing can be traced back
+    to is a pattern claim with no witness."""
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.store_events(_deposits_hour_0_and_1())
+    oldest = cache.events()[0].block_number
+    cache.store_clusters([_cluster(oldest - 5_000, oldest - 4_990), _cluster(oldest, oldest + 2)])
+    cache.save()
+
+    restored = CuratorCache(path=path, clock=clock)
+    restored.load(now=NOW)
+    assert [row["first_block"] for row in restored.clusters()] == [oldest]
+
+
+def test_a_cluster_reloaded_with_no_retained_history_at_all_is_dropped(tmp_path, clock):
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.store_clusters([_cluster(25_770_000, 25_770_010)])
+    cache.save()
+    restored = CuratorCache(path=path, clock=clock)
+    restored.load(now=NOW)
+    assert restored.clusters() == []
+
+
+def test_the_flagged_points_share_is_recomputed_on_load_never_restored(tmp_path, clock):
+    """It is a ratio against a total that changes every hour; a restored one
+    would be a stale percentage rendered beside live absolutes."""
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.store_events(_deposits_hour_0_and_1())
+    inside = cache.events()[0].block_number
+    cache.store_clusters([_cluster(inside, inside + 1, share=41.7)])
+    cache.save()
+
+    on_disk = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    assert "points_share_pct" not in on_disk["clusters"][0]
+
+    restored = CuratorCache(path=path, clock=clock)
+    restored.load(now=NOW)
+    assert restored.clusters()[0]["points_share_pct"] is None
+
+
+def test_junk_cluster_rows_are_dropped_rather_than_rendered(cache):
+    cache.store_clusters(["junk", {"size": 3}, _cluster(1, 2), None])
+    assert len(cache.clusters()) == 1

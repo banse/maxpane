@@ -242,6 +242,14 @@ def _opt_int(value: Any) -> int | None:
     return value
 
 
+def _opt_float(value: Any) -> float | None:
+    """A finite ``float`` if the value is a real number, else ``None``."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    out = float(value)
+    return out if math.isfinite(out) else None
+
+
 def _pair(entry: Any) -> tuple[float, Any] | None:
     """One ``(timestamp, value)`` bucket, or ``None`` when it is not one."""
     if not isinstance(entry, (list, tuple)) or len(entry) != 2:
@@ -764,6 +772,86 @@ class CuratorCache:
         """
         return self._last_seen_block
 
+    # -- cluster (fan-out pattern) state -------------------------------------
+
+    def store_clusters(self, rows: Any, *, now: float | None = None) -> None:
+        """Persist this cycle's fan-out patterns.  Pattern language only.
+
+        The **share of total points is not persisted**: it is a ratio against a
+        total that changes every hour, so a restored one would be a stale
+        percentage rendered next to live absolutes.  It is recomputed from the
+        live fold each cycle and is ``None`` until it has been.
+        """
+        kept: list[dict] = []
+        for row in rows or ():
+            if not isinstance(row, Mapping):
+                continue
+            first_block = _opt_int(row.get("first_block"))
+            last_block = _opt_int(row.get("last_block"))
+            size = _opt_int(row.get("size"))
+            if first_block is None or last_block is None or size is None:
+                continue
+            kept.append(
+                {
+                    "size": size,
+                    "amount_eth": _opt_float(row.get("amount_eth")),
+                    "first_block": first_block,
+                    "last_block": last_block,
+                    "points": _opt_int(row.get("points")),
+                    "points_share_pct": _opt_float(row.get("points_share_pct")),
+                }
+            )
+        self._clusters = kept
+
+    def clusters(self) -> list[dict]:
+        return [dict(row) for row in self._clusters]
+
+    def _load_clusters(self, raw: Any) -> None:
+        """Restore the patterns the retained history can still corroborate.
+
+        A cluster whose block window has fallen out of the retained event
+        history is **dropped**, not rendered: the rows that evidenced it are
+        gone, and a flag nothing can be traced back to is an accusation with no
+        witness.  Every restored share is ``None`` — see :meth:`store_clusters`.
+        """
+        self._clusters = []
+        if not isinstance(raw, (list, tuple)):
+            return
+        oldest = self._events[0].block_number if self._events else None
+        restored: list[dict] = []
+        dropped = 0
+        for row in raw:
+            if not isinstance(row, Mapping):
+                dropped += 1
+                continue
+            first_block = _opt_int(row.get("first_block"))
+            last_block = _opt_int(row.get("last_block"))
+            size = _opt_int(row.get("size"))
+            if first_block is None or last_block is None or size is None:
+                dropped += 1
+                continue
+            if oldest is None or first_block < oldest:
+                dropped += 1
+                continue
+            restored.append(
+                {
+                    "size": size,
+                    "amount_eth": _opt_float(row.get("amount_eth")),
+                    "first_block": first_block,
+                    "last_block": last_block,
+                    "points": _opt_int(row.get("points")),
+                    # Never restored from disk: a ratio against a total that
+                    # changes every hour.
+                    "points_share_pct": None,
+                }
+            )
+        self._clusters = restored
+        if dropped:
+            logger.info(
+                "Dropped %d persisted cluster(s) the retained history no longer covers",
+                dropped,
+            )
+
     # -- the settlement evidence latch (H1) ----------------------------------
 
     def observe_settlement(
@@ -906,6 +994,10 @@ class CuratorCache:
             "rescued_total_wei": self._rescued_total_wei,
             "fold": [_row_to_dict(row) for row in self._fold],
             "last_seen_block": self._last_seen_block,
+            "clusters": [
+                {k: v for k, v in row.items() if k != "points_share_pct"}
+                for row in self._clusters
+            ],
         }
 
     def save(self, path: str | None = None) -> None:
@@ -1055,6 +1147,12 @@ class CuratorCache:
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Curator fold block bad: %s", exc)
+
+        try:
+            self._load_clusters(payload.get("clusters"))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Curator clusters block bad: %s", exc)
+            self._clusters = []
 
         try:
             self._load_settlement(payload.get("settlement"))
