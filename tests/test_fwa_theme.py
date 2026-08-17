@@ -394,18 +394,26 @@ def test_fwa_css_block_is_appended_at_eof(tcss_text: str):
     The Talismans block must still be the last thing before FWA. WP6 (surf)
     later appends its own block after FWA's, per the same append-only
     discipline, so FWA is no longer required to be the literal EOF -- instead
-    the Surf block must immediately follow it with nothing interleaved, and
-    the Surf block must now be the last thing in the file.
+    the Surf block must immediately follow it with nothing interleaved. WP7
+    (curator) then appended after Surf under the same rule, so the invariant
+    is now the *chain*: Talismans -> FWA -> Surf -> Curator, contiguous, with
+    the newest block at EOF. Each new dashboard extends the chain here; none
+    may insert into the middle of it, because an inserted block would change
+    which rules win for every screen below it.
     """
     tal = tcss_text.index("/* ── Talismans screen")
     fwa = tcss_text.index("/* ── FWA screen")
     surf = tcss_text.index("/* ── Surf screen")
-    assert tal < fwa < surf
+    curator = tcss_text.index("/* ── Curator screen")
+    assert tal < fwa < surf < curator
     assert "/* ──" not in tcss_text[fwa + 10 : surf], (
         "nothing may be appended between the FWA block and the Surf block"
     )
-    assert "/* ──" not in tcss_text[surf + 10 :], (
-        "the Surf block must be the last section in minimal.tcss"
+    assert "/* ──" not in tcss_text[surf + 10 : curator], (
+        "nothing may be appended between the Surf block and the Curator block"
+    )
+    assert "/* ──" not in tcss_text[curator + 10 :], (
+        "the Curator block must be the last section in minimal.tcss"
     )
 
 
