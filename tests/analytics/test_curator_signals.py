@@ -586,3 +586,93 @@ def test_the_curve_is_total_over_missing_and_nonsense_inputs() -> None:
     assert sig.points_for_weight(ETH, None) is None
     assert sig.points_for_weight(-1, POINTS_PER_ETH) is None
     assert sig.points_for_weight("0x1", POINTS_PER_ETH) is None
+
+
+# ===========================================================================
+# WP3.4 — the weight formula (H8)
+# ===========================================================================
+
+
+@pytest.fixture(scope="module")
+def bundle_deposits(bundle: dict) -> list[DepositEvent]:
+    """The 2930 ``Deposited`` events of the 00:03:22Z bundle.
+
+    A second, twelve-times-larger differential corpus — and the one whose state
+    section was read in the same second, so the fold can be reconciled against
+    the contract's own counters further down.
+    """
+    rows = [_deposit_from_log(r) for r in _rows_of(bundle["logs"], TOPIC_DEPOSITED)]
+    assert len(rows) == 2930
+    return rows
+
+
+def test_the_captured_first_deposit_to_the_wei(deposits: list[DepositEvent]) -> None:
+    """0.05 ETH at 19 975 bps -> 0.099875 ETH of weight.  ``==``, never approx.
+
+    This is deposit #1, made by the announce EOA in block 25 769 888 — the one
+    real witness for the formula, and it is in the captured sweep.
+    """
+    assert sig.weight_added(5 * 10**16, 19_975) == 99_875_000_000_000_000
+    first = min(deposits, key=lambda d: (d.block_number, d.log_index))
+    assert first.amount_wei == 5 * 10**16
+    assert first.early_bps == 19_975
+    assert first.weight_added_wei == 99_875_000_000_000_000
+    assert sig.weight_added(first.credited_delta_wei, first.early_bps) == first.weight_added_wei
+
+
+def test_every_captured_deposit_satisfies_the_identity(
+    deposits: list[DepositEvent], bundle_deposits: list[DepositEvent]
+) -> None:
+    """All 231 rows of the sweep and all 2930 of the bundle.  This is the
+    differential that makes the formula a fact rather than a reading of the
+    source."""
+    corpus = deposits + bundle_deposits
+    assert len(corpus) == 3161
+    for ev in corpus:
+        assert sig.weight_added(ev.credited_delta_wei, ev.early_bps) == ev.weight_added_wei
+
+
+def test_the_corpus_actually_exercises_the_floor(
+    deposits: list[DepositEvent], bundle_deposits: list[DepositEvent]
+) -> None:
+    """A differential over rows that all divide exactly would pass under
+    ``round`` too.  Count the ones that do not, so the corpus is known to bite.
+    """
+    inexact = [
+        ev
+        for ev in deposits + bundle_deposits
+        if (ev.credited_delta_wei * ev.early_bps) % 10_000
+    ]
+    # 31 of the 3161 rows do not divide exactly — few, because most amounts are
+    # round numbers of ETH, but enough that the differential above is a floor
+    # test and not just an arithmetic test.
+    assert len(inexact) >= 20
+
+
+def test_the_division_floors() -> None:
+    assert sig.weight_added(1, 19_999) == 1  # 1.9999 -> 1
+    assert sig.weight_added(1, 9_999) == 0  # 0.9999 -> 0, a real zero
+    assert sig.weight_added(3, 10_001) == 3  # 3.0003 -> 3
+
+
+def test_a_zero_credited_delta_yields_zero_weight_and_does_not_raise() -> None:
+    """H3: legal, and common once anyone crosses the cap."""
+    assert sig.weight_added(0, 20_000) == 0
+    assert sig.weight_added(0, 10_000) == 0
+
+
+def test_the_flat_post_grace_multiplier_is_the_identity() -> None:
+    """After grace ``earlyMultiplierBps()`` is a flat 10 000 forever, so weight
+    and credit are the same number — the branch every deposit from
+    2026-08-17 19:58:47 UTC onwards takes."""
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    # (capture B, the first post-grace bundle, does not exist yet: the earliest
+    # window is 2026-08-17 19:58:47 UTC.)
+    for amount in (5 * 10**16, 3 * ETH, 461 * ETH, 1000 * ETH):
+        assert sig.weight_added(amount, 10_000) == amount
+
+
+def test_weight_added_is_total_over_missing_inputs() -> None:
+    assert sig.weight_added(None, 19_975) is None
+    assert sig.weight_added(10**18, None) is None
+    assert sig.weight_added(-1, 19_975) is None

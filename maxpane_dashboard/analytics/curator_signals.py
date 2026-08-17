@@ -380,6 +380,30 @@ def points_for_weight(weight_wei: int | None, points_per_eth: int | None) -> int
     return math.isqrt(weight) * rate // _SQRT_SCALE
 
 
+# ---------------------------------------------------------------------------
+# The weight formula (H8)
+# ---------------------------------------------------------------------------
+
+
+def weight_added(credited_delta_wei: int | None, early_bps: int | None) -> int | None:
+    """``_credit``'s last line: ``(creditedDelta * earlyBps) / BPS``, floored.
+
+    Wei-exact and integer-only.  The identity holds for every captured
+    ``Deposited`` row — the witness is deposit #1, 0.05 ETH at 19 975 bps
+    producing 0.099875 ETH of weight — and a ``round`` here would disagree with
+    the chain on most of them.
+
+    ``0`` in, ``0`` out, and that is a legitimate answer rather than a failure:
+    a deposit whose new high-water mark is already above the credit cap credits
+    nothing and still counts in full toward the hour's survival.
+    """
+    delta = _int_or_none(credited_delta_wei)
+    bps = _int_or_none(early_bps)
+    if delta is None or bps is None or delta < 0 or bps < 0:
+        return None
+    return delta * bps // _BPS
+
+
 __all__ = [
     # tunables
     "WHALE_MIN_ETH",
@@ -407,4 +431,5 @@ __all__ = [
     "lived_desc",
     # curve
     "points_for_weight",
+    "weight_added",
 ]
