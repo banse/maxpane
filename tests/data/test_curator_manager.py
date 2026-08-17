@@ -42,6 +42,7 @@ from maxpane_dashboard.data.curator_models import (
     CuratorConfig,
     CuratorState,
     LogSweep,
+    WalletState,
 )
 
 NOW = 1_786_968_000.0
@@ -836,3 +837,90 @@ def test_a_sweep_row_that_does_not_decode_is_dropped_not_zeroed(tmp_path, clock)
     asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
     assert len(manager.cache.events()) == 231
     assert all(e.amount_wei > 0 for e in manager.cache.events())
+
+
+# ---------------------------------------------------------------------------
+# WP5.10 — the YOU tier
+# ---------------------------------------------------------------------------
+
+WALLET = "0x200E710aCAA6A93bbc77146026328C40F1d60fB1"
+
+
+def _wallet_state(**overrides) -> WalletState:
+    fields = dict(
+        address=WALLET,
+        points=1000,
+        weight_wei=10**18,
+        contributed_wei=10**18,
+        tx_count=4,
+        first_hour=0,
+        has_joined=True,
+        required_next_wei=4_100_000_000_000_000_000,
+    )
+    fields.update(overrides)
+    return WalletState(**fields)
+
+
+def test_with_no_wallet_configured_zero_wallet_calls_are_made(tmp_path, clock):
+    client = FakeClient(fetch_wallet=_wallet_state())
+    manager = _manager(tmp_path, clock)
+    manager.client = client
+    assert asyncio.run(manager._pool_wallet(NOW)) is None
+    assert client.calls == []
+    assert manager._degraded() == [SOURCE_LOGS, SOURCE_STATE]      # never 'wallet'
+
+
+def test_with_a_wallet_set_the_six_views_run_on_the_fast_tier(tmp_path, clock):
+    client = FakeClient(fetch_wallet=_wallet_state())
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+    state = asyncio.run(manager._pool_wallet(NOW))
+    assert client.calls == [("fetch_wallet", WALLET)]
+    assert state.points == 1000
+    assert manager.cache.get_last_good(SLOT_WALLET).payload == {"address": WALLET}
+    assert SOURCE_WALLET not in manager._degraded()
+
+
+def test_an_invalid_address_is_rejected_before_any_request(tmp_path, clock):
+    """Sending garbage to a public node to be told what we could have checked
+    locally is both rude and slow."""
+    for bad in ("not-an-address", "0x1234", "0x" + "zz" * 20, 42, ""):
+        client = FakeClient(fetch_wallet=_wallet_state())
+        manager = _manager(tmp_path, clock, client=client, wallet=bad)
+        assert asyncio.run(manager._pool_wallet(NOW)) is None
+        assert client.calls == []
+        if bad:
+            assert SOURCE_WALLET in manager._degraded()
+
+
+def test_a_stranger_is_a_successful_read_not_a_failure(tmp_path, clock):
+    """The contract answers minDeposit for a wallet that has never deposited,
+    which is exactly the number that wallet needs."""
+    stranger = _wallet_state(
+        points=0, weight_wei=0, contributed_wei=0, tx_count=0,
+        first_hour=0, has_joined=False, required_next_wei=5 * 10**16,
+    )
+    client = FakeClient(fetch_wallet=stranger)
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+    state = asyncio.run(manager._pool_wallet(NOW))
+    assert state.has_joined is False
+    assert state.required_next_wei == 5 * 10**16
+    assert SOURCE_WALLET not in manager._degraded()
+
+
+def test_a_failed_wallet_read_degrades_only_the_wallet(tmp_path, clock):
+    client = FakeClient(fetch_wallet=None)
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+    manager.cache.store_last_good(SLOT_STATE, {"a": 1}, ts=NOW)
+    manager.cache.store_last_good(SLOT_LOGS, {"b": 2}, ts=NOW)
+    assert asyncio.run(manager._pool_wallet(NOW)) is None
+    assert manager._degraded() == [SOURCE_WALLET]
+
+
+def test_a_partial_wallet_read_is_a_failure_not_a_half_truth(tmp_path, clock):
+    """The client sets wallet_failed for a partial batch too: three of six
+    views answering is not a YOU row anyone should read as live."""
+    client = FakeClient(fetch_wallet=_wallet_state(points=None, weight_wei=None))
+    client.wallet_failed = True
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+    asyncio.run(manager._pool_wallet(NOW))
+    assert SOURCE_WALLET in manager._degraded()

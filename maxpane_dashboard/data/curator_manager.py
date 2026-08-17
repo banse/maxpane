@@ -115,6 +115,20 @@ def _opt_int(value: Any) -> int | None:
     return value
 
 
+def _looks_like_address(value: Any) -> bool:
+    """A 20-byte hex address, checked locally before a request is spent on it."""
+    if not isinstance(value, str):
+        return False
+    body = value[2:] if value.lower().startswith("0x") else value
+    if len(value) != 42 or len(body) != 40:
+        return False
+    try:
+        int(body, 16)
+    except ValueError:
+        return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Log decoding — raw rows in, models out
 # ---------------------------------------------------------------------------
@@ -625,6 +639,46 @@ class CuratorManager:
         self.cache.store_last_good(SLOT_CONFIG, payload, ts=now)
         self.cache.mark_fetched(TIER_ONCE, now)
         return payload
+
+    # -- the fast tier, second half: the YOU views ---------------------------
+
+    async def _pool_wallet(self, now: float) -> Any:
+        """The six argument-taking views, and **only** when a wallet is set.
+
+        With no wallet configured this makes **zero** requests and returns
+        ``None``: every ``you_*`` key is then ``None`` because there is nobody
+        to ask about, which is a different fact from a source being down and is
+        reported differently (:meth:`_degraded` never names ``wallet`` in that
+        case).
+
+        An address that cannot be one is rejected **here**, before any request:
+        sending garbage to a public node to be told what we could have checked
+        locally is both rude and slow, and the failure is reported as a wallet
+        degradation rather than an outage.
+
+        A wallet that is not on the list is a **successful** read, not a
+        failure: the contract answers ``minDeposit`` for a stranger, which is
+        exactly the number that wallet needs and the most useful thing on the
+        row.
+        """
+        if not self.wallet:
+            return None
+        if not _looks_like_address(self.wallet):
+            logger.warning(
+                "Curator wallet %r is not an address; the YOU row is unavailable "
+                "and nothing was sent to the node",
+                self.wallet,
+            )
+            self._note(SOURCE_WALLET, False)
+            return None
+        state = await self._guard(
+            lambda: self.client.fetch_wallet(self.wallet), "fetch_wallet"
+        )
+        ok = state is not None and not getattr(self.client, "wallet_failed", False)
+        if ok:
+            self.cache.store_last_good(SLOT_WALLET, {"address": self.wallet}, ts=now)
+        self._note(SOURCE_WALLET, ok)
+        return state
 
     # -- the medium tier: the log sweep and the fold -------------------------
 
