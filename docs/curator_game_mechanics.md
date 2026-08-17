@@ -17,10 +17,10 @@ forever). Verified source, no proxy, no upgrade path, no pause, no mutable param
 
 | role | address | notes |
 |---|---|---|
-| WhitelistCurator | `0xcb0b0531e86A9aC36fa865ca8e3DbcCF047fDA91` | Ethereum mainnet, verified (Blockscout, `src/WhitelistCurator.sol`, solc 0.8.28) |
+| WhitelistCurator | `0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91` | Ethereum mainnet, verified (Blockscout, `src/WhitelistCurator.sol`, solc 0.8.28) |
 | deployer / surfsurf.eth | `0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7` | surf dashboard's `DEV_WALLET`. Only power: `rescue()` force-fed ETH |
 | creation tx | `0x240bf1a83d08dd10ff28027f4bdd7f9c0fa7f57629a13cfaafdd6e708dcc641f` | block 25 769 870, 2026-08-16 19:58:47 UTC; `launchTime` == creation timestamp (1786910327) |
-| announce channel | `0x200E710aCAA6A93bbc77146026328C40F1d60fB1` | has **not** mentioned the curator as of 2026-08-16 21:13 UTC (all posts since Aug 1 decoded) |
+| announce channel | `0x200E710aCAA6A93bbc77146026328C40F1d60fB1` | never **posted** about the curator (all posts since Aug 1 decoded) — but it *participated*: its tx page holds exactly one curator item, a 0.05 ETH `deposit` at 19975 bps in block 25769888, which is deposit #1 of the game and the witness for the weight formula |
 
 ## Deployed parameters (constructor-set, immutable, cross-checked eth_call vs creation-tx input)
 
@@ -116,7 +116,7 @@ and closest-call history (only the last active hour lives in state), escalation 
 
 **Validated endpoints (this research, live):** state — `ethereum-rpc.publicnode.com`
 (all 21 parameterless views returned, zero failures); logs —
-`gateway.tenderly.co/public/mainnet` (226 `Deposited` from deploy block `0x189360e` in one
+`gateway.tenderly.co/public/mainnet` (231 `Deposited` from deploy block `0x189360e` in one
 sweep); `eth.drpc.org` failed once with routing-message text ("Can't route your request…") —
 classify by message text and fail over. Blockscout REST
 (`eth.blockscout.com/api/v2/addresses/<addr>/logs`, 8 pages) reconciled with the RPC sweep

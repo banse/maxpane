@@ -2,7 +2,7 @@
 
 Dashboard #11 (8th visible), `--game curator`, menu position **2** (right after Surfboard,
 same surfsurf.eth universe), titled **THE LIST**. Subject: the `WhitelistCurator` contract at
-`0xcb0b0531e86A9aC36fa865ca8e3DbcCF047fDA91` on Ethereum mainnet — surfsurf.eth's
+`0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91` on Ethereum mainnet — surfsurf.eth's
 zero-custody allowlist game with an hourly doomsday clock. Companion research:
 `docs/curator_game_mechanics.md`. Raw captured payloads:
 `tests/fixtures/curator/captures/`.
@@ -131,7 +131,7 @@ view batch with preimages. ABI vendored under `abis/` from the verified source.
 | tier | period | contents |
 |---|---|---|
 | `fast` | 15 s | one batched eth_call round: `isSettled`, `currentHour`, `currentHourTotal`, `ethNeededThisHour`, `timeLeftInHour`, `lastActiveHour`, `earlyMultiplierBps`, `stats`; `eth_getBalance(contract)` (forced-ETH anomaly); + 6 YOU calls (`pointsOf`, `weightOf`, `contributedBy`, `txCountOf`, `firstHourOf`, `requiredNext`) when `MAXPANE_WALLET` set |
-| `medium` | 60 s | incremental `eth_getLogs` from last-seen block + 1; folded into the contributor table, hourly series, clusters; detects `Settled`/`Rescued`/`HourSaved`. Plus a bounded `eth_getBlockByNumber` batch on the **state** pool over the distinct blocks of the rendered activity window (amendment A4: neither Tenderly's `eth_getLogs` nor Blockscout's log items carry a block timestamp, so the feed's `HH:MM` has no other source; a missing stamp renders `--:--`, never `00:00`). Hour buckets need no timestamps — the hour is `Deposited`'s indexed second topic and its wall-clock is `launchTime + hour × hourDuration`, exact |
+| `medium` | 60 s | incremental `eth_getLogs` from last-seen block + 1; folded into the contributor table, hourly series, clusters; detects `Settled`/`Rescued`/`HourSaved`. Deposit wall-clock stamps come from the log rows themselves — **corrected 2026-08-17: they do carry timestamps.** All 377 RPC rows in `tenderly_logs.json` have `blockTimestamp` and all 376 Blockscout items have `block_timestamp` (pinned by `test_every_captured_log_carries_a_block_timestamp`). The bounded `eth_getBlockByNumber` batch on the **state** pool is therefore a *fallback* for an endpoint that omits the field, not the primary source — a client that discards a stamp it was handed pays a round trip for nothing. A missing stamp renders `--:--`, never `00:00`. Hour buckets need no timestamps — the hour is `Deposited`'s indexed second topic and its wall-clock is `launchTime + hour × hourDuration`, exact |
 | `slow` | 420 s | Blockscout cross-check of `stats()` vs folded totals; gap repair if the incremental fold ever skipped blocks across a failover |
 | `once` | ∞ | the 8 immutables + `Launched` event + `POINTS_PER_ETH` + one `previewPoints(uint256)` probe (amendment A2: gives the locally recomputed sqrt curve an onchain witness — without it the curve is only *transcribed* from source) |
 
@@ -295,7 +295,7 @@ Applied 2026-08-17 after planning against the real captures and the verified sou
 | A1 | none to this document — recorded as a fixture-calibration warning | `earlyMultiplierBps()` in the committed captures is `0x4c23` = **19491 bps = 1.9491×**. §1's 1.9342× (21:33 UTC) and the mechanics doc's 19975 bps first-deposit cross-check are both consistent; a fixture calibrated to a remembered "~1.99×" would silently miscompute every derived weight |
 | A2 | §5 `once` tier gains a `previewPoints(uint256)` probe | the 21-call captured round holds only parameterless views, so the sqrt curve had no onchain witness at all |
 | A3 | §8's three mandated mutations become four | the 0.099875 example witnesses the *weight* formula, not `_curve`'s integer sqrt — two different pieces of code, each needs its own proof |
-| A4 | §5 `medium` tier gains a bounded `eth_getBlockByNumber` batch | the activity feed's `HH:MM` had no specified provenance: Tenderly's `eth_getLogs` returns no `blockTimestamp` and Blockscout's log items carry none either (the `timestamp` visible in `bs_page_*.json` is `FirstDeposit`'s own data field) |
+| A4 | ~~§5 `medium` tier gains a bounded `eth_getBlockByNumber` batch as the activity feed's timestamp source~~ — **refuted the next day, and demoted to a fallback** | the premise was wrong. WP0's capture pins prove every one of the 377 RPC log rows carries `blockTimestamp` and every one of the 376 Blockscout items carries `block_timestamp`; only the *hazard doc's* reading of `bs_page_*.json` was mistaken. The feed reads the stamp it is handed and falls back to `eth_getBlockByNumber` only for an endpoint that omits it. Left in the log rather than deleted: the amendment was applied and then disproved by evidence, which is the record worth keeping |
 
 One repo fact that confirms rather than changes §9.4: the contiguous-keys assertion does exist,
 but it lives in `tests/test_fwa_theme.py:490`

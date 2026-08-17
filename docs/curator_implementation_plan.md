@@ -7,7 +7,7 @@
 
 **Goal:** Ship `--game curator`, MaxPane dashboard #11 (8th visible) — **THE LIST**, a keyless
 read-only survival watch over `WhitelistCurator`
-(`0xcb0b0531e86A9aC36fa865ca8e3DbcCF047fDA91`, Ethereum mainnet): a zero-custody allowlist
+(`0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91`, Ethereum mainnet): a zero-custody allowlist
 game with an hourly doomsday clock, which must be equally good as a live clock and as the
 game's archive after the clock wins.
 
@@ -187,9 +187,9 @@ traces to one of them.
 | `contract.json`, `wc_abi.json` | two saves of the same Blockscout smart-contracts response, incl. the ABI | WP0 (vendors `abis/curator/whitelist_curator.json`) |
 | `creation_tx.json` | creation tx `0x240bf1a8…`, block **25769870**, 2026-08-16 19:58:47 UTC, `launchTime == 1786910327` | WP0 (creation block/ts pins) |
 | `batch.json` / `results.json` | the **21-call batched `eth_call` round and its raw returns** — the selector table's cross-check and the state decoder's fixture | WP0 (selectors), WP2 (`fetch_state`) |
-| `tenderly_logs.json` | one full-history `eth_getLogs` sweep from the deploy block, 377 logs (226 `Deposited`) | WP2 (log sweep), WP3 (folds) |
+| `tenderly_logs.json` | one full-history `eth_getLogs` sweep from the deploy block, 377 logs = 1 `Launched` + **231** `Deposited` + 145 `FirstDeposit` (recounted from the committed bytes; every earlier doc said 226, and a fold calibrated to 226 silently drops five real deposits). The file is the **whole JSON-RPC envelope** — rows live under `result` | WP2 (log sweep), WP3 (folds) |
 | `bs_page_0..7.json` | the same history via Blockscout pagination, 376 logs, reconciled | WP2 (REST cross-check / gap repair) |
-| `ann_page_0.json` | the announce channel's tx page, showing no curator mention at capture | WP0 (a fact pin only; **surf is out of scope**) |
+| `ann_page_0.json` | the announce channel's tx page: it never *posted* about the curator, but it did make deposit #1 (one `deposit` item) | WP0 (a fact pin only; **surf is out of scope**) |
 | `hour_boundary_h1_h2.json` | the same 21-call batch re-sent every ~20 s across the hour 1 → 2 crossing (16 samples, 21:56:15 → 22:01:21 UTC), with a `views` table mapping request id → selector → Solidity signature | WP2 (state decoder over a moving series), WP5 (the boundary fold rule) |
 
 Two decoded facts worth stating up front, because they were read out of `results.json` during
@@ -270,13 +270,13 @@ A hazard with no test is not handled.
 | H5 | **Nonzero contract balance is always forced ETH**, never deposits. | WP5.8 | `eth_getBalance(contract)` feeds `forced_eth` only; expected rendering is `—`. A test asserts a nonzero balance never reaches a volume, TVL or hero total. |
 | H6 | **`contributors()` carries a `firstHour + 1` offset**; `firstHourOf()` un-shifts it; `FirstDeposit.index` is 1-based. | WP2.5, WP3.6 | The client reads `firstHourOf()` (2 words: `hour`, `hasJoined`) and never the raw struct field. A decode test asserts `(0, false)` for a never-joined address is **not** rendered as "joined in hour 0". The fold asserts `FirstDeposit.index` maxes at exactly `totalContributors` (145 in the captures). |
 | H7 | **Integer sqrt must floor exactly like the contract.** `points = (isqrt(weight) * 1000) // 1e9`, multiplication before division. | WP3.3 | `math.isqrt` in production; the test transcribes the contract's seeded-Newton loop with its `result <= a/result ? result : result - 1` correction and asserts equality over an edge + randomized corpus. **Mandated mutation:** `//` → `round` (and `isqrt` → `int(math.sqrt(...))`) → red. |
-| H8 | **`weightAdded = creditedDelta * earlyBps // 10_000`**, floor. | WP3.4 | Wei-exact `==` (never `pytest.approx`) against the captured event where 0.05 ETH at 19975 bps produced 0.099875 ETH of weight, plus a differential over **all 226** captured `Deposited` rows. |
+| H8 | **`weightAdded = creditedDelta * earlyBps // 10_000`**, floor. | WP3.4 | Wei-exact `==` (never `pytest.approx`) against the captured event where 0.05 ETH at 19975 bps produced 0.099875 ETH of weight, plus a differential over **all 231** captured `Deposited` rows. |
 | H9 | **publicnode 403s python-urllib's default UA.** | WP2.1 | The client sets an explicit real `User-Agent` header. A test asserts the header is present, non-empty, and not a `python-`/`urllib`/`httpx` default, on every request the transport sees. |
 | H10 | **drpc fails with a routing message**; providers reuse `-32602`/`-32005` for unrelated meanings. | WP2.3 | Classification is on **message text**, not code (`_looks_like_endpoint_limitation` / `_is_range_limitation` pattern tables, mirrored from `surf_client`). A test drives a `-32602`-coded routing message and asserts failover, and a `-32602`-coded malformed-request body and asserts short-circuit. A provider's "suggested range" is **never followed** — the window halves. |
 | H11 | **State and logs need different endpoint pools.** publicnode refuses archive `eth_getLogs`. | WP2.1 | Two pool lists, structurally separate, with a banned-host frozenset (`eth.llamarpc.com`, `rpc.ankr.com`, `cloudflare-eth.com`, `api.reservoir.tools`, `*.alchemy.com`, `infura.io`, any `etherscan.io`). Constructor raises on a banned host; a test asserts publicnode is absent from the logs pool. |
 | H12 | **`timeLeftInHour()` returns `hourDuration`, never 0, at an exact boundary.** | WP3.2 | A "0 seconds left" render is unreachable; the countdown formatter is tested at 3600 and 1. |
 | H13 | **The in-progress hour is never judged.** `_isShort` returns false while `lastActive == hour`. | WP3.8 | The judged-hour fold excludes the current hour; a test at the exact boundary asserts the hour that just completed becomes judgeable and the new one does not. |
-| H14 | **Tenderly's `eth_getLogs` returns no `blockTimestamp`.** | WP2.8 | Deposit wall-clock stamps come from a bounded `eth_getBlockByNumber` batch over the distinct blocks of the newest N rows (state pool). Hour buckets need **no** timestamps: the hour is an indexed topic and its wall-clock is `launchTime + hour * hourDuration`, exact by construction. A missing stamp renders `--:--`, never `00:00`. |
+| H14 | **~~Tenderly's `eth_getLogs` returns no `blockTimestamp`~~ — REFUTED 2026-08-17.** Every one of the 377 RPC rows carries `blockTimestamp` and every one of the 376 Blockscout items carries `block_timestamp` (`test_every_captured_log_carries_a_block_timestamp`). The real hazard is the inverse: *discarding* a stamp you were handed, then paying a round trip to re-fetch it. | WP2.8 | Deposit wall-clock stamps are read off the log row; the bounded `eth_getBlockByNumber` batch (state pool, distinct blocks of the newest N rows) is the **fallback** for an endpoint that omits the field. Hour buckets need **no** timestamps at all: the hour is an indexed topic and its wall-clock is `launchTime + hour * hourDuration`, exact by construction. A missing stamp renders `--:--`, never `00:00`. |
 | H15 | **Deposits after death revert; the backfill grows unbounded** if the game survives weeks. | WP5.5 | The folded contributor table and the hourly series are persisted; the raw per-event history stays on disk unfolded and is capped by a documented row limit with the drop counted and logged. Compaction is PRD §12 material, not v1. |
 
 ---
@@ -305,9 +305,10 @@ an assumption the plan hides.
 - **The dashboard may launch into a settled game.** SETTLED is a first-class phase, built and
   tested as a normal state, never an error. The whole log history stays keylessly fetchable
   forever, so the archive is complete regardless of when the build finishes.
-- **Blockscout log items carry `block_number` but no per-log block timestamp** (verified in
-  `bs_page_0.json` — the `timestamp` field found there is `FirstDeposit`'s own *data* field).
-  This is why H14's block-timestamp batch exists rather than "just read it off Blockscout".
+- **~~Blockscout log items carry no per-log block timestamp~~ — wrong, and corrected by the
+  WP0 capture pins.** Blockscout items carry `block_timestamp` and the RPC rows carry
+  `blockTimestamp`; the planning read confused those with `FirstDeposit`'s own *data* field,
+  which is also present. The block-timestamp batch survives as a fallback only (H14).
 
 ---
 
