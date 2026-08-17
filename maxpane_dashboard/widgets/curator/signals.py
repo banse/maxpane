@@ -149,6 +149,19 @@ _STATE_STYLE = {
 #: retyping a character that is one code point from ``●``.
 UNKNOWN_GLYPH = _STATE_STYLE[None][0]
 
+#: The ``degraded`` group the HOUR SAVED, WHALE and FARM rows are folded from.
+#:
+#: Three of the seven rows read the deposit and ``HourSaved`` logs, and two of
+#: them have no representable "read it, found nothing but a zero" value the way
+#: FARM's ``clusters_count == 0`` does: ``last_saved_hour`` and
+#: ``whale_amount_eth`` are ``None`` both when the chain is quiet and when the
+#: pool is down.  So this row alone needs the health flag to tell the two
+#: apart, and it is the only member of ``META_KEYS`` any widget receives.
+#: Restated rather than imported from ``data/curator_models``'s
+#: ``CURATOR_DEGRADED_GROUPS`` -- widgets may not import ``data/`` -- with the
+#: agreement asserted in the suite.
+LOGS_GROUP = "logs"
+
 #: Explicit never-fired / no-wallet copy, tested verbatim.
 NEVER_SAVED = "none yet"
 NO_WHALE = "none this hour"
@@ -276,9 +289,25 @@ def _at_risk_row(data: dict) -> tuple[str | None, list[str]]:
     return state or "ok", ["hour is safe", f"{fmt_countdown(left)} left"]
 
 
+def _logs_are_dead(data: dict) -> bool:
+    """Is the group these rows are folded from in ``degraded``?
+
+    ``"logs"`` is restated here rather than imported: a widget may not import
+    ``data/``, where ``CURATOR_DEGRADED_GROUPS`` is frozen, and the agreement
+    lives in the suite -- the ``MAX_BLOCK_SPAN`` pattern one module over.
+    """
+    groups = data.get("degraded")
+    return isinstance(groups, (list, tuple, set, frozenset)) and LOGS_GROUP in groups
+
+
 def _hour_saved_row(data: dict) -> tuple[str | None, list[str]]:
     hour = data.get("last_saved_hour")
     if not isinstance(hour, int):
+        if _logs_are_dead(data):
+            # The read did not happen, so "never" is a claim nobody measured.
+            # FARM is fed by the same group and has always said this; these two
+            # rows used to disagree with it in green.
+            return None, [f"{DASH} unknown"]
         # HourSaved has never fired on chain and may never; a blank row is
         # indistinguishable from a broken one.
         return "ok", [NEVER_SAVED]
@@ -295,6 +324,11 @@ def _hour_saved_row(data: dict) -> tuple[str | None, list[str]]:
 def _whale_row(data: dict) -> tuple[str | None, list[str]]:
     amount = as_float(data.get("whale_amount_eth"))
     if amount is None:
+        if _logs_are_dead(data):
+            # "no whale in the last five minutes" is a statement about the
+            # deposit log.  With that pool down we did not look, and last-good
+            # events are older than the window the row is about.
+            return None, [f"{DASH} unknown"]
         return "ok", [NO_WHALE]
     parts = [f"[bold]{fmt_eth(amount)} ETH[/]"]
     wallet = data.get("whale_wallet")
@@ -450,6 +484,12 @@ WIDTH_PROBE = {
     "you_credit_eth": _WIDEST_ETH,
     "you_required_next_eth": _WIDEST_ETH,
     "you_marginal_points": MAX_CURVE_POINTS,
+    #: Empty **on purpose**, and it is the one probe entry that is not a
+    #: maximum: a degraded group only ever replaces a row's parts with
+    #: ``-- unknown``, which is narrower than every value it stands in for.
+    #: The widest rail is the healthy one, and the suite asserts that a
+    #: ``["logs"]`` probe measures no wider.
+    "degraded": [],
 }
 
 #: Widget columns the rail needs for the widest row it can **ever** render,
@@ -536,9 +576,15 @@ class CuratorSignals(Vertical):
         you_credit_eth=None,
         you_required_next_eth=None,
         you_marginal_points=None,
+        degraded=None,
         **_kwargs,
     ) -> None:
-        """Refresh all seven rows from the flat ``CURATOR_KEYS`` payload."""
+        """Refresh all seven rows from the flat ``CURATOR_KEYS`` payload.
+
+        ``degraded`` is the one health key any widget takes: see
+        :data:`LOGS_GROUP` for why two of these rows cannot be honest without
+        it.
+        """
         self._payload = {
             "phase": phase,
             "settled": settled,
@@ -563,6 +609,7 @@ class CuratorSignals(Vertical):
             "you_credit_eth": you_credit_eth,
             "you_required_next_eth": you_required_next_eth,
             "you_marginal_points": you_marginal_points,
+            "degraded": list(degraded) if degraded else [],
             "seen": True,
         }
         self._render_view()

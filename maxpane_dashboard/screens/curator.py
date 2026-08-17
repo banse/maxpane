@@ -230,8 +230,16 @@ CLUSTERS_ID = "curator-clusters"
 #: height dimension with it.
 CURATOR_FULL_LAYOUT_COLUMNS = 138
 
-#: The three flat-dict keys the screen consumes itself and never dispatches to
-#: a widget.  Exactly ``curator_signals.MANAGER_OWNED_KEYS``; the agreement is
+#: The three flat-dict keys the screen renders itself -- the title bar's
+#: freshness and health markers.  Exactly ``curator_signals.MANAGER_OWNED_KEYS``.
+#:
+#: "Never dispatched to a widget" was true of all three until ``degraded``
+#: also had to reach ``CuratorSignals``: two of its rows are ``None`` both when
+#: the chain is quiet and when the logs pool is down, and only this key tells
+#: those apart (see that widget's ``LOGS_GROUP``).  It is a *both*, not a move
+#: -- the title bar still renders it -- and the totality test below is a
+#: containment, so meta and dispatched may overlap.  ``as_of``/``as_of_hhmm``
+#: reach no widget.  The agreement with the analytics layer is
 #: asserted rather than assumed.  ``phase`` and ``settled`` are deliberately
 #: *not* here -- the title bar reads them **and** the hero and the rail are
 #: dispatched them, which is why the dispatch test asserts containment plus
@@ -274,6 +282,14 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "clusters_count", "flagged_points_share_pct", "forced_eth",
         "rescued_total_eth", "you_rank", "you_points", "you_credit_eth",
         "you_required_next_eth", "you_marginal_points",
+        # The one META_KEYS entry a widget receives, and the only one it needs:
+        # HOUR SAVED and WHALE are ``None`` both when the chain is quiet and
+        # when the logs pool is down, so without this they rendered a green
+        # ``none yet`` / ``none this hour`` off a refresh that could not look --
+        # while FARM, fed by the same group, said ``-- unknown``.  FARM can tell
+        # them apart because ``clusters_count == 0`` is representable and
+        # "no whale" is not.  See ``widgets/curator/signals.LOGS_GROUP``.
+        "degraded",
     ),
     "CuratorActivity": ("activity_rows",),
     "CuratorClosestCalls": (

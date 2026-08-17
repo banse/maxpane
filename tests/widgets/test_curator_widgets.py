@@ -955,6 +955,68 @@ async def test_hour_saved_renders_a_never_fired_state_rather_than_waiting():
     assert "hour 26" in fired and "0x200e" in fired
 
 
+async def test_the_three_log_fed_rows_agree_when_the_logs_pool_is_dead():
+    """HOUR SAVED, WHALE and FARM are folded from the same group, and all
+    three must say ``-- unknown`` when it is degraded.
+
+    They did not.  FARM could tell "read it, found nothing" from "did not
+    read" because ``clusters_count`` has a representable zero; the other two
+    have none -- ``last_saved_hour`` and ``whale_amount_eth`` are ``None`` for
+    both facts -- so they rendered a confident green ``none yet`` /
+    ``none this hour`` off a refresh that could not look.  Live-state /
+    dead-logs is the *expected* outage here (CLAUDE.md: state and logs need
+    different endpoint pools), not a corner.
+    """
+    dead = await _rendered(
+        CuratorSignals,
+        last_saved_hour=None,
+        whale_amount_eth=None,
+        clusters_count=None,
+        degraded=["logs"],
+    )
+    rows = {
+        label: line
+        for label in ("HOUR SAVED", "WHALE", "FARM")
+        for line in dead.splitlines()
+        if label in line
+    }
+    assert set(rows) == {"HOUR SAVED", "WHALE", "FARM"}
+    for label, line in rows.items():
+        assert "unknown" in line, f"{label}: {line!r}"
+        assert NEVER_SAVED not in line and "none this hour" not in line, label
+        assert UNKNOWN_GLYPH in line, label
+
+    # ...and the real negatives survive: a healthy read that found nothing
+    # still says so, which is the whole point of keeping the two apart.
+    quiet = await _rendered(
+        CuratorSignals,
+        last_saved_hour=None,
+        whale_amount_eth=None,
+        clusters_count=0,
+        degraded=[],
+    )
+    assert NEVER_SAVED in quiet and "none this hour" in quiet
+
+
+@pytest.mark.parametrize("groups", [["state"], ["wallet"], ["state", "wallet"]])
+async def test_another_groups_outage_does_not_touch_the_log_fed_rows(groups):
+    """Only the group these rows are folded from may unknown them."""
+    text = await _rendered(
+        CuratorSignals, last_saved_hour=None, whale_amount_eth=None,
+        degraded=groups,
+    )
+    assert NEVER_SAVED in text and "none this hour" in text
+
+
+def test_the_widget_spells_the_degraded_group_the_frozen_way():
+    """``LOGS_GROUP`` is restated in the widget because ``widgets/`` may not
+    import ``data/``; this is the agreement half."""
+    from maxpane_dashboard.data.curator_models import CURATOR_DEGRADED_GROUPS
+    from maxpane_dashboard.widgets.curator import signals as sig_mod
+
+    assert sig_mod.LOGS_GROUP in CURATOR_DEGRADED_GROUPS
+
+
 async def test_the_farm_row_uses_pattern_language():
     text = await _rendered(
         CuratorSignals, clusters_count=1, flagged_points_share_pct=12.4
@@ -1201,6 +1263,14 @@ def test_the_width_probe_carries_every_field_at_its_widest():
         if p.kind is not p.VAR_KEYWORD and name != "self"
     }
     assert set(probe) == kwargs, sorted(kwargs ^ set(probe))
+
+    # `degraded` is the one probe entry that is not a maximum: a dead group
+    # replaces a row's parts with `-- unknown`, which is narrower than every
+    # value it stands in for.  Pinned rather than asserted in prose.
+    for groups in ([sig_mod.LOGS_GROUP], ["state", sig_mod.LOGS_GROUP, "wallet"]):
+        assert sig_mod.measure_signals_width({**probe, "degraded": groups}) <= (
+            sig_mod.SIGNALS_FULL_WIDTH
+        )
 
 
 async def test_the_rail_needs_the_width_it_publishes():

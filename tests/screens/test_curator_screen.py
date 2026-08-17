@@ -938,6 +938,32 @@ async def test_all_seven_detector_rows_reach_the_compositor_in_every_phase():
             assert label in text, (label, phase)
 
 
+async def test_the_dead_logs_pool_reaches_the_three_rows_it_feeds():
+    """End to end: ``degraded`` is dispatched, and the rail acts on it.
+
+    The realistic outage, not the total one -- state alive, logs dead, which
+    CLAUDE.md calls the expected case because the two sit on different
+    endpoint pools.  HOUR SAVED and WHALE used to render a green ``none yet``
+    / ``none this hour`` here while FARM, folded from the same group, said
+    ``-- unknown``; ``degraded`` was not in this widget's signature, so the
+    rail could not have told them apart even if it wanted to.
+    """
+    payload = _grace_payload(
+        degraded=["logs"],
+        last_saved_hour=None, last_saved_wallet=None, last_saved_age_s=None,
+        whale_amount_eth=None, whale_wallet=None, whale_age_s=None,
+        clusters_count=None,
+    )
+    rail = await _rail_text(payload)
+    for label in ("HOUR SAVED", "WHALE", "FARM"):
+        line = next(line for line in rail.splitlines() if label in line)
+        assert "unknown" in line, f"{label}: {line!r}"
+
+    # The clock keeps its own state: only the group that died goes unknown.
+    assert "n/a until hour" in rail          # HOUR AT RISK, off the live state
+    assert "list open" in rail               # SETTLED, off isSettled()
+
+
 async def test_a_rail_row_lost_off_the_bottom_is_named_on_the_title_bar():
     """The failure ``TALLER_HINT`` exists for, demonstrated end to end.
 
