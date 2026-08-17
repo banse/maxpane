@@ -12,6 +12,7 @@ kind, no wallet, no signing, no transactions.
 | Game | Chain | What you see |
 |------|-------|-------------|
 | **Surfboard** | Ethereum | surfsurf.eth announce feed, six launch detectors, IMD market, IDMD NFT |
+| **THE LIST** | Ethereum | Zero-custody allowlist game: hourly doomsday clock, survival signals, fan-out patterns |
 | **FWA** | Ethereum | NFT gacha pool, inverse-weighted VRF draws, pull EV |
 | **Base Trading** | Base | Trending tokens, volume, ETH price, signals |
 | **FrenPet** | Base | Pet battles, leaderboard, activity, trends |
@@ -108,6 +109,7 @@ alias maxpane='~/path/to/maxpane/maxpane/target/release/maxpane && command maxpa
 ```bash
 maxpane                        # launch dashboard (default: surf)
 maxpane --game surf            # start on surfsurf.eth Surfboard view
+maxpane --game curator         # start on THE LIST (WhitelistCurator) view
 maxpane --game fwa             # start on Fake World Assets view
 maxpane --game base            # start on Base trading view
 maxpane --game frenpet         # start on FrenPet view
@@ -130,9 +132,13 @@ last marker goes out at:
 
 | columns | what still shows |
 |--------:|------------------|
-| 109–112 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, surf `IDENTITY.MD ‹ widen for /2000 written`, FWA `SIGNALS ‹ widen` |
-| 113–134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
-| 135–141 | surf `ANNOUNCE FEED ‹ widen`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
+| 109–112 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, surf `IDENTITY.MD ‹ widen for /2000 written`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen…`, curator `SIGNALS ‹ widen`, curator `ACTIVITY ‹ widen…`, curator `FAN-OUT PATTERNS ‹ widen` |
+| 113–122 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen…`, curator `SIGNALS ‹ widen`, curator `ACTIVITY ‹ widen…`, curator `FAN-OUT PATTERNS ‹ widen: block window` |
+| 123–126 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen: TX`, curator `SIGNALS ‹ widen`, curator `ACTIVITY ‹ widen: credit wording` |
+| 127–133 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen: TX`, curator `SIGNALS ‹ widen` |
+| 134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `SIGNALS ‹ widen` |
+| 135–137 | surf `ANNOUNCE FEED ‹ widen`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `SIGNALS ‹ widen` |
+| 138–141 | surf `ANNOUNCE FEED ‹ widen`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
 | 142 | surf `IMD MARKET ‹ widen for 24h volume and bridge flow`, FWA `SIGNALS ‹ widen` |
 | **≥ 143** | **nothing — full layout**, with one exception below |
 
@@ -148,6 +154,16 @@ to shed, so the marker is bare again. Every one of those is a
 panel saying what it dropped,
 which is the system working; the table lists the last few to go out, not every marker a
 narrow terminal can show.
+
+THE LIST's own layout is whole at **138**, five columns under the number at the bottom of
+the table, so it is never the dashboard that decides how wide you need to be. Its last
+marker to go out is `SIGNALS`, the rail of seven detectors ending in YOU; the leaderboard
+clears at 134, the activity feed at 127 and the fan-out table at 123. Two notes on reading
+its rows above. `FAN-OUT PATTERNS` and `CLOSEST CALLS` share one slot — `c` swaps them —
+so the table names whichever the current phase opens on, and the other behaves the same
+way. And 138 is a *height-independent* number on purpose: the right rail reserves the
+column its scrollbar would need, so a short window scrolls the rail instead of quietly
+narrowing the panel that sets the width.
 
 `IMD MARKET` is the one row that moves with the data rather than with your terminal. Its
 widest line carries the IMD/FP gap in dollars, and prices under a cent print with six
