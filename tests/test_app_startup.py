@@ -46,6 +46,7 @@ ALL_GAMES = [
     "talismans",
     "fwa",
     "surf",
+    "curator",
 ]
 
 #: Attribute names of every manager the app builds in ``__init__``.
@@ -63,6 +64,7 @@ MANAGER_ATTRS = [
     "_talismans_manager",
     "_fwa_manager",
     "_surf_manager",
+    "_curator_manager",
 ]
 
 
