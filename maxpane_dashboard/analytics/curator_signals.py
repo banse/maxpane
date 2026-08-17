@@ -1,0 +1,234 @@
+"""Pure math for the curator dashboard — THE LIST.
+
+Everything derived on that screen is computed here: the phase machine, the
+curve, the folds over the ``Deposited`` history, the survival record, the
+fan-out heuristic and the YOU quote.  No I/O, no widgets, no clock of its own —
+``now_ts`` is a parameter of every function that needs one, which is what makes
+a replay of the 2026-08-16 captures reproducible forever.
+
+Unit discipline
+    **Wei stays an ``int`` through every fold.**  The division to ETH happens
+    exactly once, at the presentation boundary, and that boundary is
+    :func:`build_signals` — the function whose output keys are the flat dict's.
+    Nothing downstream of it divides again, and nothing upstream of it divides
+    at all.  A helper that returns wei says ``_wei`` in its name; a flat-dict
+    key that carries ETH says ``_eth``.
+
+The three legitimate zeros
+    ``creditedDelta == 0`` (a deposit above the credit cap), ``ethNeededThisHour
+    () == 0`` (all through grace, and again whenever a judged hour is already
+    safe) and ``currentHourTotal() == 0`` (every hour boundary, until the next
+    deposit lands) are all real measurements.  ``None`` is the only failed read.
+    Every function here is total over that distinction: no division by a
+    credited delta, no ``max()`` over a possibly-empty sequence without a
+    default, and no state that treats a ``None`` as a number.
+
+    In particular a ``None`` never lights an alarm.  ``HOUR AT RISK`` with an
+    unknown deficit renders unavailable, not ``watch`` — a dead RPC must not
+    scream that the game is dying.
+
+Pattern language, never accusation
+    :func:`find_clusters` reports a *shape* in the data: single-deposit wallets,
+    byte-identical amounts, a tight block window.  The contract's own comments
+    delegate that analysis to consumers, and the data cannot support a claim
+    about intent.  The output vocabulary is deliberately limited to the shape.
+
+The tunables (PRD §12) are the named constants at the top of this module and
+every one of them is a **first guess**, to be re-tuned against post-grace data
+and recorded as an amendment.  A magic number inline cannot be re-tuned; it
+just gets edited.
+"""
+
+from __future__ import annotations
+
+import math
+from datetime import datetime, timezone
+from typing import Any
+
+from maxpane_dashboard.data.curator_models import (
+    CURATOR_ACTIVITY_KINDS,
+    PHASES,
+    ContributorRow,
+    HourBucket,
+)
+
+# ---------------------------------------------------------------------------
+# Tunables — PRD §12.  Every one of these is a FIRST GUESS.
+# ---------------------------------------------------------------------------
+
+#: A single deposit at or above this many ETH is a WHALE.  **First guess**: it
+#: is roughly 5x the hourly survival threshold as this contract was configured,
+#: which is the scale at which one send visibly changes the hour.  Re-tune
+#: against post-grace data and record it as a PRD amendment.
+WHALE_MIN_ETH = 25.0
+
+#: How far back the WHALE row looks (PRD §4: "largest single deposit last 60
+#: min").  **First guess**, and deliberately equal to one hour bucket so the row
+#: and the hero clock talk about the same window.
+WHALE_WINDOW_S = 3600.0
+
+#: A fan-out needs at least this many single-deposit wallets.  **First guess**
+#: from PRD §5; two identical amounts is a coincidence anyone can produce.
+CLUSTER_MIN_SIZE = 3
+
+#: …landing inside this many blocks.  **First guess** — about six minutes of
+#: mainnet.  Without the bound, the 53 wallets sitting at the minimum deposit
+#: would form one meaningless "cluster" spanning the whole game.
+CLUSTER_MAX_BLOCK_SPAN = 32
+
+#: HOUR AT RISK goes from ``watch`` to ``fired`` with fewer than this many
+#: seconds left in a short judged hour.  **First guess**: a quarter of an hour
+#: is about the point at which a rescue has to be already in flight.
+AT_RISK_RED_SECONDS = 900
+
+#: How long a ``fired`` row keeps its fired framing before relaxing (surf's
+#: precedent, same value).  Only the SETTLED row uses it: settlement is
+#: terminal, so the *phase* never relaxes, but the rail's colour does — a game
+#: that died three days ago is not news.  **First guess.**
+FIRED_TTL_S = 86_400.0
+
+#: Row budgets.  The widgets truncate further; these bound what crosses the
+#: manager boundary at all, so a long game cannot grow the payload without
+#: bound.
+LEADERBOARD_LIMIT = 10
+ACTIVITY_LIMIT = 40
+CLOSEST_CALL_LIMIT = 10
+CLUSTER_LIMIT = 10
+
+#: The three signal spellings, mirrored from ``CURATOR_SIGNAL_STATES``.  A
+#: fourth anywhere is a silent fallback arm; ``None`` (unknown) is not a
+#: spelling, it is the absence of one.
+STATE_OK = "ok"
+STATE_WATCH = "watch"
+STATE_FIRED = "fired"
+
+_BPS = 10_000
+_WEI = 10**18
+#: ``sqrt(1e18) == 1e9`` — the curve's fixed-point scale, from ``_curve``.
+_SQRT_SCALE = 10**9
+
+
+# ---------------------------------------------------------------------------
+# The two seams
+# ---------------------------------------------------------------------------
+
+#: Everything :func:`build_signals` reads, and the only thing it reads.
+#:
+#: **Outage encoding, uniform across every entry:** ``None`` means *the read
+#: failed*; ``[]`` / ``()`` means *the read succeeded and found nothing*; ``0``
+#: is a measurement.  The two are never interchangeable here — an empty judged
+#: history means "nothing has been judged yet" and a ``None`` means "we could
+#: not look", and the screen says different things about each.
+#:
+#: A missing key is treated exactly like ``None``, so a caller that has not
+#: implemented a tier yet degrades one row instead of raising.
+READING_KEYS: tuple[str, ...] = (
+    # --- fast tier (one batched eth_call) ---------------------------------
+    "settled",                # bool | None — isSettled(); None is "unknown"
+    "current_hour",           # int | None — currentHour()
+    "hour_needed_wei",        # int | None — ethNeededThisHour(); 0 is REAL
+    "hour_seconds_left",      # int | None — timeLeftInHour(); never 0
+    "early_bps",              # int | None — earlyMultiplierBps()
+    "volume_wei",             # int | None — stats() word 0
+    "contributors",           # int | None — stats() word 1
+    "tx_count",               # int | None — stats() word 2
+    "forced_balance_wei",     # int | None — eth_getBalance(CURATOR)
+    # --- once tier (immutables, read live, never hardcoded) ---------------
+    "launch_time",            # int | None
+    "grace_period",           # int | None
+    "hour_duration",          # int | None
+    "hourly_threshold_wei",   # int | None
+    "first_judged_hour",      # int | None
+    "points_per_eth",         # int | None
+    "credit_cap_wei",         # int | None
+    # --- logs tier ---------------------------------------------------------
+    "deposits",               # list[DepositEvent] | None — [] is a read that found none
+    "first_deposits",         # list[dict] | None — {"contributor", "index", "ts"}
+    "hour_saved",             # list[dict] | None — {"hour", "wallet", "ts"}
+    "rescued_total_wei",      # int | None — summed Rescued events; 0 is REAL
+    # --- manager-held records ---------------------------------------------
+    "settlement_record",      # SettlementRecord | None — the latch, not a read
+    "wallet_state",           # WalletState | None — None when no wallet is set
+)
+
+#: The three flat-dict keys :func:`build_signals` does **not** produce.  They
+#: are the manager's own health markers: which groups degraded, and when the
+#: payload was assembled.  Nothing here can know either.
+MANAGER_OWNED_KEYS: tuple[str, ...] = ("degraded", "as_of_hhmm", "as_of")
+
+#: Exactly the keys :func:`build_signals` emits — always all of them.
+#:
+#: Hand-typed rather than derived from ``CURATOR_KEYS`` on purpose (CLAUDE.md's
+#: redundancy rule): a derivation would make WP0's subset guard compare a
+#: constant against itself, and it could never fail again.
+SIGNAL_OUTPUT_KEYS: tuple[str, ...] = (
+    "phase",
+    "settled",
+    "settled_hour",
+    "settled_at_ts",
+    "settled_observed_at",
+    "lived_desc",
+    "current_hour",
+    "hour_fed_eth",
+    "hour_needed_eth",
+    "hour_seconds_left",
+    "grace_seconds_left",
+    "grace_ends_utc",
+    "hourly_threshold_eth",
+    "first_judged_hour",
+    "early_multiplier_x",
+    "points_per_eth_now",
+    "survival_streak_hours",
+    "closest_call_margin_eth",
+    "closest_call_hour",
+    "contributors_total",
+    "deposits_total",
+    "volume_routed_eth",
+    "top_points",
+    "last_saved_hour",
+    "last_saved_wallet",
+    "last_saved_age_s",
+    "whale_amount_eth",
+    "whale_wallet",
+    "whale_age_s",
+    "clusters_count",
+    "flagged_points_share_pct",
+    "forced_eth",
+    "rescued_total_eth",
+    "sig_settled_state",
+    "sig_at_risk_state",
+    "you_rank",
+    "you_points",
+    "you_credit_eth",
+    "you_required_next_eth",
+    "you_marginal_points",
+    "leaderboard_rows",
+    "activity_rows",
+    "closest_call_rows",
+    "cluster_rows",
+    "volume_series",
+    "contributors_series",
+)
+
+
+__all__ = [
+    # tunables
+    "WHALE_MIN_ETH",
+    "WHALE_WINDOW_S",
+    "CLUSTER_MIN_SIZE",
+    "CLUSTER_MAX_BLOCK_SPAN",
+    "AT_RISK_RED_SECONDS",
+    "FIRED_TTL_S",
+    "LEADERBOARD_LIMIT",
+    "ACTIVITY_LIMIT",
+    "CLOSEST_CALL_LIMIT",
+    "CLUSTER_LIMIT",
+    # states
+    "STATE_OK",
+    "STATE_WATCH",
+    "STATE_FIRED",
+    # seams
+    "READING_KEYS",
+    "SIGNAL_OUTPUT_KEYS",
+    "MANAGER_OWNED_KEYS",
+]
