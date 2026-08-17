@@ -254,6 +254,34 @@ def test_a_shared_cex_funder_cannot_be_the_second_family() -> None:
     assert detect(ds, DetectConfig()).clusters == []
 
 
+def test_a_single_block_coincidence_is_one_family_and_no_cluster() -> None:
+    """Review I3 / ruling R12: one block with ≥ min_size chained-near
+    single-deposit wallets, tier A only.  Before the fix, amounts-near and
+    cadence-burst both fired on that identical configuration and the block
+    convicted itself; now the coincidence is a single amount family and the
+    gate holds."""
+    base = 100_000_000_000_000_000
+    deposits = []
+    for i in range(6):
+        amount = base + i * base // 100  # chained-near jitter, no two equal
+        deposits.append(
+            {
+                "contributor": f"0x{i + 1:040x}",
+                "hour": 1,
+                "amount_wei": amount,
+                "credited_delta_wei": amount,
+                "weight_added_wei": amount,
+                "new_weight_wei": amount,
+                "tx_count": 1,
+                "block_number": 1000,  # ONE block
+                "tx_hash": "0x" + f"{i + 1:064x}",
+                "log_index": i,
+            }
+        )
+    ds = Dataset.from_events(deposits, [])
+    assert detect(ds, DetectConfig()).clusters == []
+
+
 def test_the_gate_reads_its_thresholds_from_the_config() -> None:
     ds = _labeled()
     default = detect(ds, DetectConfig())

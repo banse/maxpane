@@ -98,13 +98,37 @@ def test_each_2067_wave_drips_on_its_own_slice(population_ds) -> None:
     assert len(waves) >= 2  # measured: 104 (h13) + 46/41 (h18, two sub-runs)
 
 
-def test_the_labeled_burst_slice_fires_in_sample(labeled_ds, labeled_truth) -> None:
-    """idxrun_13326's sample lands 6 wallets in one block with jitter amounts
-    inside ±tol — a burst even at sample density."""
+def test_a_jitter_burst_is_amount_evidence_not_cadence(
+    labeled_ds, labeled_truth
+) -> None:
+    """Review I3 / ruling R12: the same-block chained-near configuration IS
+    the amounts-near signal, so cadence must not fire on it too — one block
+    must never hand a crowd two families by itself.  idxrun_13326's sampled
+    6-in-one-block therefore gets no cadence edge; the operator still
+    detects, because gas corroborates the amount component."""
     edges = cadence_edges(labeled_ds, CFG)
     members = labeled_truth["members_of"]["idxrun_13326"]
-    hit = {a for c in connected_sets(edges) for a in c} & members
-    assert len(hit) >= 5
+    for e in edges:
+        assert e.a not in members and e.b not in members
+    # ...and the combiner still finds the operator without the double count
+    from sybilkit import DetectConfig, detect
+
+    res = detect(labeled_ds, DetectConfig())
+    covered = max((set(c.members) & members for c in res.clusters), key=len)
+    assert len(covered) >= 5
+
+
+def test_a_single_block_burst_of_identical_amounts_needs_a_second_block() -> None:
+    """Ruling R12's synthetic negative, signal half: min_size byte-identical
+    deposits in ONE block only — no repetition, no cadence."""
+    amt = 700_000_000_000_000_000
+    one_block = _synthetic([(1000, amt)] * 6)
+    assert cadence_edges(one_block, CFG) == []
+    # the same six plus a second qualifying block: now it is a rhythm
+    two_blocks = _synthetic([(1000, amt)] * 6 + [(1042, amt)] * 6)
+    edges = cadence_edges(two_blocks, CFG)
+    assert edges
+    assert all("burst" in e.reason.human_string for e in edges)
 
 
 def test_a_random_scatter_produces_no_cadence_edge() -> None:

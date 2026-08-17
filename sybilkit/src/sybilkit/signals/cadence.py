@@ -3,8 +3,15 @@
 Two machine rhythms, both measured on this population (research §4/§5.4):
 
 **Burst** — a submission engine drains a queue, so a wave lands *exactly* 20
-or 30 near-identical deposits per block.  Rule: ≥ ``min_size`` single-deposit
-wallets in **one block** whose amounts chain within ±tol.
+or 30 byte-identical deposits per block, block after block.  Rule:
+≥ ``min_size`` single-deposit wallets sending the **same integer wei** in one
+block, and that amount must have **≥ 2 distinct qualifying blocks** — the
+repetition is the rhythm.  A single block proves only that a block was busy,
+and (review I3 / ruling R12) the same-block *near-chained* configuration is
+exactly the amounts-near signal, so cadence deliberately does not fire on it
+at all: one block must never hand a crowd two families by itself.  Jitter
+runs are covered by ``sequence`` (the join counter) and by ``amounts`` (the
+near rule), not by cadence.
 
 **Drip** — a rate-limited engine sends one deposit every N blocks for hours.
 Rule: ≥ 8 consecutive same-amount deposits whose gaps stay small (≤ 8 blocks)
@@ -19,7 +26,7 @@ from collections import defaultdict
 from ..cluster import Edge
 from ..model import Dataset
 from ..report import Reason
-from . import eth_str, near, single_first_rows, tol_bps_of
+from . import eth_str, single_first_rows
 
 #: Drip: minimum run length, maximum inter-deposit gap, maximum gap range.
 DRIP_MIN_RUN = 8
@@ -32,38 +39,32 @@ STRENGTH_DRIP = 0.8
 
 def cadence_edges(ds: Dataset, cfg) -> list[Edge]:
     singles = single_first_rows(ds)
-    tol_bps = tol_bps_of(cfg.near_amount_tol)
     edges: list[Edge] = []
 
-    # ---- burst: >= min_size near-identical amounts in one block ---------
-    by_block: dict[int, list[tuple[int, str]]] = defaultdict(list)
+    # ---- burst: same integer wei, >= min_size per block, >= 2 blocks ----
+    per_amount_block: dict[int, dict[int, list[str]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
     for addr, dep in singles.items():
-        by_block[dep.block_number].append((dep.amount_wei, addr))
-    for block, rows in sorted(by_block.items()):
-        if len(rows) < cfg.min_size:
-            continue
-        rows.sort()
-        group = [rows[0]]
-
-        def flush_burst(group: list[tuple[int, str]]) -> None:
-            if len(group) < cfg.min_size:
-                return
+        per_amount_block[dep.amount_wei][dep.block_number].append(addr)
+    for amount, blocks in sorted(per_amount_block.items()):
+        qualifying = {
+            block: addrs
+            for block, addrs in blocks.items()
+            if len(addrs) >= cfg.min_size
+        }
+        if len(qualifying) < 2:
+            continue  # a single block is a busy block, not a rhythm
+        for block, addrs in sorted(qualifying.items()):
             reason = Reason(
                 "cadence",
-                f"burst ×{len(group)} in one block "
-                f"(~{eth_str(group[0][0])}Ξ each)",
+                f"burst ×{len(addrs)} of {eth_str(amount)}Ξ in one block, "
+                f"repeated over {len(qualifying)} blocks",
                 STRENGTH_BURST,
             )
-            for (_, a), (_, b) in zip(group, group[1:]):
+            addrs.sort()
+            for a, b in zip(addrs, addrs[1:]):
                 edges.append(Edge(a, b, "cadence", STRENGTH_BURST, reason))
-
-        for row in rows[1:]:
-            if near(group[-1][0], row[0], tol_bps):
-                group.append(row)
-            else:
-                flush_burst(group)
-                group = [row]
-        flush_burst(group)
 
     # ---- drip: same exact amount, small *regular* gaps ------------------
     by_amount: dict[int, list[tuple[int, str]]] = defaultdict(list)
