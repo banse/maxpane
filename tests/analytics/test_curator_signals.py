@@ -886,9 +886,111 @@ def test_a_replayed_log_does_not_double_count(
     rows: list[ContributorRow], deposits: list[DepositEvent], first_deposits: list[dict]
 ) -> None:
     """(tx_hash, log_index) is the de-dupe key.  A re-org replay, or two
-    endpoints answering the same window, must not inflate the table."""
+    endpoints answering the same window, must not inflate the table.
+
+    **``fold_deposits`` alone cannot prove this.**  The fold keys on the *last*
+    event per address, so a duplicate cannot move its output — it would pass
+    with the de-dupe deleted outright, and with the sort deleted too.  What a
+    replay actually corrupts is everything downstream of the fold: the hourly
+    volumes, the deposit counter, the routed-volume fallback and the series.
+    So the assertion follows the duplicates there.
+    """
     doubled = deposits + list(reversed(deposits))
     assert sig.fold_deposits(doubled, first_deposits, points_per_eth=POINTS_PER_ETH) == rows
+    # The fold that a replay *does* move: hour volumes and per-hour counts.
+    assert _buckets(doubled) == _buckets(deposits)
+
+
+def test_a_replay_moves_nothing_build_signals_emits(
+    full_readings: dict, bundle_deposits: list[DepositEvent]
+) -> None:
+    """The de-dupe, asserted where a user would see it fail.
+
+    Every key below is derived by summing over events rather than by taking a
+    last-writer-wins value, so each one doubles the moment the key stops
+    de-duplicating.  ``tx_count``/``volume_wei``/``contributors`` are blanked
+    so the *log-derived fallbacks* are the things under test — with the state
+    counters present those three keys come from the contract and would agree
+    no matter how badly the logs were folded.
+    """
+    no_counters = {
+        **full_readings,
+        "tx_count": None,
+        "volume_wei": None,
+        "contributors": None,
+    }
+    clean = sig.build_signals(no_counters, now_ts=BUNDLE_NOW)
+    replayed = sig.build_signals(
+        {**no_counters, "deposits": bundle_deposits + list(reversed(bundle_deposits))},
+        now_ts=BUNDLE_NOW,
+    )
+    for key in (
+        "volume_series",
+        "contributors_series",
+        "deposits_total",
+        "volume_routed_eth",
+        "hour_fed_eth",
+        "activity_rows",
+        "clusters_count",
+        "leaderboard_rows",
+    ):
+        assert replayed[key] == clean[key], key
+    # Not a vacuous comparison: these are the real, non-empty numbers.
+    assert clean["deposits_total"] == 2930
+    assert clean["volume_routed_eth"] > 15_000.0
+
+
+def test_two_deposits_in_one_transaction_are_two_deposits() -> None:
+    """The key is ``(tx_hash, log_index)`` — **both halves**.
+
+    No capture can exercise the ``log_index`` half: inside the committed sweep
+    all 231 ``Deposited`` rows sit in 231 distinct transactions (the only tx
+    carrying two rows carries a ``FirstDeposit`` + a ``Deposited``, which are
+    different groups), so a key degraded to ``(tx_hash,)`` alone leaves every
+    differential in this file green while silently swallowing a contributor.
+
+    It is not hypothetical.  The escalation rule lets one wallet call
+    ``deposit()`` twice in one transaction with a rising high-water mark, and
+    any batching/multicall contract can carry two wallets' deposits in one — the
+    second would vanish from the activity feed, the hourly fold and every volume
+    derived from it.  This tests the key's arity, not a chain state, so it needs
+    no capture.
+    """
+    one_tx = "0x" + "ab" * 32
+    first = _synthetic_deposit(
+        hour=2,
+        amount_wei=3 * ETH,
+        contributor="0x" + "a1" * 20,
+        tx_hash=one_tx,
+        log_index=0,
+    )
+    second = _synthetic_deposit(
+        hour=2,
+        amount_wei=7 * ETH,
+        contributor="0x" + "b2" * 20,
+        tx_hash=one_tx,
+        log_index=1,
+    )
+
+    folded = sig.fold_deposits([first, second], [], points_per_eth=POINTS_PER_ETH)
+    assert len(folded) == 2
+    assert sorted(row.credit_wei for row in folded) == [3 * ETH, 7 * ETH]
+
+    hour_two = _buckets([first, second])[2]
+    assert hour_two.deposits == 2
+    assert hour_two.volume_wei == 10 * ETH
+
+
+def test_the_very_same_log_twice_is_one_deposit() -> None:
+    """The other half of the same key: identical ``tx_hash`` **and** identical
+    ``log_index`` is one event seen twice, and it collapses."""
+    event = _synthetic_deposit(
+        hour=2, amount_wei=3 * ETH, contributor="0x" + "a1" * 20, log_index=0
+    )
+    assert len(sig.fold_deposits([event, event], [], points_per_eth=POINTS_PER_ETH)) == 1
+    hour_two = _buckets([event, event])[2]
+    assert hour_two.deposits == 1
+    assert hour_two.volume_wei == 3 * ETH
 
 
 def test_an_empty_history_folds_to_an_empty_list_not_a_crash() -> None:
@@ -933,6 +1035,7 @@ def _synthetic_deposit(
     tx_count: int = 1,
     new_weight_wei: int | None = None,
     ts: float | None = None,
+    tx_hash: str | None = None,
 ) -> DepositEvent:
     """A hand-built event for a shape the chain has not produced yet.
 
@@ -952,7 +1055,7 @@ def _synthetic_deposit(
         hour_total_wei=amount_wei,
         early_bps=early_bps,
         block_number=block_number,
-        tx_hash="0x" + f"{block_number:064x}"[:64],
+        tx_hash="0x" + f"{block_number:064x}" if tx_hash is None else tx_hash,
         log_index=log_index,
         ts=ts,
     )
@@ -1934,6 +2037,46 @@ def test_an_empty_log_read_is_not_the_same_as_a_failed_one(full_readings: dict) 
     assert failed["hour_fed_eth"] is None
     # The contract's own counters survive a dead logs tier — they are state.
     assert failed["contributors_total"] == 2291
+    # The survival record is derived from the logs alone, so a dead logs tier
+    # leaves it unknown.  ``0`` would read as "we have survived nothing", which
+    # is a claim about the chain made by a refresh that never reached it — and
+    # state and logs are served by different endpoint pools, so a live-state /
+    # dead-logs refresh is the expected failure rather than a corner case.
+    assert empty["survival_streak_hours"] == 0
+    assert failed["survival_streak_hours"] is None
+    assert failed["closest_call_hour"] is None
+    assert failed["closest_call_margin_eth"] is None
+    assert failed["closest_call_rows"] == []
+
+
+def test_a_dead_logs_tier_leaves_the_streak_unknown_in_a_judged_hour(
+    full_readings: dict,
+) -> None:
+    """The same rule where it actually shows: past grace, with judged hours
+    behind us and every log group failed.
+
+    ``empty`` vs ``failed`` above runs at hour 4 of grace, where the judged
+    window is empty anyway; here the window is 24..29 and a ``0`` streak would
+    be rendered next to a live phase as a factual claim of six dead hours.
+
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    (capture B, the first post-grace judged hour, lands 2026-08-17 19:58:47Z.)
+    """
+    judged = {
+        **full_readings,
+        "current_hour": 30,
+        "hour_needed_wei": 2 * ETH,
+        "deposits": None,
+        "first_deposits": None,
+    }
+    out = sig.build_signals(judged, now_ts=LAUNCH + 30 * HOUR + 10)
+    assert out["phase"] == "judged"
+    assert out["survival_streak_hours"] is None
+    # The keys that already degraded correctly, pinned so this one stops being
+    # the outlier by accident rather than by rule.
+    assert out["hour_fed_eth"] is None
+    assert out["clusters_count"] is None
+    assert out["top_points"] is None
 
 
 def test_an_all_none_readings_dict_produces_the_full_surface_of_nones() -> None:

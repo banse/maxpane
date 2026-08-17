@@ -1271,14 +1271,26 @@ def build_signals(readings: Any, *, now_ts: float) -> dict:
         out["hour_fed_eth"] = _eth(live[0].volume_wei) if live else 0.0
 
     # --- survival ----------------------------------------------------------
-    record_survival = _guard(
-        lambda: survival(
-            buckets,
-            current_hour=current_hour,
-            hourly_threshold_wei=threshold_wei,
-            first_judged_hour=first_judged,
-        ),
-        {},
+    # ``survival()`` is handed ``[]`` for two different facts — "the logs read
+    # fine and found nothing" and "every log group failed" — and cannot tell
+    # them apart, so it answers a streak of ``0`` for both.  The caller can:
+    # ``has_logs`` is False exactly when the deposits read did not happen.  A
+    # ``0`` there renders "we have survived nothing" off a refresh that merely
+    # could not look, which is the house rule's own bug (a failed read is
+    # ``None``, never ``0``) — and state and logs sit on *different endpoint
+    # pools*, so live-state/dead-logs is the expected outage, not a corner.
+    record_survival = (
+        _guard(
+            lambda: survival(
+                buckets,
+                current_hour=current_hour,
+                hourly_threshold_wei=threshold_wei,
+                first_judged_hour=first_judged,
+            ),
+            {},
+        )
+        if has_logs
+        else {}
     )
     out["survival_streak_hours"] = record_survival.get("streak_hours")
     out["closest_call_hour"] = record_survival.get("closest_call_hour")
