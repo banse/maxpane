@@ -37,10 +37,14 @@ from maxpane_dashboard.widgets.curator import (
     LEADERBOARD_EMPTY,
     LEADERBOARD_TITLE,
     LEADERBOARD_UNAVAILABLE,
+    NEVER_SAVED,
+    NO_WALLET,
+    SIGNAL_LABELS,
     SPARKLINES_TITLE,
     WAITING,
     CuratorHero,
     CuratorLeaderboard,
+    CuratorSignals,
     CuratorSparklines,
 )
 from maxpane_dashboard.widgets.curator._fmt import (
@@ -758,3 +762,202 @@ async def test_a_narrow_rail_sheds_the_bar_label_before_the_sparkline():
         text = _screen_text(app)
     assert "VOL/h" in text and "WALLETS" in text
     assert "ETH bar" not in text
+
+
+# ===========================================================================
+# WP4.5 — CuratorSignals (the seven-row rail)
+# ===========================================================================
+
+
+def _signals_full() -> dict:
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    # (a judged hour with a live deficit, a HourSaved and a nonzero balance
+    #  have all never been observed on chain; capture B/C are the windows)
+    return dict(
+        phase="judged",
+        settled=False,
+        sig_settled_state="ok",
+        sig_at_risk_state="fired",
+        first_judged_hour=24,
+        hour_needed_eth=1.4,
+        hour_seconds_left=753,
+        last_saved_hour=26,
+        last_saved_wallet="0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+        last_saved_age_s=720,
+        whale_amount_eth=461.1,
+        whale_wallet="0x381fe4861234567890abcdef1234567890abCDEF",
+        whale_age_s=180,
+        clusters_count=1,
+        flagged_points_share_pct=12.4,
+        forced_eth=0.0,
+        rescued_total_eth=None,
+        you_rank=12,
+        you_points=1234,
+        you_credit_eth=3.6,
+        you_required_next_eth=4.1,
+        you_marginal_points=120,
+    )
+
+
+def test_the_rail_renders_exactly_the_frozen_signal_rows():
+    """Seven rows, in ``SIGNAL_ROWS`` order, ending in ``you``.
+
+    The tuple used to end in ``rescued``, which contradicted every spec the
+    widget author reads; ``rescued_total_eth`` renders inside FORCED ETH.
+    """
+    from maxpane_dashboard.data.curator_models import SIGNAL_ROWS
+    from maxpane_dashboard.widgets.curator import signals as sig_mod
+
+    assert sig_mod.SIGNAL_KEYS == SIGNAL_ROWS
+    assert len(SIGNAL_LABELS) == len(SIGNAL_ROWS) == 7
+    assert SIGNAL_ROWS[-1] == "you" and SIGNAL_LABELS[-1] == "YOU"
+
+
+def test_the_rail_knows_exactly_the_frozen_state_vocabulary():
+    from maxpane_dashboard.data.curator_models import CURATOR_SIGNAL_STATES
+    from maxpane_dashboard.widgets.curator import signals as sig_mod
+
+    assert sig_mod.SIGNAL_STATES == CURATOR_SIGNAL_STATES
+
+
+def test_the_label_cell_is_sized_to_the_labels_the_rail_actually_renders():
+    from maxpane_dashboard.widgets.curator import signals as sig_mod
+
+    assert sig_mod.LABEL_COLS == max(len(label) for label in SIGNAL_LABELS)
+
+
+async def test_all_seven_rows_reach_the_compositor():
+    """The FWA coverage-badge lesson: a rail inside a fixed-height row loses
+    its LAST row first, and YOU is last.  Pinned at the rail's real height —
+    title + spacer + seven rows."""
+    for height in (24, 9):
+        text = await _rendered(CuratorSignals, size=(80, height), **_signals_full())
+        for label in SIGNAL_LABELS:
+            assert label in text, (height, label)
+
+
+async def test_an_unknown_state_is_never_rendered_as_ok():
+    """``None`` is the third state of ``isSettled()`` and it is not False."""
+    text = await _rendered(CuratorSignals, settled=None, sig_settled_state=None)
+    assert "list open" not in text and "list FROZEN" not in text
+    assert "unknown" in text
+
+
+async def test_hour_at_risk_says_n_a_during_grace_and_never_goes_blank():
+    text = await _rendered(
+        CuratorSignals, phase="grace", sig_at_risk_state="ok",
+        hour_needed_eth=None, first_judged_hour=24,
+    )
+    assert "n/a until hour 24" in text
+
+
+async def test_the_first_judged_hour_is_read_from_the_payload():
+    """``24`` is ``gracePeriod // hourDuration`` on *this* deployment; a
+    literal would be wrong on the next one and neither operand is in the flat
+    dict."""
+    text = await _rendered(
+        CuratorSignals, phase="grace", first_judged_hour=48, hour_needed_eth=None
+    )
+    assert "n/a until hour 48" in text
+    assert "hour 24" not in text
+
+
+async def test_a_judged_hour_distinguishes_a_zero_deficit_from_an_unknown_one():
+    """``ethNeededThisHour()`` is 0 whenever a judged hour is already safe —
+    a real answer.  ``None`` is a failed read and must never light the row."""
+    safe = await _rendered(
+        CuratorSignals, phase="judged", hour_needed_eth=0.0, hour_seconds_left=900
+    )
+    assert "hour is safe" in safe
+    unknown = await _rendered(
+        CuratorSignals, phase="judged", hour_needed_eth=None, hour_seconds_left=900
+    )
+    assert "hour is safe" not in unknown and "needs" not in unknown
+
+
+async def test_forced_eth_expects_a_dash_and_shouts_on_a_nonzero():
+    """H5.  Zero is the expected, healthy state and renders quietly.  Any
+    nonzero value is an anomaly — forced ETH, never a deposit — and must be
+    visually distinct."""
+    assert EMDASH in await _rendered(CuratorSignals, forced_eth=0.0)
+    loud = await _rendered(CuratorSignals, forced_eth=1.5)
+    assert "1.5" in loud and "forced" in loud.lower()
+    # Scanned on the row itself, not the rail: "HOUR AT RISK" is a mandated
+    # PRD §4 label and it contains "at risk" -- of the *hour* failing, which
+    # is the one thing on this dashboard genuinely at risk.  A rail-wide grep
+    # for that phrase reports the honest label and misses nothing else, so
+    # the money words are scanned where money words would go.
+    row = next(line for line in loud.splitlines() if "FORCED ETH" in line)
+    for banned in ("TVL", "balance held", "locked", "at risk", "capital"):
+        assert banned.lower() not in row.lower(), banned
+    for banned in ("TVL", "locked", "capital"):
+        assert banned.lower() not in loud.lower(), banned
+
+
+async def test_the_swept_total_rides_in_the_forced_row_not_a_row_of_its_own():
+    """``rescued_total_eth`` is real and rare; the rail has no eighth row to
+    give it, and YOU is the row that would have been pushed off."""
+    text = await _rendered(CuratorSignals, forced_eth=1.5, rescued_total_eth=0.5)
+    assert "0.50 ETH swept" in text
+    assert "RESCUED" not in text
+
+
+async def test_hour_saved_renders_a_never_fired_state_rather_than_waiting():
+    """HourSaved may never fire in this game's whole life.  A permanently
+    blank row is indistinguishable from a broken one."""
+    assert NEVER_SAVED in (await _rendered(CuratorSignals, last_saved_hour=None))
+    fired = await _rendered(
+        CuratorSignals, last_saved_hour=26,
+        last_saved_wallet="0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+        last_saved_age_s=720,
+    )
+    assert "hour 26" in fired and "0x200e" in fired
+
+
+async def test_the_farm_row_uses_pattern_language():
+    text = await _rendered(
+        CuratorSignals, clusters_count=1, flagged_points_share_pct=12.4
+    )
+    assert "fan-out" in text.lower()
+    for word in ("sybil", "cheat", "fraud", "attack"):
+        assert word not in text.lower(), word
+
+
+async def test_the_farm_row_separates_no_clusters_from_no_analysis():
+    none_found = await _rendered(CuratorSignals, clusters_count=0)
+    assert "no fan-out patterns" in none_found
+    not_run = await _rendered(CuratorSignals, clusters_count=None)
+    assert "no fan-out patterns" not in not_run and "unknown" in not_run
+
+
+async def test_the_you_row_is_absent_not_zeroed_when_no_wallet_is_configured():
+    """All YOU keys None means MAXPANE_WALLET is unset.  'rank --, 0 pts'
+    reads as a wallet with no score; the honest render names the variable."""
+    text = await _rendered(CuratorSignals, you_rank=None, you_points=None)
+    assert NO_WALLET in text
+    assert "0 pts" not in text
+
+
+async def test_the_you_row_carries_the_credit_the_first_kwarg_table_forgot():
+    """Amendment 3: ``you_credit_eth`` stays a key and reaches this row —
+    the honest YOU line is ``rank · pts · credit · next ≥``."""
+    text = await _rendered(CuratorSignals, size=(90, 24), **_signals_full())
+    assert "rank 12" in text and "1,234 pts" in text
+    assert "3.60 credit" in text and "next ≥ 4.10 ETH" in text
+
+
+async def test_every_state_carries_a_glyph_or_a_word_not_only_a_colour():
+    text = await _rendered(CuratorSignals, **_signals_full())
+    assert any(glyph in text for glyph in ("▶", "◐", "●"))
+
+
+async def test_a_narrow_rail_drops_parts_from_the_end_and_says_so_when_starved():
+    widget = CuratorSignals()
+    app = _Harness(widget)
+    async with app.run_test(size=(30, 12)) as pilot:
+        widget.update_data(**_signals_full())
+        await pilot.pause()
+        text = _screen_text(app)
+    for label in SIGNAL_LABELS:
+        assert label in text, label          # the head never shrinks
+    assert "widen" in text

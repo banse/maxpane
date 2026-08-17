@@ -233,7 +233,7 @@ SETTLED · HOUR AT RISK · HOUR SAVED · WHALE · FARM · FORCED ETH · YOU.
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_all_seven_rows_reach_the_compositor():
@@ -283,10 +283,10 @@ def test_the_you_row_is_absent_not_zeroed_when_no_wallet_is_configured():
     assert "0 pts" not in text
 ```
 
-- [ ] Implement, reusing the `{label, value_str, indicator, color}` row shape the Talismans and
+- [x] Implement, reusing the `{label, value_str, indicator, color}` row shape the Talismans and
       FWA signal widgets use. Colour is **never the sole carrier** — every state also carries
       a glyph or a word.
-- [ ] Commit: `feat(curator): seven-row signal rail with never-fired and no-wallet states`
+- [x] Commit: `feat(curator): seven-row signal rail with never-fired and no-wallet states`
 
 ---
 
