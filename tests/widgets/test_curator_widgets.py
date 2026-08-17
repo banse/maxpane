@@ -3348,3 +3348,96 @@ async def test_reasons_wider_than_the_cell_shed_whole_phrases_visibly():
     )
     assert "…" in text
     assert widest["reasons"][0] in text    # the strongest phrase stays whole
+
+
+# -- WP4.2: CuratorSegments -------------------------------------------------
+
+
+async def test_the_segment_bands_render_with_their_pattern_language_labels():
+    """PRD §5.2: "largest operators", "early cohort" — never "whale sybil".
+    The index-1000 cohort's 7.6% is the number Adam asked for by name."""
+    from maxpane_dashboard.widgets.curator.segments import CuratorSegments
+
+    env = _segment_envelope()
+    text = await _rendered(
+        CuratorSegments, segment_rows=env["rows"], analysis_as_of_hhmm="22:41"
+    )
+    assert "largest operators" in text
+    assert "early cohort" in text
+    assert "7.6%" in text
+    assert "as of 22:41" in text
+
+
+async def test_segments_none_is_unavailable_and_empty_is_a_real_negative():
+    from maxpane_dashboard.widgets.curator.segments import (
+        SEGMENTS_EMPTY,
+        SEGMENTS_UNAVAILABLE,
+        CuratorSegments,
+    )
+
+    dead = await _rendered(CuratorSegments, segment_rows=None)
+    empty = await _rendered(CuratorSegments, segment_rows=[])
+    assert SEGMENTS_UNAVAILABLE in dead and SEGMENTS_EMPTY not in dead
+    assert SEGMENTS_EMPTY in empty and SEGMENTS_UNAVAILABLE not in empty
+
+
+async def test_a_band_with_no_share_renders_a_dash_not_a_zero():
+    """`degraded_row` is the committed example: a per-hour band whose share
+    could not be attributed.  `0.0%` there would read "this hour scored
+    nothing", a measurement nobody made — and its 56-column detail is the
+    widest string in the whole fixture set, so it must render whole."""
+    from maxpane_dashboard.widgets.curator.segments import CuratorSegments
+
+    env = _segment_envelope()
+    text = await _rendered(
+        CuratorSegments, segment_rows=[env["degraded_row"]]
+    )
+    assert "0.0%" not in text
+    assert DASH in text
+    assert env["degraded_row"]["detail"] in text
+
+
+async def test_the_segments_panel_uses_pattern_language_only():
+    """The panel's own copy of the forbidden-word test (PRD §8), over every
+    band in the committed slice plus the degraded row."""
+    from maxpane_dashboard.widgets.curator.segments import CuratorSegments
+
+    env = _segment_envelope()
+    rows = list(env["rows"]) + [env["degraded_row"]]
+    text = await _rendered(
+        CuratorSegments, segment_rows=rows, analysis_as_of_hhmm="22:41"
+    )
+    for word in ("sybil", "cheat", "fraud", "attack", "abuse", "wash"):
+        assert word not in text.lower(), word
+
+
+async def test_a_hostile_segment_label_renders_literally():
+    from maxpane_dashboard.widgets.curator.segments import CuratorSegments
+
+    row = {
+        "label": "[/x]",
+        "contributors": 3,
+        "points_share_pct": 1.0,
+        "detail": "[red]3Ξ[/red]",
+    }
+    text = await _rendered(CuratorSegments, segment_rows=[row])
+    assert "[/x]" in text
+    assert "[red]" in text                  # markup rendered as text, not style
+
+
+async def test_a_narrow_segments_table_sheds_the_detail_first():
+    """The label is the band's identity and the share is the finding; the
+    free-text detail is the first thing a narrow slot gives up, announced."""
+    from maxpane_dashboard.widgets.curator.segments import CuratorSegments
+
+    env = _segment_envelope()
+    widget = CuratorSegments()
+    app = _Harness(widget)
+    async with app.run_test(size=(60, 20)) as pilot:
+        widget.update_data(segment_rows=env["rows"])
+        await pilot.pause()
+        text = _screen_text(app)
+    assert "widen" in text
+    assert "largest operators" in text
+    assert "43.2%" in text
+    assert "send shapes" not in text        # the detail column is gone
