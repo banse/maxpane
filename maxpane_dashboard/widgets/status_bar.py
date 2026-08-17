@@ -57,6 +57,13 @@ class StatusBar(Horizontal):
         self._theme_name = "minimal"
         self._game_name = ""
         self._active_view: str = ""
+        #: Extra per-screen key hints, e.g. ``"c panels · y wallet"``.  Opt-in:
+        #: empty means the nine other dashboards render exactly what they
+        #: always have.  A screen that sets it also gives up the ``updated Ns
+        #: ago`` segment, because the line has room for one or the other -- and
+        #: the screens that want hints (curator) carry their data freshness in
+        #: their own title bar as ``as of HH:MM``.
+        self._key_hints: str = ""
 
     def compose(self) -> ComposeResult:
         yield Static(
@@ -92,6 +99,10 @@ class StatusBar(Horizontal):
         self._active_view = view or ""
         self._update_right()
 
+    def set_key_hints(self, hints: str) -> None:
+        """Name this screen's own keys in the left label (see ``_key_hints``)."""
+        self._key_hints = hints or ""
+
     def _update_right(self) -> None:
         """Refresh the right-side label."""
         try:
@@ -120,10 +131,25 @@ class StatusBar(Horizontal):
         if error_count > 0:
             error_str = f" [dim]\u00b7[/] [red]{error_count} errors[/]"
 
-        self.query_one("#status-left", Static).update(
+        keys = (
             f"[dim]q[/] quit [dim]\u00b7[/] [dim]r[/] refresh [dim]\u00b7[/] "
-            f"[dim]m[/] menu [dim]\u00b7[/] [dim]tab[/] switch [dim]\u00b7[/] "
-            f"{poll_interval}s poll [dim]\u00b7[/] "
-            f"[{color}]updated {seconds_int}s ago[/]"
-            f"{error_str}"
+            f"[dim]m[/] menu"
+        )
+        if self._key_hints:
+            # This screen's own keys instead of ``tab switch`` and ``updated Ns
+            # ago``: measured, the line holds the hints or those two, not both,
+            # and an error count must never be the thing that falls off the
+            # end.  A screen asking for hints shows freshness in its own title
+            # bar, and `tab` still works unnamed.
+            keys += f" [dim]\u00b7[/] {self._key_hints}"
+            freshness = f"{poll_interval}s poll"
+        else:
+            keys += " [dim]\u00b7[/] [dim]tab[/] switch"
+            freshness = (
+                f"{poll_interval}s poll [dim]\u00b7[/] "
+                f"[{color}]updated {seconds_int}s ago[/]"
+            )
+
+        self.query_one("#status-left", Static).update(
+            f"{keys} [dim]\u00b7[/] {freshness}{error_str}"
         )

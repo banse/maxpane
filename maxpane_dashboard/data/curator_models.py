@@ -575,6 +575,8 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
     # in full toward that hour's survival, so the 0 is a fact about the cap.
     "you_ladder_rows": (
         "hour", "amount_eth", "credited_eth", "weight_eth", "early_x", "capped",
+        # The running score after that rung, off the event's own new_weight.
+        "points",
         "ts",
     ),
     "cluster_rows": (

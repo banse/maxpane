@@ -115,62 +115,30 @@ _AMOUNT_COLS = 10
 _CREDIT_COLS = 10
 _WEIGHT_COLS = 10
 _EARLY_COLS = 6
+#: 44,721 is the ceiling this deployment's cap allows (see leaderboard's own
+#: note), so six columns hold every score with the thousands separator.
+_PTS_COLS = 6
 
-_LADDER_TIERS = (
-    (
-        "full",
-        tier_cost(
-            (
-                ("hour", "HOUR", _HOUR_COLS),
-                ("amount", "SENT", _AMOUNT_COLS),
-                ("credited", "CREDITED", _CREDIT_COLS),
-                ("weight", "WEIGHT", _WEIGHT_COLS),
-                ("early", "MULT", _EARLY_COLS),
-            )
-        ),
-        (
-            ("hour", "HOUR", _HOUR_COLS),
-            ("amount", "SENT", _AMOUNT_COLS),
-            ("credited", "CREDITED", _CREDIT_COLS),
-            ("weight", "WEIGHT", _WEIGHT_COLS),
-            ("early", "MULT", _EARLY_COLS),
-        ),
-        "",
-    ),
-    (
-        "no-weight",
-        tier_cost(
-            (
-                ("hour", "HOUR", _HOUR_COLS),
-                ("amount", "SENT", _AMOUNT_COLS),
-                ("credited", "CREDITED", _CREDIT_COLS),
-                ("early", "MULT", _EARLY_COLS),
-            )
-        ),
-        (
-            ("hour", "HOUR", _HOUR_COLS),
-            ("amount", "SENT", _AMOUNT_COLS),
-            ("credited", "CREDITED", _CREDIT_COLS),
-            ("early", "MULT", _EARLY_COLS),
-        ),
-        "‹ widen for weight",
-    ),
-    (
-        "sent-only",
-        tier_cost(
-            (
-                ("hour", "HOUR", _HOUR_COLS),
-                ("amount", "SENT", _AMOUNT_COLS),
-                ("early", "MULT", _EARLY_COLS),
-            )
-        ),
-        (
-            ("hour", "HOUR", _HOUR_COLS),
-            ("amount", "SENT", _AMOUNT_COLS),
-            ("early", "MULT", _EARLY_COLS),
-        ),
-        "‹ widen for credit",
-    ),
+_LADDER_COLUMNS = (
+    ("hour", "HOUR", _HOUR_COLS),
+    ("amount", "SENT", _AMOUNT_COLS),
+    ("credited", "CREDITED", _CREDIT_COLS),
+    ("weight", "WEIGHT", _WEIGHT_COLS),
+    ("early", "MULT", _EARLY_COLS),
+    ("points", "PTS", _PTS_COLS),
+)
+
+#: Widest first.  Columns are shed from the *derived* end: the score after a
+#: rung can be read off the leaderboard, the multiplier that rung got cannot be
+#: read anywhere else, and the amount sent is the row's identity.
+_LADDER_TIERS = tuple(
+    (name, tier_cost(_LADDER_COLUMNS[:keep]), _LADDER_COLUMNS[:keep], hint)
+    for name, keep, hint in (
+        ("full", 6, ""),
+        ("no-points", 5, "‹ widen for pts"),
+        ("no-weight", 4, "‹ widen for weight"),
+        ("sent-only", 3, "‹ widen for credit"),
+    )
 )
 
 
@@ -195,6 +163,7 @@ def _ladder_values(row: dict) -> dict:
         "credited": CAPPED_MARK if capped else fmt_eth(credited),
         "weight": fmt_eth(row.get("weight_eth")),
         "early": _early_x(row.get("early_x")),
+        "points": fmt_points(row.get("points")),
     }
 
 
@@ -273,7 +242,18 @@ class _FactsPanel(Vertical):
                 shed = True
             if kept and len(head + " · ".join(kept)) > width:
                 shed = True
-            rendered.append(safe_markup(head + " · ".join(kept) if kept else head.rstrip()))
+            if not kept:
+                rendered.append(safe_markup(head.rstrip()))
+                continue
+            # Escaped part by part, then marked up: `safe_markup` over the
+            # assembled line would escape this panel's own emphasis.  The
+            # headline value -- the first part of a labelled line -- is the one
+            # a reader is looking for; a continuation line is a sentence and
+            # gets none.
+            escaped = [safe_markup(part) for part in kept]
+            if label:
+                escaped[0] = f"[bold $success]{escaped[0]}[/]"
+            rendered.append(safe_markup(head) + " · ".join(escaped))
 
         text, placed = title_with_hint(self.TITLE, WIDEN_HINT if shed else "", width)
         title.update(text)
@@ -554,8 +534,13 @@ class CuratorWalletTarget(_FactsPanel):
         elif passes is False:
             verdict = HOLDS_RANK
 
+        # `to pass` is prefixed only to the priced form.  The other two are
+        # already whole sentences, and prefixing them pushed the cap sentence
+        # past the panel's width, where it wrapped mid-phrase.
+        priced = False
         if isinstance(next_rank, int) and needs is not None:
             pass_parts = [f"rank {next_rank} needs {fmt_eth(needs)} ETH"]
+            priced = True
         elif isinstance(next_rank, int):
             # Ranked, a target above, and no price: the cap is the only way
             # that happens, and saying so beats a dash.
@@ -565,10 +550,14 @@ class CuratorWalletTarget(_FactsPanel):
         else:
             pass_parts = [DASH]
 
-        lines = [("gain", gain_parts)]
+        # The verdict and the price of the place above are two halves of one
+        # sentence about the same send, so both hang under the points with a
+        # blank line separating them from the number itself.
+        lines: list[tuple] = [("gain", gain_parts), ("", [""])]
         if verdict is not None:
             lines.append(("", [verdict]))
-        lines.append(("to pass", pass_parts))
+        head = f"to pass {pass_parts[0]}" if priced else pass_parts[0]
+        lines.append(("", [head] + pass_parts[1:]))
         return lines
 
 

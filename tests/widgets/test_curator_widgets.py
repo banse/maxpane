@@ -2211,3 +2211,44 @@ def test_no_theme_token_reaches_the_rich_parsed_activity_feed():
         ):
             for token in ("[$success]", "[$error]", "[$warning]", "[$"):
                 assert token not in node.value, (token, node.value)
+
+
+# -- the status bar's opt-in key hints (curator asks; the others must not) ----
+
+
+def test_the_status_bar_without_hints_is_byte_identical_to_before():
+    """Nine other dashboards share this widget: the hints are opt-in, and a
+    screen that never calls `set_key_hints` must render exactly what it always
+    did -- `tab switch` and `updated Ns ago` included."""
+    from maxpane_dashboard.widgets.status_bar import StatusBar
+
+    bar = StatusBar()
+    rendered = {}
+    bar.query_one = lambda *a, **k: type(
+        "Sink", (), {"update": lambda _self, text: rendered.__setitem__("text", text)}
+    )()
+    bar.update_data(last_updated_seconds_ago=3, error_count=0, poll_interval=30)
+
+    assert "tab[/] switch" in rendered["text"]
+    assert "updated 3s ago" in rendered["text"]
+
+
+def test_hints_replace_tab_switch_and_the_cycle_age_but_never_the_errors():
+    """An error count must never be the thing that falls off the end of the
+    line, which is why the hints buy their room from `tab switch` too."""
+    from maxpane_dashboard.widgets.status_bar import StatusBar
+
+    bar = StatusBar()
+    rendered = {}
+    bar.query_one = lambda *a, **k: type(
+        "Sink", (), {"update": lambda _self, text: rendered.__setitem__("text", text)}
+    )()
+    bar.set_key_hints("[dim]c[/] panels [dim]·[/] [dim]y[/] wallet")
+    bar.update_data(last_updated_seconds_ago=3, error_count=4, poll_interval=30)
+
+    text = rendered["text"]
+    assert "c[/] panels" in text and "y[/] wallet" in text
+    assert "tab[/] switch" not in text
+    assert "updated" not in text
+    assert "4 errors" in text
+    assert "30s poll" in text

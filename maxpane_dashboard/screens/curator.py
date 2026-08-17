@@ -610,6 +610,7 @@ class CuratorScreen(RefreshGuard, Screen):
     CuratorScreen CuratorWalletLadder {
         width: 3fr;
         height: 100%;
+        margin: 0 0 1 0;
         padding: 0 1;
     }
     /* In the rail: full width, sized to their own lines, one blank row between
@@ -617,13 +618,13 @@ class CuratorScreen(RefreshGuard, Screen):
     CuratorScreen CuratorWalletStanding {
         width: 100%;
         height: auto;
-        margin: 0 0 1 0;
+        margin: 0 0 2 0;
         padding: 0 1;
     }
     CuratorScreen CuratorWalletNext {
         width: 100%;
         height: auto;
-        margin: 0 0 1 0;
+        margin: 0 0 2 0;
         padding: 0 1;
     }
     CuratorScreen CuratorWalletTarget {
@@ -733,9 +734,19 @@ class CuratorScreen(RefreshGuard, Screen):
 
         yield StatusBar()
 
+    #: The two keys this screen adds, named in the status bar.  `tab switch`
+    #: survives beside them at the measured width; `updated Ns ago` does not,
+    #: and the title bar's `as of HH:MM` is the freshness marker that matters
+    #: (it freezes under an outage, where the cycle age keeps counting).
+    KEY_HINTS = "[dim]c[/] panels [dim]·[/] [dim]y[/] wallet"
+
     def on_mount(self) -> None:
         self._show_active_view()
         self._show_mode()
+        try:
+            self.query_one(StatusBar).set_key_hints(self.KEY_HINTS)
+        except Exception as exc:  # noqa: BLE001 -- a hint is never load-bearing
+            logger.debug("Could not set the curator key hints: %s", exc)
 
     # ------------------------------------------------------------------
     # Actions / bindings

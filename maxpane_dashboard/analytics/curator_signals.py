@@ -1088,6 +1088,7 @@ def you_ladder(
     address: Any,
     *,
     credit_cap_wei: int | None,
+    points_per_eth: int | None = None,
 ) -> list[dict]:
     """The reader's own sends, oldest first, as they actually happened.
 
@@ -1134,6 +1135,13 @@ def you_ladder(
                 "weight_eth": _eth(added),
                 "early_x": None if bps is None else bps / 10_000,
                 "capped": None if credited is None else (credited == 0 and amount > 0),
+                # The score this wallet stood at *after* that rung, from the
+                # event's own running weight -- the curve is concave, so what a
+                # send bought is not readable off the send.
+                "points": points_for_weight(
+                    _int_or_none(getattr(event, "new_weight_wei", None)),
+                    points_per_eth,
+                ),
                 "ts": _int_or_none(getattr(event, "ts", None)),
             }
         )
@@ -1563,7 +1571,8 @@ def build_signals(readings: Any, *, now_ts: float) -> dict:
 
         out["you_ladder_rows"] = _guard(
             lambda: you_ladder(read.get("deposits"), address,
-                               credit_cap_wei=credit_cap),
+                               credit_cap_wei=credit_cap,
+                               points_per_eth=points_per_eth),
             [],
         )
 

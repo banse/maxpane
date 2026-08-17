@@ -2291,13 +2291,14 @@ CuratorScreen #curator-wallet-rail {
 CuratorScreen CuratorWalletLadder {
     width: 3fr;
     height: 100%;
+    margin: 0 0 1 0;
     padding: 0 1;
 }
 
 CuratorScreen CuratorWalletStanding {
     width: 100%;
     height: auto;
-    margin: 0 0 1 0;
+    margin: 0 0 2 0;
     padding: 0 1;
 }
 
@@ -2306,7 +2307,7 @@ CuratorScreen CuratorWalletStanding {
 CuratorScreen CuratorWalletNext {
     width: 100%;
     height: auto;
-    margin: 0 0 1 0;
+    margin: 0 0 2 0;
     padding: 0 1;
 }
 

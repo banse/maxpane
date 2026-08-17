@@ -717,7 +717,13 @@ async def test_a_raising_manager_touches_only_the_status_bar():
         after = _screen_text(app)
 
     assert "THE LIST · hour 4 · GRACE" in after, "the previous frame was lost"
-    assert f"updated {MANAGER_FAILURE_SECONDS}s ago" in after
+    # This screen trades `updated Ns ago` for its own key hints (`set_key_hints`),
+    # so the cycle age lives on the *poll* segment and the data's own freshness
+    # is the title bar's `as of HH:MM` -- which is the one that freezes under an
+    # outage while the cycle age keeps counting.
+    assert "updated" not in after
+    assert "y[/] wallet" in after or "y wallet" in after
+    assert "as of" in after
 
 
 async def test_the_managers_error_count_reaches_the_status_bar():
@@ -1860,8 +1866,10 @@ async def test_every_label_in_the_rail_puts_its_value_in_the_same_column():
         _wallet_payload(you_rank=12, you_next_rank=11, you_next_rank_needs_eth=604.0,
                         you_next_send_passes=False)
     )
+    # `to pass` is deliberately absent: it moved into the value, on a
+    # label-less continuation line under the points.
     labels = ("rank", "score", "banked", "share", "joined", "send", "to beat",
-              "gain", "to pass")
+              "gain")
     starts, seen = set(), set()
     for line in text.split("\n"):
         stripped = line.lstrip()
@@ -1908,3 +1916,81 @@ async def test_the_verdict_hangs_on_its_own_line_under_the_points():
     assert HOLDS_RANK not in gain
     verdict = next(l for l in text.split("\n") if HOLDS_RANK in l)
     assert "pts" not in verdict
+
+
+async def test_the_ladder_shows_the_score_after_each_rung():
+    """The concave curve made visible: 450 ETH buys ~29,500 points and the next
+    0.1 ETH escalations buy three each.  Nothing else on the screen says that."""
+    text = await _wallet_view_text(
+        _wallet_payload(
+            you_ladder_rows=[
+                {"hour": 0, "amount_eth": 1.1, "credited_eth": 1.1,
+                 "weight_eth": 2.13, "early_x": 1.94, "capped": False,
+                 "points": 1_459, "ts": None},
+                {"hour": 1, "amount_eth": 450.0, "credited_eth": 448.9,
+                 "weight_eth": 870.7, "early_x": 1.94, "capped": False,
+                 "points": 29_540, "ts": None},
+            ]
+        )
+    )
+    assert "PTS" in text
+    assert "1,459" in text and "29,540" in text
+
+
+async def test_the_pts_column_is_the_first_the_ladder_sheds():
+    """It is the derived one: the score after a rung can be read off the
+    leaderboard, the multiplier that rung got cannot be read anywhere else."""
+    from maxpane_dashboard.widgets.curator.wallet import _LADDER_TIERS
+
+    widest, second = _LADDER_TIERS[0], _LADDER_TIERS[1]
+    assert [c[0] for c in widest[2]][-1] == "points"
+    assert "points" not in [c[0] for c in second[2]]
+    assert "pts" in second[3]
+
+
+def _segment_style(app, needle: str):
+    """The style of the composited segment containing *needle*."""
+    for strip in app.screen._compositor.render_strips():
+        for segment in strip:
+            if needle in segment.text:
+                return segment.style
+    return None
+
+
+async def test_the_headline_value_in_the_rail_is_bold_and_coloured():
+    """Asserted on the composited *style*, not on markup in a string: the point
+    is what reaches the pixel."""
+    screen = _screen(_wallet_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+
+        # `947.31 weight` renders in the rail and NOWHERE else -- the hero's
+        # own `30,853 pts` is bold too, so searching for that would pass on the
+        # hero's emphasis while the rail had none (verified: it did).
+        headline = _segment_style(app, "947.31 weight")
+        assert headline is not None, "the banked headline never reached a pixel"
+        assert headline.bold, "the rail's headline value is not bold"
+        assert headline.color is not None, "the rail's headline value has no colour"
+        # A trailing part of the same line is not competing for the eye.
+        tail = _segment_style(app, "3 sends")
+        assert tail is None or not tail.bold
+
+
+async def test_the_curator_status_line_names_its_own_two_keys():
+    screen = _screen(_grace_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        text = _screen_text(app)
+
+    assert "c panels" in text and "y wallet" in text
+    assert "updated" not in text        # traded for the hints
+    assert "quit" in text and "refresh" in text and "menu" in text
+    assert "poll" in text
