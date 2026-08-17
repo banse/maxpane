@@ -586,5 +586,6 @@ def test_the_curve_preset_signature_floors_like_the_contract() -> None:
     params = inspect.signature(curve_points).parameters
     assert list(params) == ["weight_wei", "points_per_eth"]
     assert all(p.default is inspect.Parameter.empty for p in params.values())
-    with pytest.raises(NotImplementedError, match="WP1"):
-        curve_points(10**18, 1000)
+    # WP1 landed the body; the stub assertion this replaces was the only line
+    # of this test allowed to change.
+    assert curve_points(10**18, 1000) == 1000

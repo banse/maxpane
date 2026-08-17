@@ -29,6 +29,8 @@ The arithmetic, and why each part of it is load-bearing::
 
 from __future__ import annotations
 
+import math
+
 
 def curve_points(weight_wei: int, points_per_eth: int) -> int:
     """Curve points for *weight_wei* at a live *points_per_eth* rate.
@@ -36,9 +38,10 @@ def curve_points(weight_wei: int, points_per_eth: int) -> int:
     Neither argument has a default: a caller that does not know the chain's
     current rate must go and read it, not inherit someone's memory of it.
 
-    WP1 fills this in.
+    ``isqrt`` (exact), multiply **before** the single floor division, and an
+    ``int`` ``10**9`` — each part is load-bearing; see the module docstring.
     """
-    raise NotImplementedError("WP1")
+    return math.isqrt(weight_wei) * points_per_eth // 10**9
 
 
 __all__ = ["curve_points"]
