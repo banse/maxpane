@@ -179,6 +179,7 @@ class CuratorClusters(Vertical):
         self._payload: dict = {}
         self._columns: tuple = ()
         self._hint: str = ""
+        self._tier: str = "full"
 
     def compose(self) -> ComposeResult:
         yield Static(CLUSTERS_TITLE, classes="curator-cl-title", id="curator-cl-title")
@@ -280,7 +281,7 @@ class CuratorClusters(Vertical):
             return
 
         self._set_note(self._summary())
-        with_window = getattr(self, "_tier", "full") == "full"
+        with_window = self._tier == "full"
         for row in usable[:MAX_ROWS]:
             try:
                 values = _row_values(row, with_window)

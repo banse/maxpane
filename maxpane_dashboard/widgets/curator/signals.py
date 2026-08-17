@@ -401,8 +401,16 @@ class CuratorSignals(Vertical):
         self._render_view()
 
     def on_resize(self, _event=None) -> None:
-        """Re-render so the dropped-part marker tracks the width."""
-        self._render_view()
+        """Re-render so the dropped-part marker tracks the width.
+
+        Gated on a payload: before the first fetch the rail must stay blank
+        rather than render its never-fired copy.  ``HOUR SAVED — none yet``
+        is a true statement about a payload whose ``last_saved_hour`` is
+        ``None``; it is not a true statement about a dashboard that has not
+        read anything yet.
+        """
+        if self._payload:
+            self._render_view()
 
     # -- rendering ---------------------------------------------------------
 
