@@ -1325,6 +1325,59 @@ def test_a_healthy_cycle_publishes_the_chain_values_it_read(tmp_path, clock):
     assert out["you_required_next_eth"] == pytest.approx(4.1)
 
 
+def test_the_fast_tier_is_spaced_by_its_own_ttl_not_by_the_poll_interval(tmp_path, clock):
+    """TIER_TTL_SECONDS['fast'] is 15 s (PRD §5) and `--poll-interval` accepts
+    5, so an ungated fast half triples the declared request budget against
+    keyless public endpoints -- and the 15 s failure backoff never applies to a
+    rate-limited host at all.  Ten cycles inside one TTL window are one round of
+    requests, and the readings in between are the ones that round returned."""
+    from maxpane_dashboard.data.curator_cache import TIER_TTL_SECONDS
+
+    client = _scenario_client({"state": True, "logs": True, "wallet": True})
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+    first = asyncio.run(manager.fetch_and_compute())
+    for _ in range(9):
+        clock.advance(1)
+        out = asyncio.run(manager.fetch_and_compute())
+        # ...and the picture does not flicker to `unavailable` in between.
+        assert out["current_hour"] == first["current_hour"]
+        assert out["phase"] == first["phase"]
+        assert out["you_required_next_eth"] == first["you_required_next_eth"]
+
+    names = [name for name, *_ in client.calls]
+    assert names.count("fetch_state") == 1
+    assert names.count("fetch_balance") == 1
+    assert names.count("fetch_wallet") == 1
+
+    clock.advance(TIER_TTL_SECONDS["fast"])
+    asyncio.run(manager.fetch_and_compute())
+    names = [name for name, *_ in client.calls]
+    assert names.count("fetch_state") == 2
+    assert names.count("fetch_wallet") == 2
+
+
+def test_a_skipped_fast_tick_never_re_serves_a_reading_from_across_an_outage(tmp_path, clock):
+    """The retained round is not a last-good store.  It is cleared by a failed
+    attempt, so the tier sitting out its 15 s BACKOFF renders unavailable rather
+    than a number from before the outage wearing a live face (PRD §11 row 1)."""
+    client = _scenario_client({"state": True, "logs": True, "wallet": False})
+    manager = _manager(tmp_path, clock, client=client)
+    healthy = asyncio.run(manager.fetch_and_compute())
+    assert healthy["current_hour"] == 4
+
+    client.answers["fetch_state"] = None
+    client.answers["fetch_balance"] = None
+    clock.advance(15)
+    dead = asyncio.run(manager.fetch_and_compute())
+    assert dead["current_hour"] is None
+    assert SOURCE_STATE in dead["degraded"]
+
+    clock.advance(1)                                   # inside the backoff
+    still = asyncio.run(manager.fetch_and_compute())
+    assert still["current_hour"] is None
+    assert SOURCE_STATE in still["degraded"]
+
+
 def test_a_nonzero_balance_never_reaches_a_volume_field(tmp_path, clock):
     """H5.  1.5 ETH of forced ETH is an anomaly -- somebody selfdestructed into
     a contract that refunds every wei in-tx -- and it belongs to exactly one

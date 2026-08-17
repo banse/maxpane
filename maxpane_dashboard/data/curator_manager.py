@@ -512,6 +512,15 @@ class CuratorManager:
         #: Set by the cross-check when the fold looks short: the next medium
         #: tick re-sweeps from here instead of from the watermark.
         self._repair_from_block: int | None = None
+        #: The newest fast-tier answers, re-served while that tier is still
+        #: fresh.  This is **not** a last-good store and it is deliberately not
+        #: the cache's: it is set on every *attempted* fast tick, to ``None``
+        #: when the attempt failed, so it can never outlive the tier's own TTL.
+        #: Serving a reading from twelve seconds ago is what a 15 s TTL means;
+        #: serving one from across an outage is what PRD §11's row 1 forbids,
+        #: and the two are kept apart by clearing these on failure.
+        self._fast_state: Any = None
+        self._fast_wallet: Any = None
 
         try:
             self.cache.load()
@@ -1159,11 +1168,25 @@ class CuratorManager:
         # anchor, and everything else is independent of them.
         config = await self._pool_config(tiers, now)
 
-        # Both halves of the fast tier ride the same pool and the same tick.
-        state_out, wallet_state = await asyncio.gather(
-            self._pool_state(now), self._pool_wallet(now)
-        )
-        state = state_out.get("state")
+        # Both halves of the fast tier ride the same pool and the same tick —
+        # and both are **gated on the tier**, the way the medium and slow halves
+        # are.  Ungated, `TIER_TTL_SECONDS["fast"]` and its failure backoff are
+        # decorative: `--poll-interval 5` is accepted (`_MIN_POLL_INTERVAL`), so
+        # the eight-view batch, the balance and the six YOU views were being
+        # re-sent three times per declared 15 s window against keyless public
+        # endpoints, and a rate-limited host was hammered rather than backed
+        # off.  PRD §5 sizes this tier at 15 s; this is where that number takes
+        # effect.
+        if TIER_FAST in tiers:
+            state_out, wallet_state = await asyncio.gather(
+                self._pool_state(now), self._pool_wallet(now)
+            )
+            state = state_out.get("state")
+            self._fast_state = state
+            self._fast_wallet = wallet_state
+        else:
+            state = self._fast_state
+            wallet_state = self._fast_wallet
 
         logs_out = await self._pool_logs(tiers, now, config)
         await self._pool_crosscheck(tiers, now, state, config)
