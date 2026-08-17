@@ -36,16 +36,19 @@ Width behaviour
 =========  ====  =========================================
 Tier       Cost  Columns
 =========  ====  =========================================
-full        48   # WALLET POINTS CREDIT TX ⚑
-compact     42   # WALLET POINTS CREDIT ⚑
-minimal     32   # WALLET POINTS ⚑
+full        49   # WALLET POINTS CREDIT TX ⚑
+compact     43   # WALLET POINTS CREDIT ⚑
+minimal     33   # WALLET POINTS ⚑
 =========  ====  =========================================
 
-``TX`` goes first: the ladder length is the least load-bearing number on the
-row.  ``CREDIT`` goes second.  ``POINTS`` and the flag never go — points are
-what the board ranks by, and the flag is the one column a reader cannot
-reconstruct from anything else on screen.  Each drop is announced in the
-title (``‹ widen: TX``); nothing is ever clipped in silence.
+The costs are :func:`_table.tier_cost` of each column set, and a test asserts
+every one of them — this table said 48/42/32 for a while, one column low in
+each row, because it was typed rather than measured.  ``TX`` goes first: the
+ladder length is the least load-bearing number on the row.  ``CREDIT`` goes
+second.  ``POINTS`` and the flag never go — points are what the board ranks
+by, and the flag is the one column a reader cannot reconstruct from anything
+else on screen.  Each drop is announced in the title (``‹ widen: TX``);
+nothing is ever clipped in silence.
 
 Primitives only — this module imports nothing from ``data/`` or ``analytics/``.
 """
@@ -139,6 +142,24 @@ _TIERS = (
         "‹ widen: TX + CREDIT",
     ),
 )
+
+#: Widget columns this board needs for its **full** column set, ``DataTable``
+#: cell padding included — ``_TIERS[0]``'s own cost rather than a second
+#: typing of it, so the constant a screen imports and the tier the widget
+#: picks can never disagree.
+#:
+#: The confidence-graded flag (WP5.3) did **not** move it.  ``link_conf``
+#: replaced the cell's *contents*, not its width: all four glyphs are one
+#: column (``rich.cells.cell_len``), the column was already two wide, and it
+#: is in every tier because it never sheds.  Re-measured rather than assumed —
+#: ``◌`` is East-Asian-ambiguous and a two-column rendering of it would have
+#: pushed every tier out by one.
+LEADERBOARD_FULL_WIDTH = _TIERS[0][1]
+
+#: The narrowest column set this board will ever pick — what it costs to keep
+#: the rank, an identity, the score and the flag on screen.  Published beside
+#: the full width because a screen sizing a slot needs both ends of the range.
+LEADERBOARD_MIN_WIDTH = _TIERS[-1][1]
 
 
 def _same_wallet(address, you_address) -> bool:

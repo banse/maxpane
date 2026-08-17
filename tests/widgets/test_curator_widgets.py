@@ -2760,3 +2760,197 @@ async def test_the_graded_flag_reaches_the_screen_at_every_declared_tier(width):
         await pilot.pause()
         text = _screen_text(app)
     assert text.count("⚑") == 2, (width, text)
+
+
+# ===========================================================================
+# WP5.4 — the two widget-level widths, re-measured and published
+#
+# WP4's screen sweep imports these rather than re-typing a number.  Both are
+# derived from the builders that render (`_standing_lines`) or from the tier
+# the widget actually picks (`_TIERS[0]`), so neither can drift into being a
+# remembered adjective -- the failure mode CLAUDE.md records for `dev`/`ops`
+# and this package records for SIGNALS_FULL_WIDTH's first two values.
+# ===========================================================================
+
+
+def _worst_case_reasons() -> list[list[str]]:
+    """Every ``reasons`` list in the committed analysis slice, widest first."""
+    from tests.curator_sybil_fixtures import row_payloads
+
+    lists = [
+        list(row.get("reasons") or [])
+        for _label, row in row_payloads("operator_row_worst.json")
+    ]
+    return sorted((r for r in lists if r), key=lambda r: -len(" · ".join(r)))
+
+
+def test_the_standing_probe_carries_the_widest_linkage_strings_the_slices_hold():
+    """A widget may not open a fixture, so the probe restates the measured
+    worst case and this is the agreement test.
+
+    Both maxima are pinned, and they are **independent**: the widest reason
+    (53 columns) and the most reasons on one row (4) do not come from the
+    same row, so the probe takes each at its own worst.  A later slice with a
+    wider phrase reddens here rather than silently making the published width
+    a description of the old data.
+    """
+    from maxpane_dashboard.widgets.curator import wallet as wallet_mod
+
+    lists = _worst_case_reasons()
+    widest_reason = max(len(r) for group in lists for r in group)
+    most_reasons = max(len(group) for group in lists)
+    assert (widest_reason, most_reasons) == (53, 4), (widest_reason, most_reasons)
+
+    probe = wallet_mod.STANDING_WIDTH_PROBE["you_linked_reasons"]
+    assert max(len(r) for r in probe) >= widest_reason
+    assert len(probe) >= most_reasons
+    assert wallet_mod._WIDEST_REASON in {
+        r for group in lists for r in group
+    }, "the probe's reason is not one the slices actually hold"
+
+    # ...and the group size the probe carries is past the widest real one.
+    from tests.curator_sybil_fixtures import row_payloads
+
+    sizes = [row.get("size") for _l, row in row_payloads("operator_row_worst.json")]
+    assert wallet_mod.STANDING_WIDTH_PROBE["you_linked_group_size"] >= max(
+        s for s in sizes if isinstance(s, int)
+    )
+
+
+def test_the_standing_probe_carries_every_kwarg_the_panel_reads():
+    """A kwarg added to the panel cannot slip past the probe unmeasured —
+    the guard ``CuratorSignals`` already keeps on ``WIDTH_PROBE``."""
+    from maxpane_dashboard.widgets.curator import signals as sig_mod
+    from maxpane_dashboard.widgets.curator import wallet as wallet_mod
+
+    kwargs = set(_kwargs_of(CuratorWalletStanding))
+    assert set(wallet_mod.STANDING_WIDTH_PROBE) == kwargs, sorted(
+        kwargs ^ set(wallet_mod.STANDING_WIDTH_PROBE)
+    )
+    # The score ceiling is imported from the rail, never re-typed: the suite
+    # asserts *that* constant against the analytics curve.
+    assert wallet_mod.STANDING_WIDTH_PROBE["you_points"] == sig_mod.MAX_CURVE_POINTS
+
+
+async def test_the_standing_panel_needs_the_width_it_publishes():
+    """Composited, both sides of the pin: at the published width the worst
+    case reaches the screen whole, and one column under it the panel *says*
+    it could not.  A test comparing the constant to its own formula could
+    not catch a forgotten ``padding: 0 1``."""
+    from maxpane_dashboard.widgets.curator import wallet as wallet_mod
+
+    probe = wallet_mod.STANDING_WIDTH_PROBE
+    fits = await _rendered(
+        CuratorWalletStanding,
+        size=(wallet_mod.STANDING_FULL_WIDTH, 24), **probe,
+    )
+    assert "widen" not in fits
+    assert fits.count(wallet_mod._WIDEST_REASON) == 4      # every reason whole
+
+    cut = await _rendered(
+        CuratorWalletStanding,
+        size=(wallet_mod.STANDING_FULL_WIDTH - 1, 24), **probe,
+    )
+    assert "widen" in cut
+    assert cut.count(wallet_mod._WIDEST_REASON) < 4
+
+
+def test_the_published_standing_width_is_the_panels_worst_case_not_a_payloads():
+    """The ordering that makes the constant a property of the *panel*.
+
+    A reader carrying the widest real evidence in the slices (the 1,995-wallet
+    operator's size against the widest reason list) needs 191 columns; a
+    reader with no linkage at all needs 40, and that number is **unchanged by
+    this work package** — both new lines are shorter than the `joined` line
+    that already set it.  The published constant clears all of them.
+    """
+    from maxpane_dashboard.widgets.curator import wallet as wallet_mod
+
+    base = dict(
+        you_rank=412, you_points=1234, you_credit_eth=3.6, you_weight_eth=7.03,
+        you_tx_count=4, you_weight_share_pct=0.42, you_first_hour=0,
+        you_joined_utc="2026-08-16 19:58 UTC", contributors_total=10_643,
+    )
+    widest_real = _worst_case_reasons()[0]
+
+    unlinked = wallet_mod.measure_standing_width(base)
+    cleared = wallet_mod.measure_standing_width(
+        {**base, "you_linked_state": "clean", "you_linked_reasons": [],
+         "you_clean_rank": 47}
+    )
+    linked = wallet_mod.measure_standing_width(
+        {**base, "you_linked_state": "linked", "you_linked_group_size": 1995,
+         "you_linked_reasons": widest_real}
+    )
+
+    assert unlinked == cleared == 40
+    assert linked == 191
+    assert wallet_mod.STANDING_FULL_WIDTH > linked > unlinked
+    assert wallet_mod.STANDING_FULL_WIDTH == wallet_mod.measure_standing_width(
+        wallet_mod.STANDING_WIDTH_PROBE
+    )
+
+
+async def test_the_standing_panel_sheds_value_tails_and_never_its_labels():
+    """The facts-panel contract, on the two new lines: at the rail's own
+    share of a full-layout terminal a linked reader keeps every label and the
+    group size, and loses the evidence from the end behind the marker."""
+    from maxpane_dashboard.widgets.curator import wallet as wallet_mod
+
+    text = await _rendered(
+        CuratorWalletStanding, size=(51, 24),
+        you_linked_state="linked", you_linked_group_size=1995,
+        you_linked_reasons=_worst_case_reasons()[0],
+        you_clean_rank=None, **_standing_full(),
+    )
+    for label in ("rank", "clean", "score", "banked", "share", "joined",
+                  "linked"):
+        assert _facts_line(text, label), label
+    assert "1,995-wallet group" in text          # the part a reader acts on
+    assert wallet_mod._WIDEST_REASON not in text  # the tail went
+    assert "widen" in text                        # ...and said so
+
+
+def test_the_leaderboard_publishes_the_tier_it_actually_picks():
+    """Both ends of the range, and neither is re-typed: a constant that
+    disagreed with ``_TIERS`` would send a screen a width the widget then
+    refuses to use."""
+    from maxpane_dashboard.widgets.curator import leaderboard as lb
+    from maxpane_dashboard.widgets.curator._table import pick_tier, tier_cost
+
+    assert lb.LEADERBOARD_FULL_WIDTH == tier_cost(lb._TIERS[0][2]) == 49
+    assert lb.LEADERBOARD_MIN_WIDTH == tier_cost(lb._TIERS[-1][2]) == 33
+
+    name, _columns, hint = pick_tier(lb._TIERS, lb.LEADERBOARD_FULL_WIDTH)
+    assert (name, hint) == ("full", "")
+    name, _columns, hint = pick_tier(lb._TIERS, lb.LEADERBOARD_FULL_WIDTH - 1)
+    assert name == "compact" and hint
+
+
+def test_the_graded_flag_did_not_widen_the_board():
+    """``◌`` is East-Asian-ambiguous; a two-column rendering of it would have
+    pushed every tier out by one and moved a published width for a glyph."""
+    from rich.cells import cell_len
+
+    from maxpane_dashboard.widgets.curator import leaderboard as lb
+
+    for glyph in (lb.LINK_HIGH, lb.LINK_LOW, lb.LINK_UNKNOWN):
+        assert cell_len(glyph) == 1, glyph
+    assert cell_len(lb.LINK_CLEAN) == 0
+    assert lb._FLAG_COLS >= max(
+        cell_len(g) for g in (lb.LINK_HIGH, lb.LINK_LOW, lb.LINK_UNKNOWN)
+    )
+
+
+@pytest.mark.parametrize("width,hint", [(49, ""), (48, "‹ widen: TX")])
+async def test_the_board_renders_its_published_full_tier_and_says_so_below_it(
+    width, hint
+):
+    widget = CuratorLeaderboard()
+    app = _Harness(widget)
+    async with app.run_test(size=(width, 20)) as pilot:
+        widget.update_data(leaderboard_rows=_lb_rows(3))
+        await pilot.pause()
+        text = _screen_text(app)
+    assert ("widen" in text) is bool(hint), (width, text)
+    assert "⚑" in text                    # the flag column is in both tiers

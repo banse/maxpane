@@ -19,10 +19,18 @@ must NOT make:
   for the same ETH split across wallets, which is why the fan-out patterns
   panel exists; `2.9% of all weight` is true of an address and says nothing
   about who holds it.
+* **An analysis that has not run has not cleared anybody.**  The standing
+  panel's `linked` and `clean` lines render `-- unknown` until the linkage
+  sweep produces a verdict, never "not linked": of every wrong answer this
+  view can give, the reassuring one is the only one a reader will not check.
 
-Width: the ladder is a `DataTable` on the shared `_table` tiers; the two facts
+Width: the ladder is a `DataTable` on the shared `_table` tiers; the facts
 panels are label/value lines that shed their *value tails* — never their labels
 — and hand the marker to the title, the same contract the rail keeps.
+:data:`STANDING_FULL_WIDTH` is what the standing panel needs for the widest
+lines it can *ever* render and is not a slot budget;
+:func:`measure_standing_width` answers the narrower question a screen actually
+has, which is what one payload in hand needs.
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.curator._fmt import (
+    COMPACT_ETH_PROBE,
     DASH,
     EMDASH,
     as_float,
@@ -39,6 +48,7 @@ from maxpane_dashboard.widgets.curator._fmt import (
     fmt_pct,
     fmt_points,
 )
+from maxpane_dashboard.widgets.curator.signals import MAX_CURVE_POINTS
 from maxpane_dashboard.widgets.curator.hero import (
     EOA_SUBTITLE,
     EOA_SUBTITLE_SHORT,
@@ -157,6 +167,11 @@ LABEL_COLS = len("to beat")
 GE = "≥ "
 GUTTER = "  "
 assert len(GE) == len(GUTTER)
+
+#: The widest ETH magnitude any cell in this package is sized against, reused
+#: rather than restated -- ``_fmt`` documents why the tuple ends where it does,
+#: and ``signals`` derives its own probe entry the same way.
+_WIDEST_ETH = max(COMPACT_ETH_PROBE)
 
 _HOUR_COLS = 5
 _AMOUNT_COLS = 10
@@ -648,6 +663,97 @@ def _standing_lines(data: dict) -> list[tuple]:
         # one that grows, and the shedding contract works from the end.
         ("linked", linked_parts),
     ]
+
+
+# -- how wide the standing panel is ---------------------------------------
+
+
+def measure_standing_width(payload: dict) -> int:
+    """Widget columns :class:`CuratorWalletStanding` needs for **this** payload.
+
+    Measured through :func:`_standing_lines`, the very builder that renders,
+    at no width at all — so nothing is shed and the answer is what the panel
+    would need to say everything it has.  ``padding: 0 1`` on the body is the
+    ``+ 2``, the same arithmetic :func:`signals.measure_signals_width` does.
+
+    This is the number a **screen** wants.  :data:`STANDING_FULL_WIDTH` is the
+    worst case over every magnitude the producers can emit and is the wrong
+    number to budget a slot from: no layout in this app is that wide, and the
+    ``‹ widen`` marker is what covers the reader whose own linkage evidence
+    outgrows the rail.
+    """
+    widest = 0
+    for line in _standing_lines(_standing_state(payload)):
+        label, parts = line[0], line[1]
+        marker = line[2] if len(line) > 2 else GUTTER
+        head = f"{label:<{LABEL_COLS}}{marker}"
+        widest = max(widest, len(head + " · ".join(parts)))
+    return widest + 2
+
+
+#: The one linkage reason the probe below is built from, at the **measured**
+#: worst case rather than a plausible typing of one.
+#:
+#: 53 columns, and it is a real string: the widest ``reasons`` entry in
+#: ``tests/fixtures/curator/sybil/operator_row_worst.json``, which is an
+#: index-run operator in ``rows`` and *not* the 45-column longest phrase of
+#: the ``worst`` row everybody reads first.  A widget may not open a fixture,
+#: so the literal lives here and
+#: ``test_the_standing_probe_carries_the_widest_linkage_strings_the_slices_hold``
+#: is the agreement — the same redundancy-plus-agreement-test pattern
+#: ``SIGNAL_ROWS`` and ``CURATOR_ACTIVITY_KINDS`` use.
+_WIDEST_REASON = "consecutive join indices 14,001–14,100 · 1-block span"
+
+#: The widest value each of this panel's fields can carry — a **probe**, in
+#: the sense ``_fmt.COMPACT_ETH_PROBE`` is one, not a fixture and not a
+#: capture.  Every entry has a reason:
+#:
+#: * the ETH amounts are ``max(COMPACT_ETH_PROBE)``, the magnitude every ETH
+#:   cell in this package is sized from, rendered here through ``fmt_eth``
+#:   (nine columns, where a table's ``fmt_eth_compact`` spends six);
+#: * the score is ``signals.MAX_CURVE_POINTS`` — imported, never re-typed:
+#:   it is a **hard bound** the contract guarantees and the suite already
+#:   asserts it against ``analytics.curator_signals.points_for_weight``;
+#: * ``you_rank``, ``contributors_total``, ``you_clean_rank`` and
+#:   ``you_linked_group_size`` are all bounded by ``totalContributors``,
+#:   which nothing bounds; five digits is a decade past the 2 291 wallets on
+#:   the captured list and past the 1 995 of the widest operator in the
+#:   analysis slices;
+#: * the hours are ~14 months of them, the send count a ladder nobody will
+#:   ever have, and the join stamp is the manager's own format;
+#: * **the reasons are four copies of the widest one**, because the two
+#:   maxima the slices pin are independent — 53 columns per reason, 4 reasons
+#:   per row — and a probe takes each field at its own worst.  The widest
+#:   *real* reason list joins to 159 columns rather than these 221, and the
+#:   whole panel to 191 rather than 254; that answer comes from
+#:   :func:`measure_standing_width`, which is the question a screen asks.
+STANDING_WIDTH_PROBE = {
+    "you_rank": 99_999,
+    "contributors_total": 99_999,
+    "you_points": MAX_CURVE_POINTS,
+    "you_credit_eth": _WIDEST_ETH,
+    "you_weight_eth": _WIDEST_ETH,
+    "you_tx_count": 9_999,
+    "you_weight_share_pct": 100.0,
+    "you_first_hour": 9_999,
+    "you_joined_utc": "2026-08-16 19:58 UTC",
+    "you_linked_state": "linked",
+    "you_linked_group_size": 99_999,
+    "you_linked_reasons": [_WIDEST_REASON] * 4,
+    "you_clean_rank": 99_999,
+}
+
+#: Widget columns the standing panel needs for the widest lines it can
+#: **ever** render, body padding included.  Derived from
+#: :data:`STANDING_WIDTH_PROBE` through :func:`_standing_lines`, so no example
+#: payload can set it — the ``dev``/``ops`` lesson in CLAUDE.md.
+#:
+#: It is **not** a slot budget and the rail is nowhere near it: at the screen's
+#: 2fr share of a 138-column terminal this panel gets ~51 columns, which is
+#: every line whole *except* a linked one, whose evidence sheds from the end
+#: behind a ``‹ widen`` marker.  That is the designed behaviour, not clipping:
+#: the group size — the part a reader acts on — is the part that survives.
+STANDING_FULL_WIDTH = measure_standing_width(STANDING_WIDTH_PROBE)
 
 
 class CuratorWalletStanding(_FactsPanel):
