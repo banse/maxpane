@@ -420,6 +420,75 @@ class CuratorClient(OwnedHttpClient):
                         await asyncio.sleep(self._backoff_seconds[attempt])
         raise RuntimeError(f"all state endpoints failed: {last_err}")
 
+    async def _rpc_state_batch(
+        self, calls: list[tuple[str, list]]
+    ) -> list[Any] | None:
+        """One JSON-RPC **batch array** POST on the state pool.
+
+        Returns per-entry results aligned with *calls*.  An entry that came back
+        as an error is ``None`` — **never** ``0``: three of this contract's
+        views answer a legitimate zero, so a sentinel here is indistinguishable
+        from a reading and would be persisted as one.
+
+        Alignment is **by ``id``, never by position**.  JSON-RPC allows a server
+        to answer a batch in any order, and every view in the fast round is a
+        same-width ``uint256``, so a position-mapped reordering transposes
+        fields silently and no type check downstream can see it.
+
+        ``None`` overall only when every endpoint failed to serve the array.
+        A malformed-request error raises instead: it fails identically on every
+        endpoint, so rotating on it triples the request count and hides our bug.
+        """
+        payloads = []
+        for method, params in calls:
+            self._request_id += 1
+            payloads.append(jsonrpc_payload(self._request_id, method, params))
+        id_to_idx = {p["id"]: i for i, p in enumerate(payloads)}
+        last_err: BaseException | None = None
+        for url in self._state_rpcs:
+            for attempt in range(_MAX_RETRIES):
+                try:
+                    resp = await self._post_rpc(url, payloads)
+                    if resp.status_code in ENDPOINT_DEAD_CODES:
+                        last_err = RuntimeError(f"{url} -> {resp.status_code}")
+                        break  # rotate, do not retry a dead host
+                    resp.raise_for_status()
+                    body = resp.json()
+                    if not isinstance(body, list):
+                        # A batch-level error body is the endpoint refusing the
+                        # whole array. Classify it the same way a single call
+                        # is classified: our own malformed request short-
+                        # circuits, anything else rotates.
+                        if isinstance(body, dict) and body.get("error"):
+                            err = body["error"]
+                            if not _looks_like_endpoint_limitation(err):
+                                raise RuntimeError(f"malformed request: {err}")
+                            last_err = RuntimeError(f"{url}: {err}")
+                            break
+                        last_err = RuntimeError(f"{url}: non-batch reply")
+                        break
+                    results: list[Any] = [None] * len(payloads)
+                    for entry in body:
+                        if not isinstance(entry, dict):
+                            continue
+                        idx = id_to_idx.get(entry.get("id"))
+                        if idx is None:
+                            continue
+                        if entry.get("error"):
+                            logger.warning(
+                                "batch entry %s failed: %s",
+                                calls[idx][0], entry["error"],
+                            )
+                            continue  # stays None — never 0
+                        results[idx] = entry.get("result")
+                    return results
+                except (httpx.HTTPError, ValueError) as exc:
+                    last_err = exc
+                    if attempt < _MAX_RETRIES - 1:
+                        await asyncio.sleep(self._backoff_seconds[attempt])
+        logger.warning("state batch failed on every endpoint: %s", last_err)
+        return None
+
 
 __all__ = [
     "CuratorClient",
