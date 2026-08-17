@@ -1287,3 +1287,122 @@ def test_survival_over_no_buckets_at_all_does_not_crash() -> None:
     assert result["streak_hours"] == 0
     assert result["closest_calls"] == []
     assert sig.survival(None, current_hour=None, hourly_threshold_wei=None)["closest_calls"] == []
+
+
+# ===========================================================================
+# WP3.9 — HOUR AT RISK
+# ===========================================================================
+
+
+def test_during_grace_the_row_says_when_judging_starts_and_never_blanks() -> None:
+    """The hour number comes from ``first_judged_hour`` — a literal 24 here is
+    a documented value hardcoded into a screen (CLAUDE.md rule 4), and this
+    deployment's 24 is ``gracePeriod // hourDuration``, not a constant."""
+    state, detail = sig.at_risk_state(
+        phase="grace", needed_wei=0, seconds_left=1800, first_judged_hour=FIRST_JUDGED_HOUR
+    )
+    assert state == "ok"
+    assert detail == "n/a until hour 24"
+    assert "24" not in inspect.getsource(sig.at_risk_state)
+
+    other, other_detail = sig.at_risk_state(
+        phase="grace", needed_wei=0, seconds_left=1800, first_judged_hour=48
+    )
+    assert other == "ok" and other_detail == "n/a until hour 48"
+
+
+def test_during_grace_an_unknown_first_judged_hour_still_says_something() -> None:
+    state, detail = sig.at_risk_state(
+        phase="grace", needed_wei=None, seconds_left=None, first_judged_hour=None
+    )
+    assert state == "ok" and detail and "None" not in detail
+
+
+def test_a_judged_hour_that_is_already_safe_is_ok() -> None:
+    """``ethNeededThisHour()`` returns 0 whenever the hour is safe — a real
+    measurement, not a missing one (source.sol:547)."""
+    state, detail = sig.at_risk_state(
+        phase="judged", needed_wei=0, seconds_left=1800, first_judged_hour=24
+    )
+    assert state == "ok" and detail
+
+
+def test_a_deficit_with_time_left_watches_and_names_the_number() -> None:
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    # (no judged hour with a live deficit exists yet; capture B's window is
+    # 2026-08-17 19:58:47 UTC onwards.)
+    state, detail = sig.at_risk_state(
+        phase="judged",
+        needed_wei=3_420_000_000_000_000_000,
+        seconds_left=900,
+        first_judged_hour=24,
+    )
+    assert state == "watch"
+    assert "3.42" in detail
+
+
+def test_the_last_quarter_of_an_hour_with_a_deficit_fires() -> None:
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    state, detail = sig.at_risk_state(
+        phase="judged", needed_wei=ETH, seconds_left=899, first_judged_hour=24
+    )
+    assert state == "fired"
+    assert "1.00" in detail
+
+    watching, _ = sig.at_risk_state(
+        phase="judged", needed_wei=ETH, seconds_left=900, first_judged_hour=24
+    )
+    assert watching == "watch"
+
+
+def test_a_failed_read_is_unknown_and_never_lights_an_alarm() -> None:
+    """The 'a dead RPC screams that the game is dying' bug.  ``needed_wei is
+    None`` is not a deficit; it is the absence of a measurement, and the row
+    renders unavailable."""
+    state, detail = sig.at_risk_state(
+        phase="judged", needed_wei=None, seconds_left=60, first_judged_hour=24
+    )
+    assert state is None
+    assert state not in ("ok", "watch", "fired")
+    assert detail
+
+
+def test_an_unknown_phase_does_not_produce_a_state() -> None:
+    state, detail = sig.at_risk_state(
+        phase=None, needed_wei=0, seconds_left=1800, first_judged_hour=24
+    )
+    assert state is None and detail
+
+
+def test_a_settled_game_is_terminal_and_not_merely_ok() -> None:
+    """'ok' on a dead contract reads as 'the hour is fine'.  The risk did not
+    go away — it happened."""
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    # (capture C, the settlement transition, is one-shot and has not happened.)
+    state, detail = sig.at_risk_state(
+        phase="settled", needed_wei=None, seconds_left=None, first_judged_hour=24
+    )
+    assert state == "fired"
+    assert state != "ok" and detail
+
+
+def test_a_deficit_with_an_unreadable_clock_watches_rather_than_fires() -> None:
+    """Half a reading is not an alarm: the deficit is real, the urgency is
+    unknown, and ``fired`` is the state that says 'act now'."""
+    state, _ = sig.at_risk_state(
+        phase="judged", needed_wei=ETH, seconds_left=None, first_judged_hour=24
+    )
+    assert state == "watch"
+
+
+def test_every_state_it_returns_is_a_frozen_spelling() -> None:
+    seen = set()
+    for phase in (*PHASES, None, "nonsense"):
+        for needed in (None, 0, ETH):
+            for left in (None, 0, 899, 900, 3600):
+                state, detail = sig.at_risk_state(
+                    phase=phase, needed_wei=needed, seconds_left=left, first_judged_hour=24
+                )
+                assert isinstance(detail, str) and detail
+                seen.add(state)
+    assert seen - {None} <= set(CURATOR_SIGNAL_STATES)

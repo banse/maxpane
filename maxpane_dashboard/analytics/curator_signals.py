@@ -731,6 +731,73 @@ def survival(
     }
 
 
+# ---------------------------------------------------------------------------
+# HOUR AT RISK
+# ---------------------------------------------------------------------------
+
+
+def _eth_words(wei: int) -> str:
+    """A deficit as the rail prints it — two decimals, never a bare zero."""
+    amount = wei / _WEI
+    if 0 < amount < 0.01:
+        return "<0.01 ETH"
+    return f"{amount:.2f} ETH"
+
+
+def at_risk_state(
+    *,
+    phase: str | None,
+    needed_wei: int | None,
+    seconds_left: int | None,
+    first_judged_hour: int | None,
+) -> tuple[str | None, str]:
+    """``(state, detail)`` for the HOUR AT RISK row.
+
+    ``state`` is one of the three frozen spellings or ``None``, and **``None``
+    never lights an alarm**: an unreadable ``ethNeededThisHour()`` is the
+    absence of a measurement, not a deficit.  Rendering it as ``watch`` is the
+    "a dead RPC screams that the game is dying" bug, and it is the single most
+    likely false alarm this dashboard could produce.
+
+    The detail is always a non-empty string, so the row never renders blank —
+    during grace it says when judging starts, and the hour number comes from
+    ``first_judged_hour`` rather than from the number this deployment happens to
+    have (``gracePeriod // hourDuration``, and neither operand is a constant).
+
+    A deficit with an unreadable clock is ``watch``, not ``fired``: the deficit
+    is real but the urgency is unknown, and ``fired`` is the state that means
+    "act now".
+    """
+    if phase == "settled":
+        # Terminal, and deliberately not "ok": the risk did not go away, it
+        # happened.  An hour came up short and that is what closed the list.
+        return STATE_FIRED, "an hour came up short — the list is closed"
+
+    if phase == "grace":
+        hour = _int_or_none(first_judged_hour)
+        if hour is None:
+            return STATE_OK, "n/a until judging begins"
+        return STATE_OK, f"n/a until hour {hour}"
+
+    if phase != "judged":
+        return None, "phase unavailable"
+
+    needed = _int_or_none(needed_wei)
+    if needed is None:
+        return None, "hourly deficit unavailable"
+    if needed <= 0:
+        return STATE_OK, "hour is safe"
+
+    left = _int_or_none(seconds_left)
+    detail = f"hour needs {_eth_words(needed)}"
+    if left is None:
+        return STATE_WATCH, detail
+    if left < AT_RISK_RED_SECONDS:
+        minutes, seconds = divmod(max(0, left), 60)
+        return STATE_FIRED, f"{detail} · {minutes:02d}:{seconds:02d} left"
+    return STATE_WATCH, detail
+
+
 __all__ = [
     # tunables
     "WHALE_MIN_ETH",
@@ -765,4 +832,5 @@ __all__ = [
     "hourly_buckets",
     "bucket_start_ts",
     "survival",
+    "at_risk_state",
 ]
