@@ -155,6 +155,21 @@ app-wide number is the max of the two and did not move. Which dashboard binds
 is itself a measurement; do not assume it from an older paragraph, and measure
 a data-dependent width against the state the data is normally in.
 
+**Curator measures 138** and moves nothing. Dashboard eight arrived on
+2026-08-17 five columns under FWA's 143, so `FULL_LAYOUT_COLUMNS` is
+untouched and the record above is **not** appended to — that record tracks
+changes to the app-wide number, not every dashboard's own. The binding panel
+is `CuratorSignals`, the rail's seven-row detector list ending in YOU;
+`CuratorLeaderboard` clears at 134, `CuratorActivity` at 127 and
+`CuratorClusters` at 123. The number is **height-independent**, and only
+because `#curator-right-rail` reserves its scrollbar gutter
+(`scrollbar-gutter: stable`): without that, the scrollbar took its column out
+of `CuratorSignals` only on terminals under 42 rows, so this layout's *width*
+requirement moved with its *height* and one pin was true at 48 rows and one
+column short at 40. The sweep lives in `tests/screens/test_curator_screen.py`
+and starts deliberately away from the pin, since a sweep that began at the
+constant would agree with it by construction.
+
 143 clears every *layout*, not every possible string. Surf's announce feed
 still lights `‹ widen` there whenever a post links a transaction: the post's
 own punctuation glues the URL to the 66-char hash into one unbreakable token
