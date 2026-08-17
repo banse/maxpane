@@ -71,6 +71,7 @@ import asyncio
 import dataclasses
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from maxpane_dashboard.analytics.curator_signals import (
@@ -96,7 +97,9 @@ from maxpane_dashboard.data.curator_models import (
     CURATOR_DEGRADED_GROUPS,
     CURATOR_KEYS,
     CURATOR_SERIES_KEYS,
+    DepositEvent,
 )
+from maxpane_dashboard.data.evm_abi import addr_from_topic, strip0x
 from maxpane_dashboard.data.safe_call import safe_call
 
 logger = logging.getLogger(__name__)
@@ -107,6 +110,280 @@ def _opt_int(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         return None
     return value
+
+
+# ---------------------------------------------------------------------------
+# Log decoding — raw rows in, models out
+# ---------------------------------------------------------------------------
+#
+# The client hands back log rows **verbatim** so that the decoders have exactly
+# one caller and one hostile-input suite, and this is that decoder.  It reads
+# both dialects the two sources speak, because the Blockscout cross-check has to
+# be diffable against the RPC sweep:
+#
+#   RPC (tenderly / drpc)   blockNumber "0x18937a0"   transactionHash   logIndex
+#                           blockTimestamp "0x6a82174f"
+#   Blockscout REST         block_number 25770244     transaction_hash  index
+#                           block_timestamp "2026-08-16T21:13:35.000000Z"
+#
+# Two rules run through all of it:
+#
+# * **A short or malformed payload decodes to ``None``, never to zeros.**  A
+#   reverted call and a truncated log both come back as something ``int(x, 16)``
+#   would happily turn into a 0, and a 0 here is a deposit that never happened
+#   sitting on the leaderboard.
+# * **A missing timestamp stays ``None``.**  Every captured row carries one
+#   (H14 is struck through), but the fallback batch exists for an endpoint that
+#   omits it, and ``ts=None`` renders ``--:--`` where a ``0`` renders
+#   1970-01-01 — which looks like data.
+
+#: ``Deposited``'s seven data words, in the order the ABI declares them.
+_DEPOSIT_DATA_WORDS = (
+    "amount_wei",
+    "credited_delta_wei",
+    "weight_added_wei",
+    "new_weight_wei",
+    "tx_count",
+    "hour_total_wei",
+    "early_bps",
+)
+
+#: ``Launched``'s seven data words — no indexed fields at all.
+_LAUNCHED_DATA_WORDS = (
+    "launch_time",
+    "hourly_threshold_wei",
+    "grace_period",
+    "hour_duration",
+    "min_deposit_wei",
+    "min_escalation_wei",
+    "credit_cap_wei",
+)
+
+
+def _topics(row: Any) -> list[str]:
+    """The row's topic array, ``None`` padding dropped (Blockscout pads to 4)."""
+    if not isinstance(row, dict):
+        return []
+    raw = row.get("topics")
+    if not isinstance(raw, (list, tuple)):
+        return []
+    return [t for t in raw if isinstance(t, str)]
+
+
+def _data_words(row: Any) -> list[str]:
+    """The row's data blob split into 32-byte words.  A partial tail is dropped."""
+    if not isinstance(row, dict):
+        return []
+    raw = row.get("data")
+    if not isinstance(raw, str):
+        return []
+    body = strip0x(raw)
+    return [body[i : i + 64] for i in range(0, len(body) - len(body) % 64, 64)]
+
+
+def _hex_or_int(value: Any) -> int | None:
+    """An ``int`` from either dialect's number, or ``None``.  Never a ``0`` guess."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return int(value, 16) if value.lower().startswith("0x") else int(value, 10)
+        except ValueError:
+            return None
+    return None
+
+
+def _row_block(row: Any) -> int | None:
+    if not isinstance(row, dict):
+        return None
+    return _hex_or_int(row.get("blockNumber", row.get("block_number")))
+
+
+def _row_log_index(row: Any) -> int | None:
+    if not isinstance(row, dict):
+        return None
+    return _hex_or_int(row.get("logIndex", row.get("index")))
+
+
+def _row_tx_hash(row: Any) -> str | None:
+    if not isinstance(row, dict):
+        return None
+    value = row.get("transactionHash", row.get("transaction_hash"))
+    return value if isinstance(value, str) and value else None
+
+
+def _row_ts(row: Any) -> float | None:
+    """The row's own block timestamp, in epoch seconds, or ``None``.
+
+    Read from the row rather than re-fetched: every captured row on both
+    sources carries one, and a client that discards a stamp it was handed pays
+    a round trip for nothing (H14, refuted and inverted).
+    """
+    if not isinstance(row, dict):
+        return None
+    raw = row.get("blockTimestamp", row.get("block_timestamp"))
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return float(raw) if raw > 0 else None
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    if raw.lower().startswith("0x"):
+        value = _hex_or_int(raw)
+        return float(value) if value else None
+    try:
+        stamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp.timestamp()
+
+
+def decode_deposit(row: Any) -> DepositEvent | None:
+    """One ``Deposited`` row → :class:`DepositEvent`, or ``None`` if unusable.
+
+    ``contributor`` and ``hour`` are the two **indexed** topics, which is why
+    hour bucketing needs no timestamp at all: the hour is in the log and its
+    wall clock is ``launchTime + hour × hourDuration``, exact by construction.
+    The seven data words are taken raw — nothing derived, nothing divided.
+    """
+    topics = _topics(row)
+    words = _data_words(row)
+    if len(topics) < 3 or topics[0].lower() != A.TOPIC_DEPOSITED.lower():
+        return None
+    if len(words) < len(_DEPOSIT_DATA_WORDS):
+        return None
+    block = _row_block(row)
+    log_index = _row_log_index(row)
+    tx_hash = _row_tx_hash(row)
+    if block is None or log_index is None or tx_hash is None:
+        # Without the de-dupe key a re-org replay renders every deposit twice.
+        return None
+    try:
+        values = {
+            name: int(words[i], 16) for i, name in enumerate(_DEPOSIT_DATA_WORDS)
+        }
+        hour = int(strip0x(topics[2]), 16)
+    except ValueError:
+        return None
+    return DepositEvent(
+        contributor=addr_from_topic(topics[1]),
+        hour=hour,
+        block_number=block,
+        tx_hash=tx_hash,
+        log_index=log_index,
+        ts=_row_ts(row),
+        **values,
+    )
+
+
+def decode_first_deposit(row: Any) -> dict | None:
+    """One ``FirstDeposit`` row → ``{"contributor", "index", "ts"}``.
+
+    ``index`` is the second **indexed** topic, is 1-based, and maxes at exactly
+    ``totalContributors``.  The data word is the contract's own timestamp; the
+    row's block stamp is the fallback.
+    """
+    topics = _topics(row)
+    if len(topics) < 3 or topics[0].lower() != A.TOPIC_FIRST_DEPOSIT.lower():
+        return None
+    try:
+        index = int(strip0x(topics[2]), 16)
+    except ValueError:
+        return None
+    words = _data_words(row)
+    ts: float | None = None
+    if words:
+        try:
+            stamped = int(words[0], 16)
+        except ValueError:
+            stamped = 0
+        ts = float(stamped) if stamped > 0 else None
+    return {
+        "contributor": addr_from_topic(topics[1]),
+        "index": index,
+        "ts": ts if ts is not None else _row_ts(row),
+    }
+
+
+def decode_hour_saved(row: Any) -> dict | None:
+    """One ``HourSaved`` row → ``{"hour", "wallet", "ts"}``.  Never fired yet."""
+    topics = _topics(row)
+    if len(topics) < 3 or topics[0].lower() != A.TOPIC_HOUR_SAVED.lower():
+        return None
+    try:
+        hour = int(strip0x(topics[2]), 16)
+    except ValueError:
+        return None
+    return {"hour": hour, "wallet": addr_from_topic(topics[1]), "ts": _row_ts(row)}
+
+
+def decode_settled(row: Any) -> dict | None:
+    """One ``Settled`` row → the obituary's four values.  Never the latch.
+
+    ``isSettled()`` is derived, so it can flip with no log at all; this row is
+    evidence about the past and only fills in details the view cannot give.
+    """
+    topics = _topics(row)
+    words = _data_words(row)
+    if len(topics) < 2 or topics[0].lower() != A.TOPIC_SETTLED.lower():
+        return None
+    if len(words) < 3:
+        return None
+    try:
+        return {
+            "hour": int(strip0x(topics[1]), 16),
+            "ts": int(words[0], 16),
+            "total_contributors": int(words[1], 16),
+            "total_volume_wei": int(words[2], 16),
+        }
+    except ValueError:
+        return None
+
+
+def decode_rescued_total(rows: Any) -> int | None:
+    """Sum the ``Rescued`` amounts.  ``None`` when the filter did not read.
+
+    ``0`` is a real answer — the event has never fired on chain and may never —
+    so an empty tuple sums to ``0`` while a ``None`` input stays ``None``.
+    """
+    if rows is None:
+        return None
+    total = 0
+    for row in rows:
+        topics = _topics(row)
+        words = _data_words(row)
+        if len(topics) < 2 or topics[0].lower() != A.TOPIC_RESCUED.lower():
+            continue
+        if not words:
+            continue
+        try:
+            total += int(words[0], 16)
+        except ValueError:
+            continue
+    return total
+
+
+def decode_launched(row: Any) -> dict | None:
+    """One ``Launched`` row → the seven immutables it announced.
+
+    A **cross-check**, never the source: the ``once`` tier reads the same
+    numbers off the contract's own getters, because a log is what the deployer
+    said and a getter is what the contract will do.
+    """
+    topics = _topics(row)
+    words = _data_words(row)
+    if not topics or topics[0].lower() != A.TOPIC_LAUNCHED.lower():
+        return None
+    if len(words) < len(_LAUNCHED_DATA_WORDS):
+        return None
+    try:
+        return {
+            name: int(words[i], 16) for i, name in enumerate(_LAUNCHED_DATA_WORDS)
+        }
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -405,6 +682,12 @@ class CuratorManager:
 
 __all__ = [
     "CONFIG_PAYLOAD_KEYS",
+    "decode_deposit",
+    "decode_first_deposit",
+    "decode_hour_saved",
+    "decode_launched",
+    "decode_rescued_total",
+    "decode_settled",
     "FAST_TIER_PAYLOAD_KEYS",
     "GROUP_SLOT",
     "SOURCES",

@@ -23,6 +23,12 @@ from maxpane_dashboard.data.curator_cache import (
 )
 from maxpane_dashboard.data.curator_manager import (
     FAST_TIER_PAYLOAD_KEYS,
+    decode_deposit,
+    decode_first_deposit,
+    decode_hour_saved,
+    decode_launched,
+    decode_rescued_total,
+    decode_settled,
     GROUP_SLOT,
     SOURCES,
     SOURCE_LOGS,
@@ -30,6 +36,7 @@ from maxpane_dashboard.data.curator_manager import (
     SOURCE_WALLET,
     CuratorManager,
 )
+from tests.curator_fixtures import capture
 from maxpane_dashboard.data.curator_models import (
     CURATOR_DEGRADED_GROUPS,
     CuratorConfig,
@@ -420,3 +427,174 @@ def test_a_failed_once_tier_degrades_state_and_comes_due_again(tmp_path, clock):
     assert SOURCE_STATE in manager._degraded()
     clock.advance(3600)
     assert "once" in manager.cache.tiers_due()
+
+
+# ---------------------------------------------------------------------------
+# The decoder — the gap the wave-2 gate found unassigned, and WP5 owns it
+# ---------------------------------------------------------------------------
+
+RPC_ROWS = capture("tenderly_logs.json")["result"]
+BS_ROWS = capture("bs_page_0.json")["items"]
+
+
+def test_the_captured_sweep_decodes_to_the_231_deposited_rows():
+    events = [e for e in (decode_deposit(row) for row in RPC_ROWS) if e is not None]
+    assert len(events) == 231
+    first = events[0]
+    assert first.contributor == A.ANNOUNCE.lower()
+    assert first.hour == 0
+    assert first.amount_wei == 50_000_000_000_000_000
+    assert first.early_bps == 19_975
+    assert first.tx_count == 1
+
+
+def test_the_weight_identity_holds_wei_exact_for_every_captured_row():
+    """H8: weightAdded == creditedDelta * earlyBps // 10_000, floored.  Wei is an
+    integer -- pytest.approx on one of these is a review failure."""
+    for event in (decode_deposit(row) for row in RPC_ROWS):
+        if event is None:
+            continue
+        assert event.weight_added_wei == event.credited_delta_wei * event.early_bps // 10_000
+
+
+def test_the_hour_comes_off_the_indexed_topic_not_a_timestamp():
+    """Hour bucketing needs no timestamp at all, which is what makes the fold
+    immune to the boundary the state views trip over."""
+    hours = {e.hour for e in (decode_deposit(r) for r in RPC_ROWS) if e is not None}
+    # The 2026-08-16 sweep was taken at 21:04-21:14 UTC, i.e. 65-76 minutes
+    # after launch: hours 0 and 1 exist and no later hour does yet.
+    assert hours == {0, 1}
+
+
+def test_every_decoded_event_carries_the_stamp_it_was_handed():
+    """H14 struck through: the rows DO carry blockTimestamp, so re-fetching it
+    would pay a round trip for nothing."""
+    events = [e for e in (decode_deposit(r) for r in RPC_ROWS) if e is not None]
+    assert all(e.ts is not None and e.ts > 1_786_000_000 for e in events)
+
+
+def test_first_deposit_indices_are_one_based_and_max_at_the_contributor_count():
+    rows = [decode_first_deposit(r) for r in RPC_ROWS]
+    rows = [r for r in rows if r is not None]
+    assert len(rows) == 145
+    assert min(r["index"] for r in rows) == 1
+    assert max(r["index"] for r in rows) == 145        # == totalContributors
+
+
+def test_the_launched_row_decodes_to_the_pinned_immutables():
+    launched = [decode_launched(r) for r in RPC_ROWS]
+    launched = [r for r in launched if r is not None]
+    assert len(launched) == 1
+    assert launched[0] == {
+        "launch_time": A.LAUNCH_TIME,
+        "hourly_threshold_wei": 5 * 10**18,
+        "grace_period": 86_400,
+        "hour_duration": 3_600,
+        "min_deposit_wei": 5 * 10**16,
+        "min_escalation_wei": 10**17,
+        "credit_cap_wei": 1000 * 10**18,
+    }
+
+
+def test_the_blockscout_dialect_decodes_to_the_same_event(tmp_path):
+    """The cross-check is only a cross-check if both dialects land on the same
+    model: block_number/transaction_hash/index/ISO timestamp vs the RPC's hex."""
+    by_key = {
+        (e.tx_hash.lower(), e.log_index): e
+        for e in (decode_deposit(r) for r in RPC_ROWS)
+        if e is not None
+    }
+    matched = 0
+    for row in BS_ROWS:
+        event = decode_deposit(row)
+        if event is None:
+            continue
+        twin = by_key.get((event.tx_hash.lower(), event.log_index))
+        if twin is None:
+            continue
+        matched += 1
+        assert event == twin
+    assert matched >= 25
+
+
+def test_a_short_or_malformed_payload_decodes_to_none_never_to_zeros():
+    """A truncated log and a reverted call both look like something int(x, 16)
+    would turn into a 0 -- and a 0 here is a deposit that never happened."""
+    good = dict(RPC_ROWS[2])
+    assert decode_deposit(good) is not None
+
+    short = dict(good, data="0x" + "00" * 32)             # one word, seven needed
+    assert decode_deposit(short) is None
+    assert decode_deposit(dict(good, data="0x")) is None
+    assert decode_deposit(dict(good, data=None)) is None
+    assert decode_deposit(dict(good, topics=[good["topics"][0]])) is None
+    assert decode_deposit(dict(good, transactionHash=None)) is None
+    assert decode_deposit(dict(good, logIndex=None)) is None
+    assert decode_deposit(dict(good, blockNumber="not-hex")) is None
+    assert decode_deposit("junk") is None
+    assert decode_deposit(None) is None
+
+
+def test_a_row_of_another_event_is_not_decoded_as_a_deposit():
+    """Topic0 is checked, so the six filters cannot contaminate each other."""
+    first_deposit_row = next(
+        r for r in RPC_ROWS if r["topics"][0].lower() == A.TOPIC_FIRST_DEPOSIT.lower()
+    )
+    assert decode_deposit(first_deposit_row) is None
+    assert decode_hour_saved(first_deposit_row) is None
+    assert decode_settled(first_deposit_row) is None
+    assert decode_launched(first_deposit_row) is None
+
+
+def test_a_row_with_no_stamp_decodes_with_ts_none(tmp_path):
+    """Renders '--:--'.  A 0 would render 1970-01-01, which looks like data."""
+    stampless = {k: v for k, v in RPC_ROWS[2].items() if k != "blockTimestamp"}
+    event = decode_deposit(stampless)
+    assert event is not None and event.ts is None
+
+
+def test_rescued_distinguishes_never_fired_from_never_read():
+    """0 is a real answer -- Rescued has never fired -- and None is an outage."""
+    assert decode_rescued_total(RPC_ROWS) == 0
+    assert decode_rescued_total(()) == 0
+    assert decode_rescued_total(None) is None
+
+
+def test_the_settled_and_hour_saved_decoders_read_their_synthetic_rows():
+    """# SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    (WP1.3 capture C).  Neither event has ever fired on chain, so these rows
+    are hand-built from the vendored ABI; the shape is the ABI's, not a guess.
+    """
+    settled_row = {
+        "topics": [A.TOPIC_SETTLED, "0x" + f"{24:064x}"],
+        "data": "0x" + f"{1_787_000_400:064x}" + f"{300:064x}" + f"{9 * 10**21:064x}",
+        "blockNumber": "0x18937a0",
+        "transactionHash": "0x" + "ab" * 32,
+        "logIndex": "0x1",
+        "blockTimestamp": hex(1_787_000_400),
+    }
+    assert decode_settled(settled_row) == {
+        "hour": 24,
+        "ts": 1_787_000_400,
+        "total_contributors": 300,
+        "total_volume_wei": 9 * 10**21,
+    }
+    assert decode_settled(dict(settled_row, data="0x")) is None
+
+    saved_row = {
+        "topics": [
+            A.TOPIC_HOUR_SAVED,
+            "0x" + "0" * 24 + "cd" * 20,
+            "0x" + f"{30:064x}",
+        ],
+        "data": "0x" + f"{5 * 10**18:064x}",
+        "blockNumber": "0x18937a1",
+        "transactionHash": "0x" + "cd" * 32,
+        "logIndex": "0x2",
+        "blockTimestamp": hex(1_787_004_000),
+    }
+    assert decode_hour_saved(saved_row) == {
+        "hour": 30,
+        "wallet": "0x" + "cd" * 20,
+        "ts": float(1_787_004_000),
+    }
