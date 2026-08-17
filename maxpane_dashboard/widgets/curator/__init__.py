@@ -39,6 +39,25 @@ from .activity import (
     ACTIVITY_UNAVAILABLE,
     CuratorActivity,
 )
+from .cleaned_list import (
+    CLEAN_LIST_EMPTY,
+    CLEAN_LIST_TITLE,
+    CLEAN_LIST_UNAVAILABLE,
+    YOU_CLEAN_UNSET,
+    CuratorCleanList,
+)
+from .operators import (
+    OPERATORS_EMPTY,
+    OPERATORS_TITLE,
+    OPERATORS_UNAVAILABLE,
+    CuratorOperators,
+)
+from .segments import (
+    SEGMENTS_EMPTY,
+    SEGMENTS_TITLE,
+    SEGMENTS_UNAVAILABLE,
+    CuratorSegments,
+)
 from .wallet import (
     AT_THE_CAP,
     CAPPED_MARK,
@@ -104,6 +123,20 @@ __all__ = [
     "ACTIVITY_EMPTY",
     "ACTIVITY_TITLE",
     "ACTIVITY_UNAVAILABLE",
+    # the `f` analysis view (WP4)
+    "CuratorOperators",
+    "CuratorSegments",
+    "CuratorCleanList",
+    "OPERATORS_TITLE",
+    "OPERATORS_EMPTY",
+    "OPERATORS_UNAVAILABLE",
+    "SEGMENTS_TITLE",
+    "SEGMENTS_EMPTY",
+    "SEGMENTS_UNAVAILABLE",
+    "CLEAN_LIST_TITLE",
+    "CLEAN_LIST_EMPTY",
+    "CLEAN_LIST_UNAVAILABLE",
+    "YOU_CLEAN_UNSET",
     "CLOSEST_CALLS_TITLE",
     "CLOSEST_CALLS_UNAVAILABLE",
     "CLUSTERS_EMPTY",

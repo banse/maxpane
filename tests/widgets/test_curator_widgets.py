@@ -41,6 +41,9 @@ from maxpane_dashboard.widgets.curator import (
     CLOSEST_CALLS_UNAVAILABLE,
     CLUSTERS_EMPTY,
     CLUSTERS_UNAVAILABLE,
+    CuratorCleanList,
+    CuratorOperators,
+    CuratorSegments,
     LEADERBOARD_EMPTY,
     LEADERBOARD_TITLE,
     LEADERBOARD_UNAVAILABLE,
@@ -1966,6 +1969,10 @@ _WIDGETS = (
     CuratorWalletStanding,
     CuratorWalletTarget,
     CuratorWalletNext,
+    # The `f` analysis view's three panels (WP4, sybil expansion).
+    CuratorOperators,
+    CuratorSegments,
+    CuratorCleanList,
 )
 
 
@@ -2145,8 +2152,15 @@ def _full_payload() -> dict:
         # splats this payload at every widget at 143 columns, so taking the
         # slices here is free coverage of the widest strings the analysis can
         # produce, and it cannot drift from the shapes WP3 has to emit.
-        operator_rows=worst_case_rows("operator_row_worst.json"),
-        operators_count=len(worst_case_rows("operator_row_worst.json")),
+        #
+        # `operators_count` is derived from THIS payload's own row list
+        # (controller ruling, WP4): it used to be a second `worst_case_rows`
+        # call, which is the same number only while `operator_rows` above is
+        # the whole slice — the moment either line takes a subslice the count
+        # silently stops being the contract's "groups the sweep found" and
+        # becomes "rows a fixture happens to hold".
+        operator_rows=(_op_rows := worst_case_rows("operator_row_worst.json")),
+        operators_count=len(_op_rows),
         segment_rows=worst_case_rows("segment_rows_worst.json"),
         clean_list_rows=worst_case_rows("clean_list_rows_worst.json"),
         clean_points=_clean_totals()["clean_points"],
@@ -2213,6 +2227,11 @@ _EXPECTED_ROWS = {
     "CuratorWalletTarget": (("pts", "rank"), 2),
     "CuratorWalletHero": (("YOUR", "#", "pts"), 3),
     "CuratorWalletAddress": (("wallet", "ens"), 2),
+    # The `f` view.  The operators' marker is the size cell's own word; the
+    # segments' is the share column; the clean list's is the identity cell.
+    "CuratorOperators": (("linked",), 6),
+    "CuratorSegments": (("%", "band"), 8),
+    "CuratorCleanList": (("0x", ".eth"), 8),
 }
 
 
