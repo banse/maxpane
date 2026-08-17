@@ -401,6 +401,18 @@ def test_the_synthetic_slices_are_marked_and_the_measured_one_is_not() -> None:
 # ---------------------------------------------------------------------------
 
 
+#: Which ``CURATOR_ROW_KEYS`` entry each worst-case slice is a payload for.
+#: Spelled out rather than derived from the filename: the operator slice is
+#: ``operator_row_worst.json`` (singular, because ``worst`` is one row) while
+#: its contract key is ``operator_rows``, and a string transform that papered
+#: over that would be one rename from silently matching the wrong shape.
+WORST_CASE_SHAPES = {
+    "operator_row_worst.json": "operator_rows",
+    "segment_rows_worst.json": "segment_rows",
+    "clean_list_rows_worst.json": "clean_list_rows",
+}
+
+
 def test_every_worst_case_row_matches_its_frozen_row_shape() -> None:
     """The fixtures and ``CURATOR_ROW_KEYS`` are the same contract.
 
@@ -408,10 +420,10 @@ def test_every_worst_case_row_matches_its_frozen_row_shape() -> None:
     written without a cell for it, and a row carrying an extra one would let a
     widget be written *around* a key the manager will never send.
     """
-    for name in WORST_CASE:
+    assert set(WORST_CASE_SHAPES) == set(WORST_CASE)
+    for name, key in WORST_CASE_SHAPES.items():
         payload = load(name)
-        shape = CURATOR_ROW_KEYS[name.replace("_worst.json", "").replace(
-            "operator_row", "operator_rows")]
+        shape = CURATOR_ROW_KEYS[key]
         assert tuple(payload["row_keys"]) == shape, name
         for row in worst_case_rows(name):
             assert set(row) == set(shape), (name, sorted(row))
