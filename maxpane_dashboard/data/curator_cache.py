@@ -50,7 +50,11 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from maxpane_dashboard.data.curator_models import SettlementRecord
+from maxpane_dashboard.data.curator_models import (
+    ContributorRow,
+    DepositEvent,
+    SettlementRecord,
+)
 from maxpane_dashboard.data.series_points import (
     CLOCK_SKEW_TOLERANCE_SECONDS,
     coerce_points,
@@ -69,6 +73,15 @@ _SCHEMA_VERSION = 1
 #: Longest history either series keeps: 30 days of hourly points.  The game may
 #: outlive that (H15); the oldest points are dropped, never the newest.
 MAX_SERIES_POINTS = 720
+
+#: Longest raw ``Deposited`` history kept on disk and in memory.  The fold, the
+#: hour buckets, the clusters and the activity feed are all recomputed from it
+#: every cycle, so a drop here is a leaderboard that is a *lower bound* rather
+#: than a wrong number — and it is logged with its count so a truncated history
+#: stays discoverable.  231 events landed in the first four hours of the game;
+#: this holds roughly a hundred days at that pace.  Compaction of the folded
+#: table is PRD §12 material, not v1 (H15).
+MAX_PERSISTED_EVENTS = 25_000
 
 #: Wei per ETH.  The **only** division site outside
 #: ``analytics.curator_signals``: the series are persisted in the presentation
@@ -239,6 +252,109 @@ def _pair(entry: Any) -> tuple[float, Any] | None:
     return ts, entry[1]
 
 
+#: Every ``DepositEvent`` field that must be an ``int`` for the row to be usable.
+_EVENT_INT_FIELDS = (
+    "hour",
+    "amount_wei",
+    "credited_delta_wei",
+    "weight_added_wei",
+    "new_weight_wei",
+    "tx_count",
+    "hour_total_wei",
+    "early_bps",
+    "block_number",
+    "log_index",
+)
+
+#: The same for a folded ``ContributorRow``.  ``first_hour`` / ``first_index`` /
+#: ``points`` are legitimately ``None`` and are validated separately.
+_ROW_INT_FIELDS = ("weight_wei", "credit_wei", "tx_count")
+
+
+def _event_key(event: Any) -> tuple[str, int] | None:
+    """``(tx_hash, log_index)`` — the de-dupe key, or ``None`` if unusable."""
+    tx_hash = getattr(event, "tx_hash", None)
+    log_index = _opt_int(getattr(event, "log_index", None))
+    if not isinstance(tx_hash, str) or not tx_hash or log_index is None:
+        return None
+    return tx_hash.lower(), log_index
+
+
+def _event_to_dict(event: DepositEvent) -> dict[str, Any]:
+    return {
+        "contributor": event.contributor,
+        "hour": event.hour,
+        "amount_wei": event.amount_wei,
+        "credited_delta_wei": event.credited_delta_wei,
+        "weight_added_wei": event.weight_added_wei,
+        "new_weight_wei": event.new_weight_wei,
+        "tx_count": event.tx_count,
+        "hour_total_wei": event.hour_total_wei,
+        "early_bps": event.early_bps,
+        "block_number": event.block_number,
+        "tx_hash": event.tx_hash,
+        "log_index": event.log_index,
+        "ts": event.ts,
+    }
+
+
+def _event_from_dict(raw: Any) -> DepositEvent | None:
+    """One persisted event, or ``None`` when a field is missing or wrong.
+
+    Dropped, never repaired: a deposit with a defaulted amount is a wrong
+    leaderboard row, and a wrong row is worse than a short table.  ``ts`` is the
+    one field allowed to be absent — a missing stamp renders ``--:--``.
+    """
+    if not isinstance(raw, Mapping):
+        return None
+    if not isinstance(raw.get("contributor"), str):
+        return None
+    if not isinstance(raw.get("tx_hash"), str):
+        return None
+    values: dict[str, Any] = {}
+    for field in _EVENT_INT_FIELDS:
+        value = _opt_int(raw.get(field))
+        if value is None:
+            return None
+        values[field] = value
+    return DepositEvent(
+        contributor=raw["contributor"],
+        tx_hash=raw["tx_hash"],
+        ts=_stamp(raw.get("ts")),
+        **values,
+    )
+
+
+def _row_to_dict(row: ContributorRow) -> dict[str, Any]:
+    return {
+        "address": row.address,
+        "weight_wei": row.weight_wei,
+        "credit_wei": row.credit_wei,
+        "tx_count": row.tx_count,
+        "first_hour": row.first_hour,
+        "first_index": row.first_index,
+        "points": row.points,
+    }
+
+
+def _row_from_dict(raw: Any) -> ContributorRow | None:
+    if not isinstance(raw, Mapping) or not isinstance(raw.get("address"), str):
+        return None
+    values: dict[str, Any] = {}
+    for field in _ROW_INT_FIELDS:
+        value = _opt_int(raw.get(field))
+        if value is None:
+            return None
+        values[field] = value
+    return ContributorRow(
+        address=raw["address"],
+        first_hour=_opt_int(raw.get("first_hour")),
+        first_index=_opt_int(raw.get("first_index")),
+        points=_opt_int(raw.get("points")),
+        **values,
+    )
+
+
 class CuratorCache:
     """Tiered TTLs, last-good store, folds, series and the settlement latch.
 
@@ -271,6 +387,21 @@ class CuratorCache:
         #: The ``Settled`` log's four words, filed whether or not the latch
         #: exists yet.  It is the obituary, not the verdict.
         self._obituary: dict[str, Any] = {}
+        #: The raw decoded ``Deposited`` history, oldest first, de-duplicated on
+        #: ``(tx_hash, log_index)``.  Kept because the sweep is *incremental*:
+        #: after the first backfill the client only ever hands back the new
+        #: rows, so this is the only place the rest of the game exists.
+        self._events: list[DepositEvent] = []
+        self._event_keys: set[tuple[str, int]] = set()
+        #: How many events the cap has dropped this process.  Surfaced so a
+        #: truncated history is discoverable rather than silently short.
+        self.dropped_events: int = 0
+        self._first_deposits: list[dict] = []
+        self._hour_saved: list[dict] = []
+        self._rescued_total_wei: int | None = None
+        self._fold: list[ContributorRow] = []
+        self._last_seen_block: int | None = None
+        self._clusters: list[dict] = []
 
     # -- clock ---------------------------------------------------------------
 
@@ -505,6 +636,134 @@ class CuratorCache:
         points = sorted(self._series[name].items())
         return [[float(ts), float(value)] for ts, value in points[-MAX_SERIES_POINTS:]]
 
+    # -- the raw event history, the fold and the watermark -------------------
+
+    def store_events(self, events: Any, *, now: float | None = None) -> int:
+        """Merge newly swept ``Deposited`` events in.  Returns how many were new.
+
+        De-duplicated on ``(tx_hash, log_index)``, the model's own key: without
+        it a re-org replay or an overlapping sweep window renders every deposit
+        twice and doubles the leaderboard.  Kept oldest-first by
+        ``(block_number, log_index)`` so the activity feed's "newest last" and
+        the cluster detector's block windows both read straight off the list.
+
+        The cap drops the **oldest** events and counts the drop
+        (:data:`MAX_PERSISTED_EVENTS`, :attr:`dropped_events`).
+        """
+        added = 0
+        for event in events or ():
+            key = _event_key(event)
+            if key is None or key in self._event_keys:
+                continue
+            self._event_keys.add(key)
+            self._events.append(event)
+            added += 1
+        if added:
+            self._events.sort(key=lambda e: (e.block_number, e.log_index))
+        if len(self._events) > MAX_PERSISTED_EVENTS:
+            overflow = len(self._events) - MAX_PERSISTED_EVENTS
+            for event in self._events[:overflow]:
+                self._event_keys.discard(_event_key(event))
+            self._events = self._events[overflow:]
+            self.dropped_events += overflow
+            logger.warning(
+                "Curator event history exceeded %d rows; dropped the %d oldest "
+                "(%d dropped this process). The folded totals are now a lower "
+                "bound; the contract's own counters are not.",
+                MAX_PERSISTED_EVENTS,
+                overflow,
+                self.dropped_events,
+            )
+        return added
+
+    def events(self) -> list[DepositEvent]:
+        """The whole raw ``Deposited`` history, oldest first."""
+        return list(self._events)
+
+    def store_first_deposits(self, rows: Any) -> None:
+        """``FirstDeposit`` rows, merged on ``contributor`` (1-based index)."""
+        merged = {row["contributor"].lower(): row for row in self._first_deposits}
+        for row in rows or ():
+            if not isinstance(row, Mapping):
+                continue
+            who = row.get("contributor")
+            index = _opt_int(row.get("index"))
+            if not isinstance(who, str) or index is None:
+                continue
+            merged[who.lower()] = {
+                "contributor": who,
+                "index": index,
+                "ts": _stamp(row.get("ts")),
+            }
+        self._first_deposits = sorted(merged.values(), key=lambda r: r["index"])
+
+    def first_deposits(self) -> list[dict]:
+        return [dict(row) for row in self._first_deposits]
+
+    def store_hour_saved(self, rows: Any) -> None:
+        """``HourSaved`` rows, merged on ``hour``.  Never fired on chain yet."""
+        merged = {row["hour"]: row for row in self._hour_saved}
+        for row in rows or ():
+            if not isinstance(row, Mapping):
+                continue
+            hour = _opt_int(row.get("hour"))
+            wallet = row.get("wallet")
+            if hour is None or not isinstance(wallet, str):
+                continue
+            merged[hour] = {"hour": hour, "wallet": wallet, "ts": _stamp(row.get("ts"))}
+        self._hour_saved = sorted(merged.values(), key=lambda r: r["hour"])
+
+    def hour_saved(self) -> list[dict]:
+        return [dict(row) for row in self._hour_saved]
+
+    def store_rescued_total(self, total_wei: Any) -> None:
+        """The summed ``Rescued`` amounts.  ``0`` is real; ``None`` is unread."""
+        value = _opt_int(total_wei)
+        if value is None or value < 0:
+            return
+        self._rescued_total_wei = value
+
+    def rescued_total_wei(self) -> int | None:
+        return self._rescued_total_wei
+
+    def store_fold(
+        self, rows: Any, *, last_block: int | None, now: float | None = None
+    ) -> None:
+        """Persist the folded contributor table and advance the watermark.
+
+        **Only a successful sweep may call this.**  The watermark is where the
+        next incremental sweep starts, so advancing it on a failure skips that
+        block range *forever*: the leaderboard would be permanently wrong with
+        no symptom, which is why the slow tier's gap repair exists at all.
+
+        ``last_block=None`` stores the rows and leaves the watermark where it
+        is — the honest combination for a sweep whose head we could not read.
+        The watermark never moves backwards either: a lagging replica answering
+        after a fresher one must not re-open a range that is already folded in.
+        """
+        table: list[ContributorRow] = []
+        for row in rows or ():
+            if isinstance(row, ContributorRow):
+                table.append(row)
+        self._fold = table
+        block = _opt_int(last_block)
+        if block is None:
+            return
+        if self._last_seen_block is None or block > self._last_seen_block:
+            self._last_seen_block = block
+
+    def fold_rows(self) -> list[ContributorRow]:
+        return list(self._fold)
+
+    def last_seen_block(self) -> int | None:
+        """The newest block a **successful** sweep covered, or ``None``.
+
+        ``None`` means "backfill from the creation block" — never "start from
+        now".  Starting from the head would leave the whole game unfolded with
+        an empty leaderboard and no error anywhere.
+        """
+        return self._last_seen_block
+
     # -- the settlement evidence latch (H1) ----------------------------------
 
     def observe_settlement(
@@ -641,6 +900,12 @@ class CuratorCache:
             "series": {name: self.get_series(name) for name in SERIES_NAMES},
             "settlement": self._settlement_to_dict(),
             "settled_event": dict(self._obituary) if self._obituary else None,
+            "events": [_event_to_dict(e) for e in self._events],
+            "first_deposits": [dict(row) for row in self._first_deposits],
+            "hour_saved": [dict(row) for row in self._hour_saved],
+            "rescued_total_wei": self._rescued_total_wei,
+            "fold": [_row_to_dict(row) for row in self._fold],
+            "last_seen_block": self._last_seen_block,
         }
 
     def save(self, path: str | None = None) -> None:
@@ -742,6 +1007,56 @@ class CuratorCache:
             logger.warning("Curator series block bad: %s", exc)
 
         try:
+            dropped = 0
+            for raw in payload.get("events") or ():
+                event = _event_from_dict(raw)
+                if event is None:
+                    dropped += 1
+                    continue
+                key = _event_key(event)
+                if key is None or key in self._event_keys:
+                    dropped += 1
+                    continue
+                self._event_keys.add(key)
+                self._events.append(event)
+            self._events.sort(key=lambda e: (e.block_number, e.log_index))
+            if dropped:
+                logger.warning(
+                    "Dropped %d unusable event row(s) from the curator cache %s",
+                    dropped,
+                    target,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Curator events block bad: %s", exc)
+
+        try:
+            self.store_first_deposits(payload.get("first_deposits"))
+            self.store_hour_saved(payload.get("hour_saved"))
+            self.store_rescued_total(payload.get("rescued_total_wei"))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Curator log-row block bad: %s", exc)
+
+        try:
+            dropped = 0
+            rows: list[ContributorRow] = []
+            for raw in payload.get("fold") or ():
+                row = _row_from_dict(raw)
+                if row is None:
+                    dropped += 1
+                    continue
+                rows.append(row)
+            self._fold = rows
+            self._last_seen_block = _opt_int(payload.get("last_seen_block"))
+            if dropped:
+                logger.warning(
+                    "Dropped %d unusable fold row(s) from the curator cache %s",
+                    dropped,
+                    target,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Curator fold block bad: %s", exc)
+
+        try:
             self._load_settlement(payload.get("settlement"))
         except Exception as exc:  # noqa: BLE001
             logger.warning("Curator settlement block bad: %s", exc)
@@ -768,6 +1083,7 @@ class CuratorCache:
 
 
 __all__ = [
+    "MAX_PERSISTED_EVENTS",
     "MAX_SERIES_POINTS",
     "SERIES_CONTRIBUTORS",
     "SERIES_INPUT_KEYS",

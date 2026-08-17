@@ -6,6 +6,7 @@ every expiry is driven by advancing it.
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import json
 import os
@@ -15,7 +16,7 @@ import pytest
 
 from maxpane_dashboard.analytics.curator_signals import bucket_start_ts, hourly_buckets
 from maxpane_dashboard.data import curator_cache
-from maxpane_dashboard.data.curator_models import DepositEvent
+from maxpane_dashboard.data.curator_models import ContributorRow, DepositEvent
 from maxpane_dashboard.data.series_points import CLOCK_SKEW_TOLERANCE_SECONDS
 from maxpane_dashboard.data.curator_cache import (
     SLOTS,
@@ -617,3 +618,149 @@ def test_an_observation_with_an_unreadable_height_still_latches(cache):
     evidence's precision, not the verdict."""
     rec = cache.observe_settlement(True, block_number=None, now=NOW)
     assert rec.settled is True and rec.block_number is None
+
+
+# ---------------------------------------------------------------------------
+# WP5.5 — the folded contributor table, the raw history and the watermark
+# ---------------------------------------------------------------------------
+
+
+def _row(address: str, *, weight=10**18, credit=10**18, tx_count=1,
+         first_hour=0, first_index=1, points=1000) -> ContributorRow:
+    return ContributorRow(
+        address=address,
+        weight_wei=weight,
+        credit_wei=credit,
+        tx_count=tx_count,
+        first_hour=first_hour,
+        first_index=first_index,
+        points=points,
+    )
+
+
+def test_a_never_swept_cache_has_no_watermark(cache):
+    """``None`` means backfill from the creation block — never 'start from
+    now', which would leave the whole game unfolded behind an empty
+    leaderboard and no error anywhere."""
+    assert cache.last_seen_block() is None
+
+
+def test_the_watermark_advances_only_on_a_successful_sweep(cache):
+    cache.store_fold([_row("0xaa")], last_block=25_770_500)
+    assert cache.last_seen_block() == 25_770_500
+
+    # A sweep that could not read its head stores nothing new about blocks.
+    cache.store_fold([_row("0xaa")], last_block=None)
+    assert cache.last_seen_block() == 25_770_500
+
+    # And a lagging replica cannot re-open an already-folded range.
+    cache.store_fold([_row("0xaa")], last_block=25_770_100)
+    assert cache.last_seen_block() == 25_770_500
+
+
+def test_the_fold_round_trips_and_a_row_with_a_missing_field_is_dropped(tmp_path, clock):
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.store_fold([_row("0xaa"), _row("0xbb", points=None)], last_block=25_770_500)
+    cache.save()
+
+    raw = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    raw["fold"].append({"address": "0xcc"})                 # no weight/credit/tx
+    raw["fold"].append({"weight_wei": 1, "credit_wei": 1, "tx_count": 1})
+    raw["fold"].append("junk")
+    pathlib.Path(path).write_text(json.dumps(raw), encoding="utf-8")
+
+    restored = CuratorCache(path=path, clock=clock)
+    restored.load(now=NOW)
+    rows = restored.fold_rows()
+    assert [r.address for r in rows] == ["0xaa", "0xbb"]
+    assert rows[1].points is None                            # a real None survives
+    assert restored.last_seen_block() == 25_770_500
+
+
+def test_events_are_de_duplicated_on_tx_hash_and_log_index(cache):
+    first = _deposits_hour_0_and_1()
+    assert cache.store_events(first) == 2
+    assert cache.store_events(first) == 0                    # a replayed window
+    assert len(cache.events()) == 2
+
+
+def test_events_stay_ordered_oldest_first_however_they_arrive(cache):
+    late = _deposit(3, 10**18, index=9, block=25_780_000)
+    early = _deposit(0, 10**18, index=1, block=25_770_000)
+    cache.store_events([late])
+    cache.store_events([early])
+    assert [e.block_number for e in cache.events()] == [
+        early.block_number,
+        late.block_number,
+    ]
+
+
+def test_the_event_cap_drops_the_oldest_and_counts_the_drop(cache):
+    over = curator_cache.MAX_PERSISTED_EVENTS + 5
+    cache.store_events([_deposit(0, 10**18, index=i, block=25_770_000) for i in range(over)])
+    kept = cache.events()
+    assert len(kept) == curator_cache.MAX_PERSISTED_EVENTS
+    assert cache.dropped_events == 5
+    assert kept[0].log_index == 5                            # the oldest went
+
+
+def test_the_raw_history_round_trips_and_a_broken_row_is_dropped(tmp_path, clock):
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.store_events(_deposits_hour_0_and_1())
+    cache.save()
+
+    raw = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    broken = dict(raw["events"][0])
+    broken.pop("amount_wei")
+    broken["tx_hash"] = "0x" + "9" * 64
+    raw["events"].append(broken)
+    raw["events"].append({"contributor": "0xaa"})
+    pathlib.Path(path).write_text(json.dumps(raw), encoding="utf-8")
+
+    restored = CuratorCache(path=path, clock=clock)
+    restored.load(now=NOW)
+    events = restored.events()
+    assert len(events) == 2
+    assert events[0].amount_wei == 851_890_000_000_000_000_000
+    assert events[0].ts is not None
+
+
+def test_an_event_whose_stamp_never_arrived_stays_none_through_a_round_trip(tmp_path, clock):
+    """A missing stamp renders '--:--'.  A 0 would render 1970-01-01."""
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.store_events([dataclasses.replace(_deposit(0, 10**18, index=7), ts=None)])
+    cache.save()
+    restored = CuratorCache(path=path, clock=clock)
+    restored.load(now=NOW)
+    assert restored.events()[0].ts is None
+
+
+def test_first_deposits_and_hour_saved_merge_and_round_trip(tmp_path, clock):
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.store_first_deposits([
+        {"contributor": "0xAA", "index": 2, "ts": LAUNCH_TIME + 10},
+        {"contributor": "0xbb", "index": 1, "ts": None},
+        {"contributor": "0xcc"},                     # no index — dropped
+        "junk",
+    ])
+    cache.store_first_deposits([{"contributor": "0xaa", "index": 2, "ts": LAUNCH_TIME + 11}])
+    cache.store_hour_saved([{"hour": 30, "wallet": "0xdd", "ts": LAUNCH_TIME + 3600}])
+    cache.store_rescued_total(0)
+    cache.save()
+
+    restored = CuratorCache(path=path, clock=clock)
+    restored.load(now=NOW)
+    assert [r["index"] for r in restored.first_deposits()] == [1, 2]
+    assert restored.first_deposits()[1]["ts"] == LAUNCH_TIME + 11   # merged, not doubled
+    assert restored.hour_saved() == [{"hour": 30, "wallet": "0xdd", "ts": float(LAUNCH_TIME + 3600)}]
+    assert restored.rescued_total_wei() == 0                        # 0 is REAL
+
+
+def test_an_unread_rescued_total_stays_none(cache):
+    assert cache.rescued_total_wei() is None
+    cache.store_rescued_total(None)
+    assert cache.rescued_total_wei() is None
