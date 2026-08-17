@@ -29,12 +29,10 @@ from maxpane_dashboard.widgets.markup_safety import visible_len
 __all__ = [
     "WIDEN_HINT",
     "cells",
-    "has_column",
     "pick_tier",
     "install_columns",
     "tier_cost",
     "title_with_hint",
-    "width_of",
 ]
 
 #: The bare marker, for a title bar too narrow to carry the descriptive one.
@@ -79,17 +77,6 @@ def install_columns(table, columns, current) -> bool:
 def cells(values: dict, columns, default: str = "") -> list:
     """Project ``values`` onto the active columns, in their order."""
     return [values.get(key, default) for key, _header, _width in columns]
-
-
-def has_column(columns, key: str) -> bool:
-    return any(col_key == key for col_key, _header, _width in columns)
-
-
-def width_of(columns, key: str, fallback: int) -> int:
-    for col_key, _header, width in columns:
-        if col_key == key:
-            return width
-    return fallback
 
 
 def title_with_hint(title: str, hint: str, width: int) -> tuple[str, bool]:

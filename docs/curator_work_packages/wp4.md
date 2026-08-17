@@ -387,10 +387,10 @@ flagged_points_share_pct=None, **_kwargs)`.
 
 **Steps:**
 
-- [ ] Add the three-way exercise every widget suite in this repo runs — **no args**,
+- [x] Add the three-way exercise every widget suite in this repo runs — **no args**,
       **all-`None`**, **full payload** — parametrised over all seven classes, asserting no
       raise and the expected row counts, all through the compositor.
-- [ ] Add the contract test against WP0's frozen keys:
+- [x] Add the contract test against WP0's frozen keys:
 
 ```python
 def test_every_widget_kwarg_is_a_curator_key():
@@ -411,12 +411,119 @@ def test_the_signature_map_covers_every_widget_this_package_exports():
       `_SCREEN_SUPPLIED` holds the two kwargs the screen passes that are not payload keys
       (`you_address`, `hourly_threshold_eth`) — name them, so the exception is a decision
       rather than a hole.
-- [ ] Run the file and the full suite.
-- [ ] Write the WP6 hand-off note: the exact `update_data` kwarg tuple per widget, every panel
+- [x] Run the file and the full suite.
+- [x] Write the WP6 hand-off note: the exact `update_data` kwarg tuple per widget, every panel
       title string, every unavailable-state string, and the `‹ widen` marker convention. WP6
       asserts against these strings and must not re-invent them.
-- [ ] Commit: `test(curator): widget contract, three-way exercise and the screen hand-off`
+- [x] Commit: `test(curator): widget contract, three-way exercise and the screen hand-off`
 
 **Done when:** all seven widgets survive no-args / all-None / full payload through the
 compositor, no widget imports `data/` or `analytics/`, and the kwarg map is pinned against
 `CURATOR_KEYS`.
+
+---
+
+## WP4 → WP6 hand-off (written 2026-08-17, when WP4 landed)
+
+Everything WP6's screen needs in order to dispatch to these widgets **without
+reading their source**. WP6 asserts against these strings; it must not re-invent
+them. All seven classes and every constant below are re-exported from the package
+root, `maxpane_dashboard.widgets.curator` — import from there, never from a
+submodule.
+
+### `update_data` kwargs, per widget
+
+Every kwarg is optional and defaults to `None`; every signature ends in `**_kwargs`,
+so the screen may splat the whole flat dict at every widget. Every name is a key of
+`CURATOR_KEYS` except `you_address`, which is the screen's own (CLI / `MAXPANE_WALLET`).
+
+| widget | `update_data` kwargs |
+|---|---|
+| `CuratorHero` | `phase, current_hour, grace_seconds_left, grace_ends_utc, hour_fed_eth, hour_needed_eth, hour_seconds_left, hourly_threshold_eth, settled_hour, settled_at_ts, settled_observed_at, lived_desc, early_multiplier_x, points_per_eth_now, survival_streak_hours, closest_call_margin_eth, closest_call_hour, contributors_total, deposits_total, volume_routed_eth, top_points` |
+| `CuratorLeaderboard` | `leaderboard_rows, you_address` |
+| `CuratorSparklines` | `volume_series, contributors_series, hourly_threshold_eth` |
+| `CuratorSignals` | `phase, settled, settled_hour, sig_settled_state, sig_at_risk_state, first_judged_hour, hour_needed_eth, hour_seconds_left, last_saved_hour, last_saved_wallet, last_saved_age_s, whale_amount_eth, whale_wallet, whale_age_s, clusters_count, flagged_points_share_pct, forced_eth, rescued_total_eth, you_rank, you_points, you_credit_eth, you_required_next_eth, you_marginal_points` |
+| `CuratorActivity` | `activity_rows` |
+| `CuratorClosestCalls` | `closest_call_rows, first_judged_hour, grace_ends_utc` |
+| `CuratorClusters` | `cluster_rows, clusters_count, flagged_points_share_pct` |
+
+**Four `CURATOR_KEYS` reach no widget in this package** and are WP6's own:
+`as_of`, `as_of_hhmm`, `degraded` (the title bar) and `settled_observed_at`
+(the hero takes it as a fallback stamp but the freshness marker is the title
+bar's). `tests/widgets/test_curator_widgets.py::test_the_keys_no_widget_reads_are_named_here_rather_than_forgotten`
+records that set, so WP6.1's totality assertion has a starting point.
+
+### Panel titles (exact, asserted)
+
+`CuratorHero` has no title of its own — its three boxes are titled `CLOCK` /
+`THE LIST` / `CURVE`, and the third becomes `SURVIVAL` in the judged phase and
+`FINAL` in the settled one.
+
+| constant | value |
+|---|---|
+| `LEADERBOARD_TITLE` | `TOP OF THE LIST` |
+| `SPARKLINES_TITLE` | `TRENDS` |
+| `SIGNALS_TITLE` | `SIGNALS` |
+| `ACTIVITY_TITLE` | `ACTIVITY` |
+| `CLOSEST_CALLS_TITLE` | `CLOSEST CALLS` |
+| `CLUSTERS_TITLE` | `FAN-OUT PATTERNS` |
+
+`SIGNAL_LABELS` is the rail's seven row labels in order:
+`SETTLED · HOUR AT RISK · HOUR SAVED · WHALE · FARM · FORCED ETH · YOU`.
+
+### Explicit states (exact, asserted)
+
+| constant | value | means |
+|---|---|---|
+| `LEADERBOARD_UNAVAILABLE` | `leaderboard unavailable` | `leaderboard_rows is None` |
+| `LEADERBOARD_EMPTY` | `no contributors yet` | `leaderboard_rows == []` |
+| `ACTIVITY_UNAVAILABLE` | `activity unavailable` | `activity_rows is None` |
+| `ACTIVITY_EMPTY` | `no deposits yet` | `activity_rows == []` |
+| `CLOSEST_CALLS_UNAVAILABLE` | `closest calls unavailable` | `closest_call_rows is None` |
+| `NO_JUDGED_HOURS` | `no judged hours yet` | `closest_call_rows == []`; the panel appends ` — judging begins <grace_ends_utc> · hour <first_judged_hour>` when it has them |
+| `CLUSTERS_UNAVAILABLE` | `clusters unavailable` | `cluster_rows is None` |
+| `CLUSTERS_EMPTY` | `no fan-out patterns found` | `cluster_rows == []` |
+| `WAITING` | `waiting for data...` | either series has < 2 usable points — **the one place `None` and `[]` render the same**, because neither can be drawn |
+| `PHASE_UNAVAILABLE` | `phase unavailable` | `phase` is `None` or not one of `PHASES` |
+| `NEVER_SAVED` | `none yet` | HOUR SAVED has never fired |
+| `NO_WALLET` | `set MAXPANE_WALLET` | every `you_*` key is `None` |
+| `DASH` / `EMDASH` / `NO_STAMP` | `--` / `—` / `--:--` | "could not read" / "deliberately nothing" / "no block stamp" |
+
+### The `‹ widen` convention
+
+Every panel appends `‹ widen: <what it shed>` to its **title** (never replaces
+the title, so `TITLE in text` holds at every width), degrading to a bare
+`‹ widen` when the descriptive form does not fit, and moving the bare marker
+into the panel's note line when even that does not fit the title bar. The hero
+is the exception: its boxes carry the marker in their **bottom border**
+(`border_subtitle`), because a hero box has five content lines and no sixth.
+
+Measured widths, so WP6 can budget the slot grid before it renders anything:
+
+| panel | needs (content columns) | sheds, in order |
+|---|---|---|
+| hero box | 26 (×3 boxes + borders/margins → ~90 for the row) | wording, then the grace date, then the parenthetical |
+| leaderboard | 48 | `TX`, then `CREDIT` |
+| sparklines | ~46 for both rows at full width | the bar label, then the spark's width, then the trend value |
+| signals rail | **76** for the full YOU line (`rank · pts · credit · next ≥ X (+N pts)`) | parts from the end of each row |
+| activity | 70 | delta wording, delta, `tx#`, then `kind` |
+| closest calls | 42 | `VOLUME`, then `SAVIOR` |
+| clusters | 42 | the block window, then `POINTS` |
+
+The signals rail is the widest thing in this package and it is the panel to
+measure the seam against. **Measure, do not reason** — and re-measure after any
+copy edit, exactly as the surf screen's seam sweep does.
+
+### Three things WP6 and WP7 must know
+
+1. **`HOUR AT RISK` contains the string "at risk".** It is PRD §4's mandated
+   label and it is about the *hour*, not about capital. WP7.12's guardrail scan
+   for `TVL` / `locked` / `at risk` / `capital` will hit it; scope the scan to
+   lines carrying a volume field, the way
+   `test_forced_eth_expects_a_dash_and_shouts_on_a_nonzero` does.
+2. **The hero is 8 rows tall, not 7** — three boxes over the one-line EOA
+   subtitle (`CuratorHero.EOA_SUBTITLE`, the single honest capital sentence,
+   rendered once and never beside a volume figure).
+3. **`short_addr` renders 11 columns, not 13.** PRD §4 says "`0x1234…abcd`
+   (13 cols)" and its two halves disagree; the literal is 11 and every address
+   cell here is sized from `ADDR_COLS`.

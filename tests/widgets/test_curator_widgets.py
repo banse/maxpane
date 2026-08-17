@@ -1306,3 +1306,291 @@ async def test_a_shed_column_is_announced_even_when_the_title_bar_is_too_narrow(
             await pilot.pause()
             text = _screen_text(app)
         assert "widen" in text, cls.__name__
+
+
+# ===========================================================================
+# WP4.9 — the widget contract
+# ===========================================================================
+
+#: Every widget this package exports, in screen order.  The map below is
+#: derived from these classes rather than hand-typed, so it cannot rot; what
+#: *is* hand-typed is this tuple, and
+#: ``test_the_signature_map_covers_every_widget_this_package_exports`` is
+#: what makes forgetting to add a class to it fail.
+_WIDGETS = (
+    CuratorHero,
+    CuratorLeaderboard,
+    CuratorSparklines,
+    CuratorSignals,
+    CuratorActivity,
+    CuratorClosestCalls,
+    CuratorClusters,
+)
+
+
+def _kwargs_of(cls) -> tuple[str, ...]:
+    return tuple(
+        name
+        for name, param in inspect.signature(cls.update_data).parameters.items()
+        if param.kind is not param.VAR_KEYWORD and name != "self"
+    )
+
+
+CURATOR_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
+    cls.__name__: _kwargs_of(cls) for cls in _WIDGETS
+}
+
+#: The one kwarg the screen supplies that is **not** a manager key: the CLI /
+#: ``MAXPANE_WALLET`` address, so the leaderboard can mark the reader's own
+#: row.  It is named here so the exception is a decision rather than a hole.
+#:
+#: It used to be three.  ``hourly_threshold_eth`` and ``first_judged_hour``
+#: were about to be hardcoded into a widget ("/5.00 ETH", "n/a until hour
+#: 24") because no frozen surface carried them; WP0's 2026-08-17 amendment
+#: added both to ``CURATOR_KEYS`` and they are now dispatched from the
+#: payload like every other chain value.
+_SCREEN_SUPPLIED = {"you_address"}
+
+
+def _exported_widget_classes() -> set[str]:
+    """Widget classes re-exported from ``widgets.curator``'s package root."""
+    import maxpane_dashboard.widgets.curator as pkg
+    from textual.widget import Widget
+
+    return {
+        name
+        for name in pkg.__all__
+        if isinstance(getattr(pkg, name), type)
+        and issubclass(getattr(pkg, name), Widget)
+    }
+
+
+def test_every_widget_kwarg_is_a_curator_key():
+    """Containment, from the widget side.  A widget that reads a key the
+    manager does not emit renders None forever with a green suite behind it —
+    which is exactly what this repo's seam-drift defect class looks like."""
+    from maxpane_dashboard.data.curator_models import CURATOR_KEYS
+
+    for cls, sig in CURATOR_WIDGET_SIGNATURES.items():
+        unknown = set(sig) - set(CURATOR_KEYS) - _SCREEN_SUPPLIED
+        assert not unknown, f"{cls}: {sorted(unknown)}"
+
+
+def test_the_signature_map_covers_every_widget_this_package_exports():
+    """A widget added without an entry here is a widget nobody checks."""
+    assert set(CURATOR_WIDGET_SIGNATURES) == _exported_widget_classes()
+
+
+def test_every_widget_accepts_the_whole_flat_dict():
+    """``**_kwargs`` on every ``update_data``: the screen splats the manager
+    dict at each widget, so a foreign key must be ignored, not fatal."""
+    for cls in _WIDGETS:
+        has_var_kw = any(
+            p.kind is p.VAR_KEYWORD
+            for p in inspect.signature(cls.update_data).parameters.values()
+        )
+        assert has_var_kw, f"{cls.__name__}.update_data lacks **_kwargs"
+
+
+def test_every_kwarg_has_a_none_default():
+    """House idiom: every kwarg optional, defaulting to ``None``, so a
+    partial payload is a degraded render rather than a TypeError."""
+    for cls in _WIDGETS:
+        for name, param in inspect.signature(cls.update_data).parameters.items():
+            if name == "self" or param.kind is param.VAR_KEYWORD:
+                continue
+            assert param.default is None, f"{cls.__name__}.{name}"
+
+
+def test_the_keys_no_widget_reads_are_named_here_rather_than_forgotten():
+    """The other direction of the seam, from this side: keys that reach no
+    widget in this package.  WP6.1 asserts totality against the *screen*,
+    which also dispatches to the title bar and the status bar, so this is a
+    record rather than a failure — it exists so the next person can tell a
+    deliberate omission from a dropped key."""
+    from maxpane_dashboard.data.curator_models import CURATOR_KEYS
+
+    dispatched = {k for sig in CURATOR_WIDGET_SIGNATURES.values() for k in sig}
+    unread = set(CURATOR_KEYS) - dispatched
+    # Everything here belongs to the title bar / status bar (WP6), not to a
+    # panel: the freshness marker, the degraded groups, and the two settled
+    # keys the hero reads through `settled_hour` / `lived_desc` instead.
+    assert unread == {"as_of", "as_of_hhmm", "degraded", "settled_observed_at"} or \
+        unread <= {"as_of", "as_of_hhmm", "degraded", "settled_observed_at"}, (
+            sorted(unread)
+        )
+
+
+def _full_payload() -> dict:
+    """One payload carrying **every** ``CURATOR_KEYS`` entry plus the screen's
+    ``you_address`` — splatted at every widget, exactly as the screen will.
+
+    SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    (the judged / at-risk / saved / settled halves of this have no capture
+    yet; captures B and C are their windows.)
+    """
+    return dict(
+        phase="judged",
+        settled=False,
+        settled_hour=None,
+        settled_at_ts=None,
+        settled_observed_at=None,
+        lived_desc="alive 27 h",
+        current_hour=27,
+        hour_fed_eth=3.6,
+        hour_needed_eth=1.4,
+        hour_seconds_left=753,
+        grace_seconds_left=0,
+        grace_ends_utc="2026-08-17 19:58:47Z",
+        hourly_threshold_eth=5.0,
+        first_judged_hour=24,
+        early_multiplier_x=1.0,
+        points_per_eth_now=1000,
+        survival_streak_hours=3,
+        closest_call_margin_eth=0.42,
+        closest_call_hour=26,
+        contributors_total=252,
+        deposits_total=497,
+        volume_routed_eth=8401.0,
+        top_points=21473,
+        last_saved_hour=26,
+        last_saved_wallet="0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+        last_saved_age_s=720,
+        whale_amount_eth=461.1,
+        whale_wallet="0x381fe4861234567890abcdef1234567890abCDEF",
+        whale_age_s=180,
+        clusters_count=1,
+        flagged_points_share_pct=12.4,
+        forced_eth=0.0,
+        rescued_total_eth=None,
+        sig_settled_state="ok",
+        sig_at_risk_state="fired",
+        you_rank=12,
+        you_points=1234,
+        you_credit_eth=3.6,
+        you_required_next_eth=4.1,
+        you_marginal_points=120,
+        leaderboard_rows=_lb_rows(3),
+        activity_rows=[_act_row(log_index=1), _act_row(log_index=2, tx_count=5)],
+        closest_call_rows=_call_rows(),
+        cluster_rows=_cluster_rows(),
+        volume_series=_volume_series(),
+        contributors_series=_contributors_series(),
+        degraded=[],
+        as_of_hhmm="22:58",
+        as_of=1787000341.0,
+        you_address="0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91",
+    )
+
+
+def test_the_full_payload_is_exactly_the_frozen_contract():
+    """The three-way exercise is only worth anything if its "full" payload
+    really is full."""
+    from maxpane_dashboard.data.curator_models import CURATOR_KEYS
+
+    assert set(_full_payload()) == set(CURATOR_KEYS) | _SCREEN_SUPPLIED
+
+
+#: What each widget must have on screen after the full payload: the markers
+#: a data row carries (any of them), and how many lines must carry one.  Row
+#: counts, not just "something rendered" — a panel that quietly drops half
+#: its rows passes a smoke test.
+_EXPECTED_ROWS = {
+    "CuratorHero": (("THE LIST",), 1),
+    "CuratorLeaderboard": (("0x",), 3),
+    "CuratorSparklines": (("▲", "▼", "●"), 2),
+    "CuratorSignals": (("▶", "◐", "●"), 7),   # the rail's last row is YOU
+    "CuratorActivity": (("0x200e",), 2),
+    "CuratorClosestCalls": (("h2",), 3),
+    "CuratorClusters": (("9×",), 1),
+}
+
+
+@pytest.mark.parametrize("cls", _WIDGETS, ids=lambda c: c.__name__)
+@pytest.mark.parametrize("mode", ("no-args", "all-none", "full"))
+async def test_the_three_way_exercise(cls, mode):
+    """No args, all-``None``, and the whole flat dict — every widget, through
+    the compositor, no raise and nothing left saying "Loading"."""
+    if mode == "no-args":
+        payload = {}
+    elif mode == "all-none":
+        payload = {name: None for name in _kwargs_of(cls)}
+    else:
+        payload = _full_payload()
+
+    widget = cls()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 30)) as pilot:
+        widget.update_data(**payload)
+        await pilot.pause()
+        text = _screen_text(app)
+
+    assert text.strip(), f"{cls.__name__} rendered an empty screen"
+    assert "Loading" not in text
+    if mode == "full":
+        markers, count = _EXPECTED_ROWS[cls.__name__]
+        rendered = [
+            line for line in text.splitlines() if any(m in line for m in markers)
+        ]
+        assert len(rendered) >= count, (cls.__name__, markers, len(rendered))
+
+
+@pytest.mark.parametrize("cls", _WIDGETS, ids=lambda c: c.__name__)
+async def test_a_second_update_replaces_rather_than_appends(cls):
+    """A refresh every 15 s must not grow the panel; the feed and the tables
+    are the ones this bites."""
+    widget = cls()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 30)) as pilot:
+        widget.update_data(**_full_payload())
+        await pilot.pause()
+        first = _screen_text(app)
+        widget.update_data(**_full_payload())
+        await pilot.pause()
+        assert _screen_text(app) == first, cls.__name__
+
+
+@pytest.mark.parametrize("cls", _WIDGETS, ids=lambda c: c.__name__)
+async def test_no_widget_renders_a_bare_zero_for_a_missing_value(cls):
+    """None-vs-0 is the whole point of this dashboard: 0 ETH needed and "we
+    could not read what is needed" look nothing alike."""
+    widget = cls()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 30)) as pilot:
+        widget.update_data(**{name: None for name in _kwargs_of(cls)})
+        await pilot.pause()
+        text = _screen_text(app)
+    for banned in ("0.00 ETH", "0 wallets", "0 pts", "rank 0", "0.0%"):
+        assert banned not in text, (cls.__name__, banned)
+
+
+def test_no_theme_token_reaches_the_rich_parsed_activity_feed():
+    """``[$warning]`` is Textual *Content* markup.  ``RichLog.write`` parses
+    with Rich's own ``Text.from_markup``, which does not know ``$`` tokens and
+    raises ``MarkupError`` instead of degrading — the FWA activity-feed crash,
+    caught there by eye.  Only string literals are inspected: this docstring
+    has to quote the very token it forbids."""
+    from maxpane_dashboard.widgets.curator import activity as act_mod
+
+    tree = ast.parse(inspect.getsource(act_mod))
+    # Docstrings are excluded: the prose above has to quote the token it
+    # forbids, and so does this module's own.  Only *rendered* literals are
+    # scanned -- f-strings decompose into Constant parts, so a token inside
+    # one still survives as its own segment and is still caught.
+    docstrings = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef))
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    }
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and id(node) not in docstrings
+        ):
+            for token in ("[$success]", "[$error]", "[$warning]", "[$"):
+                assert token not in node.value, (token, node.value)
