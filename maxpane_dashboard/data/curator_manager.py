@@ -68,6 +68,7 @@ zero.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 from typing import Any
@@ -101,6 +102,13 @@ from maxpane_dashboard.data.safe_call import safe_call
 logger = logging.getLogger(__name__)
 
 
+def _opt_int(value: Any) -> int | None:
+    """An ``int`` if the value is one, else ``None``.  ``bool`` is not one."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Source groups — PRD §5's exact vocabulary, and the screen renders it verbatim
 # ---------------------------------------------------------------------------
@@ -123,6 +131,40 @@ GROUP_SLOT: dict[str, str] = {
     SOURCE_LOGS: SLOT_LOGS,
     SOURCE_WALLET: SLOT_WALLET,
 }
+
+
+#: Exactly the ``READING_KEYS`` entries the fast tier produces.
+#:
+#: Note what is **absent**: the hour total and the last-active-hour pair.  Both
+#: are on :class:`CuratorState`, both are read every 15 s, and neither is a
+#: reading ``build_signals`` accepts — the hour history is folded from
+#: ``Deposited`` logs alone (H2).  This tuple and
+#: :data:`~maxpane_dashboard.data.curator_cache.SERIES_INPUT_KEYS` are asserted
+#: disjoint, so the day someone "helpfully" feeds the live hour total into the
+#: sparkline, a test says so before a user sees a 99.5% crash that never
+#: happened.
+FAST_TIER_PAYLOAD_KEYS: tuple[str, ...] = (
+    "settled",
+    "current_hour",
+    "hour_needed_wei",
+    "hour_seconds_left",
+    "early_bps",
+    "volume_wei",
+    "contributors",
+    "tx_count",
+    "forced_balance_wei",
+)
+
+#: The ``once`` tier's readings, straight off :class:`CuratorConfig`.
+CONFIG_PAYLOAD_KEYS: tuple[str, ...] = (
+    "launch_time",
+    "grace_period",
+    "hour_duration",
+    "hourly_threshold_wei",
+    "first_judged_hour",
+    "points_per_eth",
+    "credit_cap_wei",
+)
 
 
 class CuratorManager:
@@ -226,6 +268,84 @@ class CuratorManager:
             self._failed_groups.add(group)
             self._error_count += 1
 
+    # -- the fast tier: state + the forced-ETH anomaly (H1, H5) --------------
+
+    async def _pool_state(self, now: float) -> dict[str, Any]:
+        """One batched ``eth_call`` round and one ``eth_getBalance``.  Never raises.
+
+        Exactly two requests per fast tick: the eight views travel in a single
+        JSON-RPC batch (with ``eth_blockNumber`` as its last entry, so the
+        readings and the height describe the same block) and the balance is a
+        second call on purpose — it is a **bare int** on the client, so nothing
+        can reach it by reading a state object and mistake it for a deposit.
+
+        The balance is **always forced ETH** (H5).  Every wei of a deposit is
+        refunded inside the same transaction, so a non-zero balance is an
+        anomaly — somebody ``selfdestruct``-ed ETH into the contract — and it
+        feeds ``forced_eth`` alone.  It is never a volume, a TVL or a hero
+        total, and ``0`` is the *healthy* answer.
+
+        ``settled`` goes to the latch and nowhere else this tier can write.
+        **No series is touched here**: :data:`FAST_TIER_PAYLOAD_KEYS` and the
+        cache's ``SERIES_INPUT_KEYS`` are disjoint by test (H2).
+        """
+        state, balance = await asyncio.gather(
+            self._guard(self.client.fetch_state, "fetch_state"),
+            self._guard(self.client.fetch_balance, "fetch_balance"),
+        )
+        if state is not None:
+            state = dataclasses.replace(state, forced_balance_wei=_opt_int(balance))
+            # The one-way latch (H1).  A False or None observation cannot clear
+            # a True one, so this is safe to call every tick.
+            self.cache.observe_settlement(
+                getattr(state, "settled", None),
+                block_number=_opt_int(getattr(state, "block_number", None)),
+                now=now,
+            )
+
+        ok = state is not None and balance is not None
+        if ok:
+            self.cache.store_last_good(SLOT_STATE, self._state_payload(state), ts=now)
+            self.cache.mark_fetched(TIER_FAST, now)
+        else:
+            # A half-failure keeps whatever did come back for *this* payload but
+            # must not overwrite the last-good with a half-empty round, and must
+            # not restart the TTL as though the tier were healthy.
+            self.cache.mark_failed(TIER_FAST, now)
+        self._note(SOURCE_STATE, ok)
+        return {"state": state, "ok": ok}
+
+    @staticmethod
+    def _state_payload(state: Any) -> dict[str, Any]:
+        """``FAST_TIER_PAYLOAD_KEYS`` off one :class:`CuratorState`.
+
+        Field for field, no derivation and no division: the model is wei-native
+        and ``build_signals`` is the presentation boundary.
+        """
+        return {key: getattr(state, key, None) for key in FAST_TIER_PAYLOAD_KEYS}
+
+    async def _pool_config(self, tiers: set[str], now: float) -> dict[str, Any] | None:
+        """The ``once`` tier: the eight immutables plus ``POINTS_PER_ETH``.
+
+        Read **live** and never hardcoded (CLAUDE.md), even though
+        ``curator_addresses`` pins the same numbers — the pins exist so a test
+        can prove the live read agrees, not so the dashboard can skip it.
+        Nothing on this contract can change them, so one success is final; a
+        *failure* still comes due again after the tier's backoff.
+        """
+        cached = self.cache.get_last_good(SLOT_CONFIG)
+        if TIER_ONCE not in tiers:
+            return cached.payload if cached is not None else None
+        config = await self._guard(self.client.fetch_config, "fetch_config")
+        if config is None:
+            self.cache.mark_failed(TIER_ONCE, now)
+            self._note(SOURCE_STATE, False)
+            return cached.payload if cached is not None else None
+        payload = {key: getattr(config, key, None) for key in CONFIG_PAYLOAD_KEYS}
+        self.cache.store_last_good(SLOT_CONFIG, payload, ts=now)
+        self.cache.mark_fetched(TIER_ONCE, now)
+        return payload
+
     def _client_degradation(self) -> set[str]:
         """The groups the client's own flags implicate.
 
@@ -284,6 +404,8 @@ class CuratorManager:
 
 
 __all__ = [
+    "CONFIG_PAYLOAD_KEYS",
+    "FAST_TIER_PAYLOAD_KEYS",
     "GROUP_SLOT",
     "SOURCES",
     "SOURCE_LOGS",

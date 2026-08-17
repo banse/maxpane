@@ -15,12 +15,14 @@ import pytest
 from maxpane_dashboard.data import curator_addresses as A
 from maxpane_dashboard.data import curator_manager
 from maxpane_dashboard.data.curator_cache import (
+    SERIES_INPUT_KEYS,
     SLOT_LOGS,
     SLOT_STATE,
     SLOT_WALLET,
     CuratorCache,
 )
 from maxpane_dashboard.data.curator_manager import (
+    FAST_TIER_PAYLOAD_KEYS,
     GROUP_SLOT,
     SOURCES,
     SOURCE_LOGS,
@@ -30,6 +32,7 @@ from maxpane_dashboard.data.curator_manager import (
 )
 from maxpane_dashboard.data.curator_models import (
     CURATOR_DEGRADED_GROUPS,
+    CuratorConfig,
     CuratorState,
 )
 
@@ -268,3 +271,152 @@ def test_the_wallet_comes_from_the_constructor_never_the_environment(tmp_path, c
     assert manager.wallet is None
     src = inspect.getsource(curator_manager)
     assert "os.environ" not in src and "getenv" not in src
+
+
+# ---------------------------------------------------------------------------
+# WP5.8 — the fast tier: state, the latch and the forced-ETH anomaly
+# ---------------------------------------------------------------------------
+
+
+def _state(**overrides) -> CuratorState:
+    """A healthy grace-phase round, calibrated to the 2026-08-16 captures."""
+    fields = dict(
+        settled=False,
+        current_hour=4,
+        current_hour_total_wei=51_480_000_000_000_000_000,
+        hour_needed_wei=0,                    # 0 during grace is REAL
+        hour_seconds_left=3_412,
+        last_active_hour=4,
+        last_active_hour_total_wei=51_480_000_000_000_000_000,
+        early_bps=19_491,
+        volume_wei=8_401_000_000_000_000_000_000,
+        contributors=143,
+        tx_count=222,
+        forced_balance_wei=None,              # always fetch_balance()'s
+        block_number=25_770_500,
+    )
+    fields.update(overrides)
+    return CuratorState(**fields)
+
+
+def test_one_state_and_one_balance_call_per_fast_tick(tmp_path, clock):
+    client = FakeClient(fetch_state=_state(), fetch_balance=0)
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_state(NOW))
+    assert [name for name, *_ in client.calls] == ["fetch_state", "fetch_balance"]
+
+
+def test_the_balance_is_folded_onto_the_state_and_nowhere_else(tmp_path, clock):
+    """H5: a non-zero balance is forced ETH -- somebody selfdestructed into the
+    contract.  It must never become a deposit, a volume or an hour total."""
+    client = FakeClient(fetch_state=_state(), fetch_balance=1_500_000_000_000_000_000)
+    manager = _manager(tmp_path, clock, client=client)
+    out = asyncio.run(manager._pool_state(NOW))
+    state = out["state"]
+    assert state.forced_balance_wei == 1_500_000_000_000_000_000
+    assert state.volume_wei == 8_401_000_000_000_000_000_000
+    assert state.current_hour_total_wei == 51_480_000_000_000_000_000
+
+
+def test_a_zero_balance_is_the_healthy_answer_and_is_not_a_failure(tmp_path, clock):
+    client = FakeClient(fetch_state=_state(), fetch_balance=0)
+    manager = _manager(tmp_path, clock, client=client)
+    out = asyncio.run(manager._pool_state(NOW))
+    assert out["ok"] is True
+    assert out["state"].forced_balance_wei == 0
+    assert manager._degraded() == [SOURCE_LOGS]        # logs never ran, state is fine
+
+
+def test_the_fast_tier_payload_cannot_reach_the_series(tmp_path, clock):
+    """The other half of H2's guarantee, from the manager's side: the keys the
+    fast tier produces and the keys the series writer consumes are disjoint
+    sets, asserted rather than reasoned about."""
+    assert not (set(FAST_TIER_PAYLOAD_KEYS) & set(SERIES_INPUT_KEYS))
+    for banned in ("current_hour_total_wei", "last_active_hour", "last_active_hour_total_wei"):
+        assert banned not in FAST_TIER_PAYLOAD_KEYS
+
+
+def test_the_fast_tier_writes_no_series_point_however_often_it_runs(tmp_path, clock):
+    """The behavioural half.  Fifty fast ticks across an hour boundary, with
+    the live hour total collapsing to 0 -- and the series stays empty, because
+    only a folded sweep may write one."""
+    states = [_state(), _state(current_hour=5, current_hour_total_wei=0, last_active_hour=4)]
+    client = FakeClient(fetch_state=lambda: states[min(1, len(client.calls) // 10)],
+                        fetch_balance=0)
+    manager = _manager(tmp_path, clock, client=client)
+    for _ in range(50):
+        asyncio.run(manager._pool_state(clock.now))
+        clock.advance(15)
+    assert manager.cache.get_series("volume_series") == []
+    assert manager.cache.get_series("contributors_series") == []
+
+
+def test_settled_feeds_the_latch_and_the_latch_only(tmp_path, clock):
+    client = FakeClient(fetch_state=_state(settled=True), fetch_balance=0)
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_state(NOW))
+    record = manager.cache.settlement_record()
+    assert record.settled is True
+    assert record.block_number == 25_770_500
+    assert record.observed_at == NOW
+
+
+def test_a_failed_state_read_notes_state_and_leaves_the_last_good_standing(tmp_path, clock):
+    client = FakeClient(fetch_state=_state(), fetch_balance=0)
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_state(NOW))
+    assert manager.cache.get_last_good(SLOT_STATE).payload["contributors"] == 143
+
+    client.answers["fetch_state"] = None
+    clock.advance(15)
+    out = asyncio.run(manager._pool_state(clock.now))
+    assert out["ok"] is False
+    assert SOURCE_STATE in manager._degraded()
+    assert manager.cache.get_last_good(SLOT_STATE).payload["contributors"] == 143
+    assert manager.cache.as_of_ts(SLOT_STATE) == NOW          # freshness froze
+    assert manager.cache.last_fetch_ts("fast") == NOW         # a failure is not a fetch
+
+
+def test_a_failed_balance_read_never_becomes_a_zero(tmp_path, clock):
+    """'RPC down' and 'the contract holds nothing' are different facts and the
+    forced-ETH row says different things about each."""
+    client = FakeClient(fetch_state=_state(), fetch_balance=None)
+    manager = _manager(tmp_path, clock, client=client)
+    out = asyncio.run(manager._pool_state(NOW))
+    assert out["state"].forced_balance_wei is None
+    assert out["ok"] is False
+
+
+def test_the_once_tier_is_read_live_and_then_never_again(tmp_path, clock):
+    config = CuratorConfig(
+        launch_time=1_786_910_327,
+        hourly_threshold_wei=5 * 10**18,
+        grace_period=86_400,
+        hour_duration=3_600,
+        min_deposit_wei=5 * 10**16,
+        min_escalation_wei=10**17,
+        credit_cap_wei=1000 * 10**18,
+        first_judged_hour=24,
+        points_per_eth=1000,
+        deployer=A.DEPLOYER,
+    )
+    client = FakeClient(fetch_config=config)
+    manager = _manager(tmp_path, clock, client=client)
+
+    payload = asyncio.run(manager._pool_config({"once"}, NOW))
+    assert payload["hourly_threshold_wei"] == 5 * 10**18
+    assert payload["points_per_eth"] == 1000
+
+    clock.advance(365 * 24 * 3600)
+    again = asyncio.run(manager._pool_config(set(manager.cache.tiers_due()), clock.now))
+    assert again == payload
+    assert [name for name, *_ in client.calls] == ["fetch_config"]
+
+
+def test_a_failed_once_tier_degrades_state_and_comes_due_again(tmp_path, clock):
+    client = FakeClient(fetch_config=None)
+    manager = _manager(tmp_path, clock, client=client)
+    assert asyncio.run(manager._pool_config({"once"}, NOW)) is None
+    assert SOURCE_STATE in manager._degraded()
+    clock.advance(3600)
+    assert "once" in manager.cache.tiers_due()
