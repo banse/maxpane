@@ -1414,6 +1414,85 @@ async def test_the_pre_judging_state_names_the_instant_from_the_payload():
     assert f"{NO_JUDGED_HOURS} — judging begins 2026-08-17 19:58:47Z" in text
 
 
+#: The pre-judging sentence exactly as the grace-phase payload produces it:
+#: the captured deployment's ``grace_ends_utc`` and ``first_judged_hour``.
+#: Seventy columns, which is where the defect lived — the test above renders
+#: at the suite's default 143 and never saw a slot narrower than the string.
+_PRE_JUDGING_SENTENCE = (
+    f"{NO_JUDGED_HOURS} — judging begins 2026-08-17 19:58:47 UTC · hour 24"
+)
+
+
+@pytest.mark.parametrize("width", (143, 49, 40, 24))
+async def test_the_pre_judging_sentence_survives_a_slot_narrower_than_itself(
+    width,
+):
+    """The one sentence this panel exists to say, whole, at every width.
+
+    The note was ``text-wrap: nowrap; text-overflow: ellipsis`` and the
+    sentence is **70 columns**; the panel's ``3fr`` share of the curator
+    screen's bottom row is about **49** at the screen's own full-layout
+    width.  So through the entire grace period — the phase this panel spends
+    most of its life in — the screen ellipsised ``· hour 24``, then ``UTC``,
+    then the seconds, under a clean ``CLOSEST CALLS`` title.  Truncation with
+    no marker is indistinguishable from a payload that carried no hour, which
+    is the confusion every explicit state in this package exists to prevent.
+
+    Asserted on the composited text with whitespace collapsed, because the
+    fix spends **rows**: the note wraps rather than clipping, so the sentence
+    crosses a line break at every width under 70 and is contiguous only once
+    the newlines and the row padding are folded away.  ``143`` stays in the
+    sweep so a future "just make it one line again" is caught at both ends.
+    """
+    text = await _rendered(
+        CuratorClosestCalls,
+        size=(width, 20),
+        closest_call_rows=[],
+        first_judged_hour=24,
+        grace_ends_utc="2026-08-17 19:58:47 UTC",
+    )
+    assert _PRE_JUDGING_SENTENCE in " ".join(text.split()), width
+    assert "…" not in text, width          # the ellipsis glyph, never here
+
+
+async def test_the_pre_judging_note_wraps_instead_of_raising_a_widen_marker():
+    """``‹ widen`` would be the *other* honest fix, and it is the wrong one.
+
+    A marker here would light on the curator screen for the whole grace
+    period and could only be cleared by a screen ~72 columns wider than the
+    one FWA binds — so the panel would advertise a loss it is not taking.
+    Nothing is shed, so nothing is announced: the sentence is bought with the
+    spare rows this slot has, exactly as the surf announce feed buys its
+    wrapping tier (CLAUDE.md).  The *table*'s own markers are untouched, and
+    the next test pins that they still fire.
+    """
+    text = await _rendered(
+        CuratorClosestCalls,
+        size=(60, 20),                      # every column set still fits
+        closest_call_rows=[],
+        first_judged_hour=24,
+        grace_ends_utc="2026-08-17 19:58:47 UTC",
+    )
+    assert _PRE_JUDGING_SENTENCE in " ".join(text.split())
+    assert "widen" not in text
+
+
+async def test_the_wrapping_note_still_carries_the_tables_relocated_marker():
+    """The note is where ``‹ widen`` goes when the title bar cannot hold it
+    (``_table.title_with_hint`` returns ``placed=False``).  Wrapping must not
+    cost that path: at 24 columns the table has shed two column sets and the
+    marker rides in front of the sentence, wrapping with it."""
+    text = await _rendered(
+        CuratorClosestCalls,
+        size=(24, 20),
+        closest_call_rows=[],
+        first_judged_hour=24,
+        grace_ends_utc="2026-08-17 19:58:47 UTC",
+    )
+    assert "widen" in text
+    assert _PRE_JUDGING_SENTENCE in " ".join(text.split())
+
+
 async def test_a_none_list_is_not_the_pre_judging_state():
     dead = await _rendered(CuratorClosestCalls, closest_call_rows=None,
                            grace_ends_utc="2026-08-17 19:58:47Z")

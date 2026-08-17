@@ -40,6 +40,37 @@ minimal     18   HOUR MARGIN
 reconstruct, since the margin is the volume measured against the same
 threshold the hero and the sparkline both label.  Each drop is announced.
 
+The note line **wraps**; it does not ellipsise
+----------------------------------------------
+
+The tiers above govern the table.  The note under the title carries the
+whole pre-judging sentence — ``no judged hours yet — judging begins
+2026-08-17 19:58:47 UTC · hour 24``, **70 columns** against the ~49 this
+panel gets from a ``3fr`` slot of the curator screen's bottom row at the
+screen's own full-layout width — and it used to be ``text-wrap: nowrap``
+plus ``text-overflow: ellipsis``.  So the panel silently ate ``· hour 24``,
+then ``UTC``, then the seconds: the tail of the one sentence the empty state
+exists to say, dropped with a clean ``CLOSEST CALLS`` title above it.  A
+reader could not tell the truncation from a payload that had no hour number
+in it, which is the exact confusion every explicit state in this package
+exists to prevent.
+
+Two fixes were available and the cheap one is not the marker.  Announcing it
+with ``‹ widen`` would be honest, but it would light a marker on the curator
+screen at its measured full-layout width for the whole grace period — the
+phase the panel spends most of its life in — and the only way to clear it
+would be a screen 72 columns wider than the one FWA binds.  This panel has
+no spare columns and plenty of spare rows (title, note and a four-row table
+inside a seventeen-row slot), so the sentence buys its width in **rows**:
+the note is ``height: auto`` and wraps.  It is the surf announce feed's
+lever, and CLAUDE.md records why it was the right one there too — the panel
+a layout hands its spare rows to should spend them.
+
+Nothing is shed, so nothing is announced.  The relocated ``‹ widen`` the
+*table* raises when the title bar is too narrow to carry it still rides in
+front of this note (:meth:`CuratorClosestCalls._set_note`), and it wraps
+with it.
+
 Primitives only — this module imports nothing from ``data/`` or ``analytics/``.
 """
 
@@ -158,12 +189,14 @@ class CuratorClosestCalls(Vertical):
         text-style: bold;
         color: $text-muted;
     }
+    /* height: auto + wrap, never nowrap/ellipsis -- see the module
+       docstring: the pre-judging sentence is 70 columns and this panel's
+       slot is ~49, so it is bought with rows rather than clipped. */
     CuratorClosestCalls > .curator-cc-note {
         width: 100%;
-        height: 1;
+        height: auto;
+        min-height: 1;
         padding: 0 1;
-        text-wrap: nowrap;
-        text-overflow: ellipsis;
     }
     CuratorClosestCalls > DataTable {
         height: 1fr;
@@ -182,6 +215,8 @@ class CuratorClosestCalls(Vertical):
         )
         # The note doubles as the spacer: the pre-judging state is a sentence
         # with an absolute instant in it and no DataTable cell is that wide.
+        # It wraps (``height: auto``) rather than ellipsising, so the sentence
+        # survives a slot narrower than itself.
         yield Static("", classes="curator-cc-note", id="curator-cc-note")
         yield DataTable(id="curator-cc-table", classes="curator-cc-table")
 
@@ -245,7 +280,12 @@ class CuratorClosestCalls(Vertical):
         self._render_view()
 
     def _empty_note(self) -> str:
-        """``no judged hours yet — judging begins <UTC> · hour N``."""
+        """``no judged hours yet — judging begins <UTC> · hour N``.
+
+        Built whole and handed to a wrapping ``Static``: neither half is
+        dropped to make it fit, because ``· hour N`` is the fact a reader
+        counts down to and the instant is the fact they set a timer by.
+        """
         ends = str(self._payload.get("grace_ends_utc") or "").strip()
         first = self._payload.get("first_judged_hour")
         text = NO_JUDGED_HOURS
