@@ -832,14 +832,27 @@ class CuratorManager:
         """
         cfg = config or {}
         events = self.cache.events()
+        # ``default=None`` rather than ``[]``: a fold that *raised* is not a fold
+        # that found nobody.  Handing ``[]`` on to ``store_fold`` would blank the
+        # leaderboard, advance the watermark past the range that produced it and
+        # — before the curve below was written per hour — launder the failure
+        # into a literal ``0`` in a *persisted* series, which is the one thing
+        # the house rule forbids outright.
         rows = _safe_call(
             fold_deposits,
             events,
             self.cache.first_deposits(),
             points_per_eth=cfg.get("points_per_eth"),
-            default=[],
+            default=None,
         )
-        self.cache.store_fold(rows, last_block=last_block, now=now)
+        if rows is None:
+            logger.warning(
+                "Curator fold over %d event(s) failed; keeping the previous table "
+                "and the watermark rather than publishing an empty one",
+                len(events),
+            )
+        else:
+            self.cache.store_fold(rows, last_block=last_block, now=now)
 
         buckets = _safe_call(
             hourly_buckets,
@@ -853,8 +866,24 @@ class CuratorManager:
         # Without the launch anchor a bucket has no wall clock, so there is
         # nothing honest to plot: the series waits for the `once` tier rather
         # than inventing a timeline.
+        #
+        # Both curves are written **per bucket**, walking the dense hourly fold
+        # in order and accumulating the joiners of each hour — the same running
+        # sum ``build_signals`` computes, so the persisted history and the
+        # freshly computed one are the same curve rather than one point of it.
+        # Stamping a single cumulative total at the newest bucket produced a
+        # one-point series, and a sparkline with one point renders
+        # "waiting for data..." forever however long the game has run.
+        joined_by_hour: dict[int, int] = {}
+        for row in rows or ():
+            first_hour = getattr(row, "first_hour", None)
+            if first_hour is not None:
+                joined_by_hour[first_hour] = joined_by_hour.get(first_hour, 0) + 1
         pairs = []
+        joined: list[tuple[float, int]] = []
+        running = 0
         for bucket in buckets or ():
+            running += joined_by_hour.get(bucket.hour, 0)
             stamp = _safe_call(
                 bucket_start_ts,
                 bucket.hour,
@@ -863,9 +892,14 @@ class CuratorManager:
             )
             if stamp is not None:
                 pairs.append([stamp, bucket.volume_wei])
+                joined.append((stamp, running))
         if pairs:
             self.cache.record_hour_buckets(pairs, now=now)
-            self.cache.record_contributor_count(len(rows or []), ts=pairs[-1][0], now=now)
+        # Only a fold that actually ran may write the contributor curve: a
+        # failed one has no count, and ``0`` is not the count of a failure.
+        if rows is not None:
+            for stamp, total in joined:
+                self.cache.record_contributor_count(total, ts=stamp, now=now)
 
     # -- the slow tier: the independent cross-check and gap repair -----------
 

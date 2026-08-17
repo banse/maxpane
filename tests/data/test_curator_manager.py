@@ -714,6 +714,67 @@ def test_the_fold_and_the_series_come_out_of_the_sweep(tmp_path, clock):
     assert manager.cache.get_series("contributors_series")[-1][1] == 145
 
 
+def test_the_contributors_curve_gets_a_point_per_hour_not_one_per_cycle(tmp_path, clock):
+    """A cumulative total stamped at the newest bucket is a ONE-POINT series,
+    and ``CuratorSparklines`` renders "waiting for data..." below two points --
+    so the PEOPLE row would stay blank on a fresh install no matter how long
+    the game has run.  The persisted curve must be the same curve
+    ``build_signals`` computes, hour by hour, not one sample of it."""
+    from maxpane_dashboard.analytics.curator_signals import build_signals
+
+    client = FakeClient(fetch_logs=lambda *_: _sweep())
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+
+    stored = manager.cache.get_series("contributors_series")
+    computed = build_signals(
+        manager._readings(config=CONFIG, logs=_sweep()), now_ts=NOW
+    )["contributors_series"]
+    assert len(stored) == 2                                  # hours 0 and 1
+    assert stored == [[float(ts), float(v)] for ts, v in computed]
+    assert [ts for ts, _v in stored] == [A.LAUNCH_TIME, A.LAUNCH_TIME + 3600]
+    assert stored[0][1] < stored[1][1]                       # a curve, not a level
+
+
+def test_a_failed_fold_writes_no_zero_and_keeps_the_previous_table(tmp_path, clock):
+    """``safe_call`` turning a raise into ``[]`` used to reach
+    ``record_contributor_count(len(rows or []))`` as a literal ``0`` -- the
+    sentinel-in-a-persisted-series the house rule forbids, and it survived to
+    disk.  A failed fold is not an empty fold: nothing is published, the
+    leaderboard keeps standing and the watermark does not move past the range
+    that produced it."""
+    client = FakeClient(fetch_logs=lambda *_: _sweep())
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+    healthy = manager.cache.get_series("contributors_series")
+    watermark = manager.cache.last_seen_block()
+    assert healthy and len(manager.cache.fold_rows()) == 145
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("fold on fire")
+
+    original = curator_manager.fold_deposits
+    curator_manager.fold_deposits = boom
+    try:
+        clock.advance(60)
+        client.answers["fetch_logs"] = lambda *_: _sweep(
+            [], from_block=watermark + 1, to_block=watermark + 50
+        )
+        asyncio.run(manager._pool_logs({"medium"}, clock.now, CONFIG))
+    finally:
+        curator_manager.fold_deposits = original
+
+    assert manager.cache.get_series("contributors_series") == healthy
+    assert 0.0 not in [v for _ts, v in manager.cache.get_series("contributors_series")]
+    assert len(manager.cache.fold_rows()) == 145
+    assert manager.cache.last_seen_block() == watermark
+
+    manager.cache.save()
+    restored = CuratorCache(path=manager.cache.path, clock=clock)
+    restored.load(now=clock.now)
+    assert restored.get_series("contributors_series") == healthy
+
+
 def test_the_series_is_untouched_when_the_launch_anchor_is_unknown(tmp_path, clock):
     """Without launchTime a bucket has no wall clock; the series waits for the
     `once` tier rather than inventing a timeline."""
