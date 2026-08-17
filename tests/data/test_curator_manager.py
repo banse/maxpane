@@ -37,10 +37,12 @@ from maxpane_dashboard.data.curator_manager import (
     CuratorManager,
 )
 from tests.curator_fixtures import capture
+from maxpane_dashboard.analytics.curator_signals import build_signals
 from maxpane_dashboard.data.curator_models import (
     CURATOR_DEGRADED_GROUPS,
     CURATOR_KEYS,
     CuratorConfig,
+    DepositEvent,
     CuratorState,
     LogSweep,
     WalletState,
@@ -344,6 +346,51 @@ def test_the_fast_tier_payload_cannot_reach_the_series(tmp_path, clock):
     assert not (set(FAST_TIER_PAYLOAD_KEYS) & set(SERIES_INPUT_KEYS))
     for banned in ("current_hour_total_wei", "last_active_hour", "last_active_hour_total_wei"):
         assert banned not in FAST_TIER_PAYLOAD_KEYS
+
+
+def test_the_manager_never_names_a_live_hour_view_at_all(tmp_path, clock):
+    """H2, structural, and the half the tree lacked.  The cache is grepped for
+    these spellings already, but the FOLD PATH lives here: `_refold` builds its
+    buckets one attribute access away from the live CuratorState, and a
+    mutation that stamps the live hour total onto the folded bucket persists
+    the exact 99.5% boundary crash H2 exists to prevent -- with the whole suite
+    green, because FAST_TIER_PAYLOAD_KEYS governs the last-good PAYLOAD and not
+    what `_refold` may read off a state object."""
+    src = inspect.getsource(curator_manager)
+    for banned in (
+        "current_hour_total",
+        "currentHourTotal",
+        "last_active_hour",
+        "lastActiveHour",
+    ):
+        assert banned not in src, banned
+
+
+def test_a_quiet_crossing_cannot_overwrite_a_folded_bucket(tmp_path, clock):
+    """The behavioural half.  Replay a healthy cycle, then a crossing where the
+    live hour total has legitimately dropped to 0 while the previous hour is
+    still the last active one, and force a refold.  The series must not move:
+    hour 1's volume is the logs' answer, and a state poll has no vote.
+
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    # (WP1.3 capture A, the quiet hour crossing).  The synthetic is the
+    # captured healthy state with two words changed; the real pair is the same
+    # two words changed by the chain.
+    """
+    client = _scenario_client({"state": True, "logs": True, "wallet": False})
+    manager = _manager(tmp_path, clock, client=client)
+    healthy = asyncio.run(manager.fetch_and_compute())
+    assert healthy["volume_series"] and healthy["volume_series"][-1][1] > 0
+
+    client.answers["fetch_state"] = _state(
+        current_hour=2, current_hour_total_wei=0, last_active_hour=1
+    )
+    clock.advance(60)
+    manager.cache.mark_failed("medium", clock.now, retry_after=0.0)   # force a refold
+    crossed = asyncio.run(manager.fetch_and_compute())
+
+    assert crossed["volume_series"] == healthy["volume_series"]
+    assert manager.cache.get_series("volume_series") == healthy["volume_series"]
 
 
 def test_the_fast_tier_writes_no_series_point_however_often_it_runs(tmp_path, clock):
@@ -720,8 +767,6 @@ def test_the_contributors_curve_gets_a_point_per_hour_not_one_per_cycle(tmp_path
     so the PEOPLE row would stay blank on a fresh install no matter how long
     the game has run.  The persisted curve must be the same curve
     ``build_signals`` computes, hour by hour, not one sample of it."""
-    from maxpane_dashboard.analytics.curator_signals import build_signals
-
     client = FakeClient(fetch_logs=lambda *_: _sweep())
     manager = _manager(tmp_path, clock, client=client)
     asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
@@ -1157,13 +1202,89 @@ def test_config_is_served_from_the_cache_because_immutables_cannot_go_stale(tmp_
     assert read["credit_cap_wei"] == 1000 * 10**18
 
 
-def test_the_three_legitimate_zeros_survive_the_seam(tmp_path, clock):
-    """currentHourTotal at a boundary, ethNeededThisHour in grace, and a
-    creditedDelta above the cap are all measurements, not outages."""
+def test_the_deficit_zero_survives_the_seam(tmp_path, clock):
+    """Legitimate zero 1 of 3: ethNeededThisHour() returns 0 through ALL of
+    grace and on any already-safe judged hour.  It is the answer, not a hole."""
     manager = _manager(tmp_path, clock)
     read = manager._readings(state=_state(hour_needed_wei=0), config=CONFIG)
     assert read["hour_needed_wei"] == 0
     assert read["hour_needed_wei"] is not None
+
+
+def test_a_silent_hour_reaches_the_series_as_a_zero_rather_than_a_hole(tmp_path, clock):
+    """Legitimate zero 2 of 3, and the most important point on the chart: a
+    judged hour that took in nothing IS a zero.  hourly_buckets is dense, so
+    the silent hour must be PRESENT at 0.0 -- skipping it would draw the curve
+    straight across the crash that killed the game.
+
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    # (WP1.3 capture A, the quiet hour crossing).  The capture covers hours 0
+    # and 1 only; the hour-3 row below is a captured row with its indexed hour
+    # topic and its de-dupe key changed by hand -- the same two words the chain
+    # will change for us when capture A lands.
+    """
+    deposit = next(
+        r for r in RPC_ROWS if r["topics"][0].lower() == A.TOPIC_DEPOSITED.lower()
+    )
+    later = dict(
+        deposit,
+        topics=[deposit["topics"][0], deposit["topics"][1], "0x" + f"{3:064x}"],
+        blockNumber=hex(25_770_499),
+        transactionHash="0x" + "3a" * 32,
+        logIndex="0x0",
+    )
+    client = FakeClient(fetch_logs=lambda *_: _sweep([*RPC_ROWS, later]))
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+
+    series = manager.cache.get_series("volume_series")
+    assert [ts for ts, _v in series] == [A.LAUNCH_TIME + 3600 * h for h in range(4)]
+    assert series[2][1] == 0.0                 # hour 2 took in nothing
+    assert len(series) == 4                    # ...and is present, not skipped
+
+    read = manager._readings(config=CONFIG, logs=_sweep())
+    assert build_signals(read, now_ts=NOW)["volume_series"][2][1] == 0.0
+
+
+def test_a_credited_delta_above_the_cap_is_a_measurement_not_a_dropped_row(tmp_path, clock):
+    """Legitimate zero 3 of 3.  Above the 1000 ETH credit cap a further deposit
+    earns creditedDelta == 0 and therefore weightAdded == 0 -- while still
+    counting FULLY toward that hour's survival.  A row that is dropped or
+    coerced to None here loses the whale from the activity feed and loses its
+    ETH from the hour that had to survive on it."""
+    from maxpane_dashboard.data.curator_cache import _event_from_dict, _event_to_dict
+
+    cap = CONFIG["credit_cap_wei"]
+    capped = DepositEvent(
+        contributor="0x" + "c0" * 20,
+        hour=1,
+        amount_wei=cap + 500 * 10**18,          # 500 ETH past the cap
+        credited_delta_wei=0,                   # ...credits nothing more
+        weight_added_wei=0,                     # ...and so weighs nothing more
+        new_weight_wei=cap,
+        tx_count=2,
+        hour_total_wei=cap,
+        early_bps=19_491,
+        block_number=25_770_499,
+        tx_hash="0x" + "cc" * 32,
+        log_index=0,
+        ts=A.LAUNCH_TIME + 3600.0,
+    )
+    round_tripped = _event_from_dict(_event_to_dict(capped))
+    assert round_tripped == capped
+    assert round_tripped.credited_delta_wei == 0
+    assert round_tripped.weight_added_wei == 0
+
+    manager = _manager(tmp_path, clock)
+    manager.cache.store_events([capped], now=NOW)
+    read = manager._readings(config=CONFIG, logs=_sweep([]))
+    out = build_signals(read, now_ts=NOW)
+
+    row = next(r for r in out["activity_rows"] if r["tx_hash"] == capped.tx_hash)
+    assert row["credited_eth"] == 0.0           # a measurement...
+    assert row["credited_eth"] is not None      # ...never an outage
+    assert row["amount_eth"] == pytest.approx(1500.0)   # the ETH still routed
+    assert out["volume_series"][1][1] == pytest.approx(1500.0)
 
 
 def test_the_latch_reaches_the_seam_even_when_the_live_read_is_gone(tmp_path, clock):
