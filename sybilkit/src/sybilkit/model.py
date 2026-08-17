@@ -56,18 +56,25 @@ def _get(row: Any, name: str, *alts: str) -> Any:
 
 
 def _wei(value: Any) -> int:
-    """A wei word as an exact ``int``.  Accepts ``int``, a decimal string and a
-    ``0x`` hex string — the three spellings real producers hand out.  A float
-    is malformed on purpose: it already lost the low digits upstream."""
+    """A wei word as an exact non-negative ``int``.  Accepts ``int``, a decimal
+    string and a ``0x`` hex string — the three spellings real producers hand
+    out.  A float is malformed on purpose: it already lost the low digits
+    upstream.  A **negative** is malformed too: no event word can be negative,
+    and one that slipped through would reach ``math.isqrt`` and crash the
+    analysis instead of being dropped at the door."""
     if isinstance(value, bool) or not isinstance(value, (int, str)):
         raise _Malformed(repr(value))
     if isinstance(value, int):
-        return value
-    text = value.strip()
-    try:
-        return int(text, 16) if text.lower().startswith("0x") else int(text, 10)
-    except ValueError:
-        raise _Malformed(repr(value)) from None
+        word = value
+    else:
+        text = value.strip()
+        try:
+            word = int(text, 16) if text.lower().startswith("0x") else int(text, 10)
+        except ValueError:
+            raise _Malformed(repr(value)) from None
+    if word < 0:
+        raise _Malformed(repr(value))
+    return word
 
 
 def _opt_wei(value: Any) -> int | None:

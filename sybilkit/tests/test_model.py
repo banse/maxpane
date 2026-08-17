@@ -7,8 +7,6 @@ Pure coercion: lowercase every address, integerise every wei word, de-dupe on
 
 from __future__ import annotations
 
-import pytest
-
 from sybilkit.model import Dataset, Deposit, Funding, Tx
 
 ADDR = "0x047F606FD5B2BAA5F5C6C4AB8958E45CB6B054B7"  # deliberately checksummed
@@ -146,6 +144,39 @@ def test_a_malformed_deposit_is_dropped_not_zeroed() -> None:
     ds = Dataset.from_events(rows, [_first_row()])
     assert len(ds.deposits) == 1
     assert all(d.amount_wei > 0 for d in ds.deposits)
+
+
+def test_a_negative_wei_word_is_malformed_and_the_row_is_dropped() -> None:
+    """Hostile input: a negative amount would survive to ``math.isqrt`` and
+    crash ``detect`` with a ValueError deep in the curve.  Negative wei is a
+    word that cannot have come off the contract — the row is dropped, not
+    zeroed, in both the int and string spellings."""
+    rows = [
+        _dep_row(),
+        _dep_row(amount_wei=-1, tx_hash=TX2),
+        _dep_row(new_weight_wei="-450000000000000000", tx_hash=TX2, log_index=99),
+    ]
+    ds = Dataset.from_events(rows, [_first_row()])
+    assert len(ds.deposits) == 1
+    # ...and the tier-B/C words hold the same line
+    ds2 = Dataset.from_events(
+        [_dep_row()],
+        [_first_row()],
+        txs={TX1: {"tx_hash": TX1, "nonce": -3, "gas_limit": 91_600}},
+        funding={ADDR: {"address": ADDR, "funder": FUNDER, "hops": -1}},
+    )
+    assert ds2.txs == {}
+    assert ds2.funding == {}
+
+
+def test_a_hostile_dataset_never_reaches_the_curve_with_a_negative() -> None:
+    """End to end: negative rows dropped at the door means ``detect`` runs."""
+    from sybilkit import detect
+
+    rows = [_dep_row(amount_wei=-(10**18), new_weight_wei=-(10**18), tx_hash=TX2)]
+    res = detect(Dataset.from_events(rows, [_first_row()]))
+    assert res.clusters == []
+    assert res.total_points == 0
 
 
 def test_no_sort_dependence_on_input_order() -> None:
