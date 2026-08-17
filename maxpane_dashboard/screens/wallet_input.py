@@ -9,6 +9,11 @@ from textual.widgets import Input, Static
 
 from maxpane_dashboard.config import get_wallet, save_wallet
 
+#: Where submitting writes, named on screen so the reader knows before they
+#: press enter rather than after.  Rendered as `~/...` because the literal home
+#: path is noise in a centred box.
+SAVE_PATH_HINT = "~/.maxpane/config.toml"
+
 
 class WalletInputScreen(Screen):
     """Simple screen that prompts for a wallet address and saves it."""
@@ -40,6 +45,11 @@ class WalletInputScreen(Screen):
         margin-bottom: 1;
     }
 
+    WalletInputScreen #wi-save-note {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+
     WalletInputScreen #wi-error {
         color: red;
         margin-top: 1;
@@ -65,6 +75,16 @@ class WalletInputScreen(Screen):
             yield Static(
                 "[dim]Enter your Ethereum wallet address (0x...)[/]",
                 id="wi-hint",
+                classes="wi-centered",
+            )
+            # Says what submitting DOES.  This screen writes
+            # ~/.maxpane/config.toml and the write outlives the session -- and
+            # since curator's `y` opens this prompt on the way to a view, an
+            # address can be typed as part of "just show me mine" and then
+            # quietly persist.  Disclosure before a durable write, not after.
+            yield Static(
+                f"[dim]saved to {SAVE_PATH_HINT} · esc to cancel[/]",
+                id="wi-save-note",
                 classes="wi-centered",
             )
             yield Input(

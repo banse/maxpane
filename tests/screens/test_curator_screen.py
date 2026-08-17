@@ -2214,3 +2214,25 @@ async def test_a_freshly_typed_wallet_says_resolving_not_no_ens_record(saved_wal
         assert ENS_PENDING in text
         assert NO_ENS not in text
         manager.release.set()
+
+
+async def test_the_wallet_prompt_says_that_submitting_saves(saved_wallets):
+    """A durable write disclosed before it happens, not after.
+
+    `y` opens this prompt on the way to a view, so an address can be typed as
+    part of "just show me mine" -- and then outlive the session in a file the
+    reader never chose to write.
+    """
+    from maxpane_dashboard.screens.wallet_input import SAVE_PATH_HINT
+
+    screen = _no_wallet_screen()
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+        text = _screen_text(app)
+
+    assert SAVE_PATH_HINT in text
+    assert "saved to" in text
+    assert "esc to cancel" in text
