@@ -13,7 +13,9 @@ import pathlib
 
 import pytest
 
+from maxpane_dashboard.analytics.curator_signals import bucket_start_ts, hourly_buckets
 from maxpane_dashboard.data import curator_cache
+from maxpane_dashboard.data.curator_models import DepositEvent
 from maxpane_dashboard.data.series_points import CLOCK_SKEW_TOLERANCE_SECONDS
 from maxpane_dashboard.data.curator_cache import (
     SLOTS,
@@ -29,6 +31,7 @@ from maxpane_dashboard.data.curator_cache import (
     TIER_ONCE,
     TIER_SLOW,
     TIER_TTL_SECONDS,
+    MAX_SERIES_POINTS,
     CuratorCache,
 )
 
@@ -343,3 +346,167 @@ def test_a_round_trip_preserves_the_last_good_slots_and_the_series(tmp_path, clo
         [NOW - 7200, 851.89],
         [NOW - 3600, 9987.26],
     ]
+
+
+# ---------------------------------------------------------------------------
+# WP5.3 — the series, fed from folded logs only (H2)
+# ---------------------------------------------------------------------------
+
+LAUNCH_TIME = 1_786_910_327          # 2026-08-16 19:58:47 UTC, the real launch
+HOUR = 3600
+THRESHOLD_WEI = 5 * 10**18
+
+
+def _deposit(hour: int, amount_wei: int, *, index: int, block: int = 25_770_000):
+    """One decoded ``Deposited`` event, wei-native like the chain's."""
+    return DepositEvent(
+        contributor="0x" + f"{index:040x}",
+        hour=hour,
+        amount_wei=amount_wei,
+        credited_delta_wei=amount_wei,
+        weight_added_wei=amount_wei,
+        new_weight_wei=amount_wei,
+        tx_count=1,
+        hour_total_wei=amount_wei,
+        early_bps=19_491,
+        block_number=block + index,
+        tx_hash="0x" + f"{index:064x}",
+        log_index=index,
+        ts=float(LAUNCH_TIME + hour * HOUR + 10),
+    )
+
+
+def _deposits_hour_0_and_1():
+    """Hour 0 takes 851.89 ETH, hour 1 takes 730 — the shape of the capture."""
+    return [
+        _deposit(0, 851_890_000_000_000_000_000, index=1),
+        _deposit(1, 730_000_000_000_000_000_000, index=2),
+    ]
+
+
+def _buckets_from(deposits, *, first_judged_hour=24):
+    """Fold to ``(bucket_start_ts, volume_wei)`` pairs — the writer's input.
+
+    The hour comes off ``Deposited``'s indexed second topic and its wall clock
+    is ``launchTime + hour × hourDuration``, so no timestamp read participates.
+    """
+    buckets = hourly_buckets(
+        deposits,
+        launch_time=LAUNCH_TIME,
+        hour_duration=HOUR,
+        first_judged_hour=first_judged_hour,
+        hourly_threshold_wei=THRESHOLD_WEI,
+    )
+    return [
+        [bucket_start_ts(b.hour, LAUNCH_TIME, HOUR), b.volume_wei] for b in buckets
+    ]
+
+
+def test_the_series_writer_takes_folded_buckets_not_a_state_reading():
+    """H2, structural.  The live hour-total view legitimately drops to 0 at
+    every hour boundary while the last-active-hour view still names the
+    previous bucket.  A state-poll sparkline reads that as a crash -- and the
+    zero gets PERSISTED, so the corruption outlives the boundary that produced
+    it."""
+    params = set(inspect.signature(CuratorCache.record_hour_buckets).parameters)
+    assert params == {"self", "buckets", "now"}
+    src = inspect.getsource(curator_cache)
+    for banned in ("current_hour_total", "currentHourTotal"):
+        assert banned not in src
+
+
+def test_the_boundary_fixture_writes_no_zero(cache):
+    """The behavioural half.  Replay: hour 1 with 730 ETH, then the boundary
+    tick where the live hour total is 0 and the last active hour still says
+    hour 1.  The series must still read [.., 730] -- the boundary is invisible
+    to it, because no state reading can reach the writer.
+
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    # (WP1.3 capture A).  The synthetic is captures/results.json with two words
+    # changed; the real pair is the same two words changed by the chain.
+    """
+    cache.record_hour_buckets(_buckets_from(_deposits_hour_0_and_1()))
+    cache.record_hour_buckets(_buckets_from(_deposits_hour_0_and_1()))  # boundary tick
+    series = cache.get_series("volume_series")
+    assert [v for _ts, v in series] == [851.89, 730.0]
+    assert 0.0 not in [v for _ts, v in series[:-1]]
+
+
+def test_a_genuinely_silent_hour_does_write_a_zero(cache):
+    """The mirror image, and the reason the rule is 'from logs only' rather
+    than 'never write a zero'.  A judged hour that took in nothing IS a zero,
+    and it is the most important point on the chart."""
+    deposits = [
+        _deposit(0, 851_890_000_000_000_000_000, index=1),
+        _deposit(2, 12_000_000_000_000_000_000, index=2),      # hour 1 is silent
+    ]
+    cache.record_hour_buckets(_buckets_from(deposits))
+    values = [v for _ts, v in cache.get_series("volume_series")]
+    assert values == [851.89, 0.0, 12.0]
+
+
+def test_re_recording_the_same_fold_is_idempotent(cache):
+    """Every cycle re-records the whole folded history; the series must not
+    grow a duplicate hour or fall out of ascending order."""
+    for _ in range(5):
+        cache.record_hour_buckets(_buckets_from(_deposits_hour_0_and_1()))
+    series = cache.get_series("volume_series")
+    stamps = [ts for ts, _v in series]
+    assert stamps == sorted(stamps) == [LAUNCH_TIME, LAUNCH_TIME + HOUR]
+
+
+def test_a_later_fold_revises_an_hour_it_had_already_written(cache):
+    """A sweep that recovers a missed range corrects the bucket in place."""
+    cache.record_hour_buckets([[LAUNCH_TIME, 10 * 10**18]])
+    cache.record_hour_buckets([[LAUNCH_TIME, 42 * 10**18]])
+    assert cache.get_series("volume_series") == [[LAUNCH_TIME, 42.0]]
+
+
+def test_junk_buckets_are_dropped_rather_than_coerced(cache):
+    cache.record_hour_buckets(
+        [
+            [LAUNCH_TIME, 10**18],
+            [None, 10**18],            # no stamp
+            [LAUNCH_TIME + HOUR, None],  # a failed read is not a zero
+            [LAUNCH_TIME + 2 * HOUR, -5],
+            "junk",
+            [LAUNCH_TIME + 3 * HOUR],
+        ]
+    )
+    assert cache.get_series("volume_series") == [[LAUNCH_TIME, 1.0]]
+
+
+def test_the_contributor_series_takes_a_folded_total_and_refuses_none(cache):
+    assert cache.record_contributor_count(143, ts=LAUNCH_TIME) is True
+    assert cache.record_contributor_count(None, ts=LAUNCH_TIME + HOUR) is False
+    assert cache.record_contributor_count(5, ts=None) is False
+    assert cache.record_contributor_count(145, ts=LAUNCH_TIME + HOUR) is True
+    assert cache.get_series("contributors_series") == [
+        [LAUNCH_TIME, 143.0],
+        [LAUNCH_TIME + HOUR, 145.0],
+    ]
+
+
+def test_the_series_are_capped_and_drop_the_oldest(cache):
+    cache.record_hour_buckets(
+        [[LAUNCH_TIME + i * HOUR, i * 10**18] for i in range(MAX_SERIES_POINTS + 20)]
+    )
+    series = cache.get_series("volume_series")
+    assert len(series) == MAX_SERIES_POINTS
+    assert series[0][0] == LAUNCH_TIME + 20 * HOUR
+
+
+def test_the_series_survive_a_save_load_round_trip(tmp_path, clock):
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.record_hour_buckets(_buckets_from(_deposits_hour_0_and_1()))
+    cache.record_contributor_count(2, ts=LAUNCH_TIME + HOUR)
+    cache.save()
+
+    restored = CuratorCache(path=path, clock=clock)
+    restored.load(now=NOW)
+    assert restored.get_series("volume_series") == [
+        [LAUNCH_TIME, 851.89],
+        [LAUNCH_TIME + HOUR, 730.0],
+    ]
+    assert restored.get_series("contributors_series") == [[LAUNCH_TIME + HOUR, 2.0]]

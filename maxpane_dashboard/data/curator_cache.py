@@ -23,12 +23,13 @@ while the last-good payload covers the gap.
 
 **The hour-boundary rule (H2) is structural here, not a convention.**  The
 series writer takes *folded ``Deposited`` buckets* and there is deliberately no
-parameter through which a state read could enter it: ``currentHourTotal()``
-legitimately reads ``0`` at every hour boundary while ``lastActiveHour()`` still
-names the previous bucket, and a series fed from that view records the boundary
-as a 99.5% crash — 9987.26 → 51.48 ETH across 2026-08-16 21:58:47 UTC, captured
-in ``hour_boundary_h1_h2.json``.  The zero would then be *persisted*, so the
-corruption outlives the boundary that produced it.
+parameter through which a state read could enter it — the live hour-total view
+legitimately reads ``0`` at every hour boundary while the last-active-hour view
+still names the previous bucket, and a series fed from it records the boundary
+as a 99.5% crash (9987.26 → 51.48 ETH across 2026-08-16 21:58:47 UTC, captured
+in ``hour_boundary_h1_h2.json``).  The zero would then be *persisted*, so the
+corruption outlives the boundary that produced it.  The two banned spellings are
+absent from this module by test, not by care.
 
 **The settlement latch (H1)** lives here for the same reason: ``isSettled()`` is
 the truth and the ``Settled`` event is only the obituary, so the first ``True``
@@ -211,6 +212,26 @@ def _jsonable(value: Any, _depth: int = 0) -> Any:
     return None
 
 
+def _stamp(value: Any) -> float | None:
+    """A usable epoch-second timestamp, or ``None``.  Never a ``0``."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    ts = float(value)
+    if not math.isfinite(ts) or ts <= 0.0:
+        return None
+    return ts
+
+
+def _pair(entry: Any) -> tuple[float, Any] | None:
+    """One ``(timestamp, value)`` bucket, or ``None`` when it is not one."""
+    if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+        return None
+    ts = _stamp(entry[0])
+    if ts is None:
+        return None
+    return ts, entry[1]
+
+
 class CuratorCache:
     """Tiered TTLs, last-good store, folds, series and the settlement latch.
 
@@ -376,6 +397,88 @@ class CuratorCache:
                 f"unknown curator series {name!r}; expected one of {SERIES_NAMES}"
             )
         return name
+
+    def record_hour_buckets(self, buckets: Any, *, now: float | None = None) -> int:
+        """Fold this cycle's hourly volume into the persisted series.
+
+        ``buckets`` is an iterable of ``(bucket_start_ts, volume_wei)`` pairs —
+        the folded ``Deposited`` history, each hour already anchored to its own
+        wall clock by ``analytics.curator_signals.bucket_start_ts``
+        (``launchTime + hour × hourDuration``, exact by construction, no
+        timestamp read required).  Returns the number of points written.
+
+        **There is deliberately no other parameter.**  Not a state reading, not
+        a "current hour total", not an override for the newest bucket: the
+        signature itself is what makes H2 unviolatable, and
+        ``test_the_series_writer_takes_folded_buckets_not_a_state_reading``
+        asserts the parameter set exactly.  A live hour-total view drops to
+        ``0`` at every boundary while the previous bucket is still the last
+        active one; recording that reading would persist a crash that never
+        happened.
+
+        A **genuinely silent hour is a zero and is written**, which is why the
+        rule is "from logs only" rather than "never write a zero": a judged hour
+        that took in nothing is the most important point on the chart.
+
+        Wei divides to ETH here, once — the same presentation boundary
+        ``build_signals`` applies, so the two agree and nothing downstream
+        divides again.
+        """
+        written = 0
+        for entry in buckets or ():
+            pair = _pair(entry)
+            if pair is None:
+                continue
+            ts, wei = pair
+            if isinstance(wei, bool) or not isinstance(wei, (int, float)):
+                continue
+            if wei < 0 or not math.isfinite(float(wei)):
+                continue
+            self._series[SERIES_VOLUME][ts] = float(wei) / _WEI
+            written += 1
+        self._trim(SERIES_VOLUME)
+        return written
+
+    def record_contributor_count(
+        self, total: Any, *, ts: Any, now: float | None = None
+    ) -> bool:
+        """Record the cumulative contributor count for the bucket at ``ts``.
+
+        ``total`` comes from the **fold** (how many addresses the ``Deposited``
+        /``FirstDeposit`` history has seen by that hour), never from
+        ``stats()``: mixing a live counter into a per-hour history would make
+        the newest point a different measurement from every point before it,
+        and an outage in the counter would then write a hole into the middle of
+        the chart.
+
+        ``None`` in → nothing written and ``False`` returned.  A failed read is
+        never a zero, and a zero in a persisted series outlives the outage.
+        """
+        if isinstance(total, bool) or not isinstance(total, (int, float)):
+            return False
+        if total < 0 or not math.isfinite(float(total)):
+            return False
+        stamp = _stamp(ts)
+        if stamp is None:
+            return False
+        self._series[SERIES_CONTRIBUTORS][stamp] = float(total)
+        self._trim(SERIES_CONTRIBUTORS)
+        return True
+
+    def _trim(self, name: str) -> None:
+        """Keep the newest :data:`MAX_SERIES_POINTS` buckets, drop the oldest."""
+        points = self._series[name]
+        if len(points) <= MAX_SERIES_POINTS:
+            return
+        keep = sorted(points)[-MAX_SERIES_POINTS:]
+        dropped = len(points) - len(keep)
+        self._series[name] = {ts: points[ts] for ts in keep}
+        logger.info(
+            "Curator %s exceeded %d points; dropped the %d oldest",
+            name,
+            MAX_SERIES_POINTS,
+            dropped,
+        )
 
     def get_series(self, name: str) -> list[list[float]]:
         """``[[bucket_ts, value], …]`` oldest first — the sparkline shape.
