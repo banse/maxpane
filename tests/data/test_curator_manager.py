@@ -1251,6 +1251,37 @@ def test_the_manager_divides_to_eth_exactly_once(tmp_path, clock):
     assert "_eth(" not in src
 
 
+def test_an_analytics_failure_is_never_published_as_a_healthy_picture(tmp_path, clock):
+    """`_safe_call` absorbs a raise from build_signals and the blank contract
+    goes out -- but `degraded` is recomputed from SOURCE health, and the sources
+    are fine.  Untouched, the title bar asserts three live sources over a
+    payload nothing produced: 49 None values with a fresh `as of HH:MM`.  The
+    outermost handler already does the right thing; safe_call intercepts before
+    it can be reached."""
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("analytics on fire")
+
+    client = _scenario_client({"state": True, "logs": True, "wallet": True})
+    manager = _manager(tmp_path, clock, client=client, wallet=WALLET)
+    original = curator_manager.build_signals
+    curator_manager.build_signals = boom
+    try:
+        out = asyncio.run(manager.fetch_and_compute())
+    finally:
+        curator_manager.build_signals = original
+
+    assert set(out) == set(CURATOR_KEYS)
+    assert out["phase"] is None                      # nothing was produced
+    assert out["degraded"] == sorted(SOURCES)        # ...and the banner says so
+    assert set(out["degraded"]) <= set(SOURCES)
+
+    # ...and it clears itself once the analytics are back, rather than latching.
+    clock.advance(60)
+    healthy = asyncio.run(manager.fetch_and_compute())
+    assert healthy["phase"] == "grace"
+    assert healthy["degraded"] == []
+
+
 def test_a_key_the_manager_invents_is_dropped_and_logged(tmp_path, clock, caplog):
     """_finalise returns exactly CURATOR_KEYS -- the surf pattern."""
     manager = _manager(tmp_path, clock)

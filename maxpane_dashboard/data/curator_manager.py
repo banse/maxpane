@@ -1179,6 +1179,13 @@ class CuratorManager:
         if not isinstance(signals, dict):
             logger.warning("build_signals returned %r — publishing the blank contract", signals)
             payload = self._blank_payload()
+            # `degraded` is recomputed from SOURCE health below, and the sources
+            # may all be perfectly healthy — the analytics are what died.  Left
+            # alone this publishes 49 None values under `degraded == []`, i.e. a
+            # total internal failure wearing the face of a healthy picture, and
+            # `_safe_call` intercepts the most likely internal failure before the
+            # outermost handler (which does exactly this) can ever see it.
+            self._failed_groups.update(SOURCES)
         else:
             payload = dict(signals)
 
