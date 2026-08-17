@@ -77,20 +77,22 @@ scripts/                    one-shot tooling (ABI vendoring etc). Imported by no
 (render primitives only). Widgets never import from `data/` or `analytics/`; they receive
 `str`/`int`/`float`/`bool`/`dict`/`list[dict]`.
 
-## The seven visible dashboards
+## The eight visible dashboards
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
 | 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel + launch detectors |
-| 2 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
-| 3 | `base` | Base | trending tokens, volume, signals |
-| 4 | `frenpet` | Base | pet battles, leaderboard, activity |
-| 5 | `cattown` | Base | fishing competition, KIBBLE economy |
-| 6 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
-| 7 | `talismans` | Ethereum | core-conservation NFT collection |
+| 2 | `curator` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock |
+| 3 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
+| 4 | `base` | Base | trending tokens, volume, signals |
+| 5 | `frenpet` | Base | pet battles, leaderboard, activity |
+| 6 | `cattown` | Base | fishing competition, KIBBLE economy |
+| 7 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
+| 8 | `talismans` | Ethereum | core-conservation NFT collection |
 
-`surf` is position 1 and the `--game` default; `fwa` moved to position 2 on 2026-08-10 and is
-no longer the dashboard whose data is prefetched at launch.
+`surf` is position 1 and the `--game` default; `fwa` moved to position 2 on 2026-08-10, and
+`curator` took position 2 from it on 2026-08-17. Neither is the dashboard whose data is
+prefetched at launch — that is still `surf`, and it is meant to stay that way.
 
 Hidden from the selection pane, code and tests intact: `bakery` and `ocm` (hidden on request),
 `dota` (its backend is NXDOMAIN, so it could only ever render an unavailable state; 77 client
@@ -118,7 +120,14 @@ of the three into a derivation.
 **Adding one touches the same six**, in the order app.py → `__main__.py` → `GAMES`: the
 registration tests derive their expectations from `GAMES`, so growing that list first turns
 `tests/test_cli_game_choices.py` and `tests/test_app_startup.py` red until the wiring catches up.
-`tests/test_surf_registration.py` is the worked example.
+There are two worked examples and they are different shapes.
+`tests/test_surf_registration.py` is the **append** — surf went in at position 1 and no other
+key moved. `tests/test_curator_registration.py` is the **position-2 insert**: every key below
+it shifted, the CLAUDE.md and README tables renumbered with it, and the two hardcoded lists in
+`tests/test_app_startup.py` (`ALL_GAMES` and `MANAGER_ATTRS`, both hardcoded on purpose) had to
+grow too — without the second, a real manager survives inside `run_test()` and the headless
+suite starts writing the developer's own `~/.maxpane/` cache. Prefer the insert's example when
+the new dashboard is not going at the end.
 
 ## Build & run
 
