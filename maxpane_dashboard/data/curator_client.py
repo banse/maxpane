@@ -730,6 +730,57 @@ class CuratorClient(OwnedHttpClient):
             deployer=word("SEL_DEPLOYER"),
         )
 
+    async def fetch_wallet(self, address: str) -> WalletState | None:
+        """The six argument-taking views for one address, in one batch.
+
+        ``firstHourOf(address)`` is the reason this method exists in the shape
+        it does.  It returns **two** words, ``(hour, hasJoined)``, and the raw
+        ``contributors(address)`` struct getter — which packs ``firstHour + 1``
+        so that ``0`` can mean "never deposited" — is deliberately not vendored
+        anywhere in this package.  ``(0, False)`` is a stranger and ``(0, True)``
+        is someone who deposited in the launch hour; a scalar decode of that
+        view renders every stranger as a founder.
+
+        An address that cannot be one costs **no request at all**: ``--wallet``
+        and ``MAXPANE_WALLET`` are unvalidated user input, and six calls against
+        ``"me"`` spend a round trip to learn what a length check knows for free.
+        """
+        self.wallet_failed = False
+        if not _is_address(address):
+            logger.warning("fetch_wallet: %r is not an address", address)
+            self.wallet_failed = True
+            return None
+        wallet = address.strip()
+        try:
+            results = await self._rpc_state_batch(
+                self._view_calls(A.WALLET_VIEW_SELECTORS, encode_address(wallet))
+            )
+        except RuntimeError as exc:
+            logger.warning("fetch_wallet: %s", exc)
+            self.wallet_failed = True
+            return None
+        if results is None:
+            self.wallet_failed = True
+            return None
+
+        words = self._decode_round(A.WALLET_VIEW_SELECTORS, results)
+        self.wallet_failed = any(v is None for v in words.values())
+
+        def word(name: str, idx: int = 0) -> Any:
+            got = words.get(name)
+            return None if got is None else got[idx]
+
+        return WalletState(
+            address=wallet,
+            points=word("SEL_POINTS_OF"),
+            weight_wei=word("SEL_WEIGHT_OF"),
+            contributed_wei=word("SEL_CONTRIBUTED_BY"),
+            tx_count=word("SEL_TX_COUNT_OF"),
+            first_hour=word("SEL_FIRST_HOUR_OF", 0),
+            has_joined=word("SEL_FIRST_HOUR_OF", 1),
+            required_next_wei=word("SEL_REQUIRED_NEXT"),
+        )
+
 
 __all__ = [
     "CuratorClient",

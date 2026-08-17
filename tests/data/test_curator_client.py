@@ -796,3 +796,140 @@ def test_no_documented_config_value_is_hardcoded_in_the_client() -> None:
     for banned in (86_400, 3_600, 5_000_000_000_000_000_000,
                    1_000_000_000_000_000_000_000, 1_000, 19_491):
         assert banned not in literals, f"{banned} is a chain value, read it live"
+
+
+# ===========================================================================
+# WP2.5 — the per-wallet view batch
+# ===========================================================================
+
+#: ``pointsOf``/``weightOf`` for leaderboard #1, read off the chain at
+#: 2026-08-16 22:51:43 UTC and committed in
+#: ``captures/live/20260816T225143Z_curve-probe.json``.  Real values, not
+#: invented ones: the points are the contract's own answer for that weight.
+LEADER_1 = "0x381fe486d87c7f2633c777f1b5be3105a2a51744"
+LEADER_1_POINTS = 0x7553                    # 30_035
+LEADER_1_WEIGHT = 0x30E7413171FFE0A000
+
+#: The remaining four wallet views were never captured for any address (the
+#: research round holds only parameterless calls plus these two).  These four
+#: words are hand-built to exercise the decode, not to assert a chain fact — no
+#: assertion below treats them as one.
+_W_CONTRIBUTED = 462_200_000_000_000_000_000
+_W_TX_COUNT = 2
+_W_REQUIRED_NEXT = 462_300_000_000_000_000_000
+
+
+def _words(*values: int) -> str:
+    return "0x" + "".join(f"{v:064x}" for v in values)
+
+
+def _wallet_answers(**override: str) -> dict[str, str]:
+    answers = {
+        A.SEL_POINTS_OF: _words(LEADER_1_POINTS),
+        A.SEL_WEIGHT_OF: _words(LEADER_1_WEIGHT),
+        A.SEL_CONTRIBUTED_BY: _words(_W_CONTRIBUTED),
+        A.SEL_TX_COUNT_OF: _words(_W_TX_COUNT),
+        A.SEL_REQUIRED_NEXT: _words(_W_REQUIRED_NEXT),
+        A.SEL_FIRST_HOUR_OF: _words(0, 1),
+    }
+    answers.update(override)
+    return answers
+
+
+def _wallet_returning(override: dict[str, str] | None = None,
+                      errors: frozenset[str] = frozenset()) -> Any:
+    handler = _view_handler(_wallet_answers(**(override or {})), errors=errors)
+    return asyncio.run(_client(handler).fetch_wallet(LEADER_1))
+
+
+def test_fetch_wallet_decodes_the_six_argument_taking_views() -> None:
+    ws = _wallet_returning()
+    assert ws.address == LEADER_1
+    assert ws.points == LEADER_1_POINTS
+    assert ws.weight_wei == LEADER_1_WEIGHT
+    assert ws.contributed_wei == _W_CONTRIBUTED
+    assert ws.tx_count == _W_TX_COUNT
+    assert ws.required_next_wei == _W_REQUIRED_NEXT
+
+
+def test_first_hour_of_un_shifts_and_reports_joined_separately() -> None:
+    """H6.  ``firstHourOf`` returns ``(0, false)`` for a stranger and
+    ``(0, true)`` for an hour-0 founder.  The client must never collapse them,
+    and must never read the raw ``contributors()`` struct field, which carries
+    the ``+1``."""
+    stranger = _wallet_returning({A.SEL_FIRST_HOUR_OF: _words(0, 0)})
+    founder = _wallet_returning({A.SEL_FIRST_HOUR_OF: _words(0, 1)})
+    assert (stranger.first_hour, stranger.has_joined) == (0, False)
+    assert (founder.first_hour, founder.has_joined) == (0, True)
+    # ...and the bit is a bool, so a failed read stays distinguishable from both.
+    assert stranger.has_joined is False
+    assert _wallet_returning(errors=frozenset({A.SEL_FIRST_HOUR_OF})).has_joined \
+        is None
+
+
+def test_the_client_never_calls_the_raw_contributors_getter() -> None:
+    """It packs ``firstHour + 1`` so that 0 can mean "never deposited".  Reading
+    it un-shifted renders every hour-0 founder as an hour-1 depositor, and every
+    stranger as a founder."""
+    assert "SEL_CONTRIBUTORS" not in inspect.getsource(curator_client)
+
+
+def test_required_next_is_the_wei_the_wallet_must_send() -> None:
+    """Quoted so nobody burns gas on ``MustEscalate``.  A ``None`` renders the
+    unavailable state; a ``0`` would read as "send anything"."""
+    assert _wallet_returning().required_next_wei == _W_REQUIRED_NEXT
+    assert _wallet_returning(
+        errors=frozenset({A.SEL_REQUIRED_NEXT})).required_next_wei is None
+
+
+def test_an_address_argument_is_left_padded_without_an_inner_0x() -> None:
+    """The Multicall3 lesson applies to plain ``eth_call`` data too: an inner
+    ``0x`` makes the node reject the payload."""
+    client, transport = _recording_client(_view_handler(_wallet_answers()))
+    asyncio.run(client.fetch_wallet(LEADER_1))
+    sent = [p for _u, _m, p, _h in transport.requests if isinstance(p, list)][0]
+    by_selector = {c["params"][0]["data"][:10]: c["params"][0]["data"] for c in sent}
+    data = by_selector[A.SEL_POINTS_OF]
+    assert data.count("0x") == 1 and len(data) == 10 + 64
+    assert data.endswith(LEADER_1[2:].lower())
+
+
+def test_the_wallet_batch_is_sent_in_the_frozen_order() -> None:
+    """Hand-typed, for the reason spelled out on the fast tier's twin."""
+    expected = ["0xcf6a4403", "0xdd4bc101", "0x64a8e570",
+                "0x662d7299", "0xa5f88754", "0xc5148173"]
+    assert [s for _n, s in A.WALLET_VIEW_SELECTORS] == expected
+    client, transport = _recording_client(_view_handler(_wallet_answers()))
+    asyncio.run(client.fetch_wallet(LEADER_1))
+    sent = [p for _u, _m, p, _h in transport.requests if isinstance(p, list)][0]
+    assert [c["params"][0]["data"][:10] for c in sent] == expected
+    assert len(transport.requests) == 1, "six views, one round trip"
+
+
+def test_one_failed_wallet_entry_degrades_one_field() -> None:
+    client = _client(_view_handler(_wallet_answers(),
+                                   errors=frozenset({A.SEL_WEIGHT_OF})))
+    ws = asyncio.run(client.fetch_wallet(LEADER_1))
+    assert ws.weight_wei is None and ws.points == LEADER_1_POINTS
+    assert client.wallet_failed is True
+
+
+def test_a_dead_pool_returns_no_wallet_rather_than_an_empty_one() -> None:
+    client = _offline_client()
+    assert asyncio.run(client.fetch_wallet(LEADER_1)) is None
+    assert client.wallet_failed is True
+
+
+def test_an_unusable_address_costs_no_request_at_all() -> None:
+    """``--wallet`` is user input and ``MAXPANE_WALLET`` is environment input.
+    Neither is validated upstream, and a batch of six calls against ``"me"``
+    spends a round trip to be told what a length check knows for free.
+
+    ``_raising_client`` is the double here precisely because it proves the
+    absence of I/O rather than tolerating it.
+    """
+    for bad in ("", "   ", "me", "0x", "0xnothex" + "0" * 32,
+                "0x381fe486d87c7f2633c777f1b5be3105a2a517"):
+        client = _raising_client()
+        assert asyncio.run(client.fetch_wallet(bad)) is None
+        assert client.wallet_failed is True
