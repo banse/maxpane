@@ -205,9 +205,15 @@ def test_dataset_from_events_is_a_classmethod_with_the_frozen_signature() -> Non
     assert params["funding"].default is None
 
 
-def test_dataset_from_events_is_a_stub_until_wp1() -> None:
-    with pytest.raises(NotImplementedError, match="WP1"):
-        Dataset.from_events([], [])
+def test_dataset_from_events_builds_the_empty_dataset() -> None:
+    """WP1 landed the body; the stub assertion this replaces is the only line
+    of the freeze that was allowed to change.  Empty in, empty out — with the
+    two tier-B/C lookups as real empty dicts, not ``None``."""
+    ds = Dataset.from_events([], [])
+    assert ds.deposits == ()
+    assert ds.first_index == {}
+    assert ds.txs == {}
+    assert ds.funding == {}
 
 
 def test_a_dataset_holds_the_four_lookups_the_signals_need() -> None:
