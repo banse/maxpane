@@ -169,6 +169,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletNext,
     CuratorWalletStanding,
     CuratorWalletTarget,
+    CuratorWalletHero,
     CuratorClusters,
     CuratorHero,
     CuratorLeaderboard,
@@ -220,6 +221,8 @@ VIEW_CLOSEST = "closest"
 #: by id in one place each, and a class would invite a second member.
 DASHBOARD_BODY_ID = "curator-dashboard-body"
 WALLET_BODY_ID = "curator-wallet-body"
+#: The wallet body's own hero, which swaps with it.
+WALLET_HERO_ID = "curator-wallet-hero"
 
 #: The two modes.  `dashboard` is the game; `wallet` is the reader's own
 #: standing on it.  A third spelling anywhere is a silent fallback arm, the
@@ -317,6 +320,11 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "cluster_rows", "clusters_count", "flagged_points_share_pct",
     ),
     # -- the `y` wallet view --------------------------------------------------
+    "CuratorWalletHero": (
+        "you_rank", "you_points", "you_credit_eth", "you_weight_share_pct",
+        "you_required_next_eth", "you_marginal_points", "you_next_send_passes",
+        "contributors_total",
+    ),
     "CuratorWalletLadder": ("you_ladder_rows", "you_address"),
     "CuratorWalletStanding": (
         "you_rank", "you_points", "you_credit_eth", "you_weight_eth",
@@ -591,6 +599,10 @@ class CuratorScreen(RefreshGuard, Screen):
         height: 1fr;
         margin: 1 0 0 0;
     }
+    CuratorScreen CuratorWalletHero {
+        width: 100%;
+        height: 8;
+    }
     CuratorScreen #curator-wallet-rail {
         width: 2fr;
         height: 100%;
@@ -678,7 +690,12 @@ class CuratorScreen(RefreshGuard, Screen):
         yield Static(INITIAL_TITLE, id="title-bar")
 
         with Horizontal(id="hero-row"):
+            # One hero per body, both composed, one displayed -- same reason
+            # the bodies themselves are: a hero built on the keypress is blank
+            # for a beat.  Identical geometry (8 rows, three boxes over the EOA
+            # subtitle), so the row below never moves on the toggle.
             yield CuratorHero()
+            yield CuratorWalletHero(id=WALLET_HERO_ID)
 
         # Both bodies are composed once and one is hidden, for the same reason
         # the two swap tables are: a body built on demand is blank for a beat
@@ -743,6 +760,8 @@ class CuratorScreen(RefreshGuard, Screen):
         try:
             self.query_one(f"#{DASHBOARD_BODY_ID}").display = not wallet
             self.query_one(f"#{WALLET_BODY_ID}").display = wallet
+            self.query_one(CuratorHero).display = not wallet
+            self.query_one(f"#{WALLET_HERO_ID}").display = wallet
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("Curator mode toggle failed: %s", exc)
 
@@ -949,6 +968,7 @@ class CuratorScreen(RefreshGuard, Screen):
             # Dispatched whether or not `y` is showing them, exactly like the
             # two swap tables: a body that starts rendering only when it
             # becomes visible is blank for a beat after the keypress.
+            CuratorWalletHero,
             CuratorWalletLadder,
             CuratorWalletStanding,
             CuratorWalletNext,

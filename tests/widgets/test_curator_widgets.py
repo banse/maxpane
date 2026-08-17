@@ -58,6 +58,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletNext,
     CuratorWalletStanding,
     CuratorWalletTarget,
+    CuratorWalletHero,
     CuratorHero,
     CuratorLeaderboard,
     CuratorSignals,
@@ -1912,8 +1913,9 @@ _WIDGETS = (
     CuratorActivity,
     CuratorClosestCalls,
     CuratorClusters,
-    # The `y` view's three (PRD §13 A8).  Same seam, same guarantees: the
-    # screen splats the whole flat dict at them too.
+    # The `y` view's four panels and its own hero (PRD §13 A8).  Same seam,
+    # same guarantees: the screen splats the whole flat dict at them too.
+    CuratorWalletHero,
     CuratorWalletLadder,
     CuratorWalletStanding,
     CuratorWalletTarget,
@@ -2117,6 +2119,7 @@ _EXPECTED_ROWS = {
     "CuratorWalletStanding": (("rank", "pts", "weight"), 3),
     "CuratorWalletNext": (("≥", "ETH"), 2),
     "CuratorWalletTarget": (("pts", "rank"), 2),
+    "CuratorWalletHero": (("YOUR", "#", "pts"), 3),
 }
 
 

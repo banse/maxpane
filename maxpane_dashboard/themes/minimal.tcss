@@ -2276,6 +2276,13 @@ CuratorScreen #wallet-top-row {
     margin: 1 0 0 0;
 }
 
+/* The wallet body's hero: same 8 rows as CuratorHero, so the row under it does
+ * not move when `y` swaps them. */
+CuratorScreen CuratorWalletHero {
+    width: 100%;
+    height: 8;
+}
+
 CuratorScreen #curator-wallet-rail {
     width: 2fr;
     height: 100%;

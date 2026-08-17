@@ -89,6 +89,8 @@ import inspect
 import json
 from pathlib import Path
 
+import re
+
 import pytest
 from textual.app import App
 from textual.widgets import Input
@@ -106,6 +108,7 @@ from maxpane_dashboard.widgets.curator.wallet import (
     TARGET_TITLE,
     HOLDS_RANK,
     TAKES_RANK,
+    LABEL_COLS,
     NOT_ON_THE_LIST,
     NO_LADDER,
     STANDING_TITLE,
@@ -127,6 +130,7 @@ from maxpane_dashboard.screens.curator import (
     CuratorScreen,
     MODE_DASHBOARD,
     MODE_WALLET,
+    WALLET_HERO_ID,
     _default_view,
     _fmt_degraded,
     _fmt_int,
@@ -143,6 +147,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletNext,
     CuratorWalletStanding,
     CuratorWalletTarget,
+    CuratorWalletHero,
     CuratorHero,
     CuratorLeaderboard,
     CuratorSignals,
@@ -481,7 +486,10 @@ async def test_screen_mounts_all_seven_widgets():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
-        assert len(screen.query_one("#hero-row").children) == 1
+        # Two heroes -- the game's and the `y` view's -- exactly one displayed.
+        hero_row = screen.query_one("#hero-row").children
+        assert len(hero_row) == 2
+        assert [child.display for child in hero_row].count(True) == 1
         assert len(screen.query_one("#middle-row").children) == 2
         assert len(screen.query_one("#curator-right-rail").children) == 2
         bottom = screen.query_one("#bottom-row").children
@@ -1616,6 +1624,25 @@ def _wallet_payload(**overrides) -> dict:
     return payload
 
 
+async def _wallet_rail_text(payload=None, *, width=CURATOR_FULL_LAYOUT_COLUMNS,
+                            height=_TALL) -> str:
+    """Composited text **inside the wallet rail's own rectangle**.
+
+    The whole-screen composite cannot answer a question about this rail's
+    columns: every one of its rows also carries a ladder row to its left, so a
+    line starting with `rank` never exists there.
+    """
+    screen = _screen(payload if payload is not None else _wallet_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, height)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+        return _region_text(app, screen.query_one("#curator-wallet-rail"), screen)
+
+
 async def _wallet_view_text(payload=None, *, width=CURATOR_FULL_LAYOUT_COLUMNS,
                             height=_TALL) -> str:
     """Composite the screen with the `y` view showing."""
@@ -1702,7 +1729,8 @@ async def test_a_capped_send_says_capped_rather_than_crediting_zero():
 async def test_the_standing_names_the_share_as_a_share_of_all_weight():
     text = await _wallet_view_text()
     assert "of all weight" in text
-    assert "rank 1" in text
+    # `rank` is a label now, so the value beside it is the place alone.
+    assert "rank" in text and "1 of" in text
 
 
 async def test_a_dead_logs_pool_costs_the_ladder_and_says_so():
@@ -1787,3 +1815,96 @@ async def test_a_send_that_takes_the_rank_says_so():
     )
     assert TAKES_RANK in text
     assert HOLDS_RANK not in text
+
+
+async def test_y_swaps_the_hero_for_wallet_metrics_too():
+    """The game's CLOCK / LIST / CURVE is about the list; in this view the
+    reader is asking about themselves.  The phase and hour stay legible in the
+    title bar above, which is why the countdown can leave the hero."""
+    screen = _screen(_wallet_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        dashboard = _screen_text(app)
+        assert "CLOCK" in dashboard and "YOUR RANK" not in dashboard
+
+        await pilot.press("y")
+        await pilot.pause()
+        wallet = _screen_text(app)
+        assert "YOUR RANK" in wallet and "YOUR SCORE" in wallet
+        assert "YOUR NEXT SEND" in wallet
+        # Structural, not "CLOCK is absent from the text": two heroes sharing
+        # one row would still composite *something* legible, so the flags are
+        # what this pins.
+        assert screen.query_one(CuratorHero).display is False
+        assert screen.query_one(f"#{WALLET_HERO_ID}").display is True
+        assert "CLOCK" not in wallet
+        # The one honest capital sentence stays on screen in both views.
+        assert "EOA-only gate" in wallet
+        # ...and so does the phase, one row up.
+        assert "GRACE" in wallet
+
+        await pilot.press("y")
+        await pilot.pause()
+        assert "CLOCK" in _screen_text(app)
+        assert screen.query_one(CuratorHero).display is True
+        assert screen.query_one(f"#{WALLET_HERO_ID}").display is False
+
+
+async def test_every_label_in_the_rail_puts_its_value_in_the_same_column():
+    """One label column for all three panels: a per-panel width would step the
+    values in and out down the rail."""
+    text = await _wallet_rail_text(
+        _wallet_payload(you_rank=12, you_next_rank=11, you_next_rank_needs_eth=604.0,
+                        you_next_send_passes=False)
+    )
+    labels = ("rank", "score", "banked", "share", "joined", "send", "to beat",
+              "gain", "to pass")
+    starts, seen = set(), set()
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        label = next((l for l in labels if stripped.startswith(l + " ")), None)
+        if label is None:
+            continue
+        seen.add(label)
+        indent = len(line) - len(stripped)
+        # The value begins exactly one label field plus one gutter in, whatever
+        # the label's own length -- and the gutter may hold a `≥`.
+        value_col = indent + LABEL_COLS + len("  ")
+        assert line[value_col] != " ", (label, repr(line))
+        starts.add(value_col)
+    assert seen == set(labels), f"missing labels: {sorted(set(labels) - seen)}"
+    assert len(starts) == 1, f"values start in {sorted(starts)}, not one column"
+
+
+async def test_the_comparison_glyph_rides_in_the_gutter_not_in_the_value():
+    """`≥` is spent out of the two columns between label and value, which is
+    what lets the amount line up with `4 of 10,643` two panels above."""
+    text = await _wallet_rail_text()
+    send = next(l for l in text.split("\n") if l.lstrip().startswith("send "))
+    indent = len(send) - len(send.lstrip())
+    assert send[indent + LABEL_COLS] == "≥"
+
+
+async def test_the_two_amounts_in_your_next_move_share_a_column():
+    """The `≥` is spent out of the label gutter, so the two amounts -- and every
+    other value in the rail -- start in the same column."""
+    text = await _wallet_rail_text()
+    send = next(l for l in text.split("\n") if "send" in l and "≥" in l)
+    beat = next(l for l in text.split("\n") if "to beat" in l)
+    assert send.index("491.00") == beat.index("490.90")
+
+
+async def test_the_verdict_hangs_on_its_own_line_under_the_points():
+    """Not trailing the points behind a `·`: it is a sentence, not a statistic."""
+    text = await _wallet_view_text(
+        _wallet_payload(you_rank=12, you_next_rank=11, you_next_rank_needs_eth=604.0,
+                        you_next_send_passes=False)
+    )
+    gain = next(l for l in text.split("\n") if "gain" in l)
+    assert "pts" in gain
+    assert HOLDS_RANK not in gain
+    verdict = next(l for l in text.split("\n") if HOLDS_RANK in l)
+    assert "pts" not in verdict

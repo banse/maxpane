@@ -28,15 +28,24 @@ panels are label/value lines that shed their *value tails* — never their label
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.curator._fmt import (
     DASH,
+    EMDASH,
     as_float,
     fmt_eth,
     fmt_pct,
     fmt_points,
+)
+from maxpane_dashboard.widgets.curator.hero import (
+    EOA_SUBTITLE,
+    EOA_SUBTITLE_SHORT,
+    EOA_SUBTITLE_TINY,
+    CuratorHeroBox,
+    _lines as _hero_lines,
+    _tier_for,
 )
 from maxpane_dashboard.widgets.curator._table import (
     WIDEN_HINT,
@@ -63,6 +72,8 @@ __all__ = [
     "CuratorWalletStanding",
     "CuratorWalletNext",
     "CuratorWalletTarget",
+    "CuratorWalletHero",
+    "HERO_BOX_IDS",
 ]
 
 LADDER_TITLE = "YOUR LADDER"
@@ -84,6 +95,20 @@ AT_THE_CAP = "at the credit cap — no send buys weight"
 CAPPED_MARK = "capped"
 
 MAX_LADDER_ROWS = 12
+
+#: Label column, shared by all three facts panels so every value in the rail
+#: starts in the same column -- `to beat` and `to pass` are the longest, and a
+#: per-panel width would step the values in and out down the rail.
+LABEL_COLS = len("to beat")
+
+#: A comparison glyph rides in the two-column gutter between the label and the
+#: value, so `≥ 491.00` and `490.90` and `4 of 10,643` all start their value in
+#: the same column -- the glyph is spent out of the gutter rather than out of
+#: the number's position.  Exactly as wide as the gutter, which is what makes
+#: that work.
+GE = "≥ "
+GUTTER = "  "
+assert len(GE) == len(GUTTER)
 
 _HOUR_COLS = 5
 _AMOUNT_COLS = 10
@@ -235,14 +260,20 @@ class _FactsPanel(Vertical):
         width = max(self.content_size.width - 2, 0)
         rendered: list[str] = []
         shed = False
-        for label, parts in self._lines():
+        for line in self._lines():
+            label, parts = line[0], line[1]
+            # An empty label is a *continuation* line: its value hangs under
+            # the value above it rather than starting a new column.  A third
+            # element is a gutter marker (see GE) and never widens the head.
+            marker = line[2] if len(line) > 2 else GUTTER
+            head = f"{label:<{LABEL_COLS}}{marker}"
             kept = list(parts)
-            while kept and len(f"{label}  {' · '.join(kept)}") > width and len(kept) > 1:
+            while kept and len(head + " · ".join(kept)) > width and len(kept) > 1:
                 kept.pop()
                 shed = True
-            if kept and len(f"{label}  {' · '.join(kept)}") > width:
+            if kept and len(head + " · ".join(kept)) > width:
                 shed = True
-            rendered.append(safe_markup(f"{label}  {' · '.join(kept)}" if kept else label))
+            rendered.append(safe_markup(head + " · ".join(kept) if kept else head.rstrip()))
 
         text, placed = title_with_hint(self.TITLE, WIDEN_HINT if shed else "", width)
         title.update(text)
@@ -397,12 +428,12 @@ class CuratorWalletStanding(_FactsPanel):
         total = data.get("total")
 
         if isinstance(rank, int):
-            place = f"rank {rank}" + (f" of {total:,}" if isinstance(total, int) else "")
+            place = f"{rank}" + (f" of {total:,}" if isinstance(total, int) else "")
         elif rank is None and data.get("points") is None:
             # A stranger, not a zero.  See the module docstring.
             place = NOT_ON_THE_LIST
         else:
-            place = f"rank {DASH}"
+            place = DASH
 
         # Two short lines rather than one long one: measured at the panel's
         # 2fr share of 138 columns, a single score line sheds its tail and
@@ -436,7 +467,7 @@ class CuratorWalletStanding(_FactsPanel):
             joined_parts = [DASH]
 
         return [
-            ("", [place]),
+            ("rank", [place]),
             ("score", score),
             ("banked", banked),
             ("share", share_parts),
@@ -471,11 +502,14 @@ class CuratorWalletNext(_FactsPanel):
         required = as_float(data.get("required"))
         credit = as_float(data.get("credit"))
 
-        send_parts = [f"≥ {fmt_eth(required)} ETH" if required is not None else DASH]
+        send_parts = [f"{fmt_eth(required)} ETH" if required is not None else DASH]
         # The rule in one line: only beating your own high-water mark counts.
         beat_parts = [f"{fmt_eth(credit)} ETH" if credit is not None else DASH]
 
-        return [("send", send_parts), ("to beat", beat_parts)]
+        return [
+            ("send", send_parts, GE if required is not None else GUTTER),
+            ("to beat", beat_parts),
+        ]
 
 
 class CuratorWalletTarget(_FactsPanel):
@@ -512,10 +546,13 @@ class CuratorWalletTarget(_FactsPanel):
 
         # 0 is real: at the cap the next legal send buys no points at all.
         gain_parts = [f"+{marginal:,} pts" if isinstance(marginal, int) else DASH]
+        # The verdict is a sentence, not another statistic, so it hangs on its
+        # own line under the points rather than trailing them behind a `·`.
+        verdict = None
         if passes is True:
-            gain_parts.append(TAKES_RANK)
+            verdict = TAKES_RANK
         elif passes is False:
-            gain_parts.append(HOLDS_RANK)
+            verdict = HOLDS_RANK
 
         if isinstance(next_rank, int) and needs is not None:
             pass_parts = [f"rank {next_rank} needs {fmt_eth(needs)} ETH"]
@@ -528,4 +565,179 @@ class CuratorWalletTarget(_FactsPanel):
         else:
             pass_parts = [DASH]
 
-        return [("gain", gain_parts), ("to pass", pass_parts)]
+        lines = [("gain", gain_parts)]
+        if verdict is not None:
+            lines.append(("", [verdict]))
+        lines.append(("to pass", pass_parts))
+        return lines
+
+
+#: The wallet hero's three boxes.  Deliberately not the game's CLOCK / LIST /
+#: CURVE: in this view the reader is asking about themselves, and the phase and
+#: the hour stay legible in the title bar above.
+HERO_BOX_IDS = (
+    "curator-wallet-hero-rank",
+    "curator-wallet-hero-score",
+    "curator-wallet-hero-next",
+)
+
+
+def _hero_rank_lines(data: dict, tier: str) -> list[str]:
+    """Where this wallet sits, and out of how many."""
+    rank = data.get("rank")
+    total = data.get("total")
+    if not isinstance(rank, int):
+        # Not on the list is not rank zero, and a failed read is not either.
+        note = NOT_ON_THE_LIST if data.get("points") is None else DASH
+        return _hero_lines("YOUR RANK", f"[dim]{EMDASH}[/]", f"[dim]{note}[/]")
+    of = f"of {total:,} wallets" if isinstance(total, int) else ""
+    return _hero_lines("YOUR RANK", f"[bold]#{rank:,}[/]", f"[dim]{of}[/]")
+
+
+def _hero_score_lines(data: dict, tier: str) -> list[str]:
+    """What is banked: the score, the credit behind it, the share it is of."""
+    points = data.get("points")
+    big = f"[bold]{fmt_points(points)} pts[/]" if points is not None else f"[dim]{EMDASH}[/]"
+    credit = as_float(data.get("credit"))
+    share = as_float(data.get("share"))
+    rest = []
+    if credit is not None:
+        rest.append(f"[dim]{fmt_eth(credit)} ETH credit[/]")
+    if share is not None and tier != "minimal":
+        rest.append(f"[dim]{fmt_pct(share)} of all weight[/]")
+    if not rest:
+        rest = [f"[dim]{NOT_ON_THE_LIST}[/]"]
+    return _hero_lines("YOUR SCORE", big, *rest)
+
+
+def _hero_next_lines(data: dict, tier: str) -> list[str]:
+    """The one actionable number, and whether it is enough to move up."""
+    required = as_float(data.get("required"))
+    big = (
+        f"[bold]{GE}{fmt_eth(required)} ETH[/]"
+        if required is not None
+        else f"[dim]{EMDASH}[/]"
+    )
+    rest = []
+    marginal = data.get("marginal")
+    if isinstance(marginal, int):
+        rest.append(f"[dim]+{marginal:,} pts[/]")
+    passes = data.get("passes")
+    if passes is True:
+        rest.append(f"[$success]{TAKES_RANK}[/]")
+    elif passes is False:
+        rest.append(f"[dim]{HOLDS_RANK}[/]")
+    if not rest:
+        rest = [f"[dim]{DASH}[/]"]
+    return _hero_lines("YOUR NEXT SEND", big, *rest)
+
+
+_HERO_BUILDERS = {
+    HERO_BOX_IDS[0]: _hero_rank_lines,
+    HERO_BOX_IDS[1]: _hero_score_lines,
+    HERO_BOX_IDS[2]: _hero_next_lines,
+}
+
+
+class CuratorWalletHero(Vertical):
+    """The `y` view's hero: three boxes about the reader, not about the game.
+
+    Same geometry as :class:`CuratorHero` -- three boxes over the EOA subtitle,
+    eight rows -- so swapping bodies never moves the row below it, and the one
+    honest capital sentence stays on screen in both views.
+    """
+
+    DEFAULT_CSS = """
+    CuratorWalletHero {
+        height: 8;
+    }
+    CuratorWalletHero > #curator-wallet-hero-boxes {
+        height: 7;
+    }
+    CuratorWalletHero CuratorHeroBox {
+        width: 1fr;
+        height: 7;
+        padding: 0 2;
+        margin: 0 1;
+        border: solid $panel;
+        background: $surface;
+        content-align: center middle;
+        text-align: center;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+        border-subtitle-color: $warning;
+    }
+    CuratorWalletHero > #curator-wallet-hero-note {
+        width: 100%;
+        height: 1;
+        padding: 0 2;
+        color: $text-muted;
+        text-align: center;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+    }
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._payload: dict = {}
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="curator-wallet-hero-boxes"):
+            for box_id in HERO_BOX_IDS:
+                yield CuratorHeroBox(
+                    "[dim]Loading...[/]", id=box_id, classes="curator-hero-box"
+                )
+        yield Static(EOA_SUBTITLE, id="curator-wallet-hero-note")
+
+    def update_data(
+        self,
+        you_rank=None,
+        you_points=None,
+        you_credit_eth=None,
+        you_weight_share_pct=None,
+        you_required_next_eth=None,
+        you_marginal_points=None,
+        you_next_send_passes=None,
+        contributors_total=None,
+        **_kwargs,
+    ) -> None:
+        self._payload = {
+            "rank": you_rank,
+            "points": you_points,
+            "credit": you_credit_eth,
+            "share": you_weight_share_pct,
+            "required": you_required_next_eth,
+            "marginal": you_marginal_points,
+            "passes": you_next_send_passes,
+            "total": contributors_total,
+            "seen": True,
+        }
+        self._render_view()
+
+    def on_resize(self, _event=None) -> None:
+        if self._payload:
+            self._render_view()
+
+    def _render_view(self) -> None:
+        data = self._payload
+        try:
+            boxes = {
+                box_id: self.query_one(f"#{box_id}", CuratorHeroBox)
+                for box_id in HERO_BOX_IDS
+            }
+            note = self.query_one("#curator-wallet-hero-note", Static)
+        except Exception:  # not composed yet
+            return
+
+        for box_id, box in boxes.items():
+            builder = _HERO_BUILDERS[box_id]
+            box.render_lines_at_tier(lambda tier, fn=builder: fn(data, tier))
+
+        width = max(self.content_size.width - 4, 0)
+        for text in (EOA_SUBTITLE, EOA_SUBTITLE_SHORT, EOA_SUBTITLE_TINY):
+            if width <= 0 or len(text) <= width:
+                note.update(text)
+                break
+        else:
+            note.update(EOA_SUBTITLE_TINY)
