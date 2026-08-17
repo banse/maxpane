@@ -55,7 +55,7 @@ add a key.**
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_no_curator_widget_imports_data_or_analytics():
@@ -103,8 +103,8 @@ def test_no_formatter_ever_renders_a_negative_countdown():
     assert "-" not in fmt_countdown(0)
 ```
 
-- [ ] Implement.
-- [ ] Commit: `feat(curator): widget package, format helpers and the import-hygiene guard`
+- [x] Implement.
+- [x] Commit: `feat(curator): widget package, format helpers and the import-hygiene guard`
 
 ---
 
@@ -127,7 +127,7 @@ deposits_total=None, volume_routed_eth=None, top_points=None, **_kwargs)`.
 
 **Steps:**
 
-- [ ] Failing tests, composited:
+- [x] Failing tests, composited:
 
 ```python
 def test_volume_is_never_labelled_tvl_or_capital():
@@ -177,10 +177,10 @@ def test_an_unknown_phase_renders_a_named_fallback_not_a_blank_box():
     assert "phase unavailable" in text.lower()
 ```
 
-- [ ] Implement. The CLOCK box's countdown comes **only** from the payload — no widget-local
+- [x] Implement. The CLOCK box's countdown comes **only** from the payload — no widget-local
       timer, no `time.time()` (PRD §2: clock values are poll-anchored). A test asserts the
       module's source contains no `time.time()` / `datetime.now()`.
-- [ ] Commit: `feat(curator): phase-driven hero with the routed-not-TVL copy`
+- [x] Commit: `feat(curator): phase-driven hero with the routed-not-TVL copy`
 
 ---
 

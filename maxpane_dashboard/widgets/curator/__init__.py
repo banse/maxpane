@@ -26,10 +26,13 @@ this package is safe to import with no manager, no cache and no network.
 """
 
 from ._fmt import ADDR_COLS, DASH, EMDASH, NO_STAMP
+from .hero import PHASE_UNAVAILABLE, CuratorHero
 
 __all__ = [
     "ADDR_COLS",
     "DASH",
     "EMDASH",
     "NO_STAMP",
+    "PHASE_UNAVAILABLE",
+    "CuratorHero",
 ]
