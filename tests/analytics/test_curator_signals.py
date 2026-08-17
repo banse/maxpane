@@ -772,3 +772,145 @@ def test_nothing_in_this_module_divides_by_credited_delta() -> None:
     src = inspect.getsource(sig)
     assert "/ credited" not in src and "// credited" not in src
     assert "/ delta" not in src and "// delta" not in src
+
+
+# ===========================================================================
+# WP3.6 — fold_deposits(): the contributor table
+# ===========================================================================
+
+
+@pytest.fixture(scope="module")
+def rows(
+    deposits: list[DepositEvent], first_deposits: list[dict]
+) -> list[ContributorRow]:
+    return sig.fold_deposits(deposits, first_deposits, points_per_eth=POINTS_PER_ETH)
+
+
+def test_the_fold_uses_the_events_running_totals_not_a_re_derivation(
+    rows: list[ContributorRow], deposits: list[DepositEvent]
+) -> None:
+    """``Deposited`` carries ``newWeight`` and ``txCount`` — the contract's own
+    running totals.  Summing ``weightAdded`` instead would drift the moment one
+    log is missed, and a missed log is what the gap-repair tier exists for."""
+    for row in rows:
+        last = _last_event_for(deposits, row.address)
+        assert row.weight_wei == last.new_weight_wei
+        assert row.tx_count == last.tx_count
+
+
+def test_credit_telescopes_to_the_final_high_water(
+    rows: list[ContributorRow], deposits: list[DepositEvent]
+) -> None:
+    """Lifetime credit == the final high-water mark, and ``amount`` IS the new
+    high-water by construction."""
+    for row in rows:
+        assert row.credit_wei == _last_event_for(deposits, row.address).amount_wei
+
+
+def test_the_fold_reproduces_the_captured_leaderboard(rows: list[ContributorRow]) -> None:
+    """Rank 1: 0x381fe486…, credit 461.1 ETH, weight 902.10737 ETH, 30 035
+    points — and 30 035 is not a recomputation, it is what ``pointsOf()``
+    answered on chain in the curve probe."""
+    assert rows[0].address == "0x381fe486d87c7f2633c777f1b5be3105a2a51744"
+    assert rows[0].credit_wei == 461_100_000_000_000_000_000
+    assert rows[0].weight_wei == 902_107_370_000_000_000_000
+    assert rows[0].points == 30_035
+    assert rows[0].tx_count == 2
+    assert [r.points for r in rows[:4]] == [30_035, 18_264, 11_184, 10_860]
+
+
+def test_the_fold_is_sorted_by_points_descending(rows: list[ContributorRow]) -> None:
+    points = [r.points for r in rows]
+    assert points == sorted(points, reverse=True)
+
+
+def test_the_fold_matches_the_contracts_own_counters(
+    rows: list[ContributorRow],
+    bundle: dict,
+    bundle_deposits: list[DepositEvent],
+) -> None:
+    """The sweep holds 145 contributors and 231 deposits — the batch round
+    taken two minutes earlier says 143 / 222, which is why a cross-instant
+    assertion is worthless and this one is made against a BUNDLE whose state
+    and logs were read in the same second: 2291 == 2291 and 2930 == 2930.
+    """
+    assert len(rows) == 145
+    assert sum(r.tx_count for r in rows) == 231
+
+    state = bundle["state"]
+    contributors = int(state["0xf251fc8c"]["result"], 16)
+    tx_count = int(state["0x9b4f50e7"]["result"], 16)
+    folded = sig.fold_deposits(bundle_deposits, [], points_per_eth=POINTS_PER_ETH)
+    assert len(folded) == contributors == 2291
+    assert sum(r.tx_count for r in folded) == tx_count == 2930
+
+
+def test_first_index_is_one_based_and_dense(rows: list[ContributorRow]) -> None:
+    """``FirstDeposit.index`` is 1-based and maxes at exactly
+    ``totalContributors`` (H6)."""
+    assert sorted(r.first_index for r in rows) == list(range(1, 146))
+
+
+def test_a_wallet_without_a_first_deposit_row_keeps_a_none_index(
+    deposits: list[DepositEvent],
+) -> None:
+    """The FirstDeposit filter can fail on its own (``LogSweep`` groups fail
+    independently).  A missing index is None — never 0, which is a rank."""
+    folded = sig.fold_deposits(deposits, [], points_per_eth=POINTS_PER_ETH)
+    assert len(folded) == 145
+    assert all(r.first_index is None for r in folded)
+    assert all(r.first_hour is not None for r in folded)
+
+
+def test_first_hour_comes_from_the_events_indexed_hour_topic(
+    rows: list[ContributorRow], deposits: list[DepositEvent]
+) -> None:
+    for row in rows[:20]:
+        earliest = min(
+            (d for d in deposits if d.contributor == row.address),
+            key=lambda d: (d.block_number, d.log_index),
+        )
+        assert row.first_hour == earliest.hour
+
+
+def test_the_fold_is_deterministic_under_input_reordering(
+    rows: list[ContributorRow], deposits: list[DepositEvent], first_deposits: list[dict]
+) -> None:
+    """Ordering comes from (blockNumber, logIndex), never from list position —
+    two endpoints paginate the same window differently."""
+    shuffled = random.Random(7).sample(deposits, k=len(deposits))
+    assert sig.fold_deposits(shuffled, first_deposits, points_per_eth=POINTS_PER_ETH) == rows
+
+
+def test_a_replayed_log_does_not_double_count(
+    rows: list[ContributorRow], deposits: list[DepositEvent], first_deposits: list[dict]
+) -> None:
+    """(tx_hash, log_index) is the de-dupe key.  A re-org replay, or two
+    endpoints answering the same window, must not inflate the table."""
+    doubled = deposits + list(reversed(deposits))
+    assert sig.fold_deposits(doubled, first_deposits, points_per_eth=POINTS_PER_ETH) == rows
+
+
+def test_an_empty_history_folds_to_an_empty_list_not_a_crash() -> None:
+    assert sig.fold_deposits([], [], points_per_eth=POINTS_PER_ETH) == []
+    assert sig.fold_deposits(None, None, points_per_eth=POINTS_PER_ETH) == []
+
+
+def test_points_stay_none_when_the_curve_constant_could_not_be_read(
+    deposits: list[DepositEvent], first_deposits: list[dict]
+) -> None:
+    """A 0 there would render a real entry as having scored nothing.  The rows
+    still rank — by weight, which is the curve-free record."""
+    folded = sig.fold_deposits(deposits, first_deposits, points_per_eth=None)
+    assert all(r.points is None for r in folded)
+    weights = [r.weight_wei for r in folded]
+    assert weights == sorted(weights, reverse=True)
+
+
+def test_the_fold_ignores_rows_it_cannot_read(
+    rows: list[ContributorRow], deposits: list[DepositEvent], first_deposits: list[dict]
+) -> None:
+    """Hostile input reaches this fold through a decoder, and one malformed row
+    must cost one row — never the table."""
+    hostile = [None, object(), {"contributor": "0x1"}, *deposits]
+    assert sig.fold_deposits(hostile, first_deposits, points_per_eth=POINTS_PER_ETH) == rows

@@ -431,6 +431,144 @@ def credited_delta(
     return capped_new - capped_old if capped_new > capped_old else 0
 
 
+# ---------------------------------------------------------------------------
+# Folds over the event history
+# ---------------------------------------------------------------------------
+
+#: The fields the folds read off a decoded ``Deposited`` event.  Read through
+#: ``getattr`` so a row that is missing one costs its own row and not the fold:
+#: hostile input reaches these functions through a decoder, and one malformed
+#: log must never empty the leaderboard.
+_DEPOSIT_FIELDS = (
+    "contributor",
+    "hour",
+    "amount_wei",
+    "credited_delta_wei",
+    "weight_added_wei",
+    "new_weight_wei",
+    "tx_count",
+    "block_number",
+    "log_index",
+)
+
+
+def _usable_deposits(deposits: Any) -> list[Any]:
+    """Every event that carries a readable identity, ordered as the chain saw
+    them and de-duplicated on ``(tx_hash, log_index)``.
+
+    Chain order is ``(block_number, log_index)`` and never list position: two
+    endpoints paginate the same window differently, and a fold that depends on
+    arrival order is a fold that disagrees with itself between refreshes.
+    """
+    if not isinstance(deposits, (list, tuple)):
+        return []
+
+    seen: set[tuple[Any, Any]] = set()
+    usable: list[Any] = []
+    for event in deposits:
+        values = {name: getattr(event, name, None) for name in _DEPOSIT_FIELDS}
+        if not isinstance(values["contributor"], str):
+            continue
+        if any(
+            _int_or_none(values[name]) is None
+            for name in ("hour", "amount_wei", "new_weight_wei", "tx_count",
+                         "block_number", "log_index")
+        ):
+            continue
+        key = (getattr(event, "tx_hash", None), values["log_index"])
+        if key in seen:
+            continue
+        seen.add(key)
+        usable.append(event)
+
+    usable.sort(key=lambda e: (e.block_number, e.log_index))
+    return usable
+
+
+def _first_index_map(first_deposits: Any) -> dict[str, int]:
+    """``FirstDeposit``'s 1-based index, keyed by lowercase address.
+
+    Accepts the mapping shape the client emits (``contributor``/``index``) and
+    tolerates ``address``/``first_index`` spellings, because this seam is
+    written by a different work package in a different wave.
+    """
+    out: dict[str, int] = {}
+    if not isinstance(first_deposits, (list, tuple)):
+        return out
+    for row in first_deposits:
+        if isinstance(row, dict):
+            address = row.get("contributor") or row.get("address")
+            index = _int_or_none(row.get("index") if "index" in row else row.get("first_index"))
+        else:
+            address = getattr(row, "contributor", None) or getattr(row, "address", None)
+            index = _int_or_none(
+                getattr(row, "index", None)
+                if hasattr(row, "index")
+                else getattr(row, "first_index", None)
+            )
+        if isinstance(address, str) and index is not None:
+            out[address.lower()] = index
+    return out
+
+
+def fold_deposits(
+    deposits: Any,
+    first_deposits: Any,
+    *,
+    points_per_eth: int | None,
+) -> list[ContributorRow]:
+    """The contributor table, folded from the events' own running totals.
+
+    ``Deposited`` carries ``newWeight`` and ``txCount`` — the contract's
+    accumulators, not ours.  Re-deriving them by summing ``weightAdded`` would
+    drift silently the moment one log is missed, and a missed log is exactly
+    what the gap-repair tier exists for; taking the last event's running total
+    is self-healing instead.
+
+    ``credit_wei`` is the final high-water mark (``amount`` *is* the new
+    high-water), which is the credited net contribution and **not** the gross
+    the address routed.  Points stay ``None`` when ``points_per_eth`` could not
+    be read: a ``0`` there would render a real entry as having scored nothing.
+
+    Sorted by points, then weight, then the first-deposit index — total and
+    deterministic, so two refreshes of the same history render the same table.
+    """
+    events = _usable_deposits(deposits)
+    indices = _first_index_map(first_deposits)
+
+    latest: dict[str, Any] = {}
+    first_hours: dict[str, int] = {}
+    for event in events:
+        key = event.contributor.lower()
+        latest[key] = event
+        first_hours.setdefault(key, event.hour)
+
+    rows: list[ContributorRow] = []
+    for key, event in latest.items():
+        weight = event.new_weight_wei
+        rows.append(
+            ContributorRow(
+                address=event.contributor,
+                weight_wei=weight,
+                credit_wei=event.amount_wei,
+                tx_count=event.tx_count,
+                first_hour=first_hours.get(key),
+                first_index=indices.get(key),
+                points=points_for_weight(weight, points_per_eth),
+            )
+        )
+
+    rows.sort(
+        key=lambda r: (
+            -(r.points if r.points is not None else 0),
+            -r.weight_wei,
+            r.first_index if r.first_index is not None else 1 << 62,
+            r.address.lower(),
+        )
+    )
+    return rows
+
+
 __all__ = [
     # tunables
     "WHALE_MIN_ETH",
@@ -460,4 +598,6 @@ __all__ = [
     "points_for_weight",
     "weight_added",
     "credited_delta",
+    # folds
+    "fold_deposits",
 ]
