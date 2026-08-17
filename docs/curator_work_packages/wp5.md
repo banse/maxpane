@@ -46,13 +46,13 @@ slow: 420, once: inf}`, `TIER_FAILURE_BACKOFF_SECONDS`, the slot names
 
 **Steps:**
 
-- [ ] Failing tests: TTLs drive `tiers_due` off an injected clock with zero sleeping; a failed
+- [x] Failing tests: TTLs drive `tiers_due` off an injected clock with zero sleeping; a failed
       tier is **not** marked fetched and comes due again after its backoff, not its TTL;
       `store_last_good(slot, None)` is **refused** (storing `None` would overwrite a good
       payload and its provenance with an absence); an unknown tier or slot raises `ValueError`
       naming the valid set; the `once` tier never comes due twice after a success.
-- [ ] Implement.
-- [ ] Commit: `feat(curator): tiered cache with injected clock and failure backoff`
+- [x] Implement.
+- [x] Commit: `feat(curator): tiered cache with injected clock and failure backoff`
 
 ---
 
@@ -60,7 +60,7 @@ slow: 420, once: inf}`, `TIER_FAILURE_BACKOFF_SECONDS`, the slot names
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_a_single_null_in_a_series_does_not_abort_the_load():
@@ -94,8 +94,8 @@ def test_a_missing_or_unreadable_cache_file_is_silently_an_empty_cache():
     ...
 ```
 
-- [ ] Implement with the `surf_cache` `_jsonable` sanitiser and temp+rename save.
-- [ ] Commit: `feat(curator): atomic persistence with per-point series validation`
+- [x] Implement with the `surf_cache` `_jsonable` sanitiser and temp+rename save.
+- [x] Commit: `feat(curator): atomic persistence with per-point series validation`
 
 ---
 
@@ -107,7 +107,7 @@ def test_a_missing_or_unreadable_cache_file_is_silently_an_empty_cache():
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_the_series_writer_takes_folded_buckets_not_a_state_reading():
@@ -150,13 +150,13 @@ def test_a_genuinely_silent_hour_does_write_a_zero():
     ...
 ```
 
-- [ ] Implement.
-- [ ] **Mandated prove-it-bites #2 (PRD §8, the hour-boundary rule):** add a
+- [x] Implement.
+- [x] **Mandated prove-it-bites #2 (PRD §8, the hour-boundary rule):** add a
       `current_hour_total_wei` parameter to `record_hour_buckets` and let it overwrite the last
       bucket; run the boundary fixture → `test_the_boundary_fixture_writes_no_zero` FAILS with
       a `0.0` in the series, and `test_the_series_writer_takes_folded_buckets_not_a_state_reading`
       FAILS on the signature. Restore. **Record the evidence for WP7.12.**
-- [ ] Commit: `feat(curator): hourly series fed exclusively from folded Deposited logs`
+- [x] Commit: `feat(curator): hourly series fed exclusively from folded Deposited logs`
 
 ---
 
@@ -174,7 +174,7 @@ itself enforces, not attacker-emittable logs.
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_the_first_true_observation_is_persisted_with_its_evidence():
@@ -228,13 +228,13 @@ def test_the_settled_event_fills_the_obituary_without_creating_the_latch():
     assert rec.settled_hour == 24 and rec.total_contributors == 300
 ```
 
-- [ ] Implement.
-- [ ] **Mandated prove-it-bites #1 (PRD §8, the settlement latch):** change
+- [x] Implement.
+- [x] **Mandated prove-it-bites #1 (PRD §8, the settlement latch):** change
       `settlement_record()` to re-read the live value instead of the persisted record (i.e.
       make the latch transparent) → `test_a_none_observation_never_clears_a_true_one` FAILS,
       and WP5.13's end-to-end "outage after settlement still renders SETTLED" FAILS. Restore.
       **Record the evidence for WP7.12.**
-- [ ] Commit: `feat(curator): settlement evidence latch, re-validated and outage-proof`
+- [x] Commit: `feat(curator): settlement evidence latch, re-validated and outage-proof`
 
 ---
 
@@ -245,15 +245,15 @@ def test_the_settled_event_fills_the_obituary_without_creating_the_latch():
 
 **Steps:**
 
-- [ ] Failing tests: the watermark advances only on a **successful** sweep (a failed sweep must
+- [x] Failing tests: the watermark advances only on a **successful** sweep (a failed sweep must
       not skip a block range forever — the gap-repair tier exists because that once happened);
       a watermark of `None`/absent means "backfill from `CREATION_BLOCK`", never "start from
       now"; a persisted row with a missing field is dropped and counted, not fatal; the row cap
       drops **oldest** events and logs the count.
-- [ ] Implement.
-- [ ] **Prove it bites:** advance the watermark before the sweep succeeds → the failed-sweep
+- [x] Implement.
+- [x] **Prove it bites:** advance the watermark before the sweep succeeds → the failed-sweep
       test FAILS with a permanent gap. Restore.
-- [ ] Commit: `feat(curator): persisted fold, block watermark and bounded event history`
+- [x] Commit: `feat(curator): persisted fold, block watermark and bounded event history`
 
 ---
 
@@ -261,12 +261,12 @@ def test_the_settled_event_fills_the_obituary_without_creating_the_latch():
 
 **Steps:**
 
-- [ ] Failing tests: clusters persist and reload; a reloaded cluster whose block window is
+- [x] Failing tests: clusters persist and reload; a reloaded cluster whose block window is
       outside the retained history is dropped rather than rendered; the flagged-points share
       is recomputed on load, never restored from disk (it is a ratio against a total that
       changes every hour).
-- [ ] Implement.
-- [ ] Commit: `feat(curator): persist cluster state with a recomputed points share`
+- [x] Implement.
+- [x] Commit: `feat(curator): persist cluster state with a recomputed points share`
 
 ---
 
@@ -279,13 +279,13 @@ wallet=None, clock=time.time)`, `_guard(coro, name)`, `_note(group, ok)`, `_degr
 
 **Steps:**
 
-- [ ] Failing tests: `degraded` is a sorted list drawn **only** from `SOURCES` (a manager that
+- [x] Failing tests: `degraded` is a sorted list drawn **only** from `SOURCES` (a manager that
       invents `"rpc"` would light a banner the screen's formatter has never seen);
       `_guard` swallows and notes; `close()` awaits the client's `close()` and saves the cache
       **in that order** (a client closed first cannot corrupt a save); `close()` still saves if
       the client's close raises.
-- [ ] Implement.
-- [ ] Commit: `feat(curator): manager skeleton with the three-source degradation surface`
+- [x] Implement.
+- [x] Commit: `feat(curator): manager skeleton with the three-source degradation surface`
 
 ---
 
@@ -293,15 +293,15 @@ wallet=None, clock=time.time)`, `_guard(coro, name)`, `_note(group, ok)`, `_degr
 
 **Steps:**
 
-- [ ] Failing tests: one `fetch_state()` + one `fetch_balance()` per fast tick, no more;
+- [x] Failing tests: one `fetch_state()` + one `fetch_balance()` per fast tick, no more;
       `settled` feeds `observe_settlement`, and **only** that — the fast tier writes no series
       (WP5.3's disjointness test covers it structurally, this covers it behaviourally);
       `forced_balance_wei` reaches `forced_eth` and reaches **nothing else** —
       `test_a_nonzero_balance_never_reaches_a_volume_field` asserts that with a 1.5 ETH
       balance and checks `volume_routed_eth` and `hour_fed_eth` are untouched (H5);
       a failed state read notes `"state"` degraded and leaves the previous last-good standing.
-- [ ] Implement.
-- [ ] Commit: `feat(curator): fast tier with the settlement observation and forced-ETH anomaly`
+- [x] Implement.
+- [x] Commit: `feat(curator): fast tier with the settlement observation and forced-ETH anomaly`
 
 ---
 
@@ -309,7 +309,7 @@ wallet=None, clock=time.time)`, `_guard(coro, name)`, `_note(group, ok)`, `_degr
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_a_first_run_backfills_from_the_creation_block():
@@ -345,8 +345,8 @@ def test_one_failed_log_group_degrades_only_its_own_keys():
     ...
 ```
 
-- [ ] Implement, reading the client's `log_group_failed` dict rather than inferring from `()`.
-- [ ] Commit: `feat(curator): log backfill, incremental sweep and stats-cross-check repair`
+- [x] Implement, reading the client's `log_group_failed` dict rather than inferring from `()`.
+- [x] Commit: `feat(curator): log backfill, incremental sweep and stats-cross-check repair`
 
 ---
 
@@ -354,16 +354,16 @@ def test_one_failed_log_group_degrades_only_its_own_keys():
 
 **Steps:**
 
-- [ ] Failing tests: with no `MAXPANE_WALLET`, **zero** wallet calls are made and every `you_*`
+- [x] Failing tests: with no `MAXPANE_WALLET`, **zero** wallet calls are made and every `you_*`
       key is `None`; with a wallet set, the six calls run on the fast tier; an invalid address
       string is rejected before any call and notes `"wallet"` degraded rather than sending
       garbage to the node; a wallet not on the list yields `you_rank=None` with
       `you_required_next_eth` still populated (the contract answers `minDeposit` for a
       stranger, which is exactly the number that wallet needs — and the most useful thing on
       the row).
-- [ ] Implement, reading the wallet from the constructor (the app passes `--wallet` /
+- [x] Implement, reading the wallet from the constructor (the app passes `--wallet` /
       `MAXPANE_WALLET`), never from the environment inside the manager.
-- [ ] Commit: `feat(curator): wallet tier, silent and complete when no wallet is configured`
+- [x] Commit: `feat(curator): wallet tier, silent and complete when no wallet is configured`
 
 ---
 
@@ -371,7 +371,7 @@ def test_one_failed_log_group_degrades_only_its_own_keys():
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_readings_emits_exactly_the_frozen_reading_keys():
@@ -389,8 +389,8 @@ def test_the_outage_encoding_is_held_constant():
     assert quiet["deposits"] == []
 ```
 
-- [ ] Implement, routing `build_signals` through `safe_call` with a full-`None` default.
-- [ ] Commit: `feat(curator): the readings seam with a constant outage encoding`
+- [x] Implement, routing `build_signals` through `safe_call` with a full-`None` default.
+- [x] Commit: `feat(curator): the readings seam with a constant outage encoding`
 
 ---
 
@@ -398,7 +398,7 @@ def test_the_outage_encoding_is_held_constant():
 
 **Steps:**
 
-- [ ] Failing tests:
+- [x] Failing tests:
 
 ```python
 def test_it_returns_exactly_curator_keys_always():
@@ -438,10 +438,10 @@ def test_the_blank_payload_distinguishes_dead_sources_from_empty_ones():
     assert blank["degraded"] == []
 ```
 
-- [ ] Implement.
-- [ ] **Prove it bites:** seed `leaderboard_rows=[]` in `_blank_payload` → the last test FAILS
+- [x] Implement.
+- [x] **Prove it bites:** seed `leaderboard_rows=[]` in `_blank_payload` → the last test FAILS
       (a dead Blockscout would assert the list is empty). Restore.
-- [ ] Commit: `feat(curator): fetch_and_compute returns exactly CURATOR_KEYS, never raises`
+- [x] Commit: `feat(curator): fetch_and_compute returns exactly CURATOR_KEYS, never raises`
 
 ---
 
@@ -463,8 +463,8 @@ Each row is a required test, driven end to end through a fake client.
 
 **Steps:**
 
-- [ ] Write all seven, driving the injected clock and the fake client — no sleeping.
-- [ ] The fourth row is the flagship:
+- [x] Write all seven, driving the injected clock and the fake client — no sleeping.
+- [x] The fourth row is the flagship:
 
 ```python
 def test_settlement_survives_a_total_outage():
@@ -485,12 +485,63 @@ def test_settlement_survives_a_total_outage():
     assert out["settled_observed_at"] == first["settled_observed_at"]
 ```
 
-- [ ] Run the whole WP, then the full suite.
-- [ ] Write the WP6 hand-off note: `fetch_and_compute()`/`close()` signatures, the exact
+- [x] Run the whole WP, then the full suite.
+- [x] Write the WP6 hand-off note: `fetch_and_compute()`/`close()` signatures, the exact
       `SOURCES` strings the title bar will render, and the confirmation that the manager never
       raises — so WP6's `raises=True` double is labelled belt-and-braces, not the outage path.
-- [ ] Commit: `test(curator): the seven-row degradation matrix, settlement latch included`
+- [x] Commit: `test(curator): the seven-row degradation matrix, settlement latch included`
 
 **Done when:** the flat contract holds under every failure combination, the two mandated
 mutations in WP5.3 and WP5.4 were each watched go red and restored, and a settled contract
 still reads SETTLED with every endpoint dead.
+
+---
+
+## WP5 sign-off (2026-08-17)
+
+**Landed.** `data/curator_cache.py`, `data/curator_manager.py`,
+`tests/data/test_curator_{cache,manager,degradation}.py`. Curator WP5 tests: 55 cache +
+67 manager + 12 degradation = **134**, all green, with the full suite green alongside.
+
+**The gap the wave-2 gate found, and nobody owned:** nothing in the tree turned a raw log
+row into a `DepositEvent`. Six decoders now live in `curator_manager.py`, next to their
+only caller — `decode_deposit` / `decode_first_deposit` / `decode_hour_saved` /
+`decode_settled` / `decode_rescued_total` / `decode_launched` — reading **both** dialects
+(RPC `blockNumber`/`transactionHash`/`logIndex`/hex `blockTimestamp`; Blockscout
+`block_number`/`transaction_hash`/`index`/ISO `block_timestamp` with its `None`-padded
+topics array), because the cross-check is only a cross-check if the two land on the same
+model. Verified against the committed captures: 231 `Deposited`, 145 `FirstDeposit` whose
+1-based index maxes at exactly `totalContributors`, one `Launched` matching every pin, and
+the H8 weight identity wei-exact on all 231.
+
+### The four mandated proofs performed here
+
+| # | mutation | what went red | restored |
+|---|---|---|---|
+| WP5.3 (mandated #2, H2) | `record_hour_buckets` gains `current_hour_total_wei=` and overwrites the newest bucket | `test_the_series_writer_takes_folded_buckets_not_a_state_reading` on the signature set **and** `test_the_boundary_fixture_writes_no_zero` with `[851.89, 0.0] != [851.89, 730.0]` | yes, 31 passed |
+| WP5.4 (mandated #1, H1, unit half) | `observe_settlement` writes every observation through instead of latching the first `True` | `test_a_false_observation_never_clears_a_true_one`, `test_a_none_observation_never_clears_a_true_one`, `test_a_false_reading_never_creates_a_record` (`assert False is True`) | yes, 40 passed |
+| WP5.13 (mandated #1, end-to-end half) | `_readings` publishes the record only when the **live** read says `True` — the latch made transparent | `test_settlement_survives_a_total_outage` (*phase lost on tick 1*), plus the dead-state-pool and restart variants | yes, 12 passed |
+| WP5.5 | `store_fold` drops its forward-only guard | `test_the_watermark_advances_only_on_a_successful_sweep` (`25770100 == 25770500`) | yes, 50 passed |
+| WP5.12 | `_blank_payload` seeds `leaderboard_rows=[]` | `test_the_blank_payload_distinguishes_dead_sources_from_empty_ones` (`assert [] is None`) | yes, 67 passed |
+
+Note on the end-to-end half: mutating **only** `CuratorCache.settlement_record()` does
+*not* fail the flagship, because `_pool_state` never hands the latch a reading it does not
+have — during the outage `observe_settlement` is not called at all. The mutation that
+actually exercises the end-to-end guarantee is the one above: making the *payload's*
+verdict depend on the live read. That is worth knowing before someone re-runs it and
+concludes the test is asleep.
+
+### Two things the next work package should know
+
+1. **`build_signals` defaults its six list keys to `[]`**, which is right for a total pure
+   function and wrong for the four source-backed row keys at the manager boundary: left
+   alone, a dead logs pool asserts that nobody has ever deposited. `_cycle` republishes
+   them as `None` when the deposits read did not happen. This is a seam decision, not a
+   defect in WP3 — but it is the kind of thing that gets "simplified" away.
+2. **The `once` tier cannot run PRD §5's `previewPoints(uint256)` probe.**
+   `CuratorClient` exposes no method for `SEL_PREVIEW_POINTS` (it is deliberately not a
+   member of any ordered selector tuple), so the manager reads the nine immutables via
+   `fetch_config()` and nothing else. The curve already has its onchain witness in
+   `captures/live/20260816T225143Z_curve-probe.json`, so nothing is unproven — but the
+   probe named in the PRD is *not* wired, and pretending otherwise would be worse than
+   saying so. Reported, not fixed: `curator_client.py` is WP2's file.
