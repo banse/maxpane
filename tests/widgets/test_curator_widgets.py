@@ -67,6 +67,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorSignals,
     CuratorSparklines,
 )
+from tests.curator_sybil_fixtures import worst_case_rows
 from maxpane_dashboard.widgets.curator._fmt import (
     ADDR_COLS,
     DASH,
@@ -2121,7 +2122,48 @@ def _full_payload() -> dict:
         you_ens="surfsurf.eth",
         whale_ens=None,
         last_saved_ens=None,
+        # ---- the linkage analysis (WP0's eleven) --------------------------
+        # The three row lists come from the **committed worst-case slices**
+        # rather than from a hand-typed row apiece: the three-way exercise
+        # splats this payload at every widget at 143 columns, so taking the
+        # slices here is free coverage of the widest strings the analysis can
+        # produce, and it cannot drift from the shapes WP3 has to emit.
+        operator_rows=worst_case_rows("operator_row_worst.json"),
+        operators_count=len(worst_case_rows("operator_row_worst.json")),
+        segment_rows=worst_case_rows("segment_rows_worst.json"),
+        clean_list_rows=worst_case_rows("clean_list_rows_worst.json"),
+        clean_points=_clean_totals()["clean_points"],
+        clean_contributors=_clean_totals()["clean_contributors"],
+        # Deliberately NOT `as_of_hhmm`: the analysis sweep is a slower tier
+        # than the fast one, so the two markers differ in the normal case and
+        # a payload that made them equal would hide a panel wired to the
+        # wrong one (PRD §5 -- each panel shows its own freshness).
+        analysis_as_of_hhmm="22:41",
+        # A linked reader, which is the state that exercises the widest
+        # rendering: the group size, four reasons, and -- by WP3's contract --
+        # NO clean rank, because a linked wallet is removed from that list.
+        you_linked_state="linked",
+        you_linked_group_size=1995,
+        you_linked_reasons=_worst_case_envelope_reasons(),
+        you_clean_rank=None,
     )
+
+
+def _clean_totals() -> dict:
+    """The clean-list slice's ``totals`` block — the summary WP4's panel
+    renders and the two scalars ``_full_payload`` needs."""
+    from tests.curator_sybil_fixtures import worst_case_envelope
+
+    return worst_case_envelope("clean_list_rows_worst.json")["totals"]
+
+
+def _worst_case_envelope_reasons() -> list[str]:
+    """The widest operator's own reasons — the ``worst`` entry, which lives
+    **outside** ``rows`` and is the payload a sweep driven by
+    ``worst_case_rows`` alone never sees."""
+    from tests.curator_sybil_fixtures import worst_case_envelope
+
+    return list(worst_case_envelope("operator_row_worst.json")["worst"]["reasons"])
 
 
 def test_the_full_payload_is_exactly_the_frozen_contract():
@@ -2954,3 +2996,122 @@ async def test_the_board_renders_its_published_full_tier_and_says_so_below_it(
         text = _screen_text(app)
     assert ("widen" in text) is bool(hint), (width, text)
     assert "⚑" in text                    # the flag column is in both tiers
+
+
+def test_the_standing_panel_is_the_same_height_in_every_linkage_state():
+    """The rail stacks four panels in a fixed column and the last one —
+    ``WHERE IT GETS YOU`` — falls off the bottom first (CLAUDE.md's FWA
+    coverage-badge hazard, and `you` is last in the signal rail for the same
+    reason).  A panel whose height depended on its data would move the panels
+    under it on every refresh, so the line count is pinned here rather than
+    left to whichever branch a payload happens to take.
+
+    Seven lines, always.  **Two more than the five that shipped**, which is a
+    measured cost and not a free one: the `y` view's last panel first fits
+    at a 36-row terminal where it used to fit at 34 (swept against the real
+    screen at the pinned full-layout width, with and without these lines).
+    """
+    from maxpane_dashboard.widgets.curator import wallet as wallet_mod
+
+    states = (
+        {},
+        {"you_linked_state": None},
+        {"you_linked_state": "clean", "you_linked_reasons": [],
+         "you_clean_rank": 47},
+        {"you_linked_state": "linked", "you_linked_group_size": 1995,
+         "you_linked_reasons": _worst_case_reasons()[0]},
+        {"you_linked_state": "nonsense"},
+        wallet_mod.STANDING_WIDTH_PROBE,
+    )
+    for extra in states:
+        payload = {**_standing_full(), **extra}
+        lines = wallet_mod._standing_lines(wallet_mod._standing_state(payload))
+        assert len(lines) == 7, (extra, [line[0] for line in lines])
+        assert [line[0] for line in lines] == [
+            "rank", "clean", "score", "banked", "share", "joined", "linked"
+        ]
+
+
+# ===========================================================================
+# WP5.5 — THE WP4 WIRING HAND-OFF
+#
+# Everything WP4 needs from this work package, in the file the agreement
+# tests live in.  `rg "WP4 WIRING HAND-OFF"` is the whole index.
+#
+# 1. `CuratorWalletStanding.update_data` — the EXACT kwarg tuple, in order,
+#    to paste into `WIDGET_SIGNATURES` in screens/curator.py:
+#
+#        "CuratorWalletStanding": (
+#            "you_rank", "you_points", "you_credit_eth", "you_weight_eth",
+#            "you_tx_count", "you_weight_share_pct", "you_first_hour",
+#            "you_joined_utc", "contributors_total",
+#            "you_linked_state", "you_linked_reasons",
+#            "you_linked_group_size", "you_clean_rank",
+#        ),
+#
+#    The first nine are unchanged; the last four are new and are exactly the
+#    four `ANALYSIS_KEY_ROUTING` routes to this widget.  Until that map grows,
+#    `tests/screens/test_curator_screen.py::test_the_dispatch_map_matches_the
+#    _widgets_own_signatures` is RED, and that red is this hand-off's receipt
+#    -- it is the agreement test doing its job across a wave boundary, and it
+#    is WP4's to close.  `test_every_widget_kwarg_is_a_curator_key` already
+#    passes, so all four are real contract keys.
+#
+# 2. `CuratorLeaderboard.update_data` is **UNCHANGED**: `(leaderboard_rows,
+#    you_address)`.  `link_conf` is a row sub-key of a payload it already
+#    receives, so WP4 changes nothing for it and `ANALYSIS_KEY_ROUTING`
+#    rightly has no entry for it.  What WP3 must do instead is seed
+#    `row["link_conf"] = None` on every row -- `build_signals` emits no
+#    placeholder for it -- and the widget then falls back to the Tier-A bool
+#    (R5), so nothing on the board changes until the sweep really runs.
+#
+# 3. Widths, published for import rather than re-typing:
+#
+#      leaderboard.LEADERBOARD_FULL_WIDTH = 49   (full tier: # WALLET POINTS
+#                                                 CREDIT TX ⚑)
+#      leaderboard.LEADERBOARD_MIN_WIDTH  = 33   (minimal tier, flag included)
+#      wallet.STANDING_FULL_WIDTH         = 254  (worst case; NOT a budget)
+#      wallet.measure_standing_width(payload)    (the number a screen wants)
+#
+#    Neither widget moved the app-wide picture: the leaderboard's tiers are
+#    unchanged (all four glyphs are one cell wide), and the standing panel
+#    needs **40 columns with no linkage and 40 with a clean verdict**, the
+#    same as before this work package -- the `joined` line still sets it.  The
+#    screen gives that panel 54 columns at the pinned 138, measured, so
+#    `CURATOR_FULL_LAYOUT_COLUMNS` does not move.  A **linked** reader is the
+#    exception and it is by design: the widest evidence in the committed
+#    slices needs 191 columns, so the line sheds its reasons from the end
+#    behind `‹ widen` and keeps the group size.  If WP4's phase fixtures give
+#    the reader a linked verdict, the `y` view will light the marker at 138 --
+#    that is the surf announce-feed precedent (a layout clears; a string need
+#    not), and it must not be "fixed" by raising the constant.
+#
+#    Height is the one thing that did move: the panel is 9 rows where it was
+#    7, so the `y` view's last panel (`WHERE IT GETS YOU`) first fits at a
+#    **36-row** terminal where it used to fit at 34.  Measured both ways
+#    against the real screen at 138 columns, by sweeping the height.  Nothing
+#    in the suite pins it and no test moved, but it is the FWA
+#    coverage-badge hazard's shape -- the last panel in a fixed column goes
+#    first, in silence -- so WP4 should know the number.  The rail's own
+#    `margin: 0 0 2 0` between panels is where the rows can be bought back.
+#
+# 4. New unavailable / explicit-state strings WP4's phase tests can assert
+#    against, all importable from `widgets.curator.wallet`:
+#
+#      UNKNOWN_VALUE      "-- unknown"                  (both new lines, and
+#                                                        the ONLY rendering of
+#                                                        a linkage `None`)
+#      NOT_LINKED         "not linked to any group"     (an answer, not a
+#                                                        default)
+#      LINKED_UNSIZED     "in a group of unknown size"
+#      CLEAN_RANK_SUFFIX  "with farms removed"          (renders `#47 with
+#                                                        farms removed`)
+#      CLEAN_RANK_REMOVED "removed as a linked wallet"
+#
+#    ...and from `widgets.curator.leaderboard`: LINK_HIGH `⚑`, LINK_LOW `◌`,
+#    LINK_CLEAN `` (empty), LINK_UNKNOWN `?`.
+#
+#    None of these is re-exported from `widgets/curator/__init__.py`: that
+#    file is not WP5's to edit.  WP4 owns it (it exports the three new
+#    panels) and should add them there if the screen wants the package root.
+# ===========================================================================
