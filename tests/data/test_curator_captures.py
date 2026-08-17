@@ -157,6 +157,7 @@ def test_the_vendored_abi_is_not_fetched_at_runtime() -> None:
 from collections import Counter  # noqa: E402
 
 from maxpane_dashboard.data import curator_addresses as A  # noqa: E402
+from maxpane_dashboard.data.curator_models import CURATOR_KEYS  # noqa: E402
 from tests.curator_fixtures import (  # noqa: E402
     CURATOR_FIXTURES,
     LIVE,
@@ -355,6 +356,47 @@ def test_the_derived_config_is_self_consistent() -> None:
     assert v[A.SEL_LAUNCH_TIME] + v[A.SEL_GRACE_PERIOD] == 1_786_996_727  # 08-17 19:58:47Z
     assert v[A.SEL_LAUNCH_TIME] + 25 * 3600 == 1_787_000_327  # 08-17 20:58:47Z
     assert v[A.SEL_LAUNCH_TIME] == A.LAUNCH_TIME
+
+
+def test_the_hourly_threshold_is_not_recoverable_from_the_two_keys_beside_it() -> None:
+    """Why ``hourly_threshold_eth`` had to become a key of its own.
+
+    Two widgets render the number -- the hero clock's ``fed X.XX/5.00 ETH`` and
+    the volume sparkline's labelled survival bar -- and the tempting shortcut is
+    ``hour_fed_eth + hour_needed_eth``.  It is wrong, and this capture is the
+    counter-example: ``ethNeededThisHour()`` (``source.sol`` line 547) returns 0
+    for the whole grace period and again whenever a judged hour is already safe,
+    so the sum reconstructs the threshold **only while an hour is short**.  Here
+    734.61 ETH had been fed against a 5 ETH bar and the view answered 0.
+
+    Without the key a widget hardcodes 5.00, which is CLAUDE.md hard constraint
+    4 -- the documented value, not the live one.
+    """
+    v = _decoded_batch()
+    fed = v[A.SEL_CURRENT_HOUR_TOTAL]
+    needed = v[A.SEL_ETH_NEEDED_THIS_HOUR]
+    threshold = v[A.SEL_HOURLY_THRESHOLD]
+    assert needed == 0 and fed > threshold
+    assert fed + needed != threshold
+    # And the safe-hour arm is not a special case of grace: the same view
+    # returns 0 for any judged hour already over the bar.
+    assert threshold == 5 * 10**18
+
+
+def test_the_first_judged_hour_is_a_read_value_not_the_literal_24() -> None:
+    """Why ``first_judged_hour`` had to become a key of its own.
+
+    ``n/a until hour 24`` (HOUR AT RISK during grace) and the closest-calls
+    empty state both print it.  It happens to equal
+    ``gracePeriod // hourDuration`` on this deployment, but **neither operand is
+    in the flat dict either**, so with no key the widget types the 24 -- and a
+    redeploy with a different grace window would render a lie.
+    """
+    v = _decoded_batch()
+    assert v[A.SEL_FIRST_JUDGED_HOUR] == 24
+    assert v[A.SEL_FIRST_JUDGED_HOUR] == v[A.SEL_GRACE_PERIOD] // v[A.SEL_HOUR_DURATION]
+    assert "first_judged_hour" in CURATOR_KEYS
+    assert "hourly_threshold_eth" in CURATOR_KEYS
 
 
 def test_the_live_immutables_agree_with_the_vendored_pins() -> None:
