@@ -584,36 +584,39 @@ class CuratorScreen(RefreshGuard, Screen):
         height: 1fr;
         width: 100%;
     }
+    /* `margin: 1 0 0 0` is `#middle-row`'s, so the blank line under the hero's
+       EOA subtitle is the same on both bodies and the two pages' first titles
+       sit on the same row. */
     CuratorScreen #wallet-top-row {
         height: 1fr;
-        margin: 0 0 1 0;
+        margin: 1 0 0 0;
     }
-    CuratorScreen #wallet-bottom-row {
-        height: auto;
-    }
-    CuratorScreen #wallet-separator {
-        height: 1;
+    CuratorScreen #curator-wallet-rail {
+        width: 2fr;
+        height: 100%;
     }
     CuratorScreen CuratorWalletLadder {
         width: 3fr;
         height: 100%;
         padding: 0 1;
     }
+    /* In the rail: full width, sized to their own lines, one blank row between
+       panels so the three do not read as one block. */
     CuratorScreen CuratorWalletStanding {
-        width: 2fr;
-        height: 100%;
+        width: 100%;
+        height: auto;
+        margin: 0 0 1 0;
         padding: 0 1;
     }
     CuratorScreen CuratorWalletNext {
-        width: 3fr;
+        width: 100%;
         height: auto;
-        min-height: 3;
+        margin: 0 0 1 0;
         padding: 0 1;
     }
     CuratorScreen CuratorWalletTarget {
-        width: 2fr;
+        width: 100%;
         height: auto;
-        min-height: 3;
         padding: 0 1;
     }
     CuratorScreen CuratorActivity {
@@ -702,11 +705,14 @@ class CuratorScreen(RefreshGuard, Screen):
         with Vertical(id=WALLET_BODY_ID):
             with Horizontal(id="wallet-top-row"):
                 yield CuratorWalletLadder()
-                yield CuratorWalletStanding()
-            yield Static("─" * 300, id="wallet-separator")
-            with Horizontal(id="wallet-bottom-row"):
-                yield CuratorWalletNext()
-                yield CuratorWalletTarget()
+                # The three facts panels stack in one rail beside the ladder:
+                # they are read top to bottom as one thought -- where you
+                # stand, what the next send must be, what it gets you -- and
+                # the ladder is the tall thing they are read against.
+                with Vertical(id="curator-wallet-rail"):
+                    yield CuratorWalletStanding()
+                    yield CuratorWalletNext()
+                    yield CuratorWalletTarget()
 
         yield StatusBar()
 

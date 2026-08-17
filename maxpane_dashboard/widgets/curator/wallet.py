@@ -186,8 +186,12 @@ class _FactsPanel(Vertical):
     ID_PREFIX = "curator-wallet"
 
     DEFAULT_CSS = """
+    /* `margin-bottom: 1` is the blank row between the title and the first
+       value line -- the ladder gets one for free from its (usually empty) note
+       Static, and without this the two halves of the view do not line up. */
     _FactsPanel > .curator-facts-title {
         width: 100%;
+        margin: 0 0 1 0;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;

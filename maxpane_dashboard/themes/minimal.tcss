@@ -2268,18 +2268,17 @@ CuratorScreen #curator-wallet-body {
 
 /* The ladder is the wider half: five columns of numbers against the standing
  * panel's four label/value lines. 3:2 measured, same method as #middle-row. */
+/* `margin: 1 0 0 0` is the shared `#middle-row`'s, so the blank line under the
+ * hero's EOA subtitle is identical on both bodies and the two pages' first
+ * panel titles land on the same row. */
 CuratorScreen #wallet-top-row {
     height: 1fr;
-    margin: 0 0 1 0;
+    margin: 1 0 0 0;
 }
 
-CuratorScreen #wallet-bottom-row {
-    height: auto;
-}
-
-CuratorScreen #wallet-separator {
-    color: $panel;
-    height: 1;
+CuratorScreen #curator-wallet-rail {
+    width: 2fr;
+    height: 100%;
 }
 
 CuratorScreen CuratorWalletLadder {
@@ -2289,23 +2288,23 @@ CuratorScreen CuratorWalletLadder {
 }
 
 CuratorScreen CuratorWalletStanding {
-    width: 2fr;
-    height: 100%;
+    width: 100%;
+    height: auto;
+    margin: 0 0 1 0;
     padding: 0 1;
 }
 
 /* The bottom quadrants take the top row's 3:2 seam, so the four boxes line up
  * as one grid rather than as two unrelated rows. */
 CuratorScreen CuratorWalletNext {
-    width: 3fr;
+    width: 100%;
     height: auto;
-    min-height: 3;
+    margin: 0 0 1 0;
     padding: 0 1;
 }
 
 CuratorScreen CuratorWalletTarget {
-    width: 2fr;
+    width: 100%;
     height: auto;
-    min-height: 3;
     padding: 0 1;
 }
