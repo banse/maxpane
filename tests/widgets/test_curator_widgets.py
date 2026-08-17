@@ -37,8 +37,11 @@ from maxpane_dashboard.widgets.curator import (
     LEADERBOARD_EMPTY,
     LEADERBOARD_TITLE,
     LEADERBOARD_UNAVAILABLE,
+    SPARKLINES_TITLE,
+    WAITING,
     CuratorHero,
     CuratorLeaderboard,
+    CuratorSparklines,
 )
 from maxpane_dashboard.widgets.curator._fmt import (
     ADDR_COLS,
@@ -633,3 +636,125 @@ def test_tier_costs_descend_so_a_narrow_panel_can_reach_the_narrow_layout():
         assert module._TIERS[0][3] == "", "the widest tier sheds nothing"
         for _n, _c, _cols, hint in module._TIERS[1:]:
             assert hint, "every narrower tier names what it dropped"
+
+
+# ===========================================================================
+# WP4.4 — CuratorSparklines
+# ===========================================================================
+
+
+def _volume_series() -> list:
+    """Hour-bucketed routed volume, folded from ``Deposited`` logs.
+
+    The four values are the hour totals the live bundle
+    ``20260817T000322Z_grace-late.json`` reconciles wei-exact against three
+    independent state reads: hours 0-3 at 851.89 / 9987.26 / 2263.83 /
+    2738.92 ETH.
+    """
+    return [
+        [1786910327, 851.89],
+        [1786913927, 9987.26],
+        [1786917527, 2263.83],
+        [1786921127, 2738.92],
+    ]
+
+
+def _contributors_series() -> list:
+    return [[1786910327, 66], [1786913927, 145], [1786917527, 213],
+            [1786921127, 252]]
+
+
+async def test_both_series_draw_through_the_shared_sparkline_helper():
+    from maxpane_dashboard.widgets.sparkline_common import SPARK_CHARS
+
+    text = await _rendered(
+        CuratorSparklines,
+        volume_series=_volume_series(),
+        contributors_series=_contributors_series(),
+        hourly_threshold_eth=5.0,
+    )
+    assert any(ch in text for ch in SPARK_CHARS)
+    assert "VOL/h" in text and "WALLETS" in text
+
+
+async def test_the_volume_spark_labels_the_survival_bar_from_the_payload():
+    """A volume sparkline without the bar is a pretty picture with no
+    meaning — the only thing that matters about an hour is whether it cleared
+    the threshold.  The number is read live, never a remembered 5.00."""
+    text = await _rendered(
+        CuratorSparklines,
+        volume_series=_volume_series(),
+        contributors_series=_contributors_series(),
+        hourly_threshold_eth=7.5,
+    )
+    assert "7.50 ETH bar" in text
+    assert "5.00" not in text
+
+
+async def test_an_unknown_threshold_dashes_the_bar_rather_than_inventing_one():
+    text = await _rendered(
+        CuratorSparklines,
+        volume_series=_volume_series(),
+        contributors_series=_contributors_series(),
+    )
+    assert f"{DASH} ETH bar" in text
+
+
+async def test_a_none_series_and_an_empty_series_render_the_same_state():
+    """Deliberate, and the one place in this package where they agree: both
+    mean "no history to draw", and a flat baseline would be a line the data
+    never justified.  A failed read still reaches the reader — through the
+    title bar's degraded groups, not through this panel."""
+    dead = await _rendered(CuratorSparklines, volume_series=None,
+                           contributors_series=None)
+    empty = await _rendered(CuratorSparklines, volume_series=[],
+                            contributors_series=[])
+    assert WAITING in dead and WAITING in empty
+
+
+async def test_a_series_with_a_null_point_survives_through_coerce_points():
+    """A single ``null`` in a cache file used to abort startup for every
+    dashboard; ``coerce_points`` is the boundary and it is imported, not
+    re-implemented."""
+    dirty = [[1786910327, 851.89], None, [1786913927, None],
+             ["bad", "worse"], [1786917527, 2263.83]]
+    text = await _rendered(
+        CuratorSparklines,
+        volume_series=dirty,
+        contributors_series=_contributors_series(),
+        hourly_threshold_eth=5.0,
+    )
+    assert WAITING not in text          # two good points still draw a line
+    assert "2.26K ETH" in text or "2.3K ETH" in text
+
+
+async def test_the_trend_arrow_is_the_shared_one():
+    from maxpane_dashboard.widgets.sparkline_common import trend_arrow
+
+    rising = _contributors_series()
+    assert "▲" in trend_arrow(rising)
+    text = await _rendered(
+        CuratorSparklines,
+        volume_series=_volume_series(),
+        contributors_series=rising,
+        hourly_threshold_eth=5.0,
+    )
+    assert "▲" in text
+
+
+async def test_a_narrow_rail_sheds_the_bar_label_before_the_sparkline():
+    """Order of sacrifice: the bar label (a constant a reader learns once),
+    then the spark's width, then the trend value.  The row label never goes —
+    a nameless sparkline is decoration."""
+    widget = CuratorSparklines()
+    app = _Harness(widget)
+    async with app.run_test(size=(38, 8)) as pilot:
+        widget.update_data(
+            volume_series=_volume_series(),
+            contributors_series=_contributors_series(),
+            hourly_threshold_eth=5.0,
+        )
+        await pilot.pause()
+        text = _screen_text(app)
+    assert "VOL/h" in text and "WALLETS" in text
+    assert "ETH bar" not in text

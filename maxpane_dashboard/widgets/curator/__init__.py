@@ -27,6 +27,7 @@ this package is safe to import with no manager, no cache and no network.
 
 from ._fmt import ADDR_COLS, DASH, EMDASH, NO_STAMP
 from .hero import PHASE_UNAVAILABLE, CuratorHero
+from .sparklines import SPARKLINES_TITLE, WAITING, CuratorSparklines
 from .leaderboard import (
     LEADERBOARD_EMPTY,
     LEADERBOARD_TITLE,
@@ -44,5 +45,8 @@ __all__ = [
     "LEADERBOARD_UNAVAILABLE",
     "PHASE_UNAVAILABLE",
     "CuratorHero",
+    "SPARKLINES_TITLE",
+    "WAITING",
     "CuratorLeaderboard",
+    "CuratorSparklines",
 ]

@@ -215,14 +215,14 @@ hourly_threshold_eth=None, **_kwargs)`.
 
 **Steps:**
 
-- [ ] Failing tests: both series render through `sparkline_common.build_sparkline`; a `None`
+- [x] Failing tests: both series render through `sparkline_common.build_sparkline`; a `None`
       series renders `waiting for data...` and an empty one renders the same (here they are
       genuinely the same fact — say so in a comment, since everywhere else they differ); a
       series with a `None` point survives via `coerce_points`; the **threshold line is
       labelled** on the volume spark (`5.00 ETH bar`) because a volume sparkline without the
       survival bar is a pretty picture with no meaning; `trend_arrow` is used, not copied.
-- [ ] Implement.
-- [ ] Commit: `feat(curator): hourly volume and contributor sparklines with the survival bar`
+- [x] Implement.
+- [x] Commit: `feat(curator): hourly volume and contributor sparklines with the survival bar`
 
 ---
 
