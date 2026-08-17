@@ -1349,3 +1349,113 @@ def test_the_timestamp_batch_goes_to_the_state_pool() -> None:
     client, transport = _recording_client(_blocks_handler())
     asyncio.run(client.fetch_block_timestamps([25_770_000]))
     assert STATE_PRIMARY_HOST in transport.requests[0][0]
+
+
+# ===========================================================================
+# WP2.9 — the Blockscout cross-check
+# ===========================================================================
+
+BS_PAGES = [capture(f"bs_page_{i}.json") for i in range(8)]
+
+
+def _blockscout_handler(
+    pages: list[dict], *, status: int = 200, fail_from: int | None = None,
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Serve the committed pages, following ``next_page_params`` as a cursor.
+
+    The cursor is echoed back as query parameters exactly as the server sent
+    it, which is what the real pager does, so this double also proves the
+    client passes it through rather than inventing its own paging scheme.
+    """
+    order = {json.dumps(p.get("next_page_params"), sort_keys=True): i + 1
+             for i, p in enumerate(pages)}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if status != 200:
+            return httpx.Response(status, text="nope")
+        params = dict(request.url.params)
+        if not params:
+            index = 0
+        else:
+            index = next(
+                (i for key, i in order.items()
+                 if key != "null"
+                 and {k: str(v) for k, v in json.loads(key).items()} == params),
+                None,
+            )
+            assert index is not None, f"unrecognised cursor {params}"
+        if fail_from is not None and index >= fail_from:
+            return httpx.Response(500, text="boom")
+        return httpx.Response(200, json=pages[index])
+
+    return handler
+
+
+def test_the_pager_follows_the_cursor_until_it_runs_out() -> None:
+    client = _client(_blockscout_handler(BS_PAGES))
+    rows = asyncio.run(client.fetch_blockscout_logs())
+    assert len(rows) == 376
+    assert client.blockscout_truncated is False
+
+
+def test_the_page_bound_with_a_cursor_still_open_reports_truncation() -> None:
+    """Returning the partial rows silently is the bug this flag exists to
+    close: a caller cannot tell "that is everything" from "we stopped asking",
+    and the cross-check would then report a phantom gap against the RPC sweep."""
+    client = _client(_blockscout_handler(BS_PAGES))
+    rows = asyncio.run(client.fetch_blockscout_logs(max_pages=3))
+    assert len(rows) == 150
+    assert client.blockscout_truncated is True
+
+
+def test_the_truncation_flag_is_reset_at_the_start_of_every_call() -> None:
+    client = _client(_blockscout_handler(BS_PAGES))
+    client.blockscout_truncated = True
+    asyncio.run(client.fetch_blockscout_logs())
+    assert client.blockscout_truncated is False
+
+
+def test_the_blockscout_rows_reconcile_with_the_rpc_sweep() -> None:
+    """WP0.7's pin, re-asserted through the CLIENT rather than through the
+    files: 376 ⊂ 377, with exactly one extra on the RPC side because the two
+    pulls were seconds apart.  A reconciliation that is off by more than that
+    one row means the pager lost a page, and losing a page silently is how a
+    gap-repair pass concludes there is a gap."""
+    rpc = asyncio.run(_client(_logs_handler(FULL_SWEEP_ROWS))
+                      .fetch_logs(A.CREATION_BLOCK))
+    rpc_keys = {(r["transactionHash"].lower(), int(r["logIndex"], 16))
+                for g in curator_client.LOG_GROUPS for r in getattr(rpc, g)}
+    bs = asyncio.run(_client(_blockscout_handler(BS_PAGES)).fetch_blockscout_logs())
+    bs_keys = {(i["transaction_hash"].lower(), i["index"]) for i in bs}
+    assert len(rpc_keys) == 377 and len(bs_keys) == 376
+    assert bs_keys <= rpc_keys
+    assert len(rpc_keys - bs_keys) == 1
+
+
+def test_a_4xx_returns_none_rather_than_an_empty_list() -> None:
+    """An empty list would read as "the contract has no logs", which is the one
+    conclusion an outage must never be allowed to reach."""
+    client = _client(_blockscout_handler(BS_PAGES, status=404))
+    assert asyncio.run(client.fetch_blockscout_logs()) is None
+
+
+def test_a_page_that_fails_mid_walk_returns_none_not_a_partial_reconciliation() -> None:
+    """The one place partial is worse than nothing.  These rows exist to be
+    diffed against the RPC sweep; half of them diff into hundreds of phantom
+    missing logs and a gap repair that re-fetches the whole history."""
+    client = _client(_blockscout_handler(BS_PAGES, fail_from=4))
+    assert asyncio.run(client.fetch_blockscout_logs()) is None
+
+
+def test_the_cross_check_is_a_rest_get_and_never_touches_the_rpc_pools() -> None:
+    client, transport = _recording_client(_blockscout_handler(BS_PAGES))
+    asyncio.run(client.fetch_blockscout_logs())
+    assert transport.requests
+    for url, method, _p, headers in transport.requests:
+        assert method == "GET"
+        assert "blockscout" in url
+        assert f"/addresses/{A.CURATOR}/logs" in url
+        assert STATE_PRIMARY_HOST not in url and "drpc" not in url
+        # publicnode's 403 is a UA problem, but the header is unconditional and
+        # the REST leg must not be the one place it goes missing.
+        assert "maxpane" in headers.get("user-agent", "").lower()

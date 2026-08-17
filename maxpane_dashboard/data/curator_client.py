@@ -982,6 +982,79 @@ class CuratorClient(OwnedHttpClient):
                 stamps[number] = ts
         return stamps
 
+    # ------------------------------------------------------------------
+    # Blockscout REST — the cross-check
+    # ------------------------------------------------------------------
+
+    async def _get_json(self, url: str, params: dict | None = None) -> Any:
+        """GET with retries.  Parsed JSON, or ``None`` on any failure."""
+        for attempt in range(_MAX_RETRIES):
+            try:
+                self._last_rpc_at = await pace(
+                    self._last_rpc_at, self._inter_call_delay
+                )
+                resp = await self._client.get(
+                    url, params=params, headers=dict(_REQUEST_HEADERS)
+                )
+                if resp.status_code in ENDPOINT_DEAD_CODES:
+                    logger.warning("GET %s -> %s", url, resp.status_code)
+                    return None
+                resp.raise_for_status()
+                return resp.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                if attempt < _MAX_RETRIES - 1:
+                    await asyncio.sleep(self._backoff_seconds[attempt])
+                else:
+                    logger.warning("GET %s failed: %s", url, exc)
+        return None
+
+    async def fetch_blockscout_logs(
+        self, max_pages: int = MAX_BLOCKSCOUT_PAGES
+    ) -> list[dict] | None:
+        """Every curator log Blockscout has, as the RPC sweep's cross-check.
+
+        A second, independent read of the same history, so a sweep that lost a
+        window across a failover can be caught rather than folded.  At capture
+        the two reconciled exactly: 376 Blockscout items ⊂ 377 RPC rows, one
+        extra on the RPC side because the pulls were seconds apart.
+
+        Two return values that are easy to conflate and must not be:
+
+        * ``None`` — we could not read it.  A ``[]`` here would read as "the
+          contract has no logs", which is the one conclusion an outage must
+          never reach, so **any** page failing returns ``None``.  Partial is
+          worse than nothing for this particular method: these rows exist to be
+          diffed, and half of them diff into hundreds of phantom missing logs
+          and a gap repair that re-fetches the whole history.
+        * ``[]`` — read fine, nothing there.
+
+        :attr:`blockscout_truncated` (reset at the START of every call) is True
+        only when *max_pages* was exhausted while the server was still handing
+        back a cursor: more rows existed than this sweep was willing to fetch.
+        """
+        self.blockscout_truncated = False
+        url = f"{self._blockscout}/addresses/{A.CURATOR}/logs"
+        rows: list[dict] = []
+        params: dict | None = None
+        for _page in range(max_pages):
+            body = await self._get_json(url, params=params)
+            if not isinstance(body, dict) or "items" not in body:
+                logger.warning("blockscout logs: page read failed at %d rows; "
+                               "reporting unavailable rather than a partial "
+                               "cross-check", len(rows))
+                return None
+            rows.extend(r for r in body["items"] if isinstance(r, dict))
+            nxt = body.get("next_page_params")
+            if not nxt:
+                return rows
+            params = nxt  # the server's cursor, verbatim, as query params
+        logger.warning(
+            "blockscout logs: hit the %d-page bound with a cursor still open; "
+            "returning %d partial rows", max_pages, len(rows),
+        )
+        self.blockscout_truncated = True
+        return rows
+
 
 __all__ = [
     "CuratorClient",
