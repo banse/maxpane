@@ -441,6 +441,37 @@ live rather than the fold. `FORCED ETH` renders `—`. The countdown to 19:58:47
   user who has set it. The title bar does say `⚠ … wallet`, so the degradation is advertised —
   the row's own copy is what is wrong. A `you_configured` flag in the flat dict would close it.
 
+### Wave-5 repair pass (2026-08-17, after review)
+
+Five findings against the registered build, each verified before it was touched. The first of
+the two smoke-run findings above (the three-minute first paint) is **closed** by item 3; the
+second (the YOU row's `set MAXPANE_WALLET` under a wallet outage) is **not**, and is still the
+one open defect from that pair. `degraded` now reaching a widget makes it cheap: the same key
+that fixed item 5 tells that row whether the wallet group answered.
+
+1. **`tests/test_game_select_quit.py` kept a real `CuratorManager`.** `MANAGER_ATTRS` lives in
+   *four* test modules and wave 5 grew three; the fourth left the real manager on the app, so
+   the `q` those headless tests press awaited its real `close()` and rewrote the developer's own
+   7.5 MB `~/.maxpane/curator_cache.json` with an empty one. Reproduced against a redirected
+   `HOME`. The list stays hardcoded in all four; the agreement test now walks `tests/` for every
+   copy and compares each against the managers `MaxPaneApp.__init__` builds, so a fifth is
+   covered the day it is written. CLAUDE.md named two files and now names four.
+2. **The cluster table cut its own headline number.** `_POINTS_COLS` was a hand-typed 8 and the
+   live top row is 2,663,784 points, so it rendered `2,663,78` at 138, 143, 200 and 250 columns
+   with no `‹ widen` — a cell width is fixed while a panel's is not. Now derived from the same
+   two bounds `_PATTERN_COLS` uses (a row's `points` is the *sum* over its members, so the
+   per-wallet ceiling does not bound it); tier costs 45 → 47 and 33 → 35. Every clusters fixture
+   had happened to pick a value that fits 8, which is why the suite was green over it.
+3. **First paint no longer waits on the cross-check** (PRD A5). Detached, one at a time,
+   cancelled by `close()`.
+4. **`dropped_events` is persisted.** The in-process fix for the history cap died at the file:
+   a relaunched cache reported 0 dropped, so once the cap trips every launch declares the fold
+   short against the contract's counter and re-sweeps from the creation block. ~890 deposits/h
+   puts 25,000 about fifteen hours after launch — shortly after the first judged hour.
+5. **HOUR SAVED and WHALE go `-- unknown` when the logs pool is dead** (PRD A6).
+
+Curator's measured width is unchanged at **138**, and `FULL_LAYOUT_COLUMNS` stays FWA's 143.
+
 **Still open, and deliberately.** The synthetic-fixture ledger closed *open*: 33 markers, none
 re-pointed, because captures A, B and C had not happened yet — see "Synthetic until captured"
 above and the marker inventory in `tests/fixtures/curator/captures/live/README.md`. The WHALE

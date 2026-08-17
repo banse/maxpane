@@ -302,6 +302,12 @@ so the corruption outlives the outage. Never write a sentinel into a history ser
 
 **A dead source degrades to an explicit unavailable state.** Never a crash, never a blank panel,
 and never a stale number presented as live. Serve last-good behind an `as of HH:MM` marker.
+And check the widget can *tell*: a row whose real negative has no representable value —
+"no whale in the last hour", "it has never fired" — renders `None` identically for "we looked
+and there was nothing" and "we could not look", so it reads confident and green through an
+outage. Curator's rail shipped that way: FARM said `-- unknown` off `clusters_count is None`
+while HOUR SAVED and WHALE, folded from the same dead group, said `none yet`. Either give the
+value a representable zero or hand the widget the `degraded` list.
 
 **Escape every third-party string before it reaches markup or a `DataTable`.** Use
 `widgets/markup_safety.safe_markup`. Textual defers `Text.from_markup` into the message pump, so

@@ -297,6 +297,14 @@ Applied 2026-08-17 after planning against the real captures and the verified sou
 | A3 | §8's three mandated mutations become four | the 0.099875 example witnesses the *weight* formula, not `_curve`'s integer sqrt — two different pieces of code, each needs its own proof |
 | A4 | ~~§5 `medium` tier gains a bounded `eth_getBlockByNumber` batch as the activity feed's timestamp source~~ — **refuted the next day, and demoted to a fallback** | the premise was wrong. WP0's capture pins prove every one of the 377 RPC log rows carries `blockTimestamp` and every one of the 376 Blockscout items carries `block_timestamp`; only the *hazard doc's* reading of `bs_page_*.json` was mistaken. The feed reads the stamp it is handed and falls back to `eth_getBlockByNumber` only for an endpoint that omits it. Left in the log rather than deleted: the amendment was applied and then disproved by evidence, which is the record worth keeping |
 
+Applied 2026-08-17 by the wave-5 repair pass, after the review of the registered build. Neither
+changes scope; both change a §5/§6 detail the earlier text got wrong.
+
+| # | change | why |
+|---|---|---|
+| A5 | §5's `slow` tier runs **detached**: `fetch_and_compute` starts the Blockscout cross-check and never awaits it | awaiting it put first paint behind a read of the contract's *entire* log history — measured through the real app at **201.2 s** to first payload, of which `fetch_blockscout_logs` was 202.6 of the cycle's 203.8 s, while the next cycle took 0.8 s. The fold every panel renders was ready in under a second and the SIGNALS rail — the doomsday clock — was empty for three and a half minutes, on every launch. The cross-check publishes no key (it agrees with the fold or schedules a repair sweep), and a cycle without it is already the specified `{"ok": None, "checked": False}` state. Its cost still grows with the history while the 420 s period does not; paging only down to a persisted verified-to-block watermark is §12 material |
+| A6 | §6's health list `degraded` is **dispatched to `CuratorSignals`**, not screen-only | three rail rows are folded from the logs group and only FARM could say so. `clusters_count == 0` is a representable "read it, found nothing"; `last_saved_hour` and `whale_amount_eth` have no such value, so HOUR SAVED and WHALE rendered a green `none yet` / `none this hour` off a refresh that never read the logs — §6's own "dead source ⇒ explicit unavailable state" rule, broken in the direction that reassures. `degraded` stays a title-bar key as well; it is the one `META_KEYS` entry any widget receives |
+
 One repo fact that confirms rather than changes §9.4: the contiguous-keys assertion does exist,
 but it lives in `tests/test_fwa_theme.py:490`
 (`keys == [str(i) for i in range(1, len(GAMES) + 1)]`), not in a registration test file — so the
