@@ -168,6 +168,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletLadder,
     CuratorWalletNext,
     CuratorWalletStanding,
+    CuratorWalletTarget,
     CuratorClusters,
     CuratorHero,
     CuratorLeaderboard,
@@ -322,9 +323,10 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "you_tx_count", "you_weight_share_pct", "you_first_hour",
         "you_joined_utc", "contributors_total",
     ),
-    "CuratorWalletNext": (
-        "you_required_next_eth", "you_marginal_points", "you_rank",
-        "you_next_rank", "you_next_rank_needs_eth",
+    "CuratorWalletNext": ("you_required_next_eth", "you_credit_eth"),
+    "CuratorWalletTarget": (
+        "you_marginal_points", "you_rank", "you_next_rank",
+        "you_next_rank_needs_eth", "you_next_send_passes",
     ),
 }
 
@@ -603,7 +605,13 @@ class CuratorScreen(RefreshGuard, Screen):
         padding: 0 1;
     }
     CuratorScreen CuratorWalletNext {
-        width: 100%;
+        width: 3fr;
+        height: auto;
+        min-height: 3;
+        padding: 0 1;
+    }
+    CuratorScreen CuratorWalletTarget {
+        width: 2fr;
         height: auto;
         min-height: 3;
         padding: 0 1;
@@ -698,6 +706,7 @@ class CuratorScreen(RefreshGuard, Screen):
             yield Static("─" * 300, id="wallet-separator")
             with Horizontal(id="wallet-bottom-row"):
                 yield CuratorWalletNext()
+                yield CuratorWalletTarget()
 
         yield StatusBar()
 
@@ -937,6 +946,7 @@ class CuratorScreen(RefreshGuard, Screen):
             CuratorWalletLadder,
             CuratorWalletStanding,
             CuratorWalletNext,
+            CuratorWalletTarget,
         ):
             self._dispatch(widget_cls, data)
 

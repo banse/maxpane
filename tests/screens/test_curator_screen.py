@@ -103,6 +103,9 @@ from maxpane_dashboard.widgets.curator.wallet import (
     LADDER_TITLE,
     LADDER_UNAVAILABLE,
     NEXT_TITLE,
+    TARGET_TITLE,
+    HOLDS_RANK,
+    TAKES_RANK,
     NOT_ON_THE_LIST,
     NO_LADDER,
     STANDING_TITLE,
@@ -139,6 +142,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletLadder,
     CuratorWalletNext,
     CuratorWalletStanding,
+    CuratorWalletTarget,
     CuratorHero,
     CuratorLeaderboard,
     CuratorSignals,
@@ -175,6 +179,7 @@ _PANELS = (
     # about whichever body happens to be visible.
     CuratorWalletLadder,
     CuratorWalletStanding,
+    CuratorWalletTarget,
     CuratorWalletNext,
 )
 
@@ -1605,6 +1610,7 @@ def _wallet_payload(**overrides) -> dict:
         ],
         you_next_rank=None,
         you_next_rank_needs_eth=None,
+        you_next_send_passes=None,
     )
     payload.update(overrides)
     return payload
@@ -1644,7 +1650,7 @@ async def test_y_swaps_the_body_and_keeps_the_clock_on_screen():
 
         assert screen._mode == MODE_WALLET
         assert LADDER_TITLE in wallet and STANDING_TITLE in wallet
-        assert NEXT_TITLE in wallet
+        assert NEXT_TITLE in wallet and TARGET_TITLE in wallet
         # The game's own panels are gone...
         assert LEADERBOARD_TITLE not in wallet
         assert ACTIVITY_TITLE not in wallet
@@ -1726,10 +1732,13 @@ async def test_rank_one_is_told_there_is_nobody_above():
 
 async def test_a_reachable_rank_above_is_quoted_as_one_send():
     text = await _wallet_view_text(
-        _wallet_payload(you_rank=12, you_next_rank=11, you_next_rank_needs_eth=604.0)
+        _wallet_payload(you_rank=12, you_next_rank=11, you_next_rank_needs_eth=604.0,
+                        you_next_send_passes=False)
     )
     assert "rank 11 needs" in text
     assert "604.00" in text
+    # ...and the reader is told their minimum legal send is not enough for it.
+    assert HOLDS_RANK in text
 
 
 async def test_a_capped_wallet_is_told_no_send_buys_weight():
@@ -1756,3 +1765,25 @@ async def test_the_wallet_view_clears_at_the_pinned_full_layout_width():
             )
             return
     raise AssertionError("the y view never cleared inside the sweep window")
+
+
+async def test_an_unknown_pass_verdict_says_neither_enough_nor_not_enough():
+    """`you_next_send_passes is None` means the comparison could not be made.
+    Rendered as either verdict it becomes a claim about a number nobody read."""
+    text = await _wallet_view_text(
+        _wallet_payload(you_rank=12, you_next_rank=11, you_next_rank_needs_eth=604.0,
+                        you_next_send_passes=None)
+    )
+    assert HOLDS_RANK not in text
+    assert TAKES_RANK not in text
+    # ...while the half that IS known still renders.
+    assert "rank 11 needs" in text
+
+
+async def test_a_send_that_takes_the_rank_says_so():
+    text = await _wallet_view_text(
+        _wallet_payload(you_rank=12, you_next_rank=11, you_next_rank_needs_eth=604.0,
+                        you_next_send_passes=True)
+    )
+    assert TAKES_RANK in text
+    assert HOLDS_RANK not in text

@@ -57,6 +57,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletLadder,
     CuratorWalletNext,
     CuratorWalletStanding,
+    CuratorWalletTarget,
     CuratorHero,
     CuratorLeaderboard,
     CuratorSignals,
@@ -1915,6 +1916,7 @@ _WIDGETS = (
     # screen splats the whole flat dict at them too.
     CuratorWalletLadder,
     CuratorWalletStanding,
+    CuratorWalletTarget,
     CuratorWalletNext,
 )
 
@@ -2075,6 +2077,7 @@ def _full_payload() -> dict:
         ],
         you_next_rank=11,
         you_next_rank_needs_eth=604.0,
+        you_next_send_passes=False,
         leaderboard_rows=_lb_rows(3),
         activity_rows=[_act_row(log_index=1), _act_row(log_index=2, tx_count=5)],
         closest_call_rows=_call_rows(),
@@ -2112,7 +2115,8 @@ _EXPECTED_ROWS = {
     # data row carries; the two facts panels are label/value lines.
     "CuratorWalletLadder": (("×",), 2),
     "CuratorWalletStanding": (("rank", "pts", "weight"), 3),
-    "CuratorWalletNext": (("≥", "rank"), 2),
+    "CuratorWalletNext": (("≥", "ETH"), 2),
+    "CuratorWalletTarget": (("pts", "rank"), 2),
 }
 
 

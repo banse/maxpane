@@ -524,6 +524,7 @@ EXPECTED_KEYS = {
     "you_ladder_rows",
     "you_next_rank",
     "you_next_rank_needs_eth",
+    "you_next_send_passes",
     # rows
     "leaderboard_rows",
     "activity_rows",

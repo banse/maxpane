@@ -2339,9 +2339,11 @@ def test_cost_to_pass_quotes_one_send_that_lands_strictly_above():
         early_bps=20_000, credit_cap_wei=1000 * E,
     )
     assert rank == 2
-    # 20 ETH of weight at 2.00x is 10 ETH of credited delta, and credit
-    # telescopes to the high-water mark: 60 + 10.
-    assert needs == 70.0
+    # 20 ETH of weight (plus the one wei that puts us strictly above) at 2.00x
+    # is 10 ETH of credited delta, and credit telescopes to the high-water
+    # mark: 60 + 10.  Wei-exact, and the trailing wei is the tie rule showing
+    # up in the arithmetic rather than in a comment.
+    assert needs == 70 * E + 1
 
 
 def test_cost_to_pass_reverses_the_weight_floor_rather_than_rounding_it():
@@ -2352,9 +2354,10 @@ def test_cost_to_pass_reverses_the_weight_floor_rather_than_rounding_it():
         2, rows, weight_wei=100 * E, high_water_wei=0,
         early_bps=3, credit_cap_wei=1000 * E,
     )
-    delta_wei = round(needs * 1e18)
-    assert sig.weight_added(delta_wei, 3) + 100 * E > 100 * E + 1
-    assert sig.weight_added(delta_wei - 1, 3) + 100 * E <= 100 * E + 1
+    # high_water is 0 here, so the quote IS the credited delta.  At 3 bps the
+    # floor throws away a lot, which is what makes the off-by-one visible.
+    assert sig.weight_added(needs, 3) + 100 * E > 100 * E + 1
+    assert sig.weight_added(needs - 1, 3) + 100 * E <= 100 * E + 1
 
 
 def test_rank_one_has_nobody_above_and_is_quoted_nothing():
@@ -2386,3 +2389,77 @@ def test_a_missing_multiplier_costs_the_quote_not_the_rank():
     rows = [_Row(500 * E), _Row(100 * E)]
     assert sig.cost_to_pass(2, rows, weight_wei=100 * E, high_water_wei=50 * E,
                             early_bps=None, credit_cap_wei=1000 * E) == (None, None)
+
+
+def _wallet_readings(full_readings: dict, *, weight_wei: int, high_water_wei: int,
+                     required_next_wei: int, rows_above: list[int]) -> dict:
+    """`full_readings` with a wallet whose rank and target are ours to choose.
+
+    The deposits are synthetic on purpose: the captured bundle's own wallets
+    give one arrangement, and the pass/hold seam needs both sides of it.
+    """
+    # SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    #
+    # At 10_000 bps a first deposit's weight IS its amount, so the fold's rows
+    # are exactly these numbers and the wallet below is ranked behind them.
+    me = "0x00000000000000000000000000000000000000aa"
+    deposits = [
+        _synthetic_deposit(hour=0, amount_wei=amount, contributor=f"0x{i + 1:040x}",
+                           block_number=26_000_000 + i, early_bps=10_000)
+        for i, amount in enumerate(rows_above)
+    ]
+    deposits.append(
+        _synthetic_deposit(hour=0, amount_wei=weight_wei, contributor=me,
+                           block_number=26_000_100, early_bps=10_000)
+    )
+    return {
+        **full_readings,
+        "deposits": deposits,
+        "wallet_state": WalletState(
+            address=me,
+            points=None,
+            weight_wei=weight_wei,
+            contributed_wei=high_water_wei,
+            tx_count=1,
+            first_hour=0,
+            has_joined=True,
+            required_next_wei=required_next_wei,
+        ),
+    }
+
+
+def test_the_minimum_send_is_reported_as_not_enough_when_it_is_not(full_readings):
+    """The seam a widget must not have to guess: `you_next_send_passes` is
+    False only when the comparison actually says so."""
+    readings = _wallet_readings(
+        full_readings, weight_wei=E, high_water_wei=E,
+        required_next_wei=E + E // 10,          # the 0.1 ETH escalation minimum
+        rows_above=[2 * E],                     # the wallet above holds twice
+    )
+    out = sig.build_signals(readings, now_ts=BUNDLE_NOW)
+    assert out["you_rank"] == 2
+    assert out["you_next_rank"] == 1
+    # Passing needs ~2 ETH of send; the escalation minimum is 1.1.
+    assert out["you_next_rank_needs_eth"] > 1.1
+    assert out["you_next_send_passes"] is False
+
+
+def test_a_send_far_above_the_target_is_reported_as_enough(full_readings):
+    """The other side of the same comparison — without this, a `passes` that is
+    hardcoded True passes every other test in this file."""
+    readings = _wallet_readings(
+        full_readings, weight_wei=E, high_water_wei=E,
+        required_next_wei=10_000 * E,           # absurdly more than any target
+        rows_above=[2 * E],
+    )
+    out = sig.build_signals(readings, now_ts=BUNDLE_NOW)
+    assert out["you_next_rank"] == 1
+    assert out["you_next_send_passes"] is True
+
+
+def test_an_unknown_target_leaves_passes_unknown_rather_than_false(full_readings):
+    """`None` is "we could not tell".  Rendered as False it becomes "your send
+    is not enough", which is a claim about a number nobody read."""
+    readings = {**full_readings, "wallet_state": None}
+    out = sig.build_signals(readings, now_ts=BUNDLE_NOW)
+    assert out["you_next_send_passes"] is None

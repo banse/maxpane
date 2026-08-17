@@ -52,6 +52,7 @@ __all__ = [
     "LADDER_TITLE",
     "STANDING_TITLE",
     "NEXT_TITLE",
+    "TARGET_TITLE",
     "NO_LADDER",
     "NOT_ON_THE_LIST",
     "LADDER_UNAVAILABLE",
@@ -61,11 +62,13 @@ __all__ = [
     "CuratorWalletLadder",
     "CuratorWalletStanding",
     "CuratorWalletNext",
+    "CuratorWalletTarget",
 ]
 
 LADDER_TITLE = "YOUR LADDER"
 STANDING_TITLE = "YOUR STANDING"
 NEXT_TITLE = "YOUR NEXT MOVE"
+TARGET_TITLE = "WHERE IT GETS YOU"
 
 #: Explicit states, tested verbatim.  Each is a different sentence because each
 #: is a different fact: nothing sent, nothing readable, nothing above you.
@@ -73,6 +76,9 @@ NO_LADDER = "no sends from this wallet yet"
 NOT_ON_THE_LIST = "not on the list yet"
 LADDER_UNAVAILABLE = "ladder unavailable"
 TOP_OF_THE_LIST = "nobody above you"
+#: The minimum legal send buys points but not the place above.
+HOLDS_RANK = "not enough to move up"
+TAKES_RANK = "enough to move up"
 AT_THE_CAP = "at the credit cap — no send buys weight"
 #: Marks a deposit that credited nothing because it was above the cap.
 CAPPED_MARK = "capped"
@@ -442,37 +448,73 @@ class CuratorWalletNext(_FactsPanel):
     def update_data(
         self,
         you_required_next_eth=None,
-        you_marginal_points=None,
-        you_rank=None,
-        you_next_rank=None,
-        you_next_rank_needs_eth=None,
+        you_credit_eth=None,
         **_kwargs,
     ) -> None:
         self._payload = {
             "required": you_required_next_eth,
+            "credit": you_credit_eth,
+        }
+        self._seen = True
+        self._render_view()
+
+    def _lines(self) -> list[tuple[str, list[str]]]:
+        """The requirement only.  What it *buys* is the panel beside this one:
+        the contract's escalation rule and its consequences are two different
+        thoughts, and a reader deciding what to type wants the first one alone.
+        """
+        data = self._payload
+        required = as_float(data.get("required"))
+        credit = as_float(data.get("credit"))
+
+        send_parts = [f"≥ {fmt_eth(required)} ETH" if required is not None else DASH]
+        # The rule in one line: only beating your own high-water mark counts.
+        beat_parts = [f"{fmt_eth(credit)} ETH" if credit is not None else DASH]
+
+        return [("send", send_parts), ("to beat", beat_parts)]
+
+
+class CuratorWalletTarget(_FactsPanel):
+    """What the next legal send buys, and what the place above would cost."""
+
+    TITLE = TARGET_TITLE
+
+    def update_data(
+        self,
+        you_marginal_points=None,
+        you_rank=None,
+        you_next_rank=None,
+        you_next_rank_needs_eth=None,
+        you_next_send_passes=None,
+        **_kwargs,
+    ) -> None:
+        self._payload = {
             "marginal": you_marginal_points,
             "rank": you_rank,
             "next_rank": you_next_rank,
             "needs": you_next_rank_needs_eth,
+            "passes": you_next_send_passes,
         }
         self._seen = True
         self._render_view()
 
     def _lines(self) -> list[tuple[str, list[str]]]:
         data = self._payload
-        required = as_float(data.get("required"))
         marginal = data.get("marginal")
-
-        send_parts = [f"≥ {fmt_eth(required)}" if required is not None else DASH]
-        if isinstance(marginal, int):
-            # 0 is real: at the cap the next legal send buys no points at all.
-            send_parts.append(f"+{marginal:,} pts")
-
         rank = data.get("rank")
         next_rank = data.get("next_rank")
         needs = as_float(data.get("needs"))
+        passes = data.get("passes")
+
+        # 0 is real: at the cap the next legal send buys no points at all.
+        gain_parts = [f"+{marginal:,} pts" if isinstance(marginal, int) else DASH]
+        if passes is True:
+            gain_parts.append(TAKES_RANK)
+        elif passes is False:
+            gain_parts.append(HOLDS_RANK)
+
         if isinstance(next_rank, int) and needs is not None:
-            pass_parts = [f"rank {next_rank} needs {fmt_eth(needs)}"]
+            pass_parts = [f"rank {next_rank} needs {fmt_eth(needs)} ETH"]
         elif isinstance(next_rank, int):
             # Ranked, a target above, and no price: the cap is the only way
             # that happens, and saying so beats a dash.
@@ -482,4 +524,4 @@ class CuratorWalletNext(_FactsPanel):
         else:
             pass_parts = [DASH]
 
-        return [("send", send_parts), ("to pass", pass_parts)]
+        return [("gain", gain_parts), ("to pass", pass_parts)]

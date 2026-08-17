@@ -210,6 +210,7 @@ SIGNAL_OUTPUT_KEYS: tuple[str, ...] = (
     "you_ladder_rows",
     "you_next_rank",
     "you_next_rank_needs_eth",
+    "you_next_send_passes",
     "leaderboard_rows",
     "activity_rows",
     "closest_call_rows",
@@ -1149,8 +1150,12 @@ def cost_to_pass(
     high_water_wei: int | None,
     early_bps: int | None,
     credit_cap_wei: int | None,
-) -> tuple[int | None, float | None]:
-    """``(rank_above, the single send that would take it)`` -- or ``None``.
+) -> tuple[int | None, int | None]:
+    """``(rank_above, the single send in WEI that would take it)`` -- or ``None``.
+
+    Wei rather than ETH because the caller compares it against ``requiredNext``
+    to answer "does my next legal send already pass them"; through a float that
+    comparison is decided by rounding at the eighteenth decimal.
 
     The fold ranks on points, then weight, then **who joined first**, so a tie
     does not pass anybody: the target is ``weight_above + 1`` wei, not equality.
@@ -1187,7 +1192,7 @@ def cost_to_pass(
         headroom = cap - min(high_water, cap)
         if delta > headroom:
             return place - 1, None                  # unreachable at any price
-    return place - 1, _eth(high_water + delta)
+    return place - 1, high_water + delta
 
 
 # ---------------------------------------------------------------------------
@@ -1562,10 +1567,7 @@ def build_signals(readings: Any, *, now_ts: float) -> dict:
             [],
         )
 
-        (
-            out["you_next_rank"],
-            out["you_next_rank_needs_eth"],
-        ) = _guard(
+        next_rank, needs_wei = _guard(
             lambda: cost_to_pass(
                 out["you_rank"],
                 rows,
@@ -1578,6 +1580,16 @@ def build_signals(readings: Any, *, now_ts: float) -> dict:
             ),
             (None, None),
         )
+        out["you_next_rank"] = next_rank
+        out["you_next_rank_needs_eth"] = _eth(needs_wei)
+
+        # Does the *minimum legal* send already pass them?  Compared in wei,
+        # where the answer is exact; through ETH floats it is decided by
+        # rounding at the eighteenth decimal.  `None` when either side is
+        # unknown -- "we could not tell" is not "it does not".
+        required_wei = _int_or_none(getattr(wallet_state, "required_next_wei", None))
+        if needs_wei is not None and required_wei is not None:
+            out["you_next_send_passes"] = required_wei >= needs_wei
 
     return out
 

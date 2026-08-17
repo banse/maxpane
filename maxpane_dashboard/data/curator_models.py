@@ -532,6 +532,9 @@ CURATOR_KEYS: tuple[str, ...] = (
                                 #   holds, never what a person holds.
     "you_ladder_rows",          # list[dict] — CURATOR_ROW_KEYS["you_ladder_rows"]
     "you_next_rank",            # int | None — the rank above; None at rank 1
+    "you_next_send_passes",     # bool | None — does the MINIMUM legal send
+                                #   already pass the rank above?  None is "we
+                                #   could not tell", never "no".
     "you_next_rank_needs_eth",  # float | None — one send that would pass it.
                                 #   None at the credit cap: no send buys weight
                                 #   there, and a number would be a promise the

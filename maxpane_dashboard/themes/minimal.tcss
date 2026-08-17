@@ -2294,8 +2294,17 @@ CuratorScreen CuratorWalletStanding {
     padding: 0 1;
 }
 
+/* The bottom quadrants take the top row's 3:2 seam, so the four boxes line up
+ * as one grid rather than as two unrelated rows. */
 CuratorScreen CuratorWalletNext {
-    width: 100%;
+    width: 3fr;
+    height: auto;
+    min-height: 3;
+    padding: 0 1;
+}
+
+CuratorScreen CuratorWalletTarget {
+    width: 2fr;
     height: auto;
     min-height: 3;
     padding: 0 1;
