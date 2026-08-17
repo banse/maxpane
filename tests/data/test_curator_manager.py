@@ -953,6 +953,42 @@ def test_a_stats_mismatch_marks_the_fold_stale_rather_than_publishing(tmp_path, 
     assert SOURCE_LOGS in manager._degraded()
 
 
+def test_the_history_cap_does_not_make_the_fold_look_permanently_short(tmp_path, clock, monkeypatch):
+    """MAX_PERSISTED_EVENTS drops the OLDEST rows, and the cache says so: the
+    folded totals become a lower bound while the contract's counter never
+    forgets.  Comparing retained rows against that counter declares the fold
+    short forever once the cap trips -- a full re-sweep from the creation block
+    every slow tick, re-dropping the overflow each time, and a `degraded` that
+    never clears.  231 deposits landed in four hours, so 25 000 is reachable."""
+    from maxpane_dashboard.data import curator_cache as cc
+
+    monkeypatch.setattr(cc, "MAX_PERSISTED_EVENTS", 100)
+    client = FakeClient(
+        fetch_logs=lambda *_: _sweep(), fetch_blockscout_logs=lambda *_: []
+    )
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+    assert len(manager.cache.events()) == 100
+    assert manager.cache.dropped_events == 131          # 231 seen, 100 kept
+
+    covered = _state(tx_count=222, block_number=25_770_400)
+    out = asyncio.run(manager._pool_crosscheck({"slow"}, NOW, covered, CONFIG))
+    assert out["gap_block"] is None
+    assert manager._fold_stale is False
+    assert manager._repair_from_block is None
+
+    # ...and a REAL shortfall is still caught: 231 seen against a claimed 400.
+    manager2 = _manager(tmp_path / "b", clock, client=client)
+    asyncio.run(manager2._pool_logs({"medium"}, NOW, CONFIG))
+    short = asyncio.run(
+        manager2._pool_crosscheck(
+            {"slow"}, NOW, _state(tx_count=400, block_number=25_770_400), CONFIG
+        )
+    )
+    assert short["gap_block"] == A.CREATION_BLOCK
+    assert manager2._fold_stale is True
+
+
 def test_a_dead_cross_check_does_not_condemn_the_fold(tmp_path, clock):
     """Blockscout being down is not the logs pool being down: the fold still
     stands on the RPC sweep, and claiming a gap we cannot see would be worse

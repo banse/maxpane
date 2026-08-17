@@ -994,11 +994,25 @@ class CuratorManager:
             and watermark is not None
             and watermark >= state_block
         )
-        if covered and len(self.cache.events()) < counter:
+        # The cap counts.  ``MAX_PERSISTED_EVENTS`` drops the OLDEST rows once
+        # the history outgrows it, and the cache says so in as many words: "the
+        # folded totals are now a lower bound; the contract's own counters are
+        # not".  Comparing the retained rows against a counter that has never
+        # forgotten anything therefore declares the fold short *permanently*
+        # once the cap trips — a full re-sweep from the creation block on every
+        # slow tick, each one re-dropping the overflow, plus a `degraded` that
+        # never clears.  What we have seen is retained + dropped.
+        seen = len(self.cache.events()) + max(
+            0, _opt_int(getattr(self.cache, "dropped_events", 0)) or 0
+        )
+        if covered and seen < counter:
             logger.warning(
-                "Curator fold is short: %d folded deposits against the contract's "
-                "own %d at block %s — re-sweeping",
+                "Curator fold is short: %d folded deposits (%d retained + %d the "
+                "history cap dropped) against the contract's own %d at block %s "
+                "— re-sweeping",
+                seen,
                 len(self.cache.events()),
+                seen - len(self.cache.events()),
                 counter,
                 state_block,
             )
