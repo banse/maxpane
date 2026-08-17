@@ -645,6 +645,92 @@ def hourly_buckets(
     ]
 
 
+# ---------------------------------------------------------------------------
+# Survival: judged hours, the streak, the closest call (H13)
+# ---------------------------------------------------------------------------
+
+
+def survival(
+    buckets: Any,
+    *,
+    current_hour: int | None,
+    hourly_threshold_wei: int | None,
+    first_judged_hour: int | None = None,
+) -> dict:
+    """The survival record over the **completed, judged** hours.
+
+    Returns ``streak_hours``, ``closest_call_hour``, ``closest_call_margin_wei``
+    and ``closest_calls`` — the last a list of
+    ``(hour, volume_wei, margin_wei, savior)`` ascending by margin, ties broken
+    by hour so two identical margins never swap places between refreshes.
+
+    **The in-progress hour is never judged** (H13).  ``_isShort`` returns false
+    while the live hour is the active one, so judging it would end the game
+    three seconds after every boundary.  The judged window is
+    ``[first_judged_hour, current_hour - 1]``.
+
+    **Silence inside that window counts.**  The fold's buckets stop at the last
+    hour that saw a deposit, and the hours after it are precisely the ones that
+    kill the contract — ``_isShort``'s own comment says every hour past the last
+    active one is provably empty.  So a judged hour with no bucket is folded in
+    at zero, but only *past a known history*: with no buckets at all there is no
+    evidence of where the history ends, and inventing fatal hours out of an
+    empty read is the opposite of honest.
+
+    ``first_judged_hour`` is optional only because the fold already stamped
+    ``judged`` on each bucket; pass it whenever it is known — it is the one
+    input that says where judging starts when the buckets are silent there.
+
+    Unknown inputs give ``None``, never ``0``: a failed threshold read must not
+    render "we have survived nothing".
+    """
+    empty: dict[str, Any] = {
+        "streak_hours": None,
+        "closest_call_hour": None,
+        "closest_call_margin_wei": None,
+        "closest_calls": [],
+    }
+
+    hour_now = _int_or_none(current_hour)
+    threshold = _int_or_none(hourly_threshold_wei)
+    if hour_now is None or threshold is None:
+        return empty
+
+    rows = [b for b in (buckets or []) if _int_or_none(getattr(b, "hour", None)) is not None]
+    volumes = {b.hour: _int_or_none(getattr(b, "volume_wei", None)) or 0 for b in rows}
+    saviors = {b.hour: getattr(b, "saved_by", None) for b in rows}
+
+    start = _int_or_none(first_judged_hour)
+    if start is None:
+        judged_hours = [b.hour for b in rows if getattr(b, "judged", False)]
+        start = min(judged_hours) if judged_hours else None
+    if start is None or not rows:
+        return {**empty, "streak_hours": 0}
+
+    window = [h for h in range(start, hour_now) if h >= 0]
+    if not window:
+        return {**empty, "streak_hours": 0}
+
+    calls = [
+        (hour, volumes.get(hour, 0), volumes.get(hour, 0) - threshold, saviors.get(hour))
+        for hour in window
+    ]
+
+    streak = 0
+    for _hour, _volume, margin, _savior in reversed(calls):
+        if margin < 0:
+            break
+        streak += 1
+
+    ranked = sorted(calls, key=lambda row: (row[2], row[0]))
+    return {
+        "streak_hours": streak,
+        "closest_call_hour": ranked[0][0],
+        "closest_call_margin_wei": ranked[0][2],
+        "closest_calls": ranked,
+    }
+
+
 __all__ = [
     # tunables
     "WHALE_MIN_ETH",
@@ -678,4 +764,5 @@ __all__ = [
     "fold_deposits",
     "hourly_buckets",
     "bucket_start_ts",
+    "survival",
 ]

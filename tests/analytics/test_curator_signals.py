@@ -1121,3 +1121,169 @@ def test_bucket_start_ts_is_none_when_the_immutables_are_unknown() -> None:
     assert sig.bucket_start_ts(3, LAUNCH, None) is None
     assert sig.bucket_start_ts(None, LAUNCH, HOUR) is None
     assert sig.bucket_start_ts(3, LAUNCH, HOUR) == LAUNCH + 3 * HOUR
+
+
+# ===========================================================================
+# WP3.8 — survival: judged hours, streak, closest call (H13)
+# ===========================================================================
+#
+# Every judged hour below is SYNTHETIC and permanently marked, because no
+# judged hour exists on chain yet: the first one completes at
+# 2026-08-17 20:58:47 UTC.
+# SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+
+
+def _bucket(hour: int, eth: float, *, judged: bool = True, saved_by: str | None = None) -> HourBucket:
+    return HourBucket(
+        hour=hour,
+        volume_wei=int(round(eth * ETH)),
+        deposits=1 if eth else 0,
+        judged=judged,
+        saved_by=saved_by,
+    )
+
+
+def _ladder(volumes: dict[int, float], *, judged_from: int = FIRST_JUDGED_HOUR) -> list[HourBucket]:
+    return [
+        _bucket(h, volumes.get(h, 0.0), judged=h >= judged_from)
+        for h in range(0, max(volumes) + 1)
+    ]
+
+
+def _hours(result: dict) -> list[int]:
+    return [row[0] for row in result["closest_calls"]]
+
+
+def test_the_in_progress_hour_is_never_judged() -> None:
+    """H13, straight from ``_isShort``: ``from > hour - 1`` returns false, so
+    the hour you are living in cannot kill you.  Judging it would settle the
+    game every single hour, three seconds after the boundary."""
+    buckets = _ladder({h: 9.0 for h in range(24, 30)} | {30: 0.0})
+    result = sig.survival(
+        buckets,
+        current_hour=30,
+        hourly_threshold_wei=THRESHOLD,
+        first_judged_hour=FIRST_JUDGED_HOUR,
+    )
+    assert 30 not in _hours(result)
+    assert result["streak_hours"] == 6
+
+
+def test_the_hour_that_just_completed_becomes_judgeable_at_the_boundary() -> None:
+    """The exact-boundary proof: one tick of ``current_hour`` moves hour 29
+    from living to judged, and nothing else about the input changes."""
+    buckets = _ladder({h: 9.0 for h in range(24, 30)})
+    before = sig.survival(
+        buckets, current_hour=29, hourly_threshold_wei=THRESHOLD, first_judged_hour=24
+    )
+    after = sig.survival(
+        buckets, current_hour=30, hourly_threshold_wei=THRESHOLD, first_judged_hour=24
+    )
+    assert 29 not in _hours(before) and 29 in _hours(after)
+    assert before["streak_hours"] == 5 and after["streak_hours"] == 6
+
+
+def test_no_judged_hours_yet_is_an_explicit_state_not_an_empty_number(
+    deposits: list[DepositEvent],
+) -> None:
+    """During grace there is nothing to survive.  The margin is None, not 0 —
+    a 0 margin reads as 'we scraped through by nothing', which is a lie in the
+    most alarming possible direction."""
+    result = sig.survival(
+        _buckets(deposits),
+        current_hour=1,
+        hourly_threshold_wei=THRESHOLD,
+        first_judged_hour=FIRST_JUDGED_HOUR,
+    )
+    assert result["streak_hours"] == 0
+    assert result["closest_call_hour"] is None
+    assert result["closest_call_margin_wei"] is None
+    assert result["closest_calls"] == []
+
+
+def test_the_margin_is_volume_minus_threshold_and_can_be_exactly_zero() -> None:
+    """A judged hour that took in exactly 5 ETH survived by exactly nothing.
+    That is the tightest possible real call and must render as 0.00, not None.
+    """
+    buckets = _ladder({24: 9.0, 25: 5.0, 26: 40.0})
+    result = sig.survival(
+        buckets, current_hour=27, hourly_threshold_wei=THRESHOLD, first_judged_hour=24
+    )
+    assert result["closest_call_hour"] == 25
+    assert result["closest_call_margin_wei"] == 0
+    assert result["closest_calls"][0] == (25, THRESHOLD, 0, None)
+    assert _hours(result) == [25, 24, 26]  # ascending by margin
+
+
+def test_the_margins_are_wei_exact() -> None:
+    buckets = [
+        HourBucket(hour=24, volume_wei=THRESHOLD + 1, deposits=1, judged=True),
+        HourBucket(hour=25, volume_wei=THRESHOLD - 1, deposits=1, judged=True),
+    ]
+    result = sig.survival(
+        buckets, current_hour=26, hourly_threshold_wei=THRESHOLD, first_judged_hour=24
+    )
+    assert dict((h, m) for h, _v, m, _s in result["closest_calls"]) == {24: 1, 25: -1}
+
+
+def test_the_streak_counts_consecutive_survived_judged_hours() -> None:
+    """It counts back from the last completed hour and stops at the first
+    failure — a streak is what is unbroken *now*, not the best run ever."""
+    buckets = _ladder({24: 9.0, 25: 1.0, 26: 9.0, 27: 9.0, 28: 9.0})
+    result = sig.survival(
+        buckets, current_hour=29, hourly_threshold_wei=THRESHOLD, first_judged_hour=24
+    )
+    assert result["streak_hours"] == 3
+    assert result["closest_call_hour"] == 25
+    assert result["closest_call_margin_wei"] == 1 * ETH - THRESHOLD
+
+
+def test_a_silent_hour_past_the_last_deposit_is_judged_and_kills_the_streak() -> None:
+    """The fold's buckets stop at the last hour that saw a deposit — and the
+    hours after it are exactly the ones that end the game.  ``_isShort``'s own
+    comment says it: every hour after the last active one is provably empty.
+    """
+    buckets = _ladder({24: 9.0, 25: 9.0})
+    result = sig.survival(
+        buckets, current_hour=28, hourly_threshold_wei=THRESHOLD, first_judged_hour=24
+    )
+    assert _hours(result) == [26, 27, 24, 25]
+    assert result["closest_call_margin_wei"] == -THRESHOLD
+    assert result["streak_hours"] == 0
+
+
+def test_the_savior_travels_with_the_hour_it_saved() -> None:
+    """HourSaved has never fired on chain; when it does, the row already has a
+    place to sit."""
+    savior = "0x00000000000000000000000000000000000000bb"
+    buckets = [
+        _bucket(h, 0.0, judged=False) for h in range(0, 24)
+    ] + [_bucket(24, 5.5, saved_by=savior)]
+    result = sig.survival(
+        buckets, current_hour=25, hourly_threshold_wei=THRESHOLD, first_judged_hour=24
+    )
+    assert result["closest_calls"][0][3] == savior
+
+
+def test_survival_is_unknown_rather_than_zero_when_an_input_is_missing() -> None:
+    """A failed threshold read must not render a streak of 0, which reads as
+    'we have survived nothing' rather than 'we could not check'."""
+    buckets = _ladder({24: 9.0, 25: 9.0})
+    for kwargs in (
+        {"current_hour": None, "hourly_threshold_wei": THRESHOLD},
+        {"current_hour": 26, "hourly_threshold_wei": None},
+    ):
+        result = sig.survival(buckets, first_judged_hour=24, **kwargs)
+        assert result["streak_hours"] is None
+        assert result["closest_call_hour"] is None
+        assert result["closest_call_margin_wei"] is None
+        assert result["closest_calls"] == []
+
+
+def test_survival_over_no_buckets_at_all_does_not_crash() -> None:
+    result = sig.survival(
+        [], current_hour=30, hourly_threshold_wei=THRESHOLD, first_judged_hour=24
+    )
+    assert result["streak_hours"] == 0
+    assert result["closest_calls"] == []
+    assert sig.survival(None, current_hour=None, hourly_threshold_wei=None)["closest_calls"] == []
