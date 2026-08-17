@@ -179,8 +179,19 @@ def detect(ds: Dataset, config: DetectConfig = DetectConfig()) -> DetectResult:
     all_edges.extend(funding_edges(ds, config, groups=groups))
 
     # ---- 3. the compound gate -------------------------------------------
+    # The gate counts *distinct families*, so the family vocabulary is
+    # enforced right where the counting happens: an edge whose family is not
+    # in FAMILIES is a programming error in a signal (a misspelling would
+    # otherwise silently count as a second family and quietly loosen the
+    # gate), and a programming error raises — it never convicts.
+    known_families = frozenset(FAMILIES)
     best_by_family: dict[str, dict[str, Reason]] = {}
     for edge in all_edges:
+        if edge.family not in known_families:
+            raise ValueError(
+                f"unknown edge family {edge.family!r} (not in FAMILIES); "
+                "a misspelt family must never count toward the gate"
+            )
         root = uf.find(edge.a)
         families = best_by_family.setdefault(root, {})
         cur = families.get(edge.family)

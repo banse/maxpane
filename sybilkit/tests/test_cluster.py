@@ -299,6 +299,38 @@ def test_reasons_are_pattern_language_never_verdicts() -> None:
     assert "amount" in families
 
 
+def test_an_unknown_edge_family_is_a_programming_error_not_a_second_family() -> None:
+    """Review I1: the gate counts distinct families, so a misspelt family
+    from a future signal ('amounts ', 'sequnce') must never silently count
+    as corroboration.  An unknown family is a programming error and detect
+    raises on it rather than convicting with it."""
+    import pytest
+
+    from sybilkit.cluster import Edge
+    from sybilkit.report import Reason
+    import sybilkit.signals.amounts as amounts_mod
+
+    ds = _two_family_farm(fresh=True)
+    real = amounts_mod.amount_edges
+
+    def poisoned(ds_, cfg_):
+        edges = real(ds_, cfg_)
+        bad = Reason("amounts ", "misspelt family", 0.9)
+        return edges + [
+            Edge(edges[0].a, edges[0].b, "amounts ", 0.9, bad),
+            Edge(edges[0].a, edges[0].b, "sequnce", 0.9, bad),
+        ]
+
+    amounts_mod.amount_edges = poisoned
+    try:
+        with pytest.raises(ValueError, match="amounts "):
+            detect(ds, DetectConfig())
+    finally:
+        amounts_mod.amount_edges = real
+    # restored: the same dataset detects normally again
+    assert len(detect(ds, DetectConfig()).clusters) == 1
+
+
 def test_an_empty_dataset_detects_nothing_and_says_so() -> None:
     res = detect(Dataset(deposits=(), first_index={}, txs={}, funding={}))
     assert res.clusters == []
