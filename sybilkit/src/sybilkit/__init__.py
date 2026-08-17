@@ -39,13 +39,26 @@ Public surface (frozen in WP0, implemented in WP1/WP2)
 
 from __future__ import annotations
 
+from .cluster import DetectConfig, detect
 from .model import Dataset, Deposit, Funding, Tx
+from .report import Cluster, DetectResult, Reason, WalletVerdict
 
-# WP0.3 adds the report/cluster re-exports here.  The names in the docstring
-# are the freeze; this list is what makes them importable.
+#: PRD §3.3's first line is ``from sybilkit import Dataset, detect,
+#: DetectConfig`` — so the whole public surface is re-exported here rather than
+#: leaving a reader to find the submodule each name lives in.
+#:
+#: ``curve_points`` is deliberately **not** here: it is an implementation
+#: primitive of the curator preset (WP2's ``sybilkit.curator`` re-exports it),
+#: not part of the analysis surface a caller drives.
 __all__: tuple[str, ...] = (
     "Dataset",
+    "detect",
+    "DetectConfig",
+    "DetectResult",
     "Deposit",
     "Tx",
     "Funding",
+    "Cluster",
+    "Reason",
+    "WalletVerdict",
 )

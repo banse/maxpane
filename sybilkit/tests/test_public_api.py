@@ -306,3 +306,279 @@ def test_no_module_imports_maxpane_textual_or_a_transport() -> None:
 
 def test_the_distribution_ships_py_typed() -> None:
     assert (SRC / "py.typed").is_file()
+
+
+# ===========================================================================
+# WP0.3 — the report / config / detect surface
+# ===========================================================================
+
+from sybilkit.cluster import FAMILIES, DetectConfig, detect  # noqa: E402
+from sybilkit.curve import curve_points  # noqa: E402
+from sybilkit.report import Cluster, DetectResult, Reason, WalletVerdict  # noqa: E402
+
+#: The three report dataclasses, frozen the same way the models are.
+REPORT_KWARGS: dict[type, tuple[str, ...]] = {
+    Reason: ("family", "human_string", "strength"),
+    Cluster: (
+        "cluster_id",
+        "members",
+        "reasons",
+        "confidence",
+        "points",
+        "points_share",
+        "span_blocks",
+        "size",
+    ),
+    WalletVerdict: ("in_cluster", "cluster_id", "reasons", "confidence"),
+}
+
+REPORTS = tuple(REPORT_KWARGS)
+
+
+def _reason(family: str = "amount", strength: float = 0.8) -> Reason:
+    return Reason(family=family, human_string="identical 0.45 ETH send", strength=strength)
+
+
+def _cluster(cluster_id: int = 0, points_share: float = 0.0681) -> Cluster:
+    return Cluster(
+        cluster_id=cluster_id,
+        members=("0x" + "11" * 20, "0x" + "22" * 20),
+        reasons=(_reason(),),
+        confidence=0.9,
+        points=1_811_322,
+        points_share=points_share,
+        span_blocks=254,
+        size=1995,
+    )
+
+
+@pytest.mark.parametrize("model", REPORTS)
+def test_report_models_are_frozen_slotted_dataclasses(model) -> None:
+    assert dataclasses.is_dataclass(model)
+    assert model.__dataclass_params__.frozen is True
+    assert "__slots__" in vars(model), f"{model.__name__} is not slotted"
+
+
+@pytest.mark.parametrize("model", REPORTS)
+def test_report_field_names_are_exactly_the_frozen_vocabulary(model) -> None:
+    assert tuple(f.name for f in dataclasses.fields(model)) == REPORT_KWARGS[model]
+
+
+@pytest.mark.parametrize("model", REPORTS)
+def test_report_models_construct_from_their_documented_kwargs(model) -> None:
+    assert model(**{name: None for name in REPORT_KWARGS[model]}) is not None
+
+
+def test_the_five_signal_families_are_the_authority_and_live_in_cluster() -> None:
+    """PRD §3.1: a cluster forms only when ≥ ``min_families`` **distinct**
+    families link its members.  One tuple, in one module, or the combiner and
+    the reason-writer count different things and the gate silently loosens.
+
+    ``Reason`` deliberately does **not** validate against this tuple at
+    construction: ``cluster.py`` imports ``report.py`` (it builds
+    :class:`Cluster` objects), so a validating ``Reason`` would need the import
+    to run the other way too.  The constraint is pinned here instead.
+    """
+    assert FAMILIES == ("amount", "sequence", "cadence", "gas", "funding")
+    assert len(set(FAMILIES)) == len(FAMILIES)
+    for family in FAMILIES:
+        assert _reason(family).family == family
+    # ...and the module that owns the tuple is the one the combiner lives in.
+    assert FAMILIES is sys.modules["sybilkit.cluster"].FAMILIES
+    assert not hasattr(sys.modules["sybilkit.report"], "FAMILIES")
+
+
+def test_a_reason_is_a_pattern_language_string_with_a_graduated_strength() -> None:
+    """"Reasons, never verdicts" (PRD §3.1).  ``strength`` is a float in [0, 1]
+    so confidence can be multiplicative and graduated; a bool here would make
+    every cluster binary, which is the failure mode the whole design avoids."""
+    r = _reason(strength=0.55)
+    assert _hint(Reason, "strength") == "float"
+    assert _hint(Reason, "human_string") == "str"
+    assert 0.0 <= r.strength <= 1.0
+
+
+def test_a_cluster_carries_its_share_its_span_and_its_size() -> None:
+    """``span_blocks`` is ``int | None`` — a one-block cluster spans 0, which is
+    a real and very incriminating measurement, so the unknown case needs its own
+    value."""
+    c = _cluster()
+    assert _hint(Cluster, "span_blocks") == "int | None"
+    assert _hint(Cluster, "points") == "int"
+    assert _hint(Cluster, "points_share") == "float"
+    assert _hint(Cluster, "members") == "tuple[str, ...]"
+    assert _hint(Cluster, "reasons") == "tuple[Reason, ...]"
+    assert c.size == 1995 and c.span_blocks == 254
+
+
+def test_clusters_are_ordered_by_points_share_descending() -> None:
+    """PRD §3.3: ``res.clusters`` is sorted by ``points_share`` desc — widest
+    operator first, because that is the row the OPERATORS panel leads with."""
+    small, big = _cluster(1, 0.0042), _cluster(2, 0.1789)
+    res = DetectResult(
+        clusters=[big, small],
+        total_points=26_585_740,
+        flagged_points=11_498_903,
+        clean_points=15_086_837,
+    )
+    assert [c.cluster_id for c in res.clusters] == [2, 1]
+    assert res.clusters == sorted(
+        [small, big], key=lambda c: c.points_share, reverse=True
+    )
+
+
+def test_detect_result_is_a_value_object_not_a_dataclass() -> None:
+    """It has methods (``wallet``) and a derived property (``flagged``), so it
+    is a small class rather than a dataclass — the four counters are the whole
+    of its state and each is an ``int``, never a ``None``: a detector that ran
+    always knows how many points it looked at."""
+    assert not dataclasses.is_dataclass(DetectResult)
+    res = DetectResult(
+        clusters=[_cluster()],
+        total_points=26_585_740,
+        flagged_points=11_498_903,
+        clean_points=15_086_837,
+    )
+    assert res.total_points == 26_585_740
+    assert res.flagged_points + res.clean_points == res.total_points
+    assert isinstance(res.clusters, list)
+
+
+def test_detect_result_wallet_and_flagged_are_stubs_until_wp1() -> None:
+    res = DetectResult(
+        clusters=[], total_points=0, flagged_points=0, clean_points=0
+    )
+    with pytest.raises(NotImplementedError, match="WP1"):
+        res.wallet("0x" + "11" * 20)
+    with pytest.raises(NotImplementedError, match="WP1"):
+        _ = res.flagged
+
+
+def test_the_flagged_threshold_travels_with_the_result() -> None:
+    """``res.flagged`` is "confidence >= threshold", so the threshold has to be
+    somewhere the result can see it.  It is a keyword-only argument defaulting
+    to ``DetectConfig.confidence_threshold``'s default, which is what makes
+    ``detect()`` able to hand its config's value straight through and a
+    hand-built result behave identically."""
+    params = inspect.signature(DetectResult.__init__).parameters
+    assert list(params) == [
+        "self",
+        "clusters",
+        "total_points",
+        "flagged_points",
+        "clean_points",
+        "confidence_threshold",
+    ]
+    assert params["confidence_threshold"].kind is inspect.Parameter.KEYWORD_ONLY
+    default = dataclasses.fields(DetectConfig)
+    (threshold,) = [f for f in default if f.name == "confidence_threshold"]
+    assert params["confidence_threshold"].default == threshold.default
+
+
+def test_a_wallet_verdict_separates_not_in_a_cluster_from_not_analyzed() -> None:
+    """``res.wallet(addr)`` returns ``None`` when the wallet was **not
+    analyzed**, and a ``WalletVerdict(in_cluster=False, ...)`` when it was
+    analyzed and found clean.  Collapsing the two would let the `y` view print
+    a confident "not linked" through an outage — the FARM-row defect,
+    one wave early.
+    """
+    clean = WalletVerdict(in_cluster=False, cluster_id=None, reasons=(), confidence=0.0)
+    linked = WalletVerdict(
+        in_cluster=True, cluster_id=0, reasons=(_reason(),), confidence=0.91
+    )
+    assert clean.in_cluster is False and clean.cluster_id is None
+    assert linked.cluster_id == 0
+    assert _hint(WalletVerdict, "cluster_id") == "int | None"
+    assert _hint(WalletVerdict, "in_cluster") == "bool"
+
+
+def test_detect_config_defaults_are_the_measured_ones() -> None:
+    """PRD §3.1/§3.3, and every one of the four is a measured decision:
+
+    ``min_size=5``   — Hop used ≥10 and LayerZero ≥20; 5 is the floor that
+                       still keeps one-human-few-wallets out.
+    ``min_families=2`` — one family alone never convicts.
+    ``near_amount_tol=0.10`` — ±10% catches the jitter-amount batches a
+                       byte-identical rule cannot (499 runs / 7 369 wallets at
+                       ±10%, against 281 / 3 779 byte-identical).
+    ``confidence_threshold=0.5`` — the ``flagged`` cut, graduated either side.
+    """
+    cfg = DetectConfig()
+    assert cfg.min_size == 5
+    assert cfg.min_families == 2
+    assert cfg.near_amount_tol == 0.10
+    assert cfg.confidence_threshold == 0.5
+    assert dataclasses.is_dataclass(DetectConfig)
+    assert DetectConfig.__dataclass_params__.frozen is True
+    assert tuple(f.name for f in dataclasses.fields(DetectConfig)) == (
+        "min_size",
+        "min_families",
+        "near_amount_tol",
+        "confidence_threshold",
+    )
+
+
+def test_detect_has_the_frozen_signature_and_is_a_stub_until_wp1() -> None:
+    params = inspect.signature(detect).parameters
+    assert list(params) == ["ds", "config"]
+    assert params["config"].default == DetectConfig()
+    ds = Dataset(deposits=(), first_index={}, txs={}, funding={})
+    with pytest.raises(NotImplementedError, match="WP1"):
+        detect(ds)
+
+
+def test_the_whole_prd_public_surface_imports_from_the_package_root() -> None:
+    """PRD §3.3's first line is ``from sybilkit import Dataset, detect,
+    DetectConfig`` — so those names must be on the package, not only on the
+    submodules a reader would have to go looking for."""
+    import sybilkit
+
+    for name in (
+        "Dataset",
+        "detect",
+        "DetectConfig",
+        "DetectResult",
+        "Deposit",
+        "Tx",
+        "Funding",
+        "Cluster",
+        "Reason",
+        "WalletVerdict",
+    ):
+        assert hasattr(sybilkit, name), name
+        assert name in sybilkit.__all__, name
+    assert set(sybilkit.__all__) == {
+        "Dataset",
+        "detect",
+        "DetectConfig",
+        "DetectResult",
+        "Deposit",
+        "Tx",
+        "Funding",
+        "Cluster",
+        "Reason",
+        "WalletVerdict",
+    }
+
+
+def test_the_curve_preset_signature_floors_like_the_contract() -> None:
+    """``curve_points(weight_wei, points_per_eth)`` — the contract's own
+    ``isqrt(weight_wei) * points_per_eth // 10**9``.
+
+    It lives in its own module rather than in ``curator.py`` (WP2's file)
+    because ``Cluster.points`` needs it in **wave 1**: a cluster's points are
+    the summed curve points of its members, so WP1 cannot compute a
+    ``points_share`` without it.  WP2's ``sybilkit.curator`` re-exports *this*
+    one; there is deliberately never a second implementation, because the
+    second one is the one nobody mutation-tests.
+
+    Two things are frozen by the signature alone and both are load-bearing:
+    ``points_per_eth`` is **read from the chain**, never the documented 1000
+    (CLAUDE.md hard constraint 4), and neither argument has a default, so no
+    caller can silently inherit one.
+    """
+    params = inspect.signature(curve_points).parameters
+    assert list(params) == ["weight_wei", "points_per_eth"]
+    assert all(p.default is inspect.Parameter.empty for p in params.values())
+    with pytest.raises(NotImplementedError, match="WP1"):
+        curve_points(10**18, 1000)
