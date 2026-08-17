@@ -76,7 +76,10 @@ from typing import Any
 
 from maxpane_dashboard.analytics.curator_signals import (
     READING_KEYS,
+    bucket_start_ts,
     build_signals,
+    fold_deposits,
+    hourly_buckets,
 )
 from maxpane_dashboard.data import curator_addresses as A
 from maxpane_dashboard.data.curator_cache import (
@@ -92,7 +95,7 @@ from maxpane_dashboard.data.curator_cache import (
     TIER_SLOW,
     CuratorCache,
 )
-from maxpane_dashboard.data.curator_client import CuratorClient
+from maxpane_dashboard.data.curator_client import LOG_GROUPS, CuratorClient
 from maxpane_dashboard.data.curator_models import (
     CURATOR_DEGRADED_GROUPS,
     CURATOR_KEYS,
@@ -622,6 +625,264 @@ class CuratorManager:
         self.cache.store_last_good(SLOT_CONFIG, payload, ts=now)
         self.cache.mark_fetched(TIER_ONCE, now)
         return payload
+
+    # -- the medium tier: the log sweep and the fold -------------------------
+
+    def _sweep_from_block(self) -> int:
+        """Where the next sweep starts.
+
+        A repair range wins, then the watermark + 1, then the creation block.
+        **Never the head**: an absent watermark means "we have never folded
+        anything", and starting from now would leave the whole game unfolded
+        behind an empty leaderboard with no error anywhere.  The full backfill
+        is one sweep in practice — 377 rows from block 25 769 870, validated in
+        the research.
+        """
+        if self._repair_from_block is not None:
+            return max(A.CREATION_BLOCK, self._repair_from_block)
+        watermark = self.cache.last_seen_block()
+        if watermark is None:
+            return A.CREATION_BLOCK
+        return max(A.CREATION_BLOCK, watermark + 1)
+
+    def _log_group_failed(self) -> dict[str, bool]:
+        """The client's per-filter failure dict, defensively.
+
+        ``LogSweep``'s ``()`` is ambiguous — "read, nothing matched" or "this
+        filter died" — and only this dict tells them apart.  A double that does
+        not define it is treated as "nothing failed", which is what a client
+        that cannot report partial failure is in fact claiming.
+        """
+        flags = getattr(self.client, "log_group_failed", None)
+        if not isinstance(flags, dict):
+            return dict.fromkeys(LOG_GROUPS, False)
+        return {group: bool(flags.get(group)) for group in LOG_GROUPS}
+
+    def _logs_read_groups(self) -> set[str]:
+        """Which log groups have ever been read successfully, across restarts.
+
+        This is what separates ``[]`` from ``None`` for a group whose history is
+        legitimately empty: ``HourSaved`` and ``Rescued`` have never fired on
+        chain, so "read it, found nothing" is the *expected* answer and must not
+        render as an outage — while a group nobody has ever managed to read must
+        not render as an empty game.
+        """
+        entry = self.cache.get_last_good(SLOT_LOGS)
+        payload = entry.payload if entry is not None else None
+        groups = payload.get("groups_read") if isinstance(payload, dict) else None
+        return {g for g in groups if g in LOG_GROUPS} if isinstance(groups, list) else set()
+
+    async def _pool_logs(
+        self, tiers: set[str], now: float, config: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        """Sweep, decode, fold and persist.  Never raises.
+
+        Incremental by design: after the first backfill the client only hands
+        back rows newer than the watermark, so the cache is the only place the
+        rest of the game exists.  The watermark advances **only** on a
+        successful sweep — advancing it on a failure would skip that range
+        forever, and the leaderboard would be permanently wrong with no symptom.
+        """
+        if TIER_MEDIUM not in tiers:
+            return {"ok": None, "swept": False}
+
+        from_block = self._sweep_from_block()
+        sweep = await self._guard(
+            lambda: self.client.fetch_logs(from_block), "fetch_logs"
+        )
+        if sweep is None:
+            self.cache.mark_failed(TIER_MEDIUM, now)
+            self._note(SOURCE_LOGS, False)
+            return {"ok": False, "swept": True, "from_block": from_block}
+
+        failed = self._log_group_failed()
+        decoded = [decode_deposit(row) for row in getattr(sweep, "deposits", ())]
+        events = [event for event in decoded if event is not None]
+        if len(events) != len(decoded):
+            logger.warning(
+                "Curator sweep: %d of %d Deposited row(s) did not decode and were "
+                "dropped rather than zeroed",
+                len(decoded) - len(events),
+                len(decoded),
+            )
+        self.cache.store_events(events, now=now)
+
+        firsts = [decode_first_deposit(row) for row in getattr(sweep, "first_deposits", ())]
+        self.cache.store_first_deposits([row for row in firsts if row is not None])
+        saved = [decode_hour_saved(row) for row in getattr(sweep, "hour_saved", ())]
+        self.cache.store_hour_saved([row for row in saved if row is not None])
+        if not failed["rescued"]:
+            self.cache.store_rescued_total(
+                decode_rescued_total(getattr(sweep, "rescued", ()))
+            )
+        for row in getattr(sweep, "settled", ()):
+            obituary = decode_settled(row)
+            if obituary is not None:
+                # The obituary only. The verdict is the view's, and the latch
+                # refuses to be created by a log (H1).
+                self.cache.record_settled_event(
+                    hour=obituary["hour"],
+                    ts=obituary["ts"],
+                    contributors=obituary["total_contributors"],
+                    volume_wei=obituary["total_volume_wei"],
+                )
+
+        self._refold(config, last_block=_opt_int(getattr(sweep, "to_block", None)), now=now)
+
+        groups_read = self._logs_read_groups() | {
+            group for group, dead in failed.items() if not dead
+        }
+        self.cache.store_last_good(
+            SLOT_LOGS,
+            {
+                "groups_read": sorted(groups_read),
+                "events": len(self.cache.events()),
+                "last_block": self.cache.last_seen_block(),
+            },
+            ts=now,
+        )
+        self.cache.mark_fetched(TIER_MEDIUM, now)
+        # A partial sweep is still a sweep: the rows that arrived are folded and
+        # persisted, and the groups that died reach the user through `degraded`
+        # rather than through a silently empty table.
+        self._note(SOURCE_LOGS, not any(failed.values()))
+        if self._repair_from_block is not None:
+            logger.info(
+                "Curator gap repair swept from block %d and completed", from_block
+            )
+            self._repair_from_block = None
+            self._fold_stale = False
+        return {"ok": True, "swept": True, "from_block": from_block, "sweep": sweep}
+
+    def _refold(
+        self, config: dict[str, Any] | None, *, last_block: int | None, now: float
+    ) -> None:
+        """Re-run the pure folds over the whole persisted history.
+
+        Every fold is a pure function of the events, so this is idempotent and
+        the cheapest correct thing: a sweep that recovers a missed range simply
+        produces the right answer next cycle instead of patching a running
+        total.  The analytics calls go through ``safe_call`` so a fold bug costs
+        one number rather than the cycle.
+        """
+        cfg = config or {}
+        events = self.cache.events()
+        rows = safe_call(
+            fold_deposits,
+            events,
+            self.cache.first_deposits(),
+            points_per_eth=cfg.get("points_per_eth"),
+            default=[],
+        )
+        self.cache.store_fold(rows, last_block=last_block, now=now)
+
+        buckets = safe_call(
+            hourly_buckets,
+            events,
+            launch_time=cfg.get("launch_time"),
+            hour_duration=cfg.get("hour_duration"),
+            first_judged_hour=cfg.get("first_judged_hour"),
+            hourly_threshold_wei=cfg.get("hourly_threshold_wei"),
+            default=[],
+        )
+        # Without the launch anchor a bucket has no wall clock, so there is
+        # nothing honest to plot: the series waits for the `once` tier rather
+        # than inventing a timeline.
+        pairs = []
+        for bucket in buckets or ():
+            stamp = safe_call(
+                bucket_start_ts,
+                bucket.hour,
+                cfg.get("launch_time"),
+                cfg.get("hour_duration"),
+            )
+            if stamp is not None:
+                pairs.append([stamp, bucket.volume_wei])
+        if pairs:
+            self.cache.record_hour_buckets(pairs, now=now)
+            self.cache.record_contributor_count(len(rows or []), ts=pairs[-1][0], now=now)
+
+    # -- the slow tier: the independent cross-check and gap repair -----------
+
+    async def _pool_crosscheck(
+        self, tiers: set[str], now: float, state: Any, config: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        """Diff the fold against an independent source and the contract's counters.
+
+        Two checks, both of which end in *re-sweep*, never in a quietly wrong
+        number:
+
+        * **Blockscout** serves the same logs over a different transport.  Any
+          ``Deposited`` row it has that the fold does not is a gap, and the
+          oldest such block is where the repair sweep starts.
+        * **``stats()``** is the contract's own deposit counter.  It is only
+          comparable when the fold covers the block the counter was read at —
+          the two are read seconds apart on *different endpoint pools*, so a
+          fold that is merely younger is not a fold that is short.
+        """
+        if TIER_SLOW not in tiers:
+            return {"ok": None, "checked": False}
+
+        rows = await self._guard(
+            self.client.fetch_blockscout_logs, "fetch_blockscout_logs"
+        )
+        gap_block: int | None = None
+        if rows is None:
+            # The cross-check is unavailable, which is not the same as the logs
+            # being unavailable: the fold still stands on the RPC sweep.
+            self.cache.mark_failed(TIER_SLOW, now)
+        else:
+            known = {
+                (event.tx_hash.lower(), event.log_index)
+                for event in self.cache.events()
+            }
+            for row in rows:
+                event = decode_deposit(row)
+                if event is None:
+                    continue
+                if (event.tx_hash.lower(), event.log_index) in known:
+                    continue
+                gap_block = (
+                    event.block_number
+                    if gap_block is None
+                    else min(gap_block, event.block_number)
+                )
+            self.cache.store_last_good(
+                SLOT_BLOCKSCOUT, {"rows": len(rows), "gap_block": gap_block}, ts=now
+            )
+            self.cache.mark_fetched(TIER_SLOW, now)
+
+        counter = _opt_int(getattr(state, "tx_count", None))
+        state_block = _opt_int(getattr(state, "block_number", None))
+        watermark = self.cache.last_seen_block()
+        covered = (
+            counter is not None
+            and state_block is not None
+            and watermark is not None
+            and watermark >= state_block
+        )
+        if covered and len(self.cache.events()) < counter:
+            logger.warning(
+                "Curator fold is short: %d folded deposits against the contract's "
+                "own %d at block %s — re-sweeping",
+                len(self.cache.events()),
+                counter,
+                state_block,
+            )
+            gap_block = A.CREATION_BLOCK if gap_block is None else min(
+                gap_block, A.CREATION_BLOCK
+            )
+
+        if gap_block is not None:
+            # Publish the shortfall rather than the number: the fold is stale
+            # until the repair sweep lands, and `degraded` is how the user is
+            # told.
+            self._fold_stale = True
+            self._repair_from_block = gap_block
+            self._note(SOURCE_LOGS, False)
+            # The repair runs on the next medium tick, so bring it forward.
+            self.cache.mark_failed(TIER_MEDIUM, now, retry_after=0.0)
+        return {"ok": rows is not None, "checked": True, "gap_block": gap_block}
 
     def _client_degradation(self) -> set[str]:
         """The groups the client's own flags implicate.

@@ -41,6 +41,7 @@ from maxpane_dashboard.data.curator_models import (
     CURATOR_DEGRADED_GROUPS,
     CuratorConfig,
     CuratorState,
+    LogSweep,
 )
 
 NOW = 1_786_968_000.0
@@ -598,3 +599,240 @@ def test_the_settled_and_hour_saved_decoders_read_their_synthetic_rows():
         "wallet": "0x" + "cd" * 20,
         "ts": float(1_787_004_000),
     }
+
+
+# ---------------------------------------------------------------------------
+# WP5.9 — backfill, incremental sweep and gap repair
+# ---------------------------------------------------------------------------
+
+CONFIG = {
+    "launch_time": A.LAUNCH_TIME,
+    "grace_period": 86_400,
+    "hour_duration": 3_600,
+    "hourly_threshold_wei": 5 * 10**18,
+    "first_judged_hour": 24,
+    "points_per_eth": 1000,
+    "credit_cap_wei": 1000 * 10**18,
+}
+
+
+def _sweep(rows=None, *, from_block=A.CREATION_BLOCK, to_block=25_770_500) -> LogSweep:
+    rows = RPC_ROWS if rows is None else rows
+    groups = {"deposits": [], "first_deposits": [], "hour_saved": [],
+              "settled": [], "rescued": [], "launched": []}
+    topic_group = {
+        A.TOPIC_DEPOSITED.lower(): "deposits",
+        A.TOPIC_FIRST_DEPOSIT.lower(): "first_deposits",
+        A.TOPIC_HOUR_SAVED.lower(): "hour_saved",
+        A.TOPIC_SETTLED.lower(): "settled",
+        A.TOPIC_RESCUED.lower(): "rescued",
+        A.TOPIC_LAUNCHED.lower(): "launched",
+    }
+    for row in rows:
+        group = topic_group.get(row["topics"][0].lower())
+        if group:
+            groups[group].append(row)
+    return LogSweep(
+        from_block=from_block,
+        to_block=to_block,
+        **{name: tuple(items) for name, items in groups.items()},
+    )
+
+
+def _recorded_from_block(client) -> int:
+    return next(args[0] for name, *args in client.calls if name == "fetch_logs")
+
+
+def test_a_first_run_backfills_from_the_creation_block(tmp_path, clock):
+    """Validated as one sweep in the research; 377 logs from 25 769 870."""
+    client = FakeClient(fetch_logs=lambda *_: _sweep())
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+    assert _recorded_from_block(client) == A.CREATION_BLOCK
+    assert len(manager.cache.events()) == 231
+    assert len(manager.cache.first_deposits()) == 145
+
+
+def test_a_later_run_starts_at_the_watermark_plus_one(tmp_path, clock):
+    client = FakeClient(fetch_logs=lambda *_: _sweep())
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+    assert manager.cache.last_seen_block() == 25_770_500
+
+    clock.advance(60)
+    client.answers["fetch_logs"] = lambda *_: _sweep([], from_block=25_770_501,
+                                                     to_block=25_770_600)
+    asyncio.run(manager._pool_logs({"medium"}, clock.now, CONFIG))
+    assert _recorded_from_block(client) == A.CREATION_BLOCK
+    assert [args[0] for name, *args in client.calls if name == "fetch_logs"][-1] == 25_770_501
+
+
+def test_a_failed_sweep_does_not_advance_the_watermark(tmp_path, clock):
+    """Otherwise the missed range is missed forever and the leaderboard is
+    permanently wrong with no symptom."""
+    client = FakeClient(fetch_logs=lambda *_: _sweep())
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+    before = manager.cache.last_seen_block()
+
+    client.answers["fetch_logs"] = lambda *_: None
+    clock.advance(60)
+    out = asyncio.run(manager._pool_logs({"medium"}, clock.now, CONFIG))
+    assert out["ok"] is False
+    assert manager.cache.last_seen_block() == before
+    assert SOURCE_LOGS in manager._degraded()
+
+    # ...and the next attempt re-reads the range that failed, not the one after.
+    client.answers["fetch_logs"] = lambda *_: _sweep([], from_block=before + 1,
+                                                     to_block=before + 50)
+    clock.advance(60)
+    asyncio.run(manager._pool_logs({"medium"}, clock.now, CONFIG))
+    assert [args[0] for name, *args in client.calls if name == "fetch_logs"][-1] == before + 1
+
+
+def test_a_sweep_the_medium_tier_is_not_due_for_is_not_made(tmp_path, clock):
+    client = FakeClient(fetch_logs=lambda *_: _sweep())
+    manager = _manager(tmp_path, clock, client=client)
+    out = asyncio.run(manager._pool_logs({"fast"}, NOW, CONFIG))
+    assert out == {"ok": None, "swept": False}
+    assert client.calls == []
+
+
+def test_the_fold_and_the_series_come_out_of_the_sweep(tmp_path, clock):
+    client = FakeClient(fetch_logs=lambda *_: _sweep())
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+
+    rows = manager.cache.fold_rows()
+    assert len(rows) == 145                     # == totalContributors
+    assert rows[0].points is not None
+    series = manager.cache.get_series("volume_series")
+    assert [ts for ts, _v in series] == [A.LAUNCH_TIME, A.LAUNCH_TIME + 3600]
+    assert series[0][1] > 0
+    assert manager.cache.get_series("contributors_series")[-1][1] == 145
+
+
+def test_the_series_is_untouched_when_the_launch_anchor_is_unknown(tmp_path, clock):
+    """Without launchTime a bucket has no wall clock; the series waits for the
+    `once` tier rather than inventing a timeline."""
+    client = FakeClient(fetch_logs=lambda *_: _sweep())
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, None))
+    assert manager.cache.get_series("volume_series") == []
+    assert len(manager.cache.events()) == 231   # the history still folded in
+
+
+def test_one_failed_log_group_degrades_only_its_own_keys(tmp_path, clock):
+    """LogSweep's () is ambiguous; log_group_failed resolves it.  A dead
+    ``settled`` filter must not make the leaderboard look empty, and an empty
+    ``hour_saved`` must not read as a failure."""
+    client = FakeClient(fetch_logs=lambda *_: _sweep())
+    client.log_group_failed["rescued"] = True
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+
+    assert len(manager.cache.events()) == 231           # deposits unaffected
+    assert manager.cache.hour_saved() == []             # read, never fired
+    assert manager.cache.rescued_total_wei() is None    # NOT read -> not 0
+    assert SOURCE_LOGS in manager._degraded()
+    assert "rescued" not in manager._logs_read_groups()
+    assert "hour_saved" in manager._logs_read_groups()
+
+
+def test_a_settled_log_fills_the_obituary_without_creating_the_latch(tmp_path, clock):
+    """# SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
+    (WP1.3 capture C).  Settled has never fired on chain."""
+    settled_row = {
+        "topics": [A.TOPIC_SETTLED, "0x" + f"{24:064x}"],
+        "data": "0x" + f"{1_787_000_400:064x}" + f"{300:064x}" + f"{9 * 10**21:064x}",
+        "blockNumber": "0x18937a0",
+        "transactionHash": "0x" + "ab" * 32,
+        "logIndex": "0x1",
+        "blockTimestamp": hex(1_787_000_400),
+    }
+    client = FakeClient(fetch_logs=lambda *_: _sweep([*RPC_ROWS, settled_row]))
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+    assert manager.cache.settlement_record() is None
+
+    manager.cache.observe_settlement(True, block_number=25_776_000, now=NOW)
+    record = manager.cache.settlement_record()
+    assert record.settled_hour == 24 and record.total_contributors == 300
+
+
+def test_the_slow_tier_repairs_a_gap_the_fold_missed(tmp_path, clock):
+    """PRD §5: cross-check against an independent source; a mismatch triggers a
+    re-sweep of the suspect range rather than a silent wrong number.  Driven
+    with a fold that is deliberately short by one event."""
+    short = [row for row in RPC_ROWS if row is not RPC_ROWS[2]]
+    missing = RPC_ROWS[2]
+    client = FakeClient(
+        fetch_logs=lambda *_: _sweep(short),
+        fetch_blockscout_logs=lambda *_: [missing],
+    )
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+    assert len(manager.cache.events()) == 230
+
+    out = asyncio.run(manager._pool_crosscheck({"slow"}, NOW, _state(), CONFIG))
+    assert out["gap_block"] == 25_769_888
+    assert manager._repair_from_block == 25_769_888
+    assert manager._fold_stale is True
+    assert SOURCE_LOGS in manager._degraded()
+    assert "medium" in manager.cache.tiers_due(NOW)      # the repair is brought forward
+
+    client.answers["fetch_logs"] = lambda *_: _sweep()
+    asyncio.run(manager._pool_logs({"medium"}, NOW + 1, CONFIG))
+    assert _recorded_from_block(client) == A.CREATION_BLOCK
+    assert [args[0] for name, *args in client.calls if name == "fetch_logs"][-1] == 25_769_888
+    assert len(manager.cache.events()) == 231
+    assert manager._repair_from_block is None
+    assert manager._fold_stale is False
+
+
+def test_a_stats_mismatch_marks_the_fold_stale_rather_than_publishing(tmp_path, clock):
+    """The contract's own deposit counter against the folded history -- but
+    only when the fold covers the block the counter was read at, because the
+    two are read seconds apart on different endpoint pools."""
+    client = FakeClient(
+        fetch_logs=lambda *_: _sweep(to_block=25_770_500),
+        fetch_blockscout_logs=lambda *_: [],
+    )
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+
+    # Fold younger than the counter's block: not comparable, nothing claimed.
+    ahead = _state(tx_count=9_999, block_number=25_999_999)
+    out = asyncio.run(manager._pool_crosscheck({"slow"}, NOW, ahead, CONFIG))
+    assert out["gap_block"] is None
+    assert manager._fold_stale is False
+
+    # Fold covers the block: 231 folded against a claimed 400 is a real gap.
+    covered = _state(tx_count=400, block_number=25_770_400)
+    out = asyncio.run(manager._pool_crosscheck({"slow"}, NOW, covered, CONFIG))
+    assert out["gap_block"] == A.CREATION_BLOCK
+    assert manager._fold_stale is True
+    assert SOURCE_LOGS in manager._degraded()
+
+
+def test_a_dead_cross_check_does_not_condemn_the_fold(tmp_path, clock):
+    """Blockscout being down is not the logs pool being down: the fold still
+    stands on the RPC sweep, and claiming a gap we cannot see would be worse
+    than saying nothing."""
+    client = FakeClient(fetch_logs=lambda *_: _sweep(), fetch_blockscout_logs=lambda *_: None)
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+    out = asyncio.run(manager._pool_crosscheck({"slow"}, NOW, _state(), CONFIG))
+    assert out["ok"] is False
+    assert manager._fold_stale is False
+    assert manager._repair_from_block is None
+    assert manager._degraded() == [SOURCE_STATE]        # state never ran here
+
+
+def test_a_sweep_row_that_does_not_decode_is_dropped_not_zeroed(tmp_path, clock):
+    broken = dict(RPC_ROWS[2], data="0x00")
+    client = FakeClient(fetch_logs=lambda *_: _sweep([*RPC_ROWS, broken]))
+    manager = _manager(tmp_path, clock, client=client)
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+    assert len(manager.cache.events()) == 231
+    assert all(e.amount_wei > 0 for e in manager.cache.events())
