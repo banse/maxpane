@@ -537,14 +537,18 @@ EXPECTED_KEYS = {
     "volume_series",
     "contributors_series",
     # The linked-wallet analysis view (`f`), added by the sybil expansion
-    # (docs/curator_sybil_PRD.md §7).  All eleven are manager-adapter-produced
+    # (docs/curator_sybil_PRD.md §7).  All twelve are manager-adapter-produced
     # from the detached B+C sweep's last-good, never emitted by build_signals.
+    # `points_total` is the R14 amendment (2026-08-18): the freeze missed the
+    # population total, and without it the CLEANED LIST panel cannot render
+    # PRD §5.3's "total points vs clean points".
     "operator_rows",
     "segment_rows",
     "clean_list_rows",
     "operators_count",
     "clean_points",
     "clean_contributors",
+    "points_total",
     "analysis_as_of_hhmm",
     "you_linked_state",
     "you_linked_reasons",
@@ -848,26 +852,31 @@ def test_curator_keys_gained_exactly_the_analysis_surface() -> None:
     assert "linked_points_share_pct" not in CURATOR_KEYS
 
 
-def test_the_analysis_keys_are_exactly_the_eleven_the_adapter_fills() -> None:
+def test_the_analysis_keys_are_exactly_the_twelve_the_adapter_fills() -> None:
     """``CURATOR_ANALYSIS_KEYS`` — the third producer of the flat dict.
 
     ``build_signals`` emits ``SIGNAL_OUTPUT_KEYS``; the manager emits
     ``MANAGER_OWNED_KEYS`` (the three health markers); and the manager's
-    **analysis adapter** emits exactly these eleven.  Naming them lets the
+    **analysis adapter** emits exactly these twelve.  Naming them lets the
     analytics suite's output-surface guard stay an exact equality on all three
     without ``analytics/curator_signals.py`` being opened — that module stays
     byte-identical to what shipped (PRD §2).
+
+    Eleven at the freeze; ``points_total`` is the R14 amendment (2026-08-18),
+    because PRD §5.3's "total points vs clean points" needs the population
+    total and no frozen key carried it.
 
     Restated literally here rather than filtered out of ``CURATOR_KEYS``: a
     derivation would compare the tuple against itself and could never fail.
     """
     assert set(CURATOR_ANALYSIS_KEYS) == {
         "operator_rows", "segment_rows", "clean_list_rows", "operators_count",
-        "clean_points", "clean_contributors", "analysis_as_of_hhmm",
+        "clean_points", "clean_contributors", "points_total",
+        "analysis_as_of_hhmm",
         "you_linked_state", "you_linked_reasons", "you_linked_group_size",
         "you_clean_rank",
     }
-    assert len(CURATOR_ANALYSIS_KEYS) == len(set(CURATOR_ANALYSIS_KEYS)) == 11
+    assert len(CURATOR_ANALYSIS_KEYS) == len(set(CURATOR_ANALYSIS_KEYS)) == 12
     assert set(CURATOR_ANALYSIS_KEYS) <= set(CURATOR_KEYS)
     assert isinstance(CURATOR_ANALYSIS_KEYS, tuple)
     # `flagged_points_share_pct` is REUSED, so it is a signal-surface key that
@@ -1023,6 +1032,10 @@ ANALYSIS_KEY_ROUTING: dict[str, tuple[str, ...]] = {
     "clean_list_rows": ("CuratorCleanList",),
     "clean_points": ("CuratorCleanList",),
     "clean_contributors": ("CuratorCleanList",),
+    # R14 (2026-08-18): the population total at the analysis snapshot, so the
+    # panel can render PRD §5.3's "total points vs clean points" -- one key,
+    # one panel; the board totals other panels show are theirs, not this.
+    "points_total": ("CuratorCleanList",),
     # ---- two keys, more than one home ------------------------------------
     "analysis_as_of_hhmm": WP4_ANALYSIS_WIDGETS,
     "you_clean_rank": ("CuratorCleanList", "CuratorWalletStanding"),
@@ -1036,13 +1049,13 @@ ANALYSIS_KEY_ROUTING: dict[str, tuple[str, ...]] = {
 def test_every_new_key_has_a_home_widget() -> None:
     """Totality: the screen's dispatch test will require CURATOR_KEYS - dispatched
     - META_KEYS == {}.  Each new top-level key must therefore reach a widget.
-    analysis_as_of_hhmm reaches all three analysis panels."""
+    analysis_as_of_hhmm reaches all three analysis panels.
+
+    Derived from ``CURATOR_ANALYSIS_KEYS`` rather than a third hand-typing of
+    the set (R14): the tuple already has its own literal agreement test above,
+    so a re-typed filter here could only drift from it silently."""
     homed = set(ANALYSIS_KEY_ROUTING)
-    new = {k for k in CURATOR_KEYS if k in {
-        "operator_rows","segment_rows","clean_list_rows","operators_count",
-        "clean_points","clean_contributors","analysis_as_of_hhmm",
-        "you_linked_state","you_linked_reasons","you_linked_group_size","you_clean_rank"}}
-    assert new <= homed
+    assert set(CURATOR_ANALYSIS_KEYS) <= homed
 
 
 def test_the_routing_table_only_routes_keys_that_exist() -> None:

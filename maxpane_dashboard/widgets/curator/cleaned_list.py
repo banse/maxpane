@@ -137,6 +137,21 @@ _TIERS = (
 )
 
 
+def _as_int(value) -> int | None:
+    """``int`` or ``None`` — never raise, never bool-coerce.
+
+    ``True`` is not one point and not one wallet; a flag reaching a count
+    field is a bug worth rendering as unknown rather than as a quantity
+    (the ``as_float`` rule, for the summary's integers).
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _row_values(row: dict) -> dict:
     """One survivor's cells.  Every field degrades on its own."""
     rank = row.get("clean_rank")
@@ -276,15 +291,24 @@ class CuratorCleanList(Vertical):
         clean_list_rows=None,
         clean_points=None,
         clean_contributors=None,
+        points_total=None,
         you_clean_rank=None,
         analysis_as_of_hhmm=None,
         **_kwargs,
     ) -> None:
-        """Refresh the table and its one-line summary."""
+        """Refresh the table and its one-line summary.
+
+        ``points_total`` (R14) is the population's total at the **same**
+        analysis snapshot as ``clean_points``, which is what makes the
+        summary's "X of Y pts" an honest comparison; ``None`` — the manager's
+        state until the adapter runs — renders the clean side alone rather
+        than a total borrowed from another panel's sweep.
+        """
         self._payload = {
             "rows": clean_list_rows,
             "points": clean_points,
             "contributors": clean_contributors,
+            "total": points_total,
             "you": you_clean_rank,
             "as_of": analysis_as_of_hhmm,
             "seen": True,
@@ -299,16 +323,20 @@ class CuratorCleanList(Vertical):
 
     def _summary(self) -> str:
         parts: list[str] = []
-        contributors = self._payload.get("contributors")
-        points = self._payload.get("points")
-        try:
-            parts.append(f"{int(contributors):,} wallets")
-        except (TypeError, ValueError):
-            pass
-        try:
-            parts.append(f"{int(points):,} pts")
-        except (TypeError, ValueError):
-            pass
+        contributors = _as_int(self._payload.get("contributors"))
+        points = _as_int(self._payload.get("points"))
+        total = _as_int(self._payload.get("total"))
+        if contributors is not None:
+            parts.append(f"{contributors:,} wallets")
+        if points is not None:
+            # PRD §5.3: total VS clean.  The comparison renders only when both
+            # halves come from the payload -- a missing total costs the "of",
+            # never invents one, and a total without readable clean points is
+            # not a comparison at all.
+            if total is not None:
+                parts.append(f"{points:,} of {total:,} pts")
+            else:
+                parts.append(f"{points:,} pts")
         parts.append("linked groups removed")
         you = self._payload.get("you")
         if isinstance(you, int) and not isinstance(you, bool):
@@ -338,9 +366,22 @@ class CuratorCleanList(Vertical):
             return
 
         try:
-            usable = [r for r in list(rows) if isinstance(r, dict)]
+            raw = list(rows)
         except TypeError:
-            usable = []
+            raw = None
+        usable = (
+            [r for r in raw if isinstance(r, dict)] if raw is not None else []
+        )
+
+        if raw is None or (raw and not usable):
+            # A torn payload (uniterable, or rows that are not rows) is not a
+            # finding: rendered as the empty state it would be a confident
+            # "nobody survives" drawn from bytes nobody could read (M2).
+            self._set_note(
+                f"[$warning]⚠ {CLEAN_LIST_UNAVAILABLE}[/]{self._as_of()}"
+            )
+            table.add_row(*cells({}, columns, default=DASH))
+            return
 
         if not usable:
             # A real negative: the sweep ran and no wallet survives it.

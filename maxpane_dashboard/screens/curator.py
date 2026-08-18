@@ -384,9 +384,11 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "analysis_as_of_hhmm",
     ),
     "CuratorSegments": ("segment_rows", "analysis_as_of_hhmm"),
+    # `points_total` is the R14 amendment: the population total at the same
+    # analysis snapshot, so the panel can render PRD §5.3's "total vs clean".
     "CuratorCleanList": (
         "clean_list_rows", "clean_points", "clean_contributors",
-        "you_clean_rank", "analysis_as_of_hhmm",
+        "points_total", "you_clean_rank", "analysis_as_of_hhmm",
     ),
 }
 

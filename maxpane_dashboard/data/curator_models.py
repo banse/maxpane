@@ -165,19 +165,27 @@ from dataclasses import dataclass
 # SYBIL EXPANSION 2026-08-17 — WP0 of the second curator build.
 #
 # The linked-wallet / fan-out analysis (docs/curator_sybil_PRD.md,
-# docs/curator_sybil_implementation_plan.md) adds ELEVEN keys and THREE row
+# docs/curator_sybil_implementation_plan.md) adds TWELVE keys and THREE row
 # shapes to the contract above, plus one additive sub-key on
 # `leaderboard_rows`.  Wave 1 (WP1 core ∥ WP5 wallet widgets) and wave 2 (WP2
 # io/cli ∥ WP4 third view) all code against them without talking.
 #
 #   new keys ... operator_rows, segment_rows, clean_list_rows,
 #                operators_count, clean_points, clean_contributors,
-#                analysis_as_of_hhmm, you_linked_state, you_linked_reasons,
-#                you_linked_group_size, you_clean_rank
+#                points_total, analysis_as_of_hhmm, you_linked_state,
+#                you_linked_reasons, you_linked_group_size, you_clean_rank
 #                — and they are exported as CURATOR_ANALYSIS_KEYS, because the
 #                  analytics suite's output-surface guard needs to name the
 #                  third producer of this dict without opening the analytics
-#                  module.  Import the tuple; never re-type the eleven.
+#                  module.  Import the tuple; never re-type the twelve.
+#
+#   R14 (2026-08-18, WP4 fix round 1): `points_total` was ELEVENTH-HOUR-ADDED
+#   to this set by controller ruling — the freeze missed the population total,
+#   and the CLEANED LIST panel could not render PRD §5.3's "total points vs
+#   clean points" from the eleven.  WP3 fills it from the SAME detect result
+#   that produces `clean_points` (DetectResult.total_points), so the pair
+#   always describes one snapshot; until then the manager's `_blank_payload`
+#   emits it as None like every other analysis key.
 #   new rows ... operator_rows / segment_rows / clean_list_rows
 #   new sub-key  leaderboard_rows["link_conf"]  ("high"|"low"|"clean"|None)
 #
@@ -735,6 +743,14 @@ CURATOR_KEYS: tuple[str, ...] = (
                                 #   groups removed.  0 would mean the whole
                                 #   list is linked, which is an answer too.
     "clean_contributors",       # int | None — survivor count
+    "points_total",             # int | None — the population's total curve
+                                #   points at the ANALYSIS snapshot (R14,
+                                #   2026-08-18: the freeze missed it, and
+                                #   without it the CLEANED LIST cannot render
+                                #   PRD §5.3's "total vs clean").  Taken from
+                                #   the same detect result as `clean_points`
+                                #   so the two always describe one snapshot;
+                                #   None is "analysis not run", never 0.
     "analysis_as_of_hhmm",      # str | None — the B+C sweep's OWN freshness
                                 #   marker.  Separate from `as_of_hhmm`
                                 #   because the sweep is detached and long-TTL:
@@ -849,10 +865,12 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
     "clean_list_rows": ("clean_rank", "address", "points", "credit_eth", "name"),
 }
 
-#: The eleven keys the **manager's analysis adapter** produces, and the only
+#: The twelve keys the **manager's analysis adapter** produces, and the only
 #: keys in ``CURATOR_KEYS`` that ``build_signals`` does not emit besides
 #: ``curator_signals.MANAGER_OWNED_KEYS`` (``degraded``, ``as_of_hhmm``,
-#: ``as_of``).
+#: ``as_of``).  Eleven at the freeze; ``points_total`` is the R14 amendment
+#: (2026-08-18) — PRD §5.3's "total vs clean" needed the population total and
+#: no frozen key carried it.
 #:
 #: It exists so the analytics suite's output-surface guard can stay an exact
 #: equality —
@@ -875,6 +893,7 @@ CURATOR_ANALYSIS_KEYS: tuple[str, ...] = (
     "operators_count",
     "clean_points",
     "clean_contributors",
+    "points_total",
     "analysis_as_of_hhmm",
     "you_linked_state",
     "you_linked_reasons",

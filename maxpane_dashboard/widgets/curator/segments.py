@@ -249,9 +249,20 @@ class CuratorSegments(Vertical):
             return
 
         try:
-            usable = [r for r in list(rows) if isinstance(r, dict)]
+            raw = list(rows)
         except TypeError:
-            usable = []
+            raw = None
+        usable = (
+            [r for r in raw if isinstance(r, dict)] if raw is not None else []
+        )
+
+        if raw is None or (raw and not usable):
+            # A torn payload (uniterable, or rows that are not rows) is not a
+            # finding: rendered as the empty state it would be a confident
+            # "no segments yet" drawn from bytes nobody could read (M2).
+            self._set_note(f"[$warning]⚠ {SEGMENTS_UNAVAILABLE}[/]{self._as_of()}")
+            table.add_row(*cells({}, columns, default=DASH))
+            return
 
         if not usable:
             # A real negative: the sweep ran and derived no bands.

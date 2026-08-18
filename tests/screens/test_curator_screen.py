@@ -2323,6 +2323,7 @@ def _analysis_payload(**overrides) -> dict:
         clean_list_rows=clean["rows"],
         clean_points=clean["totals"]["clean_points"],
         clean_contributors=clean["totals"]["clean_contributors"],
+        points_total=clean["totals"]["total_points"],
         analysis_as_of_hhmm="22:41",
         you_linked_state="clean",
         you_linked_reasons=[],

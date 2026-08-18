@@ -2157,6 +2157,9 @@ def _full_payload() -> dict:
         clean_list_rows=worst_case_rows("clean_list_rows_worst.json"),
         clean_points=_clean_totals()["clean_points"],
         clean_contributors=_clean_totals()["clean_contributors"],
+        # R14: the population total from the SAME totals block, so the
+        # payload's "of" comparison is self-consistent by construction.
+        points_total=_clean_totals()["total_points"],
         # Deliberately NOT `as_of_hhmm`: the analysis sweep is a slower tier
         # than the fast one, so the two markers differ in the normal case and
         # a payload that made them equal would hide a panel wired to the
@@ -3458,9 +3461,15 @@ async def test_a_narrow_segments_table_sheds_the_detail_first():
 
 
 async def test_the_clean_totals_and_the_survivor_count_render():
-    """PRD §5.3.  The panel receives the clean side of the contract —
-    `clean_points` and `clean_contributors` — and says what the numbers are
-    *after*: the removal of the linked groups."""
+    """PRD §5.3: `total points` **vs** `clean points`.  `points_total` is the
+    R14 contract amendment — the same detect snapshot as `clean_points`, so
+    the "of" comparison never mixes two sweeps.
+
+    The note is a single nowrap/ellipsis line whose overflow is *silent*, so
+    the assertion set ends with the note's own **tail** (`as of HH:MM`):
+    end-ellipsis truncation eats the tail first, which makes its presence in
+    the composite the proof that the whole widened line reached a pixel at
+    the pinned width."""
     from maxpane_dashboard.widgets.curator.cleaned_list import CuratorCleanList
 
     env = _clean_envelope()
@@ -3469,12 +3478,43 @@ async def test_the_clean_totals_and_the_survivor_count_render():
         clean_list_rows=env["rows"],
         clean_points=env["totals"]["clean_points"],
         clean_contributors=env["totals"]["clean_contributors"],
+        points_total=env["totals"]["total_points"],
+        you_clean_rank=47,
         analysis_as_of_hhmm="22:41",
     )
-    assert "9,273" in text                  # the survivor count
-    assert "15,086,837" in text             # the clean points
-    assert "linked groups removed" in text  # what the numbers are after
-    assert "as of 22:41" in text
+    assert "9,273 wallets" in text                    # the survivor count
+    assert "15,086,837 of 26,585,740 pts" in text     # clean VS total
+    assert "linked groups removed" in text            # what the numbers are after
+    assert "you #47" in text
+    assert "as of 22:41" in text                      # the tail survived whole
+
+
+async def test_a_missing_total_never_fabricates_the_comparison():
+    """`points_total` is None until WP3's adapter fills it (and on any torn
+    snapshot).  The clean side still renders; the `of` comparison does not —
+    a total invented from another panel's board numbers would compare two
+    different sweeps as one."""
+    from maxpane_dashboard.widgets.curator.cleaned_list import CuratorCleanList
+
+    env = _clean_envelope()
+    text = await _rendered(
+        CuratorCleanList,
+        clean_list_rows=env["rows"],
+        clean_points=env["totals"]["clean_points"],
+        clean_contributors=env["totals"]["clean_contributors"],
+        points_total=None,
+        analysis_as_of_hhmm="22:41",
+    )
+    assert "15,086,837 pts" in text
+    assert "15,086,837 of" not in text      # (`as of` also spells "of" -- be exact)
+    # ...and a total without readable clean points is not a comparison either.
+    orphan = await _rendered(
+        CuratorCleanList,
+        clean_list_rows=env["rows"],
+        clean_points=None,
+        points_total=env["totals"]["total_points"],
+    )
+    assert "26,585,740" not in orphan
 
 
 async def test_your_clean_rank_renders_and_the_unset_state_names_the_fix():
@@ -3541,6 +3581,36 @@ async def test_clean_list_none_is_unavailable_and_empty_is_a_real_negative():
     empty = await _rendered(CuratorCleanList, clean_list_rows=[])
     assert CLEAN_LIST_UNAVAILABLE in dead and CLEAN_LIST_EMPTY not in dead
     assert CLEAN_LIST_EMPTY in empty and CLEAN_LIST_UNAVAILABLE not in empty
+
+
+async def test_a_torn_rows_payload_is_unavailable_not_a_healthy_empty():
+    """M2: a non-``None`` rows value holding no renderable dicts is a torn
+    payload, not a finding.  Rendered as the *empty* state it becomes a
+    confident negative ("no segments yet" / "every wallet is in a linked
+    group") drawn from bytes nobody could read — the operators panel already
+    treats its count/rows disagreement this way, and the other two must
+    match it."""
+    from maxpane_dashboard.widgets.curator.cleaned_list import (
+        CLEAN_LIST_EMPTY,
+        CLEAN_LIST_UNAVAILABLE,
+        CuratorCleanList,
+    )
+    from maxpane_dashboard.widgets.curator.segments import (
+        SEGMENTS_EMPTY,
+        SEGMENTS_UNAVAILABLE,
+        CuratorSegments,
+    )
+
+    torn = ["garbage", 42]
+    seg = await _rendered(CuratorSegments, segment_rows=torn)
+    assert SEGMENTS_UNAVAILABLE in seg and SEGMENTS_EMPTY not in seg
+
+    clean = await _rendered(CuratorCleanList, clean_list_rows=torn)
+    assert CLEAN_LIST_UNAVAILABLE in clean and CLEAN_LIST_EMPTY not in clean
+
+    # An uniterable rows value is the same fact.
+    seg2 = await _rendered(CuratorSegments, segment_rows=42)
+    assert SEGMENTS_UNAVAILABLE in seg2 and SEGMENTS_EMPTY not in seg2
 
 
 async def test_the_clean_list_panel_uses_pattern_language_only():
