@@ -84,12 +84,17 @@ CLEAN_LIST_EMPTY = "every wallet is in a linked group"
 #: instruction ("set a wallet"), prefixed with whose rank the gap is about.
 YOU_CLEAN_UNSET = "you: set a wallet"
 
-#: The receipt line's failure state.  Honest on both halves because the
-#: screen's writer is atomic (temp file + ``os.replace``): the new export
-#: really wrote nothing, and whatever file an earlier ``saved →`` named is
-#: still intact on disk — but that earlier receipt must not keep standing,
-#: because its *freshness* is now a lie about the keypress that just failed.
-EXPORT_FAILED = "export failed · nothing new was written"
+#: The receipt line's failure state.  The screen's writer replaces the JSON
+#: and *then* the CSV (temp file + ``os.replace`` each), so a JSON-succeeds /
+#: CSV-fails window leaves the JSON newly written while the CSV is a step
+#: behind — "nothing new was written" was a lie in exactly that window.  The
+#: wording is honest for both halves: the both-failed case (neither replace
+#: ran, the old files are byte-identical) and the torn-pair case (the two
+#: files *may* be out of step).  Either way the ``e`` retry is the fix, and
+#: any earlier ``saved →`` receipt must not keep standing — its *freshness* is
+#: now a lie about the keypress that just failed.  Kept short: this is a
+#: nowrap/ellipsis line, and it fits the panel's full-layout width with room.
+EXPORT_FAILED = "export failed · files may be out of step · press e to retry"
 
 #: Rows rendered.  Eight survivors: the analysis body stacks three panels
 #: and the screen's ANALYSIS_MIN_HEIGHT is measured against exactly these

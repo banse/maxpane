@@ -3605,6 +3605,26 @@ async def test_a_failed_export_replaces_the_receipt_with_a_visible_failure():
     assert "saved →" in retried and EXPORT_FAILED not in retried
 
 
+def test_the_export_failure_banner_is_honest_in_the_torn_pair_window():
+    """`_write_clean_list` replaces the JSON, then the CSV: a JSON-succeeds /
+    CSV-fails window leaves NEW bytes on disk, so the old
+    "nothing new was written" was factually false there.  The banner must be
+    honest in both cases -- the both-failed one (old files unchanged) and the
+    torn-pair one (the files may be out of step) -- so it never claims nothing
+    was written, and it points the reader at the `e` retry."""
+    from maxpane_dashboard.widgets.curator.cleaned_list import EXPORT_FAILED
+
+    low = EXPORT_FAILED.lower()
+    # The false claim, and any weaker variant of it, is gone.
+    assert "nothing" not in low
+    assert "written" not in low
+    # Honest about the torn-pair risk, and actionable.
+    assert "out of step" in low
+    assert "retry" in low
+    # Still the failure it is -- the word the reader scans for is untouched.
+    assert low.startswith("export failed")
+
+
 async def test_clean_list_none_is_unavailable_and_empty_is_a_real_negative():
     from maxpane_dashboard.widgets.curator.cleaned_list import (
         CLEAN_LIST_EMPTY,
