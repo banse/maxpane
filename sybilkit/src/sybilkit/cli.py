@@ -389,6 +389,17 @@ def _tx_hashes_in_chain_order(
         if dep.tx_hash not in hashes:
             hashes.append(dep.tx_hash)
 
+    # ZERO MEANS ZERO.  The `out and` in the boundary rule below exists so a
+    # cap smaller than the first block still takes that block *whole* rather
+    # than handing a uniformity detector a fragment of one — and with `cap=0`
+    # that same clause let the whole first block through, so a cap of nothing
+    # fetched a block and the coverage header reported `cap: 0` beside a
+    # non-zero `read`.  A negative cap lands here too: it is the same
+    # statement, never an inverted one.  The block it stopped at is still
+    # named, because that is the cursor a later pass resumes from.
+    if cap <= 0:
+        return [], (min(by_block) if by_block else None)
+
     out: list[str] = []
     for block in sorted(by_block):
         group = by_block[block]

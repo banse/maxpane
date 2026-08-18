@@ -821,6 +821,72 @@ def test_a_negative_funding_budget_is_rejected_at_the_command_line(capsys) -> No
     assert parser.parse_args(["analyze", "--funding-budget", "40"]).funding_budget == 40
 
 
+def test_a_zero_tx_cap_fetches_nothing_and_says_where_it_stopped(capsys) -> None:
+    """**B4.**  The block-boundary rule is ``if out and len(out) + len(group) >
+    cap``, and the ``out and`` was there so a cap smaller than the first block
+    still takes that block **whole** rather than handing a uniformity detector
+    a fragment.  With ``cap=0`` the same clause let the first block through: a
+    cap of nothing fetched a whole block, and the coverage header then reported
+    a cap of 0 next to a non-zero ``read``.
+
+    Zero means zero.  It still names the block it stopped at, because that is
+    the cursor a later pass resumes from.
+    """
+    from sybilkit.cli import _tx_hashes_in_chain_order
+    from sybilkit.model import Deposit
+
+    def dep(block: int, log_index: int, tag: str) -> Deposit:
+        return Deposit(
+            contributor="0x" + "11" * 20, hour=0, amount_wei=1,
+            credited_delta_wei=1, weight_added_wei=1, new_weight_wei=1,
+            tx_count=1, block_number=block, log_index=log_index,
+            tx_hash="0x" + tag * 32,
+        )
+
+    deposits = [dep(10, 1, "f1"), dep(10, 2, "f2"), dep(11, 1, "0a")]
+    assert _tx_hashes_in_chain_order(deposits, cap=0) == ([], 10)
+    # A negative cap is the same statement, never an inverted one.
+    assert _tx_hashes_in_chain_order(deposits, cap=-3) == ([], 10)
+    # Nothing to cut, so nowhere to resume from: `None`, not block zero.
+    assert _tx_hashes_in_chain_order([], cap=0) == ([], None)
+
+    httpx = pytest.importorskip("httpx")
+    from sybilkit import sources
+
+    rate_sel = sources.selector("POINTS_PER_ETH()")
+    rows = [_deposit_row(block=100, log_index=i, tag=f"{i:02x}") for i in range(2)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls = body if isinstance(body, list) else [body]
+        out = []
+        for call in calls:
+            method, cid = call["method"], call["id"]
+            if method == "eth_call":
+                value = 1000 if call["params"][0]["data"] == rate_sel else 5 * 10**16
+                out.append({"jsonrpc": "2.0", "id": cid,
+                            "result": "0x" + f"{value:064x}"})
+            elif method == "eth_blockNumber":
+                out.append({"jsonrpc": "2.0", "id": cid, "result": hex(200)})
+            elif method == "eth_getLogs":
+                out.append({"jsonrpc": "2.0", "id": cid, "result": rows})
+            else:  # pragma: no cover — a cap of zero fetches no fingerprint
+                raise AssertionError(f"--max-txs 0 asked for a fingerprint: {method}")
+        return httpx.Response(200, json=out if isinstance(body, list) else out[0])
+
+    code = cli.main(
+        ["analyze", "--contract", CONTRACT, "--from-block", "100",
+         "--tiers", "ab", "--max-txs", "0"],
+        transport=httpx.MockTransport(handler),
+    )
+    assert code == 0
+    fp = out_json(capsys)["coverage"]["tx_fingerprints"]
+    assert fp["cap"] == 0
+    assert fp["requested"] == 0 and fp["read"] == 0 and fp["unread"] == 0
+    assert fp["available"] == 2, "the history is still measured; it was not read"
+    assert fp["cut_at_block"] == 100, "the cap stopped before block 100"
+
+
 def test_a_malformed_labeled_bundle_is_a_message_not_a_key_error_traceback(
     tmp_path, capsys
 ) -> None:
