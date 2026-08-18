@@ -114,11 +114,14 @@ async def fetch_tx_fingerprints(
       gives an empty complete sweep and costs no request.
 
     A **malformed request short-circuits** the whole call — no rotation, no
-    further batches, ``None``.  It is our own bug, it fails identically
+    retry, no further batches.  It is our own bug, it fails identically
     everywhere, and rotating on it triples the request count and hides it.
     (``fetch_deposits`` degrades the same way for the same reason; a fetcher
     that raised here would make "never crash the caller" untrue for a class of
-    failure the caller cannot do anything about.)  An endpoint problem rotates
+    failure the caller cannot do anything about.)  It does **not** discard the
+    batches already read: everything from the bad batch onward goes to
+    ``pending`` and the fingerprints already decoded come back, so ``None``
+    keeps meaning exactly "no batch was read".  An endpoint problem rotates
     inside ``rpc_batch``, which classifies on the message text.
     """
     wanted: list[str] = []
@@ -139,12 +142,19 @@ async def fetch_tx_fingerprints(
     batches = chunks(wanted, config.tx_batch_size)
     read = 0
     async with _Session(config, client=client, transport=transport, sleep=sleep) as s:
-        for batch in batches:
+        for index, batch in enumerate(batches):
             calls = [("eth_getTransactionByHash", [h]) for h in batch]
             try:
                 results = await rpc_batch(s, config.state_rpcs, calls)
             except MalformedRequest:
-                return None  # our own bug: stop, do not rotate, do not retry
+                # Our own bug: stop, do not rotate, do not retry.  But `None`
+                # means "no batch was read", and returning it here threw away
+                # every fingerprint the earlier batches had already read — one
+                # bad hash string in a hand-edited cursor cost the whole pass.
+                # Keep what was read; name everything from this batch onward.
+                for unread in batches[index:]:
+                    pending.extend(unread)
+                break
             except AllEndpointsFailed:
                 pending.extend(batch)
                 continue

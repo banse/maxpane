@@ -830,6 +830,159 @@ def test_a_malformed_batch_short_circuits_instead_of_rotating() -> None:
     assert served.count("gateway.tenderly.co") == 0, served
 
 
+def _malformed_batch(request: httpx.Request) -> httpx.Response:
+    batch = json.loads(request.content)
+    return httpx.Response(200, json=[
+        {"jsonrpc": "2.0", "id": c["id"],
+         "error": {"code": -32602,
+                   "message": "invalid argument 0: hex string of odd length"}}
+        for c in batch
+    ])
+
+
+def _two_per_batch() -> SourceConfig:
+    return SourceConfig(inter_call_delay=0.0, backoff_seconds=(0.0, 0.0),
+                        blockscout_min_interval=0.0, tx_batch_size=2)
+
+
+def test_a_malformed_hash_in_a_later_batch_keeps_the_fingerprints_already_read() -> None:
+    """**Review #10, the reproduced case.**  ``None`` means *no batch was
+    read*.
+
+    One bad hash string — in a hand-edited cursor, say — arrives as a
+    ``-32602`` on the batch that carries it, and the whole call returned
+    ``None``: every fingerprint the earlier batches had already read was thrown
+    away, and the caller was told the endpoint never answered at all.  The
+    short circuit is right (our own bug fails identically everywhere) but it
+    must keep what it read and name what it did not.
+    """
+    hashes = ["0x" + f"{i:064x}" for i in range(6)]
+    bad = hashes[2]
+    served: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        served.append(request.url.host or "")
+        batch = json.loads(request.content)
+        if any(c["params"][0] == bad for c in batch):
+            return _malformed_batch(request)
+        return httpx.Response(200, json=[
+            {"jsonrpc": "2.0", "id": c["id"], "result": _tx_reply(c["params"][0])}
+            for c in batch
+        ])
+
+    got = asyncio.run(
+        txs.fetch_tx_fingerprints(hashes, client=_client(handler), config=_two_per_batch())
+    )
+    assert got is not None, "a read batch was discarded by a later bad one"
+    assert set(got.fingerprints) == set(hashes[:2])
+    assert served.count("gateway.tenderly.co") == 0, served  # still no rotation
+
+
+def test_a_malformed_hash_in_the_first_batch_is_still_none() -> None:
+    """The other half, unchanged: nothing was read, so ``None`` keeps its
+    exact documented meaning."""
+    hashes = ["0x" + f"{i:064x}" for i in range(6)]
+    got = asyncio.run(
+        txs.fetch_tx_fingerprints(
+            hashes, client=_client(_malformed_batch), config=_two_per_batch()
+        )
+    )
+    assert got is None
+
+
+def test_the_pending_cursor_after_a_malformed_batch_names_every_unread_hash() -> None:
+    """And the cursor is usable: everything from the bad batch onward is
+    pending, so feeding ``pending`` back finishes the sweep."""
+    hashes = ["0x" + f"{i:064x}" for i in range(6)]
+    bad = hashes[2]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        if any(c["params"][0] == bad for c in batch):
+            return _malformed_batch(request)
+        return httpx.Response(200, json=[
+            {"jsonrpc": "2.0", "id": c["id"], "result": _tx_reply(c["params"][0])}
+            for c in batch
+        ])
+
+    first = asyncio.run(
+        txs.fetch_tx_fingerprints(hashes, client=_client(handler), config=_two_per_batch())
+    )
+    assert first is not None
+    assert first.pending == tuple(hashes[2:]), first.pending
+
+    def healthy(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        return httpx.Response(200, json=[
+            {"jsonrpc": "2.0", "id": c["id"], "result": _tx_reply(c["params"][0])}
+            for c in batch
+        ])
+
+    second = asyncio.run(
+        txs.fetch_tx_fingerprints(
+            first.pending, client=_client(healthy), config=_two_per_batch()
+        )
+    )
+    assert second is not None
+    assert set(second.fingerprints) == set(hashes[2:])
+    assert second.pending == ()
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "invalid params",
+        "Invalid params: invalid length 63, expected a 0x-prefixed hex string",
+        "parse error",
+        "unknown block",
+        "json: cannot unmarshal hex string of odd length into Go value",
+    ],
+)
+def test_a_genuine_invalid_params_message_short_circuits_without_rotating(
+    message: str,
+) -> None:
+    """The classification that makes the short circuit safe is the **message**.
+
+    ``is_endpoint_limitation`` used to end on ``err["code"] not in
+    MALFORMED_REQUEST_CODES`` — classification by code, which this repo forbids
+    because providers reuse ``-32602`` and ``-32005`` for unrelated meanings.
+    Short-circuiting now needs the message to agree, and these are the real
+    spellings of a request that is genuinely ours to fix.
+    """
+    served: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        served.append(request.url.host or "")
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(100))
+        return _rpc_error(-32602, message)
+
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+    assert sweep is None
+    assert served.count("eth.drpc.org") == 0, served
+
+
+def test_an_error_object_with_no_message_falls_back_to_the_code_and_says_so() -> None:
+    """The one documented use of a code in this module, and the reason it is
+    documented: there is no text to classify.
+
+    An unfamiliar *message* is an endpoint problem, not our bug — rotating on
+    somebody's unrecognised wording costs a round trip, while short-circuiting
+    the whole pool on it hides a working endpoint.
+    """
+    assert sources.is_endpoint_limitation({"code": -32602}) is False
+    assert sources.is_endpoint_limitation({"code": -32000}) is True
+    assert sources.is_endpoint_limitation({"code": -32602, "message": ""}) is False
+    assert sources.is_endpoint_limitation(
+        {"code": -32602, "message": "a wording nobody has vendored yet"}
+    ) is True
+    doc = " ".join((sources.is_endpoint_limitation.__doc__ or "").split()).lower()
+    assert "no message" in doc, doc
+
+
 def test_a_partial_batch_failure_names_the_hashes_it_could_not_read() -> None:
     """A partial read handed back as a bare dict is indistinguishable from a
     complete one, and a uniformity detector reading a half-covered component

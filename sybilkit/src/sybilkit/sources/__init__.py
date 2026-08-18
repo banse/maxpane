@@ -26,10 +26,14 @@ A REAL ``User-Agent``, ON EVERY REQUEST
 MESSAGE TEXT, NEVER THE CODE
     Providers reuse ``-32602`` and ``-32005`` for unrelated meanings — drpc's
     "Can't route your request" arrives wearing a code other providers spend on
-    a genuinely malformed request.  Classify on the message.  A real malformed
-    request short-circuits the whole chain, because it fails identically
-    everywhere and rotating on our own bug triples the request count and hides
-    it.
+    a genuinely malformed request.  Classify on the message, **in both
+    directions**: a short circuit needs the message to match
+    :data:`MALFORMED_REQUEST_PATTERNS`, and an unrecognised one rotates.  A
+    real malformed request short-circuits the whole chain, because it fails
+    identically everywhere and rotating on our own bug triples the request
+    count and hides it.  The one place a *code* is still read is an error
+    object carrying no message at all — there is nothing else to go on, and
+    that exception is documented on ``is_endpoint_limitation`` itself.
 
 A PROVIDER'S SUGGESTED RANGE IS NEVER ADOPTED
     One of them decrements a single block per round trip: ask for 800, be told
@@ -209,6 +213,22 @@ RANGE_LIMITATION_PATTERNS: tuple[str, ...] = (
 
 MALFORMED_REQUEST_CODES = frozenset({-32600, -32601, -32602, -32604, -32700})
 
+#: "This request is bad", in the words providers actually use.  A short circuit
+#: needs the **message** to agree: the codes above are reused for unrelated
+#: meanings, and a code-only classification bins drpc's routing refusal as our
+#: own bug and stops the pool dead.
+#:
+#: "Method not found" is deliberately **absent**.  The pools here are
+#: heterogeneous — ``publicnode`` refuses archive ``eth_getLogs`` outright —
+#: so "this endpoint does not have that method" is an endpoint limitation that
+#: must rotate, not a request that is ours to fix.
+MALFORMED_REQUEST_PATTERNS: tuple[str, ...] = (
+    "invalid params", "invalid parameters", "invalid argument",
+    "invalid request", "invalid json", "parse error", "unknown block",
+    "cannot unmarshal", "hex string", "odd length", "missing value",
+    "malformed",
+)
+
 #: HTTP statuses that mean "this endpoint is not going to answer" — rotate,
 #: do not retry.
 DEAD_STATUS_CODES = frozenset({401, 402, 403, 404, 405, 410, 429, 500, 502, 503, 521})
@@ -233,15 +253,28 @@ def is_range_limitation(err: Any) -> bool:
 def is_endpoint_limitation(err: Any) -> bool:
     """True if *err* reads as "this endpoint can't", not "this request is bad".
 
-    Message first, code only as the tiebreak — and a non-dict body (drpc's
+    **The message decides, in both directions.**  A non-dict body (drpc's
     routing **string**) is an endpoint problem by construction: a provider that
-    could not even shape an error object did not judge our request.
+    could not even shape an error object did not judge our request.  And a
+    short circuit — which stops the whole pool — now needs the message to agree
+    with :data:`MALFORMED_REQUEST_PATTERNS`, because the codes are reused for
+    unrelated meanings and ending on ``code not in MALFORMED_REQUEST_CODES``
+    was classification by code, which is exactly what this module's own
+    docstring forbids.  An *unrecognised* message therefore rotates: that costs
+    a round trip, while short-circuiting on somebody's unfamiliar wording hides
+    a working endpoint.
+
+    The single documented use of a code is the one case with no text to
+    classify: an error object carrying **no message at all**.
     """
-    if any(frag in _message(err) for frag in ENDPOINT_LIMITATION_PATTERNS):
+    message = _message(err)
+    if any(frag in message for frag in ENDPOINT_LIMITATION_PATTERNS):
         return True
     if not isinstance(err, dict):
         return True
-    return err.get("code") not in MALFORMED_REQUEST_CODES
+    if not message:
+        return err.get("code") not in MALFORMED_REQUEST_CODES
+    return not any(frag in message for frag in MALFORMED_REQUEST_PATTERNS)
 
 
 class RangeTooWide(RuntimeError):
