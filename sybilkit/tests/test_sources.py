@@ -1644,18 +1644,56 @@ def test_a_wallet_funded_by_an_internal_transfer_resolves_its_funder() -> None:
 
 
 def test_the_internal_walk_only_runs_when_the_normal_walk_found_nothing() -> None:
-    """Ruling D2 option C: full coverage at near-zero marginal cost.  A
-    normally-funded wallet costs exactly what it cost before — the extra walk
-    happens only for the wallets that look self-created or internally funded,
-    which is the minority."""
-    rec = Recorder(lambda r: _page([_incoming(FUNDER, ALICE, 7)], None))
+    """Ruling D2 option C has **two** halves, and they are pinned together
+    here: *only when* is one of them, *when* is the other.
+
+    Half one — a normally-funded wallet costs exactly what it cost before.  The
+    extra walk happens only for the wallets that look self-created or
+    internally funded, which is the minority; that is the whole reason C was
+    ruled over B (always walk), which doubles the pacing for every wallet.
+
+    Half two — a wallet whose external history finished with no incoming
+    transfer **does** pay for the second request, at the ``internal-
+    transactions`` endpoint.  This half was missing, and its absence was
+    one-directional in the worst way: deleting the internal walk from
+    ``_funder_of`` entirely — the pre-D2-C behaviour, blind to the exact
+    fan-out pattern the funding family exists to catch — left the old version
+    of this test green, because it asserted only that a *funded* wallet earns
+    no extra request.  A cost bound with no coverage bound underneath it is
+    satisfied perfectly by doing nothing at all.
+
+    Both halves are asserted at the *request* level, on the same Recorder
+    shape, so the pair reddens from either side: half one from an
+    unconditional walk, half two from a deleted one.
+    """
+    # Half one: funded on the external history — one request, and it is not
+    # the internal one.
+    funded = Recorder(lambda r: _page([_incoming(FUNDER, ALICE, 7)], None))
     sweep = asyncio.run(
-        blockscout.fetch_funding([ALICE], client=_client(rec), config=FAST)
+        blockscout.fetch_funding([ALICE], client=_client(funded), config=FAST)
     )
     assert sweep is not None
     assert sweep.funding[ALICE.lower()].funder == FUNDER.lower()
-    assert len(rec.calls) == 1, rec.urls
-    assert not any("internal-transactions" in u for u in rec.urls), rec.urls
+    assert len(funded.calls) == 1, funded.urls
+    assert not any("internal-transactions" in u for u in funded.urls), funded.urls
+
+    # Half two: nothing on the external history — the second request is made,
+    # and it is the internal one.
+    def self_created(request: httpx.Request) -> httpx.Response:
+        if "internal-transactions" in str(request.url):
+            return _page([_internal(DISPERSER, BOB, 12)], None)
+        return _page([], None)  # walked to the end, no external transfer in
+
+    unfunded = Recorder(self_created)
+    sweep = asyncio.run(
+        blockscout.fetch_funding([BOB], client=_client(unfunded), config=FAST)
+    )
+    assert sweep is not None
+    assert len(unfunded.calls) == 2, unfunded.urls
+    assert "internal-transactions" not in unfunded.urls[0], unfunded.urls
+    assert "internal-transactions" in unfunded.urls[1], unfunded.urls
+    # And the request was made for a reason: the fan-out funder is resolved.
+    assert sweep.funding[BOB.lower()].funder == DISPERSER.lower()
 
 
 def test_a_disperse_style_fan_out_produces_one_shared_funder_across_the_batch() -> None:
