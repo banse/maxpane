@@ -542,6 +542,8 @@ class CuratorManager:
         #: publish.  "Could not run yet" (no events, no live-read config) is a
         #: different fact and never sets it — see :meth:`_pool_analysis`.
         self._analysis_failed = False
+        #: Once-per-process marker for the missing-library log line.
+        self._sybilkit_missing_logged = False
         #: The enrichment session for the detached sweep.  A test injects an
         #: ``httpx`` transport (and a no-op ``sleep``) here; production leaves
         #: both ``None`` and the sweep borrows the client's own HTTP session.
@@ -1220,7 +1222,9 @@ class CuratorManager:
         except Exception as exc:  # noqa: BLE001
             self._error_count += 1
             self._analysis_failed = True
-            self.cache.mark_failed(TIER_ANALYSIS, now)
+            # Completion time, not spawn time (M4): a sweep that took 200 s to
+            # die must not have those 200 s deducted from its retry spacing.
+            self.cache.mark_failed(TIER_ANALYSIS, float(self._clock()))
             logger.warning("Curator analysis sweep failed: %s", exc)
 
     async def _cancel_analysis(self) -> None:
@@ -1270,12 +1274,32 @@ class CuratorManager:
         """
         if TIER_ANALYSIS not in tiers:
             return {"ok": None, "swept": False}
+        if not curator_clusters.SYBILKIT_AVAILABLE:
+            # The guarded-import compatibility story (fix round 1): until
+            # maxpane's own dependency list can name sybilkit (it is not on
+            # PyPI yet), absence is the cannot-run state — spaced retry, no
+            # banner, the twelve keys in their honest not-yet-run None.
+            if not self._sybilkit_missing_logged:
+                self._sybilkit_missing_logged = True
+                logger.info(
+                    "sybilkit is not installed; the linked-wallet analysis "
+                    "panels stay in their unavailable state"
+                )
+            self.cache.mark_failed(TIER_ANALYSIS, float(self._clock()))
+            return {"ok": None, "swept": False}
         cfg = config if isinstance(config, dict) else {}
         events = self.cache.events()
         rate = _opt_int(cfg.get("points_per_eth"))
         minimum = _opt_int(cfg.get("min_deposit_wei"))
         if not events or rate is None or rate <= 0 or minimum is None:
-            self.cache.mark_failed(TIER_ANALYSIS, now)
+            # Completion-time stamp (M4): the retry clock must not have the
+            # sweep's own duration deducted from it.  Freshness stamps stay
+            # spawn-time — only failures are stamped at completion.
+            # Deliberately does NOT clear `_analysis_failed`: a failed sweep
+            # followed by a cannot-run one keeps its banner state (ledgered
+            # fix-round-1 deferral; the sequence takes a config slot decaying
+            # mid-flight, which nothing produces today).
+            self.cache.mark_failed(TIER_ANALYSIS, float(self._clock()))
             return {"ok": None, "swept": False}
 
         firsts = self.cache.first_deposits()
@@ -1312,7 +1336,30 @@ class CuratorManager:
             result, enrichment=enrich.state()
         )
         self.cache.store_analysis(payload, ts=now)
-        self.cache.mark_fetched(TIER_ANALYSIS, now)
+        # M2: the enrichment health decides the RETRY clock, never the
+        # publish.  The tier-A(+accumulated) result above is data-wise honest
+        # either way; but a pass in which every source that was asked a
+        # question was down should retry on the failure backoff, not wait out
+        # the full TTL — and a partial outage is logged so a one-sided
+        # coverage stall is discoverable.
+        attempted = [
+            ok for ok in (enrich.tx_ok, enrich.funding_ok) if ok is not None
+        ]
+        if attempted and not any(attempted):
+            logger.warning(
+                "Curator analysis sweep published on held data only: every "
+                "enrichment source that was asked a question was unreachable; "
+                "retrying on the failure backoff"
+            )
+            self.cache.mark_failed(TIER_ANALYSIS, float(self._clock()))
+        else:
+            if False in attempted:
+                dead = "fingerprints" if enrich.tx_ok is False else "funding"
+                logger.warning(
+                    "Curator analysis sweep published with the %s source "
+                    "unreachable; its coverage extends next sweep", dead
+                )
+            self.cache.mark_fetched(TIER_ANALYSIS, now)
         self._analysis_failed = False
         return {"ok": True, "swept": True}
 

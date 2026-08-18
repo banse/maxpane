@@ -1003,3 +1003,25 @@ def test_only_curator_clusters_imports_sybilkit():
                 importers.append(str(path.relative_to(_REPO)))
                 break
     assert importers == ["maxpane_dashboard/data/curator_clusters.py"]
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 — M3: an unknown grade band is unknown
+# ---------------------------------------------------------------------------
+
+
+def test_an_unknown_grade_band_is_unknown_never_low():
+    """A corrupted/unknown `conf` in a persisted group is bad data, and a
+    confidence word derived from bad data is a claim: it renders `?` (None),
+    while the membership FACT (linked, size, reasons) is untouched."""
+    payload = curator_clusters.slot_payload(farm_analysis())
+    payload["groups"][0]["conf"] = "banana"
+    assert curator_clusters.grade_of(FARM_MEMBERS[0], payload) is None
+
+    rows = [{"address": FARM_MEMBERS[0], "flagged": True}]
+    curator_clusters.merge_leaderboard_grade(rows, payload)
+    assert rows[0]["link_conf"] is None
+
+    linkage = curator_clusters.you_linkage(FARM_MEMBERS[0], payload)
+    assert linkage["you_linked_state"] == "linked"
+    assert linkage["you_linked_group_size"] == len(FARM_MEMBERS)

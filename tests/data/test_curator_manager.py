@@ -2407,3 +2407,184 @@ def test_clearing_the_wallet_clears_the_linkage_but_not_the_population_keys(
         assert out[key] is None, key
     assert out["operator_rows"], "the population analysis is not the reader's"
     assert SOURCE_WALLET not in out["degraded"]
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 — the analyzed-none state end to end, absence, outage backoff
+# ---------------------------------------------------------------------------
+
+import httpx  # noqa: E402
+
+from tests.data.test_curator_clusters import (  # noqa: E402
+    MINIMUM as FARM_MINIMUM,
+    RATE as FARM_RATE,
+)
+
+
+def _store_analyzed_none_slot(manager, *, ts=NOW):
+    """A REAL analyzed-none publish: the analysis ran over the farm with no
+    second family, so the amount component exists and no cluster does."""
+    result = curator_clusters.build_analysis(
+        farm_events(),
+        farm_first_deposits(),
+        points_per_eth=FARM_RATE,
+        min_deposit_wei=FARM_MINIMUM,
+    )
+    payload = curator_clusters.slot_payload(result)
+    manager.cache.store_analysis(payload, ts=ts)
+    return payload
+
+
+def test_an_analyzed_none_slot_reaches_the_flat_dict_as_real_zeros(tmp_path, clock):
+    """Fix round 1, I1 — the fourth payload state, pinned THROUGH
+    fetch_and_compute.  The regression class this exists for is the
+    ``slot.get(key) or None`` collapse: a real zero laundered into 'could not
+    analyze' by a truthiness test at the merge."""
+    import re
+
+    manager = _analysis_manager(tmp_path, clock, wallet=FARM_MEMBERS[0])
+    stored = _store_analyzed_none_slot(manager)
+    assert stored["operators_count"] == 0             # guard: really none-found
+
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["operator_rows"] == []                  # analyzed, nothing linked
+    assert out["operators_count"] == 0
+    assert isinstance(out["operators_count"], int)
+    assert out["segment_rows"], "the population bands exist without operators"
+    assert all(
+        row["label"] != "largest operators" for row in out["segment_rows"]
+    )
+    assert out["clean_points"] == out["points_total"] > 0
+    assert out["clean_contributors"] == len(FARM_MEMBERS) + len(FARM_CONTROLS)
+    assert out["flagged_points_share_pct"] == 0.0      # the ruled override
+    assert re.fullmatch(r"\d{2}:\d{2}", out["analysis_as_of_hhmm"])
+    # The configured wallet was analyzed and cleared:
+    assert out["you_linked_state"] == "clean"
+    assert out["you_linked_reasons"] == []
+    assert out["you_linked_group_size"] is None
+    assert isinstance(out["you_clean_rank"], int)
+    # ...and every leaderboard row grades clean, never a confident blank.
+    for row in out["leaderboard_rows"]:
+        assert row["link_conf"] in ("clean", None)
+
+
+def test_a_missing_sybilkit_is_analysis_unavailable_never_a_crash(
+    tmp_path, clock, monkeypatch
+):
+    """The ruled guarded import: with the library absent the twelve keys stay
+    in their not-yet-run state, the merge and the R9 seeding keep working,
+    no banner lights for mere absence, and the tier is spaced rather than
+    re-offered every cycle."""
+    manager = _analysis_manager(tmp_path, clock, wallet=WALLET)
+    monkeypatch.setattr(curator_clusters, "SYBILKIT_AVAILABLE", False)
+
+    async def _run():
+        out = await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
+        assert set(out) == set(CURATOR_KEYS)
+        for key in (
+            "operator_rows",
+            "segment_rows",
+            "clean_list_rows",
+            "operators_count",
+            "clean_points",
+            "clean_contributors",
+            "points_total",
+            "analysis_as_of_hhmm",
+            "you_linked_state",
+            "you_linked_reasons",
+            "you_linked_group_size",
+            "you_clean_rank",
+        ):
+            assert out[key] is None, key
+        assert out["degraded"] == []                   # absence is not an outage
+        for row in out["leaderboard_rows"]:
+            assert "link_conf" in row and row["link_conf"] is None
+        task = manager._analysis_task
+        if task is not None:
+            await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(_run())
+    assert manager._analysis_failed is False
+    assert TIER_ANALYSIS not in manager.cache.tiers_due(NOW + 1)
+
+
+def test_a_held_analysis_still_serves_when_sybilkit_is_gone(
+    tmp_path, clock, monkeypatch
+):
+    """The merge reads a persisted payload, not the library: a last-good built
+    while sybilkit existed keeps rendering after it is gone."""
+    manager = _analysis_manager(tmp_path, clock, wallet=FARM_MEMBERS[0])
+    _store_farm_slot(manager)
+    monkeypatch.setattr(curator_clusters, "SYBILKIT_AVAILABLE", False)
+
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["operators_count"] == 1
+    assert out["operator_rows"]
+    assert out["you_linked_state"] == "linked"
+    assert out["degraded"] == []
+
+
+def test_a_sweep_whose_every_source_died_retries_on_the_backoff(tmp_path, clock):
+    """Fix round 1, M2 — tx AND funding both unreachable: the tier-A result
+    still publishes (data-wise honest), but the tier retries on the FAILURE
+    backoff instead of waiting out the full ~30-minute TTL."""
+
+    async def dead(_request):
+        raise httpx.ConnectError("network unreachable")
+
+    client = _scenario_client({"state": True, "logs": True, "wallet": False})
+    client.answers["fetch_state"] = _state(tx_count=9, contributors=9)
+    client.answers["fetch_logs"] = lambda *_: _sweep([], to_block=25_770_500)
+    manager = _manager(
+        tmp_path,
+        clock,
+        client=client,
+        analysis_transport=httpx.MockTransport(dead),
+        analysis_sleep=no_sleep,
+    )
+    manager.cache.store_events(farm_events(), now=NOW)
+    manager.cache.store_first_deposits(farm_first_deposits())
+
+    async def _run():
+        task = manager._spawn_analysis({TIER_ANALYSIS}, NOW, ANALYSIS_CONFIG)
+        await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(_run())
+    entry = manager.cache.analysis_last_good()
+    assert entry is not None                            # the tier-A publish
+    assert entry.payload["operators_count"] == 0
+    assert manager._analysis_failed is False            # it published; no banner
+    from maxpane_dashboard.data.curator_cache import TIER_FAILURE_BACKOFF_SECONDS
+
+    assert TIER_ANALYSIS not in manager.cache.tiers_due(NOW + 1)
+    assert TIER_ANALYSIS in manager.cache.tiers_due(
+        NOW + TIER_FAILURE_BACKOFF_SECONDS[TIER_ANALYSIS] + 1
+    )
+
+
+def test_a_failed_sweeps_backoff_counts_from_completion_not_spawn(
+    tmp_path, clock, monkeypatch
+):
+    """Fix round 1, M4 — a sweep that took 200 s to die must not have those
+    200 s deducted from its retry spacing.  Freshness stamps stay spawn-time;
+    only the retry clock moves."""
+
+    def slow_boom(*_args, **_kwargs):
+        clock.advance(200)                              # the sweep's own duration
+        raise RuntimeError("died late")
+
+    manager = _analysis_manager(tmp_path, clock)
+    monkeypatch.setattr(curator_clusters, "build_analysis", slow_boom)
+
+    async def _run():
+        task = manager._spawn_analysis({TIER_ANALYSIS}, NOW, ANALYSIS_CONFIG)
+        await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(_run())
+    from maxpane_dashboard.data.curator_cache import TIER_FAILURE_BACKOFF_SECONDS
+
+    backoff = TIER_FAILURE_BACKOFF_SECONDS[TIER_ANALYSIS]
+    # Spawn-time stamping would make the tier due at NOW + 300 already:
+    assert TIER_ANALYSIS not in manager.cache.tiers_due(NOW + backoff + 1)
+    assert TIER_ANALYSIS not in manager.cache.tiers_due(NOW + 200 + backoff - 1)
+    assert TIER_ANALYSIS in manager.cache.tiers_due(NOW + 200 + backoff + 1)

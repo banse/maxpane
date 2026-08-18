@@ -46,18 +46,44 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
 
-from sybilkit import Dataset, DetectResult, detect
-from sybilkit.curator import CleanList, CuratorPreset, Segments
-from sybilkit.curator import clean_list as _clean_list
-from sybilkit.curator import segments as _segments
-from sybilkit.model import Funding, Tx
-from sybilkit.signals import first_rows, tier_a_components
-from sybilkit.sources import blockscout as _blockscout
-from sybilkit.sources import txs as _tx_sources
-from sybilkit.sources import DEFAULT_CONFIG as _SOURCE_DEFAULTS
-from sybilkit.sources.blockscout import PENDING_PAGES
+try:
+    from sybilkit import Dataset, DetectResult, detect
+    from sybilkit.curator import CleanList, CuratorPreset, Segments
+    from sybilkit.curator import clean_list as _clean_list
+    from sybilkit.curator import segments as _segments
+    from sybilkit.model import Funding, Tx
+    from sybilkit.signals import first_rows, tier_a_components
+    from sybilkit.sources import blockscout as _blockscout
+    from sybilkit.sources import txs as _tx_sources
+    from sybilkit.sources import DEFAULT_CONFIG as _SOURCE_DEFAULTS
+    from sybilkit.sources.blockscout import PENDING_PAGES
+except ImportError:  # pragma: no cover — exercised through the flag in tests
+    #: ``sybilkit`` is not on PyPI yet, so until maxpane's own dependency list
+    #: can name it (WP6/packaging: the pyproject gains ``sybilkit`` at the
+    #: first release AFTER the library publishes), the import is guarded and
+    #: this flag is the compatibility story: the manager treats absence as
+    #: the analysis's cannot-run state (spaced retry, no banner), while the
+    #: merge, the R9 ``link_conf`` seeding and a HELD last-good keep working —
+    #: they read persisted payloads, never the library.
+    SYBILKIT_AVAILABLE = False
+else:
+    SYBILKIT_AVAILABLE = True
 
 from maxpane_dashboard.data.curator_models import CURATOR_ANALYSIS_KEYS
+
+
+def _require_sybilkit() -> None:
+    """A clear raise for the analysis entry points when the library is gone.
+
+    The manager checks :data:`SYBILKIT_AVAILABLE` before calling any of them,
+    so in production this never fires; it exists so a direct caller gets a
+    named error instead of a ``NameError`` from a half-imported module.
+    """
+    if not SYBILKIT_AVAILABLE:
+        raise ModuleNotFoundError(
+            "sybilkit is not installed; the linked-wallet analysis is "
+            "unavailable (pip install sybilkit)"
+        )
 
 #: Wei per ETH — the module's ONLY division site (see the module docstring).
 _ETH = 10**18
@@ -126,6 +152,7 @@ def build_preset(points_per_eth: Any, min_deposit_wei: Any) -> CuratorPreset:
     or malformed read raises — the caller reports "could not analyze" rather
     than analyzing with a guess.
     """
+    _require_sybilkit()
     if not isinstance(points_per_eth, int) or isinstance(points_per_eth, bool):
         raise ValueError(
             f"points_per_eth must be the live-read rate, got {points_per_eth!r}"
@@ -223,6 +250,7 @@ def build_analysis(
     R13 landed after it was written, and the preset refuses to exist without
     the minimum, so the honest signature carries it.
     """
+    _require_sybilkit()
     preset = config if config is not None else build_preset(
         points_per_eth, min_deposit_wei
     )
@@ -359,7 +387,11 @@ def grade_of(address: Any, analysis: Any) -> str | None:
     group = _group_of(address, analysis)
     if group is not None:
         conf = group.get("conf")
-        return conf if conf in ("high", "low") else "low"
+        # An unknown band in a persisted group is bad data, and a confidence
+        # word derived from bad data is a claim: it renders `?` (None) — the
+        # membership FACT (linked, size, reasons) is `you_linkage`'s and is
+        # untouched by the band being unreadable.
+        return conf if conf in ("high", "low") else None
     if address.lower() in _clean_ranks_of(analysis):
         return "clean"
     return None
@@ -583,6 +615,7 @@ def candidate_targets(
     hashes are the candidates' **first-deposit** transactions, which is what
     the gas family and the freshness discount actually read.
     """
+    _require_sybilkit()
     ds = Dataset.from_events(events, first_deposits)
     cfg = preset.detect_config()
     components = [
@@ -632,6 +665,7 @@ async def fetch_enrichment(
     a zero budget (it would still open a session; WP2's warning): the skip
     switch is not calling it.
     """
+    _require_sybilkit()
     prior = state if isinstance(state, Mapping) else {}
     known_txs: dict[str, dict] = {
         str(key).lower(): dict(value)
