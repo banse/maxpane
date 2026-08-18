@@ -1244,10 +1244,14 @@ test could not be run by name would be recorded here as **not closed**; there ar
 
 **And every row names the test that actually bites.** The second WP9 pass did not inherit the
 first one's table — it reintroduced each defect in the source, ran the whole suite, and recorded
-which tests reddened. 40 mutations, applied and restored one at a time; `diff -r` against a
-pristine copy of `sybilkit/src` after the last one is identical, and `git status` shows no source
-file touched. Where the plan's §7 headline is **not** the test carrying the signal, the row says
-so rather than reading tidily. An honest table that admits a weak row is worth more than one that
+which tests reddened. **58 distinct mutations across 71 suite runs** — 13 scenarios were measured
+twice, because the harness's first version overwrote its own backup when one scenario edited a
+file twice and left three lines of it behind. That leftover was caught by `diff -r` against a
+pristine copy of `sybilkit/src`, not by a green suite (it made two unrelated tests fail in every
+later run, which is what gave it away), the harness was fixed, and every affected scenario was
+re-measured. `diff -r` after the last mutation is identical and `git status` shows no source file
+touched. Where the plan's §7 headline is **not** the test carrying the signal, the row says so
+rather than reading tidily. An honest table that admits a weak row is worth more than one that
 hides it.
 
 | # | finding | WP · ruling | the mutation, and what it reddened | commit |
