@@ -642,12 +642,26 @@ BUILDERS = {
 def _non_negative_int(text: str) -> int:
     """An ``int`` that is not negative, as an ``argparse`` ``type=``.
 
-    A negative budget used to reach ``fetch_funding`` and slice ``wanted[:-5]``
-    — "all but the last five", the exact opposite of a cap on five.  The
-    library clamps it now (a negative budget is a zero budget), which keeps
-    every caller safe and turns a typed minus sign into a pass that quietly
-    reads nothing.  At a command line the typo is nameable, so it is named
-    here instead.
+    Two options are read through it, and a minus sign is a different kind of
+    nonsense in each — so the message states the rule rather than one option's
+    story:
+
+    ``--funding-budget``
+        a negative budget used to reach ``fetch_funding`` and slice
+        ``wanted[:-5]`` — "all but the last five", the exact opposite of a cap
+        on five.  The library clamps it now (a negative budget is a zero
+        budget), which keeps every caller safe and turns a typed minus sign
+        into a pass that quietly reads nothing.
+    ``--from-block``
+        a negative from-block sails through the past-the-head check below (it
+        is not ``> head``), reaches ``eth_getLogs`` as ``hex(-500)`` —
+        ``"-0x1f4"``, which is not a quantity in any JSON-RPC spec — and is
+        stamped into the artifact's own ``block_range.from`` beside
+        ``coverage.logs.complete: true``: a range beginning before genesis,
+        presented as a completed measurement.
+
+    At a command line either typo is nameable, so it is named here instead of
+    being absorbed downstream.
     """
     try:
         value = int(text)
@@ -655,8 +669,9 @@ def _non_negative_int(text: str) -> int:
         raise argparse.ArgumentTypeError(f"{text!r} is not an integer") from None
     if value < 0:
         raise argparse.ArgumentTypeError(
-            f"{value} is negative; this is a cap, and 0 already means "
-            "'do not run this tier'"
+            f"{value} is negative, and nothing this parser counts runs "
+            "backwards: a cap of 0 already means 'do not run this tier', and "
+            "block 0 is the genesis block"
         )
     return value
 
@@ -678,7 +693,7 @@ def build_parser() -> argparse.ArgumentParser:
     ):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--contract", help="the contract to sweep (live path)")
-        p.add_argument("--from-block", type=int, default=0,
+        p.add_argument("--from-block", type=_non_negative_int, default=0,
                        help="first block of the sweep (live path)")
         p.add_argument("--dataset", help="a committed JSON bundle; sweeps nothing")
         p.add_argument("--preset", choices=PRESETS, default="curator")

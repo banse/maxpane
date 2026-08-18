@@ -863,6 +863,47 @@ def test_a_negative_funding_budget_is_rejected_at_the_command_line(capsys) -> No
     assert parser.parse_args(["analyze", "--funding-budget", "40"]).funding_budget == 40
 
 
+def test_a_negative_from_block_is_rejected_at_the_command_line(capsys) -> None:
+    """The last unguarded member of the argument-sanity family.
+
+    ``--funding-budget`` got :func:`~sybilkit.cli._non_negative_int` and
+    ``--max-txs`` got the cap clamp.  ``--from-block`` got only the
+    past-the-head check, and a negative sails through that — it is not
+    ``> head``.  So ``--from-block -500`` **swept**: the value reached
+    ``eth_getLogs`` as ``hex(-500)``, i.e. ``"-0x1f4"``, which is not a
+    quantity in any JSON-RPC spec; and whatever the node made of that, the
+    number was stamped into the artifact's own ``block_range.from`` beside
+    ``coverage.logs.complete: true`` — a range beginning 500 blocks before
+    genesis, presented as a completed measurement.
+
+    A block number counts up from block 0, so a typed minus sign is a typo the
+    user can fix.  It is named at the command line with the same helper its
+    sibling uses, before a single request is made — which is what the refusing
+    transport below asserts.
+    """
+    httpx = pytest.importorskip("httpx")
+
+    def refuse(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError(
+            f"a negative --from-block reached the network: {request.url}"
+        )
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(
+            ["analyze", "--contract", CONTRACT, "--from-block", "-500"],
+            transport=httpx.MockTransport(refuse),
+        )
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "--from-block" in err and "-500" in err
+
+    # Genesis still parses, and so does a real backfill cursor: this is a
+    # sanity guard on the sign, not a floor above zero.
+    parser = cli.build_parser()
+    assert parser.parse_args(["analyze", "--from-block", "0"]).from_block == 0
+    assert parser.parse_args(["analyze", "--from-block", "900"]).from_block == 900
+
+
 def test_a_zero_tx_cap_fetches_nothing_and_says_where_it_stopped(capsys) -> None:
     """**B4.**  The block-boundary rule is ``if out and len(out) + len(group) >
     cap``, and the ``out and`` was there so a cap smaller than the first block
