@@ -384,3 +384,116 @@ maxpane_dashboard/analytics/curator_signals.py` empty at sign-off.
    the manager (the pure folds and the budgets are measured; the paced
    Blockscout pass is arithmetic at ~3 req/s, not a wall-clock measurement
    through `_pool_analysis`). First live run should confirm ~70–90 s.
+
+---
+
+# Fix round 1 (review of `ed780bd..245d967`) — 2026-08-18
+
+Approved, with one plan-mandated Important, the controller's pre-ruled guarded
+import, and three ruled-in minors.  All fixed test-first (RED captured where
+the behaviour was new; the two agreement-style pins proven by mutation), each
+restore verified, pathspec-limited commits, captures untouched.
+
+## I1 — the analyzed-none state, pinned end to end
+
+`test_an_analyzed_none_slot_reaches_the_flat_dict_as_real_zeros`
+(`tests/data/test_curator_manager.py`) stores a **real** analyzed-none publish
+(the farm with no second family: the amount component exists, no cluster does)
+and asserts in the flat dict: `operator_rows == []`, `operators_count == 0`
+(an `int`, not `None`), `segment_rows` non-empty with no "largest operators"
+band (the none-found semantics: the population bands exist without
+operators), `clean_points == points_total > 0`, `clean_contributors == 9`,
+`flagged_points_share_pct == 0.0` (the ruled override), `analysis_as_of_hhmm`
+a real HH:MM, and for the configured wallet `you_linked_state == "clean"`,
+`you_linked_reasons == []`, a dense `you_clean_rank`, every leaderboard row
+graded `"clean"`/`None`.
+
+**Mandated bite recorded:** changing the merge's count read to
+`_opt_int(slot.get(key)) or None` — the exact collapse class the pin exists
+for — reddens it (`1 failed`); restored, `tests/data/` whole: 2249 passed.
+
+## Ruled guarded import — the packaging gap's compatibility story
+
+`curator_clusters.py`'s sybilkit imports now sit in a module-level
+`try/except ImportError` setting **`SYBILKIT_AVAILABLE`**; the four analysis
+entry points (`build_preset`, `build_analysis`, `candidate_targets`,
+`fetch_enrichment`) raise a named `ModuleNotFoundError` through
+`_require_sybilkit()` so a direct caller never sees a bare `NameError`.  The
+manager checks the flag first in `_pool_analysis`: absence is the existing
+cannot-run path — spaced retry, **no banner**, one INFO log line per process
+(`_sybilkit_missing_logged`).  The merge, the R9 `link_conf=None` seeding and
+a **held last-good** keep working with the library gone (they read persisted
+payloads, never the library).  The AST guardrail still lists
+`curator_clusters` as the sole importer — no test churn.
+
+Covering tests (RED under the missing flag, GREEN after):
+`test_a_missing_sybilkit_is_analysis_unavailable_never_a_crash` (full
+contract, twelve keys None, `degraded == []`, link_conf seeded, tier spaced)
+and `test_a_held_analysis_still_serves_when_sybilkit_is_gone`.  The **real**
+`except ImportError` branch (which the flag monkeypatch cannot execute) was
+verified in a subprocess with a meta-path blocker: both modules import
+cleanly, `SYBILKIT_AVAILABLE is False`, the entry points raise the named
+error, and the payload-side lookups (`grade_of`/`you_linkage`/
+`merge_leaderboard_grade`) function fully without the library.
+
+**WP6 hand-off note (ruled):** maxpane's `pyproject` gains `sybilkit` as a
+dependency at the first release AFTER sybilkit publishes; until then the
+guarded import is the compatibility story.  (This supersedes concern 1's
+"highest priority" framing — the gap is now survivable, not crashing.)
+
+## M2 — enrichment outage drives the retry clock
+
+`_pool_analysis` now reads `tx_ok`/`funding_ok`: every attempted source dead
+→ the tier-A(+accumulated) result **still publishes** (data-wise honest) but
+the tier is marked **failed** (backoff ~300 s, completion-stamped) with a
+warning; a partial outage keeps `mark_fetched` and logs which source's
+coverage stalls.  "Attempted" is the operative word: a sweep whose only
+asked-question source died retries on the backoff too.  Covering:
+`test_a_sweep_whose_every_source_died_retries_on_the_backoff` (dead
+transport; publish lands, `_analysis_failed` stays False, no banner, due
+again after the backoff, not the TTL).
+
+## M3 — an unknown grade band is unknown
+
+`grade_of` on a corrupted/unknown `conf` now answers `None` (renders `?`),
+never `"low"` — a confidence word off bad data is a claim.  The membership
+fact (`you_linkage`: linked, size, reasons) is untouched.  Covering:
+`test_an_unknown_grade_band_is_unknown_never_low`
+(`tests/data/test_curator_clusters.py`).
+
+## M4 — failures stamp the retry clock at completion
+
+All three `mark_failed(TIER_ANALYSIS, …)` sites use `float(self._clock())`
+(completion) instead of the spawn `now`; freshness stamps
+(`store_analysis(ts=now)`) stay spawn-time.  Covering:
+`test_a_failed_sweeps_backoff_counts_from_completion_not_spawn` (a sweep that
+takes 200 s to die is due at completion+300, not spawn+300 — RED before,
+spawn-time stamping made the tier due 200 s early).
+
+## Deferred, as ledgered
+
+The page-bound ratchet gating on attempted passes; `_analysis_failed` not
+clearing on cannot-run (now carries the ruled one-line comment naming the
+contrived sequence); the `_cancel_analysis` parity note.  Untouched.
+
+## Fix-round test evidence
+
+- RED: `5 failed, 2 passed` on the focused selection (absence ×2, M2, M4, M3
+  — I1 green on write, its mandated mutation bite recorded instead).
+- GREEN: the four curator data suites **251 passed**; `tests/data/` whole
+  **2249 passed** after the bite restore.
+- Full maxpane suite after the round (`.venv/bin/python -m pytest -q`,
+  `testpaths = ["tests"]`), pasted verbatim — **nothing skipped or xfailed**,
+  the six warnings are the pre-existing Textual noise, and the count grew by
+  exactly this round's six new tests (4652 → 4658):
+
+```
+4658 passed, 6 warnings in 363.23s (0:06:03)
+```
+
+## Fix-round commits
+
+| SHA | Subject |
+|---|---|
+| `96a7ebb` | fix(curator): the fourth payload state, the guarded import and honest retry clocks |
+| (report) | docs(curator): WP3 fix round 1 report |
