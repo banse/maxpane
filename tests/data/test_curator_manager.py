@@ -2087,6 +2087,71 @@ def test_the_sweep_publishes_into_the_slot_with_the_spawn_time_stamp(tmp_path, c
     asyncio.run(_run())
 
 
+def test_the_sweep_borrows_the_real_clients_own_session_in_production(tmp_path, clock):
+    """The **production** half of ``_analysis_session`` — the branch every
+    other sweep test skips.
+
+    Those tests inject an ``analysis_transport``, so ``_analysis_session``
+    returns the injected branch and the borrowed-``_client`` path is exercised
+    only by the live smoke.  Here ``analysis_transport`` is ``None`` (so the
+    injected branch is *not* taken) and the manager's client is a **real**
+    :class:`CuratorClient` whose own ``httpx`` session is MockTransport-backed:
+    the sweep must borrow that session, fetch through it, and publish into
+    ``SLOT_CLUSTERS`` — with no socket, because the transport is a mock.
+
+    The borrowed attribute is asserted by name (``_client``): a future
+    ``CuratorClient`` refactor that renames it would silently drop the sweep to
+    tier A, and this reddens instead.
+    """
+    import httpx
+    from maxpane_dashboard.data.curator_client import CuratorClient
+
+    routes = AnalysisRoutes()
+    http = httpx.AsyncClient(transport=routes.transport)
+    client = CuratorClient(http_client=http)
+
+    # The seam this test exists to pin: production borrows the real client's
+    # own `_client`.  If the attribute is renamed, this fails here rather than
+    # letting the sweep quietly run tier A only.
+    assert getattr(client, "_client", None) is http
+
+    manager = _manager(
+        tmp_path,
+        clock,
+        client=client,
+        analysis_transport=None,           # force the production branch
+        analysis_sleep=no_sleep,
+    )
+    assert manager._analysis_session() == (http, None)
+
+    manager.cache.store_events(farm_events(), now=NOW)
+    manager.cache.store_first_deposits(farm_first_deposits())
+
+    async def _run():
+        try:
+            return await asyncio.wait_for(
+                manager._pool_analysis({TIER_ANALYSIS}, NOW, ANALYSIS_CONFIG),
+                timeout=5,
+            )
+        finally:
+            await http.aclose()
+
+    out = asyncio.run(_run())
+    assert out["swept"] is True
+
+    # Fetched through the borrowed session: the mock transport recorded both
+    # wire shapes, which only the production `_client` path could have driven.
+    assert routes.posts and routes.gets, (
+        "the sweep drove sybilkit.sources through the real client's own _client"
+    )
+    # ...and published into SLOT_CLUSTERS, funding-linked exactly as the
+    # injected-branch sibling asserts.
+    entry = manager.cache.get_last_good(SLOT_CLUSTERS)
+    assert entry is not None
+    assert entry.payload["operators_count"] == 1
+    assert set(entry.payload["enrichment"]["funding"]) >= set(FARM_MEMBERS)
+
+
 def test_the_first_payload_is_not_behind_the_analysis_read(tmp_path, clock):
     """The mandated first-paint guard: a funding pass is minutes long, and
     awaiting it in-cycle is exactly the 201-second blank SIGNALS rail the
