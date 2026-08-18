@@ -665,6 +665,119 @@ def test_a_live_fetch_without_httpx_names_the_extra(monkeypatch, capsys) -> None
 
 
 # ===========================================================================
+# Below the cap — the 2026-08-18 review's B1..B5 ledger
+# ===========================================================================
+
+
+def test_a_chain_that_answers_zero_points_per_eth_is_a_named_error_not_a_traceback(
+    capsys,
+) -> None:
+    """**B1.**  ``hex_to_int`` answers ``None`` for a read it could not make and
+    ``0`` for a chain that really said zero, so a contract answering
+    ``POINTS_PER_ETH() = 0`` walks straight past the ``is None`` outage check
+    and into ``CuratorPreset``, which raises ``ValueError`` — a traceback out
+    of a ``main`` whose own docstring says it never raises.
+
+    Zero is a *reading*, not an outage, and it is an unusable rate: every
+    deposit scores zero points.  So the run stops and names the view that
+    answered it, rather than crashing or analysing at a rate of nothing.
+    """
+    httpx = pytest.importorskip("httpx")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls = body if isinstance(body, list) else [body]
+        out = []
+        for call in calls:
+            assert call["method"] == "eth_call", "it must stop before it sweeps"
+            out.append({"jsonrpc": "2.0", "id": call["id"], "result": "0x" + "0" * 64})
+        return httpx.Response(200, json=out if isinstance(body, list) else out[0])
+
+    code = cli.main(
+        ["analyze", "--contract", CONTRACT, "--from-block", "100"],
+        transport=httpx.MockTransport(handler),
+    )
+    assert code != 0
+    err = capsys.readouterr().err
+    assert "POINTS_PER_ETH" in err
+    assert "--points-per-eth" in err, "the override is the way out; name it"
+
+
+def test_a_chain_that_answers_zero_min_deposit_stops_but_a_measured_zero_does_not(
+    capsys,
+) -> None:
+    """**B1, the other view.**  A ``minDeposit()`` of zero disables the R13
+    exemption, which is the exact failure the ``is None`` branch already
+    refuses in prose: *without it the whole minimum-paying crowd is linked by
+    an identicalness that identifies nobody*.  A zero that came **off the
+    chain** stops the run; a zero the caller passed is that caller's own
+    measurement and runs.
+    """
+    httpx = pytest.importorskip("httpx")
+    from sybilkit import sources
+
+    rate_sel = sources.selector("POINTS_PER_ETH()")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls = body if isinstance(body, list) else [body]
+        out = []
+        for call in calls:
+            method, cid = call["method"], call["id"]
+            if method == "eth_call":
+                value = 1000 if call["params"][0]["data"] == rate_sel else 0
+                out.append({"jsonrpc": "2.0", "id": cid,
+                            "result": "0x" + f"{value:064x}"})
+            elif method == "eth_blockNumber":
+                out.append({"jsonrpc": "2.0", "id": cid, "result": hex(120)})
+            elif method == "eth_getLogs":
+                out.append({"jsonrpc": "2.0", "id": cid, "result": []})
+            else:  # pragma: no cover
+                raise AssertionError(method)
+        return httpx.Response(200, json=out if isinstance(body, list) else out[0])
+
+    argv = ["analyze", "--contract", CONTRACT, "--from-block", "100"]
+    code = cli.main(argv, transport=httpx.MockTransport(handler))
+    assert code != 0
+    err = capsys.readouterr().err
+    assert "minDeposit" in err and "--min-deposit-wei" in err
+
+    measured = cli.main(
+        argv + ["--min-deposit-wei", "0"], transport=httpx.MockTransport(handler)
+    )
+    assert measured == 0, "a zero the caller measured is not the CLI's to refuse"
+    assert out_json(capsys)["config"]["protocol_min_amount_wei"] == "0"
+
+
+def test_an_unexpected_value_error_exits_non_zero_with_a_message(capsys) -> None:
+    """**B1, the handler half.**  ``--points-per-eth 0`` is not None, so it
+    clears every guard in ``_run`` and raises out of ``CuratorPreset``.  The
+    library validates its own inputs properly; what was missing was a CLI that
+    turns that validation into a message and an exit status instead of a
+    stack trace.
+    """
+    code = run("analyze", "--dataset", str(LABELED),
+               "--points-per-eth", "0", "--min-deposit-wei", "0")
+    assert code == 3
+    assert "points_per_eth" in capsys.readouterr().err
+
+
+def test_a_malformed_labeled_bundle_is_a_message_not_a_key_error_traceback(
+    tmp_path, capsys
+) -> None:
+    """The ``KeyError`` half of the same handler: ``dataset_from_labeled``
+    reads ``entry["first_index"]`` directly, so a hand-written labeled bundle
+    missing one field is a traceback rather than "your file is missing this"."""
+    bundle = tmp_path / "labeled_missing_index.json"
+    bundle.write_text(
+        json.dumps({"members": [{"address": "0x" + "11" * 20}]}), encoding="utf-8"
+    )
+    code = run("analyze", "--dataset", str(bundle), *OFFLINE_RATE)
+    assert code == 3
+    assert "first_index" in capsys.readouterr().err
+
+
+# ===========================================================================
 # Structural
 # ===========================================================================
 

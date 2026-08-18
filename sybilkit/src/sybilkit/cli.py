@@ -210,9 +210,40 @@ def _live(args, transport: Any) -> tuple[Dataset, dict, int, int]:
         rate = args.points_per_eth
         if rate is None:
             rate = await sources.fetch_uint_view(args.contract, "POINTS_PER_ETH()", **kw)
+            # A READ ZERO IS NOT AN OUTAGE, AND `is None` CANNOT SEE IT.
+            # `hex_to_int` answers `None` for a read that failed and `0` for a
+            # chain that really said zero, which is the whole point of that
+            # rule — but zero is also an unusable rate: every deposit scores
+            # zero points, and `CuratorPreset` (rightly) refuses it with a
+            # `ValueError` that used to leave `main` as a traceback.  Name the
+            # view that answered it instead.  Only the *live* read is checked:
+            # `--points-per-eth` is the caller's own measurement and never
+            # reaches here.
+            if rate == 0:
+                raise CliError(
+                    f"{args.contract} answered POINTS_PER_ETH() = 0.  That is a "
+                    "reading rather than an outage, and it is an unusable rate: "
+                    "every deposit would score zero points.  Check the address "
+                    "(a contract without that view can answer zero words), or "
+                    "pass --points-per-eth with a value you read yourself."
+                )
         minimum = args.min_deposit_wei
         if minimum is None:
             minimum = await sources.fetch_uint_view(args.contract, "minDeposit()", **kw)
+            # Same shape, and the same reasoning the `is None` branch below
+            # already spells out: with no protocol minimum the R13 exemption
+            # applies to nobody, so the whole minimum-paying crowd is linked by
+            # an identicalness that identifies nobody.  A zero the caller
+            # measured is the caller's business — `--min-deposit-wei 0` skips
+            # this read entirely — but a zero we read off the chain stops.
+            if minimum == 0:
+                raise CliError(
+                    f"{args.contract} answered minDeposit() = 0, so the R13 "
+                    "exemption would apply to nobody and the whole "
+                    "minimum-paying crowd would be linked by an identicalness "
+                    "that identifies nobody.  Check the address, or pass "
+                    "--min-deposit-wei 0 if that zero is what you measured."
+                )
         if rate is None or minimum is None:
             return None, {}, {}, rate, minimum
         sweep = await logs.fetch_deposits(args.contract, args.from_block, **kw)
@@ -536,6 +567,21 @@ def main(argv: Sequence[str] | None = None, *, transport: Any = None) -> int:
     except CliError as exc:
         print(f"sybilkit: {exc}", file=sys.stderr)
         return 2
+    except (ValueError, KeyError, ArithmeticError) as exc:
+        # The three exception types a *user-supplied* input reaches the library
+        # with: an out-of-range option (`--points-per-eth 0` →
+        # `CuratorPreset.__post_init__`), a hand-written bundle missing a field
+        # (`dataset_from_labeled` reads `entry["first_index"]` directly), and
+        # anything the arithmetic reaches on a degenerate dataset.  The library
+        # validates its own inputs properly; what was missing was a CLI that
+        # turned that validation into a message and a status instead of a
+        # stack trace.  Deliberately narrow: a `TypeError` or an
+        # `AttributeError` is *our* bug and still propagates with its traceback
+        # intact, because that is the report we want.  Exit 3, distinct from
+        # the 2 a `CliError` returns, so a script can tell "you asked for
+        # something impossible" from "your input is malformed".
+        print(f"sybilkit: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 3
 
 
 def _run(args, parser: argparse.ArgumentParser, transport: Any) -> int:
