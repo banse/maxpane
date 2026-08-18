@@ -1286,15 +1286,24 @@ FUNDER = "0x3333333333333333333333333333333333333333"
 DISPERSER = "0x4444444444444444444444444444444444444444"
 
 
-def _internal(from_addr: str, to_addr: str, block: int, value: str = "10000000000000000") -> dict:
+def _internal(
+    from_addr: str, to_addr: str, block: int, value: str = "10000000000000000",
+    *, success: bool = True, error: str | None = None,
+) -> dict:
     """One Blockscout ``internal-transactions`` item — a ``disperse``-style
-    value transfer, which never appears on ``/transactions``."""
+    value transfer, which never appears on ``/transactions``.
+
+    ``success``/``error`` are Blockscout's own outcome fields and both ship on
+    every item; a **reverted** call carries its requested ``value`` unchanged
+    while having moved nothing at all.
+    """
     return {
         "from": {"hash": from_addr},
         "to": {"hash": to_addr},
         "block_number": block,
         "value": value,
-        "success": True,
+        "success": success,
+        "error": error,
         "type": "call",
         "transaction_hash": "0x" + f"{block:064x}",
     }
@@ -1376,6 +1385,44 @@ def test_a_zero_value_internal_call_is_not_a_funding_transfer() -> None:
     entry = sweep.funding[ALICE.lower()]
     assert entry.funder is None  # walked both histories, found no transfer
     assert entry.hops is None
+    assert sweep.pending == ()
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "shape"),
+    [
+        ({"success": False}, "reverted"),
+        ({"error": "Reverted"}, "errored"),
+    ],
+    ids=["reverted", "errored"],
+)
+def test_a_call_that_failed_is_not_a_funding_transfer(kwargs: dict, shape: str) -> None:
+    """**R3.2.**  A reverted call moved nothing, whatever its ``value`` says.
+
+    Blockscout's internal-transactions feed carries every call, and a reverted
+    one keeps the value it *asked* to send: the whole transaction was undone,
+    so nothing left the sender.  The only internal fixture the suite had always
+    answered ``success: True``, so deleting the outcome guard left all 84 tests
+    green while a failed call fabricated a funder on the strongest evidence
+    family the library has (10/10 vs 0/47) — and a fabricated funder is not
+    one wrong row, it is a shared-funder hub that welds a component together.
+
+    Both spellings, because Blockscout ships both fields and a failure can
+    arrive as either.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "internal-transactions" in str(request.url):
+            return _page([_internal(DISPERSER, ALICE, 12, **kwargs)], None)
+        return _page([], None)
+
+    sweep = asyncio.run(
+        blockscout.fetch_funding([ALICE], client=_client(handler), config=FAST)
+    )
+    assert sweep is not None
+    entry = sweep.funding[ALICE.lower()]
+    assert entry.funder is None, f"a {shape} call funded nobody"
+    assert entry.hops is None
+    # Resolved, not pending: both histories really were walked to the end.
     assert sweep.pending == ()
 
 
