@@ -88,9 +88,12 @@ class FundingSweep:
     this one" without saying where, so every pass re-walked the same first
     pages forever and pendings — which head the budget — crowded out addresses
     nobody had looked at yet.  Each entry is
-    ``{"params": …, "funder": …, "block": …}``: where to ask next, and the
-    oldest incoming transfer found so far.  Feed it back as ``cursors=``
-    alongside ``pending``.  It is **defaulted and added last** so existing
+    ``{"params": …, "funder": …, "block": …, "stage": …}``: where to ask next,
+    the oldest incoming transfer found so far, and **which of the two histories
+    to ask** — without that last one an address bounded inside its internal
+    walk would come back through ``/transactions``, complete there with nothing
+    again and restart the internal walk at page one, forever.  Feed it back as
+    ``cursors=`` alongside ``pending``.  It is **defaulted and added last** so existing
     keyword construction and a payload persisted before it existed both still
     work — a consumer that ignores it simply restarts each walk at page 1.
     """
