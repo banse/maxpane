@@ -702,6 +702,21 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None, *, transport: Any = None) -> int:
     """Run one subcommand.  Returns a process exit status; never raises.
 
+    Three statuses, and a script can act on the difference:
+
+    ``0``
+        the document was written.
+    ``2``
+        a :class:`CliError` — something the caller asked for that cannot be
+        done, named on stderr.  ``argparse`` uses the same status for a
+        rejected option, which is the same class of thing.
+    ``3``
+        a ``ValueError``/``KeyError``/``ArithmeticError`` out of the library:
+        an option out of range or a hand-written bundle missing a field.  It
+        is a message rather than a traceback because it is *input*, not a
+        crash — a ``TypeError`` or an ``AttributeError`` is our own bug and
+        still comes out with its traceback intact.
+
     *transport* is keyword-only and exists so the suite can drive the live path
     without a socket.  It is not a user-facing flag: a caller who wants a
     different endpoint edits :class:`sybilkit.sources.SourceConfig`.
