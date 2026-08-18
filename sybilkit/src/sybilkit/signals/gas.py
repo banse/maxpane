@@ -14,6 +14,20 @@ class would invent a shared value nobody sent (controller ruling 3).
 ``tx_type`` never counts toward uniformity — the population is nearly all
 type 2, so a collapsed type says nothing.
 
+**One transaction is one fingerprint**, and the axes are computed over the
+*distinct* transactions rather than over the members.  Members whose first
+deposits ride the same router or multisend call cannot disagree — they carry
+one fee tuple by construction — so counting them per member handed the
+uniformity test N copies of one measurement and every axis collapsed for
+free.  Two gates follow from that, and they say different things: **coverage**
+(``MIN_COVERAGE``) stays a statement about the *group* — how much of it we can
+see — while ``min_size`` now also bounds the number of **distinct
+transactions**, because a fee fingerprint measured on two transactions is not
+evidence about ten wallets.  The ``×N`` in the rendered reason is therefore a
+count of transactions; its wording and width are unchanged on purpose (the
+dashboard's evidence cell is pinned across the distribution boundary), so this
+paragraph is where the meaning lives.
+
 Fires when
 
 * **two** of the three axes collapse to one value (strength 0.85), or
@@ -27,7 +41,7 @@ from __future__ import annotations
 from math import ceil
 
 from ..cluster import Edge
-from ..model import Dataset, Deposit, Tx
+from ..model import Dataset, Tx
 from ..report import Reason
 from . import first_rows, tier_a_components
 
@@ -51,14 +65,25 @@ def gas_edges(ds: Dataset, cfg, *, groups=None) -> list[Edge]:
     for group in groups:
         if len(group) < cfg.min_size:
             continue
-        fingerprints = [
-            tx
-            for member in group
-            if (dep := firsts.get(member)) is not None
-            and (tx := ds.txs.get(dep.tx_hash)) is not None
-        ]
-        if len(fingerprints) < max(cfg.min_size, ceil(MIN_COVERAGE * len(group))):
+        by_hash: dict[str, Tx] = {}
+        covered: set[str] = set()
+        for member in group:
+            dep = firsts.get(member)
+            if dep is None:
+                continue
+            tx = ds.txs.get(dep.tx_hash)
+            if tx is None:
+                continue
+            by_hash.setdefault(dep.tx_hash, tx)
+            covered.add(member)
+        # Coverage is about the group: a sampled sliver cannot vouch for a
+        # crowd.  Distinctness is about the evidence: N members on one router
+        # call are one measurement, not N agreeing ones.
+        if len(covered) < max(cfg.min_size, ceil(MIN_COVERAGE * len(group))):
             continue
+        if len(by_hash) < cfg.min_size:
+            continue
+        fingerprints = list(by_hash.values())
 
         pf = _axis(fingerprints, "max_priority_fee_wei")
         mf = _axis(fingerprints, "max_fee_wei")

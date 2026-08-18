@@ -140,3 +140,93 @@ def test_empty_txs_means_no_edges_tier_a_only(labeled_truth) -> None:
     ds = build_labeled_dataset(txs=False)
     assert ds.txs == {}
     assert gas_edges(ds, CFG) == []
+
+
+# ---- review finding #2: one transaction is one fingerprint ----------------
+#
+# The uniformity test asks whether a component's members *agree*.  Members
+# whose first deposits ride the SAME transaction cannot disagree — they carry
+# one fee tuple by construction — so counting them per member hands the test
+# N copies of one measurement and every axis collapses for free.
+
+AMT_ODD = 3_333_000_000_000_000_001  # odd → one byte-identical amount component
+
+
+def _wave(n, tx_of, *, block_of=None):
+    """*n* single-deposit wallets on one odd amount, whose first deposits ride
+    the transactions ``tx_of(i)`` names — one uniform fee tuple per distinct
+    transaction, so uniformity is guaranteed and only the *count* is at issue.
+    """
+    block_of = block_of or (lambda i: 1000 + i)
+    rows, txs, seen = [], [], set()
+    for i in range(n):
+        tx_hash = tx_of(i)
+        rows.append(
+            {
+                "contributor": "0x" + "aa" * 4 + f"{i:032x}",
+                "hour": 1,
+                "amount_wei": AMT_ODD,
+                "credited_delta_wei": AMT_ODD,
+                "weight_added_wei": AMT_ODD,
+                "new_weight_wei": AMT_ODD,
+                "tx_count": 1,
+                "block_number": block_of(i),
+                "tx_hash": tx_hash,
+                "log_index": i,
+            }
+        )
+        if tx_hash not in seen:
+            seen.add(tx_hash)
+            txs.append(
+                {
+                    "tx_hash": tx_hash,
+                    "nonce": 0,
+                    "max_priority_fee_wei": 100_000_000,
+                    "max_fee_wei": 150_000_000,
+                    "gas_limit": 91_600,
+                    "tx_type": 2,
+                }
+            )
+    return Dataset.from_events(rows, [], txs=txs)
+
+
+def _hash(i):
+    return "0x" + "bb" * 4 + f"{i:056x}"
+
+
+def test_a_group_whose_first_deposits_share_one_transaction_yields_no_gas_edge() -> None:
+    """Six wallets credited by one router call: one transaction, therefore one
+    fee tuple, therefore no agreement to measure.  It used to read as six
+    agreeing fingerprints and fire at the two-axis strength."""
+    ds = _wave(6, lambda i: _hash(0), block_of=lambda i: 1000)
+    assert gas_edges(ds, CFG) == []
+
+
+def test_the_uniformity_count_is_distinct_transactions_not_members() -> None:
+    """Six members, five transactions (two members share one).  The group is
+    fully covered and still fires — but the number the reason carries is the
+    five measurements, not the six wallets."""
+    ds = _wave(6, lambda i: _hash(min(i, 4)))
+    edges = gas_edges(ds, CFG)
+    assert edges
+    assert {e.strength for e in edges} == {0.85}
+    assert all("×5" in e.reason.human_string for e in edges)
+    assert not any("×6" in e.reason.human_string for e in edges)
+
+
+def test_a_router_batched_wave_cannot_reach_the_two_axis_strength() -> None:
+    """Ten wallets across two batch transactions.  Coverage is perfect and
+    every axis collapses, but two measurements are below ``min_size`` and a
+    fee fingerprint of two transactions is not evidence about ten wallets."""
+    ds = _wave(10, lambda i: _hash(i // 5), block_of=lambda i: 1000 + i // 5)
+    assert gas_edges(ds, CFG) == []
+
+
+def test_a_group_with_enough_distinct_transactions_still_fires() -> None:
+    """The over-correction guard: deduping by transaction must not silence the
+    ordinary case, where every member sent its own."""
+    ds = _wave(6, _hash)
+    edges = gas_edges(ds, CFG)
+    assert edges
+    assert {e.strength for e in edges} == {0.85}
+    assert all("×6" in e.reason.human_string for e in edges)
