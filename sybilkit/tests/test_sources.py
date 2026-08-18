@@ -1285,6 +1285,43 @@ def test_a_provider_that_echoes_string_ids_still_realigns_the_batch() -> None:
     assert {h: got.fingerprints[h].nonce for h in hashes} == nonce_of
 
 
+def test_a_provider_that_echoes_a_boolean_id_never_claims_slot_one() -> None:
+    """**R3.4.**  ``hash(True) == hash(1)`` and ``True == 1``, so in Python a
+    dict keyed on JSON-RPC ids answers ``by_id[True]`` with slot **1**'s value.
+
+    An id is opaque, so a provider echoing a JSON ``true`` is malformed rather
+    than malicious — but the alias is silent and it lands the *wrong
+    transaction's* fingerprint on the first hash of the batch, which is a
+    detector-calibration mystery rather than a decode error.  ``_slot_of``
+    refuses booleans before the lookup; nothing asserted that it does.
+
+    The unmatched slot stays ``None``, decodes to nothing and lands in
+    ``pending`` — "ask again", which is the honest answer for a batch entry we
+    could not place.
+    """
+    hashes = ["0x" + f"{i:064x}" for i in range(1, 3)]
+    stranger = "0x" + "ef" * 32
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        return httpx.Response(200, json=[
+            # The first answer comes back with `true` where its id belongs,
+            # carrying a body for a transaction nobody asked about.
+            {"jsonrpc": "2.0", "id": True, "result": _tx_reply(stranger, nonce=99)},
+            {"jsonrpc": "2.0", "id": batch[1]["id"],
+             "result": _tx_reply(batch[1]["params"][0], nonce=7)},
+        ])
+
+    got = asyncio.run(
+        txs.fetch_tx_fingerprints(hashes, client=_client(handler), config=FAST)
+    )
+    assert got is not None
+    assert got.pending == (hashes[0],), got.pending
+    assert hashes[0] not in got.fingerprints
+    assert got.fingerprints[hashes[1]].nonce == 7
+    assert all(t.tx_hash != stranger for t in got.fingerprints.values())
+
+
 def test_a_429_backs_off_before_rotating() -> None:
     """**Below-cap B6.**  ``429`` is the one dead status that means *later*,
     not *never*.
