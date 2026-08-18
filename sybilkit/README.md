@@ -56,6 +56,24 @@ That compound condition is the design, not an optimisation: no per-wallet signal
 farms from power users in any published study, and false positives are the failure mode rather
 than a rounding error.
 
+### What the dataset guarantees
+
+`Dataset.from_events` is order-independent: a shuffled producer and an ordered one build the
+same `Dataset`. Two rows sharing a `(tx_hash, log_index)` — a reorg replay, or two sweeps merged
+across one — are settled by **content**, not by arrival: the higher `block_number` wins, and
+every remaining field of the row breaks the remaining ties, `contributor` and `ts` included, so
+no pair is ever decided by which one the producer handed over first. The same rule, character
+for character, settles duplicates inside `sources/logs.py`, and a test compares the two sources.
+
+A malformed field drops its row — except `ts`, which degrades to `None`, because `ts` feeds a
+label and never a signal (cadence runs off `block_number`, and an hour band is the event's own
+`hour` word), and an absent `ts` already degrades that way. A population of ISO-8601 timestamps
+is therefore a readable dataset whose only casualty is the CLI's `generated_at` stamp, not an
+empty one. A `NaN` or an infinity — what `float()` returns for the JSON literals of those names —
+degrades the same way, and it degrades **in the coercer** rather than in the tie-break: an
+unorderable `ts` that reached `_replay_rank` would hand a conflicting duplicate straight back to
+arrival order, which is the one thing this section promises it never does.
+
 ## CLI
 
 ```bash
@@ -74,6 +92,12 @@ value as a decimal string (a JSON number is a double to most consumers, and wei 
 such a run cannot read the chain, it must be told what the chain says:
 `--points-per-eth` and `--min-deposit-wei` are required there and have no defaults.
 
+**Every refusal is a named message and a non-zero exit, never a traceback.** That covers the
+arguments (`--max-txs 0` fetches nothing and says where it stopped, a negative
+`--funding-budget` is rejected outright, `--from-block` past the head is an error rather than an
+inverted `block_range`) and the chain readings a run cannot proceed on (a deployment answering
+zero points per ETH is named, not divided by).
+
 ## Endpoints (all keyless, all verified)
 
 | use | endpoint |
@@ -90,7 +114,42 @@ failover classifies on **message text, never the code**; and a provider's *sugge
 range is never adopted — one of them decrements a single block per round trip and livelocks a
 verbatim follower, so the window halves instead.
 
+Two more rules the same failover carries: a **200 whose body is not a JSON-RPC answer** — an
+HTML error page, a bare array — is a failure that rotates to the next endpoint, never a read
+that counts; and a **429 backs off before it rotates**, so a throttled pool is not walked at
+full speed until it is exhausted.
+
 A frozenset of dead and newly-keyed hosts is refused at `SourceConfig` construction.
+
+### What a sweep returns, and what it means
+
+Every fetcher answers `None` for **"nothing was read"** and a sweep object for "something was".
+The distinction is load-bearing — the whole point of `None` is that a consumer can tell an outage
+from a real emptiness — so each one states its own extent rather than implying it:
+
+| fetcher | `None` means | a returned sweep means |
+|---|---|---|
+| `fetch_deposits` | the head could not be read, or not one chunk could | the chunks between `from_block` and **`to_block`** were read; `to_block` is the coverage *and* the resume cursor, so a run that lost its endpoint pool part-way returns the partial rather than discarding it |
+| `fetch_tx_fingerprints` | zero batches were read | the fingerprints in `fingerprints` were read; every hash not in them is in `pending`, including everything after a malformed batch |
+| `fetch_funding` | not one attempted address answered — and a deferral does not soften that, since a budgeted pass whose two requests both died is exactly as dead as an unbudgeted one | `funding` holds only walks that **finished**; `pending` holds the rest, with `pending_reasons` naming why, and `page_cursors` says where each bounded walk stopped |
+
+A funding walk finishes only when it has read the address's incoming history to the end. Two
+histories count: `/transactions?filter=to`, and — **only when that one found no incoming
+transfer at all** — `/internal-transactions?filter=to`, because a wallet funded by a
+`disperse`-style multisend receives its ETH as an internal transfer and appears nowhere on the
+first endpoint. That is the exact pattern the `funding` family exists to catch, so it is not
+optional; making it conditional keeps the cost off the common case. A direct internal transfer
+is still `hops=1`.
+
+`funder=None` on a row in `funding` is therefore a **measurement** — both histories were walked
+and nobody funded this wallet. Anything we could not read (an unparseable page, a `from` that is
+not an address, a page bound) leaves the address in `pending` instead, and never becomes a row.
+A resolved row is the one thing a caller may cache forever; a hole must not be cacheable as one.
+
+`fetch_funding(..., cursors=…)` takes back the `page_cursors` of a previous sweep, so an address
+whose history is longer than `blockscout_max_pages` resumes mid-history next pass instead of
+re-walking from page 1 forever. The mapping is tolerant on read — an absent or unreadable entry
+simply starts at page 1 — so a consumer's payload written before cursors existed still works.
 
 ## The benchmark gate
 
@@ -132,6 +191,25 @@ constants. Every remaining field (the gate knobs, the early-cohort size, the gra
 "largest operator" line, the multiplier band edges) is an *analysis* choice, so each carries a
 documented default and stays a field: a caller who measured something else is never arguing with a
 literal.
+
+`Segments.bands` keys on a closed vocabulary: **`linked_groups`** (every linked cluster,
+aggregated), `early_cohort`, `late_cohort`, `hour_<h>`, `multiplier_<edge_bps>` and
+`multiplier_unknown`. `linked_groups` is deliberately *not* the `largest_operator_credit_wei`
+slice — that is `Segments.largest_operators`, a property, and it is never a band. The aggregate
+carried the credit line's name while applying none of it; the fix was to correct the name,
+because the number itself was right and it is the most useful one on the panel.
+
+`clean_list` never speaks for a wallet nobody analyzed. Survivors come from `res.analyzed`
+alone, so a result that analyzed nobody has no survivors and `CleanList.standing(addr)` answers
+`"unknown"` — the three words `clean` / `removed` / `unknown` mean what they say on every
+result, including a hand-built one.
+
+`segments`, `clean_list` and the signal functions all take their shared folds by **keyword with
+a default** (`weights=`, `credits=`, `firsts=`, `windows=`, `singles=`, `groups=`) so one caller
+can walk a population once and hand the same answer to both. Every one of those parameters is additive: a
+caller who does not care keeps the call it always had, and the cross-distribution imports
+(`signals.first_rows`, `signals.tier_a_components`, `curator.segments`, `curator.clean_list`,
+`CuratorPreset`, `sources.blockscout`, `sources.txs`) only ever grow.
 
 ### The adapter boundary
 
