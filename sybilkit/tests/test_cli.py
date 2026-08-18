@@ -887,6 +887,50 @@ def test_a_zero_tx_cap_fetches_nothing_and_says_where_it_stopped(capsys) -> None
     assert fp["cut_at_block"] == 100, "the cap stopped before block 100"
 
 
+def test_a_from_block_past_the_head_is_a_named_error_not_an_inverted_range(
+    capsys,
+) -> None:
+    """**B5.**  ``fetch_deposits`` answers a from-block past the head with an
+    empty ``DepositSweep(from_block, head, …)`` — correct for a library whose
+    caller may be polling a range that has not been mined yet.  The CLI then
+    stamped it straight into the provenance header, so the artifact stated
+    ``block_range: {"from": 500, "to": 120}`` — a range running backwards,
+    presented as a measurement, and an analysis of nothing reported as an
+    analysis.  Exit 0, no warning.
+
+    A from-block past the head is a typo the user can fix, so it is named:
+    both numbers, before anything is swept.
+    """
+    httpx = pytest.importorskip("httpx")
+    from sybilkit import sources
+
+    rate_sel = sources.selector("POINTS_PER_ETH()")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls = body if isinstance(body, list) else [body]
+        out = []
+        for call in calls:
+            method, cid = call["method"], call["id"]
+            if method == "eth_call":
+                value = 1000 if call["params"][0]["data"] == rate_sel else 5 * 10**16
+                out.append({"jsonrpc": "2.0", "id": cid,
+                            "result": "0x" + f"{value:064x}"})
+            elif method == "eth_blockNumber":
+                out.append({"jsonrpc": "2.0", "id": cid, "result": hex(120)})
+            else:  # pragma: no cover — there is nothing to sweep
+                raise AssertionError(f"swept past the head: {method}")
+        return httpx.Response(200, json=out if isinstance(body, list) else out[0])
+
+    code = cli.main(
+        ["analyze", "--contract", CONTRACT, "--from-block", "500"],
+        transport=httpx.MockTransport(handler),
+    )
+    assert code != 0
+    err = capsys.readouterr().err
+    assert "500" in err and "120" in err, "name both numbers; one of them is a typo"
+
+
 def test_a_malformed_labeled_bundle_is_a_message_not_a_key_error_traceback(
     tmp_path, capsys
 ) -> None:

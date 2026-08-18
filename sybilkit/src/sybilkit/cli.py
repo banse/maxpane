@@ -217,6 +217,38 @@ def tiers_read(ds: Dataset) -> str:
 # ---------------------------------------------------------------------------
 
 
+async def _chain_head(config: Any, transport: Any) -> int | None:
+    """The log pool's own ``eth_blockNumber``, read **by the CLI**.
+
+    ``fetch_deposits`` reads it internally when it is not given one, and this
+    costs no extra round trip because passing it in stops that read happening.
+    The CLI needs the number itself: a ``--from-block`` past the head is a typo
+    the user can fix, and it cannot be told apart afterwards from a healthy
+    sweep of an empty range — the library answers both with an empty
+    ``DepositSweep``, and the header then states a ``block_range`` running
+    backwards as if it were a measurement.
+
+    ``None`` on failure, never a remembered head.  ``_Session`` and
+    ``rpc_call`` are the same door ``logs.fetch_deposits`` opens for the same
+    call; the transport still arrives by injection, so the suite covers this
+    request like every other.
+    """
+    from . import sources  # noqa: PLC0415 — httpx rides in behind this import
+
+    async with sources._Session(config, transport=transport) as session:
+        try:
+            raw = await sources.rpc_call(
+                session, config.log_rpcs, "eth_blockNumber", []
+            )
+        except (
+            sources.AllEndpointsFailed,
+            sources.MalformedRequest,
+            sources.RangeTooWide,
+        ):
+            return None
+    return sources.hex_to_int(raw)
+
+
 def _live(args, transport: Any) -> tuple[Dataset, dict, int, int]:
     """Sweep the chain: read the two constants, then the logs, then the tiers.
 
@@ -279,7 +311,30 @@ def _live(args, transport: Any) -> tuple[Dataset, dict, int, int]:
                 )
         if rate is None or minimum is None:
             return None, {}, {}, rate, minimum
-        sweep = await logs.fetch_deposits(args.contract, args.from_block, **kw)
+
+        head = await _chain_head(config, transport)
+        if head is None:
+            raise CliError(
+                "could not read the chain head (eth_blockNumber) from the log "
+                "pool — reporting unavailable rather than sweeping towards a "
+                "block nobody measured"
+            )
+        # A FROM-BLOCK PAST THE HEAD IS A TYPO, NOT A SWEEP.  The library
+        # answers it with an empty `DepositSweep(from_block, head, …)`, which
+        # is right for a caller polling a range that has not been mined yet
+        # and wrong for an artifact: stamped into the header it became
+        # `block_range: {"from": 500, "to": 120}`, a range running backwards
+        # presented as a measurement, beside an analysis of nothing that
+        # exited 0.
+        if args.from_block > head:
+            raise CliError(
+                f"--from-block {args.from_block} is past the chain head "
+                f"{head}: there is no history between them to sweep.  Nothing "
+                "was read, so nothing is reported."
+            )
+        sweep = await logs.fetch_deposits(
+            args.contract, args.from_block, to_block=head, **kw
+        )
         if sweep is None:
             return None, {}, {}, rate, minimum
 
