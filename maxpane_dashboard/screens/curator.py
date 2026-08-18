@@ -151,6 +151,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -505,20 +506,44 @@ def _write_clean_list(directory: Path, rows: list) -> Path:
 
     The JSON is the ``clean_list_rows`` payload verbatim -- the shape the
     contract froze, so a consumer script reads the same rows the panel shows.
+    An **empty list is a real record** (M1): the sweep ran and nobody
+    survives it, and that is exactly the state a consumer most needs to see.
     The CSV's header is ``CURATOR_ROW_KEYS["clean_list_rows"]``, imported
     rather than retyped.  Returns the JSON path (the one the panel names).
+
+    **Atomic against the files already on disk.**  Both files are written to
+    temp names in the *same* directory and ``os.replace``d into place only
+    once both writes completed, so a failed RE-export can never truncate a
+    previously good export in place -- writing the real names directly is a
+    corruption window exactly as wide as the write, and the panel's receipt
+    would keep naming the mangled file as saved.  On any failure the temp
+    files are removed and the old files are byte-identical.
     """
     directory.mkdir(parents=True, exist_ok=True)
     columns = CURATOR_ROW_KEYS["clean_list_rows"]
     json_path = directory / f"{CLEAN_LIST_BASENAME}.json"
     csv_path = directory / f"{CLEAN_LIST_BASENAME}.csv"
-    json_path.write_text(json.dumps(rows, indent=1), encoding="utf-8")
-    with open(csv_path, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
-        writer.writeheader()
-        for row in rows:
-            if isinstance(row, dict):
-                writer.writerow({key: row.get(key) for key in columns})
+    json_tmp = directory / f"{CLEAN_LIST_BASENAME}.json.tmp"
+    csv_tmp = directory / f"{CLEAN_LIST_BASENAME}.csv.tmp"
+    try:
+        json_tmp.write_text(json.dumps(rows, indent=1), encoding="utf-8")
+        with open(csv_tmp, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(
+                handle, fieldnames=columns, extrasaction="ignore"
+            )
+            writer.writeheader()
+            for row in rows:
+                if isinstance(row, dict):
+                    writer.writerow({key: row.get(key) for key in columns})
+        os.replace(json_tmp, json_path)
+        os.replace(csv_tmp, csv_path)
+    except Exception:
+        for leftover in (json_tmp, csv_tmp):
+            try:
+                leftover.unlink()
+            except OSError:
+                pass
+        raise
     return json_path
 
 
@@ -1008,12 +1033,19 @@ class CuratorScreen(RefreshGuard, Screen):
         cache ethic exactly: read-only toward the chain, and the reader asked
         for the file.  A ``None`` list is never written: an empty allowlist
         file fabricated from a read that did not happen would outlive the
-        outage that caused it.
+        outage that caused it.  An **empty list is written** (M1): the sweep
+        ran and nobody survives it, which is a real record, not an absence.
+
+        A failed write is *told to the reader*, on the panel, not to the log
+        alone -- and it replaces any earlier ``saved →`` receipt, whose
+        freshness would otherwise be a lie about the keypress that just
+        failed.  The writer itself is atomic (see :func:`_write_clean_list`),
+        so the failure never corrupts a previous export.
         """
         if self._mode != MODE_ANALYSIS:
             return
         rows = (self._title_data or {}).get("clean_list_rows")
-        if not isinstance(rows, list) or not rows:
+        if not isinstance(rows, list):
             logger.debug("Clean-list export skipped: nothing analyzed yet")
             return
         directory = self._export_dir or Path.home() / ".maxpane"
@@ -1021,6 +1053,10 @@ class CuratorScreen(RefreshGuard, Screen):
             json_path = _write_clean_list(directory, rows)
         except Exception as exc:  # noqa: BLE001 -- a failed write must not crash
             logger.debug("Clean-list export failed: %s", exc)
+            try:
+                self.query_one(CuratorCleanList).mark_export_failed()
+            except Exception as inner:  # noqa: BLE001
+                logger.debug("Could not show the export failure: %s", inner)
             return
         try:
             self.query_one(CuratorCleanList).mark_exported(str(json_path))

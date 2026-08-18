@@ -2474,11 +2474,16 @@ async def test_the_analysis_panels_are_dispatched_while_hidden():
         await pilot.press("f")
         await pilot.pause()
         text = _screen_text(app)
+        # Anchored on the OPERATORS panel's own region, not a screen line
+        # index (M3): its summary note is a line only `update_data` can
+        # write, so a mount-placeholder frame -- title, blank note, a lone
+        # `…` row -- can never contain it.
+        ops = _region_text(app, screen.query_one(CuratorOperators), screen)
 
     assert "1,995 linked" in text           # OPERATORS, from the slice
     assert "largest operators" in text      # SEGMENTS
     assert "linked groups removed" in text  # CLEANED LIST
-    assert "…" not in text.split("\n")[3]   # not the mount placeholder row
+    assert "16 linked groups" in ops        # the note only a dispatch writes
 
 
 async def test_the_status_line_gains_the_f_key():
@@ -2568,8 +2573,12 @@ async def test_e_in_the_analysis_view_writes_both_files_and_names_the_path(
     assert 1 + len(payload["clean_list_rows"]) == len(
         csv_path.read_text().splitlines()
     )
-    # The receipt reaches the panel, composited.
+    # The receipt reaches the panel, composited -- and the atomic write left
+    # no temp-file litter beside the two real files.
     assert "curator_clean_list.json" in text
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "curator_clean_list.csv", "curator_clean_list.json",
+    ]
 
 
 # -- WP4.7: the analysis view's measured width, and both views' heights ------
@@ -2747,7 +2756,11 @@ async def test_a_linked_reader_lights_the_marker_rather_than_clipping_dark():
 
 async def test_e_with_nothing_analyzed_writes_nothing(tmp_path):
     """An export of a `None` list would fabricate an empty allowlist file
-    from a read that never happened."""
+    from a read that never happened.  **Only** `None` is the no-op (M1): an
+    analyzed-empty list is a real record and has its own test below.  And a
+    no-op is a no-op — no receipt, and no failure banner either."""
+    from maxpane_dashboard.widgets.curator.cleaned_list import EXPORT_FAILED
+
     screen = _export_screen(tmp_path, _wallet_payload())
     app = _ThemedHarness(screen)
     async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
@@ -2761,3 +2774,111 @@ async def test_e_with_nothing_analyzed_writes_nothing(tmp_path):
         text = _screen_text(app)
     assert list(tmp_path.iterdir()) == []
     assert "curator_clean_list.json" not in text
+    assert EXPORT_FAILED not in text
+
+
+async def test_e_on_an_analyzed_empty_list_writes_the_honest_record(tmp_path):
+    """M1: analyzed-empty is a REAL record — the sweep ran and nobody
+    survives it.  The export writes the honest empty JSON array and a
+    header-only CSV, and the receipt renders; collapsing `[]` into the
+    `None` no-op would make the one state a consumer script most needs to
+    see (an allowlist that empties out) the one state it can never fetch."""
+    payload = _analysis_payload(clean_list_rows=[])
+    screen = _export_screen(tmp_path, payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        text = _screen_text(app)
+
+    json_path = tmp_path / "curator_clean_list.json"
+    csv_path = tmp_path / "curator_clean_list.csv"
+    assert json.loads(json_path.read_text()) == []
+    from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS
+
+    assert csv_path.read_text().splitlines() == [
+        ",".join(CURATOR_ROW_KEYS["clean_list_rows"])
+    ]
+    assert "curator_clean_list.json" in text
+
+
+async def test_a_failed_export_never_leaves_a_stale_receipt(tmp_path):
+    """The Important finding: a failed RE-export must neither corrupt the
+    previously written files nor leave the earlier `saved →` receipt
+    standing over them.  The write goes to temp names and `os.replace`s into
+    place, so the old files survive any failure byte-identical — and the
+    panel says the export failed, visibly, instead of keeping a receipt
+    whose freshness is now a lie."""
+    import os as _os
+
+    from maxpane_dashboard.widgets.curator.cleaned_list import EXPORT_FAILED
+
+    payload = _analysis_payload()
+    export_dir = tmp_path / "maxpane"
+    screen = _export_screen(export_dir, payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        good = _screen_text(app)
+        assert "curator_clean_list.json" in good
+
+        json_path = export_dir / "curator_clean_list.json"
+        good_bytes = json_path.read_bytes()
+
+        # Now the directory refuses writes: the tmp-file create fails.
+        _os.chmod(export_dir, 0o500)
+        try:
+            await pilot.press("e")
+            await pilot.pause()
+            failed = _screen_text(app)
+        finally:
+            _os.chmod(export_dir, 0o700)
+
+    assert EXPORT_FAILED in failed
+    assert "saved →" not in failed              # the stale receipt is gone
+    # ...and the previously exported files are byte-identical, not truncated.
+    assert json_path.read_bytes() == good_bytes
+    assert json.loads(json_path.read_text()) == payload["clean_list_rows"]
+    # No temp-file litter either way.
+    assert sorted(p.name for p in export_dir.iterdir()) == [
+        "curator_clean_list.csv", "curator_clean_list.json",
+    ]
+
+
+async def test_a_first_export_that_fails_says_so_and_writes_nothing(tmp_path):
+    from maxpane_dashboard.widgets.curator.cleaned_list import EXPORT_FAILED
+
+    export_dir = tmp_path / "maxpane"
+    screen = _export_screen(export_dir, _analysis_payload())
+    app = _ThemedHarness(screen)
+    import os as _os
+
+    _os.chmod(tmp_path, 0o500)      # the export dir cannot even be created
+    try:
+        async with app.run_test(
+            size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)
+        ) as pilot:
+            await pilot.pause()
+            await screen._do_refresh()
+            await pilot.pause()
+            await pilot.press("f")
+            await pilot.pause()
+            await pilot.press("e")
+            await pilot.pause()
+            text = _screen_text(app)
+    finally:
+        _os.chmod(tmp_path, 0o700)
+
+    assert EXPORT_FAILED in text
+    assert not export_dir.exists()

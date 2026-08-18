@@ -3570,6 +3570,41 @@ async def test_the_export_path_renders_only_after_the_screen_reports_a_write():
     assert "/somewhere/.maxpane/curator_clean_list.json" in refreshed
 
 
+async def test_a_failed_export_replaces_the_receipt_with_a_visible_failure():
+    """The receipt's three states, in the order a reader can produce them:
+    saved, then failed (the earlier `saved →` must NOT keep standing — its
+    freshness is now a lie), then saved again once a retry lands."""
+    from maxpane_dashboard.widgets.curator.cleaned_list import (
+        EXPORT_FAILED,
+        CuratorCleanList,
+    )
+
+    env = _clean_envelope()
+    widget = CuratorCleanList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 24)) as pilot:
+        widget.update_data(clean_list_rows=env["rows"])
+        widget.mark_exported("/x/.maxpane/curator_clean_list.json")
+        await pilot.pause()
+        saved = _screen_text(app)
+        widget.mark_export_failed()
+        await pilot.pause()
+        failed = _screen_text(app)
+        # ...and the failed state is sticky across a refresh too: the payload
+        # says nothing about the write, so a refresh may not un-say a failure.
+        widget.update_data(clean_list_rows=env["rows"])
+        await pilot.pause()
+        refreshed = _screen_text(app)
+        widget.mark_exported("/x/.maxpane/curator_clean_list.json")
+        await pilot.pause()
+        retried = _screen_text(app)
+
+    assert "saved →" in saved
+    assert EXPORT_FAILED in failed and "saved →" not in failed
+    assert EXPORT_FAILED in refreshed
+    assert "saved →" in retried and EXPORT_FAILED not in retried
+
+
 async def test_clean_list_none_is_unavailable_and_empty_is_a_real_negative():
     from maxpane_dashboard.widgets.curator.cleaned_list import (
         CLEAN_LIST_EMPTY,

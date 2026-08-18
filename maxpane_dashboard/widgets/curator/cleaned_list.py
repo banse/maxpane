@@ -84,6 +84,13 @@ CLEAN_LIST_EMPTY = "every wallet is in a linked group"
 #: instruction ("set a wallet"), prefixed with whose rank the gap is about.
 YOU_CLEAN_UNSET = "you: set a wallet"
 
+#: The receipt line's failure state.  Honest on both halves because the
+#: screen's writer is atomic (temp file + ``os.replace``): the new export
+#: really wrote nothing, and whatever file an earlier ``saved →`` named is
+#: still intact on disk — but that earlier receipt must not keep standing,
+#: because its *freshness* is now a lie about the keypress that just failed.
+EXPORT_FAILED = "export failed · nothing new was written"
+
 #: Rows rendered.  Eight survivors: the analysis body stacks three panels
 #: and the screen's ANALYSIS_MIN_HEIGHT is measured against exactly these
 #: caps — grow one only with the screen's sweep open.
@@ -211,6 +218,8 @@ class CuratorCleanList(Vertical):
         #: The written export path, set by the screen after the `e` write.
         #: Sticky across refreshes: the file it names is still on disk.
         self._export_path: str | None = None
+        #: True after a failed `e` write (and until a retry succeeds).
+        self._export_failed: bool = False
 
     def compose(self) -> ComposeResult:
         yield Static(
@@ -237,17 +246,35 @@ class CuratorCleanList(Vertical):
 
     def mark_exported(self, path) -> None:
         """Render the path the screen just wrote — the ``mark_pending``
-        precedent: a state only a keypress can set, handed over directly."""
+        precedent: a state only a keypress can set, handed over directly.
+        Clears any earlier failure: this call *is* the successful retry."""
         self._export_path = str(path) if path else None
+        self._export_failed = False
+        self._render_path()
+
+    def mark_export_failed(self) -> None:
+        """The `e` write failed: say so, visibly, and drop any earlier
+        ``saved →`` receipt — the file it named survives (the screen's writer
+        is atomic) but the receipt's freshness would now be a lie.  Sticky
+        across refreshes for the same reason the path is: the payload says
+        nothing about the write, so a refresh may not un-say a failure."""
+        self._export_path = None
+        self._export_failed = True
         self._render_path()
 
     def _render_path(self) -> None:
-        """The receipt line.  A path too long for the row keeps its **tail**
-        behind a leading ``…`` — the filename is the half a reader needs to
-        find the file, and a trailing ellipsis would cut exactly that."""
+        """The receipt line, three states: hidden (no export yet), the saved
+        path, or the visible failure.  A path too long for the row keeps its
+        **tail** behind a leading ``…`` — the filename is the half a reader
+        needs to find the file, and a trailing ellipsis would cut exactly
+        that."""
         try:
             line = self.query_one("#curator-clean-path", Static)
         except Exception:  # not composed yet
+            return
+        if getattr(self, "_export_failed", False):
+            line.display = True
+            line.update(f"[$warning]⚠ {EXPORT_FAILED}[/]")
             return
         if not self._export_path:
             line.display = False
