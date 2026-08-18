@@ -25,7 +25,14 @@ import pytest
 
 from sybilkit import DetectConfig, curve, detect
 from sybilkit import curator as preset_mod
-from sybilkit.curator import CuratorPreset, curve_points
+from sybilkit.curator import (
+    FORBIDDEN_LABEL_WORDS,
+    CuratorPreset,
+    clean_list,
+    curve_points,
+    multiplier_bps,
+    segments,
+)
 from tests.conftest import build_labeled_dataset, build_population_dataset
 
 SRC = Path(preset_mod.__file__).resolve().parent
@@ -247,3 +254,280 @@ def test_the_minimum_knob_is_load_bearing_on_the_real_population(
     flagged_without = len(minimum_payers & without.flagged)
     assert flagged_without > flagged_with * 2
     assert flagged_with < len(minimum_payers) // 2
+
+
+# ===========================================================================
+# WP2.2 — segments: whale OPERATORS, cohorts, hour and multiplier bands
+# ===========================================================================
+
+
+@pytest.fixture(scope="module")
+def population_analysis(population_ds):
+    """One ``detect`` over the whole population, reused by every segment test.
+
+    Module-scoped because the run is ~0.4 s and eleven tests want the same
+    answer; the core is pure, so one run and eleven readers cannot disagree.
+    """
+    preset = a_preset()
+    res = detect(population_ds, preset.detect_config())
+    return preset, population_ds, res
+
+
+def _final_weight(ds) -> dict[str, int]:
+    last: dict[str, int] = {}
+    for dep in ds.deposits:  # chain order: the last write is the final weight
+        last[dep.contributor] = dep.new_weight_wei
+    return last
+
+
+def _first_deposit(ds) -> dict[str, object]:
+    first: dict[str, object] = {}
+    for dep in ds.deposits:
+        first.setdefault(dep.contributor, dep)
+    return first
+
+
+def test_the_whale_segment_is_the_operator_not_the_single_send(
+    population_analysis,
+) -> None:
+    """Research §5 / Adam's ask, re-derived from the committed population.
+
+    A credit-threshold whale list at 800 ETH+ finds **two wallets holding
+    0.25% of the points**, because real whale capital on this contract is
+    *split*: 171.99×10, 14×997, 10×769.  So the whale segment has to be defined
+    on the combined credit of an **operator**, and the preset's
+    ``largest_operators`` is exactly that — an order of magnitude more points
+    than the single-send list, off the same threshold.
+    """
+    preset, ds, res = population_analysis
+    segs = segments(ds, res, preset)
+
+    weights = _final_weight(ds)
+    biggest_send: dict[str, int] = {}
+    for dep in ds.deposits:
+        addr = dep.contributor
+        if dep.amount_wei > biggest_send.get(addr, 0):
+            biggest_send[addr] = dep.amount_wei
+    single_send_whales = {
+        a for a, m in biggest_send.items() if m >= preset.largest_operator_credit_wei
+    }
+    single_send_points = sum(preset.points(weights[a]) for a in single_send_whales)
+
+    # The measured facts the whole segment design turns on.
+    assert len(single_send_whales) == 2
+    assert single_send_points == 67_014
+    assert round(100 * single_send_points / segs.total_points, 2) == 0.25
+
+    largest = segs.largest_operators
+    assert largest, "no operator cleared the combined-credit line"
+    assert all(op.credit_wei >= preset.largest_operator_credit_wei for op in largest)
+    assert sum(op.size for op in largest) > 100 * len(single_send_whales)
+    assert sum(op.points for op in largest) > 20 * single_send_points
+
+
+def test_the_operator_list_is_ranked_by_combined_credit(population_analysis) -> None:
+    preset, ds, res = population_analysis
+    segs = segments(ds, res, preset)
+    credits = [op.credit_wei for op in segs.operators]
+    assert credits == sorted(credits, reverse=True)
+    assert len(segs.operators) == len(res.clusters)
+    assert {op.cluster_id for op in segs.operators} == {
+        c.cluster_id for c in res.clusters
+    }
+
+
+def test_an_operator_carries_its_own_sqrt_subsidy(population_analysis) -> None:
+    """The number that makes the sqrt curve's invitation legible: the points
+    the group earned split, over the points the same weight would have earned
+    in one wallet.  Always ≥ 1 by concavity, and re-derived here from the
+    curve rather than read back off the object that produced it."""
+    preset, ds, res = population_analysis
+    segs = segments(ds, res, preset)
+    weights = _final_weight(ds)
+    by_id = {c.cluster_id: c for c in res.clusters}
+    checked = 0
+    for op in segs.operators[:5]:
+        members = by_id[op.cluster_id].members
+        combined = sum(weights[m] for m in members)
+        alone = curve_points(combined, preset.points_per_eth)
+        assert op.weight_wei == combined
+        assert op.subsidy_x == pytest.approx(op.points / alone)
+        assert op.subsidy_x >= 1.0
+        checked += 1
+    assert checked == 5
+
+
+def test_the_early_cohort_is_seven_point_six_one_percent_of_points(
+    population_analysis,
+) -> None:
+    """Research §5: join index 1–1000 is 6.4% of wallets and **7.61% of
+    points**.  Re-derived from ``first_deposits.json.gz`` rather than retyped:
+    1 000 contributors, 2 024 397 points of 26 585 740."""
+    preset, ds, res = population_analysis
+    segs = segments(ds, res, preset)
+    (early,) = [s for s in segs.bands if s.key == "early_cohort"]
+    assert early.contributors == 1_000
+    assert early.points == 2_024_397
+    assert round(100 * early.points_share, 2) == 7.61
+    assert segs.total_points == 26_585_740
+
+
+def test_the_late_grace_cohort_is_two_point_three_nine_percent_of_points(
+    population_analysis,
+) -> None:
+    """Research §5: hours 22–23, the last of the grace window — 742 wallets,
+    **2.39% of points**.  FOMO at ≤1.06×, not multiplier chasers."""
+    preset, ds, res = population_analysis
+    segs = segments(ds, res, preset)
+    (late,) = [s for s in segs.bands if s.key == "late_cohort"]
+    assert late.contributors == 742
+    assert late.points == 634_538
+    assert round(100 * late.points_share, 2) == 2.39
+
+
+def test_the_hour_bands_partition_the_whole_population(population_analysis) -> None:
+    """Every contributor lands in exactly one join-hour band, and the bands'
+    points sum to the population's.  A band set that does not partition is a
+    band set that quietly drops people."""
+    preset, ds, res = population_analysis
+    segs = segments(ds, res, preset)
+    hours = [s for s in segs.bands if s.kind == "hour"]
+    assert len(hours) == 24  # this sweep covers hours 0..23
+    assert sum(s.contributors for s in hours) == segs.total_contributors
+    assert sum(s.points for s in hours) == segs.total_points
+    assert sum(s.points_share for s in hours) == pytest.approx(1.0)
+
+
+def test_the_multiplier_bands_partition_the_whole_population(
+    population_analysis,
+) -> None:
+    """The early-bird multiplier is not a field on ``Deposit`` — it is derived
+    wei-exactly from the deposit's own words (``weight_added / credited_delta``
+    in basis points), so nothing has to be remembered about the decay curve."""
+    preset, ds, res = population_analysis
+    segs = segments(ds, res, preset)
+    bands = [s for s in segs.bands if s.kind == "multiplier"]
+    assert len(bands) == len(preset.multiplier_band_bps)
+    assert sum(s.contributors for s in bands) == segs.total_contributors
+    assert sum(s.points for s in bands) == segs.total_points
+
+
+def test_a_deposit_above_the_credit_cap_has_no_representable_multiplier(
+    population_analysis,
+) -> None:
+    """``credited_delta_wei`` is legitimately ``0`` for a deposit above the
+    cap, and nothing may divide by it.  Those contributors get an explicit
+    unknown band rather than a silent 1.0× — the representable negative."""
+    preset, ds, res = population_analysis
+    segs = segments(ds, res, preset)
+    unknown = [s for s in segs.bands if s.key == "multiplier_unknown"]
+    # This population happens to contain none, so the band is absent rather
+    # than present-and-zero: an empty band would read as a measured zero.
+    assert unknown == []
+    assert multiplier_bps(_first_deposit(ds)["0x200e710acaa6a93bbc77146026328c40f1d60fb1"]) == 19_975
+
+
+def test_no_segment_label_carries_an_accusatory_word(population_analysis) -> None:
+    """PRD §8 / research §8.  The library may say "sybil" in its own name — it
+    is a general sybil-analysis toolkit and lives outside every scanned
+    surface — but a preset's ``label`` and ``detail`` are what a consumer
+    renders, so they are written in pattern language and the adapter never has
+    to translate an accusation into a description."""
+    preset, ds, res = population_analysis
+    segs = segments(ds, res, preset)
+    strings = [s.label for s in segs.bands] + [s.detail for s in segs.bands]
+    strings += [op.label for op in segs.operators]
+    strings += [r for op in segs.operators for r in op.reasons]
+    assert strings
+    for text in strings:
+        lowered = text.lower()
+        for word in FORBIDDEN_LABEL_WORDS:
+            assert word not in lowered, f"{word!r} in {text!r}"
+
+
+# ===========================================================================
+# WP2.2 — the cleaned list
+# ===========================================================================
+
+
+def test_the_clean_list_removes_the_flagged_and_ranks_the_survivors(
+    population_analysis,
+) -> None:
+    preset, ds, res = population_analysis
+    clean = clean_list(ds, res, preset)
+
+    assert clean.total_points == res.total_points
+    assert clean.flagged_points == res.flagged_points
+    assert clean.clean_points == res.clean_points
+    assert clean.clean_points == clean.total_points - clean.flagged_points
+
+    assert clean.contributors_total == len(res.analyzed)
+    assert clean.flagged_contributors == len(res.flagged)
+    assert clean.clean_contributors == clean.contributors_total - clean.flagged_contributors
+    assert len(clean.entries) == clean.clean_contributors
+
+    ranks = [e.clean_rank for e in clean.entries]
+    assert ranks == list(range(1, len(ranks) + 1))  # dense, 1-based
+    points = [e.points for e in clean.entries]
+    assert points == sorted(points, reverse=True)
+    assert sum(points) == clean.clean_points
+
+
+def test_a_flagged_member_has_no_clean_rank_and_a_survivor_has_a_dense_one(
+    population_analysis,
+) -> None:
+    preset, ds, res = population_analysis
+    clean = clean_list(ds, res, preset)
+    flagged = sorted(res.flagged)[0]
+    survivor = clean.entries[0].address
+
+    assert clean.clean_rank(flagged) is None
+    assert clean.clean_rank(survivor) == 1
+    assert clean.clean_rank(survivor.upper()) == 1  # lookup is case-insensitive
+
+
+def test_the_three_standings_are_never_collapsed(population_analysis) -> None:
+    """CLAUDE.md's representable-negative rule, applied to a rank.
+
+    ``clean_rank`` answers ``None`` for a removed member **and** for an address
+    nobody analyzed, which is exactly the row that reads confident and green
+    through an outage.  ``standing`` keeps the three apart, so a consumer can
+    render "removed from the list" differently from "not on the list at all".
+    """
+    preset, ds, res = population_analysis
+    clean = clean_list(ds, res, preset)
+    stranger = "0x" + "ff" * 20
+    assert clean.standing(clean.entries[0].address) == "clean"
+    assert clean.standing(sorted(res.flagged)[0]) == "removed"
+    assert clean.standing(stranger) == "unknown"
+    assert clean.clean_rank(stranger) is None
+
+
+def test_the_clean_list_carries_wei_not_ether(population_analysis) -> None:
+    """Wei-native to the edge: nothing in the library divides by 1e18, because
+    a float cannot hold 1 363 396 200 000 000 000 000 wei and the presentation
+    boundary is the only place that should be losing digits."""
+    preset, ds, res = population_analysis
+    clean = clean_list(ds, res, preset)
+    top = clean.entries[0]
+    weights = _final_weight(ds)
+    credits: dict[str, int] = {}
+    for dep in ds.deposits:
+        credits[dep.contributor] = credits.get(dep.contributor, 0) + dep.credited_delta_wei
+    assert isinstance(top.credit_wei, int) and isinstance(top.weight_wei, int)
+    assert top.weight_wei == weights[top.address]
+    assert top.credit_wei == credits[top.address]
+    assert top.points == preset.points(top.weight_wei)
+
+
+def test_the_clean_list_on_an_empty_result_keeps_everybody(labeled_ds) -> None:
+    """Nothing linked is not the same as nothing analyzed: with an empty
+    :class:`DetectResult` every analyzed contributor is a survivor, and the
+    clean total equals the population total."""
+    preset = a_preset()
+    empty = detect(labeled_ds, dataclasses.replace(preset.detect_config(), min_size=10**6))
+    assert empty.clusters == []
+    clean = clean_list(labeled_ds, empty, preset)
+    assert clean.flagged_contributors == 0
+    assert clean.clean_points == clean.total_points
+    assert len(clean.entries) == len(empty.analyzed)
