@@ -997,3 +997,42 @@ def test_clean_list_and_segments_agree_when_handed_the_same_folds() -> None:
         curator_mod.final_weights = real_w
         curator_mod.credited_totals = real_c
     assert calls == {"weights": 1, "credits": 1}, calls
+
+
+def test_every_edges_strength_equals_its_reasons_strength() -> None:
+    """``Edge.strength`` and ``Edge.reason.strength`` are the same number.
+
+    They are two fields holding one value, and the duplication is **kept on
+    purpose**: dropping the field would mean editing every ``Edge(...)``
+    construction in five signal modules for no behaviour change, which is
+    exactly the risk this cleanup lane exists to avoid.  What the lane leaves
+    behind instead is this invariant — because while they agree the duplication
+    is harmless, and the day they disagree the two readers disagree with them.
+    ``detect``'s per-family "best" pick reads ``edge.reason.strength``; the
+    docstring on :class:`~sybilkit.cluster.Edge` says ``strength`` "is the
+    graduated weight the cluster's multiplicative confidence is built from".
+    One of those would be wrong.
+
+    Swept over every family on both committed fixtures, and the families are
+    counted so the sweep cannot pass by finding no edges.
+    """
+    from sybilkit.signals.funding import funding_edges
+
+    from tests.conftest import build_labeled_dataset, build_population_dataset
+
+    cfg = DetectConfig()
+    seen: set[str] = set()
+    for ds in (build_labeled_dataset(), build_population_dataset()):
+        for fn in (
+            amount_edges,
+            split_edges,
+            sequence_edges,
+            cadence_edges,
+            gas_edges,
+            funding_edges,
+        ):
+            for edge in fn(ds, cfg):
+                assert edge.strength == edge.reason.strength, (fn.__name__, edge)
+                assert edge.family == edge.reason.family, (fn.__name__, edge)
+                seen.add(edge.family)
+    assert seen == set(FAMILIES), seen
