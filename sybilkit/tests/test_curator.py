@@ -25,7 +25,7 @@ import pytest
 
 from sybilkit import DetectConfig, curve, detect
 from sybilkit import curator as preset_mod
-from sybilkit.report import DetectResult
+from sybilkit.report import Cluster, DetectResult
 from sybilkit.curator import (
     FORBIDDEN_LABEL_WORDS,
     Segment,
@@ -871,3 +871,63 @@ def test_a_hand_built_result_never_makes_the_clean_list_speak_for_the_unanalyzed
             assert (clean.standing(addr) == "unknown") is not looked_at, addr
         assert clean.contributors_total == len(analyzed)
         assert {e.address for e in clean.entries} == set(analyzed)
+
+
+def _checksummed(addr: str) -> str:
+    """*addr* with its hex letters uppercased — the EIP-55 spelling shape."""
+    return "0x" + addr[2:].upper()
+
+
+def test_the_clean_list_lowercases_the_analyzed_set_like_everything_else_it_reads() -> None:
+    """**Review R4.2.**  ``clean_list`` lowercased ``res.flagged`` and every
+    lookup in ``standing``/``clean_rank``, but read ``res.analyzed`` raw.
+
+    Two things break on a mixed-case analyzed set, and they break in opposite
+    directions.  A **flagged** address survives the ``not in flagged`` filter,
+    because the cluster spells it lowercase (as :class:`Cluster` documents) and
+    the analyzed set spells it checksummed — so the export ships a wallet the
+    detector removed.  And a **clean** address is exported under a spelling the
+    object's own accessors cannot resolve: ``standing`` and ``clean_rank``
+    lowercase the query, ``_rank_by_address`` is keyed on the raw entry, so the
+    list answers ``"unknown"`` for an address printed on its own first page.
+
+    :class:`DetectResult` documents ``analyzed`` as lowercase, so this is a
+    no-op on every path ``detect`` produces; it is pure defence on the
+    hand-built path that dropping the empty-analyzed fallback (finding #4) has
+    just made first-class.  The point is that the object agrees with itself
+    whatever it is handed.
+    """
+    preset = a_preset()
+    ds = _mini_dataset([(i, 0) for i in range(1, 13)])
+    addrs = [f"0x{i:040x}" for i in range(1, 13)]
+    survivor, removed = addrs[9], addrs[10]  # ...00a and ...00b — real letters
+    assert survivor != _checksummed(survivor)
+
+    cluster = Cluster(
+        cluster_id=1,
+        members=(removed,),  # lowercase, exactly as `Cluster` documents
+        reasons=(),
+        confidence=1.0,
+        points=0,
+        points_share=0.0,
+        span_blocks=None,
+        size=1,
+    )
+    res = DetectResult([cluster], 0, 0, 0)
+    res.analyzed = frozenset({_checksummed(survivor), _checksummed(removed)})
+
+    clean = clean_list(ds, res, preset)
+
+    # the removed wallet does not survive on a spelling
+    assert {e.address for e in clean.entries} == {survivor}
+    assert clean.standing(removed) == "removed"
+    assert clean.clean_rank(removed) is None
+    assert clean.contributors_total == 2  # both were looked at
+
+    # and every address it exports resolves through its own accessors
+    assert all(e.address == e.address.lower() for e in clean.entries)
+    for entry in clean.entries:
+        assert clean.standing(entry.address) == "clean", entry.address
+        assert clean.clean_rank(entry.address) == entry.clean_rank
+    assert clean.standing(_checksummed(survivor)) == "clean"
+    assert clean.clean_rank(_checksummed(survivor)) == 1

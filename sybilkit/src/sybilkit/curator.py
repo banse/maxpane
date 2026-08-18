@@ -662,11 +662,23 @@ def clean_list(ds: Dataset, res: DetectResult, preset: CuratorPreset) -> CleanLi
     analyzed nobody therefore has no survivors and a ``contributors_total`` of
     ``0``: the population is not the analysis, and an unanalyzed wallet's
     honest word is ``"unknown"``.
+
+    ``analyzed`` is **lowercased on read**, exactly as ``flagged`` is.
+    :class:`DetectResult` documents the set as lowercase, so this changes
+    nothing a ``detect`` run can produce; on a hand-built result it is what
+    keeps the object agreeing with itself, since :meth:`CleanList.standing` and
+    :meth:`CleanList.clean_rank` lowercase every query they are given.
     """
     weights = final_weights(ds)
     credits = credited_totals(ds)
     flagged = {a.lower() for a in res.flagged}
-    analyzed = set(res.analyzed)
+    # Lowercased on read for the same reason `flagged` is, and it has to be the
+    # same reason: `standing` and `clean_rank` lowercase every query, so an
+    # analyzed set spelled any other way both leaks a flagged member past the
+    # filter below and exports a survivor under a key its own accessors cannot
+    # resolve.  `DetectResult` documents `analyzed` as lowercase, so this is a
+    # no-op on every path `detect` produces and defence on the hand-built one.
+    analyzed = {a.lower() for a in res.analyzed}
 
     survivors = sorted(
         (a for a in analyzed if a not in flagged),
