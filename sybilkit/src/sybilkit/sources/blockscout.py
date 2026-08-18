@@ -136,7 +136,9 @@ async def _funder_of(
 
     Blockscout serves newest-first with a keyset cursor, so the **first**
     funder is on the last page and the cursor is followed verbatim, as query
-    params, exactly as the server handed it back.
+    params, exactly as the server handed it back — **carrying our own
+    ``filter=to`` with it**, because a cursor that replaces the filter asks
+    every page after the first for the address's whole transaction history.
 
     ``outcome`` is one of :data:`_COMPLETE`, :data:`PENDING_PAGES` or
     :data:`PENDING_UNREADABLE`, and the distinction between the last two is the
@@ -185,7 +187,16 @@ async def _funder_of(
         nxt = body.get("next_page_params")
         if not nxt:
             return (oldest[0] if oldest else None), _COMPLETE, True
-        params = nxt  # the server's cursor, verbatim
+        if not isinstance(nxt, Mapping):
+            # A cursor we cannot extend with our own filter is not the end of
+            # the history: `_COMPLETE` here would resolve a row off a walk that
+            # stopped early, and `{**nxt}` on a non-mapping would take the
+            # caller down with a TypeError.
+            return None, PENDING_UNREADABLE, reachable
+        # The server's cursor, verbatim — **plus our own filter**.  `params =
+        # nxt` replaced it, so every page after the first asked for the whole
+        # transaction history rather than its incoming half.
+        params = {**nxt, "filter": "to"}
     # Fell out of the loop with a cursor still open: every page we asked for
     # answered, there are simply more of them than we were willing to walk.
     return None, PENDING_PAGES, reachable

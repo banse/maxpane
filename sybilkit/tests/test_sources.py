@@ -1128,6 +1128,58 @@ def test_funding_paginates_by_keyset_and_takes_the_oldest_incoming_transfer() ->
     assert "block_number=10" in rec.urls[1]
 
 
+def test_every_funding_page_after_the_first_still_carries_the_incoming_filter() -> None:
+    """**Review #14a, the reproduced case.**  ``params = nxt`` *replaced* the
+    filter with the server's cursor.
+
+    Page 1 asks for ``filter=to`` — the address's incoming half.  From page 2
+    on it asked for the whole transaction history instead, so a busy wallet
+    spent its page bound walking outgoing transactions it will never read a
+    funder from.  The cursor is still followed verbatim; our own filter rides
+    along with it.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        if params.get("block_number") == "10":
+            return _page([_incoming(FUNDER, ALICE, 10)], None)
+        return _page(
+            [_incoming(BOB, ALICE, 900)],
+            {"block_number": "10", "index": "1"},
+        )
+
+    rec = Recorder(handler)
+    sweep = asyncio.run(
+        blockscout.fetch_funding([ALICE], client=_client(rec), config=FAST)
+    )
+    assert sweep is not None
+    assert len(rec.calls) == 2
+    page_two = dict(rec.calls[1][1].params)
+    assert page_two["filter"] == "to", page_two
+    assert page_two["block_number"] == "10"  # the cursor still rides verbatim
+    assert page_two["index"] == "1"
+
+
+def test_a_cursor_that_is_not_a_page_of_params_is_unreadable_not_a_finished_walk() -> None:
+    """A cursor we cannot extend with our own filter is not the end of the
+    history.  Calling it ``complete`` would resolve a row off a walk that
+    stopped early — #5a's hazard in a different costume — and ``{**nxt}`` on a
+    non-mapping would take the caller down with a ``TypeError``."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        who = str(request.url).rsplit("/addresses/", 1)[1].split("/")[0].lower()
+        if who == ALICE.lower():
+            return httpx.Response(
+                200, json={"items": [], "next_page_params": "block_number=10"}
+            )
+        return _page([_incoming(FUNDER, who, 7)], None)
+
+    sweep = asyncio.run(
+        blockscout.fetch_funding([ALICE, BOB], client=_client(handler), config=FAST)
+    )
+    assert sweep is not None
+    assert ALICE.lower() not in sweep.funding
+    assert sweep.pending_reasons[ALICE.lower()] == blockscout.PENDING_UNREADABLE
+
+
 def test_funding_throttles_between_requests() -> None:
     """~3 req/s measured clean against Blockscout with zero 429s.  Asserted
     against an injected ``sleep`` so the suite proves the pacing without
