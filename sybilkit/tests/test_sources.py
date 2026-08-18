@@ -813,3 +813,30 @@ def test_no_source_module_builds_a_client_of_its_own_by_default() -> None:
         assert "MockTransport" not in text
         total += text.count("AsyncClient(")
     assert total == 1, "exactly one construction site, in sources/__init__.py"
+
+
+def test_no_test_file_in_the_suite_builds_a_client_without_a_transport() -> None:
+    """WP2.7's whole-suite gate, not just this file's.
+
+    ``test_no_test_in_this_file_builds_a_client_without_a_transport`` covers
+    the fetch tests; this one walks **every** module under ``tests/``, so a
+    future test file that reaches for a transport-less client is caught the day
+    it is written rather than the day CI runs offline.  It discovers the files
+    by walking the directory, so a file nobody thought to add here is covered
+    anyway.
+    """
+    root = THIS_FILE.parent
+    scanned = 0
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        scanned += 1
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+            if name not in ("AsyncClient", "Client"):
+                continue
+            assert any(kw.arg == "transport" for kw in node.keywords), (
+                f"{path.name}: {ast.dump(node)}"
+            )
+    assert scanned >= 12, "the walk found almost nothing — it proved nothing"

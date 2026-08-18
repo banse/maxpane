@@ -373,3 +373,44 @@ def test_the_cli_imports_no_transport_at_module_scope() -> None:
         elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
             names = [node.module.split(".")[0]]
         assert "httpx" not in names
+
+
+def test_the_declared_entry_point_resolves_to_this_main() -> None:
+    """An agreement test between the packaging and the code.
+
+    ``pyproject.toml`` names ``sybilkit = "sybilkit.cli:main"``.  A rename here
+    would leave a wheel whose console script imports something that no longer
+    exists — and nothing in a normal test run would notice, because a test run
+    calls ``cli.main`` directly and never goes through the entry point.
+    """
+    import tomllib
+
+    root = THIS_FILE.parents[1]
+    data = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    target = data["project"]["scripts"]["sybilkit"]
+    assert target == "sybilkit.cli:main"
+
+    module_path, _, attr = target.partition(":")
+    import importlib
+
+    resolved = getattr(importlib.import_module(module_path), attr)
+    assert resolved is cli.main
+    assert callable(resolved)
+
+
+def test_the_sources_extra_declares_the_only_third_party_package() -> None:
+    """``dependencies`` stays empty and ``[sources]`` carries exactly httpx.
+
+    Pinned because the whole "the core imports with zero third-party packages"
+    promise is one careless ``dependencies = [...]`` away from being false, and
+    a wheel that quietly grew a dependency looks identical until somebody
+    installs it somewhere small.
+    """
+    import tomllib
+
+    root = THIS_FILE.parents[1]
+    data = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    assert data["project"]["dependencies"] == []
+    extras = data["project"]["optional-dependencies"]
+    assert list(extras) == ["sources"]
+    assert [d.split(">=")[0] for d in extras["sources"]] == ["httpx"]
