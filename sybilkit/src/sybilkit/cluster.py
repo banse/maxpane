@@ -212,8 +212,16 @@ def detect(ds: Dataset, config: DetectConfig = DetectConfig()) -> DetectResult:
             families[edge.family] = edge.reason
 
     firsts = first_rows(ds)
+    # Sort for ourselves; the last write is then the final high-water weight.
+    # ``ds.deposits`` arrives "in whatever order the caller supplied"
+    # (:class:`~sybilkit.model.Dataset`) and every other reader in the library
+    # — ``signals.first_rows``, ``curator.final_weights``,
+    # ``curator.first_deposits`` — sorts before folding.  Trusting the
+    # caller's order here made a newest-first dataset score every laddering
+    # wallet off its *first* rung, so ``total_points`` silently disagreed with
+    # ``curator.final_weights`` on the same input.
     last_weight: dict[str, int] = {}
-    for dep in ds.deposits:  # chain order: the last write is the final weight
+    for dep in sorted(ds.deposits, key=lambda d: (d.block_number, d.log_index)):
         last_weight[dep.contributor] = dep.new_weight_wei
     points_per_eth = config.points_per_eth
     total_points = sum(

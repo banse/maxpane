@@ -460,6 +460,127 @@ def test_the_protocol_minimum_crowd_is_not_flagged_wholesale_on_tier_a() -> None
 
 
 # ---------------------------------------------------------------------------
+# order independence (finding #6): the Dataset contract says detectors sort
+# ---------------------------------------------------------------------------
+
+
+def _laddering_farm() -> Dataset:
+    """Six wallets that each deposit twice, laddering their weight upward.
+
+    Two families and nothing else: consecutive join indices one block apart
+    (``sequence``) and one fee fingerprint across the wave (``gas``).  The
+    amount and cadence families cannot fire here — both run over *single*
+    -deposit wallets only — which is exactly what this fixture needs: a real
+    cluster whose every member has a **later** row carrying the final weight,
+    so a fold that walks ``ds.deposits`` in the caller's order scores the
+    whole cluster off the wrong rung of the ladder.
+    """
+    rung_wei = 1_000_000_000_000_000_000  # 1 ETH
+    deposits, firsts, txs = [], [], []
+    for i in range(6):
+        addr = f"0x{i + 1:040x}"
+        amount = rung_wei + i * 10**15  # near-identical: ±0.5% at most
+        firsts.append({"contributor": addr, "index": i + 1})
+        for rung in (1, 2):
+            tx_hash = "0x" + f"{rung * 1000 + i + 1:064x}"
+            deposits.append(
+                {
+                    "contributor": addr,
+                    "hour": rung,
+                    "amount_wei": amount,
+                    "credited_delta_wei": amount,
+                    "weight_added_wei": amount,
+                    "new_weight_wei": amount * rung,  # high-water mark, climbing
+                    "tx_count": rung,
+                    "block_number": 1000 * rung + i,
+                    "tx_hash": tx_hash,
+                    "log_index": i,
+                }
+            )
+            if rung == 1:  # the fingerprint the gas family reads
+                txs.append(
+                    {
+                        "tx_hash": tx_hash,
+                        "nonce": 0,
+                        "max_priority_fee_wei": 100_000_000,
+                        "max_fee_wei": 150_000_000,
+                        "gas_limit": 91_600,
+                        "tx_type": 2,
+                    }
+                )
+    return Dataset.from_events(deposits, firsts, txs=txs)
+
+
+def _reordered(ds: Dataset, deposits) -> Dataset:
+    """The same dataset with its deposits handed over in another order.
+
+    Hand-built on purpose: ``Dataset.from_events`` sorts into chain order, so
+    the only way to express a producer that did not is to build the frozen
+    model directly — which the ``Dataset`` docstring explicitly allows
+    ("in whatever order the caller supplied; detectors sort it themselves").
+    """
+    return Dataset(
+        deposits=tuple(deposits),
+        first_index=ds.first_index,
+        txs=ds.txs,
+        funding=ds.funding,
+    )
+
+
+def test_a_newest_first_dataset_scores_the_same_points_as_a_chain_ordered_one() -> None:
+    """Finding #6.  ``detect``'s final-weight fold must sort for itself.
+
+    A producer that hands its rows newest-first is inside the ``Dataset``
+    contract, and every other reader in the library (``signals.first_rows``,
+    ``curator.final_weights``, ``curator.first_deposits``) sorts before
+    folding.  ``detect`` did not, so a newest-first dataset scored every
+    laddering wallet off its *first* rung and silently under-reported the
+    population's points.
+    """
+    chain = _laddering_farm()
+    newest_first = _reordered(chain, reversed(chain.deposits))
+    # the fixture really is out of chain order, and the rungs really differ
+    assert [d.new_weight_wei for d in newest_first.deposits] != [
+        d.new_weight_wei for d in chain.deposits
+    ]
+    assert detect(chain).total_points == detect(newest_first).total_points
+
+
+def test_total_points_agrees_with_the_curator_preset_on_a_hand_built_dataset() -> None:
+    """``detect().total_points`` and ``curator.final_weights`` are the same
+    fold over the same rows, so they must agree whatever order the rows
+    arrive in — the disagreement finding #6 describes was silent."""
+    from sybilkit.curator import final_weights
+
+    chain = _laddering_farm()
+    orders = {
+        "chain": chain.deposits,
+        "newest_first": tuple(reversed(chain.deposits)),
+        "interleaved": chain.deposits[1::2] + chain.deposits[0::2],
+    }
+    for name, deposits in orders.items():
+        ds = _reordered(chain, deposits)
+        expected = sum(curve_points(w, 1000) for w in final_weights(ds).values())
+        assert detect(ds, DetectConfig(points_per_eth=1000)).total_points == expected, name
+
+
+def test_a_clusters_points_do_not_depend_on_the_deposit_order() -> None:
+    """Per-cluster, not just the total: ``points_share`` is what reaches the
+    screen, and both its numerator and its denominator come off that fold."""
+    chain = _laddering_farm()
+    baseline = detect(chain)
+    assert len(baseline.clusters) == 1  # the fixture is a real cluster
+    for deposits in (
+        tuple(reversed(chain.deposits)),
+        chain.deposits[1::2] + chain.deposits[0::2],
+    ):
+        other = detect(_reordered(chain, deposits))
+        assert [
+            (c.members, c.points, c.points_share) for c in other.clusters
+        ] == [(c.members, c.points, c.points_share) for c in baseline.clusters]
+
+
+# ---------------------------------------------------------------------------
 # the whole-population smoke (controller ruling 4): tier A only, one pass
 # ---------------------------------------------------------------------------
 
