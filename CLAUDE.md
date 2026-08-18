@@ -67,6 +67,7 @@ maxpane_dashboard/          the app (published to PyPI as `maxpane`)
 └── widgets/                shared widgets + one package per dashboard
 
 maxpane/                    Rust intro sequence (Matrix-style boot animation), separate crate
+sybilkit/                   SECOND in-repo Python distribution — see below
 tests/                      analytics/ data/ screens/ widgets/ fixtures/
 docs/                       per-project research, PRDs, implementation plans, code reviews
 scripts/                    one-shot tooling (ABI vendoring etc). Imported by nothing.
@@ -77,12 +78,22 @@ scripts/                    one-shot tooling (ABI vendoring etc). Imported by no
 (render primitives only). Widgets never import from `data/` or `analytics/`; they receive
 `str`/`int`/`float`/`bool`/`dict`/`list[dict]`.
 
+**`sybilkit/` is a second Python distribution in this repo**, a sibling of the `maxpane/` Rust
+crate rather than a package inside `maxpane_dashboard/`: its own `pyproject.toml`, its own
+`tests/`, its own version, its own PyPI name. It is a general keyless EVM sybil/fan-out cluster
+toolkit — THE LIST is one *preset* it ships, not its subject — and it is **maxpane-independent**:
+nothing under `sybilkit/` imports the dashboard, Textual, or httpx-at-import (the core is
+stdlib-only; `httpx` is the optional `[sources]` extra, imported lazily inside the call that
+needs it). Build it with `python -m build sybilkit/`; the root `python -m build` does not, and
+must not, build it. See `sybilkit/README.md` for the release step. Only **one** maxpane module
+imports it — `data/curator_clusters.py` — and that import is guarded (see the curator section).
+
 ## The eight visible dashboards
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
 | 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel + launch detectors |
-| 2 | `curator` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock |
+| 2 | `curator` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock, linked-wallet analysis |
 | 3 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
 | 4 | `base` | Base | trending tokens, volume, signals |
 | 5 | `frenpet` | Base | pet battles, leaderboard, activity |
@@ -137,6 +148,55 @@ is the agreement test that finds the next missed one — it discovers the copies
 `tests/`, so a fifth file is covered the day it is written. Prefer the insert's example when
 the new dashboard is not going at the end.
 
+### THE LIST's linked-wallet analysis — the `sybilkit` seam (2026-08-18)
+
+Curator grew a **third view**, not a ninth dashboard: `f` swaps the dashboard body for
+MODE_ANALYSIS (OPERATORS / SEGMENTS / CLEANED LIST) with the hero left in place so the doomsday
+clock never leaves the screen, `e` exports the cleaned list, and the `y` view and the leaderboard
+each grew a field off the same result. **There is no six-surface renumber for an expansion** —
+`app.py`, `__main__.py` and `GAMES` are untouched.
+
+**`data/curator_clusters.py` is the only maxpane module that imports `sybilkit`**, and
+`test_only_curator_clusters_imports_sybilkit` asserts exactly that by walking every `.py` under
+`maxpane_dashboard/` (`rg -n "import sybilkit|from sybilkit" maxpane_dashboard/` must return that
+one file). It is also the *translation boundary*: the library is a general sybil-analysis toolkit
+and may say so in its own strings, but `pattern_language()` re-checks every reason, label and
+detail — including strings read back from a **persisted** payload, because a hand-edited cache
+file is third-party input too — and swaps a forbidden word for the evidence family's own phrase.
+On screen the dashboard therefore speaks only patterns: *linked*, *fan-out*, `⚑`/`◌`/`?`, and
+every panel has its own composited forbidden-word test. **The word "sybil" lives in the standalone
+library, not in the dashboard's language**: it appears in maxpane only in the adapter's own
+`FORBIDDEN_WORDS` list, in module comments, and in file/identifier names — never in a rendered
+string, and never at all in `analytics/curator_signals.py`, which stays **byte-identical to what
+shipped** (`test_curator_signals_never_imports_sybilkit`; the Tier-A `find_clusters` it already had
+is unchanged and it never learns the library exists).
+
+**The import is guarded** (`try/except ImportError` → `SYBILKIT_AVAILABLE`), and that flag is the
+packaging story, not defensive habit. `sybilkit` is not on PyPI yet, so maxpane's `pyproject.toml`
+**does not** list it and will not until the first maxpane release *after* sybilkit publishes.
+Until then: a dev checkout runs it editable-installed, and an end user's `pip install maxpane`
+gets a dashboard whose analysis panels say `analysis unavailable` and whose everything-else works
+exactly as before. Do not add the dependency early — a `pip install maxpane` that fails to resolve
+is worse than a view that degrades.
+
+**The sweep is detached, on the `_spawn_crosscheck` precedent.** Tier-B/C analysis (tx
+fingerprints via publicnode/tenderly batches, first funders via Blockscout — all keyless, all
+budgeted to *candidate* members, never the full population, resumable through a cursor in the
+slot) is spawned, never awaited, so it cannot block first paint;
+`test_the_first_payload_is_not_behind_the_analysis_read` is the tripwire and it fails by timing
+out. It lives on its own long tier — `TIER_ANALYSIS` (1800 s, 300 s after a failure) with the
+`SLOT_CLUSTERS` last-good — so the analysis panels carry an `as of HH:MM` on a slower clock than
+the title bar's, deliberately. A failed sweep folds into the **`logs`** degraded group only when
+there is nothing to serve; otherwise a stale `analysis_as_of_hhmm` is the signal.
+
+**Nothing is persisted as a verdict.** The slot holds revisable rows; groups carry a band *word*
+and their families, never a boolean, and a test scans the cache file for one. A later sweep may
+re-admit a wallet to the clean list, which is the point. The on-screen banding is **structural,
+not numeric**: noisy-OR puts every gated cluster at ≥ 0.77, so `high` means ≥ 3 distinct families
+or funding present and `low` means exactly two — a numeric cut would band nothing. (The library's
+own 0.5 flag threshold is likewise structurally inert: everything that survives the ≥ 2-family,
+≥ 5-member gate is already above it, so `flagged` == clustered.)
+
 ## Build & run
 
 ```bash
@@ -186,6 +246,16 @@ requirement moved with its *height* and one pin was true at 48 rows and one
 column short at 40. The sweep lives in `tests/screens/test_curator_screen.py`
 and starts deliberately away from the pin, since a sweep that began at the
 constant would agree with it by construction.
+
+**The `f` view (2026-08-18) measures 137 and moved nothing either.** The
+analysis body clears one column *inside* `CURATOR_FULL_LAYOUT_COLUMNS` and six
+inside FWA's 143, so neither constant changes and the record above is again
+**not** appended to — it tracks the app-wide number, which has not moved since
+2026-08-12. Its binding panel is `CuratorOperators` (the 82-column evidence
+cell), pinned by `test_the_analysis_binding_panel_is_the_operators_table`
+rather than by this sentence. The two swapped bodies bind on *rows* instead:
+the `f` body is whole from **48** rows and the `y` body from **40**, and below
+each the body scrolls and the title bar says `‹ taller`.
 
 143 clears every *layout*, not every possible string. Surf's announce feed
 still lights `‹ widen` there whenever a post links a transaction: the post's
@@ -258,14 +328,23 @@ Per-dashboard: `c` swaps the shared bottom-right slot (FWA, TTT, Talismans,
 curator); **`y` on curator** swaps the whole body for the reader's own
 standing — ladder, share, and what passing the rank above would cost — with the
 hero left in place so the doomsday clock never leaves the screen (`esc` backs
-out, one-way); and **`w` on curator** prompts for the wallet its YOU row is about —
+out, one-way); **`f` on curator** swaps in the linked-wallet analysis (OPERATORS
+/ SEGMENTS / CLEANED LIST), also keeping the clock; **`e`** inside that view
+exports the cleaned list (analysis-mode only, a no-op elsewhere, and
+deliberately absent from the status hints — the CLEANED LIST panel is where its
+receipt appears); and **`w` on curator** prompts for the wallet its YOU row is about —
 `WalletInputScreen` validates and persists to `~/.maxpane/config.toml`, so it
 is app-wide from the next launch. A runtime wallet switch is more than an
 assignment: `CuratorManager.set_wallet` also drops the wallet last-good (its
 payload names the *old* address) and expires the fast tier, because a tier
 with 12 of its 15 seconds left is "fresh" and the row would stay dark after a
-keypress that looked like it worked.
-Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`.
+keypress that looked like it worked. Curator's status hints read
+`c panels · y you · f linked` — `y wallet` was reworded to **`y you`** when the
+third key pushed the worst-case line (`4 errors` present) one column past 138,
+and an error count must never be the field that falls off the end. Any doc that
+quotes the old hint is wrong.
+Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`; curator's
+`e` export to `~/.maxpane/curator_clean_list.json` and `.csv`.
 
 **`__version__` comes from installed distribution metadata**, not from a
 constant — `maxpane_dashboard/__init__.py` reads it with
@@ -280,14 +359,18 @@ memory when a bug report cites one.
 ## Tests
 
 ```bash
-pytest                                    # ~2100 tests, must be green
+pytest                                    # ~4650 tests, must be green
 pytest tests/analytics/                   # pure math
 pytest -x                                 # stop on first failure
-cargo test                                # the Rust intro crate, from maxpane/
+cd sybilkit && python -m pytest           # the second distribution, ~290 tests
+cargo test                                # the Rust intro crate, from maxpane/ (443)
 ```
 
 Use `.venv/bin/python -m pytest` — the system `python3` lacks the deps and produces alarming
-collection errors that mean nothing.
+collection errors that mean nothing. That applies to `sybilkit/` too, and there it is not
+cosmetic: its fetcher tests need the `[sources]` extra, so an interpreter without `httpx`
+*skips* them rather than erroring, and a suite that reports green having skipped its network
+layer is the worst of both.
 
 ## Environment variables
 
