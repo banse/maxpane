@@ -440,6 +440,57 @@ def test_the_late_cohort_window_never_names_an_hour_before_zero() -> None:
     assert late.contributors == segs.total_contributors
 
 
+def test_the_late_cohort_window_is_exactly_the_hours_the_preset_asks_for() -> None:
+    """**Review R4.1.**  The clamp above pins only the window's *floor*, and it
+    cannot pin its *size*: where ``max(0, …)`` bites, ``last_hour - hours`` and
+    ``last_hour - hours + 1`` are both negative and both clamp to ``0``, so the
+    ``+ 1`` — the difference between an ``hours``-wide window and an
+    ``hours + 1``-wide one — is invisible there.
+
+    This is that arithmetic, measured away from the clamp: ``late_cohort_hours=3``
+    on a dataset whose newest join is hour 5 covers hours **3–5**, three hours
+    and three wallets.  Without the ``+ 1`` it would reach back to hour 2 and
+    quietly enlarge both the span it prints and the cohort it counts.  Only the
+    full-population percentage test caught that before, which is a fact about
+    one committed capture rather than about the arithmetic.
+    """
+    preset = a_preset(late_cohort_hours=3)
+    ds = _mini_dataset([(1, 0), (2, 1), (3, 2), (4, 3), (5, 4), (6, 5)])
+    res = detect(ds, preset.detect_config())
+    segs = segments(ds, res, preset)
+
+    (late,) = [s for s in segs.bands if s.key == "late_cohort"]
+    assert late.detail == "joined in hours 3–5"
+    # three hours asked for, three hours' worth of wallets — not the four an
+    # off-by-one window would sweep in, and not the whole six-hour population.
+    assert late.contributors == 3
+    assert segs.total_contributors == 6
+
+
+def test_a_dataset_whose_only_hour_is_zero_reads_as_one_hour_not_a_range() -> None:
+    """The singular branch the clamp newly makes reachable.
+
+    With the default ``late_cohort_hours=2`` and every join in hour 0, the
+    clamped window is ``range(0, 1)`` — length one — so the detail is the
+    singular ``"joined in hour 0"``.  Unclamped it was ``range(-1, 1)``, length
+    two, and the band advertised ``"joined in hours -1–0"``: a two-hour span
+    over a one-hour dataset, one of whose hours does not exist.
+
+    Worth its own test because the ``len(window) == 1`` arm of the span string
+    was unreachable before the clamp — no window could be one hour wide — so
+    the fix created a branch and nothing exercised it.
+    """
+    preset = a_preset()
+    assert preset.late_cohort_hours == 2
+    ds = _mini_dataset([(1, 0), (2, 0), (3, 0)])
+    res = detect(ds, preset.detect_config())
+    segs = segments(ds, res, preset)
+
+    (late,) = [s for s in segs.bands if s.key == "late_cohort"]
+    assert late.detail == "joined in hour 0"
+    assert late.contributors == 3
+
+
 def test_the_early_cohort_detail_counts_indices_present_not_addresses_on_the_list() -> None:
     """**Review #15b.**  The early-cohort detail said "the first N addresses on
     the list", where N is only how many of the first ``early_cohort_size`` join
