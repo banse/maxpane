@@ -385,6 +385,82 @@ def test_the_late_grace_cohort_is_two_point_three_nine_percent_of_points(
     assert round(100 * late.points_share, 2) == 2.39
 
 
+def _mini_dataset(specs):
+    """A tiny ``Dataset`` from ``(join_index, hour)`` pairs — one deposit each.
+
+    Small on purpose: the committed population covers hours 0–23 and join
+    indices 1–N contiguously, so it cannot exhibit either edge the two tests
+    below are about (a dataset younger than the late-cohort window, and a
+    first-1 000 slice that is a *sample* rather than a prefix).
+    """
+    from sybilkit.model import Dataset
+
+    deposits, firsts = [], []
+    for i, (index, hour) in enumerate(specs, start=1):
+        addr = f"0x{i:040x}"
+        deposits.append(
+            {
+                "contributor": addr,
+                "hour": hour,
+                "amount_wei": 10**18,
+                "credited_delta_wei": 10**18,
+                "weight_added_wei": 15 * 10**17,
+                "new_weight_wei": 15 * 10**17,
+                "tx_count": 1,
+                "block_number": 100 + i,
+                "log_index": 1,
+                "tx_hash": "0x" + f"{i:064x}",
+            }
+        )
+        firsts.append({"contributor": addr, "index": index})
+    return Dataset.from_events(deposits, firsts)
+
+
+def test_the_late_cohort_window_never_names_an_hour_before_zero() -> None:
+    """**Review #15a.**  The window is ``last_hour - late_cohort_hours + 1``
+    with no floor, so a dataset younger than the window prints an hour that
+    does not exist: with ``late_cohort_hours=3`` on a sweep whose newest join
+    is hour 1, the detail read "joined in hours -1–1".
+
+    Hour −1 is not a slow hour or an empty hour — it is not an hour, and the
+    band's own membership was never filtered by it (no deposit can carry it).
+    A detail line is a claim about the data; this one was arithmetic leaking
+    out of a range.
+    """
+    preset = a_preset(late_cohort_hours=3)
+    ds = _mini_dataset([(1, 0), (2, 0), (3, 1), (4, 1), (5, 1), (6, 1)])
+    res = detect(ds, preset.detect_config())
+    segs = segments(ds, res, preset)
+
+    (late,) = [s for s in segs.bands if s.key == "late_cohort"]
+    assert late.detail == "joined in hours 0–1"
+    assert "-1" not in late.detail
+    # the whole population is inside the clamped window, so nothing was lost
+    assert late.contributors == segs.total_contributors
+
+
+def test_the_early_cohort_detail_counts_indices_present_not_addresses_on_the_list() -> None:
+    """**Review #15b.**  The early-cohort detail said "the first N addresses on
+    the list", where N is only how many of the first ``early_cohort_size`` join
+    indices are **in this dataset**.
+
+    On a partial sweep — which is every sweep the adapter runs before it has
+    walked the whole history — that turns a fact about the *sample* into a
+    fact about *the list*.  Here indices 1, 5 and 900 are present and 2–4 and
+    6–899 are not: three addresses, and not one of them is "the first three".
+    """
+    preset = a_preset()
+    ds = _mini_dataset([(1, 0), (5, 0), (900, 0), (1_400, 0), (1_700, 0)])
+    res = detect(ds, preset.detect_config())
+    segs = segments(ds, res, preset)
+
+    (early,) = [s for s in segs.bands if s.key == "early_cohort"]
+    assert early.contributors == 3
+    assert ds.first_index["0x" + f"{3:040x}"] == 900  # the sample is not a prefix
+    assert early.detail == "3 of the first 1,000 join indices present"
+    assert "the first 3 addresses" not in early.detail
+
+
 def test_the_hour_bands_partition_the_whole_population(population_analysis) -> None:
     """Every contributor lands in exactly one join-hour band, and the bands'
     points sum to the population's.  A band set that does not partition is a

@@ -454,7 +454,10 @@ def segments(ds: Dataset, res: DetectResult, preset: CuratorPreset) -> Segments:
                 "early_cohort",
                 "cohort",
                 f"early cohort · join index ≤{cutoff:,}",
-                f"the first {len(early):,} addresses on the list",
+                # NOT "the first N addresses on the list": N is how many of the
+                # first `cutoff` join indices are in *this dataset*, which on a
+                # partial sweep is a fact about the sample, not about the list.
+                f"{len(early):,} of the first {cutoff:,} join indices present",
                 early,
                 points_of,
                 total_points,
@@ -465,7 +468,12 @@ def segments(ds: Dataset, res: DetectResult, preset: CuratorPreset) -> Segments:
     hours = {a: firsts[a].hour for a in contributors if a in firsts}
     if hours:
         last_hour = max(hours.values())
-        window = range(last_hour - preset.late_cohort_hours + 1, last_hour + 1)
+        # Clamped at 0: on a dataset younger than the window the unclamped
+        # arithmetic names hours that do not exist ("joined in hours -1–1").
+        # Nothing can be filed under a negative hour, so the only thing the
+        # missing floor ever produced was a fabricated string.
+        start = max(0, last_hour - preset.late_cohort_hours + 1)
+        window = range(start, last_hour + 1)
         late = [a for a, h in hours.items() if h in window]
         if late:
             span = (
