@@ -19,6 +19,20 @@ Shared vocabulary lives here so no detector re-derives it differently:
 :func:`near`
     The ±tol comparison, in integers end to end.  ``tol_bps`` comes off the
     config's float once, by ``round``, so ``0.10`` means exactly 1 000 bps.
+
+**The shared folds travel by keyword.**  One ``detect`` run used to derive the
+first-deposit map seven times over, so every consumer of a fold takes it as a
+keyword-only argument defaulting to ``None`` — ``firsts=`` for the first-row
+map, ``singles=`` for the single-deposit slice.  Two rules make that safe to
+rely on and both are pinned in ``tests/test_public_api.py``:
+
+* the parameters are **additive and keyword-only**, because maxpane's adapter
+  imports :func:`first_rows` and :func:`tier_a_components` across a
+  distribution boundary this suite cannot see; and
+* being handed a fold answers **exactly** what deriving it answers, so passing
+  one is an optimisation and never a second opinion.  Hand in a map that is not
+  the one :func:`first_rows` would derive and you are asking a different
+  question — that is the caller's business, and the library does not check it.
 """
 
 from __future__ import annotations
@@ -50,10 +64,17 @@ def deposit_counts(ds: Dataset) -> dict[str, int]:
     return counts
 
 
-def single_first_rows(ds: Dataset) -> dict[str, Deposit]:
-    """First deposits of wallets that deposited exactly once."""
+def single_first_rows(ds: Dataset, *, firsts=None) -> dict[str, Deposit]:
+    """First deposits of wallets that deposited exactly once.
+
+    *firsts* is the :func:`first_rows` map when the caller already holds one;
+    ``None`` derives it.  The counts are still walked here — they are a
+    different fold over the same deposits, and cheap.
+    """
     counts = deposit_counts(ds)
-    return {c: d for c, d in first_rows(ds).items() if counts[c] == 1}
+    if firsts is None:
+        firsts = first_rows(ds)
+    return {c: d for c, d in firsts.items() if counts[c] == 1}
 
 
 def tol_bps_of(near_amount_tol: float) -> int:
@@ -70,7 +91,7 @@ MAX_HOUR_GAP = 1
 
 
 def identical_amount_windows(
-    ds: Dataset, cfg
+    ds: Dataset, cfg, *, singles=None
 ) -> list[tuple[int, list[tuple[int, int, str]]]]:
     """Byte-identical single-deposit groups under the ONE window discipline.
 
@@ -88,9 +109,16 @@ def identical_amount_windows(
 
     Yields ``(amount_wei, window)`` with each window a sorted list of
     ``(hour, block_number, address)`` and ``len(window) >= 2``.
+
+    *singles* is the :func:`single_first_rows` slice when the caller already
+    holds one; ``None`` derives it.  Both amount-family signals walk these
+    windows, so ``detect`` computes the pass once and hands the **same list
+    objects** to each — nothing here or downstream mutates a window.
     """
+    if singles is None:
+        singles = single_first_rows(ds)
     by_amount: dict[int, list[tuple[int, int, str]]] = {}
-    for addr, dep in single_first_rows(ds).items():
+    for addr, dep in singles.items():
         by_amount.setdefault(dep.amount_wei, []).append(
             (dep.hour, dep.block_number, addr)
         )
@@ -121,7 +149,7 @@ def near(a: int, b: int, tol_bps: int) -> bool:
     return abs(a - b) * 10_000 <= tol_bps * max(a, b)
 
 
-def tier_a_components(ds: Dataset, cfg) -> list[set[str]]:
+def tier_a_components(ds: Dataset, cfg, *, firsts=None) -> list[set[str]]:
     """The behavioural pre-components: union-find over every tier-A edge
     (amount, split, sequence, cadence).
 
@@ -133,11 +161,17 @@ def tier_a_components(ds: Dataset, cfg) -> list[set[str]]:
 
     Imported lazily to keep this package's import graph acyclic (the signal
     modules import their shared helpers from here).
+
+    *firsts* is the :func:`first_rows` map when the caller already holds one;
+    ``None`` derives it.
     """
     from .amounts import amount_edges
     from .cadence import cadence_edges
     from .sequence import sequence_edges
     from .split import split_edges
+
+    if firsts is None:
+        firsts = first_rows(ds)
 
     parent: dict[str, str] = {}
 
@@ -151,10 +185,10 @@ def tier_a_components(ds: Dataset, cfg) -> list[set[str]]:
         return root
 
     for edges in (
-        amount_edges(ds, cfg),
-        split_edges(ds, cfg),
-        sequence_edges(ds, cfg),
-        cadence_edges(ds, cfg),
+        amount_edges(ds, cfg, firsts=firsts),
+        split_edges(ds, cfg, firsts=firsts),
+        sequence_edges(ds, cfg, firsts=firsts),
+        cadence_edges(ds, cfg, firsts=firsts),
     ):
         for e in edges:
             ra, rb = find(e.a), find(e.b)

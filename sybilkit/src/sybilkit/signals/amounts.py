@@ -41,8 +41,12 @@ STRENGTH_EXACT_ROUND = 0.75
 STRENGTH_NEAR = 0.7
 
 
-def amount_edges(ds: Dataset, cfg) -> list[Edge]:
+def amount_edges(ds: Dataset, cfg, *, firsts=None) -> list[Edge]:
     """Byte-identical and ±tol amount groups among single-deposit wallets.
+
+    *firsts* is the :func:`sybilkit.signals.first_rows` map when the caller
+    already holds one; ``None`` derives it.
+
 
     The byte-identical groups come from
     :func:`sybilkit.signals.identical_amount_windows` — the one windowing
@@ -85,11 +89,11 @@ def amount_edges(ds: Dataset, cfg) -> list[Edge]:
     pins that equality — and reddens if the welding rule ever stops holding it
     up, which is the assumption doing the work here.
     """
-    singles = single_first_rows(ds)
+    singles = single_first_rows(ds, firsts=firsts)
     edges: list[Edge] = []
 
     # ---- byte-identical groups, on the integer wei ----------------------
-    for amount, window in identical_amount_windows(ds, cfg):
+    for amount, window in identical_amount_windows(ds, cfg, singles=singles):
         if amount % ROUND_WEI:
             reason = Reason(
                 "amount",

@@ -37,8 +37,13 @@ STRENGTH_BURST = 0.85
 STRENGTH_DRIP = 0.8
 
 
-def cadence_edges(ds: Dataset, cfg) -> list[Edge]:
-    singles = single_first_rows(ds)
+def cadence_edges(ds: Dataset, cfg, *, firsts=None) -> list[Edge]:
+    """Burst and drip edges over the single-deposit wallets.
+
+    *firsts* is the :func:`sybilkit.signals.first_rows` map when the caller
+    already holds one; ``None`` derives it.
+    """
+    singles = single_first_rows(ds, firsts=firsts)
     edges: list[Edge] = []
 
     # ---- burst: same integer wei, >= min_size per block, >= 2 blocks ----

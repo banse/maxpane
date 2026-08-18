@@ -650,3 +650,131 @@ def test_the_curve_preset_signature_floors_like_the_contract() -> None:
     # WP1 landed the body; the stub assertion this replaces was the only line
     # of this test allowed to change.
     assert curve_points(10**18, 1000) == 1000
+
+
+# ===========================================================================
+# WP8 — the shared folds
+#
+# The cleanup lane's contract, and it is a *cross-distribution* one: maxpane's
+# ``data/curator_clusters.py`` imports ``sybilkit.signals.first_rows`` and
+# ``sybilkit.signals.tier_a_components`` by name, so a hoist that makes the
+# library compute a fold once may only ever GROW those signatures, and only
+# with keyword-only parameters carrying defaults.  These tests pin the growth
+# *and* pin that being handed the fold answers exactly what deriving it does —
+# a shared fold that changed a number would be a failed cleanup.
+# ===========================================================================
+
+from sybilkit.signals import (  # noqa: E402
+    first_rows,
+    identical_amount_windows,
+    single_first_rows,
+    tier_a_components,
+)
+from sybilkit.signals.amounts import amount_edges  # noqa: E402
+from sybilkit.signals.cadence import cadence_edges  # noqa: E402
+from sybilkit.signals.funding import funding_edges  # noqa: E402
+from sybilkit.signals.gas import gas_edges  # noqa: E402
+from sybilkit.signals.sequence import sequence_edges  # noqa: E402
+from sybilkit.signals.split import split_edges  # noqa: E402
+
+#: ``(callable, the positional parameters that were already frozen)``.  Every
+#: parameter after those must be KEYWORD_ONLY with a default — the additive
+#: shape the distribution boundary allows.
+SHARED_FOLD_SIGNATURES: tuple[tuple[object, tuple[str, ...]], ...] = (
+    (single_first_rows, ("ds",)),
+    (identical_amount_windows, ("ds", "cfg")),
+    (tier_a_components, ("ds", "cfg")),
+    (amount_edges, ("ds", "cfg")),
+    (split_edges, ("ds", "cfg")),
+    (sequence_edges, ("ds", "cfg")),
+    (cadence_edges, ("ds", "cfg")),
+    (gas_edges, ("ds", "cfg")),
+    (funding_edges, ("ds", "cfg")),
+)
+
+
+@pytest.mark.parametrize(
+    "fn,frozen", SHARED_FOLD_SIGNATURES, ids=lambda v: getattr(v, "__name__", "")
+)
+def test_the_shared_fold_parameters_are_additive_and_keyword_only(fn, frozen) -> None:
+    """The boundary rule, asserted structurally rather than remembered.
+
+    ``first_rows`` and ``tier_a_components`` are imported *by maxpane*, and
+    every other name here is one hop from them; a positional insertion or a
+    renamed leading parameter breaks a second distribution that this suite
+    cannot see.  So: the leading positional names are exactly what they were,
+    and anything the hoist added is keyword-only and defaults to ``None``.
+    """
+    params = inspect.signature(fn).parameters
+    names = list(params)
+    assert names[: len(frozen)] == list(frozen), names
+    for name in names[len(frozen) :]:
+        p = params[name]
+        assert p.kind is inspect.Parameter.KEYWORD_ONLY, (fn, name, p.kind)
+        assert p.default is None, (fn, name, p.default)
+
+
+def test_first_rows_itself_keeps_the_signature_maxpane_calls_it_with() -> None:
+    """The one fold maxpane derives for itself.  It takes a dataset and
+    nothing else, and the hoist must not have given it a knob — a defaulted
+    parameter here would be a fold the two distributions could disagree on."""
+    params = inspect.signature(first_rows).parameters
+    assert list(params) == ["ds"]
+    assert all(p.default is inspect.Parameter.empty for p in params.values())
+
+
+def test_the_signals_accept_a_precomputed_first_row_map_and_agree_with_deriving_it() -> None:
+    """``detect`` derived every contributor's first deposit seven times over.
+
+    Handing the map in must be indistinguishable from letting each signal walk
+    the deposits itself — same edges, same order, same reasons, same strengths
+    — for the four tier-A families, for ``gas``, and for the two shared folds
+    the amount family is built on.
+    """
+    from tests.conftest import build_labeled_dataset
+
+    ds = build_labeled_dataset()
+    cfg = DetectConfig()
+    firsts = first_rows(ds)
+    assert firsts, "the labeled subset has first deposits to share"
+
+    assert single_first_rows(ds, firsts=firsts) == single_first_rows(ds)
+    assert tier_a_components(ds, cfg, firsts=firsts) == tier_a_components(ds, cfg)
+
+    for fn in (amount_edges, split_edges, sequence_edges, cadence_edges):
+        assert fn(ds, cfg, firsts=firsts) == fn(ds, cfg), fn.__name__
+    groups = tier_a_components(ds, cfg, firsts=firsts)
+    assert gas_edges(ds, cfg, groups=groups, firsts=firsts) == gas_edges(
+        ds, cfg, groups=groups
+    )
+    # and with no groups handed in either, so the fallback path shares too
+    assert gas_edges(ds, cfg, firsts=firsts) == gas_edges(ds, cfg)
+
+
+def test_detect_walks_the_deposits_for_a_first_row_map_exactly_once() -> None:
+    """The hoist itself, and the only way to see it is to count the walks.
+
+    Seven callers used to derive the same map inside one ``detect`` run
+    (``amounts`` twice, ``split``, ``sequence``, ``cadence``, ``gas``, and
+    ``detect``'s own fold).  Counting is what makes this test bite: an
+    agreement test alone stays green with every recomputation still in place.
+    """
+    import sybilkit.signals as signals_mod
+
+    real = signals_mod.first_rows
+    calls = 0
+
+    def counting(ds):
+        nonlocal calls
+        calls += 1
+        return real(ds)
+
+    from tests.conftest import build_labeled_dataset
+
+    ds = build_labeled_dataset()
+    signals_mod.first_rows = counting
+    try:
+        detect(ds, DetectConfig())
+    finally:
+        signals_mod.first_rows = real
+    assert calls == 1, calls

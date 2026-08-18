@@ -172,13 +172,20 @@ def detect(ds: Dataset, config: DetectConfig = DetectConfig()) -> DetectResult:
 
     contributors = {dep.contributor for dep in ds.deposits}
 
+    # The fold every signal below is built on, computed **once** and handed
+    # down by keyword.  Deriving it per signal cost one run seven walks of the
+    # deposits for the same map; the answer was identical every time, which is
+    # what makes sharing it a cleanup and not a change.  Nothing downstream
+    # mutates it.
+    firsts = first_rows(ds)
+
     # ---- 1. tier A draws the components ---------------------------------
     uf = _UnionFind()
     for addr in contributors:
         uf.find(addr)
     tier_a: list[Edge] = []
     for edge_fn in (amount_edges, split_edges, sequence_edges, cadence_edges):
-        tier_a.extend(edge_fn(ds, config))
+        tier_a.extend(edge_fn(ds, config, firsts=firsts))
     for edge in tier_a:
         uf.union(edge.a, edge.b)
     components: dict[str, set[str]] = {}
@@ -188,7 +195,7 @@ def detect(ds: Dataset, config: DetectConfig = DetectConfig()) -> DetectResult:
 
     # ---- 2. tier B/C corroborate inside them ----------------------------
     all_edges = list(tier_a)
-    all_edges.extend(gas_edges(ds, config, groups=groups))
+    all_edges.extend(gas_edges(ds, config, groups=groups, firsts=firsts))
     all_edges.extend(funding_edges(ds, config, groups=groups))
 
     # ---- 3. the compound gate -------------------------------------------
@@ -211,7 +218,6 @@ def detect(ds: Dataset, config: DetectConfig = DetectConfig()) -> DetectResult:
         if cur is None or edge.reason.strength > cur.strength:
             families[edge.family] = edge.reason
 
-    firsts = first_rows(ds)
     # Sort for ourselves; the last write is then the final high-water weight.
     # ``ds.deposits`` arrives "in whatever order the caller supplied"
     # (:class:`~sybilkit.model.Dataset`) and every other reader in the library

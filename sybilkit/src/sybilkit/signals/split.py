@@ -24,7 +24,7 @@ from __future__ import annotations
 from ..cluster import Edge
 from ..model import Dataset
 from ..report import Reason
-from . import eth_str, identical_amount_windows
+from . import eth_str, identical_amount_windows, single_first_rows
 
 #: The implied pot ``k · amount`` above which an equal split stops being a
 #: human coincidence.  50 ETH is far above every measured control ladder and
@@ -34,11 +34,18 @@ MIN_POT_WEI = 50 * 10**18
 STRENGTH_SPLIT = 0.8
 
 
-def split_edges(ds: Dataset, cfg) -> list[Edge]:
+def split_edges(ds: Dataset, cfg, *, firsts=None) -> list[Edge]:
     """Equal-split groups: ≥ ``cfg.min_size`` byte-identical single-deposit
-    amounts in one wave window whose implied pot clears :data:`MIN_POT_WEI`."""
+    amounts in one wave window whose implied pot clears :data:`MIN_POT_WEI`.
+
+    *firsts* is the :func:`sybilkit.signals.first_rows` map when the caller
+    already holds one; ``None`` derives it.
+    """
     edges: list[Edge] = []
-    for amount, window in identical_amount_windows(ds, cfg):
+    windows = identical_amount_windows(
+        ds, cfg, singles=single_first_rows(ds, firsts=firsts)
+    )
+    for amount, window in windows:
         k = len(window)
         if k < cfg.min_size or amount * k < MIN_POT_WEI:
             continue

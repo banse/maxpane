@@ -53,13 +53,19 @@ STRENGTH_TWO_AXES = 0.85
 STRENGTH_LIMIT_AND_QUANTIZED_FEE = 0.7
 
 
-def gas_edges(ds: Dataset, cfg, *, groups=None) -> list[Edge]:
-    """Uniformity classes over *groups* (default: the tier-A components)."""
+def gas_edges(ds: Dataset, cfg, *, groups=None, firsts=None) -> list[Edge]:
+    """Uniformity classes over *groups* (default: the tier-A components).
+
+    *firsts* is the :func:`sybilkit.signals.first_rows` map when the caller
+    already holds one; ``None`` derives it, and it seeds the tier-A pass too
+    when no *groups* were handed in.
+    """
     if not ds.txs:
         return []  # tier B not run: silent, never synthetic
-    firsts = first_rows(ds)
+    if firsts is None:
+        firsts = first_rows(ds)
     if groups is None:
-        groups = tier_a_components(ds, cfg)
+        groups = tier_a_components(ds, cfg, firsts=firsts)
 
     edges: list[Edge] = []
     for group in groups:

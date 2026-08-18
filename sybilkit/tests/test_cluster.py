@@ -410,8 +410,11 @@ def test_an_unknown_edge_family_is_a_programming_error_not_a_second_family() -> 
     ds = _two_family_farm(fresh=True)
     real = amounts_mod.amount_edges
 
-    def poisoned(ds_, cfg_):
-        edges = real(ds_, cfg_)
+    def poisoned(ds_, cfg_, **folds):
+        # ``**folds`` forwards whatever shared folds ``detect`` hands its
+        # signals (``firsts=``/``windows=``), so this double stays a double and
+        # not a second, narrower signature.
+        edges = real(ds_, cfg_, **folds)
         bad = Reason("amounts ", "misspelt family", 0.9)
         return edges + [
             Edge(edges[0].a, edges[0].b, "amounts ", 0.9, bad),

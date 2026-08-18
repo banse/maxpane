@@ -22,10 +22,15 @@ MAX_BLOCK_GAP = 2
 STRENGTH_SEQUENCE = 0.9
 
 
-def sequence_edges(ds: Dataset, cfg) -> list[Edge]:
+def sequence_edges(ds: Dataset, cfg, *, firsts=None) -> list[Edge]:
     """Maximal consecutive-index runs (≥ ``cfg.min_size``) with ≤ 2-block
-    spacing and near-identical amounts, as spanning chains."""
-    firsts = first_rows(ds)
+    spacing and near-identical amounts, as spanning chains.
+
+    *firsts* is the :func:`sybilkit.signals.first_rows` map when the caller
+    already holds one; ``None`` derives it.
+    """
+    if firsts is None:
+        firsts = first_rows(ds)
     tol_bps = tol_bps_of(cfg.near_amount_tol)
     by_index = sorted(
         (index, addr) for addr, index in ds.first_index.items() if addr in firsts
