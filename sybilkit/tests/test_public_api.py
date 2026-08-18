@@ -855,3 +855,41 @@ def test_the_two_amount_signals_are_handed_the_very_same_windows() -> None:
     before = [(amount, list(window)) for amount, window in seen[0]]
     detect(ds, DetectConfig())
     assert [(amount, list(window)) for amount, window in seen[0]] == before
+
+
+def test_the_preset_and_the_signals_agree_on_first_deposits(monkeypatch) -> None:
+    """``curator.first_deposits`` and ``signals.first_rows`` are the same fold.
+
+    They were two implementations of it — a sort-and-``setdefault`` here, a
+    min-comparison there — agreeing today because nobody had changed either.
+    That is the shape ruling R1 already refused for the curve ("the second copy
+    is the one nobody mutation-tests"), and the same argument applies to a fold
+    the detector and the preset both key their whole output off.
+
+    Comparing the two to *each other* would be vacuous once one delegates, so
+    they are both compared to a third derivation written out here — the plain
+    "smallest ``(block_number, log_index)`` per contributor" an auditor would
+    write — and the delegation itself is proven separately, by patching the
+    name the preset imported and watching the preset's answer move with it.
+    """
+    import sybilkit.curator as curator_mod
+
+    from tests.conftest import build_labeled_dataset, build_population_dataset
+
+    for ds in (build_labeled_dataset(), build_population_dataset()):
+        oracle: dict = {}
+        for dep in ds.deposits:
+            cur = oracle.get(dep.contributor)
+            if cur is None or (dep.block_number, dep.log_index) < (
+                cur.block_number,
+                cur.log_index,
+            ):
+                oracle[dep.contributor] = dep
+        assert oracle, "the fixture has deposits to fold"
+        assert first_rows(ds) == oracle
+        assert curator_mod.first_deposits(ds) == oracle
+
+    ds = build_labeled_dataset()
+    sentinel: dict = {}
+    monkeypatch.setattr(curator_mod, "first_rows", lambda d: sentinel)
+    assert curator_mod.first_deposits(ds) is sentinel

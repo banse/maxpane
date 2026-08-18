@@ -48,6 +48,7 @@ from .cluster import DetectConfig
 from .curve import curve_points  # re-export, ruling R1 — never a second copy
 from .model import Dataset
 from .report import Cluster, DetectResult
+from .signals import first_rows  # the one first-deposit fold, ruling R1's rule
 
 #: Words a rendered ``label`` or ``detail`` may never contain.  The chain
 #: cannot prove intent — one person spreading a deposit and nine people copying
@@ -232,11 +233,17 @@ def credited_totals(ds: Dataset) -> dict[str, int]:
 
 
 def first_deposits(ds: Dataset):
-    """Each contributor's first deposit, in chain order."""
-    first: dict[str, object] = {}
-    for dep in sorted(ds.deposits, key=lambda d: (d.block_number, d.log_index)):
-        first.setdefault(dep.contributor, dep)
-    return first
+    """Each contributor's first deposit, in chain order.
+
+    :func:`sybilkit.signals.first_rows` under the preset's own name.  It was a
+    second implementation of that fold — sort-then-``setdefault`` against a
+    min-comparison — agreeing only because nobody had changed either, which is
+    exactly the shape ruling R1 refused for the curve: the second copy is the
+    one nobody mutation-tests, and the two drift where nobody looks.  The
+    detector and the preset key their whole output off this map, so there is
+    one of it.
+    """
+    return first_rows(ds)
 
 
 # ---------------------------------------------------------------------------
