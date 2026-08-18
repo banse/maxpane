@@ -130,7 +130,14 @@ def decode_deposit(row: Any) -> Deposit | None:
     tx_hash = row.get("transactionHash")
     if contributor is None or hour is None or block is None or log_index is None:
         return None
-    if not isinstance(tx_hash, str) or not tx_hash.startswith("0x"):
+    # Strip and lowercase *before* looking for the prefix, exactly as
+    # `model._tx_hash` does since the #9 fix: one spelling cannot be malformed
+    # here and valid in the coercers a sweep's own `dataset()` runs every row
+    # back through.
+    if not isinstance(tx_hash, str):
+        return None
+    tx_hash = tx_hash.strip().lower()
+    if not tx_hash.startswith("0x"):
         return None
     values = {}
     for name, word in zip(DEPOSIT_DATA_WORDS, words):
@@ -148,7 +155,7 @@ def decode_deposit(row: Any) -> Deposit | None:
         new_weight_wei=values["new_weight_wei"],
         tx_count=values["tx_count"],
         block_number=block,
-        tx_hash=tx_hash.lower(),
+        tx_hash=tx_hash,
         log_index=log_index,
         ts=None if ts is None else float(ts),
     )

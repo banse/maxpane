@@ -883,6 +883,29 @@ def test_the_two_copies_of_the_replay_rule_are_character_identical() -> None:
     )
 
 
+def test_an_uppercase_prefixed_log_hash_decodes_like_a_lowercase_one() -> None:
+    """**R3.8(b), WP2's finding, the ``logs.py`` half.**  ``_tx_hash`` in
+    ``model.py`` strips and lowercases *before* looking for the ``0x``, after
+    the #9 fix; this decoder still compared the raw string, so ``0X…`` was a
+    row this module dropped and ``Dataset.from_events`` accepted.
+
+    One spelling cannot be valid in one module and malformed in the other when
+    the two are two ends of the same pipe — a sweep's own ``dataset()`` runs
+    every row back through the coercers.  Not a live defect on any endpoint we
+    use (JSON-RPC answers lowercase), which is exactly why it would have
+    survived until a decoder somewhere else changed.
+    """
+    row = deposited_row(
+        ALICE, hour=0, amount=10**17, block=7, log_index=1,
+        tx_hash="0X" + "AB" * 32,
+    )
+    sweep = _sweep_of([row])
+    assert sweep is not None
+    assert len(sweep.deposits) == 1, "the row the coercers would have accepted"
+    assert sweep.deposits[0].tx_hash == "0x" + "ab" * 32
+    assert len(sweep.dataset().deposits) == 1  # and the two ends agree
+
+
 def test_duplicate_rows_are_deduped_on_tx_hash_and_log_index() -> None:
     row = deposited_row(ALICE, hour=0, amount=10**17, block=4, log_index=1)
 
@@ -944,6 +967,32 @@ def test_tx_fingerprints_are_batched_and_decoded() -> None:
     assert (one.gas_limit, one.tx_type, one.max_priority_fee_wei) == (
         91_600, 2, 100_000_000,
     )
+
+
+def test_an_uppercase_prefixed_tx_hash_is_still_a_fingerprint() -> None:
+    """**R3.8(b), the ``txs.py`` half** — the same one-line prefix check, and
+    the same disagreement with ``model.py``'s coercers.
+
+    A hash this decoder refuses does not degrade to a missing field: the whole
+    body is dropped and the hash lands in ``pending``, so the group loses a
+    fingerprint and ``gas_edges``' coverage rule reads it as a hole.
+    """
+    wanted = "0x" + "cd" * 32
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        return httpx.Response(200, json=[
+            {"jsonrpc": "2.0", "id": c["id"],
+             "result": _tx_reply("0X" + c["params"][0][2:].upper())}
+            for c in batch
+        ])
+
+    got = asyncio.run(
+        txs.fetch_tx_fingerprints([wanted], client=_client(handler), config=FAST)
+    )
+    assert got is not None
+    assert got.pending == (), got.pending
+    assert got.fingerprints[wanted].tx_hash == wanted
 
 
 def test_a_legacy_transaction_keeps_its_missing_fee_fields_as_none() -> None:
@@ -2080,6 +2129,71 @@ def test_a_transient_failure_is_never_frozen_into_a_resolved_row() -> None:
     assert healed is not None
     assert healed.funding[ALICE.lower()].funder == FUNDER.lower()
     assert healed.pending == ()
+
+
+@pytest.mark.parametrize("spelling", ["", "0xdeadbeef", "null"], ids=["empty", "short", "word"])
+def test_a_funder_that_is_not_an_address_leaves_the_address_unresolved(
+    spelling: str,
+) -> None:
+    """**R3.8(a), WP2's finding.**  A resolved row with a *falsy* funder is the
+    worst shape this module can write.
+
+    ``Funding(funder=funder, hops=1 if funder else None)`` turns an empty
+    string into a row that reads exactly like the honest measurement "walked
+    both histories, nobody funded this wallet" — and the documented resume
+    recipe passes ``funding`` back as ``known``, so the address is never looked
+    at again.  A failed read frozen as a measurement: the one thing
+    :class:`FundingSweep`'s docstring spends a paragraph forbidding.
+
+    A ``from`` we cannot read is not a funder, so the address stays **pending**
+    and unreadable.  Note that skipping the *entry* instead would be worse: the
+    next incoming transfer up would then be resolved as the "first" one, which
+    invents a funder rather than admitting to a hole.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        who = str(request.url).rsplit("/addresses/", 1)[1].split("/")[0].lower()
+        if who == ALICE.lower():
+            return _page(
+                [{"from": {"hash": spelling}, "to": {"hash": ALICE},
+                  "block_number": 7}],
+                None,
+            )
+        return _page([_incoming(FUNDER, who, 7)], None)
+
+    sweep = asyncio.run(
+        blockscout.fetch_funding([ALICE, BOB], client=_client(handler), config=FAST)
+    )
+    assert sweep is not None
+    assert ALICE.lower() not in sweep.funding, sweep.funding
+    assert sweep.pending == (ALICE.lower(),)
+    assert sweep.pending_reasons[ALICE.lower()] == blockscout.PENDING_UNREADABLE
+    assert sweep.unreadable == (ALICE.lower(),)
+    assert sweep.funding[BOB.lower()].funder == FUNDER.lower()
+
+
+def test_a_hand_edited_cursor_never_carries_an_unreadable_best_so_far() -> None:
+    """And the door the same value arrives through twice: ``page_cursors``
+    round-trips through a consumer's cache file.
+
+    A cursor whose ``funder`` is not an address would otherwise be adopted as
+    the best-so-far, beat every genuine transfer at a higher block, and make
+    the walk resolve to it — or, with R3.8(a) in place, keep the address
+    pending forever off one hand-edited byte.  ``_resume_from`` reads
+    tolerantly, and tolerantly means dropping it, not believing it.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _page([_incoming(FUNDER, ALICE, 7)], None)
+
+    poisoned = {ALICE.lower(): {"params": {"block_number": "800"},
+                                "funder": "", "block": 5}}
+    sweep = asyncio.run(
+        blockscout.fetch_funding(
+            [ALICE], client=_client(handler), config=FAST, cursors=poisoned
+        )
+    )
+    assert sweep is not None
+    assert sweep.funding[ALICE.lower()].funder == FUNDER.lower()
+    assert sweep.pending == ()
 
 
 def test_a_page_whose_items_are_null_is_unreadable_not_a_finished_walk() -> None:

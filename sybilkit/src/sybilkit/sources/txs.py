@@ -74,10 +74,18 @@ def decode_tx(payload: Any) -> Tx | None:
     if not isinstance(payload, dict):
         return None
     tx_hash = payload.get("hash")
-    if not isinstance(tx_hash, str) or not tx_hash.startswith("0x"):
+    # Strip and lowercase *before* the prefix check, exactly as
+    # `model._tx_hash` does since the #9 fix: a spelling the coercers accept
+    # must not be a body this decoder drops, because a dropped body is not a
+    # missing field — the hash lands in `pending` and the group loses a
+    # fingerprint the coverage rule then reads as a hole.
+    if not isinstance(tx_hash, str):
+        return None
+    tx_hash = tx_hash.strip().lower()
+    if not tx_hash.startswith("0x"):
         return None
     return Tx(
-        tx_hash=tx_hash.lower(),
+        tx_hash=tx_hash,
         nonce=hex_to_int(payload.get("nonce")),
         max_priority_fee_wei=hex_to_int(payload.get("maxPriorityFeePerGas")),
         max_fee_wei=hex_to_int(payload.get("maxFeePerGas")),

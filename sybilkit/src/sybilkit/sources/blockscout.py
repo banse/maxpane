@@ -143,6 +143,25 @@ def _moved_value(item: Mapping) -> bool:
         return False
 
 
+def _is_address(value: Any) -> bool:
+    """True for a 20-byte hex address, on ``model._addr``'s spelling rule.
+
+    A funder that is not one is a **hole**, and this module's whole discipline
+    is that a hole never gets written down as a measurement.  The shape that
+    made it necessary is the falsy one: ``Funding(funder="", hops=None)`` is
+    byte-for-byte how "we walked both histories and nobody funded this wallet"
+    is recorded, so an unreadable ``from`` would be indistinguishable from the
+    real negative — and the resume recipe passes ``funding`` back as ``known``,
+    so nothing would ever look at that address again.
+    """
+    if not isinstance(value, str):
+        return False
+    text = value.strip().lower()
+    if len(text) != 42 or not text.startswith("0x"):
+        return False
+    return all(c in "0123456789abcdef" for c in text[2:])
+
+
 def _first_incoming(
     items: Iterable[Any], address: str, *, require_value: bool = False
 ) -> tuple[str, int] | None:
@@ -223,8 +242,12 @@ def _resume_from(entry: Any) -> tuple[Any, tuple[str, int] | None, str]:
     funder = entry.get("funder")
     block = entry.get("block")
     oldest: tuple[str, int] | None = None
-    if isinstance(funder, str) and isinstance(block, int) and not isinstance(block, bool):
-        oldest = (funder.lower(), block)
+    if _is_address(funder) and isinstance(block, int) and not isinstance(block, bool):
+        # Any *string* used to be adopted as the best-so-far, so a hand-edited
+        # `""` outranked every genuine transfer at a higher block and decided
+        # the walk.  Tolerant means dropping what we cannot read, not believing
+        # it: without a best-so-far the resumed walk simply finds one again.
+        oldest = (funder.strip().lower(), block)
     stage = entry.get("stage")
     if stage != _STAGE_INTERNAL:
         stage = _STAGE_EXTERNAL
@@ -457,6 +480,16 @@ async def fetch_funding(
             )
             if reachable:
                 reached += 1
+            if outcome == _COMPLETE and funder is not None and not _is_address(funder):
+                # A `from` we cannot read is not a funder.  Resolving it would
+                # write `Funding(funder="", hops=None)` — the exact row that
+                # means "walked to the end, nobody funded this wallet" — so a
+                # failed read would be frozen as a measurement and the next
+                # pass, which passes `funding` back as `known`, would skip the
+                # address forever.  Skipping the *entry* instead would be
+                # worse: the next transfer up would be resolved as the "first"
+                # one, which invents a funder rather than admitting a hole.
+                outcome = PENDING_UNREADABLE
             if outcome != _COMPLETE:
                 # NOT resolved.  A row here would be read as an answer by the
                 # very next pass (which passes `funding` as `known`) and the
