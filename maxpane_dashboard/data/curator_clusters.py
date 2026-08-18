@@ -497,8 +497,10 @@ def slot_payload(
     No boolean verdict enters the file: the groups carry membership, families
     and a *band word*, all of which the next sweep may revise.  The
     ``enrichment`` cursor (accumulated fingerprints, resolved funders, the
-    pending set and the page bound) rides in the same payload so coverage
-    extends incrementally across sweeps — and across restarts.
+    pending set, the page bound and the per-address page cursors) rides in
+    the same payload so coverage extends incrementally across sweeps — and
+    across restarts.  Everything new goes **inside** that dict, which is why
+    this payload's own key set has not changed since it was frozen.
     """
     payload: dict[str, Any] = {
         "operator_rows": [dict(row) for row in result.operator_rows],
@@ -586,6 +588,16 @@ class EnrichmentSweep:
     available and nothing was attempted — which is a different fact from
     ``tx_ok``/``funding_ok`` being ``False`` (attempted and the source did not
     answer) or ``None`` (nothing to ask, or skipped).
+
+    ``funding_cursors`` is ``sybilkit``'s per-address
+    :attr:`~sybilkit.sources.blockscout.FundingSweep.page_cursors`, carried
+    through so a **page-bounded** address resumes where it stopped instead of
+    re-walking its first pages every sweep forever.  ``pending`` alone said
+    "come back to this one" without saying where, and pendings head the
+    budget, so one long history crowded out addresses nobody had looked at
+    yet.  It is defaulted and last, so a persisted payload written before it
+    existed still constructs — that consumer simply restarts each walk at
+    page 1, which is what it did anyway.
     """
 
     txs: dict[str, dict]
@@ -596,15 +608,24 @@ class EnrichmentSweep:
     fetched: bool
     tx_ok: bool | None
     funding_ok: bool | None
+    funding_cursors: dict[str, dict] = field(default_factory=dict)
 
     def state(self) -> dict[str, Any]:
-        """The cursor the slot payload persists and the next sweep resumes."""
+        """The cursor the slot payload persists and the next sweep resumes.
+
+        ``"cursors"`` rides **inside** this dict, which is itself the
+        ``enrichment`` entry of :func:`slot_payload` — so ``SLOT_CLUSTERS``'s
+        own shape does not change and ``curator_cache`` needs no version bump.
+        """
         return {
             "txs": dict(self.txs),
             "funding": dict(self.funding),
             "pending": list(self.funding_pending),
             "reasons": dict(self.funding_reasons),
             "page_bound": self.page_bound,
+            "cursors": {
+                addr: dict(entry) for addr, entry in self.funding_cursors.items()
+            },
         }
 
 
@@ -665,6 +686,12 @@ async def fetch_enrichment(
     ``"unreadable"`` one is retried as-is — spending more pages on a failing
     endpoint is the one action that cannot help.
 
+    ``state["cursors"]`` is the **per-address** half of that resume, handed
+    to ``fetch_funding(cursors=…)``: a page-bounded address continues where
+    it stopped rather than re-reading its first pages every sweep.  It is
+    read with ``.get``, exactly like the four keys above it, so a payload
+    persisted before the cursor existed loads and resumes from page 1.
+
     **No session, no fetch.**  With neither *client* nor *transport* the
     carried state comes back untouched (``fetched=False``): production hands
     the manager's own HTTP session in, tests hand a MockTransport in, and a
@@ -692,6 +719,16 @@ async def fetch_enrichment(
         str(key): str(value)
         for key, value in (prior.get("reasons") or {}).items()
     }
+    # The per-address page cursor, read with the SAME tolerant shape as the
+    # four above: a payload written before it existed has no such key, and
+    # `.get` is the whole compatibility story — that cache file must load and
+    # simply resume each walk from page 1.  The library reads each *entry*
+    # tolerantly too, so a hand-edited one costs a restart, not a crash.
+    cursors: dict[str, dict] = {
+        str(key).lower(): dict(value)
+        for key, value in (prior.get("cursors") or {}).items()
+        if isinstance(value, Mapping)
+    }
 
     bound = prior.get("page_bound")
     if not isinstance(bound, int) or isinstance(bound, bool) or bound < 1:
@@ -712,6 +749,7 @@ async def fetch_enrichment(
             fetched=False,
             tx_ok=None,
             funding_ok=None,
+            funding_cursors=cursors,
         )
 
     wanted_hashes: list[str] = []
@@ -758,6 +796,7 @@ async def fetch_enrichment(
             },
             budget=funding_budget,
             max_pages=bound,
+            cursors=cursors,
             client=client,
             transport=transport,
             sleep=sleep,
@@ -771,6 +810,14 @@ async def fetch_enrichment(
             }
             pending = fsweep.pending
             reasons = dict(fsweep.pending_reasons)
+            # Replaced, not merged: the sweep returns the cursors of exactly
+            # the addresses that still need one, so an address it finished
+            # drops its resume point rather than carrying a dead walk
+            # position in the cache file forever.
+            cursors = {
+                addr: dict(entry)
+                for addr, entry in fsweep.page_cursors.items()
+            }
 
     return EnrichmentSweep(
         txs=known_txs,
@@ -781,6 +828,7 @@ async def fetch_enrichment(
         fetched=True,
         tx_ok=tx_ok,
         funding_ok=funding_ok,
+        funding_cursors=cursors,
     )
 
 
