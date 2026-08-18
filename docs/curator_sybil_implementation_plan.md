@@ -459,6 +459,26 @@ Genuine PRD gaps/contradictions, noted here rather than silently resolved (per t
     ENS + `y`-view keys. WP0 extends the **live** file, not the wave-2 brief's list, and every
     count-based test in `test_curator_models.py` must be re-derived, not hand-bumped.
 
+### §6 close-out (WP6, 2026-08-18) — how each risk actually landed
+
+Every one of the eleven is resolved and the resolution is on the record below. **All eleven
+landed on the recommendation**, so nothing in §6 above is struck or rewritten; this block is the
+outcome, appended rather than edited into the risks, so a reader can still see what was open.
+
+| # | landed | evidence |
+|---|---|---|
+| 1 | **as recommended** — `clean_list_export_path` is NOT in `CURATOR_KEYS` (73 keys, checked). The screen owns the write (`action_export_clean_list`, injectable `export_dir=`) and hands the widget the path through `mark_exported`, never through `update_data`. | `test_the_export_path_renders_only_after_the_screen_reports_a_write` |
+| 2 | **as recommended** — `flagged_points_share_pct` is override-with-fallback: the library's number once `SLOT_CLUSTERS` has last-good, Tier-A's until then, so the FARM rail row and the OPERATORS summary agree. No `linked_points_share_pct` was added. | `curator_manager.py` merge; WP3 report §4 |
+| 3 | **as recommended** — `flagged` stays the Tier-A bool and `link_conf` is an additive `leaderboard_rows` sub-key filled by the manager's merge. `curator_signals.py` is byte-identical. Glyphs: `⚑` high · `◌` low · empty clean · `?` not analyzed. | `test_link_conf_grades_the_flag`; `git diff main -- .../curator_signals.py` empty |
+| 4 | **resolved** — the name is `sybilkit`, locked before WP0 and unchanged since. | `sybilkit/pyproject.toml` |
+| 5 | **as recommended** — the adapter drives `sybilkit.sources` with an injected client/transport. `data/curator_client.py` gained no method and is not in this build's diff. | `curator_clusters.fetch_enrichment` |
+| 6 | **mitigated, and the residual risk did not fire.** WP0's worst-case rows over-provisioned the reason string to four phrases; WP3.9 pinned the adapter's shape against them; the WP6 live smoke found **no disagreement that needed a re-pin** — the analysis body still clears at 137 against live rows. |
+| 7 | **as recommended** — analysis failures fold into the existing `logs` group, and only while there is nothing to serve. `CURATOR_DEGRADED_GROUPS` is untouched. The analyzed-nothing (`0`) vs cannot-analyze (`None`) distinction lives in the keys and widgets. | offline smoke: `degraded == ['logs', 'state']`, all twelve analysis keys `None`, nothing `0` |
+| 8 | **Option A, as recommended** — documented manual release in `sybilkit/README.md`. Option B was NOT added: sybilkit has no PyPI project or trusted-publishing config yet, so the job could only fail at upload. Verified that the root workflow builds only maxpane (294-entry wheel, zero `sybilkit` entries, no `sybilkit` in `Requires-Dist`). |
+| 9 | **held** — the game had **not** settled by 2026-08-18 (live: hour 31, `JUDGED`, list OPEN). The settled path is covered by WP4's phase tests rather than by a live observation, and the sweep runs off the frozen log history in any phase. |
+| 10 | **held** — the two Tier-A implementations coexist. `test_curator_signals_never_imports_sybilkit` and `test_only_curator_clusters_imports_sybilkit` are the guardrails, and both were re-run in the WP6 audit. |
+| 11 | **as recommended** — the live file was extended and the counts are derived. `len(CURATOR_KEYS) == 73`. |
+
 ---
 
 ## 7. Testing & honesty gates (apply to every WP)

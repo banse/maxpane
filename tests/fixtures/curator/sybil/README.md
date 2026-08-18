@@ -64,9 +64,41 @@ SYNTHETIC — calibrated from docs/curator_sybil_data/, re-point at a live analy
 ```
 
 so `rg "SYNTHETIC —"` stays the whole checklist. They are *shaped* payloads: the
-numbers are measured, but no live analysis sweep has ever produced a row in this
-schema, because WP3 has not been written. When it has, re-point them at a real
-bundle and drop the marker.
+numbers are measured, but no live analysis sweep had ever produced a row in this
+schema at the time they were written, because WP3 did not exist yet.
+
+**WP6 close-out (2026-08-18): the three markers stay, and they are now
+permanent.** WP3 exists and the live sweep does produce rows in this schema, so
+the sentence this paragraph used to end with — "re-point them at a real bundle
+and drop the marker" — is retired. Two reasons, and the second is the one that
+matters:
+
+1. These are **worst-case envelopes**, not snapshots. WP4 and WP5 pin column
+   widths against them. A live bundle is one sample of a population that moves
+   every hour, so re-pointing the width pins at one would calibrate the layout to
+   whatever the list looked like that afternoon — the exact mistake CLAUDE.md
+   records for the surf market panel's IMD/FP peg, where a width measured against
+   a 2.75% spread was a column short the moment the peg got healthy. The 56-column
+   `degraded_row` detail and the 12-character name probe exist precisely because
+   no single live bundle is guaranteed to contain them.
+2. The numbers already *are* live reads. `docs/curator_sybil_data/` is the
+   2026-08-17 sweep of the real population, and `tests/data/test_curator_sybil_data.py`
+   re-derives every value in these files straight from it. "SYNTHETIC" here means
+   *shaped into the panel's schema by hand*, not *invented* — which is why
+   `labeled_subset.json`, joined from the same archive without reshaping, carries
+   no marker at all.
+
+The marker literal is deliberately unchanged rather than reworded to
+`SYNTHETIC — permanent`: `tests/curator_sybil_fixtures.SYNTHETIC_MARKER` and
+`test_the_synthetic_slices_are_marked_and_the_measured_one_is_not` both pin the
+exact string, and a doc close-out is not a reason to move a pinned literal in
+three files. `rg "SYNTHETIC —"` still finds all three, which is the property the
+ledger was built for.
+
+The 33 `SYNTHETIC — re-point` markers elsewhere under `tests/` are a **different
+generation** — the base curator build's, closed by that build's WP7.13 against
+the live capture bundles — and are none of this build's business. `sybilkit/tests/`
+carries no marker of either generation.
 
 `labeled_subset.json` deliberately carries **no** marker. Every byte of it is
 measured data — joined across five files, never invented.
