@@ -548,6 +548,28 @@ BUILDERS = {
 # ---------------------------------------------------------------------------
 
 
+def _non_negative_int(text: str) -> int:
+    """An ``int`` that is not negative, as an ``argparse`` ``type=``.
+
+    A negative budget used to reach ``fetch_funding`` and slice ``wanted[:-5]``
+    — "all but the last five", the exact opposite of a cap on five.  The
+    library clamps it now (a negative budget is a zero budget), which keeps
+    every caller safe and turns a typed minus sign into a pass that quietly
+    reads nothing.  At a command line the typo is nameable, so it is named
+    here instead.
+    """
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not an integer") from None
+    if value < 0:
+        raise argparse.ArgumentTypeError(
+            f"{value} is negative; this is a cap, and 0 already means "
+            "'do not run this tier'"
+        )
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sybilkit",
@@ -578,7 +600,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="evidence tiers to fetch: a=logs, b=+gas, c=+funding")
         p.add_argument("--max-txs", type=int, default=5_000,
                        help="cap on tier-B fingerprint lookups")
-        p.add_argument("--funding-budget", type=int, default=0,
+        p.add_argument("--funding-budget", type=_non_negative_int, default=0,
                        help="cap on tier-C funding lookups (slow; 0 disables)")
         p.add_argument("--min-size", type=int, default=5)
         p.add_argument("--min-families", type=int, default=2)

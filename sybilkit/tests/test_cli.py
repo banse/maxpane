@@ -800,6 +800,27 @@ def test_a_non_utc_offset_is_converted_rather_than_suffixed_with_z(
     assert out_json(capsys)["generated_at"] == "2026-08-17T19:44:40Z"
 
 
+def test_a_negative_funding_budget_is_rejected_at_the_command_line(capsys) -> None:
+    """**B3, the CLI half.**  ``fetch_funding`` now clamps a negative budget to
+    zero — it used to slice ``wanted[:-5]``, which looks up *all but* the last
+    five addresses, the exact opposite of a cap.  The clamp keeps the library
+    safe for every caller; it also turns a typo into a pass that quietly reads
+    nothing.  At the command line the typo is nameable, so it is named.
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["analyze", "--dataset", str(LABELED), *OFFLINE_RATE,
+                  "--funding-budget", "-5"])
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "--funding-budget" in err and "-5" in err
+
+    # The values that mean something still parse, zero included: zero is
+    # "tier C off", which `--tiers abc` already refuses separately.
+    parser = cli.build_parser()
+    assert parser.parse_args(["analyze", "--funding-budget", "0"]).funding_budget == 0
+    assert parser.parse_args(["analyze", "--funding-budget", "40"]).funding_budget == 40
+
+
 def test_a_malformed_labeled_bundle_is_a_message_not_a_key_error_traceback(
     tmp_path, capsys
 ) -> None:
