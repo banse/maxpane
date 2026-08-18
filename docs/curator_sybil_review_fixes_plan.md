@@ -1157,8 +1157,9 @@ handed on.
 
 ## 10.1 Measured state
 
-58 commits after the review baseline `33eb8b4`, across two distributions, plus this close-out's
-own three.
+**59** commits after the review baseline `33eb8b4`, across two distributions — counted with
+`git rev-list --count 33eb8b4..fa29dfa`, because the draft's "58" was one out — plus this
+close-out's own four, for 63 on the branch.
 
 | gate | baseline | measured 2026-08-18 | verdict |
 |---|---|---|---|
