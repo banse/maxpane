@@ -58,8 +58,13 @@ none of a snapshot's trust assumptions.
 
 The raw `contributors(address)` getter (`0x1f6d4942`) returns `firstHour + 1`, where `0` means
 "never deposited". Reading it and treating word 4 as the hour makes **every non-member render as
-an hour-0 founder** — the rarest cohort in the game. This repo deliberately refuses to vendor
-that getter for exactly this reason.
+an hour-0 founder** — the rarest cohort in the game.
+
+*Correction (2026-08-18, found while planning):* an earlier draft of this section claimed this
+repo "deliberately refuses to vendor that getter". It does not — `maxpane_dashboard/abis/curator/
+whitelist_curator.json` contains all 32 functions including `contributors`. The guard is
+therefore **discipline enforced by a test**, not an absence, which makes the test below more
+load-bearing rather than less.
 
 **Rule: membership and hour come from `firstHourOf`, both return words, always.** The test that
 a non-member cannot claim and does not read as hour 0 is the single most valuable test in the
@@ -248,13 +253,18 @@ glyph count does the work — `223` is 324px wide, `36,924` is 648px.
 A working Solidity renderer was built in a scratchpad, gas measured in-EVM, output rasterised
 through librsvg, and the Solidity output proved byte-identical to a Python model.
 
-| quantity | measured |
-|---|---|
-| template | 1 808 B, one SSTORE2 pointer, 13.6× under the EIP-170 ceiling |
-| `tokenURI` output | 2 645 B |
-| template deployment | ≈ 443 728 gas (≈ $5 at 3 gwei) |
-| `tokenURI` read | 217 083 gas — 0.43% of the 50 M `eth_call` cap |
-| fixed vs per-token | ≈ 95% template / 5% variable, across 22 slots |
+| quantity | prototype (22 slots, SVG only) | **shipped design** (JSON envelope in the blob) |
+|---|---|---|
+| template | 1 808 B | **1 996 B**, one SSTORE2 pointer |
+| `tokenURI` output | 2 645 B | **2 937 B** |
+| `tokenURI` read | 217 083 gas | **276 275 gas** — 0.55% of the 50 M `eth_call` cap |
+| fixed vs per-token | ≈ 95% / 5% | ≈ 95% / 5%, 13 slots |
+
+*The right-hand column is the one to hold the implementation to.* The prototype measured the
+SVG alone and left the JSON envelope to Solidity string literals — which puts the envelope in
+contract bytecode for ever and splits the template across two places. Putting the whole JSON in
+the blob costs ~190 B and ~59 k gas and is worth it. Both columns are real measurements; quoting
+the left-hand one as a regression target would fail a correct implementation.
 
 Every variable slot is a small integer, a fixed-point decimal, a hex address or a closed enum.
 
