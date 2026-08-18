@@ -349,6 +349,78 @@ def test_a_malformed_request_short_circuits_instead_of_rotating() -> None:
     assert served.count("eth.drpc.org") == 0
 
 
+def test_a_capitalised_range_cap_is_read_like_its_lowercase_twin() -> None:
+    """**R3.3.**  The ``.lower()`` inside ``_message`` is the whole
+    classify-on-the-message discipline, and nothing pinned it.
+
+    Removing both ``.lower()`` calls left all 84 tests green, and it survived
+    by accident: the one capitalised spelling in the suite ("Invalid params:
+    invalid length 63, expected a 0x-prefixed hex string") happens to contain
+    ``hex string``, a pattern in its own right, lowercase.  Providers
+    capitalise their sentences; a classifier that reads the raw text bins
+    everything that starts with a capital as unrecognised.
+
+    "Block range limit exceeded" is the shrinkable class — it must halve our
+    own window against the **same** endpoint.  Read case-sensitively it matches
+    nothing, falls through to "unfamiliar wording, therefore an endpoint
+    problem", and rotates: the pool is spent on a window that is too wide
+    everywhere, and the shrink that would have fixed it never happens.
+    """
+    assert sources.is_range_limitation({"code": -32005, "message": "Block range limit exceeded"})
+    served: list[str] = []
+    seen: list[tuple[int, int]] = []
+    state = {"refused": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        served.append(request.url.host or "")
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(1_599))
+        flt = body["params"][0]
+        lo, hi = int(flt["fromBlock"], 16), int(flt["toBlock"], 16)
+        seen.append((lo, hi))
+        if state["refused"] < 1:
+            state["refused"] += 1
+            return _rpc_error(-32005, "Block range limit exceeded")
+        return _rpc_result([])
+
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+    assert sweep is not None
+    assert seen[0] == (0, 799)
+    assert seen[1] == (0, 399), seen  # same cursor, halved window
+    assert served.count("eth.drpc.org") == 0, served
+
+
+@pytest.mark.parametrize("message", ["Invalid Request", "Parse error"])
+def test_a_capitalised_malformed_message_still_short_circuits(message: str) -> None:
+    """The other direction of the same guard, and the two JSON-RPC spellings
+    that carry no lowercase accident at all.
+
+    ``-32600`` is *"Invalid Request"* and ``-32700`` is *"Parse error"* in the
+    specification's own capitalisation, so these are what a spec-faithful
+    provider sends.  Read case-sensitively neither matches
+    ``MALFORMED_REQUEST_PATTERNS``, so our own bug is reclassified as somebody
+    else's outage and rotated onto — which triples the request count and hides
+    the bug, the exact failure the short circuit exists to prevent.
+    """
+    served: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        served.append(request.url.host or "")
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(100))
+        return _rpc_error(-32600, message)
+
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+    assert sweep is None
+    assert served.count("eth.drpc.org") == 0, served
+
+
 def test_a_two_hundred_html_body_rotates_to_the_next_endpoint() -> None:
     """**Review #3, the reproduced case.**  A 200 whose body is not JSON-RPC is
     not an answer.
