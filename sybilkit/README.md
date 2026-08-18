@@ -109,7 +109,60 @@ cd sybilkit && python -m pytest
 No test opens a socket. Every external payload is a committed fixture; every fetch test injects
 an `httpx.MockTransport`, and an AST scan enforces it.
 
-<!-- TODO(WP6): the maxpane-facing "THE LIST preset" section — `sybilkit.curator`'s
-     `CuratorPreset` / `segments` / `clean_list`, the adapter boundary, and the separate
-     publish job (the root workflow builds only maxpane; publishing sybilkit is a distinct
-     tag/job and is not auto-wired). -->
+## The THE LIST preset
+
+`sybilkit.curator` is **one preset**, not the subject of the library. It holds the constants and
+the cuts one particular allowlist game needs, and it is the worked example for writing another.
+
+```python
+from sybilkit import Dataset, detect, DetectConfig
+from sybilkit.curator import CuratorPreset, clean_list, segments
+
+preset = CuratorPreset(points_per_eth=..., min_deposit_wei=...)   # both read off the chain
+res    = detect(ds, DetectConfig(points_per_eth=preset.points_per_eth,
+                                 protocol_min_amount_wei=preset.min_deposit_wei))
+
+segments(ds, res, preset)    # Segments: the largest operators, cohorts, multiplier bands
+clean_list(ds, res, preset)  # CleanList: the ranking with flagged groups removed
+```
+
+`CuratorPreset`'s first two fields have **no defaults** on purpose — they are chain readings
+(`POINTS_PER_ETH()`, `minDeposit()`), and 1000 / 0.05 ETH are measurements of one deployment, not
+constants. Every remaining field (the gate knobs, the early-cohort size, the grace-hour count, the
+"largest operator" line, the multiplier band edges) is an *analysis* choice, so each carries a
+documented default and stays a field: a caller who measured something else is never arguing with a
+literal.
+
+### The adapter boundary
+
+The MaxPane dashboard consumes this library through exactly one module,
+`maxpane_dashboard/data/curator_clusters.py`, and that seam is deliberate in both directions:
+
+- **Nothing here imports maxpane.** The dependency is one-way; this distribution is installable
+  and usable on its own, and its test suite never imports the dashboard.
+- **Nothing this library says reaches a screen unfiltered.** The adapter re-phrases every reason,
+  label and detail — including strings read back out of a persisted cache file — into pattern
+  language before rendering. This library is free to call a cluster what it is; a dashboard
+  looking at real people's wallets is not.
+- The adapter's import of this library is **guarded**, so the dashboard runs, and degrades to an
+  explicit "analysis unavailable", when `sybilkit` is not installed.
+
+## Releasing
+
+**`sybilkit` is published by hand, and on purpose.** The repository's
+`.github/workflows/publish.yml` fires on a `v*` tag and runs `python -m build` at the *repository
+root*, which builds only `maxpane` (the root `pyproject.toml` packages `maxpane_dashboard`). It
+never changes directory into `sybilkit/`, so **a maxpane release cannot ship this distribution** —
+which is the safe default: an automatic build here would publish whatever version string happened
+to be sitting in this `pyproject.toml` at the time of somebody else's release.
+
+To cut a release, bump `version` in `sybilkit/pyproject.toml` and then, from the repository root:
+
+```bash
+python -m build sybilkit/          # -> sybilkit/dist/*.whl and *.tar.gz
+twine upload sybilkit/dist/*
+```
+
+Check the wheel before uploading: its core must import with **zero** third-party packages
+installed (`python -c "from sybilkit import detect"` in a venv with no `httpx`), and
+`pip install "sybilkit[sources]"` must be the only thing that brings `httpx` in.
