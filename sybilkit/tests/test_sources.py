@@ -1097,6 +1097,100 @@ def _incoming(from_addr: str, to_addr: str, block: int) -> dict:
 
 
 FUNDER = "0x3333333333333333333333333333333333333333"
+DISPERSER = "0x4444444444444444444444444444444444444444"
+
+
+def _internal(from_addr: str, to_addr: str, block: int, value: str = "10000000000000000") -> dict:
+    """One Blockscout ``internal-transactions`` item — a ``disperse``-style
+    value transfer, which never appears on ``/transactions``."""
+    return {
+        "from": {"hash": from_addr},
+        "to": {"hash": to_addr},
+        "block_number": block,
+        "value": value,
+        "success": True,
+        "type": "call",
+        "transaction_hash": "0x" + f"{block:064x}",
+    }
+
+
+def test_a_wallet_funded_by_an_internal_transfer_resolves_its_funder() -> None:
+    """**Review #5b, the reproduced case.**  The funding family was blind to
+    the exact pattern it exists to catch.
+
+    A wallet funded by a ``disperse``/multisend call receives its ETH as an
+    **internal** transfer, which never appears on ``/addresses/{a}/
+    transactions``.  The walk therefore finished cleanly with no incoming
+    transfer and wrote a *resolved* ``Funding(funder=None)`` row — a
+    measurement saying "we walked the whole history and found nothing" — for a
+    fan-out member.  The strongest discriminator in the library (10/10 vs 0/47)
+    was structurally blind to fan-outs, and recorded the blindness as a fact.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "internal-transactions" in str(request.url):
+            return _page([_internal(DISPERSER, ALICE, 12)], None)
+        return _page([], None)  # a clean walk: no incoming *external* transfer
+
+    sweep = asyncio.run(
+        blockscout.fetch_funding([ALICE], client=_client(handler), config=FAST)
+    )
+    assert sweep is not None
+    assert sweep.funding[ALICE.lower()].funder == DISPERSER.lower()
+    assert sweep.funding[ALICE.lower()].hops == 1  # direct transfer, one hop
+    assert sweep.pending == ()
+
+
+def test_the_internal_walk_only_runs_when_the_normal_walk_found_nothing() -> None:
+    """Ruling D2 option C: full coverage at near-zero marginal cost.  A
+    normally-funded wallet costs exactly what it cost before — the extra walk
+    happens only for the wallets that look self-created or internally funded,
+    which is the minority."""
+    rec = Recorder(lambda r: _page([_incoming(FUNDER, ALICE, 7)], None))
+    sweep = asyncio.run(
+        blockscout.fetch_funding([ALICE], client=_client(rec), config=FAST)
+    )
+    assert sweep is not None
+    assert sweep.funding[ALICE.lower()].funder == FUNDER.lower()
+    assert len(rec.calls) == 1, rec.urls
+    assert not any("internal-transactions" in u for u in rec.urls), rec.urls
+
+
+def test_a_disperse_style_fan_out_produces_one_shared_funder_across_the_batch() -> None:
+    """And the shape it buys: a fan-out batch resolves to one shared funder,
+    which is what the funding family builds its edges from."""
+    members = ["0x" + f"{i:040x}" for i in range(1, 4)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        who = str(request.url).rsplit("/addresses/", 1)[1].split("/")[0].lower()
+        if "internal-transactions" in str(request.url):
+            return _page([_internal(DISPERSER, who, 20)], None)
+        return _page([], None)
+
+    sweep = asyncio.run(
+        blockscout.fetch_funding(members, client=_client(handler), config=FAST)
+    )
+    assert sweep is not None
+    assert {sweep.funding[m].funder for m in members} == {DISPERSER.lower()}
+
+
+def test_a_zero_value_internal_call_is_not_a_funding_transfer() -> None:
+    """An internal *call* that moved no value funded nobody.  Blockscout's
+    internal-transactions feed carries every call, not only value transfers, so
+    a walk that ignored ``value`` would invent a funder out of a delegatecall —
+    the "never fake a value" rule, on the strongest evidence family there is."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "internal-transactions" in str(request.url):
+            return _page([_internal(DISPERSER, ALICE, 12, value="0")], None)
+        return _page([], None)
+
+    sweep = asyncio.run(
+        blockscout.fetch_funding([ALICE], client=_client(handler), config=FAST)
+    )
+    assert sweep is not None
+    entry = sweep.funding[ALICE.lower()]
+    assert entry.funder is None  # walked both histories, found no transfer
+    assert entry.hops is None
+    assert sweep.pending == ()
 
 
 def test_funding_paginates_by_keyset_and_takes_the_oldest_incoming_transfer() -> None:
@@ -1185,7 +1279,14 @@ def test_funding_throttles_between_requests() -> None:
     against an injected ``sleep`` so the suite proves the pacing without
     spending the seconds."""
     def handler(request: httpx.Request) -> httpx.Response:
-        return _page([_incoming(FUNDER, ALICE, 5)], None)
+        # The double answers about the address it was ASKED about.  It used to
+        # hand BOB a page describing a transfer to ALICE, which under
+        # `docs/curator_sybil_review_fixes_plan.md` §WP4.7 (ruling D2/C) is a
+        # wallet with no incoming external transfer and therefore earns a
+        # second, internal walk — a third request, from a fixture artifact.
+        # The assertion below is unchanged: one paced request per address.
+        who = str(request.url).rsplit("/addresses/", 1)[1].split("/")[0].lower()
+        return _page([_incoming(FUNDER, who, 5)], None)
 
     sleep, waits = _sleeper()
     cfg = SourceConfig(blockscout_min_interval=1 / 3, backoff_seconds=(0.0, 0.0))

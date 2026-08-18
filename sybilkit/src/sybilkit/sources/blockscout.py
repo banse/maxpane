@@ -24,6 +24,16 @@ be recorded as "this wallet has no funder", forever.  A resolved row is only
 ever written for an address whose history was walked **to the end**; an address
 walked to the end with no incoming transfer gets a real ``Funding(funder=None)``
 row and is *not* pending, because that one is a measurement rather than a gap.
+
+**"To the end" means both histories.**  ``/addresses/{a}/transactions`` does not
+carry internal transfers, so a wallet funded by a ``disperse``/multisend call —
+the exact fan-out this evidence family exists to catch — finished that walk with
+nothing and had its blindness recorded as a measurement.  When, and only when,
+the external walk completes with no incoming transfer, ``/addresses/{a}/
+internal-transactions`` is walked too, under the same page bound, cursor and
+pacing.  A direct internal transfer is still one hop.  Doing it always would
+double the requests for every wallet; doing it for the wallets that look
+self-created costs almost nothing.
 """
 
 from __future__ import annotations
@@ -59,9 +69,11 @@ class FundingSweep:
     "corruption outlives the outage" hazard, and in WP3's persisted slot it
     would outlive the process too.  So: **resolved rows are only ever written
     for addresses that are finished**, and a finished address is one whose
-    history we walked to the end.  An address we walked to the end and found no
-    incoming transfer for gets a real ``Funding(funder=None)`` row and is *not*
-    pending — that is a measurement, not a gap.
+    history we walked to the end — **both** histories, external and internal,
+    since a fan-out recipient's funding arrives as an internal transfer.  An
+    address we walked to the end and found no incoming transfer for gets a real
+    ``Funding(funder=None)`` row and is *not* pending — that is a measurement,
+    not a gap.
 
     ``truncated`` is True only for the **budget** case: the pass stopped
     because it ran out of its own budget while addresses were still unread.  It
@@ -111,8 +123,34 @@ class FundingSweep:
         )
 
 
-def _first_incoming(items: Iterable[Any], address: str) -> tuple[str, int] | None:
-    """The oldest transfer *into* ``address`` in *items*, as ``(funder, block)``."""
+def _moved_value(item: Mapping) -> bool:
+    """True if this internal entry actually transferred ETH.
+
+    The internal-transactions feed carries **every** call, not only value
+    transfers, so a walk that ignored ``value`` would invent a funder out of a
+    delegatecall — and a reverted call moved nothing whatever its value says.
+    Unreadable is treated as "no": inventing a funder on the strongest evidence
+    family there is costs more than missing one.
+    """
+    if item.get("success") is False or item.get("error"):
+        return False
+    value = item.get("value")
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return False
+    try:
+        return int(str(value)) > 0
+    except ValueError:
+        return False
+
+
+def _first_incoming(
+    items: Iterable[Any], address: str, *, require_value: bool = False
+) -> tuple[str, int] | None:
+    """The oldest transfer *into* ``address`` in *items*, as ``(funder, block)``.
+
+    *require_value* is for the internal-transactions feed, where an entry is a
+    call rather than necessarily a transfer.
+    """
     best: tuple[str, int] | None = None
     for item in items:
         if not isinstance(item, Mapping):
@@ -124,6 +162,8 @@ def _first_incoming(items: Iterable[Any], address: str) -> tuple[str, int] | Non
         if not isinstance(to_hash, str) or not isinstance(frm_hash, str):
             continue
         if to_hash.lower() != address:
+            continue
+        if require_value and not _moved_value(item):
             continue
         block = item.get("block_number")
         if not isinstance(block, int):
@@ -141,31 +181,43 @@ def _first_incoming(items: Iterable[Any], address: str) -> tuple[str, int] | Non
 _COMPLETE = "complete"
 
 
-def _cursor_of(params: Any, oldest: tuple[str, int] | None) -> dict:
-    """One address's resume point: where to ask next, and the best so far.
+#: The two histories a funder can arrive through, and the order they are
+#: walked in.  ``internal-transactions`` runs **only** when the first finished
+#: with nothing (ruling D2 option C): a wallet funded by a ``disperse``/
+#: multisend call receives its ETH as an internal transfer, which never appears
+#: on ``/transactions``, so the strongest evidence family in the library was
+#: structurally blind to the exact pattern it exists to catch.  Walking it
+#: always would double the requests for every wallet; walking it only for the
+#: wallets that look self-created costs almost nothing.
+_STAGE_EXTERNAL = "transactions"
+_STAGE_INTERNAL = "internal-transactions"
 
-    Blockscout serves newest-first, so a resumed walk needs exactly two things
-    — the next page's params and the oldest incoming transfer seen so far.
-    Everything behind the cursor is strictly older, so the answer a resumed
+
+def _cursor_of(params: Any, oldest: tuple[str, int] | None, stage: str) -> dict:
+    """One address's resume point: which history, where to ask next, best so far.
+
+    Blockscout serves newest-first, so a resumed walk needs exactly those three
+    — everything behind the cursor is strictly older, so the answer a resumed
     walk reaches is the answer an unbounded one would have.
     """
     return {
         "params": dict(params) if isinstance(params, Mapping) else None,
         "funder": oldest[0] if oldest else None,
         "block": oldest[1] if oldest else None,
+        "stage": stage,
     }
 
 
-def _resume_from(entry: Any) -> tuple[Any, tuple[str, int] | None]:
-    """A persisted cursor entry → ``(starting params, best-so-far)``.
+def _resume_from(entry: Any) -> tuple[Any, tuple[str, int] | None, str]:
+    """A persisted cursor entry → ``(starting params, best-so-far, stage)``.
 
     Read tolerantly on purpose: this shape round-trips through a consumer's
     cache file, and a hand-edited payload is third-party input.  Anything
-    unrecognisable simply starts the walk at page 1, which is the pre-cursor
-    behaviour rather than an error.
+    unrecognisable simply starts the external walk at page 1, which is the
+    pre-cursor behaviour rather than an error.
     """
     if not isinstance(entry, Mapping):
-        return None, None
+        return None, None, _STAGE_EXTERNAL
     raw = entry.get("params")
     params = dict(raw) if isinstance(raw, Mapping) and raw else None
     funder = entry.get("funder")
@@ -173,23 +225,22 @@ def _resume_from(entry: Any) -> tuple[Any, tuple[str, int] | None]:
     oldest: tuple[str, int] | None = None
     if isinstance(funder, str) and isinstance(block, int) and not isinstance(block, bool):
         oldest = (funder.lower(), block)
-    return params, oldest
+    stage = entry.get("stage")
+    if stage != _STAGE_INTERNAL:
+        stage = _STAGE_EXTERNAL
+    return params, oldest, stage
 
 
-async def _funder_of(
+async def _walk(
     session: _Session,
     address: str,
     max_pages: int,
     *,
+    stage: str,
     params: Any = None,
     oldest: tuple[str, int] | None = None,
-) -> tuple[str | None, str, bool, dict | None]:
-    """``(funder, outcome, reachable, cursor)`` for one address.
-
-    *params* and *oldest* are a previous pass's resume point (see
-    :func:`_resume_from`); with neither, the walk starts at page 1.  *cursor*
-    is where this pass stopped, or ``None`` when there is nothing to resume —
-    the walk finished, or it died before a single page parsed.
+) -> tuple[tuple[str, int] | None, str, bool, Any]:
+    """One history walked: ``(oldest, outcome, reachable, stopped-on params)``.
 
     Blockscout serves newest-first with a keyset cursor, so the **first**
     funder is on the last page and the cursor is followed verbatim, as query
@@ -213,59 +264,106 @@ async def _funder_of(
     an outage.
     """
     httpx = require_httpx()
-    url = f"{session.config.blockscout_base}/addresses/{address}/transactions"
+    url = f"{session.config.blockscout_base}/addresses/{address}/{stage}"
     query: Any = (
         {**params, "filter": "to"}
         if isinstance(params, Mapping) and params
         else {"filter": "to"}
     )
     reachable = False
-
-    def stopped() -> dict | None:
-        # A cursor is worth persisting only once a page has parsed: before
-        # that, "resume here" and "start at the beginning" are the same place.
-        return _cursor_of(query, oldest) if reachable else None
-
     for _page in range(max_pages):
         try:
             resp = await session.get(
                 url, params=query, delay=session.config.blockscout_min_interval
             )
             if resp.status_code in DEAD_STATUS_CODES:
-                return None, PENDING_UNREADABLE, reachable, stopped()
+                return oldest, PENDING_UNREADABLE, reachable, query
             resp.raise_for_status()
             body = resp.json()
         except (httpx.HTTPError, ValueError):
-            return None, PENDING_UNREADABLE, reachable, stopped()
+            return oldest, PENDING_UNREADABLE, reachable, query
         if not isinstance(body, Mapping):
-            return None, PENDING_UNREADABLE, reachable, stopped()
+            return oldest, PENDING_UNREADABLE, reachable, query
         items = body.get("items")
         if not isinstance(items, list):
             # `{"items": null}` from a 200 passed the old `"items" in body`
             # guard, so an unread page was treated as a finished walk and the
             # address got a resolved `funder=None` row.  A page we cannot read
             # is unreadable, whatever the status line said.
-            return None, PENDING_UNREADABLE, reachable, stopped()
+            return oldest, PENDING_UNREADABLE, reachable, query
         reachable = True
-        found = _first_incoming(items, address)
+        found = _first_incoming(
+            items, address, require_value=stage == _STAGE_INTERNAL
+        )
         if found is not None and (oldest is None or found[1] < oldest[1]):
             oldest = found
         nxt = body.get("next_page_params")
         if not nxt:
-            return (oldest[0] if oldest else None), _COMPLETE, True, None
+            return oldest, _COMPLETE, True, None
         if not isinstance(nxt, Mapping):
             # A cursor we cannot extend with our own filter is not the end of
             # the history: `_COMPLETE` here would resolve a row off a walk that
             # stopped early, and `{**nxt}` on a non-mapping would take the
             # caller down with a TypeError.
-            return None, PENDING_UNREADABLE, reachable, stopped()
+            return oldest, PENDING_UNREADABLE, reachable, query
         # The server's cursor, verbatim — **plus our own filter**.  `params =
         # nxt` replaced it, so every page after the first asked for the whole
         # transaction history rather than its incoming half.
         query = {**nxt, "filter": "to"}
     # Fell out of the loop with a cursor still open: every page we asked for
     # answered, there are simply more of them than we were willing to walk.
-    return None, PENDING_PAGES, reachable, stopped()
+    return oldest, PENDING_PAGES, reachable, query
+
+
+async def _funder_of(
+    session: _Session,
+    address: str,
+    max_pages: int,
+    *,
+    params: Any = None,
+    oldest: tuple[str, int] | None = None,
+    stage: str = _STAGE_EXTERNAL,
+) -> tuple[str | None, str, bool, dict | None]:
+    """``(funder, outcome, reachable, cursor)`` for one address.
+
+    *params*, *oldest* and *stage* are a previous pass's resume point (see
+    :func:`_resume_from`); with none of them, the external walk starts at page
+    1.  *cursor* is where this pass stopped, or ``None`` when there is nothing
+    to resume — both histories finished, or the first died before a single page
+    parsed.
+
+    **Finished means both histories.**  An address whose external walk
+    completes with no incoming transfer is exactly the fan-out shape (a
+    ``disperse`` recipient is funded by an *internal* transfer), so its
+    internal history is walked before any resolved row is written.  A direct
+    internal transfer is still one hop.
+    """
+    reached = False
+    if stage != _STAGE_INTERNAL:
+        oldest, outcome, reachable, query = await _walk(
+            session, address, max_pages,
+            stage=_STAGE_EXTERNAL, params=params, oldest=oldest,
+        )
+        reached = reachable
+        if outcome != _COMPLETE:
+            cursor = _cursor_of(query, oldest, _STAGE_EXTERNAL) if reachable else None
+            return None, outcome, reached, cursor
+        if oldest is not None:
+            return oldest[0], _COMPLETE, True, None
+        # Walked the whole external history and found no incoming transfer:
+        # the fan-out case, and the only one that costs a second walk.
+        params = None
+
+    oldest, outcome, reachable, query = await _walk(
+        session, address, max_pages,
+        stage=_STAGE_INTERNAL, params=params, oldest=oldest,
+    )
+    reached = reached or reachable
+    if outcome != _COMPLETE:
+        # The stage rides in the cursor: without it a resumed pass would
+        # re-walk the whole external history to get back here.
+        return None, outcome, reached, _cursor_of(query, oldest, _STAGE_INTERNAL)
+    return (oldest[0] if oldest else None), _COMPLETE, True, None
 
 
 async def fetch_funding(
@@ -343,9 +441,12 @@ async def fetch_funding(
     async with _Session(config, client=client, transport=transport, sleep=sleep) as s:
         for address in todo:
             attempted += 1
-            start_params, start_oldest = _resume_from(prior_cursors.get(address))
+            start_params, start_oldest, start_stage = _resume_from(
+                prior_cursors.get(address)
+            )
             funder, outcome, reachable, cursor = await _funder_of(
-                s, address, pages, params=start_params, oldest=start_oldest
+                s, address, pages,
+                params=start_params, oldest=start_oldest, stage=start_stage,
             )
             if reachable:
                 reached += 1
