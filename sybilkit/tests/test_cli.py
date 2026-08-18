@@ -762,6 +762,48 @@ def test_an_unexpected_value_error_exits_non_zero_with_a_message(capsys) -> None
     assert "points_per_eth" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("bug", [TypeError, AttributeError])
+def test_a_bug_of_ours_keeps_its_traceback_instead_of_becoming_an_exit_code(
+    bug, monkeypatch, capsys
+) -> None:
+    """**B1, the other half — the direction nobody was holding.**
+
+    ``main``'s handler is deliberately narrow: ``ValueError``/``KeyError``/
+    ``ArithmeticError`` are what *user input* reaches the library with, so they
+    become a message and exit 3, while a ``TypeError`` or an ``AttributeError``
+    is **our** bug and still comes out with its traceback intact.  Both the
+    docstring and the inline comment state that guarantee and nothing tested
+    it.  Narrowing was pinned — swapping the tuple for ``RuntimeError`` reddens
+    the two tests above — but widening was not: ``except Exception`` left the
+    whole suite green while turning every crash in the distribution into a tidy
+    ``sybilkit: TypeError: ...`` and exit 3, which is the one report shape that
+    makes a bug look like bad input.
+
+    So: inject each of the two into the run and assert it comes back out of
+    ``cli.main`` as an exception, with the raising frame still on the
+    traceback and nothing printed as though it were a message for the user.
+    """
+    def _boom(*_args, **_kwargs):
+        raise bug("detect() was handed something that is not a Dataset")
+
+    # `_run` looks `detect` up as a module global, so this is the library call
+    # failing the way our own bug would fail it — inside the `try`, past every
+    # `CliError` guard, on a run that is otherwise completely healthy.
+    monkeypatch.setattr(cli, "detect", _boom)
+
+    with pytest.raises(bug) as excinfo:
+        run("analyze", "--dataset", str(LABELED), *OFFLINE_RATE)
+
+    assert "not a Dataset" in str(excinfo.value)
+    frames = [entry.name for entry in excinfo.traceback]
+    assert "main" in frames, "the traceback must still run through cli.main"
+    assert "_boom" in frames, "…and reach the frame that actually raised"
+
+    captured = capsys.readouterr()
+    assert captured.err == "", "a bug of ours is not a message on stderr"
+    assert captured.out == ""
+
+
 def test_a_non_utc_offset_is_converted_rather_than_suffixed_with_z(
     tmp_path, capsys
 ) -> None:
