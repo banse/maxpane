@@ -258,8 +258,25 @@ def test_the_first_index_is_the_one_based_first_deposit_index() -> None:
 # ===========================================================================
 
 
+#: The **only** part of the distribution allowed a third-party import, and it
+#: is allowed exactly one: ``httpx``, lazily, inside the call that needs it.
+#: WP0 wrote this exemption's shape into the two tests below before ``sources/``
+#: existed ("this test grows an explicit exemption for that subpackage and for
+#: nothing else"), and WP2 filled it in.  ``cli.py`` rides along because it
+#: reaches the transport only *through* ``sources/`` — it is listed so that a
+#: future direct import there is a decision somebody made here, not a drift.
+IO_EXEMPT_PACKAGES = ("sources",)
+IO_EXEMPT_FILES = ("cli.py",)
+IO_ALLOWED_ROOTS = frozenset({"httpx"})
+
+
 def _module_sources() -> list[Path]:
     return sorted(SRC.rglob("*.py"))
+
+
+def _is_io_exempt(path: Path) -> bool:
+    rel = path.relative_to(SRC)
+    return rel.parts[0] in IO_EXEMPT_PACKAGES or rel.name in IO_EXEMPT_FILES
 
 
 def _imported_roots(path: Path) -> set[str]:
@@ -287,14 +304,17 @@ def test_the_package_imports_only_the_standard_library() -> None:
 
     Asserted against ``sys.stdlib_module_names`` rather than a banned list, so
     a future ``import numpy`` fails here too — not just the four names anyone
-    happened to write down.  WP2's ``sources/`` will import ``httpx``; when it
-    does, this test grows an explicit exemption for that subpackage and for
-    nothing else.
+    happened to write down.  WP2's ``sources/`` imports ``httpx``, so the test
+    grew the exemption its own docstring promised — :data:`IO_EXEMPT_PACKAGES`
+    plus :data:`IO_ALLOWED_ROOTS`, and nothing else.
     """
     offenders: list[str] = []
     for path in _module_sources():
+        exempt = _is_io_exempt(path)
         for root in _imported_roots(path):
             if root in sys.stdlib_module_names or root == "sybilkit":
+                continue
+            if exempt and root in IO_ALLOWED_ROOTS:
                 continue
             offenders.append(f"{path.relative_to(SRC)}: {root}")
     assert not offenders, offenders
@@ -303,11 +323,32 @@ def test_the_package_imports_only_the_standard_library() -> None:
 def test_no_module_imports_maxpane_textual_or_a_transport() -> None:
     """Named explicitly as well, because these four are the ones that would
     make the distribution stop being standalone rather than merely stop being
-    dependency-free."""
+    dependency-free.
+
+    ``httpx`` is struck from the banned set for ``sources/`` alone, and for
+    nothing else: maxpane, textual, requests and a bare ``socket`` stay banned
+    everywhere, including there.
+    """
     banned = {"maxpane", "maxpane_dashboard", "textual", "httpx", "requests", "socket"}
     for path in _module_sources():
-        clash = banned & _imported_roots(path)
+        allowed = IO_ALLOWED_ROOTS if _is_io_exempt(path) else frozenset()
+        clash = (banned - allowed) & _imported_roots(path)
         assert not clash, f"{path.relative_to(SRC)} imports {clash}"
+
+
+def test_the_io_exemption_covers_exactly_the_sources_subpackage() -> None:
+    """The exemption is a hole in two structural gates, so it gets its own
+    pin: exactly one package, exactly one file, exactly one allowed root.  A
+    later WP that widens any of the three has to widen it *here*, in front of
+    this docstring, rather than by adding an import somewhere and watching a
+    gate go quiet."""
+    assert IO_EXEMPT_PACKAGES == ("sources",)
+    assert IO_EXEMPT_FILES == ("cli.py",)
+    assert IO_ALLOWED_ROOTS == frozenset({"httpx"})
+    exempted = [p.relative_to(SRC) for p in _module_sources() if _is_io_exempt(p)]
+    assert all(
+        str(p).startswith("sources/") or str(p) == "cli.py" for p in exempted
+    ), exempted
 
 
 def test_the_distribution_ships_py_typed() -> None:
