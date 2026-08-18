@@ -75,11 +75,23 @@ DEFAULT_MULTIPLIER_BAND_BPS: tuple[int, ...] = (17_500, 15_000, 12_500, 10_000)
 _ETH = 10**18
 
 
+#: Decimals kept by :func:`_eth_str`.  **Presentation only**, and lossy on
+#: purpose: a jitter-batch amount is 0.082193701937108305 ETH and no label
+#: wants eighteen decimals.  Nothing in this module computes with the string —
+#: every arithmetic path is wei-native ``int`` — so the truncation cannot reach
+#: a number anybody adds up.
+LABEL_ETH_DECIMALS = 6
+
+
 def _eth_str(wei: int) -> str:
-    """A wei amount as a short ETH string.  Presentation only — nothing
-    computes with it; trailing zeros trimmed, one decimal always kept."""
+    """A wei amount as a short ETH string.  Presentation only.
+
+    Truncated rather than rounded (a label should not claim more than the value
+    has), trailing zeros trimmed, one decimal always kept: ``0.45``, ``14.0``,
+    ``2.067``, ``0.082193``.
+    """
     whole, frac = divmod(wei, _ETH)
-    text = f"{whole}.{frac:018d}".rstrip("0")
+    text = f"{whole}.{frac:018d}"[: -(18 - LABEL_ETH_DECIMALS) or None].rstrip("0")
     return text + "0" if text.endswith(".") else text
 
 
