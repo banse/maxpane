@@ -27,13 +27,13 @@ from sybilkit import DetectConfig, curve, detect
 from sybilkit import curator as preset_mod
 from sybilkit.curator import (
     FORBIDDEN_LABEL_WORDS,
+    Segment,
     CuratorPreset,
     clean_list,
     curve_points,
     multiplier_bps,
     segments,
 )
-from tests.conftest import build_labeled_dataset, build_population_dataset
 
 SRC = Path(preset_mod.__file__).resolve().parent
 
@@ -425,6 +425,70 @@ def test_a_deposit_above_the_credit_cap_has_no_representable_multiplier(
     # than present-and-zero: an empty band would read as a measured zero.
     assert unknown == []
     assert multiplier_bps(_first_deposit(ds)["0x200e710acaa6a93bbc77146026328c40f1d60fb1"]) == 19_975
+
+
+def test_a_multiplier_below_the_lowest_band_is_unknown_not_the_lowest_band(
+    labeled_ds,
+) -> None:
+    """**Review M4.**  The bottom band's fallback used to swallow anything it
+    could not place.
+
+    A deposit whose derived multiplier is *below* the lowest edge cannot happen
+    on a decay curve that bottoms out at 1.0x — which is precisely why filing it
+    under "1.00x-1.25x" is a fabricated fact rather than a harmless rounding.
+    It is either a different deployment or a decode fault, and both belong in
+    the band that says "no representable multiplier".
+    """
+    from sybilkit.model import Dataset
+
+    rows = [
+        {
+            "contributor": f"0x{i:040x}", "hour": 0,
+            "amount_wei": 10**18, "credited_delta_wei": 10**18,
+            # weight BELOW the credit: a 0.5x multiplier, which the decay curve
+            # never produces and the bands therefore cannot place.
+            "weight_added_wei": 5 * 10**17, "new_weight_wei": 5 * 10**17,
+            "tx_count": 1, "block_number": 100 + i, "log_index": 1,
+            "tx_hash": "0x" + f"{i:064x}",
+        }
+        for i in range(1, 4)
+    ]
+    ds = Dataset.from_events(
+        rows, [{"contributor": r["contributor"], "index": i}
+               for i, r in enumerate(rows, start=1)]
+    )
+    preset = a_preset()
+    res = detect(ds, preset.detect_config())
+    segs = segments(ds, res, preset)
+
+    assert multiplier_bps(ds.deposits[0]) == 5_000  # 0.5x, below every edge
+    unknown = [s for s in segs.bands if s.key == "multiplier_unknown"]
+    assert len(unknown) == 1
+    assert unknown[0].contributors == 3
+    assert not [s for s in segs.bands if s.key == "multiplier_10000"]
+
+
+def test_the_segment_key_vocabulary_is_exactly_what_the_docstring_names(
+    population_analysis,
+) -> None:
+    """**Review M3.**  The `Segment` docstring named a key spelling
+    (``multiplier_17500_20000``) the code has never emitted.  A key vocabulary
+    a consumer reads off a docstring and then keys on is worse than none."""
+    import re
+
+    preset, ds, res = population_analysis
+    segs = segments(ds, res, preset)
+    allowed = re.compile(
+        r"^(largest_operators|early_cohort|late_cohort|hour_\d+"
+        r"|multiplier_\d+|multiplier_unknown)$"
+    )
+    for band in segs.bands:
+        assert allowed.match(band.key), band.key
+    doc = Segment.__doc__ or ""
+    for spelling in ("largest_operators", "early_cohort", "late_cohort",
+                     "hour_<h>", "multiplier_<edge_bps>", "multiplier_unknown"):
+        assert spelling in doc, spelling
+    assert "multiplier_17500_20000" not in doc
 
 
 def test_no_segment_label_carries_an_accusatory_word(population_analysis) -> None:

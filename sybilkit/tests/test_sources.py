@@ -511,10 +511,11 @@ def test_tx_fingerprints_are_batched_and_decoded() -> None:
     got = asyncio.run(
         txs.fetch_tx_fingerprints(hashes, client=_client(rec), config=FAST)
     )
-    assert got is not None and len(got) == 95
+    assert got is not None and len(got.fingerprints) == 95
+    assert got.pending == ()
     sizes = [len(p) for p in rec.payloads]
     assert sizes == [40, 40, 15], sizes  # publicnode throttles ~40-call batches
-    one = got[hashes[0]]
+    one = got.fingerprints[hashes[0]]
     assert isinstance(one, Tx)
     assert (one.gas_limit, one.tx_type, one.max_priority_fee_wei) == (
         91_600, 2, 100_000_000,
@@ -539,9 +540,9 @@ def test_a_legacy_transaction_keeps_its_missing_fee_fields_as_none() -> None:
         txs.fetch_tx_fingerprints([tx_hash], client=_client(handler), config=FAST)
     )
     assert got is not None
-    assert got[tx_hash].max_priority_fee_wei is None
-    assert got[tx_hash].max_fee_wei is None
-    assert got[tx_hash].gas_limit == 91_600
+    assert got.fingerprints[tx_hash].max_priority_fee_wei is None
+    assert got.fingerprints[tx_hash].max_fee_wei is None
+    assert got.fingerprints[tx_hash].gas_limit == 91_600
 
 
 def test_publicnode_403s_a_library_default_user_agent_and_we_never_send_one() -> None:
@@ -565,7 +566,7 @@ def test_publicnode_403s_a_library_default_user_agent_and_we_never_send_one() ->
     got = asyncio.run(
         txs.fetch_tx_fingerprints([tx_hash], client=_client(handler), config=FAST)
     )
-    assert got is not None and tx_hash in got
+    assert got is not None and tx_hash in got.fingerprints
 
     # The control: the same transport really does 403 a default UA, so the
     # assertion above is about our header and not about a lenient double.
@@ -575,6 +576,137 @@ def test_publicnode_403s_a_library_default_user_agent_and_we_never_send_one() ->
             return resp.status_code
 
     assert asyncio.run(bare()) == 403
+
+
+def test_a_batch_endpoint_error_rotates_on_message_text() -> None:
+    """**Review I1, the reproduced case.**  drpc answers every entry of a batch
+    with "Can't route your request" under ``-32602`` — a code other providers
+    spend on genuinely malformed input.
+
+    The batch path used to skip errored entries silently, so a live endpoint
+    that had refused the *whole* call produced an empty result set and no
+    rotation at all.  Classification is on the message, exactly as in
+    ``rpc_call``, and the whole batch rotates to the next endpoint.
+    """
+    served: list[str] = []
+    tx_hash = "0x" + "44" * 32
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        served.append(request.url.host or "")
+        batch = json.loads(request.content)
+        if request.url.host == "ethereum-rpc.publicnode.com":
+            return httpx.Response(200, json=[
+                {"jsonrpc": "2.0", "id": c["id"],
+                 "error": {"code": -32602,
+                           "message": "Can't route your request. Try again later."}}
+                for c in batch
+            ])
+        return httpx.Response(200, json=[
+            {"jsonrpc": "2.0", "id": c["id"], "result": _tx_reply(c["params"][0])}
+            for c in batch
+        ])
+
+    got = asyncio.run(
+        txs.fetch_tx_fingerprints([tx_hash], client=_client(handler), config=FAST)
+    )
+    assert got is not None
+    assert tx_hash in got.fingerprints, "the routing error was not classified"
+    assert "ethereum-rpc.publicnode.com" in served
+    assert "gateway.tenderly.co" in served, served
+
+
+def test_a_malformed_batch_short_circuits_instead_of_rotating() -> None:
+    """OUR bug fails identically everywhere, so rotating on it triples the
+    request count and hides it.  The batch stops at the first endpoint and the
+    fetcher degrades to ``None`` — the same answer ``fetch_deposits`` gives."""
+    served: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        served.append(request.url.host or "")
+        batch = json.loads(request.content)
+        return httpx.Response(200, json=[
+            {"jsonrpc": "2.0", "id": c["id"],
+             "error": {"code": -32602,
+                       "message": "invalid argument 0: hex string of odd length"}}
+            for c in batch
+        ])
+
+    got = asyncio.run(
+        txs.fetch_tx_fingerprints(["0x" + "55" * 32], client=_client(handler), config=FAST)
+    )
+    assert got is None
+    assert served.count("gateway.tenderly.co") == 0, served
+
+
+def test_a_partial_batch_failure_names_the_hashes_it_could_not_read() -> None:
+    """A partial read handed back as a bare dict is indistinguishable from a
+    complete one, and a uniformity detector reading a half-covered component
+    sees a collapsed axis that is really a coverage hole.  So the sweep says
+    which hashes it is missing."""
+    hashes = ["0x" + f"{i:064x}" for i in range(3)]
+    dead = hashes[2]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        if any(c["params"][0] == dead for c in batch):
+            return httpx.Response(503, text="Service Unavailable")
+        return httpx.Response(200, json=[
+            {"jsonrpc": "2.0", "id": c["id"], "result": _tx_reply(c["params"][0])}
+            for c in batch
+        ])
+
+    cfg = SourceConfig(inter_call_delay=0.0, backoff_seconds=(0.0, 0.0),
+                       blockscout_min_interval=0.0, tx_batch_size=2)
+    got = asyncio.run(
+        txs.fetch_tx_fingerprints(hashes, client=_client(handler), config=cfg)
+    )
+    assert got is not None
+    assert set(got.fingerprints) == set(hashes[:2])
+    assert got.pending == (dead,)
+
+    # A hash the node answered for with no body is "ask again", never "this
+    # transaction has no fingerprint".
+    def empty(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        return httpx.Response(200, json=[
+            {"jsonrpc": "2.0", "id": c["id"], "result": None} for c in batch
+        ])
+
+    none_body = asyncio.run(
+        txs.fetch_tx_fingerprints(hashes[:1], client=_client(empty), config=FAST)
+    )
+    assert none_body is not None
+    assert none_body.fingerprints == {}
+    assert none_body.pending == (hashes[0],)
+
+
+def test_a_batch_answered_out_of_order_is_realigned_by_id() -> None:
+    """**Review I5.**  A provider is allowed to answer a batch in any order,
+    and one that does hands every fingerprint to the wrong transaction — a
+    defect that looks exactly like a detector calibration problem.
+
+    The transport below answers **reversed** and gives each transaction a
+    distinct nonce, so a positional decoder maps them backwards and this test
+    is the only thing that would say so.
+    """
+    hashes = ["0x" + f"{i:064x}" for i in range(5)]
+    nonce_of = {h: i * 7 for i, h in enumerate(hashes)}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        replies = [
+            {"jsonrpc": "2.0", "id": c["id"],
+             "result": _tx_reply(c["params"][0], nonce=nonce_of[c["params"][0]])}
+            for c in batch
+        ]
+        replies.reverse()
+        return httpx.Response(200, json=replies)
+
+    got = asyncio.run(
+        txs.fetch_tx_fingerprints(hashes, client=_client(handler), config=FAST)
+    )
+    assert got is not None
+    assert {h: got.fingerprints[h].nonce for h in hashes} == nonce_of
 
 
 def test_a_dead_batch_falls_over_and_then_degrades_to_none() -> None:
@@ -597,7 +729,8 @@ def test_a_dead_batch_falls_over_and_then_degrades_to_none() -> None:
 
 def test_no_hashes_is_an_empty_answer_and_no_request_at_all() -> None:
     got = asyncio.run(txs.fetch_tx_fingerprints([], client=_client(_never), config=FAST))
-    assert got == {}
+    assert got is not None
+    assert got.fingerprints == {} and got.pending == ()
 
 
 # ===========================================================================
@@ -665,7 +798,11 @@ def test_funding_throttles_between_requests() -> None:
         )
     )
     assert waits, "no pacing at all"
-    assert all(w <= 1 / 3 + 1e-9 for w in waits), waits
+    # Equality, not a ceiling: an upper bound is satisfied by a pacer that
+    # sleeps zero, which is exactly the regression (a dropped `delay=`) the
+    # test exists to catch.
+    assert all(w == pytest.approx(cfg.blockscout_min_interval) for w in waits), waits
+    assert len(waits) == 2  # one paced request per address
 
 
 def test_funding_is_resumable_from_the_pending_cursor() -> None:
@@ -714,10 +851,15 @@ def test_a_known_address_is_never_re_read() -> None:
     assert sweep.pending == ()
 
 
-def test_an_address_whose_history_outran_the_page_budget_is_pending_not_wrong() -> None:
-    """A bounded-out lookup is ``funder=None`` — "we could not resolve one",
-    never "this address has no funder" — **and** it stays in ``pending`` so a
-    later, more patient call can finish the job."""
+def test_an_address_whose_history_outran_the_page_budget_gets_no_row_at_all() -> None:
+    """**Review C1.**  A bounded-out address is pending and is NOT resolved.
+
+    The row it used to get — ``Funding(funder=None)`` — is the trap: the
+    documented resume recipe passes ``funding`` back as ``known``, and ``known``
+    is skipped, so the very address the cursor was supposed to return to would
+    be skipped forever.  A pending address therefore has **no** row, and
+    ``pending_reasons`` says why it is pending.
+    """
     def handler(request: httpx.Request) -> httpx.Response:
         return _page([_incoming(BOB, ALICE, 900)], {"block_number": "800"})
 
@@ -727,9 +869,127 @@ def test_an_address_whose_history_outran_the_page_budget_is_pending_not_wrong() 
         )
     )
     assert sweep is not None
-    assert sweep.funding[ALICE.lower()].funder is None
-    assert sweep.funding[ALICE.lower()].hops is None
+    assert ALICE.lower() not in sweep.funding
     assert sweep.pending == (ALICE.lower(),)
+    assert sweep.pending_reasons == {ALICE.lower(): blockscout.PENDING_PAGES}
+    assert sweep.page_bounded == (ALICE.lower(),)
+    # `truncated` stays budget-only, so a page-bounded pass is visible through
+    # its own vocabulary rather than by overloading somebody else's flag.
+    assert sweep.truncated is False
+
+
+def test_a_page_bounded_address_is_actually_re_read_on_the_next_pass() -> None:
+    """**Review C1, the reproduced case.**  The documented resume recipe,
+    driven end to end.
+
+    Pass 1 runs with a page budget too small for this address's history and
+    reports it pending.  Pass 2 feeds ``pending`` back as *addresses* with
+    ``funding`` as ``known`` — exactly the recipe in the WP3 hand-off — and it
+    must **issue a request**.  Before the fix it issued zero: pass 1 had written
+    a ``funder=None`` row, ``known`` skipped it, ``pending`` came back empty and
+    the address was silently dropped from the analysis forever.
+    """
+    state = {"patient": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        if params.get("block_number") == "800":
+            return _page([_incoming(FUNDER, ALICE, 7)], None)
+        return _page([_incoming(BOB, ALICE, 900)], {"block_number": "800"})
+
+    rec = Recorder(handler)
+    first = asyncio.run(
+        blockscout.fetch_funding(
+            [ALICE], client=_client(rec), config=FAST, max_pages=1
+        )
+    )
+    assert first is not None
+    assert first.pending == (ALICE.lower(),)
+    assert first.funding == {}
+
+    before = len(rec.calls)
+    second = asyncio.run(
+        blockscout.fetch_funding(
+            first.pending, client=_client(rec), config=FAST,
+            known=first.funding, max_pages=5,
+        )
+    )
+    assert len(rec.calls) - before > 0, "pass 2 issued no request — the cursor is dead"
+    assert second is not None
+    assert second.pending == ()
+    assert second.funding[ALICE.lower()].funder == FUNDER.lower()
+
+
+def test_a_transient_failure_is_never_frozen_into_a_resolved_row() -> None:
+    """**Review C1, the second reproduced case.**  "The corruption outlives the
+    outage" — the repo's own words, and the reason a sentinel is never written
+    into a stored series.
+
+    One 503 on pass 1 used to write ``Funding(funder=None)`` permanently: the
+    next pass skipped it as ``known`` and the wallet was recorded as having no
+    funder, forever, on the strength of one bad minute.  WP3 persists this dict
+    into a cache slot, so "forever" would have outlived the process too.
+    """
+    state = {"down": True}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if state["down"]:
+            return httpx.Response(503, text="Service Unavailable")
+        return _page([_incoming(FUNDER, ALICE, 7)], None)
+
+    first = asyncio.run(
+        blockscout.fetch_funding([ALICE], client=_client(handler), config=FAST)
+    )
+    # Everything attempted failed, so this pass is an outage, not a result.
+    assert first is None
+
+    # …and a pass that *partly* answered must still not freeze the failure.
+    state["down"] = True
+
+    def mixed(request: httpx.Request) -> httpx.Response:
+        who = str(request.url).rsplit("/addresses/", 1)[1].split("/")[0].lower()
+        if who == ALICE.lower() and state["down"]:
+            return httpx.Response(503, text="Service Unavailable")
+        return _page([_incoming(FUNDER, who, 7)], None)
+
+    partial = asyncio.run(
+        blockscout.fetch_funding([ALICE, BOB], client=_client(mixed), config=FAST)
+    )
+    assert partial is not None
+    assert ALICE.lower() not in partial.funding      # NOT frozen as funder=None
+    assert partial.pending == (ALICE.lower(),)
+    assert partial.pending_reasons[ALICE.lower()] == blockscout.PENDING_UNREADABLE
+    assert partial.unreadable == (ALICE.lower(),)
+    assert partial.funding[BOB.lower()].funder == FUNDER.lower()
+
+    state["down"] = False
+    healed = asyncio.run(
+        blockscout.fetch_funding(
+            partial.pending, client=_client(mixed), config=FAST,
+            known=partial.funding,
+        )
+    )
+    assert healed is not None
+    assert healed.funding[ALICE.lower()].funder == FUNDER.lower()
+    assert healed.pending == ()
+
+
+def test_a_total_outage_is_none_even_when_the_budget_deferred_addresses() -> None:
+    """**Review C2, the reproduced case.**  Deferral does not soften an outage.
+
+    ``budget=2`` over five addresses with every request dying used to return a
+    ``FundingSweep`` carrying two ``funder=None`` rows and ``truncated=True`` —
+    a total outage wearing the costume of a budget cap.  Zero endpoints
+    answered; that is ``None``, and the number of addresses we had not got to
+    yet has nothing to do with it.
+    """
+    addresses = ["0x" + f"{i:040x}" for i in range(5)]
+    sweep = asyncio.run(
+        blockscout.fetch_funding(
+            addresses, client=_client(_offline), config=FAST, budget=2
+        )
+    )
+    assert sweep is None
 
 
 def test_a_funding_outage_degrades_to_none_never_to_an_empty_map() -> None:

@@ -37,6 +37,24 @@ CONTRACT = "0x8ff23e0bd8b6f8f1cdb54b0dfc0c1f30d5ffcbd8"
 OFFLINE_RATE = ["--points-per-eth", "1000", "--min-deposit-wei", "50000000000000000"]
 
 
+def _deposit_row(*, block: int, log_index: int, tag: str) -> dict:
+    """One `Deposited` log row, wire-shaped, for the live-path tests."""
+    from sybilkit.sources import logs
+
+    word = lambda v: f"{v:064x}"  # noqa: E731
+    return {
+        "address": CONTRACT,
+        "topics": [logs.DEPOSITED_TOPIC,
+                   "0x" + "0" * 24 + "11" * 20,
+                   hex(0)],
+        "data": "0x" + "".join(word(v) for v in (10**17, 10**17, 10**17,
+                                                 10**17, 1, 10**17, 10_000)),
+        "blockNumber": hex(block),
+        "logIndex": hex(log_index),
+        "transactionHash": "0x" + (tag * 32)[:64],
+    }
+
+
 def run(*argv: str) -> int:
     return cli.main(list(argv))
 
@@ -304,6 +322,170 @@ def test_the_live_path_reads_the_rate_and_the_minimum_off_the_chain(capsys) -> N
     assert doc["block_range"] == {"from": 100, "to": 120}
     assert doc["clusters"] == []          # the sweep really was empty
     assert doc["totals"]["contributors"] == 0
+
+
+def test_the_header_records_which_tiers_actually_ran(capsys) -> None:
+    """**Review I2(a).**  The repo's no-silent-caps rule, applied to coverage.
+
+    A capped or skipped tier changes what the detector could possibly find, so
+    the artifact has to say so — otherwise two exports of the same contract
+    differ for a reason no reader can see.  On a ``--dataset`` run the header
+    reports what the bundle carried; the labeled subset carries all three
+    tiers.
+    """
+    run("analyze", "--dataset", str(LABELED), "--preset", "curator", *OFFLINE_RATE)
+    doc = out_json(capsys)
+    cov = doc["coverage"]
+    assert cov["tiers"] == "abc"
+    assert cov["tx_fingerprints"]["read"] == 220
+    assert cov["funding"]["read"] == 220
+    assert cov["tx_fingerprints"]["source"] == "dataset"
+
+
+def test_the_header_says_so_when_a_tier_is_absent(tmp_path, capsys) -> None:
+    """The negative has to be representable too: a bundle with no fingerprints
+    reports ``tx_fingerprints: null``, which is "this ran without tier B" and
+    not "tier B found nothing"."""
+    bundle = tmp_path / "logs_only.json"
+    bundle.write_text(json.dumps({
+        "meta": {"sweep_utc": "2026-08-17 19:44:40"},
+        "deposits": [{
+            "contributor": "0x" + "11" * 20, "hour": 0,
+            "amount_wei": 10**17, "credited_delta_wei": 10**17,
+            "weight_added_wei": 10**17, "new_weight_wei": 10**17,
+            "tx_count": 1, "block": 100, "log_index": 1,
+            "tx_hash": "0x" + "ab" * 32,
+        }],
+        "first_deposits": [{"contributor": "0x" + "11" * 20, "index": 1}],
+    }), encoding="utf-8")
+    code = run("analyze", "--dataset", str(bundle), "--preset", "curator", *OFFLINE_RATE)
+    assert code == 0
+    cov = out_json(capsys)["coverage"]
+    assert cov["tiers"] == "a"
+    assert cov["tx_fingerprints"] is None
+    assert cov["funding"] is None
+
+
+def test_abc_without_a_funding_budget_exits_rather_than_silently_skipping(
+    capsys,
+) -> None:
+    """**Review I2(b).**  ``--tiers abc`` with the budget at its 0 default used
+    to run a and b, skip c, and say so nowhere — the run looked like a full
+    A+B+C analysis and was not one.  A cap that silently does nothing is worse
+    than no cap."""
+    code = run("analyze", "--contract", CONTRACT, "--from-block", "0",
+               "--preset", "curator", "--tiers", "abc")
+    assert code != 0
+    err = capsys.readouterr().err
+    assert "--funding-budget" in err and "--tiers ab" in err
+
+
+def test_the_tx_cap_cuts_chronologically_at_a_block_boundary_and_says_so() -> None:
+    """**Review I2(c).**  ``sorted({...})[:n]`` is a *lexicographic* sample of
+    transaction hashes — uncorrelated with anything — and it cuts mid-block,
+    which splits the very groups the gas family measures uniformity over
+    (``gas_edges`` needs ≥ 90 % of a component before it will speak).
+
+    So the cap walks chain order and stops at the last block that fits whole.
+    """
+    from sybilkit.cli import _tx_hashes_in_chain_order
+    from sybilkit.model import Deposit
+
+    def dep(block: int, log_index: int, tag: str) -> Deposit:
+        return Deposit(
+            contributor="0x" + "11" * 20, hour=0, amount_wei=1,
+            credited_delta_wei=1, weight_added_wei=1, new_weight_wei=1,
+            tx_count=1, block_number=block, log_index=log_index,
+            tx_hash="0x" + tag * 32,
+        )
+
+    # Block 10 holds three transactions, block 11 holds two.  Shuffled on the
+    # way in, and the hash of the LAST one sorts first — so a lexicographic
+    # slice would lead with a block-11 transaction.
+    deposits = [
+        dep(11, 1, "0a"), dep(10, 2, "f2"), dep(10, 1, "f1"),
+        dep(11, 2, "0b"), dep(10, 3, "f3"),
+    ]
+    hashes, cut = _tx_hashes_in_chain_order(deposits, cap=4)
+    assert hashes == ["0x" + t * 32 for t in ("f1", "f2", "f3")]
+    assert cut == 11, "the cut must name the first block it did NOT cover"
+
+    whole, cut_none = _tx_hashes_in_chain_order(deposits, cap=99)
+    assert len(whole) == 5 and cut_none is None
+    # A cap smaller than the first block still takes that block whole rather
+    # than handing a uniformity detector a fragment of one.
+    tiny, tiny_cut = _tx_hashes_in_chain_order(deposits, cap=1)
+    assert tiny == ["0x" + t * 32 for t in ("f1", "f2", "f3")]
+    assert tiny_cut == 11
+
+
+def test_the_live_header_records_the_tx_cap_it_applied(capsys) -> None:
+    """And the cut reaches the artifact, so a consumer sees the analysis was
+    scored on part of the history."""
+    httpx = pytest.importorskip("httpx")
+    from sybilkit import sources
+
+    rate_sel = sources.selector("POINTS_PER_ETH()")
+    min_sel = sources.selector("minDeposit()")
+    rows = [
+        _deposit_row(block=100, log_index=i, tag=f"{i:02x}") for i in range(3)
+    ] + [_deposit_row(block=101, log_index=9, tag="99")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls = body if isinstance(body, list) else [body]
+        out = []
+        for call in calls:
+            method, cid = call["method"], call["id"]
+            if method == "eth_call":
+                data = call["params"][0]["data"]
+                value = 1000 if data == rate_sel else 50_000_000_000_000_000
+                assert data in (rate_sel, min_sel)
+                out.append({"jsonrpc": "2.0", "id": cid,
+                            "result": "0x" + f"{value:064x}"})
+            elif method == "eth_blockNumber":
+                out.append({"jsonrpc": "2.0", "id": cid, "result": hex(200)})
+            elif method == "eth_getLogs":
+                out.append({"jsonrpc": "2.0", "id": cid, "result": rows})
+            elif method == "eth_getTransactionByHash":
+                h = call["params"][0]
+                out.append({"jsonrpc": "2.0", "id": cid, "result": {
+                    "hash": h, "nonce": "0x0", "gas": hex(91_600), "type": "0x2",
+                    "maxPriorityFeePerGas": hex(10**8), "maxFeePerGas": hex(10**9),
+                }})
+            else:  # pragma: no cover
+                raise AssertionError(method)
+        return httpx.Response(200, json=out if isinstance(body, list) else out[0])
+
+    code = cli.main(
+        ["analyze", "--contract", CONTRACT, "--from-block", "100",
+         "--preset", "curator", "--tiers", "ab", "--max-txs", "3"],
+        transport=httpx.MockTransport(handler),
+    )
+    assert code == 0
+    cov = out_json(capsys)["coverage"]
+    assert cov["tiers"] == "ab"
+    assert cov["tx_fingerprints"]["available"] == 4
+    assert cov["tx_fingerprints"]["requested"] == 3
+    assert cov["tx_fingerprints"]["read"] == 3
+    assert cov["tx_fingerprints"]["unread"] == 0
+    assert cov["tx_fingerprints"]["cap"] == 3
+    assert cov["tx_fingerprints"]["cut_at_block"] == 101
+    assert cov["funding"] is None
+
+
+def test_the_preset_name_in_the_output_is_the_one_that_was_asked_for(capsys) -> None:
+    """It was hardcoded ``"curator"`` in all three builders, so a second preset
+    would have shipped documents claiming to be the first one."""
+    run("segments", "--dataset", str(LABELED), "--preset", "curator", *OFFLINE_RATE)
+    doc = out_json(capsys)
+    assert doc["preset"] == "curator"
+    assert cli.PRESETS == ("curator",)
+    # And the value is threaded, not typed: the builders read it off the header.
+    import inspect
+
+    src = inspect.getsource(cli)
+    assert src.count('"preset": "curator"') == 0
 
 
 def test_a_live_run_that_cannot_read_the_chain_exits_non_zero(capsys) -> None:

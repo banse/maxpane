@@ -277,8 +277,12 @@ class OperatorSegment:
 class Segment:
     """One band of the population: who is in it and what it is worth.
 
-    ``key`` is machine-stable (``early_cohort``, ``hour_9``,
-    ``multiplier_17500_20000``) and is what a consumer keys on; ``label`` and
+    ``key`` is machine-stable and is what a consumer keys on.  The whole
+    vocabulary, exactly as emitted: ``largest_operators``, ``early_cohort``,
+    ``late_cohort``, ``hour_<h>`` (``hour_9``), ``multiplier_<edge_bps>``
+    (``multiplier_17500`` — the band's **lower** edge, since the upper one is
+    the previous band's lower edge and naming both would let the two drift),
+    and ``multiplier_unknown``.  ``label`` and
     ``detail`` are the human strings and are pattern language.  ``points`` and
     ``contributors`` are counts, and ``points_share`` is a *share* in [0, 1] —
     the presentation boundary multiplies by 100, once, where every other
@@ -511,8 +515,15 @@ def segments(ds: Dataset, res: DetectResult, preset: CuratorPreset) -> Segments:
                 if bps >= edge:
                     chosen = edge
                     break
+            # No edge matched, so this deposit's multiplier is BELOW the
+            # lowest band.  It cannot happen on a decay curve that bottoms out
+            # at 1.0x, which is exactly why it must not be filed under the
+            # lowest band: a value the model says is impossible is either a
+            # different deployment or a decode fault, and either way calling it
+            # "1.00x-1.25x" is a fabricated fact.  It goes to the unknown
+            # bucket with everything else that has no representable multiplier.
             if chosen is None:
-                chosen = edges[-1] if edges else None
+                bps = None
         by_band.setdefault(chosen, []).append(addr)
     for i, edge in enumerate(edges):
         members = by_band.get(edge)
@@ -538,7 +549,8 @@ def segments(ds: Dataset, res: DetectResult, preset: CuratorPreset) -> Segments:
                 "multiplier_unknown",
                 "multiplier",
                 "multiplier band · unknown",
-                "credited nothing at the cap, so no multiplier is representable",
+                "no representable multiplier — credited nothing at the cap, "
+                "or below the lowest band",
                 unknown,
                 points_of,
                 total_points,

@@ -30,20 +30,68 @@ from ..model import Funding
 from . import DEFAULT_CONFIG, DEAD_STATUS_CODES, SourceConfig, _Session, require_httpx
 
 
+#: Why an address is still in :attr:`FundingSweep.pending`.  Three reasons, and
+#: the caller is entitled to tell them apart because only one of them is ours
+#: to fix.
+PENDING_BUDGET = "budget"        #: this pass's ``budget`` never got to it
+PENDING_PAGES = "pages"          #: its history outran ``max_pages``
+PENDING_UNREADABLE = "unreadable"  #: the source did not answer for it
+
+
 @dataclass(frozen=True, slots=True)
 class FundingSweep:
     """What one bounded pass resolved, and what it did not.
 
     ``pending`` **is** the cursor: pass it back as *addresses* on the next call,
-    with ``funding`` as ``known``, and coverage extends.  ``truncated`` is True
-    only when the pass stopped because it ran out of budget while addresses
-    were still unread — a *configuration* fact, not a source failure, and the
-    caller is entitled to tell the two apart.
+    with ``funding`` as ``known``, and coverage extends.
+
+    **A pending address has no row in ``funding``.**  That is the whole
+    resume contract and it was got wrong once: writing
+    ``Funding(funder=None)`` for an address that stays pending means the very
+    next call — which passes ``funding`` as ``known``, exactly as the recipe
+    says — skips it, so ``pending`` resumes nothing and a transient 503 is
+    frozen into a permanent "this wallet has no funder".  That is the repo's
+    "corruption outlives the outage" hazard, and in WP3's persisted slot it
+    would outlive the process too.  So: **resolved rows are only ever written
+    for addresses that are finished**, and a finished address is one whose
+    history we walked to the end.  An address we walked to the end and found no
+    incoming transfer for gets a real ``Funding(funder=None)`` row and is *not*
+    pending — that is a measurement, not a gap.
+
+    ``truncated`` is True only for the **budget** case: the pass stopped
+    because it ran out of its own budget while addresses were still unread.  It
+    is a *configuration* fact, not a source failure.  Page-bounded and
+    unreadable addresses do not set it — they are visible in
+    :attr:`pending_reasons`, and :attr:`page_bounded` names the ones whose
+    history simply outran ``max_pages`` (the signal that the bound, not the
+    source, is what needs raising).
     """
 
     funding: dict[str, Funding]
     pending: tuple[str, ...]
     truncated: bool
+    pending_reasons: dict[str, str]
+
+    @property
+    def page_bounded(self) -> tuple[str, ...]:
+        """Pending addresses whose history outran ``max_pages``.
+
+        Non-empty means the *pager's* bound is what stopped us, which is the
+        one truncation a caller fixes by asking for more pages rather than by
+        waiting for an endpoint to come back.
+        """
+        return tuple(
+            a for a in self.pending
+            if self.pending_reasons.get(a) == PENDING_PAGES
+        )
+
+    @property
+    def unreadable(self) -> tuple[str, ...]:
+        """Pending addresses the source did not answer for."""
+        return tuple(
+            a for a in self.pending
+            if self.pending_reasons.get(a) == PENDING_UNREADABLE
+        )
 
 
 def _first_incoming(items: Iterable[Any], address: str) -> tuple[str, int] | None:
@@ -133,8 +181,14 @@ async def fetch_funding(
     **new** addresses this pass will look up; anything beyond it lands in
     ``pending`` with ``truncated=True``.
 
+    **An address that stays pending gets no row in the result.**  It is not
+    written as ``Funding(funder=None)`` and then skipped by the next pass's
+    ``known`` — see :class:`FundingSweep`.  Only a finished address is
+    resolved, and "finished" means the history was walked to the end.
+
     ``None`` only when the source could not be reached at all — never an empty
-    map, which reads as "nobody has a funder".
+    map, which reads as "nobody has a funder", and never a half-full one that
+    quietly forgets an outage happened.
     """
     resolved: dict[str, Funding] = {
         a.lower(): f for a, f in (known or {}).items()
@@ -150,12 +204,15 @@ async def fetch_funding(
         seen.add(key)
         wanted.append(key)
     if not wanted:
-        return FundingSweep(funding=resolved, pending=(), truncated=False)
+        return FundingSweep(
+            funding=resolved, pending=(), truncated=False, pending_reasons={}
+        )
 
     pages = config.blockscout_max_pages if max_pages is None else max_pages
     todo = wanted if budget is None else wanted[:budget]
     deferred = [] if budget is None else wanted[budget:]
     pending: list[str] = list(deferred)
+    reasons: dict[str, str] = {a: PENDING_BUDGET for a in deferred}
     attempted = 0
     reached = 0
 
@@ -166,23 +223,37 @@ async def fetch_funding(
             if reachable:
                 reached += 1
             if not complete:
-                # Bounded out or unreadable: the row says we looked and found
-                # nothing resolvable, the cursor says we are not finished.
+                # NOT resolved.  A row here would be read as an answer by the
+                # very next pass (which passes `funding` as `known`) and the
+                # address would never be looked at again.
                 pending.append(address)
+                reasons[address] = (
+                    PENDING_PAGES if reachable else PENDING_UNREADABLE
+                )
+                continue
             resolved[address] = Funding(
                 address=address,
                 funder=funder,
                 hops=1 if funder else None,
             )
-    if attempted and reached == 0 and not deferred:
-        # Not one address answered: that is an outage, not a population of
-        # wallets that nobody ever funded.
+    if attempted and reached == 0:
+        # Not one attempted address answered: that is an outage.  Deferral does
+        # NOT change that — a pass with `budget=2` over five addresses where
+        # both requests died is exactly as dead as one over two, and returning
+        # a half-full sweep there hides a total outage behind `truncated=True`.
         return None
     return FundingSweep(
         funding=resolved,
         pending=tuple(pending),
         truncated=bool(deferred),
+        pending_reasons=reasons,
     )
 
 
-__all__ = ["FundingSweep", "fetch_funding"]
+__all__ = [
+    "PENDING_BUDGET",
+    "PENDING_PAGES",
+    "PENDING_UNREADABLE",
+    "FundingSweep",
+    "fetch_funding",
+]

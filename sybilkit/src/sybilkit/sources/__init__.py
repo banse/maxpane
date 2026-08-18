@@ -560,14 +560,32 @@ async def rpc_batch(
                     last = RuntimeError(f"{url}: batch answered {type(body).__name__}")
                     break
                 out: list[Any] = [None] * len(payload)
+                endpoint_problem: Any = None
                 for entry in body:
                     if not isinstance(entry, dict):
                         continue
                     slot = by_id.get(entry.get("id"))
-                    if slot is None or entry.get("error"):
+                    if slot is None:
                         continue
+                    err = entry.get("error")
+                    if err:
+                        # Same discipline as `rpc_call`, and it was missing
+                        # here: drpc's "Can't route your request" arrives on
+                        # every entry wearing -32602, and a batch path that
+                        # only skipped errored entries returned an empty
+                        # result set from a live endpoint that had refused the
+                        # whole call.  Classify on the MESSAGE.
+                        if is_endpoint_limitation(err):
+                            endpoint_problem = err
+                            break
+                        raise MalformedRequest(f"{url}: {err}")
                     out[slot] = entry.get("result")
+                if endpoint_problem is not None:
+                    last = RuntimeError(f"{url}: {endpoint_problem}")
+                    break  # rotate the WHOLE batch: this endpoint refused it
                 return out
+            except (MalformedRequest, AllEndpointsFailed):
+                raise
             except (httpx.HTTPError, ValueError) as exc:
                 last = exc
                 if attempt < session.config.max_retries - 1:

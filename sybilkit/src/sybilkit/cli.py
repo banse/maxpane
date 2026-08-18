@@ -130,6 +130,25 @@ def _provenance(ds: Dataset, meta: dict, source: str) -> dict:
         "generated_at": generated_at,
         "block_range": block_range,
         "source": source,
+        # What was actually READ, not what was asked for.  The repo's
+        # no-silent-caps rule: a capped or skipped tier changes what the
+        # detector could possibly find, so the artifact has to say so — a
+        # consumer comparing two exports must be able to see that one of them
+        # never ran the funding pass.  The live path overwrites this with the
+        # real numbers; a `--dataset` run reports what the bundle carried.
+        "coverage": {
+            "tiers": "".join(
+                t for t, present in (("a", bool(ds.deposits)),
+                                     ("b", bool(ds.txs)),
+                                     ("c", bool(ds.funding))) if present
+            ),
+            "tx_fingerprints": (
+                {"read": len(ds.txs), "source": "dataset"} if ds.txs else None
+            ),
+            "funding": (
+                {"read": len(ds.funding), "source": "dataset"} if ds.funding else None
+            ),
+        },
     }
 
 
@@ -158,6 +177,7 @@ def _live(args, transport: Any) -> tuple[Dataset, dict, int, int]:
 
     config = sources.SourceConfig()
     kw: dict[str, Any] = {"config": config, "transport": transport}
+    coverage: dict[str, Any] = {"tiers": args.tiers}
 
     async def _run() -> tuple[Any, dict[str, Any], dict[str, Any], int | None, int | None]:
         rate = args.points_per_eth
@@ -171,18 +191,43 @@ def _live(args, transport: Any) -> tuple[Dataset, dict, int, int]:
         sweep = await logs.fetch_deposits(args.contract, args.from_block, **kw)
         if sweep is None:
             return None, {}, {}, rate, minimum
+
         fingerprints: dict[str, Any] = {}
         if "b" in args.tiers:
-            hashes = sorted({d.tx_hash for d in sweep.deposits})[: args.max_txs]
+            hashes, cut_at = _tx_hashes_in_chain_order(sweep.deposits, args.max_txs)
             got = await txs.fetch_tx_fingerprints(hashes, **kw)
-            fingerprints = got or {}
+            fingerprints = got.fingerprints if got else {}
+            coverage["tx_fingerprints"] = {
+                "requested": len(hashes),
+                "read": len(fingerprints),
+                "unread": (len(got.pending) if got else len(hashes)),
+                "available": len({d.tx_hash for d in sweep.deposits}),
+                "cap": args.max_txs,
+                "cut_at_block": cut_at,
+                "source": None if got else "unavailable",
+            }
+        else:
+            coverage["tx_fingerprints"] = None
+
         funding: dict[str, Any] = {}
-        if "c" in args.tiers and args.funding_budget:
-            addresses = sorted({d.contributor for d in sweep.deposits})
+        if "c" in args.tiers:
+            addresses = _contributors_in_chain_order(sweep.deposits)
             got_funding = await blockscout.fetch_funding(
                 addresses, budget=args.funding_budget, **kw
             )
             funding = got_funding.funding if got_funding else {}
+            coverage["funding"] = {
+                "requested": len(addresses),
+                "read": len(funding),
+                "budget": args.funding_budget,
+                "pending": (len(got_funding.pending) if got_funding else len(addresses)),
+                "page_bounded": (
+                    len(got_funding.page_bounded) if got_funding else 0
+                ),
+                "source": None if got_funding else "unavailable",
+            }
+        else:
+            coverage["funding"] = None
         return sweep, fingerprints, funding, rate, minimum
 
     sweep, fingerprints, funding, rate, minimum = asyncio.run(_run())
@@ -206,7 +251,62 @@ def _live(args, transport: Any) -> tuple[Dataset, dict, int, int]:
     ds = sweep.dataset(txs=fingerprints or None, funding=funding or None)
     prov = _provenance(ds, {}, f"{args.contract}@{args.from_block}")
     prov["block_range"] = {"from": sweep.from_block, "to": sweep.to_block}
+    prov["coverage"] = coverage
     return ds, prov, rate, minimum
+
+
+def _tx_hashes_in_chain_order(
+    deposits, cap: int
+) -> tuple[list[str], int | None]:
+    """Distinct deposit tx hashes in **chain order**, cut at a block boundary.
+
+    Two things wrong with the obvious ``sorted({...})[:cap]`` and both of them
+    matter to the detector rather than to the fetch:
+
+    * a *lexicographic* slice of transaction hashes is an arbitrary sample of
+      the population — it is uncorrelated with anything, so a capped run
+      fingerprints a scatter of wallets across every operator instead of a
+      contiguous slice of history;
+    * cutting mid-block splits a **group**.  The gas family's whole claim is
+      "this component collapses to one fingerprint", and it requires ≥ 90 %
+      coverage of a component before it will speak; a cap that fingerprints 14
+      of a 20-transaction block hands it a coverage hole shaped exactly like
+      evidence.
+
+    So: walk chain order, and stop at the last block that fits **whole**.
+    Returns ``(hashes, cut_at_block)`` — ``cut_at_block`` is ``None`` when
+    nothing was cut, and otherwise the first block NOT covered, which the
+    document header records and a later pass can resume from.
+    """
+    ordered = sorted(deposits, key=lambda d: (d.block_number, d.log_index))
+    by_block: dict[int, list[str]] = {}
+    for dep in ordered:
+        hashes = by_block.setdefault(dep.block_number, [])
+        if dep.tx_hash not in hashes:
+            hashes.append(dep.tx_hash)
+
+    out: list[str] = []
+    for block in sorted(by_block):
+        group = by_block[block]
+        if out and len(out) + len(group) > cap:
+            return out, block
+        out.extend(group)
+        if len(out) >= cap:
+            nxt = [b for b in sorted(by_block) if b > block]
+            return out, (nxt[0] if nxt else None)
+    return out, None
+
+
+def _contributors_in_chain_order(deposits) -> list[str]:
+    """Distinct contributors in the order they first appear on chain.
+
+    Chain order rather than sorted, for the same reason as the hashes: a
+    budgeted funding pass should walk the history, not the alphabet.
+    """
+    seen: dict[str, None] = {}
+    for dep in sorted(deposits, key=lambda d: (d.block_number, d.log_index)):
+        seen.setdefault(dep.contributor, None)
+    return list(seen)
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +322,7 @@ def _analyze_doc(ds: Dataset, res, preset: CuratorPreset, prov: dict) -> dict:
     return {
         **prov,
         "command": "analyze",
-        "preset": "curator",
+        "preset": prov.get("preset", "curator"),
         "config": {
             "min_size": preset.min_size,
             "min_families": preset.min_families,
@@ -268,7 +368,7 @@ def _segments_doc(ds: Dataset, res, preset: CuratorPreset, prov: dict) -> dict:
     return {
         **prov,
         "command": "segments",
-        "preset": "curator",
+        "preset": prov.get("preset", "curator"),
         "total_points": segs.total_points,
         "total_contributors": segs.total_contributors,
         "largest_operator_credit_wei": _wei(segs.largest_operator_credit_wei),
@@ -307,7 +407,7 @@ def _clean_list_doc(ds: Dataset, res, preset: CuratorPreset, prov: dict) -> dict
     return {
         **prov,
         "command": "export-clean-list",
-        "preset": "curator",
+        "preset": prov.get("preset", "curator"),
         "totals": {
             "total_points": clean.total_points,
             "flagged_points": clean.flagged_points,
@@ -410,12 +510,24 @@ def _run(args, parser: argparse.ArgumentParser, transport: Any) -> int:
         prov = _provenance(ds, meta, args.dataset)
         rate, minimum = args.points_per_eth, args.min_deposit_wei
     elif args.contract:
+        # A cap that silently does nothing is worse than no cap: `--tiers abc`
+        # with the funding budget at its 0 default used to run tiers a and b
+        # and report tier c in neither the output nor an error, so the run
+        # looked like a full A+B+C analysis and was not one.
+        if "c" in args.tiers and not args.funding_budget:
+            raise CliError(
+                "--tiers abc asks for the funding pass but --funding-budget is 0, "
+                "which would skip it silently.  Pass --funding-budget N (it is "
+                "the slow tier: ~1-2 keyless Blockscout calls per address at "
+                "~3 req/s, resumable across runs), or drop to --tiers ab."
+            )
         ds, prov, rate, minimum = _live(args, transport)
     else:
         raise CliError(
             "nothing to analyse: pass --contract to sweep a chain, or "
             "--dataset to read a committed bundle"
         )
+    prov["preset"] = args.preset
 
     preset = CuratorPreset(
         points_per_eth=rate,
