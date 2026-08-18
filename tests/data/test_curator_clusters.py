@@ -305,6 +305,26 @@ def test_a_hostile_persisted_payload_is_re_guarded_on_the_way_out():
             assert word not in low, (word, text)
 
 
+def test_the_adapter_forbidden_words_cover_the_librarys_label_words():
+    """Boundary parity, derived so it cannot silently drift.
+
+    The library never emits a forbidden word (its own ``test_curator`` scans
+    every produced string) and the adapter re-filters everything on the way
+    out regardless -- so this is defense-in-depth for a **hand-edited** cache,
+    the one input neither of those guards sees.  For that boundary to be
+    complete the adapter must screen at least every word the library screens.
+    The expectation is read off the library's own ``FORBIDDEN_LABEL_WORDS``
+    rather than retyped, so a word added on either side reddens this until the
+    two lists agree again (the omitted ``"farmer"`` is exactly how it slipped
+    the first time)."""
+    from sybilkit.curator import FORBIDDEN_LABEL_WORDS
+
+    adapter = {word.lower() for word in curator_clusters.FORBIDDEN_WORDS}
+    library = {word.lower() for word in FORBIDDEN_LABEL_WORDS}
+    missing = library - adapter
+    assert not missing, f"adapter omits library-screened word(s): {sorted(missing)}"
+
+
 def test_link_conf_bands_come_from_evidence_structure_not_the_raw_number():
     """Noisy-OR puts every cluster at >= 0.77, so a numeric band boundary is
     meaningless: the funding family (or a third family) is the 'high' claim,

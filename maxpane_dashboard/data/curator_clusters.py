@@ -91,12 +91,20 @@ _ETH = 10**18
 #: Words that may never reach a rendered string.  The chain cannot prove
 #: intent, so the adapter describes shapes and lets the reader judge — the same
 #: rule the widgets and ``curator_signals`` already enforce on their surfaces.
+#: A **superset of** ``sybilkit.curator.FORBIDDEN_LABEL_WORDS`` (order mirrored):
+#: the library screens its own labels and this adapter re-filters everything on
+#: the way out, so the only input this boundary alone guards is a hand-edited
+#: cache — for which the two lists must not drift.  ``"farmer"`` is here for
+#: that parity even though the library never emits it; the derived parity test
+#: (``test_the_adapter_forbidden_words_cover_the_librarys_label_words``) catches
+#: the next omission on either side.
 FORBIDDEN_WORDS: tuple[str, ...] = (
     "sybil",
     "cheat",
     "fraud",
     "attack",
     "abuse",
+    "farmer",
     "wash",
 )
 
