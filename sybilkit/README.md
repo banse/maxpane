@@ -7,18 +7,109 @@ through exactly one adapter. It scores *clusters*, not wallets; it emits *reason
 graduated confidence, never a verdict; and a failed read is `None`, never `0`. No API key of
 any kind, ever.
 
+Read-only analysis. Nothing here signs, sends, or constructs calldata for a state change.
+Not affiliated with any allowlist, drop, or protocol.
+
+## Install
+
+```bash
+pip install sybilkit              # the pure core — zero third-party packages
+pip install "sybilkit[sources]"   # adds httpx and the keyless fetchers
+```
+
+The core imports with **no** dependencies installed. `sybilkit.sources` imports `httpx` lazily,
+inside the call that needs it, so `import sybilkit.sources` and `sybilkit --help` work on the
+pure install too — only a live fetch asks for the extra, and it names it.
+
+Python 3.11+. `py.typed` is shipped.
+
+## Use
+
 ```python
 from sybilkit import Dataset, detect, DetectConfig
 
-ds = Dataset.from_events(deposits, first_deposits, txs=None, funding=None)
-res = detect(ds, DetectConfig(min_size=5, min_families=2, near_amount_tol=0.10))
-res.clusters        # sorted by points_share desc
-res.wallet(addr)    # WalletVerdict | None
+ds  = Dataset.from_events(deposits, first_deposits, txs=None, funding=None)
+res = detect(ds, DetectConfig(points_per_eth=1000, protocol_min_amount_wei=50_000_000_000_000_000))
+
+res.clusters        # list[Cluster], sorted by points_share desc
+res.wallet(addr)    # WalletVerdict | None  — None means "not analyzed", not "clean"
 res.flagged         # set[str], lowercase
 ```
 
-Status: the public API is **frozen** (WP0); the bodies raise `NotImplementedError` until WP1
-(core) and WP2 (sources, CLI, presets, packaging) land.
+Everything is **wei, and wei are `int`**. There is no `*_eth` field anywhere: a float cannot
+hold 1 363 396 200 000 000 000 000 wei, and the points curve floors an integer square root, so
+a float upstream moves the last digits of every score.
 
-<!-- TODO(WP6): finalise this README — install, CLI usage, the benchmark gate, the
-     keyless-endpoint list, and the separate publish job. -->
+`points_per_eth` and `protocol_min_amount_wei` have no useful defaults and are not meant to be
+remembered — read them off the chain. Without the protocol minimum, every wallet that paid the
+protocol's floor is byte-identical to every other one, and identicalness at the minimum
+identifies nobody.
+
+### How a cluster forms
+
+A wallet is never scored on its own. Signals emit `Edge`s in five independent **families** —
+`amount`, `sequence`, `cadence`, `gas`, `funding` — the combiner unions them, and a component
+survives only with **≥ 2 distinct families** and **≥ 5 members**. Confidence is noisy-OR over
+the families' best strengths, discounted (never raised) by wallet freshness.
+
+That compound condition is the design, not an optimisation: no per-wallet signal separated
+farms from power users in any published study, and false positives are the failure mode rather
+than a rounding error.
+
+## CLI
+
+```bash
+sybilkit analyze           --contract 0x… --from-block N --out clusters.json
+sybilkit segments          --contract 0x… --preset curator
+sybilkit export-clean-list --contract 0x… --preset curator --out clean_list.json
+```
+
+Sweeps `eth_getLogs` in 800-block chunks with endpoint failover, batches
+`eth_getTransactionByHash`, and runs a bounded, throttled, resumable Blockscout funding pass —
+all keyless. Every document carries a `schema_version`, a provenance header taken **from the
+data** (never the wall clock, so re-exporting one archive is byte-identical), and every wei
+value as a decimal string (a JSON number is a double to most consumers, and wei are not).
+
+`--dataset FILE` runs the same analysis over a committed JSON bundle and sweeps nothing. Since
+such a run cannot read the chain, it must be told what the chain says:
+`--points-per-eth` and `--min-deposit-wei` are required there and have no defaults.
+
+## Endpoints (all keyless, all verified)
+
+| use | endpoint |
+|---|---|
+| logs | `gateway.tenderly.co/public/mainnet`, then `eth.drpc.org` |
+| state / tx fingerprints | `ethereum-rpc.publicnode.com`, then the tenderly gateway |
+| per-address history | `eth.blockscout.com/api/v2` |
+
+Four things measured the hard way and encoded in `sources/`: publicnode **403s** a
+library-default `User-Agent` and refuses archive `eth_getLogs`; Blockscout stalls
+python-urllib while answering httpx and curl in under a second; drpc answers some log calls
+with a routing-error **string** wearing a code other providers spend on malformed input, so
+failover classifies on **message text, never the code**; and a provider's *suggested* retry
+range is never adopted — one of them decrements a single block per round trip and livelocks a
+verbatim follower, so the window halves instead.
+
+A frozenset of dead and newly-keyed hosts is refused at `SourceConfig` construction.
+
+## The benchmark gate
+
+`sybilkit.bench.run_benchmark(labeled_subset)` scores the detector against a labeled list and
+returns a `BenchResult` with `precision`, `median_gap` and `passes(floor, ceiling)`. Two bars,
+because either alone is gameable: a precision floor is met perfectly by a detector that
+convicts nobody, and a gap ceiling by one that convicts everybody. It reads the fixture its
+caller hands it and never the network.
+
+## Tests
+
+```bash
+cd sybilkit && python -m pytest
+```
+
+No test opens a socket. Every external payload is a committed fixture; every fetch test injects
+an `httpx.MockTransport`, and an AST scan enforces it.
+
+<!-- TODO(WP6): the maxpane-facing "THE LIST preset" section — `sybilkit.curator`'s
+     `CuratorPreset` / `segments` / `clean_list`, the adapter boundary, and the separate
+     publish job (the root workflow builds only maxpane; publishing sybilkit is a distinct
+     tag/job and is not auto-wired). -->

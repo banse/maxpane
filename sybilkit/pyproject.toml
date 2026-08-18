@@ -17,28 +17,49 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 # The CORE is stdlib-only, on purpose: `import sybilkit` must work with zero
-# third-party packages installed (PRD §3.5).  WP2 adds `httpx` as an OPTIONAL
-# extra for `sybilkit.sources`, never as a hard dependency.
+# third-party packages installed (PRD §3.5).  `httpx` is an OPTIONAL extra for
+# `sybilkit.sources`, never a hard dependency, and it is imported lazily inside
+# the call that needs it -- so `import sybilkit.sources` and `sybilkit --help`
+# both work on the pure install and only a live fetch names the extra.
 dependencies = []
 
 [project.optional-dependencies]
-# WP2 fills this in: sources/ needs httpx, nothing else does.
-sources = []
+# `sources/` is the only part of the distribution that opens a socket, and this
+# is the only third-party package in the whole tree.  0.27 is the floor because
+# that is where `MockTransport` and the `transport=` keyword the test suite
+# injects through settled into their current shape.
+sources = ["httpx>=0.27"]
 
 [project.scripts]
-# Implemented by WP2 (`sybilkit analyze|segments|export-clean-list`).  Declared
-# here so the entry-point name is frozen with the distribution name.
+# `sybilkit analyze|segments|export-clean-list`.  `main()` returns an int and
+# never raises for a user error, so the console script's exit status is the
+# CLI's own and not a traceback.
 sybilkit = "sybilkit.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/banse/maxpane"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/sybilkit/"]
+# `tests/` is deliberately NOT here.  The committed population archives are
+# ~3 MB and they are calibration data, not distribution content; the benchmark
+# gate reads whatever labeled subset its caller hands it, so a consumer who
+# wants to run it points `run_benchmark` at their own.
+#
+# The leading slashes anchor these at the distribution root.  Unanchored,
+# hatchling reads them as gitignore-style patterns and a bare `README.md`
+# quietly drags `tests/fixtures/README.md` into the sdist with it.
+include = ["/src/sybilkit/", "/README.md", "/pyproject.toml"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sybilkit"]
+# `py.typed` is data, not a module, so it is named explicitly rather than
+# trusted to a glob: a wheel that ships the code without it is a wheel whose
+# type hints no downstream type checker will look at.
+artifacts = ["src/sybilkit/py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
