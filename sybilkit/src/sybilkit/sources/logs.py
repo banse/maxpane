@@ -219,6 +219,14 @@ def _replay_rank(d: Deposit) -> tuple[int, int, int, int, int, int, int, str, bo
 #: dense in one place and empty everywhere else used to pay the narrow window
 #: for the whole rest of the walk — 16× the requests per chunk, forever, off
 #: one dense region.
+#:
+#: Recovery is **symmetric**: when the span climbs all the way back to
+#: ``log_chunk_blocks`` the per-endpoint shrink budget comes back with it.  It
+#: used to reset only where the pool head is dropped, so a second dense region
+#: after a full recovery skipped shrinking and spent an **endpoint** instead —
+#: the expensive answer, on a pool two deep.  Full width is the conservative
+#: place to do it: the walk can only get there by reading real chunks, so the
+#: reset cannot feed the livelock the halving rule exists to prevent.
 SPAN_RECOVER_AFTER = 4
 
 
@@ -301,6 +309,15 @@ async def _page(
         if clean >= SPAN_RECOVER_AFTER and span < full_span:
             span = min(span * 2, full_span)
             clean = 0
+            if span == full_span:
+                # The shrink budget recovers with the span, and only at full
+                # width.  Resetting it earlier would let one stubborn region
+                # shrink forever; not resetting it at all made a *second* dense
+                # region cost an endpoint rather than a shrink, which on a
+                # two-deep pool is the whole pool for a history that is merely
+                # lumpy.  Full width is reachable only by reading real chunks,
+                # so this cannot livelock.
+                shrinks = 0
     return rows, covered
 
 

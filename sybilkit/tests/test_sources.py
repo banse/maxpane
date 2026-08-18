@@ -635,6 +635,53 @@ def test_a_narrowed_span_recovers_after_a_run_of_clean_chunks() -> None:
     assert spans[:6] == [800, 400, 400, 400, 400, 800], spans
 
 
+def test_a_second_dense_region_costs_a_shrink_and_not_the_endpoint() -> None:
+    """**R3.6.**  Recovery was asymmetric: the *span* came back after a run of
+    clean chunks, the per-endpoint *shrink budget* never did.
+
+    ``shrinks`` was reset only where the pool head is dropped, so a walk that
+    spent its four shrinks on one dense region carried ``shrinks == 4`` for the
+    whole rest of the history — even after the span had climbed all the way
+    back to ``log_chunk_blocks`` on twelve clean chunks.  The next dense region
+    therefore skipped shrinking entirely and **dropped a healthy endpoint**,
+    which is the expensive recovery and the wrong one: the pool is two deep, so
+    two dense regions in one history cost the whole pool.
+
+    Reset it with the span, and only at full width — the walk has to have
+    demonstrated full-width progress again, which it can only do by reading
+    real chunks in between, so the reset cannot livelock.
+    """
+    calls: list[tuple[str, int, int]] = []
+    state = {"first": 0, "second": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(4_000))
+        flt = body["params"][0]
+        lo, hi = int(flt["fromBlock"], 16), int(flt["toBlock"], 16)
+        calls.append((request.url.host or "", lo, hi))
+        if lo == 0 and state["first"] < FAST.max_shrinks:
+            state["first"] += 1  # region one: spend the whole shrink budget
+            return _rpc_error(-32005, "query returned more than 10000 results")
+        if lo == 3_000 and state["second"] < 1:
+            state["second"] += 1  # region two, long after full recovery
+            return _rpc_error(-32005, "query returned more than 10000 results")
+        return _rpc_result([])
+
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+    assert sweep is not None
+    assert sweep.to_block == 4_000
+    assert state["first"] == FAST.max_shrinks and state["second"] == 1
+    # The span really did come all the way back before region two.
+    assert ("gateway.tenderly.co", 3_000, 3_799) in calls, calls
+    after = calls[calls.index(("gateway.tenderly.co", 3_000, 3_799)) + 1]
+    assert after == ("gateway.tenderly.co", 3_000, 3_399), calls[-4:]
+    assert {host for host, _, _ in calls} == {"gateway.tenderly.co"}, calls
+
+
 def test_a_sweep_that_read_some_chunks_returns_how_far_it_got_not_none() -> None:
     """**Review #11(iii).**  One more failure after the shrink budget used to
     discard every chunk already fetched, with no resume cursor at all.
