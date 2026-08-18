@@ -184,6 +184,11 @@ def _provenance(ds: Dataset, meta: dict, source: str) -> dict:
         "coverage": {
             "tiers_requested": None,
             "tiers_read": tiers_read(ds),
+            # Nothing was swept: this dataset was read from a file, so there is
+            # no covered-versus-requested range to state.  Present and null,
+            # rather than absent, for the same reason `tx_fingerprints` is —
+            # a consumer reads one shape from every document this CLI writes.
+            "logs": None,
             "tx_fingerprints": (
                 {"read": len(ds.txs), "source": "dataset"} if ds.txs else None
             ),
@@ -222,11 +227,18 @@ async def _chain_head(config: Any, transport: Any) -> int | None:
 
     ``fetch_deposits`` reads it internally when it is not given one, and this
     costs no extra round trip because passing it in stops that read happening.
-    The CLI needs the number itself: a ``--from-block`` past the head is a typo
-    the user can fix, and it cannot be told apart afterwards from a healthy
-    sweep of an empty range — the library answers both with an empty
-    ``DepositSweep``, and the header then states a ``block_range`` running
-    backwards as if it were a measurement.
+    The CLI needs the number itself, for two claims the artifact makes and
+    neither of which can be recovered after the sweep:
+
+    * a ``--from-block`` past the head is a typo the user can fix, and it
+      cannot be told apart afterwards from a healthy sweep of an empty range —
+      the library answers both with an empty ``DepositSweep``, and the header
+      then states a ``block_range`` running backwards as if it were a
+      measurement;
+    * a sweep that lost the pool half way through comes back **partial**, with
+      ``to_block`` naming what it covered.  ``block_range`` carries that
+      number honestly but silently: only the head it was aiming at makes the
+      shortfall visible.
 
     ``None`` on failure, never a remembered head.  ``_Session`` and
     ``rpc_call`` are the same door ``logs.fetch_deposits`` opens for the same
@@ -337,6 +349,19 @@ def _live(args, transport: Any) -> tuple[Dataset, dict, int, int]:
         )
         if sweep is None:
             return None, {}, {}, rate, minimum
+        # TIER A CAN BE PARTIAL NOW, AND HAS TO SAY SO.  A sweep that read some
+        # chunks and then lost the pool comes back with `to_block` naming the
+        # extent it covered rather than as a `None` that threw the read chunks
+        # away.  `block_range` carries that number, but a range alone cannot
+        # show that the sweep was aiming at the head and stopped short of it —
+        # so the header states both, exactly as the tier-B and tier-C rows
+        # already state requested beside read.
+        coverage["logs"] = {
+            "from_block": sweep.from_block,
+            "requested_to": head,
+            "covered_to": sweep.to_block,
+            "complete": sweep.to_block >= head,
+        }
 
         # `is not None`, never truthiness.  A sweep that ran and resolved
         # nothing is a healthy sweep — the node answering `"result": null` is

@@ -931,6 +931,84 @@ def test_a_from_block_past_the_head_is_a_named_error_not_an_inverted_range(
     assert "500" in err and "120" in err, "name both numbers; one of them is a typo"
 
 
+def test_a_partial_log_sweep_states_the_extent_it_covered_not_the_one_it_asked_for(
+    capsys,
+) -> None:
+    """**WP4's #11(iii), consumed.**  ``fetch_deposits`` used to answer a sweep
+    that lost the pool half way through with ``None``; it now answers with a
+    **partial** ``DepositSweep`` whose ``to_block`` is the extent actually
+    covered, because discarding every chunk already read left the caller with
+    no resume cursor at all.
+
+    ``block_range`` alone cannot carry that: it names a range, and a reader has
+    no way to see that the sweep was aiming at the head and stopped 301 blocks
+    short.  So the coverage header carries what was asked for beside what was
+    read, exactly as the tier-B and tier-C rows already do.
+    """
+    httpx = pytest.importorskip("httpx")
+    from sybilkit import sources
+
+    rate_sel = sources.selector("POINTS_PER_ETH()")
+    rows = [_deposit_row(block=1000, log_index=0, tag="aa")]
+
+    def make_handler(*, break_after: int | None):
+        """A pool that answers *break_after* log pages and then dies.
+
+        Two 800-block pages cover 900→2000, so ``break_after=1`` loses the
+        pool with the second page unread and the walk stops at 1699.
+        """
+        state = {"pages": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            calls = body if isinstance(body, list) else [body]
+            out = []
+            for call in calls:
+                method, cid = call["method"], call["id"]
+                if method == "eth_call":
+                    value = 1000 if call["params"][0]["data"] == rate_sel else 5 * 10**16
+                    out.append({"jsonrpc": "2.0", "id": cid,
+                                "result": "0x" + f"{value:064x}"})
+                elif method == "eth_blockNumber":
+                    out.append({"jsonrpc": "2.0", "id": cid, "result": hex(2000)})
+                elif method == "eth_getLogs":
+                    state["pages"] += 1
+                    if break_after is not None and state["pages"] > break_after:
+                        return httpx.Response(500, text="the pool is gone")
+                    out.append({"jsonrpc": "2.0", "id": cid,
+                                "result": rows if state["pages"] == 1 else []})
+                else:  # pragma: no cover
+                    raise AssertionError(method)
+            return httpx.Response(200, json=out if isinstance(body, list) else out[0])
+
+        return handler, state
+
+    handler, state = make_handler(break_after=1)
+    argv = ["analyze", "--contract", CONTRACT, "--from-block", "900", "--tiers", "a"]
+    assert cli.main(argv, transport=httpx.MockTransport(handler)) == 0
+    doc = out_json(capsys)
+    assert state["pages"] > 1, "the second page has to have been attempted"
+    assert doc["block_range"] == {"from": 900, "to": 1699}
+    partial = doc["coverage"]["logs"]
+    assert partial["from_block"] == 900
+    assert partial["requested_to"] == 2000
+    assert partial["covered_to"] == 1699, "never claim a range it did not read"
+    assert partial["complete"] is False
+
+    # And the healthy pass is not reported as a partial one — a coverage field
+    # that always says "short" says nothing.
+    whole, _ = make_handler(break_after=None)
+    assert cli.main(argv, transport=httpx.MockTransport(whole)) == 0
+    covered = out_json(capsys)["coverage"]["logs"]
+    assert covered == {"from_block": 900, "requested_to": 2000,
+                       "covered_to": 2000, "complete": True}
+
+    # A `--dataset` run swept nothing at all, and says so rather than leaving
+    # the key absent for a consumer to trip over.
+    run("analyze", "--dataset", str(LABELED), *OFFLINE_RATE)
+    assert out_json(capsys)["coverage"]["logs"] is None
+
+
 def test_a_malformed_labeled_bundle_is_a_message_not_a_key_error_traceback(
     tmp_path, capsys
 ) -> None:
