@@ -893,3 +893,107 @@ def test_the_preset_and_the_signals_agree_on_first_deposits(monkeypatch) -> None
     sentinel: dict = {}
     monkeypatch.setattr(curator_mod, "first_rows", lambda d: sentinel)
     assert curator_mod.first_deposits(ds) is sentinel
+
+
+def test_clean_list_and_segments_agree_when_handed_the_same_folds() -> None:
+    """``segments`` and ``clean_list`` fold the same two things.
+
+    Both need every contributor's final high-water weight and total credited
+    ETH, and a consumer that renders the SEGMENTS panel and exports the CLEANED
+    LIST calls both — so the population's deposits were walked four times for
+    two answers.  Both functions now take the folds by keyword, additive and
+    defaulted like the signals' do, and being handed them answers exactly what
+    deriving them answers.
+
+    They are **optional**: nothing in the library passes them to itself, and a
+    caller that does not care keeps the two-argument call it always had.
+    """
+    import inspect as _inspect
+
+    import sybilkit.curator as curator_mod
+    from sybilkit.curator import CuratorPreset, clean_list, credited_totals
+    from sybilkit.curator import final_weights, segments
+
+    from tests.conftest import build_labeled_dataset
+
+    for fn, frozen in (
+        (segments, ("ds", "res", "preset")),
+        (clean_list, ("ds", "res", "preset")),
+        (CuratorPreset.segments, ("self", "ds", "res")),
+        (CuratorPreset.clean_list, ("self", "ds", "res")),
+    ):
+        params = _inspect.signature(fn).parameters
+        names = list(params)
+        assert names[: len(frozen)] == list(frozen), names
+        assert names[len(frozen) :], f"{fn} grew no shared-fold parameters"
+        for name in names[len(frozen) :]:
+            p = params[name]
+            assert p.kind is _inspect.Parameter.KEYWORD_ONLY, (fn, name, p.kind)
+            assert p.default is None, (fn, name, p.default)
+
+    ds = build_labeled_dataset()
+    preset = CuratorPreset(points_per_eth=1000, min_deposit_wei=5 * 10**16)
+    res = detect(ds, preset.detect_config())
+    weights = final_weights(ds)
+    credits = credited_totals(ds)
+    assert weights and credits
+
+    assert segments(ds, res, preset, weights=weights, credits=credits) == segments(
+        ds, res, preset
+    )
+    assert clean_list(ds, res, preset, weights=weights, credits=credits) == clean_list(
+        ds, res, preset
+    )
+    assert preset.segments(ds, res, weights=weights, credits=credits) == preset.segments(
+        ds, res
+    )
+    assert preset.clean_list(
+        ds, res, weights=weights, credits=credits
+    ) == preset.clean_list(ds, res)
+
+    # The bound methods have to *forward* the folds, and equality alone cannot
+    # see that — a method that drops them on the floor still returns the right
+    # answer, by re-deriving them.  So watch the objects arrive.
+    seen: list[tuple[object, object]] = []
+
+    def spying(real):
+        def wrapped(ds_, res_, preset_, *, weights=None, credits=None):
+            seen.append((weights, credits))
+            return real(ds_, res_, preset_, weights=weights, credits=credits)
+
+        return wrapped
+
+    real_segments, real_clean = curator_mod.segments, curator_mod.clean_list
+    curator_mod.segments = spying(real_segments)
+    curator_mod.clean_list = spying(real_clean)
+    try:
+        preset.segments(ds, res, weights=weights, credits=credits)
+        preset.clean_list(ds, res, weights=weights, credits=credits)
+    finally:
+        curator_mod.segments = real_segments
+        curator_mod.clean_list = real_clean
+    assert seen == [(weights, credits), (weights, credits)]
+    assert all(w is weights and c is credits for w, c in seen)
+
+    # ...and handing them over is what makes the two calls one walk each.
+    calls: dict[str, int] = {"weights": 0, "credits": 0}
+
+    def counting(name, real):
+        def wrapped(ds_):
+            calls[name] += 1
+            return real(ds_)
+
+        return wrapped
+
+    real_w, real_c = curator_mod.final_weights, curator_mod.credited_totals
+    curator_mod.final_weights = counting("weights", real_w)
+    curator_mod.credited_totals = counting("credits", real_c)
+    try:
+        shared_w = curator_mod.final_weights(ds)
+        shared_c = curator_mod.credited_totals(ds)
+        segments(ds, res, preset, weights=shared_w, credits=shared_c)
+        clean_list(ds, res, preset, weights=shared_w, credits=shared_c)
+    finally:
+        curator_mod.final_weights = real_w
+        curator_mod.credited_totals = real_c
+    assert calls == {"weights": 1, "credits": 1}, calls

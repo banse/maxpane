@@ -175,13 +175,17 @@ class CuratorPreset:
         """Curve points for *weight_wei* at **this preset's** measured rate."""
         return curve_points(weight_wei, self.points_per_eth)
 
-    def segments(self, ds: Dataset, res: DetectResult) -> "Segments":
-        """:func:`segments`, bound to this preset."""
-        return segments(ds, res, self)
+    def segments(
+        self, ds: Dataset, res: DetectResult, *, weights=None, credits=None
+    ) -> "Segments":
+        """:func:`segments`, bound to this preset.  Forwards the shared folds."""
+        return segments(ds, res, self, weights=weights, credits=credits)
 
-    def clean_list(self, ds: Dataset, res: DetectResult) -> "CleanList":
-        """:func:`clean_list`, bound to this preset."""
-        return clean_list(ds, res, self)
+    def clean_list(
+        self, ds: Dataset, res: DetectResult, *, weights=None, credits=None
+    ) -> "CleanList":
+        """:func:`clean_list`, bound to this preset.  Forwards the shared folds."""
+        return clean_list(ds, res, self, weights=weights, credits=credits)
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +408,14 @@ def _band(
     )
 
 
-def segments(ds: Dataset, res: DetectResult, preset: CuratorPreset) -> Segments:
+def segments(
+    ds: Dataset,
+    res: DetectResult,
+    preset: CuratorPreset,
+    *,
+    weights=None,
+    credits=None,
+) -> Segments:
     """The population, cut the ways Adam asked for.
 
     *preset* is required and is the third argument rather than the two the PRD
@@ -417,9 +428,19 @@ def segments(ds: Dataset, res: DetectResult, preset: CuratorPreset) -> Segments:
 
     Pure: no clock, no I/O.  Two calls over one ``(ds, res)`` return equal
     objects.
+
+    *weights* and *credits* are :func:`final_weights` and
+    :func:`credited_totals` when the caller already holds them; ``None``
+    derives them.  :func:`clean_list` folds the same two things, and a consumer
+    that renders the SEGMENTS panel *and* exports the CLEANED LIST calls both —
+    four walks of the population's deposits for two answers.  Keyword-only and
+    defaulted, exactly like the signals' shared folds: passing one is an
+    optimisation, never a second opinion.
     """
-    weights = final_weights(ds)
-    credits = credited_totals(ds)
+    if weights is None:
+        weights = final_weights(ds)
+    if credits is None:
+        credits = credited_totals(ds)
     firsts = first_deposits(ds)
     points_of = {addr: preset.points(w) for addr, w in weights.items()}
     total_points = sum(points_of.values())
@@ -651,7 +672,14 @@ class CleanList:
         return "unknown"
 
 
-def clean_list(ds: Dataset, res: DetectResult, preset: CuratorPreset) -> CleanList:
+def clean_list(
+    ds: Dataset,
+    res: DetectResult,
+    preset: CuratorPreset,
+    *,
+    weights=None,
+    credits=None,
+) -> CleanList:
     """The list with every flagged group's members removed, ranked densely.
 
     *preset* is required for the same reason :func:`segments` needs it — the
@@ -675,9 +703,16 @@ def clean_list(ds: Dataset, res: DetectResult, preset: CuratorPreset) -> CleanLi
     nothing a ``detect`` run can produce; on a hand-built result it is what
     keeps the object agreeing with itself, since :meth:`CleanList.standing` and
     :meth:`CleanList.clean_rank` lowercase every query they are given.
+
+    *weights* and *credits* are :func:`final_weights` and
+    :func:`credited_totals` when the caller already holds them — see
+    :func:`segments`, which folds the same two things — and ``None`` derives
+    them.
     """
-    weights = final_weights(ds)
-    credits = credited_totals(ds)
+    if weights is None:
+        weights = final_weights(ds)
+    if credits is None:
+        credits = credited_totals(ds)
     flagged = {a.lower() for a in res.flagged}
     # Lowercased on read for the same reason `flagged` is, and it has to be the
     # same reason: `standing` and `clean_rank` lowercase every query, so an
