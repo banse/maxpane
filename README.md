@@ -12,7 +12,7 @@ kind, no wallet, no signing, no transactions.
 | Game | Chain | What you see |
 |------|-------|-------------|
 | **Surfboard** | Ethereum | surfsurf.eth announce feed, six launch detectors, IMD market, IDMD NFT |
-| **THE LIST** | Ethereum | Zero-custody allowlist game: hourly doomsday clock, survival signals, fan-out patterns |
+| **THE LIST** | Ethereum | Zero-custody allowlist game: hourly doomsday clock, survival signals, fan-out patterns, linked-wallet analysis |
 | **FWA** | Ethereum | NFT gacha pool, inverse-weighted VRF draws, pull EV |
 | **Base Trading** | Base | Trending tokens, volume, ETH price, signals |
 | **FrenPet** | Base | Pet battles, leaderboard, activity, trends |
@@ -57,6 +57,47 @@ fire a burn or un-fire a migration.
 The NFT floor is shown as `n/a — no keyless source`, not estimated. There is no keyless floor
 feed for this collection, and a made-up number on a dashboard people trade against is worse than
 an honest gap.
+
+### THE LIST — the linked-wallet view (`f`)
+
+THE LIST is a zero-custody allowlist game: send ETH, take points on a square-root curve, and the
+lowest-ranked wallets fall off the list at the top of every hour. The curve pays a *sublinear*
+return on size, so one person splitting a stake across ten wallets outscores the same ETH sent
+once. That makes the interesting question not who is on the list, but **how much of the list is
+the same hand**.
+
+Press **`f`** for as much of an answer as a public chain can support. The doomsday clock stays on
+screen the whole time; `esc` goes back.
+
+- **OPERATORS** — one row per linked group, widest first: how many wallets, the evidence that
+  links them (`identical 0.45Ξ send ×10 in one wave · shared first funder 0x1a2b3c4d… ×7`), the
+  share of all points the group holds, and a one-cell confidence marker — `⚑` several independent
+  kinds of evidence or shared money provenance, `◌` exactly two, `?` not analyzed yet.
+- **SEGMENTS** — the same population cut into bands: the largest operators, the early cohort, the
+  multiplier bands, the per-hour cohorts.
+- **CLEANED LIST** — the points total against what is left once linked groups come out, and your
+  own rank in both.
+
+Press **`e`** while that view is open to write the cleaned list to
+`~/.maxpane/curator_clean_list.json` (and a `.csv` of the same rows). The panel prints the path it
+wrote; a list it could not compute writes nothing rather than an empty allowlist file.
+
+The `y` view grows two lines from the same analysis: `linked`, which reads either a pattern
+(`1,995-wallet group · matching send amounts · shared funder chain`) or `not linked to any group`,
+and a clean rank under your raw one (`#47 with farms removed`). The leaderboard's flag column is
+graded the same way.
+
+**It is read-only analysis, in pattern language, and it is never an accusation.** The chain can
+show that twelve wallets sent an identical amount four seconds apart from one funder; it cannot
+show why, and this dashboard does not guess. So it describes shapes — *linked*, *fan-out*, a flag
+glyph — and never labels a wallet or a person. Groups are scored, never wallets on their own; two
+independent kinds of evidence are required before anything is called linked at all; and no verdict
+is ever written to disk, so a later sweep can and does put wallets back on the clean list.
+
+The analysis runs *behind* the dashboard, so the clock and the signals paint first and the three
+panels read `analysis unavailable` for the first minute or so of a cold start. They fill in on
+their own slower schedule and stamp their own `as of HH:MM`, which is deliberately not the title
+bar's.
 
 ## Install
 
@@ -163,7 +204,12 @@ its rows above. `FAN-OUT PATTERNS` and `CLOSEST CALLS` share one slot — `c` sw
 so the table names whichever the current phase opens on, and the other behaves the same
 way. And 138 is a *height-independent* number on purpose: the right rail reserves the
 column its scrollbar would need, so a short window scrolls the rail instead of quietly
-narrowing the panel that sets the width.
+narrowing the panel that sets the width. The `f` view is whole at **137**, one column
+inside the dashboard body it swaps out and six inside the number at the bottom of the
+table, so pressing it never asks for a wider terminal than the screen you pressed it on;
+its own binding panel is `OPERATORS`, whose evidence cell is the widest thing on it.
+The two swapped views need rows rather than columns: the `f` body fits whole from 48
+rows and the `y` body from 40, and below that each scrolls and says so with `‹ taller`.
 
 `IMD MARKET` is the one row that moves with the data rather than with your terminal. Its
 widest line carries the IMD/FP gap in dollars, and prices under a cent print with six
@@ -224,9 +270,13 @@ the other, so a single manager owns the command.
 
 Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap the two panels
 that share their bottom-right slot. **THE LIST binds `y`** for your own standing — every send you
-made with the multiplier it got, what each one actually credited, your share of all weight, and the
-single send that would pass the rank above you (`esc` goes back; the clock stays on screen either
-way). **It also binds `w`**, which asks for the wallet its
+made with the multiplier it got, what each one actually credited, your share of all weight, the
+single send that would pass the rank above you, and (from the linked-wallet analysis) whether you
+are in a group and what your rank is without one (`esc` goes back; the clock stays on screen either
+way). **It binds `f`** for the linked-wallet view described above, and **`e`** inside that view to
+export the cleaned list. THE LIST's status bar names the three: `c panels · y you · f linked`; `e`
+is not in the hints because it only acts in the `f` view, where the CLEANED LIST panel prints what
+it wrote. **It also binds `w`**, which asks for the wallet its
 YOU row is about — rank, points, credit, and the exact amount that wallet must send next to beat
 its own high-water mark. The address is validated, saved to `~/.maxpane/config.toml`, and picked
 up by every wallet-scoped dashboard on the next launch, so it is the easiest way to set one:
@@ -300,3 +350,33 @@ costs you fields, never correctness.
 
 Ten themes. `talismans` and `fwa` are game-specific palettes that pair with their dashboards
 (`maxpane --game fwa --theme fwa`), but any theme works with any game.
+
+## sybilkit — the analysis library, on its own
+
+The clustering behind THE LIST's `f` view is not part of the dashboard. It lives in
+[`sybilkit`](sybilkit/README.md), a **separate Python distribution** in this repository that knows
+nothing about maxpane, Textual, or any particular allowlist — THE LIST is one preset it ships, not
+its subject. maxpane reaches it through exactly one adapter module, and you can use it without
+maxpane at all.
+
+```bash
+pip install sybilkit              # the pure core — zero third-party packages
+pip install "sybilkit[sources]"   # adds httpx and the keyless fetchers
+```
+
+```bash
+sybilkit analyze           --contract 0x… --from-block N --out clusters.json
+sybilkit segments          --contract 0x… --preset curator
+sybilkit export-clean-list --contract 0x… --preset curator --out clean_list.json
+```
+
+Keyless like everything else here: public RPCs and a public explorer, no key of any kind, no
+signing, no writes. It scores *clusters* rather than wallets, requires at least two independent
+signal families and five members before a group exists at all, and emits `reasons` with a
+graduated confidence instead of a verdict. See [`sybilkit/README.md`](sybilkit/README.md) for the
+API, the endpoint table and the benchmark gate.
+
+`sybilkit` is built and released on its own — a maxpane release does not publish it, and
+`pip install maxpane` does not pull it in yet. Until it is on PyPI, maxpane's import of it is
+guarded: with the library absent the dashboard runs exactly as before and the `f` view reports
+`analysis unavailable` instead of failing.
