@@ -29,6 +29,7 @@ Raw discipline
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
@@ -95,6 +96,20 @@ def _ts(value: Any) -> float | None:
     blanket ``except`` dropped the whole deposit, so a fully valid population
     with ISO timestamps built an empty ``Dataset``.
 
+    **A reading that is not a real number is not a reading.**  ``float()`` hands
+    out ``nan`` and ``inf`` on request — from the bare ``NaN`` literal
+    ``json.loads`` accepts, and from the strings ``"nan"``/``"inf"`` a CSV or a
+    hand-edited cache file spells — and raises ``OverflowError``, which is in
+    nobody's ``except`` clause, for an integer past ``1.8e308``.  All three
+    degrade here, exactly as the ISO string does, and they have to degrade
+    *here* rather than downstream: a ``NaN`` compares false against everything,
+    so it makes :func:`_replay_rank` neither greater nor less and hands a
+    conflicting duplicate back to arrival order — the one thing
+    :meth:`Dataset.from_events` promises not to do — while an ``inf`` outranks
+    every genuine reading and a ``NaN`` poisons the CLI's ``max(stamps)``
+    provenance stamp.  Fixing it in the coercer keeps the two copies of
+    ``_replay_rank`` character-identical, which is itself pinned.
+
     Only ``ts`` gets this treatment.  Every other word is a signal, and a signal
     that cannot be read still drops its row rather than being softened to
     ``None``.
@@ -102,9 +117,10 @@ def _ts(value: Any) -> float | None:
     if value is None or isinstance(value, bool):
         return None
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        stamp = float(value)
+    except (TypeError, ValueError, OverflowError):
         return None
+    return stamp if math.isfinite(stamp) else None
 
 
 def _addr(value: Any) -> str:
@@ -153,7 +169,9 @@ class Deposit:
 
     ``ts`` is the block's wall clock and is ``None`` when the producer had no
     timestamp to give, **or gave one we cannot read** — an ISO-8601 string, say,
-    which is what Blockscout and every CSV export hand out.  Cadence detection
+    which is what Blockscout and every CSV export hand out, or a ``NaN`` /
+    infinity, which is what ``float()`` hands out for the JSON literal of the
+    same name and which no comparison can order.  Cadence detection
     works off ``block_number``, which is always present, precisely so that a
     missing ``ts`` degrades a label rather than a signal; an unreadable one
     degrades identically instead of taking the whole deposit down with it.

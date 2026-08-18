@@ -7,6 +7,8 @@ Pure coercion: lowercase every address, integerise every wei word, de-dupe on
 
 from __future__ import annotations
 
+import json
+
 from sybilkit.model import Dataset, Deposit, Funding, Tx
 
 ADDR = "0x047F606FD5B2BAA5F5C6C4AB8958E45CB6B054B7"  # deliberately checksummed
@@ -291,6 +293,77 @@ def test_a_malformed_amount_still_drops_the_row() -> None:
     ds = Dataset.from_events(rows, [_first_row()])
     assert len(ds.deposits) == 1
     assert ds.deposits[0].tx_hash == TX1.lower()
+
+
+def test_a_nan_timestamp_degrades_the_label_and_keeps_the_deposit() -> None:
+    """``NaN`` is not a reading, and ``float()`` hands one out on request.
+
+    The #8 fix caught ``TypeError``/``ValueError`` and degraded an ISO string to
+    ``None``; it let ``float("nan")`` straight through, because that call does
+    not raise.  A ``NaN`` ``ts`` is not a timestamp anybody measured — it is the
+    float spelling of "unreadable" — so it degrades exactly the way an ISO
+    string does, and for the same reason: ``ts`` is a *label*, not a signal.
+
+    It arrives through ordinary JSON, in both spellings: ``json.loads`` accepts
+    the bare ``NaN`` literal, and the decimal-string road runs ``float("nan")``
+    itself.  Downstream a ``NaN`` reaches ``cli.py``'s ``max(stamps)`` and
+    poisons a provenance stamp, and it reaches :func:`~sybilkit.model._replay_rank`,
+    where it compares false in *both* directions and hands the tie back to
+    arrival order.
+    """
+    from_json = json.loads(json.dumps(_dep_row()).rstrip("}") + ', "ts": NaN}')
+    assert from_json["ts"] != from_json["ts"], "the bare NaN literal really parses"
+    for row in (
+        _dep_row(ts=float("nan")),
+        _dep_row(ts="nan"),
+        _dep_row(ts="NaN"),
+        from_json,
+    ):
+        ds = Dataset.from_events([row], [_first_row()])
+        assert len(ds.deposits) == 1, row["ts"]
+        assert ds.deposits[0].ts is None, row["ts"]
+        assert ds.deposits[0].amount_wei == 450_000_000_000_000_000
+
+
+def test_an_unrepresentable_timestamp_degrades_the_label_too() -> None:
+    """The other two shapes of "not a real number".
+
+    An infinity orders, but it orders *wrongly* — it outranks every genuine
+    reading, so a garbage row wins a replay tie-break over a measured one.  And
+    an integer too large for a ``float`` made ``float()`` raise ``OverflowError``,
+    which is in neither ``_ts``'s own ``except`` clause nor the row's, so it
+    escaped ``from_events`` altogether: a hostile ``ts`` took the whole
+    constructor down instead of degrading one label.
+    """
+    for spelling in (float("inf"), float("-inf"), "inf", "Infinity", "-Infinity"):
+        ds = Dataset.from_events([_dep_row(ts=spelling)], [_first_row()])
+        assert len(ds.deposits) == 1, spelling
+        assert ds.deposits[0].ts is None, spelling
+    huge = Dataset.from_events([_dep_row(ts=10**400)], [_first_row()])
+    assert len(huge.deposits) == 1
+    assert huge.deposits[0].ts is None
+
+
+def test_two_rows_differing_only_in_a_nan_ts_are_not_settled_by_arrival() -> None:
+    """The tie-break is only total if every term it reads can be ordered.
+
+    ``NaN`` compares false against everything, so ``rank(a) > rank(b)`` and
+    ``rank(b) > rank(a)`` are *both* false and the dedupe falls back to whichever
+    row the producer handed over first — the one thing ``from_events`` promises
+    not to do, reintroduced by a value that the amended rank cannot see.  The
+    ruling fixes it in the **coercer**: a ``NaN`` is not a readable timestamp, so
+    it never reaches the rank at all, and both copies of ``_replay_rank`` stay
+    character-identical.
+    """
+    unreadable = _dep_row(ts=float("nan"))
+    measured = _dep_row(ts=5.0)
+    first = Dataset.from_events([unreadable, measured], [_first_row()])
+    second = Dataset.from_events([measured, unreadable], [_first_row()])
+    assert len(first.deposits) == 1
+    assert first == second
+    # ...and the row that *has* a reading is the one that survives, exactly as
+    # it is when the other row's ``ts`` was simply absent.
+    assert first.deposits[0].ts == 5.0
 
 
 def test_a_checksummed_funder_on_a_prebuilt_row_is_lowercased_like_a_mapping_row() -> None:

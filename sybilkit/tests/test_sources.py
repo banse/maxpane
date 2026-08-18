@@ -883,6 +883,61 @@ def test_the_two_copies_of_the_replay_rule_are_character_identical() -> None:
     )
 
 
+def test_a_log_row_whose_timestamp_cannot_be_a_float_degrades_the_label_not_the_row() -> None:
+    """The decoder's own ``ts`` road, taken through :func:`model._ts`.
+
+    ``hex_to_int`` reads a quantity of **any** width — the wire has no length
+    rule — and ``float()`` on an integer past ``1.8e308`` raises
+    ``OverflowError``, which no ``except`` on this path catches.  So one
+    over-wide ``blockTimestamp`` in a reply did not degrade a label: it escaped
+    ``decode_deposit``, escaped ``fetch_deposits``, and took the whole sweep
+    down.  ``ts`` is the one field whose absence degrades a *label* and not a
+    signal, so the unreadable spelling degrades identically — and routing this
+    site through the model's coercer is also what makes the ``logs.py`` copy of
+    the replay rule provably safe from a ``NaN`` it could not order.
+    """
+    row = deposited_row(
+        ALICE, hour=0, amount=10**17, block=7, log_index=1, ts=16**320
+    )
+    first = first_deposit_row(ALICE, index=1, block=7, log_index=2)
+    first["blockTimestamp"] = "0x" + "f" * 320
+    sweep = _sweep_of([row, first])
+    assert sweep is not None, "an unreadable label must not take the sweep down"
+    assert len(sweep.deposits) == 1
+    assert sweep.deposits[0].ts is None
+    assert sweep.deposits[0].amount_wei == 10**17
+    assert [f["contributor"] for f in sweep.first_deposits] == [ALICE.lower()]
+    assert sweep.first_deposits[0]["ts"] is None
+    assert sweep.dataset().deposits[0].ts is None  # and the two ends agree
+
+
+def test_a_sweep_carrying_an_unreadable_timestamp_builds_the_same_dataset_either_way() -> None:
+    """The twin rule's half of the ``NaN`` hole, through this module's own door.
+
+    A caller merging two persisted sweeps hands ``DepositSweep`` pre-built rows,
+    and ``dataset()`` runs them all back through ``Dataset.from_events``.  Two
+    of them sharing a ``(tx_hash, log_index)`` and differing in **nothing but a
+    ``NaN`` timestamp** ranked neither above nor below each other — ``NaN``
+    compares false in both directions — so the survivor was whichever row came
+    first, in the one constructor that promises otherwise.  Fixed in the
+    coercer, so both copies of ``_replay_rank`` stay character-identical and
+    neither ever sees the value.
+    """
+    common = dict(
+        contributor=ALICE.lower(), hour=0, amount_wei=10**17,
+        credited_delta_wei=10**17, weight_added_wei=10**17,
+        new_weight_wei=10**17, tx_count=1, block_number=10,
+        tx_hash="0x" + "ef" * 32, log_index=3,
+    )
+    unreadable = Deposit(**common, ts=float("nan"))
+    measured = Deposit(**common, ts=5.0)
+    forward = logs.DepositSweep(0, 50, (unreadable, measured), ()).dataset()
+    backward = logs.DepositSweep(0, 50, (measured, unreadable), ()).dataset()
+    assert len(forward.deposits) == 1
+    assert forward == backward
+    assert forward.deposits[0].ts == 5.0
+
+
 def test_an_uppercase_prefixed_log_hash_decodes_like_a_lowercase_one() -> None:
     """**R3.8(b), WP2's finding, the ``logs.py`` half.**  ``_tx_hash`` in
     ``model.py`` strips and lowercases *before* looking for the ``0x``, after

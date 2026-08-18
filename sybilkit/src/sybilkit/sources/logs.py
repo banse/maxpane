@@ -38,7 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from ..model import Dataset, Deposit
+from ..model import Dataset, Deposit, _ts
 from . import (
     DEFAULT_CONFIG,
     AllEndpointsFailed,
@@ -145,6 +145,14 @@ def decode_deposit(row: Any) -> Deposit | None:
         if parsed is None:
             return None
         values[name] = parsed
+    # One coercer for the wall clock, shared with `model._ts`.  `hex_to_int`
+    # reads a quantity of any width — the wire has no length rule — and
+    # `float()` raises `OverflowError` past ~1.8e308, which nothing on this path
+    # catches: an over-wide `blockTimestamp` escaped this decoder and took the
+    # whole sweep down instead of degrading one label.  Routing it through the
+    # model's coercer also means no `NaN` can ever reach `_replay_rank` below,
+    # where it would compare false in both directions and settle a conflicting
+    # duplicate by arrival order.
     ts = hex_to_int(row.get("blockTimestamp"))
     return Deposit(
         contributor=contributor,
@@ -157,7 +165,7 @@ def decode_deposit(row: Any) -> Deposit | None:
         block_number=block,
         tx_hash=tx_hash,
         log_index=log_index,
-        ts=None if ts is None else float(ts),
+        ts=_ts(ts),
     )
 
 
@@ -184,7 +192,11 @@ def decode_first_deposit(row: Any) -> dict | None:
     return {
         "contributor": contributor,
         "index": index,
-        "ts": None if not stamped else float(stamped),
+        # `_ts` for the same reason as in `decode_deposit`: an over-wide
+        # `blockTimestamp` raised `OverflowError` out of the decoder.  A falsy
+        # stamp stays `None` — a zero here is the word not being present, not a
+        # wallet that joined at the epoch.
+        "ts": None if not stamped else _ts(stamped),
     }
 
 
