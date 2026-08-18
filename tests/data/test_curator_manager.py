@@ -2516,8 +2516,13 @@ def test_an_analyzed_none_slot_reaches_the_flat_dict_as_real_zeros(tmp_path, clo
     assert out["operators_count"] == 0
     assert isinstance(out["operators_count"], int)
     assert out["segment_rows"], "the population bands exist without operators"
+    # Retargeted for ruling D4.  The aggregate band is `linked groups` now,
+    # and this assertion had to move with it or it would have been VACUOUS:
+    # after the rename no row can carry "largest operators" whatever the
+    # analysis found, so the old spelling could no longer distinguish an
+    # analyzed-none slot from one that published an aggregate off nothing.
     assert all(
-        row["label"] != "largest operators" for row in out["segment_rows"]
+        row["label"] != "linked groups" for row in out["segment_rows"]
     )
     assert out["clean_points"] == out["points_total"] > 0
     assert out["clean_contributors"] == len(FARM_MEMBERS) + len(FARM_CONTROLS)

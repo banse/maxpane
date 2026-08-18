@@ -386,7 +386,12 @@ def test_the_segment_rows_lead_with_the_operators_and_end_with_the_hours():
     aggregate and the cohorts must not be buried under twenty hour bands."""
     result = farm_analysis()
     labels = [row["label"] for row in result.segment_rows]
-    assert labels[0] == "largest operators"
+    # `linked groups`, not `largest operators` (review finding #12 / ruling
+    # D4): the aggregate is every linked cluster however small, so the name
+    # of the credit-line slice on it claimed a fact about whales while
+    # measuring one about linked groups.  `kind` is still "operators", which
+    # is what this ordering keys on, so nothing below moved.
+    assert labels[0] == "linked groups"
     hour_positions = [
         i for i, label in enumerate(labels) if label.startswith("per-hour band")
     ]

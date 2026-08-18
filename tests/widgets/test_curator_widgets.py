@@ -3368,7 +3368,7 @@ async def test_reasons_wider_than_the_cell_shed_whole_phrases_visibly():
 
 
 async def test_the_segment_bands_render_with_their_pattern_language_labels():
-    """PRD §5.2: "largest operators", "early cohort" — never "whale sybil".
+    """PRD §5.2: "linked groups", "early cohort" — never "whale sybil".
     The index-1000 cohort's 7.6% is the number Adam asked for by name."""
     from maxpane_dashboard.widgets.curator.segments import CuratorSegments
 
@@ -3376,10 +3376,41 @@ async def test_the_segment_bands_render_with_their_pattern_language_labels():
     text = await _rendered(
         CuratorSegments, segment_rows=env["rows"], analysis_as_of_hhmm="22:41"
     )
-    assert "largest operators" in text
+    assert "linked groups" in text
     assert "early cohort" in text
     assert "7.6%" in text
     assert "as of 22:41" in text
+
+
+async def test_the_segments_panel_never_calls_a_small_group_a_largest_operator():
+    """Review finding #12 / ruling D4, pinned where the reader sees it.
+
+    The aggregate band is **every** linked cluster, however small, so under
+    its old name the panel's headline row claimed a fact about whales while
+    measuring one about linked groups.  The farm double is that case at its
+    starkest: six wallets sending 1.2345Ξ each, ~7.4Ξ of combined credit —
+    a hundredth of the preset's 800Ξ ``largest_operator_credit_wei``, which
+    is the line the word "largest" is supposed to mean.  So the credit-line
+    slice is genuinely **empty** here, and any row calling this group a
+    largest operator is a fabricated fact rather than a wording quibble.
+
+    End to end and composited: the adapter builds the rows off a real
+    ``detect()`` run and the widget renders them.
+    """
+    from tests.data.test_curator_clusters import farm_analysis
+    from maxpane_dashboard.widgets.curator.segments import CuratorSegments
+
+    result = farm_analysis()
+    # Guard: the group is linked, and it is nobody's idea of a largest
+    # operator — without both halves the assertion below proves nothing.
+    assert result.operators_count == 1
+    assert result.segments.largest_operators == ()
+
+    rows = result.segment_rows
+    assert rows[0]["label"] == "linked groups"
+    text = await _rendered(CuratorSegments, segment_rows=rows)
+    assert "linked groups" in text
+    assert "largest operator" not in text.lower()
 
 
 async def test_segments_none_is_unavailable_and_empty_is_a_real_negative():
@@ -3452,7 +3483,7 @@ async def test_a_narrow_segments_table_sheds_the_detail_first():
         await pilot.pause()
         text = _screen_text(app)
     assert "widen" in text
-    assert "largest operators" in text
+    assert "linked groups" in text
     assert "43.2%" in text
     assert "send shapes" not in text        # the detail column is gone
 

@@ -2479,9 +2479,14 @@ async def test_the_analysis_panels_are_dispatched_while_hidden():
         # write, so a mount-placeholder frame -- title, blank note, a lone
         # `…` row -- can never contain it.
         ops = _region_text(app, screen.query_one(CuratorOperators), screen)
+        # SEGMENTS is anchored on its own region too, and for a new reason:
+        # its band is `linked groups` since ruling D4, and CLEANED LIST's own
+        # note ends "linked groups removed" — a screen-wide `in text` would
+        # be satisfied by the wrong panel.
+        segs = _region_text(app, screen.query_one(CuratorSegments), screen)
 
     assert "1,995 linked" in text           # OPERATORS, from the slice
-    assert "largest operators" in text      # SEGMENTS
+    assert "linked groups" in segs          # SEGMENTS
     assert "linked groups removed" in text  # CLEANED LIST
     assert "16 linked groups" in ops        # the note only a dispatch writes
 

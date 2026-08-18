@@ -3,9 +3,9 @@
 One row per derived band: whale **operators** by combined credit, the
 index-1000 early cohort, per-hour join bands, per-multiplier bands::
 
-    largest operators                  6,303   43.2%   16 linked groups · 0.45Ξ–171.99Ξ send shapes
+    linked groups                      6,303   43.2%   16 linked groups · 0.45Ξ–171.99Ξ send shapes
 
-Pattern language only: the labels are the producer's ("largest operators",
+Pattern language only: the labels are the producer's ("linked groups",
 "early cohort"), and the same forbidden-word list that guards the analytics
 source guards this panel's composited output — a whale here is a size, never
 an intent.

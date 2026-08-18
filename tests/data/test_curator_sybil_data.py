@@ -675,13 +675,19 @@ def test_the_segment_rows_are_the_segments_adam_asked_for() -> None:
     The single-send row is the point of the whole panel: an 800 ETH+ list is
     **2 wallets and 0.25% of points**, while the operator groups are 6 303
     wallets and 43.25% — sorting by one send finds the wrong whales.
+
+    The aggregate's label is ``linked groups`` (review finding #12 / ruling
+    D4).  **The numbers are the same 6 303 and 43.25** — the band was always
+    measuring every linked cluster, and renaming rather than filtering is
+    what keeps that true.
     """
     rows = worst_case_rows("segment_rows_worst.json")
     by_label = {r["label"]: r for r in rows}
     whales = research("whales_segments.json")
 
-    assert by_label["largest operators"]["contributors"] == 6303
-    assert by_label["largest operators"]["points_share_pct"] == 43.25
+    assert "largest operators" not in by_label
+    assert by_label["linked groups"]["contributors"] == 6303
+    assert by_label["linked groups"]["points_share_pct"] == 43.25
 
     single = by_label["single-send whales ≥ 800Ξ"]
     assert single["contributors"] == whales["whales_800plus_credit"]["count"] == 2
