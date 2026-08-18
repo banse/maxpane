@@ -126,6 +126,15 @@ class DetectResult:
     stranger's ``None``.  ``detect`` sets it after construction; a hand-built
     result defaults to ``frozenset()``, so its non-members read as "not
     analyzed" — the safe default is never a confident clean.
+
+    **Every membership test here is lowercased on both sides.**  :meth:`wallet`
+    lowercases its query, so an ``analyzed`` set or a ``Cluster.members`` tuple
+    spelled any other way makes the object disagree with itself — and with
+    ``curator.clean_list``, which lowercases both on read.  ``analyzed`` is
+    therefore normalised in its setter and the member index and :attr:`flagged`
+    are built lowercase.  ``detect`` already produces lowercase for all three,
+    so this is a no-op on every live path and defence on the hand-built one
+    that ruling D1-B made first-class.
     """
 
     __slots__ = (
@@ -134,7 +143,7 @@ class DetectResult:
         "flagged_points",
         "clean_points",
         "confidence_threshold",
-        "analyzed",
+        "_analyzed",
         "_by_member",
     )
 
@@ -154,12 +163,28 @@ class DetectResult:
         self.flagged_points = flagged_points
         self.clean_points = clean_points
         self.confidence_threshold = confidence_threshold
-        self.analyzed: frozenset[str] = frozenset()
+        self.analyzed = frozenset()
         self._by_member: dict[str, Cluster] = {
-            member: cluster
+            member.lower(): cluster
             for cluster in self.clusters
             for member in cluster.members
         }
+
+    @property
+    def analyzed(self) -> frozenset[str]:
+        """The population the producing run looked at, lowercase."""
+        return self._analyzed
+
+    @analyzed.setter
+    def analyzed(self, population) -> None:
+        # Normalised once, on write, rather than on every lookup: `wallet` is a
+        # per-address call and the analysed population is the whole
+        # contributor set, so lowercasing on read would make an O(1) membership
+        # test O(n).  `detect` assigns a lowercase frozenset, so this changes
+        # nothing it produces.
+        self._analyzed: frozenset[str] = frozenset(
+            addr.lower() for addr in population
+        )
 
     def wallet(self, addr: str) -> WalletVerdict | None:
         """This wallet's verdict, or ``None`` if it was not analyzed.
@@ -194,9 +219,14 @@ class DetectResult:
 
         Confidence stays graduated on both sides of the cut; the threshold
         decides only what the word "flagged" covers.
+
+        Lowercased here rather than trusted from the cluster, because every
+        consumer writes ``addr not in res.flagged`` against a lowercase address
+        and a raw spelling walks a flagged member straight through the filter
+        that exists to remove it.
         """
         return {
-            member
+            member.lower()
             for cluster in self.clusters
             if cluster.confidence >= self.confidence_threshold
             for member in cluster.members
