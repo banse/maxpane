@@ -59,6 +59,31 @@ def amount_edges(ds: Dataset, cfg) -> list[Edge]:
     therefore dropped from the near pass entirely (review #13, ruling D5-A),
     which costs a genuine near-neighbour of the minimum its edge and buys
     order-independence for the ~2 000 wallets sitting on that value.
+
+    **Ruling D5-A scoped that to the protocol minimum, and only to it**, so a
+    run of byte-equal *non-exempt* rows still picks its near partner
+    lexically: equal amounts are skipped, so the run's **lowest**-addressed
+    member is the one that can reach the near neighbour below it and its
+    **highest**-addressed member the one that can reach the neighbour above.
+    Which wallet that is is decided by lowercase address order, which is not a
+    fact about anybody.
+
+    It is nonetheless harmless, and structurally rather than luckily so.  A
+    byte-equal run of two or more non-exempt single-deposit rows *in one block*
+    is already one component before the near pass runs —
+    :func:`sybilkit.signals.identical_amount_windows` welds it, globally for an
+    odd amount and inside the block's own hour window for a round one (one
+    block is one timestamp, so its rows share an hour) — so the near edge
+    merges the **same two components** whichever member of the run carries it.
+    Membership is therefore order-independent, and membership is what every
+    count, share and reason a caller ever sees is computed from; all that moves
+    is which two addresses sit on an ``Edge`` object inside this function's
+    return list.  The rendered ``Reason`` names amounts, never addresses, and
+    at :data:`STRENGTH_NEAR` it is dominated by the welding rule's own
+    :data:`STRENGTH_EXACT_ODD` / :data:`STRENGTH_EXACT_ROUND` in any case.
+    ``test_which_member_of_a_byte_equal_run_carries_the_near_edge_changes_nothing``
+    pins that equality — and reddens if the welding rule ever stops holding it
+    up, which is the assumption doing the work here.
     """
     singles = single_first_rows(ds)
     edges: list[Edge] = []

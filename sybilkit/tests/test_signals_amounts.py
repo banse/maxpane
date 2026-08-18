@@ -250,6 +250,69 @@ def test_which_of_two_byte_equal_minimum_wallets_links_is_not_decided_by_address
     assert touched[0] == touched[1]
 
 
+# ---- R1.3: D5-A is scoped to the minimum, and that is documented ----------
+#
+# The exemption fixes the arbitrariness only where R13b already said the value
+# identifies nobody.  Above the minimum a byte-equal run still hands its near
+# edge to a lexically chosen member — and that is harmless, because the
+# byte-identical rule has already welded the run into one component, so the
+# near edge merges the same two components whichever member carries it.  This
+# test states the harmlessness rather than asserting the arbitrariness away,
+# and it is the pin the ``amount_edges`` docstring names.
+
+RUN_AMOUNT = 2_067_000_000_000_000_001  # odd, and well above EXEMPT
+NEIGHBOUR = "0x" + "ee" * 20
+
+
+def _byte_equal_run_ds(order):
+    """Three byte-equal non-exempt rows and one near neighbour above them, all
+    in one block.  *order* permutes only the run's addresses; not one wei, block
+    or log index moves with it."""
+    from sybilkit import Dataset
+
+    rows = [
+        _row(_crowd_addr(role, order), RUN_AMOUNT, block=900, log_index=role)
+        for role in range(3)
+    ]
+    rows.append(
+        _row(NEIGHBOUR, RUN_AMOUNT + RUN_AMOUNT // 20, block=900, log_index=9)
+    )
+    return Dataset.from_events(rows, [])
+
+
+def test_which_member_of_a_byte_equal_run_carries_the_near_edge_changes_nothing() -> None:
+    """The near pass sorts by ``(amount, address)`` and skips equal amounts, so
+    the run's highest-addressed member is the one that reaches the neighbour
+    above it — an arbitrary choice that relabelling moves.  What must not move
+    is the **membership** it decides, and it does not: the byte-identical rule
+    already welded the run, so both spellings produce one component over the
+    same four roles.  Every count, share and reason a caller sees is computed
+    from that membership; only the endpoints of an ``Edge`` object move."""
+    carriers, partitions = [], []
+    for order in ((1, 2, 3), (3, 1, 2)):  # role 2 then role 0 holds the largest
+        role_of = {_crowd_addr(role, order): role for role in range(3)}
+        role_of[NEIGHBOUR] = 3
+        edges = amount_edges(_byte_equal_run_ds(order), WITH_MIN)
+        near = [e for e in edges if "near-identical" in e.reason.human_string]
+        assert len(near) == 1
+        carriers.append(
+            {role_of[a] for a in (near[0].a, near[0].b) if a != NEIGHBOUR}
+        )
+        partitions.append(
+            {
+                frozenset(
+                    role_of[m] for m in (component_containing(edges, a) or {a})
+                )
+                for a in role_of
+            }
+        )
+    # the lexical winner really does move -- the phenomenon the docstring names
+    assert carriers[0] != carriers[1]
+    assert carriers == [{2}, {0}]
+    # ...and the membership it decides does not
+    assert partitions[0] == partitions[1] == {frozenset({0, 1, 2, 3})}
+
+
 def test_a_near_edge_above_the_exempt_minimum_still_fires() -> None:
     """The over-correction guard: the exemption is about the minimum, not
     about the near rule.  Two in-band amounts that are both above it still
