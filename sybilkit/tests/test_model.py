@@ -11,6 +11,7 @@ from sybilkit.model import Dataset, Deposit, Funding, Tx
 
 ADDR = "0x047F606FD5B2BAA5F5C6C4AB8958E45CB6B054B7"  # deliberately checksummed
 ADDR_LC = ADDR.lower()
+ADDR_0X = "0X" + ADDR[2:]  # the other prefix spelling: ``_wei`` already takes it
 FUNDER = "0x332F73DD1E40DD9581444DBDC0BB6547FADBF954"
 TX1 = "0x" + "ab" * 32
 TX2 = "0x" + "cd" * 32
@@ -288,6 +289,117 @@ def test_a_malformed_amount_still_drops_the_row() -> None:
     ds = Dataset.from_events(rows, [_first_row()])
     assert len(ds.deposits) == 1
     assert ds.deposits[0].tx_hash == TX1.lower()
+
+
+def test_a_checksummed_funder_on_a_prebuilt_row_is_lowercased_like_a_mapping_row() -> None:
+    """Review finding #9.  ``isinstance(row, Funding)`` short-circuited straight
+    into the dict, so a checksummed ``funder`` survived un-normalised.  Every
+    component map in the library is keyed lowercase, so an un-normalised funder
+    silently kills the 0.95 peel-chain edge and splits ``by_funder`` hubs — the
+    strongest measured discriminator on this population, lost to spelling."""
+    prebuilt = Dataset.from_events(
+        [_dep_row()],
+        [_first_row()],
+        funding=[Funding(address=ADDR, funder=FUNDER, hops=1)],
+    )
+    mapped = Dataset.from_events(
+        [_dep_row()],
+        [_first_row()],
+        funding=[{"address": ADDR, "funder": FUNDER, "hops": 1}],
+    )
+    assert list(prebuilt.funding) == [ADDR_LC]
+    assert prebuilt.funding[ADDR_LC].address == ADDR_LC
+    assert prebuilt.funding[ADDR_LC].funder == FUNDER.lower()
+    assert prebuilt.funding == mapped.funding
+
+
+def test_a_prebuilt_tx_with_a_float_fee_is_dropped_not_admitted() -> None:
+    """A float already lost its low digits upstream, which is exactly why
+    ``_wei`` refuses one.  The prebuilt fast path skipped ``_opt_wei``
+    altogether, so a float priority fee walked into the gas axes and the
+    distinct-value count they feed."""
+    ds = Dataset.from_events(
+        [_dep_row()],
+        [_first_row()],
+        txs=[Tx(TX1, 4, 1.0e8, 141_167_541, 91_600, 2)],
+    )
+    assert ds.txs == {}
+    # ...and a negative one is refused on the same path, for the same reason
+    neg = Dataset.from_events(
+        [_dep_row()], [_first_row()], txs=[Tx(TX1, -3, 100_000_000, None, 91_600, 2)]
+    )
+    assert neg.txs == {}
+    # ...while the well-formed row is admitted, hash normalised
+    ok = Dataset.from_events(
+        [_dep_row()],
+        [_first_row()],
+        txs=[Tx("0x" + "AB" * 32, 4, 100_000_000, 141_167_541, 91_600, 2)],
+    )
+    assert list(ok.txs) == [TX1]
+    assert ok.txs[TX1].max_priority_fee_wei == 100_000_000
+
+
+def test_an_uppercase_0x_address_is_accepted_exactly_like_a_lowercase_one() -> None:
+    """``_wei`` lowercases before it looks for the ``0x`` prefix, so ``0X…`` is a
+    valid *amount*; ``_addr`` checked the prefix on the raw string, so the very
+    same spelling was malformed in an *address* and took the row with it.  One
+    spelling rule, every field — and leading whitespace is stripped in all of
+    them, not just the wei words."""
+    ds = Dataset.from_events(
+        [_dep_row(contributor=ADDR_0X, amount_wei="0X63EB89DA4ED00000")],
+        [_first_row(contributor=ADDR_0X)],
+        funding=[{"address": ADDR_0X, "funder": " " + FUNDER + "\n", "hops": 1}],
+    )
+    assert len(ds.deposits) == 1
+    assert ds.deposits[0].contributor == ADDR_LC
+    assert ds.deposits[0].amount_wei == 0x63EB89DA4ED00000
+    assert ds.first_index == {ADDR_LC: 2767}
+    assert ds.funding[ADDR_LC].funder == FUNDER.lower()
+    # ...and the tx-hash words hold the same rule
+    ds2 = Dataset.from_events([_dep_row(tx_hash="0X" + "AB" * 32)], [_first_row()])
+    assert ds2.deposits[0].tx_hash == TX1
+
+
+def test_the_prebuilt_and_mapping_paths_build_equal_datasets() -> None:
+    """The whole of #9 in one assertion.  The same rows, handed over as
+    dataclasses and as mappings, must describe the same dataset — a producer
+    that decoded its own rows (maxpane's detached sweep hands over real ``Tx``
+    and ``Funding`` objects) otherwise got a *different* dataset from one that
+    passed the raw dicts."""
+    dep = Deposit(
+        contributor=ADDR,
+        hour=3,
+        amount_wei=450_000_000_000_000_000,
+        credited_delta_wei=450_000_000_000_000_000,
+        weight_added_wei=821_025_000_000_000_000,
+        new_weight_wei=821_025_000_000_000_000,
+        tx_count=1,
+        block_number=25_771_131,
+        tx_hash=TX1,
+        log_index=67,
+    )
+    prebuilt = Dataset.from_events(
+        [dep],
+        [_first_row()],
+        txs={TX1: Tx(TX1, 4, 100_000_000, 141_167_541, 91_600, 2)},
+        funding={ADDR: Funding(ADDR, FUNDER, 1)},
+    )
+    mapped = Dataset.from_events(
+        [_dep_row()],
+        [_first_row()],
+        txs={
+            TX1: {
+                "tx_hash": TX1,
+                "nonce": 4,
+                "max_priority_fee_wei": 100_000_000,
+                "max_fee_wei": 141_167_541,
+                "gas_limit": 91_600,
+                "tx_type": 2,
+            }
+        },
+        funding={ADDR: {"address": ADDR, "funder": FUNDER, "hops": 1}},
+    )
+    assert prebuilt == mapped
 
 
 def test_the_committed_population_round_trips() -> None:

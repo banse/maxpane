@@ -110,10 +110,31 @@ def _ts(value: Any) -> float | None:
 def _addr(value: Any) -> str:
     """A lowercase ``0x`` address.  The whole library keys membership on the
     lowercase spelling; a checksummed one from one producer and a lowercase one
-    from another would silently split every cluster in half."""
-    if not isinstance(value, str) or not value.startswith("0x") or len(value) != 42:
+    from another would silently split every cluster in half.
+
+    Strip and lowercase **before** the prefix check, exactly as :func:`_wei`
+    already does.  Checking the raw string made ``0X…`` malformed in an address
+    while the identical spelling was a perfectly good wei word — one rule per
+    field is one rule too many, and the row was dropped for a capital letter.
+    """
+    if not isinstance(value, str):
         raise _Malformed(repr(value))
-    return value.lower()
+    text = value.strip().lower()
+    if not text.startswith("0x") or len(text) != 42:
+        raise _Malformed(repr(value))
+    return text
+
+
+def _tx_hash(value: Any) -> str:
+    """A lowercase ``0x`` transaction hash, on :func:`_addr`'s spelling rule:
+    strip and lowercase first, *then* look for the prefix.  No length check —
+    the hash is a de-dupe key here, not a decoded word."""
+    if not isinstance(value, str):
+        raise _Malformed(repr(value))
+    text = value.strip().lower()
+    if not text.startswith("0x"):
+        raise _Malformed(repr(value))
+    return text
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,7 +267,12 @@ class Dataset:
 
         *txs* and *funding* are keyword-only and default to ``None`` because
         tier A runs with neither: a caller that has only logs must not have to
-        pass two empty dicts to say so.
+        pass two empty dicts to say so.  A **pre-built** :class:`Tx` or
+        :class:`Funding` takes exactly the same road as a mapping and is re-read
+        through the same coercers rather than trusted — a decoder that produced
+        a checksummed ``funder`` or a float fee is precisely the producer this
+        door exists to normalise, and one that already produced clean values
+        loses nothing by being asked twice.
 
         Malformed rows are **dropped, not zeroed** — with exactly one exception,
         ``ts``, which degrades to ``None`` (see :func:`_ts`) because it is a
@@ -258,9 +284,6 @@ class Dataset:
         parsed: dict[tuple[str, int], Deposit] = {}
         for row in deposits:
             try:
-                tx_hash = _get(row, "tx_hash")
-                if not isinstance(tx_hash, str) or not tx_hash.startswith("0x"):
-                    raise _Malformed(repr(tx_hash))
                 dep = Deposit(
                     contributor=_addr(_get(row, "contributor")),
                     hour=_wei(_get(row, "hour")),
@@ -270,7 +293,7 @@ class Dataset:
                     new_weight_wei=_wei(_get(row, "new_weight_wei")),
                     tx_count=_wei(_get(row, "tx_count")),
                     block_number=_wei(_get(row, "block_number", "block")),
-                    tx_hash=tx_hash.lower(),
+                    tx_hash=_tx_hash(_get(row, "tx_hash")),
                     log_index=_wei(_get(row, "log_index")),
                     ts=_ts(_get(row, "ts")),  # degrades to None, never drops the row
                 )
@@ -295,16 +318,12 @@ class Dataset:
         if txs is not None:
             rows: Iterable[Any] = txs.values() if isinstance(txs, Mapping) else txs
             for row in rows:
-                if isinstance(row, Tx):
-                    if isinstance(row.tx_hash, str):
-                        parsed_txs.setdefault(row.tx_hash.lower(), row)
-                    continue
+                # A pre-built ``Tx`` takes the same road as a mapping: ``_get``
+                # reads an attribute as happily as a key, and a fast path here
+                # skipped every coercer (a float fee walked into the gas axes).
                 try:
-                    tx_hash = _get(row, "tx_hash")
-                    if not isinstance(tx_hash, str) or not tx_hash.startswith("0x"):
-                        raise _Malformed(repr(tx_hash))
                     tx = Tx(
-                        tx_hash=tx_hash.lower(),
+                        tx_hash=_tx_hash(_get(row, "tx_hash")),
                         nonce=_opt_wei(_get(row, "nonce")),
                         max_priority_fee_wei=_opt_wei(_get(row, "max_priority_fee_wei")),
                         max_fee_wei=_opt_wei(_get(row, "max_fee_wei")),
@@ -319,10 +338,9 @@ class Dataset:
         if funding is not None:
             rows = funding.values() if isinstance(funding, Mapping) else funding
             for row in rows:
-                if isinstance(row, Funding):
-                    if isinstance(row.address, str):
-                        parsed_funding.setdefault(row.address.lower(), row)
-                    continue
+                # Likewise: a pre-built ``Funding`` is re-coerced, because the
+                # fast path let a checksummed ``funder`` through un-normalised
+                # and every component map in the library is keyed lowercase.
                 try:
                     funder = _get(row, "funder")
                     entry = Funding(
