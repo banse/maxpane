@@ -2283,9 +2283,19 @@ CuratorScreen CuratorWalletHero {
     height: 8;
 }
 
+/* The rail scrolls below its measured minimum height instead of dropping
+ * WHERE IT GETS YOU dark — the FWA coverage-badge hazard on the reader's own
+ * panels — and the title bar's `‹ taller` marker is the advertisement, the
+ * same construct as the dashboard's own rail above.  The gutter is reserved
+ * for the same reason as there: unreserved, the scrollbar takes its column
+ * out of the rail's panels only on short terminals, and the `y` view's
+ * *width* requirement becomes a function of its *height*. */
 CuratorScreen #curator-wallet-rail {
     width: 2fr;
     height: 100%;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-size: 1 1;
 }
 
 CuratorScreen CuratorWalletLadder {
@@ -2319,6 +2329,56 @@ CuratorScreen CuratorWalletNext {
 }
 
 CuratorScreen CuratorWalletTarget {
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * THE LIST's `f` view — the linked-wallet analysis (curator analysis body).
+ *
+ * Three full-width panels stacked, measured (WP4.7): SEGMENTS' full tier
+ * alone needs 111 columns (a 33-column label beside a 56-column detail), so
+ * no two of these panels fit side by side inside the app-wide 143, and
+ * stacking is what lets every panel reach its full tier at the curator
+ * screen's own 138.  The body claims the same `1fr` as its two siblings so
+ * the hero — which STAYS on screen in this mode (PRD §5: the doomsday clock
+ * never leaves) — does not move on the toggle.
+ *
+ * Rows are the scarce dimension: the three panels total 37 rows, so the body
+ * first fits whole at a 48-row terminal (ANALYSIS_MIN_HEIGHT in the screen
+ * suite).  Below that it scrolls — nothing is unreachable — and the
+ * advertisement is the title bar's `‹ taller`, driven off this body's own
+ * scrollbar.  The gutter is reserved for the by-now-standard reason: without
+ * it the scrollbar takes its column out of the widest panel only on short
+ * terminals, and the *width* pin becomes a function of *height*.
+ * ------------------------------------------------------------------------ */
+CuratorScreen #curator-analysis-body {
+    height: 1fr;
+    width: 100%;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-size: 1 1;
+}
+
+/* `margin: 1 0 1 0` on the first panel: the top row is `#middle-row`'s own
+ * blank line under the hero, so the three bodies' first titles land on the
+ * same row; the bottom row is the gap to SEGMENTS. */
+CuratorOperators {
+    width: 100%;
+    height: auto;
+    margin: 1 0 1 0;
+    padding: 0 1;
+}
+
+CuratorSegments {
+    width: 100%;
+    height: auto;
+    margin: 0 0 1 0;
+    padding: 0 1;
+}
+
+CuratorCleanList {
     width: 100%;
     height: auto;
     padding: 0 1;

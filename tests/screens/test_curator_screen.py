@@ -156,16 +156,22 @@ from maxpane_dashboard.widgets.curator import (
     CuratorLeaderboard,
     CuratorSignals,
     CuratorSparklines,
+    CuratorOperators,
+    CuratorSegments,
+    CuratorCleanList,
 )
 # Imported, never re-spelled: these are WP4's rendered interface.  A literal
 # retyped here would certify a string nobody renders.
 from maxpane_dashboard.widgets.curator import (
     ACTIVITY_TITLE,
+    CLEAN_LIST_TITLE,
     CLOSEST_CALLS_TITLE,
     CLUSTERS_TITLE,
     LEADERBOARD_TITLE,
     NO_JUDGED_HOURS,
     NO_WALLET,
+    OPERATORS_TITLE,
+    SEGMENTS_TITLE,
     SIGNAL_LABELS,
     SIGNALS_TITLE,
 )
@@ -192,6 +198,10 @@ _PANELS = (
     CuratorWalletStanding,
     CuratorWalletTarget,
     CuratorWalletNext,
+    # The `f` analysis view's three panels (WP4, sybil expansion).
+    CuratorOperators,
+    CuratorSegments,
+    CuratorCleanList,
 )
 
 #: The window the width sweep scans.  Deliberately independent of
@@ -460,15 +470,16 @@ async def _first_clean_width(payload=None, view: str | None = None,
 # =======================================================================
 
 
-def test_the_five_bindings_are_the_ones_this_screen_documents():
+def test_the_seven_bindings_are_the_ones_this_screen_documents():
     """Hand-typed rather than derived: a set compared against itself could not
     catch a binding that was added, renamed or lost.
 
     `r` refresh, `c` swap the bottom-right slot, `w` set the wallet,
-    `y` the wallet view, `escape` back out of it.
+    `y` the wallet view, `f` the analysis view, `e` export the cleaned list
+    (analysis mode only), `escape` back out of either view.
     """
     assert {binding.key for binding in CuratorScreen.BINDINGS} == {
-        "r", "c", "w", "y", "escape",
+        "r", "c", "w", "y", "f", "e", "escape",
     }
 
 
@@ -502,6 +513,12 @@ async def test_screen_mounts_all_seven_widgets():
         assert len(bottom) == 3
         # Exactly one of the swap pair is displayed.
         assert [child.display for child in bottom].count(True) == 2
+        # The `f` view's body holds its three panels, composed but hidden.
+        from maxpane_dashboard.screens.curator import ANALYSIS_BODY_ID
+
+        analysis = screen.query_one(f"#{ANALYSIS_BODY_ID}")
+        assert len(analysis.children) == 3
+        assert analysis.display is False
         for cls in _PANELS:
             assert screen.query_one(cls) is not None
         # The two ids WP7's stylesheet places the swap pair by.
@@ -728,7 +745,7 @@ async def test_a_raising_manager_touches_only_the_status_bar():
     # is the title bar's `as of HH:MM` -- which is the one that freezes under an
     # outage while the cycle age keeps counting.
     assert "updated" not in after
-    assert "y[/] wallet" in after or "y wallet" in after
+    assert "y[/] you" in after or "y you" in after
     assert "as of" in after
 
 
@@ -1992,7 +2009,7 @@ async def test_the_headline_value_in_the_rail_is_bold_and_coloured():
         assert tail is None or not tail.bold
 
 
-async def test_the_curator_status_line_names_its_own_two_keys():
+async def test_the_curator_status_line_names_its_own_three_keys():
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
     async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
@@ -2001,7 +2018,7 @@ async def test_the_curator_status_line_names_its_own_two_keys():
         await pilot.pause()
         text = _screen_text(app)
 
-    assert "c panels" in text and "y wallet" in text
+    assert "c panels" in text and "y you" in text and "f linked" in text
     assert "updated" not in text        # traded for the hints
     assert "quit" in text and "refresh" in text and "menu" in text
     assert "poll" in text
@@ -2236,3 +2253,303 @@ async def test_the_wallet_prompt_says_that_submitting_saves(saved_wallets):
     assert SAVE_PATH_HINT in text
     assert "saved to" in text
     assert "esc to cancel" in text
+
+
+# ---------------------------------------------------------------------------
+# The `f` view — MODE_ANALYSIS (WP4, sybil expansion)
+#
+# Imports of the new mode surface are function-local in this section: the
+# tests were written before `screens/curator.py` grew the mode (TDD), and a
+# module-level import would have taken the whole file's collection down with
+# it rather than failing exactly the tests that describe the missing view.
+# ---------------------------------------------------------------------------
+
+
+def _analysis_payload(**overrides) -> dict:
+    """The grace payload plus the eleven analysis keys, filled from the
+    committed worst-case slices — the state the analysis body is normally in,
+    which is what a width sweep must measure against (the IMD/FP-peg lesson).
+
+    The reader's own linkage state is **clean** here, deliberately: a linked
+    reader's standing line legitimately exceeds the pinned width (WP5 measured
+    191 columns for the widest real evidence), so the `y`-view sweep measures
+    the not-linked state and a dedicated test pins the linked marker instead —
+    the surf announce-feed precedent.
+    """
+    from tests.curator_sybil_fixtures import worst_case_envelope
+
+    ops = worst_case_envelope("operator_row_worst.json")
+    segs = worst_case_envelope("segment_rows_worst.json")
+    clean = worst_case_envelope("clean_list_rows_worst.json")
+    payload = _wallet_payload()
+    payload.update(
+        operator_rows=ops["rows"],
+        operators_count=len(ops["rows"]),
+        segment_rows=list(segs["rows"]) + [segs["degraded_row"]],
+        clean_list_rows=clean["rows"],
+        clean_points=clean["totals"]["clean_points"],
+        clean_contributors=clean["totals"]["clean_contributors"],
+        analysis_as_of_hhmm="22:41",
+        you_linked_state="clean",
+        you_linked_reasons=[],
+        you_linked_group_size=None,
+        you_clean_rank=47,
+    )
+    payload.update(overrides)
+    return payload
+
+
+async def _analysis_view_text(payload=None, *, width=CURATOR_FULL_LAYOUT_COLUMNS,
+                              height=_TALL) -> str:
+    """Composite the screen with the `f` view showing."""
+    screen = _screen(payload if payload is not None else _analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, height)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        return _screen_text(app)
+
+
+async def test_f_swaps_the_body_for_the_three_analysis_panels():
+    from maxpane_dashboard.screens.curator import MODE_ANALYSIS
+
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        dashboard = _screen_text(app)
+        assert OPERATORS_TITLE not in dashboard
+
+        await pilot.press("f")
+        await pilot.pause()
+        text = _screen_text(app)
+
+        assert screen._mode == MODE_ANALYSIS
+        assert OPERATORS_TITLE in text
+        assert SEGMENTS_TITLE in text
+        assert CLEAN_LIST_TITLE in text
+        # The game's own panels are gone...
+        assert LEADERBOARD_TITLE not in text
+        assert ACTIVITY_TITLE not in text
+        # ...and so is the wallet body.
+        assert LADDER_TITLE not in text
+
+
+async def test_the_clock_never_leaves_the_screen_in_the_analysis_view():
+    """PRD §5: unlike `y` (which swaps to the wallet hero), `f` keeps the
+    **dashboard** hero — the doomsday clock — in place above the new body."""
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        hero_before = _region_text(app, screen.query_one(CuratorHero), screen)
+
+        await pilot.press("f")
+        await pilot.pause()
+
+        assert screen.query_one(CuratorHero).display is True
+        assert screen.query_one(f"#{WALLET_HERO_ID}").display is False
+        hero_after = _region_text(app, screen.query_one(CuratorHero), screen)
+        # The same clock, pixel for pixel — the row above the body never moves.
+        assert hero_after == hero_before
+        assert "GRACE" in _screen_text(app)
+
+
+async def test_f_toggles_back_and_escape_backs_out_one_way():
+    from maxpane_dashboard.screens.curator import MODE_ANALYSIS
+
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        await pilot.press("f")
+        await pilot.pause()
+        assert screen._mode == MODE_ANALYSIS
+        await pilot.press("f")
+        await pilot.pause()
+        assert screen._mode == MODE_DASHBOARD
+
+        await pilot.press("f")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert screen._mode == MODE_DASHBOARD
+        # Escape on the dashboard stays a no-op, never a toggle back in.
+        await pilot.press("escape")
+        await pilot.pause()
+        assert screen._mode == MODE_DASHBOARD
+
+
+async def test_y_and_f_cross_transitions_land_in_the_right_mode():
+    """`f` from the wallet view and `y` from the analysis view both go where
+    the key says, and each mode shows exactly its own hero and body."""
+    from maxpane_dashboard.screens.curator import (
+        ANALYSIS_BODY_ID,
+        DASHBOARD_BODY_ID,
+        MODE_ANALYSIS,
+        WALLET_BODY_ID,
+    )
+
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        await pilot.press("y")
+        await pilot.pause()
+        assert screen._mode == MODE_WALLET
+        await pilot.press("f")
+        await pilot.pause()
+        assert screen._mode == MODE_ANALYSIS
+        assert screen.query_one(f"#{ANALYSIS_BODY_ID}").display is True
+        assert screen.query_one(f"#{WALLET_BODY_ID}").display is False
+        assert screen.query_one(f"#{DASHBOARD_BODY_ID}").display is False
+        assert screen.query_one(CuratorHero).display is True
+        assert screen.query_one(f"#{WALLET_HERO_ID}").display is False
+
+        await pilot.press("y")
+        await pilot.pause()
+        assert screen._mode == MODE_WALLET
+        assert screen.query_one(f"#{WALLET_BODY_ID}").display is True
+        assert screen.query_one(f"#{ANALYSIS_BODY_ID}").display is False
+
+
+async def test_the_analysis_panels_are_dispatched_while_hidden():
+    """Both hidden bodies receive every refresh (the swap-table precedent),
+    so the first `f` shows a filled view — no blank first frame."""
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        # No second refresh after the keypress: the data must already be there.
+        await pilot.press("f")
+        await pilot.pause()
+        text = _screen_text(app)
+
+    assert "1,995 linked" in text           # OPERATORS, from the slice
+    assert "largest operators" in text      # SEGMENTS
+    assert "linked groups removed" in text  # CLEANED LIST
+    assert "…" not in text.split("\n")[3]   # not the mount placeholder row
+
+
+async def test_the_status_line_gains_the_f_key():
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        text = _screen_text(app)
+    assert "f linked" in text
+    assert "c panels" in text and "y you" in text
+
+
+async def test_an_unanalyzed_payload_renders_three_unavailable_panels():
+    """The manager emits `None` for every analysis key until the detached
+    sweep first publishes — the already-supported state, rendered explicitly
+    on all three panels, never as zeros or a blank body."""
+    from maxpane_dashboard.widgets.curator import (
+        CLEAN_LIST_UNAVAILABLE,
+        OPERATORS_UNAVAILABLE,
+        SEGMENTS_UNAVAILABLE,
+    )
+
+    text = await _analysis_view_text(_wallet_payload())
+    assert OPERATORS_UNAVAILABLE in text
+    assert SEGMENTS_UNAVAILABLE in text
+    assert CLEAN_LIST_UNAVAILABLE in text
+    assert "0 linked groups" not in text
+
+
+# -- WP4.5: the `e` export ---------------------------------------------------
+
+
+def _export_screen(tmp_path, payload=None):
+    manager = _FakeManager(
+        payload=payload if payload is not None else _analysis_payload()
+    )
+    return CuratorScreen(
+        manager, poll_interval=30, name="curator", wallet=_WALLET,
+        export_dir=tmp_path,
+    )
+
+
+async def test_e_on_the_dashboard_is_a_no_op(tmp_path):
+    """The key only acts inside the analysis view, so it can never swallow a
+    keypress meant for something else — the `esc` rule's shape."""
+    screen = _export_screen(tmp_path)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        assert screen._mode == MODE_DASHBOARD
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_e_in_the_analysis_view_writes_both_files_and_names_the_path(
+    tmp_path,
+):
+    """`e` writes the JSON and the CSV into the injected home dir (the cache
+    precedent — production uses ~/.maxpane) and the CLEANED LIST panel then
+    renders the written path.  The JSON is `clean_list_rows`-shaped."""
+    payload = _analysis_payload()
+    screen = _export_screen(tmp_path, payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        text = _screen_text(app)
+
+    json_path = tmp_path / "curator_clean_list.json"
+    csv_path = tmp_path / "curator_clean_list.csv"
+    assert json_path.is_file() and csv_path.is_file()
+    assert json.loads(json_path.read_text()) == payload["clean_list_rows"]
+    header = csv_path.read_text().splitlines()[0]
+    from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS
+
+    assert header.split(",") == list(CURATOR_ROW_KEYS["clean_list_rows"])
+    assert 1 + len(payload["clean_list_rows"]) == len(
+        csv_path.read_text().splitlines()
+    )
+    # The receipt reaches the panel, composited.
+    assert "curator_clean_list.json" in text
+
+
+async def test_e_with_nothing_analyzed_writes_nothing(tmp_path):
+    """An export of a `None` list would fabricate an empty allowlist file
+    from a read that never happened."""
+    screen = _export_screen(tmp_path, _wallet_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        text = _screen_text(app)
+    assert list(tmp_path.iterdir()) == []
+    assert "curator_clean_list.json" not in text

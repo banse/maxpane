@@ -148,7 +148,10 @@ The screen is written against the frozen ``CURATOR_KEYS`` contract, not against
 
 from __future__ import annotations
 
+import csv
+import json
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
@@ -160,7 +163,7 @@ from textual.widgets import Static
 from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 
 from maxpane_dashboard import __version__
-from maxpane_dashboard.data.curator_models import PHASES
+from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS, PHASES
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.curator import (
     CuratorActivity,
@@ -171,9 +174,12 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletTarget,
     CuratorWalletAddress,
     CuratorWalletHero,
+    CuratorCleanList,
     CuratorClusters,
     CuratorHero,
     CuratorLeaderboard,
+    CuratorOperators,
+    CuratorSegments,
     CuratorSignals,
     CuratorSparklines,
 )
@@ -222,15 +228,27 @@ VIEW_CLOSEST = "closest"
 #: by id in one place each, and a class would invite a second member.
 DASHBOARD_BODY_ID = "curator-dashboard-body"
 WALLET_BODY_ID = "curator-wallet-body"
+#: The `f` view's body — OPERATORS over SEGMENTS over CLEANED LIST.
+ANALYSIS_BODY_ID = "curator-analysis-body"
 #: The wallet body's own hero, which swaps with it.
 WALLET_HERO_ID = "curator-wallet-hero"
 
-#: The two modes.  `dashboard` is the game; `wallet` is the reader's own
-#: standing on it.  A third spelling anywhere is a silent fallback arm, the
-#: same rule PHASES keeps.
+#: The three modes.  `dashboard` is the game; `wallet` is the reader's own
+#: standing on it; `analysis` is the linked-wallet view (`f`).  A fourth
+#: spelling anywhere is a silent fallback arm, the same rule PHASES keeps.
+#:
+#: `analysis` is the one mode that keeps the **dashboard** hero on screen
+#: (PRD §5): the doomsday clock never leaves, so `_show_mode` hides the hero
+#: only for `wallet`, which swaps in a hero of its own.
 MODE_DASHBOARD = "dashboard"
 MODE_WALLET = "wallet"
-MODES = (MODE_DASHBOARD, MODE_WALLET)
+MODE_ANALYSIS = "analysis"
+MODES = (MODE_DASHBOARD, MODE_WALLET, MODE_ANALYSIS)
+
+#: Where the `e` export lands, relative to the (injectable) home directory —
+#: the cleaned list as JSON rows plus a CSV of the same rows.  A TUI cannot
+#: hand a file to the reader, so it writes to disk and names the path.
+CLEAN_LIST_BASENAME = "curator_clean_list"
 
 CLOSEST_ID = "curator-closest-calls"
 CLUSTERS_ID = "curator-clusters"
@@ -329,15 +347,35 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     ),
     "CuratorWalletAddress": ("you_address", "you_ens"),
     "CuratorWalletLadder": ("you_ladder_rows", "you_address"),
+    # The last four are the `f` build's additions (WP5's hand-off, pasted
+    # verbatim): the linked line and the clean rank beside the raw one.
     "CuratorWalletStanding": (
         "you_rank", "you_points", "you_credit_eth", "you_weight_eth",
         "you_tx_count", "you_weight_share_pct", "you_first_hour",
         "you_joined_utc", "contributors_total",
+        "you_linked_state", "you_linked_reasons",
+        "you_linked_group_size", "you_clean_rank",
     ),
     "CuratorWalletNext": ("you_required_next_eth", "you_credit_eth"),
     "CuratorWalletTarget": (
         "you_marginal_points", "you_rank", "you_next_rank",
         "you_next_rank_needs_eth", "you_next_send_passes",
+    ),
+    # -- the `f` analysis view (WP0's routing table, ANALYSIS_KEY_ROUTING) ----
+    # `flagged_points_share_pct` is REUSED (PRD §7): Tier A feeds the FARM
+    # rail row from it today, and the OPERATORS summary renders the same
+    # number — one key, two panels, never two keys for one quantity.
+    # `clean_list_export_path` is deliberately NOT here (ruling R4): the
+    # export receipt is screen-supplied through `mark_exported`, like
+    # `mark_pending`, because it is a keypress's result and not manager data.
+    "CuratorOperators": (
+        "operator_rows", "operators_count", "flagged_points_share_pct",
+        "analysis_as_of_hhmm",
+    ),
+    "CuratorSegments": ("segment_rows", "analysis_as_of_hhmm"),
+    "CuratorCleanList": (
+        "clean_list_rows", "clean_points", "clean_contributors",
+        "you_clean_rank", "analysis_as_of_hhmm",
     ),
 }
 
@@ -449,6 +487,28 @@ def _title_line(data: dict, row_hint: bool = False) -> str:
     return line
 
 
+def _write_clean_list(directory: Path, rows: list) -> Path:
+    """Write ``rows`` as ``curator_clean_list.json`` + ``.csv`` in *directory*.
+
+    The JSON is the ``clean_list_rows`` payload verbatim -- the shape the
+    contract froze, so a consumer script reads the same rows the panel shows.
+    The CSV's header is ``CURATOR_ROW_KEYS["clean_list_rows"]``, imported
+    rather than retyped.  Returns the JSON path (the one the panel names).
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    columns = CURATOR_ROW_KEYS["clean_list_rows"]
+    json_path = directory / f"{CLEAN_LIST_BASENAME}.json"
+    csv_path = directory / f"{CLEAN_LIST_BASENAME}.csv"
+    json_path.write_text(json.dumps(rows, indent=1), encoding="utf-8")
+    with open(csv_path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            if isinstance(row, dict):
+                writer.writerow({key: row.get(key) for key in columns})
+    return json_path
+
+
 def _default_view(phase) -> str:
     """Which table owns the bottom-right slot before the reader says otherwise.
 
@@ -473,6 +533,10 @@ class CuratorScreen(RefreshGuard, Screen):
         Binding("c", "toggle_view", "Calls/Patterns", show=True),
         Binding("w", "set_wallet", "Wallet", show=True),
         Binding("y", "toggle_mode", "You", show=True),
+        Binding("f", "toggle_analysis", "Linked", show=True),
+        # Only acts in MODE_ANALYSIS (a no-op elsewhere), so the key never
+        # swallows a press meant for something else -- the `esc` rule's shape.
+        Binding("e", "export_clean_list", "Export", show=False),
         Binding("escape", "back_to_dashboard", "Back", show=False),
     ]
 
@@ -606,9 +670,20 @@ class CuratorScreen(RefreshGuard, Screen):
         width: 100%;
         height: 8;
     }
+    /* The rail scrolls below its measured minimum height (WALLET_MIN_HEIGHT
+       in the screen suite) instead of dropping WHERE IT GETS YOU dark -- the
+       FWA coverage-badge hazard on the reader's own panels -- and the
+       `‹ taller` marker on the title bar is the advertisement, exactly as it
+       is for the dashboard's own rail.  The gutter is reserved for the same
+       reason as there: an unreserved one takes its column out of the rail's
+       panels only on short terminals, which made the `y` view's *width*
+       requirement a function of its *height*. */
     CuratorScreen #curator-wallet-rail {
         width: 2fr;
         height: 100%;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
+        scrollbar-size: 1 1;
     }
     CuratorScreen CuratorWalletLadder {
         width: 3fr;
@@ -641,6 +716,49 @@ class CuratorScreen(RefreshGuard, Screen):
         height: auto;
         padding: 0 1;
     }
+    /* The `f` view.  Three full-width panels stacked -- measured (WP4.7):
+       SEGMENTS' full tier alone needs 111 columns (a 33-column label beside
+       a 56-column detail), so no two of these panels fit side by side inside
+       the app-wide 143, and stacking is what lets every panel reach its full
+       tier at the screen's own 138.  The body claims the same `1fr` as its
+       two siblings so the hero -- which stays on screen in this mode --
+       never moves on the toggle.
+
+       Rows are the scarce dimension here: three panels of title + note +
+       header + capped rows total 37 rows, so the whole body first fits a
+       48-row terminal (ANALYSIS_MIN_HEIGHT in the screen suite).  Below
+       that it scrolls -- nothing is unreachable -- and the advertisement is
+       the title bar's `‹ taller`, driven off this body's own scrollbar.
+       The gutter is reserved for the by-now-standard reason: without it the
+       scrollbar takes its column out of the widest panel only on short
+       terminals, and the *width* pin becomes a function of *height*. */
+    CuratorScreen #curator-analysis-body {
+        height: 1fr;
+        width: 100%;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
+        scrollbar-size: 1 1;
+    }
+    /* `margin: 1 0 1 0` on the first panel: the top row is `#middle-row`'s
+       own blank line under the hero, so the three bodies' first titles land
+       on the same row; the bottom row is the gap to SEGMENTS. */
+    CuratorScreen CuratorOperators {
+        width: 100%;
+        height: auto;
+        margin: 1 0 1 0;
+        padding: 0 1;
+    }
+    CuratorScreen CuratorSegments {
+        width: 100%;
+        height: auto;
+        margin: 0 0 1 0;
+        padding: 0 1;
+    }
+    CuratorScreen CuratorCleanList {
+        width: 100%;
+        height: auto;
+        padding: 0 1;
+    }
     CuratorScreen CuratorActivity {
         width: 5fr;
         height: auto;
@@ -664,12 +782,17 @@ class CuratorScreen(RefreshGuard, Screen):
         poll_interval: int = 30,
         name: str = "curator",
         wallet: str | None = None,
+        export_dir: str | Path | None = None,
         **kwargs,
     ):
         super().__init__(name=name, **kwargs)
         self._data_manager = data_manager
         self._poll_interval = poll_interval
         self._refresh_timer = None
+        #: Where the `e` export writes.  Injectable for the same reason the
+        #: cache path is (tests must never touch the developer's ~/.maxpane);
+        #: ``None`` means the house directory, resolved at keypress time.
+        self._export_dir = Path(export_dir) if export_dir is not None else None
         #: The wallet the leaderboard emphasises.  Passed in by the app from
         #: ``--wallet`` / ``MAXPANE_WALLET``; the screen never reads the
         #: environment itself, so two screens in one process can watch two
@@ -742,13 +865,32 @@ class CuratorScreen(RefreshGuard, Screen):
                     yield CuratorWalletNext()
                     yield CuratorWalletTarget()
 
+        # The `f` view (PRD §5): the linked-wallet analysis, stacked so every
+        # panel reaches its full tier at the screen's measured width.  Same
+        # composed-once-shown-by-display contract as the other two bodies,
+        # and the dashboard hero above stays visible in this mode -- the
+        # doomsday clock never leaves the screen.
+        with Vertical(id=ANALYSIS_BODY_ID):
+            yield CuratorOperators()
+            yield CuratorSegments()
+            yield CuratorCleanList()
+
         yield StatusBar()
 
-    #: The two keys this screen adds, named in the status bar.  `tab switch`
+    #: The three keys this screen adds, named in the status bar.  `tab switch`
     #: survives beside them at the measured width; `updated Ns ago` does not,
     #: and the title bar's `as of HH:MM` is the freshness marker that matters
     #: (it freezes under an outage, where the cycle age keeps counting).
-    KEY_HINTS = "[dim]c[/] panels [dim]·[/] [dim]y[/] wallet"
+    #: `e` is deliberately not here: it only acts inside the `f` view, and
+    #: the CLEANED LIST panel is where its result appears.
+    #:
+    #: `y you`, not the earlier `y wallet`: the third key made the worst-case
+    #: line (`4 errors` present) one column too long at the measured 138, and
+    #: an error count must never be the thing that falls off the end.  `you`
+    #: is also the word the rail's own row and the binding already use.
+    KEY_HINTS = (
+        "[dim]c[/] panels [dim]·[/] [dim]y[/] you [dim]·[/] [dim]f[/] linked"
+    )
 
     def on_mount(self) -> None:
         self._show_active_view()
@@ -776,15 +918,28 @@ class CuratorScreen(RefreshGuard, Screen):
             pass
 
     def _show_mode(self) -> None:
-        """Apply :attr:`_mode` to the two bodies' visibility."""
+        """Apply :attr:`_mode` to the three bodies' visibility.
+
+        Exactly one body is displayed.  The hero row is the asymmetry: the
+        wallet mode swaps in its own hero, while the analysis mode keeps the
+        **dashboard** hero -- the doomsday clock -- in place (PRD §5).
+        """
         wallet = self._mode == MODE_WALLET
+        analysis = self._mode == MODE_ANALYSIS
         try:
-            self.query_one(f"#{DASHBOARD_BODY_ID}").display = not wallet
+            self.query_one(f"#{DASHBOARD_BODY_ID}").display = (
+                not wallet and not analysis
+            )
             self.query_one(f"#{WALLET_BODY_ID}").display = wallet
+            self.query_one(f"#{ANALYSIS_BODY_ID}").display = analysis
             self.query_one(CuratorHero).display = not wallet
             self.query_one(f"#{WALLET_HERO_ID}").display = wallet
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("Curator mode toggle failed: %s", exc)
+        # The `‹ taller` marker is about whichever body is now showing, so it
+        # must be re-read -- deferred, exactly like `on_resize`, because the
+        # newly displayed body has not been laid out when this returns.
+        self.call_after_refresh(self._render_title)
 
     def action_toggle_mode(self) -> None:
         """``y`` -- swap the body between the game and the reader's own standing.
@@ -814,9 +969,51 @@ class CuratorScreen(RefreshGuard, Screen):
         self._mode = MODE_WALLET
         self._show_mode()
 
+    def action_toggle_analysis(self) -> None:
+        """``f`` -- swap the body for the linked-wallet analysis, or back.
+
+        Mirrors :meth:`action_toggle_mode`, minus the wallet gate: the
+        OPERATORS and SEGMENTS panels are about the population, so the view
+        is worth opening with no wallet configured -- only the CLEANED LIST's
+        "you" line needs one, and it degrades to its own instruction.
+        """
+        self._mode = (
+            MODE_DASHBOARD if self._mode == MODE_ANALYSIS else MODE_ANALYSIS
+        )
+        self._show_mode()
+
+    def action_export_clean_list(self) -> None:
+        """``e`` -- write the cleaned list to disk and show the path.
+
+        **Only acts in ``MODE_ANALYSIS``** (a no-op elsewhere, so the key
+        never swallows a press meant for something else).  The write is an
+        explicit user action to a local file -- the ``WalletInputScreen`` /
+        cache ethic exactly: read-only toward the chain, and the reader asked
+        for the file.  A ``None`` list is never written: an empty allowlist
+        file fabricated from a read that did not happen would outlive the
+        outage that caused it.
+        """
+        if self._mode != MODE_ANALYSIS:
+            return
+        rows = (self._title_data or {}).get("clean_list_rows")
+        if not isinstance(rows, list) or not rows:
+            logger.debug("Clean-list export skipped: nothing analyzed yet")
+            return
+        directory = self._export_dir or Path.home() / ".maxpane"
+        try:
+            json_path = _write_clean_list(directory, rows)
+        except Exception as exc:  # noqa: BLE001 -- a failed write must not crash
+            logger.debug("Clean-list export failed: %s", exc)
+            return
+        try:
+            self.query_one(CuratorCleanList).mark_exported(str(json_path))
+        except Exception as exc:  # noqa: BLE001 -- the file is written either way
+            logger.debug("Could not show the export path: %s", exc)
+
     def action_back_to_dashboard(self) -> None:
-        """``esc`` -- one-way, back to the game.  A no-op when already there,
-        so the key never swallows an escape the reader meant for something else."""
+        """``esc`` -- one-way, back to the game from either view.  A no-op
+        when already there, so the key never swallows an escape the reader
+        meant for something else."""
         if self._mode != MODE_DASHBOARD:
             self._mode = MODE_DASHBOARD
             self._show_mode()
@@ -935,16 +1132,24 @@ class CuratorScreen(RefreshGuard, Screen):
         self.call_after_refresh(self._render_title)
 
     def _rail_is_cut(self) -> bool:
-        """Does the right rail hold more rows than this height can show?
+        """Does the *showing* body's rail hold more rows than this height shows?
 
-        ``show_vertical_scrollbar`` is the rail's own answer, and it is what
-        the layout already turns the loss into; asking it rather than
+        ``show_vertical_scrollbar`` is the container's own answer, and it is
+        what the layout already turns the loss into; asking it rather than
         re-deriving the arithmetic keeps the marker and the scrollbar from
-        ever disagreeing.
+        ever disagreeing.  Which container is *the* rail depends on the mode:
+        each body has exactly one scrolling column, and the marker must be
+        about the one the reader is looking at -- a dashboard rail that fits
+        says nothing about a wallet rail that does not.
         """
+        container_id = {
+            MODE_DASHBOARD: "curator-right-rail",
+            MODE_WALLET: "curator-wallet-rail",
+            MODE_ANALYSIS: ANALYSIS_BODY_ID,
+        }.get(self._mode, "curator-right-rail")
         try:
             return bool(
-                self.query_one("#curator-right-rail").show_vertical_scrollbar
+                self.query_one(f"#{container_id}").show_vertical_scrollbar
             )
         except Exception:  # noqa: BLE001 -- not composed yet, or torn down
             return False
@@ -1038,6 +1243,12 @@ class CuratorScreen(RefreshGuard, Screen):
             CuratorWalletStanding,
             CuratorWalletNext,
             CuratorWalletTarget,
+            # The `f` view's three panels, dispatched hidden for the same
+            # reason again -- and because "not yet analyzed" (`None` in every
+            # analysis key) is a payload state they render explicitly.
+            CuratorOperators,
+            CuratorSegments,
+            CuratorCleanList,
         ):
             self._dispatch(widget_cls, data)
 
