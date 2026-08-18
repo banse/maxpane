@@ -2191,3 +2191,159 @@ def test_without_a_session_the_sweep_publishes_tier_a_only_and_fetches_nothing(
     assert payload["operators_count"] == 0            # amount alone never convicts
     assert payload["enrichment"]["funding"] == {}
     assert payload["enrichment"]["txs"] == {}
+
+
+# ---------------------------------------------------------------------------
+# WP3.4 — the merge into the flat dict (and the keys-FILLED criterion)
+# ---------------------------------------------------------------------------
+
+
+def _store_farm_slot(manager, *, ts=NOW, wallet=None, **overrides):
+    payload = curator_clusters.slot_payload(farm_analysis(wallet=wallet))
+    payload.update(overrides)
+    manager.cache.store_analysis(payload, ts=ts)
+    return payload
+
+
+def test_with_no_analysis_last_good_every_analysis_key_is_none_never_empty(
+    tmp_path, clock
+):
+    """The dead-vs-empty pin, and the WP3.4 bite's designated victim: a
+    not-yet-run analysis must be None — an [] here is an empty table asserting
+    nobody is linked, drawn from a read that never happened."""
+    manager = _analysis_manager(tmp_path, clock, wallet=WALLET)
+    out = asyncio.run(manager.fetch_and_compute())
+    for key in ("operator_rows", "segment_rows", "clean_list_rows"):
+        assert out[key] is None, key
+    for key in (
+        "operators_count",
+        "clean_points",
+        "clean_contributors",
+        "points_total",
+        "analysis_as_of_hhmm",
+        "you_linked_state",
+        "you_linked_reasons",
+        "you_linked_group_size",
+        "you_clean_rank",
+    ):
+        assert out[key] is None, key
+    # R9: link_conf is seeded None on every leaderboard row — present, never
+    # missing, never a confident empty.
+    for row in out["leaderboard_rows"]:
+        assert "link_conf" in row and row["link_conf"] is None
+
+
+def test_with_an_analysis_last_good_every_one_of_the_twelve_keys_is_filled(
+    tmp_path, clock
+):
+    """The missing-red hazard, closed head-on (controller ruling 3): the
+    totality test stayed green while all twelve keys were None, so this one
+    asserts the FILLING — rows populated, counts real ints, the marker a real
+    HH:MM — for both reader states."""
+    import re
+
+    # --- a linked reader ---------------------------------------------------
+    manager = _analysis_manager(tmp_path / "linked", clock, wallet=FARM_MEMBERS[0])
+    _store_farm_slot(manager)
+    out = asyncio.run(manager.fetch_and_compute())
+
+    assert out["operator_rows"] and isinstance(out["operator_rows"], list)
+    assert out["operator_rows"][0]["size"] == len(FARM_MEMBERS)
+    assert out["segment_rows"] and out["segment_rows"][0]["label"]
+    assert out["clean_list_rows"] and out["clean_list_rows"][0]["clean_rank"] == 1
+    for key, expected in (
+        ("operators_count", 1),
+        ("clean_points", None),
+        ("clean_contributors", 3),
+        ("points_total", None),
+    ):
+        value = out[key]
+        assert isinstance(value, int) and not isinstance(value, bool), key
+        if expected is not None:
+            assert value == expected, key
+    assert out["points_total"] > out["clean_points"] > 0
+    assert re.fullmatch(r"\d{2}:\d{2}", out["analysis_as_of_hhmm"])
+    assert out["you_linked_state"] == "linked"
+    assert out["you_linked_reasons"], "pattern-language evidence, not empty"
+    assert out["you_linked_group_size"] == len(FARM_MEMBERS)
+    assert out["you_clean_rank"] is None          # removed from the list: real
+
+    # --- a clean reader ----------------------------------------------------
+    manager2 = _analysis_manager(tmp_path / "clean", clock, wallet=FARM_CONTROLS[0])
+    _store_farm_slot(manager2)
+    out2 = asyncio.run(manager2.fetch_and_compute())
+    assert out2["you_linked_state"] == "clean"
+    assert out2["you_linked_reasons"] == []       # analyzed, not linked
+    assert out2["you_linked_group_size"] is None
+    assert isinstance(out2["you_clean_rank"], int)
+
+
+def test_the_farm_share_prefers_the_analysis_value_when_it_has_run(
+    tmp_path, clock
+):
+    """Override-with-fallback (plan §6 risk 2, pre-ruled): the analysis
+    last-good's share wins when present; Tier A's build_signals value stands
+    otherwise — so FARM and OPERATORS tell one story once the sweep has run."""
+    manager = _analysis_manager(tmp_path, clock)
+    before = asyncio.run(manager.fetch_and_compute())
+    tier_a_share = before["flagged_points_share_pct"]
+    assert tier_a_share != 43.25                  # guard: the override is visible
+
+    _store_farm_slot(manager, flagged_points_share_pct=43.25)
+    clock.advance(1)
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["flagged_points_share_pct"] == 43.25
+
+    # ...and an analysis that carries no share leaves Tier A's value standing.
+    _store_farm_slot(manager, flagged_points_share_pct=None, ts=NOW + 2)
+    clock.advance(1)
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["flagged_points_share_pct"] == tier_a_share
+
+
+def test_link_conf_is_graded_from_the_slot_and_flagged_stays_tier_a(
+    tmp_path, clock
+):
+    manager = _analysis_manager(tmp_path, clock)
+    _store_farm_slot(manager)
+    out = asyncio.run(manager.fetch_and_compute())
+    by_addr = {row["address"].lower(): row for row in out["leaderboard_rows"]}
+    member = by_addr[FARM_MEMBERS[0]]
+    control = by_addr[FARM_CONTROLS[0]]
+    assert member["link_conf"] == "high"
+    assert control["link_conf"] == "clean"
+    assert isinstance(member["flagged"], bool)    # Tier A's bool, untouched
+
+
+def test_a_resolved_name_reaches_the_clean_list_rows(tmp_path, clock):
+    """`name` on a clean-list row is the leaderboard's identity cell exactly:
+    filled by the manager's ENS merge, never by the adapter."""
+    manager = _analysis_manager(tmp_path, clock)
+    named = FARM_CONTROLS[0]
+    manager.client.answers["fetch_ens_names"] = lambda addrs: (
+        {named: "his-dudeness.eth"} if named in {a.lower() for a in addrs} else {}
+    )
+    _store_farm_slot(manager)
+    out = asyncio.run(manager.fetch_and_compute())
+    row = next(
+        r for r in out["clean_list_rows"] if r["address"].lower() == named
+    )
+    assert row["name"] == "his-dudeness.eth"
+
+
+def test_the_merge_never_mutates_the_persisted_slot_payload(tmp_path, clock):
+    """The merge copies rows out of the slot: the ENS fill writes names onto
+    the PAYLOAD's rows, and a name written into the cached slot would be
+    persisted past every name TTL."""
+    manager = _analysis_manager(tmp_path, clock)
+    named = FARM_CONTROLS[0]
+    manager.client.answers["fetch_ens_names"] = lambda addrs: {
+        named: "his-dudeness.eth"
+    }
+    stored = _store_farm_slot(manager)
+    asyncio.run(manager.fetch_and_compute())
+    for row in stored["clean_list_rows"]:
+        assert row["name"] is None
+    slot_rows = manager.cache.analysis_last_good().payload["clean_list_rows"]
+    for row in slot_rows:
+        assert row["name"] is None

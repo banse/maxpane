@@ -1561,11 +1561,77 @@ class CuratorManager:
             if stored:
                 payload[key] = stored
 
+        # The analysis merge runs BEFORE the ENS labelling (the WP3 brief
+        # sketched after) for one reason: the clean list's identity cells are
+        # the leaderboard's exactly, and a merge that ran second would hand
+        # the labeller rows it never saw.
+        _safe_call(self._merge_analysis, payload)
+
         await self._label_with_ens(payload, now)
 
         payload["degraded"] = self._degraded()
         self._stamp(payload)
         return self._finalise(payload)
+
+    # -- the analysis merge (WP3.4) ------------------------------------------
+
+    def _merge_analysis(self, payload: dict[str, Any]) -> None:
+        """Merge the detached sweep's last-good into the flat dict.  In place.
+
+        The ENS-merge shape: ``build_signals`` never sees these keys, the
+        adapter's lookups fill them, and the widget's unavailable states do
+        the rest.  Three states, never collapsed:
+
+        * **no last-good** — every analysis key stays ``None`` (the blank
+          payload's own value; an ``[]`` here would be an empty table
+          asserting nobody is linked, off a read that never happened) and
+          ``link_conf`` is seeded ``None`` on every leaderboard row (R9);
+        * **analyzed, nothing linked** — ``operators_count == 0`` with real
+          empty rows, a representable zero;
+        * **analyzed and linked** — rows, counts, the reader's linkage, and
+          the ``flagged_points_share_pct`` **override-with-fallback** (plan
+          §6 risk 2 as pre-ruled): the analysis's share wins when it carries
+          one, Tier A's ``build_signals`` value stands otherwise.
+
+        Rows are **copied** out of the slot: the ENS labeller writes ``name``
+        onto the payload's rows next, and writing into the cached slot would
+        persist names into the analysis payload where they outlive every name
+        TTL.  ``analysis_as_of_hhmm`` is the slot's own spawn-time stamp —
+        the sweep's freshness moves on its own schedule, never the fast
+        tier's.
+        """
+        entry = self.cache.analysis_last_good()
+        slot = (
+            entry.payload
+            if entry is not None and isinstance(entry.payload, Mapping)
+            else None
+        )
+        rows = payload.get("leaderboard_rows")
+        curator_clusters.merge_leaderboard_grade(
+            rows if isinstance(rows, list) else None, slot
+        )
+        if slot is None:
+            return
+        for key in ("operator_rows", "segment_rows", "clean_list_rows"):
+            value = slot.get(key)
+            payload[key] = (
+                [dict(row) for row in value if isinstance(row, Mapping)]
+                if isinstance(value, list)
+                else None
+            )
+        for key in (
+            "operators_count",
+            "clean_points",
+            "clean_contributors",
+            "points_total",
+        ):
+            payload[key] = _opt_int(slot.get(key))
+        share = slot.get("flagged_points_share_pct")
+        if isinstance(share, (int, float)) and not isinstance(share, bool):
+            payload["flagged_points_share_pct"] = float(share)
+        payload["analysis_as_of_hhmm"] = entry.as_of_hhmm()
+        if self.wallet:
+            payload.update(curator_clusters.you_linkage(self.wallet, slot))
 
     # -- reverse ENS (PRD §13 A9) --------------------------------------------
 
@@ -1577,7 +1643,11 @@ class CuratorManager:
         feed's, the two signal wallets, the savior column, and the reader's own.
         """
         out: list[str] = []
-        for key in ("leaderboard_rows", "activity_rows"):
+        # ``clean_list_rows`` renders the same identity cell the leaderboard
+        # does (bounded: the adapter caps the rendered slice), so its
+        # addresses are part of the on-screen set — after the analysis merge,
+        # which is why the merge runs first.
+        for key in ("leaderboard_rows", "activity_rows", "clean_list_rows"):
             for row in payload.get(key) or ():
                 if isinstance(row, dict) and isinstance(row.get("address"), str):
                     out.append(row["address"])
@@ -1633,7 +1703,7 @@ class CuratorManager:
         if not known:
             return
 
-        for key in ("leaderboard_rows", "activity_rows"):
+        for key in ("leaderboard_rows", "activity_rows", "clean_list_rows"):
             for row in payload.get(key) or ():
                 if isinstance(row, dict) and isinstance(row.get("address"), str):
                     row["name"] = known.get(row["address"].lower())
