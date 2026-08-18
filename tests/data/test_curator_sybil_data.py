@@ -391,6 +391,10 @@ def test_the_sybil_fixtures_all_live_in_one_directory() -> None:
         "operator_row_worst.json",
         "segment_rows_worst.json",
         "clean_list_rows_worst.json",
+        # WP3.7's agreement seam: labeled_subset joined 1:1 into the
+        # adapter's input shape (its derivation is pinned in
+        # test_curator_clusters.py::test_the_agreement_fixture_is_still_the_labeled_subset).
+        "adapter_agrees.json",
     }
     # Only JSON and the manifest live here.
     assert {p.name for p in SYBIL.iterdir() if p.is_file()} == names | {"README.md"}

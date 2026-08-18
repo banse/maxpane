@@ -1968,7 +1968,6 @@ def test_a_fresh_name_is_not_re_resolved(tmp_path, clock):
 # WP3.3 — the detached Tier-B+C analysis sweep (_spawn_crosscheck's pattern)
 # ---------------------------------------------------------------------------
 
-import json as _json  # noqa: E402
 
 from maxpane_dashboard.data import curator_clusters  # noqa: E402
 from maxpane_dashboard.data.curator_cache import (  # noqa: E402
