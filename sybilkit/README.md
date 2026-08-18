@@ -122,7 +122,7 @@ preset = CuratorPreset(points_per_eth=..., min_deposit_wei=...)   # both read of
 res    = detect(ds, DetectConfig(points_per_eth=preset.points_per_eth,
                                  protocol_min_amount_wei=preset.min_deposit_wei))
 
-segments(ds, res, preset)    # Segments: the largest operators, cohorts, multiplier bands
+segments(ds, res, preset)    # Segments: the linked groups, cohorts, multiplier bands
 clean_list(ds, res, preset)  # CleanList: the ranking with flagged groups removed
 ```
 

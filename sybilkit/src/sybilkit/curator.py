@@ -34,7 +34,7 @@ Pattern language, in the labels
     A preset's ``label`` strings are what a consumer renders.  The library may
     say "sybil" in its own name and docstrings — it is a general sybil-analysis
     toolkit and lives outside every scanned surface — but the *segment labels*
-    are written in the dashboard's own vocabulary ("largest operators", "early
+    are written in the dashboard's own vocabulary ("linked groups", "early
     cohort") so that an adapter never has to translate an accusation into a
     description.  :data:`FORBIDDEN_LABEL_WORDS` names what may not appear and
     ``tests/test_curator.py`` scans every produced string for it.
@@ -278,7 +278,9 @@ class Segment:
     """One band of the population: who is in it and what it is worth.
 
     ``key`` is machine-stable and is what a consumer keys on.  The whole
-    vocabulary, exactly as emitted: ``largest_operators``, ``early_cohort``,
+    vocabulary, exactly as emitted: ``linked_groups`` (every linked cluster
+    aggregated — *not* the credit-line slice, which is
+    :attr:`Segments.largest_operators` and is never a band), ``early_cohort``,
     ``late_cohort``, ``hour_<h>`` (``hour_9``), ``multiplier_<edge_bps>``
     (``multiplier_17500`` — the band's **lower** edge, since the upper one is
     the previous band's lower edge and naming both would let the two drift),
@@ -304,9 +306,16 @@ class Segments:
 
     ``operators`` is every linked group, ranked by **combined credit**;
     ``largest_operators`` is the slice of it at or above the preset's line.
-    ``bands`` is the flat list a consumer renders: the largest-operators
+    ``bands`` is the flat list a consumer renders: the ``linked_groups``
     aggregate, the early and late cohorts, one band per join hour and one per
     multiplier band.
+
+    ``largest_operator_credit_wei`` gates :attr:`largest_operators` and
+    **nothing else** — no band's membership moves with it.  The aggregate band
+    used to carry that property's name while carrying every linked cluster,
+    small ones included, so the row a consumer renders first claimed a whale
+    fact and measured a linkage one; it is ``linked_groups`` / "linked groups"
+    now, and the numbers on it are unchanged.
     """
 
     total_points: int
@@ -435,9 +444,15 @@ def segments(ds: Dataset, res: DetectResult, preset: CuratorPreset) -> Segments:
         linked = {m for c in res.clusters for m in c.members}
         bands.append(
             _band(
-                "largest_operators",
+                # NOT "largest_operators": this row is every linked cluster,
+                # however small, while `Segments.largest_operators` is the
+                # credit-line slice.  Sharing a name made the headline row
+                # claim a fact about whales while measuring one about linked
+                # groups.  `kind` stays "operators" so consumer ordering does
+                # not move with the name.
+                "linked_groups",
                 "operators",
-                "largest operators",
+                "linked groups",
                 f"{len(operators):,} linked groups · {shape_detail}",
                 linked,
                 points_of,

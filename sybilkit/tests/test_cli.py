@@ -207,7 +207,9 @@ def test_segments_prints_the_operators_and_the_bands(capsys) -> None:
     }
     assert isinstance(op["credit_wei"], str)
     keys = {b["key"] for b in doc["bands"]}
-    assert "largest_operators" in keys and "early_cohort" in keys
+    # `linked_groups`, not `largest_operators`: review finding #12 / D4, the
+    # aggregate band was renamed off the credit line's name (plan WP5.3).
+    assert "linked_groups" in keys and "early_cohort" in keys
     assert any(k.startswith("hour_") for k in keys)
     assert any(k.startswith("multiplier_") for k in keys)
 

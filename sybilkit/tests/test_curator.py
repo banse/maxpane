@@ -545,27 +545,93 @@ def test_a_multiplier_below_the_lowest_band_is_unknown_not_the_lowest_band(
     assert not [s for s in segs.bands if s.key == "multiplier_10000"]
 
 
+def test_the_linked_groups_band_is_not_named_after_the_credit_line(
+    population_analysis,
+) -> None:
+    """**Review finding #12**, decision D4 ruled A (rename, do not filter).
+
+    The aggregate band collects the members of **every** linked cluster,
+    however small, and that is the number worth showing.  It was keyed and
+    labelled ``largest_operators`` / "largest operators" — the name of the
+    credit-line slice, which is a different and much smaller set — so the
+    consumer's headline row claimed a fact about whales while measuring one
+    about linked groups.
+
+    Every measured number on the band stays exactly as it was; only the name
+    moves.  ``kind`` stays ``"operators"`` so a consumer's ordering does not.
+    """
+    preset, ds, res = population_analysis
+    segs = segments(ds, res, preset)
+
+    (band,) = segs.by_kind("operators")
+    assert band.key == "linked_groups"
+    assert band.label == "linked groups"
+    assert "largest" not in band.key and "largest" not in band.label
+
+    # what it measures, and why the old name was wrong: it is every linked
+    # wallet, not the credit-line slice, and the two are far apart here.
+    linked = {m for c in res.clusters for m in c.members}
+    over_the_line = {
+        m
+        for op in segs.largest_operators
+        for m in next(c for c in res.clusters if c.cluster_id == op.cluster_id).members
+    }
+    assert band.contributors == len(linked)
+    assert len(over_the_line) < len(linked)
+
+
+def test_the_largest_operators_property_is_the_only_thing_the_credit_line_gates(
+    population_ds,
+) -> None:
+    """The credit line gates the *property* and nothing a band renders.
+
+    Two presets differing only in ``largest_operator_credit_wei``: the bands
+    are byte-identical, the ``largest_operators`` slice is not.  That is the
+    whole content of ruling D4/A — the knob whose purpose is defining
+    "largest" keeps meaning that, and stops sharing a name with an aggregate
+    it never gated.
+    """
+    low = a_preset(largest_operator_credit_wei=1)
+    high = a_preset(largest_operator_credit_wei=10_000 * ETH)
+    res = detect(population_ds, low.detect_config())
+
+    at_low = segments(population_ds, res, low)
+    at_high = segments(population_ds, res, high)
+
+    assert at_low.bands == at_high.bands
+    assert len(at_low.largest_operators) == len(at_low.operators)
+    assert len(at_high.largest_operators) < len(at_low.largest_operators)
+
+
 def test_the_segment_key_vocabulary_is_exactly_what_the_docstring_names(
     population_analysis,
 ) -> None:
     """**Review M3.**  The `Segment` docstring named a key spelling
     (``multiplier_17500_20000``) the code has never emitted.  A key vocabulary
-    a consumer reads off a docstring and then keys on is worse than none."""
+    a consumer reads off a docstring and then keys on is worse than none.
+
+    This is the agreement test, not a defect pin: it moved with the D4 rename
+    (``largest_operators`` -> ``linked_groups``) rather than being weakened by
+    it, and it now also asserts the retired spelling is gone from both the
+    emitted keys and the docstring — see
+    ``docs/curator_sybil_review_fixes_plan.md``, WP5.3.
+    """
     import re
 
     preset, ds, res = population_analysis
     segs = segments(ds, res, preset)
     allowed = re.compile(
-        r"^(largest_operators|early_cohort|late_cohort|hour_\d+"
+        r"^(linked_groups|early_cohort|late_cohort|hour_\d+"
         r"|multiplier_\d+|multiplier_unknown)$"
     )
     for band in segs.bands:
         assert allowed.match(band.key), band.key
     doc = Segment.__doc__ or ""
-    for spelling in ("largest_operators", "early_cohort", "late_cohort",
+    for spelling in ("linked_groups", "early_cohort", "late_cohort",
                      "hour_<h>", "multiplier_<edge_bps>", "multiplier_unknown"):
         assert spelling in doc, spelling
     assert "multiplier_17500_20000" not in doc
+    assert "``largest_operators``" not in doc  # the band never carried it
 
 
 def test_no_segment_label_carries_an_accusatory_word(population_analysis) -> None:
