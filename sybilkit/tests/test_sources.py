@@ -1926,6 +1926,40 @@ def test_a_sweep_without_cursors_still_walks_from_page_one() -> None:
     assert sweep.page_cursors == {}
 
 
+def test_a_hand_edited_cursor_is_re_stamped_with_the_incoming_filter() -> None:
+    """**R3.5.**  ``_walk`` re-adds ``filter=to`` to whatever params it is
+    handed, and the resumed path is the one place that mattered and was never
+    asserted.
+
+    #14a was ``params = nxt``: the server's cursor *replaced* our filter, so
+    every page after the first asked for the address's whole transaction
+    history instead of its incoming half.  ``page_cursors`` round-trips through
+    a consumer's cache file, and a hand-edited payload is third-party input —
+    so a cursor arriving with no filter at all is exactly the shape
+    ``_resume_from`` exists to tolerate, and it would reintroduce #14a through
+    the tolerance if the re-stamp were dropped.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        if params.get("block_number") == "800":
+            return _page([_incoming(FUNDER, ALICE, 7)], None)
+        return _page([_incoming(BOB, ALICE, 900)], {"block_number": "800"})
+
+    rec = Recorder(handler)
+    hand_edited = {ALICE.lower(): {"params": {"block_number": "800"}}}
+    sweep = asyncio.run(
+        blockscout.fetch_funding(
+            [ALICE], client=_client(rec), config=FAST, max_pages=5,
+            cursors=hand_edited,
+        )
+    )
+    assert sweep is not None
+    resumed = dict(rec.calls[0][1].params)
+    assert resumed["block_number"] == "800", resumed
+    assert resumed.get("filter") == "to", resumed
+    assert sweep.funding[ALICE.lower()].funder == FUNDER.lower()
+
+
 def test_a_budget_deferred_address_keeps_the_cursor_it_arrived_with() -> None:
     """A cursor is only lost when the address is resolved.  An address this
     pass never got to keeps the one it came in with, or the next pass restarts
