@@ -130,18 +130,27 @@ def _provenance(ds: Dataset, meta: dict, source: str) -> dict:
         "generated_at": generated_at,
         "block_range": block_range,
         "source": source,
-        # What was actually READ, not what was asked for.  The repo's
-        # no-silent-caps rule: a capped or skipped tier changes what the
-        # detector could possibly find, so the artifact has to say so — a
+        # The repo's no-silent-caps rule: a capped or skipped tier changes what
+        # the detector could possibly find, so the artifact has to say so — a
         # consumer comparing two exports must be able to see that one of them
-        # never ran the funding pass.  The live path overwrites this with the
-        # real numbers; a `--dataset` run reports what the bundle carried.
+        # never ran the funding pass.
+        #
+        # TWO FIELDS, because one word cannot carry both facts and a single
+        # `tiers` meant "asked for" on the live path and "carries" on the
+        # `--dataset` path under a comment claiming it meant "read".
+        #
+        #   tiers_requested — what this invocation asked for.  `None` on a
+        #                     `--dataset` run, which asks for nothing (it reads
+        #                     a file, and `--tiers` is ignored there).
+        #   tiers_read      — what the DATASET THE DETECTOR SAW actually holds.
+        #                     Derived the same way on both paths, from the
+        #                     built `Dataset`, so the two are comparable.
+        #
+        # `tiers_requested != tiers_read` is therefore a real and readable
+        # signal: a tier was asked for and did not arrive.
         "coverage": {
-            "tiers": "".join(
-                t for t, present in (("a", bool(ds.deposits)),
-                                     ("b", bool(ds.txs)),
-                                     ("c", bool(ds.funding))) if present
-            ),
+            "tiers_requested": None,
+            "tiers_read": tiers_read(ds),
             "tx_fingerprints": (
                 {"read": len(ds.txs), "source": "dataset"} if ds.txs else None
             ),
@@ -150,6 +159,24 @@ def _provenance(ds: Dataset, meta: dict, source: str) -> dict:
             ),
         },
     }
+
+
+def tiers_read(ds: Dataset) -> str:
+    """Which evidence tiers the dataset the detector saw actually carries.
+
+    ``"a"`` logs, ``"b"`` transaction fingerprints, ``"c"`` funding — derived
+    from the dataset itself rather than from anybody's intent, so it means the
+    same thing on a live sweep and on a committed bundle.
+    """
+    return "".join(
+        tier
+        for tier, present in (
+            ("a", bool(ds.deposits)),
+            ("b", bool(ds.txs)),
+            ("c", bool(ds.funding)),
+        )
+        if present
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +204,7 @@ def _live(args, transport: Any) -> tuple[Dataset, dict, int, int]:
 
     config = sources.SourceConfig()
     kw: dict[str, Any] = {"config": config, "transport": transport}
-    coverage: dict[str, Any] = {"tiers": args.tiers}
+    coverage: dict[str, Any] = {"tiers_requested": args.tiers}
 
     async def _run() -> tuple[Any, dict[str, Any], dict[str, Any], int | None, int | None]:
         rate = args.points_per_eth
@@ -192,19 +219,24 @@ def _live(args, transport: Any) -> tuple[Dataset, dict, int, int]:
         if sweep is None:
             return None, {}, {}, rate, minimum
 
+        # `is not None`, never truthiness.  A sweep that ran and resolved
+        # nothing is a healthy sweep — the node answering `"result": null` is
+        # the documented ask-again case — and a falsy-empty check would stamp
+        # it "unavailable", which is the opposite of what happened.
         fingerprints: dict[str, Any] = {}
         if "b" in args.tiers:
             hashes, cut_at = _tx_hashes_in_chain_order(sweep.deposits, args.max_txs)
             got = await txs.fetch_tx_fingerprints(hashes, **kw)
-            fingerprints = got.fingerprints if got else {}
+            reached = got is not None
+            fingerprints = got.fingerprints if reached else {}
             coverage["tx_fingerprints"] = {
                 "requested": len(hashes),
                 "read": len(fingerprints),
-                "unread": (len(got.pending) if got else len(hashes)),
+                "unread": (len(got.pending) if reached else len(hashes)),
                 "available": len({d.tx_hash for d in sweep.deposits}),
                 "cap": args.max_txs,
                 "cut_at_block": cut_at,
-                "source": None if got else "unavailable",
+                "source": None if reached else "unavailable",
             }
         else:
             coverage["tx_fingerprints"] = None
@@ -215,16 +247,19 @@ def _live(args, transport: Any) -> tuple[Dataset, dict, int, int]:
             got_funding = await blockscout.fetch_funding(
                 addresses, budget=args.funding_budget, **kw
             )
-            funding = got_funding.funding if got_funding else {}
+            reached_funding = got_funding is not None
+            funding = got_funding.funding if reached_funding else {}
             coverage["funding"] = {
                 "requested": len(addresses),
                 "read": len(funding),
                 "budget": args.funding_budget,
-                "pending": (len(got_funding.pending) if got_funding else len(addresses)),
-                "page_bounded": (
-                    len(got_funding.page_bounded) if got_funding else 0
+                "pending": (
+                    len(got_funding.pending) if reached_funding else len(addresses)
                 ),
-                "source": None if got_funding else "unavailable",
+                "page_bounded": (
+                    len(got_funding.page_bounded) if reached_funding else 0
+                ),
+                "source": None if reached_funding else "unavailable",
             }
         else:
             coverage["funding"] = None
@@ -251,6 +286,11 @@ def _live(args, transport: Any) -> tuple[Dataset, dict, int, int]:
     ds = sweep.dataset(txs=fingerprints or None, funding=funding or None)
     prov = _provenance(ds, {}, f"{args.contract}@{args.from_block}")
     prov["block_range"] = {"from": sweep.from_block, "to": sweep.to_block}
+    # The live detail replaces the dataset-derived per-tier rows, but
+    # `tiers_read` stays the one `_provenance` computed: it is derived from the
+    # dataset the detector actually saw, identically on both paths, which is
+    # what makes `tiers_requested != tiers_read` mean something.
+    coverage["tiers_read"] = prov["coverage"]["tiers_read"]
     prov["coverage"] = coverage
     return ds, prov, rate, minimum
 

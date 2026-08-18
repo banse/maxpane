@@ -119,20 +119,34 @@ def _first_incoming(items: Iterable[Any], address: str) -> tuple[str, int] | Non
     return best
 
 
+#: ``_funder_of``'s "we walked the whole history" answer.  Not a pending
+#: reason — it is the only outcome that produces a resolved row.
+_COMPLETE = "complete"
+
+
 async def _funder_of(
     session: _Session, address: str, max_pages: int
-) -> tuple[str | None, bool, bool]:
-    """``(funder, complete, reachable)`` for one address.
+) -> tuple[str | None, str, bool]:
+    """``(funder, outcome, reachable)`` for one address.
 
     Blockscout serves newest-first with a keyset cursor, so the **first**
     funder is on the last page and the cursor is followed verbatim, as query
     params, exactly as the server handed it back.
 
-    Three answers rather than two, and the third is what keeps an outage from
-    looking like a budget problem: ``complete`` is False when the pager hit its
-    bound with a cursor still open, and ``reachable`` is True as soon as one
-    page parsed — an address whose history simply outran the budget was read
-    fine, and a pass full of those is not an outage.
+    ``outcome`` is one of :data:`_COMPLETE`, :data:`PENDING_PAGES` or
+    :data:`PENDING_UNREADABLE`, and the distinction between the last two is the
+    point of this function's shape.  "Reached page ``max_pages`` with a cursor
+    still open" and "a request died on page 2" are **different problems with
+    opposite fixes**: the first is solved by raising ``max_pages``, and doing
+    that for the second just spends more requests on an endpoint that is
+    failing.  A first cut classified both as ``pages`` because the loop only
+    tracked whether *any* page had parsed, so the hand-off's own advice —
+    "raise ``max_pages`` for the ``pages`` ones" — pointed at exactly the wrong
+    action for a mid-history failure.
+
+    ``reachable`` stays separate from both: it is True as soon as one page
+    parsed, and it is what keeps a budget or page bound from being mistaken for
+    an outage.
     """
     httpx = require_httpx()
     url = f"{session.config.blockscout_base}/addresses/{address}/transactions"
@@ -145,22 +159,24 @@ async def _funder_of(
                 url, params=params, delay=session.config.blockscout_min_interval
             )
             if resp.status_code in DEAD_STATUS_CODES:
-                return None, False, reachable
+                return None, PENDING_UNREADABLE, reachable
             resp.raise_for_status()
             body = resp.json()
         except (httpx.HTTPError, ValueError):
-            return None, False, reachable
+            return None, PENDING_UNREADABLE, reachable
         if not isinstance(body, Mapping) or "items" not in body:
-            return None, False, reachable
+            return None, PENDING_UNREADABLE, reachable
         reachable = True
         found = _first_incoming(body.get("items") or (), address)
         if found is not None and (oldest is None or found[1] < oldest[1]):
             oldest = found
         nxt = body.get("next_page_params")
         if not nxt:
-            return (oldest[0] if oldest else None), True, True
+            return (oldest[0] if oldest else None), _COMPLETE, True
         params = nxt  # the server's cursor, verbatim
-    return None, False, reachable
+    # Fell out of the loop with a cursor still open: every page we asked for
+    # answered, there are simply more of them than we were willing to walk.
+    return None, PENDING_PAGES, reachable
 
 
 async def fetch_funding(
@@ -219,17 +235,17 @@ async def fetch_funding(
     async with _Session(config, client=client, transport=transport, sleep=sleep) as s:
         for address in todo:
             attempted += 1
-            funder, complete, reachable = await _funder_of(s, address, pages)
+            funder, outcome, reachable = await _funder_of(s, address, pages)
             if reachable:
                 reached += 1
-            if not complete:
+            if outcome != _COMPLETE:
                 # NOT resolved.  A row here would be read as an answer by the
                 # very next pass (which passes `funding` as `known`) and the
-                # address would never be looked at again.
+                # address would never be looked at again.  The reason comes
+                # from `_funder_of`, which is the only place that knows whether
+                # the page loop ended cleanly or a request died inside it.
                 pending.append(address)
-                reasons[address] = (
-                    PENDING_PAGES if reachable else PENDING_UNREADABLE
-                )
+                reasons[address] = outcome
                 continue
             resolved[address] = Funding(
                 address=address,

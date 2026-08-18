@@ -974,6 +974,81 @@ def test_a_transient_failure_is_never_frozen_into_a_resolved_row() -> None:
     assert healed.pending == ()
 
 
+def test_a_failure_mid_history_is_unreadable_not_page_bounded() -> None:
+    """**Fix round 2, M1.**  Two different problems with opposite fixes.
+
+    "Reached ``max_pages`` with a cursor still open" is solved by raising
+    ``max_pages``.  "A request died on page 2" is not — doing that just spends
+    more requests on an endpoint that is failing.  Round 1 classified both as
+    ``"pages"`` because the loop only tracked whether *any* page had parsed, so
+    the hand-off's own advice pointed at exactly the wrong action here.
+
+    Page 1 answers with a cursor; page 2 503s; the budget is nine pages, so the
+    bound was nowhere near reached.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        if params.get("block_number") == "500":
+            return httpx.Response(503, text="Service Unavailable")
+        return _page([_incoming(BOB, ALICE, 900)], {"block_number": "500"})
+
+    sweep = asyncio.run(
+        blockscout.fetch_funding(
+            [ALICE], client=_client(handler), config=FAST, max_pages=9
+        )
+    )
+    assert sweep is not None
+    assert sweep.pending == (ALICE.lower(),)
+    assert sweep.pending_reasons[ALICE.lower()] == blockscout.PENDING_UNREADABLE
+    assert sweep.page_bounded == ()          # NOT a bound problem
+    assert sweep.unreadable == (ALICE.lower(),)
+    assert ALICE.lower() not in sweep.funding
+
+
+def test_a_clean_fall_through_the_page_bound_is_page_bounded() -> None:
+    """The other half of the same distinction: every page we asked for
+    answered, there are simply more of them than we were willing to walk."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        # An endless history: always another cursor, never an error.
+        return _page([_incoming(BOB, ALICE, 900)], {"block_number": "500"})
+
+    sweep = asyncio.run(
+        blockscout.fetch_funding(
+            [ALICE], client=_client(handler), config=FAST, max_pages=3
+        )
+    )
+    assert sweep is not None
+    assert sweep.pending_reasons[ALICE.lower()] == blockscout.PENDING_PAGES
+    assert sweep.page_bounded == (ALICE.lower(),)
+    assert sweep.unreadable == ()
+
+
+def test_a_tx_sweep_that_resolved_nothing_is_still_a_sweep() -> None:
+    """**Fix round 2, the Important.**  ``TxSweep`` has no truthiness.
+
+    It carried a ``__len__`` for one round, which made a successful pass that
+    resolved nothing — the documented "node answered, no usable body, ask
+    again" case — *falsy*.  Every ``if sweep:`` caller then read a healthy pass
+    as an outage.  ``bool()`` on it must stay the plain object default.
+    """
+    hashes = ["0x" + f"{i:064x}" for i in range(2)]
+
+    def null_bodies(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        return httpx.Response(200, json=[
+            {"jsonrpc": "2.0", "id": c["id"], "result": None} for c in batch
+        ])
+
+    got = asyncio.run(
+        txs.fetch_tx_fingerprints(hashes, client=_client(null_bodies), config=FAST)
+    )
+    assert got is not None
+    assert got.fingerprints == {}
+    assert set(got.pending) == set(hashes)
+    assert bool(got) is True, "an empty-but-successful sweep must not be falsy"
+    assert not hasattr(txs.TxSweep, "__len__")
+
+
 def test_a_total_outage_is_none_even_when_the_budget_deferred_addresses() -> None:
     """**Review C2, the reproduced case.**  Deferral does not soften an outage.
 

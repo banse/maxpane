@@ -336,7 +336,10 @@ def test_the_header_records_which_tiers_actually_ran(capsys) -> None:
     run("analyze", "--dataset", str(LABELED), "--preset", "curator", *OFFLINE_RATE)
     doc = out_json(capsys)
     cov = doc["coverage"]
-    assert cov["tiers"] == "abc"
+    # A `--dataset` run asks for nothing — it reads a file — so `requested` is
+    # null and only `read` is a claim about anything.
+    assert cov["tiers_requested"] is None
+    assert cov["tiers_read"] == "abc"
     assert cov["tx_fingerprints"]["read"] == 220
     assert cov["funding"]["read"] == 220
     assert cov["tx_fingerprints"]["source"] == "dataset"
@@ -361,7 +364,8 @@ def test_the_header_says_so_when_a_tier_is_absent(tmp_path, capsys) -> None:
     code = run("analyze", "--dataset", str(bundle), "--preset", "curator", *OFFLINE_RATE)
     assert code == 0
     cov = out_json(capsys)["coverage"]
-    assert cov["tiers"] == "a"
+    assert cov["tiers_requested"] is None
+    assert cov["tiers_read"] == "a"
     assert cov["tx_fingerprints"] is None
     assert cov["funding"] is None
 
@@ -464,7 +468,8 @@ def test_the_live_header_records_the_tx_cap_it_applied(capsys) -> None:
     )
     assert code == 0
     cov = out_json(capsys)["coverage"]
-    assert cov["tiers"] == "ab"
+    assert cov["tiers_requested"] == "ab"
+    assert cov["tiers_read"] == "ab"
     assert cov["tx_fingerprints"]["available"] == 4
     assert cov["tx_fingerprints"]["requested"] == 3
     assert cov["tx_fingerprints"]["read"] == 3
@@ -472,6 +477,135 @@ def test_the_live_header_records_the_tx_cap_it_applied(capsys) -> None:
     assert cov["tx_fingerprints"]["cap"] == 3
     assert cov["tx_fingerprints"]["cut_at_block"] == 101
     assert cov["funding"] is None
+
+
+def test_a_tier_that_answered_with_nothing_is_not_reported_unavailable(
+    capsys,
+) -> None:
+    """**Fix round 2, the Important — reproduced shape (a).**
+
+    The node answers HTTP 200 with ``"result": null`` bodies: the documented
+    ask-again case.  Tier B was reached, read nothing, and has two hashes to
+    retry — and the header must say exactly that.  Round 1 stamped
+    ``source: "unavailable"``, because ``TxSweep.__len__`` made the successful
+    empty sweep falsy.
+    """
+    httpx = pytest.importorskip("httpx")
+    from sybilkit import sources
+
+    rate_sel = sources.selector("POINTS_PER_ETH()")
+    rows = [_deposit_row(block=100, log_index=i, tag=f"{i:02x}") for i in range(2)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls = body if isinstance(body, list) else [body]
+        out = []
+        for call in calls:
+            method, cid = call["method"], call["id"]
+            if method == "eth_call":
+                value = 1000 if call["params"][0]["data"] == rate_sel else 5 * 10**16
+                out.append({"jsonrpc": "2.0", "id": cid, "result": "0x" + f"{value:064x}"})
+            elif method == "eth_blockNumber":
+                out.append({"jsonrpc": "2.0", "id": cid, "result": hex(200)})
+            elif method == "eth_getLogs":
+                out.append({"jsonrpc": "2.0", "id": cid, "result": rows})
+            elif method == "eth_getTransactionByHash":
+                out.append({"jsonrpc": "2.0", "id": cid, "result": None})
+            else:  # pragma: no cover
+                raise AssertionError(method)
+        return httpx.Response(200, json=out if isinstance(body, list) else out[0])
+
+    code = cli.main(
+        ["analyze", "--contract", CONTRACT, "--from-block", "100", "--tiers", "ab"],
+        transport=httpx.MockTransport(handler),
+    )
+    assert code == 0
+    cov = out_json(capsys)["coverage"]
+    fp = cov["tx_fingerprints"]
+    assert fp["source"] is None, "a reachable tier was reported unavailable"
+    assert fp["read"] == 0
+    assert fp["unread"] == 2
+    assert fp["requested"] == 2
+    # Asked for b, did not get b — and the two fields say so without lying
+    # about either half.
+    assert cov["tiers_requested"] == "ab"
+    assert cov["tiers_read"] == "a"
+
+
+def test_a_tier_that_was_never_asked_a_question_is_not_an_outage(capsys) -> None:
+    """**Fix round 2, the Important — reproduced shape (b).**
+
+    An empty log sweep under the default ``--tiers ab``: there are no
+    transaction hashes, so zero tier-B requests are issued.  A tier nobody
+    asked anything is not unavailable — it is complete and empty.
+    """
+    httpx = pytest.importorskip("httpx")
+    from sybilkit import sources
+
+    rate_sel = sources.selector("POINTS_PER_ETH()")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls = body if isinstance(body, list) else [body]
+        out = []
+        for call in calls:
+            method, cid = call["method"], call["id"]
+            if method == "eth_call":
+                value = 1000 if call["params"][0]["data"] == rate_sel else 5 * 10**16
+                out.append({"jsonrpc": "2.0", "id": cid, "result": "0x" + f"{value:064x}"})
+            elif method == "eth_blockNumber":
+                out.append({"jsonrpc": "2.0", "id": cid, "result": hex(200)})
+            elif method == "eth_getLogs":
+                out.append({"jsonrpc": "2.0", "id": cid, "result": []})
+            else:  # pragma: no cover — no fingerprint call may be issued
+                raise AssertionError(f"tier B asked something: {method}")
+        return httpx.Response(200, json=out if isinstance(body, list) else out[0])
+
+    code = cli.main(
+        ["analyze", "--contract", CONTRACT, "--from-block", "100"],
+        transport=httpx.MockTransport(handler),
+    )
+    assert code == 0
+    fp = out_json(capsys)["coverage"]["tx_fingerprints"]
+    assert fp["requested"] == 0
+    assert fp["read"] == 0
+    assert fp["unread"] == 0
+    assert fp["source"] is None, "a tier with nothing to ask was called unavailable"
+
+
+def test_a_tier_that_really_failed_is_still_reported_unavailable(capsys) -> None:
+    """The negative of the two above: ``source: "unavailable"`` has to keep
+    meaning something, or fixing the false positive would just delete the
+    signal."""
+    httpx = pytest.importorskip("httpx")
+    from sybilkit import sources
+
+    rate_sel = sources.selector("POINTS_PER_ETH()")
+    rows = [_deposit_row(block=100, log_index=0, tag="aa")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if isinstance(body, list):        # the fingerprint batch: dead
+            return httpx.Response(500, text="internal error")
+        method, cid = body["method"], body["id"]
+        if method == "eth_call":
+            value = 1000 if body["params"][0]["data"] == rate_sel else 5 * 10**16
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": cid,
+                                             "result": "0x" + f"{value:064x}"})
+        if method == "eth_blockNumber":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": cid,
+                                             "result": hex(200)})
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": cid, "result": rows})
+
+    code = cli.main(
+        ["analyze", "--contract", CONTRACT, "--from-block", "100", "--tiers", "ab"],
+        transport=httpx.MockTransport(handler),
+    )
+    assert code == 0
+    cov = out_json(capsys)["coverage"]
+    assert cov["tx_fingerprints"]["source"] == "unavailable"
+    assert cov["tx_fingerprints"]["unread"] == 1
+    assert cov["tiers_requested"] == "ab" and cov["tiers_read"] == "a"
 
 
 def test_the_preset_name_in_the_output_is_the_one_that_was_asked_for(capsys) -> None:

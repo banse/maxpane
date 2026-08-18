@@ -51,13 +51,18 @@ class TxSweep:
     when the node answered without a usable transaction body (a reorg, or a
     hash that never landed) — both are "ask again", never "this transaction
     has no fingerprint".
+
+    **This object has no truthiness of its own, deliberately.**  It carried a
+    ``__len__`` for exactly one review round and that was a bug: a sweep which
+    succeeded and resolved nothing — the documented "node answered, no usable
+    body, ask again" case — came out *falsy*, so a caller written as
+    ``if sweep:`` stamped a healthy pass as unavailable.  A sweep that ran and
+    found nothing is not the same object as a sweep that never happened, and
+    only ``is None`` tells them apart.  **Test ``sweep is not None``.**
     """
 
     fingerprints: dict[str, Tx]
     pending: tuple[str, ...]
-
-    def __len__(self) -> int:
-        return len(self.fingerprints)
 
 
 def decode_tx(payload: Any) -> Tx | None:
