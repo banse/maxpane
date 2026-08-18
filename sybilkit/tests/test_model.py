@@ -13,6 +13,8 @@ ADDR = "0x047F606FD5B2BAA5F5C6C4AB8958E45CB6B054B7"  # deliberately checksummed
 ADDR_LC = ADDR.lower()
 ADDR_0X = "0X" + ADDR[2:]  # the other prefix spelling: ``_wei`` already takes it
 FUNDER = "0x332F73DD1E40DD9581444DBDC0BB6547FADBF954"
+OTHER = "0xB2B7C1795F19FBC28FDA77A95E59EDBB8B3709C8"  # sorts *above* ADDR lowercase
+OTHER_LC = OTHER.lower()
 TX1 = "0x" + "ab" * 32
 TX2 = "0x" + "cd" * 32
 
@@ -460,6 +462,57 @@ def test_the_higher_block_wins_even_when_the_other_row_scores_higher() -> None:
         assert len(ds.deposits) == 1
         assert ds.deposits[0].block_number == 25_771_140
         assert ds.deposits[0].new_weight_wei == 821_025_000_000_000_000
+
+
+def test_two_rows_differing_only_in_contributor_are_not_settled_by_arrival() -> None:
+    """The order the tie-break stopped short of being **total**.
+
+    ``from_events`` promises flatly that a shuffled producer and an ordered one
+    build the same dataset, and :func:`_replay_rank` says its later terms exist
+    so the answer never depends on which row arrived first.  Both sentences were
+    untrue of one pair: the rank stopped at the numeric words, so two rows
+    sharing a ``(tx_hash, log_index)`` and differing only in ``contributor``
+    ranked *equal*, and equal means the first one in wins.  Two decoders
+    disagreeing about one log — or a merged sweep carrying both readings — is
+    contradictory data, and the constructor's job is to answer it the same way
+    every time rather than to be right about it.
+    """
+    mine = _dep_row(contributor=ADDR)
+    theirs = _dep_row(contributor=OTHER)
+    first = Dataset.from_events([mine, theirs], [_first_row()])
+    second = Dataset.from_events([theirs, mine], [_first_row()])
+    assert len(first.deposits) == 1
+    assert first == second
+    assert first.deposits[0].contributor == OTHER_LC
+
+
+def test_two_rows_differing_only_in_ts_are_not_settled_by_arrival() -> None:
+    """``ts`` was left out of the rank on the grounds that ``None`` does not
+    order — true of the *value*, and it left a pair differing in nothing else
+    settled by arrival.  It enters as a present-flag followed by a value, which
+    orders ``None`` without comparing it."""
+    early = _dep_row(ts=1_755_000_000)
+    late = _dep_row(ts=1_755_000_600)
+    first = Dataset.from_events([early, late], [_first_row()])
+    second = Dataset.from_events([late, early], [_first_row()])
+    assert len(first.deposits) == 1
+    assert first == second
+    assert first.deposits[0].ts == 1_755_000_600.0
+
+
+def test_a_readable_ts_outranks_an_unreadable_one_at_the_epoch() -> None:
+    """The present-flag is not decoration.  One producer with timestamps and one
+    without, merged, hand over the same log twice — and at ``ts == 0`` the value
+    term alone cannot tell *read it, it was zero* from *could not read it*.  The
+    flag does, and it does it the way the rest of the library does: a failed
+    read is ``None``, never ``0``, so the row that has a reading wins."""
+    absent = _dep_row(ts=None)
+    epoch = _dep_row(ts=0)
+    first = Dataset.from_events([absent, epoch], [_first_row()])
+    second = Dataset.from_events([epoch, absent], [_first_row()])
+    assert len(first.deposits) == 1
+    assert first == second
+    assert first.deposits[0].ts == 0.0
 
 
 def test_two_byte_identical_duplicates_still_collapse_to_one_row() -> None:
