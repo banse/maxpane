@@ -25,6 +25,7 @@ import pytest
 
 from sybilkit import DetectConfig, curve, detect
 from sybilkit import curator as preset_mod
+from sybilkit.report import DetectResult
 from sybilkit.curator import (
     FORBIDDEN_LABEL_WORDS,
     Segment,
@@ -663,11 +664,93 @@ def test_the_clean_list_carries_wei_not_ether(population_analysis) -> None:
 def test_the_clean_list_on_an_empty_result_keeps_everybody(labeled_ds) -> None:
     """Nothing linked is not the same as nothing analyzed: with an empty
     :class:`DetectResult` every analyzed contributor is a survivor, and the
-    clean total equals the population total."""
+    clean total equals the population total.
+
+    Note what this pins and what it does not.  ``empty`` here comes from a
+    **real** ``detect`` run, which always populates ``analyzed`` — so this is
+    "no *clusters* keeps everybody", not "no *analyzed* keeps everybody".  The
+    three tests below cover the second, which used to answer "clean" for
+    wallets nobody had looked at (review finding #4).
+    """
     preset = a_preset()
     empty = detect(labeled_ds, dataclasses.replace(preset.detect_config(), min_size=10**6))
     assert empty.clusters == []
+    assert empty.analyzed  # a real run always says who it looked at
     clean = clean_list(labeled_ds, empty, preset)
     assert clean.flagged_contributors == 0
     assert clean.clean_points == clean.total_points
     assert len(clean.entries) == len(empty.analyzed)
+
+
+def _unanalyzed_result(total_points: int = 0) -> DetectResult:
+    """A hand-built result that looked at nobody — ``analyzed`` stays empty.
+
+    Exactly what a caller constructs when it has counters but no run: the
+    class documents the empty default as "the safe default is never a
+    confident clean", and these tests hold the preset to that.
+    """
+    return DetectResult([], total_points, 0, total_points)
+
+
+def test_a_result_that_analyzed_nobody_produces_no_survivors() -> None:
+    """**Review finding #4.**  ``analyzed = set(res.analyzed) or set(weights)``
+    rewrote *analyzed nobody* into *everybody analyzed and clean*.
+
+    The population is not the analysis.  A result with an empty ``analyzed``
+    has no survivors to rank, because nothing was looked at — and
+    ``contributors_total`` is the size of what was analyzed, so it is ``0``
+    rather than the number of wallets that happen to be in the dataset.
+    """
+    preset = a_preset()
+    ds = _mini_dataset([(1, 0), (2, 0), (3, 1), (4, 1), (5, 1)])
+    res = _unanalyzed_result()
+
+    clean = clean_list(ds, res, preset)
+
+    assert clean.entries == ()
+    assert clean.clean_contributors == 0
+    assert clean.contributors_total == 0
+
+
+def test_standing_of_an_unanalyzed_address_is_unknown_not_clean() -> None:
+    """``CleanList.standing``'s own docstring promises three words that are
+    never collapsed; the fallback made the third one unreachable.
+
+    A wallet ``res.wallet()`` answers ``None`` for — never analyzed — must not
+    come back "clean" from the object whose whole job is telling clean,
+    removed and unknown apart.  That is CLAUDE.md's confident-negative hazard
+    in the one place it is least survivable.
+    """
+    preset = a_preset()
+    ds = _mini_dataset([(1, 0), (2, 0), (3, 1), (4, 1), (5, 1)])
+    addr = "0x" + f"{1:040x}"
+    res = _unanalyzed_result()
+
+    assert res.wallet(addr) is None  # the detector says: never looked at
+    clean = clean_list(ds, res, preset)
+    assert clean.standing(addr) == "unknown"
+    assert clean.clean_rank(addr) is None
+
+
+def test_a_hand_built_result_never_makes_the_clean_list_speak_for_the_unanalyzed() -> None:
+    """The general form: ``standing`` and ``wallet`` agree, address by address.
+
+    Asserted on a **partially** analyzed result as well as an empty one,
+    because that is the shape a resumable sweep produces — a cursor that has
+    walked two of five wallets — and it is where "everybody clean" would be
+    most plausible and most wrong.
+    """
+    preset = a_preset()
+    ds = _mini_dataset([(1, 0), (2, 0), (3, 1), (4, 1), (5, 1)])
+    addrs = [f"0x{i:040x}" for i in range(1, 6)]
+
+    for analyzed in (frozenset(), frozenset(addrs[:2])):
+        res = _unanalyzed_result()
+        res.analyzed = analyzed
+        clean = clean_list(ds, res, preset)
+
+        for addr in addrs:
+            looked_at = res.wallet(addr) is not None
+            assert (clean.standing(addr) == "unknown") is not looked_at, addr
+        assert clean.contributors_total == len(analyzed)
+        assert {e.address for e in clean.entries} == set(analyzed)

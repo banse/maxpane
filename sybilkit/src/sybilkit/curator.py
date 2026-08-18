@@ -638,11 +638,20 @@ def clean_list(ds: Dataset, res: DetectResult, preset: CuratorPreset) -> CleanLi
     Ranking is ``(-points, address)``: points descending, ties broken on the
     lowercase address, so two wallets with identical points always rank in the
     same order and a re-run never reshuffles the export.
+
+    **The survivors come from ``res.analyzed``, never from the dataset.**  This
+    used to fall back to every contributor in *ds* when ``analyzed`` was empty,
+    which rewrote "analyzed nobody" into "everybody analyzed and clean" — so
+    :meth:`CleanList.standing` answered ``"clean"`` for a wallet
+    :meth:`DetectResult.wallet` said was never looked at.  A result that
+    analyzed nobody therefore has no survivors and a ``contributors_total`` of
+    ``0``: the population is not the analysis, and an unanalyzed wallet's
+    honest word is ``"unknown"``.
     """
     weights = final_weights(ds)
     credits = credited_totals(ds)
     flagged = {a.lower() for a in res.flagged}
-    analyzed = set(res.analyzed) or set(weights)
+    analyzed = set(res.analyzed)
 
     survivors = sorted(
         (a for a in analyzed if a not in flagged),
