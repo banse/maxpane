@@ -495,6 +495,10 @@ async def rpc_call(
     Raises :class:`RangeTooWide` for the shrinkable class (the caller halves
     its own window), :class:`MalformedRequest` without rotating for our own
     bug, and :class:`AllEndpointsFailed` when the pool is exhausted.
+
+    **A 200 body that is not a JSON-RPC object rotates.**  A single answer is
+    an object by spec; an HTML error page or a bare array is an endpoint that
+    did not answer, not an answer of ``None`` and not a page of zero rows.
     """
     payload = jsonrpc(session.next_id(), method, params)
     httpx = require_httpx()
@@ -511,7 +515,20 @@ async def rpc_call(
                     body = resp.json()
                 except ValueError:
                     body = None
-                if isinstance(body, dict) and body.get("error"):
+                if not isinstance(body, dict):
+                    # A 200 we cannot read is NOT an answer.  A ``text/html``
+                    # error page used to come back as ``None`` with **no
+                    # rotation**, and a bare ``[]`` came back verbatim — which
+                    # ``_page`` accepted as a page of zero logs, so a sweep
+                    # completed *empty* during an outage.  A single JSON-RPC
+                    # answer is an object by spec, even when its ``result`` is a
+                    # list; anything else is an endpoint that did not answer.
+                    # Rotate, exactly as ``rpc_batch`` does for a non-list body.
+                    last = RuntimeError(
+                        f"{url}: answered {type(body).__name__}, not a JSON-RPC object"
+                    )
+                    break
+                if body.get("error"):
                     err = body["error"]
                     if is_range_limitation(err):
                         raise RangeTooWide(str(err))
@@ -520,7 +537,7 @@ async def rpc_call(
                         break
                     raise MalformedRequest(f"{url}: {err}")
                 resp.raise_for_status()
-                return body.get("result") if isinstance(body, dict) else body
+                return body.get("result")
             except (RangeTooWide, MalformedRequest):
                 raise
             except (httpx.HTTPError, ValueError) as exc:

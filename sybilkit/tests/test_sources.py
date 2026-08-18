@@ -348,6 +348,69 @@ def test_a_malformed_request_short_circuits_instead_of_rotating() -> None:
     assert served.count("eth.drpc.org") == 0
 
 
+def test_a_two_hundred_html_body_rotates_to_the_next_endpoint() -> None:
+    """**Review #3, the reproduced case.**  A 200 whose body is not JSON-RPC is
+    not an answer.
+
+    An endpoint behind a proxy that has fallen over answers ``200 text/html``.
+    ``resp.json()`` raised, ``body`` became ``None``, and the final line handed
+    that ``None`` straight back **without rotating** — so a healthy second
+    endpoint was never asked.  ``rpc_batch`` already rotated on the same input
+    (``not isinstance(body, list)``), and that asymmetry is the proof the intent
+    was rotation all along.
+    """
+    served: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        served.append(request.url.host or "")
+        if request.url.host == "gateway.tenderly.co":
+            return httpx.Response(200, text="<html><body>502 Bad Gateway</body></html>")
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(100))
+        return _rpc_result([])
+
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+    assert "eth.drpc.org" in served, served
+    assert sweep is not None
+    assert sweep.to_block == 100
+
+
+def test_a_two_hundred_bare_array_body_is_not_a_completed_sweep() -> None:
+    """The same defect's quieter half, and the dangerous one.
+
+    A single JSON-RPC answer is an **object** by spec, even when its ``result``
+    is a list.  A bare ``[]`` came back verbatim, ``_page`` accepted it as a
+    page of zero logs, and ``fetch_deposits`` completed an *empty* sweep —
+    "this contract has no history", during an outage.  That is the one
+    conclusion an outage must never reach.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(100))
+        return httpx.Response(200, json=[])
+
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+    assert sweep is None
+
+
+def test_an_unreadable_body_from_every_endpoint_degrades_to_none_not_an_empty_history() -> None:
+    """And when nobody can be read, the pool is walked first and the answer is
+    ``None`` — never a sweep of zero deposits."""
+    rec = Recorder(lambda r: httpx.Response(200, text="upstream connect error"))
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(rec), config=FAST)
+    )
+    assert sweep is None
+    hosts = {u.split("/")[2] for u in rec.urls}
+    assert len(hosts) > 1, rec.urls  # it really did rotate
+
+
 def test_a_providers_suggested_retry_range_is_never_adopted() -> None:
     """**The mandated livelock bite.**
 
