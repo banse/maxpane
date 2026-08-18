@@ -384,6 +384,25 @@ def _region_text(app, widget, clip) -> str:
     )
 
 
+def _row_cells(text: str, anchor: str) -> list[str]:
+    """The cells of the one composited table row in *text* holding *anchor*.
+
+    Cell-level, because panel-level is not always discriminating.  The
+    SEGMENTS band row's DETAIL cell reads ``16 linked groups · …``, so an
+    assertion of the form ``"linked groups" in <the SEGMENTS panel>`` is
+    satisfied by the detail **whatever the BAND cell says** — it was green
+    through the whole pre-D4 spelling, which is how the rename shipped with
+    two of its four reported witnesses unable to see it.
+
+    The tables pad between columns and every cell collapses its own
+    whitespace to single spaces, so a run of two or more spaces is the cell
+    boundary.
+    """
+    rows = [line for line in text.split("\n") if anchor in line]
+    assert len(rows) == 1, f"{anchor!r} names {len(rows)} rows, want exactly 1"
+    return [cell for cell in re.split(r"\s{2,}", rows[0].strip()) if cell]
+
+
 async def _render(payload=None, *, width: int = CURATOR_FULL_LAYOUT_COLUMNS,
                   height: int = _TALL, view: str | None = None,
                   wallet=_WALLET) -> str:
@@ -2482,11 +2501,14 @@ async def test_the_analysis_panels_are_dispatched_while_hidden():
         # SEGMENTS is anchored on its own region too, and for a new reason:
         # its band is `linked groups` since ruling D4, and CLEANED LIST's own
         # note ends "linked groups removed" — a screen-wide `in text` would
-        # be satisfied by the wrong panel.
+        # be satisfied by the wrong panel.  The region alone is not enough:
+        # the band row's own DETAIL cell reads "16 linked groups · …", so the
+        # assertion is on the BAND *cell*, which is the only thing the label
+        # writes.
         segs = _region_text(app, screen.query_one(CuratorSegments), screen)
 
     assert "1,995 linked" in text           # OPERATORS, from the slice
-    assert "linked groups" in segs          # SEGMENTS
+    assert _row_cells(segs, "6,303")[0] == "linked groups"   # SEGMENTS
     assert "linked groups removed" in text  # CLEANED LIST
     assert "16 linked groups" in ops        # the note only a dispatch writes
 

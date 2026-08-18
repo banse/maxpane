@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import re
 from pathlib import Path
 
 import pytest
@@ -116,6 +117,25 @@ class _Harness(App):
 def _screen_text(app) -> str:
     strips = app.screen._compositor.render_strips()
     return "\n".join("".join(seg.text for seg in strip) for strip in strips)
+
+
+def _row_cells(text: str, anchor: str) -> list[str]:
+    """The cells of the one composited table row in *text* holding *anchor*.
+
+    Cell-level, because panel-level is not always discriminating.  The
+    SEGMENTS band row's DETAIL cell reads ``16 linked groups · …``, so an
+    assertion of the form ``"linked groups" in text`` is satisfied by the
+    detail **whatever the BAND cell says** — it stayed green with the
+    pre-D4 label rendered, which is how the rename shipped with two of its
+    four reported witnesses unable to see it.
+
+    The tables pad between columns and every cell collapses its own
+    whitespace to single spaces, so a run of two or more spaces is the cell
+    boundary.
+    """
+    rows = [line for line in text.split("\n") if anchor in line]
+    assert len(rows) == 1, f"{anchor!r} names {len(rows)} rows, want exactly 1"
+    return [cell for cell in re.split(r"\s{2,}", rows[0].strip()) if cell]
 
 
 async def _rendered(cls, *, size=(143, 24), **kwargs) -> str:
@@ -3369,14 +3389,21 @@ async def test_reasons_wider_than_the_cell_shed_whole_phrases_visibly():
 
 async def test_the_segment_bands_render_with_their_pattern_language_labels():
     """PRD §5.2: "linked groups", "early cohort" — never "whale sybil".
-    The index-1000 cohort's 7.6% is the number Adam asked for by name."""
+    The index-1000 cohort's 7.6% is the number Adam asked for by name.
+
+    The band is asserted on its BAND **cell**: that row's own DETAIL cell
+    reads "16 linked groups · …", so a panel-wide `"linked groups" in text`
+    says nothing about the label — it was satisfied by the detail through
+    the whole pre-D4 spelling.  "early cohort" appears in no other cell, so
+    it stays a panel-level read.
+    """
     from maxpane_dashboard.widgets.curator.segments import CuratorSegments
 
     env = _segment_envelope()
     text = await _rendered(
         CuratorSegments, segment_rows=env["rows"], analysis_as_of_hhmm="22:41"
     )
-    assert "linked groups" in text
+    assert _row_cells(text, "6,303")[0] == "linked groups"
     assert "early cohort" in text
     assert "7.6%" in text
     assert "as of 22:41" in text
