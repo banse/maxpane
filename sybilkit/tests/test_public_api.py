@@ -1036,3 +1036,62 @@ def test_every_edges_strength_equals_its_reasons_strength() -> None:
                 assert edge.family == edge.reason.family, (fn.__name__, edge)
                 seen.add(edge.family)
     assert seen == set(FAMILIES), seen
+
+
+def _explicit_slots() -> dict[tuple[str, str], list[str]]:
+    """Every class in the distribution that spells its own ``__slots__``.
+
+    Deliberately *not* the ``@dataclass(slots=True)`` models: those declare
+    their fields as a public vocabulary and are read from outside by name, so
+    "nobody reads it here" says nothing about them.  A hand-written
+    ``__slots__`` is different — it is a private state list, and a name on it
+    that nothing ever loads is state the class carries and never uses.
+    """
+    found: dict[tuple[str, str], list[str]] = {}
+    for path in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for stmt in node.body:
+                if isinstance(stmt, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == "__slots__"
+                    for t in stmt.targets
+                ):
+                    found[(str(path.relative_to(SRC)), node.name)] = [
+                        e.value
+                        for e in getattr(stmt.value, "elts", [])
+                        if isinstance(e, ast.Constant)
+                    ]
+    return found
+
+
+def test_no_hand_written_slot_is_written_and_never_read() -> None:
+    """Dead state, found structurally rather than remembered.
+
+    ``sources._Session`` carried a ``_last_at`` it set to ``0.0`` in
+    ``__init__`` and never read again — the residue of a pacing scheme that
+    measured time since the last call, replaced by the flat
+    ``inter_call_delay`` the config actually documents.  Harmless, and exactly
+    the kind of thing that reads to the next author as "the session knows when
+    it last spoke", which it does not.
+
+    The scan is a deliberate *under*-estimate: a slot counts as read if the
+    name is loaded as an attribute **anywhere** in the distribution, whoever
+    the object is.  A false negative here misses dead state; a false positive
+    would fail the suite over a coincidence, and that is the worse trade.
+    """
+    loads: set[str] = set()
+    for path in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+                loads.add(node.attr)
+
+    slotted = _explicit_slots()
+    assert len(slotted) >= 3, slotted  # the scan actually found the classes
+    dead = {
+        where: [name for name in names if name not in loads]
+        for where, names in slotted.items()
+    }
+    assert not any(dead.values()), {k: v for k, v in dead.items() if v}

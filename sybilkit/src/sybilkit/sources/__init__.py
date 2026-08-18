@@ -505,7 +505,7 @@ class _Session:
     the three modules share exactly one answer to "whose client is this".
     """
 
-    __slots__ = ("client", "config", "_owned", "_sleep", "_last_at", "_id")
+    __slots__ = ("client", "config", "_owned", "_sleep", "_id")
 
     def __init__(
         self,
@@ -525,7 +525,6 @@ class _Session:
 
             sleep = asyncio.sleep
         self._sleep = sleep
-        self._last_at = 0.0
         self._id = 0
 
     async def __aenter__(self) -> "_Session":
