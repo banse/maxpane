@@ -180,3 +180,86 @@ def test_no_edges_from_an_empty_dataset() -> None:
     from sybilkit import Dataset
 
     assert amount_edges(Dataset(deposits=(), first_index={}, txs={}, funding={}), CFG) == []
+
+
+# ---- review finding #13: the near pass at the exempt minimum ---------------
+#
+# Ruling R13b already says identicalness at the protocol minimum identifies
+# nobody, and ``identical_amount_windows`` enforces it.  The near pass then
+# re-admitted an arbitrary member of the very same crowd: it sorts each block's
+# rows by ``(amount, address)`` and compares adjacent pairs, skipping equal
+# amounts — so a run of byte-equal minimum rows sitting beside a near
+# neighbour hands exactly one of them an edge, and *which* one is decided by
+# lowercase address order.  D5 rules A: exempt rows leave the near pass too.
+
+EXEMPT = 50_000_000_000_000_000  # 0.05 ETH — the protocol minimum
+WITH_MIN = DetectConfig(protocol_min_amount_wei=EXEMPT)
+
+
+def _row(addr, amount, *, block, log_index):
+    return {
+        "contributor": addr,
+        "hour": 1,
+        "amount_wei": amount,
+        "credited_delta_wei": amount,
+        "weight_added_wei": amount,
+        "new_weight_wei": amount,
+        "tx_count": 1,
+        "block_number": block,
+        "tx_hash": "0x" + f"{block:032x}{log_index:032x}",
+        "log_index": log_index,
+    }
+
+
+def _minimum_crowd_ds(addr_of):
+    """Three byte-equal minimum wallets and one near neighbour above them, all
+    in one block.  *addr_of* names the crowd member playing each role, so the
+    same measured population can be relabelled without changing one wei."""
+    from sybilkit import Dataset
+
+    rows = [_row(addr_of(role), EXEMPT, block=900, log_index=role) for role in range(3)]
+    rows.append(_row("0x" + "ee" * 20, EXEMPT + 2_000_000_000_000_000, block=900, log_index=9))
+    return Dataset.from_events(rows, [])
+
+
+def _crowd_addr(role, order):
+    return "0x" + "cc" * 4 + f"{order[role]:032x}"
+
+
+def test_a_near_edge_at_the_exempt_minimum_is_never_emitted() -> None:
+    """The minimum crowd contributes no amount edge from either rule.  A
+    0.052 wallet in the same block used to pull exactly one of them in."""
+    ds = _minimum_crowd_ds(lambda role: _crowd_addr(role, (1, 2, 3)))
+    assert amount_edges(ds, WITH_MIN) == []
+
+
+def test_which_of_two_byte_equal_minimum_wallets_links_is_not_decided_by_address_order() -> None:
+    """Two datasets identical in every measured value — same amounts, same
+    block, same log indices — with the crowd's addresses permuted between
+    them.  Nothing a detector may read has changed, so the set of *roles* the
+    edges touch must not change either.  Under the defect the lexically
+    largest address was linked, so relabelling moved the conviction from role
+    2 to role 0."""
+    first = (1, 2, 3)
+    second = (3, 1, 2)  # role 0 now carries the largest address
+    touched = []
+    for order in (first, second):
+        role_of = {_crowd_addr(role, order): role for role in range(3)}
+        edges = amount_edges(_minimum_crowd_ds(lambda role: _crowd_addr(role, order)), WITH_MIN)
+        touched.append({role_of[a] for e in edges for a in (e.a, e.b) if a in role_of})
+    assert touched[0] == touched[1]
+
+
+def test_a_near_edge_above_the_exempt_minimum_still_fires() -> None:
+    """The over-correction guard: the exemption is about the minimum, not
+    about the near rule.  Two in-band amounts that are both above it still
+    join inside their block."""
+    from sybilkit import Dataset
+
+    rows = [
+        _row("0x" + "aa" * 4 + f"{1:032x}", EXEMPT + 2_000_000_000_000_000, block=900, log_index=1),
+        _row("0x" + "aa" * 4 + f"{2:032x}", EXEMPT + 5_000_000_000_000_000, block=900, log_index=2),
+    ]
+    edges = amount_edges(Dataset.from_events(rows, []), WITH_MIN)
+    assert len(edges) == 1
+    assert "near-identical" in edges[0].reason.human_string

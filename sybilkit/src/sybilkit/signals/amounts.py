@@ -49,6 +49,16 @@ def amount_edges(ds: Dataset, cfg) -> list[Edge]:
     discipline this family and ``split`` share — so the protocol-minimum
     exemption (``cfg.protocol_min_amount_wei``, ruling R13) applies here for
     free: identicalness at the minimum is not evidence.
+
+    The **near** pass applies the same exemption explicitly, because it does
+    not go through that helper.  It sorts each block's rows by
+    ``(amount, address)`` and compares adjacent pairs, so a run of byte-equal
+    minimum rows beside a near neighbour would hand exactly one of the crowd
+    an edge and let lowercase address order decide which — an arbitrary
+    conviction on the one value that identifies nobody.  Exempt rows are
+    therefore dropped from the near pass entirely (review #13, ruling D5-A),
+    which costs a genuine near-neighbour of the minimum its edge and buys
+    order-independence for the ~2 000 wallets sitting on that value.
     """
     singles = single_first_rows(ds)
     edges: list[Edge] = []
@@ -74,8 +84,16 @@ def amount_edges(ds: Dataset, cfg) -> list[Edge]:
 
     # ---- near-identical (±tol), same block only -------------------------
     tol_bps = tol_bps_of(cfg.near_amount_tol)
+    exempt = cfg.protocol_min_amount_wei
     by_block: dict[int, list[tuple[int, str]]] = defaultdict(list)
     for addr, dep in singles.items():
+        if exempt is not None and dep.amount_wei == exempt:
+            # R13b, and the near pass obeys it too: a run of byte-equal
+            # minimum rows sits between two near neighbours, so leaving it in
+            # hands exactly one of the crowd an edge and lets lowercase
+            # address order pick which.  Nobody at the minimum is identified
+            # by being at the minimum, from either rule.
+            continue
         by_block[dep.block_number].append((dep.amount_wei, addr))
     for block, rows in sorted(by_block.items()):
         if len(rows) < 2:
