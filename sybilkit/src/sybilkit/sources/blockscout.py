@@ -28,7 +28,7 @@ row and is *not* pending, because that one is a measurement rather than a gap.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Iterable, Mapping
 
 from ..model import Funding
@@ -70,12 +70,24 @@ class FundingSweep:
     :attr:`pending_reasons`, and :attr:`page_bounded` names the ones whose
     history simply outran ``max_pages`` (the signal that the bound, not the
     source, is what needs raising).
+
+    ``page_cursors`` is the **per-address** half of the cursor, and it is why a
+    page-bounded address now finishes.  ``pending`` alone said "come back to
+    this one" without saying where, so every pass re-walked the same first
+    pages forever and pendings — which head the budget — crowded out addresses
+    nobody had looked at yet.  Each entry is
+    ``{"params": …, "funder": …, "block": …}``: where to ask next, and the
+    oldest incoming transfer found so far.  Feed it back as ``cursors=``
+    alongside ``pending``.  It is **defaulted and added last** so existing
+    keyword construction and a payload persisted before it existed both still
+    work — a consumer that ignores it simply restarts each walk at page 1.
     """
 
     funding: dict[str, Funding]
     pending: tuple[str, ...]
     truncated: bool
     pending_reasons: dict[str, str]
+    page_cursors: dict[str, dict] = field(default_factory=dict)
 
     @property
     def page_bounded(self) -> tuple[str, ...]:
@@ -129,10 +141,55 @@ def _first_incoming(items: Iterable[Any], address: str) -> tuple[str, int] | Non
 _COMPLETE = "complete"
 
 
+def _cursor_of(params: Any, oldest: tuple[str, int] | None) -> dict:
+    """One address's resume point: where to ask next, and the best so far.
+
+    Blockscout serves newest-first, so a resumed walk needs exactly two things
+    — the next page's params and the oldest incoming transfer seen so far.
+    Everything behind the cursor is strictly older, so the answer a resumed
+    walk reaches is the answer an unbounded one would have.
+    """
+    return {
+        "params": dict(params) if isinstance(params, Mapping) else None,
+        "funder": oldest[0] if oldest else None,
+        "block": oldest[1] if oldest else None,
+    }
+
+
+def _resume_from(entry: Any) -> tuple[Any, tuple[str, int] | None]:
+    """A persisted cursor entry → ``(starting params, best-so-far)``.
+
+    Read tolerantly on purpose: this shape round-trips through a consumer's
+    cache file, and a hand-edited payload is third-party input.  Anything
+    unrecognisable simply starts the walk at page 1, which is the pre-cursor
+    behaviour rather than an error.
+    """
+    if not isinstance(entry, Mapping):
+        return None, None
+    raw = entry.get("params")
+    params = dict(raw) if isinstance(raw, Mapping) and raw else None
+    funder = entry.get("funder")
+    block = entry.get("block")
+    oldest: tuple[str, int] | None = None
+    if isinstance(funder, str) and isinstance(block, int) and not isinstance(block, bool):
+        oldest = (funder.lower(), block)
+    return params, oldest
+
+
 async def _funder_of(
-    session: _Session, address: str, max_pages: int
-) -> tuple[str | None, str, bool]:
-    """``(funder, outcome, reachable)`` for one address.
+    session: _Session,
+    address: str,
+    max_pages: int,
+    *,
+    params: Any = None,
+    oldest: tuple[str, int] | None = None,
+) -> tuple[str | None, str, bool, dict | None]:
+    """``(funder, outcome, reachable, cursor)`` for one address.
+
+    *params* and *oldest* are a previous pass's resume point (see
+    :func:`_resume_from`); with neither, the walk starts at page 1.  *cursor*
+    is where this pass stopped, or ``None`` when there is nothing to resume —
+    the walk finished, or it died before a single page parsed.
 
     Blockscout serves newest-first with a keyset cursor, so the **first**
     funder is on the last page and the cursor is followed verbatim, as query
@@ -157,49 +214,58 @@ async def _funder_of(
     """
     httpx = require_httpx()
     url = f"{session.config.blockscout_base}/addresses/{address}/transactions"
-    params: Any = {"filter": "to"}
-    oldest: tuple[str, int] | None = None
+    query: Any = (
+        {**params, "filter": "to"}
+        if isinstance(params, Mapping) and params
+        else {"filter": "to"}
+    )
     reachable = False
+
+    def stopped() -> dict | None:
+        # A cursor is worth persisting only once a page has parsed: before
+        # that, "resume here" and "start at the beginning" are the same place.
+        return _cursor_of(query, oldest) if reachable else None
+
     for _page in range(max_pages):
         try:
             resp = await session.get(
-                url, params=params, delay=session.config.blockscout_min_interval
+                url, params=query, delay=session.config.blockscout_min_interval
             )
             if resp.status_code in DEAD_STATUS_CODES:
-                return None, PENDING_UNREADABLE, reachable
+                return None, PENDING_UNREADABLE, reachable, stopped()
             resp.raise_for_status()
             body = resp.json()
         except (httpx.HTTPError, ValueError):
-            return None, PENDING_UNREADABLE, reachable
+            return None, PENDING_UNREADABLE, reachable, stopped()
         if not isinstance(body, Mapping):
-            return None, PENDING_UNREADABLE, reachable
+            return None, PENDING_UNREADABLE, reachable, stopped()
         items = body.get("items")
         if not isinstance(items, list):
             # `{"items": null}` from a 200 passed the old `"items" in body`
             # guard, so an unread page was treated as a finished walk and the
             # address got a resolved `funder=None` row.  A page we cannot read
             # is unreadable, whatever the status line said.
-            return None, PENDING_UNREADABLE, reachable
+            return None, PENDING_UNREADABLE, reachable, stopped()
         reachable = True
         found = _first_incoming(items, address)
         if found is not None and (oldest is None or found[1] < oldest[1]):
             oldest = found
         nxt = body.get("next_page_params")
         if not nxt:
-            return (oldest[0] if oldest else None), _COMPLETE, True
+            return (oldest[0] if oldest else None), _COMPLETE, True, None
         if not isinstance(nxt, Mapping):
             # A cursor we cannot extend with our own filter is not the end of
             # the history: `_COMPLETE` here would resolve a row off a walk that
             # stopped early, and `{**nxt}` on a non-mapping would take the
             # caller down with a TypeError.
-            return None, PENDING_UNREADABLE, reachable
+            return None, PENDING_UNREADABLE, reachable, stopped()
         # The server's cursor, verbatim — **plus our own filter**.  `params =
         # nxt` replaced it, so every page after the first asked for the whole
         # transaction history rather than its incoming half.
-        params = {**nxt, "filter": "to"}
+        query = {**nxt, "filter": "to"}
     # Fell out of the loop with a cursor still open: every page we asked for
     # answered, there are simply more of them than we were willing to walk.
-    return None, PENDING_PAGES, reachable
+    return None, PENDING_PAGES, reachable, stopped()
 
 
 async def fetch_funding(
@@ -208,6 +274,7 @@ async def fetch_funding(
     known: Mapping[str, Funding] | None = None,
     budget: int | None = None,
     max_pages: int | None = None,
+    cursors: Mapping[str, Mapping] | None = None,
     config: SourceConfig = DEFAULT_CONFIG,
     client: Any = None,
     transport: Any = None,
@@ -220,6 +287,13 @@ async def fetch_funding(
     **new** addresses this pass will look up; anything beyond it lands in
     ``pending`` with ``truncated=True``.
 
+    *cursors* is the previous pass's :attr:`FundingSweep.page_cursors`, and it
+    is what makes a page-bounded address finish: with it, that address's walk
+    resumes at the page it stopped on instead of re-reading its first pages
+    forever.  Keyword-only and defaulted, and read tolerantly — an entry that
+    does not parse just starts the walk at page 1, which is what every caller
+    written before ``page_cursors`` existed gets for free.
+
     **An address that stays pending gets no row in the result.**  It is not
     written as ``Funding(funder=None)`` and then skipped by the next pass's
     ``known`` — see :class:`FundingSweep`.  Only a finished address is
@@ -231,6 +305,11 @@ async def fetch_funding(
     """
     resolved: dict[str, Funding] = {
         a.lower(): f for a, f in (known or {}).items()
+    }
+    prior_cursors: dict[str, Mapping] = {
+        a.lower(): c
+        for a, c in (cursors or {}).items()
+        if isinstance(a, str) and isinstance(c, Mapping)
     }
     wanted: list[str] = []
     seen: set[str] = set()
@@ -252,13 +331,22 @@ async def fetch_funding(
     deferred = [] if budget is None else wanted[budget:]
     pending: list[str] = list(deferred)
     reasons: dict[str, str] = {a: PENDING_BUDGET for a in deferred}
+    # An address this pass never got to keeps the cursor it arrived with:
+    # dropping it would restart its walk from page 1, which is the defect the
+    # cursor exists to end.  A *resolved* address keeps none.
+    walked_cursors: dict[str, dict] = {
+        a: dict(prior_cursors[a]) for a in deferred if a in prior_cursors
+    }
     attempted = 0
     reached = 0
 
     async with _Session(config, client=client, transport=transport, sleep=sleep) as s:
         for address in todo:
             attempted += 1
-            funder, outcome, reachable = await _funder_of(s, address, pages)
+            start_params, start_oldest = _resume_from(prior_cursors.get(address))
+            funder, outcome, reachable, cursor = await _funder_of(
+                s, address, pages, params=start_params, oldest=start_oldest
+            )
             if reachable:
                 reached += 1
             if outcome != _COMPLETE:
@@ -269,6 +357,10 @@ async def fetch_funding(
                 # the page loop ended cleanly or a request died inside it.
                 pending.append(address)
                 reasons[address] = outcome
+                if cursor is not None:
+                    walked_cursors[address] = cursor
+                elif address in prior_cursors:
+                    walked_cursors[address] = dict(prior_cursors[address])
                 continue
             resolved[address] = Funding(
                 address=address,
@@ -286,6 +378,7 @@ async def fetch_funding(
         pending=tuple(pending),
         truncated=bool(deferred),
         pending_reasons=reasons,
+        page_cursors=walked_cursors,
     )
 
 

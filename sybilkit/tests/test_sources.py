@@ -1317,6 +1317,137 @@ def test_a_page_bounded_address_is_actually_re_read_on_the_next_pass() -> None:
     assert second.funding[ALICE.lower()].funder == FUNDER.lower()
 
 
+def _paged_history(request: httpx.Request) -> httpx.Response:
+    """ALICE with a three-page incoming history, oldest funder on the last."""
+    params = dict(request.url.params)
+    assert params.get("filter") == "to", params
+    page = params.get("block_number")
+    if page is None:
+        return _page([_incoming(BOB, ALICE, 900)], {"block_number": "800"})
+    if page == "800":
+        return _page([_incoming(BOB, ALICE, 800)], {"block_number": "700"})
+    return _page([_incoming(FUNDER, ALICE, 7)], None)
+
+
+def test_a_page_bounded_address_resumes_from_its_own_cursor_next_pass() -> None:
+    """**Review #14b.**  A page-bounded address re-walked from page 1 every
+    sweep, forever.
+
+    ``pending`` said "come back to this address" but carried no per-address
+    cursor, so each pass spent the same bounded walk on the same first pages
+    and made zero progress — and pendings head the budget, so they crowded out
+    addresses nobody had looked at yet.  ``page_cursors`` is that cursor: fed
+    back in, the next pass asks the server for the page it stopped on.
+    """
+    rec = Recorder(_paged_history)
+    first = asyncio.run(
+        blockscout.fetch_funding(
+            [ALICE], client=_client(rec), config=FAST, max_pages=1
+        )
+    )
+    assert first is not None
+    assert first.pending == (ALICE.lower(),)
+    assert first.page_bounded == (ALICE.lower(),)
+    assert first.page_cursors[ALICE.lower()]["params"]["block_number"] == "800"
+
+    before = len(rec.calls)
+    second = asyncio.run(
+        blockscout.fetch_funding(
+            first.pending, client=_client(rec), config=FAST, max_pages=1,
+            known=first.funding, cursors=first.page_cursors,
+        )
+    )
+    assert second is not None
+    resumed = dict(rec.calls[before][1].params)
+    assert resumed["block_number"] == "800", "pass 2 walked from page 1 again"
+    assert resumed["filter"] == "to"
+    assert second.page_cursors[ALICE.lower()]["params"]["block_number"] == "700"
+
+    third = asyncio.run(
+        blockscout.fetch_funding(
+            second.pending, client=_client(rec), config=FAST, max_pages=1,
+            known=second.funding, cursors=second.page_cursors,
+        )
+    )
+    assert third is not None
+    assert third.pending == ()
+    assert third.funding[ALICE.lower()].funder == FUNDER.lower()
+    assert third.page_cursors == {}, "a resolved address keeps no cursor"
+
+
+def test_a_resumed_walk_keeps_the_oldest_funder_found_before_the_bound() -> None:
+    """The best-so-far travels with the cursor.  Blockscout serves
+    newest-first, so a resumed walk only ever needs the oldest transfer seen so
+    far plus the next page's params — but it does need the first of those, or
+    the answer depends on where the bound happened to fall."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        if params.get("block_number") == "800":
+            # An older page with a *later* incoming transfer than page 1's.
+            return _page([_incoming(BOB, ALICE, 900)], None)
+        return _page([_incoming(FUNDER, ALICE, 7)], {"block_number": "800"})
+
+    rec = Recorder(handler)
+    first = asyncio.run(
+        blockscout.fetch_funding(
+            [ALICE], client=_client(rec), config=FAST, max_pages=1
+        )
+    )
+    assert first is not None
+    assert first.page_cursors[ALICE.lower()]["funder"] == FUNDER.lower()
+    assert first.page_cursors[ALICE.lower()]["block"] == 7
+
+    before = len(rec.calls)
+    second = asyncio.run(
+        blockscout.fetch_funding(
+            first.pending, client=_client(rec), config=FAST, max_pages=5,
+            known=first.funding, cursors=first.page_cursors,
+        )
+    )
+    assert second is not None
+    assert second.funding[ALICE.lower()].funder == FUNDER.lower()
+    # One request, not two: the resumed pass read page 2 only.  Re-walking
+    # page 1 would find the same funder by accident and hide the carry.
+    assert len(rec.calls) - before == 1, rec.urls[before:]
+
+
+def test_a_sweep_without_cursors_still_walks_from_page_one() -> None:
+    """The parameter is optional and defaulted, so every existing caller — and
+    a slot payload written before ``page_cursors`` existed — simply starts at
+    the beginning."""
+    rec = Recorder(_paged_history)
+    sweep = asyncio.run(
+        blockscout.fetch_funding(
+            [ALICE], client=_client(rec), config=FAST, max_pages=5
+        )
+    )
+    assert sweep is not None
+    assert sweep.funding[ALICE.lower()].funder == FUNDER.lower()
+    assert "block_number" not in dict(rec.calls[0][1].params)
+    assert sweep.page_cursors == {}
+
+
+def test_a_budget_deferred_address_keeps_the_cursor_it_arrived_with() -> None:
+    """A cursor is only lost when the address is resolved.  An address this
+    pass never got to keeps the one it came in with, or the next pass restarts
+    its walk from page 1 — the very defect the cursor exists to end."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        who = str(request.url).rsplit("/addresses/", 1)[1].split("/")[0].lower()
+        return _page([_incoming(FUNDER, who, 7)], None)
+
+    carried = {BOB.lower(): {"params": {"block_number": "500"},
+                             "funder": None, "block": None}}
+    sweep = asyncio.run(
+        blockscout.fetch_funding(
+            [ALICE, BOB], client=_client(handler), config=FAST,
+            budget=1, cursors=carried,
+        )
+    )
+    assert sweep is not None
+    assert sweep.pending == (BOB.lower(),)
+    assert sweep.page_cursors[BOB.lower()]["params"] == {"block_number": "500"}
+
+
 def test_a_transient_failure_is_never_frozen_into_a_resolved_row() -> None:
     """**Review C1, the second reproduced case.**  "The corruption outlives the
     outage" — the repo's own words, and the reason a sentinel is never written
