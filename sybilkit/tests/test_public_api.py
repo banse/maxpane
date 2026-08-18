@@ -778,3 +778,80 @@ def test_detect_walks_the_deposits_for_a_first_row_map_exactly_once() -> None:
     finally:
         signals_mod.first_rows = real
     assert calls == 1, calls
+
+
+def test_split_and_amounts_walk_one_windowing_pass() -> None:
+    """The second shared fold: the ONE window discipline, run once.
+
+    ``amounts`` and ``split`` are deliberately built on the same windowing pass
+    — "neither can weld a crowd the other would have split" — and each used to
+    compute it for itself, so the discipline they share was a shared *rule* and
+    two separate answers.  ``detect`` runs the pass once and hands the same
+    list to both; being handed it answers exactly what deriving it answers.
+    """
+    import sybilkit.signals as signals_mod
+    import sybilkit.signals.amounts as amounts_mod
+    import sybilkit.signals.split as split_mod
+
+    from tests.conftest import build_labeled_dataset
+
+    ds = build_labeled_dataset()
+    cfg = DetectConfig()
+    windows = identical_amount_windows(ds, cfg, singles=single_first_rows(ds))
+    assert windows, "the labeled subset has identical-amount windows to share"
+
+    assert amount_edges(ds, cfg, windows=windows) == amount_edges(ds, cfg)
+    assert split_edges(ds, cfg, windows=windows) == split_edges(ds, cfg)
+
+    real = identical_amount_windows
+    calls = 0
+
+    def counting(ds_, cfg_, **kw):
+        nonlocal calls
+        calls += 1
+        return real(ds_, cfg_, **kw)
+
+    for mod in (signals_mod, amounts_mod, split_mod):
+        mod.identical_amount_windows = counting
+    try:
+        detect(ds, cfg)
+    finally:
+        for mod in (signals_mod, amounts_mod, split_mod):
+            mod.identical_amount_windows = real
+    assert calls == 1, calls
+
+
+def test_the_two_amount_signals_are_handed_the_very_same_windows() -> None:
+    """Identity, not merely equality — the point of the hoist is that there is
+    one pass, and a window is a list nobody downstream may mutate."""
+    import sybilkit.signals.amounts as amounts_mod
+    import sybilkit.signals.split as split_mod
+
+    from tests.conftest import build_labeled_dataset
+
+    ds = build_labeled_dataset()
+    seen: list[object] = []
+
+    def record(fn):
+        def wrapped(ds_, cfg_, *, windows=None, **kw):
+            seen.append(windows)
+            return fn(ds_, cfg_, windows=windows, **kw)
+
+        return wrapped
+
+    real_amounts, real_split = amounts_mod.amount_edges, split_mod.split_edges
+    amounts_mod.amount_edges = record(real_amounts)
+    split_mod.split_edges = record(real_split)
+    try:
+        detect(ds, DetectConfig())
+    finally:
+        amounts_mod.amount_edges = real_amounts
+        split_mod.split_edges = real_split
+
+    assert len(seen) == 2
+    assert seen[0] is not None
+    assert seen[0] is seen[1]
+    # and the pass survived both signals unmutated
+    before = [(amount, list(window)) for amount, window in seen[0]]
+    detect(ds, DetectConfig())
+    assert [(amount, list(window)) for amount, window in seen[0]] == before

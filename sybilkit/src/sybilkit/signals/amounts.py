@@ -41,11 +41,15 @@ STRENGTH_EXACT_ROUND = 0.75
 STRENGTH_NEAR = 0.7
 
 
-def amount_edges(ds: Dataset, cfg, *, firsts=None) -> list[Edge]:
+def amount_edges(ds: Dataset, cfg, *, firsts=None, windows=None) -> list[Edge]:
     """Byte-identical and ±tol amount groups among single-deposit wallets.
 
-    *firsts* is the :func:`sybilkit.signals.first_rows` map when the caller
-    already holds one; ``None`` derives it.
+    *firsts* is the :func:`sybilkit.signals.first_rows` map and *windows* the
+    :func:`sybilkit.signals.identical_amount_windows` pass, when the caller
+    already holds either; ``None`` derives it.  ``split`` walks the same
+    windows — that is the ONE window discipline, and it is a shared *answer*
+    now and not merely a shared rule — so ``detect`` runs the pass once and
+    hands the same list to both.  Neither signal mutates a window.
 
 
     The byte-identical groups come from
@@ -91,9 +95,11 @@ def amount_edges(ds: Dataset, cfg, *, firsts=None) -> list[Edge]:
     """
     singles = single_first_rows(ds, firsts=firsts)
     edges: list[Edge] = []
+    if windows is None:
+        windows = identical_amount_windows(ds, cfg, singles=singles)
 
     # ---- byte-identical groups, on the integer wei ----------------------
-    for amount, window in identical_amount_windows(ds, cfg, singles=singles):
+    for amount, window in windows:
         if amount % ROUND_WEI:
             reason = Reason(
                 "amount",

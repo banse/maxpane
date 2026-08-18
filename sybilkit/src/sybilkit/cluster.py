@@ -162,7 +162,7 @@ def detect(ds: Dataset, config: DetectConfig = DetectConfig()) -> DetectResult:
     """
     # imported here, not at module top: the signal modules import ``Edge``
     # from this module, and a load-time import would be the cycle.
-    from .signals import first_rows
+    from .signals import first_rows, identical_amount_windows, single_first_rows
     from .signals.amounts import amount_edges
     from .signals.cadence import cadence_edges
     from .signals.funding import funding_edges
@@ -172,20 +172,28 @@ def detect(ds: Dataset, config: DetectConfig = DetectConfig()) -> DetectResult:
 
     contributors = {dep.contributor for dep in ds.deposits}
 
-    # The fold every signal below is built on, computed **once** and handed
-    # down by keyword.  Deriving it per signal cost one run seven walks of the
-    # deposits for the same map; the answer was identical every time, which is
-    # what makes sharing it a cleanup and not a change.  Nothing downstream
-    # mutates it.
+    # The two folds every signal below is built on, computed **once** and
+    # handed down by keyword.  Deriving them per signal cost one run seven
+    # walks of the deposits for the same first-row map and two runs of the
+    # identical-amount windowing; the answers were identical every time, which
+    # is what makes sharing them a cleanup and not a change.  The windowing in
+    # particular is the ONE window discipline ``amounts`` and ``split`` are both
+    # built on — it is a shared *answer* now, not merely a shared rule.
+    # Nothing downstream mutates either object.
     firsts = first_rows(ds)
+    windows = identical_amount_windows(
+        ds, config, singles=single_first_rows(ds, firsts=firsts)
+    )
 
     # ---- 1. tier A draws the components ---------------------------------
     uf = _UnionFind()
     for addr in contributors:
         uf.find(addr)
     tier_a: list[Edge] = []
-    for edge_fn in (amount_edges, split_edges, sequence_edges, cadence_edges):
-        tier_a.extend(edge_fn(ds, config, firsts=firsts))
+    tier_a.extend(amount_edges(ds, config, firsts=firsts, windows=windows))
+    tier_a.extend(split_edges(ds, config, windows=windows))
+    tier_a.extend(sequence_edges(ds, config, firsts=firsts))
+    tier_a.extend(cadence_edges(ds, config, firsts=firsts))
     for edge in tier_a:
         uf.union(edge.a, edge.b)
     components: dict[str, set[str]] = {}

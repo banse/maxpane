@@ -21,10 +21,11 @@ Shared vocabulary lives here so no detector re-derives it differently:
     config's float once, by ``round``, so ``0.10`` means exactly 1 000 bps.
 
 **The shared folds travel by keyword.**  One ``detect`` run used to derive the
-first-deposit map seven times over, so every consumer of a fold takes it as a
-keyword-only argument defaulting to ``None`` — ``firsts=`` for the first-row
-map, ``singles=`` for the single-deposit slice.  Two rules make that safe to
-rely on and both are pinned in ``tests/test_public_api.py``:
+first-deposit map seven times over and the identical-amount windowing twice, so
+every consumer of a fold takes it as a keyword-only argument defaulting to
+``None`` — ``firsts=`` for the first-row map, ``singles=`` for the
+single-deposit slice, ``windows=`` for the windowing pass.  Two rules make that
+safe to rely on and both are pinned in ``tests/test_public_api.py``:
 
 * the parameters are **additive and keyword-only**, because maxpane's adapter
   imports :func:`first_rows` and :func:`tier_a_components` across a
@@ -163,7 +164,8 @@ def tier_a_components(ds: Dataset, cfg, *, firsts=None) -> list[set[str]]:
     modules import their shared helpers from here).
 
     *firsts* is the :func:`first_rows` map when the caller already holds one;
-    ``None`` derives it.
+    ``None`` derives it.  The windowing pass the two amount signals share is
+    run here once either way.
     """
     from .amounts import amount_edges
     from .cadence import cadence_edges
@@ -172,6 +174,9 @@ def tier_a_components(ds: Dataset, cfg, *, firsts=None) -> list[set[str]]:
 
     if firsts is None:
         firsts = first_rows(ds)
+    windows = identical_amount_windows(
+        ds, cfg, singles=single_first_rows(ds, firsts=firsts)
+    )
 
     parent: dict[str, str] = {}
 
@@ -185,8 +190,8 @@ def tier_a_components(ds: Dataset, cfg, *, firsts=None) -> list[set[str]]:
         return root
 
     for edges in (
-        amount_edges(ds, cfg, firsts=firsts),
-        split_edges(ds, cfg, firsts=firsts),
+        amount_edges(ds, cfg, firsts=firsts, windows=windows),
+        split_edges(ds, cfg, windows=windows),
         sequence_edges(ds, cfg, firsts=firsts),
         cadence_edges(ds, cfg, firsts=firsts),
     ):

@@ -34,17 +34,21 @@ MIN_POT_WEI = 50 * 10**18
 STRENGTH_SPLIT = 0.8
 
 
-def split_edges(ds: Dataset, cfg, *, firsts=None) -> list[Edge]:
+def split_edges(ds: Dataset, cfg, *, firsts=None, windows=None) -> list[Edge]:
     """Equal-split groups: ≥ ``cfg.min_size`` byte-identical single-deposit
     amounts in one wave window whose implied pot clears :data:`MIN_POT_WEI`.
 
-    *firsts* is the :func:`sybilkit.signals.first_rows` map when the caller
-    already holds one; ``None`` derives it.
+    *windows* is the :func:`sybilkit.signals.identical_amount_windows` pass
+    when the caller already holds one — ``amounts`` walks the same list, so
+    ``detect`` runs the windowing once and hands it to both.  *firsts* seeds
+    that derivation when only the first-row map is to hand.  This function
+    reads the windows and never mutates them.
     """
     edges: list[Edge] = []
-    windows = identical_amount_windows(
-        ds, cfg, singles=single_first_rows(ds, firsts=firsts)
-    )
+    if windows is None:
+        windows = identical_amount_windows(
+            ds, cfg, singles=single_first_rows(ds, firsts=firsts)
+        )
     for amount, window in windows:
         k = len(window)
         if k < cfg.min_size or amount * k < MIN_POT_WEI:
