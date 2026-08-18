@@ -893,3 +893,114 @@ def test_the_agreement_fixture_is_still_the_labeled_subset():
     assert set(funding) == {r["address"] for r in rows if r.get("funding")}
     assert doc["points_per_eth"] == 1000
     assert doc["min_deposit_wei"] == 5 * 10**16
+
+
+# ---------------------------------------------------------------------------
+# WP3.8 — keyless, no-verdict, single-import guardrails
+# ---------------------------------------------------------------------------
+
+import ast
+import pathlib
+
+_REPO = pathlib.Path(__file__).resolve().parents[2]
+
+
+def _imported_module_names(path: pathlib.Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module)
+    return names
+
+
+def test_no_curator_module_opens_a_socket_for_analysis():
+    """Structural, not promised: the adapter and the manager can only reach
+    the network through a session somebody INJECTED.  Neither imports httpx,
+    neither constructs a client, and the sources' own suite pins that the
+    package has exactly one construction site — so a test that forgets to
+    inject gets the tier-A-only sweep, never a socket."""
+    import inspect
+
+    from maxpane_dashboard.data import curator_manager
+
+    for module in (curator_clusters, curator_manager):
+        imported = _imported_module_names(pathlib.Path(module.__file__))
+        assert not any(
+            name == "httpx" or name.startswith("httpx.") for name in imported
+        ), module.__name__
+        src = inspect.getsource(module)
+        assert "AsyncClient" not in src, module.__name__
+        assert "open_client" not in src, module.__name__
+
+    # ...and no curator data test builds a bare httpx client either: every
+    # AsyncClient a test constructs must carry a transport.
+    for test_file in sorted((_REPO / "tests" / "data").glob("test_curator_*.py")):
+        tree = ast.parse(test_file.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "attr", getattr(node.func, "id", ""))
+            if name != "AsyncClient":
+                continue
+            kwargs = {kw.arg for kw in node.keywords}
+            assert "transport" in kwargs, (
+                f"{test_file.name} builds an AsyncClient with no transport"
+            )
+
+
+def test_the_analysis_slot_persists_no_boolean_verdict(tmp_path):
+    """PRD §2: revisable rows only.  No is_sybil/verdict key reaches the
+    file, and no boolean rides any 'flag'-shaped key — the grade is a word
+    the next sweep may revise, never a stored judgement."""
+    from maxpane_dashboard.data.curator_cache import CuratorCache
+
+    cache = CuratorCache(path=str(tmp_path / "c.json"), clock=lambda: 1_786_968_000.0)
+    cache.store_analysis(
+        curator_clusters.slot_payload(
+            farm_analysis(), enrichment={"txs": {}, "funding": {}, "pending": []}
+        ),
+        ts=1_786_968_000.0,
+    )
+    cache.save()
+    on_disk = json.loads(pathlib.Path(cache.path).read_text(encoding="utf-8"))
+
+    offences: list[str] = []
+
+    def walk(node, path="$"):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                where = f"{path}.{key}"
+                if key in ("is_sybil", "sybil", "verdict"):
+                    offences.append(where)
+                if "flag" in key and isinstance(value, bool):
+                    offences.append(f"{where} (boolean)")
+                walk(value, where)
+        elif isinstance(node, list):
+            for i, item in enumerate(node):
+                walk(item, f"{path}[{i}]")
+
+    walk(on_disk)
+    assert offences == []
+
+
+def test_curator_signals_never_imports_sybilkit():
+    """Tier A stays exactly as shipped: the frozen analytics module never
+    learns the library exists (its forbidden-word source scan included)."""
+    signals = _REPO / "maxpane_dashboard" / "analytics" / "curator_signals.py"
+    for name in _imported_module_names(signals):
+        assert not name.startswith("sybilkit"), name
+
+
+def test_only_curator_clusters_imports_sybilkit():
+    """The single-seam rule, repo-wide: exactly one maxpane module may import
+    the library, and it is the adapter."""
+    importers: list[str] = []
+    for path in sorted((_REPO / "maxpane_dashboard").rglob("*.py")):
+        for name in _imported_module_names(path):
+            if name == "sybilkit" or name.startswith("sybilkit."):
+                importers.append(str(path.relative_to(_REPO)))
+                break
+    assert importers == ["maxpane_dashboard/data/curator_clusters.py"]
