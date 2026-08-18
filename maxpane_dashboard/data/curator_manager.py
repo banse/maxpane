@@ -1829,6 +1829,15 @@ class CuratorManager:
             if self.cache.get_last_good(slot) is None:
                 out.add(group)
         out |= self._client_degradation()
+        # The analysis sweep is enrichment folded over the log story (plan §6
+        # risk 7 — no new group name; the title bar's vocabulary is frozen).
+        # A failed sweep lights ``logs`` ONLY while there is no analysis
+        # last-good to serve: with one, the keys ride behind their own
+        # ``analysis_as_of_hhmm`` marker and nothing lights; and a sweep that
+        # has never been *able* to run is not a failure at all
+        # (``_analysis_failed`` stays False on the cannot-run path).
+        if self._analysis_failed and self.cache.analysis_last_good() is None:
+            out.add(SOURCE_LOGS)
         if not self.wallet:
             out.discard(SOURCE_WALLET)
         return sorted(out & set(SOURCES))

@@ -316,3 +316,112 @@ def test_settled_from_the_view_leaves_the_obituary_none_not_zero(tmp_path):
     assert out["settled_at_ts"] is None
     assert out["settled_observed_at"] == clock.now
     assert out["lived_desc"] is not None
+
+
+# ---------------------------------------------------------------------------
+# WP3.5 — the analysis sweep's health folds into the `logs` story
+# ---------------------------------------------------------------------------
+#
+# No new degraded-group name: the title bar renders the frozen vocabulary
+# verbatim.  The rule, pinned here exactly: the analysis is enrichment over
+# the logs, so a failed sweep lights `logs` ONLY while there is no analysis
+# last-good to serve; with one, the keys ride behind `analysis_as_of_hhmm`
+# and nothing lights; and not-yet-run is not a failure at all.
+
+from maxpane_dashboard.data import curator_clusters
+from maxpane_dashboard.data.curator_cache import (
+    TIER_ANALYSIS,
+    TIER_FAILURE_BACKOFF_SECONDS,
+)
+from tests.data.test_curator_manager import (
+    ANALYSIS_CONFIG,
+    _analysis_manager,
+    _store_farm_slot,
+)
+
+
+def _boom(*_args, **_kwargs):
+    raise RuntimeError("the analysis fold is on fire")
+
+
+def _run_sweep(manager, now):
+    async def _go():
+        task = manager._spawn_analysis({TIER_ANALYSIS}, now, ANALYSIS_CONFIG)
+        await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(_go())
+
+
+def test_a_not_yet_run_analysis_is_not_a_degradation(tmp_path):
+    clock = Clock(DURING_GRACE)
+    manager = _analysis_manager(tmp_path, clock)
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["degraded"] == []
+    assert out["operator_rows"] is None            # not yet run, honestly
+
+
+def test_a_failed_sweep_with_no_last_good_lights_logs_and_blanks_nothing(
+    tmp_path, monkeypatch
+):
+    """The keys' None must read as 'could not analyze', and the only frozen
+    group name that story belongs to is `logs` — while the fold and the clock
+    keep working untouched."""
+    clock = Clock(DURING_GRACE)
+    manager = _analysis_manager(tmp_path, clock)
+    monkeypatch.setattr(curator_clusters, "build_analysis", _boom)
+
+    _run_sweep(manager, clock.now)
+    assert manager._analysis_failed is True
+    assert manager.cache.analysis_last_good() is None
+    # ...and the tier is backed off, not hammered.
+    assert TIER_ANALYSIS not in manager.cache.tiers_due(clock.now + 1)
+    assert TIER_ANALYSIS in manager.cache.tiers_due(
+        clock.now + TIER_FAILURE_BACKOFF_SECONDS[TIER_ANALYSIS] + 1
+    )
+
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["degraded"] == [SOURCE_LOGS]
+    assert out["operator_rows"] is None
+    assert out["operators_count"] is None
+    # Nothing blanked: the fold and the clock are other sources' answers.
+    assert out["leaderboard_rows"]
+    assert out["phase"] == "grace"
+    assert out["hour_seconds_left"] is not None
+
+
+def test_a_failed_sweep_with_a_last_good_serves_it_and_lights_nothing(
+    tmp_path, monkeypatch
+):
+    """An analysis-only failure while the log fold is fresh keeps the keys on
+    last-good behind their own marker and does NOT falsely light `logs`."""
+    clock = Clock(DURING_GRACE)
+    manager = _analysis_manager(tmp_path, clock)
+    stored = _store_farm_slot(manager, ts=clock.now - 1_800)
+    monkeypatch.setattr(curator_clusters, "build_analysis", _boom)
+
+    _run_sweep(manager, clock.now)
+    assert manager._analysis_failed is True
+
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["degraded"] == []
+    assert out["operators_count"] == stored["operators_count"] == 1
+    assert out["operator_rows"]
+    assert out["analysis_as_of_hhmm"] is not None  # the OLD sweep's marker
+
+
+def test_the_banner_clears_when_a_later_sweep_publishes(tmp_path, monkeypatch):
+    clock = Clock(DURING_GRACE)
+    manager = _analysis_manager(tmp_path, clock)
+    real = curator_clusters.build_analysis
+    monkeypatch.setattr(curator_clusters, "build_analysis", _boom)
+    _run_sweep(manager, clock.now)
+    assert asyncio.run(manager.fetch_and_compute())["degraded"] == [SOURCE_LOGS]
+
+    monkeypatch.setattr(curator_clusters, "build_analysis", real)
+    clock.advance(TIER_FAILURE_BACKOFF_SECONDS[TIER_ANALYSIS] + 1)
+    _run_sweep(manager, clock.now)
+    assert manager._analysis_failed is False
+
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["degraded"] == []
+    assert out["operators_count"] is not None

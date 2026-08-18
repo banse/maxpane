@@ -1992,10 +1992,16 @@ ANALYSIS_CONFIG = {**CONFIG, "min_deposit_wei": 5 * 10**16}
 
 
 def _analysis_manager(tmp_path, clock, *, routes=None, wallet=None):
-    """A manager whose fold is the farm: cache pre-seeded, empty log sweeps."""
+    """A manager whose fold is the farm: cache pre-seeded, empty log sweeps.
+
+    The state double's counters agree with the nine seeded events — the
+    cross-check compares the fold against ``stats()``, and a double whose
+    counter says 222 over a nine-event fold is a fixture accusing itself.
+    """
     client = _scenario_client(
         {"state": True, "logs": True, "wallet": bool(wallet)}
     )
+    client.answers["fetch_state"] = _state(tx_count=9, contributors=9)
     client.answers["fetch_logs"] = lambda *_: _sweep([], to_block=25_770_500)
     manager = _manager(
         tmp_path,
