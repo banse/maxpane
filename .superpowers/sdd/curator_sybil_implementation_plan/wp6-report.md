@@ -19,8 +19,14 @@ close-out), `tests/fixtures/curator/sybil/README.md` (ledger close-out), and the
 | `d13c8d7` | test: audit the sybil build's keyless, no-verdict and mutation guarantees |
 | `ee9c985` | build: document (and optionally add) the separate sybilkit publish path |
 | `a520303` | chore: full suite green across both distributions with the sybil expansion |
-| _(see §7)_ | chore: live smoke run — analysis view and sybilkit CLI, keyless |
-| _(see §8)_ | docs: close the sybil-analysis ledger and update memory |
+| `80ccb86` | chore: live smoke run — analysis view and sybilkit CLI, keyless |
+| `39dc697` | docs: close the sybil-analysis ledger and update memory |
+| `5e4847f` | docs(curator): WP6 report |
+| `f583cef` | chore: final verification after the last two doc commits |
+
+Four of these are `--allow-empty` records: WP6.4 (the audit), WP6.5 (the publish path), WP6.6
+(the suite gate) and WP6.7 (the smoke) produce evidence, not file changes, and the commit body
+is where that evidence is meant to live.
 
 ---
 
