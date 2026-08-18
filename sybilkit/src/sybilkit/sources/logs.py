@@ -181,20 +181,24 @@ def decode_first_deposit(row: Any) -> dict | None:
     }
 
 
-def _replay_rank(d: Deposit) -> tuple[int, ...]:
+def _replay_rank(d: Deposit) -> tuple[int, int, int, int, int, int, int, str, bool, float]:
     """The tie-break for two rows sharing one ``(tx_hash, log_index)``.
 
     That collision is a **reorg replay** — or two sweeps merged across one — and
     the canonical row is the one at the higher block, so ``block_number`` is the
-    rule.  The rest of the tuple exists for one purpose only: to make the answer
-    total, so that it never depends on which row the producer handed over first.
-    ``ts`` is deliberately absent — it is optional, and ``None`` does not order.
+    rule.  Every later term exists for one purpose only: to make the answer
+    **total**, so that it never depends on which row the producer handed over
+    first.  Total means every field of the row takes part, ``contributor`` and
+    ``ts`` included: a rank that stopped at the numeric words still ordered two
+    rows differing only in those two by input order, which is the one thing
+    ``Dataset.from_events`` promises not to do.  ``ts`` is optional and ``None``
+    does not order, so it enters as a present-flag followed by a value.
 
-    This function is **byte-identical to the copy in ``model.py``** and must
-    stay that way: the two modules dedupe the same rows on the same key, and a
-    rule that differed between them would make a sweep's own ``Dataset``
-    disagree with one built from its rows.  Frozen in the review-fix plan under
-    decision D3 (option B), and pinned by
+    The same rule, term for term, lives in the other module: ``model.py`` and
+    ``sources/logs.py`` dedupe the same rows on the same key, and a rule that
+    differed between them would make the ``Dataset`` a sweep builds disagree
+    with one built from its rows.  Frozen in the review-fix plan under decision
+    D3 (option B); the two copies are pinned behaviourally by
     ``test_the_log_sweep_and_from_events_agree_on_a_conflicting_duplicate``.
     """
     return (
@@ -205,6 +209,9 @@ def _replay_rank(d: Deposit) -> tuple[int, ...]:
         d.weight_added_wei,
         d.tx_count,
         d.hour,
+        d.contributor,
+        d.ts is not None,
+        d.ts if d.ts is not None else 0.0,
     )
 
 

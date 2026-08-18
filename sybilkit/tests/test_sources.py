@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -688,6 +689,21 @@ def test_a_replayed_log_row_is_deduped_to_the_higher_block() -> None:
         assert sweep.deposits[0].amount_wei == 2 * 10**17
 
 
+#: Two rows sharing one ``(tx_hash, log_index)`` and differing in **nothing
+#: numeric** — only the contributor and the timestamp.  A rank that stopped at
+#: the numeric words tied here, so the survivor was whichever row the producer
+#: handed over first: the one thing ``Dataset.from_events`` promises not to do.
+TWIN_TX = "0x" + "cd" * 32
+TWIN_ALICE = deposited_row(
+    ALICE, hour=0, amount=10**17, block=10, log_index=2,
+    tx_hash=TWIN_TX, ts=1_700_000_000,
+)
+TWIN_BOB = deposited_row(
+    BOB, hour=0, amount=10**17, block=10, log_index=2,
+    tx_hash=TWIN_TX, ts=1_700_000_900,
+)
+
+
 def test_the_log_sweep_and_from_events_agree_on_a_conflicting_duplicate() -> None:
     """The cross-module agreement decision D3 exists to hold.
 
@@ -696,6 +712,12 @@ def test_the_log_sweep_and_from_events_agree_on_a_conflicting_duplicate() -> Non
     disagree with one built from the sweep's rows.  Two copies of the rule —
     the plan froze it so both work packages could land it in parallel — and one
     test that they answer the same.
+
+    The second half is the amended twin rule (**R3.7**).  "Total" has to mean
+    *every* field of the row, ``contributor`` and ``ts`` included: the seven
+    numeric terms left two rows differing only in those two **tied**, and a tie
+    falls back to arrival order, which is precisely the order-dependence the
+    rule was written to remove.  Both orders, both modules, one answer.
     """
     assert logs._replay_rank is not model._replay_rank, "one copy is not two"
     decoded = [logs.decode_deposit(REPLAY_LOW), logs.decode_deposit(REPLAY_HIGH)]
@@ -712,6 +734,34 @@ def test_the_log_sweep_and_from_events_agree_on_a_conflicting_duplicate() -> Non
         assert len(via_events.deposits) == 1
         assert via_events.deposits[0].block_number == via_sweep.deposits[0].block_number
         assert via_events.deposits[0].amount_wei == via_sweep.deposits[0].amount_wei
+
+    # …and the pair that only the last three terms can separate.
+    for rows in ([TWIN_ALICE, TWIN_BOB], [TWIN_BOB, TWIN_ALICE]):
+        via_sweep = _sweep_of(rows)
+        assert via_sweep is not None
+        assert len(via_sweep.deposits) == 1, rows
+        via_events = Dataset.from_events([logs.decode_deposit(r) for r in rows], ())
+        assert len(via_events.deposits) == 1
+        # BOB's address sorts above ALICE's, so BOB's row is canonical whichever
+        # way round the producer handed them over.
+        assert via_sweep.deposits[0].contributor == BOB.lower(), rows
+        assert via_events.deposits[0].contributor == via_sweep.deposits[0].contributor
+        assert via_events.deposits[0].ts == via_sweep.deposits[0].ts
+
+
+def test_the_two_copies_of_the_replay_rule_are_character_identical() -> None:
+    """The docstring's own claim, checked rather than trusted.
+
+    ``logs.py``'s copy used to *say* it was byte-identical to ``model.py``'s
+    while the two docstrings differed — which is how a rule that must not drift
+    drifts.  ``inspect.getsource`` is the only reading of "identical" that
+    cannot be satisfied by a paraphrase, and the behavioural test above is what
+    it means; this one is what stops the two texts explaining different rules
+    to the next reader.
+    """
+    assert inspect.getsource(logs._replay_rank) == inspect.getsource(
+        model._replay_rank
+    )
 
 
 def test_duplicate_rows_are_deduped_on_tx_hash_and_log_index() -> None:
