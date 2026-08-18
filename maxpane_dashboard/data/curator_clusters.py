@@ -587,6 +587,22 @@ def _persisted_map(value: Any) -> Mapping:
     return value if isinstance(value, Mapping) else {}
 
 
+def _persisted_addresses(value: Any) -> tuple[str, ...]:
+    """One carried address list, or ``()`` if it is not a list.
+
+    The sequence half of :func:`_persisted_map`, and it needs the *type* check
+    rather than a plain iteration for a second reason: ``for addr in value``
+    over a bare string yields one single-character "address" per character,
+    and those would be silently accepted as pendings — which **head the
+    funding budget** — so a one-character edit would crowd real wallets out
+    of every sweep and nothing would say so.  A crash at least announces
+    itself; this does not.
+    """
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(addr for addr in value if isinstance(addr, str))
+
+
 def _funding_object(address: str, row: Any) -> Funding:
     if isinstance(row, Funding):
         return row
@@ -733,9 +749,7 @@ async def fetch_enrichment(
         for key, value in _persisted_map(prior.get("funding")).items()
         if isinstance(value, Mapping)
     }
-    pending: tuple[str, ...] = tuple(
-        addr for addr in (prior.get("pending") or ()) if isinstance(addr, str)
-    )
+    pending: tuple[str, ...] = _persisted_addresses(prior.get("pending"))
     reasons: dict[str, str] = {
         str(key): str(value)
         for key, value in _persisted_map(prior.get("reasons")).items()

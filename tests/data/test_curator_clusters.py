@@ -1592,6 +1592,30 @@ def test_every_persisted_enrichment_map_survives_a_hand_edited_cache_file():
         assert sweep.funding_pending == sound.funding_pending, torn_key
 
 
+def test_a_hand_edited_pending_list_is_dropped_not_iterated():
+    """The fifth read, and the same class one shape over.
+
+    ``pending`` is the one carried sequence, and it was read
+    ``(prior.get("pending") or ())`` — which iterates *whatever is there*.  An
+    int raises `TypeError` in the detached sweep exactly like the four maps
+    did; a bare string is worse than a crash, because iterating it yields one
+    single-character "address" per character and pendings **head the funding
+    budget**, so five characters would crowd out five real wallets on every
+    sweep, forever, and nothing would ever say so.
+    """
+    for torn in (5, "0x" + "ab" * 20):
+        state = _healthy_enrichment()
+        state["pending"] = torn
+        sweep = _carried(state)
+
+        assert sweep.fetched is False
+        assert sweep.funding_pending == (), torn
+        assert sweep.state()["pending"] == [], torn
+        # ...and, as with the maps, it takes nothing else down with it.
+        for key, attr in _ENRICHMENT_MAPS.items():
+            assert getattr(sweep, attr), f"a torn pending lost {key}"
+
+
 def test_a_cursor_entry_that_is_not_a_mapping_is_dropped_not_cast():
     """The entry-level guard on ``cursors``, which no test could see.
 
