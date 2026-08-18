@@ -1812,16 +1812,34 @@ async def test_the_wallet_view_clears_at_the_pinned_full_layout_width():
 
     Swept independently of the pin, both bodies, so a `y` view that needed 150
     columns could not hide behind a dashboard that clears at 138.
+
+    The payload's linkage state is **clean with a clean rank** — the state
+    the view is normally in — by controller ruling: a *linked* reader's
+    evidence line legitimately exceeds the rail's share and lights `‹ widen`
+    at any width this sweep scans (the surf announce-feed precedent, its own
+    dedicated test below), so a sweep over the linked state would find no
+    clean width to pin.
     """
+    payload = _wallet_payload(
+        you_linked_state="clean", you_linked_reasons=[], you_clean_rank=1
+    )
     for width in range(CURATOR_FULL_LAYOUT_COLUMNS, _SWEEP_HI + 1):
-        text = await _wallet_view_text(width=width)
+        text = await _wallet_view_text(payload, width=width)
         if "‹ widen" not in text:
             assert width == CURATOR_FULL_LAYOUT_COLUMNS, (
                 f"the y view first clears at {width}, not the pinned "
                 f"{CURATOR_FULL_LAYOUT_COLUMNS}"
             )
-            return
-    raise AssertionError("the y view never cleared inside the sweep window")
+            break
+    else:
+        raise AssertionError("the y view never cleared inside the sweep window")
+    # The second dimension: the pin holds on a short, scrolling terminal too
+    # -- the wallet rail's reserved gutter is what makes this true.
+    for height in _HEIGHTS:
+        text = await _wallet_view_text(
+            payload, width=CURATOR_FULL_LAYOUT_COLUMNS, height=height
+        )
+        assert "‹ widen" not in text, height
 
 
 async def test_an_unknown_pass_verdict_says_neither_enough_nor_not_enough():
@@ -2535,6 +2553,179 @@ async def test_e_in_the_analysis_view_writes_both_files_and_names_the_path(
     )
     # The receipt reaches the panel, composited.
     assert "curator_clean_list.json" in text
+
+
+# -- WP4.7: the analysis view's measured width, and both views' heights ------
+
+#: The first terminal height at which the whole analysis body — three panels,
+#: 37 content rows — renders with no scrollbar.  Measured at the pinned width
+#: by sweeping the height in both directions; below it the body scrolls and
+#: the title bar's `‹ taller` announces it (the RAIL_FULL_HEIGHT construct).
+ANALYSIS_MIN_HEIGHT = 48
+
+#: The first terminal height at which the `y` view's rail — four panels
+#: ending in WHERE IT GETS YOU — renders whole, with no scrollbar.  WP5
+#: measured 36 as the height where that panel's *title* first reaches the
+#: compositor; 40 is where the whole rail does, and it is the honest pin
+#: because a title with its lines cut is the FWA coverage-badge bug wearing
+#: a header.  Below it the rail scrolls and `‹ taller` announces it — the
+#: silence WP5's hand-off flagged is gone.
+WALLET_MIN_HEIGHT = 40
+
+
+async def test_the_analysis_view_clears_the_measured_width():
+    """The `f` body must clear at the screen's own pin (the `y`-view
+    precedent), at a tall terminal and a short scrolling one — the reserved
+    gutter is what makes those the same number."""
+    for height in _HEIGHTS:
+        text = await _analysis_view_text(
+            width=CURATOR_FULL_LAYOUT_COLUMNS, height=height
+        )
+        assert "‹ widen" not in text, height
+
+
+async def test_the_analysis_body_clears_one_column_inside_the_screens_pin():
+    """Measured, not reasoned: the body's own first-clean width is 137 —
+    one column inside `CURATOR_FULL_LAYOUT_COLUMNS` — so the analysis view
+    moves neither the screen's number nor the app-wide 143.  Pinned tight in
+    both directions so a copy edit that widens a cell fails here rather than
+    clipping in a user's terminal."""
+    for height in _HEIGHTS:
+        clear = await _analysis_view_text(
+            width=CURATOR_FULL_LAYOUT_COLUMNS - 1, height=height
+        )
+        assert "‹ widen" not in clear, height
+        tight = await _analysis_view_text(
+            width=CURATOR_FULL_LAYOUT_COLUMNS - 2, height=height
+        )
+        assert "‹ widen" in tight, height
+
+
+async def test_the_analysis_view_advertises_rather_than_truncating():
+    """Every column shed below the measured width is announced, and the
+    panels are still there saying it, not blanked."""
+    for width in (
+        CURATOR_FULL_LAYOUT_COLUMNS - 2,
+        CURATOR_FULL_LAYOUT_COLUMNS - 20,
+    ):
+        text = await _analysis_view_text(width=width)
+        assert "‹ widen" in text
+        assert OPERATORS_TITLE in text and SEGMENTS_TITLE in text
+        assert CLEAN_LIST_TITLE in text
+
+
+async def test_the_analysis_binding_panel_is_the_operators_table():
+    """Which panel is the last one asking for a column is a measurement, not
+    prose (the surf lesson): OPERATORS — the 82-column evidence cell — is the
+    analysis body's binder, at both heights."""
+    for height in _HEIGHTS:
+        screen = _screen(_analysis_payload())
+        app = _ThemedHarness(screen)
+        async with app.run_test(
+            size=(CURATOR_FULL_LAYOUT_COLUMNS - 2, height)
+        ) as pilot:
+            await pilot.pause()
+            await screen._do_refresh()
+            await pilot.pause()
+            await pilot.press("f")
+            await pilot.pause()
+            marked = {
+                cls.__name__
+                for cls in (CuratorOperators, CuratorSegments, CuratorCleanList)
+                if "‹ widen"
+                in _region_text(app, screen.query_one(cls), screen)
+            }
+        assert marked == {"CuratorOperators"}, (height, marked)
+
+
+async def test_the_analysis_body_fits_whole_at_its_measured_height():
+    """The height pin, both directions: at ANALYSIS_MIN_HEIGHT the last
+    panel's last capped row reaches the compositor with no scrollbar; one
+    row shorter, the loss is announced on the title bar."""
+    text = await _analysis_view_text(height=ANALYSIS_MIN_HEIGHT)
+    assert TALLER_HINT not in text
+    assert CLEAN_LIST_TITLE in text
+    assert "#8" in text                     # the clean list's last capped row
+
+    shorter = await _analysis_view_text(height=ANALYSIS_MIN_HEIGHT - 1)
+    assert TALLER_HINT in shorter
+
+
+async def test_a_short_analysis_terminal_scrolls_and_announces():
+    """At the sweep's short height the body scrolls: the loss is announced,
+    and the bottom panel is reachable rather than clipped out of existence."""
+    from maxpane_dashboard.screens.curator import ANALYSIS_BODY_ID
+
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _SHORT)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        text = _screen_text(app)
+        assert TALLER_HINT in text
+        assert CLEAN_LIST_TITLE not in text     # below the fold...
+        screen.query_one(f"#{ANALYSIS_BODY_ID}").scroll_end(animate=False)
+        await pilot.pause()
+        scrolled = _screen_text(app)
+    assert CLEAN_LIST_TITLE in scrolled          # ...never unreachable
+    assert "#8" in scrolled
+
+
+async def test_the_wallet_rails_last_panel_survives_the_sweep_heights():
+    """WP5's flagged silence, closed: WHERE IT GETS YOU is provably present
+    where the rail fits, and its loss is announced where it does not."""
+    tall = await _wallet_view_text(_analysis_payload(), height=_TALL)
+    assert TARGET_TITLE in tall and TALLER_HINT not in tall
+
+    fits = await _wallet_view_text(_analysis_payload(), height=WALLET_MIN_HEIGHT)
+    assert TARGET_TITLE in fits and TALLER_HINT not in fits
+
+    below = await _wallet_view_text(
+        _analysis_payload(), height=WALLET_MIN_HEIGHT - 1
+    )
+    assert TALLER_HINT in below
+
+
+async def test_a_short_wallet_terminal_scrolls_the_rail_rather_than_clipping():
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _SHORT)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+        text = _screen_text(app)
+        assert TALLER_HINT in text
+        assert TARGET_TITLE not in text
+        screen.query_one("#curator-wallet-rail").scroll_end(animate=False)
+        await pilot.pause()
+        scrolled = _screen_text(app)
+    assert TARGET_TITLE in scrolled
+
+
+async def test_a_linked_reader_lights_the_marker_rather_than_clipping_dark():
+    """The surf announce-feed precedent, ruled onto the `y` view: a linked
+    reader's evidence line legitimately exceeds the rail's share at the
+    pinned width (WP5 measured 191 columns for the widest committed
+    evidence), so the panel advertises and keeps the head of the line — the
+    group size, the part a reader can act on.  The marker must never be
+    silenced by raising a width constant."""
+    from tests.curator_sybil_fixtures import worst_case_envelope
+
+    worst = worst_case_envelope("operator_row_worst.json")["worst"]
+    payload = _analysis_payload(
+        you_linked_state="linked",
+        you_linked_group_size=1995,
+        you_linked_reasons=list(worst["reasons"]),
+        you_clean_rank=None,
+    )
+    text = await _wallet_view_text(payload)
+    assert "‹ widen" in text
+    assert "1,995-wallet group" in text
 
 
 async def test_e_with_nothing_analyzed_writes_nothing(tmp_path):

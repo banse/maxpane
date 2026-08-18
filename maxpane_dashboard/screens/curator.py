@@ -268,6 +268,17 @@ CLUSTERS_ID = "curator-clusters"
 #: for a tall window and false for a short one.  The gutter is reserved now
 #: (see ``DEFAULT_CSS`` and the module docstring) and the sweep carries the
 #: height dimension with it.
+#:
+#: **The 2026-08-18 `f` view did not move it.**  The analysis body's own
+#: first-clean width is **137** at both sweep heights — one column inside
+#: this pin — and its binding panel is ``CuratorOperators`` (the 82-column
+#: evidence cell), pinned by
+#: ``test_the_analysis_binding_panel_is_the_operators_table`` rather than by
+#: this sentence.  The `y` view still clears at exactly 138 with the wallet
+#: rail's gutter reserved, measured against a **clean-linkage** payload: a
+#: *linked* reader's evidence line legitimately exceeds the rail's share and
+#: lights ``‹ widen`` here at any width (the surf announce-feed precedent),
+#: which is correct and must never be silenced by raising this constant.
 CURATOR_FULL_LAYOUT_COLUMNS = 138
 
 #: The three flat-dict keys the screen renders itself -- the title bar's
