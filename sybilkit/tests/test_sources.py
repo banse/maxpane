@@ -1319,6 +1319,77 @@ def test_a_transient_failure_is_never_frozen_into_a_resolved_row() -> None:
     assert healed.pending == ()
 
 
+def test_a_page_whose_items_are_null_is_unreadable_not_a_finished_walk() -> None:
+    """**Review #5a, the reproduced case.**  ``{"items": null}`` from a 200.
+
+    The guard was ``"items" not in body``, so a null items list passed it: the
+    walk was treated as **complete**, and an address whose history we never
+    actually read got a resolved ``Funding(funder=None)`` row.  A resolved row
+    means "we walked the whole history and found no incoming transfer"; that is
+    a measurement, and this was an outage wearing it.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        who = str(request.url).rsplit("/addresses/", 1)[1].split("/")[0].lower()
+        if who == ALICE.lower():
+            return httpx.Response(200, json={"items": None, "next_page_params": None})
+        return _page([_incoming(FUNDER, who, 7)], None)
+
+    sweep = asyncio.run(
+        blockscout.fetch_funding([ALICE, BOB], client=_client(handler), config=FAST)
+    )
+    assert sweep is not None
+    assert ALICE.lower() not in sweep.funding
+    assert sweep.pending == (ALICE.lower(),)
+    assert sweep.pending_reasons[ALICE.lower()] == blockscout.PENDING_UNREADABLE
+    assert sweep.unreadable == (ALICE.lower(),)
+
+
+def test_a_null_items_page_never_freezes_a_none_funder_into_a_resolved_row() -> None:
+    """And the consequence the row would have had: the documented resume recipe
+    passes ``funding`` back as ``known``, so a frozen ``funder=None`` is
+    permanent — in maxpane's persisted slot, permanent past the process."""
+    state = {"null": True}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        who = str(request.url).rsplit("/addresses/", 1)[1].split("/")[0].lower()
+        if who == ALICE.lower() and state["null"]:
+            return httpx.Response(200, json={"items": None, "next_page_params": None})
+        return _page([_incoming(FUNDER, who, 7)], None)
+
+    first = asyncio.run(
+        blockscout.fetch_funding([ALICE, BOB], client=_client(handler), config=FAST)
+    )
+    assert first is not None
+    assert ALICE.lower() not in first.funding
+
+    state["null"] = False
+    healed = asyncio.run(
+        blockscout.fetch_funding(
+            first.pending, client=_client(handler), config=FAST, known=first.funding
+        )
+    )
+    assert healed is not None
+    assert healed.funding[ALICE.lower()].funder == FUNDER.lower()
+    assert healed.pending == ()
+
+
+def test_the_funding_docstrings_agree_that_a_pending_address_gets_no_row() -> None:
+    """**Review #5c.**  The *module* docstring still taught the behaviour the
+    class docstring and the code had already reversed: "emitted with a ``None``
+    funder **and** stays in ``pending``".  Both are true statements about two
+    different designs, and only one of them is this one.
+
+    Doc-agreement is a test here for the same reason it is on the segment key
+    vocabulary: a docstring that teaches the old contract is how the old
+    contract gets re-implemented.
+    """
+    module_doc = " ".join((blockscout.__doc__ or "").split()).lower()
+    class_doc = " ".join((blockscout.FundingSweep.__doc__ or "").split()).lower()
+    assert "a pending address has no row" in class_doc
+    assert "no row at all" in module_doc
+    assert "emitted with a ``none`` funder **and** stays in ``pending``" not in module_doc
+
+
 def test_a_failure_mid_history_is_unreadable_not_page_bounded() -> None:
     """**Fix round 2, M1.**  Two different problems with opposite fixes.
 

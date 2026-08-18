@@ -16,9 +16,14 @@ extends coverage without re-reading a byte.
 The bounded-out case is the one to get right.  ``funder is None`` means *we
 could not resolve one* — never *this address has no funder*; an EOA that has
 transacted always had a first funder, we may simply not have found it.  Such an
-address is emitted with a ``None`` funder **and** stays in ``pending``: the row
-says honestly that we looked, and the cursor says honestly that we are not
-finished.
+address gets **no row at all** and stays in ``pending``.  Writing a
+``Funding(funder=None)`` row for it would be read as an answer by the very next
+pass — which passes ``funding`` back as ``known``, exactly as the resume recipe
+says — so the address would never be looked at again and one bad minute would
+be recorded as "this wallet has no funder", forever.  A resolved row is only
+ever written for an address whose history was walked **to the end**; an address
+walked to the end with no incoming transfer gets a real ``Funding(funder=None)``
+row and is *not* pending, because that one is a measurement rather than a gap.
 """
 
 from __future__ import annotations
@@ -164,10 +169,17 @@ async def _funder_of(
             body = resp.json()
         except (httpx.HTTPError, ValueError):
             return None, PENDING_UNREADABLE, reachable
-        if not isinstance(body, Mapping) or "items" not in body:
+        if not isinstance(body, Mapping):
+            return None, PENDING_UNREADABLE, reachable
+        items = body.get("items")
+        if not isinstance(items, list):
+            # `{"items": null}` from a 200 passed the old `"items" in body`
+            # guard, so an unread page was treated as a finished walk and the
+            # address got a resolved `funder=None` row.  A page we cannot read
+            # is unreadable, whatever the status line said.
             return None, PENDING_UNREADABLE, reachable
         reachable = True
-        found = _first_incoming(body.get("items") or (), address)
+        found = _first_incoming(items, address)
         if found is not None and (oldest is None or found[1] < oldest[1]):
             oldest = found
         nxt = body.get("next_page_params")
