@@ -1157,9 +1157,11 @@ handed on.
 
 ## 10.1 Measured state
 
-**59** commits after the review baseline `33eb8b4`, across two distributions — counted with
-`git rev-list --count 33eb8b4..fa29dfa`, because the draft's "58" was one out — plus this
-close-out's own four, for 63 on the branch.
+**59** commits of code and tests after the review baseline `33eb8b4`, across two distributions —
+counted with `git rev-list --count 33eb8b4..fa29dfa`, `fa29dfa` being the last of them — plus
+this close-out's own documentation commits on top of that. The branch total is deliberately
+*not* quoted here: every attempt at it so far has been one out, because the commit stating the
+number is itself one of the commits being counted. Run `git rev-list --count 33eb8b4..HEAD`.
 
 | gate | baseline | measured 2026-08-18 | verdict |
 |---|---|---|---|
