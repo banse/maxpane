@@ -435,6 +435,33 @@ def test_a_reorg_replay_keeps_the_row_at_the_higher_block() -> None:
     assert first.deposits[0].new_weight_wei == 900_000_000_000_000_000
 
 
+def test_the_higher_block_wins_even_when_the_other_row_scores_higher() -> None:
+    """The *field order* of :func:`_replay_rank`, not merely its terms.
+
+    Every other replay test above hands the higher block the higher
+    ``new_weight_wei`` as well, so ``block_number`` never has to outrank
+    anything: an auditor swapped the first two terms of the tuple and all
+    twenty-five tests in this file stayed green.  Here the two words disagree —
+    the later inclusion carries the *lower* weight, which is what a reorg that
+    dropped an earlier deposit by the same contributor leaves behind — and
+    ``block_number`` is still the rule, in both arrival orders.
+    """
+    later_but_lighter = _dep_row(
+        block_number=25_771_140, new_weight_wei=821_025_000_000_000_000
+    )
+    earlier_but_heavier = _dep_row(
+        block_number=25_771_131, new_weight_wei=900_000_000_000_000_000
+    )
+    for rows in (
+        [later_but_lighter, earlier_but_heavier],
+        [earlier_but_heavier, later_but_lighter],
+    ):
+        ds = Dataset.from_events(rows, [_first_row()])
+        assert len(ds.deposits) == 1
+        assert ds.deposits[0].block_number == 25_771_140
+        assert ds.deposits[0].new_weight_wei == 821_025_000_000_000_000
+
+
 def test_two_byte_identical_duplicates_still_collapse_to_one_row() -> None:
     """The ordinary case is untouched: one page fetched twice, or a replay of
     the same bytes, still counts once — and the same transaction at a different
