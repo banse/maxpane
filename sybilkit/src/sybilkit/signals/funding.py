@@ -18,7 +18,13 @@ mandated mutation bite of WP1.4: firing on any contributor funder reddens
 ``test_a_main_wallet_funder_outside_the_component_is_not_evidence``.
 
 ``funder is None`` (tier C not run, or the lookup bounded out) produces no
-edge — never a false one.
+edge — never a false one.  Neither does ``funder == address``: a wallet is
+not its own first funder, so such a row is edited rather than measured, and a
+persisted payload is third-party input.  The union of an address with itself
+is a no-op, but the *family* it would book is not — a one-family component
+that gains ``funding`` clears the ≥2-family gate on one edited line.  The
+comparison lowercases both sides, so the guard holds for a hand-built
+:class:`sybilkit.model.Funding` that never passed the mapping coercers.
 """
 
 from __future__ import annotations
@@ -57,7 +63,11 @@ def funding_edges(ds: Dataset, cfg, *, groups=None) -> list[Edge]:
     )
     for addr, entry in sorted(ds.funding.items()):
         funder = entry.funder
-        if funder is None or is_infra_funder(funder):
+        if (
+            funder is None
+            or funder.lower() == addr.lower()
+            or is_infra_funder(funder)
+        ):
             continue
         comp = component_of.get(addr)
         if comp is not None and comp == component_of.get(funder):
@@ -66,7 +76,11 @@ def funding_edges(ds: Dataset, cfg, *, groups=None) -> list[Edge]:
     # ---- the hub: one non-infra funder, many members of one cluster -----
     by_funder: dict[str, list[str]] = defaultdict(list)
     for addr, entry in ds.funding.items():
-        if entry.funder is not None and not is_infra_funder(entry.funder):
+        if (
+            entry.funder is not None
+            and entry.funder.lower() != addr.lower()
+            and not is_infra_funder(entry.funder)
+        ):
             by_funder[entry.funder].append(addr)
     for funder, funded in sorted(by_funder.items()):
         if len(funded) < 2:

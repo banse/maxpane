@@ -177,3 +177,90 @@ def test_empty_funding_means_no_edges_tier_a_only() -> None:
     ds = build_labeled_dataset(funding=False)
     assert ds.funding == {}
     assert funding_edges(ds, CFG) == []
+
+
+# ---- review finding #1: the self-referential funding row -------------------
+#
+# A persisted slot payload is third-party input (the adapter's own translation
+# boundary says so), so ``{'address': A, 'funder': A}`` is a row this family
+# has to survive.  The union of A with A is a no-op, but the *family* it books
+# is not: a one-family component that gains ``funding`` clears the >=2-family
+# gate and convicts at noisy-OR ~0.995 on evidence that is one edited line.
+
+
+def test_a_self_funding_row_never_creates_the_funding_family() -> None:
+    """A wallet is not its own first funder; a row saying so is edited, not
+    measured.  It must produce no edge at all — an ``Edge(A, A, "funding")``
+    unions nothing but books the family, which is the whole defect."""
+    rows = _farm_rows(6)
+    addrs = _addrs(rows)
+    funding = [{"address": addrs[0], "funder": addrs[0], "hops": 1}]
+    ds = Dataset.from_events(rows, [], funding=funding)
+    assert funding_edges(ds, CFG) == []
+
+
+def test_a_self_funding_row_never_joins_a_shared_funder_hub() -> None:
+    """The hub fold counts the funded addresses inside one component, so a
+    self row inflates the hub by one and hands the reason a count that is one
+    wallet too many.  The hub here is two real members, not three."""
+    rows = _farm_rows(6)
+    addrs = _addrs(rows)
+    hub = addrs[0]
+    funding = [
+        {"address": hub, "funder": hub, "hops": 1},  # the hand-edited row
+        {"address": addrs[1], "funder": hub, "hops": 1},
+        {"address": addrs[2], "funder": hub, "hops": 1},
+    ]
+    ds = Dataset.from_events(rows, [], funding=funding)
+    edges = funding_edges(ds, CFG)
+    assert all(e.a != e.b for e in edges)
+    shared = [e for e in edges if "shared" in e.reason.human_string]
+    assert shared
+    assert all("×2" in e.reason.human_string for e in shared)
+    assert {e.a for e in shared} | {e.b for e in shared} == {addrs[1], addrs[2]}
+
+
+def test_a_hand_edited_self_funding_row_cannot_lift_a_one_family_component() -> None:
+    """End to end through ``detect``: six wallets on one byte-identical odd
+    amount are a one-family component and must never convict.  One edited
+    ``funder == address`` row used to book a second family and produce a
+    cluster at ~0.995 confidence."""
+    from sybilkit import detect
+
+    rows = _farm_rows(6)
+    addrs = _addrs(rows)
+    plain = detect(Dataset.from_events(rows, []), CFG)
+    assert plain.clusters == []  # one family: amount, and one never convicts
+    funding = [{"address": addrs[0], "funder": addrs[0], "hops": 1}]
+    ds = Dataset.from_events(rows, [], funding=funding)
+    assert detect(ds, CFG).clusters == []
+
+
+def test_the_self_funder_guard_does_not_depend_on_the_funders_casing() -> None:
+    """A hand-built ``Funding`` reaches the family without passing the mapping
+    coercers, so the guard compares lowercased on both sides rather than
+    trusting the producer to have normalised.  Built as a ``Dataset`` directly
+    so this states the family's own contract, not the model's."""
+    from sybilkit import Dataset as DS
+    from sybilkit.model import Funding
+
+    rows = _farm_rows(6)
+    addrs = _addrs(rows)
+    hub = addrs[0]
+    shouty = "0x" + hub[2:].upper()
+    ds = Dataset.from_events(rows, [])
+    funding = {
+        a: Funding(address=a, funder=shouty, hops=1) for a in addrs[:3]
+    }
+    ds = DS(
+        deposits=ds.deposits,
+        first_index=ds.first_index,
+        txs=ds.txs,
+        funding=funding,
+    )
+    edges = funding_edges(ds, CFG)
+    assert all(e.a != e.b for e in edges)
+    shared = [e for e in edges if "shared" in e.reason.human_string]
+    assert shared
+    assert all("×2" in e.reason.human_string for e in shared)
+    assert {e.a for e in shared} | {e.b for e in shared} == {addrs[1], addrs[2]}
