@@ -21,11 +21,13 @@ from maxpane_dashboard.data.series_points import CLOCK_SKEW_TOLERANCE_SECONDS
 from maxpane_dashboard.data.curator_cache import (
     SLOTS,
     SLOT_BLOCKSCOUT,
+    SLOT_CLUSTERS,
     SLOT_CONFIG,
     SLOT_LOGS,
     SLOT_STATE,
     SLOT_WALLET,
     TIERS,
+    TIER_ANALYSIS,
     TIER_FAILURE_BACKOFF_SECONDS,
     TIER_FAST,
     TIER_MEDIUM,
@@ -69,8 +71,9 @@ def cache(tmp_path, clock) -> CuratorCache:
 # ---------------------------------------------------------------------------
 
 
-def test_the_four_tiers_and_their_ttls_are_the_prd_tiers():
-    assert TIERS == (TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_ONCE)
+def test_the_five_tiers_and_their_ttls_are_the_prd_tiers():
+    """Grown 4 -> 5 in WP3.2: the detached B+C sweep rides its own long tier."""
+    assert TIERS == (TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_ONCE, TIER_ANALYSIS)
     assert TIER_TTL_SECONDS[TIER_FAST] == 15.0
     assert TIER_TTL_SECONDS[TIER_MEDIUM] == 60.0
     assert TIER_TTL_SECONDS[TIER_SLOW] == 420.0
@@ -163,8 +166,17 @@ def test_an_unknown_slot_raises_naming_the_valid_set(cache):
         assert SLOT_STATE in str(excinfo.value)
 
 
-def test_the_five_slots_are_the_five_independently_failing_sources():
-    assert SLOTS == (SLOT_STATE, SLOT_LOGS, SLOT_WALLET, SLOT_CONFIG, SLOT_BLOCKSCOUT)
+def test_the_six_slots_are_the_six_independently_failing_sources():
+    """Grown 5 -> 6 in WP3.2: the analysis last-good is its own slot, because
+    the detached sweep fails independently of every fetch tier."""
+    assert SLOTS == (
+        SLOT_STATE,
+        SLOT_LOGS,
+        SLOT_WALLET,
+        SLOT_CONFIG,
+        SLOT_BLOCKSCOUT,
+        SLOT_CLUSTERS,
+    )
 
 
 def test_storing_none_as_a_last_good_payload_is_refused(cache):
@@ -969,3 +981,130 @@ def test_drop_last_good_is_idempotent_and_refuses_an_unknown_slot(cache):
     cache.drop_last_good(SLOT_WALLET)
     with pytest.raises(ValueError, match="unknown curator slot"):
         cache.drop_last_good(TIER_FAST)   # a tier name, not a slot
+
+
+# ---------------------------------------------------------------------------
+# WP3.2 — the analysis tier and the clusters slot
+# ---------------------------------------------------------------------------
+
+
+def test_the_analysis_tier_is_long_ttl_with_a_shorter_backoff():
+    """PRD §4 sizes the detached B+C sweep at ~30-60 min.  Its failure backoff
+    must be shorter than its TTL, or a failed sweep would retry no sooner than
+    a successful one and the backoff would be decorative."""
+    assert TIER_ANALYSIS in TIERS
+    assert 1_800.0 <= TIER_TTL_SECONDS[TIER_ANALYSIS] <= 3_600.0
+    assert (
+        TIER_FAILURE_BACKOFF_SECONDS[TIER_ANALYSIS]
+        < TIER_TTL_SECONDS[TIER_ANALYSIS]
+    )
+    # ...and the four shipped tiers did not move with the growth.
+    assert TIER_TTL_SECONDS[TIER_FAST] == 15.0
+    assert TIER_TTL_SECONDS[TIER_MEDIUM] == 60.0
+    assert TIER_TTL_SECONDS[TIER_SLOW] == 420.0
+    assert TIER_TTL_SECONDS[TIER_ONCE] == float("inf")
+
+
+def test_the_analysis_slot_refuses_none_and_round_trips(tmp_path, clock):
+    cache = CuratorCache(path=str(tmp_path / "c.json"), clock=clock)
+    assert cache.analysis_last_good() is None
+    assert cache.analysis_as_of_hhmm() is None
+    with pytest.raises(ValueError):
+        cache.store_last_good(SLOT_CLUSTERS, None, ts=NOW)
+
+    payload = {"operators_count": 2, "groups": [{"size": 6, "conf": "high"}]}
+    cache.store_analysis(payload, ts=NOW)
+    assert cache.analysis_last_good().payload == payload
+    cache.save()
+
+    restored = CuratorCache(path=cache.path, clock=clock)
+    restored.load(now=NOW)
+    entry = restored.analysis_last_good()
+    assert entry is not None
+    assert entry.payload == payload
+    assert entry.ts == NOW
+
+
+def test_an_older_file_without_the_slot_still_loads_its_other_sections(
+    tmp_path, clock
+):
+    """The additive-schema rule (the ens/dropped_events precedent), and the
+    WP3.2 bite's designated victim: bumping _SCHEMA_VERSION makes this version-1
+    file load NOTHING, so the state slot below comes back empty and this test
+    reddens."""
+    assert curator_cache._SCHEMA_VERSION == 1
+    path = tmp_path / "old.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "saved_at": NOW,
+                "last_good": {
+                    "state": {"payload": {"settled": False}, "ts": NOW - 60}
+                },
+            }
+        )
+    )
+    cache = CuratorCache(path=str(path), clock=clock)
+    cache.load(now=NOW)
+    assert cache.get_last_good(SLOT_STATE).payload == {"settled": False}
+    # The older file simply lacks the slot; absence is 'analysis never ran'.
+    assert cache.analysis_last_good() is None
+
+
+def test_analysis_as_of_hhmm_is_the_slots_own_stamp_not_the_fast_tiers(
+    tmp_path, clock
+):
+    """The sweep is detached and long-TTL: one marker for both tiers would
+    present an hours-old analysis as live."""
+    import time as _time
+
+    cache = CuratorCache(path=str(tmp_path / "c.json"), clock=clock)
+    analysis_ts = NOW - 2 * 3600                      # an hours-old sweep
+    cache.store_analysis({"operators_count": 0}, ts=analysis_ts)
+    cache.store_last_good(SLOT_STATE, {"settled": False}, ts=NOW)
+
+    expected = _time.strftime("%H:%M", _time.localtime(analysis_ts))
+    assert cache.analysis_as_of_hhmm() == expected
+    assert cache.analysis_as_of_hhmm() != _time.strftime(
+        "%H:%M", _time.localtime(cache.newest_as_of())
+    )
+
+
+def test_an_analysis_publish_never_moves_the_global_freshness_marker(
+    tmp_path, clock
+):
+    """`as_of_hhmm` claims a source ANSWERED.  The sweep re-analyzes data that
+    was already fetched, so a publish during a total outage must not make the
+    title bar's marker jump forward."""
+    cache = CuratorCache(path=str(tmp_path / "c.json"), clock=clock)
+    cache.store_last_good(SLOT_STATE, {"settled": False}, ts=NOW)
+    before = cache.newest_as_of()
+
+    cache.store_analysis({"operators_count": 0}, ts=NOW + 1_800)
+    assert cache.newest_as_of() == before
+
+
+def test_the_analysis_slot_is_a_last_good_not_a_history(tmp_path, clock):
+    """No verdict enters a SERIES: the slot is revisable, the series writers
+    are untouched, and the persisted series section stays exactly the two
+    sparkline payloads."""
+    cache = CuratorCache(path=str(tmp_path / "c.json"), clock=clock)
+    cache.store_analysis(
+        {
+            "operators_count": 1,
+            "groups": [
+                {"size": 6, "conf": "high", "members": ["0x" + "a1" * 20]}
+            ],
+        },
+        ts=NOW,
+    )
+    cache.save()
+    on_disk = json.loads(pathlib.Path(cache.path).read_text())
+    assert set(on_disk["series"]) <= set(curator_cache.SERIES_NAMES)
+    assert "clusters" not in on_disk["series"]
+    with pytest.raises(ValueError, match="unknown curator series"):
+        cache.get_series("clusters")
+    # ...and a second publish REPLACES the first: revisable, never appended.
+    cache.store_analysis({"operators_count": 0, "groups": []}, ts=NOW + 60)
+    assert cache.analysis_last_good().payload["operators_count"] == 0

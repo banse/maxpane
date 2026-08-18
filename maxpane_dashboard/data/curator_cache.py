@@ -16,6 +16,9 @@ Four refresh tiers, sized from PRD §5:
 ``slow``    420 s.  The Blockscout cross-check and gap repair.
 ``once``    ∞.  The immutables.  Nothing on this contract can change them, so
             this is a genuine forever cache rather than a long TTL.
+``analysis``  1800 s.  The detached Tier-B+C linked-wallet sweep (WP3): a full
+            pass is minutes long, so it runs detached, publishes into
+            :data:`SLOT_CLUSTERS` and is re-offered on its own schedule.
 
 A failure never marks a tier fetched; it only spaces the retry
 (:data:`TIER_FAILURE_BACKOFF_SECONDS`), so a rate-limited host is not hammered
@@ -99,8 +102,15 @@ TIER_FAST = "fast"
 TIER_MEDIUM = "medium"
 TIER_SLOW = "slow"
 TIER_ONCE = "once"
+TIER_ANALYSIS = "analysis"
 
-TIERS: tuple[str, ...] = (TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_ONCE)
+TIERS: tuple[str, ...] = (
+    TIER_FAST,
+    TIER_MEDIUM,
+    TIER_SLOW,
+    TIER_ONCE,
+    TIER_ANALYSIS,
+)
 
 TIER_TTL_SECONDS: dict[str, float] = {
     TIER_FAST: 15.0,
@@ -109,6 +119,11 @@ TIER_TTL_SECONDS: dict[str, float] = {
     # The eight immutables plus POINTS_PER_ETH.  There is no owner power on
     # this contract that reaches a parameter, so a success here is final.
     TIER_ONCE: math.inf,
+    # PRD §4's "~30-60 min": the detached B+C sweep is bounded per pass and
+    # extends its funding coverage incrementally, so the low end of the band
+    # is what makes coverage grow rather than what hammers Blockscout — one
+    # pass is ~200 lookups at ~3/s, well inside the window.
+    TIER_ANALYSIS: 1_800.0,
 }
 
 TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
@@ -118,6 +133,10 @@ TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
     # A *failed* once tier must come back: the immutables are unreadable, not
     # unchanging-and-known.  Its infinite TTL applies to success only.
     TIER_ONCE: 60.0,
+    # Shorter than the TTL on purpose: a sweep that failed outright should
+    # retry sooner than a successful one is refreshed, or the backoff is
+    # decorative.
+    TIER_ANALYSIS: 300.0,
 }
 
 
@@ -130,13 +149,19 @@ SLOT_LOGS = "logs"              # the eth_getLogs sweep, folded
 SLOT_WALLET = "wallet"          # the six YOU views
 SLOT_CONFIG = "config"          # the `once` immutables
 SLOT_BLOCKSCOUT = "blockscout"  # the independent cross-check
+SLOT_CLUSTERS = "clusters"      # the detached B+C analysis last-good (WP3)
 
+#: Adding :data:`SLOT_CLUSTERS` did **not** move ``_SCHEMA_VERSION`` — the
+#: additive-key rule the ``ens``/``dropped_events`` precedent set.  The slot
+#: rides the generic ``last_good`` persistence below, so an older file simply
+#: lacks it and restores "the analysis never ran", which is true.
 SLOTS: tuple[str, ...] = (
     SLOT_STATE,
     SLOT_LOGS,
     SLOT_WALLET,
     SLOT_CONFIG,
     SLOT_BLOCKSCOUT,
+    SLOT_CLUSTERS,
 )
 
 
@@ -580,9 +605,39 @@ class CuratorCache:
         return None if entry is None else entry.age_seconds(self._now(now))
 
     def newest_as_of(self) -> float | None:
-        """Timestamp of the freshest successful read across every slot."""
-        stamps = [entry.ts for entry in self.last_good.values()]
+        """Timestamp of the freshest successful **read** across the slots.
+
+        :data:`SLOT_CLUSTERS` is deliberately excluded: the analysis sweep
+        re-derives its payload from data that was already fetched, so a
+        publish during a total source outage would otherwise march the title
+        bar's ``as of HH:MM`` forward while nothing had answered — a freshness
+        lie.  The analysis has its own marker, :meth:`analysis_as_of_hhmm`.
+        """
+        stamps = [
+            entry.ts
+            for slot, entry in self.last_good.items()
+            if slot != SLOT_CLUSTERS
+        ]
         return max(stamps) if stamps else None
+
+    # -- the analysis last-good (WP3) ----------------------------------------
+
+    def store_analysis(self, payload: Any, *, ts: float) -> LastGood:
+        """Publish one detached sweep's revisable result into its slot.
+
+        ``ts`` is mandatory and is the **spawn** time: a stamp taken at the
+        end of a minutes-long read claims the data is fresher than it is.
+        ``None`` is refused by :meth:`store_last_good`'s own rule.
+        """
+        return self.store_last_good(SLOT_CLUSTERS, payload, ts=ts)
+
+    def analysis_last_good(self) -> LastGood | None:
+        return self.get_last_good(SLOT_CLUSTERS)
+
+    def analysis_as_of_hhmm(self) -> str | None:
+        """The analysis slot's own freshness marker, on its own schedule."""
+        entry = self.get_last_good(SLOT_CLUSTERS)
+        return None if entry is None else entry.as_of_hhmm()
 
     # -- series --------------------------------------------------------------
 
@@ -1261,11 +1316,13 @@ __all__ = [
     "LastGood",
     "SLOTS",
     "SLOT_BLOCKSCOUT",
+    "SLOT_CLUSTERS",
     "SLOT_CONFIG",
     "SLOT_LOGS",
     "SLOT_STATE",
     "SLOT_WALLET",
     "TIERS",
+    "TIER_ANALYSIS",
     "TIER_FAILURE_BACKOFF_SECONDS",
     "TIER_FAST",
     "TIER_MEDIUM",
