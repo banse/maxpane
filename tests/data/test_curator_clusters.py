@@ -26,7 +26,7 @@ from maxpane_dashboard.data.curator_models import (
     CURATOR_ROW_KEYS,
     DepositEvent,
 )
-from tests.curator_sybil_fixtures import labeled_subset
+from tests.curator_sybil_fixtures import labeled_subset, worst_case_envelope
 
 from maxpane_dashboard.data import curator_clusters
 
@@ -814,3 +814,82 @@ def test_a_tx_sweep_that_resolved_nothing_is_a_healthy_pass_not_an_outage():
         )
     )
     assert set(again.txs) == set(hashes)
+
+
+# ---------------------------------------------------------------------------
+# WP3.7 — the integration fixture: the adapter agrees with the library
+# ---------------------------------------------------------------------------
+
+from tests.curator_sybil_fixtures import load as load_sybil_fixture
+
+
+def _agreement_inputs():
+    doc = load_sybil_fixture("adapter_agrees.json")
+    return doc, doc["deposits"], doc["first_deposits"], doc["txs"], doc["funding"]
+
+
+def test_the_adapter_agrees_with_the_library_on_the_committed_fixture():
+    """PRD §8's mandated seam: over one committed byte source, the adapter's
+    flagged set is IDENTICAL to a bare sybilkit.detect run — not similar, not
+    a superset, identical."""
+    import sybilkit
+
+    doc, deposits, firsts, txs, funding = _agreement_inputs()
+    result = curator_clusters.build_analysis(
+        deposits,
+        firsts,
+        txs=txs,
+        funding=funding,
+        points_per_eth=doc["points_per_eth"],
+        min_deposit_wei=doc["min_deposit_wei"],
+    )
+    ds = sybilkit.Dataset.from_events(deposits, firsts, txs=txs, funding=funding)
+    res = sybilkit.detect(
+        ds,
+        curator_clusters.build_preset(
+            doc["points_per_eth"], doc["min_deposit_wei"]
+        ).detect_config(),
+    )
+    assert res.flagged, "a vacuous agreement proves nothing"
+    assert result.flagged == res.flagged
+    assert result.operators_count == len(res.clusters) > 0
+    assert result.points_total == res.total_points
+    assert result.clean_points == res.clean_points
+    assert result.clean_contributors == len(res.analyzed) - len(res.flagged)
+
+
+def test_the_operator_rows_match_the_worst_case_fixture_shape():
+    """WP4's width sweep was measured against operator_row_worst.json before
+    this adapter existed; the rows it produces must be that SHAPE.  Shape
+    only: the fixture's conf grades are calibration, never truth (ruling 6)."""
+    frozen = worst_case_envelope("operator_row_worst.json")["row_keys"]
+    doc, deposits, firsts, txs, funding = _agreement_inputs()
+    result = curator_clusters.build_analysis(
+        deposits,
+        firsts,
+        txs=txs,
+        funding=funding,
+        points_per_eth=doc["points_per_eth"],
+        min_deposit_wei=doc["min_deposit_wei"],
+    )
+    assert result.operator_rows, "the fixture must produce operators"
+    for row in result.operator_rows:
+        assert set(row) == set(frozen)
+        assert set(row) == set(CURATOR_ROW_KEYS["operator_rows"])
+        assert isinstance(row["reasons"], list) and row["reasons"]
+        assert row["conf"] in ("high", "low")
+
+
+def test_the_agreement_fixture_is_still_the_labeled_subset():
+    """The fixture is a 1:1 join of labeled_subset.json.  Pinning the
+    derivation is what stops the two byte sources drifting into two different
+    populations under one test name."""
+    doc, deposits, firsts, txs, funding = _agreement_inputs()
+    subset = labeled_subset()
+    rows = subset["members"] + subset["controls"]
+    assert {r["contributor"] for r in firsts} == {r["address"] for r in rows}
+    assert len(deposits) == sum(len(r["deposits"]) for r in rows)
+    assert set(txs) == {r["tx"]["tx_hash"] for r in rows if r.get("tx")}
+    assert set(funding) == {r["address"] for r in rows if r.get("funding")}
+    assert doc["points_per_eth"] == 1000
+    assert doc["min_deposit_wei"] == 5 * 10**16
