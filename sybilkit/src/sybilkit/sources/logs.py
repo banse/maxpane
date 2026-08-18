@@ -336,6 +336,15 @@ async def _page(
                 # two-deep pool is the whole pool for a history that is merely
                 # lumpy.  Full width is reachable only by reading real chunks,
                 # so this cannot livelock.
+                #
+                # THE GUARD IS THE RULE, not decoration.  Hoisting this line out
+                # of the `span == full_span` test — "recovery is recovery" —
+                # hands the budget back at every doubling, so an endpoint capped
+                # AT `min_log_window` shrinks forever instead of rotating: over
+                # one 20 000-block range, 43 requests with the pool rotated
+                # became 504 with it never rotated and the healthy second
+                # endpoint asked nothing.  Pinned by
+                # `test_an_endpoint_that_refuses_every_wide_span_is_dropped_rather_than_retried`.
                 shrinks = 0
     return rows, covered
 

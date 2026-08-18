@@ -682,6 +682,54 @@ def test_a_second_dense_region_costs_a_shrink_and_not_the_endpoint() -> None:
     assert {host for host, _, _ in calls} == {"gateway.tenderly.co"}, calls
 
 
+def test_an_endpoint_that_refuses_every_wide_span_is_dropped_rather_than_retried() -> None:
+    """**R3.6's placement**, which the test above does not pin.
+
+    ``shrinks = 0`` lives inside ``if span == full_span:`` and only there.
+    Hoisting it out — the naive "recovery is recovery" simplification the code
+    comment warns against — leaves the whole suite green, including the R3.6
+    test above, while reintroducing the livelock the shrink cap exists to
+    prevent.
+
+    The shape that shows it is an endpoint whose cap sits **at**
+    ``min_log_window``: it refuses everything wider, so the walk shrinks 800 →
+    50, reads four clean chunks, doubles back to 100, and is refused again.  With
+    the reset where it belongs the shrink budget is still spent, so the walk
+    drops the head of the pool and the healthy second endpoint finishes the
+    history.  With the reset hoisted, every doubling hands the budget back, the
+    walk shrinks instead of rotating, and it repeats that cycle for the whole
+    range: measured over this same 20 000 blocks, 43 requests with the pool
+    rotated became **504 with the pool never rotated**, the healthy endpoint
+    receiving nothing at all — a 11.7× amplification with the suite green.
+
+    So the pins are all three of: it rotates, it terminates, and it terminates
+    inside a bound a regression of that size cannot fit in.
+    """
+    served: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(20_000))
+        flt = body["params"][0]
+        lo, hi = int(flt["fromBlock"], 16), int(flt["toBlock"], 16)
+        served.append(request.url.host or "")
+        if request.url.host == "gateway.tenderly.co" and hi - lo + 1 > FAST.min_log_window:
+            return _rpc_error(-32005, "query returned more than 10000 results")
+        return _rpc_result([])
+
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+    assert sweep is not None
+    assert sweep.to_block == 20_000, "the walk has to finish, not merely stop"
+    assert served.count("eth.drpc.org") >= 1, "the pool never rotated"
+    # The capped endpoint is dropped once and never asked again; without the
+    # guard it answers every request in the sweep.
+    assert served.count("gateway.tenderly.co") <= 12, len(served)
+    assert len(served) <= 60, len(served)
+
+
 def test_a_sweep_that_read_some_chunks_returns_how_far_it_got_not_none() -> None:
     """**Review #11(iii).**  One more failure after the shrink budget used to
     discard every chunk already fetched, with no resume cursor at all.
