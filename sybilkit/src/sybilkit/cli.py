@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -92,12 +93,26 @@ def _load_bundle(path: Path) -> tuple[Dataset, dict]:
     )
 
 
+#: A trailing ``[+-]HH:MM`` / ``[+-]HHMM`` UTC offset.  Anchored, and four
+#: digits wide on purpose: ``2026-08-17`` must not read as an offset of
+#: ``-17``, because the conversion below would then run a date-only stamp
+#: through the *local* zone.
+_UTC_OFFSET = re.compile(r"[+-]\d{2}:?\d{2}$")
+
+
 def _iso(text: Any) -> str | None:
     """A sweep timestamp normalised to ``YYYY-MM-DDTHH:MM:SSZ``, or ``None``.
 
     ``None`` rather than a guess: a bundle that carries no timestamp genuinely
     has none, and inventing one is exactly the fabricated fact this whole
     distribution refuses to produce.
+
+    An offset that is not UTC is **converted**, never suffixed.  Handling
+    ``Z`` and ``+00:00`` and then appending a ``Z`` to whatever was left turned
+    a sweep stamped ``2026-08-17T21:44:40+02:00`` into
+    ``2026-08-17T21:44:40+02:00Z`` — not a timestamp in any format, and two
+    hours wrong to any reader lenient enough to parse it.  Only a *naive*
+    stamp gets a bare ``Z``.
     """
     if not isinstance(text, str) or not text.strip():
         return None
@@ -105,7 +120,25 @@ def _iso(text: Any) -> str | None:
     if body.endswith("Z"):
         return body
     if body.endswith("+00:00"):
+        # Already UTC: rewritten rather than re-parsed, so this path stays
+        # byte-preserving (fractional seconds and all) for the spelling the
+        # sweeps actually emit.
         return body[: -len("+00:00")] + "Z"
+    if _UTC_OFFSET.search(body):
+        import datetime  # noqa: PLC0415 — only this formatting needs it
+
+        try:
+            moment = datetime.datetime.fromisoformat(body)
+        except ValueError:
+            # Whatever this is, it is not a stamp we can read.  Hand it back
+            # untouched: a `Z` it never earned is a fabricated fact, and it
+            # still carries its own offset, so nothing is lost.
+            return body
+        if moment.tzinfo is None:
+            return body  # the offset was a coincidence; never guess a zone
+        return moment.astimezone(datetime.timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
     return body + "Z"
 
 

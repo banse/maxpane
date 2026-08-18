@@ -762,6 +762,44 @@ def test_an_unexpected_value_error_exits_non_zero_with_a_message(capsys) -> None
     assert "points_per_eth" in capsys.readouterr().err
 
 
+def test_a_non_utc_offset_is_converted_rather_than_suffixed_with_z(
+    tmp_path, capsys
+) -> None:
+    """**B2.**  ``_iso`` handled ``Z`` and ``+00:00`` and then appended a ``Z``
+    to whatever was left, so a sweep stamped ``2026-08-17T21:44:40+02:00``
+    reached the provenance header as ``2026-08-17T21:44:40+02:00Z`` — not a
+    timestamp in any format, and two hours wrong to anything lenient enough to
+    parse it.  An offset is converted; only a *naive* stamp gets a bare ``Z``.
+    """
+    assert cli._iso("2026-08-17T21:44:40+02:00") == "2026-08-17T19:44:40Z"
+    assert cli._iso("2026-08-17T11:44:40-08:00") == "2026-08-17T19:44:40Z"
+    # The three shapes that were already right stay byte-identical: this is a
+    # provenance field whose whole job is exporting the same archive to the
+    # same bytes tomorrow.
+    assert cli._iso("2026-08-17 19:44:40") == "2026-08-17T19:44:40Z"
+    assert cli._iso("2026-08-17T19:44:40+00:00") == "2026-08-17T19:44:40Z"
+    assert cli._iso("2026-08-17T19:44:40Z") == "2026-08-17T19:44:40Z"
+    assert cli._iso("") is None and cli._iso(None) is None
+    # And a stamp we cannot read keeps its own offset rather than being handed
+    # a `Z` it never earned.
+    assert not cli._iso("whenever+02:00").endswith("Z")
+
+    bundle = tmp_path / "berlin.json"
+    bundle.write_text(json.dumps({
+        "meta": {"sweep_utc": "2026-08-17T21:44:40+02:00"},
+        "deposits": [{
+            "contributor": "0x" + "11" * 20, "hour": 0,
+            "amount_wei": 10**17, "credited_delta_wei": 10**17,
+            "weight_added_wei": 10**17, "new_weight_wei": 10**17,
+            "tx_count": 1, "block": 100, "log_index": 1,
+            "tx_hash": "0x" + "ab" * 32,
+        }],
+        "first_deposits": [{"contributor": "0x" + "11" * 20, "index": 1}],
+    }), encoding="utf-8")
+    assert run("analyze", "--dataset", str(bundle), *OFFLINE_RATE) == 0
+    assert out_json(capsys)["generated_at"] == "2026-08-17T19:44:40Z"
+
+
 def test_a_malformed_labeled_bundle_is_a_message_not_a_key_error_traceback(
     tmp_path, capsys
 ) -> None:
