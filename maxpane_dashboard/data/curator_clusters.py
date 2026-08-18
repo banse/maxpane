@@ -50,6 +50,12 @@ from sybilkit import Dataset, DetectResult, detect
 from sybilkit.curator import CleanList, CuratorPreset, Segments
 from sybilkit.curator import clean_list as _clean_list
 from sybilkit.curator import segments as _segments
+from sybilkit.model import Funding, Tx
+from sybilkit.signals import first_rows, tier_a_components
+from sybilkit.sources import blockscout as _blockscout
+from sybilkit.sources import txs as _tx_sources
+from sybilkit.sources import DEFAULT_CONFIG as _SOURCE_DEFAULTS
+from sybilkit.sources.blockscout import PENDING_PAGES
 
 from maxpane_dashboard.data.curator_models import CURATOR_ANALYSIS_KEYS
 
@@ -471,14 +477,286 @@ def slot_payload(
     return payload
 
 
+# ---------------------------------------------------------------------------
+# The bounded, resumable enrichment fetch (the detached sweep's network half)
+# ---------------------------------------------------------------------------
+
+#: First-deposit fingerprints fetched per sweep: ten 40-call batches.  The gas
+#: family needs >= 90 % coverage of a component before it may corroborate, so
+#: a big component reaches judgeability over several sweeps rather than in one
+#: unbounded burst against a keyless pool.
+TX_BUDGET = 400
+
+#: Funder lookups per sweep: ~200 addresses at Blockscout's measured ~3 req/s
+#: is ~70 s of paced work, comfortably inside the analysis tier's 1800 s TTL.
+#: R3: candidates only, never the 15.5k population (~90 min).
+FUNDING_BUDGET = 200
+
+#: Non-candidate contributors resolved alongside the candidates, in chain
+#: order — a small fixed control margin so the funding evidence is measured
+#: against a baseline rather than only against suspects.
+CONTROL_MARGIN = 24
+
+#: The funding page bound's ceiling.  The bound starts at the sources default
+#: (20 pages = 1 000 transactions) and doubles only when a sweep reports
+#: ``"pages"`` pendings — the one truncation raising it can fix.  80 pages is
+#: 4 000 transactions, far beyond any 1–5-tx farm wallet; a history longer
+#: than that stays honestly pending rather than eating the whole budget.
+MAX_FUNDING_PAGES = 80
+
+
+def _tx_dict(tx: Any) -> dict[str, Any]:
+    if isinstance(tx, Tx):
+        return {
+            "tx_hash": tx.tx_hash,
+            "nonce": tx.nonce,
+            "max_priority_fee_wei": tx.max_priority_fee_wei,
+            "max_fee_wei": tx.max_fee_wei,
+            "gas_limit": tx.gas_limit,
+            "tx_type": tx.tx_type,
+        }
+    return dict(tx)
+
+
+def _funding_dict(row: Any) -> dict[str, Any]:
+    if isinstance(row, Funding):
+        return {"address": row.address, "funder": row.funder, "hops": row.hops}
+    return dict(row)
+
+
+def _funding_object(address: str, row: Any) -> Funding:
+    if isinstance(row, Funding):
+        return row
+    funder = row.get("funder") if isinstance(row, Mapping) else None
+    hops = row.get("hops") if isinstance(row, Mapping) else None
+    return Funding(
+        address=address,
+        funder=funder if isinstance(funder, str) else None,
+        hops=hops if isinstance(hops, int) and not isinstance(hops, bool) else None,
+    )
+
+
+@dataclass(slots=True)
+class EnrichmentSweep:
+    """One bounded pass's accumulated enrichment, plus its cursor and health.
+
+    ``txs``/``funding`` are the **accumulated** maps (prior state carried
+    forward, this pass's answers merged in), already serialized to the plain
+    dicts the slot payload persists.  ``fetched`` is False when no session was
+    available and nothing was attempted — which is a different fact from
+    ``tx_ok``/``funding_ok`` being ``False`` (attempted and the source did not
+    answer) or ``None`` (nothing to ask, or skipped).
+    """
+
+    txs: dict[str, dict]
+    funding: dict[str, dict]
+    funding_pending: tuple[str, ...]
+    funding_reasons: dict[str, str]
+    page_bound: int
+    fetched: bool
+    tx_ok: bool | None
+    funding_ok: bool | None
+
+    def state(self) -> dict[str, Any]:
+        """The cursor the slot payload persists and the next sweep resumes."""
+        return {
+            "txs": dict(self.txs),
+            "funding": dict(self.funding),
+            "pending": list(self.funding_pending),
+            "reasons": dict(self.funding_reasons),
+            "page_bound": self.page_bound,
+        }
+
+
+def candidate_targets(
+    events: Iterable[Any],
+    first_deposits: Iterable[Any],
+    preset: CuratorPreset,
+    *,
+    margin: int = CONTROL_MARGIN,
+) -> tuple[list[str], list[str]]:
+    """Who the enrichment is about: ``(funding_addresses, first_tx_hashes)``.
+
+    R3 — candidates only, never the population: the members of every tier-A
+    component of at least ``min_size``, in chain order, plus a deterministic
+    control margin of the first *margin* non-candidate contributors.  The tx
+    hashes are the candidates' **first-deposit** transactions, which is what
+    the gas family and the freshness discount actually read.
+    """
+    ds = Dataset.from_events(events, first_deposits)
+    cfg = preset.detect_config()
+    components = [
+        comp for comp in tier_a_components(ds, cfg) if len(comp) >= cfg.min_size
+    ]
+    firsts = first_rows(ds)
+
+    def chain_order(addr: str) -> tuple[int, int]:
+        dep = firsts.get(addr)
+        return (dep.block_number, dep.log_index) if dep is not None else (2**63, 0)
+
+    members = sorted({m for comp in components for m in comp}, key=chain_order)
+    member_set = set(members)
+    controls = sorted(
+        (a for a in firsts if a not in member_set), key=chain_order
+    )[: max(0, margin)]
+    tx_hashes = [firsts[m].tx_hash for m in members if m in firsts]
+    return members + controls, tx_hashes
+
+
+async def fetch_enrichment(
+    *,
+    tx_wanted: Iterable[str],
+    funding_wanted: Iterable[str],
+    state: Mapping[str, Any] | None = None,
+    client: Any = None,
+    transport: Any = None,
+    sleep: Any = None,
+    tx_budget: int = TX_BUDGET,
+    funding_budget: int = FUNDING_BUDGET,
+) -> EnrichmentSweep:
+    """Extend the accumulated tier-B/C coverage by one bounded pass.
+
+    *state* is the previous :meth:`EnrichmentSweep.state` (or ``None`` on the
+    first sweep).  Known fingerprints and resolved funders are **never**
+    re-read; the funding cursor's pendings go first, so a deferred address is
+    picked up before a new one.  A ``"pages"`` pending raises the page bound
+    for the next pass (doubled, capped at :data:`MAX_FUNDING_PAGES`); an
+    ``"unreadable"`` one is retried as-is — spending more pages on a failing
+    endpoint is the one action that cannot help.
+
+    **No session, no fetch.**  With neither *client* nor *transport* the
+    carried state comes back untouched (``fetched=False``): production hands
+    the manager's own HTTP session in, tests hand a MockTransport in, and a
+    bare double hands nothing in — which is what keeps every FakeClient-driven
+    test socket-free structurally.  ``fetch_funding`` is **never** called with
+    a zero budget (it would still open a session; WP2's warning): the skip
+    switch is not calling it.
+    """
+    prior = state if isinstance(state, Mapping) else {}
+    known_txs: dict[str, dict] = {
+        str(key).lower(): dict(value)
+        for key, value in (prior.get("txs") or {}).items()
+        if isinstance(value, Mapping)
+    }
+    known_funding: dict[str, dict] = {
+        str(key).lower(): dict(value)
+        for key, value in (prior.get("funding") or {}).items()
+        if isinstance(value, Mapping)
+    }
+    pending: tuple[str, ...] = tuple(
+        addr for addr in (prior.get("pending") or ()) if isinstance(addr, str)
+    )
+    reasons: dict[str, str] = {
+        str(key): str(value)
+        for key, value in (prior.get("reasons") or {}).items()
+    }
+
+    bound = prior.get("page_bound")
+    if not isinstance(bound, int) or isinstance(bound, bool) or bound < 1:
+        bound = _SOURCE_DEFAULTS.blockscout_max_pages
+    if any(reason == PENDING_PAGES for reason in reasons.values()):
+        bound = min(bound * 2, MAX_FUNDING_PAGES)
+
+    fetched = client is not None or transport is not None
+    tx_ok: bool | None = None
+    funding_ok: bool | None = None
+    if not fetched:
+        return EnrichmentSweep(
+            txs=known_txs,
+            funding=known_funding,
+            funding_pending=pending,
+            funding_reasons=reasons,
+            page_bound=bound,
+            fetched=False,
+            tx_ok=None,
+            funding_ok=None,
+        )
+
+    wanted_hashes: list[str] = []
+    seen: set[str] = set()
+    for raw in tx_wanted:
+        if not isinstance(raw, str):
+            continue
+        key = raw.lower()
+        if key in seen or key in known_txs:
+            continue
+        seen.add(key)
+        wanted_hashes.append(key)
+    wanted_hashes = wanted_hashes[: max(0, tx_budget)]
+    if wanted_hashes:
+        sweep = await _tx_sources.fetch_tx_fingerprints(
+            wanted_hashes, client=client, transport=transport, sleep=sleep
+        )
+        if sweep is None:                      # is None == outage; keep last-good
+            tx_ok = False
+        else:
+            tx_ok = True
+            for tx_hash, tx in sweep.fingerprints.items():
+                known_txs[tx_hash] = _tx_dict(tx)
+            # `sweep.pending` needs no bookkeeping: an unresolved hash is
+            # simply still absent from `known_txs`, so it is re-wanted next
+            # sweep by construction.
+
+    todo: list[str] = []
+    seen = set()
+    for raw in (*pending, *funding_wanted):
+        if not isinstance(raw, str):
+            continue
+        key = raw.lower()
+        if key in seen or key in known_funding:
+            continue
+        seen.add(key)
+        todo.append(key)
+    if todo and funding_budget and funding_budget > 0:
+        fsweep = await _blockscout.fetch_funding(
+            todo,
+            known={
+                addr: _funding_object(addr, row)
+                for addr, row in known_funding.items()
+            },
+            budget=funding_budget,
+            max_pages=bound,
+            client=client,
+            transport=transport,
+            sleep=sleep,
+        )
+        if fsweep is None:                     # is None == outage; keep last-good
+            funding_ok = False
+        else:
+            funding_ok = True
+            known_funding = {
+                addr: _funding_dict(row) for addr, row in fsweep.funding.items()
+            }
+            pending = fsweep.pending
+            reasons = dict(fsweep.pending_reasons)
+
+    return EnrichmentSweep(
+        txs=known_txs,
+        funding=known_funding,
+        funding_pending=pending,
+        funding_reasons=reasons,
+        page_bound=bound,
+        fetched=True,
+        tx_ok=tx_ok,
+        funding_ok=funding_ok,
+    )
+
+
 __all__ = [
     "AnalysisResult",
     "CLEAN_LIST_LIMIT",
+    "CONTROL_MARGIN",
+    "EnrichmentSweep",
     "FORBIDDEN_WORDS",
+    "FUNDING_BUDGET",
     "HIGH_MIN_FAMILIES",
+    "MAX_FUNDING_PAGES",
+    "TX_BUDGET",
     "analysis_keys",
     "build_analysis",
     "build_preset",
+    "candidate_targets",
+    "fetch_enrichment",
     "grade_of",
     "merge_leaderboard_grade",
     "pattern_language",

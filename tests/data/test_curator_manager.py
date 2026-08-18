@@ -1962,3 +1962,232 @@ def test_a_fresh_name_is_not_re_resolved(tmp_path, clock):
     assert len(asked) == 1
     # ...and the cached name still labels the second payload.
     assert payload["leaderboard_rows"][0]["name"] == "surfsurf.eth"
+
+
+# ---------------------------------------------------------------------------
+# WP3.3 — the detached Tier-B+C analysis sweep (_spawn_crosscheck's pattern)
+# ---------------------------------------------------------------------------
+
+import json as _json  # noqa: E402
+
+from maxpane_dashboard.data import curator_clusters  # noqa: E402
+from maxpane_dashboard.data.curator_cache import (  # noqa: E402
+    SLOT_CLUSTERS,
+    TIER_ANALYSIS,
+)
+from tests.data.test_curator_clusters import (  # noqa: E402
+    AnalysisRoutes,
+    FARM_MEMBERS,
+    CONTROLS as FARM_CONTROLS,
+    STRANGER as FARM_STRANGER,
+    farm_analysis,
+    farm_events,
+    farm_first_deposits,
+    no_sleep,
+)
+
+#: The once-tier payload the sweep reads, as `_pool_config` now stores it:
+#: the readings' keys plus the minimum the preset refuses to run without.
+ANALYSIS_CONFIG = {**CONFIG, "min_deposit_wei": 5 * 10**16}
+
+
+def _analysis_manager(tmp_path, clock, *, routes=None, wallet=None):
+    """A manager whose fold is the farm: cache pre-seeded, empty log sweeps."""
+    client = _scenario_client(
+        {"state": True, "logs": True, "wallet": bool(wallet)}
+    )
+    client.answers["fetch_logs"] = lambda *_: _sweep([], to_block=25_770_500)
+    manager = _manager(
+        tmp_path,
+        clock,
+        client=client,
+        wallet=wallet,
+        analysis_transport=routes.transport if routes is not None else None,
+        analysis_sleep=no_sleep,
+    )
+    manager.cache.store_events(farm_events(), now=NOW)
+    manager.cache.store_first_deposits(farm_first_deposits())
+    return manager
+
+
+def test_the_config_slot_carries_the_minimum_and_the_readings_do_not(tmp_path, clock):
+    """R13's live read travels through the config slot to the sweep — and only
+    there: READING_KEYS is frozen and build_signals never sees the key."""
+    client = _scenario_client({"state": True, "logs": True, "wallet": False})
+    manager = _manager(tmp_path, clock, client=client)
+    payload = asyncio.run(manager._pool_config({"once"}, NOW))
+    assert payload["min_deposit_wei"] == 5 * 10**16
+    readings = manager._readings(config=payload)
+    assert "min_deposit_wei" not in readings
+
+
+def test_spawn_analysis_starts_one_task_and_never_stacks_a_second(tmp_path, clock):
+    routes = AnalysisRoutes(blocking=True)
+    manager = _analysis_manager(tmp_path, clock, routes=routes)
+
+    async def _run():
+        task = manager._spawn_analysis({TIER_ANALYSIS}, NOW, ANALYSIS_CONFIG)
+        assert task is not None
+        await asyncio.wait_for(routes.started.wait(), timeout=5)
+        again = manager._spawn_analysis(
+            {TIER_ANALYSIS}, NOW + 1, ANALYSIS_CONFIG
+        )
+        assert again is task, "one in flight, never two"
+        routes.release.set()
+        await asyncio.wait_for(task, timeout=5)
+        assert manager.cache.analysis_last_good() is not None
+
+    asyncio.run(_run())
+
+
+def test_the_analysis_tier_gates_the_sweep(tmp_path, clock):
+    manager = _analysis_manager(tmp_path, clock)
+
+    async def _run():
+        assert (
+            manager._spawn_analysis({"fast", "medium"}, NOW, ANALYSIS_CONFIG)
+            is None
+        )
+        assert manager._analysis_task is None
+
+    asyncio.run(_run())
+
+
+def test_the_sweep_publishes_into_the_slot_with_the_spawn_time_stamp(tmp_path, clock):
+    """The payload built before the sweep lands is the supported not-yet-run
+    state; the slot's stamp is the SPAWN time, never the completion time."""
+    routes = AnalysisRoutes()
+    manager = _analysis_manager(tmp_path, clock, routes=routes)
+
+    async def _run():
+        out = await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
+        assert out["operator_rows"] is None            # not-yet-run this cycle
+        assert out["analysis_as_of_hhmm"] is None
+        assert manager._analysis_task is not None
+        await asyncio.wait_for(manager._analysis_task, timeout=5)
+
+        entry = manager.cache.analysis_last_good()
+        assert entry is not None
+        assert entry.ts == NOW                          # spawn-time stamp
+        payload = entry.payload
+        assert payload["operators_count"] == 1          # funding linked the farm
+        assert payload["groups"][0]["size"] == len(FARM_MEMBERS)
+        # The cursor rides in the slot: coverage extends across sweeps.
+        assert set(payload["enrichment"]["funding"]) >= set(FARM_MEMBERS)
+        assert payload["enrichment"]["txs"]
+        assert routes.gets and routes.posts, (
+            "the sweep drives sybilkit.sources through the injected transport"
+        )
+
+    asyncio.run(_run())
+
+
+def test_the_first_payload_is_not_behind_the_analysis_read(tmp_path, clock):
+    """The mandated first-paint guard: a funding pass is minutes long, and
+    awaiting it in-cycle is exactly the 201-second blank SIGNALS rail the
+    cross-check already taught this manager about.  Awaiting the sweep inside
+    `_cycle` makes the five-second timeout here fire."""
+    routes = AnalysisRoutes(blocking=True)
+    manager = _analysis_manager(tmp_path, clock, routes=routes)
+
+    async def _run():
+        out = await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
+        assert set(out) == set(CURATOR_KEYS)
+        assert out["leaderboard_rows"], "the fold that drives every panel"
+
+        await asyncio.wait_for(routes.started.wait(), timeout=5)
+        task = manager._analysis_task
+        assert not task.done()
+
+        # A second cycle while it fetches does not stack a second sweep.
+        clock.advance(1)
+        await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
+        assert manager._analysis_task is task
+
+        routes.release.set()
+        await asyncio.wait_for(task, timeout=5)
+        assert manager.cache.analysis_last_good() is not None
+
+    asyncio.run(_run())
+
+
+def test_close_cancels_both_detached_tasks_and_saves(tmp_path, clock):
+    """Quitting mid-sweep is the common case when a sweep takes minutes: both
+    detached reads hold the client, so both are cancelled and awaited before
+    the sockets go, and the cache is still saved."""
+    routes = AnalysisRoutes(blocking=True)
+    scenario = _scenario_client({"state": True, "logs": True, "wallet": False})
+    client = _BlockingCrossCheck(
+        [],
+        fetch_logs=lambda *_: _sweep([], to_block=25_770_500),
+        fetch_state=_state(),
+        fetch_config=scenario.answers["fetch_config"],
+    )
+    manager = _manager(
+        tmp_path,
+        clock,
+        client=client,
+        analysis_transport=routes.transport,
+        analysis_sleep=no_sleep,
+    )
+    manager.cache.store_events(farm_events(), now=NOW)
+    manager.cache.store_first_deposits(farm_first_deposits())
+
+    async def _run():
+        await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
+        await asyncio.wait_for(routes.started.wait(), timeout=5)
+        await asyncio.wait_for(client.started.wait(), timeout=5)
+        a_task, c_task = manager._analysis_task, manager._crosscheck_task
+        assert not a_task.done() and not c_task.done()
+
+        await asyncio.wait_for(manager.close(), timeout=5)
+        assert a_task.done() and a_task.cancelled()
+        assert c_task.done() and c_task.cancelled()
+        assert manager._analysis_task is None
+        assert manager._crosscheck_task is None
+        assert client.closed is True
+        assert os.path.exists(manager.cache.path)
+
+    asyncio.run(_run())
+
+
+def test_a_sweep_with_nothing_to_analyze_backs_off_instead_of_spinning(tmp_path, clock):
+    """No events (or no live-read config) is 'cannot run yet', not a failed
+    sweep: the tier is spaced so the offer is not re-made every cycle, and no
+    degradation banner lights for it."""
+    client = _scenario_client({"state": True, "logs": True, "wallet": False})
+    client.answers["fetch_logs"] = lambda *_: _sweep([], to_block=25_770_500)
+    manager = _manager(tmp_path, clock, client=client)  # cache empty: no events
+
+    async def _run():
+        task = manager._spawn_analysis({TIER_ANALYSIS}, NOW, ANALYSIS_CONFIG)
+        await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(_run())
+    assert manager.cache.analysis_last_good() is None
+    assert manager._analysis_failed is False
+    from maxpane_dashboard.data.curator_cache import TIER_FAILURE_BACKOFF_SECONDS
+
+    assert TIER_ANALYSIS not in manager.cache.tiers_due(NOW + 1)
+    assert TIER_ANALYSIS in manager.cache.tiers_due(
+        NOW + TIER_FAILURE_BACKOFF_SECONDS[TIER_ANALYSIS] + 1
+    )
+
+
+def test_without_a_session_the_sweep_publishes_tier_a_only_and_fetches_nothing(
+    tmp_path, clock
+):
+    """A client double with no HTTP session and no injected transport means the
+    sweep may not fetch — it still publishes the tier-A answer, whose losses
+    are honest (the two-family gate simply finds less)."""
+    manager = _analysis_manager(tmp_path, clock)      # no routes
+
+    async def _run():
+        task = manager._spawn_analysis({TIER_ANALYSIS}, NOW, ANALYSIS_CONFIG)
+        await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(_run())
+    payload = manager.cache.analysis_last_good().payload
+    assert payload["operators_count"] == 0            # amount alone never convicts
+    assert payload["enrichment"]["funding"] == {}
+    assert payload["enrichment"]["txs"] == {}

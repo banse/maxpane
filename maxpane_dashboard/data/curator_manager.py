@@ -84,6 +84,7 @@ from maxpane_dashboard.analytics.curator_signals import (
 )
 from maxpane_dashboard.data import curator_addresses as A
 from maxpane_dashboard.data import ens
+from maxpane_dashboard.data import curator_clusters
 from maxpane_dashboard.data.curator_cache import (
     DEFAULT_CACHE_PATH,
     SLOT_BLOCKSCOUT,
@@ -91,6 +92,7 @@ from maxpane_dashboard.data.curator_cache import (
     SLOT_LOGS,
     SLOT_STATE,
     SLOT_WALLET,
+    TIER_ANALYSIS,
     TIER_FAST,
     TIER_MEDIUM,
     TIER_ONCE,
@@ -492,6 +494,8 @@ class CuratorManager:
         wallet: str | None = None,
         clock: Any = time.time,
         cache_path: str = DEFAULT_CACHE_PATH,
+        analysis_transport: Any = None,
+        analysis_sleep: Any = None,
     ) -> None:
         self.poll_interval = poll_interval
         self._clock = clock
@@ -532,6 +536,19 @@ class CuratorManager:
         #: The detached slow-tier cross-check, or ``None`` when none is in
         #: flight.  See :meth:`_spawn_crosscheck` for why it is not awaited.
         self._crosscheck_task: Any = None
+        #: The detached Tier-B+C analysis sweep, on the exact same pattern.
+        self._analysis_task: Any = None
+        #: True only while the most recent analysis sweep RAN and failed to
+        #: publish.  "Could not run yet" (no events, no live-read config) is a
+        #: different fact and never sets it — see :meth:`_pool_analysis`.
+        self._analysis_failed = False
+        #: The enrichment session for the detached sweep.  A test injects an
+        #: ``httpx`` transport (and a no-op ``sleep``) here; production leaves
+        #: both ``None`` and the sweep borrows the client's own HTTP session.
+        #: With neither available the sweep runs tier A only and opens
+        #: **nothing** — which is what keeps a bare test double socket-free.
+        self._analysis_transport = analysis_transport
+        self._analysis_sleep = analysis_sleep
 
         try:
             self.cache.load()
@@ -547,19 +564,21 @@ class CuratorManager:
             logger.warning("Curator cache save failed: %s", exc)
 
     async def close(self) -> None:
-        """Stop the cross-check, close the client, then persist the cache.
+        """Stop both detached tasks, close the client, then persist the cache.
 
         Never raises.  In that order, and the save happens even when the close
         raises.  The detached cross-check holds the same client, so it is
         cancelled and awaited *first* -- closing sockets out from under a task
         that is still paging is how a clean quit turns into a traceback on the
-        way down.  The client owns sockets and the cache owns a file; closing
-        before saving means no in-flight response can still be folding rows
-        into the structures the save is walking, and saving in a ``finally``
-        means a client that throws on the way out cannot cost the user the
-        whole game's history.
+        way down -- and the analysis sweep borrows the same session, so it is
+        stopped right beside it for the same reason.  The client owns sockets
+        and the cache owns a file; closing before saving means no in-flight
+        response can still be folding rows into the structures the save is
+        walking, and saving in a ``finally`` means a client that throws on the
+        way out cannot cost the user the whole game's history.
         """
         await self._cancel_crosscheck()
+        await self._cancel_analysis()
         try:
             await self.client.close()
         except Exception as exc:  # noqa: BLE001
@@ -672,6 +691,15 @@ class CuratorManager:
             self._note(SOURCE_STATE, False)
             return cached.payload if cached is not None else None
         payload = {key: getattr(config, key, None) for key in CONFIG_PAYLOAD_KEYS}
+        # One extra live read rides the slot WITHOUT joining the readings:
+        # `CONFIG_PAYLOAD_KEYS` mirrors the frozen `READING_KEYS` one for one,
+        # and `build_signals` has no use for the minimum -- but the analysis
+        # sweep's preset refuses to exist without it (ruling R13: everyone
+        # sends the minimum, so the minimum identifies nobody).  `_readings`
+        # iterates `CONFIG_PAYLOAD_KEYS`, so this key never reaches it.
+        payload["min_deposit_wei"] = _opt_int(
+            getattr(config, "min_deposit_wei", None)
+        )
         self.cache.store_last_good(SLOT_CONFIG, payload, ts=now)
         self.cache.mark_fetched(TIER_ONCE, now)
         return payload
@@ -1138,6 +1166,156 @@ class CuratorManager:
             self.cache.mark_failed(TIER_MEDIUM, now, retry_after=0.0)
         return {"ok": rows is not None, "checked": True, "gap_block": gap_block}
 
+    # -- the analysis tier: the detached Tier-B+C sweep (WP3) ----------------
+
+    def _spawn_analysis(
+        self, tiers: set[str], now: float, config: dict[str, Any] | None
+    ) -> Any:
+        """Start the analysis sweep **detached**; never wait for it.
+
+        :meth:`_spawn_crosscheck`'s pattern, verbatim, for the same measured
+        reason: a full tier-C funding pass is minutes long (~200 lookups at
+        Blockscout's ~3 req/s per sweep, and that is the *bounded* version),
+        and awaiting it in-cycle would put the doomsday clock behind it.
+        Nothing downstream needs the answer this cycle: the sweep publishes
+        into ``SLOT_CLUSTERS`` and the **next** cycle's merge reads it; a
+        payload built before it lands is the already-supported "analysis not
+        yet run" state.
+
+        One at a time: while a sweep is in flight the analysis tier stays due
+        (only :meth:`_pool_analysis` marks it), so every cycle offers again
+        and the guard here is what keeps a minutes-long read from stacking up
+        behind a 30-second poll.  ``now`` is the spawn time and stamps the
+        slot — a marker taken at the end of a long read claims the data is
+        fresher than it is.
+        """
+        if TIER_ANALYSIS not in tiers:
+            return None
+        running = self._analysis_task
+        if running is not None and not running.done():
+            logger.debug("Curator analysis sweep still in flight; not starting another")
+            return running
+        self._analysis_task = asyncio.ensure_future(
+            self._analysis_detached(tiers, now, config)
+        )
+        return self._analysis_task
+
+    async def _analysis_detached(
+        self, tiers: set[str], now: float, config: dict[str, Any] | None
+    ) -> None:
+        """:meth:`_pool_analysis` with nobody to raise at.
+
+        Same shape as :meth:`_crosscheck_detached`: a detached task's
+        exception surfaces as an "exception was never retrieved" line at GC
+        time and never as a degraded source, so it is caught here.  A sweep
+        that RAN and failed marks its tier failed (backoff) and sets
+        ``_analysis_failed`` — which lights the ``logs`` banner **only while
+        there is no analysis last-good to serve** (see :meth:`_degraded`).
+        ``CancelledError`` is re-raised: that one is :meth:`close` working.
+        """
+        try:
+            await self._pool_analysis(tiers, now, config)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self._error_count += 1
+            self._analysis_failed = True
+            self.cache.mark_failed(TIER_ANALYSIS, now)
+            logger.warning("Curator analysis sweep failed: %s", exc)
+
+    async def _cancel_analysis(self) -> None:
+        """Stop an in-flight analysis sweep and wait for it to be gone."""
+        task = self._analysis_task
+        self._analysis_task = None
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception) as exc:  # noqa: BLE001
+            logger.debug("curator analysis sweep stopped on close: %s", exc)
+
+    def _analysis_session(self) -> tuple[Any, Any]:
+        """``(client, transport)`` the enrichment fetch may use.
+
+        An injected transport wins (tests); otherwise the real client's own
+        ``httpx`` session is borrowed (production — ``_client`` is the
+        attribute every ``OwnedHttpClient`` subclass carries, and the sweep is
+        cancelled in :meth:`close` *before* that session closes).  A double
+        with neither means the sweep fetches nothing and runs tier A only —
+        no test can open a socket by forgetting to inject.
+        """
+        if self._analysis_transport is not None:
+            return None, self._analysis_transport
+        return getattr(self.client, "_client", None), None
+
+    async def _pool_analysis(
+        self, tiers: set[str], now: float, config: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        """One bounded, resumable Tier-B+C sweep, published as a last-good.
+
+        The rule (PRD §4, ruling R3): candidates only, never the population.
+        The adapter picks the tier-A component members plus a small control
+        margin, extends the accumulated fingerprint/funding coverage by one
+        budgeted pass (the cursor rides in the slot payload), and re-runs the
+        pure analysis over everything held.  The pure folds run in a worker
+        thread: ~0.4 s of detect over a real history would otherwise stall
+        the TUI's event loop twice an hour.
+
+        "Cannot run yet" — no events folded, or the ``once`` tier has not
+        produced the live rate and minimum — is **not** a failed sweep: the
+        tier is spaced (so the offer is not re-made every cycle) and no
+        degradation lights, because whichever source is actually missing
+        already tells its own story.
+        """
+        if TIER_ANALYSIS not in tiers:
+            return {"ok": None, "swept": False}
+        cfg = config if isinstance(config, dict) else {}
+        events = self.cache.events()
+        rate = _opt_int(cfg.get("points_per_eth"))
+        minimum = _opt_int(cfg.get("min_deposit_wei"))
+        if not events or rate is None or rate <= 0 or minimum is None:
+            self.cache.mark_failed(TIER_ANALYSIS, now)
+            return {"ok": None, "swept": False}
+
+        firsts = self.cache.first_deposits()
+        entry = self.cache.analysis_last_good()
+        prior = (
+            entry.payload.get("enrichment")
+            if entry is not None and isinstance(entry.payload, dict)
+            else None
+        )
+        preset = curator_clusters.build_preset(rate, minimum)
+        funding_wanted, tx_wanted = await asyncio.to_thread(
+            curator_clusters.candidate_targets, events, firsts, preset
+        )
+        client, transport = self._analysis_session()
+        enrich = await curator_clusters.fetch_enrichment(
+            tx_wanted=tx_wanted,
+            funding_wanted=funding_wanted,
+            state=prior,
+            client=client,
+            transport=transport,
+            sleep=self._analysis_sleep,
+        )
+        result = await asyncio.to_thread(
+            lambda: curator_clusters.build_analysis(
+                events,
+                firsts,
+                txs=enrich.txs,
+                funding=enrich.funding,
+                wallet=self.wallet,
+                config=preset,
+            )
+        )
+        payload = curator_clusters.slot_payload(
+            result, enrichment=enrich.state()
+        )
+        self.cache.store_analysis(payload, ts=now)
+        self.cache.mark_fetched(TIER_ANALYSIS, now)
+        self._analysis_failed = False
+        return {"ok": True, "swept": True}
+
     # -- the WP3 seam --------------------------------------------------------
 
     def _log_reading(
@@ -1337,6 +1515,10 @@ class CuratorManager:
         # transport and takes minutes, while publishing no key.  See
         # `_spawn_crosscheck`.
         self._spawn_crosscheck(tiers, now, state, config)
+        # Started, not awaited, for the same reason: the bounded funding pass
+        # alone is ~70 s of paced requests.  The NEXT cycle's merge reads what
+        # it publishes.  See `_spawn_analysis`.
+        self._spawn_analysis(tiers, now, config)
 
         readings = self._readings(
             state=state,

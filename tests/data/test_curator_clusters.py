@@ -486,3 +486,331 @@ def test_the_sqrt_subsidy_survives_and_the_representable_none_does_too():
     seg = result.segments.operators[0]
     assert row["sqrt_subsidy_x"] == seg.subsidy_x
     assert row["sqrt_subsidy_x"] is None or row["sqrt_subsidy_x"] > 1.0
+
+
+# ---------------------------------------------------------------------------
+# WP3.3 — candidates and the bounded, resumable enrichment fetch
+# ---------------------------------------------------------------------------
+#
+# Every fetch drives ``sybilkit.sources`` through an injected
+# ``httpx.MockTransport``; no test in this section (or any other) opens a
+# socket, and the no-session case is proven with a bomb rather than promised.
+
+import asyncio
+
+import httpx
+
+
+async def no_sleep(_seconds: float) -> None:
+    """Injected pacing: the suite proves the calls, never spends the seconds."""
+
+
+class AnalysisRoutes:
+    """One async MockTransport handler for both sources wire shapes.
+
+    POST is the JSON-RPC fingerprint batch (answered per ``id``, the
+    re-alignment contract); GET is Blockscout's per-address transaction page.
+    Shared with ``test_curator_manager``'s sweep tests — imported, never
+    re-typed.
+    """
+
+    def __init__(
+        self,
+        *,
+        funder: str = FUNDER,
+        blocking: bool = False,
+        tx_result: str = "full",
+        pages_forever: tuple[str, ...] = (),
+        unreadable: tuple[str, ...] = (),
+    ) -> None:
+        self.funder = funder
+        self.blocking = blocking
+        self.tx_result = tx_result
+        self.pages_forever = {a.lower() for a in pages_forever}
+        self.unreadable = {a.lower() for a in unreadable}
+        self.release = asyncio.Event()
+        self.started = asyncio.Event()
+        self.posts: list = []
+        self.gets: list[str] = []
+
+    async def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.started.set()
+        if self.blocking:
+            await self.release.wait()
+        if request.method == "POST":
+            body = json.loads(request.content.decode())
+            self.posts.append(body)
+            out = []
+            for entry in body:
+                tx_hash = entry["params"][0]
+                result = (
+                    None
+                    if self.tx_result == "null"
+                    else {
+                        "hash": tx_hash,
+                        "nonce": "0x0",
+                        "maxPriorityFeePerGas": "0x5f5e100",
+                        "maxFeePerGas": "0xbebc200",
+                        "gas": "0x165e0",
+                        "type": "0x2",
+                    }
+                )
+                out.append({"jsonrpc": "2.0", "id": entry["id"], "result": result})
+            return httpx.Response(200, json=out)
+        addr = request.url.path.rstrip("/").split("/")[-2].lower()
+        self.gets.append(addr)
+        if addr in self.unreadable:
+            return httpx.Response(503, text="down")
+        if addr in self.pages_forever:
+            return httpx.Response(
+                200,
+                json={"items": [], "next_page_params": {"page": len(self.gets)}},
+            )
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "from": {"hash": self.funder},
+                        "to": {"hash": addr},
+                        "block_number": 90,
+                    }
+                ],
+                "next_page_params": None,
+            },
+        )
+
+    @property
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self)
+
+
+def test_candidates_are_the_component_members_plus_a_bounded_margin():
+    """R3: the funding sweep is candidates-only, never full-population — the
+    members of every tier-A component >= min_size, in chain order, plus a
+    small deterministic control margin."""
+    preset = curator_clusters.build_preset(RATE, MINIMUM)
+    addrs, hashes = curator_clusters.candidate_targets(
+        farm_events(), farm_first_deposits(), preset
+    )
+    assert addrs[: len(FARM_MEMBERS)] == list(FARM_MEMBERS)   # chain order
+    assert set(addrs[len(FARM_MEMBERS):]) <= set(CONTROLS)    # the margin
+    assert len(addrs) <= len(FARM_MEMBERS) + curator_clusters.CONTROL_MARGIN
+    member_first_txs = {
+        e.tx_hash for e in farm_events() if e.contributor in FARM_MEMBERS
+    }
+    assert set(hashes) == member_first_txs
+
+
+def test_fetch_enrichment_without_a_session_never_touches_the_sources(monkeypatch):
+    """No transport and no client means NO fetch — structurally, via a bomb.
+    This is what keeps every FakeClient-driven manager test socket-free."""
+
+    async def bomb(*_args, **_kwargs):
+        raise AssertionError("a source was driven with no injected session")
+
+    monkeypatch.setattr(
+        curator_clusters._tx_sources, "fetch_tx_fingerprints", bomb
+    )
+    monkeypatch.setattr(curator_clusters._blockscout, "fetch_funding", bomb)
+
+    state = {
+        "txs": {"0xabc": {"tx_hash": "0xabc", "nonce": 0}},
+        "funding": {},
+        "pending": [FARM_MEMBERS[0]],
+        "reasons": {FARM_MEMBERS[0]: "budget"},
+        "page_bound": 20,
+    }
+    sweep = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=["0xdef"], funding_wanted=[FARM_MEMBERS[1]], state=state
+        )
+    )
+    assert sweep.fetched is False
+    assert sweep.tx_ok is None and sweep.funding_ok is None
+    assert sweep.txs == state["txs"]                  # carried, untouched
+    assert list(sweep.funding_pending) == state["pending"]
+
+
+def test_fetch_enrichment_accumulates_and_never_rereads_known():
+    routes = AnalysisRoutes()
+    hashes = [e.tx_hash for e in farm_events()[:3]]
+    addrs = list(FARM_MEMBERS[:3])
+
+    first = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=hashes,
+            funding_wanted=addrs,
+            state=None,
+            transport=routes.transport,
+            sleep=no_sleep,
+        )
+    )
+    assert first.fetched is True
+    assert first.tx_ok is True and first.funding_ok is True
+    assert set(first.txs) == set(hashes)
+    assert set(first.funding) == set(addrs)
+    assert first.funding[addrs[0]]["funder"] == FUNDER
+
+    gets, posts = len(routes.gets), len(routes.posts)
+    second = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=hashes,
+            funding_wanted=addrs,
+            state=first.state(),
+            transport=routes.transport,
+            sleep=no_sleep,
+        )
+    )
+    assert len(routes.gets) == gets, "a known address was re-read"
+    assert len(routes.posts) == posts, "a known fingerprint was re-fetched"
+    assert second.funding == first.funding
+    # Nothing was attempted, and 'not attempted' is not 'failed'.
+    assert second.tx_ok is None and second.funding_ok is None
+
+
+def test_the_funding_budget_defers_and_the_cursor_resumes():
+    routes = AnalysisRoutes()
+    addrs = list(FARM_MEMBERS)
+
+    first = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=[],
+            funding_wanted=addrs,
+            state=None,
+            transport=routes.transport,
+            sleep=no_sleep,
+            funding_budget=2,
+        )
+    )
+    assert len(first.funding) == 2
+    assert set(first.funding_pending) == set(addrs[2:])
+    assert set(first.funding_reasons.values()) == {"budget"}
+
+    second = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=[],
+            funding_wanted=addrs,
+            state=first.state(),
+            transport=routes.transport,
+            sleep=no_sleep,
+            funding_budget=2,
+        )
+    )
+    # The deferred addresses go first: coverage extends, nothing is re-read.
+    assert set(second.funding) == set(addrs[:4])
+    assert set(second.funding_pending) == set(addrs[4:])
+
+
+def test_a_pages_pending_raises_the_bound_and_unreadable_does_not():
+    """WP2's cursor vocabulary, acted on: 'pages' means the bound is what needs
+    raising; 'unreadable' means retry as-is and spend no more pages on a
+    failing endpoint."""
+    stuck, flaky, fine = FARM_MEMBERS[0], FARM_MEMBERS[1], FARM_MEMBERS[2]
+    routes = AnalysisRoutes(pages_forever=(stuck,), unreadable=(flaky,))
+
+    first = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=[],
+            funding_wanted=[stuck, flaky, fine],
+            state=None,
+            transport=routes.transport,
+            sleep=no_sleep,
+        )
+    )
+    assert first.funding_reasons[stuck] == "pages"
+    assert first.funding_reasons[flaky] == "unreadable"
+    assert fine in first.funding
+    start_bound = first.page_bound
+
+    second = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=[],
+            funding_wanted=[],
+            state=first.state(),
+            transport=routes.transport,
+            sleep=no_sleep,
+        )
+    )
+    assert second.page_bound == min(
+        start_bound * 2, curator_clusters.MAX_FUNDING_PAGES
+    )
+    assert second.page_bound > start_bound
+    assert curator_clusters.MAX_FUNDING_PAGES >= second.page_bound
+
+
+def test_a_source_outage_keeps_the_carried_state():
+    """None from a fetcher is 'could not read', never 'there is nothing': the
+    accumulated map and the cursor survive, and the pass reports itself."""
+
+    async def dead(_request):
+        raise httpx.ConnectError("network unreachable")
+
+    state = {
+        "txs": {},
+        "funding": {FARM_MEMBERS[0]: {"address": FARM_MEMBERS[0], "funder": FUNDER, "hops": 1}},
+        "pending": [FARM_MEMBERS[1]],
+        "reasons": {FARM_MEMBERS[1]: "unreadable"},
+        "page_bound": 20,
+    }
+    sweep = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=[],
+            funding_wanted=[FARM_MEMBERS[2]],
+            state=state,
+            transport=httpx.MockTransport(dead),
+            sleep=no_sleep,
+        )
+    )
+    assert sweep.funding_ok is False
+    assert sweep.funding == state["funding"]          # last-good, untouched
+    assert list(sweep.funding_pending) == state["pending"]
+
+
+def test_a_zero_funding_budget_skips_the_call_entirely():
+    """WP2's warning verbatim: fetch_funding(budget=0) still opens a session,
+    so the skip switch is not calling it at all."""
+    routes = AnalysisRoutes()
+    sweep = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=[],
+            funding_wanted=list(FARM_MEMBERS),
+            state=None,
+            transport=routes.transport,
+            sleep=no_sleep,
+            funding_budget=0,
+        )
+    )
+    assert routes.gets == [] and routes.posts == []
+    assert sweep.funding_ok is None                   # skipped, not failed
+    assert sweep.funding == {}
+
+
+def test_a_tx_sweep_that_resolved_nothing_is_a_healthy_pass_not_an_outage():
+    """Fix round 2's rule: test `is not None`, never truthiness — a node
+    answering `result: null` is the documented ask-again case."""
+    routes = AnalysisRoutes(tx_result="null")
+    hashes = [e.tx_hash for e in farm_events()[:2]]
+    sweep = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=hashes,
+            funding_wanted=[],
+            state=None,
+            transport=routes.transport,
+            sleep=no_sleep,
+        )
+    )
+    assert sweep.tx_ok is True                        # reached, healthy
+    assert sweep.txs == {}                            # nothing resolved yet
+    # ...and the hashes stay wanted: a later pass asks again.
+    routes.tx_result = "full"
+    again = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=hashes,
+            funding_wanted=[],
+            state=sweep.state(),
+            transport=routes.transport,
+            sleep=no_sleep,
+        )
+    )
+    assert set(again.txs) == set(hashes)
