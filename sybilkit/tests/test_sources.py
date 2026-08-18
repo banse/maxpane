@@ -1698,6 +1698,62 @@ def test_a_resumed_walk_keeps_the_oldest_funder_found_before_the_bound() -> None
     assert len(rec.calls) - before == 1, rec.urls[before:]
 
 
+def _internal_paged(request: httpx.Request) -> httpx.Response:
+    """ALICE: a clean one-page **external** history with nothing incoming, and
+    a two-page **internal** history whose funder is on the second page."""
+    if "internal-transactions" not in str(request.url):
+        return _page([], None)  # complete, and no incoming external transfer
+    params = dict(request.url.params)
+    if params.get("block_number") == "800":
+        return _page([_internal(DISPERSER, ALICE, 12)], None)
+    return _page([], {"block_number": "800", "index": "1"})
+
+
+def test_a_walk_bounded_inside_the_internal_history_resumes_there() -> None:
+    """**R3.1.**  The cursor's ``stage`` is what makes an internally-funded,
+    page-bounded address finish at all.
+
+    Ruling D2/C walks ``/internal-transactions`` only after the external walk
+    completes with nothing.  So an address bounded *inside* the internal
+    history has to come back to the internal history: a cursor that named only
+    the page would send the next pass through ``/transactions`` again, which
+    completes with nothing again, which restarts the internal walk **at page
+    one** — the same zero-progress loop ``page_cursors`` exists to end, wearing
+    #14b's costume one stage further in.  An auditor forced ``_resume_from`` to
+    answer ``external`` for every entry and the whole suite stayed green.
+
+    Pass 2 therefore issues exactly **one** request, to
+    ``/internal-transactions``, carrying the stored page.
+    """
+    rec = Recorder(_internal_paged)
+    first = asyncio.run(
+        blockscout.fetch_funding(
+            [ALICE], client=_client(rec), config=FAST, max_pages=1
+        )
+    )
+    assert first is not None
+    assert first.pending == (ALICE.lower(),)
+    assert first.page_bounded == (ALICE.lower(),)
+    cursor = first.page_cursors[ALICE.lower()]
+    assert cursor["stage"] == blockscout._STAGE_INTERNAL, cursor
+    assert cursor["params"]["block_number"] == "800", cursor
+
+    before = len(rec.calls)
+    second = asyncio.run(
+        blockscout.fetch_funding(
+            first.pending, client=_client(rec), config=FAST, max_pages=1,
+            known=first.funding, cursors=first.page_cursors,
+        )
+    )
+    assert second is not None
+    resumed = rec.calls[before:]
+    assert len(resumed) == 1, [str(c[1]) for c in resumed]
+    assert "internal-transactions" in str(resumed[0][1]), str(resumed[0][1])
+    assert dict(resumed[0][1].params)["block_number"] == "800"
+    assert second.funding[ALICE.lower()].funder == DISPERSER.lower()
+    assert second.pending == ()
+
+
 def test_a_sweep_without_cursors_still_walks_from_page_one() -> None:
     """The parameter is optional and defaulted, so every existing caller — and
     a slot payload written before ``page_cursors`` existed — simply starts at
