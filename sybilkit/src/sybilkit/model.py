@@ -83,6 +83,30 @@ def _opt_wei(value: Any) -> int | None:
     return None if value is None else _wei(value)
 
 
+def _ts(value: Any) -> float | None:
+    """A block's wall clock as a ``float``, or ``None`` — **never a raise**.
+
+    ``ts`` is the one field whose absence degrades a *label* and not a signal:
+    cadence detection runs off ``block_number``, which is always present, which
+    is exactly why :class:`Deposit` lets ``ts`` be ``None``.  A *malformed*
+    ``ts`` therefore has to degrade the same way an absent one does.  Reading it
+    inside the row's own ``try`` did the opposite — an ISO-8601 string, which is
+    what Blockscout and every CSV export hand out, raised ``ValueError`` and the
+    blanket ``except`` dropped the whole deposit, so a fully valid population
+    with ISO timestamps built an empty ``Dataset``.
+
+    Only ``ts`` gets this treatment.  Every other word is a signal, and a signal
+    that cannot be read still drops its row rather than being softened to
+    ``None``.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _addr(value: Any) -> str:
     """A lowercase ``0x`` address.  The whole library keys membership on the
     lowercase spelling; a checksummed one from one producer and a lowercase one
@@ -107,9 +131,11 @@ class Deposit:
     measurements, neither is a failed read, and nothing may divide by either.
 
     ``ts`` is the block's wall clock and is ``None`` when the producer had no
-    timestamp to give — cadence detection works off ``block_number``, which is
-    always present, precisely so that a missing ``ts`` degrades a label rather
-    than a signal.
+    timestamp to give, **or gave one we cannot read** — an ISO-8601 string, say,
+    which is what Blockscout and every CSV export hand out.  Cadence detection
+    works off ``block_number``, which is always present, precisely so that a
+    missing ``ts`` degrades a label rather than a signal; an unreadable one
+    degrades identically instead of taking the whole deposit down with it.
     """
 
     contributor: str
@@ -222,7 +248,9 @@ class Dataset:
         tier A runs with neither: a caller that has only logs must not have to
         pass two empty dicts to say so.
 
-        Malformed rows are **dropped, not zeroed**; deposits are de-duped on
+        Malformed rows are **dropped, not zeroed** — with exactly one exception,
+        ``ts``, which degrades to ``None`` (see :func:`_ts`) because it is a
+        label and not a signal.  Deposits are de-duped on
         ``(tx_hash, log_index)`` and sorted into chain order
         ``(block_number, log_index)``, so a shuffled producer and an ordered
         one build the same dataset.
@@ -233,7 +261,6 @@ class Dataset:
                 tx_hash = _get(row, "tx_hash")
                 if not isinstance(tx_hash, str) or not tx_hash.startswith("0x"):
                     raise _Malformed(repr(tx_hash))
-                ts = _get(row, "ts")
                 dep = Deposit(
                     contributor=_addr(_get(row, "contributor")),
                     hour=_wei(_get(row, "hour")),
@@ -245,7 +272,7 @@ class Dataset:
                     block_number=_wei(_get(row, "block_number", "block")),
                     tx_hash=tx_hash.lower(),
                     log_index=_wei(_get(row, "log_index")),
-                    ts=None if ts is None else float(ts),
+                    ts=_ts(_get(row, "ts")),  # degrades to None, never drops the row
                 )
             except (_Malformed, TypeError, ValueError):
                 continue  # dropped, not zeroed

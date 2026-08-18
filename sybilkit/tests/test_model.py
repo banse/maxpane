@@ -236,6 +236,60 @@ def test_the_population_fixture_spelling_block_is_accepted() -> None:
     assert ds.deposits[0].block_number == 25_771_131
 
 
+def test_an_iso_string_timestamp_degrades_the_label_and_keeps_the_deposit() -> None:
+    """Review finding #8.  ``ts`` is the one field whose absence degrades a
+    *label* and not a signal — cadence detection runs off ``block_number``,
+    which is always present — so a *malformed* ``ts`` must degrade exactly the
+    way an absent one does: to ``None``, with the deposit kept.  Reading it
+    inside the row's own ``try`` made an ISO-8601 string (what Blockscout and
+    every CSV export hand out) drop the whole deposit."""
+    ds = Dataset.from_events(
+        [_dep_row(ts="2026-08-17T19:58:47.000000Z")], [_first_row()]
+    )
+    assert len(ds.deposits) == 1
+    dep = ds.deposits[0]
+    assert dep.ts is None
+    assert dep.amount_wei == 450_000_000_000_000_000
+    assert dep.block_number == 25_771_131
+    # ...and a readable timestamp still lands as a float, in both spellings
+    ds2 = Dataset.from_events(
+        [_dep_row(ts=1_755_460_727), _dep_row(ts="1755460728", tx_hash=TX2)],
+        [_first_row()],
+    )
+    assert [d.ts for d in ds2.deposits] == [1_755_460_727.0, 1_755_460_728.0]
+    assert all(isinstance(d.ts, float) for d in ds2.deposits)
+
+
+def test_a_whole_population_with_iso_timestamps_still_builds_a_dataset() -> None:
+    """The review's reproduction, committed.  A fully valid population whose
+    producer spells ``ts`` ISO-8601 used to build an *empty* ``Dataset``, and
+    every downstream count read zero — the worst shape of failure this repo
+    knows, because nothing raises and nothing is marked degraded."""
+    from tests.sybilkit_fixtures import load
+
+    rows = load("deposits.json.gz")
+    for row in rows:
+        row["ts"] = "2026-08-17T19:58:47Z"
+    ds = Dataset.from_events(rows, load("first_deposits.json.gz"))
+    assert len(ds.deposits) == 22_319
+    assert len(ds.first_index) == 15_576
+    assert all(d.ts is None for d in ds.deposits)
+
+
+def test_a_malformed_amount_still_drops_the_row() -> None:
+    """The complement of #8: only ``ts`` degrades.  A word that *is* a signal is
+    still dropped — never zeroed — however it is spelled, and a row carrying an
+    unreadable ``ts`` alongside an unreadable amount is dropped for the amount."""
+    rows = [
+        _dep_row(),
+        _dep_row(amount_wei="not-a-number", tx_hash=TX2, ts="2026-08-17T19:58:47Z"),
+        _dep_row(new_weight_wei=None, tx_hash=TX2, log_index=99),
+    ]
+    ds = Dataset.from_events(rows, [_first_row()])
+    assert len(ds.deposits) == 1
+    assert ds.deposits[0].tx_hash == TX1.lower()
+
+
 def test_the_committed_population_round_trips() -> None:
     """The full fixture builds: 22 319 deposits, 15 576 contributors, and the
     wei words survive exactly (no float anywhere near them)."""
