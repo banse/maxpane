@@ -564,6 +564,113 @@ def test_total_points_agrees_with_the_curator_preset_on_a_hand_built_dataset() -
         assert detect(ds, DetectConfig(points_per_eth=1000)).total_points == expected, name
 
 
+def _same_block_laddering_farm() -> Dataset:
+    """Six wallets whose two rungs sit in **one block each**, apart only in
+    ``log_index``.
+
+    :func:`_laddering_farm` puts the rungs at ``1000 + i`` and ``2000 + i``, so
+    ``block_number`` alone already separates every pair of rows in it and the
+    ``log_index`` half of ``detect``'s sort key is never exercised: an auditor
+    cut the key down to ``key=lambda d: d.block_number`` and the whole file
+    stayed green.  Here the two rungs of a ladder share a block, so the
+    tie-break is the *only* thing that decides which rung's high-water weight
+    is folded — and because ``sorted`` is **stable**, a block-only key hands
+    that decision straight back to the caller's arrival order, which is
+    finding #6 restored in miniature.
+
+    Two families and nothing else, same as its sibling: consecutive join
+    indices one block apart (``sequence``) and one fee fingerprint across the
+    wave (``gas``).  The amount and cadence families run over *single*-deposit
+    wallets, so neither fires on a ladder.
+    """
+    rung_wei = 1_000_000_000_000_000_000  # 1 ETH
+    deposits, firsts, txs = [], [], []
+    for i in range(6):
+        addr = f"0x{i + 1:040x}"
+        amount = rung_wei + i * 10**15  # near-identical: ±0.5% at most
+        firsts.append({"contributor": addr, "index": i + 1})
+        for rung in (1, 2):
+            tx_hash = "0x" + f"{rung * 1000 + i + 1:064x}"
+            deposits.append(
+                {
+                    "contributor": addr,
+                    "hour": rung,
+                    "amount_wei": amount,
+                    "credited_delta_wei": amount,
+                    "weight_added_wei": amount,
+                    "new_weight_wei": amount * rung,  # high-water mark, climbing
+                    "tx_count": rung,
+                    "block_number": 1000 + i,  # ONE block for both rungs
+                    "tx_hash": tx_hash,
+                    "log_index": rung - 1,  # ...ordered only by this
+                }
+            )
+            if rung == 1:  # the fingerprint the gas family reads
+                txs.append(
+                    {
+                        "tx_hash": tx_hash,
+                        "nonce": 0,
+                        "max_priority_fee_wei": 100_000_000,
+                        "max_fee_wei": 150_000_000,
+                        "gas_limit": 91_600,
+                        "tx_type": 2,
+                    }
+                )
+    return Dataset.from_events(deposits, firsts, txs=txs)
+
+
+def test_the_final_weight_fold_breaks_a_same_block_tie_by_log_index() -> None:
+    """Finding #6, the half the block-separated fixture cannot see.
+
+    ``detect`` folds the final weight over ``sorted(..., key=(block_number,
+    log_index))``.  Dropping ``log_index`` from that key looks harmless while
+    every fixture separates its rows by block — and is not: ``sorted`` is
+    stable, so within a block the caller's order decides the last write again,
+    and a newest-first producer scores every ladder off its bottom rung.
+    """
+    chain = _same_block_laddering_farm()
+    newest_first = _reordered(chain, reversed(chain.deposits))
+
+    # the fixture really does put both rungs of each ladder in one block,
+    # separated by nothing but the log index
+    assert set(Counter(d.block_number for d in chain.deposits).values()) == {2}
+    assert {d.log_index for d in chain.deposits} == {0, 1}
+
+    # ...and the two rungs really carry different weights, so the fold has
+    # something to get wrong
+    top = sum(
+        curve_points(d.new_weight_wei, 1000)
+        for d in chain.deposits
+        if d.log_index == 1
+    )
+    bottom = sum(
+        curve_points(d.new_weight_wei, 1000)
+        for d in chain.deposits
+        if d.log_index == 0
+    )
+    assert bottom < top
+
+    assert detect(chain).total_points == top
+    assert detect(newest_first).total_points == top
+
+
+def test_a_same_block_ladder_cluster_scores_the_same_points_in_any_order() -> None:
+    """The per-cluster half of the same tie-break: ``points_share`` is what
+    reaches the screen, and both its numerator and its denominator come off the
+    fold that the log index orders."""
+    chain = _same_block_laddering_farm()
+    baseline = detect(chain)
+    assert len(baseline.clusters) == 1  # the fixture is a real cluster
+    for deposits in (
+        tuple(reversed(chain.deposits)),
+        chain.deposits[1::2] + chain.deposits[0::2],
+    ):
+        other = detect(_reordered(chain, deposits))
+        assert [
+            (c.members, c.points, c.points_share) for c in other.clusters
+        ] == [(c.members, c.points, c.points_share) for c in baseline.clusters]
+
+
 def test_a_clusters_points_do_not_depend_on_the_deposit_order() -> None:
     """Per-cluster, not just the total: ``points_share`` is what reaches the
     screen, and both its numerator and its denominator come off that fold."""
