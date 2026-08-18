@@ -73,8 +73,8 @@ screen the whole time; `esc` goes back.
   links them (`identical 0.45Ξ send ×10 in one wave · shared first funder 0x1a2b3c4d… ×7`), the
   share of all points the group holds, and a one-cell confidence marker — `⚑` several independent
   kinds of evidence or shared money provenance, `◌` exactly two, `?` not analyzed yet.
-- **SEGMENTS** — the same population cut into bands: the linked groups, the single-send whales,
-  the early cohort, the multiplier bands, the per-hour cohorts.
+- **SEGMENTS** — the same population cut into bands: the linked groups, the early cohort, the
+  late-grace cohort, the multiplier bands, the per-hour cohorts.
 - **CLEANED LIST** — the points total against what is left once linked groups come out, and your
   own rank in both.
 

@@ -1,6 +1,6 @@
 """Population segments (PRD §5.2) — the ``f`` view's second panel.
 
-One row per derived band: whale **operators** by combined credit, the
+One row per derived band: **every linked group**, aggregated, the
 index-1000 early cohort, per-hour join bands, per-multiplier bands::
 
     linked groups                      6,303   43.2%   16 linked groups · 0.45Ξ–171.99Ξ send shapes
