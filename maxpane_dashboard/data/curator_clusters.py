@@ -566,6 +566,27 @@ def _funding_dict(row: Any) -> dict[str, Any]:
     return dict(row)
 
 
+def _persisted_map(value: Any) -> Mapping:
+    """One sub-map of a carried sweep state, or ``{}`` if it is not a map.
+
+    The four maps :func:`fetch_enrichment` carries forward arrive out of
+    ``~/.maxpane/curator_cache.json``, and this module treats a hand-edited
+    cache file as third-party input like any other.  ``(x or {}).items()``
+    does not: a key edited into a JSON list is a list, a list has no
+    ``.items()``, and the ``AttributeError`` aborts the whole read — every
+    map, not just the torn one — inside the *detached* sweep, where it
+    surfaces as an analysis tier that fails and backs off forever, because a
+    backoff cannot repair a file.  ``{}`` is the honest reading of "these
+    bytes are not a map": that map is re-derived by the next sweep, the
+    other three survive, and the panels keep rendering.
+
+    Deliberately not ``or {}``-shaped: an *empty* map and an unreadable one
+    both yield ``{}`` here because both mean the same thing to the caller —
+    nothing accumulated to carry — and neither is a measurement.
+    """
+    return value if isinstance(value, Mapping) else {}
+
+
 def _funding_object(address: str, row: Any) -> Funding:
     if isinstance(row, Funding):
         return row
@@ -704,12 +725,12 @@ async def fetch_enrichment(
     prior = state if isinstance(state, Mapping) else {}
     known_txs: dict[str, dict] = {
         str(key).lower(): dict(value)
-        for key, value in (prior.get("txs") or {}).items()
+        for key, value in _persisted_map(prior.get("txs")).items()
         if isinstance(value, Mapping)
     }
     known_funding: dict[str, dict] = {
         str(key).lower(): dict(value)
-        for key, value in (prior.get("funding") or {}).items()
+        for key, value in _persisted_map(prior.get("funding")).items()
         if isinstance(value, Mapping)
     }
     pending: tuple[str, ...] = tuple(
@@ -717,16 +738,18 @@ async def fetch_enrichment(
     )
     reasons: dict[str, str] = {
         str(key): str(value)
-        for key, value in (prior.get("reasons") or {}).items()
+        for key, value in _persisted_map(prior.get("reasons")).items()
     }
     # The per-address page cursor, read with the SAME tolerant shape as the
     # four above: a payload written before it existed has no such key, and
     # `.get` is the whole compatibility story — that cache file must load and
     # simply resume each walk from page 1.  The library reads each *entry*
-    # tolerantly too, so a hand-edited one costs a restart, not a crash.
+    # tolerantly too, so a hand-edited one costs a restart, not a crash — and
+    # the `isinstance(value, Mapping)` below is what keeps that true here:
+    # `dict(entry)` raises on an entry hand-edited into a JSON list.
     cursors: dict[str, dict] = {
         str(key).lower(): dict(value)
-        for key, value in (prior.get("cursors") or {}).items()
+        for key, value in _persisted_map(prior.get("cursors")).items()
         if isinstance(value, Mapping)
     }
 

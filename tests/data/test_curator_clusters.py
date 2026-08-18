@@ -1483,3 +1483,131 @@ def test_an_unknown_grade_band_is_unknown_never_low():
     linkage = curator_clusters.you_linkage(FARM_MEMBERS[0], payload)
     assert linkage["you_linked_state"] == "linked"
     assert linkage["you_linked_group_size"] == len(FARM_MEMBERS)
+
+
+# ---------------------------------------------------------------------------
+# Fix round 2 — M4: a hand-edited cache file is third-party input too
+# ---------------------------------------------------------------------------
+#
+# ``fetch_enrichment`` reads six sub-payloads out of the persisted slot, four
+# of them maps.  Every one was read ``(prior.get(key) or {}).items()``, which
+# is a *type assumption* about bytes this module's own docstring calls
+# third-party input: hand-edit ``"txs": []`` into the cache file and a list has
+# no ``.items()``.  The manager's detached-sweep catch contains the
+# AttributeError to a failed analysis tier with backoff — but a backoff does
+# not repair a file, so the analysis panels stay dark on every sweep until
+# somebody deletes ``~/.maxpane/curator_cache.json`` by hand.
+#
+# The entry-level half is the same doctrine one level down and was equally
+# untested: ``cursors`` is the only map whose entries are re-wrapped with
+# ``dict(value)``, which raises on a value that is not a mapping.
+
+#: The four persisted maps, and the sweep attribute each one becomes.
+_ENRICHMENT_MAPS = {
+    "txs": "txs",
+    "funding": "funding",
+    "reasons": "funding_reasons",
+    "cursors": "funding_cursors",
+}
+
+
+def _healthy_enrichment() -> dict:
+    """A carried state with all four maps non-empty, JSON round-tripped.
+
+    Round-tripped because the shapes this guards against arrive **through the
+    file**: the point is bytes, not in-process objects.
+    """
+    tx_hash = "0x" + "1" * 64
+    return json.loads(
+        json.dumps(
+            {
+                "txs": {tx_hash: {"tx_hash": tx_hash, "nonce": 0}},
+                "funding": {
+                    FARM_MEMBERS[0]: {
+                        "address": FARM_MEMBERS[0],
+                        "funder": FUNDER,
+                        "hops": 1,
+                    }
+                },
+                "pending": [FARM_MEMBERS[1]],
+                "reasons": {FARM_MEMBERS[1]: "pages"},
+                "page_bound": 20,
+                "cursors": {
+                    FARM_MEMBERS[1]: {
+                        "params": {"page": 21, "filter": "to"},
+                        "funder": None,
+                        "block": None,
+                        "stage": "transactions",
+                    }
+                },
+            }
+        )
+    )
+
+
+def _carried(state) -> curator_clusters.EnrichmentSweep:
+    """One sweep with neither client nor transport: carried state, no I/O.
+
+    ``fetched=False`` is asserted by every caller below, which is what makes
+    "this path opened no socket" an observation rather than a claim.
+    """
+    return asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=[], funding_wanted=[], state=state
+        )
+    )
+
+
+def test_every_persisted_enrichment_map_survives_a_hand_edited_cache_file():
+    """The whole class, walked: each of the four maps hand-edited into a JSON
+    list in turn, and each time the sweep must load, drop *that* map and keep
+    the other three.
+
+    One at a time rather than all four at once, because the failure mode being
+    pinned is a map taking its siblings down with it: the read is a single
+    expression per key and an exception in any one of them aborts the load of
+    all of them.
+    """
+    sound = _carried(_healthy_enrichment())
+    for key, attr in _ENRICHMENT_MAPS.items():
+        assert getattr(sound, attr), f"guard: {key} is empty when the file is sound"
+
+    for torn_key, torn_attr in _ENRICHMENT_MAPS.items():
+        state = _healthy_enrichment()
+        state[torn_key] = ["hand-edited into a JSON list"]
+        sweep = _carried(state)
+
+        assert sweep.fetched is False, torn_key
+        # The unreadable map is dropped -- an empty map is the honest reading
+        # of "these bytes are not a map", and it is re-derived next sweep.
+        assert getattr(sweep, torn_attr) == {}, torn_key
+        assert sweep.state()[torn_key] == {}, torn_key
+        # ...and it takes nothing else with it.
+        for other_key, other_attr in _ENRICHMENT_MAPS.items():
+            if other_key == torn_key:
+                continue
+            assert getattr(sweep, other_attr) == getattr(sound, other_attr), (
+                f"a torn {torn_key} lost {other_key} too"
+            )
+        assert sweep.funding_pending == sound.funding_pending, torn_key
+
+
+def test_a_cursor_entry_that_is_not_a_mapping_is_dropped_not_cast():
+    """The entry-level guard on ``cursors``, which no test could see.
+
+    ``cursors`` is the only carried map whose entries are re-wrapped with
+    ``dict(entry)``, so a hand-edited entry that is a JSON list raises inside
+    the *detached* sweep — where the traceback is a failed analysis tier and
+    nothing else.  The sound sibling entry in the same map must survive, which
+    is what makes this a dropped row rather than a dropped file.
+    """
+    good, bad = FARM_MEMBERS[1], FARM_MEMBERS[2]
+    state = _healthy_enrichment()
+    state["cursors"][bad] = ["page", 21]
+
+    sweep = _carried(state)
+
+    assert sweep.fetched is False
+    assert bad not in sweep.funding_cursors
+    assert sweep.funding_cursors[good]["params"]["page"] == 21
+    assert bad not in sweep.state()["cursors"]
