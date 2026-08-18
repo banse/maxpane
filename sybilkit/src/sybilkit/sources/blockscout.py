@@ -383,7 +383,9 @@ async def fetch_funding(
     *known* is whatever a previous pass resolved: those addresses are carried
     into the result untouched and are never re-read.  *budget* caps how many
     **new** addresses this pass will look up; anything beyond it lands in
-    ``pending`` with ``truncated=True``.
+    ``pending`` with ``truncated=True``.  It is clamped at zero, because a
+    negative budget slices from the end and would look up *all but* the last
+    ``|budget|`` addresses — the opposite of a cap.
 
     *cursors* is the previous pass's :attr:`FundingSweep.page_cursors`, and it
     is what makes a page-bounded address finish: with it, that address's walk
@@ -425,6 +427,11 @@ async def fetch_funding(
         )
 
     pages = config.blockscout_max_pages if max_pages is None else max_pages
+    # A negative budget *inverts* the cap through the slice: `wanted[:-2]` is
+    # "all but the last two", which is the opposite of a budget of -2.  Clamp
+    # it: a negative budget is a zero budget — everything deferred,
+    # `truncated=True`, and not one request.
+    budget = None if budget is None else max(0, budget)
     todo = wanted if budget is None else wanted[:budget]
     deferred = [] if budget is None else wanted[budget:]
     pending: list[str] = list(deferred)

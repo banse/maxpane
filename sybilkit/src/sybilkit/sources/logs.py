@@ -181,6 +181,33 @@ def decode_first_deposit(row: Any) -> dict | None:
     }
 
 
+def _replay_rank(d: Deposit) -> tuple[int, ...]:
+    """The tie-break for two rows sharing one ``(tx_hash, log_index)``.
+
+    That collision is a **reorg replay** — or two sweeps merged across one — and
+    the canonical row is the one at the higher block, so ``block_number`` is the
+    rule.  The rest of the tuple exists for one purpose only: to make the answer
+    total, so that it never depends on which row the producer handed over first.
+    ``ts`` is deliberately absent — it is optional, and ``None`` does not order.
+
+    This function is **byte-identical to the copy in ``model.py``** and must
+    stay that way: the two modules dedupe the same rows on the same key, and a
+    rule that differed between them would make a sweep's own ``Dataset``
+    disagree with one built from its rows.  Frozen in the review-fix plan under
+    decision D3 (option B), and pinned by
+    ``test_the_log_sweep_and_from_events_agree_on_a_conflicting_duplicate``.
+    """
+    return (
+        d.block_number,
+        d.new_weight_wei,
+        d.amount_wei,
+        d.credited_delta_wei,
+        d.weight_added_wei,
+        d.tx_count,
+        d.hour,
+    )
+
+
 #: Clean chunks in a row before the window widens again.  A history that is
 #: dense in one place and empty everywhere else used to pay the narrow window
 #: for the whole rest of the walk — 16× the requests per chunk, forever, off
@@ -323,7 +350,13 @@ async def fetch_deposits(
         if topic0 == DEPOSITED_TOPIC:
             dep = decode_deposit(row)
             if dep is not None:
-                deposits.setdefault((dep.tx_hash, dep.log_index), dep)
+                # Settled by content, not by arrival: `setdefault` kept the
+                # orphaned row on an old-then-new ordering, so a shuffled
+                # producer and an ordered one built different sweeps.
+                key = (dep.tx_hash, dep.log_index)
+                prev = deposits.get(key)
+                if prev is None or _replay_rank(dep) > _replay_rank(prev):
+                    deposits[key] = dep
         elif topic0 == FIRST_DEPOSIT_TOPIC:
             first = decode_first_deposit(row)
             if first is not None:

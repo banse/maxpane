@@ -39,8 +39,8 @@ httpx = pytest.importorskip(
     reason="sybilkit[sources] is an extra; the core suite runs without it",
 )
 
-from sybilkit import Deposit, Funding, Tx  # noqa: E402
-from sybilkit import sources  # noqa: E402
+from sybilkit import Dataset, Deposit, Funding, Tx  # noqa: E402
+from sybilkit import model, sources  # noqa: E402
 from sybilkit.sources import SourceConfig, blockscout, logs, txs  # noqa: E402
 
 CONTRACT = "0x8fF23e0Bd8b6f8f1cDb54B0dFC0c1F30d5fFCbd8"
@@ -651,6 +651,69 @@ def test_a_row_from_another_address_or_topic_never_reaches_the_dataset() -> None
     assert [d.contributor for d in sweep.deposits] == [ALICE.lower()]
 
 
+def _sweep_of(rows: list[dict]) -> Any:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(50))
+        return _rpc_result(rows)
+
+    return asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+
+
+REPLAY_TX = "0x" + "ab" * 32
+REPLAY_LOW = deposited_row(
+    ALICE, hour=0, amount=10**17, block=10, log_index=1, tx_hash=REPLAY_TX
+)
+REPLAY_HIGH = deposited_row(
+    ALICE, hour=0, amount=2 * 10**17, block=12, log_index=1, tx_hash=REPLAY_TX
+)
+
+
+def test_a_replayed_log_row_is_deduped_to_the_higher_block() -> None:
+    """**Review #7, the ``logs.py`` half.**  Two rows sharing one
+    ``(tx_hash, log_index)`` with *different content* is a reorg replay, or two
+    sweeps merged across one.  ``setdefault`` settled it first-wins on arrival
+    order, so an old-then-new ordering kept the orphaned row and a shuffled
+    producer built a different sweep from the same logs.  The canonical row is
+    the one at the higher block.
+    """
+    for order in ([REPLAY_LOW, REPLAY_HIGH], [REPLAY_HIGH, REPLAY_LOW]):
+        sweep = _sweep_of(order)
+        assert sweep is not None
+        assert len(sweep.deposits) == 1
+        assert sweep.deposits[0].block_number == 12, [r["blockNumber"] for r in order]
+        assert sweep.deposits[0].amount_wei == 2 * 10**17
+
+
+def test_the_log_sweep_and_from_events_agree_on_a_conflicting_duplicate() -> None:
+    """The cross-module agreement decision D3 exists to hold.
+
+    ``logs.py`` and ``model.py`` dedupe the same rows on the same key, and a
+    rule that differed between them would make a sweep's own ``Dataset``
+    disagree with one built from the sweep's rows.  Two copies of the rule —
+    the plan froze it so both work packages could land it in parallel — and one
+    test that they answer the same.
+    """
+    assert logs._replay_rank is not model._replay_rank, "one copy is not two"
+    decoded = [logs.decode_deposit(REPLAY_LOW), logs.decode_deposit(REPLAY_HIGH)]
+    assert all(d is not None for d in decoded)
+    for dep in decoded:
+        assert logs._replay_rank(dep) == model._replay_rank(dep)
+
+    for order in (decoded, list(reversed(decoded))):
+        via_sweep = _sweep_of(
+            [REPLAY_LOW, REPLAY_HIGH] if order is decoded else [REPLAY_HIGH, REPLAY_LOW]
+        )
+        via_events = Dataset.from_events(order, ())
+        assert via_sweep is not None
+        assert len(via_events.deposits) == 1
+        assert via_events.deposits[0].block_number == via_sweep.deposits[0].block_number
+        assert via_events.deposits[0].amount_wei == via_sweep.deposits[0].amount_wei
+
+
 def test_duplicate_rows_are_deduped_on_tx_hash_and_log_index() -> None:
     row = deposited_row(ALICE, hour=0, amount=10**17, block=4, log_index=1)
 
@@ -1070,6 +1133,79 @@ def test_a_dead_batch_falls_over_and_then_degrades_to_none() -> None:
     )
     assert got is None
     assert len(set(served)) > 1, served  # it really did rotate
+
+
+def test_a_provider_that_echoes_string_ids_still_realigns_the_batch() -> None:
+    """**Below-cap B7.**  JSON-RPC ids are opaque, and a provider is free to
+    echo ``"1"`` for ``1``.
+
+    ``by_id.get(entry.get("id"))`` missed those, so every slot stayed ``None``,
+    decoded to nothing and landed in ``pending`` — a silent partial that looks
+    exactly like a reorg, from an endpoint that answered everything correctly.
+    Answered reversed as well, so a positional decoder cannot pass this either.
+    """
+    hashes = ["0x" + f"{i:064x}" for i in range(5)]
+    nonce_of = {h: i * 7 for i, h in enumerate(hashes)}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch = json.loads(request.content)
+        return httpx.Response(200, json=[
+            {"jsonrpc": "2.0", "id": str(c["id"]),
+             "result": _tx_reply(c["params"][0], nonce=nonce_of[c["params"][0]])}
+            for c in reversed(batch)
+        ])
+
+    got = asyncio.run(
+        txs.fetch_tx_fingerprints(hashes, client=_client(handler), config=FAST)
+    )
+    assert got is not None
+    assert got.pending == (), got.pending
+    assert {h: got.fingerprints[h].nonce for h in hashes} == nonce_of
+
+
+def test_a_429_backs_off_before_rotating() -> None:
+    """**Below-cap B6.**  ``429`` is the one dead status that means *later*,
+    not *never*.
+
+    It sat in ``DEAD_STATUS_CODES`` and broke straight to the next URL with no
+    pacing at all, so a throttled pool was hammered at full speed round the
+    rotation.  It now waits ``backoff_seconds[attempt]`` first — and nothing
+    else does, because for every other dead status waiting buys nothing.
+    """
+    cfg = SourceConfig(inter_call_delay=0.0, blockscout_min_interval=0.0,
+                       backoff_seconds=(0.75, 1.5))
+
+    def handler_for(status: int) -> Callable[[httpx.Request], httpx.Response]:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "gateway.tenderly.co":
+                return httpx.Response(status, text="no")
+            body = json.loads(request.content)
+            if body["method"] == "eth_blockNumber":
+                return _rpc_result(hex(50))
+            return _rpc_result([])
+        return handler
+
+    throttled = Recorder(handler_for(429))
+    sleep, waits = _sleeper()
+    sweep = asyncio.run(
+        logs.fetch_deposits(
+            CONTRACT, 0, client=_client(throttled), config=cfg, sleep=sleep
+        )
+    )
+    assert sweep is not None
+    assert waits, "a 429 rotated with no backoff at all"
+    assert all(w == pytest.approx(0.75) for w in waits), waits
+    assert any("drpc" in u for u in throttled.urls), throttled.urls
+
+    # The control: a 500 is "never", and pacing it would only slow the rotation.
+    dead = Recorder(handler_for(500))
+    sleep_500, waits_500 = _sleeper()
+    assert asyncio.run(
+        logs.fetch_deposits(
+            CONTRACT, 0, client=_client(dead), config=cfg, sleep=sleep_500
+        )
+    ) is not None
+    assert waits_500 == [], waits_500
 
 
 def test_no_hashes_is_an_empty_answer_and_no_request_at_all() -> None:
@@ -1765,6 +1901,31 @@ def test_a_total_outage_is_none_even_when_the_budget_deferred_addresses() -> Non
         )
     )
     assert sweep is None
+
+
+@pytest.mark.parametrize("budget", [-2, 0])
+def test_a_negative_funding_budget_is_a_zero_budget_not_an_inverted_one(
+    budget: int,
+) -> None:
+    """**Below-cap B3.**  ``wanted[:budget]`` with a negative *inverts* the cap.
+
+    ``budget=-2`` over five addresses looked up *all but the last two* — the
+    opposite of a budget — and only the two it skipped were reported as
+    deferred.  A negative budget is a zero budget: everything deferred,
+    ``truncated=True``, and **not one request** (the transport here raises on
+    any).
+    """
+    addresses = ["0x" + f"{i:040x}" for i in range(5)]
+    sweep = asyncio.run(
+        blockscout.fetch_funding(
+            addresses, client=_client(_never), config=FAST, budget=budget
+        )
+    )
+    assert sweep is not None
+    assert sweep.funding == {}
+    assert sweep.pending == tuple(addresses)
+    assert sweep.truncated is True
+    assert set(sweep.pending_reasons.values()) == {blockscout.PENDING_BUDGET}
 
 
 def test_a_funding_outage_degrades_to_none_never_to_an_empty_map() -> None:

@@ -277,6 +277,44 @@ def is_endpoint_limitation(err: Any) -> bool:
     return not any(frag in message for frag in MALFORMED_REQUEST_PATTERNS)
 
 
+#: The one dead status that means "later" rather than "never".
+RETRY_AFTER_STATUS = 429
+
+
+def _dead_status_pause(config: SourceConfig, status: int, attempt: int) -> float:
+    """Seconds to wait before rotating off *status* — non-zero only for 429.
+
+    ``429`` sat in :data:`DEAD_STATUS_CODES` and broke straight to the next URL
+    with no pacing, so a throttled pool was hammered at full speed all the way
+    round the rotation.  Every other dead status is "this endpoint is not going
+    to answer", and waiting on one buys nothing but latency.
+    """
+    if status != RETRY_AFTER_STATUS:
+        return 0.0
+    return config.backoff_seconds[min(attempt, len(config.backoff_seconds) - 1)]
+
+
+def _slot_of(by_id: dict, raw: Any) -> int | None:
+    """The payload slot an answered batch entry belongs to, by ``id``.
+
+    JSON-RPC ids are opaque and a provider is free to echo ``"1"`` for ``1``.
+    A strict dict lookup dropped exactly those slots: they stayed ``None``,
+    decoded to nothing and landed in ``pending`` — a silent partial that looks
+    exactly like a reorg, from an endpoint that answered everything correctly.
+    """
+    if isinstance(raw, bool):
+        return None  # `True` would alias the id `1`
+    slot = by_id.get(raw)
+    if slot is not None:
+        return slot
+    if isinstance(raw, str):
+        try:
+            return by_id.get(int(raw.strip()))
+        except ValueError:
+            return None
+    return None
+
+
 class RangeTooWide(RuntimeError):
     """``eth_getLogs`` failed because the requested window is too wide."""
 
@@ -542,6 +580,9 @@ async def rpc_call(
                 resp = await session.post(url, payload)
                 if resp.status_code in DEAD_STATUS_CODES:
                     last = RuntimeError(f"{url} -> HTTP {resp.status_code}")
+                    await session.pace(
+                        _dead_status_pause(session.config, resp.status_code, attempt)
+                    )
                     break
                 body: Any = None
                 try:
@@ -604,6 +645,9 @@ async def rpc_batch(
                 resp = await session.post(url, payload)
                 if resp.status_code in DEAD_STATUS_CODES:
                     last = RuntimeError(f"{url} -> HTTP {resp.status_code}")
+                    await session.pace(
+                        _dead_status_pause(session.config, resp.status_code, attempt)
+                    )
                     break
                 body = resp.json()
                 if not isinstance(body, list):
@@ -614,7 +658,7 @@ async def rpc_batch(
                 for entry in body:
                     if not isinstance(entry, dict):
                         continue
-                    slot = by_id.get(entry.get("id"))
+                    slot = _slot_of(by_id, entry.get("id"))
                     if slot is None:
                         continue
                     err = entry.get("error")
