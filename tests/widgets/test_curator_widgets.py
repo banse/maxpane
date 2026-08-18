@@ -666,20 +666,12 @@ def test_every_declared_tier_cost_is_the_measured_one():
 
 
 def _analysis_tier_modules():
-    """The `f` view's tiered-table modules, one per panel as they land."""
+    """The `f` view's three tiered-table modules — the analysis panels."""
+    from maxpane_dashboard.widgets.curator import cleaned_list as clean_mod
     from maxpane_dashboard.widgets.curator import operators as op_mod
+    from maxpane_dashboard.widgets.curator import segments as seg_mod
 
-    modules = [op_mod]
-    for name in ("segments", "cleaned_list"):
-        try:
-            modules.append(
-                __import__(
-                    f"maxpane_dashboard.widgets.curator.{name}", fromlist=["_TIERS"]
-                )
-            )
-        except ModuleNotFoundError:  # pragma: no cover - pre-WP4.2/4.3 only
-            pass
-    return tuple(modules)
+    return (op_mod, seg_mod, clean_mod)
 
 
 def test_tier_costs_descend_so_a_narrow_panel_can_reach_the_narrow_layout():

@@ -227,16 +227,25 @@ class CuratorCleanList(Vertical):
         self._render_path()
 
     def _render_path(self) -> None:
+        """The receipt line.  A path too long for the row keeps its **tail**
+        behind a leading ``…`` — the filename is the half a reader needs to
+        find the file, and a trailing ellipsis would cut exactly that."""
         try:
             line = self.query_one("#curator-clean-path", Static)
         except Exception:  # not composed yet
             return
-        if self._export_path:
-            line.display = True
-            line.update(f"[dim]saved → {safe_markup(self._export_path)}[/]")
-        else:
+        if not self._export_path:
             line.display = False
             line.update("")
+            return
+        line.display = True
+        prefix = "saved → "
+        path = self._export_path
+        width = max(self.content_size.width - 2, 0)
+        if width and len(prefix) + len(path) > width:
+            keep = max(width - len(prefix) - 1, 1)
+            path = f"…{path[-keep:]}"
+        line.update(f"[dim]{prefix}{safe_markup(path)}[/]")
 
     # -- rendering ---------------------------------------------------------
 

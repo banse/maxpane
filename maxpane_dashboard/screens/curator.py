@@ -535,8 +535,12 @@ def _default_view(phase) -> str:
 class CuratorScreen(RefreshGuard, Screen):
     """THE LIST -- WhitelistCurator survival watch (Ethereum mainnet).
 
-    ``BINDINGS`` is ``r`` plus ``c``; the latter swaps CLOSEST CALLS and
-    FAN-OUT PATTERNS in the bottom-right slot (see the module docstring).
+    Seven bindings: ``r`` refresh; ``c`` swaps CLOSEST CALLS and FAN-OUT
+    PATTERNS in the bottom-right slot (see the module docstring); ``w`` sets
+    the wallet; ``y`` swaps the body for the reader's own standing; ``f``
+    swaps it for the linked-wallet analysis, with the doomsday clock left in
+    place; ``e`` -- analysis mode only -- exports the cleaned list; ``esc``
+    backs out of either view, one-way.
     """
 
     BINDINGS = [

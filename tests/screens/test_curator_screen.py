@@ -564,6 +564,22 @@ def test_the_dispatch_map_matches_the_widgets_own_signatures():
         assert set(WIDGET_SIGNATURES[cls.__name__]) == accepted, cls.__name__
 
 
+def test_the_dispatch_map_honours_the_frozen_routing_table():
+    """WP0 froze which widget renders which analysis key
+    (``ANALYSIS_KEY_ROUTING``, pinned in the models suite because WP0 could
+    not edit this screen).  The screen's hand-typed map must route every one
+    of the eleven to exactly the widgets the freeze named — this is the
+    cross-wave agreement the two hand-typed tables need to stay one design."""
+    from tests.data.test_curator_models import ANALYSIS_KEY_ROUTING
+
+    for key, widgets in ANALYSIS_KEY_ROUTING.items():
+        for name in widgets:
+            assert key in WIDGET_SIGNATURES[name], (
+                f"{key} is routed to {name} but the dispatch map does not "
+                "deliver it there"
+            )
+
+
 def test_the_screen_reads_no_clock_of_its_own():
     """Every time-derived string arrives pre-computed in the payload."""
     source = (_ROOT / "maxpane_dashboard" / "screens" / "curator.py").read_text()
