@@ -1449,6 +1449,14 @@ class CuratorManager:
         tier with 12 of its 15 seconds left is "fresh", and without this the row
         stays empty after a keypress that looked like it worked.
 
+        The **analysis linkage needs no expiry at all**: the B+C sweep is
+        about the population, not about one wallet, so ``you_linked_*`` /
+        ``you_clean_rank`` are re-answered by the next cycle's merge from the
+        **already-held** analysis last-good (:meth:`_merge_analysis` asks
+        ``curator_clusters.you_linkage`` about ``self.wallet`` every cycle).
+        Expiring :data:`TIER_ANALYSIS` here would burn a minutes-long sweep to
+        re-learn facts the slot already holds.
+
         A no-op when the address is unchanged (including ``""``/``None`` both
         meaning *no wallet*), so a reader who re-types the same address does not
         pay a refetch or lose their last-good.

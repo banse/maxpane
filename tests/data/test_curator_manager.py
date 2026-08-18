@@ -2353,3 +2353,58 @@ def test_the_merge_never_mutates_the_persisted_slot_payload(tmp_path, clock):
     slot_rows = manager.cache.analysis_last_good().payload["clean_list_rows"]
     for row in slot_rows:
         assert row["name"] is None
+
+
+# ---------------------------------------------------------------------------
+# WP3.6 — the reader's linkage and clean rank across a wallet switch
+# ---------------------------------------------------------------------------
+
+
+def test_set_wallet_recomputes_linkage_from_the_held_analysis_without_a_new_sweep(
+    tmp_path, clock
+):
+    """The sweep is about-the-population, not about-one-wallet: a runtime
+    switch re-answers the four linkage keys from the already-held last-good,
+    and forces no fresh B+C read."""
+    manager = _analysis_manager(tmp_path, clock, wallet=FARM_MEMBERS[0])
+    _store_farm_slot(manager)
+    manager.cache.mark_fetched(TIER_ANALYSIS, NOW)     # no sweep is due
+
+    first = asyncio.run(manager.fetch_and_compute())
+    assert first["you_linked_state"] == "linked"
+    assert first["you_clean_rank"] is None
+
+    assert manager.set_wallet(FARM_CONTROLS[0]) is True
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["you_linked_state"] == "clean"
+    assert out["you_linked_reasons"] == []
+    assert isinstance(out["you_clean_rank"], int)
+    assert out["analysis_as_of_hhmm"] == first["analysis_as_of_hhmm"]
+    assert manager._analysis_task is None, "a wallet switch spawned a sweep"
+
+    # ...and a wallet the sweep never saw is unknown, never a confident clean.
+    manager.set_wallet(FARM_STRANGER)
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["you_linked_state"] is None
+    assert out["you_clean_rank"] is None
+
+
+def test_clearing_the_wallet_clears_the_linkage_but_not_the_population_keys(
+    tmp_path, clock
+):
+    manager = _analysis_manager(tmp_path, clock, wallet=FARM_MEMBERS[0])
+    _store_farm_slot(manager)
+    manager.cache.mark_fetched(TIER_ANALYSIS, NOW)
+    assert asyncio.run(manager.fetch_and_compute())["you_linked_state"] == "linked"
+
+    manager.set_wallet(None)
+    out = asyncio.run(manager.fetch_and_compute())
+    for key in (
+        "you_linked_state",
+        "you_linked_reasons",
+        "you_linked_group_size",
+        "you_clean_rank",
+    ):
+        assert out[key] is None, key
+    assert out["operator_rows"], "the population analysis is not the reader's"
+    assert SOURCE_WALLET not in out["degraded"]
