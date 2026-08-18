@@ -24,7 +24,9 @@ persisted payload is third-party input.  The union of an address with itself
 is a no-op, but the *family* it would book is not — a one-family component
 that gains ``funding`` clears the ≥2-family gate on one edited line.  The
 comparison lowercases both sides, so the guard holds for a hand-built
-:class:`sybilkit.model.Funding` that never passed the mapping coercers.
+:class:`sybilkit.model.Funding` that never passed the mapping coercers — pinned
+on the **hub** fold, which is the half a hand-built row can actually reach; the
+peel chain carries a note saying why its own copy is defensive only.
 """
 
 from __future__ import annotations
@@ -61,6 +63,21 @@ def funding_edges(ds: Dataset, cfg, *, groups=None) -> list[Edge]:
         "first funder is a member of the same cluster (peel chain)",
         STRENGTH_CHAIN,
     )
+    # ``.lower()`` on this guard is **defensive only**, and measured to be so
+    # (review R1.2, 2026-08-18).  Unlike its twin in the hub fold below — which
+    # ``test_the_self_funder_guard_does_not_depend_on_the_funders_casing``
+    # bites, because a hand-built ``Funding`` reaches ``by_funder`` directly —
+    # no honest dataset can make this one load-bearing.  ``component_of`` is
+    # keyed on the dataset's *own* contributor spellings, so a funder spelled
+    # differently from every contributor misses the lookup two lines down and
+    # yields no edge whatever this guard decides; the only dataset where both
+    # spellings resolve to a component is one carrying the same wallet twice as
+    # two contributors, which already breaks the lowercase-address invariant
+    # that :class:`~sybilkit.cluster.Edge` and ``_UnionFind`` document and which
+    # no producer here can build (``Dataset.from_events``, ``logs.py`` and the
+    # maxpane adapter all lowercase).  It is kept rather than trimmed: it costs
+    # one call, it is the same sentence as the fold below, and the fold below is
+    # a bug that shipped.  A vacuous test for it would be worse than none.
     for addr, entry in sorted(ds.funding.items()):
         funder = entry.funder
         if (
