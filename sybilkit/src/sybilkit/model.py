@@ -172,6 +172,32 @@ class Deposit:
     ts: float | None = None
 
 
+def _replay_rank(d: Deposit) -> tuple[int, ...]:
+    """The tie-break for two rows sharing one ``(tx_hash, log_index)``.
+
+    That collision is a **reorg replay** — or two sweeps merged across one — and
+    the canonical row is the one at the higher block, so ``block_number`` is the
+    rule.  The rest of the tuple exists for one purpose only: to make the answer
+    total, so that it never depends on which row the producer handed over first.
+    ``ts`` is deliberately absent — it is optional, and ``None`` does not order.
+
+    This function is **byte-identical to the copy in ``sources/logs.py``** and
+    must stay that way: the two modules dedupe the same rows on the same key,
+    and a rule that differed between them would make a sweep's own ``Dataset``
+    disagree with one built from its rows.  Frozen in the review-fix plan under
+    decision D3 (option B).
+    """
+    return (
+        d.block_number,
+        d.new_weight_wei,
+        d.amount_wei,
+        d.credited_delta_wei,
+        d.weight_added_wei,
+        d.tx_count,
+        d.hour,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Tx:
     """A tier-B transaction fingerprint.  Every field independently failable.
@@ -280,6 +306,12 @@ class Dataset:
         ``(tx_hash, log_index)`` and sorted into chain order
         ``(block_number, log_index)``, so a shuffled producer and an ordered
         one build the same dataset.
+
+        Two rows can share that key and still differ — a reorg replay, or two
+        sweeps merged across one.  They are settled by :func:`_replay_rank`, not
+        by arrival: the higher ``block_number`` wins, and the remaining words
+        break a tie so the result is total.  First-wins made the sentence above
+        untrue, which is what decision D3 of the review-fix plan is about.
         """
         parsed: dict[tuple[str, int], Deposit] = {}
         for row in deposits:
@@ -299,7 +331,10 @@ class Dataset:
                 )
             except (_Malformed, TypeError, ValueError):
                 continue  # dropped, not zeroed
-            parsed.setdefault((dep.tx_hash, dep.log_index), dep)
+            key = (dep.tx_hash, dep.log_index)
+            prev = parsed.get(key)
+            if prev is None or _replay_rank(dep) > _replay_rank(prev):
+                parsed[key] = dep
         ordered = tuple(
             sorted(parsed.values(), key=lambda d: (d.block_number, d.log_index))
         )

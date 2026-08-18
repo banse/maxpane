@@ -402,6 +402,49 @@ def test_the_prebuilt_and_mapping_paths_build_equal_datasets() -> None:
     assert prebuilt == mapped
 
 
+def test_a_shuffled_producer_and_an_ordered_one_build_the_same_dataset() -> None:
+    """Review finding #7a, ruling D3-B.  Two rows sharing a
+    ``(tx_hash, log_index)`` but differing in content — what a reorg replay, or
+    two sweeps merged across one, produces — were deduped **first-wins on input
+    order**.  A shuffled producer and an ordered one therefore built *different*
+    datasets, which ``from_events``' own docstring flatly denies."""
+    old = _dep_row(block_number=25_771_131, amount_wei=450_000_000_000_000_000)
+    new = _dep_row(block_number=25_771_140, amount_wei=470_000_000_000_000_000)
+    a = Dataset.from_events([old, new], [_first_row()])
+    b = Dataset.from_events([new, old], [_first_row()])
+    assert len(a.deposits) == 1
+    assert a == b
+
+
+def test_a_reorg_replay_keeps_the_row_at_the_higher_block() -> None:
+    """The canonical row is the later inclusion, whichever order it arrives in.
+    Where the blocks tie, the remaining words settle it — they exist only so
+    that the answer is never the input order's."""
+    orphan = _dep_row(block_number=25_771_131, new_weight_wei=821_025_000_000_000_000)
+    canon = _dep_row(block_number=25_771_140, new_weight_wei=900_000_000_000_000_000)
+    for rows in ([orphan, canon], [canon, orphan]):
+        ds = Dataset.from_events(rows, [_first_row()])
+        assert len(ds.deposits) == 1
+        assert ds.deposits[0].block_number == 25_771_140
+        assert ds.deposits[0].new_weight_wei == 900_000_000_000_000_000
+    twin_low = _dep_row(new_weight_wei=821_025_000_000_000_000)
+    twin_high = _dep_row(new_weight_wei=900_000_000_000_000_000)
+    first = Dataset.from_events([twin_low, twin_high], [_first_row()])
+    second = Dataset.from_events([twin_high, twin_low], [_first_row()])
+    assert first == second
+    assert first.deposits[0].new_weight_wei == 900_000_000_000_000_000
+
+
+def test_two_byte_identical_duplicates_still_collapse_to_one_row() -> None:
+    """The ordinary case is untouched: one page fetched twice, or a replay of
+    the same bytes, still counts once — and the same transaction at a different
+    log index is still a second, real event."""
+    ds = Dataset.from_events([_dep_row(), _dep_row(), _dep_row()], [_first_row()])
+    assert len(ds.deposits) == 1
+    ds2 = Dataset.from_events([_dep_row(), _dep_row(log_index=68)], [_first_row()])
+    assert len(ds2.deposits) == 2
+
+
 def test_the_committed_population_round_trips() -> None:
     """The full fixture builds: 22 319 deposits, 15 576 contributors, and the
     wei words survive exactly (no float anywhere near them)."""
