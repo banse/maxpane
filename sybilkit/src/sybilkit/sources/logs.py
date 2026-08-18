@@ -8,11 +8,20 @@ Two things about the paging that look like details and are not:
 
 * **A provider's suggested range is never adopted.**  One of them decrements a
   single block per round trip and livelocks anything that follows it verbatim.
-  The window halves, boundedly, and then the sweep fails honestly.
+  The window halves, boundedly; when that is exhausted the head of the pool is
+  dropped and the same cursor is retried against the next endpoint, because a
+  *throttle* message carrying ``limited to`` classifies as a range cap and
+  shrinking against a throttled endpoint forever is how a healthy second
+  endpoint ends a sweep having received zero requests.
 * **Shrinking narrows the window's right edge and re-issues the same cursor.**
   Raising ``fromBlock`` instead is correct for a rolling recent window and
   catastrophic for a backfill: the blocks it walks past are the contract's
   whole early history, and nothing ever asks for them again.
+* **A sweep that read some chunks and then lost the pool is a partial, not a
+  ``None``.**  ``DepositSweep.to_block`` names the extent actually covered and
+  is the cursor a later sweep resumes from; discarding everything already
+  fetched left the caller with no cursor at all.  Zero chunks read is still
+  ``None`` — that one is an outage.
 
 The two event signatures are **vendored ABI**, and their ``topic0``s are
 **computed** from them by this package's own keccak at import.  A signature is
@@ -78,6 +87,11 @@ class DepositSweep:
     CLI stamps into its output header — a *measured* range rather than a wall
     clock, so re-running the export over the same archive produces the same
     file.
+
+    ``to_block`` is the range the sweep **covered**, which on a partial pass is
+    short of the chain head it asked for: the walk is contiguous from
+    ``from_block``, so that one number is both the honest extent and the cursor
+    a later sweep resumes from.
     """
 
     from_block: int
@@ -167,22 +181,50 @@ def decode_first_deposit(row: Any) -> dict | None:
     }
 
 
+#: Clean chunks in a row before the window widens again.  A history that is
+#: dense in one place and empty everywhere else used to pay the narrow window
+#: for the whole rest of the walk — 16× the requests per chunk, forever, off
+#: one dense region.
+SPAN_RECOVER_AFTER = 4
+
+
 async def _page(
     session: _Session,
     contract: str,
     from_block: int,
     to_block: int,
-) -> list[dict] | None:
-    """Every matching row over ``[from_block, to_block]``, or ``None``.
+) -> tuple[list[dict], int | None]:
+    """Every matching row over ``[from_block, to_block]``, and how far it got.
 
-    ``None`` on any failure: a partial backfill silently presented as a
-    complete one is a leaderboard missing contributors.
+    Returns ``(rows, covered_to_block)``.  ``covered_to_block is None`` means
+    **no chunk was read at all** — the outage case, and the only one the caller
+    turns into ``None``.  Anything else is honest partial coverage: the walk is
+    contiguous from ``from_block``, so one block number states its whole extent
+    and is also the cursor a later sweep resumes from.
+
+    Three failure shapes, three different answers:
+
+    * ``RangeTooWide`` — halve **our own** span (never the provider's suggested
+      one; one of them decrements a single block per round trip and a verbatim
+      follower never converges), at most ``max_shrinks`` times.  When shrinking
+      is exhausted the problem may not be the window at all: a *throttle*
+      message carrying ``limited to`` classifies as a range cap, and shrinking
+      against a throttled endpoint forever is how a healthy second endpoint
+      ends a sweep having received zero requests.  So the head of the pool is
+      dropped and the **same cursor** is retried against what is left.
+    * ``MalformedRequest`` — our own bug, identical everywhere; stop.
+    * ``AllEndpointsFailed`` / an unreadable result — stop, keeping what was
+      already read.
     """
     cfg = session.config
-    span = max(int(cfg.log_chunk_blocks), 1)
+    pool = list(cfg.log_rpcs)
+    full_span = max(int(cfg.log_chunk_blocks), 1)
+    span = full_span
     cursor = from_block
     shrinks = 0
+    clean = 0
     rows: list[dict] = []
+    covered: int | None = None
     while cursor <= to_block:
         end = min(cursor + span - 1, to_block)
         flt = {
@@ -192,24 +234,40 @@ async def _page(
             "topics": [[DEPOSITED_TOPIC, FIRST_DEPOSIT_TOPIC]],
         }
         try:
-            result = await rpc_call(session, cfg.log_rpcs, "eth_getLogs", [flt])
+            result = await rpc_call(session, tuple(pool), "eth_getLogs", [flt])
         except RangeTooWide:
             # THE LIVELOCK RULE.  The provider's own suggested range is not
             # even parsed: one of them decrements a single block per round trip
             # and a verbatim follower never converges.  Halve OUR span, at most
-            # `max_shrinks` times, then fail honestly.
-            if shrinks >= cfg.max_shrinks or span <= cfg.min_log_window:
-                return None
-            shrinks += 1
-            span = max(span // 2, cfg.min_log_window)
-            continue  # same cursor, narrower window
+            # `max_shrinks` times.
+            clean = 0
+            if shrinks < cfg.max_shrinks and span > cfg.min_log_window:
+                shrinks += 1
+                span = max(span // 2, cfg.min_log_window)
+                continue  # same cursor, narrower window
+            # Shrinking is exhausted against THIS endpoint.  It may never have
+            # been a range problem: rotate rather than fail with the rest of
+            # the pool unasked.  The span is carried over rather than reset —
+            # the recovery below widens it again off clean chunks, and a reset
+            # here would make the requested spans climb mid-walk, which is the
+            # one shape the livelock bite forbids.
+            pool.pop(0)
+            if not pool:
+                return rows, covered
+            shrinks = 0
+            continue  # same cursor, next endpoint
         except (MalformedRequest, AllEndpointsFailed):
-            return None
+            return rows, covered
         if not isinstance(result, list):
-            return None
+            return rows, covered
         rows.extend(r for r in result if isinstance(r, dict))
+        covered = end
         cursor = end + 1
-    return rows
+        clean += 1
+        if clean >= SPAN_RECOVER_AFTER and span < full_span:
+            span = min(span * 2, full_span)
+            clean = 0
+    return rows, covered
 
 
 async def fetch_deposits(
@@ -228,8 +286,17 @@ async def fetch_deposits(
     call chain so the sweep's stated range is one it actually asked for.
 
     Returns ``None`` — never an empty sweep — when the head could not be read
-    or a page failed: ``[]`` here would read as "this contract has no history",
-    which is the one conclusion an outage must never reach.
+    or **no chunk at all** could be: ``[]`` here would read as "this contract
+    has no history", which is the one conclusion an outage must never reach.
+
+    **A sweep that read some chunks and then lost the pool comes back as a
+    partial**, with ``to_block`` naming the extent it actually covered.  This
+    relaxes the older "``None``, never a partial" contract deliberately —
+    ``docs/curator_sybil_review_fixes_plan.md`` §WP4.2(iii), ruled as
+    recommended — because the alternative was discarding every chunk already
+    fetched and offering the caller no resume cursor.  ``to_block`` is already
+    the field that states coverage and already the cursor a later sweep starts
+    from, so a partial states its own extent rather than lying by omission.
     """
     contract = contract.lower()
     async with _Session(config, client=client, transport=transport, sleep=sleep) as s:
@@ -243,9 +310,9 @@ async def fetch_deposits(
                 return None
         if head < from_block:
             return DepositSweep(from_block, head, (), ())
-        rows = await _page(s, contract, from_block, head)
-    if rows is None:
-        return None
+        rows, covered = await _page(s, contract, from_block, head)
+    if covered is None:
+        return None  # not one chunk was read: an outage, never an empty history
 
     deposits: dict[tuple[str, int], Deposit] = {}
     firsts: dict[str, dict] = {}
@@ -264,7 +331,10 @@ async def fetch_deposits(
     ordered = tuple(sorted(deposits.values(), key=lambda d: (d.block_number, d.log_index)))
     first_rows = tuple(sorted(firsts.values(), key=lambda f: f["index"]))
     return DepositSweep(
-        from_block=from_block, to_block=head, deposits=ordered, first_deposits=first_rows
+        from_block=from_block,
+        to_block=covered,
+        deposits=ordered,
+        first_deposits=first_rows,
     )
 
 
@@ -274,6 +344,7 @@ __all__ = [
     "DEPOSIT_DATA_WORDS",
     "FIRST_DEPOSIT_SIGNATURE",
     "FIRST_DEPOSIT_TOPIC",
+    "SPAN_RECOVER_AFTER",
     "DepositSweep",
     "decode_deposit",
     "decode_first_deposit",

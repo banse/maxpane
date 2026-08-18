@@ -480,6 +480,135 @@ def test_shrinking_narrows_the_right_edge_and_keeps_the_cursor() -> None:
     assert seen[1][1] < 799
 
 
+def test_a_throttle_message_that_looks_like_a_range_cap_still_rotates_the_pool() -> None:
+    """**Review #11(i), the reproduced case.**  Shrinking is not a substitute
+    for rotating.
+
+    "You are limited to 100 requests per second" is a *throttle*, but it
+    contains ``limited to`` and is therefore classified ``RangeTooWide``.  The
+    walk then halved its window 800 → 50 against the **same** endpoint and gave
+    up, with the healthy second endpoint receiving nothing at all.  Shrink
+    exhaustion now drops the head of the pool and carries on from the same
+    cursor.
+    """
+    served: list[str] = []
+    row = deposited_row(ALICE, hour=0, amount=10**17, block=7, log_index=1)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        served.append(request.url.host or "")
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(100))
+        if request.url.host == "gateway.tenderly.co":
+            return _rpc_error(-32005, "You are limited to 100 requests per second")
+        flt = body["params"][0]
+        lo, hi = int(flt["fromBlock"], 16), int(flt["toBlock"], 16)
+        return _rpc_result([row] if lo <= 7 <= hi else [])
+
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+    assert sweep is not None, "the throttled endpoint took the whole sweep down"
+    assert [d.contributor for d in sweep.deposits] == [ALICE.lower()]
+    assert "eth.drpc.org" in served, served
+
+
+def test_the_second_endpoint_receives_a_request_before_the_sweep_fails() -> None:
+    """The minimum statement of the same defect: when the sweep does fail, it
+    fails having asked **everybody**.  Before the fix the second endpoint's
+    request count was zero."""
+    getlogs: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(5_000))
+        getlogs.append(request.url.host or "")
+        return _rpc_error(-32005, "query returned more than 10000 results")
+
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+    assert sweep is None
+    assert getlogs.count("eth.drpc.org") >= 1, getlogs
+
+
+def test_a_narrowed_span_recovers_after_a_run_of_clean_chunks() -> None:
+    """**Review #11(ii).**  One dense region used to narrow the window for the
+    whole rest of the walk — 16× the requests for every later chunk, on a
+    history that is dense in one place and empty everywhere else.  After
+    ``SPAN_RECOVER_AFTER`` clean chunks the span doubles back toward
+    ``log_chunk_blocks``."""
+    spans: list[int] = []
+    state = {"refused": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(6_000))
+        flt = body["params"][0]
+        lo, hi = int(flt["fromBlock"], 16), int(flt["toBlock"], 16)
+        spans.append(hi - lo + 1)
+        if state["refused"] < 1:
+            state["refused"] += 1
+            return _rpc_error(-32005, "query returned more than 10000 results")
+        return _rpc_result([])
+
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+    assert sweep is not None
+    assert logs.SPAN_RECOVER_AFTER == 4
+    assert spans[:6] == [800, 400, 400, 400, 400, 800], spans
+
+
+def test_a_sweep_that_read_some_chunks_returns_how_far_it_got_not_none() -> None:
+    """**Review #11(iii).**  One more failure after the shrink budget used to
+    discard every chunk already fetched, with no resume cursor at all.
+
+    ``DepositSweep.to_block`` is already the field that tells the truth about
+    coverage *and* is already the resume cursor, so a partial sweep is honest
+    rather than a lie of omission.  This deliberately relaxes the documented
+    "``None``, never a partial" contract — see
+    ``docs/curator_sybil_review_fixes_plan.md`` §WP4.2(iii), ruled as
+    recommended.
+    """
+    row = deposited_row(ALICE, hour=0, amount=10**17, block=7, log_index=1)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(2_000))
+        flt = body["params"][0]
+        if int(flt["fromBlock"], 16) == 0:
+            return _rpc_result([row])
+        raise httpx.ConnectError("the endpoint went away", request=request)
+
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+    assert sweep is not None
+    assert sweep.from_block == 0
+    assert sweep.to_block == 799, "the sweep must state the extent it covered"
+    assert [d.contributor for d in sweep.deposits] == [ALICE.lower()]
+
+
+def test_a_sweep_that_read_nothing_is_still_none() -> None:
+    """The other half of the contract, unchanged: zero chunks read is an
+    outage, and an outage is ``None`` — never a sweep of zero deposits over a
+    range we never covered."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(hex(2_000))
+        raise httpx.ConnectError("the endpoint went away", request=request)
+
+    sweep = asyncio.run(
+        logs.fetch_deposits(CONTRACT, 0, client=_client(handler), config=FAST)
+    )
+    assert sweep is None
+
+
 def test_a_total_outage_degrades_to_none_never_to_an_empty_sweep() -> None:
     sweep = asyncio.run(
         logs.fetch_deposits(CONTRACT, 0, client=_client(_offline), config=FAST)
