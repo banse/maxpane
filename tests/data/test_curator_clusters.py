@@ -1037,6 +1037,227 @@ def test_a_page_bounded_address_makes_progress_across_two_sweeps():
 
 
 # ---------------------------------------------------------------------------
+# WP7.3 — the sweep states the detached sweep now has to read
+# ---------------------------------------------------------------------------
+#
+# Two of the library's degraded paths changed shape in the review-fix round,
+# and the adapter's reading of them is the thing a user actually feels:
+#
+# * finding #10 — a malformed batch used to throw away every fingerprint the
+#   earlier batches had already read and return ``None``.  It now returns a
+#   PARTIAL ``TxSweep``, which is a healthy pass, not an outage.
+# * finding #5a — a ``{"items": null}`` page from a 200 used to finish the
+#   walk and write a resolved ``funder=None`` row.  It now leaves the address
+#   PENDING.
+#
+# The adapter's contract is unchanged — ``is None`` is the outage, everything
+# else is a pass — but "unchanged" is a claim until something asserts it.
+
+
+class PartialTxRoutes:
+    """A fingerprint pool that answers the first batch and refuses the second.
+
+    The refusal wears OUR OWN bug's shape (``invalid argument`` — one of
+    ``MALFORMED_REQUEST_PATTERNS``), which short-circuits the pool rather than
+    rotating: it fails identically everywhere.  What it must NOT do any more
+    is discard the batch that already came back.
+    """
+
+    def __init__(self) -> None:
+        self.batches = 0
+        self.asked: list[list[str]] = []
+
+    async def __call__(self, request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST", "this route serves the batch pool only"
+        body = json.loads(request.content.decode())
+        self.batches += 1
+        self.asked.append([entry["params"][0] for entry in body])
+        if self.batches == 2:
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "jsonrpc": "2.0",
+                        "id": entry["id"],
+                        "error": {
+                            "code": -32602,
+                            "message": "invalid argument 0: hex string of odd length",
+                        },
+                    }
+                    for entry in body
+                ],
+            )
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "jsonrpc": "2.0",
+                    "id": entry["id"],
+                    "result": {
+                        "hash": entry["params"][0],
+                        "nonce": "0x0",
+                        "maxPriorityFeePerGas": "0x5f5e100",
+                        "maxFeePerGas": "0xbebc200",
+                        "gas": "0x165e0",
+                        "type": "0x2",
+                    },
+                }
+                for entry in body
+            ],
+        )
+
+    @property
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self)
+
+
+def test_a_partial_tx_sweep_is_a_healthy_pass_that_leaves_the_rest_wanted():
+    """`is None` is the outage; a sweep with pendings is coverage, not failure.
+
+    Sixty hashes is two batches.  The first comes back, the second is our own
+    bug — and the pass must keep the forty it read while leaving the twenty it
+    did not **wanted**, never recorded as "these transactions have no
+    fingerprint".  A `tx_ok=False` here would fold a healthy pass into the
+    degraded group and hide forty real reads behind it.
+    """
+    hashes = [f"0x{i:064x}" for i in range(1, 61)]
+    routes = PartialTxRoutes()
+
+    sweep = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=hashes,
+            funding_wanted=[],
+            state=None,
+            transport=routes.transport,
+            sleep=no_sleep,
+        )
+    )
+    assert routes.batches == 2                   # short-circuited, not rotated
+    assert sweep.tx_ok is True                   # partial is NOT an outage
+    assert set(sweep.txs) == set(hashes[:40])
+    assert set(sweep.txs).isdisjoint(hashes[40:])
+
+    healthy = AnalysisRoutes()
+    again = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=hashes,
+            funding_wanted=[],
+            state=sweep.state(),
+            transport=healthy.transport,
+            sleep=no_sleep,
+        )
+    )
+    asked = {entry["params"][0] for post in healthy.posts for entry in post}
+    assert asked == set(hashes[40:]), "a known fingerprint was re-fetched"
+    assert set(again.txs) == set(hashes)
+
+
+def test_an_outage_still_keeps_the_last_good_rather_than_publishing_an_empty_analysis():
+    """Both sources dead, and every carried field survives — cursor included.
+
+    The rule this pins is the repo's oldest: a failed read is `None`, never
+    an empty map.  An empty `funding` here would be persisted, and the next
+    pass reads it back as `known` — so one dead minute would erase coverage
+    that took many sweeps to accumulate.
+    """
+
+    async def dead(_request):
+        raise httpx.ConnectError("network unreachable")
+
+    known_hash = "0x" + "1" * 64
+    carried = {
+        "txs": {known_hash: {"tx_hash": known_hash, "nonce": 0}},
+        "funding": {
+            FARM_MEMBERS[0]: {
+                "address": FARM_MEMBERS[0], "funder": FUNDER, "hops": 1
+            }
+        },
+        "pending": [FARM_MEMBERS[1]],
+        "reasons": {FARM_MEMBERS[1]: "pages"},
+        "page_bound": 20,
+        "cursors": {
+            FARM_MEMBERS[1]: {
+                "params": {"page": 21, "filter": "to"},
+                "funder": None,
+                "block": None,
+                "stage": "transactions",
+            }
+        },
+    }
+    sweep = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=["0x" + "2" * 64],
+            funding_wanted=[FARM_MEMBERS[2]],
+            state=carried,
+            transport=httpx.MockTransport(dead),
+            sleep=no_sleep,
+        )
+    )
+    assert sweep.fetched is True
+    assert sweep.tx_ok is False and sweep.funding_ok is False
+    assert sweep.txs == carried["txs"]
+    assert sweep.funding == carried["funding"]
+    assert list(sweep.funding_pending) == carried["pending"]
+    assert sweep.funding_reasons == carried["reasons"]
+    assert sweep.funding_cursors == carried["cursors"]
+    assert sweep.state()["cursors"] == carried["cursors"]
+
+
+def test_a_null_items_funding_page_leaves_the_address_pending_not_resolved():
+    """Finding #5a's consequence, asserted where it would be persisted.
+
+    `{"items": null}` off a 200 is an unread page, not a finished walk.  A
+    resolved `funder=None` row for it would be handed back as `known` by the
+    very next pass, so the address would never be looked at again and one bad
+    minute would be frozen as "this wallet has no funder", forever — in a
+    file that outlives the process.
+
+    Two addresses on purpose: one that answers, so the pass is a pass rather
+    than the total outage a single unreachable address would rightly be.
+    """
+    good, broken = FARM_MEMBERS[0], FARM_MEMBERS[1]
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        addr = request.url.path.rstrip("/").split("/")[-2].lower()
+        if addr == broken:
+            return httpx.Response(
+                200, json={"items": None, "next_page_params": None}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "from": {"hash": FUNDER},
+                        "to": {"hash": addr},
+                        "block_number": 90,
+                    }
+                ],
+                "next_page_params": None,
+            },
+        )
+
+    sweep = asyncio.run(
+        curator_clusters.fetch_enrichment(
+            tx_wanted=[],
+            funding_wanted=[good, broken],
+            state=None,
+            transport=httpx.MockTransport(handler),
+            sleep=no_sleep,
+        )
+    )
+    assert sweep.funding_ok is True                  # one address answered
+    assert sweep.funding[good]["funder"] == FUNDER
+    assert broken not in sweep.funding               # NOT a funder=None row
+    assert broken in sweep.funding_pending
+    assert sweep.funding_reasons[broken] == "unreadable"
+    # ...and the persisted state says the same thing, which is what the next
+    # pass reads: the address is wanted, not answered.
+    assert broken not in sweep.state()["funding"]
+    assert broken in sweep.state()["pending"]
+
+
+# ---------------------------------------------------------------------------
 # WP3.7 — the integration fixture: the adapter agrees with the library
 # ---------------------------------------------------------------------------
 
