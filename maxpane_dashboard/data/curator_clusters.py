@@ -128,7 +128,7 @@ HIGH_MIN_FAMILIES = 3
 #: How many survivors the rendered clean list carries.  The widget caps its
 #: table well below this; the *full* ranking travels in ``clean_ranks`` so the
 #: reader's own rank is answerable for any wallet.
-CLEAN_LIST_LIMIT = 20
+CLEAN_LIST_LIMIT = 100
 
 
 def pattern_language(

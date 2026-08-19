@@ -159,6 +159,8 @@ from maxpane_dashboard.widgets.curator import (
     CuratorOperators,
     CuratorSegments,
     CuratorCleanList,
+    CuratorCleanedList,
+    CuratorRawList,
 )
 # Imported, never re-spelled: these are WP4's rendered interface.  A literal
 # retyped here would certify a string nobody renders.
@@ -202,6 +204,9 @@ _PANELS = (
     CuratorOperators,
     CuratorSegments,
     CuratorCleanList,
+    # The `l` view's two record tables.
+    CuratorRawList,
+    CuratorCleanedList,
 )
 
 #: The window the width sweep scans.  Deliberately independent of
@@ -489,16 +494,17 @@ async def _first_clean_width(payload=None, view: str | None = None,
 # =======================================================================
 
 
-def test_the_seven_bindings_are_the_ones_this_screen_documents():
+def test_the_eight_bindings_are_the_ones_this_screen_documents():
     """Hand-typed rather than derived: a set compared against itself could not
     catch a binding that was added, renamed or lost.
 
     `r` refresh, `c` swap the bottom-right slot, `w` set the wallet,
-    `y` the wallet view, `f` the analysis view, `e` export the cleaned list
-    (analysis mode only), `escape` back out of either view.
+    `y` the wallet view, `f` the analysis view, `l` the two record lists,
+    `e` export the active list view (analysis or record lists), `escape` back
+    out of any secondary view.
     """
     assert {binding.key for binding in CuratorScreen.BINDINGS} == {
-        "r", "c", "w", "y", "f", "e", "escape",
+        "r", "c", "w", "y", "f", "l", "e", "escape",
     }
 
 
@@ -538,6 +544,11 @@ async def test_screen_mounts_all_seven_widgets():
         analysis = screen.query_one(f"#{ANALYSIS_BODY_ID}")
         assert len(analysis.children) == 3
         assert analysis.display is False
+        from maxpane_dashboard.screens.curator import LIST_BODY_ID
+
+        lists = screen.query_one(f"#{LIST_BODY_ID}")
+        assert len(lists.query_one("#curator-lists-row").children) == 2
+        assert lists.display is False
         for cls in _PANELS:
             assert screen.query_one(cls) is not None
         # The two ids WP7's stylesheet places the swap pair by.
@@ -780,7 +791,7 @@ async def test_a_raising_manager_touches_only_the_status_bar():
     # is the title bar's `as of HH:MM` -- which is the one that freezes under an
     # outage while the cycle age keeps counting.
     assert "updated" not in after
-    assert "y[/] you" in after or "y you" in after
+    assert "y[/] me" in after or "y me" in after
     assert "as of" in after
 
 
@@ -1722,7 +1733,7 @@ async def _wallet_view_text(payload=None, *, width=CURATOR_FULL_LAYOUT_COLUMNS,
 
 
 async def test_y_swaps_the_body_and_keeps_the_clock_on_screen():
-    """The whole reason the hero sits outside both bodies: this view exists to
+    """The hero sits outside the bodies because this view exists to
     decide what to send, and that decision is worthless without the clock it is
     racing."""
     screen = _screen(_wallet_payload())
@@ -1845,7 +1856,7 @@ async def test_a_capped_wallet_is_told_no_send_buys_weight():
 async def test_the_wallet_view_clears_at_the_pinned_full_layout_width():
     """Measured, not reasoned: the view must not push the screen's number up.
 
-    Swept independently of the pin, both bodies, so a `y` view that needed 150
+    Swept independently of the pin, so a `y` view that needed 150
     columns could not hide behind a dashboard that clears at 138.
 
     The payload's linkage state is **clean with a clean rank** — the state
@@ -2062,7 +2073,7 @@ async def test_the_headline_value_in_the_rail_is_bold_and_coloured():
         assert tail is None or not tail.bold
 
 
-async def test_the_curator_status_line_names_its_own_three_keys():
+async def test_the_curator_status_line_names_its_own_four_keys():
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
     async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
@@ -2071,7 +2082,7 @@ async def test_the_curator_status_line_names_its_own_three_keys():
         await pilot.pause()
         text = _screen_text(app)
 
-    assert "c panels" in text and "y you" in text and "f linked" in text
+    assert "y me" in text and "f link" in text and "l lists" in text
     assert "updated" not in text        # traded for the hints
     assert "quit" in text and "refresh" in text and "menu" in text
     assert "poll" in text
@@ -2513,7 +2524,7 @@ async def test_the_analysis_panels_are_dispatched_while_hidden():
     assert "16 linked groups" in ops        # the note only a dispatch writes
 
 
-async def test_the_status_line_gains_the_f_key():
+async def test_the_status_line_keeps_the_f_key_beside_the_l_key():
     screen = _screen(_analysis_payload())
     app = _ThemedHarness(screen)
     async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
@@ -2521,8 +2532,8 @@ async def test_the_status_line_gains_the_f_key():
         await screen._do_refresh()
         await pilot.pause()
         text = _screen_text(app)
-    assert "f linked" in text
-    assert "c panels" in text and "y you" in text
+    assert "f link" in text and "l lists" in text
+    assert "y me" in text
 
 
 async def test_an_unanalyzed_payload_renders_three_unavailable_panels():
@@ -2909,3 +2920,458 @@ async def test_a_first_export_that_fails_says_so_and_writes_nothing(tmp_path):
 
     assert EXPORT_FAILED in text
     assert not export_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# The `l` view -- RAW LIST | CLEANED LIST
+# ---------------------------------------------------------------------------
+
+
+async def test_l_swaps_the_body_for_two_precomposed_list_panels():
+    from maxpane_dashboard.screens.curator import (
+        ANALYSIS_BODY_ID,
+        DASHBOARD_BODY_ID,
+        LIST_BODY_ID,
+        MODE_LIST,
+        WALLET_BODY_ID,
+    )
+    from maxpane_dashboard.widgets.curator import (
+        CLEANED_LIST_TITLE,
+        RAW_LIST_TITLE,
+        CuratorCleanedList,
+        CuratorRawList,
+    )
+
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        raw = screen.query_one(CuratorRawList)
+        cleaned = screen.query_one(CuratorCleanedList)
+        assert raw is not None and cleaned is not None
+        assert screen.query_one(f"#{LIST_BODY_ID}").display is False
+
+        await pilot.press("l")
+        await pilot.pause()
+        text = _screen_text(app)
+
+        assert screen._mode == MODE_LIST
+        assert screen.query_one(f"#{LIST_BODY_ID}").display is True
+        assert screen.query_one(f"#{DASHBOARD_BODY_ID}").display is False
+        assert screen.query_one(f"#{WALLET_BODY_ID}").display is False
+        assert screen.query_one(f"#{ANALYSIS_BODY_ID}").display is False
+        assert RAW_LIST_TITLE in text
+        assert CLEANED_LIST_TITLE in text
+
+
+async def test_the_list_panels_are_dispatched_while_hidden():
+    from maxpane_dashboard.widgets.curator import (
+        CuratorCleanedList,
+        CuratorRawList,
+    )
+
+    payload = _analysis_payload(
+        leaderboard_rows=[
+            {
+                "rank": 1,
+                "address": "0x" + "12" * 20,
+                "points": 12_345,
+                "credit_eth": 67.89,
+                "tx_count": 4,
+                "flagged": False,
+                "name": "raw.eth",
+                "link_conf": "clean",
+            }
+        ],
+        clean_list_rows=[
+            {
+                "clean_rank": 1,
+                "address": "0x" + "34" * 20,
+                "points": 9_876,
+                "credit_eth": 12.34,
+                "name": "clean.eth",
+            }
+        ],
+    )
+    screen = _screen(payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+
+        raw = _region_text(app, screen.query_one(CuratorRawList), screen)
+        clean = _region_text(app, screen.query_one(CuratorCleanedList), screen)
+
+    assert "0x1212…1212" in raw and "12,345" in raw
+    assert "‹ widen: NAME" in raw
+    assert "clean.eth" in clean and "9,876" in clean
+
+
+async def test_e_in_list_mode_writes_both_lists_and_receipts_on_the_right(tmp_path):
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    payload = _analysis_payload()
+    screen = _export_screen(tmp_path, payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+
+        raw = _region_text(app, screen.query_one(CuratorRawList), screen)
+        cleaned = _region_text(app, screen.query_one(CuratorCleanedList), screen)
+
+    path = tmp_path / "curator_lists.json"
+    assert json.loads(path.read_text()) == {
+        "raw": payload["leaderboard_rows"],
+        "clean": payload["clean_list_rows"],
+    }
+    assert "curator_lists.json" not in raw
+    assert "saved →" in cleaned and "curator_lists.json" in cleaned
+    assert sorted(item.name for item in tmp_path.iterdir()) == ["curator_lists.json"]
+
+
+async def test_l_toggles_back_and_escape_backs_out_one_way():
+    from maxpane_dashboard.screens.curator import MODE_LIST
+
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        await pilot.press("l")
+        await pilot.pause()
+        assert screen._mode == MODE_LIST
+        await pilot.press("l")
+        await pilot.pause()
+        assert screen._mode == MODE_DASHBOARD
+
+        await pilot.press("l")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert screen._mode == MODE_DASHBOARD
+        await pilot.press("escape")
+        await pilot.pause()
+        assert screen._mode == MODE_DASHBOARD
+
+
+async def test_the_clock_never_leaves_the_screen_in_the_list_view():
+    screen = _screen(_settled_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        hero_before = _region_text(app, screen.query_one(CuratorHero), screen)
+
+        await pilot.press("l")
+        await pilot.pause()
+
+        assert screen.query_one(CuratorHero).display is True
+        assert screen.query_one(f"#{WALLET_HERO_ID}").display is False
+        assert _region_text(app, screen.query_one(CuratorHero), screen) == hero_before
+        assert "SETTLED" in _screen_text(app)
+
+
+async def test_the_settled_list_view_renders_both_permanent_records():
+    analysis = _analysis_payload()
+    payload = _settled_payload(
+        leaderboard_rows=analysis["leaderboard_rows"],
+        clean_list_rows=analysis["clean_list_rows"],
+        analysis_as_of_hhmm="13:58",
+    )
+    screen = _screen(payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        text = _screen_text(app)
+
+    assert "· SETTLED ·" in text
+    assert "THE RAW LIST" in text and "THE CLEANED LIST" in text
+    assert "as of 13:58" in text
+
+
+async def test_the_fourth_hint_preserves_the_worst_case_error_count():
+    screen = _screen(_settled_payload())
+    screen._data_manager._error_count = 4
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        text = _screen_text(app)
+
+    for hint in ("c", "y me", "f link", "l lists", "4 errors"):
+        assert hint in text, hint
+    assert "[dim]e[/]" not in CuratorScreen.KEY_HINTS
+
+
+@pytest.mark.parametrize("harness", (_Harness, _ThemedHarness))
+async def test_the_list_body_is_two_equal_side_by_side_panels(harness):
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    screen = _screen(_analysis_payload())
+    app = harness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+
+        raw = screen.query_one(CuratorRawList)
+        cleaned = screen.query_one(CuratorCleanedList)
+        text = _screen_text(app)
+
+    assert "THE RAW LIST" in text and "THE CLEANED LIST" in text
+    assert raw.region.y == cleaned.region.y
+    assert raw.region.right == cleaned.region.x
+    assert abs(raw.region.width - cleaned.region.width) <= 1
+
+
+def _hundred_list_payload() -> dict:
+    raw = []
+    clean = []
+    for rank in range(1, 101):
+        address = f"0x{rank:040x}"
+        raw.append(
+            {
+                "rank": rank,
+                "address": address,
+                "points": 20_000 - rank,
+                "credit_eth": float(rank),
+                "tx_count": rank,
+                "flagged": False,
+                "name": f"raw{rank}.eth",
+                "link_conf": "clean",
+            }
+        )
+        clean.append(
+            {
+                "clean_rank": rank,
+                "address": address,
+                "points": 20_000 - rank,
+                "credit_eth": float(rank),
+                "name": f"clean{rank}.eth",
+            }
+        )
+    return _analysis_payload(leaderboard_rows=raw, clean_list_rows=clean)
+
+
+async def test_a_normal_height_list_body_scrolls_and_announces():
+    from maxpane_dashboard.screens.curator import LIST_BODY_ID
+
+    screen = _screen(_hundred_list_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+
+        before = _screen_text(app)
+        assert TALLER_HINT in before
+        assert "0x0000…0064" not in before
+
+        screen.query_one(f"#{LIST_BODY_ID}").scroll_end(animate=False)
+        await pilot.pause()
+        after = _screen_text(app)
+
+    assert "0x0000…0064" in after
+
+
+LIST_MIN_HEIGHT = 115
+LIST_FULL_LAYOUT_COLUMNS = 141
+
+
+async def _first_clean_list_width() -> int | None:
+    screen = _screen(_hundred_list_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(120, LIST_MIN_HEIGHT)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        for width in range(120, 151):
+            await pilot.resize_terminal(width, LIST_MIN_HEIGHT)
+            await pilot.pause()
+            if "‹ widen" not in _screen_text(app):
+                return width
+    return None
+
+
+async def test_the_list_view_width_sweep_clears_inside_the_app_pin():
+    """The sweep starts at 120, independent of either width constant."""
+    from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
+
+    assert await _first_clean_list_width() == LIST_FULL_LAYOUT_COLUMNS
+    assert LIST_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS == 143
+
+
+async def test_the_list_body_height_sweep_is_pinned_in_both_directions():
+    screen = _screen(_hundred_list_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 108)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        first_clear = None
+        for height in range(108, 121):
+            await pilot.resize_terminal(143, height)
+            await pilot.pause()
+            if TALLER_HINT not in _screen_text(app):
+                first_clear = height
+                break
+
+    assert first_clear == LIST_MIN_HEIGHT
+
+
+async def test_list_export_recomputes_taller_at_the_height_boundary(tmp_path):
+    from maxpane_dashboard.screens.curator import LIST_BODY_ID
+
+    screen = _export_screen(tmp_path, _hundred_list_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, LIST_MIN_HEIGHT)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        assert TALLER_HINT not in _screen_text(app)
+
+        await pilot.press("e")
+        await pilot.pause()
+        body = screen.query_one(f"#{LIST_BODY_ID}")
+        assert body.show_vertical_scrollbar is True
+        assert TALLER_HINT in _screen_text(app)
+
+
+async def test_list_export_skips_unavailable_reads_but_writes_real_empty_lists(
+    tmp_path,
+):
+    unavailable = _export_screen(
+        tmp_path / "unavailable",
+        _analysis_payload(leaderboard_rows=None, clean_list_rows=[]),
+    )
+    unavailable_app = _ThemedHarness(unavailable)
+    async with unavailable_app.run_test(size=(143, _TALL)) as pilot:
+        await pilot.pause()
+        await unavailable._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.press("e")
+        await pilot.pause()
+    assert not (tmp_path / "unavailable").exists()
+
+    empty_dir = tmp_path / "empty"
+    empty = _export_screen(
+        empty_dir,
+        _analysis_payload(leaderboard_rows=[], clean_list_rows=[]),
+    )
+    empty_app = _ThemedHarness(empty)
+    async with empty_app.run_test(size=(143, _TALL)) as pilot:
+        await pilot.pause()
+        await empty._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.press("e")
+        await pilot.pause()
+    assert json.loads((empty_dir / "curator_lists.json").read_text()) == {
+        "raw": [],
+        "clean": [],
+    }
+
+
+async def test_e_remains_a_no_op_in_wallet_mode(tmp_path):
+    screen = _export_screen(tmp_path, _analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+        assert screen._mode == MODE_WALLET
+        await pilot.press("e")
+        await pilot.pause()
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_a_failed_list_reexport_replaces_the_right_panel_receipt(tmp_path):
+    import os as _os
+
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList
+    from maxpane_dashboard.widgets.curator.cleaned_list import EXPORT_FAILED
+
+    export_dir = tmp_path / "maxpane"
+    payload = _analysis_payload()
+    screen = _export_screen(export_dir, payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+
+        path = export_dir / "curator_lists.json"
+        good_bytes = path.read_bytes()
+        assert "saved →" in _region_text(
+            app, screen.query_one(CuratorCleanedList), screen
+        )
+
+        _os.chmod(export_dir, 0o500)
+        try:
+            await pilot.press("e")
+            await pilot.pause()
+            failed = _region_text(
+                app, screen.query_one(CuratorCleanedList), screen
+            )
+        finally:
+            _os.chmod(export_dir, 0o700)
+
+    assert EXPORT_FAILED in failed
+    assert "saved →" not in failed
+    assert path.read_bytes() == good_bytes
+    assert [item.name for item in export_dir.iterdir()] == ["curator_lists.json"]
+
+
+async def test_a_hundred_row_export_receipt_is_visible_without_scrolling(tmp_path):
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList
+
+    screen = _export_screen(tmp_path, _hundred_list_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        cleaned = _region_text(app, screen.query_one(CuratorCleanedList), screen)
+
+    assert "saved →" in cleaned and "curator_lists.json" in cleaned

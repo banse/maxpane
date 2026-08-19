@@ -2269,8 +2269,8 @@ CuratorScreen #curator-wallet-body {
 /* The ladder is the wider half: five columns of numbers against the standing
  * panel's four label/value lines. 3:2 measured, same method as #middle-row. */
 /* `margin: 1 0 0 0` is the shared `#middle-row`'s, so the blank line under the
- * hero's EOA subtitle is identical on both bodies and the two pages' first
- * panel titles land on the same row. */
+ * hero's EOA subtitle is identical on every body and their first panel titles
+ * land on the same row. */
 CuratorScreen #wallet-top-row {
     height: 1fr;
     margin: 1 0 0 0;
@@ -2362,7 +2362,7 @@ CuratorScreen #curator-analysis-body {
 }
 
 /* `margin: 1 0 1 0` on the first panel: the top row is `#middle-row`'s own
- * blank line under the hero, so the three bodies' first titles land on the
+ * blank line under the hero, so every body's first title lands on the
  * same row; the bottom row is the gap to SEGMENTS. */
 CuratorOperators {
     width: 100%;
@@ -2380,6 +2380,35 @@ CuratorSegments {
 
 CuratorCleanList {
     width: 100%;
+    height: auto;
+    padding: 0 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * THE LIST's `l` view -- the complete raw and cleaned record lists.
+ * ------------------------------------------------------------------------ */
+CuratorScreen #curator-list-body {
+    height: 1fr;
+    width: 100%;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-size: 1 1;
+}
+
+CuratorScreen #curator-lists-row {
+    width: 100%;
+    height: auto;
+    margin: 1 0 0 0;
+}
+
+CuratorScreen CuratorRawList {
+    width: 1fr;
+    height: auto;
+    padding: 0 1;
+}
+
+CuratorScreen CuratorCleanedList {
+    width: 1fr;
     height: auto;
     padding: 0 1;
 }

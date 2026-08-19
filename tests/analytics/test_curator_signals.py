@@ -1985,6 +1985,7 @@ def test_the_grace_payload_reproduces_the_bundle(full_readings: dict) -> None:
     assert out["rescued_total_eth"] == 0.0
 
     assert out["top_points"] == max(r["points"] for r in out["leaderboard_rows"])
+    assert sig.LEADERBOARD_LIMIT == 100
     assert len(out["leaderboard_rows"]) == sig.LEADERBOARD_LIMIT
     assert out["leaderboard_rows"][0]["rank"] == 1
     # The frozen row shape MINUS `link_conf`.

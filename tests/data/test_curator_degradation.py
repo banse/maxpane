@@ -14,6 +14,7 @@ import asyncio
 
 import pytest
 
+from maxpane_dashboard.analytics.curator_signals import LEADERBOARD_LIMIT
 from maxpane_dashboard.data import curator_addresses as A
 from maxpane_dashboard.data.curator_cache import CuratorCache
 from maxpane_dashboard.data.curator_manager import (
@@ -93,7 +94,7 @@ def test_a_dead_state_pool_keeps_every_log_derived_key(tmp_path, clock=None):
     assert out["forced_eth"] is None
 
     # Keeps working: everything folded from logs.
-    assert len(out["leaderboard_rows"]) == 10
+    assert len(out["leaderboard_rows"]) == LEADERBOARD_LIMIT
     assert out["volume_series"] == healthy["volume_series"]
     assert len(out["activity_rows"]) > 0
     assert out["cluster_rows"] is not None
@@ -256,7 +257,7 @@ def test_a_failed_wallet_read_costs_the_you_row_and_nothing_else(tmp_path):
     for key in ("you_rank", "you_points", "you_credit_eth", "you_marginal_points"):
         assert out[key] is None, key
     assert out["phase"] == "grace"
-    assert len(out["leaderboard_rows"]) == 10
+    assert len(out["leaderboard_rows"]) == LEADERBOARD_LIMIT
     assert out["contributors_total"] == 143
 
 

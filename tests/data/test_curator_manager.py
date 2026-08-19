@@ -42,7 +42,7 @@ from maxpane_dashboard.data.curator_manager import (
     CuratorManager,
 )
 from tests.curator_fixtures import capture
-from maxpane_dashboard.analytics.curator_signals import build_signals
+from maxpane_dashboard.analytics.curator_signals import LEADERBOARD_LIMIT, build_signals
 from maxpane_dashboard.data.curator_models import (
     CURATOR_DEGRADED_GROUPS,
     CURATOR_KEYS,
@@ -929,7 +929,7 @@ def test_a_group_with_history_still_serves_it_when_its_filter_dies(tmp_path, clo
     manager.client = dead
     clock.advance(60)
     out = asyncio.run(manager.fetch_and_compute())
-    assert len(out["leaderboard_rows"]) == 10
+    assert len(out["leaderboard_rows"]) == LEADERBOARD_LIMIT
     assert SOURCE_LOGS in out["degraded"]
 
 
@@ -1621,7 +1621,7 @@ def test_a_healthy_cycle_publishes_the_chain_values_it_read(tmp_path, clock):
     assert out["hourly_threshold_eth"] == 5.0          # read live, never hardcoded
     assert out["first_judged_hour"] == 24
     assert out["early_multiplier_x"] == pytest.approx(1.9491)
-    assert len(out["leaderboard_rows"]) == 10
+    assert len(out["leaderboard_rows"]) == LEADERBOARD_LIMIT
     assert out["volume_series"][0][0] == A.LAUNCH_TIME
     assert out["as_of_hhmm"] is not None
     assert out["you_required_next_eth"] == pytest.approx(4.1)

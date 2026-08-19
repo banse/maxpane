@@ -375,6 +375,7 @@ def test_with_no_analysis_the_merge_seeds_link_conf_none_on_every_row():
 def test_the_clean_list_rows_are_capped_and_rank_survivors_densely():
     result = farm_analysis()
     rows = result.clean_list_rows
+    assert curator_clusters.CLEAN_LIST_LIMIT == 100
     assert len(rows) <= curator_clusters.CLEAN_LIST_LIMIT
     assert [row["clean_rank"] for row in rows] == list(range(1, len(rows) + 1))
     linked = set(FARM_MEMBERS)

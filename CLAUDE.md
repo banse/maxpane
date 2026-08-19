@@ -167,9 +167,10 @@ On screen the dashboard therefore speaks only patterns: *linked*, *fan-out*, `�
 every panel has its own composited forbidden-word test. **The word "sybil" lives in the standalone
 library, not in the dashboard's language**: it appears in maxpane only in the adapter's own
 `FORBIDDEN_WORDS` list, in module comments, and in file/identifier names — never in a rendered
-string, and never at all in `analytics/curator_signals.py`, which stays **byte-identical to what
-shipped** (`test_curator_signals_never_imports_sybilkit`; the Tier-A `find_clusters` it already had
-is unchanged and it never learns the library exists).
+string. `analytics/curator_signals.py` still never mentions or imports the library
+(`test_curator_signals_never_imports_sybilkit`); its only post-release change is the decided
+`LEADERBOARD_LIMIT = 100` payload cap for the `l` record view. The Tier-A `find_clusters` it
+already had is unchanged and it never learns the library exists.
 
 **The import is guarded** (`try/except ImportError` → `SYBILKIT_AVAILABLE`), and that flag is the
 packaging story, not defensive habit. **`sybilkit` published to PyPI as `0.1.0` on 2026-08-19**

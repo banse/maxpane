@@ -153,7 +153,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -179,7 +179,9 @@ from maxpane_dashboard.widgets.curator import (
     CuratorClusters,
     CuratorHero,
     CuratorLeaderboard,
+    CuratorCleanedList,
     CuratorOperators,
+    CuratorRawList,
     CuratorSegments,
     CuratorSignals,
     CuratorSparklines,
@@ -225,31 +227,33 @@ VIEW_CLOSEST = "closest"
 
 #: ids for the swap pair, so ``minimal.tcss`` (WP7) can place them by id and the
 #: toggle can query them without importing the classes twice.
-#: The two bodies `y` swaps.  Ids rather than classes: the screen queries them
-#: by id in one place each, and a class would invite a second member.
+#: Body ids use ids rather than classes because several views hold repeated
+#: widget shapes and each visibility target must stay unambiguous.
 DASHBOARD_BODY_ID = "curator-dashboard-body"
 WALLET_BODY_ID = "curator-wallet-body"
 #: The `f` view's body — OPERATORS over SEGMENTS over CLEANED LIST.
 ANALYSIS_BODY_ID = "curator-analysis-body"
+#: The `l` view's body -- THE RAW LIST beside THE CLEANED LIST.
+LIST_BODY_ID = "curator-list-body"
 #: The wallet body's own hero, which swaps with it.
 WALLET_HERO_ID = "curator-wallet-hero"
 
-#: The three modes.  `dashboard` is the game; `wallet` is the reader's own
-#: standing on it; `analysis` is the linked-wallet view (`f`).  A fourth
-#: spelling anywhere is a silent fallback arm, the same rule PHASES keeps.
+#: The four modes: game, reader standing, linked-wallet analysis, and the two
+#: complete record lists. A fifth spelling is a silent fallback arm.
 #:
-#: `analysis` is the one mode that keeps the **dashboard** hero on screen
-#: (PRD §5): the doomsday clock never leaves, so `_show_mode` hides the hero
-#: only for `wallet`, which swaps in a hero of its own.
+#: `analysis` and `list` keep the **dashboard** hero on screen: the doomsday
+#: clock never leaves, so `_show_mode` hides it only for `wallet`.
 MODE_DASHBOARD = "dashboard"
 MODE_WALLET = "wallet"
 MODE_ANALYSIS = "analysis"
-MODES = (MODE_DASHBOARD, MODE_WALLET, MODE_ANALYSIS)
+MODE_LIST = "list"
+MODES = (MODE_DASHBOARD, MODE_WALLET, MODE_ANALYSIS, MODE_LIST)
 
 #: Where the `e` export lands, relative to the (injectable) home directory —
 #: the cleaned list as JSON rows plus a CSV of the same rows.  A TUI cannot
 #: hand a file to the reader, so it writes to disk and names the path.
 CLEAN_LIST_BASENAME = "curator_clean_list"
+LISTS_BASENAME = "curator_lists"
 
 CLOSEST_ID = "curator-closest-calls"
 CLUSTERS_ID = "curator-clusters"
@@ -280,6 +284,10 @@ CLUSTERS_ID = "curator-clusters"
 #: *linked* reader's evidence line legitimately exceeds the rail's share and
 #: lights ``‹ widen`` here at any width (the surf announce-feed precedent),
 #: which is correct and must never be silenced by raising this constant.
+#:
+#: The `l` body's separate composited sweep clears every column at **141** and
+#: advertises its shed NAME column at 140 and below. It therefore does not
+#: alter this dashboard-layout pin and remains inside the app-wide 143.
 CURATOR_FULL_LAYOUT_COLUMNS = 138
 
 #: The three flat-dict keys the screen renders itself -- the title bar's
@@ -391,6 +399,9 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "clean_list_rows", "clean_points", "clean_contributors",
         "points_total", "you_clean_rank", "analysis_as_of_hhmm",
     ),
+    # -- the `l` raw/clean record view ---------------------------------------
+    "CuratorRawList": ("leaderboard_rows",),
+    "CuratorCleanedList": ("clean_list_rows", "analysis_as_of_hhmm"),
 }
 
 #: The one kwarg above that the manager does not produce.
@@ -501,6 +512,30 @@ def _title_line(data: dict, row_hint: bool = False) -> str:
     return line
 
 
+def _atomic_write(
+    directory: Path,
+    writes: tuple[tuple[Path, Callable[[Path], None]], ...],
+) -> None:
+    """Write every same-directory temporary before replacing a destination."""
+    directory.mkdir(parents=True, exist_ok=True)
+    pending = tuple(
+        (path, path.with_name(f"{path.name}.tmp"), writer)
+        for path, writer in writes
+    )
+    try:
+        for _path, temporary, writer in pending:
+            writer(temporary)
+        for path, temporary, _writer in pending:
+            os.replace(temporary, path)
+    except Exception:
+        for _path, temporary, _writer in pending:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+        raise
+
+
 def _write_clean_list(directory: Path, rows: list) -> Path:
     """Write ``rows`` as ``curator_clean_list.json`` + ``.csv`` in *directory*.
 
@@ -516,18 +551,18 @@ def _write_clean_list(directory: Path, rows: list) -> Path:
     once both writes completed, so a failed RE-export can never truncate a
     previously good export in place -- writing the real names directly is a
     corruption window exactly as wide as the write, and the panel's receipt
-    would keep naming the mangled file as saved.  On any failure the temp
-    files are removed and the old files are byte-identical.
+    would keep naming the mangled file as saved. On failure, temporary files
+    are removed and no destination is ever truncated in place.
     """
-    directory.mkdir(parents=True, exist_ok=True)
     columns = CURATOR_ROW_KEYS["clean_list_rows"]
     json_path = directory / f"{CLEAN_LIST_BASENAME}.json"
     csv_path = directory / f"{CLEAN_LIST_BASENAME}.csv"
-    json_tmp = directory / f"{CLEAN_LIST_BASENAME}.json.tmp"
-    csv_tmp = directory / f"{CLEAN_LIST_BASENAME}.csv.tmp"
-    try:
-        json_tmp.write_text(json.dumps(rows, indent=1), encoding="utf-8")
-        with open(csv_tmp, "w", newline="", encoding="utf-8") as handle:
+
+    def write_json(path: Path) -> None:
+        path.write_text(json.dumps(rows, indent=1), encoding="utf-8")
+
+    def write_csv(path: Path) -> None:
+        with open(path, "w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(
                 handle, fieldnames=columns, extrasaction="ignore"
             )
@@ -535,16 +570,23 @@ def _write_clean_list(directory: Path, rows: list) -> Path:
             for row in rows:
                 if isinstance(row, dict):
                     writer.writerow({key: row.get(key) for key in columns})
-        os.replace(json_tmp, json_path)
-        os.replace(csv_tmp, csv_path)
-    except Exception:
-        for leftover in (json_tmp, csv_tmp):
-            try:
-                leftover.unlink()
-            except OSError:
-                pass
-        raise
+
+    _atomic_write(directory, ((json_path, write_json), (csv_path, write_csv)))
     return json_path
+
+
+def _write_lists(directory: Path, raw: list, clean: list) -> Path:
+    """Atomically write the raw and cleaned rows as one JSON record."""
+    path = directory / f"{LISTS_BASENAME}.json"
+
+    def write_json(temporary: Path) -> None:
+        temporary.write_text(
+            json.dumps({"raw": raw, "clean": clean}, indent=1),
+            encoding="utf-8",
+        )
+
+    _atomic_write(directory, ((path, write_json),))
+    return path
 
 
 def _default_view(phase) -> str:
@@ -562,12 +604,12 @@ def _default_view(phase) -> str:
 class CuratorScreen(RefreshGuard, Screen):
     """THE LIST -- WhitelistCurator survival watch (Ethereum mainnet).
 
-    Seven bindings: ``r`` refresh; ``c`` swaps CLOSEST CALLS and FAN-OUT
+    Eight bindings: ``r`` refresh; ``c`` swaps CLOSEST CALLS and FAN-OUT
     PATTERNS in the bottom-right slot (see the module docstring); ``w`` sets
     the wallet; ``y`` swaps the body for the reader's own standing; ``f``
     swaps it for the linked-wallet analysis, with the doomsday clock left in
-    place; ``e`` -- analysis mode only -- exports the cleaned list; ``esc``
-    backs out of either view, one-way.
+    place; ``l`` opens the raw/clean record lists; ``e`` exports inside ``f``
+    or ``l``; ``esc`` backs out of a secondary view, one-way.
     """
 
     BINDINGS = [
@@ -576,8 +618,9 @@ class CuratorScreen(RefreshGuard, Screen):
         Binding("w", "set_wallet", "Wallet", show=True),
         Binding("y", "toggle_mode", "You", show=True),
         Binding("f", "toggle_analysis", "Linked", show=True),
-        # Only acts in MODE_ANALYSIS (a no-op elsewhere), so the key never
-        # swallows a press meant for something else -- the `esc` rule's shape.
+        Binding("l", "toggle_list", "Lists", show=True),
+        # Only acts in MODE_ANALYSIS or MODE_LIST, so it remains a no-op on the
+        # dashboard and wallet view -- the `esc` rule's shape.
         Binding("e", "export_clean_list", "Export", show=False),
         Binding("escape", "back_to_dashboard", "Back", show=False),
     ]
@@ -702,8 +745,8 @@ class CuratorScreen(RefreshGuard, Screen):
         width: 100%;
     }
     /* `margin: 1 0 0 0` is `#middle-row`'s, so the blank line under the hero's
-       EOA subtitle is the same on both bodies and the two pages' first titles
-       sit on the same row. */
+       EOA subtitle is the same on every body and their first titles sit on
+       the same row. */
     CuratorScreen #wallet-top-row {
         height: 1fr;
         margin: 1 0 0 0;
@@ -782,7 +825,7 @@ class CuratorScreen(RefreshGuard, Screen):
         scrollbar-size: 1 1;
     }
     /* `margin: 1 0 1 0` on the first panel: the top row is `#middle-row`'s
-       own blank line under the hero, so the three bodies' first titles land
+       own blank line under the hero, so every body's first title lands
        on the same row; the bottom row is the gap to SEGMENTS. */
     CuratorScreen CuratorOperators {
         width: 100%;
@@ -798,6 +841,31 @@ class CuratorScreen(RefreshGuard, Screen):
     }
     CuratorScreen CuratorCleanList {
         width: 100%;
+        height: auto;
+        padding: 0 1;
+    }
+    /* The `l` view. Its two 100-row tables grow naturally inside one scrolling
+       body, so every row remains reachable and short terminals are announced
+       by the same title-bar marker as the `f` body. */
+    CuratorScreen #curator-list-body {
+        height: 1fr;
+        width: 100%;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
+        scrollbar-size: 1 1;
+    }
+    CuratorScreen #curator-lists-row {
+        width: 100%;
+        height: auto;
+        margin: 1 0 0 0;
+    }
+    CuratorScreen CuratorRawList {
+        width: 1fr;
+        height: auto;
+        padding: 0 1;
+    }
+    CuratorScreen CuratorCleanedList {
+        width: 1fr;
         height: auto;
         padding: 0 1;
     }
@@ -865,17 +933,15 @@ class CuratorScreen(RefreshGuard, Screen):
         yield Static(INITIAL_TITLE, id="title-bar")
 
         with Horizontal(id="hero-row"):
-            # One hero per body, both composed, one displayed -- same reason
-            # the bodies themselves are: a hero built on the keypress is blank
-            # for a beat.  Identical geometry (8 rows, three boxes over the EOA
-            # subtitle), so the row below never moves on the toggle.
+            # Both possible heroes are composed once. Wallet mode uses its own;
+            # dashboard, analysis, and list modes share the doomsday clock.
             yield CuratorHero()
             yield CuratorWalletHero(id=WALLET_HERO_ID)
 
-        # Both bodies are composed once and one is hidden, for the same reason
-        # the two swap tables are: a body built on demand is blank for a beat
-        # after the keypress, which reads as a bug.  The hero and the title bar
-        # sit above both, so `y` never takes the doomsday clock off the screen.
+        # Every body is composed once and all but one are hidden, for the same
+        # reason the two swap tables are: a body built on demand is blank for a
+        # beat after the keypress, which reads as a bug. The title bar sits
+        # above every body; only `y` swaps to the wallet hero.
         with Vertical(id=DASHBOARD_BODY_ID):
             with Horizontal(id="middle-row"):
                 yield CuratorLeaderboard()
@@ -909,7 +975,7 @@ class CuratorScreen(RefreshGuard, Screen):
 
         # The `f` view (PRD §5): the linked-wallet analysis, stacked so every
         # panel reaches its full tier at the screen's measured width.  Same
-        # composed-once-shown-by-display contract as the other two bodies,
+        # composed-once-shown-by-display contract as the other bodies,
         # and the dashboard hero above stays visible in this mode -- the
         # doomsday clock never leaves the screen.
         with Vertical(id=ANALYSIS_BODY_ID):
@@ -917,21 +983,26 @@ class CuratorScreen(RefreshGuard, Screen):
             yield CuratorSegments()
             yield CuratorCleanList()
 
+        with Vertical(id=LIST_BODY_ID):
+            with Horizontal(id="curator-lists-row"):
+                yield CuratorRawList()
+                yield CuratorCleanedList()
+
         yield StatusBar()
 
-    #: The three keys this screen adds, named in the status bar.  `tab switch`
+    #: The four view keys this screen names in the status bar. `tab switch`
     #: survives beside them at the measured width; `updated Ns ago` does not,
     #: and the title bar's `as of HH:MM` is the freshness marker that matters
     #: (it freezes under an outage, where the cycle age keeps counting).
-    #: `e` is deliberately not here: it only acts inside the `f` view, and
-    #: the CLEANED LIST panel is where its result appears.
+    #: `e` is deliberately not here: it only acts inside `f` and `l`, and the
+    #: relevant cleaned panel is where its result appears.
     #:
-    #: `y you`, not the earlier `y wallet`: the third key made the worst-case
-    #: line (`4 errors` present) one column too long at the measured 138, and
-    #: an error count must never be the thing that falls off the end.  `you`
-    #: is also the word the rail's own row and the binding already use.
+    #: The fourth key cannot grow the line: the third already pushed the
+    #: worst-case (`4 errors` present) to the measured 138-column edge.  The
+    #: compact spelling below remains 27 visible columns, the old hint's cost.
     KEY_HINTS = (
-        "[dim]c[/] panels [dim]·[/] [dim]y[/] you [dim]·[/] [dim]f[/] linked"
+        "[dim]c[/] [dim]·[/] [dim]y[/] me [dim]·[/] "
+        "[dim]f[/] link [dim]·[/] [dim]l[/] lists"
     )
 
     def on_mount(self) -> None:
@@ -960,20 +1031,21 @@ class CuratorScreen(RefreshGuard, Screen):
             pass
 
     def _show_mode(self) -> None:
-        """Apply :attr:`_mode` to the three bodies' visibility.
+        """Apply :attr:`_mode` to the four bodies' visibility.
 
-        Exactly one body is displayed.  The hero row is the asymmetry: the
-        wallet mode swaps in its own hero, while the analysis mode keeps the
-        **dashboard** hero -- the doomsday clock -- in place (PRD §5).
+        Exactly one body is displayed. Wallet mode swaps in its own hero;
+        analysis and list mode keep the **dashboard** doomsday clock.
         """
         wallet = self._mode == MODE_WALLET
         analysis = self._mode == MODE_ANALYSIS
+        lists = self._mode == MODE_LIST
         try:
             self.query_one(f"#{DASHBOARD_BODY_ID}").display = (
-                not wallet and not analysis
+                not wallet and not analysis and not lists
             )
             self.query_one(f"#{WALLET_BODY_ID}").display = wallet
             self.query_one(f"#{ANALYSIS_BODY_ID}").display = analysis
+            self.query_one(f"#{LIST_BODY_ID}").display = lists
             self.query_one(CuratorHero).display = not wallet
             self.query_one(f"#{WALLET_HERO_ID}").display = wallet
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
@@ -1024,24 +1096,50 @@ class CuratorScreen(RefreshGuard, Screen):
         )
         self._show_mode()
 
-    def action_export_clean_list(self) -> None:
-        """``e`` -- write the cleaned list to disk and show the path.
+    def action_toggle_list(self) -> None:
+        """``l`` -- swap the body for the raw and cleaned record lists."""
+        self._mode = MODE_DASHBOARD if self._mode == MODE_LIST else MODE_LIST
+        self._show_mode()
 
-        **Only acts in ``MODE_ANALYSIS``** (a no-op elsewhere, so the key
-        never swallows a press meant for something else).  The write is an
-        explicit user action to a local file -- the ``WalletInputScreen`` /
-        cache ethic exactly: read-only toward the chain, and the reader asked
-        for the file.  A ``None`` list is never written: an empty allowlist
-        file fabricated from a read that did not happen would outlive the
-        outage that caused it.  An **empty list is written** (M1): the sweep
-        ran and nobody survives it, which is a real record, not an absence.
+    def action_export_clean_list(self) -> None:
+        """``e`` -- export the active analysis or record-list view.
+
+        Analysis mode retains its JSON + CSV cleaned-list export. List mode
+        writes one JSON object containing both existing row arrays. Dashboard
+        and wallet modes are no-ops. A ``None`` list is never written; an empty
+        list is a real record and is written.
 
         A failed write is *told to the reader*, on the panel, not to the log
         alone -- and it replaces any earlier ``saved →`` receipt, whose
         freshness would otherwise be a lie about the keypress that just
-        failed.  The writer itself is atomic (see :func:`_write_clean_list`),
-        so the failure never corrupts a previous export.
+        failed. Both writers use :func:`_atomic_write`, so a destination is
+        never opened and truncated in place.
         """
+        if self._mode == MODE_LIST:
+            payload = self._title_data or {}
+            raw = payload.get("leaderboard_rows")
+            clean = payload.get("clean_list_rows")
+            if not isinstance(raw, list) or not isinstance(clean, list):
+                logger.debug("List export skipped: one or both lists unavailable")
+                return
+            directory = self._export_dir or Path.home() / ".maxpane"
+            try:
+                json_path = _write_lists(directory, raw, clean)
+            except Exception as exc:  # noqa: BLE001 -- visible, never fatal
+                logger.debug("List export failed: %s", exc)
+                try:
+                    self.query_one(CuratorCleanedList).mark_export_failed()
+                except Exception as inner:  # noqa: BLE001
+                    logger.debug("Could not show the list export failure: %s", inner)
+                self.call_after_refresh(self._render_title)
+                return
+            try:
+                self.query_one(CuratorCleanedList).mark_exported(str(json_path))
+            except Exception as exc:  # noqa: BLE001 -- the file exists either way
+                logger.debug("Could not show the list export path: %s", exc)
+            self.call_after_refresh(self._render_title)
+            return
+
         if self._mode != MODE_ANALYSIS:
             return
         rows = (self._title_data or {}).get("clean_list_rows")
@@ -1064,7 +1162,7 @@ class CuratorScreen(RefreshGuard, Screen):
             logger.debug("Could not show the export path: %s", exc)
 
     def action_back_to_dashboard(self) -> None:
-        """``esc`` -- one-way, back to the game from either view.  A no-op
+        """``esc`` -- one-way, back to the game from any secondary view. A no-op
         when already there, so the key never swallows an escape the reader
         meant for something else."""
         if self._mode != MODE_DASHBOARD:
@@ -1185,20 +1283,19 @@ class CuratorScreen(RefreshGuard, Screen):
         self.call_after_refresh(self._render_title)
 
     def _rail_is_cut(self) -> bool:
-        """Does the *showing* body's rail hold more rows than this height shows?
+        """Does the showing body's scroll container exceed this height?
 
         ``show_vertical_scrollbar`` is the container's own answer, and it is
         what the layout already turns the loss into; asking it rather than
         re-deriving the arithmetic keeps the marker and the scrollbar from
-        ever disagreeing.  Which container is *the* rail depends on the mode:
-        each body has exactly one scrolling column, and the marker must be
-        about the one the reader is looking at -- a dashboard rail that fits
-        says nothing about a wallet rail that does not.
+        ever disagreeing. Which container matters depends on the mode, and the
+        marker must describe the one the reader is looking at.
         """
         container_id = {
             MODE_DASHBOARD: "curator-right-rail",
             MODE_WALLET: "curator-wallet-rail",
             MODE_ANALYSIS: ANALYSIS_BODY_ID,
+            MODE_LIST: LIST_BODY_ID,
         }.get(self._mode, "curator-right-rail")
         try:
             return bool(
@@ -1302,6 +1399,10 @@ class CuratorScreen(RefreshGuard, Screen):
             CuratorOperators,
             CuratorSegments,
             CuratorCleanList,
+            # The `l` view is also dispatched hidden so it paints complete on
+            # the first keypress without another read or refresh cycle.
+            CuratorRawList,
+            CuratorCleanedList,
         ):
             self._dispatch(widget_cls, data)
 

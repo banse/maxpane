@@ -43,8 +43,10 @@ from maxpane_dashboard.widgets.curator import (
     CLUSTERS_EMPTY,
     CLUSTERS_UNAVAILABLE,
     CuratorCleanList,
+    CuratorCleanedList,
     CuratorOperators,
     CuratorSegments,
+    CuratorRawList,
     LEADERBOARD_EMPTY,
     LEADERBOARD_TITLE,
     LEADERBOARD_UNAVAILABLE,
@@ -1985,6 +1987,9 @@ _WIDGETS = (
     CuratorOperators,
     CuratorSegments,
     CuratorCleanList,
+    # The `l` view's raw and cleaned record tables.
+    CuratorRawList,
+    CuratorCleanedList,
 )
 
 
@@ -2247,6 +2252,9 @@ _EXPECTED_ROWS = {
     "CuratorOperators": (("linked",), 6),
     "CuratorSegments": (("%", "band"), 8),
     "CuratorCleanList": (("0x", ".eth"), 8),
+    # The `l` view receives the same full payload without the shipped 10/8 caps.
+    "CuratorRawList": (("0x", ".eth"), 3),
+    "CuratorCleanedList": (("0x", ".eth"), 8),
 }
 
 
@@ -3781,3 +3789,245 @@ async def test_the_worst_case_clean_row_renders_rank_identity_and_score():
     assert "36,924" in text                 # the top survivor's score
     assert "surfsurf.eth" in text           # the probe row's verified name
     assert "#9,273" in text                 # ...under its own clean rank
+
+
+# -- the `l` view: full raw and cleaned lists -------------------------------
+
+
+async def test_the_list_view_tables_render_every_frozen_row_column():
+    from maxpane_dashboard.widgets.curator import (
+        CuratorCleanedList,
+        CuratorRawList,
+    )
+
+    address = "0x1234567890abcdef1234567890abcdef1234abcd"
+    raw = await _rendered(
+        CuratorRawList,
+        size=(72, 16),
+        leaderboard_rows=[
+            {
+                "rank": 7,
+                "address": address,
+                "points": 12_345,
+                "credit_eth": 67.89,
+                "tx_count": 4,
+                "flagged": True,
+                "name": "record.eth",
+                "link_conf": "low",
+            }
+        ],
+    )
+    for header in ("#", "ADDRESS", "POINTS", "CREDIT", "TX", "FLAG", "NAME", "LINK"):
+        assert header in raw, header
+    for value in ("7", "0x1234…abcd", "12,345", "67.89", "4", "record.eth", "⚑", "◌"):
+        assert value in raw, value
+
+    clean = await _rendered(
+        CuratorCleanedList,
+        size=(72, 16),
+        clean_list_rows=[
+            {
+                "clean_rank": 3,
+                "address": address,
+                "points": 9_876,
+                "credit_eth": 12.34,
+                "name": "clean.eth",
+            }
+        ],
+        analysis_as_of_hhmm="22:41",
+    )
+    for header in ("#", "ADDRESS", "POINTS", "CREDIT", "NAME"):
+        assert header in clean, header
+    for value in ("3", "0x1234…abcd", "9,876", "12.34", "clean.eth", "as of 22:41"):
+        assert value in clean, value
+
+
+def test_the_new_lists_own_100_row_cap_without_moving_shipped_caps():
+    from maxpane_dashboard.widgets.curator.cleaned_list import MAX_ROWS as ANALYSIS_ROWS
+    from maxpane_dashboard.widgets.curator.leaderboard import MAX_ROWS as DASHBOARD_ROWS
+    from maxpane_dashboard.widgets.curator.lists import MAX_ROWS as LIST_ROWS
+
+    assert DASHBOARD_ROWS == 10
+    assert ANALYSIS_ROWS == 8
+    assert LIST_ROWS == 100
+
+
+async def test_the_list_tables_render_row_100_but_never_row_101():
+    from maxpane_dashboard.widgets.curator import (
+        CuratorCleanedList,
+        CuratorRawList,
+    )
+
+    raw_rows = []
+    clean_rows = []
+    for rank in range(1, 102):
+        row = {
+            "address": f"0x{rank:040x}",
+            "points": 100_000 + rank,
+            "credit_eth": float(rank),
+            "name": None,
+        }
+        raw_rows.append(
+            {
+                **row,
+                "rank": rank,
+                "tx_count": rank,
+                "flagged": False,
+                "link_conf": "clean",
+            }
+        )
+        clean_rows.append({**row, "clean_rank": rank})
+
+    raw = await _rendered(
+        CuratorRawList,
+        size=(72, 110),
+        leaderboard_rows=raw_rows,
+    )
+    clean = await _rendered(
+        CuratorCleanedList,
+        size=(72, 110),
+        clean_list_rows=clean_rows,
+    )
+    for text in (raw, clean):
+        assert "100,100" in text
+        assert "100,101" not in text
+
+
+async def test_the_list_tables_distinguish_unavailable_from_honest_empty():
+    from maxpane_dashboard.widgets.curator import (
+        CuratorCleanedList,
+        CuratorRawList,
+    )
+    from maxpane_dashboard.widgets.curator.lists import (
+        CLEANED_LIST_EMPTY,
+        CLEANED_LIST_UNAVAILABLE,
+        RAW_LIST_EMPTY,
+        RAW_LIST_UNAVAILABLE,
+    )
+
+    raw_dead = await _rendered(CuratorRawList, leaderboard_rows=None)
+    raw_empty = await _rendered(CuratorRawList, leaderboard_rows=[])
+    assert RAW_LIST_UNAVAILABLE in raw_dead and RAW_LIST_EMPTY not in raw_dead
+    assert RAW_LIST_EMPTY in raw_empty and RAW_LIST_UNAVAILABLE not in raw_empty
+
+    clean_dead = await _rendered(CuratorCleanedList, clean_list_rows=None)
+    clean_empty = await _rendered(
+        CuratorCleanedList,
+        clean_list_rows=[],
+        analysis_as_of_hhmm="13:58",
+    )
+    assert CLEANED_LIST_UNAVAILABLE in clean_dead
+    assert CLEANED_LIST_EMPTY not in clean_dead
+    assert CLEANED_LIST_EMPTY in clean_empty
+    assert CLEANED_LIST_UNAVAILABLE not in clean_empty
+    assert "as of 13:58" in clean_empty
+
+
+@pytest.mark.parametrize("kind", ("raw", "clean"))
+async def test_list_names_truncate_by_rendered_cells_not_python_characters(kind):
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    common = {
+        "address": "0x" + "ab" * 20,
+        "points": 100,
+        "credit_eth": 1.0,
+        "name": "測試測試測試.eth",
+    }
+    if kind == "raw":
+        widget = CuratorRawList
+        kwargs = {
+            "leaderboard_rows": [
+                {
+                    **common,
+                    "rank": 1,
+                    "tx_count": 1,
+                    "flagged": False,
+                    "link_conf": "clean",
+                }
+            ]
+        }
+    else:
+        widget = CuratorCleanedList
+        kwargs = {"clean_list_rows": [{**common, "clean_rank": 1}]}
+
+    text = await _rendered(widget, size=(72, 16), **kwargs)
+    assert "測試測試 …" in text
+    assert "測試測試測" not in text
+
+
+@pytest.mark.parametrize(
+    "cls,kwargs",
+    (
+        (
+            "raw",
+            {
+                "leaderboard_rows": [
+                    {
+                        "rank": 1,
+                        "address": "[/x]",
+                        "points": 1,
+                        "credit_eth": 1.0,
+                        "tx_count": 1,
+                        "flagged": False,
+                        "name": "[/x]",
+                        "link_conf": "clean",
+                    }
+                ]
+            },
+        ),
+        (
+            "clean",
+            {
+                "clean_list_rows": [
+                    {
+                        "clean_rank": 1,
+                        "address": "[/x]",
+                        "points": 1,
+                        "credit_eth": 1.0,
+                        "name": "[/x]",
+                    }
+                ]
+            },
+        ),
+    ),
+)
+async def test_list_addresses_and_names_are_safe_markup(cls, kwargs):
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    widget = CuratorRawList if cls == "raw" else CuratorCleanedList
+    text = await _rendered(widget, size=(72, 16), **kwargs)
+    assert text.count("[/x]") >= 2
+
+
+@pytest.mark.parametrize("kind", ("raw", "clean"))
+async def test_each_list_panel_uses_pattern_language_only(kind):
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    base = {
+        "address": "0x" + "ab" * 20,
+        "points": 100,
+        "credit_eth": 1.0,
+        "name": "record.eth",
+    }
+    if kind == "raw":
+        text = await _rendered(
+            CuratorRawList,
+            leaderboard_rows=[
+                {
+                    **base,
+                    "rank": 1,
+                    "tx_count": 1,
+                    "flagged": True,
+                    "link_conf": "high",
+                }
+            ],
+        )
+    else:
+        text = await _rendered(
+            CuratorCleanedList,
+            clean_list_rows=[{**base, "clean_rank": 1}],
+            analysis_as_of_hhmm="22:41",
+        )
+
+    for word in ("sybil", "cheat", "fraud", "attack", "abuse", "wash"):
+        assert word not in text.lower(), (kind, word)

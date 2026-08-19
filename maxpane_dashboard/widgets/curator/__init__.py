@@ -1,6 +1,7 @@
 """Widgets for the curator dashboard — THE LIST (PRD §4).
 
-Seven render-only widgets, one per slot of ``screens/curator.CuratorScreen``:
+Render-only widgets for every slot and alternate view of
+``screens/curator.CuratorScreen``:
 
 ======================  ====================================================
 Widget                  Slot
@@ -12,6 +13,8 @@ Widget                  Slot
 ``CuratorActivity``     bottom left — newest-first deposit feed
 ``CuratorClosestCalls`` bottom right (``c`` swap) — judged hours by margin
 ``CuratorClusters``     bottom right (``c`` swap) — fan-out patterns
+``CuratorRawList``      ``l`` view, left — complete raw record list
+``CuratorCleanedList``  ``l`` view, right — complete cleaned record list
 ======================  ====================================================
 
 The classes are re-exported here because the package root is the import
@@ -114,6 +117,12 @@ from .leaderboard import (
     LEADERBOARD_UNAVAILABLE,
     CuratorLeaderboard,
 )
+from .lists import (
+    CLEANED_LIST_TITLE,
+    RAW_LIST_TITLE,
+    CuratorCleanedList,
+    CuratorRawList,
+)
 
 __all__ = [
     "ADDR_COLS",
@@ -185,6 +194,10 @@ __all__ = [
     "UNKNOWN_GLYPH",
     "WAITING",
     "CuratorLeaderboard",
+    "CuratorRawList",
+    "CuratorCleanedList",
+    "RAW_LIST_TITLE",
+    "CLEANED_LIST_TITLE",
     "CuratorSignals",
     "CuratorSparklines",
     "measure_signals_width",

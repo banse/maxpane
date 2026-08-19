@@ -90,7 +90,7 @@ FIRED_TTL_S = 86_400.0
 #: Row budgets.  The widgets truncate further; these bound what crosses the
 #: manager boundary at all, so a long game cannot grow the payload without
 #: bound.
-LEADERBOARD_LIMIT = 10
+LEADERBOARD_LIMIT = 100
 ACTIVITY_LIMIT = 40
 CLOSEST_CALL_LIMIT = 10
 CLUSTER_LIMIT = 10
