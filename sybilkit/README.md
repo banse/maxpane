@@ -10,6 +10,65 @@ any kind, ever.
 Read-only analysis. Nothing here signs, sends, or constructs calldata for a state change.
 Not affiliated with any allowlist, drop, or protocol.
 
+## The short version
+
+> Most sybil detection scores **wallets**. sybilkit scores **clusters** — and refuses to
+> convict on a single signal. Six independent families of evidence; a group has to show at
+> least **two of them** and hold at least **five wallets** before it is a cluster at all.
+> Keyless, read-only, stdlib-only core. It reports patterns and confidence, never verdicts.
+
+The one default that carries the whole design is `min_families = 2`. Drop it to 1 and every
+honest wallet that happened to send a round number becomes a farm member. One family alone
+never convicts — that is the entire thesis, and everything below serves it.
+
+## How a cluster is decided
+
+**1 — Six families propose edges** between wallets, each measured against a real population
+rather than assumed:
+
+| family | what it sees |
+|---|---|
+| `sequence` | consecutive `FirstDeposit` indices — the protocol's own join counter is the fingerprint when a farm registers back-to-back |
+| `amounts` | byte-identical and near-identical (±10%) deposits, single-deposit wallets only |
+| `split` | the `≈ W/k` optimal-split signature: under a square-root curve an operator maximises points by splitting one pot into many equal deposits, and the residue is machine-scale |
+| `cadence` | machine rhythms — a burst landing in one block, or a metronomic drip |
+| `gas` | fee/limit uniformity. **The uniformity is the signal, never the value** — it corroborates a grouping another family already made |
+| `funding` | the first-funder graph, folded onto the clusters; a funder inside its own cluster is the peel chain |
+
+**2 — Union-find merges those edges** into connected components.
+
+**3 — The gate.** A component survives only with **≥ 5 members** and **≥ 2 distinct families**.
+Five is the floor that keeps one-human-with-a-few-wallets out of the result.
+
+**4 — Confidence, graduated.** Families combine noisy-OR; aged wallets apply a freshness
+discount that never falls below `0.85`. Confidence stays graduated on both sides of the
+`0.5` cut — the threshold decides only what the word "flagged" covers, never what is true.
+
+Nothing is stored as a boolean. A later sweep can re-admit a wallet, which is the point.
+
+## THE LIST — the worked example
+
+THE LIST was a zero-custody allowlist game on Ethereum: escalating ETH sends, refunded in the
+same transaction, a square-root points curve, and an hourly clock that ended the game the
+first time a completed hour came up short. It closed on 2026-08-19 with 19,522 contributors
+and 28,353 deposits — so its population is now **frozen**, which makes it an unusually honest
+benchmark: nothing can move to flatter a detector after the fact.
+
+It ships here as the `curator` preset, and it is an *example*, not the subject — sybilkit is a
+general toolkit and the preset is one calibration of it.
+
+```bash
+sybilkit analyze  --contract 0x… --from-block N --out clusters.json
+sybilkit segments --contract 0x… --preset curator
+```
+
+The [maxpane](https://pypi.org/project/maxpane/) dashboard consumes exactly this through one
+adapter, as THE LIST's linked-wallet view. Note the deliberate difference in register: the
+library says *sybil* because that is the field's word and this is a tool for analysts; the
+dashboard translates every reason into pattern language — *linked*, *fan-out* — before it
+reaches a screen. A pattern is evidence. An accusation is a claim about a person, and the
+chain cannot support one.
+
 ## Install
 
 ```bash
