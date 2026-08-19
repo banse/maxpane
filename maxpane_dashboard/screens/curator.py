@@ -5,7 +5,7 @@ FWA ``c`` swap grafted onto the bottom-right slot)::
 
     #title-bar     THE LIST · hour N · GRACE/JUDGED/SETTLED · as of HH:MM
                    [· ⚠ logs, state] · vX.Y.Z
-    #hero-row      CuratorHero (full width, 3 boxes + the EOA subtitle)   auto
+    #hero-row      CuratorHero (full width, 3 boxes + export instruction) auto
     #middle-row    CuratorLeaderboard (3fr) | #curator-right-rail (5fr)     1fr
                                             |   CuratorSparklines
                                             |   CuratorSignals
@@ -650,8 +650,8 @@ class CuratorScreen(RefreshGuard, Screen):
     #
     # `#hero-row` is `height: auto` and carries NO vertical padding.
     # ``CuratorHero`` is a height-8 widget: three height-7 boxes over the
-    # one-row EOA subtitle.  A single row of vertical padding here clips the
-    # subtitle -- or the boxes' bottom border -- off the screen, which is the
+    # one-row export instruction. A single row of vertical padding here clips
+    # the instruction -- or the boxes' bottom border -- off the screen, which is the
     # FWA hero coverage-badge bug exactly.
     #
     # `#curator-right-rail` carries no vertical padding for the same reason
@@ -758,7 +758,7 @@ class CuratorScreen(RefreshGuard, Screen):
         width: 100%;
     }
     /* `margin: 1 0 0 0` is `#middle-row`'s, so the blank line under the hero's
-       EOA subtitle is the same on every body and their first titles sit on
+       export instruction is the same on every body and their first titles sit on
        the same row. */
     CuratorScreen #wallet-top-row {
         height: 1fr;
@@ -1163,6 +1163,7 @@ class CuratorScreen(RefreshGuard, Screen):
                 self.query_one(panel).mark_exported(str(json_path))
             except Exception as exc:  # noqa: BLE001 -- the file exists either way
                 logger.debug("Could not show the list export path: %s", exc)
+            self._load_selected_list_source()
             return
 
         if self._mode != MODE_ANALYSIS:

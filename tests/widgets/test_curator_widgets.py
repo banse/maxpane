@@ -420,15 +420,14 @@ async def test_the_refunded_wording_survives_every_phase(phase):
         assert banned.lower() not in text.lower(), banned
 
 
-async def test_the_one_honest_capital_sentence_appears_at_most_once():
-    """PRD §6: the EOA gate means each high-water mark WAS really held in a
-    real EOA.  True, and worth saying once as subtitle text — never twice,
-    and never next to a volume number."""
+async def test_the_hero_subtitle_explains_how_to_show_the_complete_list():
     text = await _rendered(CuratorHero, **_grace_payload())
-    assert text.lower().count("eoa") == 1
-    # ...and on its own line, not in the box that carries the volume figure.
-    eoa_line = next(line for line in text.splitlines() if "EOA" in line)
-    assert "routed" not in eoa_line and "ETH" not in eoa_line
+    instruction = (
+        "press 'e' to export full list as json file - once exported the "
+        "complete list will be shown below"
+    )
+    assert instruction in text
+    assert "EOA-only" not in text
 
 
 @pytest.mark.parametrize("phase", ("grace", "judged", "settled"))
@@ -3946,10 +3945,7 @@ async def test_the_list_identity_and_credit_columns_have_the_requested_widths(ki
 async def test_each_list_title_uses_its_authoritative_wallet_total():
     from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
 
-    export_hint = (
-        "(press 'e' to export full list as json file - once exported all "
-        "wallets will be shown)"
-    )
+    export_hint = "press 'e' to export full list as json file"
 
     raw = await _rendered(
         CuratorRawList,
@@ -3972,10 +3968,12 @@ async def test_each_list_title_uses_its_authoritative_wallet_total():
         contributors_total=None,
     )
 
-    assert f"THE RAW LIST - 19,522 wallets {export_hint}" in raw
-    assert f"THE CLEANED LIST - 18,004 wallets {export_hint}" in clean
-    assert f"THE CLEANED LIST - 0 wallets {export_hint}" in zero
-    assert f"THE RAW LIST {export_hint}" in unknown
+    assert "THE RAW LIST - 19,522 wallets" in raw
+    assert "THE CLEANED LIST - 18,004 wallets" in clean
+    assert "THE CLEANED LIST - 0 wallets" in zero
+    assert "THE RAW LIST" in unknown
+    for rendered in (raw, clean, zero, unknown):
+        assert export_hint not in rendered
     assert "-- wallets" not in unknown
 
 
@@ -4169,7 +4167,7 @@ async def test_complete_rows_survive_refresh_until_the_authoritative_count_chang
             }
         )
 
-    complete_rows = [row(1), row(2), row(3)]
+    complete_rows = [row(1), row(2)]
     widget = CuratorRawList() if kind == "raw" else CuratorCleanedList()
     app = _Harness(widget)
     async with app.run_test(size=(143, 16)) as pilot:
@@ -4180,7 +4178,7 @@ async def test_complete_rows_survive_refresh_until_the_authoritative_count_chang
         widget.set_list_source(complete_rows, complete=True)
         await pilot.pause()
         table = widget.query_one(DataTable)
-        assert table.row_count == 3
+        assert table.row_count == 2
 
         calls = 0
         row_values = widget._row_values
@@ -4197,7 +4195,7 @@ async def test_complete_rows_survive_refresh_until_the_authoritative_count_chang
         else:
             widget.update_data(clean_list_rows=[row(1)], clean_contributors=3)
         await pilot.pause()
-        assert table.row_count == 3
+        assert table.row_count == 2
         assert calls == 0
 
         if kind == "raw":

@@ -124,7 +124,6 @@ def test_valid_matching_export_is_enriched_without_changing_the_original(
         (None, 3, "missing"),
         ("not json", 3, "invalid_json"),
         ({"rank": 1}, 3, "invalid_rows"),
-        ([_raw_row(1), _raw_row(2)], 3, "count_mismatch"),
         ([_raw_row(1), _raw_row(3), _raw_row(2)], 3, "invalid_rows"),
         ([{key: value for key, value in _raw_row(1).items() if key != "points"}], 1, "invalid_rows"),
     ),
@@ -156,6 +155,28 @@ def test_invalid_or_incomplete_export_keeps_the_live_slice(
     assert result.reason == reason
     assert result.enriched_path is None
     assert not (tmp_path / "curator_raw_list.enriched.json").exists()
+
+
+def test_valid_exported_rows_are_used_when_held_history_is_shorter_than_chain_count(
+    tmp_path: Path,
+) -> None:
+    exported = [_raw_row(1), _raw_row(2)]
+    (tmp_path / "curator_raw_list.json").write_text(
+        json.dumps(exported), encoding="utf-8"
+    )
+    live_rows = [_raw_row(1)]
+
+    result = load_export_list(
+        tmp_path,
+        cleaned=False,
+        expected_count=3,
+        live_rows=live_rows,
+        you_row=None,
+    )
+
+    assert result.complete is True
+    assert result.rows == exported
+    assert result.reason is None
 
 
 @pytest.mark.parametrize("expected_count", (None, True, -1, 3.0, "3"))

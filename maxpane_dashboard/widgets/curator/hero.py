@@ -25,9 +25,8 @@ kept **contiguous on one line** at every tier that can hold it, because a
 "routed" on one line and an "all refunded" on the next is one clipped row
 away from being just "routed".
 
-The one true capital sentence — the contract only accepts EOAs, so every
-high-water mark really was held by a real wallet at that moment — is the row
-**subtitle**, once, spanning the full width and far away from any number.
+The row **subtitle**, once, spanning the full width, tells the reader how to
+turn the capped live list into the complete exported list.
 
 Why there is a fourth line under the boxes
 ------------------------------------------
@@ -105,16 +104,16 @@ PHASES = (PHASE_GRACE, PHASE_JUDGED, PHASE_SETTLED)
 #: grace silently would render a countdown for a game that may be over.
 PHASE_UNAVAILABLE = "phase unavailable"
 
-#: The subtitle under the row.  The single honest capital statement on this
-#: dashboard (PRD §6): the contract rejects contracts, so each high-water
-#: mark was really held by a real wallet — which is true, and is *not* a
-#: statement that the contract holds anything now.
-EOA_SUBTITLE = (
-    "EOA-only gate: every high-water mark really was held in a real wallet "
-    "— the contract keeps none of it"
+#: The complete-list instruction under both hero variants. The shorter forms
+#: retain the command and outcome on terminals that cannot hold the full copy.
+LIST_EXPORT_SUBTITLE = (
+    "press 'e' to export full list as json file - once exported the complete "
+    "list will be shown below"
 )
-EOA_SUBTITLE_SHORT = "EOA-only gate: every mark really was held in a real wallet"
-EOA_SUBTITLE_TINY = "EOA-only gate"
+LIST_EXPORT_SUBTITLE_SHORT = (
+    "press 'e' to export json - the complete list will be shown below"
+)
+LIST_EXPORT_SUBTITLE_TINY = "press 'e' to export full list"
 
 #: Marker raised in a box's bottom border when even ``minimal`` overflows.
 WIDEN_HINT = "‹ widen"
@@ -349,7 +348,7 @@ class CuratorHeroBox(Static):
 
 
 class CuratorHero(Vertical):
-    """Three phase-driven boxes over the EOA subtitle line."""
+    """Three phase-driven boxes over the full-list export instruction."""
 
     DEFAULT_CSS = """
     CuratorHero {
@@ -393,7 +392,7 @@ class CuratorHero(Vertical):
                 yield CuratorHeroBox(
                     "[dim]Loading...[/]", id=box_id, classes="curator-hero-box"
                 )
-        yield Static(EOA_SUBTITLE, id="curator-hero-note")
+        yield Static(LIST_EXPORT_SUBTITLE, id="curator-hero-note")
 
     def update_data(
         self,
@@ -478,9 +477,13 @@ class CuratorHero(Vertical):
             box.render_lines_at_tier(lambda tier, fn=builder: fn(data, tier))
 
         width = max(self.content_size.width - 4, 0)
-        for candidate in (EOA_SUBTITLE, EOA_SUBTITLE_SHORT, EOA_SUBTITLE_TINY):
+        for candidate in (
+            LIST_EXPORT_SUBTITLE,
+            LIST_EXPORT_SUBTITLE_SHORT,
+            LIST_EXPORT_SUBTITLE_TINY,
+        ):
             if not width or len(candidate) <= width:
                 note.update(candidate)
                 break
         else:
-            note.update(EOA_SUBTITLE_TINY)
+            note.update(LIST_EXPORT_SUBTITLE_TINY)

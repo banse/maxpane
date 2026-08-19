@@ -2129,8 +2129,8 @@ SurfDevActivity > RichLog {
  */
 
 /* `auto`, not a pinned height, and NO vertical padding. CuratorHero is a
- * height-8 widget: three height-7 boxes over the one-row EOA subtitle. A
- * single row of vertical padding here clips the subtitle -- or the boxes'
+ * height-8 widget: three height-7 boxes over the one-row export instruction. A
+ * single row of vertical padding here clips the instruction -- or the boxes'
  * bottom border -- off the screen, which is the FWA hero coverage-badge bug
  * exactly, and against `auto` it would also silently pad the row back out. */
 CuratorScreen #hero-row {
@@ -2269,7 +2269,7 @@ CuratorScreen #curator-wallet-body {
 /* The ladder is the wider half: five columns of numbers against the standing
  * panel's four label/value lines. 3:2 measured, same method as #middle-row. */
 /* `margin: 1 0 0 0` is the shared `#middle-row`'s, so the blank line under the
- * hero's EOA subtitle is identical on every body and their first panel titles
+ * hero's export instruction is identical on every body and their first panel titles
  * land on the same row. */
 CuratorScreen #wallet-top-row {
     height: 1fr;

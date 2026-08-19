@@ -50,9 +50,9 @@ from maxpane_dashboard.widgets.curator._fmt import (
 )
 from maxpane_dashboard.widgets.curator.signals import MAX_CURVE_POINTS
 from maxpane_dashboard.widgets.curator.hero import (
-    EOA_SUBTITLE,
-    EOA_SUBTITLE_SHORT,
-    EOA_SUBTITLE_TINY,
+    LIST_EXPORT_SUBTITLE,
+    LIST_EXPORT_SUBTITLE_SHORT,
+    LIST_EXPORT_SUBTITLE_TINY,
     CuratorHeroBox,
     _tier_for,
 )
@@ -992,9 +992,8 @@ _HERO_BUILDERS = {
 class CuratorWalletHero(Vertical):
     """The `y` view's hero: three boxes about the reader, not about the game.
 
-    Same geometry as :class:`CuratorHero` -- three boxes over the EOA subtitle,
-    eight rows -- so swapping bodies never moves the row below it, and the one
-    honest capital sentence stays on screen in both views.
+    Same geometry as :class:`CuratorHero` -- three boxes over the export
+    instruction, eight rows -- so swapping bodies never moves the row below it.
     """
 
     DEFAULT_CSS = """
@@ -1038,7 +1037,7 @@ class CuratorWalletHero(Vertical):
                 yield CuratorHeroBox(
                     "[dim]Loading...[/]", id=box_id, classes="curator-hero-box"
                 )
-        yield Static(EOA_SUBTITLE, id="curator-wallet-hero-note")
+        yield Static(LIST_EXPORT_SUBTITLE, id="curator-wallet-hero-note")
 
     def update_data(
         self,
@@ -1085,9 +1084,13 @@ class CuratorWalletHero(Vertical):
             box.render_lines_at_tier(lambda tier, fn=builder: fn(data, tier))
 
         width = max(self.content_size.width - 4, 0)
-        for text in (EOA_SUBTITLE, EOA_SUBTITLE_SHORT, EOA_SUBTITLE_TINY):
+        for text in (
+            LIST_EXPORT_SUBTITLE,
+            LIST_EXPORT_SUBTITLE_SHORT,
+            LIST_EXPORT_SUBTITLE_TINY,
+        ):
             if width <= 0 or len(text) <= width:
                 note.update(text)
                 break
         else:
-            note.update(EOA_SUBTITLE_TINY)
+            note.update(LIST_EXPORT_SUBTITLE_TINY)

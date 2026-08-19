@@ -372,7 +372,13 @@ class _ThemedHarness(_Harness):
 
 def _screen(payload=None, *, raises: bool = False, wallet=_WALLET):
     manager = _FakeManager(payload=payload, raises=raises)
-    return CuratorScreen(manager, poll_interval=30, name="curator", wallet=wallet)
+    return CuratorScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=wallet,
+        export_dir=_FIXTURES / "no-local-exports",
+    )
 
 
 def _screen_text(app) -> str:
@@ -1956,8 +1962,8 @@ async def test_y_swaps_the_hero_for_wallet_metrics_too():
         assert screen.query_one(CuratorHero).display is False
         assert screen.query_one(f"#{WALLET_HERO_ID}").display is True
         assert "CLOCK" not in wallet
-        # The one honest capital sentence stays on screen in both views.
-        assert "EOA-only gate" in wallet
+        # The full-list export instruction stays on screen in both views.
+        assert "press 'e' to export full list as json file" in wallet
         # ...and so does the phase, one row up.
         assert "GRACE" in wallet
 
@@ -3378,6 +3384,42 @@ async def test_e_exports_only_the_full_list_currently_on_screen(tmp_path):
     assert len(json.loads((tmp_path / "curator_cleaned_list.json").read_text())) == 1_100
     assert "saved →" in raw_receipt and "curator_raw_list.json" in raw_receipt
     assert "saved →" in clean_receipt and "curator_cleaned_list.json" in clean_receipt
+
+
+@pytest.mark.parametrize("cleaned", (False, True))
+async def test_export_immediately_replaces_the_live_slice_with_all_wallets(
+    tmp_path, cleaned
+):
+    from textual.widgets import DataTable
+
+    payload = _list_payload(1_001)
+    payload.update(contributors_total=1_002, clean_contributors=1_002)
+    screen = _export_screen(tmp_path, payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.press("l")
+        if cleaned:
+            await pilot.press("c")
+        await pilot.pause()
+        table_id = (
+            "#curator-cleaned-list-table"
+            if cleaned
+            else "#curator-raw-list-table"
+        )
+        table = screen.query_one(table_id, DataTable)
+        assert table.row_count == 1_000
+
+        await pilot.press("e")
+        await pilot.pause()
+
+        assert table.row_count == 1_001
+        basename = "curator_cleaned_list" if cleaned else "curator_raw_list"
+        assert (tmp_path / f"{basename}.enriched.json").exists()
+        assert f"THE {'CLEANED' if cleaned else 'RAW'} LIST - 1,001 wallets" in (
+            _screen_text(app)
+        )
 
 
 @pytest.mark.parametrize("rows,should_exist", ((None, False), ([], True)))

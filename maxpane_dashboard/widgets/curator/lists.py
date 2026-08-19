@@ -34,10 +34,6 @@ CLEANED_LIST_UNAVAILABLE = "analysis unavailable"
 CLEANED_LIST_EMPTY = "no wallets survive"
 
 MAX_ROWS = 1_000
-EXPORT_TITLE_HINT = (
-    "(press 'e' to export full list as json file - once exported all wallets "
-    "will be shown)"
-)
 
 _RANK_COLS = 6
 _JOIN_COLS = 6
@@ -269,6 +265,8 @@ class _ListTable(Vertical):
         self._export_path: str | None = None
         self._export_failed = False
         self._complete_rows: list[dict] | None = None
+        self._complete_expected_count: object = None
+        self._live_wallet_count: object = None
 
     def compose(self) -> ComposeResult:
         yield Static(self.TITLE, classes="curator-list-title")
@@ -351,7 +349,6 @@ class _ListTable(Vertical):
             and count >= 0
             else self.TITLE
         )
-        heading = f"{heading} {EXPORT_TITLE_HINT}"
         title, placed = title_with_hint(heading, self._hint, width)
         self.query_one(".curator-list-title", Static).update(title)
         if self._hint and not placed:
@@ -372,10 +369,16 @@ class _ListTable(Vertical):
         """Swap between the live slice and a validated complete export."""
         selected_complete = complete and isinstance(rows, list)
         self._complete_rows = rows if selected_complete else None
+        self._complete_expected_count = (
+            self._live_wallet_count if selected_complete else None
+        )
         if not self._payload:
             return
         self._payload["rows"] = rows
         self._payload["complete"] = selected_complete
+        self._payload["wallet_count"] = (
+            len(rows) if selected_complete else self._live_wallet_count
+        )
         self._render_view()
 
     def _select_rows(self, live_rows, wallet_count) -> tuple[object, bool, bool]:
@@ -386,11 +389,12 @@ class _ListTable(Vertical):
         if (
             isinstance(wallet_count, int)
             and not isinstance(wallet_count, bool)
-            and wallet_count == len(complete)
+            and wallet_count == self._complete_expected_count
         ):
             unchanged = self._payload.get("rows") is complete
             return complete, True, unchanged
         self._complete_rows = None
+        self._complete_expected_count = None
         return live_rows, False, False
 
     def _render_you(self, columns: tuple, *, clear: bool = False) -> None:
@@ -482,13 +486,14 @@ class CuratorRawList(_ListTable):
         self, leaderboard_rows=None, you_list_row=None,
         contributors_total=None, **_kwargs
     ) -> None:
+        self._live_wallet_count = contributors_total
         rows, complete, unchanged = self._select_rows(
             leaderboard_rows, contributors_total
         )
         self._payload = {
             "rows": rows,
             "you_list_row": you_list_row,
-            "wallet_count": contributors_total,
+            "wallet_count": len(rows) if complete else contributors_total,
             "complete": complete,
             "seen": True,
         }
@@ -517,13 +522,14 @@ class CuratorCleanedList(_ListTable):
         self, clean_list_rows=None, you_list_row=None,
         clean_contributors=None, analysis_as_of_hhmm=None, **_kwargs
     ) -> None:
+        self._live_wallet_count = clean_contributors
         rows, complete, unchanged = self._select_rows(
             clean_list_rows, clean_contributors
         )
         self._payload = {
             "rows": rows,
             "you_list_row": you_list_row,
-            "wallet_count": clean_contributors,
+            "wallet_count": len(rows) if complete else clean_contributors,
             "analysis_as_of_hhmm": analysis_as_of_hhmm,
             "complete": complete,
             "seen": True,

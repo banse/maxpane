@@ -595,8 +595,8 @@ def test_the_curator_rows_that_must_not_pad_vertically_do_not(selector: str) -> 
     """Two rows lose a row of content to a single row of vertical padding.
 
     ``#hero-row`` is ``height: auto`` around an 8-row CuratorHero -- three
-    height-7 boxes over the one-row EOA subtitle -- so a vertical pad clips
-    the subtitle or the boxes' bottom border (the FWA coverage-badge bug), and
+    height-7 boxes over the one-row export instruction -- so a vertical pad clips
+    the instruction or the boxes' bottom border (the FWA coverage-badge bug), and
     against ``auto`` it also silently re-inflates the row.  ``#curator-right-rail``
     is worse: it holds a seven-row signal panel whose last row is YOU, and a
     fixed-height column loses its last row first.
@@ -1046,8 +1046,7 @@ def test_no_curator_surface_labels_volume_as_tvl_or_capital() -> None:
     ``routed (all refunded)``.
 
     Scanned over *rendered* strings only.  ``HOUR AT RISK`` is the mandated
-    detector label and is allowed as a whole string; the one honest capital
-    sentence is the EOA subtitle, and it says the contract keeps none of it.
+    detector label and is allowed as a whole string.
     """
     surfaces = [
         p for p in CURATOR_PRODUCTION
