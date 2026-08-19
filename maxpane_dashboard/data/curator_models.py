@@ -767,6 +767,9 @@ CURATOR_KEYS: tuple[str, ...] = (
                                 #   Rendered beside `you_rank`, never instead
                                 #   of it: "#412 raw, #47 with clear farms
                                 #   removed" is the whole point.
+    "you_list_row",             # dict | None — complete fixed row under the
+                                #   raw/clean list, including JOIN # even when
+                                #   the wallet ranks below the display cap.
     # ---- health -------------------------------------------------------------
     "degraded",                 # list[str] — group names ⊆ {state, logs, wallet}
     "as_of_hhmm",               # str — the rendered freshness marker
@@ -871,12 +874,11 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-#: The twelve keys the **manager's analysis adapter** produces, and the only
+#: The thirteen keys the **manager's analysis adapter** produces, and the only
 #: keys in ``CURATOR_KEYS`` that ``build_signals`` does not emit besides
 #: ``curator_signals.MANAGER_OWNED_KEYS`` (``degraded``, ``as_of_hhmm``,
-#: ``as_of``).  Eleven at the freeze; ``points_total`` is the R14 amendment
-#: (2026-08-18) — PRD §5.3's "total vs clean" needed the population total and
-#: no frozen key carried it.
+#: ``as_of``).  Eleven at the freeze; ``points_total`` added the population
+#: comparison and ``you_list_row`` added the uncapped fixed wallet record.
 #:
 #: It exists so the analytics suite's output-surface guard can stay an exact
 #: equality —
@@ -889,7 +891,7 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
 #: drift while the analytics module is never opened.
 #:
 #: Hand-typed rather than filtered out of ``CURATOR_KEYS``: a derivation would
-#: make ``test_the_analysis_keys_are_exactly_the_eleven_the_adapter_fills``
+#: make ``test_the_analysis_keys_are_exactly_the_thirteen_the_adapter_fills``
 #: compare a constant against itself, and the same redundancy rule already
 #: applies to ``SIGNAL_OUTPUT_KEYS`` one module over.
 CURATOR_ANALYSIS_KEYS: tuple[str, ...] = (
@@ -905,6 +907,7 @@ CURATOR_ANALYSIS_KEYS: tuple[str, ...] = (
     "you_linked_reasons",
     "you_linked_group_size",
     "you_clean_rank",
+    "you_list_row",
 )
 
 #: The exact ``kind`` values the activity-row producer emits — the vocabulary,

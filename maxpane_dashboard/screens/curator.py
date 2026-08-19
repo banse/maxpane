@@ -404,8 +404,10 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "points_total", "you_clean_rank", "analysis_as_of_hhmm",
     ),
     # -- the `l` raw/clean record view ---------------------------------------
-    "CuratorRawList": ("leaderboard_rows",),
-    "CuratorCleanedList": ("clean_list_rows", "analysis_as_of_hhmm"),
+    "CuratorRawList": ("leaderboard_rows", "you_list_row"),
+    "CuratorCleanedList": (
+        "clean_list_rows", "you_list_row", "analysis_as_of_hhmm",
+    ),
 }
 
 #: The one kwarg above that the manager does not produce.

@@ -1677,6 +1677,62 @@ class CuratorManager:
 
     # -- the analysis merge (WP3.4) ------------------------------------------
 
+    def _you_list_row(
+        self, payload: Mapping[str, Any], analysis: Mapping[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Project the configured wallet once, independent of display caps."""
+        if not isinstance(self.wallet, str) or not self.wallet:
+            return None
+
+        address_key = self.wallet.lower()
+        visible = next(
+            (
+                row
+                for row in payload.get("leaderboard_rows") or ()
+                if isinstance(row, Mapping)
+                and str(row.get("address", "")).lower() == address_key
+            ),
+            None,
+        )
+        first_index = visible.get("first_index") if visible else None
+        if first_index is None:
+            for row in self.cache.fold_rows():
+                if str(getattr(row, "address", "")).lower() == address_key:
+                    first_index = getattr(row, "first_index", None)
+                    break
+
+        you_keys = (
+            "you_rank",
+            "you_clean_rank",
+            "you_points",
+            "you_credit_eth",
+            "you_weight_eth",
+            "you_tx_count",
+            "you_first_hour",
+        )
+        if (
+            payload.get("leaderboard_rows") is None
+            and first_index is None
+            and all(payload.get(key) is None for key in you_keys)
+        ):
+            return None
+
+        row = {
+            "rank": payload.get("you_rank"),
+            "clean_rank": payload.get("you_clean_rank"),
+            "address": self.wallet,
+            "points": payload.get("you_points"),
+            "credit_eth": payload.get("you_credit_eth"),
+            "weight_eth": payload.get("you_weight_eth"),
+            "tx_count": payload.get("you_tx_count"),
+            "first_hour": payload.get("you_first_hour"),
+            "first_index": first_index,
+            "name": None,
+            "link_conf": None,
+        }
+        curator_clusters.merge_leaderboard_grade([row], analysis)
+        return row
+
     def _merge_analysis(self, payload: dict[str, Any]) -> None:
         """Merge the detached sweep's last-good into the flat dict.  In place.
 
@@ -1734,28 +1790,28 @@ class CuratorManager:
         curator_clusters.merge_leaderboard_grade(
             rows if isinstance(rows, list) else None, slot
         )
-        if slot is None:
-            return
-        for key in ("operator_rows", "segment_rows", "clean_list_rows"):
-            value = slot.get(key)
-            payload[key] = (
-                [dict(row) for row in value if isinstance(row, Mapping)]
-                if isinstance(value, list)
-                else None
-            )
-        for key in (
-            "operators_count",
-            "clean_points",
-            "clean_contributors",
-            "points_total",
-        ):
-            payload[key] = _opt_int(slot.get(key))
-        share = slot.get("flagged_points_share_pct")
-        if isinstance(share, (int, float)) and not isinstance(share, bool):
-            payload["flagged_points_share_pct"] = float(share)
-        payload["analysis_as_of_hhmm"] = entry.as_of_hhmm()
-        if self.wallet:
-            payload.update(curator_clusters.you_linkage(self.wallet, slot))
+        if slot is not None:
+            for key in ("operator_rows", "segment_rows", "clean_list_rows"):
+                value = slot.get(key)
+                payload[key] = (
+                    [dict(row) for row in value if isinstance(row, Mapping)]
+                    if isinstance(value, list)
+                    else None
+                )
+            for key in (
+                "operators_count",
+                "clean_points",
+                "clean_contributors",
+                "points_total",
+            ):
+                payload[key] = _opt_int(slot.get(key))
+            share = slot.get("flagged_points_share_pct")
+            if isinstance(share, (int, float)) and not isinstance(share, bool):
+                payload["flagged_points_share_pct"] = float(share)
+            payload["analysis_as_of_hhmm"] = entry.as_of_hhmm()
+            if self.wallet:
+                payload.update(curator_clusters.you_linkage(self.wallet, slot))
+        payload["you_list_row"] = self._you_list_row(payload, slot)
 
     # -- reverse ENS (PRD §13 A9) --------------------------------------------
 
@@ -1775,6 +1831,11 @@ class CuratorManager:
             for row in payload.get(key) or ():
                 if isinstance(row, dict) and isinstance(row.get("address"), str):
                     out.append(row["address"])
+        you_list_row = payload.get("you_list_row")
+        if isinstance(you_list_row, Mapping) and isinstance(
+            you_list_row.get("address"), str
+        ):
+            out.append(you_list_row["address"])
         for row in payload.get("closest_call_rows") or ():
             if isinstance(row, dict) and isinstance(row.get("savior"), str):
                 out.append(row["savior"])
@@ -1831,6 +1892,11 @@ class CuratorManager:
             for row in payload.get(key) or ():
                 if isinstance(row, dict) and isinstance(row.get("address"), str):
                     row["name"] = known.get(row["address"].lower())
+        you_list_row = payload.get("you_list_row")
+        if isinstance(you_list_row, dict) and isinstance(
+            you_list_row.get("address"), str
+        ):
+            you_list_row["name"] = known.get(you_list_row["address"].lower())
         for row in payload.get("closest_call_rows") or ():
             if isinstance(row, dict) and isinstance(row.get("savior"), str):
                 row["savior_name"] = known.get(row["savior"].lower())

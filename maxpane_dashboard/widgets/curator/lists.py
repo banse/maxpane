@@ -12,7 +12,6 @@ from maxpane_dashboard.widgets.curator._fmt import (
     NAME_COLS,
     fmt_eth_compact,
     fmt_points,
-    short_addr,
 )
 from maxpane_dashboard.widgets.curator._table import (
     WIDEN_HINT,
@@ -38,6 +37,7 @@ MAX_ROWS = 1_000
 
 _RANK_COLS = 6
 _JOIN_COLS = 6
+_ADDRESS_COLS = 42
 _POINTS_COLS = 7
 _ETH_COLS = 9
 _DEPOSITS_COLS = 8
@@ -48,7 +48,8 @@ _LINK_COLS = 4
 _RAW_FULL = (
     ("rank", "#", _RANK_COLS),
     ("join", "JOIN #", _JOIN_COLS),
-    ("wallet", "WALLET", NAME_COLS),
+    ("address", "ADDRESS", _ADDRESS_COLS),
+    ("ens", "ENS", NAME_COLS),
     ("points", "POINTS", _POINTS_COLS),
     ("weight", "WEIGHT Ξ", _ETH_COLS),
     ("credit", "CREDIT Ξ", _ETH_COLS),
@@ -66,7 +67,7 @@ _RAW_NARROW = tuple(
 _RAW_MINIMUM = tuple(
     column
     for column in _RAW_FULL
-    if column[0] in ("rank", "wallet", "points", "link")
+    if column[0] in ("rank", "address", "ens", "points", "link")
 )
 _RAW_TIERS = (
     ("full", tier_cost(_RAW_FULL), _RAW_FULL, ""),
@@ -88,7 +89,8 @@ _RAW_TIERS = (
 _CLEANED_FULL = (
     ("rank", "#", _RANK_COLS),
     ("join", "JOIN #", _JOIN_COLS),
-    ("wallet", "WALLET", NAME_COLS),
+    ("address", "ADDRESS", _ADDRESS_COLS),
+    ("ens", "ENS", NAME_COLS),
     ("points", "POINTS", _POINTS_COLS),
     ("weight", "WEIGHT Ξ", _ETH_COLS),
     ("credit", "CREDIT Ξ", _ETH_COLS),
@@ -107,7 +109,7 @@ _CLEANED_NARROW = tuple(
 _CLEANED_MINIMUM = tuple(
     column
     for column in _CLEANED_FULL
-    if column[0] in ("rank", "wallet", "points")
+    if column[0] in ("rank", "address", "ens", "points")
 )
 _CLEANED_TIERS = (
     ("full", tier_cost(_CLEANED_FULL), _CLEANED_FULL, ""),
@@ -141,15 +143,21 @@ def _rank(value) -> str:
         return DASH
 
 
-def _wallet(name, address) -> str:
+def _address(value) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return DASH
+    return safe_markup(value.strip())
+
+
+def _ens(name) -> str:
     value = ""
     if isinstance(name, str):
         value = " ".join(name.split())
     if not value:
-        value = short_addr(address)
+        return DASH
     if cell_len(value) > NAME_COLS:
         value = f"{set_cell_size(value, NAME_COLS - 1)}…"
-    return safe_markup(value or DASH)
+    return safe_markup(value)
 
 
 def _window(value) -> str:
@@ -168,7 +176,8 @@ def _raw_values(row: dict) -> dict:
     return {
         "rank": _rank(row.get("rank")),
         "join": _rank(row.get("first_index")),
-        "wallet": _wallet(row.get("name"), row.get("address")),
+        "address": _address(row.get("address")),
+        "ens": _ens(row.get("name")),
         "points": fmt_points(row.get("points")),
         "weight": fmt_eth_compact(row.get("weight_eth")),
         "credit": fmt_eth_compact(row.get("credit_eth")),
@@ -183,7 +192,8 @@ def _cleaned_values(row: dict) -> dict:
     return {
         "rank": _rank(row.get("clean_rank")),
         "join": _rank(row.get("first_index")),
-        "wallet": _wallet(row.get("name"), row.get("address")),
+        "address": _address(row.get("address")),
+        "ens": _ens(row.get("name")),
         "points": fmt_points(row.get("points")),
         "weight": fmt_eth_compact(row.get("weight_eth")),
         "credit": fmt_eth_compact(row.get("credit_eth")),
@@ -224,6 +234,17 @@ class _ListTable(Vertical):
     .curator-list-table {
         height: 1fr;
     }
+    .curator-list-you {
+        height: 1;
+        min-height: 1;
+        color: $accent;
+        text-style: bold;
+        scrollbar-size: 0 0;
+    }
+    .curator-list-blank {
+        width: 100%;
+        height: 1;
+    }
     .curator-list-receipt {
         width: 100%;
         height: 1;
@@ -248,13 +269,20 @@ class _ListTable(Vertical):
         receipt.display = False
         yield receipt
         yield DataTable(id=self.TABLE_ID, classes="curator-list-table")
+        you = DataTable(classes="curator-list-you")
+        you.show_header = False
+        yield you
+        yield Static("", classes="curator-list-blank")
 
     def on_mount(self) -> None:
         table = self.query_one(f"#{self.TABLE_ID}", DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = True
+        you = self.query_one(".curator-list-you", DataTable)
+        you.cursor_type = "none"
         columns = self._apply_columns(table)
         table.add_row(*cells({}, columns, default="…"))
+        you.add_row(*cells({}, columns))
 
     def on_resize(self, _event=None) -> None:
         if self._payload:
@@ -296,7 +324,11 @@ class _ListTable(Vertical):
     def _apply_columns(self, table: DataTable) -> tuple:
         width = table.content_size.width or self.content_size.width
         _name, columns, hint = pick_tier(self.TIERS, width)
-        install_columns(table, columns, self._columns)
+        current = self._columns
+        install_columns(table, columns, current)
+        install_columns(
+            self.query_one(".curator-list-you", DataTable), columns, current
+        )
         self._columns = columns
         self._hint = hint
         return columns
@@ -328,6 +360,19 @@ class _ListTable(Vertical):
             return
 
         columns = self._apply_columns(table)
+        you = self._payload.get("you_list_row")
+        if isinstance(you, dict):
+            try:
+                values = self._row_values(you)
+            except Exception:
+                values = {}
+            self.query_one(".curator-list-you", DataTable).add_row(
+                *cells(values, columns, default=DASH)
+            )
+        else:
+            self.query_one(".curator-list-you", DataTable).add_row(
+                *cells({}, columns)
+            )
         rows = self._rows()
         if rows is None:
             self._set_heading(f"[$warning]⚠ {self.UNAVAILABLE}[/]")
@@ -372,8 +417,14 @@ class CuratorRawList(_ListTable):
     UNAVAILABLE = RAW_LIST_UNAVAILABLE
     EMPTY = RAW_LIST_EMPTY
 
-    def update_data(self, leaderboard_rows=None, **_kwargs) -> None:
-        self._payload = {"rows": leaderboard_rows, "seen": True}
+    def update_data(
+        self, leaderboard_rows=None, you_list_row=None, **_kwargs
+    ) -> None:
+        self._payload = {
+            "rows": leaderboard_rows,
+            "you_list_row": you_list_row,
+            "seen": True,
+        }
         self._render_view()
 
     def _rows(self):
@@ -393,10 +444,12 @@ class CuratorCleanedList(_ListTable):
     EMPTY = CLEANED_LIST_EMPTY
 
     def update_data(
-        self, clean_list_rows=None, analysis_as_of_hhmm=None, **_kwargs
+        self, clean_list_rows=None, you_list_row=None,
+        analysis_as_of_hhmm=None, **_kwargs
     ) -> None:
         self._payload = {
             "rows": clean_list_rows,
+            "you_list_row": you_list_row,
             "analysis_as_of_hhmm": analysis_as_of_hhmm,
             "seen": True,
         }

@@ -2200,6 +2200,19 @@ def _full_payload() -> dict:
         you_linked_group_size=1995,
         you_linked_reasons=_worst_case_envelope_reasons(),
         you_clean_rank=None,
+        you_list_row={
+            "rank": 12,
+            "clean_rank": None,
+            "address": "0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91",
+            "points": 1234,
+            "credit_eth": 3.6,
+            "weight_eth": 7.03,
+            "tx_count": 4,
+            "first_hour": 0,
+            "first_index": 12,
+            "name": "surfsurf.eth",
+            "link_conf": "high",
+        },
     )
 
 
@@ -3826,7 +3839,8 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
     for header in (
         "#",
         "JOIN",
-        "WALLET",
+        "ADDRESS",
+        "ENS",
         "POINTS",
         "WEIGHT",
         "CREDIT",
@@ -3845,6 +3859,7 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
         "4",
         "12",
         "grace",
+        address,
         "record.eth",
         "◌",
     ):
@@ -3873,7 +3888,8 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
     for header in (
         "#",
         "JOIN",
-        "WALLET",
+        "ADDRESS",
+        "ENS",
         "POINTS",
         "WEIGHT",
         "CREDIT",
@@ -3891,12 +3907,77 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
         "6",
         "29",
         "judged",
+        address,
         "clean.eth",
         "as of 22:41",
     ):
         assert value in clean, value
     assert "LINK" not in clean
     assert "0x1234…abcd" not in clean
+
+
+@pytest.mark.parametrize("kind", ("raw", "clean"))
+async def test_the_list_footer_is_an_aligned_you_row_followed_by_one_blank_line(kind):
+    from textual.widgets import DataTable, Static
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    address = "0x1234567890abcdef1234567890abcdef1234abcd"
+    table_row = {
+        "rank": 1,
+        "clean_rank": 1,
+        "address": "0x" + "01" * 20,
+        "points": 200,
+        "credit_eth": 2.0,
+        "weight_eth": 3.0,
+        "tx_count": 1,
+        "first_hour": 0,
+        "first_index": 1,
+        "name": None,
+        "link_conf": "clean",
+    }
+    you_row = {
+        "rank": 4_321,
+        "clean_rank": None,
+        "address": address,
+        "points": 12_345,
+        "credit_eth": 67.89,
+        "weight_eth": 45.67,
+        "tx_count": 4,
+        "first_hour": 29,
+        "first_index": 88,
+        "name": "you.eth",
+        "link_conf": "low",
+    }
+    widget = CuratorRawList() if kind == "raw" else CuratorCleanedList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 18)) as pilot:
+        if kind == "raw":
+            widget.update_data(
+                leaderboard_rows=[table_row], you_list_row=you_row
+            )
+        else:
+            widget.update_data(
+                clean_list_rows=[table_row], you_list_row=you_row
+            )
+        await pilot.pause()
+
+        main = widget.query_one(".curator-list-table", DataTable)
+        footer = widget.query_one(".curator-list-you", DataTable)
+        blank = widget.query_one(".curator-list-blank", Static)
+        assert footer.row_count == 1
+        assert footer.show_header is False
+        assert footer.region.y == main.region.bottom
+        assert blank.region.y == footer.region.bottom
+        assert blank.region.height == 1
+        assert [column.width for column in main.columns.values()] == [
+            column.width for column in footer.columns.values()
+        ]
+
+        rendered = _screen_text(app)
+        assert address in rendered
+        assert "you.eth" in rendered
+        assert "12,345" in rendered
+        assert ("4,321" in rendered) if kind == "raw" else ("--" in rendered)
 
 
 def test_the_new_lists_own_1000_row_cap_without_moving_shipped_caps():
@@ -4082,8 +4163,9 @@ async def test_list_window_is_derived_from_the_nft_hour_rule(first_hour, window)
             }
         ],
     )
-    assert window in _row_cells(text, "0xabab…abab")
-    assert "?" in _row_cells(text, "0xabab…abab")
+    address = "0x" + "ab" * 20
+    assert window in _row_cells(text, address)
+    assert "?" in _row_cells(text, address)
 
 
 @pytest.mark.parametrize("kind", ("raw", "clean"))

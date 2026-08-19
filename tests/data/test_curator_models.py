@@ -537,7 +537,7 @@ EXPECTED_KEYS = {
     "volume_series",
     "contributors_series",
     # The linked-wallet analysis view (`f`), added by the sybil expansion
-    # (docs/curator_sybil_PRD.md §7).  All twelve are manager-adapter-produced
+    # (docs/curator_sybil_PRD.md §7).  All thirteen are manager-adapter-produced
     # from the detached B+C sweep's last-good, never emitted by build_signals.
     # `points_total` is the R14 amendment (2026-08-18): the freeze missed the
     # population total, and without it the CLEANED LIST panel cannot render
@@ -554,6 +554,7 @@ EXPECTED_KEYS = {
     "you_linked_reasons",
     "you_linked_group_size",
     "you_clean_rank",
+    "you_list_row",
     # health
     "degraded",
     "as_of_hhmm",
@@ -845,7 +846,7 @@ def test_curator_keys_gained_exactly_the_analysis_surface() -> None:
         "operator_rows", "segment_rows", "clean_list_rows", "operators_count",
         "clean_points", "clean_contributors", "analysis_as_of_hhmm",
         "you_linked_state", "you_linked_reasons", "you_linked_group_size",
-        "you_clean_rank",
+        "you_clean_rank", "you_list_row",
     }
     assert new <= set(CURATOR_KEYS)
     assert "clean_list_export_path" not in CURATOR_KEYS   # screen-owned (plan §6.1)
@@ -855,12 +856,12 @@ def test_curator_keys_gained_exactly_the_analysis_surface() -> None:
     assert "linked_points_share_pct" not in CURATOR_KEYS
 
 
-def test_the_analysis_keys_are_exactly_the_twelve_the_adapter_fills() -> None:
+def test_the_analysis_keys_are_exactly_the_thirteen_the_adapter_fills() -> None:
     """``CURATOR_ANALYSIS_KEYS`` — the third producer of the flat dict.
 
     ``build_signals`` emits ``SIGNAL_OUTPUT_KEYS``; the manager emits
     ``MANAGER_OWNED_KEYS`` (the three health markers); and the manager's
-    **analysis adapter** emits exactly these twelve.  Naming them lets the
+    **analysis adapter** emits exactly these thirteen.  Naming them lets the
     analytics suite's output-surface guard stay an exact equality on all three
     without ``analytics/curator_signals.py`` being opened — that module stays
     byte-identical to what shipped (PRD §2).
@@ -877,13 +878,13 @@ def test_the_analysis_keys_are_exactly_the_twelve_the_adapter_fills() -> None:
         "clean_points", "clean_contributors", "points_total",
         "analysis_as_of_hhmm",
         "you_linked_state", "you_linked_reasons", "you_linked_group_size",
-        "you_clean_rank",
+        "you_clean_rank", "you_list_row",
     }
-    assert len(CURATOR_ANALYSIS_KEYS) == len(set(CURATOR_ANALYSIS_KEYS)) == 12
+    assert len(CURATOR_ANALYSIS_KEYS) == len(set(CURATOR_ANALYSIS_KEYS)) == 13
     assert set(CURATOR_ANALYSIS_KEYS) <= set(CURATOR_KEYS)
     assert isinstance(CURATOR_ANALYSIS_KEYS, tuple)
     # `flagged_points_share_pct` is REUSED, so it is a signal-surface key that
-    # the adapter may later override -- not one of the eleven it creates.  The
+    # the adapter may later override -- not one of the thirteen it creates.  The
     # override decision is WP3's (plan §6.2); the split of ownership is not.
     assert "flagged_points_share_pct" not in CURATOR_ANALYSIS_KEYS
 
@@ -898,7 +899,7 @@ def test_the_new_analysis_keys_are_not_in_the_signal_surface() -> None:
         "operator_rows", "segment_rows", "clean_list_rows", "operators_count",
         "clean_points", "clean_contributors", "analysis_as_of_hhmm",
         "you_linked_state", "you_linked_reasons", "you_linked_group_size",
-        "you_clean_rank",
+        "you_clean_rank", "you_list_row",
     }
     assert analysis.isdisjoint(set(sig.SIGNAL_OUTPUT_KEYS))
     # The module that must not learn the word: it fills `flagged` (the Tier-A
@@ -1048,6 +1049,7 @@ ANALYSIS_KEY_ROUTING: dict[str, tuple[str, ...]] = {
     "you_linked_state": ("CuratorWalletStanding",),
     "you_linked_reasons": ("CuratorWalletStanding",),
     "you_linked_group_size": ("CuratorWalletStanding",),
+    "you_list_row": ("CuratorRawList", "CuratorCleanedList"),
 }
 
 
@@ -1087,11 +1089,14 @@ def test_every_route_is_a_tuple_of_widget_class_names() -> None:
             assert isinstance(name, str) and name.startswith("Curator"), (key, name)
 
 
-def test_the_routed_widgets_are_the_five_the_plan_names() -> None:
-    """Three panels WP4 creates plus two shipped widgets WP5 extends -- and no
-    sixth, which would be a widget nobody has been told to write."""
+def test_the_routed_widgets_are_the_seven_the_views_name() -> None:
+    """The original five analysis consumers plus both record-list tables."""
     routed = {name for names in ANALYSIS_KEY_ROUTING.values() for name in names}
-    assert routed == set(WP4_ANALYSIS_WIDGETS) | {"CuratorWalletStanding"}
+    assert routed == set(WP4_ANALYSIS_WIDGETS) | {
+        "CuratorWalletStanding",
+        "CuratorRawList",
+        "CuratorCleanedList",
+    }
     # `CuratorLeaderboard` is in WP5_EXISTING_WIDGETS but not in the routing
     # table on purpose: it renders `link_conf`, which is a sub-key of a row
     # payload it already receives, so it needs no new dispatch entry.

@@ -2388,6 +2388,41 @@ def test_full_list_exports_ignore_display_caps_without_growing_the_analysis_slot
     assert len(manager.cache.analysis_last_good().payload["clean_list_rows"]) == 20
 
 
+def test_the_configured_wallet_gets_a_complete_list_row_beyond_the_display_cap(
+    tmp_path, clock
+):
+    stored, rows = _legacy_clean_slot(count=1_200)
+    wallet = rows[-1].address
+    manager = _manager(tmp_path, clock, wallet=wallet)
+    manager.cache.store_fold(rows, last_block=None, now=NOW)
+    manager.cache.store_analysis(stored, ts=NOW)
+    payload = {
+        "leaderboard_rows": [],
+        "you_rank": 1_200,
+        "you_points": rows[-1].points,
+        "you_credit_eth": 1_200.0,
+        "you_weight_eth": rows[-1].weight_wei / 10**18,
+        "you_tx_count": 1,
+        "you_first_hour": 0,
+    }
+
+    manager._merge_analysis(payload)
+
+    assert payload["you_list_row"] == {
+        "rank": 1_200,
+        "clean_rank": 1_200,
+        "address": wallet,
+        "points": rows[-1].points,
+        "credit_eth": 1_200.0,
+        "weight_eth": rows[-1].weight_wei / 10**18,
+        "tx_count": 1,
+        "first_hour": 0,
+        "first_index": 1_200,
+        "name": None,
+        "link_conf": "clean",
+    }
+
+
 def test_full_list_exports_keep_unavailable_and_empty_distinct(tmp_path, clock):
     manager = _manager(tmp_path, clock)
     assert manager.full_list_rows(cleaned=False) is None

@@ -2964,7 +2964,14 @@ def _list_payload(row_count: int = 100) -> dict:
                 "name": f"clean{rank}.eth",
             }
         )
-    return _analysis_payload(leaderboard_rows=raw, clean_list_rows=clean)
+    return _analysis_payload(
+        leaderboard_rows=raw,
+        clean_list_rows=clean,
+        you_list_row={
+            **raw[0],
+            "clean_rank": clean[0]["clean_rank"],
+        } if raw else None,
+    )
 
 
 async def test_l_opens_one_raw_table_and_c_toggles_a_remembered_clean_table():
@@ -3054,6 +3061,29 @@ async def test_both_precomposed_lists_receive_data_before_they_are_shown():
         clean = _region_text(app, screen.query_one(CuratorCleanedList), screen)
     assert "raw1.eth" in raw and "19,999" in raw
     assert "clean1.eth" in clean and "19,999" in clean
+
+
+async def test_the_list_you_row_and_blank_line_sit_immediately_above_status():
+    from textual.widgets import Static
+    from maxpane_dashboard.widgets.curator import CuratorRawList
+    from maxpane_dashboard.widgets.status_bar import StatusBar
+
+    screen = _screen(_list_payload(1))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+
+        raw = screen.query_one(CuratorRawList)
+        footer = raw.query_one(".curator-list-you")
+        blank = raw.query_one(".curator-list-blank", Static)
+        status = screen.query_one(StatusBar)
+        assert footer.region.height == 1
+        assert blank.region.height == 1
+        assert footer.region.bottom == blank.region.y
+        assert blank.region.bottom == status.region.y
 
 
 @pytest.mark.parametrize("harness", (_Harness, _ThemedHarness))
@@ -3176,8 +3206,8 @@ async def test_both_list_width_sweeps_clear_inside_the_unchanged_app_pin():
 
     raw_width = await _first_list_width(False)
     clean_width = await _first_list_width(True)
-    assert raw_width == 93
-    assert clean_width == 93
+    assert raw_width == 137
+    assert clean_width == 131
     assert raw_width <= FULL_LAYOUT_COLUMNS == 143
     assert CURATOR_FULL_LAYOUT_COLUMNS == 138
 
