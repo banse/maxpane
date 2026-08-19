@@ -1658,11 +1658,18 @@ def test_the_closest_call_columns_are_the_frozen_row_keys():
     assert set(_call_rows()[0]) == set(CURATOR_ROW_KEYS["closest_call_rows"])
 
 
-async def test_closest_calls_ascend_by_margin():
-    text = await _rendered(CuratorClosestCalls, closest_call_rows=_call_rows())
+async def test_closest_calls_descend_by_hour_and_stop_at_hour_65():
+    rows = _call_rows() + [
+        {"hour": 65, "volume_eth": 100.0, "margin_eth": 95.0,
+         "savior": None, "savior_name": None},
+        {"hour": 66, "volume_eth": 5.01, "margin_eth": 0.01,
+         "savior": None, "savior_name": None},
+    ]
+    text = await _rendered(CuratorClosestCalls, closest_call_rows=rows)
     rows = [line for line in text.splitlines() if line.strip().startswith("h")]
     order = [line.split()[0] for line in rows]
-    assert order == ["h24", "h26", "h25"]
+    assert order == ["h65", "h26", "h25", "h24"]
+    assert "h66" not in text
 
 
 async def test_a_zero_margin_is_a_number_not_a_dash():
@@ -1781,15 +1788,13 @@ async def test_a_none_list_is_not_the_pre_judging_state():
     assert NO_JUDGED_HOURS not in dead
 
 
-async def test_a_row_with_an_unreadable_margin_sorts_last_not_first():
-    """The top of this board is a claim about how close the game came to
-    ending; a missing measurement is not evidence of a close call."""
+async def test_an_unreadable_margin_does_not_change_descending_hour_order():
     rows = _call_rows() + [{"hour": 30, "volume_eth": None, "margin_eth": None,
                             "savior": None}]
     text = await _rendered(CuratorClosestCalls, closest_call_rows=rows)
     ordered = [line.split()[0] for line in text.splitlines()
                if line.strip().startswith("h")]
-    assert ordered[-1] == "h30"
+    assert ordered == ["h30", "h26", "h25", "h24"]
 
 
 # ===========================================================================

@@ -961,6 +961,21 @@ async def test_both_views_occupy_the_identical_slot():
         assert (closest.size.width, closest.region.x) == clusters_size
 
 
+async def test_closest_calls_table_aligns_with_the_activity_log():
+    from textual.widgets import DataTable, RichLog
+
+    screen = _screen(_judged_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        activity = screen.query_one(CuratorActivity).query_one(RichLog)
+        closest = screen.query_one(CuratorClosestCalls).query_one(DataTable)
+
+        assert closest.region.y == activity.region.y
+
+
 async def test_the_toggle_survives_a_missing_widget():
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)

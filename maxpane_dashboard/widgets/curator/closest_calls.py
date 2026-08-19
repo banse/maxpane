@@ -1,8 +1,7 @@
-"""Judged hours by how close they came to killing the list (PRD §4).
+"""Completed judged hours through hour 65 (PRD §4).
 
-One row per **completed judged hour**, ascending by margin — the tightest
-call first, because the tightest call is the whole subject of this panel.
-The row is ``hour · volume · margin · savior``.
+One row per **completed judged hour**, newest first, with hours above 65
+omitted. The row is ``hour · volume · margin · savior``.
 
 Three states, all explicit
 --------------------------
@@ -108,6 +107,7 @@ NO_JUDGED_HOURS = "no judged hours yet"
 
 #: Rows rendered.  The board is a "closest" list, not a history.
 MAX_ROWS = 10
+MAX_HOUR = 65
 
 _HOUR_COLS = 5
 _VOLUME_COLS = 9
@@ -147,23 +147,25 @@ _TIERS = (
 )
 
 
-def _margin_key(row: dict) -> tuple[int, float]:
-    """Sort key: real margins ascending, unknown margins last.
+def _hour_value(row: dict) -> int | None:
+    value = row.get("hour")
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
-    An unreadable margin sorts to the bottom rather than to the top: the top
-    of this board is a claim about the closest the game came to ending, and
-    a missing measurement is not evidence of a close call.
-    """
-    margin = as_float(row.get("margin_eth"))
-    return (1, 0.0) if margin is None else (0, margin)
+
+def _hour_key(row: dict) -> tuple[int, int]:
+    """Sort valid hours descending and leave malformed rows at the bottom."""
+    hour = _hour_value(row)
+    return (1, 0) if hour is None else (0, -hour)
 
 
 def _row_values(row: dict) -> dict:
-    hour = row.get("hour")
-    try:
-        hour_str = f"h{int(hour)}"
-    except (TypeError, ValueError):
-        hour_str = DASH
+    hour = _hour_value(row)
+    hour_str = f"h{hour}" if hour is not None else DASH
     margin = as_float(row.get("margin_eth"))
     # 0.00 is a number here: an hour that survived by nothing is the
     # tightest call on the board, and the most interesting row on it.
@@ -184,14 +186,13 @@ def _row_values(row: dict) -> dict:
 
 
 class CuratorClosestCalls(Vertical):
-    """Judged hours ranked by margin, with an explicit pre-judging state."""
+    """Judged hours newest first, with an explicit pre-judging state."""
 
     DEFAULT_CSS = """
-    /* A blank row under the title and another above the table header (the note
-       carries the second one).  Rows are what this slot has spare. */
+    /* The note is the same single spacer row Activity carries. */
     CuratorClosestCalls > .curator-cc-title {
         width: 100%;
-        margin: 0 0 1 0;
+        margin: 0;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
@@ -203,7 +204,7 @@ class CuratorClosestCalls(Vertical):
         width: 100%;
         height: auto;
         min-height: 1;
-        margin: 0 0 1 0;
+        margin: 0;
         padding: 0 1;
     }
     CuratorClosestCalls > DataTable {
@@ -330,8 +331,13 @@ class CuratorClosestCalls(Vertical):
             table.add_row(*cells({}, columns, default=DASH))
             return
 
+        bounded = [
+            row
+            for row in usable
+            if (hour := _hour_value(row)) is None or hour <= MAX_HOUR
+        ]
         self._set_note("")
-        for row in sorted(usable, key=_margin_key)[:MAX_ROWS]:
+        for row in sorted(bounded, key=_hour_key)[:MAX_ROWS]:
             try:
                 values = _row_values(row)
             except Exception:
