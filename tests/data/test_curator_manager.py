@@ -46,6 +46,7 @@ from maxpane_dashboard.analytics.curator_signals import LEADERBOARD_LIMIT, build
 from maxpane_dashboard.data.curator_models import (
     CURATOR_DEGRADED_GROUPS,
     CURATOR_KEYS,
+    ContributorRow,
     CuratorConfig,
     DepositEvent,
     CuratorState,
@@ -2273,6 +2274,90 @@ def _store_farm_slot(manager, *, ts=NOW, wallet=None, **overrides):
     payload.update(overrides)
     manager.cache.store_analysis(payload, ts=ts)
     return payload
+
+
+def _legacy_clean_slot(count=120):
+    addresses = ["0x" + f"{rank:040x}" for rank in range(1, count + 1)]
+    rows = [
+        ContributorRow(
+            address=address,
+            weight_wei=rank,
+            credit_wei=rank * 10**18,
+            tx_count=1,
+            first_hour=0,
+            first_index=rank,
+            points=10_000 - rank,
+        )
+        for rank, address in enumerate(addresses, start=1)
+    ]
+    slot = {
+        "operator_rows": [],
+        "segment_rows": [],
+        "clean_list_rows": [
+            {
+                "clean_rank": rank,
+                "address": address,
+                "points": 10_000 - rank,
+                "credit_eth": float(rank),
+                "name": None,
+            }
+            for rank, address in enumerate(addresses[:20], start=1)
+        ],
+        "operators_count": 0,
+        "clean_points": sum(10_000 - rank for rank in range(1, count + 1)),
+        "clean_contributors": count,
+        "points_total": sum(10_000 - rank for rank in range(1, count + 1)),
+        "flagged_points_share_pct": 0.0,
+        "groups": [],
+        "clean_ranks": {
+            address.lower(): rank
+            for rank, address in enumerate(addresses, start=1)
+        },
+    }
+    return slot, rows
+
+
+def test_a_legacy_twenty_row_clean_list_expands_from_the_cached_fold(
+    tmp_path, clock
+):
+    """A pre-100 cache must not pin the list at its old rendered-row cap."""
+    manager = _manager(tmp_path, clock)
+    stored, rows = _legacy_clean_slot()
+    old_ts = NOW - 3_600
+    manager.cache.store_fold(rows, last_block=None, now=NOW)
+    manager.cache.store_analysis(stored, ts=old_ts)
+
+    payload = {"leaderboard_rows": []}
+    manager._merge_analysis(payload)
+
+    assert len(payload["clean_list_rows"]) == 100
+    assert [row["clean_rank"] for row in payload["clean_list_rows"]] == list(
+        range(1, 101)
+    )
+    assert payload["clean_list_rows"][-1] == {
+        "clean_rank": 100,
+        "address": "0x" + f"{100:040x}",
+        "points": 9_900,
+        "credit_eth": 100.0,
+        "name": None,
+    }
+    migrated = manager.cache.analysis_last_good()
+    assert migrated.ts == old_ts
+    assert len(migrated.payload["clean_list_rows"]) == 100
+    assert len(stored["clean_list_rows"]) == 20, "the old payload was mutated"
+
+
+def test_an_incomplete_fold_does_not_replace_a_legacy_clean_list(tmp_path, clock):
+    manager = _manager(tmp_path, clock)
+    stored, rows = _legacy_clean_slot()
+    manager.cache.store_fold(rows[:50], last_block=None, now=NOW)
+    manager.cache.store_analysis(stored, ts=NOW)
+
+    payload = {"leaderboard_rows": []}
+    manager._merge_analysis(payload)
+
+    assert len(payload["clean_list_rows"]) == 20
+    assert len(manager.cache.analysis_last_good().payload["clean_list_rows"]) == 20
 
 
 def test_with_no_analysis_last_good_every_analysis_key_is_none_never_empty(

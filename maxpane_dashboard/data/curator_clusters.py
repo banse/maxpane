@@ -88,6 +88,11 @@ def _require_sybilkit() -> None:
 #: Wei per ETH — the module's ONLY division site (see the module docstring).
 _ETH = 10**18
 
+
+def _eth(wei: int) -> float:
+    return wei / _ETH
+
+
 #: Words that may never reach a rendered string.  The chain cannot prove
 #: intent, so the adapter describes shapes and lets the reader judge — the same
 #: rule the widgets and ``curator_signals`` already enforce on their surfaces.
@@ -320,7 +325,7 @@ def build_analysis(
             "clean_rank": entry.clean_rank,
             "address": entry.address,
             "points": entry.points,
-            "credit_eth": entry.credit_wei / _ETH,
+            "credit_eth": _eth(entry.credit_wei),
             # The manager's ENS merge fills this, exactly like the leaderboard.
             "name": None,
         }
@@ -372,6 +377,46 @@ def _clean_ranks_of(analysis: Any) -> Mapping[str, Any]:
         raw = analysis.get("clean_ranks")
         return raw if isinstance(raw, Mapping) else {}
     return {}
+
+
+def clean_list_rows_from_fold(
+    analysis: Any, rows: Iterable[Any]
+) -> list[dict[str, Any]]:
+    """Rebuild the bounded display rows from persisted ranks and fold rows."""
+    ranks = {
+        address.lower(): rank
+        for address, rank in _clean_ranks_of(analysis).items()
+        if isinstance(address, str)
+        and isinstance(rank, int)
+        and not isinstance(rank, bool)
+        and 1 <= rank <= CLEAN_LIST_LIMIT
+    }
+    rebuilt: list[dict[str, Any]] = []
+    seen_ranks: set[int] = set()
+    for row in rows:
+        address = getattr(row, "address", None)
+        points = getattr(row, "points", None)
+        credit_wei = getattr(row, "credit_wei", None)
+        if not isinstance(address, str):
+            continue
+        rank = ranks.get(address.lower())
+        if rank is None or rank in seen_ranks:
+            continue
+        if not isinstance(points, int) or isinstance(points, bool):
+            continue
+        if not isinstance(credit_wei, int) or isinstance(credit_wei, bool):
+            continue
+        rebuilt.append(
+            {
+                "clean_rank": rank,
+                "address": address,
+                "points": points,
+                "credit_eth": _eth(credit_wei),
+                "name": None,
+            }
+        )
+        seen_ranks.add(rank)
+    return sorted(rebuilt, key=lambda row: row["clean_rank"])
 
 
 def _group_of(address: str, analysis: Any) -> Mapping | None:

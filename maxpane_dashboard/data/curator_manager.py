@@ -1661,6 +1661,28 @@ class CuratorManager:
             if entry is not None and isinstance(entry.payload, Mapping)
             else None
         )
+        # Pre-100 caches already carry every clean rank.  Upgrade their display
+        # slice only when the persisted fold can supply the complete new range.
+        if slot is not None:
+            clean_rows = slot.get("clean_list_rows")
+            clean_count = _opt_int(slot.get("clean_contributors"))
+            if (
+                isinstance(clean_rows, list)
+                and clean_count is not None
+                and clean_count >= 0
+            ):
+                expected = min(curator_clusters.CLEAN_LIST_LIMIT, clean_count)
+                if len(clean_rows) < expected:
+                    rebuilt = curator_clusters.clean_list_rows_from_fold(
+                        slot, self.cache.fold_rows()
+                    )
+                    if [row["clean_rank"] for row in rebuilt] == list(
+                        range(1, expected + 1)
+                    ):
+                        migrated = dict(slot)
+                        migrated["clean_list_rows"] = rebuilt
+                        self.cache.store_analysis(migrated, ts=entry.ts)
+                        slot = migrated
         rows = payload.get("leaderboard_rows")
         curator_clusters.merge_leaderboard_grade(
             rows if isinstance(rows, list) else None, slot
