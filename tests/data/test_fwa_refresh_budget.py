@@ -4,7 +4,10 @@
 WP-6 transport doubles (``RecordingTransport`` / ``SimChain``), which decode the
 client's own ``aggregate3`` calldata and re-encode a real ``Result[]``.  No test
 sleeps: the 0.12 s inter-call pacing is observed through a recording stand-in for
-``asyncio.sleep``.
+``asyncio.sleep`` **and a driven stand-in for the clock ``pace()`` reads**.  Both
+halves are needed -- faking only the sleep leaves ``pace``'s self-correction
+reading the wall, which makes the pacing assertions a measurement of machine load
+(see :class:`_FakeMonotonic`).
 
 Why this file exists in the shape it does
 -----------------------------------------
@@ -51,6 +54,7 @@ import httpx
 import pytest
 
 from maxpane_dashboard.analytics import fwa_ev
+from maxpane_dashboard.data import rpc_common
 from maxpane_dashboard.data.fwa_cache import (
     TIER_FAST,
     TIER_MEDIUM,
@@ -672,18 +676,53 @@ async def test_client_never_uses_raw_jsonrpc_array_batching():
             assert len(payload) <= MAX_JSONRPC_BATCH_ELEMENTS
 
 
+class _FakeMonotonic:
+    """A monotonic clock this test drives, standing in for the ``time`` module
+    inside :mod:`~maxpane_dashboard.data.rpc_common`.
+
+    ``pace()`` is **self-correcting**: it sleeps ``min_interval - elapsed``,
+    where ``elapsed`` comes from ``time.monotonic()``.  Faking ``asyncio.sleep``
+    alone leaves that read on the REAL clock, so the delay ``pace`` computes
+    shrinks with however long this machine actually took between round trips --
+    and the floor asserted below then goes red under load instead of on a
+    regression.  Measured: inter-call work of 0 / 0.02 / 0.05 / 0.11 / 0.20 s
+    yields sleeps of 0.12 / 0.10 / 0.07 / 0.01, three of them under the floor,
+    so roughly 20 ms of contention is enough to redden a green suite.
+
+    Advancing this clock by exactly the sleep that did NOT happen makes the
+    pacing a function of the code under test and nothing else.  Every attribute
+    other than ``monotonic`` is delegated to the real module, and ``pace`` is
+    the only thing in ``rpc_common`` that reads a clock at all.
+    """
+
+    def __init__(self, start: float = 1_000.0) -> None:
+        self._now = start
+
+    def monotonic(self) -> float:
+        return self._now
+
+    def advance(self, seconds: float) -> None:
+        self._now += seconds
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(time, name)
+
+
 async def test_consecutive_calls_are_paced_without_the_test_sleeping(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """~0.12 s between round trips, observed through a recording fake clock."""
     recorded: list[float] = []
     real_sleep = asyncio.sleep
+    clock = _FakeMonotonic()
 
     async def fake_sleep(delay: float, *a: Any, **kw: Any) -> None:
         recorded.append(delay)
+        clock.advance(delay)  # the sleep that did not happen still moves pace()
         await real_sleep(0)
 
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(rpc_common, "time", clock)
 
     chain = _sim_chain(600)
     transport = RecordingTransport(chain.handler)
@@ -707,6 +746,45 @@ async def test_consecutive_calls_are_paced_without_the_test_sleeping(
     )
     # ...and the suite did not actually wait for any of it
     assert elapsed < 2.0
+
+
+async def test_pacing_is_self_correcting_when_the_caller_was_already_slow(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A round trip that was already slow pays no extra delay -- pace()'s point.
+
+    This is the property the test above USED to assert by accident, through a
+    real clock: it read whatever elapsed on the wall between round trips, so it
+    was really measuring machine load and went red under it.  Driving the clock
+    instead of reading it puts the same property under a deterministic test --
+    without it, replacing ``elapsed`` with a hardcoded ``0.0`` passes every
+    other test in this file.
+
+    ``pace`` sleeps ``min_interval - elapsed`` and skips the sleep entirely once
+    ``elapsed`` reaches ``min_interval``, so a caller that burned 0.12 s of its
+    own is never slowed further.
+    """
+    recorded: list[float] = []
+    real_sleep = asyncio.sleep
+    clock = _FakeMonotonic()
+
+    async def fake_sleep(delay: float, *a: Any, **kw: Any) -> None:
+        recorded.append(delay)
+        clock.advance(delay)
+        await real_sleep(0)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(rpc_common, "time", clock)
+
+    last = clock.monotonic()
+    for own_work in (0.0, 0.03, INTER_CALL_DELAY_S, 0.30):
+        clock.advance(own_work)  # the caller's own cost between round trips
+        last = await rpc_common.pace(last, INTER_CALL_DELAY_S)
+
+    # The first two were faster than the floor and got topped up to it exactly;
+    # the last two had already spent >= the floor and slept not at all.
+    assert recorded == pytest.approx([INTER_CALL_DELAY_S, INTER_CALL_DELAY_S - 0.03])
+    assert len(recorded) == 2, "a caller that was already slow must not be paced again"
 
 
 # ---------------------------------------------------------------------------
