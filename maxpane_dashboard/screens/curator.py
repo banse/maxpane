@@ -164,6 +164,11 @@ from textual.widgets import Static
 from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 
 from maxpane_dashboard import __version__
+from maxpane_dashboard.data.curator_list_source import (
+    CLEANED_LIST_BASENAME,
+    RAW_LIST_BASENAME,
+    load_export_list,
+)
 from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS, PHASES
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.curator import (
@@ -253,8 +258,6 @@ MODES = (MODE_DASHBOARD, MODE_WALLET, MODE_ANALYSIS, MODE_LIST)
 #: the cleaned list as JSON rows plus a CSV of the same rows.  A TUI cannot
 #: hand a file to the reader, so it writes to disk and names the path.
 CLEAN_LIST_BASENAME = "curator_clean_list"
-RAW_LIST_BASENAME = "curator_raw_list"
-CLEANED_LIST_BASENAME = "curator_cleaned_list"
 
 LIST_RAW = "raw"
 LIST_CLEANED = "cleaned"
@@ -623,7 +626,7 @@ class CuratorScreen(RefreshGuard, Screen):
     """
 
     BINDINGS = [
-        Binding("r", "refresh", "Refresh", show=False),
+        Binding("r", "refresh_and_reload_list", "Refresh", show=False),
         Binding("c", "toggle_view", "Calls/Patterns", show=True),
         Binding("w", "set_wallet", "Wallet", show=True),
         Binding("y", "toggle_mode", "You", show=True),
@@ -931,6 +934,9 @@ class CuratorScreen(RefreshGuard, Screen):
         #: ``‹ taller`` state when only the terminal's height changed.
         #: ``None`` until the first refresh lands.
         self._title_data: dict | None = None
+        #: Set by a reader-requested list entry or manual refresh that lands
+        #: before fresh manager data. Interval refreshes never set it.
+        self._list_source_pending = False
 
     # ------------------------------------------------------------------
     # Layout
@@ -1110,8 +1116,12 @@ class CuratorScreen(RefreshGuard, Screen):
 
     def action_toggle_list(self) -> None:
         """``l`` -- swap the body for the selected full-width record list."""
-        self._mode = MODE_DASHBOARD if self._mode == MODE_LIST else MODE_LIST
+        entering = self._mode != MODE_LIST
+        self._mode = MODE_LIST if entering else MODE_DASHBOARD
         self._show_mode()
+        if entering:
+            self._list_source_pending = True
+            self._load_selected_list_source()
 
     def action_export_clean_list(self) -> None:
         """``e`` -- export the active analysis or record-list view.
@@ -1195,6 +1205,8 @@ class CuratorScreen(RefreshGuard, Screen):
                 LIST_RAW if self._list_view == LIST_CLEANED else LIST_CLEANED
             )
             self._show_list_view()
+            self._list_source_pending = True
+            self._load_selected_list_source()
             return
         self._active_view = (
             VIEW_CLUSTERS if self._active_view == VIEW_CLOSEST else VIEW_CLOSEST
@@ -1302,6 +1314,12 @@ class CuratorScreen(RefreshGuard, Screen):
         """
         self.call_after_refresh(self._render_title)
 
+    def action_refresh_and_reload_list(self) -> None:
+        """Reload a local list source after a reader-requested refresh."""
+        if self._mode == MODE_LIST:
+            self._list_source_pending = True
+        super().action_refresh()
+
     def _rail_is_cut(self) -> bool:
         """Does the showing body's scroll container exceed this height?
 
@@ -1362,6 +1380,37 @@ class CuratorScreen(RefreshGuard, Screen):
             self.query_one(widget_cls).update_data(**kwargs)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Failed to update %s: %s", name, exc)
+
+    def _load_selected_list_source(self) -> None:
+        """Load the selected complete export at an explicit reader boundary."""
+        data = self._title_data
+        if not isinstance(data, dict):
+            return
+        cleaned = self._list_view == LIST_CLEANED
+        rows_key = "clean_list_rows" if cleaned else "leaderboard_rows"
+        count_key = "clean_contributors" if cleaned else "contributors_total"
+        panel_cls = CuratorCleanedList if cleaned else CuratorRawList
+        live_rows = data.get(rows_key)
+        try:
+            result = load_export_list(
+                self._export_dir or Path.home() / ".maxpane",
+                cleaned=cleaned,
+                expected_count=data.get(count_key),
+                live_rows=live_rows,
+                you_row=data.get("you_list_row"),
+            )
+            self.query_one(panel_cls).set_list_source(
+                result.rows, complete=result.complete
+            )
+        except Exception as exc:  # noqa: BLE001 -- a local file is optional
+            logger.debug("Curator list source load failed: %s", exc)
+            try:
+                self.query_one(panel_cls).set_list_source(
+                    live_rows, complete=False
+                )
+            except Exception as inner:  # noqa: BLE001
+                logger.debug("Could not restore the live list slice: %s", inner)
+        self._list_source_pending = False
 
     async def _do_refresh(self) -> None:
         try:
@@ -1425,6 +1474,9 @@ class CuratorScreen(RefreshGuard, Screen):
             CuratorCleanedList,
         ):
             self._dispatch(widget_cls, data)
+
+        if self._list_source_pending and self._mode == MODE_LIST:
+            self._load_selected_list_source()
 
         # Status bar.  ``last_updated_seconds_ago`` is the age of the *cycle*,
         # which has just completed -- the age of the *data* is the title bar's

@@ -4086,6 +4086,118 @@ async def test_the_list_tables_add_row_1000_but_never_row_1001(kind):
         assert table.row_count == 1_000
 
 
+@pytest.mark.parametrize("kind", ("raw", "clean"))
+async def test_a_validated_complete_source_bypasses_the_live_1000_row_cap(kind):
+    from textual.widgets import DataTable
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    rows = []
+    for rank in range(1, 1_002):
+        row = {
+            "address": f"0x{rank:040x}",
+            "points": 100_000 + rank,
+            "weight_eth": rank + 0.25,
+            "credit_eth": float(rank),
+            "tx_count": rank,
+            "first_hour": rank % 48,
+            "first_index": rank,
+            "name": None,
+        }
+        rows.append(
+            {**row, "clean_rank": rank}
+            if kind == "clean"
+            else {
+                **row,
+                "rank": rank,
+                "flagged": False,
+                "link_conf": "clean",
+            }
+        )
+
+    widget = CuratorRawList() if kind == "raw" else CuratorCleanedList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 24)) as pilot:
+        if kind == "raw":
+            widget.update_data(
+                leaderboard_rows=rows[:1], contributors_total=len(rows)
+            )
+        else:
+            widget.update_data(
+                clean_list_rows=rows[:1], clean_contributors=len(rows)
+            )
+        widget.set_list_source(rows, complete=True)
+        await pilot.pause()
+
+        table = widget.query_one(DataTable)
+        assert table.row_count == 1_001
+
+
+@pytest.mark.parametrize("kind", ("raw", "clean"))
+async def test_complete_rows_survive_refresh_until_the_authoritative_count_changes(kind):
+    from textual.widgets import DataTable
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    def row(rank: int) -> dict:
+        common = {
+            "address": f"0x{rank:040x}",
+            "points": rank,
+            "credit_eth": 1.0,
+            "name": None,
+            "weight_eth": 1.0,
+            "tx_count": 1,
+            "first_hour": 0,
+            "first_index": rank,
+        }
+        return (
+            {**common, "clean_rank": rank}
+            if kind == "clean"
+            else {
+                **common,
+                "rank": rank,
+                "flagged": False,
+                "link_conf": "clean",
+            }
+        )
+
+    complete_rows = [row(1), row(2), row(3)]
+    widget = CuratorRawList() if kind == "raw" else CuratorCleanedList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 16)) as pilot:
+        if kind == "raw":
+            widget.update_data(leaderboard_rows=[row(1)], contributors_total=3)
+        else:
+            widget.update_data(clean_list_rows=[row(1)], clean_contributors=3)
+        widget.set_list_source(complete_rows, complete=True)
+        await pilot.pause()
+        table = widget.query_one(DataTable)
+        assert table.row_count == 3
+
+        calls = 0
+        row_values = widget._row_values
+
+        def counted_row_values(value):
+            nonlocal calls
+            calls += 1
+            return row_values(value)
+
+        widget._row_values = counted_row_values
+
+        if kind == "raw":
+            widget.update_data(leaderboard_rows=[row(1)], contributors_total=3)
+        else:
+            widget.update_data(clean_list_rows=[row(1)], clean_contributors=3)
+        await pilot.pause()
+        assert table.row_count == 3
+        assert calls == 0
+
+        if kind == "raw":
+            widget.update_data(leaderboard_rows=[row(1)], contributors_total=4)
+        else:
+            widget.update_data(clean_list_rows=[row(1)], clean_contributors=4)
+        await pilot.pause()
+        assert table.row_count == 1
+
+
 async def test_the_list_tables_distinguish_unavailable_from_honest_empty():
     from maxpane_dashboard.widgets.curator import (
         CuratorCleanedList,

@@ -264,6 +264,7 @@ class _ListTable(Vertical):
         self._hint = ""
         self._export_path: str | None = None
         self._export_failed = False
+        self._complete_rows: list[dict] | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(self.TITLE, classes="curator-list-title")
@@ -362,6 +363,61 @@ class _ListTable(Vertical):
     def _healthy_note(self) -> str:
         return ""
 
+    def set_list_source(self, rows, *, complete: bool) -> None:
+        """Swap between the live slice and a validated complete export."""
+        selected_complete = complete and isinstance(rows, list)
+        self._complete_rows = rows if selected_complete else None
+        if not self._payload:
+            return
+        self._payload["rows"] = rows
+        self._payload["complete"] = selected_complete
+        self._render_view()
+
+    def _select_rows(self, live_rows, wallet_count) -> tuple[object, bool, bool]:
+        """Keep a complete source only while its authoritative count agrees."""
+        complete = self._complete_rows
+        if complete is None:
+            return live_rows, False, False
+        if (
+            isinstance(wallet_count, int)
+            and not isinstance(wallet_count, bool)
+            and wallet_count == len(complete)
+        ):
+            unchanged = self._payload.get("rows") is complete
+            return complete, True, unchanged
+        self._complete_rows = None
+        return live_rows, False, False
+
+    def _render_you(self, columns: tuple, *, clear: bool = False) -> None:
+        table = self.query_one(".curator-list-you", DataTable)
+        if clear:
+            table.clear()
+        you = self._payload.get("you_list_row")
+        if isinstance(you, dict):
+            try:
+                values = self._row_values(you)
+            except Exception:
+                values = {}
+            table.add_row(*cells(values, columns, default=DASH))
+        else:
+            table.add_row(*cells({}, columns))
+
+    def _refresh_complete_metadata(self) -> None:
+        """Refresh heading and footer without rebuilding complete rows."""
+        if not self._columns:
+            self._render_view()
+            return
+        self._render_you(self._columns, clear=True)
+        rows = self._payload.get("rows")
+        if rows:
+            self._set_heading(self._healthy_note())
+            return
+        note = f"[dim]{self.EMPTY}[/]"
+        freshness = self._healthy_note()
+        if freshness:
+            note = f"{note} · {freshness}"
+        self._set_heading(note)
+
     def _render_view(self) -> None:
         try:
             table = self.query_one(f"#{self.TABLE_ID}", DataTable)
@@ -371,19 +427,7 @@ class _ListTable(Vertical):
             return
 
         columns = self._apply_columns(table)
-        you = self._payload.get("you_list_row")
-        if isinstance(you, dict):
-            try:
-                values = self._row_values(you)
-            except Exception:
-                values = {}
-            self.query_one(".curator-list-you", DataTable).add_row(
-                *cells(values, columns, default=DASH)
-            )
-        else:
-            self.query_one(".curator-list-you", DataTable).add_row(
-                *cells({}, columns)
-            )
+        self._render_you(columns)
         rows = self._rows()
         if rows is None:
             self._set_heading(f"[$warning]⚠ {self.UNAVAILABLE}[/]")
@@ -411,7 +455,8 @@ class _ListTable(Vertical):
             return
 
         self._set_heading(self._healthy_note())
-        for row in usable[:MAX_ROWS]:
+        shown = usable if self._payload.get("complete") else usable[:MAX_ROWS]
+        for row in shown:
             try:
                 values = self._row_values(row)
             except Exception:
@@ -432,13 +477,20 @@ class CuratorRawList(_ListTable):
         self, leaderboard_rows=None, you_list_row=None,
         contributors_total=None, **_kwargs
     ) -> None:
+        rows, complete, unchanged = self._select_rows(
+            leaderboard_rows, contributors_total
+        )
         self._payload = {
-            "rows": leaderboard_rows,
+            "rows": rows,
             "you_list_row": you_list_row,
             "wallet_count": contributors_total,
+            "complete": complete,
             "seen": True,
         }
-        self._render_view()
+        if unchanged:
+            self._refresh_complete_metadata()
+        else:
+            self._render_view()
 
     def _rows(self):
         return self._payload["rows"]
@@ -460,14 +512,21 @@ class CuratorCleanedList(_ListTable):
         self, clean_list_rows=None, you_list_row=None,
         clean_contributors=None, analysis_as_of_hhmm=None, **_kwargs
     ) -> None:
+        rows, complete, unchanged = self._select_rows(
+            clean_list_rows, clean_contributors
+        )
         self._payload = {
-            "rows": clean_list_rows,
+            "rows": rows,
             "you_list_row": you_list_row,
             "wallet_count": clean_contributors,
             "analysis_as_of_hhmm": analysis_as_of_hhmm,
+            "complete": complete,
             "seen": True,
         }
-        self._render_view()
+        if unchanged:
+            self._refresh_complete_metadata()
+        else:
+            self._render_view()
 
     def _rows(self):
         return self._payload["rows"]

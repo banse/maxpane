@@ -3063,6 +3063,99 @@ async def test_both_precomposed_lists_receive_data_before_they_are_shown():
     assert "clean1.eth" in clean and "19,999" in clean
 
 
+async def test_list_entry_uses_a_matching_export_and_missing_clean_export_falls_back(
+    tmp_path,
+):
+    from textual.widgets import DataTable
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    exported = _list_payload(3)
+    live = _list_payload(1)
+    live.update(contributors_total=3, clean_contributors=3)
+    raw_path = tmp_path / "curator_raw_list.json"
+    raw_path.write_text(
+        json.dumps(exported["leaderboard_rows"], indent=1), encoding="utf-8"
+    )
+    original_bytes = raw_path.read_bytes()
+    screen = _export_screen(tmp_path, live)
+    app = _ThemedHarness(screen)
+
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        raw = screen.query_one(CuratorRawList).query_one(DataTable)
+        cleaned = screen.query_one(CuratorCleanedList).query_one(DataTable)
+        assert raw.row_count == 1
+
+        await pilot.press("l")
+        await pilot.pause()
+        assert raw.row_count == 3
+        assert raw_path.read_bytes() == original_bytes
+        enriched = tmp_path / "curator_raw_list.enriched.json"
+        assert len(json.loads(enriched.read_text(encoding="utf-8"))) == 3
+
+        await pilot.press("c")
+        await pilot.pause()
+        assert cleaned.row_count == 1
+        assert not (tmp_path / "curator_cleaned_list.enriched.json").exists()
+
+
+async def test_list_exports_are_checked_only_at_reader_requested_boundaries(
+    tmp_path, monkeypatch
+):
+    import maxpane_dashboard.screens.curator as curator_screen
+
+    payload = _list_payload(1)
+    payload.update(contributors_total=1, clean_contributors=1)
+    (tmp_path / "curator_raw_list.json").write_text(
+        json.dumps(payload["leaderboard_rows"]), encoding="utf-8"
+    )
+    (tmp_path / "curator_cleaned_list.json").write_text(
+        json.dumps(payload["clean_list_rows"]), encoding="utf-8"
+    )
+    calls: list[bool] = []
+    real_load = curator_screen.load_export_list
+
+    def tracked_load(*args, **kwargs):
+        calls.append(kwargs["cleaned"])
+        return real_load(*args, **kwargs)
+
+    monkeypatch.setattr(curator_screen, "load_export_list", tracked_load)
+    screen = _export_screen(tmp_path, payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        assert calls == []
+
+        await pilot.press("l")
+        await pilot.pause()
+        assert calls == [False]
+
+        await screen._do_refresh()
+        await pilot.pause()
+        assert calls == [False]
+
+        await pilot.press("c")
+        await pilot.pause()
+        assert calls == [False, True]
+
+        previous_manager_calls = screen._data_manager.calls
+        await pilot.press("r")
+        for _ in range(10):
+            await pilot.pause()
+            if screen._data_manager.calls > previous_manager_calls:
+                break
+        assert calls == [False, True, True]
+
+        await pilot.press("l")
+        await pilot.press("l")
+        await pilot.pause()
+        assert calls == [False, True, True, True]
+
+
 async def test_the_list_you_row_and_blank_line_sit_immediately_above_status():
     from textual.widgets import Static
     from maxpane_dashboard.widgets.curator import CuratorRawList
