@@ -1,6 +1,6 @@
 [project]
 name = "maxpane"
-version = "0.7.1"
+version = "0.8.0"
 description = "Terminal dashboards for onchain games, NFTs and trading — Fake World Assets, Talismans, Ten Thousand Tokens, FrenPet, Cat Town and Base. Keyless and read-only."
 requires-python = ">=3.11"
 license = "MIT"
@@ -20,6 +20,12 @@ dependencies = [
     "textual>=0.80",
     "httpx>=0.27",
     "pydantic>=2.0",
+    # THE LIST's linked-wallet analysis. Published 2026-08-19; declared here
+    # only now, because a `pip install maxpane` that cannot resolve is worse
+    # than a view that degrades. The guarded import in
+    # data/curator_clusters.py stays -- it is what keeps an older or partial
+    # install rendering `analysis unavailable` instead of crashing.
+    "sybilkit>=0.1.0",
 ]
 
 [project.scripts]

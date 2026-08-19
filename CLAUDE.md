@@ -172,12 +172,13 @@ shipped** (`test_curator_signals_never_imports_sybilkit`; the Tier-A `find_clust
 is unchanged and it never learns the library exists).
 
 **The import is guarded** (`try/except ImportError` → `SYBILKIT_AVAILABLE`), and that flag is the
-packaging story, not defensive habit. `sybilkit` is not on PyPI yet, so maxpane's `pyproject.toml`
-**does not** list it and will not until the first maxpane release *after* sybilkit publishes.
-Until then: a dev checkout runs it editable-installed, and an end user's `pip install maxpane`
-gets a dashboard whose analysis panels say `analysis unavailable` and whose everything-else works
-exactly as before. Do not add the dependency early — a `pip install maxpane` that fails to resolve
-is worse than a view that degrades.
+packaging story, not defensive habit. **`sybilkit` published to PyPI as `0.1.0` on 2026-08-19**
+(https://pypi.org/project/sybilkit/0.1.0/), and maxpane's `pyproject.toml` declares
+`sybilkit>=0.1.0` from **v0.8.0** onward — not before, because a `pip install maxpane` that fails
+to resolve is worse than a view that degrades. That was the whole reason the dependency was held
+back, and it is why the guarded import **stays**: an older install, a partial environment or a
+future name change still renders `analysis unavailable` and leaves everything else working
+exactly as before, rather than crashing on import.
 
 **The sweep is detached, on the `_spawn_crosscheck` precedent.** Tier-B/C analysis (tx
 fingerprints via publicnode/tenderly batches, first funders via Blockscout — all keyless, all
