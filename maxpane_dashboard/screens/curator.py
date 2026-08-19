@@ -404,9 +404,12 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "points_total", "you_clean_rank", "analysis_as_of_hhmm",
     ),
     # -- the `l` raw/clean record view ---------------------------------------
-    "CuratorRawList": ("leaderboard_rows", "you_list_row"),
+    "CuratorRawList": (
+        "leaderboard_rows", "you_list_row", "contributors_total",
+    ),
     "CuratorCleanedList": (
-        "clean_list_rows", "you_list_row", "analysis_as_of_hhmm",
+        "clean_list_rows", "you_list_row", "clean_contributors",
+        "analysis_as_of_hhmm",
     ),
 }
 

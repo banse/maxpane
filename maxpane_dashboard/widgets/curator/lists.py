@@ -38,8 +38,10 @@ MAX_ROWS = 1_000
 _RANK_COLS = 6
 _JOIN_COLS = 6
 _ADDRESS_COLS = 42
+_ENS_COLS = NAME_COLS + 7
 _POINTS_COLS = 7
-_ETH_COLS = 9
+_WEIGHT_COLS = 8
+_CREDIT_COLS = 8
 _DEPOSITS_COLS = 8
 _HOUR_COLS = 4
 _WINDOW_COLS = 6
@@ -49,10 +51,10 @@ _RAW_FULL = (
     ("rank", "#", _RANK_COLS),
     ("join", "JOIN #", _JOIN_COLS),
     ("address", "ADDRESS", _ADDRESS_COLS),
-    ("ens", "ENS", NAME_COLS),
+    ("ens", "ENS", _ENS_COLS),
     ("points", "POINTS", _POINTS_COLS),
-    ("weight", "WEIGHT Ξ", _ETH_COLS),
-    ("credit", "CREDIT Ξ", _ETH_COLS),
+    ("weight", "WEIGHT Ξ", _WEIGHT_COLS),
+    ("credit", "CREDIT Ξ", _CREDIT_COLS),
     ("deposits", "DEPOSITS", _DEPOSITS_COLS),
     ("hour", "HOUR", _HOUR_COLS),
     ("window", "WINDOW", _WINDOW_COLS),
@@ -90,10 +92,10 @@ _CLEANED_FULL = (
     ("rank", "#", _RANK_COLS),
     ("join", "JOIN #", _JOIN_COLS),
     ("address", "ADDRESS", _ADDRESS_COLS),
-    ("ens", "ENS", NAME_COLS),
+    ("ens", "ENS", _ENS_COLS),
     ("points", "POINTS", _POINTS_COLS),
-    ("weight", "WEIGHT Ξ", _ETH_COLS),
-    ("credit", "CREDIT Ξ", _ETH_COLS),
+    ("weight", "WEIGHT Ξ", _WEIGHT_COLS),
+    ("credit", "CREDIT Ξ", _CREDIT_COLS),
     ("deposits", "DEPOSITS", _DEPOSITS_COLS),
     ("hour", "HOUR", _HOUR_COLS),
     ("window", "WINDOW", _WINDOW_COLS),
@@ -155,8 +157,8 @@ def _ens(name) -> str:
         value = " ".join(name.split())
     if not value:
         return DASH
-    if cell_len(value) > NAME_COLS:
-        value = f"{set_cell_size(value, NAME_COLS - 1)}…"
+    if cell_len(value) > _ENS_COLS:
+        value = f"{set_cell_size(value, _ENS_COLS - 1)}…"
     return safe_markup(value)
 
 
@@ -233,6 +235,7 @@ class _ListTable(Vertical):
     }
     .curator-list-table {
         height: 1fr;
+        scrollbar-size: 1 1;
     }
     .curator-list-you {
         height: 1;
@@ -335,7 +338,15 @@ class _ListTable(Vertical):
 
     def _set_heading(self, note: str) -> None:
         width = max(self.content_size.width - 2, 0)
-        title, placed = title_with_hint(self.TITLE, self._hint, width)
+        count = self._payload.get("wallet_count")
+        heading = (
+            f"{self.TITLE} - {count:,} wallets"
+            if isinstance(count, int)
+            and not isinstance(count, bool)
+            and count >= 0
+            else self.TITLE
+        )
+        title, placed = title_with_hint(heading, self._hint, width)
         self.query_one(".curator-list-title", Static).update(title)
         if self._hint and not placed:
             marker = f"[yellow]{WIDEN_HINT}[/]"
@@ -418,11 +429,13 @@ class CuratorRawList(_ListTable):
     EMPTY = RAW_LIST_EMPTY
 
     def update_data(
-        self, leaderboard_rows=None, you_list_row=None, **_kwargs
+        self, leaderboard_rows=None, you_list_row=None,
+        contributors_total=None, **_kwargs
     ) -> None:
         self._payload = {
             "rows": leaderboard_rows,
             "you_list_row": you_list_row,
+            "wallet_count": contributors_total,
             "seen": True,
         }
         self._render_view()
@@ -445,11 +458,12 @@ class CuratorCleanedList(_ListTable):
 
     def update_data(
         self, clean_list_rows=None, you_list_row=None,
-        analysis_as_of_hhmm=None, **_kwargs
+        clean_contributors=None, analysis_as_of_hhmm=None, **_kwargs
     ) -> None:
         self._payload = {
             "rows": clean_list_rows,
             "you_list_row": you_list_row,
+            "wallet_count": clean_contributors,
             "analysis_as_of_hhmm": analysis_as_of_hhmm,
             "seen": True,
         }

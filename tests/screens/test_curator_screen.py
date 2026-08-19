@@ -3183,8 +3183,29 @@ async def test_the_table_owns_row_cursor_and_vertical_scrolling():
     assert "raw100.eth" in tail
 
 
+async def test_the_full_raw_header_fits_beside_the_active_scrollbar():
+    from textual.widgets import DataTable
+    from maxpane_dashboard.widgets.curator import CuratorRawList
+
+    screen = _screen(_list_payload(100))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 30)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        table = screen.query_one("#curator-raw-list-table", DataTable)
+        rendered = _region_text(app, screen.query_one(CuratorRawList), screen)
+
+    assert table.show_vertical_scrollbar is True
+    assert table.scrollbar_size_vertical == 1
+    assert table.show_horizontal_scrollbar is False
+    assert "WINDOW  LINK" in rendered
+
+
 async def _first_list_width(cleaned: bool) -> int | None:
-    screen = _screen(_list_payload(1))
+    # Enough rows to keep the vertical scrollbar engaged throughout the sweep.
+    screen = _screen(_list_payload(100))
     app = _ThemedHarness(screen)
     async with app.run_test(size=(80, _TALL)) as pilot:
         await pilot.pause()
@@ -3196,7 +3217,16 @@ async def _first_list_width(cleaned: bool) -> int | None:
         for width in range(80, 144):
             await pilot.resize_terminal(width, _TALL)
             await pilot.pause()
-            if "‹ widen" not in _screen_text(app):
+            table_id = (
+                "#curator-cleaned-list-table"
+                if cleaned
+                else "#curator-raw-list-table"
+            )
+            table = screen.query_one(table_id)
+            if (
+                "‹ widen" not in _screen_text(app)
+                and not table.show_horizontal_scrollbar
+            ):
                 return width
     return None
 
@@ -3206,8 +3236,8 @@ async def test_both_list_width_sweeps_clear_inside_the_unchanged_app_pin():
 
     raw_width = await _first_list_width(False)
     clean_width = await _first_list_width(True)
-    assert raw_width == 137
-    assert clean_width == 131
+    assert raw_width == 143
+    assert clean_width == 137
     assert raw_width <= FULL_LAYOUT_COLUMNS == 143
     assert CURATOR_FULL_LAYOUT_COLUMNS == 138
 

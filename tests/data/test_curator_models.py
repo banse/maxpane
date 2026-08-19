@@ -1037,7 +1037,7 @@ ANALYSIS_KEY_ROUTING: dict[str, tuple[str, ...]] = {
     # ---- CLEANED LIST ----------------------------------------------------
     "clean_list_rows": ("CuratorCleanList",),
     "clean_points": ("CuratorCleanList",),
-    "clean_contributors": ("CuratorCleanList",),
+    "clean_contributors": ("CuratorCleanList", "CuratorCleanedList"),
     # R14 (2026-08-18): the population total at the analysis snapshot, so the
     # panel can render PRD §5.3's "total points vs clean points" -- one key,
     # one panel; the board totals other panels show are theirs, not this.

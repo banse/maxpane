@@ -3917,6 +3917,59 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
 
 
 @pytest.mark.parametrize("kind", ("raw", "clean"))
+async def test_the_list_identity_and_credit_columns_have_the_requested_widths(kind):
+    from textual.widgets import DataTable
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    widget = CuratorRawList() if kind == "raw" else CuratorCleanedList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 12)) as pilot:
+        if kind == "raw":
+            widget.update_data(leaderboard_rows=[])
+        else:
+            widget.update_data(clean_list_rows=[])
+        await pilot.pause()
+        table = widget.query_one(".curator-list-table", DataTable)
+        widths = [column.width for column in table.columns.values()]
+
+    assert widths[3] == 19  # ENS
+    assert widths[4] == 7   # POINTS is unchanged
+    assert widths[5] == 8   # WEIGHT leaves room for the active scrollbar
+    assert widths[6] == 8   # CREDIT gives back the one needed column
+
+
+async def test_each_list_title_uses_its_authoritative_wallet_total():
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    raw = await _rendered(
+        CuratorRawList,
+        leaderboard_rows=[],
+        contributors_total=19_522,
+    )
+    clean = await _rendered(
+        CuratorCleanedList,
+        clean_list_rows=[],
+        clean_contributors=18_004,
+    )
+    zero = await _rendered(
+        CuratorCleanedList,
+        clean_list_rows=[],
+        clean_contributors=0,
+    )
+    unknown = await _rendered(
+        CuratorRawList,
+        leaderboard_rows=[],
+        contributors_total=None,
+    )
+
+    assert "THE RAW LIST - 19,522 wallets" in raw
+    assert "THE CLEANED LIST - 18,004 wallets" in clean
+    assert "THE CLEANED LIST - 0 wallets" in zero
+    assert "THE RAW LIST" in unknown
+    assert "-- wallets" not in unknown
+
+
+@pytest.mark.parametrize("kind", ("raw", "clean"))
 async def test_the_list_footer_is_an_aligned_you_row_followed_by_one_blank_line(kind):
     from textual.widgets import DataTable, Static
     from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
@@ -4091,8 +4144,7 @@ async def test_list_names_truncate_by_rendered_cells_not_python_characters(kind)
         kwargs = {"clean_list_rows": [{**common, "clean_rank": 1}]}
 
     text = await _rendered(widget, size=(143, 16), **kwargs)
-    assert "測試測試測 …" in text
-    assert "測試測試測試" not in text
+    assert "測試測試測試.eth" in text
 
 
 @pytest.mark.parametrize(
