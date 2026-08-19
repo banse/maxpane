@@ -3941,6 +3941,11 @@ async def test_the_list_identity_and_credit_columns_have_the_requested_widths(ki
 async def test_each_list_title_uses_its_authoritative_wallet_total():
     from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
 
+    export_hint = (
+        "(press 'e' to export full list as json file - once exported all "
+        "wallets will be shown)"
+    )
+
     raw = await _rendered(
         CuratorRawList,
         leaderboard_rows=[],
@@ -3962,10 +3967,10 @@ async def test_each_list_title_uses_its_authoritative_wallet_total():
         contributors_total=None,
     )
 
-    assert "THE RAW LIST - 19,522 wallets" in raw
-    assert "THE CLEANED LIST - 18,004 wallets" in clean
-    assert "THE CLEANED LIST - 0 wallets" in zero
-    assert "THE RAW LIST" in unknown
+    assert f"THE RAW LIST - 19,522 wallets {export_hint}" in raw
+    assert f"THE CLEANED LIST - 18,004 wallets {export_hint}" in clean
+    assert f"THE CLEANED LIST - 0 wallets {export_hint}" in zero
+    assert f"THE RAW LIST {export_hint}" in unknown
     assert "-- wallets" not in unknown
 
 

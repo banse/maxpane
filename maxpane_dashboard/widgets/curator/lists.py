@@ -34,6 +34,10 @@ CLEANED_LIST_UNAVAILABLE = "analysis unavailable"
 CLEANED_LIST_EMPTY = "no wallets survive"
 
 MAX_ROWS = 1_000
+EXPORT_TITLE_HINT = (
+    "(press 'e' to export full list as json file - once exported all wallets "
+    "will be shown)"
+)
 
 _RANK_COLS = 6
 _JOIN_COLS = 6
@@ -347,6 +351,7 @@ class _ListTable(Vertical):
             and count >= 0
             else self.TITLE
         )
+        heading = f"{heading} {EXPORT_TITLE_HINT}"
         title, placed = title_with_hint(heading, self._hint, width)
         self.query_one(".curator-list-title", Static).update(title)
         if self._hint and not placed:
