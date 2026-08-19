@@ -331,22 +331,25 @@ curator); **`y` on curator** swaps the whole body for the reader's own
 standing — ladder, share, and what passing the rank above would cost — with the
 hero left in place so the doomsday clock never leaves the screen (`esc` backs
 out, one-way); **`f` on curator** swaps in the linked-wallet analysis (OPERATORS
-/ SEGMENTS / CLEANED LIST), also keeping the clock; **`e`** inside that view
-exports the cleaned list (analysis-mode only, a no-op elsewhere, and
-deliberately absent from the status hints — the CLEANED LIST panel is where its
-receipt appears); and **`w` on curator** prompts for the wallet its YOU row is about —
+/ SEGMENTS / CLEANED LIST), also keeping the clock; **`l`** opens one full-width
+record table, with `c` switching RAW/CLEANED and remembering the choice;
+**`e`** exports the active list (`f` keeps its existing JSON + CSV export, while
+`l` writes the full uncapped raw or cleaned JSON), and is a no-op on dashboard
+and wallet modes; and **`w` on curator** prompts for the wallet its YOU row is about —
 `WalletInputScreen` validates and persists to `~/.maxpane/config.toml`, so it
 is app-wide from the next launch. A runtime wallet switch is more than an
 assignment: `CuratorManager.set_wallet` also drops the wallet last-good (its
 payload names the *old* address) and expires the fast tier, because a tier
 with 12 of its 15 seconds left is "fresh" and the row would stay dark after a
 keypress that looked like it worked. Curator's status hints read
-`c panels · y you · f linked` — `y wallet` was reworded to **`y you`** when the
-third key pushed the worst-case line (`4 errors` present) one column past 138,
-and an error count must never be the field that falls off the end. Any doc that
-quotes the old hint is wrong.
+`c panels · y you · f linked · l lists`. The redundant `view: closest` /
+`view: clusters` tail was removed so all four labels and the worst-case
+`4 errors` fit at 138 columns; each visible panel title already names that
+state, and the list title is the sole RAW/CLEANED indicator. Any doc that quotes
+the old hint is wrong.
 Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`; curator's
-`e` export to `~/.maxpane/curator_clean_list.json` and `.csv`.
+analysis `e` export to `~/.maxpane/curator_clean_list.json` and `.csv`, and
+list-view exports to `curator_raw_list.json` or `curator_cleaned_list.json`.
 
 **`__version__` comes from installed distribution metadata**, not from a
 constant — `maxpane_dashboard/__init__.py` reads it with

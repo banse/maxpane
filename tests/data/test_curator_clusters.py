@@ -169,6 +169,16 @@ def test_the_second_family_links_the_farm_and_the_rows_take_the_frozen_shape():
         assert set(clean_row) == set(CURATOR_ROW_KEYS["clean_list_rows"])
         assert clean_row["name"] is None      # the manager's ENS merge fills it
 
+    control = next(
+        row for row in result.clean_list_rows if row["address"] == CONTROLS[0]
+    )
+    assert control["weight_eth"] == pytest.approx(
+        _CONTROL_AMOUNTS[0] * FARM_EARLY_BPS / 10_000 / 10**18
+    )
+    assert control["tx_count"] == 1
+    assert control["first_hour"] == 1
+    assert control["first_index"] == 70
+
 
 def test_the_flagged_set_matches_the_library_on_the_committed_fixture():
     """The PRD §8 seam: the adapter and the library agree, byte for byte, over
@@ -375,7 +385,7 @@ def test_with_no_analysis_the_merge_seeds_link_conf_none_on_every_row():
 def test_the_clean_list_rows_are_capped_and_rank_survivors_densely():
     result = farm_analysis()
     rows = result.clean_list_rows
-    assert curator_clusters.CLEAN_LIST_LIMIT == 100
+    assert curator_clusters.CLEAN_LIST_LIMIT == 1_000
     assert len(rows) <= curator_clusters.CLEAN_LIST_LIMIT
     assert [row["clean_rank"] for row in rows] == list(range(1, len(rows) + 1))
     linked = set(FARM_MEMBERS)

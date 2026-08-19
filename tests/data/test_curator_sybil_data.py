@@ -755,7 +755,15 @@ def test_the_multiplier_and_hour_bands_are_derived_from_the_fold() -> None:
     **first** deposit, and the shares are recomputed from the same wei-exact
     fold as everything else.  The bands partition the population: every
     contributor is in exactly one, so the four shares sum to 100."""
-    _, credit, points = _folded()
+    weight, credit, points = _folded()
+    tx_counts = Counter(
+        row["contributor"].lower() for row in research("deposits.json.gz")
+    )
+    first_indices = {
+        row["contributor"].lower(): row["index"]
+        for row in research("first_deposits.json.gz")
+    }
+    first_hours = _first_hour()
     total = sum(points.values())
     rows = worst_case_rows("segment_rows_worst.json")
 
@@ -812,7 +820,15 @@ def test_the_clean_list_is_the_survivors_of_the_de_sybilled_fold() -> None:
     reader's raw rank to be worth printing."""
     payload = load("clean_list_rows_worst.json")
     rows = payload["rows"]
-    _, credit, points = _folded()
+    weight, credit, points = _folded()
+    tx_counts = Counter(
+        row["contributor"].lower() for row in research("deposits.json.gz")
+    )
+    first_indices = {
+        row["contributor"].lower(): row["index"]
+        for row in research("first_deposits.json.gz")
+    }
+    first_hours = _first_hour()
     linked: set[str] = set().union(*_membership().values())
 
     real = rows[:-1]  # the last row is the name-width probe
@@ -825,6 +841,10 @@ def test_the_clean_list_is_the_survivors_of_the_de_sybilled_fold() -> None:
         assert row["points"] == points[row["address"]]
         assert row["credit_eth"] == round(credit[row["address"]] / 10**18, 4)
         assert row["name"] is None  # no reverse ENS resolved; never invented
+        assert row["weight_eth"] == weight[row["address"]] / 10**18
+        assert row["tx_count"] == tx_counts[row["address"]]
+        assert row["first_hour"] == first_hours[row["address"]]
+        assert row["first_index"] == first_indices[row["address"]]
 
     totals = payload["totals"]
     assert totals["total_points"] == sum(points.values())

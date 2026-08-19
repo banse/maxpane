@@ -233,7 +233,7 @@ DASHBOARD_BODY_ID = "curator-dashboard-body"
 WALLET_BODY_ID = "curator-wallet-body"
 #: The `f` view's body — OPERATORS over SEGMENTS over CLEANED LIST.
 ANALYSIS_BODY_ID = "curator-analysis-body"
-#: The `l` view's body -- THE RAW LIST beside THE CLEANED LIST.
+#: The `l` view's body -- one full-width raw or cleaned record table.
 LIST_BODY_ID = "curator-list-body"
 #: The wallet body's own hero, which swaps with it.
 WALLET_HERO_ID = "curator-wallet-hero"
@@ -253,7 +253,11 @@ MODES = (MODE_DASHBOARD, MODE_WALLET, MODE_ANALYSIS, MODE_LIST)
 #: the cleaned list as JSON rows plus a CSV of the same rows.  A TUI cannot
 #: hand a file to the reader, so it writes to disk and names the path.
 CLEAN_LIST_BASENAME = "curator_clean_list"
-LISTS_BASENAME = "curator_lists"
+RAW_LIST_BASENAME = "curator_raw_list"
+CLEANED_LIST_BASENAME = "curator_cleaned_list"
+
+LIST_RAW = "raw"
+LIST_CLEANED = "cleaned"
 
 CLOSEST_ID = "curator-closest-calls"
 CLUSTERS_ID = "curator-clusters"
@@ -285,9 +289,9 @@ CLUSTERS_ID = "curator-clusters"
 #: lights ``‹ widen`` here at any width (the surf announce-feed precedent),
 #: which is correct and must never be silenced by raising this constant.
 #:
-#: The `l` body's separate composited sweep clears every column at **141** and
-#: advertises its shed NAME column at 140 and below. It therefore does not
-#: alter this dashboard-layout pin and remains inside the app-wide 143.
+#: The `l` body's separate composited sweep clears every NFT-aligned column at
+#: **93** for both raw and cleaned tables. It therefore does not alter this
+#: dashboard-layout pin and remains comfortably inside the app-wide 143.
 CURATOR_FULL_LAYOUT_COLUMNS = 138
 
 #: The three flat-dict keys the screen renders itself -- the title bar's
@@ -575,13 +579,14 @@ def _write_clean_list(directory: Path, rows: list) -> Path:
     return json_path
 
 
-def _write_lists(directory: Path, raw: list, clean: list) -> Path:
-    """Atomically write the raw and cleaned rows as one JSON record."""
-    path = directory / f"{LISTS_BASENAME}.json"
+def _write_list(directory: Path, rows: list, *, cleaned: bool) -> Path:
+    """Atomically write the selected complete record list as JSON rows."""
+    basename = CLEANED_LIST_BASENAME if cleaned else RAW_LIST_BASENAME
+    path = directory / f"{basename}.json"
 
     def write_json(temporary: Path) -> None:
         temporary.write_text(
-            json.dumps({"raw": raw, "clean": clean}, indent=1),
+            json.dumps(rows, indent=1),
             encoding="utf-8",
         )
 
@@ -844,29 +849,23 @@ class CuratorScreen(RefreshGuard, Screen):
         height: auto;
         padding: 0 1;
     }
-    /* The `l` view. Its two 100-row tables grow naturally inside one scrolling
-       body, so every row remains reachable and short terminals are announced
-       by the same title-bar marker as the `f` body. */
+    /* The `l` view. One precomposed table is visible at a time and owns the
+       available height; DataTable supplies row navigation and scrolling. */
     CuratorScreen #curator-list-body {
         height: 1fr;
         width: 100%;
-        overflow-y: auto;
-        scrollbar-gutter: stable;
-        scrollbar-size: 1 1;
-    }
-    CuratorScreen #curator-lists-row {
-        width: 100%;
-        height: auto;
-        margin: 1 0 0 0;
+        overflow: hidden;
     }
     CuratorScreen CuratorRawList {
-        width: 1fr;
-        height: auto;
+        width: 100%;
+        height: 100%;
+        margin: 1 0 0 0;
         padding: 0 1;
     }
     CuratorScreen CuratorCleanedList {
-        width: 1fr;
-        height: auto;
+        width: 100%;
+        height: 100%;
+        margin: 1 0 0 0;
         padding: 0 1;
     }
     CuratorScreen CuratorActivity {
@@ -915,6 +914,9 @@ class CuratorScreen(RefreshGuard, Screen):
         #: Which body is on screen: MODE_DASHBOARD or MODE_WALLET.  The hero and
         #: the title bar belong to neither and are always visible.
         self._mode: str = MODE_DASHBOARD
+        #: Which of the two precomposed full-width record tables list mode
+        #: shows. Kept across leaving and re-entering the mode.
+        self._list_view: str = LIST_RAW
         #: True once the reader has pressed ``c``.  From then on the
         #: phase-aware default stops applying: a panel that snaps back while
         #: you are reading it is worse than a suboptimal default.
@@ -984,9 +986,8 @@ class CuratorScreen(RefreshGuard, Screen):
             yield CuratorCleanList()
 
         with Vertical(id=LIST_BODY_ID):
-            with Horizontal(id="curator-lists-row"):
-                yield CuratorRawList()
-                yield CuratorCleanedList()
+            yield CuratorRawList()
+            yield CuratorCleanedList()
 
         yield StatusBar()
 
@@ -997,16 +998,16 @@ class CuratorScreen(RefreshGuard, Screen):
     #: `e` is deliberately not here: it only acts inside `f` and `l`, and the
     #: relevant cleaned panel is where its result appears.
     #:
-    #: The fourth key cannot grow the line: the third already pushed the
-    #: worst-case (`4 errors` present) to the measured 138-column edge.  The
-    #: compact spelling below remains 27 visible columns, the old hint's cost.
+    #: The full words are pinned against the worst-case (`4 errors` present)
+    #: at the measured 138-column curator width.
     KEY_HINTS = (
-        "[dim]c[/] [dim]·[/] [dim]y[/] me [dim]·[/] "
-        "[dim]f[/] link [dim]·[/] [dim]l[/] lists"
+        "[dim]c[/] panels [dim]·[/] [dim]y[/] you [dim]·[/] "
+        "[dim]f[/] linked [dim]·[/] [dim]l[/] lists"
     )
 
     def on_mount(self) -> None:
         self._show_active_view()
+        self._show_list_view()
         self._show_mode()
         try:
             self.query_one(StatusBar).set_key_hints(self.KEY_HINTS)
@@ -1025,10 +1026,15 @@ class CuratorScreen(RefreshGuard, Screen):
             self.query_one(f"#{CLUSTERS_ID}").display = not showing_closest
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("Curator view toggle failed: %s", exc)
+
+    def _show_list_view(self) -> None:
+        """Show exactly the selected precomposed full-width record table."""
+        showing_cleaned = self._list_view == LIST_CLEANED
         try:
-            self.query_one(StatusBar).set_active_view(self._active_view)
-        except Exception:
-            pass
+            self.query_one(CuratorRawList).display = not showing_cleaned
+            self.query_one(CuratorCleanedList).display = showing_cleaned
+        except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
+            logger.debug("Curator list toggle failed: %s", exc)
 
     def _show_mode(self) -> None:
         """Apply :attr:`_mode` to the four bodies' visibility.
@@ -1046,6 +1052,7 @@ class CuratorScreen(RefreshGuard, Screen):
             self.query_one(f"#{WALLET_BODY_ID}").display = wallet
             self.query_one(f"#{ANALYSIS_BODY_ID}").display = analysis
             self.query_one(f"#{LIST_BODY_ID}").display = lists
+            self._show_list_view()
             self.query_one(CuratorHero).display = not wallet
             self.query_one(f"#{WALLET_HERO_ID}").display = wallet
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
@@ -1097,7 +1104,7 @@ class CuratorScreen(RefreshGuard, Screen):
         self._show_mode()
 
     def action_toggle_list(self) -> None:
-        """``l`` -- swap the body for the raw and cleaned record lists."""
+        """``l`` -- swap the body for the selected full-width record list."""
         self._mode = MODE_DASHBOARD if self._mode == MODE_LIST else MODE_LIST
         self._show_mode()
 
@@ -1105,9 +1112,10 @@ class CuratorScreen(RefreshGuard, Screen):
         """``e`` -- export the active analysis or record-list view.
 
         Analysis mode retains its JSON + CSV cleaned-list export. List mode
-        writes one JSON object containing both existing row arrays. Dashboard
-        and wallet modes are no-ops. A ``None`` list is never written; an empty
-        list is a real record and is written.
+        asks the manager for the uncapped rows of the table currently on
+        screen and writes that list alone. Dashboard and wallet modes are
+        no-ops. A ``None`` list is never written; an empty list is a real
+        record and is written.
 
         A failed write is *told to the reader*, on the panel, not to the log
         alone -- and it replaces any earlier ``saved →`` receipt, whose
@@ -1116,28 +1124,30 @@ class CuratorScreen(RefreshGuard, Screen):
         never opened and truncated in place.
         """
         if self._mode == MODE_LIST:
-            payload = self._title_data or {}
-            raw = payload.get("leaderboard_rows")
-            clean = payload.get("clean_list_rows")
-            if not isinstance(raw, list) or not isinstance(clean, list):
-                logger.debug("List export skipped: one or both lists unavailable")
+            cleaned = self._list_view == LIST_CLEANED
+            panel = CuratorCleanedList if cleaned else CuratorRawList
+            try:
+                rows = self._data_manager.full_list_rows(cleaned=cleaned)
+            except Exception as exc:  # noqa: BLE001 -- visible export is optional
+                logger.debug("List export read failed: %s", exc)
+                rows = None
+            if not isinstance(rows, list):
+                logger.debug("List export skipped: selected list unavailable")
                 return
             directory = self._export_dir or Path.home() / ".maxpane"
             try:
-                json_path = _write_lists(directory, raw, clean)
+                json_path = _write_list(directory, rows, cleaned=cleaned)
             except Exception as exc:  # noqa: BLE001 -- visible, never fatal
                 logger.debug("List export failed: %s", exc)
                 try:
-                    self.query_one(CuratorCleanedList).mark_export_failed()
+                    self.query_one(panel).mark_export_failed()
                 except Exception as inner:  # noqa: BLE001
                     logger.debug("Could not show the list export failure: %s", inner)
-                self.call_after_refresh(self._render_title)
                 return
             try:
-                self.query_one(CuratorCleanedList).mark_exported(str(json_path))
+                self.query_one(panel).mark_exported(str(json_path))
             except Exception as exc:  # noqa: BLE001 -- the file exists either way
                 logger.debug("Could not show the list export path: %s", exc)
-            self.call_after_refresh(self._render_title)
             return
 
         if self._mode != MODE_ANALYSIS:
@@ -1175,6 +1185,12 @@ class CuratorScreen(RefreshGuard, Screen):
         Also the moment the phase-aware default stops applying: after this the
         choice is the reader's, across every later phase change.
         """
+        if self._mode == MODE_LIST:
+            self._list_view = (
+                LIST_RAW if self._list_view == LIST_CLEANED else LIST_CLEANED
+            )
+            self._show_list_view()
+            return
         self._active_view = (
             VIEW_CLUSTERS if self._active_view == VIEW_CLOSEST else VIEW_CLOSEST
         )
@@ -1262,7 +1278,6 @@ class CuratorScreen(RefreshGuard, Screen):
         try:
             self.query_one(StatusBar).set_theme_name(self.app.theme)
             self.query_one(StatusBar).set_game_name("curator")
-            self.query_one(StatusBar).set_active_view(self._active_view)
         except Exception:
             pass
 

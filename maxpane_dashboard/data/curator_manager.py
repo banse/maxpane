@@ -79,8 +79,10 @@ from maxpane_dashboard.analytics.curator_signals import (
     READING_KEYS,
     bucket_start_ts,
     build_signals,
+    cluster_members,
     fold_deposits,
     hourly_buckets,
+    project_leaderboard_rows,
 )
 from maxpane_dashboard.data import curator_addresses as A
 from maxpane_dashboard.data import ens
@@ -564,6 +566,51 @@ class CuratorManager:
             self.cache.save()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Curator cache save failed: %s", exc)
+
+    def full_list_rows(self, *, cleaned: bool) -> list[dict] | None:
+        """Return one complete export list from held data, without network I/O."""
+        fold = self.cache.fold_rows()
+        if cleaned:
+            entry = self.cache.analysis_last_good()
+            slot = (
+                entry.payload
+                if entry is not None and isinstance(entry.payload, Mapping)
+                else None
+            )
+            if slot is None:
+                return None
+            expected = _opt_int(slot.get("clean_contributors"))
+            if expected is None or expected < 0:
+                return None
+            rows = curator_clusters.clean_list_rows_from_fold(
+                slot, fold, limit=None
+            )
+            if [row["clean_rank"] for row in rows] != list(
+                range(1, expected + 1)
+            ):
+                return None
+        else:
+            if self._fold_stale or self.cache.get_last_good(SLOT_LOGS) is None:
+                return None
+            rows = project_leaderboard_rows(
+                fold, cluster_members(self.cache.events()), limit=None
+            )
+            entry = self.cache.analysis_last_good()
+            slot = (
+                entry.payload
+                if entry is not None and isinstance(entry.payload, Mapping)
+                else None
+            )
+            curator_clusters.merge_leaderboard_grade(rows, slot)
+
+        known = self.cache.ens.names_fresh(
+            ens.DEFAULT_TTL_SECONDS, float(self._clock())
+        )
+        for row in rows:
+            address = row.get("address")
+            if isinstance(address, str):
+                row["name"] = known.get(address.lower())
+        return rows
 
     async def close(self) -> None:
         """Stop both detached tasks, close the client, then persist the cache.

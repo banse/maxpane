@@ -133,7 +133,7 @@ HIGH_MIN_FAMILIES = 3
 #: How many survivors the rendered clean list carries.  The widget caps its
 #: table well below this; the *full* ranking travels in ``clean_ranks`` so the
 #: reader's own rank is answerable for any wallet.
-CLEAN_LIST_LIMIT = 100
+CLEAN_LIST_LIMIT = 1_000
 
 
 def pattern_language(
@@ -320,6 +320,14 @@ def build_analysis(
         for b in ordered
     ]
 
+    first_hours: dict[str, int] = {}
+    tx_counts: dict[str, int] = {}
+    for deposit in sorted(
+        ds.deposits, key=lambda row: (row.block_number, row.log_index)
+    ):
+        first_hours.setdefault(deposit.contributor, deposit.hour)
+        tx_counts[deposit.contributor] = deposit.tx_count
+
     clean_list_rows = [
         {
             "clean_rank": entry.clean_rank,
@@ -328,6 +336,10 @@ def build_analysis(
             "credit_eth": _eth(entry.credit_wei),
             # The manager's ENS merge fills this, exactly like the leaderboard.
             "name": None,
+            "weight_eth": _eth(entry.weight_wei),
+            "tx_count": tx_counts.get(entry.address),
+            "first_hour": first_hours.get(entry.address),
+            "first_index": ds.first_index.get(entry.address),
         }
         for entry in clean.entries[:CLEAN_LIST_LIMIT]
     ]
@@ -380,16 +392,21 @@ def _clean_ranks_of(analysis: Any) -> Mapping[str, Any]:
 
 
 def clean_list_rows_from_fold(
-    analysis: Any, rows: Iterable[Any]
+    analysis: Any,
+    rows: Iterable[Any],
+    *,
+    limit: int | None = CLEAN_LIST_LIMIT,
 ) -> list[dict[str, Any]]:
-    """Rebuild the bounded display rows from persisted ranks and fold rows."""
+    """Rebuild clean rows from persisted ranks and contributor fold rows."""
+    cap = None if limit is None else max(0, int(limit))
     ranks = {
         address.lower(): rank
         for address, rank in _clean_ranks_of(analysis).items()
         if isinstance(address, str)
         and isinstance(rank, int)
         and not isinstance(rank, bool)
-        and 1 <= rank <= CLEAN_LIST_LIMIT
+        and rank >= 1
+        and (cap is None or rank <= cap)
     }
     rebuilt: list[dict[str, Any]] = []
     seen_ranks: set[int] = set()
@@ -397,6 +414,7 @@ def clean_list_rows_from_fold(
         address = getattr(row, "address", None)
         points = getattr(row, "points", None)
         credit_wei = getattr(row, "credit_wei", None)
+        weight_wei = getattr(row, "weight_wei", None)
         if not isinstance(address, str):
             continue
         rank = ranks.get(address.lower())
@@ -406,6 +424,8 @@ def clean_list_rows_from_fold(
             continue
         if not isinstance(credit_wei, int) or isinstance(credit_wei, bool):
             continue
+        if not isinstance(weight_wei, int) or isinstance(weight_wei, bool):
+            continue
         rebuilt.append(
             {
                 "clean_rank": rank,
@@ -413,6 +433,10 @@ def clean_list_rows_from_fold(
                 "points": points,
                 "credit_eth": _eth(credit_wei),
                 "name": None,
+                "weight_eth": _eth(weight_wei),
+                "tx_count": getattr(row, "tx_count", None),
+                "first_hour": getattr(row, "first_hour", None),
+                "first_index": getattr(row, "first_index", None),
             }
         )
         seen_ranks.add(rank)

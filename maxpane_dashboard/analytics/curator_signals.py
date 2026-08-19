@@ -90,7 +90,7 @@ FIRED_TTL_S = 86_400.0
 #: Row budgets.  The widgets truncate further; these bound what crosses the
 #: manager boundary at all, so a long game cannot grow the payload without
 #: bound.
-LEADERBOARD_LIMIT = 100
+LEADERBOARD_LIMIT = 1_000
 ACTIVITY_LIMIT = 40
 CLOSEST_CALL_LIMIT = 10
 CLUSTER_LIMIT = 10
@@ -932,6 +932,32 @@ def cluster_members(
     }
 
 
+def project_leaderboard_rows(
+    rows: list[ContributorRow],
+    flagged: set[str],
+    *,
+    limit: int | None = LEADERBOARD_LIMIT,
+) -> list[dict]:
+    """Project the contributor fold into the flat leaderboard row contract."""
+    selected = rows if limit is None else rows[: max(0, int(limit))]
+    return [
+        {
+            "rank": rank,
+            "address": row.address,
+            "points": row.points,
+            "credit_eth": _eth(row.credit_wei),
+            "tx_count": row.tx_count,
+            "flagged": row.address.lower() in flagged,
+            # Filled in by the manager, which is the only layer with a client.
+            "name": None,
+            "weight_eth": _eth(row.weight_wei),
+            "first_hour": row.first_hour,
+            "first_index": row.first_index,
+        }
+        for rank, row in enumerate(selected, start=1)
+    ]
+
+
 def _cluster_rows(
     run: list[Any],
     amount_wei: int,
@@ -1506,20 +1532,7 @@ def build_signals(readings: Any, *, now_ts: float) -> dict:
         out["flagged_points_share_pct"] = sum(shares)
 
     # --- rows --------------------------------------------------------------
-    out["leaderboard_rows"] = [
-        {
-            "rank": rank,
-            "address": row.address,
-            "points": row.points,
-            "credit_eth": _eth(row.credit_wei),
-            "tx_count": row.tx_count,
-            "flagged": row.address.lower() in flagged,
-            # Filled in by the manager, which is the only layer with a client;
-            # the column exists here so the row shape is whole either way.
-            "name": None,
-        }
-        for rank, row in enumerate(rows[:LEADERBOARD_LIMIT], start=1)
-    ]
+    out["leaderboard_rows"] = project_leaderboard_rows(rows, flagged)
 
     saved_keys = {(row["wallet"].lower(), row["hour"]) for row in saved_rows}
     events = _guard(lambda: _usable_deposits(raw_deposits), [])
@@ -1689,6 +1702,7 @@ __all__ = [
     "at_risk_state",
     "find_clusters",
     "cluster_members",
+    "project_leaderboard_rows",
     "newest_whale",
     "you_quote",
     "you_ladder",

@@ -551,13 +551,16 @@ def _lb_rows(count: int = 3) -> list[dict]:
     base = [
         {"rank": 1, "address": "0x381fe4861234567890abcdef1234567890abCDEF",
          "points": 21473, "credit_eth": 461.1, "tx_count": 7, "flagged": False,
-         "name": None, "link_conf": None},
+         "name": None, "weight_eth": 402.2, "first_hour": 3,
+         "first_index": 1, "link_conf": None},
         {"rank": 2, "address": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
          "points": 13038, "credit_eth": 170.0, "tx_count": 3, "flagged": False,
-         "name": "surfsurf.eth", "link_conf": None},
+         "name": "surfsurf.eth", "weight_eth": 150.0, "first_hour": 8,
+         "first_index": 2, "link_conf": None},
         {"rank": 4, "address": "0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91",
          "points": 7745, "credit_eth": 60.0, "tx_count": 1, "flagged": True,
-         "name": None, "link_conf": None},
+         "name": None, "weight_eth": 48.0, "first_hour": 29,
+         "first_index": 4, "link_conf": None},
     ]
     out = []
     for i in range(count):
@@ -3791,7 +3794,7 @@ async def test_the_worst_case_clean_row_renders_rank_identity_and_score():
     assert "#9,273" in text                 # ...under its own clean rank
 
 
-# -- the `l` view: full raw and cleaned lists -------------------------------
+# -- the `l` view: full-width raw and cleaned record tables -----------------
 
 
 async def test_the_list_view_tables_render_every_frozen_row_column():
@@ -3803,7 +3806,7 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
     address = "0x1234567890abcdef1234567890abcdef1234abcd"
     raw = await _rendered(
         CuratorRawList,
-        size=(72, 16),
+        size=(143, 16),
         leaderboard_rows=[
             {
                 "rank": 7,
@@ -3814,17 +3817,44 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
                 "flagged": True,
                 "name": "record.eth",
                 "link_conf": "low",
+                "weight_eth": 45.67,
+                "first_hour": 12,
+                "first_index": 88,
             }
         ],
     )
-    for header in ("#", "ADDRESS", "POINTS", "CREDIT", "TX", "FLAG", "NAME", "LINK"):
+    for header in (
+        "#",
+        "JOIN",
+        "WALLET",
+        "POINTS",
+        "WEIGHT",
+        "CREDIT",
+        "DEPOSITS",
+        "HOUR",
+        "WINDOW",
+        "LINK",
+    ):
         assert header in raw, header
-    for value in ("7", "0x1234…abcd", "12,345", "67.89", "4", "record.eth", "⚑", "◌"):
+    for value in (
+        "7",
+        "88",
+        "12,345",
+        "45.67",
+        "67.89",
+        "4",
+        "12",
+        "grace",
+        "record.eth",
+        "◌",
+    ):
         assert value in raw, value
+    assert "0x1234…abcd" not in raw
+    assert "⚑" not in raw
 
     clean = await _rendered(
         CuratorCleanedList,
-        size=(72, 16),
+        size=(143, 16),
         clean_list_rows=[
             {
                 "clean_rank": 3,
@@ -3832,27 +3862,56 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
                 "points": 9_876,
                 "credit_eth": 12.34,
                 "name": "clean.eth",
+                "weight_eth": 10.25,
+                "tx_count": 6,
+                "first_hour": 29,
+                "first_index": 99,
             }
         ],
         analysis_as_of_hhmm="22:41",
     )
-    for header in ("#", "ADDRESS", "POINTS", "CREDIT", "NAME"):
+    for header in (
+        "#",
+        "JOIN",
+        "WALLET",
+        "POINTS",
+        "WEIGHT",
+        "CREDIT",
+        "DEPOSITS",
+        "HOUR",
+        "WINDOW",
+    ):
         assert header in clean, header
-    for value in ("3", "0x1234…abcd", "9,876", "12.34", "clean.eth", "as of 22:41"):
+    for value in (
+        "3",
+        "99",
+        "9,876",
+        "10.25",
+        "12.34",
+        "6",
+        "29",
+        "judged",
+        "clean.eth",
+        "as of 22:41",
+    ):
         assert value in clean, value
+    assert "LINK" not in clean
+    assert "0x1234…abcd" not in clean
 
 
-def test_the_new_lists_own_100_row_cap_without_moving_shipped_caps():
+def test_the_new_lists_own_1000_row_cap_without_moving_shipped_caps():
     from maxpane_dashboard.widgets.curator.cleaned_list import MAX_ROWS as ANALYSIS_ROWS
     from maxpane_dashboard.widgets.curator.leaderboard import MAX_ROWS as DASHBOARD_ROWS
     from maxpane_dashboard.widgets.curator.lists import MAX_ROWS as LIST_ROWS
 
     assert DASHBOARD_ROWS == 10
     assert ANALYSIS_ROWS == 8
-    assert LIST_ROWS == 100
+    assert LIST_ROWS == 1_000
 
 
-async def test_the_list_tables_render_row_100_but_never_row_101():
+@pytest.mark.parametrize("kind", ("raw", "clean"))
+async def test_the_list_tables_add_row_1000_but_never_row_1001(kind):
+    from textual.widgets import DataTable
     from maxpane_dashboard.widgets.curator import (
         CuratorCleanedList,
         CuratorRawList,
@@ -3860,37 +3919,37 @@ async def test_the_list_tables_render_row_100_but_never_row_101():
 
     raw_rows = []
     clean_rows = []
-    for rank in range(1, 102):
+    for rank in range(1, 1_002):
         row = {
             "address": f"0x{rank:040x}",
             "points": 100_000 + rank,
+            "weight_eth": rank + 0.25,
             "credit_eth": float(rank),
+            "tx_count": rank,
+            "first_hour": rank % 48,
+            "first_index": rank,
             "name": None,
         }
         raw_rows.append(
             {
                 **row,
                 "rank": rank,
-                "tx_count": rank,
                 "flagged": False,
                 "link_conf": "clean",
             }
         )
         clean_rows.append({**row, "clean_rank": rank})
 
-    raw = await _rendered(
-        CuratorRawList,
-        size=(72, 110),
-        leaderboard_rows=raw_rows,
-    )
-    clean = await _rendered(
-        CuratorCleanedList,
-        size=(72, 110),
-        clean_list_rows=clean_rows,
-    )
-    for text in (raw, clean):
-        assert "100,100" in text
-        assert "100,101" not in text
+    widget = CuratorRawList() if kind == "raw" else CuratorCleanedList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 24)) as pilot:
+        if kind == "raw":
+            widget.update_data(leaderboard_rows=raw_rows)
+        else:
+            widget.update_data(clean_list_rows=clean_rows)
+        await pilot.pause()
+        table = widget.query_one(DataTable)
+        assert table.row_count == 1_000
 
 
 async def test_the_list_tables_distinguish_unavailable_from_honest_empty():
@@ -3950,9 +4009,9 @@ async def test_list_names_truncate_by_rendered_cells_not_python_characters(kind)
         widget = CuratorCleanedList
         kwargs = {"clean_list_rows": [{**common, "clean_rank": 1}]}
 
-    text = await _rendered(widget, size=(72, 16), **kwargs)
-    assert "測試測試 …" in text
-    assert "測試測試測" not in text
+    text = await _rendered(widget, size=(143, 16), **kwargs)
+    assert "測試測試測 …" in text
+    assert "測試測試測試" not in text
 
 
 @pytest.mark.parametrize(
@@ -3995,8 +4054,36 @@ async def test_list_addresses_and_names_are_safe_markup(cls, kwargs):
     from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
 
     widget = CuratorRawList if cls == "raw" else CuratorCleanedList
-    text = await _rendered(widget, size=(72, 16), **kwargs)
-    assert text.count("[/x]") >= 2
+    text = await _rendered(widget, size=(143, 16), **kwargs)
+    assert "[/x]" in text
+
+
+@pytest.mark.parametrize(
+    "first_hour,window",
+    ((0, "grace"), (23, "grace"), (24, "judged"), (99, "judged"), (None, "--")),
+)
+async def test_list_window_is_derived_from_the_nft_hour_rule(first_hour, window):
+    from maxpane_dashboard.widgets.curator import CuratorRawList
+
+    text = await _rendered(
+        CuratorRawList,
+        leaderboard_rows=[
+            {
+                "rank": 1,
+                "first_index": 1,
+                "address": "0x" + "ab" * 20,
+                "name": None,
+                "points": 1,
+                "weight_eth": 1.0,
+                "credit_eth": 1.0,
+                "tx_count": 1,
+                "first_hour": first_hour,
+                "link_conf": None,
+            }
+        ],
+    )
+    assert window in _row_cells(text, "0xabab…abab")
+    assert "?" in _row_cells(text, "0xabab…abab")
 
 
 @pytest.mark.parametrize("kind", ("raw", "clean"))

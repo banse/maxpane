@@ -587,6 +587,9 @@ def test_row_key_sets_match_the_prd() -> None:
         # Verified reverse ENS for `address` (PRD §13 A9).  Rendered inside the
         # address cell's own width, so a name can never widen the table.
         "name",
+        "weight_eth",
+        "first_hour",
+        "first_index",
         # The confidence-graded link marker (sybil PRD §6), appended so every
         # shipped column keeps its position and `flagged` keeps its type.
         "link_conf",
@@ -909,7 +912,8 @@ def test_the_new_row_shapes_are_frozen() -> None:
     assert CURATOR_ROW_KEYS["segment_rows"] == (
         "label", "contributors", "points_share_pct", "detail")
     assert CURATOR_ROW_KEYS["clean_list_rows"] == (
-        "clean_rank", "address", "points", "credit_eth", "name")
+        "clean_rank", "address", "points", "credit_eth", "name",
+        "weight_eth", "tx_count", "first_hour", "first_index")
     assert set(CURATOR_ROW_KEYS) <= set(CURATOR_KEYS)
 
 
@@ -921,7 +925,8 @@ def test_the_leaderboard_gained_a_confidence_grade_without_dropping_the_bool() -
     # Additive means *appended*: every shipped column keeps its position, so a
     # widget that indexes the tuple rather than the dict is not resequenced.
     assert lb[:-1] == (
-        "rank", "address", "points", "credit_eth", "tx_count", "flagged", "name"
+        "rank", "address", "points", "credit_eth", "tx_count", "flagged", "name",
+        "weight_eth", "first_hour", "first_index"
     )
     assert lb[-1] == "link_conf"
 

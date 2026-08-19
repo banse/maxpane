@@ -1,12 +1,16 @@
 {
  "synthetic": "SYNTHETIC — calibrated from docs/curator_sybil_data/, re-point at a live analysis bundle",
- "note": "The CLEANED LIST panel's payload: the top survivors once the 16 audited operators' 6,303 wallets are removed.  Ranks, points and credit are derived wei-exactly from deposits.json.gz.  `name` is null on every REAL address because no reverse ENS has been resolved for them and inventing one would be a fabricated fact; the LAST row is a synthetic 0xff..ff address carrying 'surfsurf.eth' -- exactly NAME_COLS (12) characters -- so the name cell can be measured at its widest without attributing a name to anyone.",
+ "note": "The CLEANED LIST panel's payload: the top survivors once the 16 audited operators' 6,303 wallets are removed.  Ranks, points, weight, credit, deposit count, first hour and join index are derived from deposits.json.gz and first_deposits.json.gz.  `name` is null on every REAL address because no reverse ENS has been resolved for them and inventing one would be a fabricated fact; the LAST row is a synthetic 0xff..ff address carrying 'surfsurf.eth' -- exactly NAME_COLS (12) characters -- so the name cell can be measured at its widest without attributing a name to anyone.",
  "row_keys": [
   "clean_rank",
   "address",
   "points",
   "credit_eth",
-  "name"
+  "name",
+  "weight_eth",
+  "tx_count",
+  "first_hour",
+  "first_index"
  ],
  "totals": {
   "total_points": 26585740,
@@ -23,147 +27,231 @@
    "address": "0x2fe4093c894749e596f458764c377bf4f1337b58",
    "points": 36924,
    "credit_eth": 786.0,
-   "name": null
+   "name": null,
+   "weight_eth": 1363.3962,
+   "tx_count": 2,
+   "first_hour": 6,
+   "first_index": 5665
   },
   {
    "clean_rank": 2,
    "address": "0xe781b28e02ed5fc4b989905cb6848d318f4735fd",
    "points": 33762,
    "credit_eth": 1000.0,
-   "name": null
+   "name": null,
+   "weight_eth": 1139.9,
+   "tx_count": 1,
+   "first_hour": 20,
+   "first_index": 14344
   },
   {
    "clean_rank": 3,
    "address": "0x383f42b5de515c564641f65f5da3bd8b4a35b4b4",
    "points": 33547,
    "credit_eth": 620.0,
-   "name": null
+   "name": null,
+   "weight_eth": 1125.424,
+   "tx_count": 1,
+   "first_hour": 4,
+   "first_index": 3174
   },
   {
    "clean_rank": 4,
    "address": "0x1aa780bb10425b86bcf05ecbb7953f9a93729ed9",
    "points": 33252,
    "credit_eth": 806.1,
-   "name": null
+   "name": null,
+   "weight_eth": 1105.72737,
+   "tx_count": 1,
+   "first_hour": 15,
+   "first_index": 9463
   },
   {
    "clean_rank": 5,
    "address": "0x75d51517b90cc5c8873c631ddc177a1bfd96b074",
    "points": 30853,
    "credit_eth": 490.9,
-   "name": null
+   "name": null,
+   "weight_eth": 951.92881,
+   "tx_count": 12,
+   "first_hour": 1,
+   "first_index": 218
   },
   {
    "clean_rank": 6,
    "address": "0x5d13fd37e8758030a6a10857c0cb699b2bff7a83",
    "points": 30788,
    "credit_eth": 490.0,
-   "name": null
+   "name": null,
+   "weight_eth": 947.905,
+   "tx_count": 1,
+   "first_hour": 1,
+   "first_index": 247
   },
   {
    "clean_rank": 7,
    "address": "0x2d3fd4eb27e1ff622eb699c1b10cc7663be70ab5",
    "points": 30728,
    "credit_eth": 490.0,
-   "name": null
+   "name": null,
+   "weight_eth": 944.23,
+   "tx_count": 1,
+   "first_hour": 1,
+   "first_index": 317
   },
   {
    "clean_rank": 8,
    "address": "0x381fe486d87c7f2633c777f1b5be3105a2a51744",
    "points": 30035,
    "credit_eth": 461.1,
-   "name": null
+   "name": null,
+   "weight_eth": 902.10737,
+   "tx_count": 2,
+   "first_hour": 0,
+   "first_index": 47
   },
   {
    "clean_rank": 9,
    "address": "0x000461a73d3985eef4923655782aa5d0de75c111",
    "points": 24777,
    "credit_eth": 317.1,
-   "name": null
+   "name": null,
+   "weight_eth": 613.90542,
+   "tx_count": 2,
+   "first_hour": 1,
+   "first_index": 241
   },
   {
    "clean_rank": 10,
    "address": "0x193e75b60a4ca8bc842dc28604afc6c41afe972a",
    "points": 22861,
    "credit_eth": 271.0,
-   "name": null
+   "name": null,
+   "weight_eth": 522.6394,
+   "tx_count": 2,
+   "first_hour": 1,
+   "first_index": 229
   },
   {
    "clean_rank": 11,
    "address": "0xd8222670b20761708d32a6a9b5e2f3a266d9673d",
    "points": 18400,
    "credit_eth": 193.0,
-   "name": null
+   "name": null,
+   "weight_eth": 338.5654,
+   "tx_count": 2,
+   "first_hour": 1,
+   "first_index": 134
   },
   {
    "clean_rank": 12,
    "address": "0xbb24cda09cb5a838ec93bae56278dc799f34feb4",
    "points": 18264,
    "credit_eth": 170.0,
-   "name": null
+   "name": null,
+   "weight_eth": 333.596,
+   "tx_count": 3,
+   "first_hour": 0,
+   "first_index": 20
   },
   {
    "clean_rank": 13,
    "address": "0x82c4426b73929c9b2a373b3a902ae7471abf0914",
    "points": 16159,
    "credit_eth": 136.0,
-   "name": null
+   "name": null,
+   "weight_eth": 261.140815,
+   "tx_count": 8,
+   "first_hour": 1,
+   "first_index": 250
   },
   {
    "clean_rank": 14,
    "address": "0xad468e8336182e2cec7022f3434f91227c33a723",
    "points": 16000,
    "credit_eth": 138.0,
-   "name": null
+   "name": null,
+   "weight_eth": 256.0314,
+   "tx_count": 1,
+   "first_hour": 3,
+   "first_index": 1008
   },
   {
    "clean_rank": 15,
    "address": "0x7f2fc61aab7ae63eb8192bb7ec36709917707f7a",
    "points": 15589,
    "credit_eth": 126.0,
-   "name": null
+   "name": null,
+   "weight_eth": 243.0288,
+   "tx_count": 1,
+   "first_hour": 1,
+   "first_index": 285
   },
   {
    "clean_rank": 16,
    "address": "0x2bdf1a698d39a4358e2c162deacc038fadb8a9d5",
    "points": 15479,
    "credit_eth": 125.0,
-   "name": null
+   "name": null,
+   "weight_eth": 239.625,
+   "tx_count": 1,
+   "first_hour": 1,
+   "first_index": 515
   },
   {
    "clean_rank": 17,
    "address": "0xd891769ecec9dc911441a15b1a090cc9af1d9eee",
    "points": 15364,
    "credit_eth": 217.5,
-   "name": null
+   "name": null,
+   "weight_eth": 236.0542,
+   "tx_count": 2,
+   "first_hour": 21,
+   "first_index": 14771
   },
   {
    "clean_rank": 18,
    "address": "0x9572cbe40ff2ed3dd1a4c0fa1c4a89bae0decccb",
    "points": 15002,
    "credit_eth": 205.0,
-   "name": null
+   "name": null,
+   "weight_eth": 225.09,
+   "tx_count": 1,
+   "first_hour": 21,
+   "first_index": 14712
   },
   {
    "clean_rank": 19,
    "address": "0x85e3f17c84e239cec91e42ab3df021db45febf17",
    "points": 14988,
    "credit_eth": 169.0,
-   "name": null
+   "name": null,
+   "weight_eth": 224.65567,
+   "tx_count": 4,
+   "first_hour": 15,
+   "first_index": 9641
   },
   {
    "clean_rank": 20,
    "address": "0xd3474bd2f558b12e83810ec7d8af14f2d1d08137",
    "points": 14294,
    "credit_eth": 140.0,
-   "name": null
+   "name": null,
+   "weight_eth": 204.3325,
+   "tx_count": 4,
+   "first_hour": 12,
+   "first_index": 8773
   },
   {
    "clean_rank": 9273,
    "address": "0xffffffffffffffffffffffffffffffffffffffff",
    "points": 225,
    "credit_eth": 0.05,
-   "name": "surfsurf.eth"
+   "name": "surfsurf.eth",
+   "weight_eth": 0.050625,
+   "tx_count": 1,
+   "first_hour": 23,
+   "first_index": 15576
   }
  ]
 }

@@ -99,6 +99,14 @@ panels read `analysis unavailable` for the first minute or so of a cold start. T
 their own slower schedule and stamp their own `as of HH:MM`, which is deliberately not the title
 bar's.
 
+Press **`l`** for the complete record view. It keeps the clock on screen and shows one full-width
+table; **`c`** switches between THE RAW LIST and THE CLEANED LIST and remembers that choice when
+you leave. The table mirrors the record NFT traits: rank, join order, wallet, points, weight,
+credit, deposits, first hour, and grace/judged window, plus the linkage mark on the raw list. The
+interactive table is capped at 1,000 rows to keep refreshes responsive. **`e`** exports the full,
+uncapped list currently shown to `~/.maxpane/curator_raw_list.json` or
+`~/.maxpane/curator_cleaned_list.json`.
+
 ## Install
 
 ### pipx (recommended)
@@ -268,15 +276,15 @@ the other, so a single manager owns the command.
 | `t` | Cycle theme |
 | `q` | Quit |
 
-Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap the two panels
-that share their bottom-right slot. **THE LIST binds `y`** for your own standing — every send you
+Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap panels; in THE
+LIST's `l` view it switches the full-width raw and cleaned tables. **THE LIST binds `y`** for your own standing — every send you
 made with the multiplier it got, what each one actually credited, your share of all weight, the
 single send that would pass the rank above you, and (from the linked-wallet analysis) whether you
 are in a group and what your rank is without one (`esc` goes back; the clock stays on screen either
-way). **It binds `f`** for the linked-wallet view described above, and **`e`** inside that view to
-export the cleaned list. THE LIST's status bar names the three: `c panels · y you · f linked`; `e`
-is not in the hints because it only acts in the `f` view, where the CLEANED LIST panel prints what
-it wrote. **It also binds `w`**, which asks for the wallet its
+way). **It binds `f`** for the linked-wallet view described above, and **`l`** for the record view.
+Inside either secondary view, **`e`** exports the list on screen. THE LIST's status bar names all
+four: `c panels · y you · f linked · l lists`; `e` is not in the hints because it only acts in
+those views, where the active list panel prints what it wrote. **It also binds `w`**, which asks for the wallet its
 YOU row is about — rank, points, credit, and the exact amount that wallet must send next to beat
 its own high-water mark. The address is validated, saved to `~/.maxpane/config.toml`, and picked
 up by every wallet-scoped dashboard on the next launch, so it is the easiest way to set one:

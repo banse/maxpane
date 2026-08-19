@@ -1,8 +1,4 @@
-"""The full raw and cleaned record lists used by the curator ``l`` view.
-
-Both widgets are render-only. They receive the existing manager rows, cap their
-own display at 100, and shed named columns rather than clipping them silently.
-"""
+"""The full-width raw and cleaned record tables used by curator list mode."""
 
 from __future__ import annotations
 
@@ -12,8 +8,8 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.curator._fmt import (
-    ADDR_COLS,
     DASH,
+    NAME_COLS,
     fmt_eth_compact,
     fmt_points,
     short_addr,
@@ -27,7 +23,7 @@ from maxpane_dashboard.widgets.curator._table import (
     title_with_hint,
 )
 from maxpane_dashboard.widgets.curator.cleaned_list import EXPORT_FAILED
-from maxpane_dashboard.widgets.curator.leaderboard import _flag_cell, _link_glyph
+from maxpane_dashboard.widgets.curator.leaderboard import _link_glyph
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 RAW_LIST_TITLE = "THE RAW LIST"
@@ -38,53 +34,80 @@ RAW_LIST_EMPTY = "no contributors"
 CLEANED_LIST_UNAVAILABLE = "analysis unavailable"
 CLEANED_LIST_EMPTY = "no wallets survive"
 
-MAX_ROWS = 100
+MAX_ROWS = 1_000
 
-_RANK_COLS = 4
+_RANK_COLS = 6
+_JOIN_COLS = 6
 _POINTS_COLS = 7
-_CREDIT_COLS = 8
-_TX_COLS = 4
-_FLAG_COLS = 4
+_ETH_COLS = 9
+_DEPOSITS_COLS = 8
+_HOUR_COLS = 4
+_WINDOW_COLS = 6
 _LINK_COLS = 4
-_NAME_COLS = 10
 
 _RAW_FULL = (
     ("rank", "#", _RANK_COLS),
-    ("address", "ADDRESS", ADDR_COLS),
+    ("join", "JOIN #", _JOIN_COLS),
+    ("wallet", "WALLET", NAME_COLS),
     ("points", "POINTS", _POINTS_COLS),
-    ("credit", "CREDIT", _CREDIT_COLS),
-    ("tx", "TX", _TX_COLS),
-    ("flag", "FLAG", _FLAG_COLS),
-    ("name", "NAME", _NAME_COLS),
+    ("weight", "WEIGHT Ξ", _ETH_COLS),
+    ("credit", "CREDIT Ξ", _ETH_COLS),
+    ("deposits", "DEPOSITS", _DEPOSITS_COLS),
+    ("hour", "HOUR", _HOUR_COLS),
+    ("window", "WINDOW", _WINDOW_COLS),
     ("link", "LINK", _LINK_COLS),
 )
-_RAW_COMPACT = tuple(column for column in _RAW_FULL if column[0] != "name")
+_RAW_COMPACT = tuple(column for column in _RAW_FULL if column[0] != "window")
 _RAW_NARROW = tuple(
-    column for column in _RAW_COMPACT if column[0] not in ("credit", "tx")
+    column
+    for column in _RAW_FULL
+    if column[0] not in ("weight", "deposits", "hour", "window")
+)
+_RAW_MINIMUM = tuple(
+    column
+    for column in _RAW_FULL
+    if column[0] in ("rank", "wallet", "points", "link")
 )
 _RAW_TIERS = (
     ("full", tier_cost(_RAW_FULL), _RAW_FULL, ""),
-    ("compact", tier_cost(_RAW_COMPACT), _RAW_COMPACT, "‹ widen: NAME"),
+    ("compact", tier_cost(_RAW_COMPACT), _RAW_COMPACT, "‹ widen: WINDOW"),
     (
         "narrow",
         tier_cost(_RAW_NARROW),
         _RAW_NARROW,
-        "‹ widen: NAME + CREDIT + TX",
+        "‹ widen: WEIGHT + DEPOSITS + HOUR + WINDOW",
+    ),
+    (
+        "minimum",
+        tier_cost(_RAW_MINIMUM),
+        _RAW_MINIMUM,
+        "‹ widen: JOIN + WEIGHT + CREDIT + DEPOSITS + HOUR + WINDOW",
     ),
 )
 
 _CLEANED_FULL = (
     ("rank", "#", _RANK_COLS),
-    ("address", "ADDRESS", ADDR_COLS),
+    ("join", "JOIN #", _JOIN_COLS),
+    ("wallet", "WALLET", NAME_COLS),
     ("points", "POINTS", _POINTS_COLS),
-    ("credit", "CREDIT", _CREDIT_COLS),
-    ("name", "NAME", _NAME_COLS),
+    ("weight", "WEIGHT Ξ", _ETH_COLS),
+    ("credit", "CREDIT Ξ", _ETH_COLS),
+    ("deposits", "DEPOSITS", _DEPOSITS_COLS),
+    ("hour", "HOUR", _HOUR_COLS),
+    ("window", "WINDOW", _WINDOW_COLS),
 )
 _CLEANED_COMPACT = tuple(
-    column for column in _CLEANED_FULL if column[0] != "name"
+    column for column in _CLEANED_FULL if column[0] != "window"
 )
 _CLEANED_NARROW = tuple(
-    column for column in _CLEANED_COMPACT if column[0] != "credit"
+    column
+    for column in _CLEANED_FULL
+    if column[0] not in ("weight", "deposits", "hour", "window")
+)
+_CLEANED_MINIMUM = tuple(
+    column
+    for column in _CLEANED_FULL
+    if column[0] in ("rank", "wallet", "points")
 )
 _CLEANED_TIERS = (
     ("full", tier_cost(_CLEANED_FULL), _CLEANED_FULL, ""),
@@ -92,13 +115,19 @@ _CLEANED_TIERS = (
         "compact",
         tier_cost(_CLEANED_COMPACT),
         _CLEANED_COMPACT,
-        "‹ widen: NAME",
+        "‹ widen: WINDOW",
     ),
     (
         "narrow",
         tier_cost(_CLEANED_NARROW),
         _CLEANED_NARROW,
-        "‹ widen: NAME + CREDIT",
+        "‹ widen: WEIGHT + DEPOSITS + HOUR + WINDOW",
+    ),
+    (
+        "minimum",
+        tier_cost(_CLEANED_MINIMUM),
+        _CLEANED_MINIMUM,
+        "‹ widen: JOIN + WEIGHT + CREDIT + DEPOSITS + HOUR + WINDOW",
     ),
 )
 
@@ -112,30 +141,40 @@ def _rank(value) -> str:
         return DASH
 
 
-def _name(value) -> str:
-    if not isinstance(value, str):
-        return DASH
-    cleaned = " ".join(value.split())
-    if not cleaned:
-        return DASH
-    if cell_len(cleaned) > _NAME_COLS:
-        cleaned = f"{set_cell_size(cleaned, _NAME_COLS - 1)}…"
-    return safe_markup(cleaned)
+def _wallet(name, address) -> str:
+    value = ""
+    if isinstance(name, str):
+        value = " ".join(name.split())
+    if not value:
+        value = short_addr(address)
+    if cell_len(value) > NAME_COLS:
+        value = f"{set_cell_size(value, NAME_COLS - 1)}…"
+    return safe_markup(value or DASH)
 
 
-def _address(value) -> str:
-    return safe_markup(short_addr(value))
+def _window(value) -> str:
+    if value is None or isinstance(value, bool):
+        return DASH
+    try:
+        hour = int(value)
+    except (TypeError, ValueError):
+        return DASH
+    if hour < 0:
+        return DASH
+    return "grace" if hour < 24 else "judged"
 
 
 def _raw_values(row: dict) -> dict:
     return {
         "rank": _rank(row.get("rank")),
-        "address": _address(row.get("address")),
+        "join": _rank(row.get("first_index")),
+        "wallet": _wallet(row.get("name"), row.get("address")),
         "points": fmt_points(row.get("points")),
+        "weight": fmt_eth_compact(row.get("weight_eth")),
         "credit": fmt_eth_compact(row.get("credit_eth")),
-        "tx": _rank(row.get("tx_count")),
-        "flag": _flag_cell(row.get("flagged")),
-        "name": _name(row.get("name")),
+        "deposits": _rank(row.get("tx_count")),
+        "hour": _rank(row.get("first_hour")),
+        "window": _window(row.get("first_hour")),
         "link": _link_glyph(row.get("link_conf"), None),
     }
 
@@ -143,10 +182,14 @@ def _raw_values(row: dict) -> dict:
 def _cleaned_values(row: dict) -> dict:
     return {
         "rank": _rank(row.get("clean_rank")),
-        "address": _address(row.get("address")),
+        "join": _rank(row.get("first_index")),
+        "wallet": _wallet(row.get("name"), row.get("address")),
         "points": fmt_points(row.get("points")),
+        "weight": fmt_eth_compact(row.get("weight_eth")),
         "credit": fmt_eth_compact(row.get("credit_eth")),
-        "name": _name(row.get("name")),
+        "deposits": _rank(row.get("tx_count")),
+        "hour": _rank(row.get("first_hour")),
+        "window": _window(row.get("first_hour")),
     }
 
 
@@ -160,6 +203,10 @@ class _ListTable(Vertical):
     EMPTY = ""
 
     DEFAULT_CSS = """
+    _ListTable {
+        width: 100%;
+        height: 100%;
+    }
     .curator-list-title {
         width: 100%;
         height: 1;
@@ -175,7 +222,7 @@ class _ListTable(Vertical):
         text-overflow: ellipsis;
     }
     .curator-list-table {
-        height: auto;
+        height: 1fr;
     }
     .curator-list-receipt {
         width: 100%;
@@ -191,10 +238,15 @@ class _ListTable(Vertical):
         self._payload: dict = {}
         self._columns: tuple = ()
         self._hint = ""
+        self._export_path: str | None = None
+        self._export_failed = False
 
     def compose(self) -> ComposeResult:
         yield Static(self.TITLE, classes="curator-list-title")
         yield Static("", classes="curator-list-note")
+        receipt = Static("", classes="curator-list-receipt")
+        receipt.display = False
+        yield receipt
         yield DataTable(id=self.TABLE_ID, classes="curator-list-table")
 
     def on_mount(self) -> None:
@@ -207,6 +259,39 @@ class _ListTable(Vertical):
     def on_resize(self, _event=None) -> None:
         if self._payload:
             self._render_view()
+        self._render_receipt()
+
+    def mark_exported(self, path) -> None:
+        self._export_path = str(path) if path else None
+        self._export_failed = False
+        self._render_receipt()
+
+    def mark_export_failed(self) -> None:
+        self._export_path = None
+        self._export_failed = True
+        self._render_receipt()
+
+    def _render_receipt(self) -> None:
+        try:
+            line = self.query_one(".curator-list-receipt", Static)
+        except Exception:
+            return
+        if self._export_failed:
+            line.display = True
+            line.update(f"[$warning]⚠ {EXPORT_FAILED}[/]")
+            return
+        if not self._export_path:
+            line.display = False
+            line.update("")
+            return
+        line.display = True
+        prefix = "saved → "
+        path = self._export_path
+        width = max(self.content_size.width - 2, 0)
+        if width and cell_len(prefix + path) > width:
+            keep = max(width - cell_len(prefix) - 1, 1)
+            path = f"…{path[-keep:]}"
+        line.update(f"[dim]{prefix}{safe_markup(path)}[/]")
 
     def _apply_columns(self, table: DataTable) -> tuple:
         width = table.content_size.width or self.content_size.width
@@ -306,51 +391,6 @@ class CuratorCleanedList(_ListTable):
     TIERS = _CLEANED_TIERS
     UNAVAILABLE = CLEANED_LIST_UNAVAILABLE
     EMPTY = CLEANED_LIST_EMPTY
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self._export_path: str | None = None
-        self._export_failed = False
-
-    def compose(self) -> ComposeResult:
-        yield Static(self.TITLE, classes="curator-list-title")
-        yield Static("", classes="curator-list-note")
-        receipt = Static("", classes="curator-list-receipt")
-        receipt.display = False
-        yield receipt
-        yield DataTable(id=self.TABLE_ID, classes="curator-list-table")
-
-    def mark_exported(self, path) -> None:
-        self._export_path = str(path) if path else None
-        self._export_failed = False
-        self._render_receipt()
-
-    def mark_export_failed(self) -> None:
-        self._export_path = None
-        self._export_failed = True
-        self._render_receipt()
-
-    def _render_receipt(self) -> None:
-        try:
-            line = self.query_one(".curator-list-receipt", Static)
-        except Exception:
-            return
-        if self._export_failed:
-            line.display = True
-            line.update(f"[$warning]⚠ {EXPORT_FAILED}[/]")
-            return
-        if not self._export_path:
-            line.display = False
-            line.update("")
-            return
-        line.display = True
-        prefix = "saved → "
-        path = self._export_path
-        width = max(self.content_size.width - 2, 0)
-        if width and len(prefix) + len(path) > width:
-            keep = max(width - len(prefix) - 1, 1)
-            path = f"…{path[-keep:]}"
-        line.update(f"[dim]{prefix}{safe_markup(path)}[/]")
 
     def update_data(
         self, clean_list_rows=None, analysis_as_of_hhmm=None, **_kwargs

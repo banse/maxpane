@@ -793,6 +793,9 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
         # Verified reverse ENS for `address`, or None.  Rendered in the
         # address cell's own width, so a name never widens the table.
         "name",
+        # Record traits already present in the contributor fold. ETH values
+        # are projected here; raw wei never crosses the flat-dict boundary.
+        "weight_eth", "first_hour", "first_index",
         # "high" | "low" | "clean" | None  ->  ⚑ / ◌ / (empty) / ?
         #
         # ADDITIVE, and appended rather than folded into `flagged`.  PRD §6
@@ -862,7 +865,10 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
     # The de-sybilled list.  `clean_rank` is the survivor rank, which is NOT
     # `rank` -- the two are rendered side by side ("#412 raw, #47 clean") and
     # one name for both would make that line impossible to write.
-    "clean_list_rows": ("clean_rank", "address", "points", "credit_eth", "name"),
+    "clean_list_rows": (
+        "clean_rank", "address", "points", "credit_eth", "name",
+        "weight_eth", "tx_count", "first_hour", "first_index",
+    ),
 }
 
 #: The twelve keys the **manager's analysis adapter** produces, and the only

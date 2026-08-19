@@ -1985,7 +1985,7 @@ def test_the_grace_payload_reproduces_the_bundle(full_readings: dict) -> None:
     assert out["rescued_total_eth"] == 0.0
 
     assert out["top_points"] == max(r["points"] for r in out["leaderboard_rows"])
-    assert sig.LEADERBOARD_LIMIT == 100
+    assert sig.LEADERBOARD_LIMIT == 1_000
     assert len(out["leaderboard_rows"]) == sig.LEADERBOARD_LIMIT
     assert out["leaderboard_rows"][0]["rank"] == 1
     # The frozen row shape MINUS `link_conf`.
@@ -2014,6 +2014,16 @@ def test_the_grace_payload_reproduces_the_bundle(full_readings: dict) -> None:
         out["leaderboard_rows"]
     )
 
+    top_row = out["leaderboard_rows"][0]
+    top_fold = sig.fold_deposits(
+        full_readings["deposits"],
+        full_readings["first_deposits"],
+        points_per_eth=full_readings["points_per_eth"],
+    )[0]
+    assert top_row["weight_eth"] == pytest.approx(top_fold.weight_wei / ETH)
+    assert top_row["first_hour"] == top_fold.first_hour
+    assert top_row["first_index"] == top_fold.first_index
+
     assert len(out["activity_rows"]) == sig.ACTIVITY_LIMIT
     assert [tuple(r) for r in out["activity_rows"]] == [
         CURATOR_ROW_KEYS["activity_rows"]
@@ -2027,6 +2037,27 @@ def test_the_grace_payload_reproduces_the_bundle(full_readings: dict) -> None:
     assert sum(point[1] for point in out["volume_series"]) == pytest.approx(
         out["volume_routed_eth"]
     )
+
+
+def test_the_leaderboard_projection_caps_only_the_display_slice() -> None:
+    source = [
+        ContributorRow(
+            address="0x" + f"{rank:040x}",
+            weight_wei=rank * ETH,
+            credit_wei=rank * ETH,
+            tx_count=rank,
+            first_hour=rank % 66,
+            first_index=rank,
+            points=20_000 - rank,
+        )
+        for rank in range(1, 1_002)
+    ]
+
+    projected = sig.project_leaderboard_rows(source, set())
+
+    assert len(projected) == 1_000
+    assert projected[-1]["rank"] == 1_000
+    assert all(row["rank"] != 1_001 for row in projected)
 
 
 def test_the_activity_feed_is_newest_first_and_names_the_first_deposits(

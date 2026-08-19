@@ -46,6 +46,7 @@ from maxpane_dashboard.analytics.curator_signals import LEADERBOARD_LIMIT, build
 from maxpane_dashboard.data.curator_models import (
     CURATOR_DEGRADED_GROUPS,
     CURATOR_KEYS,
+    CURATOR_ROW_KEYS,
     ContributorRow,
     CuratorConfig,
     DepositEvent,
@@ -930,7 +931,7 @@ def test_a_group_with_history_still_serves_it_when_its_filter_dies(tmp_path, clo
     manager.client = dead
     clock.advance(60)
     out = asyncio.run(manager.fetch_and_compute())
-    assert len(out["leaderboard_rows"]) == LEADERBOARD_LIMIT
+    assert 0 < len(out["leaderboard_rows"]) <= LEADERBOARD_LIMIT
     assert SOURCE_LOGS in out["degraded"]
 
 
@@ -1622,7 +1623,7 @@ def test_a_healthy_cycle_publishes_the_chain_values_it_read(tmp_path, clock):
     assert out["hourly_threshold_eth"] == 5.0          # read live, never hardcoded
     assert out["first_judged_hour"] == 24
     assert out["early_multiplier_x"] == pytest.approx(1.9491)
-    assert len(out["leaderboard_rows"]) == LEADERBOARD_LIMIT
+    assert 0 < len(out["leaderboard_rows"]) <= LEADERBOARD_LIMIT
     assert out["volume_series"][0][0] == A.LAUNCH_TIME
     assert out["as_of_hhmm"] is not None
     assert out["you_required_next_eth"] == pytest.approx(4.1)
@@ -2276,7 +2277,7 @@ def _store_farm_slot(manager, *, ts=NOW, wallet=None, **overrides):
     return payload
 
 
-def _legacy_clean_slot(count=120):
+def _legacy_clean_slot(count=1_200):
     addresses = ["0x" + f"{rank:040x}" for rank in range(1, count + 1)]
     rows = [
         ContributorRow(
@@ -2330,20 +2331,24 @@ def test_a_legacy_twenty_row_clean_list_expands_from_the_cached_fold(
     payload = {"leaderboard_rows": []}
     manager._merge_analysis(payload)
 
-    assert len(payload["clean_list_rows"]) == 100
+    assert len(payload["clean_list_rows"]) == 1_000
     assert [row["clean_rank"] for row in payload["clean_list_rows"]] == list(
-        range(1, 101)
+        range(1, 1_001)
     )
     assert payload["clean_list_rows"][-1] == {
-        "clean_rank": 100,
-        "address": "0x" + f"{100:040x}",
-        "points": 9_900,
-        "credit_eth": 100.0,
+        "clean_rank": 1_000,
+        "address": "0x" + f"{1_000:040x}",
+        "points": 9_000,
+        "credit_eth": 1_000.0,
         "name": None,
+        "weight_eth": 0.000000000000001,
+        "tx_count": 1,
+        "first_hour": 0,
+        "first_index": 1_000,
     }
     migrated = manager.cache.analysis_last_good()
     assert migrated.ts == old_ts
-    assert len(migrated.payload["clean_list_rows"]) == 100
+    assert len(migrated.payload["clean_list_rows"]) == 1_000
     assert len(stored["clean_list_rows"]) == 20, "the old payload was mutated"
 
 
@@ -2358,6 +2363,54 @@ def test_an_incomplete_fold_does_not_replace_a_legacy_clean_list(tmp_path, clock
 
     assert len(payload["clean_list_rows"]) == 20
     assert len(manager.cache.analysis_last_good().payload["clean_list_rows"]) == 20
+
+
+def test_full_list_exports_ignore_display_caps_without_growing_the_analysis_slot(
+    tmp_path, clock
+):
+    manager = _manager(tmp_path, clock)
+    stored, rows = _legacy_clean_slot(count=1_200)
+    manager.cache.store_fold(rows, last_block=None, now=NOW)
+    manager.cache.store_last_good(SLOT_LOGS, {}, ts=NOW)
+    manager.cache.store_analysis(stored, ts=NOW)
+
+    raw = manager.full_list_rows(cleaned=False)
+    clean = manager.full_list_rows(cleaned=True)
+
+    assert len(raw) == 1_200
+    assert len(clean) == 1_200
+    assert raw[-1]["rank"] == 1_200
+    assert clean[-1]["clean_rank"] == 1_200
+    assert raw[-1]["first_index"] == 1_200
+    assert clean[-1]["first_index"] == 1_200
+    assert set(raw[-1]) == set(CURATOR_ROW_KEYS["leaderboard_rows"])
+    assert set(clean[-1]) == set(CURATOR_ROW_KEYS["clean_list_rows"])
+    assert len(manager.cache.analysis_last_good().payload["clean_list_rows"]) == 20
+
+
+def test_full_list_exports_keep_unavailable_and_empty_distinct(tmp_path, clock):
+    manager = _manager(tmp_path, clock)
+    assert manager.full_list_rows(cleaned=False) is None
+    assert manager.full_list_rows(cleaned=True) is None
+
+    manager.cache.store_last_good(SLOT_LOGS, {}, ts=NOW)
+    empty_slot, empty_fold = _legacy_clean_slot(count=0)
+    manager.cache.store_fold(empty_fold, last_block=None, now=NOW)
+    manager.cache.store_analysis(empty_slot, ts=NOW)
+
+    assert manager.full_list_rows(cleaned=False) == []
+    assert manager.full_list_rows(cleaned=True) == []
+
+
+def test_an_incomplete_fold_cannot_masquerade_as_a_full_clean_export(
+    tmp_path, clock
+):
+    manager = _manager(tmp_path, clock)
+    stored, rows = _legacy_clean_slot(count=1_200)
+    manager.cache.store_fold(rows[:-1], last_block=None, now=NOW)
+    manager.cache.store_analysis(stored, ts=NOW)
+
+    assert manager.full_list_rows(cleaned=True) is None
 
 
 def test_with_no_analysis_last_good_every_analysis_key_is_none_never_empty(
