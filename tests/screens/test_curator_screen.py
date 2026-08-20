@@ -3262,15 +3262,17 @@ async def test_the_list_view_alone_swaps_in_the_record_summary_hero():
         assert screen.query_one(f"#{WALLET_HERO_ID}").display is False
         assert "CLOCK" not in text
         assert "THE LIST" in text and "THE CLEANED LIST" in text
+        assert "THE WALLET" in text
         assert "reader.eth" in text
         assert (
             text.index("THE LIST")
-            < text.index("reader.eth")
+            < text.index("THE WALLET")
             < text.index("THE CLEANED LIST")
         )
-        assert "#15,234 raw · #7,042 cleaned" in text
-        assert "684 clusters" in text and "999 clusters" not in text
-        assert "removed (via sybilkit)" in text
+        assert "#15,234 of 19,522 (raw)" in text
+        assert "#7,042 of 8,750 (clean)" in text
+        assert "clusters" not in text
+        assert "removed (via sybilkit)" not in text
         assert "42,721 pts" in text
         assert "8,750 wallets" in text and "12,345,678 pts" in text
 

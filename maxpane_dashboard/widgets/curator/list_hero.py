@@ -77,7 +77,7 @@ def _raw_lines(data: dict, tier: str) -> list[str]:
     )
 
 
-def _wallet_title(data: dict, tier: str) -> str:
+def _wallet_identity(data: dict, tier: str) -> str:
     ens = data.get("you_ens")
     address = data.get("you_address")
     has_ens = isinstance(ens, str) and bool(ens.strip())
@@ -97,18 +97,20 @@ def _rank(value) -> str:
     return f"#{value:,}"
 
 
+def _total(value) -> str:
+    if not isinstance(value, int) or isinstance(value, bool):
+        return DASH
+    return f"{value:,}"
+
+
 def _wallet_lines(data: dict, tier: str) -> list[str]:
-    raw_rank = _rank(data.get("you_rank"))
-    clean_rank = _rank(data.get("you_clean_rank"))
-    if tier == "minimal":
-        ranks = f"{raw_rank} r · {clean_rank} c"
-    else:
-        ranks = f"{raw_rank} raw · {clean_rank} cleaned"
     return _lines(
-        _wallet_title(data, tier),
-        f"[bold]{ranks}[/]",
-        _count(data.get("operators_count"), "clusters"),
-        "[dim]removed (via sybilkit)[/]",
+        "THE WALLET",
+        f"[bold]{_rank(data.get('you_rank'))} of "
+        f"{_total(data.get('contributors_total'))} (raw)[/]",
+        f"{_rank(data.get('you_clean_rank'))} of "
+        f"{_total(data.get('clean_contributors'))} (clean)",
+        _wallet_identity(data, tier),
         f"[bold]{fmt_points(data.get('you_points'))} pts[/]",
     )
 
@@ -197,7 +199,6 @@ class CuratorListHero(Vertical):
         you_ens=None,
         you_rank=None,
         you_clean_rank=None,
-        operators_count=None,
         you_points=None,
         clean_contributors=None,
         clean_points=None,
@@ -212,7 +213,6 @@ class CuratorListHero(Vertical):
             "you_ens": you_ens,
             "you_rank": you_rank,
             "you_clean_rank": you_clean_rank,
-            "operators_count": operators_count,
             "you_points": you_points,
             "clean_contributors": clean_contributors,
             "clean_points": clean_points,

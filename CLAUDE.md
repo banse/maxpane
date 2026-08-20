@@ -164,10 +164,8 @@ and may say so in its own strings, but `pattern_language()` re-checks every reas
 detail — including strings read back from a **persisted** payload, because a hand-edited cache
 file is third-party input too — and swaps a forbidden word for the evidence family's own phrase.
 On screen the dashboard's evidence labels therefore speak only patterns: *linked*, *fan-out*,
-`⚑`/`◌`/`?`, and every evidence panel has its own composited forbidden-word test. The sole rendered
-exception is the `l` view hero's explicit product attribution, `removed (via sybilkit)`; it names
-the tool that produced the cleaned list, not a wallet or verdict. `analytics/curator_signals.py`
-still never mentions or imports the library
+`⚑`/`◌`/`?`, and every evidence panel has its own composited forbidden-word test.
+`analytics/curator_signals.py` still never mentions or imports the library
 (`test_curator_signals_never_imports_sybilkit`); its only post-release change is the decided
 `LEADERBOARD_LIMIT = 100` payload cap for the `l` record view. The Tier-A `find_clusters` it
 already had is unchanged and it never learns the library exists.

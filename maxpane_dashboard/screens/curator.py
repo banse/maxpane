@@ -342,7 +342,7 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "CuratorListHero": (
         "phase", "contributors_total", "deposits_total", "volume_routed_eth",
         "you_address", "you_ens", "you_rank", "you_clean_rank",
-        "operators_count", "you_points", "clean_contributors", "clean_points",
+        "you_points", "clean_contributors", "clean_points",
     ),
     "CuratorLeaderboard": ("leaderboard_rows", "you_address"),
     "CuratorSparklines": (
