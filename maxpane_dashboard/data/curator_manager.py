@@ -71,8 +71,10 @@ import asyncio
 import dataclasses
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from maxpane_dashboard.analytics.curator_signals import (
@@ -83,6 +85,7 @@ from maxpane_dashboard.analytics.curator_signals import (
     fold_deposits,
     hourly_buckets,
     project_leaderboard_rows,
+    WHALE_MIN_ETH,
 )
 from maxpane_dashboard.data import curator_addresses as A
 from maxpane_dashboard.data import ens
@@ -109,6 +112,13 @@ from maxpane_dashboard.data.curator_models import (
     DepositEvent,
 )
 from maxpane_dashboard.data.evm_abi import addr_from_topic, strip0x
+from maxpane_dashboard.data.curator_list_filters import (
+    FILTER_FAMILIES,
+    FilterContext,
+    FilterSpec,
+    filter_rows,
+)
+from maxpane_dashboard.data.curator_list_source import load_export_list
 from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 
 logger = logging.getLogger(__name__)
@@ -484,6 +494,13 @@ CONFIG_PAYLOAD_KEYS: tuple[str, ...] = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class FilteredListResult:
+    rows: list[dict] | None
+    complete: bool
+    source_reason: str | None
+
+
 class CuratorManager:
     """Fetches THE LIST across three source groups and returns a flat dict."""
 
@@ -621,6 +638,56 @@ class CuratorManager:
             if isinstance(address, str):
                 row["name"] = known.get(address.lower())
         return rows
+
+    def _filter_families(self) -> dict[str, frozenset[str]] | None:
+        entry = self.cache.analysis_last_good()
+        payload = entry.payload if entry is not None else None
+        if not isinstance(payload, Mapping) or not isinstance(payload.get("groups"), list):
+            return None
+        found: dict[str, set[str]] = {}
+        for group in payload["groups"]:
+            if not isinstance(group, Mapping):
+                continue
+            families = {
+                value for value in group.get("families", ())
+                if isinstance(value, str) and value in FILTER_FAMILIES
+            }
+            for member in group.get("members", ()):
+                if isinstance(member, str) and member.strip():
+                    found.setdefault(member.casefold(), set()).update(families)
+        return {address: frozenset(values) for address, values in found.items()}
+
+    def _filter_whales(self, expected_count: Any) -> frozenset[str] | None:
+        fold = self.cache.fold_rows()
+        trusted_count = isinstance(expected_count, int) and not isinstance(expected_count, bool)
+        if not trusted_count or len(fold) != expected_count or not self._history_complete(fold):
+            return None
+        floor_wei = int(WHALE_MIN_ETH * 10**18)
+        return frozenset(
+            event.contributor.casefold()
+            for event in self.cache.events()
+            if event.amount_wei >= floor_wei
+        )
+
+    def filtered_list_rows(self, directory, *, expected_count, live_rows, you_row, spec):
+        source = load_export_list(
+            Path(directory),
+            cleaned=False,
+            expected_count=expected_count,
+            live_rows=live_rows,
+            you_row=you_row,
+        )
+        if not isinstance(source.rows, list):
+            return FilteredListResult(None, source.complete, source.reason)
+        context = FilterContext(
+            families_by_address=self._filter_families() if spec.families else None,
+            whale_addresses=self._filter_whales(expected_count) if spec.whale else None,
+        )
+        return FilteredListResult(
+            filter_rows(source.rows, spec, context),
+            source.complete,
+            source.reason,
+        )
 
     async def close(self) -> None:
         """Stop both detached tasks, close the client, then persist the cache.
@@ -2063,6 +2130,7 @@ __all__ = [
     "decode_rescued_total",
     "decode_settled",
     "FAST_TIER_PAYLOAD_KEYS",
+    "FilteredListResult",
     "GROUP_SLOT",
     "SOURCES",
     "SOURCE_LOGS",

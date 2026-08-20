@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import os
 
 import pytest
@@ -40,6 +41,12 @@ from maxpane_dashboard.data.curator_manager import (
     SOURCE_STATE,
     SOURCE_WALLET,
     CuratorManager,
+)
+from maxpane_dashboard.data.curator_list_filters import (
+    FilterDataUnavailable,
+    empty_filter_values,
+    parse_filter_values,
+    preset_filter,
 )
 from tests.curator_fixtures import capture
 from maxpane_dashboard.analytics.curator_signals import LEADERBOARD_LIMIT, build_signals
@@ -2832,3 +2839,99 @@ def test_a_failed_sweeps_backoff_counts_from_completion_not_spawn(
     assert TIER_ANALYSIS not in manager.cache.tiers_due(NOW + backoff + 1)
     assert TIER_ANALYSIS not in manager.cache.tiers_due(NOW + 200 + backoff - 1)
     assert TIER_ANALYSIS in manager.cache.tiers_due(NOW + 200 + backoff + 1)
+
+
+def _deposit(address: str, amount_wei: int, index: int) -> DepositEvent:
+    return DepositEvent(
+        contributor=address,
+        hour=0,
+        amount_wei=amount_wei,
+        credited_delta_wei=amount_wei,
+        weight_added_wei=amount_wei,
+        new_weight_wei=amount_wei,
+        tx_count=1,
+        hour_total_wei=amount_wei,
+        early_bps=10_000,
+        block_number=index,
+        tx_hash=f"0x{index:064x}",
+        log_index=0,
+        ts=NOW,
+    )
+
+
+def test_filtered_rows_use_a_valid_complete_export_and_cached_evidence(tmp_path, clock):
+    manager = _manager(tmp_path, clock)
+    slot, fold = _legacy_clean_slot(count=3)
+    addresses = [row.address for row in fold]
+    slot["groups"] = [{
+        "size": 2,
+        "conf": "high",
+        "families": ["amount", "funding"],
+        "reasons": ["matching send amounts", "shared funder chain"],
+        "members": addresses[:2],
+    }]
+    manager.cache.store_fold(fold, last_block=None, now=NOW)
+    manager.cache.store_first_deposits([
+        {"contributor": address, "index": index, "ts": NOW}
+        for index, address in enumerate(addresses, start=1)
+    ])
+    manager.cache.store_events([
+        _deposit(addresses[0], 1 * 10**18, 1),
+        _deposit(addresses[1], 25 * 10**18, 2),
+        _deposit(addresses[2], 25 * 10**18 - 1, 3),
+    ])
+    manager.cache.store_last_good(SLOT_LOGS, {}, ts=NOW)
+    manager.cache.store_analysis(slot, ts=NOW)
+
+    exported = manager.full_list_rows(cleaned=False)
+    (tmp_path / "curator_raw_list.json").write_text(json.dumps(exported))
+    spec = parse_filter_values({
+        **empty_filter_values(),
+        "families": frozenset({"funding"}),
+        "whale": True,
+    })
+    result = manager.filtered_list_rows(
+        tmp_path,
+        expected_count=3,
+        live_rows=exported[:1],
+        you_row=None,
+        spec=spec,
+    )
+
+    assert result.complete is True
+    assert result.source_reason is None
+    assert [row["address"] for row in result.rows] == [addresses[1]]
+    assert manager.client.calls == []
+
+
+def test_filtered_rows_fall_back_to_the_live_slice_when_export_is_short(tmp_path, clock):
+    manager = _manager(tmp_path, clock)
+    live = [{
+        "rank": 1, "address": "0x" + "01" * 20, "points": 1,
+        "credit_eth": 1.0, "tx_count": 1, "flagged": False, "name": None,
+        "weight_eth": 1.0, "first_hour": 0, "first_index": 1,
+        "link_conf": "clean",
+    }]
+    (tmp_path / "curator_raw_list.json").write_text(json.dumps(live))
+    result = manager.filtered_list_rows(
+        tmp_path,
+        expected_count=2,
+        live_rows=live,
+        you_row=None,
+        spec=preset_filter("2"),
+    )
+    assert result.rows == live
+    assert result.complete is False
+    assert result.source_reason == "count_mismatch"
+
+
+def test_family_and_whale_filters_refuse_missing_evidence(tmp_path, clock):
+    manager = _manager(tmp_path, clock)
+    row = {"rank": 1, "address": "0x" + "01" * 20, "first_index": 1, "first_hour": 0}
+    values = empty_filter_values()
+    values["families"] = frozenset({"amount"})
+    with pytest.raises(FilterDataUnavailable, match="linked analysis unavailable"):
+        manager.filtered_list_rows(tmp_path, expected_count=1, live_rows=[row], you_row=None, spec=parse_filter_values(values))
+
+    with pytest.raises(FilterDataUnavailable, match="deposit history unavailable"):
+        manager.filtered_list_rows(tmp_path, expected_count=1, live_rows=[row], you_row=None, spec=preset_filter("3"))
