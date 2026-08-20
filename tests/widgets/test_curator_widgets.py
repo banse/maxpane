@@ -71,6 +71,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletHero,
     CuratorHero,
     CuratorListHero,
+    CuratorListFilterEditor,
     CuratorLeaderboard,
     CuratorSignals,
     CuratorSparklines,
@@ -140,6 +141,88 @@ def _row_cells(text: str, anchor: str) -> list[str]:
     rows = [line for line in text.split("\n") if anchor in line]
     assert len(rows) == 1, f"{anchor!r} names {len(rows)} rows, want exactly 1"
     return [cell for cell in re.split(r"\s{2,}", rows[0].strip()) if cell]
+
+
+# ===========================================================================
+# CuratorListFilterEditor
+# ===========================================================================
+
+
+async def test_filter_editor_renders_every_approved_category_and_control():
+    editor = CuratorListFilterEditor()
+    app = _Harness(editor)
+    async with app.run_test(size=(143, 30)) as pilot:
+        await pilot.pause()
+        text = _screen_text(app)
+        for label in (
+            "JOIN",
+            "SCORE",
+            "CONTRIBUTION",
+            "IDENTITY",
+            "WINDOW",
+            "LINKED PATTERNS",
+        ):
+            assert label in text
+        for label in (
+            "matching amounts",
+            "consecutive joins",
+            "cadence",
+            "gas fingerprint",
+            "shared funding",
+        ):
+            assert label in text
+        for control_id in (
+            "filter-join-min",
+            "filter-join-max",
+            "filter-hour-min",
+            "filter-hour-max",
+            "filter-rank-min",
+            "filter-rank-max",
+            "filter-points-min",
+            "filter-points-max",
+            "filter-credit-min",
+            "filter-credit-max",
+            "filter-weight-min",
+            "filter-weight-max",
+            "filter-deposits-min",
+            "filter-deposits-max",
+            "filter-ens",
+            "filter-window",
+            "filter-band",
+            "filter-whale",
+            "filter-family-amount",
+            "filter-family-sequence",
+            "filter-family-cadence",
+            "filter-family-gas",
+            "filter-family-funding",
+        ):
+            assert editor.query_one(f"#{control_id}") is not None
+
+
+async def test_filter_editor_round_trips_values_and_names_an_error():
+    editor = CuratorListFilterEditor()
+    app = _Harness(editor)
+    async with app.run_test(size=(143, 30)) as pilot:
+        editor.set_values(
+            {
+                "hour_min": "0",
+                "hour_max": "0",
+                "ens": "set",
+                "window": "grace",
+                "band": "high",
+                "whale": True,
+                "families": frozenset({"amount", "funding"}),
+            }
+        )
+        editor.show_error("hour_min", "joined hour must be non-negative")
+        await pilot.pause()
+        values = editor.values()
+        assert values["hour_min"] == "0" and values["hour_max"] == "0"
+        assert values["ens"] == "set" and values["window"] == "grace"
+        assert values["band"] == "high" and values["whale"] is True
+        assert values["families"] == frozenset({"amount", "funding"})
+        assert "joined hour must be non-negative" in _screen_text(app)
+        assert editor.query_one("#filter-hour-min").has_class("filter-invalid")
 
 
 async def _rendered(cls, *, size=(143, 24), **kwargs) -> str:
@@ -2060,7 +2143,12 @@ _SCREEN_SUPPLIED = {"you_address", "filtered_rows", "filtered_complete"}
 
 
 def _exported_widget_classes() -> set[str]:
-    """Widget classes re-exported from ``widgets.curator``'s package root."""
+    """Data widgets re-exported from ``widgets.curator``'s package root.
+
+    ``CuratorListFilterEditor`` is intentionally absent: it is a render-only
+    primitive-value form with direct round-trip coverage above, not a manager
+    payload consumer.
+    """
     import maxpane_dashboard.widgets.curator as pkg
     from textual.widget import Widget
 
@@ -2069,6 +2157,7 @@ def _exported_widget_classes() -> set[str]:
         for name in pkg.__all__
         if isinstance(getattr(pkg, name), type)
         and issubclass(getattr(pkg, name), Widget)
+        and hasattr(getattr(pkg, name), "update_data")
     }
 
 

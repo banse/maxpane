@@ -2412,3 +2412,36 @@ CuratorScreen CuratorCleanedList {
     margin: 1 0 0 0;
     padding: 0 1;
 }
+
+CuratorScreen CuratorListFilterEditor {
+    width: 100%;
+    height: 100%;
+    padding: 0 2;
+    overflow-y: auto;
+}
+CuratorScreen .curator-filter-category {
+    height: auto;
+    margin-bottom: 1;
+}
+CuratorScreen .curator-filter-fields {
+    height: auto;
+    layout: grid;
+    grid-size: 4;
+    grid-columns: 1fr 1fr 1fr 1fr;
+    grid-gutter: 0 1;
+}
+CuratorScreen .curator-filter-field {
+    width: 100%;
+    min-width: 14;
+}
+CuratorScreen CuratorListFilterEditor.compact-filter .curator-filter-fields {
+    grid-size: 2;
+    grid-columns: 1fr 1fr;
+}
+CuratorScreen .filter-invalid {
+    border: tall $error;
+}
+CuratorScreen #curator-filter-error {
+    height: 1;
+    color: $error;
+}

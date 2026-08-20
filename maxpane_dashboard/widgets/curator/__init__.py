@@ -100,6 +100,7 @@ from .clusters import (
 )
 from .hero import PHASE_UNAVAILABLE, CuratorHero
 from .list_hero import CuratorListHero
+from .list_filter import CuratorListFilterEditor
 from .signals import (
     NEVER_SAVED,
     NO_WALLET,
@@ -190,6 +191,7 @@ __all__ = [
     "CuratorClusters",
     "CuratorHero",
     "CuratorListHero",
+    "CuratorListFilterEditor",
     "NEVER_SAVED",
     "NO_JUDGED_HOURS",
     "NO_WALLET",
