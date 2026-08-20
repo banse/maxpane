@@ -44,6 +44,7 @@ from maxpane_dashboard.widgets.curator import (
     CLUSTERS_UNAVAILABLE,
     CuratorCleanList,
     CuratorCleanedList,
+    CuratorFilteredList,
     CuratorOperators,
     CuratorSegments,
     CuratorRawList,
@@ -2027,9 +2028,10 @@ _WIDGETS = (
     CuratorOperators,
     CuratorSegments,
     CuratorCleanList,
-    # The `l` view's raw and cleaned record tables.
+    # The `l` view's raw, cleaned, and filtered record tables.
     CuratorRawList,
     CuratorCleanedList,
+    CuratorFilteredList,
 )
 
 
@@ -2045,16 +2047,16 @@ CURATOR_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     cls.__name__: _kwargs_of(cls) for cls in _WIDGETS
 }
 
-#: The one kwarg the screen supplies that is **not** a manager key: the CLI /
-#: ``MAXPANE_WALLET`` address, so the leaderboard can mark the reader's own
-#: row.  It is named here so the exception is a decision rather than a hole.
+#: The kwargs the screen supplies that are **not** manager keys: the CLI /
+#: ``MAXPANE_WALLET`` address plus the filtered view derived from complete list
+#: sources.  They are named here so the exceptions are decisions, not holes.
 #:
 #: It used to be three.  ``hourly_threshold_eth`` and ``first_judged_hour``
 #: were about to be hardcoded into a widget ("/5.00 ETH", "n/a until hour
 #: 24") because no frozen surface carried them; WP0's 2026-08-17 amendment
 #: added both to ``CURATOR_KEYS`` and they are now dispatched from the
 #: payload like every other chain value.
-_SCREEN_SUPPLIED = {"you_address"}
+_SCREEN_SUPPLIED = {"you_address", "filtered_rows", "filtered_complete"}
 
 
 def _exported_widget_classes() -> set[str]:
@@ -2127,8 +2129,8 @@ def test_the_keys_no_widget_reads_are_named_here_rather_than_forgotten():
 
 
 def _full_payload() -> dict:
-    """One payload carrying **every** ``CURATOR_KEYS`` entry plus the screen's
-    ``you_address`` — splatted at every widget, exactly as the screen will.
+    """One payload carrying **every** manager and screen-supplied entry,
+    splatted at every widget exactly as the screen will.
 
     SYNTHETIC — re-point at tests/fixtures/curator/captures/live/<bundle>
     (the judged / at-risk / saved / settled halves of this have no capture
@@ -2191,6 +2193,8 @@ def _full_payload() -> dict:
         you_next_rank_needs_eth=604.0,
         you_next_send_passes=False,
         leaderboard_rows=_lb_rows(3),
+        filtered_rows=_lb_rows(3),
+        filtered_complete=True,
         activity_rows=[_act_row(log_index=1), _act_row(log_index=2, tx_count=5)],
         closest_call_rows=_call_rows(),
         cluster_rows=_cluster_rows(),
@@ -2309,6 +2313,7 @@ _EXPECTED_ROWS = {
     # The `l` view receives the same full payload without the shipped 10/8 caps.
     "CuratorRawList": (("0x", ".eth"), 3),
     "CuratorCleanedList": (("0x", ".eth"), 8),
+    "CuratorFilteredList": (("0x", ".eth"), 3),
 }
 
 
@@ -3875,7 +3880,8 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
         ],
     )
     for header in (
-        "#",
+        "INDEX",
+        "RANK",
         "JOIN",
         "ADDRESS",
         "ENS",
@@ -3885,7 +3891,6 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
         "DEPOSITS",
         "HOUR",
         "WINDOW",
-        "LINK",
     ):
         assert header in raw, header
     for value in (
@@ -3899,11 +3904,10 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
         "grace",
         address,
         "record.eth",
-        "◌",
     ):
         assert value in raw, value
     assert "0x1234…abcd" not in raw
-    assert "⚑" not in raw
+    assert "LINK" not in raw
 
     clean = await _rendered(
         CuratorCleanedList,
@@ -3924,7 +3928,8 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
         analysis_as_of_hhmm="22:41",
     )
     for header in (
-        "#",
+        "INDEX",
+        "RANK",
         "JOIN",
         "ADDRESS",
         "ENS",
@@ -3954,26 +3959,129 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
     assert "0x1234…abcd" not in clean
 
 
-@pytest.mark.parametrize("kind", ("raw", "clean"))
+@pytest.mark.parametrize("kind", ("raw", "clean", "filtered"))
 async def test_the_list_identity_and_credit_columns_have_the_requested_widths(kind):
     from textual.widgets import DataTable
-    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+    from maxpane_dashboard.widgets.curator import (
+        CuratorCleanedList,
+        CuratorFilteredList,
+        CuratorRawList,
+    )
 
-    widget = CuratorRawList() if kind == "raw" else CuratorCleanedList()
+    widget = {
+        "raw": CuratorRawList(),
+        "clean": CuratorCleanedList(),
+        "filtered": CuratorFilteredList(),
+    }[kind]
     app = _Harness(widget)
     async with app.run_test(size=(143, 12)) as pilot:
         if kind == "raw":
             widget.update_data(leaderboard_rows=[])
-        else:
+        elif kind == "clean":
             widget.update_data(clean_list_rows=[])
+        else:
+            widget.update_data(filtered_rows=[], filtered_complete=True)
         await pilot.pause()
         table = widget.query_one(".curator-list-table", DataTable)
         widths = [column.width for column in table.columns.values()]
 
-    assert widths[3] == 19  # ENS
-    assert widths[4] == 7   # POINTS is unchanged
-    assert widths[5] == 8   # WEIGHT leaves room for the active scrollbar
-    assert widths[6] == 8   # CREDIT gives back the one needed column
+    assert widths[3] == 42  # ADDRESS
+    assert widths[4] == 19  # ENS
+    assert widths[5] == 7   # POINTS
+    assert widths[6] == 8   # WEIGHT leaves room for the active scrollbar
+    assert widths[7] == 6   # CREDIT gives back the two needed columns
+
+
+@pytest.mark.parametrize("kind", ("raw", "clean", "filtered"))
+async def test_every_list_has_dynamic_index_and_no_link(kind):
+    from textual.widgets import DataTable
+    from maxpane_dashboard.widgets.curator import (
+        CuratorCleanedList,
+        CuratorFilteredList,
+        CuratorRawList,
+    )
+
+    rows = [
+        {
+            "rank": rank,
+            "clean_rank": rank,
+            "first_index": rank,
+            "address": f"0x{rank:040x}",
+            "name": None,
+            "points": points,
+            "weight_eth": float(points),
+            "credit_eth": float(points),
+            "tx_count": rank,
+            "first_hour": rank,
+            "link_conf": "clean",
+        }
+        for rank, points in ((1, 9), (2, 10_000), (3, 100))
+    ]
+    widget = {
+        "raw": CuratorRawList(),
+        "clean": CuratorCleanedList(),
+        "filtered": CuratorFilteredList(),
+    }[kind]
+    kwargs = {
+        "raw": {"leaderboard_rows": rows},
+        "clean": {"clean_list_rows": rows},
+        "filtered": {"filtered_rows": rows, "filtered_complete": True},
+    }[kind]
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 18)) as pilot:
+        widget.update_data(**kwargs)
+        await pilot.pause()
+        table = widget.query_one(".curator-list-table", DataTable)
+        keys = [column[0] for column in widget._columns]
+        assert keys[0] == "index"
+        assert "link" not in keys
+        assert [table.get_row_at(i)[0] for i in range(3)] == ["1", "2", "3"]
+
+        points_index = keys.index("points")
+        x = table._get_column_region(points_index).x + 1
+        assert await pilot.click(table, offset=(x, 0))
+        await pilot.pause()
+        assert [table.get_row_at(i)[0] for i in range(3)] == ["1", "2", "3"]
+        assert [table.get_row_at(i)[keys.index("rank")] for i in range(3)] == [
+            "1",
+            "3",
+            "2",
+        ]
+
+
+async def test_filtered_export_rows_follow_the_current_sort_and_indexes():
+    from textual.widgets import DataTable
+    from maxpane_dashboard.widgets.curator import CuratorFilteredList
+
+    widget = CuratorFilteredList()
+    rows = [
+        {
+            "rank": rank,
+            "first_index": rank,
+            "address": f"0x{rank:040x}",
+            "name": None,
+            "points": points,
+            "weight_eth": float(points),
+            "credit_eth": float(points),
+            "tx_count": rank,
+            "first_hour": rank,
+            "link_conf": "clean",
+        }
+        for rank, points in ((1, 9), (2, 10_000), (3, 100))
+    ]
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 18)) as pilot:
+        widget.update_data(filtered_rows=rows, filtered_complete=True)
+        await pilot.pause()
+        table = widget.query_one(".curator-list-table", DataTable)
+        points_index = [column[0] for column in widget._columns].index("points")
+        x = table._get_column_region(points_index).x + 1
+        assert await pilot.click(table, offset=(x, 0))
+        assert await pilot.click(table, offset=(x, 0))
+        await pilot.pause()
+    exported = widget.export_rows()
+    assert [row["rank"] for row in exported] == [2, 3, 1]
+    assert [row["index"] for row in exported] == [1, 2, 3]
 
 
 async def test_each_list_title_uses_its_authoritative_wallet_total():
@@ -4073,6 +4181,47 @@ async def test_the_list_footer_is_an_aligned_you_row_followed_by_one_blank_line(
         assert "you.eth" in rendered
         assert "12,345" in rendered
         assert ("4,321" in rendered) if kind == "raw" else ("--" in rendered)
+
+
+async def test_filtered_list_footer_indexes_only_a_visible_match():
+    from textual.widgets import DataTable
+    from maxpane_dashboard.widgets.curator import CuratorFilteredList
+
+    rows = [
+        {
+            "rank": rank,
+            "first_index": rank,
+            "address": f"0x{rank:040x}",
+            "name": None,
+            "points": rank,
+            "weight_eth": float(rank),
+            "credit_eth": float(rank),
+            "tx_count": rank,
+            "first_hour": rank,
+            "link_conf": "clean",
+        }
+        for rank in (1, 2)
+    ]
+    widget = CuratorFilteredList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 18)) as pilot:
+        widget.update_data(
+            filtered_rows=rows,
+            you_list_row={**rows[0], "address": "0x" + "ff" * 20},
+            filtered_complete=True,
+        )
+        await pilot.pause()
+        footer = widget.query_one(".curator-list-you", DataTable)
+        index_column = [column[0] for column in widget._columns].index("index")
+        assert footer.get_row_at(0)[index_column] == "--"
+
+        widget.update_data(
+            filtered_rows=rows,
+            you_list_row=rows[1],
+            filtered_complete=True,
+        )
+        await pilot.pause()
+        assert footer.get_row_at(0)[index_column] == "2"
 
 
 def test_the_new_lists_own_1000_row_cap_without_moving_shipped_caps():
@@ -4293,11 +4442,13 @@ async def test_every_raw_list_header_sorts_and_missing_names_stay_last():
             x = table._get_column_region(column_index).x + 1
             assert await pilot.click(table, offset=(x, 0))
             await pilot.pause()
-            assert table.get_row_at(0)[address_index] == earlier["address"]
+            ascending_first = later if _column[0] == "index" else earlier
+            assert table.get_row_at(0)[address_index] == ascending_first["address"]
 
             assert await pilot.click(table, offset=(x, 0))
             await pilot.pause()
-            assert table.get_row_at(0)[address_index] == later["address"]
+            descending_first = earlier if _column[0] == "index" else later
+            assert table.get_row_at(0)[address_index] == descending_first["address"]
 
         widget.update_data(leaderboard_rows=[later, missing_name, earlier])
         await pilot.pause()
@@ -4556,7 +4707,7 @@ async def test_list_window_is_derived_from_the_nft_hour_rule(first_hour, window)
     )
     address = "0x" + "ab" * 20
     assert window in _row_cells(text, address)
-    assert "?" in _row_cells(text, address)
+    assert "LINK" not in text
 
 
 @pytest.mark.parametrize("kind", ("raw", "clean"))

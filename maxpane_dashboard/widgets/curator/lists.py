@@ -1,4 +1,4 @@
-"""The full-width raw and cleaned record tables used by curator list mode."""
+"""The full-width raw, cleaned, and filtered tables used by curator list mode."""
 
 from __future__ import annotations
 
@@ -7,11 +7,12 @@ import math
 from rich.cells import cell_len, set_cell_size
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.coordinate import Coordinate
+from textual.message import Message
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.curator._fmt import (
     DASH,
-    NAME_COLS,
     fmt_eth_compact,
     fmt_points,
 )
@@ -24,33 +25,36 @@ from maxpane_dashboard.widgets.curator._table import (
     title_with_hint,
 )
 from maxpane_dashboard.widgets.curator.cleaned_list import EXPORT_FAILED
-from maxpane_dashboard.widgets.curator.leaderboard import _link_glyph
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 RAW_LIST_TITLE = "THE RAW LIST"
 CLEANED_LIST_TITLE = "THE CLEANED LIST"
+FILTERED_LIST_TITLE = "THE FILTERED LIST"
 
 RAW_LIST_UNAVAILABLE = "raw list unavailable"
 RAW_LIST_EMPTY = "no contributors"
 CLEANED_LIST_UNAVAILABLE = "analysis unavailable"
 CLEANED_LIST_EMPTY = "no wallets survive"
+FILTERED_LIST_UNAVAILABLE = "filtered list unavailable"
+FILTERED_LIST_EMPTY = "no wallets match"
 
 MAX_ROWS = 1_000
 
+_INDEX_COLS = 6
 _RANK_COLS = 6
 _JOIN_COLS = 6
 _ADDRESS_COLS = 42
-_ENS_COLS = NAME_COLS + 7
+_ENS_COLS = 19
 _POINTS_COLS = 7
 _WEIGHT_COLS = 8
-_CREDIT_COLS = 8
+_CREDIT_COLS = 6
 _DEPOSITS_COLS = 8
 _HOUR_COLS = 4
 _WINDOW_COLS = 6
-_LINK_COLS = 4
 
 _RAW_FULL = (
-    ("rank", "#", _RANK_COLS),
+    ("index", "INDEX", _INDEX_COLS),
+    ("rank", "RANK", _RANK_COLS),
     ("join", "JOIN #", _JOIN_COLS),
     ("address", "ADDRESS", _ADDRESS_COLS),
     ("ens", "ENS", _ENS_COLS),
@@ -60,7 +64,6 @@ _RAW_FULL = (
     ("deposits", "DEPOSITS", _DEPOSITS_COLS),
     ("hour", "HOUR", _HOUR_COLS),
     ("window", "WINDOW", _WINDOW_COLS),
-    ("link", "LINK", _LINK_COLS),
 )
 _RAW_COMPACT = tuple(column for column in _RAW_FULL if column[0] != "window")
 _RAW_NARROW = tuple(
@@ -71,7 +74,7 @@ _RAW_NARROW = tuple(
 _RAW_MINIMUM = tuple(
     column
     for column in _RAW_FULL
-    if column[0] in ("rank", "address", "ens", "points", "link")
+    if column[0] in ("index", "rank", "address", "ens", "points")
 )
 _RAW_TIERS = (
     ("full", tier_cost(_RAW_FULL), _RAW_FULL, ""),
@@ -91,7 +94,8 @@ _RAW_TIERS = (
 )
 
 _CLEANED_FULL = (
-    ("rank", "#", _RANK_COLS),
+    ("index", "INDEX", _INDEX_COLS),
+    ("rank", "RANK", _RANK_COLS),
     ("join", "JOIN #", _JOIN_COLS),
     ("address", "ADDRESS", _ADDRESS_COLS),
     ("ens", "ENS", _ENS_COLS),
@@ -113,7 +117,7 @@ _CLEANED_NARROW = tuple(
 _CLEANED_MINIMUM = tuple(
     column
     for column in _CLEANED_FULL
-    if column[0] in ("rank", "address", "ens", "points")
+    if column[0] in ("index", "rank", "address", "ens", "points")
 )
 _CLEANED_TIERS = (
     ("full", tier_cost(_CLEANED_FULL), _CLEANED_FULL, ""),
@@ -149,6 +153,7 @@ _SORT_FIELDS = {
     "window": "first_hour",
 }
 _NUMERIC_SORT_COLUMNS = {
+    "index",
     "rank",
     "join",
     "points",
@@ -158,7 +163,13 @@ _NUMERIC_SORT_COLUMNS = {
     "hour",
     "window",
 }
-_LINK_SORT_ORDER = {"clean": 0, "unknown": 1, "low": 2, "high": 3}
+
+
+class ListOrderChanged(Message):
+    def __init__(self, kind: str, addresses: tuple[str, ...]) -> None:
+        super().__init__()
+        self.kind = kind
+        self.addresses = addresses
 
 
 def _rank(value) -> str:
@@ -211,7 +222,6 @@ def _raw_values(row: dict) -> dict:
         "deposits": _rank(row.get("tx_count")),
         "hour": _rank(row.get("first_hour")),
         "window": _window(row.get("first_hour")),
-        "link": _link_glyph(row.get("link_conf"), None),
     }
 
 
@@ -239,6 +249,7 @@ class _ListTable(Vertical):
     UNAVAILABLE = ""
     EMPTY = ""
     RANK_FIELD = "rank"
+    KIND = ""
 
     DEFAULT_CSS = """
     _ListTable {
@@ -294,6 +305,9 @@ class _ListTable(Vertical):
         self._complete_expected_count: object = None
         self._live_wallet_count: object = None
         self._rows_by_address: dict[str, dict] = {}
+        self._source_order: dict[str, int] = {}
+        self._ordered_addresses: tuple[str, ...] = ()
+        self._visible_indexes: dict[str, int] = {}
         self._sort_column: str | None = None
         self._sort_reverse = False
         self._heading_note = ""
@@ -417,20 +431,10 @@ class _ListTable(Vertical):
 
     def _sort_value(self, row: dict | None) -> tuple[bool, object]:
         column = self._sort_column
-        if column == "link":
-            if not isinstance(row, dict):
-                return True, 0
-            confidence = row.get("link_conf")
-            if confidence in ("high", "low", "clean"):
-                return False, _LINK_SORT_ORDER[confidence]
-            flagged = row.get("flagged")
-            if flagged is True:
-                state = "high"
-            elif flagged is False:
-                state = "clean"
-            else:
-                state = "unknown"
-            return False, _LINK_SORT_ORDER[state]
+        if column == "index":
+            address = self._address_key(row.get("address")) if isinstance(row, dict) else None
+            value = self._source_order.get(address) if address is not None else None
+            return value is None, value if value is not None else 0
 
         field = self.RANK_FIELD if column == "rank" else _SORT_FIELDS.get(column)
         value = row.get(field) if isinstance(row, dict) and field else None
@@ -460,6 +464,31 @@ class _ListTable(Vertical):
 
         table.sort(key=sort_key, reverse=self._sort_reverse)
 
+    def _renumber_and_publish(self, table: DataTable) -> None:
+        index_column = next(
+            i for i, column in enumerate(self._columns) if column[0] == "index"
+        )
+        addresses: list[str] = []
+        visible: dict[str, int] = {}
+        for row_index in range(table.row_count):
+            values = table.get_row_at(row_index)
+            table.update_cell_at(
+                Coordinate(row_index, index_column), _rank(row_index + 1)
+            )
+            source = self._source_row(values)
+            address = (
+                self._address_key(source.get("address"))
+                if isinstance(source, dict)
+                else None
+            )
+            if address is not None:
+                addresses.append(address)
+                visible[address] = row_index + 1
+        self._ordered_addresses = tuple(addresses)
+        self._visible_indexes = visible
+        self._render_you(self._columns, clear=True)
+        self.post_message(ListOrderChanged(self.KIND, self._ordered_addresses))
+
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
         if event.data_table.id != self.TABLE_ID:
             return
@@ -473,6 +502,7 @@ class _ListTable(Vertical):
             self._sort_column = column
             self._sort_reverse = False
         self._apply_sort(event.data_table)
+        self._renumber_and_publish(event.data_table)
         self._set_heading(self._heading_note)
 
     def _rows(self):
@@ -526,6 +556,8 @@ class _ListTable(Vertical):
                 values = self._row_values(you)
             except Exception:
                 values = {}
+            address = self._address_key(you.get("address"))
+            values["index"] = _rank(self._visible_indexes.get(address))
             table.add_row(*cells(values, columns, default=DASH))
         else:
             table.add_row(*cells({}, columns))
@@ -555,11 +587,14 @@ class _ListTable(Vertical):
             return
 
         self._rows_by_address = {}
+        self._source_order = {}
+        self._ordered_addresses = ()
+        self._visible_indexes = {}
         columns = self._apply_columns(table)
-        self._render_you(columns)
         rows = self._rows()
         if rows is None:
             self._set_heading(f"[$warning]⚠ {self.UNAVAILABLE}[/]")
+            self._renumber_and_publish(table)
             table.add_row(*cells({}, columns, default=DASH))
             return
         try:
@@ -573,6 +608,7 @@ class _ListTable(Vertical):
         )
         if raw is None or (raw and not usable):
             self._set_heading(f"[$warning]⚠ {self.UNAVAILABLE}[/]")
+            self._renumber_and_publish(table)
             table.add_row(*cells({}, columns, default=DASH))
             return
         if not usable:
@@ -581,20 +617,24 @@ class _ListTable(Vertical):
             if freshness:
                 note = f"{note} · {freshness}"
             self._set_heading(note)
+            self._renumber_and_publish(table)
             return
 
         self._set_heading(self._healthy_note())
         shown = usable if self._payload.get("complete") else usable[:MAX_ROWS]
-        for row in shown:
+        for index, row in enumerate(shown, start=1):
             address = self._address_key(row.get("address"))
             if address is not None:
                 self._rows_by_address[address] = row
+                self._source_order[address] = index
             try:
                 values = self._row_values(row)
             except Exception:
                 values = {}
+            values["index"] = _rank(index)
             table.add_row(*cells(values, columns, default=DASH))
         self._apply_sort(table)
+        self._renumber_and_publish(table)
 
 
 class CuratorRawList(_ListTable):
@@ -605,6 +645,7 @@ class CuratorRawList(_ListTable):
     TIERS = _RAW_TIERS
     UNAVAILABLE = RAW_LIST_UNAVAILABLE
     EMPTY = RAW_LIST_EMPTY
+    KIND = "raw"
 
     def update_data(
         self, leaderboard_rows=None, you_list_row=None,
@@ -642,6 +683,7 @@ class CuratorCleanedList(_ListTable):
     UNAVAILABLE = CLEANED_LIST_UNAVAILABLE
     EMPTY = CLEANED_LIST_EMPTY
     RANK_FIELD = "clean_rank"
+    KIND = "cleaned"
 
     def update_data(
         self, clean_list_rows=None, you_list_row=None,
@@ -675,3 +717,40 @@ class CuratorCleanedList(_ListTable):
         if not isinstance(stamp, str) or not stamp.strip():
             return ""
         return f"[dim]as of {safe_markup(stamp.strip())}[/]"
+
+
+class CuratorFilteredList(_ListTable):
+    TITLE = FILTERED_LIST_TITLE
+    TABLE_ID = "curator-filtered-list-table"
+    TIERS = _RAW_TIERS
+    UNAVAILABLE = FILTERED_LIST_UNAVAILABLE
+    EMPTY = FILTERED_LIST_EMPTY
+    KIND = "filtered"
+
+    def update_data(
+        self, filtered_rows=None, you_list_row=None,
+        filtered_complete=None, **_kwargs
+    ) -> None:
+        self._payload = {
+            "rows": filtered_rows,
+            "you_list_row": you_list_row,
+            "wallet_count": (
+                len(filtered_rows) if isinstance(filtered_rows, list) else None
+            ),
+            "complete": bool(filtered_complete),
+            "seen": True,
+        }
+        self._render_view()
+
+    def _rows(self):
+        return self._payload["rows"]
+
+    def _row_values(self, row: dict) -> dict:
+        return _raw_values(row)
+
+    def export_rows(self) -> list[dict]:
+        rows = []
+        for index, address in enumerate(self._ordered_addresses, start=1):
+            source = self._rows_by_address[address]
+            rows.append({**source, "index": index})
+        return rows
