@@ -649,6 +649,104 @@ async def test_the_list_hero_names_an_unconfigured_wallet_at_narrow_width():
     assert "WALLET NOT SET" in text
 
 
+@pytest.mark.parametrize(
+    ("view", "expected", "absent"),
+    (
+        (
+            "raw",
+            (
+                "THE LIST",
+                "19,522 wallets",
+                "28,353 tx",
+                "128.1K ETH",
+                "join #88",
+                "hour 12",
+            ),
+            ("THE CLEANED LIST", "THE FILTERED LIST"),
+        ),
+        (
+            "cleaned",
+            (
+                "THE CLEANED LIST",
+                "8,750 wallets",
+                "12,345,678 pts",
+                "#7,042 of 8,750 (clean)",
+                "join #88",
+                "hour 12",
+            ),
+            ("128.1K ETH", "THE FILTERED LIST"),
+        ),
+        (
+            "filtered",
+            (
+                "THE FILTERED LIST",
+                "568 wallets",
+                "1,234,567 pts",
+                "#14 of 568 (filtered)",
+                "single deposit >=25 ETH",
+            ),
+            ("#15,234 of 19,522 (raw)", "after linked removal"),
+        ),
+    ),
+)
+async def test_list_hero_follows_the_visible_list(view, expected, absent):
+    text = await _rendered(
+        CuratorListHero,
+        size=(143, 12),
+        list_view=view,
+        phase="settled",
+        contributors_total=19_522,
+        deposits_total=28_353,
+        volume_routed_eth=128_130.76,
+        clean_contributors=8_750,
+        clean_points=12_345_678,
+        filtered_contributors=568,
+        filtered_points=1_234_567,
+        you_address="0x1234567890abcdef1234567890abcdef12345678",
+        you_ens="reader.eth",
+        you_rank=15_234,
+        you_clean_rank=7_042,
+        you_filtered_index=14,
+        you_first_index=88,
+        you_first_hour=12,
+        you_points=42_721,
+        filter_summary=("single deposit >=25 ETH",),
+    )
+    for value in expected:
+        assert value in text
+    for value in absent:
+        assert value not in text
+
+
+async def test_third_list_hero_card_is_exact_white_regular_filter_help():
+    widget = CuratorListHero()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 12)) as pilot:
+        widget.update_data(list_view="raw")
+        await pilot.pause()
+        box = widget.query_one("#curator-list-hero-filter")
+        plain = box.render().plain
+        assert plain.splitlines() == [
+            "THE FILTER",
+            "'1' - first 1000 wallets",
+            "'2' - joined hour 0",
+            "'3' - whale splash",
+            "'f' - for more filters",
+        ]
+        assert "bold" not in str(box.render().get_style_at_offset(0))
+
+
+async def test_filtered_list_hero_marks_a_wallet_outside_the_visible_list():
+    text = await _rendered(
+        CuratorListHero,
+        size=(143, 12),
+        list_view="filtered",
+        filtered_contributors=568,
+        you_filtered_index=None,
+    )
+    assert "-- of 568 (filtered)" in text
+
+
 # ===========================================================================
 # WP4.3 — CuratorLeaderboard
 # ===========================================================================

@@ -25,9 +25,9 @@ FULL_WIDTH = 42
 COMPACT_WIDTH = 28
 
 _BOX_IDS = (
-    "curator-list-hero-raw",
+    "curator-list-hero-summary",
     "curator-list-hero-wallet",
-    "curator-list-hero-cleaned",
+    "curator-list-hero-filter",
 )
 
 
@@ -58,7 +58,7 @@ def _list_state(phase) -> str:
     return f"[dim]list {DASH}[/]"
 
 
-def _raw_lines(data: dict, tier: str) -> list[str]:
+def _raw_summary_lines(data: dict, tier: str) -> list[str]:
     wallets = _count(data.get("contributors_total"), "wallets")
     deposits = data.get("deposits_total")
     if (
@@ -103,19 +103,64 @@ def _total(value) -> str:
     return f"{value:,}"
 
 
+def _join_detail(data: dict) -> str:
+    join = data.get("you_first_index")
+    hour = data.get("you_first_hour")
+    details = []
+    if isinstance(join, int) and not isinstance(join, bool):
+        details.append(f"join #{join:,}")
+    if isinstance(hour, int) and not isinstance(hour, bool):
+        details.append(f"hour {hour:,}")
+    return " · ".join(details) if details else DASH
+
+
+def _compact_filter_summary(summary, tier: str) -> str:
+    if not isinstance(summary, (tuple, list)):
+        return DASH
+    clauses = [
+        clause.strip()
+        for clause in summary
+        if isinstance(clause, str) and clause.strip()
+    ]
+    if not clauses:
+        return DASH
+
+    visible = 2 if tier == "full" else 1
+    shown = clauses[:visible]
+    hidden = len(clauses) - len(shown)
+    return " · ".join(shown) + (f" +{hidden}" if hidden else "")
+
+
 def _wallet_lines(data: dict, tier: str) -> list[str]:
+    view = data.get("list_view")
+    if view == "filtered":
+        standing = (
+            f"{_rank(data.get('you_filtered_index'))} of "
+            f"{_total(data.get('filtered_contributors'))} (filtered)"
+        )
+        detail = _compact_filter_summary(data.get("filter_summary"), tier)
+    elif view == "cleaned":
+        standing = (
+            f"{_rank(data.get('you_clean_rank'))} of "
+            f"{_total(data.get('clean_contributors'))} (clean)"
+        )
+        detail = _join_detail(data)
+    else:
+        standing = (
+            f"{_rank(data.get('you_rank'))} of "
+            f"{_total(data.get('contributors_total'))} (raw)"
+        )
+        detail = _join_detail(data)
     return _lines(
         "THE WALLET",
-        f"[bold]{_rank(data.get('you_rank'))} of "
-        f"{_total(data.get('contributors_total'))} (raw)[/]",
-        f"{_rank(data.get('you_clean_rank'))} of "
-        f"{_total(data.get('clean_contributors'))} (clean)",
+        f"[bold]{standing}[/]",
+        detail,
         _wallet_identity(data, tier),
         f"[bold]{fmt_points(data.get('you_points'))} pts[/]",
     )
 
 
-def _cleaned_lines(data: dict, tier: str) -> list[str]:
+def _cleaned_summary_lines(data: dict, tier: str) -> list[str]:
     note = "after linked removal" if tier != "minimal" else "after removal"
     return _lines(
         "THE CLEANED LIST",
@@ -126,10 +171,39 @@ def _cleaned_lines(data: dict, tier: str) -> list[str]:
     )
 
 
+def _filtered_summary_lines(data: dict, tier: str) -> list[str]:
+    return _lines(
+        "THE FILTERED LIST",
+        f"[bold]{_count(data.get('filtered_contributors'), 'wallets')}[/]",
+        f"{fmt_points(data.get('filtered_points'))} pts",
+        _compact_filter_summary(data.get("filter_summary"), tier),
+        _list_state(data.get("phase")),
+    )
+
+
+def _summary_lines(data: dict, tier: str) -> list[str]:
+    view = data.get("list_view")
+    if view == "cleaned":
+        return _cleaned_summary_lines(data, tier)
+    if view == "filtered":
+        return _filtered_summary_lines(data, tier)
+    return _raw_summary_lines(data, tier)
+
+
+def _filter_lines(_data: dict, _tier: str) -> list[str]:
+    return [
+        "THE FILTER",
+        "'1' - first 1000 wallets",
+        "'2' - joined hour 0",
+        "'3' - whale splash",
+        "'f' - for more filters",
+    ]
+
+
 _BUILDERS = {
-    "curator-list-hero-raw": _raw_lines,
+    "curator-list-hero-summary": _summary_lines,
     "curator-list-hero-wallet": _wallet_lines,
-    "curator-list-hero-cleaned": _cleaned_lines,
+    "curator-list-hero-filter": _filter_lines,
 }
 
 
@@ -166,6 +240,10 @@ class CuratorListHero(Vertical):
         text-overflow: ellipsis;
         border-subtitle-color: $warning;
     }
+    CuratorListHero #curator-list-hero-filter {
+        color: $text;
+        text-style: none;
+    }
     CuratorListHero > #curator-list-hero-note {
         width: 100%;
         height: 1;
@@ -192,6 +270,7 @@ class CuratorListHero(Vertical):
     def update_data(
         self,
         phase=None,
+        list_view="raw",
         contributors_total=None,
         deposits_total=None,
         volume_routed_eth=None,
@@ -199,13 +278,20 @@ class CuratorListHero(Vertical):
         you_ens=None,
         you_rank=None,
         you_clean_rank=None,
+        you_filtered_index=None,
+        you_first_index=None,
+        you_first_hour=None,
         you_points=None,
         clean_contributors=None,
         clean_points=None,
+        filtered_contributors=None,
+        filtered_points=None,
+        filter_summary=None,
         **_kwargs,
     ) -> None:
         self._payload = {
             "phase": phase,
+            "list_view": list_view,
             "contributors_total": contributors_total,
             "deposits_total": deposits_total,
             "volume_routed_eth": volume_routed_eth,
@@ -213,9 +299,15 @@ class CuratorListHero(Vertical):
             "you_ens": you_ens,
             "you_rank": you_rank,
             "you_clean_rank": you_clean_rank,
+            "you_filtered_index": you_filtered_index,
+            "you_first_index": you_first_index,
+            "you_first_hour": you_first_hour,
             "you_points": you_points,
             "clean_contributors": clean_contributors,
             "clean_points": clean_points,
+            "filtered_contributors": filtered_contributors,
+            "filtered_points": filtered_points,
+            "filter_summary": filter_summary,
         }
         self._render_view()
 
