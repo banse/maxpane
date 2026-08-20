@@ -2904,6 +2904,35 @@ def test_filtered_rows_use_a_valid_complete_export_and_cached_evidence(tmp_path,
     assert manager.client.calls == []
 
 
+def test_whale_filter_does_not_sum_sub_threshold_individual_deposits(
+    tmp_path, clock
+):
+    manager = _manager(tmp_path, clock)
+    _slot, fold = _legacy_clean_slot(count=1)
+    address = fold[0].address
+    manager.cache.store_fold(fold, last_block=None, now=NOW)
+    manager.cache.store_first_deposits(
+        [{"contributor": address, "index": 1, "ts": NOW}]
+    )
+    manager.cache.store_events(
+        [
+            _deposit(address, 13 * 10**18, 1),
+            _deposit(address, 12 * 10**18, 2),
+        ]
+    )
+
+    result = manager.filtered_list_rows(
+        tmp_path,
+        expected_count=1,
+        live_rows=[{"rank": 1, "address": address}],
+        you_row=None,
+        spec=preset_filter("3"),
+    )
+
+    assert result.rows == []
+    assert manager.client.calls == []
+
+
 def test_filtered_rows_fall_back_to_the_live_slice_when_export_is_short(tmp_path, clock):
     manager = _manager(tmp_path, clock)
     live = [{

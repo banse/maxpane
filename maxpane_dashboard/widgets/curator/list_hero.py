@@ -58,7 +58,7 @@ def _list_state(phase) -> str:
     return f"[dim]list {DASH}[/]"
 
 
-def _raw_summary_lines(data: dict, tier: str) -> list[str]:
+def _raw_summary_lines(data: dict, tier: str, _width: int = 0) -> list[str]:
     wallets = _count(data.get("contributors_total"), "wallets")
     deposits = data.get("deposits_total")
     if (
@@ -114,7 +114,7 @@ def _join_detail(data: dict) -> str:
     return " · ".join(details) if details else DASH
 
 
-def _compact_filter_summary(summary, tier: str) -> str:
+def _compact_filter_summary(summary, tier: str, width: int = 0) -> str:
     if not isinstance(summary, (tuple, list)):
         return DASH
     clauses = [
@@ -125,20 +125,27 @@ def _compact_filter_summary(summary, tier: str) -> str:
     if not clauses:
         return DASH
 
-    visible = 2 if tier == "full" else 1
-    shown = clauses[:visible]
-    hidden = len(clauses) - len(shown)
-    return " · ".join(shown) + (f" +{hidden}" if hidden else "")
+    budget = width
+    if budget <= 0:
+        budget = FULL_WIDTH if tier == "full" else COMPACT_WIDTH
+    for shown_count in range(len(clauses), -1, -1):
+        hidden = len(clauses) - shown_count
+        candidate = " · ".join(clauses[:shown_count])
+        if hidden:
+            candidate = f"{candidate} +{hidden}" if candidate else f"+{hidden}"
+        if visible_len(candidate) <= budget:
+            return candidate
+    return DASH
 
 
-def _wallet_lines(data: dict, tier: str) -> list[str]:
+def _wallet_lines(data: dict, tier: str, width: int = 0) -> list[str]:
     view = data.get("list_view")
     if view == "filtered":
         standing = (
             f"{_rank(data.get('you_filtered_index'))} of "
             f"{_total(data.get('filtered_contributors'))} (filtered)"
         )
-        detail = _compact_filter_summary(data.get("filter_summary"), tier)
+        detail = _compact_filter_summary(data.get("filter_summary"), tier, width)
     elif view == "cleaned":
         standing = (
             f"{_rank(data.get('you_clean_rank'))} of "
@@ -160,7 +167,7 @@ def _wallet_lines(data: dict, tier: str) -> list[str]:
     )
 
 
-def _cleaned_summary_lines(data: dict, tier: str) -> list[str]:
+def _cleaned_summary_lines(data: dict, tier: str, _width: int = 0) -> list[str]:
     note = "after linked removal" if tier != "minimal" else "after removal"
     return _lines(
         "THE CLEANED LIST",
@@ -171,7 +178,7 @@ def _cleaned_summary_lines(data: dict, tier: str) -> list[str]:
     )
 
 
-def _filtered_summary_lines(data: dict, tier: str) -> list[str]:
+def _filtered_summary_lines(data: dict, tier: str, _width: int = 0) -> list[str]:
     return _lines(
         "THE FILTERED LIST",
         f"[bold]{_count(data.get('filtered_contributors'), 'wallets')}[/]",
@@ -181,16 +188,16 @@ def _filtered_summary_lines(data: dict, tier: str) -> list[str]:
     )
 
 
-def _summary_lines(data: dict, tier: str) -> list[str]:
+def _summary_lines(data: dict, tier: str, width: int = 0) -> list[str]:
     view = data.get("list_view")
     if view == "cleaned":
-        return _cleaned_summary_lines(data, tier)
+        return _cleaned_summary_lines(data, tier, width)
     if view == "filtered":
-        return _filtered_summary_lines(data, tier)
-    return _raw_summary_lines(data, tier)
+        return _filtered_summary_lines(data, tier, width)
+    return _raw_summary_lines(data, tier, width)
 
 
-def _filter_lines(_data: dict, _tier: str) -> list[str]:
+def _filter_lines(_data: dict, _tier: str, _width: int = 0) -> list[str]:
     return [
         "THE FILTER",
         "'1' - first 1000 wallets",
@@ -212,7 +219,7 @@ class CuratorListHeroBox(Static):
 
     def render_lines_at_tier(self, build) -> None:
         width = self.content_size.width
-        lines = build(_tier_for(width))
+        lines = build(_tier_for(width), width)
         over = width > 0 and any(visible_len(line) > width for line in lines)
         self.border_subtitle = WIDEN_HINT if over else ""
         self.update("\n".join(lines))
@@ -327,7 +334,9 @@ class CuratorListHero(Vertical):
 
         for box_id, box in boxes.items():
             builder = _BUILDERS[box_id]
-            box.render_lines_at_tier(lambda tier, fn=builder: fn(self._payload, tier))
+            box.render_lines_at_tier(
+                lambda tier, width, fn=builder: fn(self._payload, tier, width)
+            )
 
         width = max(self.content_size.width - 4, 0)
         for candidate in (

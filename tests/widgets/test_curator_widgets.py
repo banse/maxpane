@@ -773,6 +773,58 @@ async def test_filtered_list_hero_summary_names_the_current_filter_state():
         assert summary.render().plain.splitlines()[3] == "matching current filters"
 
 
+@pytest.mark.parametrize(
+    ("summary", "expected"),
+    (
+        (("amount or sequence or cadence or gas or funding",), "+1"),
+        (
+            (
+                "join #9,223,372,036,854,775,807-9,223,372,036,854,775,807",
+                "points 9,223,372,036,854,775,807-9,223,372,036,854,775,807",
+                "credit 9,223,372,036,854,775,807 ETH",
+            ),
+            "+3",
+        ),
+    ),
+)
+async def test_filtered_wallet_summary_collapses_to_the_rendered_card_width(
+    summary, expected
+):
+    widget = CuratorListHero()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 12)) as pilot:
+        widget.update_data(list_view="filtered", filter_summary=summary)
+        await pilot.pause()
+        box = widget.query_one("#curator-list-hero-wallet")
+        detail = box.render().plain.splitlines()[2]
+
+        assert detail == expected
+        assert _visible(detail) <= box.content_size.width
+        assert box.border_subtitle == ""
+
+
+async def test_filtered_wallet_summary_keeps_stable_early_clauses_then_counts_rest():
+    widget = CuratorListHero()
+    app = _Harness(widget)
+    async with app.run_test(size=(96, 12)) as pilot:
+        widget.update_data(
+            list_view="filtered",
+            filter_summary=(
+                "joined hour 0",
+                "credit >=25 ETH",
+                "ENS set",
+                "amount or sequence or cadence or gas or funding",
+            ),
+        )
+        await pilot.pause()
+        box = widget.query_one("#curator-list-hero-wallet")
+        detail = box.render().plain.splitlines()[2]
+
+        assert detail == "joined hour 0 +3"
+        assert _visible(detail) <= box.content_size.width
+        assert box.border_subtitle == ""
+
+
 # ===========================================================================
 # WP4.3 — CuratorLeaderboard
 # ===========================================================================

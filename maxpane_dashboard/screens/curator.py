@@ -1234,21 +1234,35 @@ class CuratorScreen(RefreshGuard, Screen):
             self._list_source_pending = True
             self._load_selected_list_source()
 
-    def _apply_filter(self, spec: FilterSpec) -> bool:
-        data = self._title_data or {}
-        result = self._data_manager.filtered_list_rows(
+    def _filter_result(self, data: dict, spec: FilterSpec):
+        return self._data_manager.filtered_list_rows(
             self._export_dir or Path.home() / ".maxpane",
             expected_count=data.get("contributors_total"),
             live_rows=data.get("leaderboard_rows"),
             you_row=data.get("you_list_row"),
             spec=spec,
         )
+
+    def _store_filter_result(self, spec: FilterSpec, result) -> None:
         self._active_filter = spec
         self._filter_summary = filter_summary(spec)
         self._filtered_rows = result.rows
         self._filtered_complete = result.complete
         self._filtered_source_reason = result.source_reason
         self._you_filtered_index = None
+
+    def _store_filter_unavailable(self, spec: FilterSpec, reason: str) -> None:
+        self._active_filter = spec
+        self._filter_summary = filter_summary(spec)
+        self._filtered_rows = None
+        self._filtered_complete = False
+        self._filtered_source_reason = reason
+        self._you_filtered_index = None
+
+    def _apply_filter(self, spec: FilterSpec) -> bool:
+        data = self._title_data or {}
+        result = self._filter_result(data, spec)
+        self._store_filter_result(spec, result)
         self._dispatch_filtered_list(data)
         panel = self.query_one(CuratorFilteredList)
         if result.rows is None:
@@ -1260,6 +1274,31 @@ class CuratorScreen(RefreshGuard, Screen):
         self._dispatch_list_hero(data)
         return True
 
+    def _refresh_active_filter(self, data: dict) -> None:
+        """Recompute the active filter from one successful refresh payload."""
+        spec = self._active_filter
+        if spec is None:
+            return
+        panel = self.query_one(CuratorFilteredList)
+        preserve_user_receipt = bool(panel._export_path) or panel._export_failed
+        try:
+            result = self._filter_result(data, spec)
+        except FilterDataUnavailable as exc:
+            reason = str(exc)
+            self._store_filter_unavailable(spec, reason)
+            if not preserve_user_receipt:
+                panel.mark_filter_unavailable(reason)
+            return
+
+        self._store_filter_result(spec, result)
+        if result.rows is None:
+            if not preserve_user_receipt:
+                panel.mark_filter_unavailable(
+                    result.source_reason or FILTERED_LIST_UNAVAILABLE
+                )
+        elif not preserve_user_receipt:
+            panel.mark_filter_applied(limited=not result.complete)
+
     def action_apply_filter_preset(self, key: str) -> None:
         """Apply one list-only filter preset immediately."""
         if self._mode != MODE_LIST or self._filter_editor_open:
@@ -1270,12 +1309,7 @@ class CuratorScreen(RefreshGuard, Screen):
             self._apply_filter(spec)
         except FilterDataUnavailable as exc:
             data = self._title_data or {}
-            self._active_filter = spec
-            self._filter_summary = filter_summary(spec)
-            self._filtered_rows = None
-            self._filtered_complete = False
-            self._filtered_source_reason = str(exc)
-            self._you_filtered_index = None
+            self._store_filter_unavailable(spec, str(exc))
             self._dispatch_filtered_list(data)
             self.query_one(CuratorFilteredList).mark_filter_unavailable(str(exc))
             self._dispatch_list_hero(data)
@@ -1701,6 +1735,8 @@ class CuratorScreen(RefreshGuard, Screen):
             self._apply_phase_default(data.get("phase"))
         except Exception as exc:  # noqa: BLE001
             logger.debug("Failed to apply the phase default: %s", exc)
+
+        self._refresh_active_filter(data)
 
         for widget_cls in (
             CuratorHero,

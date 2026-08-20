@@ -344,6 +344,8 @@ class _FakeManager:
         self.full_list_calls: list[bool] = []
         self.families_by_address: dict[str, frozenset[str]] | None = {}
         self.whale_addresses: frozenset[str] | None = frozenset()
+        self.filtered_complete = False
+        self.filtered_source_reason: str | None = "missing"
 
     async def fetch_and_compute(self) -> dict:
         self.calls += 1
@@ -372,8 +374,8 @@ class _FakeManager:
         )
         return FilteredListResult(
             filter_rows(live_rows, spec, context),
-            False,
-            "missing",
+            self.filtered_complete,
+            self.filtered_source_reason,
         )
 
 
@@ -3719,6 +3721,112 @@ async def test_e_exports_filtered_rows_in_visible_sort_order_with_indexes(tmp_pa
     assert [row["rank"] for row in rows] == [3, 2, 1]
     assert [row["index"] for row in rows] == [1, 2, 3]
     assert not (tmp_path / "curator_filtered_list.json.tmp").exists()
+
+
+async def test_refresh_recomputes_active_filter_in_the_current_sort_order(tmp_path):
+    from textual.widgets import DataTable
+
+    initial = _list_payload(3)
+    wallet = initial["leaderboard_rows"][0]["address"]
+    manager = _FakeManager(initial)
+    manager.whale_addresses = frozenset(
+        row["address"].casefold() for row in initial["leaderboard_rows"][:2]
+    )
+    screen = CuratorScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=wallet,
+        export_dir=tmp_path,
+    )
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "3")
+        filtered = screen.query_one(CuratorFilteredList)
+        table = screen.query_one("#curator-filtered-list-table", DataTable)
+        points = [column[0] for column in filtered._columns].index("points")
+        x = table._get_column_region(points).x + 1
+        assert await pilot.click(table, offset=(x, 0))
+        await pilot.press("e")
+        await pilot.pause()
+
+        refreshed = _list_payload(4)
+        for row, points_value in zip(
+            refreshed["leaderboard_rows"], (100, 10, 50, 1), strict=True
+        ):
+            row["points"] = points_value
+        refreshed["you_list_row"] = {
+            **refreshed["leaderboard_rows"][0],
+            "clean_rank": refreshed["clean_list_rows"][0]["clean_rank"],
+        }
+        manager._payload = refreshed
+        manager.whale_addresses = frozenset(
+            refreshed["leaderboard_rows"][index]["address"].casefold()
+            for index in (0, 2, 3)
+        )
+        manager.filtered_complete = True
+        manager.filtered_source_reason = None
+
+        await screen._do_refresh()
+        await pilot.pause()
+
+        current = filtered.export_rows()
+        hero = _region_text(app, screen.query_one(CuratorListHero), screen)
+        panel = _region_text(app, filtered, screen)
+        assert [row["rank"] for row in current] == [4, 3, 1]
+        assert [row["index"] for row in current] == [1, 2, 3]
+        assert screen._filtered_complete is True
+        assert filtered._payload["complete"] is True
+        assert screen._you_filtered_index == 3
+        assert "3 wallets" in hero
+        assert "151 pts" in hero
+        assert "#3 of 3 (filtered)" in hero
+        assert "saved →" in panel
+
+        await pilot.press("e")
+        await pilot.pause()
+
+    exported = json.loads((tmp_path / "curator_filtered_list.json").read_text())
+    assert [row["rank"] for row in exported] == [4, 3, 1]
+    assert [row["index"] for row in exported] == [1, 2, 3]
+
+
+async def test_refresh_propagates_active_filter_evidence_unavailability(tmp_path):
+    payload = _list_payload(1)
+    manager = _FakeManager(payload)
+    manager.whale_addresses = frozenset(
+        {payload["leaderboard_rows"][0]["address"].casefold()}
+    )
+    screen = CuratorScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=payload["leaderboard_rows"][0]["address"],
+        export_dir=tmp_path,
+    )
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "3", "e")
+        await pilot.pause()
+        path = tmp_path / "curator_filtered_list.json"
+        good_bytes = path.read_bytes()
+
+        manager.whale_addresses = None
+        await screen._do_refresh()
+        await pilot.pause()
+        panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
+
+        assert screen._filtered_rows is None
+        assert screen._filtered_source_reason == "deposit history unavailable"
+        assert FILTERED_LIST_UNAVAILABLE in panel
+        assert "saved →" in panel
+
+        await pilot.press("e")
+        await pilot.pause()
+
+    assert path.read_bytes() == good_bytes
 
 
 async def test_filtered_empty_table_exports_an_empty_array(tmp_path):

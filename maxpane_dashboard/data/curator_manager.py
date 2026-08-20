@@ -669,7 +669,15 @@ class CuratorManager:
             if event.amount_wei >= floor_wei
         )
 
-    def filtered_list_rows(self, directory, *, expected_count, live_rows, you_row, spec):
+    def filtered_list_rows(
+        self,
+        directory,
+        *,
+        expected_count,
+        live_rows,
+        you_row,
+        spec: FilterSpec,
+    ) -> FilteredListResult:
         source = load_export_list(
             Path(directory),
             cleaned=False,
