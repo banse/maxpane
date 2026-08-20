@@ -587,6 +587,21 @@ def test_curator_keys_covers_the_local_signature_map():
     assert not orphans, f"contract keys reach no widget: {sorted(orphans)}"
 
 
+def test_list_hero_screen_primitives_are_explicitly_named():
+    assert SCREEN_SUPPLIED == {
+        "you_address",
+        "list_view",
+        "filtered_contributors",
+        "filtered_points",
+        "you_filtered_index",
+        "you_first_index",
+        "you_first_hour",
+        "filter_summary",
+        "filtered_rows",
+        "filtered_complete",
+    }
+
+
 def test_the_meta_keys_are_exactly_the_ones_the_manager_owns():
     """The screen renders these three itself; no widget takes them."""
     assert set(META_KEYS) == set(MANAGER_OWNED_KEYS)

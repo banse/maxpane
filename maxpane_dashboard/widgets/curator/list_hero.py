@@ -176,7 +176,7 @@ def _filtered_summary_lines(data: dict, tier: str) -> list[str]:
         "THE FILTERED LIST",
         f"[bold]{_count(data.get('filtered_contributors'), 'wallets')}[/]",
         f"{fmt_points(data.get('filtered_points'))} pts",
-        _compact_filter_summary(data.get("filter_summary"), tier),
+        "matching current filters",
         _list_state(data.get("phase")),
     )
 

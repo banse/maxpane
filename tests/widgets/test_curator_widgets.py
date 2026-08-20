@@ -747,6 +747,21 @@ async def test_filtered_list_hero_marks_a_wallet_outside_the_visible_list():
     assert "-- of 568 (filtered)" in text
 
 
+async def test_filtered_list_hero_summary_names_the_current_filter_state():
+    widget = CuratorListHero()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 12)) as pilot:
+        widget.update_data(
+            list_view="filtered",
+            filtered_contributors=568,
+            filtered_points=1_234_567,
+            filter_summary=("single deposit >=25 ETH",),
+        )
+        await pilot.pause()
+        summary = widget.query_one("#curator-list-hero-summary")
+        assert summary.render().plain.splitlines()[3] == "matching current filters"
+
+
 # ===========================================================================
 # WP4.3 — CuratorLeaderboard
 # ===========================================================================
@@ -2237,7 +2252,18 @@ CURATOR_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
 #: 24") because no frozen surface carried them; WP0's 2026-08-17 amendment
 #: added both to ``CURATOR_KEYS`` and they are now dispatched from the
 #: payload like every other chain value.
-_SCREEN_SUPPLIED = {"you_address", "filtered_rows", "filtered_complete"}
+_SCREEN_SUPPLIED = {
+    "you_address",
+    "list_view",
+    "filtered_contributors",
+    "filtered_points",
+    "you_filtered_index",
+    "you_first_index",
+    "you_first_hour",
+    "filter_summary",
+    "filtered_rows",
+    "filtered_complete",
+}
 
 
 def _exported_widget_classes() -> set[str]:
@@ -2293,7 +2319,8 @@ def test_every_kwarg_has_a_none_default():
         for name, param in inspect.signature(cls.update_data).parameters.items():
             if name == "self" or param.kind is param.VAR_KEYWORD:
                 continue
-            assert param.default is None, f"{cls.__name__}.{name}"
+            expected = "raw" if (cls is CuratorListHero and name == "list_view") else None
+            assert param.default == expected, f"{cls.__name__}.{name}"
 
 
 def test_the_keys_no_widget_reads_are_named_here_rather_than_forgotten():

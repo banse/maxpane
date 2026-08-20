@@ -340,9 +340,11 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "deposits_total", "volume_routed_eth", "top_points",
     ),
     "CuratorListHero": (
-        "phase", "contributors_total", "deposits_total", "volume_routed_eth",
-        "you_address", "you_ens", "you_rank", "you_clean_rank",
-        "you_points", "clean_contributors", "clean_points",
+        "phase", "list_view", "contributors_total", "deposits_total",
+        "volume_routed_eth", "you_address", "you_ens", "you_rank",
+        "you_clean_rank", "you_filtered_index", "you_first_index",
+        "you_first_hour", "you_points", "clean_contributors", "clean_points",
+        "filtered_contributors", "filtered_points", "filter_summary",
     ),
     "CuratorLeaderboard": ("leaderboard_rows", "you_address"),
     "CuratorSparklines": (
@@ -423,8 +425,13 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     ),
 }
 
-#: The one kwarg above that the manager does not produce.
-SCREEN_SUPPLIED: frozenset[str] = frozenset({"you_address"})
+#: The kwargs above that the screen owns rather than the manager.
+#: The filtered values are populated by Task 6's list-view controller.
+SCREEN_SUPPLIED: frozenset[str] = frozenset({
+    "you_address", "list_view", "filtered_contributors", "filtered_points",
+    "you_filtered_index", "you_first_index", "you_first_hour", "filter_summary",
+    "filtered_rows", "filtered_complete",
+})
 
 
 # -- format helpers ----------------------------------------------------
