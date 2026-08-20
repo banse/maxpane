@@ -4175,6 +4175,191 @@ async def test_a_validated_complete_source_bypasses_the_live_1000_row_cap(kind):
 
 
 @pytest.mark.parametrize("kind", ("raw", "clean"))
+async def test_list_header_click_sorts_typed_values_toggles_and_survives_refresh(kind):
+    from textual.widgets import DataTable
+
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    rows = []
+    for rank, points in ((1, 9), (2, 10_000), (3, 100)):
+        row = {
+            "rank": rank,
+            "clean_rank": rank,
+            "first_index": rank,
+            "address": f"0x{rank:040x}",
+            "name": f"wallet-{rank}.eth",
+            "points": points,
+            "weight_eth": float(points),
+            "credit_eth": float(points),
+            "tx_count": rank,
+            "first_hour": rank,
+            "link_conf": "clean",
+        }
+        rows.append(row)
+    you = {**rows[0], "address": "0x" + "ff" * 20, "points": 999}
+
+    widget = CuratorRawList() if kind == "raw" else CuratorCleanedList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 18)) as pilot:
+        kwargs = (
+            {"leaderboard_rows": rows, "you_list_row": you}
+            if kind == "raw"
+            else {"clean_list_rows": rows, "you_list_row": you}
+        )
+        widget.update_data(**kwargs)
+        await pilot.pause()
+        table = widget.query_one(".curator-list-table", DataTable)
+        footer = widget.query_one(".curator-list-you", DataTable)
+        rank_index = next(
+            index for index, column in enumerate(widget._columns)
+            if column[0] == "rank"
+        )
+        points_index = next(
+            index for index, column in enumerate(widget._columns)
+            if column[0] == "points"
+        )
+        x = table._get_column_region(points_index).x + 1
+
+        assert await pilot.click(table, offset=(x, 0))
+        await pilot.pause()
+        assert [table.get_row_at(index)[rank_index] for index in range(3)] == [
+            "1", "3", "2"
+        ]
+        assert "sorted POINTS ↑" in _screen_text(app)
+        assert footer.get_row_at(0)[points_index] == "999"
+
+        assert await pilot.click(table, offset=(x, 0))
+        await pilot.pause()
+        assert [table.get_row_at(index)[rank_index] for index in range(3)] == [
+            "2", "3", "1"
+        ]
+        assert "sorted POINTS ↓" in _screen_text(app)
+        assert footer.get_row_at(0)[points_index] == "999"
+
+        widget.update_data(**kwargs)
+        await pilot.pause()
+        assert [table.get_row_at(index)[rank_index] for index in range(3)] == [
+            "2", "3", "1"
+        ]
+
+
+async def test_every_raw_list_header_sorts_and_missing_names_stay_last():
+    from textual.widgets import DataTable
+
+    from maxpane_dashboard.widgets.curator import CuratorRawList
+
+    earlier = {
+        "rank": 1,
+        "first_index": 1,
+        "address": "0x" + "aa" * 20,
+        "name": "alpha.eth",
+        "points": 1,
+        "weight_eth": 1.0,
+        "credit_eth": 1.0,
+        "tx_count": 1,
+        "first_hour": 23,
+        "link_conf": "clean",
+    }
+    later = {
+        "rank": 2,
+        "first_index": 2,
+        "address": "0x" + "bb" * 20,
+        "name": "zulu.eth",
+        "points": 2,
+        "weight_eth": 2.0,
+        "credit_eth": 2.0,
+        "tx_count": 2,
+        "first_hour": 24,
+        "link_conf": "high",
+    }
+    missing_name = {
+        **earlier,
+        "rank": 3,
+        "address": "0x" + "cc" * 20,
+        "name": None,
+    }
+    widget = CuratorRawList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 18)) as pilot:
+        widget.update_data(leaderboard_rows=[later, earlier])
+        await pilot.pause()
+        table = widget.query_one(".curator-list-table", DataTable)
+        address_index = next(
+            index for index, column in enumerate(widget._columns)
+            if column[0] == "address"
+        )
+
+        for column_index, _column in enumerate(widget._columns):
+            x = table._get_column_region(column_index).x + 1
+            assert await pilot.click(table, offset=(x, 0))
+            await pilot.pause()
+            assert table.get_row_at(0)[address_index] == earlier["address"]
+
+            assert await pilot.click(table, offset=(x, 0))
+            await pilot.pause()
+            assert table.get_row_at(0)[address_index] == later["address"]
+
+        widget.update_data(leaderboard_rows=[later, missing_name, earlier])
+        await pilot.pause()
+        ens_index = next(
+            index for index, column in enumerate(widget._columns)
+            if column[0] == "ens"
+        )
+        x = table._get_column_region(ens_index).x + 1
+        assert await pilot.click(table, offset=(x, 0))
+        await pilot.pause()
+        assert table.get_row_at(2)[address_index] == missing_name["address"]
+        assert await pilot.click(table, offset=(x, 0))
+        await pilot.pause()
+        assert table.get_row_at(2)[address_index] == missing_name["address"]
+
+
+async def test_header_sort_includes_every_row_from_a_complete_export():
+    from textual.widgets import DataTable
+
+    from maxpane_dashboard.widgets.curator import CuratorRawList
+
+    rows = [
+        {
+            "rank": rank,
+            "first_index": rank,
+            "address": f"0x{rank:040x}",
+            "name": None,
+            "points": rank,
+            "weight_eth": float(rank),
+            "credit_eth": float(rank),
+            "tx_count": 1,
+            "first_hour": 1,
+            "link_conf": "clean",
+        }
+        for rank in range(1, 1_002)
+    ]
+    widget = CuratorRawList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 18)) as pilot:
+        widget.update_data(leaderboard_rows=rows[:1_000], contributors_total=1_001)
+        widget.set_list_source(rows, complete=True)
+        await pilot.pause()
+        table = widget.query_one(".curator-list-table", DataTable)
+        rank_index = next(
+            index for index, column in enumerate(widget._columns)
+            if column[0] == "rank"
+        )
+        points_index = next(
+            index for index, column in enumerate(widget._columns)
+            if column[0] == "points"
+        )
+        x = table._get_column_region(points_index).x + 1
+
+        assert await pilot.click(table, offset=(x, 0))
+        assert await pilot.click(table, offset=(x, 0))
+        await pilot.pause()
+
+        assert table.row_count == 1_001
+        assert table.get_row_at(0)[rank_index] == "1,001"
+
+
+@pytest.mark.parametrize("kind", ("raw", "clean"))
 async def test_complete_rows_survive_refresh_until_the_authoritative_count_changes(kind):
     from textual.widgets import DataTable
     from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList

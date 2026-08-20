@@ -331,7 +331,8 @@ hero left in place so the doomsday clock never leaves the screen (`esc` backs
 out, one-way); **`f` on curator** swaps in the linked-wallet analysis (OPERATORS
 / SEGMENTS / CLEANED LIST), also keeping the clock; **`l`** opens one full-width
 record table under its own raw/wallet/cleaned summary hero, with `c` switching
-RAW/CLEANED and remembering the choice;
+RAW/CLEANED and remembering the choice; each list keeps its own typed header-click
+sort, with a second click reversing it and the fixed YOU row excluded;
 **`e`** exports the active list (`f` keeps its existing JSON + CSV export, while
 `l` writes the full uncapped raw or cleaned JSON), and is a no-op on dashboard
 and wallet modes; and **`w` on curator** prompts for the wallet its YOU row is about —

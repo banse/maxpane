@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from rich.cells import cell_len, set_cell_size
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -135,6 +137,29 @@ _CLEANED_TIERS = (
     ),
 )
 
+_SORT_FIELDS = {
+    "join": "first_index",
+    "address": "address",
+    "ens": "name",
+    "points": "points",
+    "weight": "weight_eth",
+    "credit": "credit_eth",
+    "deposits": "tx_count",
+    "hour": "first_hour",
+    "window": "first_hour",
+}
+_NUMERIC_SORT_COLUMNS = {
+    "rank",
+    "join",
+    "points",
+    "weight",
+    "credit",
+    "deposits",
+    "hour",
+    "window",
+}
+_LINK_SORT_ORDER = {"clean": 0, "unknown": 1, "low": 2, "high": 3}
+
 
 def _rank(value) -> str:
     if value is None or isinstance(value, bool):
@@ -213,6 +238,7 @@ class _ListTable(Vertical):
     TIERS: tuple = ()
     UNAVAILABLE = ""
     EMPTY = ""
+    RANK_FIELD = "rank"
 
     DEFAULT_CSS = """
     _ListTable {
@@ -267,6 +293,10 @@ class _ListTable(Vertical):
         self._complete_rows: list[dict] | None = None
         self._complete_expected_count: object = None
         self._live_wallet_count: object = None
+        self._rows_by_address: dict[str, dict] = {}
+        self._sort_column: str | None = None
+        self._sort_reverse = False
+        self._heading_note = ""
 
     def compose(self) -> ComposeResult:
         yield Static(self.TITLE, classes="curator-list-title")
@@ -340,6 +370,7 @@ class _ListTable(Vertical):
         return columns
 
     def _set_heading(self, note: str) -> None:
+        self._heading_note = note
         width = max(self.content_size.width - 2, 0)
         count = self._payload.get("wallet_count")
         heading = (
@@ -351,10 +382,98 @@ class _ListTable(Vertical):
         )
         title, placed = title_with_hint(heading, self._hint, width)
         self.query_one(".curator-list-title", Static).update(title)
+        if self._sort_column is not None:
+            direction = "↓" if self._sort_reverse else "↑"
+            sort_note = f"[dim]sorted {self._sort_label()} {direction}[/]"
+            note = f"{note} · {sort_note}" if note else sort_note
         if self._hint and not placed:
             marker = f"[yellow]{WIDEN_HINT}[/]"
             note = f"{marker} {note}" if note else marker
         self.query_one(".curator-list-note", Static).update(note)
+
+    def _sort_label(self) -> str:
+        for _name, _cost, columns, _hint in self.TIERS:
+            for key, header, _width in columns:
+                if key == self._sort_column:
+                    return header
+        return str(self._sort_column).upper()
+
+    @staticmethod
+    def _address_key(value) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        return value.strip().casefold()
+
+    def _source_row(self, values) -> dict | None:
+        try:
+            address_index = next(
+                index for index, column in enumerate(self._columns)
+                if column[0] == "address"
+            )
+            address = values[address_index]
+        except (IndexError, StopIteration, TypeError):
+            return None
+        return self._rows_by_address.get(self._address_key(address))
+
+    def _sort_value(self, row: dict | None) -> tuple[bool, object]:
+        column = self._sort_column
+        if column == "link":
+            if not isinstance(row, dict):
+                return True, 0
+            confidence = row.get("link_conf")
+            if confidence in ("high", "low", "clean"):
+                return False, _LINK_SORT_ORDER[confidence]
+            flagged = row.get("flagged")
+            if flagged is True:
+                state = "high"
+            elif flagged is False:
+                state = "clean"
+            else:
+                state = "unknown"
+            return False, _LINK_SORT_ORDER[state]
+
+        field = self.RANK_FIELD if column == "rank" else _SORT_FIELDS.get(column)
+        value = row.get(field) if isinstance(row, dict) and field else None
+        if column in _NUMERIC_SORT_COLUMNS:
+            if isinstance(value, bool):
+                return True, 0.0
+            try:
+                number = float(value)
+            except (TypeError, ValueError, OverflowError):
+                return True, 0.0
+            if not math.isfinite(number):
+                return True, 0.0
+            return False, number
+
+        if isinstance(value, str) and value.strip():
+            return False, " ".join(value.split()).casefold()
+        return True, ""
+
+    def _apply_sort(self, table: DataTable) -> None:
+        if self._sort_column is None or not self._rows_by_address:
+            return
+
+        def sort_key(values):
+            missing, value = self._sort_value(self._source_row(values))
+            missing_order = not missing if self._sort_reverse else missing
+            return missing_order, value
+
+        table.sort(key=sort_key, reverse=self._sort_reverse)
+
+    def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
+        if event.data_table.id != self.TABLE_ID:
+            return
+        try:
+            column = self._columns[event.column_index][0]
+        except IndexError:
+            return
+        if column == self._sort_column:
+            self._sort_reverse = not self._sort_reverse
+        else:
+            self._sort_column = column
+            self._sort_reverse = False
+        self._apply_sort(event.data_table)
+        self._set_heading(self._heading_note)
 
     def _rows(self):
         raise NotImplementedError
@@ -435,6 +554,7 @@ class _ListTable(Vertical):
         if not self._payload:
             return
 
+        self._rows_by_address = {}
         columns = self._apply_columns(table)
         self._render_you(columns)
         rows = self._rows()
@@ -466,11 +586,15 @@ class _ListTable(Vertical):
         self._set_heading(self._healthy_note())
         shown = usable if self._payload.get("complete") else usable[:MAX_ROWS]
         for row in shown:
+            address = self._address_key(row.get("address"))
+            if address is not None:
+                self._rows_by_address[address] = row
             try:
                 values = self._row_values(row)
             except Exception:
                 values = {}
             table.add_row(*cells(values, columns, default=DASH))
+        self._apply_sort(table)
 
 
 class CuratorRawList(_ListTable):
@@ -517,6 +641,7 @@ class CuratorCleanedList(_ListTable):
     TIERS = _CLEANED_TIERS
     UNAVAILABLE = CLEANED_LIST_UNAVAILABLE
     EMPTY = CLEANED_LIST_EMPTY
+    RANK_FIELD = "clean_rank"
 
     def update_data(
         self, clean_list_rows=None, you_list_row=None,
