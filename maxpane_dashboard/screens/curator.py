@@ -202,6 +202,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorSegments,
     CuratorSignals,
     CuratorSparklines,
+    FILTERED_LIST_UNAVAILABLE,
     ListOrderChanged,
 )
 from maxpane_dashboard.widgets.status_bar import StatusBar
@@ -1249,9 +1250,13 @@ class CuratorScreen(RefreshGuard, Screen):
         self._filtered_source_reason = result.source_reason
         self._you_filtered_index = None
         self._dispatch_filtered_list(data)
-        self.query_one(CuratorFilteredList).mark_filter_applied(
-            limited=not result.complete
-        )
+        panel = self.query_one(CuratorFilteredList)
+        if result.rows is None:
+            panel.mark_filter_unavailable(
+                result.source_reason or FILTERED_LIST_UNAVAILABLE
+            )
+        else:
+            panel.mark_filter_applied(limited=not result.complete)
         self._dispatch_list_hero(data)
         return True
 
@@ -1326,6 +1331,9 @@ class CuratorScreen(RefreshGuard, Screen):
                 return
             if self._list_view == LIST_FILTERED:
                 panel = self.query_one(CuratorFilteredList)
+                if self._filtered_rows is None:
+                    logger.debug("Filtered list export skipped: source unavailable")
+                    return
                 rows = panel.export_rows()
                 directory = self._export_dir or Path.home() / ".maxpane"
                 try:

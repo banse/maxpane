@@ -3668,7 +3668,27 @@ async def test_filtered_empty_table_exports_an_empty_array(tmp_path):
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
         await pilot.press("l", "c", "c", "e")
+        await pilot.pause()
+        panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
     assert json.loads((tmp_path / "curator_filtered_list.json").read_text()) == []
+    assert "saved →" in panel
+
+
+async def test_missing_filtered_source_stays_unavailable_and_writes_nothing(tmp_path):
+    payload = _list_payload(3)
+    payload["leaderboard_rows"] = None
+    screen = _export_screen(tmp_path, payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "1", "e")
+        await pilot.pause()
+        panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
+
+    assert not (tmp_path / "curator_filtered_list.json").exists()
+    assert FILTERED_LIST_UNAVAILABLE in panel
+    assert "first 1,000 wallets only" not in panel
+    assert "saved →" not in panel
 
 
 async def test_fallback_filter_receipt_says_only_first_1000_were_filtered(tmp_path):
@@ -3703,6 +3723,34 @@ async def test_unavailable_preset_names_the_source_failure_on_filtered_receipt(
         panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
     assert FILTERED_LIST_UNAVAILABLE in panel
     assert "raw source validation failed" in panel
+
+
+async def test_unavailable_preset_reexport_preserves_the_existing_filtered_file(
+    tmp_path, monkeypatch
+):
+    from maxpane_dashboard.data.curator_list_filters import FilterDataUnavailable
+
+    screen = _export_screen(tmp_path, _list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "1", "e")
+        await pilot.pause()
+        path = tmp_path / "curator_filtered_list.json"
+        good_bytes = path.read_bytes()
+
+        def unavailable(*_args, **_kwargs):
+            raise FilterDataUnavailable("raw source validation failed")
+
+        monkeypatch.setattr(screen._data_manager, "filtered_list_rows", unavailable)
+        await pilot.press("1", "e")
+        await pilot.pause()
+        panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
+
+    assert path.read_bytes() == good_bytes
+    assert FILTERED_LIST_UNAVAILABLE in panel
+    assert "raw source validation failed" in panel
+    assert "saved →" not in panel
 
 
 async def test_a_failed_filtered_reexport_replaces_the_active_receipt(
