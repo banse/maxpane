@@ -272,6 +272,7 @@ MODES = (MODE_DASHBOARD, MODE_WALLET, MODE_ANALYSIS, MODE_LIST)
 #: the cleaned list as JSON rows plus a CSV of the same rows.  A TUI cannot
 #: hand a file to the reader, so it writes to disk and names the path.
 CLEAN_LIST_BASENAME = "curator_clean_list"
+FILTERED_LIST_BASENAME = "curator_filtered_list"
 
 LIST_RAW = "raw"
 LIST_CLEANED = "cleaned"
@@ -628,6 +629,17 @@ def _write_list(directory: Path, rows: list, *, cleaned: bool) -> Path:
             json.dumps(rows, indent=1),
             encoding="utf-8",
         )
+
+    _atomic_write(directory, ((path, write_json),))
+    return path
+
+
+def _write_filtered_list(directory: Path, rows: list[dict]) -> Path:
+    """Atomically write the filtered table's current visible order as JSON."""
+    path = directory / f"{FILTERED_LIST_BASENAME}.json"
+
+    def write_json(temporary: Path) -> None:
+        temporary.write_text(json.dumps(rows, indent=1), encoding="utf-8")
 
     _atomic_write(directory, ((path, write_json),))
     return path
@@ -1237,6 +1249,9 @@ class CuratorScreen(RefreshGuard, Screen):
         self._filtered_source_reason = result.source_reason
         self._you_filtered_index = None
         self._dispatch_filtered_list(data)
+        self.query_one(CuratorFilteredList).mark_filter_applied(
+            limited=not result.complete
+        )
         self._dispatch_list_hero(data)
         return True
 
@@ -1257,6 +1272,7 @@ class CuratorScreen(RefreshGuard, Screen):
             self._filtered_source_reason = str(exc)
             self._you_filtered_index = None
             self._dispatch_filtered_list(data)
+            self.query_one(CuratorFilteredList).mark_filter_unavailable(str(exc))
             self._dispatch_list_hero(data)
         self._show_list_view()
 
@@ -1304,6 +1320,21 @@ class CuratorScreen(RefreshGuard, Screen):
         """
         if self._mode == MODE_LIST:
             if self._filter_editor_open:
+                self.query_one(CuratorListFilterEditor).show_error(
+                    None, "press f to apply filters first"
+                )
+                return
+            if self._list_view == LIST_FILTERED:
+                panel = self.query_one(CuratorFilteredList)
+                rows = panel.export_rows()
+                directory = self._export_dir or Path.home() / ".maxpane"
+                try:
+                    json_path = _write_filtered_list(directory, rows)
+                except Exception as exc:  # noqa: BLE001 -- visible, never fatal
+                    logger.debug("Filtered list export failed: %s", exc)
+                    panel.mark_export_failed()
+                    return
+                panel.mark_exported(str(json_path))
                 return
             cleaned = self._list_view == LIST_CLEANED
             panel = CuratorCleanedList if cleaned else CuratorRawList

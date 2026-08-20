@@ -3621,7 +3621,7 @@ async def test_both_list_width_sweeps_clear_inside_the_unchanged_app_pin():
     assert CURATOR_FULL_LAYOUT_COLUMNS == 138
 
 
-async def test_e_while_filter_editor_is_open_skips_manager_and_writes_nothing(
+async def test_e_in_filter_editor_writes_nothing_and_names_apply_first(
     tmp_path,
 ):
     screen = _export_screen(tmp_path, _list_payload(1))
@@ -3632,9 +3632,103 @@ async def test_e_while_filter_editor_is_open_skips_manager_and_writes_nothing(
         await pilot.press("l", "f", "e")
         await pilot.pause()
         assert screen.query_one(CuratorListFilterEditor).display is True
+        assert "press f to apply filters first" in _screen_text(app)
 
     assert manager.full_list_calls == []
     assert list(tmp_path.iterdir()) == []
+
+
+async def test_e_exports_filtered_rows_in_visible_sort_order_with_indexes(tmp_path):
+    from textual.widgets import DataTable
+
+    payload = _list_payload(3)
+    screen = _export_screen(tmp_path, payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "1")
+        table = screen.query_one("#curator-filtered-list-table", DataTable)
+        points = [
+            column[0] for column in screen.query_one(CuratorFilteredList)._columns
+        ].index("points")
+        x = table._get_column_region(points).x + 1
+        assert await pilot.click(table, offset=(x, 0))
+        await pilot.press("e")
+        await pilot.pause()
+
+    rows = json.loads((tmp_path / "curator_filtered_list.json").read_text())
+    assert [row["rank"] for row in rows] == [3, 2, 1]
+    assert [row["index"] for row in rows] == [1, 2, 3]
+    assert not (tmp_path / "curator_filtered_list.json.tmp").exists()
+
+
+async def test_filtered_empty_table_exports_an_empty_array(tmp_path):
+    screen = _export_screen(tmp_path, _list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "c", "c", "e")
+    assert json.loads((tmp_path / "curator_filtered_list.json").read_text()) == []
+
+
+async def test_fallback_filter_receipt_says_only_first_1000_were_filtered(tmp_path):
+    payload = _list_payload(3)
+    payload["contributors_total"] = 19_522
+    screen = _export_screen(tmp_path, payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "1")
+        await pilot.pause()
+        panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
+    assert "first 1,000 wallets only" in panel
+
+
+async def test_unavailable_preset_names_the_source_failure_on_filtered_receipt(
+    tmp_path, monkeypatch
+):
+    from maxpane_dashboard.data.curator_list_filters import FilterDataUnavailable
+
+    screen = _export_screen(tmp_path, _list_payload(3))
+
+    def unavailable(*_args, **_kwargs):
+        raise FilterDataUnavailable("raw source validation failed")
+
+    monkeypatch.setattr(screen._data_manager, "filtered_list_rows", unavailable)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "1")
+        await pilot.pause()
+        panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
+    assert FILTERED_LIST_UNAVAILABLE in panel
+    assert "raw source validation failed" in panel
+
+
+async def test_a_failed_filtered_reexport_replaces_the_active_receipt(
+    tmp_path, monkeypatch
+):
+    import maxpane_dashboard.screens.curator as curator_screen
+    from maxpane_dashboard.widgets.curator.cleaned_list import EXPORT_FAILED
+
+    screen = _export_screen(tmp_path, _list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "1", "e")
+        await pilot.pause()
+        path = tmp_path / "curator_filtered_list.json"
+        good_bytes = path.read_bytes()
+
+        def fail_write(*_args, **_kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(curator_screen, "_write_filtered_list", fail_write)
+        await pilot.press("e")
+        await pilot.pause()
+        failed = _region_text(app, screen.query_one(CuratorFilteredList), screen)
+    assert EXPORT_FAILED in failed and "saved →" not in failed
+    assert path.read_bytes() == good_bytes
 
 
 async def test_e_exports_only_the_full_list_currently_on_screen(tmp_path):

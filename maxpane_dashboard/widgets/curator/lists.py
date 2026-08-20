@@ -301,6 +301,7 @@ class _ListTable(Vertical):
         self._hint = ""
         self._export_path: str | None = None
         self._export_failed = False
+        self._source_receipt: str | None = None
         self._complete_rows: list[dict] | None = None
         self._complete_expected_count: object = None
         self._live_wallet_count: object = None
@@ -349,6 +350,20 @@ class _ListTable(Vertical):
         self._export_failed = True
         self._render_receipt()
 
+    def mark_filter_applied(self, limited: bool) -> None:
+        """Show the filtered source boundary after a new filter application."""
+        self._export_path = None
+        self._export_failed = False
+        self._source_receipt = "first 1,000 wallets only" if limited else None
+        self._render_receipt()
+
+    def mark_filter_unavailable(self, message: str) -> None:
+        """Replace stale filter/export receipts with the source failure."""
+        self._export_path = None
+        self._export_failed = False
+        self._source_receipt = message
+        self._render_receipt()
+
     def _render_receipt(self) -> None:
         try:
             line = self.query_one(".curator-list-receipt", Static)
@@ -358,18 +373,22 @@ class _ListTable(Vertical):
             line.display = True
             line.update(f"[$warning]⚠ {EXPORT_FAILED}[/]")
             return
-        if not self._export_path:
-            line.display = False
-            line.update("")
+        if self._export_path:
+            line.display = True
+            prefix = "saved → "
+            path = self._export_path
+            width = max(self.content_size.width - 2, 0)
+            if width and cell_len(prefix + path) > width:
+                keep = max(width - cell_len(prefix) - 1, 1)
+                path = f"…{path[-keep:]}"
+            line.update(f"[dim]{prefix}{safe_markup(path)}[/]")
             return
-        line.display = True
-        prefix = "saved → "
-        path = self._export_path
-        width = max(self.content_size.width - 2, 0)
-        if width and cell_len(prefix + path) > width:
-            keep = max(width - cell_len(prefix) - 1, 1)
-            path = f"…{path[-keep:]}"
-        line.update(f"[dim]{prefix}{safe_markup(path)}[/]")
+        if self._source_receipt:
+            line.display = True
+            line.update(safe_markup(self._source_receipt))
+            return
+        line.display = False
+        line.update("")
 
     def _apply_columns(self, table: DataTable) -> tuple:
         width = table.content_size.width or self.content_size.width

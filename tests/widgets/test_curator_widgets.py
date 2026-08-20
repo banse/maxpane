@@ -119,6 +119,17 @@ class _Harness(App):
         yield self._widget
 
 
+class _OrderHarness(_Harness):
+    """Records the real list-order messages that bubble from its widget."""
+
+    def __init__(self, widget) -> None:
+        super().__init__(widget)
+        self.orders: list[tuple[str, tuple[str, ...]]] = []
+
+    def on_list_order_changed(self, event) -> None:
+        self.orders.append((event.kind, event.addresses))
+
+
 def _screen_text(app) -> str:
     strips = app.screen._compositor.render_strips()
     return "\n".join("".join(seg.text for seg in strip) for strip in strips)
@@ -2409,6 +2420,12 @@ def _full_payload() -> dict:
         leaderboard_rows=_lb_rows(3),
         filtered_rows=_lb_rows(3),
         filtered_complete=True,
+        list_view="filtered",
+        filtered_contributors=3,
+        filtered_points=30_000,
+        you_filtered_index=1,
+        you_first_index=12,
+        filter_summary=("first 1,000 wallets",),
         activity_rows=[_act_row(log_index=1), _act_row(log_index=2, tx_count=5)],
         closest_call_rows=_call_rows(),
         cluster_rows=_cluster_rows(),
@@ -2585,6 +2602,7 @@ async def test_no_widget_renders_a_bare_zero_for_a_missing_value(cls):
         widget.update_data(**{name: None for name in _kwargs_of(cls)})
         await pilot.pause()
         text = _screen_text(app)
+    text = text.replace("first 1000 wallets", "first one-thousand wallets")
     for banned in ("0.00 ETH", "0 wallets", "0 pts", "rank 0", "0.0%"):
         assert banned not in text, (cls.__name__, banned)
 
@@ -4296,6 +4314,74 @@ async def test_filtered_export_rows_follow_the_current_sort_and_indexes():
     exported = widget.export_rows()
     assert [row["rank"] for row in exported] == [2, 3, 1]
     assert [row["index"] for row in exported] == [1, 2, 3]
+
+
+async def test_filtered_sort_emits_its_kind_and_normalized_ordered_addresses():
+    from textual.widgets import DataTable
+
+    from maxpane_dashboard.widgets.curator import CuratorFilteredList
+
+    rows = [
+        {
+            "rank": rank,
+            "first_index": rank,
+            "address": address,
+            "name": None,
+            "points": points,
+            "weight_eth": float(points),
+            "credit_eth": float(points),
+            "tx_count": rank,
+            "first_hour": rank,
+            "link_conf": "clean",
+        }
+        for rank, points, address in (
+            (1, 9, "0x" + "A" * 40),
+            (2, 10_000, "0x" + "B" * 40),
+            (3, 100, "0x" + "C" * 40),
+        )
+    ]
+    widget = CuratorFilteredList()
+    app = _OrderHarness(widget)
+    async with app.run_test(size=(143, 18)) as pilot:
+        widget.update_data(filtered_rows=rows, filtered_complete=True)
+        await pilot.pause()
+        table = widget.query_one(".curator-list-table", DataTable)
+        points_index = [column[0] for column in widget._columns].index("points")
+        x = table._get_column_region(points_index).x + 1
+        assert await pilot.click(table, offset=(x, 0))
+        await pilot.pause()
+
+    assert app.orders[-1] == (
+        "filtered",
+        tuple(rows[index]["address"].casefold() for index in (0, 2, 1)),
+    )
+
+
+async def test_filtered_filter_receipt_yields_to_export_and_returns_on_reapply():
+    from maxpane_dashboard.widgets.curator import CuratorFilteredList
+    from maxpane_dashboard.widgets.curator.cleaned_list import EXPORT_FAILED
+
+    widget = CuratorFilteredList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 18)) as pilot:
+        widget.update_data(filtered_rows=[], filtered_complete=False)
+        widget.mark_filter_applied(limited=True)
+        await pilot.pause()
+        limited = _screen_text(app)
+        widget.mark_exported("/x/.maxpane/curator_filtered_list.json")
+        await pilot.pause()
+        saved = _screen_text(app)
+        widget.mark_export_failed()
+        await pilot.pause()
+        failed = _screen_text(app)
+        widget.mark_filter_applied(limited=False)
+        await pilot.pause()
+        complete = _screen_text(app)
+
+    assert "first 1,000 wallets only" in limited
+    assert "saved →" in saved and "first 1,000 wallets only" not in saved
+    assert EXPORT_FAILED in failed and "first 1,000 wallets only" not in failed
+    assert EXPORT_FAILED not in complete and "first 1,000 wallets only" not in complete
 
 
 async def test_each_list_title_uses_its_authoritative_wallet_total():
