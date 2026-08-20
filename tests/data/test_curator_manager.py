@@ -1145,76 +1145,54 @@ def test_a_stats_mismatch_marks_the_fold_stale_rather_than_publishing(tmp_path, 
     assert SOURCE_LOGS in manager._degraded()
 
 
-def test_the_history_cap_does_not_make_the_fold_look_permanently_short(tmp_path, clock, monkeypatch):
-    """MAX_PERSISTED_EVENTS drops the OLDEST rows, and the cache says so: the
-    folded totals become a lower bound while the contract's counter never
-    forgets.  Comparing retained rows against that counter declares the fold
-    short forever once the cap trips -- a full re-sweep from the creation block
-    every slow tick, re-dropping the overflow each time, and a `degraded` that
-    never clears.  231 deposits landed in four hours, so 25 000 is reachable."""
-    from maxpane_dashboard.data import curator_cache as cc
-
-    monkeypatch.setattr(cc, "MAX_PERSISTED_EVENTS", 100)
+def test_a_legacy_truncated_cache_is_repaired_from_creation_once(tmp_path, clock):
     client = FakeClient(
-        fetch_logs=lambda *_: _sweep(), fetch_blockscout_logs=lambda *_: []
+        fetch_logs=lambda *_: _sweep(),
     )
     manager = _manager(tmp_path, clock, client=client)
+    decoded = [decode_deposit(row) for row in RPC_ROWS]
+    events = [event for event in decoded if event is not None]
+    manager.cache.store_events(events[-100:])
+    manager.cache.store_fold([], last_block=25_770_500, now=NOW)
+    manager.cache.dropped_events = 131
+
     asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
-    assert len(manager.cache.events()) == 100
-    assert manager.cache.dropped_events == 131          # 231 seen, 100 kept
 
-    covered = _state(tx_count=222, block_number=25_770_400)
-    out = asyncio.run(manager._pool_crosscheck({"slow"}, NOW, covered, CONFIG))
-    assert out["gap_block"] is None
-    assert manager._fold_stale is False
-    assert manager._repair_from_block is None
-
-    # ...and a REAL shortfall is still caught: 231 seen against a claimed 400.
-    manager2 = _manager(tmp_path / "b", clock, client=client)
-    asyncio.run(manager2._pool_logs({"medium"}, NOW, CONFIG))
-    short = asyncio.run(
-        manager2._pool_crosscheck(
-            {"slow"}, NOW, _state(tx_count=400, block_number=25_770_400), CONFIG
-        )
-    )
-    assert short["gap_block"] == A.CREATION_BLOCK
-    assert manager2._fold_stale is True
+    assert _recorded_from_block(client) == A.CREATION_BLOCK
+    assert len(manager.cache.events()) == 231
+    assert manager.cache.dropped_events == 0
+    assert manager._sweep_from_block() == 25_770_501
 
 
-def test_the_history_cap_still_does_not_condemn_the_fold_after_a_relaunch(
-    tmp_path, clock, monkeypatch
+def test_a_partial_legacy_repair_keeps_the_marker_and_retries_from_creation(
+    tmp_path, clock
 ):
-    """The same guarantee, across the persistence boundary.
+    client = FakeClient(fetch_logs=lambda *_: _sweep())
+    client.log_group_failed["deposits"] = True
+    manager = _manager(tmp_path, clock, client=client)
+    manager.cache.store_fold([], last_block=25_770_500, now=NOW)
+    manager.cache.dropped_events = 5
 
-    The in-process fix (`seen = retained + dropped_events`) died at the file:
-    `dropped_events` was not persisted, so the *second* launch compared 100
-    retained rows against a contract counter of 231 and did what the first
-    launch was fixed not to do -- full re-sweep from the creation block, every
-    launch, forever.  The live contract passes 25 000 deposits about fifteen
-    hours after launch, i.e. shortly after the first judged hour.
-    """
-    from maxpane_dashboard.data import curator_cache as cc
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
 
-    monkeypatch.setattr(cc, "MAX_PERSISTED_EVENTS", 100)
+    assert manager.cache.dropped_events == 5
+    assert manager._sweep_from_block() == A.CREATION_BLOCK
+
+
+def test_a_legacy_repair_behind_the_old_watermark_keeps_the_marker(
+    tmp_path, clock
+):
     client = FakeClient(
-        fetch_logs=lambda *_: _sweep(), fetch_blockscout_logs=lambda *_: []
+        fetch_logs=lambda *_: _sweep(to_block=25_770_499),
     )
-    first = _manager(tmp_path, clock, client=client)
-    asyncio.run(first._pool_logs({"medium"}, NOW, CONFIG))
-    assert (len(first.cache.events()), first.cache.dropped_events) == (100, 131)
-    first.save_cache()
+    manager = _manager(tmp_path, clock, client=client)
+    manager.cache.store_fold([], last_block=25_770_500, now=NOW)
+    manager.cache.dropped_events = 5
 
-    # A new process, same cache file, no sweep yet.
-    relaunched = _manager(tmp_path, clock, client=client)
-    assert len(relaunched.cache.events()) == 100
-    assert relaunched.cache.dropped_events == 131
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
 
-    covered = _state(tx_count=222, block_number=25_770_400)
-    out = asyncio.run(relaunched._pool_crosscheck({"slow"}, NOW, covered, CONFIG))
-    assert out["gap_block"] is None
-    assert relaunched._fold_stale is False
-    assert relaunched._repair_from_block is None
-    assert SOURCE_LOGS not in relaunched._degraded()
+    assert manager.cache.dropped_events == 5
+    assert manager._sweep_from_block() == A.CREATION_BLOCK
 
 
 def test_a_dead_cross_check_does_not_condemn_the_fold(tmp_path, clock):
@@ -2371,6 +2349,12 @@ def test_full_list_exports_ignore_display_caps_without_growing_the_analysis_slot
     manager = _manager(tmp_path, clock)
     stored, rows = _legacy_clean_slot(count=1_200)
     manager.cache.store_fold(rows, last_block=None, now=NOW)
+    manager.cache.store_first_deposits(
+        [
+            {"contributor": row.address, "index": index, "ts": NOW}
+            for index, row in enumerate(rows, start=1)
+        ]
+    )
     manager.cache.store_last_good(SLOT_LOGS, {}, ts=NOW)
     manager.cache.store_analysis(stored, ts=NOW)
 
@@ -2446,6 +2430,23 @@ def test_an_incomplete_fold_cannot_masquerade_as_a_full_clean_export(
     manager.cache.store_analysis(stored, ts=NOW)
 
     assert manager.full_list_rows(cleaned=True) is None
+
+
+def test_an_incomplete_fold_cannot_masquerade_as_a_full_raw_export(
+    tmp_path, clock
+):
+    manager = _manager(tmp_path, clock)
+    _stored, rows = _legacy_clean_slot(count=3)
+    manager.cache.store_fold(rows[:2], last_block=None, now=NOW)
+    manager.cache.store_first_deposits(
+        [
+            {"contributor": row.address, "index": index, "ts": NOW}
+            for index, row in enumerate(rows, start=1)
+        ]
+    )
+    manager.cache.store_last_good(SLOT_LOGS, {}, ts=NOW)
+
+    assert manager.full_list_rows(cleaned=False) is None
 
 
 def test_with_no_analysis_last_good_every_analysis_key_is_none_never_empty(

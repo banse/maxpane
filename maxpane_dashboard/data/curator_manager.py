@@ -567,9 +567,19 @@ class CuratorManager:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Curator cache save failed: %s", exc)
 
+    def _history_complete(self, fold: list[Any] | None = None) -> bool:
+        """Whether every enumerated wallet has a retained deposit row."""
+        rows = self.cache.fold_rows() if fold is None else fold
+        return (
+            self.cache.dropped_events == 0
+            and len(rows) == len(self.cache.first_deposits())
+        )
+
     def full_list_rows(self, *, cleaned: bool) -> list[dict] | None:
         """Return one complete export list from held data, without network I/O."""
         fold = self.cache.fold_rows()
+        if not self._history_complete(fold):
+            return None
         if cleaned:
             entry = self.cache.analysis_last_good()
             slot = (
@@ -798,13 +808,17 @@ class CuratorManager:
     def _sweep_from_block(self) -> int:
         """Where the next sweep starts.
 
-        A repair range wins, then the watermark + 1, then the creation block.
+        A legacy truncation marker wins, then a repair range, the watermark +
+        1, and finally the creation block. A capped cache cannot repair itself
+        incrementally because the missing rows are older than its watermark.
         **Never the head**: an absent watermark means "we have never folded
         anything", and starting from now would leave the whole game unfolded
         behind an empty leaderboard with no error anywhere.  The full backfill
         is one sweep in practice — 377 rows from block 25 769 870, validated in
         the research.
         """
+        if self.cache.dropped_events > 0:
+            return A.CREATION_BLOCK
         if self._repair_from_block is not None:
             return max(A.CREATION_BLOCK, self._repair_from_block)
         watermark = self.cache.last_seen_block()
@@ -854,6 +868,10 @@ class CuratorManager:
             return {"ok": None, "swept": False}
 
         from_block = self._sweep_from_block()
+        previous_watermark = self.cache.last_seen_block()
+        repairing_truncation = (
+            self.cache.dropped_events > 0 and from_block == A.CREATION_BLOCK
+        )
         sweep = await self._guard(
             lambda: self.client.fetch_logs(from_block), "fetch_logs"
         )
@@ -903,6 +921,7 @@ class CuratorManager:
         # watermark unchanged" combination: what arrived is kept, and the range
         # is swept again next tick.
         covered = not any(failed.values())
+        sweep_to_block = _opt_int(getattr(sweep, "to_block", None))
         if not covered:
             logger.warning(
                 "Curator sweep from block %d had a dead filter (%s); the rows it "
@@ -913,9 +932,25 @@ class CuratorManager:
             )
         self._refold(
             config,
-            last_block=_opt_int(getattr(sweep, "to_block", None)) if covered else None,
+            last_block=sweep_to_block if covered else None,
             now=now,
         )
+
+        repair_covers_watermark = (
+            previous_watermark is None
+            or (
+                sweep_to_block is not None
+                and sweep_to_block >= previous_watermark
+            )
+        )
+        if repairing_truncation and covered and repair_covers_watermark:
+            repaired = self.cache.dropped_events
+            self.cache.dropped_events = 0
+            logger.info(
+                "Curator history repair restored the creation-block sweep; "
+                "cleared the legacy marker for %d dropped event(s)",
+                repaired,
+            )
 
         groups_read = self._logs_read_groups() | {
             group for group, dead in failed.items() if not dead
@@ -1178,25 +1213,12 @@ class CuratorManager:
             and watermark is not None
             and watermark >= state_block
         )
-        # The cap counts.  ``MAX_PERSISTED_EVENTS`` drops the OLDEST rows once
-        # the history outgrows it, and the cache says so in as many words: "the
-        # folded totals are now a lower bound; the contract's own counters are
-        # not".  Comparing the retained rows against a counter that has never
-        # forgotten anything therefore declares the fold short *permanently*
-        # once the cap trips — a full re-sweep from the creation block on every
-        # slow tick, each one re-dropping the overflow, plus a `degraded` that
-        # never clears.  What we have seen is retained + dropped.
-        seen = len(self.cache.events()) + max(
-            0, _opt_int(getattr(self.cache, "dropped_events", 0)) or 0
-        )
+        seen = len(self.cache.events())
         if covered and seen < counter:
             logger.warning(
-                "Curator fold is short: %d folded deposits (%d retained + %d the "
-                "history cap dropped) against the contract's own %d at block %s "
-                "— re-sweeping",
+                "Curator fold is short: %d folded deposits against the "
+                "contract's own %d at block %s — re-sweeping",
                 seen,
-                len(self.cache.events()),
-                seen - len(self.cache.events()),
                 counter,
                 state_block,
             )
@@ -1484,10 +1506,10 @@ class CuratorManager:
         for key in CONFIG_PAYLOAD_KEYS:
             read[key] = cfg.get(key)
 
-        # Whether a *historical* rank is computable at all: the cap drops the
-        # oldest rows, and a rank counted over what survived would count fewer
-        # competitors than existed.  See `analytics.you_ladder`.
-        read["history_complete"] = self.cache.dropped_events == 0
+        # A historical rank is computable only when every enumerated wallet has
+        # a retained deposit row. Legacy capped files stay incomplete until
+        # their one-time creation-block repair finishes.
+        read["history_complete"] = self._history_complete()
 
         read["deposits"] = self._log_reading(
             "deposits",
@@ -1655,9 +1677,8 @@ class CuratorManager:
                 if not payload.get(key):
                     payload[key] = None
 
-        # The persisted series outlive one cycle's fold: they hold the hours
-        # whose events the history cap has since dropped, and they survive a
-        # restart. An empty one is left as ``build_signals`` produced it.
+        # The persisted series survive a restart. An empty one is left as
+        # ``build_signals`` produced it.
         for key in CURATOR_SERIES_KEYS:
             stored = self.cache.get_series(key)
             if stored:

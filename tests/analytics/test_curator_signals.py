@@ -2129,6 +2129,20 @@ def test_an_empty_log_read_is_not_the_same_as_a_failed_one(full_readings: dict) 
     assert failed["closest_call_rows"] == []
 
 
+def test_first_deposits_keep_the_wallet_total_complete_when_state_is_down(
+    full_readings: dict,
+) -> None:
+    truncated = {
+        **full_readings,
+        "contributors": None,
+        "deposits": full_readings["deposits"][:1],
+    }
+
+    out = sig.build_signals(truncated, now_ts=BUNDLE_NOW)
+
+    assert out["contributors_total"] == 2_291
+
+
 def test_a_dead_logs_tier_leaves_the_streak_unknown_in_a_judged_hour(
     full_readings: dict,
 ) -> None:

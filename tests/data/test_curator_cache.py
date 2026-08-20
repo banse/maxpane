@@ -708,45 +708,33 @@ def test_events_stay_ordered_oldest_first_however_they_arrive(cache):
     ]
 
 
-def test_the_event_cap_drops_the_oldest_and_counts_the_drop(cache):
-    over = curator_cache.MAX_PERSISTED_EVENTS + 5
-    cache.store_events([_deposit(0, 10**18, index=i, block=25_770_000) for i in range(over)])
+def test_the_complete_event_history_is_never_truncated(cache):
+    total = 25_005
+    cache.store_events(
+        [_deposit(0, 10**18, index=i, block=25_770_000) for i in range(total)]
+    )
+
     kept = cache.events()
-    assert len(kept) == curator_cache.MAX_PERSISTED_EVENTS
-    assert cache.dropped_events == 5
-    assert kept[0].log_index == 5                            # the oldest went
+    assert len(kept) == total
+    assert cache.dropped_events == 0
+    assert kept[0].log_index == 0
 
 
-def test_the_drop_count_survives_a_relaunch(tmp_path, clock, monkeypatch):
-    """``dropped_events`` is persisted, because a *relaunch* is where the
-    manager's cross-check reads it.
-
-    ``seen = len(events()) + dropped_events`` is what stops the history cap
-    from declaring the fold permanently short against a contract counter that
-    never forgets.  As a per-process counter that arithmetic was right inside
-    one process and wrong across the file: the reloaded cache reported 0
-    dropped, so every launch after the cap first trips would schedule a full
-    re-sweep from the creation block, re-drop the same overflow and publish a
-    ``degraded`` that could not clear.
-    """
-    monkeypatch.setattr(curator_cache, "MAX_PERSISTED_EVENTS", 25)
+def test_the_legacy_drop_marker_survives_until_the_manager_repairs_it(
+    tmp_path, clock
+):
+    """Old cache files keep their truncation marker across a restart."""
     path = str(tmp_path / "curator_cache.json")
 
     first = CuratorCache(path=path, clock=clock)
-    first.store_events([_deposit(0, 10**18, index=i) for i in range(30)])
-    assert (len(first.events()), first.dropped_events) == (25, 5)
+    first.store_events([_deposit(0, 10**18, index=i) for i in range(25)])
+    first.dropped_events = 5
     first.save()
 
     second = CuratorCache(path=path, clock=clock)
     second.load()
     assert len(second.events()) == 25
-    assert second.dropped_events == 5, (
-        "the drop count did not survive the file; the fold now reads as 25 "
-        "seen against a contract counter of 30 and re-sweeps from the "
-        "creation block on every launch"
-    )
-    # The same total the cross-check computes, on both sides of the restart.
-    assert len(second.events()) + second.dropped_events == 30
+    assert second.dropped_events == 5
 
     # Loading is a restore, not an accumulation.
     second.load()

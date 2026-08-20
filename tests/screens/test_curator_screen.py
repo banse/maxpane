@@ -3440,7 +3440,7 @@ async def test_export_immediately_replaces_the_live_slice_with_all_wallets(
     from textual.widgets import DataTable
 
     payload = _list_payload(1_001)
-    payload.update(contributors_total=1_002, clean_contributors=1_002)
+    payload.update(contributors_total=1_001, clean_contributors=1_001)
     screen = _export_screen(tmp_path, payload)
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:

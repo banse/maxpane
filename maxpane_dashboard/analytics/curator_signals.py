@@ -142,7 +142,7 @@ READING_KEYS: tuple[str, ...] = (
     "points_per_eth",         # int | None
     "credit_cap_wei",         # int | None
     # --- logs tier ---------------------------------------------------------
-    #: True when the event history has never dropped a row to the cap, which is
+    #: True when every enumerated wallet has a retained deposit row, which is
     #: what makes a *historical* rank computable at all (see `you_ladder`).
     "history_complete",       # bool | None
     "deposits",               # list[DepositEvent] | None — [] is a read that found none
@@ -1142,13 +1142,12 @@ def you_ladder(
     recomputed leave it ``None`` rather than guessing a zero.
 
     ``rank`` -- the place this wallet stood in *right after* that rung -- is
-    filled only when ``history_complete``, which the manager sets from
-    ``cache.dropped_events == 0``.  Computed over a capped history it would
-    count fewer competitors than existed and flatter the reader with a rank
-    they never held, so a short history renders ``--`` instead.  It is a rank
-    by weight at that moment; the fold's tie-break on who joined first is not
-    reconstructed, and ties are rare enough that a shared place is the honest
-    answer anyway.
+    filled only when ``history_complete``. Computed over a truncated history it
+    would count fewer competitors than existed and flatter the reader with a
+    rank they never held, so a short history renders ``--`` instead. It is a
+    rank by weight at that moment; the fold's tie-break on who joined first is
+    not reconstructed, and ties are rare enough that a shared place is the
+    honest answer anyway.
     """
     if not isinstance(address, str):
         return []
@@ -1448,7 +1447,12 @@ def build_signals(readings: Any, *, now_ts: float) -> dict:
     out["deposits_total"] = _int_or_none(read.get("tx_count"))
     out["volume_routed_eth"] = _eth(read.get("volume_wei"))
     if out["contributors_total"] is None and has_logs:
-        out["contributors_total"] = len(rows)
+        first_deposits = read.get("first_deposits")
+        out["contributors_total"] = (
+            len(_first_index_map(first_deposits))
+            if isinstance(first_deposits, (list, tuple))
+            else len(rows)
+        )
     if out["deposits_total"] is None and has_logs:
         out["deposits_total"] = sum(b.deposits for b in buckets)
     if out["volume_routed_eth"] is None and has_logs:

@@ -78,15 +78,6 @@ _SCHEMA_VERSION = 1
 #: outlive that (H15); the oldest points are dropped, never the newest.
 MAX_SERIES_POINTS = 720
 
-#: Longest raw ``Deposited`` history kept on disk and in memory.  The fold, the
-#: hour buckets, the clusters and the activity feed are all recomputed from it
-#: every cycle, so a drop here is a leaderboard that is a *lower bound* rather
-#: than a wrong number — and it is logged with its count so a truncated history
-#: stays discoverable.  231 events landed in the first four hours of the game;
-#: this holds roughly a hundred days at that pace.  Compaction of the folded
-#: table is PRD §12 material, not v1 (H15).
-MAX_PERSISTED_EVENTS = 25_000
-
 #: Wei per ETH.  The **only** division site outside
 #: ``analytics.curator_signals``: the series are persisted in the presentation
 #: unit the sparklines render, and dividing twice is how a number silently
@@ -427,19 +418,10 @@ class CuratorCache:
         #: rows, so this is the only place the rest of the game exists.
         self._events: list[DepositEvent] = []
         self._event_keys: set[tuple[str, int]] = set()
-        #: How many events the cap has dropped from this cache — **persisted**,
-        #: so it means the same thing after a relaunch as it does inside one
-        #: process.  Surfaced so a truncated history is discoverable rather than
-        #: silently short.
-        #:
-        #: It has to survive the file, because the manager's cross-check reads
-        #: it (``seen = len(events()) + dropped_events``) to decide whether the
-        #: fold is short against the contract's own counter, which never forgets.
-        #: As a per-process counter it reset to 0 on every launch, so the first
-        #: cross-check after a restart declared the fold short, scheduled a full
-        #: re-sweep from the creation block, re-dropped the same overflow and
-        #: published ``degraded`` — once per launch, forever, from the day the
-        #: cap first trips.
+        #: Legacy repair marker. Builds before the complete-list view capped
+        #: the event history and persisted how many rows they dropped. A
+        #: positive value now forces one creation-block backfill; it is cleared
+        #: only after that sweep covers the old watermark successfully.
         self.dropped_events: int = 0
         self._first_deposits: list[dict] = []
         self._hour_saved: list[dict] = []
@@ -753,8 +735,9 @@ class CuratorCache:
         ``(block_number, log_index)`` so the activity feed's "newest last" and
         the cluster detector's block windows both read straight off the list.
 
-        The cap drops the **oldest** events and counts the drop
-        (:data:`MAX_PERSISTED_EVENTS`, :attr:`dropped_events`).
+        The complete history is retained. ``Deposited`` carries the running
+        contributor totals used by every full-list row, so dropping even an
+        old event can remove a wallet from the fold entirely.
         """
         added = 0
         for event in events or ():
@@ -766,20 +749,6 @@ class CuratorCache:
             added += 1
         if added:
             self._events.sort(key=lambda e: (e.block_number, e.log_index))
-        if len(self._events) > MAX_PERSISTED_EVENTS:
-            overflow = len(self._events) - MAX_PERSISTED_EVENTS
-            for event in self._events[:overflow]:
-                self._event_keys.discard(_event_key(event))
-            self._events = self._events[overflow:]
-            self.dropped_events += overflow
-            logger.warning(
-                "Curator event history exceeded %d rows; dropped the %d oldest "
-                "(%d dropped this process). The folded totals are now a lower "
-                "bound; the contract's own counters are not.",
-                MAX_PERSISTED_EVENTS,
-                overflow,
-                self.dropped_events,
-            )
         return added
 
     def events(self) -> list[DepositEvent]:
@@ -1087,15 +1056,10 @@ class CuratorCache:
             "settlement": self._settlement_to_dict(),
             "settled_event": dict(self._obituary) if self._obituary else None,
             "events": [_event_to_dict(e) for e in self._events],
-            # Persisted with the events it belongs to: the retained rows are a
-            # lower bound on the history and this is how much lower.  Adding a
-            # key does not move `_SCHEMA_VERSION` -- an older file simply has
-            # none and restores the 0 it always had.
+            # Kept as a migration marker for files written by the old capped
+            # cache. Adding the key did not move `_SCHEMA_VERSION`; an older
+            # file simply has none and restores the 0 it always had.
             "dropped_events": int(self.dropped_events),
-            # Persisted with the events it belongs to: the retained rows are a
-            # lower bound on the history and this is how much lower.  Adding a
-            # key does not move `_SCHEMA_VERSION` -- an older file simply has
-            # none and restores the 0 it always had.
             "first_deposits": [dict(row) for row in self._first_deposits],
             "hour_saved": [dict(row) for row in self._hour_saved],
             "rescued_total_wei": self._rescued_total_wei,
@@ -1305,7 +1269,6 @@ class CuratorCache:
 
 
 __all__ = [
-    "MAX_PERSISTED_EVENTS",
     "MAX_SERIES_POINTS",
     "SERIES_CONTRIBUTORS",
     "SERIES_INPUT_KEYS",

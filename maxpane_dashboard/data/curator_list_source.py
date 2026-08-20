@@ -137,7 +137,7 @@ def load_export_list(
 
     if not isinstance(exported, list):
         return _fallback(live_rows, "invalid_rows")
-    if len(exported) > expected_count or (expected_count > 0 and not exported):
+    if len(exported) != expected_count:
         return _fallback(live_rows, "count_mismatch")
 
     row_key = "clean_list_rows" if cleaned else "leaderboard_rows"

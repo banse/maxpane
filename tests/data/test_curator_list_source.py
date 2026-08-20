@@ -157,7 +157,7 @@ def test_invalid_or_incomplete_export_keeps_the_live_slice(
     assert not (tmp_path / "curator_raw_list.enriched.json").exists()
 
 
-def test_valid_exported_rows_are_used_when_held_history_is_shorter_than_chain_count(
+def test_an_export_shorter_than_the_chain_count_keeps_the_live_slice(
     tmp_path: Path,
 ) -> None:
     exported = [_raw_row(1), _raw_row(2)]
@@ -174,9 +174,9 @@ def test_valid_exported_rows_are_used_when_held_history_is_shorter_than_chain_co
         you_row=None,
     )
 
-    assert result.complete is True
-    assert result.rows == exported
-    assert result.reason is None
+    assert result.complete is False
+    assert result.rows is live_rows
+    assert result.reason == "count_mismatch"
 
 
 @pytest.mark.parametrize("expected_count", (None, True, -1, 3.0, "3"))
