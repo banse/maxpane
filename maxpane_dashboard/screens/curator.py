@@ -164,6 +164,15 @@ from textual.widgets import Static
 from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 
 from maxpane_dashboard import __version__
+from maxpane_dashboard.data.curator_list_filters import (
+    FilterDataUnavailable,
+    FilterSpec,
+    FilterValidationError,
+    empty_filter_values,
+    filter_summary,
+    parse_filter_values,
+    preset_filter,
+)
 from maxpane_dashboard.data.curator_list_source import (
     CLEANED_LIST_BASENAME,
     RAW_LIST_BASENAME,
@@ -186,11 +195,14 @@ from maxpane_dashboard.widgets.curator import (
     CuratorListHero,
     CuratorLeaderboard,
     CuratorCleanedList,
+    CuratorFilteredList,
+    CuratorListFilterEditor,
     CuratorOperators,
     CuratorRawList,
     CuratorSegments,
     CuratorSignals,
     CuratorSparklines,
+    ListOrderChanged,
 )
 from maxpane_dashboard.widgets.status_bar import StatusBar
 
@@ -263,6 +275,8 @@ CLEAN_LIST_BASENAME = "curator_clean_list"
 
 LIST_RAW = "raw"
 LIST_CLEANED = "cleaned"
+LIST_FILTERED = "filtered"
+LIST_VIEWS = (LIST_RAW, LIST_CLEANED, LIST_FILTERED)
 
 CLOSEST_ID = "curator-closest-calls"
 CLUSTERS_ID = "curator-clusters"
@@ -321,9 +335,9 @@ META_KEYS: tuple[str, ...] = ("degraded", "as_of_hhmm", "as_of")
 #: constant with itself and it could never fail again -- the redundancy-plus-
 #: agreement-test pattern CLAUDE.md documents for ``_GAME_CYCLE``.
 #:
-#: ``you_address`` is the one entry that is not a ``CURATOR_KEYS`` key: the
-#: screen supplies the configured wallet so the reader's own row can be
-#: emphasised, and it is the only screen-supplied kwarg on this dashboard.
+#: These screen-supplied entries are not ``CURATOR_KEYS`` keys: the configured
+#: wallet plus current list/filter state belong to this view controller rather
+#: than to the manager's refresh payload.
 #: ``hourly_threshold_eth`` and ``first_judged_hour`` are **not** screen-derived
 #: -- they are read live off the ``once`` tier and dispatched like any other
 #: key, because ``ethNeededThisHour()`` answers 0 through all of grace and on
@@ -422,6 +436,9 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "CuratorCleanedList": (
         "clean_list_rows", "you_list_row", "clean_contributors",
         "analysis_as_of_hhmm",
+    ),
+    "CuratorFilteredList": (
+        "filtered_rows", "you_list_row", "filtered_complete",
     ),
 }
 
@@ -631,12 +648,12 @@ def _default_view(phase) -> str:
 class CuratorScreen(RefreshGuard, Screen):
     """THE LIST -- WhitelistCurator survival watch (Ethereum mainnet).
 
-    Eight bindings: ``r`` refresh; ``c`` swaps CLOSEST CALLS and FAN-OUT
+    Eleven bindings: ``r`` refresh; ``c`` swaps CLOSEST CALLS and FAN-OUT
     PATTERNS in the bottom-right slot (see the module docstring); ``w`` sets
     the wallet; ``y`` swaps the body for the reader's own standing; ``f``
-    swaps it for the linked-wallet analysis, with the doomsday clock left in
-    place; ``l`` opens the raw/clean record lists; ``e`` exports inside ``f``
-    or ``l``; ``esc`` backs out of a secondary view, one-way.
+    opens or applies the list filter; ``l`` opens the record lists; ``1``–``3``
+    apply list presets; ``e`` exports an active list; ``esc`` backs out of a
+    secondary view, one-way. Linked analysis remains callable internally.
     """
 
     BINDINGS = [
@@ -644,12 +661,15 @@ class CuratorScreen(RefreshGuard, Screen):
         Binding("c", "toggle_view", "Calls/Patterns", show=True),
         Binding("w", "set_wallet", "Wallet", show=True),
         Binding("y", "toggle_mode", "You", show=True),
-        Binding("f", "toggle_analysis", "Linked", show=True),
+        Binding("f", "toggle_filter", "Filter", show=False, priority=True),
         Binding("l", "toggle_list", "Lists", show=True),
         # Only acts in MODE_ANALYSIS or MODE_LIST, so it remains a no-op on the
         # dashboard and wallet view -- the `esc` rule's shape.
-        Binding("e", "export_clean_list", "Export", show=False),
+        Binding("e", "export_clean_list", "Export", show=False, priority=True),
         Binding("escape", "back_to_dashboard", "Back", show=False),
+        Binding("1", "apply_filter_preset('1')", "First 1000", show=False),
+        Binding("2", "apply_filter_preset('2')", "Hour 0", show=False),
+        Binding("3", "apply_filter_preset('3')", "Whale splash", show=False),
     ]
 
     #: Worker name for the guarded refresh (see RefreshGuard).
@@ -893,6 +913,44 @@ class CuratorScreen(RefreshGuard, Screen):
         margin: 1 0 0 0;
         padding: 0 1;
     }
+    CuratorScreen CuratorFilteredList {
+        width: 100%;
+        height: 100%;
+        margin: 1 0 0 0;
+        padding: 0 1;
+    }
+    CuratorScreen CuratorListFilterEditor {
+        width: 100%;
+        height: 100%;
+        padding: 0 2;
+        overflow-y: auto;
+    }
+    CuratorScreen .curator-filter-category {
+        height: auto;
+        margin-bottom: 1;
+    }
+    CuratorScreen .curator-filter-fields {
+        height: auto;
+        layout: grid;
+        grid-size: 4;
+        grid-columns: 1fr 1fr 1fr 1fr;
+        grid-gutter: 0 1;
+    }
+    CuratorScreen .curator-filter-field {
+        width: 100%;
+        min-width: 14;
+    }
+    CuratorScreen CuratorListFilterEditor.compact-filter .curator-filter-fields {
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+    }
+    CuratorScreen .filter-invalid {
+        border: tall $error;
+    }
+    CuratorScreen #curator-filter-error {
+        height: 1;
+        color: $error;
+    }
     CuratorScreen CuratorActivity {
         width: 5fr;
         height: auto;
@@ -939,9 +997,17 @@ class CuratorScreen(RefreshGuard, Screen):
         #: Which body is on screen: MODE_DASHBOARD or MODE_WALLET.  The hero and
         #: the title bar belong to neither and are always visible.
         self._mode: str = MODE_DASHBOARD
-        #: Which of the two precomposed full-width record tables list mode
+        #: Which of the three precomposed full-width record tables list mode
         #: shows. Kept across leaving and re-entering the mode.
         self._list_view: str = LIST_RAW
+        self._filter_editor_open = False
+        self._custom_filter_values = empty_filter_values()
+        self._active_filter: FilterSpec | None = None
+        self._filter_summary: tuple[str, ...] = ()
+        self._filtered_rows: list[dict] | None = []
+        self._filtered_complete = False
+        self._filtered_source_reason: str | None = None
+        self._you_filtered_index: int | None = None
         #: True once the reader has pressed ``c``.  From then on the
         #: phase-aware default stops applying: a panel that snaps back while
         #: you are reading it is worse than a suboptimal default.
@@ -1017,6 +1083,8 @@ class CuratorScreen(RefreshGuard, Screen):
         with Vertical(id=LIST_BODY_ID):
             yield CuratorRawList()
             yield CuratorCleanedList()
+            yield CuratorFilteredList()
+            yield CuratorListFilterEditor()
 
         yield StatusBar()
 
@@ -1031,7 +1099,7 @@ class CuratorScreen(RefreshGuard, Screen):
     #: at the measured 138-column curator width.
     KEY_HINTS = (
         "[dim]c[/] panels [dim]·[/] [dim]y[/] you [dim]·[/] "
-        "[dim]f[/] linked [dim]·[/] [dim]l[/] lists"
+        "[dim]l[/] lists"
     )
 
     def on_mount(self) -> None:
@@ -1057,13 +1125,24 @@ class CuratorScreen(RefreshGuard, Screen):
             logger.debug("Curator view toggle failed: %s", exc)
 
     def _show_list_view(self) -> None:
-        """Show exactly the selected precomposed full-width record table."""
-        showing_cleaned = self._list_view == LIST_CLEANED
+        """Show exactly one precomposed record table or the filter editor."""
         try:
-            self.query_one(CuratorRawList).display = not showing_cleaned
-            self.query_one(CuratorCleanedList).display = showing_cleaned
+            self.query_one(CuratorRawList).display = (
+                not self._filter_editor_open and self._list_view == LIST_RAW
+            )
+            self.query_one(CuratorCleanedList).display = (
+                not self._filter_editor_open and self._list_view == LIST_CLEANED
+            )
+            self.query_one(CuratorFilteredList).display = (
+                not self._filter_editor_open and self._list_view == LIST_FILTERED
+            )
+            self.query_one(CuratorListFilterEditor).display = (
+                self._filter_editor_open
+            )
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("Curator list toggle failed: %s", exc)
+        if self._title_data is not None:
+            self._dispatch_list_hero(self._title_data)
 
     def _show_mode(self) -> None:
         """Apply :attr:`_mode` to the four bodies' visibility.
@@ -1121,7 +1200,7 @@ class CuratorScreen(RefreshGuard, Screen):
         self._show_mode()
 
     def action_toggle_analysis(self) -> None:
-        """``f`` -- swap the body for the linked-wallet analysis, or back.
+        """Swap the body for the legacy linked-wallet analysis, or back.
 
         Mirrors :meth:`action_toggle_mode`, minus the wallet gate: the
         OPERATORS and SEGMENTS panels are about the population, so the view
@@ -1138,9 +1217,75 @@ class CuratorScreen(RefreshGuard, Screen):
         entering = self._mode != MODE_LIST
         self._mode = MODE_LIST if entering else MODE_DASHBOARD
         self._show_mode()
-        if entering:
+        if entering and self._list_view != LIST_FILTERED:
             self._list_source_pending = True
             self._load_selected_list_source()
+
+    def _apply_filter(self, spec: FilterSpec) -> bool:
+        data = self._title_data or {}
+        result = self._data_manager.filtered_list_rows(
+            self._export_dir or Path.home() / ".maxpane",
+            expected_count=data.get("contributors_total"),
+            live_rows=data.get("leaderboard_rows"),
+            you_row=data.get("you_list_row"),
+            spec=spec,
+        )
+        self._active_filter = spec
+        self._filter_summary = filter_summary(spec)
+        self._filtered_rows = result.rows
+        self._filtered_complete = result.complete
+        self._filtered_source_reason = result.source_reason
+        self._you_filtered_index = None
+        self._dispatch_filtered_list(data)
+        self._dispatch_list_hero(data)
+        return True
+
+    def action_apply_filter_preset(self, key: str) -> None:
+        """Apply one list-only filter preset immediately."""
+        if self._mode != MODE_LIST or self._filter_editor_open:
+            return
+        spec = preset_filter(key)
+        self._list_view = LIST_FILTERED
+        try:
+            self._apply_filter(spec)
+        except FilterDataUnavailable as exc:
+            data = self._title_data or {}
+            self._active_filter = spec
+            self._filter_summary = filter_summary(spec)
+            self._filtered_rows = None
+            self._filtered_complete = False
+            self._filtered_source_reason = str(exc)
+            self._you_filtered_index = None
+            self._dispatch_filtered_list(data)
+            self._dispatch_list_hero(data)
+        self._show_list_view()
+
+    def action_toggle_filter(self) -> None:
+        """Open the custom list filter editor, or apply its current draft."""
+        if self._mode != MODE_LIST:
+            return
+        editor = self.query_one(CuratorListFilterEditor)
+        if not self._filter_editor_open:
+            self._list_view = LIST_FILTERED
+            editor.set_values(self._custom_filter_values)
+            editor.clear_error()
+            self._filter_editor_open = True
+            self._show_list_view()
+            return
+
+        self._custom_filter_values = editor.values()
+        try:
+            spec = parse_filter_values(self._custom_filter_values)
+        except FilterValidationError as exc:
+            editor.show_error(exc.field, str(exc))
+            return
+        try:
+            self._apply_filter(spec)
+        except FilterDataUnavailable as exc:
+            editor.show_error(None, str(exc))
+            return
+        self._filter_editor_open = False
+        self._show_list_view()
 
     def action_export_clean_list(self) -> None:
         """``e`` -- export the active analysis or record-list view.
@@ -1221,12 +1366,14 @@ class CuratorScreen(RefreshGuard, Screen):
         choice is the reader's, across every later phase change.
         """
         if self._mode == MODE_LIST:
-            self._list_view = (
-                LIST_RAW if self._list_view == LIST_CLEANED else LIST_CLEANED
-            )
+            if self._filter_editor_open:
+                return
+            current = LIST_VIEWS.index(self._list_view)
+            self._list_view = LIST_VIEWS[(current + 1) % len(LIST_VIEWS)]
             self._show_list_view()
-            self._list_source_pending = True
-            self._load_selected_list_source()
+            if self._list_view != LIST_FILTERED:
+                self._list_source_pending = True
+                self._load_selected_list_source()
             return
         self._active_view = (
             VIEW_CLUSTERS if self._active_view == VIEW_CLOSEST else VIEW_CLOSEST
@@ -1401,6 +1548,55 @@ class CuratorScreen(RefreshGuard, Screen):
         except Exception as exc:  # noqa: BLE001
             logger.debug("Failed to update %s: %s", name, exc)
 
+    def _dispatch_filtered_list(self, data: dict) -> None:
+        self._dispatch(
+            CuratorFilteredList,
+            {
+                **data,
+                "filtered_rows": self._filtered_rows,
+                "filtered_complete": self._filtered_complete,
+            },
+        )
+
+    def _dispatch_list_hero(self, data: dict) -> None:
+        rows = self._filtered_rows
+        you_row = data.get("you_list_row") or {}
+        self._dispatch(
+            CuratorListHero,
+            {
+                **data,
+                "list_view": self._list_view,
+                "filtered_contributors": (
+                    len(rows) if isinstance(rows, list) else None
+                ),
+                "filtered_points": (
+                    sum(
+                        row["points"]
+                        for row in rows
+                        if isinstance(row.get("points"), int)
+                    )
+                    if isinstance(rows, list)
+                    else None
+                ),
+                "you_filtered_index": self._you_filtered_index,
+                "you_first_index": you_row.get("first_index"),
+                "you_first_hour": you_row.get("first_hour"),
+                "filter_summary": self._filter_summary,
+            },
+        )
+
+    def on_list_order_changed(self, event: ListOrderChanged) -> None:
+        if event.kind != LIST_FILTERED:
+            return
+        address = self._wallet.casefold() if isinstance(self._wallet, str) else None
+        self._you_filtered_index = (
+            event.addresses.index(address) + 1
+            if address is not None and address in event.addresses
+            else None
+        )
+        if self._title_data is not None:
+            self._dispatch_list_hero(self._title_data)
+
     def _load_selected_list_source(self) -> None:
         """Load the selected complete export at an explicit reader boundary."""
         data = self._title_data
@@ -1467,7 +1663,6 @@ class CuratorScreen(RefreshGuard, Screen):
 
         for widget_cls in (
             CuratorHero,
-            CuratorListHero,
             CuratorLeaderboard,
             CuratorSparklines,
             CuratorSignals,
@@ -1495,6 +1690,9 @@ class CuratorScreen(RefreshGuard, Screen):
             CuratorCleanedList,
         ):
             self._dispatch(widget_cls, data)
+
+        self._dispatch_filtered_list(data)
+        self._dispatch_list_hero(data)
 
         if self._list_source_pending and self._mode == MODE_LIST:
             self._load_selected_list_source()

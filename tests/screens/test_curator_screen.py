@@ -97,7 +97,8 @@ from textual.widgets import Input
 
 from maxpane_dashboard import __version__
 from maxpane_dashboard.analytics.curator_signals import MANAGER_OWNED_KEYS
-from maxpane_dashboard.data.curator_manager import SOURCES
+from maxpane_dashboard.data.curator_list_filters import FilterContext, filter_rows
+from maxpane_dashboard.data.curator_manager import FilteredListResult, SOURCES
 from maxpane_dashboard.data.curator_models import CURATOR_KEYS, PHASES
 from maxpane_dashboard.widgets.curator.wallet import (
     AT_THE_CAP,
@@ -161,7 +162,10 @@ from maxpane_dashboard.widgets.curator import (
     CuratorSegments,
     CuratorCleanList,
     CuratorCleanedList,
+    CuratorFilteredList,
+    CuratorListFilterEditor,
     CuratorRawList,
+    ListOrderChanged,
 )
 # Imported, never re-spelled: these are WP4's rendered interface.  A literal
 # retyped here would certify a string nobody renders.
@@ -170,6 +174,7 @@ from maxpane_dashboard.widgets.curator import (
     CLEAN_LIST_TITLE,
     CLOSEST_CALLS_TITLE,
     CLUSTERS_TITLE,
+    FILTERED_LIST_UNAVAILABLE,
     LEADERBOARD_TITLE,
     NO_JUDGED_HOURS,
     NO_WALLET,
@@ -209,6 +214,7 @@ _PANELS = (
     # The `l` view's two record tables.
     CuratorRawList,
     CuratorCleanedList,
+    CuratorFilteredList,
 )
 
 #: The window the width sweep scans.  Deliberately independent of
@@ -335,6 +341,8 @@ class _FakeManager:
         #: every "no fault language on screen" assertion below vacuous.
         self._error_count = 0
         self.calls = 0
+        self.families_by_address: dict[str, frozenset[str]] | None = {}
+        self.whale_addresses: frozenset[str] | None = frozenset()
 
     async def fetch_and_compute(self) -> dict:
         self.calls += 1
@@ -348,6 +356,23 @@ class _FakeManager:
     def full_list_rows(self, *, cleaned: bool) -> list[dict] | None:
         rows = self.full_clean_rows if cleaned else self.full_raw_rows
         return list(rows) if isinstance(rows, list) else None
+
+    def filtered_list_rows(
+        self, directory, *, expected_count, live_rows, you_row, spec
+    ) -> FilteredListResult:
+        if not isinstance(live_rows, list):
+            return FilteredListResult(None, False, "missing")
+        context = FilterContext(
+            families_by_address=(
+                self.families_by_address if spec.families else None
+            ),
+            whale_addresses=self.whale_addresses if spec.whale else None,
+        )
+        return FilteredListResult(
+            filter_rows(live_rows, spec, context),
+            False,
+            "missing",
+        )
 
 
 class _Harness(App):
@@ -508,17 +533,17 @@ async def _first_clean_width(payload=None, view: str | None = None,
 # =======================================================================
 
 
-def test_the_eight_bindings_are_the_ones_this_screen_documents():
+def test_the_eleven_bindings_are_the_ones_this_screen_documents():
     """Hand-typed rather than derived: a set compared against itself could not
     catch a binding that was added, renamed or lost.
 
     `r` refresh, `c` swap the bottom-right slot, `w` set the wallet,
-    `y` the wallet view, `f` the analysis view, `l` the record-list view,
+    `y` the wallet view, `f` the list filter, `l` the record-list view,
     `e` export the active list view (analysis or record lists), `escape` back
-    out of any secondary view.
+    out of any secondary view, and `1`/`2`/`3` apply list-filter presets.
     """
     assert {binding.key for binding in CuratorScreen.BINDINGS} == {
-        "r", "c", "w", "y", "f", "l", "e", "escape",
+        "r", "c", "w", "y", "f", "l", "e", "escape", "1", "2", "3",
     }
 
 
@@ -526,7 +551,8 @@ def test_every_binding_has_the_action_it_names():
     """A `Binding` naming a missing action fails silently at keypress time --
     Textual logs and moves on, so the key simply does nothing."""
     for binding in CuratorScreen.BINDINGS:
-        assert hasattr(CuratorScreen, f"action_{binding.action}"), binding.key
+        action_name = binding.action.partition("(")[0]
+        assert hasattr(CuratorScreen, f"action_{action_name}"), binding.key
 
 
 def test_the_worker_name_is_the_screens_own():
@@ -561,8 +587,13 @@ async def test_screen_mounts_every_widget():
         from maxpane_dashboard.screens.curator import LIST_BODY_ID
 
         lists = screen.query_one(f"#{LIST_BODY_ID}")
-        assert len(lists.children) == 2
-        assert [child.display for child in lists.children] == [True, False]
+        assert len(lists.children) == 4
+        assert [child.display for child in lists.children] == [
+            True,
+            False,
+            False,
+            False,
+        ]
         assert lists.display is False
         for cls in _PANELS:
             assert screen.query_one(cls) is not None
@@ -2118,7 +2149,7 @@ async def test_the_headline_value_in_the_rail_is_bold_and_coloured():
         assert tail is None or not tail.bold
 
 
-async def test_the_curator_status_line_names_its_own_four_keys():
+async def test_the_curator_status_line_names_its_reachable_view_keys():
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
     async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
@@ -2128,7 +2159,8 @@ async def test_the_curator_status_line_names_its_own_four_keys():
         text = _screen_text(app)
 
     assert "c panels" in text and "y you" in text
-    assert "f linked" in text and "l lists" in text
+    assert "l lists" in text
+    assert "f linked" not in text
     assert "updated" not in text        # traded for the hints
     assert "quit" in text and "refresh" in text and "menu" in text
     assert "poll" in text
@@ -2419,7 +2451,7 @@ async def _analysis_view_text(payload=None, *, width=CURATOR_FULL_LAYOUT_COLUMNS
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         return _screen_text(app)
 
@@ -2436,7 +2468,7 @@ async def test_f_swaps_the_body_for_the_three_analysis_panels():
         dashboard = _screen_text(app)
         assert OPERATORS_TITLE not in dashboard
 
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         text = _screen_text(app)
 
@@ -2462,7 +2494,7 @@ async def test_the_clock_never_leaves_the_screen_in_the_analysis_view():
         await pilot.pause()
         hero_before = _region_text(app, screen.query_one(CuratorHero), screen)
 
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
 
         assert screen.query_one(CuratorHero).display is True
@@ -2483,14 +2515,14 @@ async def test_f_toggles_back_and_escape_backs_out_one_way():
         await screen._do_refresh()
         await pilot.pause()
 
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         assert screen._mode == MODE_ANALYSIS
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         assert screen._mode == MODE_DASHBOARD
 
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         await pilot.press("escape")
         await pilot.pause()
@@ -2521,7 +2553,7 @@ async def test_y_and_f_cross_transitions_land_in_the_right_mode():
         await pilot.press("y")
         await pilot.pause()
         assert screen._mode == MODE_WALLET
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         assert screen._mode == MODE_ANALYSIS
         assert screen.query_one(f"#{ANALYSIS_BODY_ID}").display is True
@@ -2547,7 +2579,7 @@ async def test_the_analysis_panels_are_dispatched_while_hidden():
         await screen._do_refresh()
         await pilot.pause()
         # No second refresh after the keypress: the data must already be there.
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         text = _screen_text(app)
         # Anchored on the OPERATORS panel's own region, not a screen line
@@ -2570,7 +2602,7 @@ async def test_the_analysis_panels_are_dispatched_while_hidden():
     assert "16 linked groups" in ops        # the note only a dispatch writes
 
 
-async def test_the_status_line_keeps_the_f_key_beside_the_l_key():
+async def test_the_status_line_hides_linked_but_the_action_remains_reachable():
     screen = _screen(_analysis_payload())
     app = _ThemedHarness(screen)
     async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
@@ -2578,7 +2610,10 @@ async def test_the_status_line_keeps_the_f_key_beside_the_l_key():
         await screen._do_refresh()
         await pilot.pause()
         text = _screen_text(app)
-    assert "f linked" in text and "l lists" in text
+        screen.action_toggle_analysis()
+        await pilot.pause()
+    assert screen._mode == "analysis"
+    assert "f linked" not in text and "l lists" in text
     assert "y you" in text
 
 
@@ -2640,7 +2675,7 @@ async def test_e_in_the_analysis_view_writes_both_files_and_names_the_path(
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         await pilot.press("e")
         await pilot.pause()
@@ -2737,7 +2772,7 @@ async def test_the_analysis_binding_panel_is_the_operators_table():
             await pilot.pause()
             await screen._do_refresh()
             await pilot.pause()
-            await pilot.press("f")
+            screen.action_toggle_analysis()
             await pilot.pause()
             marked = {
                 cls.__name__
@@ -2772,7 +2807,7 @@ async def test_a_short_analysis_terminal_scrolls_and_announces():
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         text = _screen_text(app)
         assert TALLER_HINT in text
@@ -2851,7 +2886,7 @@ async def test_e_with_nothing_analyzed_writes_nothing(tmp_path):
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         await pilot.press("e")
         await pilot.pause()
@@ -2874,7 +2909,7 @@ async def test_e_on_an_analyzed_empty_list_writes_the_honest_record(tmp_path):
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         await pilot.press("e")
         await pilot.pause()
@@ -2910,7 +2945,7 @@ async def test_a_failed_export_never_leaves_a_stale_receipt(tmp_path):
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         await pilot.press("e")
         await pilot.pause()
@@ -2956,7 +2991,7 @@ async def test_a_first_export_that_fails_says_so_and_writes_nothing(tmp_path):
             await pilot.pause()
             await screen._do_refresh()
             await pilot.pause()
-            await pilot.press("f")
+            screen.action_toggle_analysis()
             await pilot.pause()
             await pilot.press("e")
             await pilot.pause()
@@ -3010,6 +3045,163 @@ def _list_payload(row_count: int = 100) -> dict:
             "clean_rank": clean[0]["clean_rank"],
         } if raw else None,
     )
+
+
+async def test_c_cycles_raw_cleaned_filtered_and_remembers_filtered():
+    screen = _screen(_list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l")
+        assert screen._list_view == "raw"
+        await pilot.press("c")
+        assert screen._list_view == "cleaned"
+        await pilot.press("c")
+        assert screen._list_view == "filtered"
+        assert screen.query_one(CuratorFilteredList).export_rows() == []
+        await pilot.press("l", "l")
+        assert screen._list_view == "filtered"
+        await pilot.press("c")
+        assert screen._list_view == "raw"
+
+
+@pytest.mark.parametrize(
+    ("key", "ranks", "summary"),
+    (
+        ("1", [1, 2, 3], "join #1-1,000"),
+        ("2", [], "joined hour 0"),
+        ("3", [3], "single deposit >=25 ETH"),
+    ),
+)
+async def test_list_presets_switch_to_filtered_and_apply_immediately(
+    key, ranks, summary
+):
+    payload = _list_payload(3)
+    payload["leaderboard_rows"][2]["first_hour"] = 24
+    screen = _screen(payload)
+    screen._data_manager.whale_addresses = frozenset(
+        {payload["leaderboard_rows"][2]["address"].casefold()}
+    )
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", key)
+        await pilot.pause()
+        assert screen._list_view == "filtered"
+        assert [
+            row["rank"]
+            for row in screen.query_one(CuratorFilteredList).export_rows()
+        ] == ranks
+        assert summary in _region_text(
+            app, screen.query_one(CuratorListHero), screen
+        )
+
+
+async def test_f_opens_blank_editor_then_applies_and_retains_custom_values():
+    screen = _screen(_list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        assert screen._list_view == "filtered" and editor.display is True
+        assert editor.values()["hour_min"] == ""
+        editor.query_one("#filter-hour-min", Input).value = "0"
+        editor.query_one("#filter-hour-max", Input).value = "0"
+        await pilot.press("f")
+        assert editor.display is False
+        await pilot.press("f")
+        assert editor.values()["hour_min"] == "0"
+
+
+async def test_filter_shortcuts_are_list_only_and_editor_blocks_cycle_and_presets():
+    screen = _screen(_list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("1", "2", "3", "f")
+        assert screen._mode == MODE_DASHBOARD
+        await pilot.press("l", "f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        numeric = editor.query_one("#filter-join-min", Input)
+        numeric.focus()
+        await pilot.press("1", "2", "3", "c")
+        assert editor.display is True and screen._list_view == "filtered"
+        assert numeric.value == "123"
+        assert screen._active_filter is None
+
+
+async def test_custom_filter_data_unavailable_keeps_the_editor_open():
+    screen = _screen(_list_payload(3))
+    screen._data_manager.families_by_address = None
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        editor.query_one("#filter-family-amount").value = True
+        await pilot.press("f")
+        await pilot.pause()
+        assert editor.display is True
+        assert "linked analysis unavailable" in _region_text(app, editor, screen)
+
+
+async def test_invalid_custom_filter_names_and_focuses_the_bad_field():
+    screen = _screen(_list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        bad = editor.query_one("#filter-hour-min", Input)
+        bad.value = "2"
+        editor.query_one("#filter-hour-max", Input).value = "1"
+        await pilot.press("f")
+        await pilot.pause()
+        assert editor.display is True
+        assert bad.has_class("filter-invalid")
+        assert app.focused is bad
+        assert "hour_min must not exceed hour_max" in _region_text(
+            app, editor, screen
+        )
+
+
+async def test_unavailable_preset_shows_the_filtered_table_without_crashing():
+    screen = _screen(_list_payload(3))
+    screen._data_manager.whale_addresses = None
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "3")
+        await pilot.pause()
+        filtered = screen.query_one(CuratorFilteredList)
+        assert screen._list_view == "filtered" and filtered.display is True
+        assert FILTERED_LIST_UNAVAILABLE in _region_text(app, filtered, screen)
+
+
+async def test_filtered_order_message_updates_the_wallet_hero_index():
+    payload = _list_payload(3)
+    wallet = payload["leaderboard_rows"][0]["address"]
+    screen = _screen(payload, wallet=wallet)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "1")
+        await pilot.pause()
+        addresses = tuple(
+            row["address"].casefold()
+            for row in (
+                payload["leaderboard_rows"][1],
+                payload["leaderboard_rows"][0],
+                payload["leaderboard_rows"][2],
+            )
+        )
+        screen.on_list_order_changed(ListOrderChanged("filtered", addresses))
+        screen.on_list_order_changed(ListOrderChanged("raw", addresses[::-1]))
+        await pilot.pause()
+        hero = _region_text(app, screen.query_one(CuratorListHero), screen)
+    assert screen._you_filtered_index == 2
+    assert "#2 of 3 (filtered)" in hero
 
 
 async def test_l_opens_one_raw_table_and_c_toggles_a_remembered_clean_table():
@@ -3276,23 +3468,31 @@ async def test_the_list_view_alone_swaps_in_the_record_summary_hero():
         assert list_hero.display is True
         assert screen.query_one(f"#{WALLET_HERO_ID}").display is False
         assert "CLOCK" not in text
-        assert "THE LIST" in text and "THE CLEANED LIST" in text
+        assert "THE LIST" in text and "THE FILTER" in text
+        assert "THE CLEANED LIST" not in text
         assert "THE WALLET" in text
         assert "reader.eth" in text
         assert (
             text.index("THE LIST")
             < text.index("THE WALLET")
-            < text.index("THE CLEANED LIST")
+            < text.index("THE FILTER")
         )
         assert "#15,234 of 19,522 (raw)" in text
-        assert "#7,042 of 8,750 (clean)" in text
         assert "clusters" not in text
         assert "removed (via sybilkit)" not in text
         assert "42,721 pts" in text
-        assert "8,750 wallets" in text and "12,345,678 pts" in text
+
+        await pilot.press("c")
+        await pilot.pause()
+        cleaned_text = _region_text(app, list_hero, screen)
+        assert "THE CLEANED LIST" in cleaned_text
+        assert "THE LIST" not in cleaned_text
+        assert "#7,042 of 8,750 (clean)" in cleaned_text
+        assert "8,750 wallets" in cleaned_text
+        assert "12,345,678 pts" in cleaned_text
 
         # The linked-analysis view still uses the original dashboard hero.
-        await pilot.press("f")
+        screen.action_toggle_analysis()
         await pilot.pause()
         assert screen.query_one(CuratorHero).display is True
         assert list_hero.display is False
@@ -3334,8 +3534,9 @@ async def test_the_fourth_hint_preserves_the_worst_case_error_count():
         await screen._do_refresh()
         await pilot.pause()
         text = _screen_text(app)
-    for hint in ("c panels", "y you", "f linked", "l lists", "4 errors"):
+    for hint in ("c panels", "y you", "l lists", "4 errors"):
         assert hint in text, hint
+    assert "f linked" not in text
     assert "[dim]e[/]" not in CuratorScreen.KEY_HINTS
 
 
