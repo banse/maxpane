@@ -4419,10 +4419,14 @@ async def test_each_list_title_uses_its_authoritative_wallet_total():
     assert "-- wallets" not in unknown
 
 
-@pytest.mark.parametrize("kind", ("raw", "clean"))
+@pytest.mark.parametrize("kind", ("raw", "clean", "filtered"))
 async def test_the_list_footer_is_an_aligned_you_row_followed_by_one_blank_line(kind):
     from textual.widgets import DataTable, Static
-    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+    from maxpane_dashboard.widgets.curator import (
+        CuratorCleanedList,
+        CuratorFilteredList,
+        CuratorRawList,
+    )
 
     address = "0x1234567890abcdef1234567890abcdef1234abcd"
     table_row = {
@@ -4451,16 +4455,26 @@ async def test_the_list_footer_is_an_aligned_you_row_followed_by_one_blank_line(
         "name": "you.eth",
         "link_conf": "low",
     }
-    widget = CuratorRawList() if kind == "raw" else CuratorCleanedList()
+    widget = {
+        "raw": CuratorRawList(),
+        "clean": CuratorCleanedList(),
+        "filtered": CuratorFilteredList(),
+    }[kind]
     app = _Harness(widget)
     async with app.run_test(size=(143, 18)) as pilot:
         if kind == "raw":
             widget.update_data(
                 leaderboard_rows=[table_row], you_list_row=you_row
             )
-        else:
+        elif kind == "clean":
             widget.update_data(
                 clean_list_rows=[table_row], you_list_row=you_row
+            )
+        else:
+            widget.update_data(
+                filtered_rows=[table_row],
+                you_list_row=you_row,
+                filtered_complete=True,
             )
         await pilot.pause()
 

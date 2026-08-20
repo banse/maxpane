@@ -3010,6 +3010,32 @@ async def test_a_first_export_that_fails_says_so_and_writes_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def test_filter_changes_are_confined_to_the_curator_list_view():
+    source = (_ROOT / "maxpane_dashboard" / "screens" / "curator.py").read_text()
+    shared_hero = (
+        _ROOT / "maxpane_dashboard" / "widgets" / "curator" / "hero.py"
+    ).read_text()
+    assert "CuratorListFilterEditor" in source
+    assert "THE FILTERED LIST" not in shared_hero
+
+
+async def test_dashboard_wallet_and_hidden_analysis_bodies_still_render():
+    from maxpane_dashboard.screens.curator import ANALYSIS_BODY_ID, MODE_ANALYSIS
+
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        assert "CLOCK" in _region_text(app, screen.query_one(CuratorHero), screen)
+        await pilot.press("y")
+        assert screen._mode == MODE_WALLET
+        screen.action_back_to_dashboard()
+        screen.action_toggle_analysis()
+        await pilot.pause()
+        assert screen._mode == MODE_ANALYSIS
+        assert screen.query_one(f"#{ANALYSIS_BODY_ID}").display is True
+
+
 def _list_payload(row_count: int = 100) -> dict:
     raw = []
     clean = []
@@ -3413,6 +3439,26 @@ async def test_the_list_you_row_and_blank_line_sit_immediately_above_status():
         assert blank.region.bottom == status.region.y
 
 
+async def test_the_filtered_you_row_and_blank_line_sit_immediately_above_status():
+    from textual.widgets import Static
+
+    screen = _screen(_list_payload(1))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "1")
+        await pilot.pause()
+
+        filtered = screen.query_one(CuratorFilteredList)
+        footer = filtered.query_one(".curator-list-you")
+        blank = filtered.query_one(".curator-list-blank", Static)
+        status = screen.query_one(StatusBar)
+        assert footer.region.height == 1
+        assert blank.region.height == 1
+        assert footer.region.bottom == blank.region.y
+        assert blank.region.bottom == status.region.y
+
+
 @pytest.mark.parametrize("harness", (_Harness, _ThemedHarness))
 async def test_each_visible_list_table_fills_the_list_body(harness):
     from maxpane_dashboard.screens.curator import LIST_BODY_ID
@@ -3562,45 +3608,60 @@ async def test_the_table_owns_row_cursor_and_vertical_scrolling():
     assert "raw100.eth" in tail
 
 
-async def test_the_full_raw_header_fits_beside_the_active_scrollbar():
+@pytest.mark.parametrize(
+    ("kind", "table_id", "widget_cls"),
+    (
+        ("raw", "#curator-raw-list-table", CuratorRawList),
+        ("cleaned", "#curator-cleaned-list-table", CuratorCleanedList),
+        ("filtered", "#curator-filtered-list-table", CuratorFilteredList),
+    ),
+)
+async def test_every_143_column_list_header_fits_beside_the_active_scrollbar(
+    kind, table_id, widget_cls
+):
     from textual.widgets import DataTable
-    from maxpane_dashboard.widgets.curator import CuratorRawList
 
     screen = _screen(_list_payload(100))
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 30)) as pilot:
-        await pilot.pause()
         await screen._do_refresh()
         await pilot.press("l")
+        if kind == "cleaned":
+            await pilot.press("c")
+        elif kind == "filtered":
+            await pilot.press("1")
         await pilot.pause()
-        table = screen.query_one("#curator-raw-list-table", DataTable)
-        rendered = _region_text(app, screen.query_one(CuratorRawList), screen)
+        table = screen.query_one(table_id, DataTable)
+        rendered = _region_text(app, screen.query_one(widget_cls), screen)
 
     assert table.show_vertical_scrollbar is True
     assert table.scrollbar_size_vertical == 1
     assert table.show_horizontal_scrollbar is False
-    assert "WINDOW  LINK" in rendered
+    assert "WINDOW" in rendered
+    assert "LINK" not in rendered
 
 
-async def _first_list_width(cleaned: bool) -> int | None:
+async def _first_list_width(kind: str) -> int | None:
     # Enough rows to keep the vertical scrollbar engaged throughout the sweep.
     screen = _screen(_list_payload(100))
     app = _ThemedHarness(screen)
     async with app.run_test(size=(80, _TALL)) as pilot:
-        await pilot.pause()
         await screen._do_refresh()
         await pilot.press("l")
-        if cleaned:
+        # Populate filtered once, then return to raw so every mode starts the
+        # measured navigation from the same state with 100 rows behind it.
+        await pilot.press("1", "c")
+        for _ in range(("raw", "cleaned", "filtered").index(kind)):
             await pilot.press("c")
         await pilot.pause()
         for width in range(80, 144):
             await pilot.resize_terminal(width, _TALL)
             await pilot.pause()
-            table_id = (
-                "#curator-cleaned-list-table"
-                if cleaned
-                else "#curator-raw-list-table"
-            )
+            table_id = {
+                "raw": "#curator-raw-list-table",
+                "cleaned": "#curator-cleaned-list-table",
+                "filtered": "#curator-filtered-list-table",
+            }[kind]
             table = screen.query_one(table_id)
             if (
                 "‹ widen" not in _screen_text(app)
@@ -3610,15 +3671,13 @@ async def _first_list_width(cleaned: bool) -> int | None:
     return None
 
 
-async def test_both_list_width_sweeps_clear_inside_the_unchanged_app_pin():
+@pytest.mark.parametrize("kind", ("raw", "cleaned", "filtered"))
+async def test_every_list_clears_inside_the_143_column_app_pin(kind):
     from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 
-    raw_width = await _first_list_width(False)
-    clean_width = await _first_list_width(True)
-    assert raw_width == 143
-    assert clean_width == 137
-    assert raw_width <= FULL_LAYOUT_COLUMNS == 143
-    assert CURATOR_FULL_LAYOUT_COLUMNS == 138
+    width = await _first_list_width(kind)
+    assert width == 143
+    assert width <= FULL_LAYOUT_COLUMNS == 143
 
 
 async def test_e_in_filter_editor_writes_nothing_and_names_apply_first(
