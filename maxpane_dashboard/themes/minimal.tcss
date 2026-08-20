@@ -2391,7 +2391,7 @@ CuratorCleanList {
 }
 
 /* ---------------------------------------------------------------------------
- * THE LIST's `l` view -- the complete raw and cleaned record lists.
+ * THE LIST's `l` view -- raw, cleaned, filtered, and the filter editor.
  * ------------------------------------------------------------------------ */
 CuratorScreen #curator-list-body {
     height: 1fr;

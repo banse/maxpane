@@ -251,14 +251,14 @@ DASHBOARD_BODY_ID = "curator-dashboard-body"
 WALLET_BODY_ID = "curator-wallet-body"
 #: The `f` view's body — OPERATORS over SEGMENTS over CLEANED LIST.
 ANALYSIS_BODY_ID = "curator-analysis-body"
-#: The `l` view's body -- one full-width raw or cleaned record table.
+#: The `l` view's body -- raw, cleaned, filtered, or the filter editor.
 LIST_BODY_ID = "curator-list-body"
 #: The wallet and record-list bodies each own a hero that swaps with them.
 WALLET_HERO_ID = "curator-wallet-hero"
 LIST_HERO_ID = "curator-list-hero"
 
-#: The four modes: game, reader standing, linked-wallet analysis, and the two
-#: complete record lists. A fifth spelling is a silent fallback arm.
+#: The four modes: game, reader standing, linked-wallet analysis, and the
+#: record-list controller. A fifth spelling is a silent fallback arm.
 #:
 #: `analysis` keeps the dashboard hero. `wallet` and `list` use their own
 #: precomposed heroes so switching modes never paints an empty first frame.
@@ -1303,6 +1303,8 @@ class CuratorScreen(RefreshGuard, Screen):
         never opened and truncated in place.
         """
         if self._mode == MODE_LIST:
+            if self._filter_editor_open:
+                return
             cleaned = self._list_view == LIST_CLEANED
             panel = CuratorCleanedList if cleaned else CuratorRawList
             try:

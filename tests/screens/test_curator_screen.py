@@ -341,6 +341,7 @@ class _FakeManager:
         #: every "no fault language on screen" assertion below vacuous.
         self._error_count = 0
         self.calls = 0
+        self.full_list_calls: list[bool] = []
         self.families_by_address: dict[str, frozenset[str]] | None = {}
         self.whale_addresses: frozenset[str] | None = frozenset()
 
@@ -354,6 +355,7 @@ class _FakeManager:
         pass
 
     def full_list_rows(self, *, cleaned: bool) -> list[dict] | None:
+        self.full_list_calls.append(cleaned)
         rows = self.full_clean_rows if cleaned else self.full_raw_rows
         return list(rows) if isinstance(rows, list) else None
 
@@ -3617,6 +3619,22 @@ async def test_both_list_width_sweeps_clear_inside_the_unchanged_app_pin():
     assert clean_width == 137
     assert raw_width <= FULL_LAYOUT_COLUMNS == 143
     assert CURATOR_FULL_LAYOUT_COLUMNS == 138
+
+
+async def test_e_while_filter_editor_is_open_skips_manager_and_writes_nothing(
+    tmp_path,
+):
+    screen = _export_screen(tmp_path, _list_payload(1))
+    manager = screen._data_manager
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "f", "e")
+        await pilot.pause()
+        assert screen.query_one(CuratorListFilterEditor).display is True
+
+    assert manager.full_list_calls == []
+    assert list(tmp_path.iterdir()) == []
 
 
 async def test_e_exports_only_the_full_list_currently_on_screen(tmp_path):
