@@ -99,13 +99,13 @@ panels read `analysis unavailable` for the first minute or so of a cold start. T
 their own slower schedule and stamp their own `as of HH:MM`, which is deliberately not the title
 bar's.
 
-Press **`l`** for the complete record view. It keeps the clock on screen and shows one full-width
-table; **`c`** switches between THE RAW LIST and THE CLEANED LIST and remembers that choice when
-you leave. The table mirrors the record NFT traits: rank, join order, wallet, points, weight,
-credit, deposits, first hour, and grace/judged window, plus the linkage mark on the raw list. The
-interactive table is capped at 1,000 rows to keep refreshes responsive. **`e`** exports the full,
-uncapped list currently shown to `~/.maxpane/curator_raw_list.json` or
-`~/.maxpane/curator_cleaned_list.json`.
+Press **`l`** for the complete record view. Its summary hero compares THE LIST, the configured
+wallet, and THE CLEANED LIST above one full-width table; **`c`** switches between THE RAW LIST and
+THE CLEANED LIST and remembers that choice when you leave. The table mirrors the record NFT
+traits: rank, join order, wallet, points, weight, credit, deposits, first hour, and grace/judged
+window, plus the linkage mark on the raw list. The interactive table is capped at 1,000 rows to
+keep refreshes responsive. **`e`** exports the full, uncapped list currently shown to
+`~/.maxpane/curator_raw_list.json` or `~/.maxpane/curator_cleaned_list.json`.
 
 ## Install
 

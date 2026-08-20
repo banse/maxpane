@@ -1,6 +1,6 @@
 """Widget suite for the curator dashboard — THE LIST (WP4).
 
-Seven render-only widgets plus their format helpers.  Everything here is
+Render-only widgets plus their format helpers.  Everything here is
 asserted against **composited output** (``app.screen._compositor.render_strips()``)
 rather than against a widget's content string: a string that never reaches a
 pixel passes a naive test while being invisible to the user, and this
@@ -69,6 +69,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletAddress,
     CuratorWalletHero,
     CuratorHero,
+    CuratorListHero,
     CuratorLeaderboard,
     CuratorSignals,
     CuratorSparklines,
@@ -531,6 +532,37 @@ async def test_a_narrow_hero_announces_the_columns_it_shed():
         await pilot.pause()
         text = _screen_text(app)
     assert "‹ widen" in text
+
+
+async def test_the_list_hero_uses_the_full_wallet_address_without_ens():
+    address = "0x1234567890abcdef1234567890abcdef12345678"
+    text = await _rendered(
+        CuratorListHero,
+        size=(138, 12),
+        you_address=address,
+        you_ens=None,
+        you_rank=12,
+        you_clean_rank=7,
+        operators_count=4,
+        you_points=31_622,
+    )
+    assert address in text
+    assert "‹ widen" not in text
+
+
+async def test_the_list_hero_renders_ens_markup_as_literal_text():
+    hostile_ens = "[bold]reader.eth[/bold]"
+    text = await _rendered(
+        CuratorListHero,
+        you_address="0x1234567890abcdef1234567890abcdef12345678",
+        you_ens=hostile_ens,
+    )
+    assert hostile_ens in text
+
+
+async def test_the_list_hero_names_an_unconfigured_wallet_at_narrow_width():
+    text = await _rendered(CuratorListHero, size=(66, 12))
+    assert "WALLET NOT SET" in text
 
 
 # ===========================================================================
@@ -1976,6 +2008,7 @@ async def test_a_shed_column_is_announced_even_when_the_title_bar_is_too_narrow(
 #: what makes forgetting to add a class to it fail.
 _WIDGETS = (
     CuratorHero,
+    CuratorListHero,
     CuratorLeaderboard,
     CuratorSparklines,
     CuratorSignals,
@@ -2251,6 +2284,7 @@ def test_the_full_payload_is_exactly_the_frozen_contract():
 #: its rows passes a smoke test.
 _EXPECTED_ROWS = {
     "CuratorHero": (("THE LIST",), 1),
+    "CuratorListHero": (("THE LIST", ".eth", "CLEANED"), 1),
     # One of the three fixture rows carries a verified ENS name, so the
     # marker is "a row rendered an identity", not "a row rendered hex".
     "CuratorLeaderboard": (("0x", ".eth"), 3),

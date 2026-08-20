@@ -7,6 +7,7 @@ Render-only widgets for every slot and alternate view of
 Widget                  Slot
 ======================  ====================================================
 ``CuratorHero``         hero row, full width — CLOCK · THE LIST · CURVE
+``CuratorListHero``     ``l`` hero — raw list · configured wallet · clean list
 ``CuratorLeaderboard``  middle left — top 10 by points
 ``CuratorSparklines``   middle right, rail top — hourly volume + contributors
 ``CuratorSignals``      middle right, rail bottom — the seven-row rail
@@ -98,6 +99,7 @@ from .clusters import (
     CuratorClusters,
 )
 from .hero import PHASE_UNAVAILABLE, CuratorHero
+from .list_hero import CuratorListHero
 from .signals import (
     NEVER_SAVED,
     NO_WALLET,
@@ -182,6 +184,7 @@ __all__ = [
     "TOP_OF_THE_LIST",
     "CuratorClusters",
     "CuratorHero",
+    "CuratorListHero",
     "NEVER_SAVED",
     "NO_JUDGED_HOURS",
     "NO_WALLET",

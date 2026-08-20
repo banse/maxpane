@@ -5,7 +5,7 @@ FWA ``c`` swap grafted onto the bottom-right slot)::
 
     #title-bar     THE LIST · hour N · GRACE/JUDGED/SETTLED · as of HH:MM
                    [· ⚠ logs, state] · vX.Y.Z
-    #hero-row      CuratorHero (full width, 3 boxes + export instruction) auto
+    #hero-row      mode-specific hero (3 boxes + export instruction)       auto
     #middle-row    CuratorLeaderboard (3fr) | #curator-right-rail (5fr)     1fr
                                             |   CuratorSparklines
                                             |   CuratorSignals
@@ -183,6 +183,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorCleanList,
     CuratorClusters,
     CuratorHero,
+    CuratorListHero,
     CuratorLeaderboard,
     CuratorCleanedList,
     CuratorOperators,
@@ -240,14 +241,15 @@ WALLET_BODY_ID = "curator-wallet-body"
 ANALYSIS_BODY_ID = "curator-analysis-body"
 #: The `l` view's body -- one full-width raw or cleaned record table.
 LIST_BODY_ID = "curator-list-body"
-#: The wallet body's own hero, which swaps with it.
+#: The wallet and record-list bodies each own a hero that swaps with them.
 WALLET_HERO_ID = "curator-wallet-hero"
+LIST_HERO_ID = "curator-list-hero"
 
 #: The four modes: game, reader standing, linked-wallet analysis, and the two
 #: complete record lists. A fifth spelling is a silent fallback arm.
 #:
-#: `analysis` and `list` keep the **dashboard** hero on screen: the doomsday
-#: clock never leaves, so `_show_mode` hides it only for `wallet`.
+#: `analysis` keeps the dashboard hero. `wallet` and `list` use their own
+#: precomposed heroes so switching modes never paints an empty first frame.
 MODE_DASHBOARD = "dashboard"
 MODE_WALLET = "wallet"
 MODE_ANALYSIS = "analysis"
@@ -336,6 +338,11 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "points_per_eth_now", "survival_streak_hours",
         "closest_call_margin_eth", "closest_call_hour", "contributors_total",
         "deposits_total", "volume_routed_eth", "top_points",
+    ),
+    "CuratorListHero": (
+        "phase", "contributors_total", "deposits_total", "volume_routed_eth",
+        "you_address", "you_ens", "you_rank", "you_clean_rank",
+        "operators_count", "you_points", "clean_contributors", "clean_points",
     ),
     "CuratorLeaderboard": ("leaderboard_rows", "you_address"),
     "CuratorSparklines": (
@@ -709,6 +716,9 @@ class CuratorScreen(RefreshGuard, Screen):
         width: 1fr;
         padding: 0 1;
     }
+    CuratorScreen CuratorListHero {
+        width: 1fr;
+    }
     CuratorScreen #middle-row {
         height: 1fr;
         margin: 1 0 0 0;
@@ -946,15 +956,16 @@ class CuratorScreen(RefreshGuard, Screen):
         yield Static(INITIAL_TITLE, id="title-bar")
 
         with Horizontal(id="hero-row"):
-            # Both possible heroes are composed once. Wallet mode uses its own;
-            # dashboard, analysis, and list modes share the doomsday clock.
+            # Every mode-specific hero is composed once so its first frame is
+            # already filled when the corresponding body becomes visible.
             yield CuratorHero()
+            yield CuratorListHero(id=LIST_HERO_ID)
             yield CuratorWalletHero(id=WALLET_HERO_ID)
 
         # Every body is composed once and all but one are hidden, for the same
         # reason the two swap tables are: a body built on demand is blank for a
         # beat after the keypress, which reads as a bug. The title bar sits
-        # above every body; only `y` swaps to the wallet hero.
+        # above every body; `y` and `l` swap to their own heroes.
         with Vertical(id=DASHBOARD_BODY_ID):
             with Horizontal(id="middle-row"):
                 yield CuratorLeaderboard()
@@ -1050,8 +1061,8 @@ class CuratorScreen(RefreshGuard, Screen):
     def _show_mode(self) -> None:
         """Apply :attr:`_mode` to the four bodies' visibility.
 
-        Exactly one body is displayed. Wallet mode swaps in its own hero;
-        analysis and list mode keep the **dashboard** doomsday clock.
+        Exactly one body and one matching hero are displayed. Analysis keeps
+        the dashboard doomsday clock; list and wallet modes use their own.
         """
         wallet = self._mode == MODE_WALLET
         analysis = self._mode == MODE_ANALYSIS
@@ -1064,7 +1075,8 @@ class CuratorScreen(RefreshGuard, Screen):
             self.query_one(f"#{ANALYSIS_BODY_ID}").display = analysis
             self.query_one(f"#{LIST_BODY_ID}").display = lists
             self._show_list_view()
-            self.query_one(CuratorHero).display = not wallet
+            self.query_one(CuratorHero).display = not wallet and not lists
+            self.query_one(f"#{LIST_HERO_ID}").display = lists
             self.query_one(f"#{WALLET_HERO_ID}").display = wallet
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("Curator mode toggle failed: %s", exc)
@@ -1448,6 +1460,7 @@ class CuratorScreen(RefreshGuard, Screen):
 
         for widget_cls in (
             CuratorHero,
+            CuratorListHero,
             CuratorLeaderboard,
             CuratorSparklines,
             CuratorSignals,

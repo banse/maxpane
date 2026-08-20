@@ -153,6 +153,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorWalletAddress,
     CuratorWalletHero,
     CuratorHero,
+    CuratorListHero,
     CuratorLeaderboard,
     CuratorSignals,
     CuratorSparklines,
@@ -185,6 +186,7 @@ _FIXTURES = _ROOT / "tests" / "fixtures" / "curator" / "screen"
 
 _PANELS = (
     CuratorHero,
+    CuratorListHero,
     CuratorLeaderboard,
     CuratorSparklines,
     CuratorSignals,
@@ -535,14 +537,14 @@ def test_the_initial_title_names_the_subject_before_the_first_payload():
     assert INITIAL_TITLE == "THE LIST · WhitelistCurator · Ethereum Mainnet"
 
 
-async def test_screen_mounts_all_seven_widgets():
+async def test_screen_mounts_every_widget():
     screen = _screen()
     app = _ThemedHarness(screen)
     async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
         await pilot.pause()
-        # Two heroes -- the game's and the `y` view's -- exactly one displayed.
+        # Three precomposed mode heroes, exactly one displayed.
         hero_row = screen.query_one("#hero-row").children
-        assert len(hero_row) == 2
+        assert len(hero_row) == 3
         assert [child.display for child in hero_row].count(True) == 1
         assert len(screen.query_one("#middle-row").children) == 2
         assert len(screen.query_one("#curator-right-rail").children) == 2
@@ -3017,16 +3019,18 @@ async def test_l_opens_one_raw_table_and_c_toggles_a_remembered_clean_table():
         await pilot.pause()
         assert screen._mode == MODE_LIST
         assert raw.display is True and cleaned.display is False
-        assert RAW_LIST_TITLE in _screen_text(app)
-        assert CLEANED_LIST_TITLE not in _screen_text(app)
+        raw_panel = _region_text(app, raw, screen)
+        assert RAW_LIST_TITLE in raw_panel
+        assert CLEANED_LIST_TITLE not in raw_panel
 
         dashboard_view = screen._active_view
         await pilot.press("c")
         await pilot.pause()
         assert raw.display is False and cleaned.display is True
         assert screen._active_view == dashboard_view
-        assert CLEANED_LIST_TITLE in _screen_text(app)
-        assert RAW_LIST_TITLE not in _screen_text(app)
+        cleaned_panel = _region_text(app, cleaned, screen)
+        assert CLEANED_LIST_TITLE in cleaned_panel
+        assert RAW_LIST_TITLE not in cleaned_panel
 
         await pilot.press("l")
         await pilot.press("l")
@@ -3223,19 +3227,59 @@ async def test_each_visible_list_table_fills_the_list_body(harness):
         assert cleaned.region.width == body.region.width
 
 
-async def test_the_clock_never_leaves_the_screen_in_the_list_view():
-    screen = _screen(_settled_payload())
+async def test_the_list_view_alone_swaps_in_the_record_summary_hero():
+    payload = _settled_payload(
+        contributors_total=19_522,
+        deposits_total=28_353,
+        volume_routed_eth=128_130.76,
+        clusters_count=999,
+        operators_count=684,
+        clean_contributors=8_750,
+        clean_points=12_345_678,
+        you_rank=15_234,
+        you_clean_rank=7_042,
+        you_points=42_721,
+        you_ens="reader.eth",
+    )
+    screen = _screen(payload)
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
-        hero_before = _region_text(app, screen.query_one(CuratorHero), screen)
+        hero_row = screen.query_one("#hero-row")
+        dashboard_hero = _region_text(app, screen.query_one(CuratorHero), screen)
+        assert "CLOCK" in dashboard_hero
+
+        # The record hero is precomposed so the first `l` frame is complete.
+        assert len(hero_row.children) == 3
         await pilot.press("l")
         await pilot.pause()
-        assert screen.query_one(CuratorHero).display is True
+
+        list_hero = screen.query_one("#curator-list-hero")
+        text = _region_text(app, list_hero, screen)
+        assert screen.query_one(CuratorHero).display is False
+        assert list_hero.display is True
         assert screen.query_one(f"#{WALLET_HERO_ID}").display is False
-        assert _region_text(app, screen.query_one(CuratorHero), screen) == hero_before
-        assert "SETTLED" in _screen_text(app)
+        assert "CLOCK" not in text
+        assert "THE LIST" in text and "THE CLEANED LIST" in text
+        assert "reader.eth" in text
+        assert (
+            text.index("THE LIST")
+            < text.index("reader.eth")
+            < text.index("THE CLEANED LIST")
+        )
+        assert "#15,234 raw · #7,042 cleaned" in text
+        assert "684 clusters" in text and "999 clusters" not in text
+        assert "removed (via sybilkit)" in text
+        assert "42,721 pts" in text
+        assert "8,750 wallets" in text and "12,345,678 pts" in text
+
+        # The linked-analysis view still uses the original dashboard hero.
+        await pilot.press("f")
+        await pilot.pause()
+        assert screen.query_one(CuratorHero).display is True
+        assert list_hero.display is False
+        assert "CLOCK" in _region_text(app, screen.query_one(CuratorHero), screen)
 
 
 async def test_settled_list_title_and_cleaned_freshness_follow_the_toggle():
@@ -3254,11 +3298,12 @@ async def test_settled_list_title_and_cleaned_freshness_follow_the_toggle():
         await screen._do_refresh()
         await pilot.press("l")
         await pilot.pause()
-        raw = _screen_text(app)
+        raw_screen = _screen_text(app)
+        raw = _region_text(app, screen.query_one(CuratorRawList), screen)
         await pilot.press("c")
         await pilot.pause()
-        cleaned = _screen_text(app)
-    assert "· SETTLED ·" in raw
+        cleaned = _region_text(app, screen.query_one(CuratorCleanedList), screen)
+    assert "· SETTLED ·" in raw_screen
     assert "THE RAW LIST" in raw and "THE CLEANED LIST" not in raw
     assert "THE CLEANED LIST" in cleaned and "as of 13:58" in cleaned
 

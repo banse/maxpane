@@ -163,11 +163,11 @@ one file). It is also the *translation boundary*: the library is a general sybil
 and may say so in its own strings, but `pattern_language()` re-checks every reason, label and
 detail — including strings read back from a **persisted** payload, because a hand-edited cache
 file is third-party input too — and swaps a forbidden word for the evidence family's own phrase.
-On screen the dashboard therefore speaks only patterns: *linked*, *fan-out*, `⚑`/`◌`/`?`, and
-every panel has its own composited forbidden-word test. **The word "sybil" lives in the standalone
-library, not in the dashboard's language**: it appears in maxpane only in the adapter's own
-`FORBIDDEN_WORDS` list, in module comments, and in file/identifier names — never in a rendered
-string. `analytics/curator_signals.py` still never mentions or imports the library
+On screen the dashboard's evidence labels therefore speak only patterns: *linked*, *fan-out*,
+`⚑`/`◌`/`?`, and every evidence panel has its own composited forbidden-word test. The sole rendered
+exception is the `l` view hero's explicit product attribution, `removed (via sybilkit)`; it names
+the tool that produced the cleaned list, not a wallet or verdict. `analytics/curator_signals.py`
+still never mentions or imports the library
 (`test_curator_signals_never_imports_sybilkit`); its only post-release change is the decided
 `LEADERBOARD_LIMIT = 100` payload cap for the `l` record view. The Tier-A `find_clusters` it
 already had is unchanged and it never learns the library exists.
@@ -332,7 +332,8 @@ standing — ladder, share, and what passing the rank above would cost — with 
 hero left in place so the doomsday clock never leaves the screen (`esc` backs
 out, one-way); **`f` on curator** swaps in the linked-wallet analysis (OPERATORS
 / SEGMENTS / CLEANED LIST), also keeping the clock; **`l`** opens one full-width
-record table, with `c` switching RAW/CLEANED and remembering the choice;
+record table under its own raw/wallet/cleaned summary hero, with `c` switching
+RAW/CLEANED and remembering the choice;
 **`e`** exports the active list (`f` keeps its existing JSON + CSV export, while
 `l` writes the full uncapped raw or cleaned JSON), and is a no-op on dashboard
 and wallet modes; and **`w` on curator** prompts for the wallet its YOU row is about —

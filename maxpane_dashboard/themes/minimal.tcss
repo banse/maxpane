@@ -2107,7 +2107,7 @@ SurfDevActivity > RichLog {
  * id -- while the shared `#middle-row` / `#bottom-row` rules above ARE law for
  * ten other screens, so the curator overrides have to be scoped to beat them
  * here and nowhere else. The `Curator*` widget types stay unscoped: those
- * seven types are mounted by this screen and nothing else.
+ * types are mounted by this screen and nothing else.
  *
  * Colour belongs in a Theme, not here: this stylesheet is shared by all ten
  * themes, so naming a theme-specific variable would raise a parse error under
@@ -2123,7 +2123,7 @@ SurfDevActivity > RichLog {
  * No widget-internal class belongs here either (.curator-lb-*,
  * .curator-signals-*, .curator-spark-*, .curator-activity-title, .curator-cc-*,
  * .curator-cl-*, #curator-hero-boxes, CuratorHeroBox, #curator-hero-note): all
- * of them are owned by the seven widget modules' own DEFAULT_CSS, none of them
+ * of them are owned by the widget modules' own DEFAULT_CSS, none of them
  * collides with a shared selector, and restating one would give that rule two
  * owners for no gain.
  */
@@ -2142,6 +2142,12 @@ CuratorScreen #hero-row {
 CuratorHero {
     width: 1fr;
     padding: 0 1;
+}
+
+/* The `l` record view owns a separate hero; no horizontal padding leaves a
+ * full 42-column wallet address available in the middle card at 138 columns. */
+CuratorListHero {
+    width: 1fr;
 }
 
 /* The only `1fr` row above the separator, so the rows a taller terminal adds
