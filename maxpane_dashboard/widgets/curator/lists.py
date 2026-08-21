@@ -176,7 +176,7 @@ def _compact_criteria(summary, budget: int) -> str:
         candidate = " · ".join(clauses[:shown])
         if hidden:
             candidate = f"{candidate} +{hidden}" if candidate else f"+{hidden}"
-        if visible_len(candidate) <= max(budget, 0):
+        if cell_len(candidate) <= max(budget, 0):
             return candidate
     return ""
 

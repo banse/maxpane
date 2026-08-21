@@ -1020,6 +1020,27 @@ async def test_filtered_title_styles_and_compacts_active_criteria():
         ).show_horizontal_scrollbar is False
 
 
+async def test_filtered_title_counts_literal_brackets_toward_width():
+    panel = CuratorFilteredList()
+    app = _Harness(panel)
+    rows = [{
+        "rank": 1, "address": "0x" + "1" * 40, "points": 1,
+        "credit_eth": 1.0, "weight_eth": 1.0, "tx_count": 1,
+        "first_hour": 0, "first_index": 1, "name": None,
+    }]
+    hostile = f"NFT [{'x' * 120}]x[/]"
+    async with app.run_test(size=(143, 20)) as pilot:
+        panel.update_data(
+            filtered_rows=rows,
+            filtered_complete=True,
+            filter_summary=(hostile,),
+        )
+        await pilot.pause()
+        title = panel.query_one(".curator-list-title").content
+        assert "+1" in title
+        assert hostile not in _screen_text(app)
+
+
 async def test_stale_nft_receipt_coexists_with_limited_source():
     panel = CuratorFilteredList()
     app = _Harness(panel)
