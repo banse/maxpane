@@ -1252,6 +1252,7 @@ class CuratorScreen(RefreshGuard, Screen):
         if self._mode == MODE_WALLET:
             self.action_show_lists()
             return
+        self._invalidate_obscured_filter_lookup()
         if self._wallet is None:
             self.app.push_screen(
                 WalletInputScreen(),
@@ -1274,13 +1275,12 @@ class CuratorScreen(RefreshGuard, Screen):
         if self._mode == MODE_ANALYSIS:
             self.action_show_lists()
             return
+        self._invalidate_obscured_filter_lookup()
         self._mode = MODE_ANALYSIS
         self._show_mode()
 
     def action_show_history(self) -> None:
-        self._invalidate_nft_name_lookup(
-            self.query_one(CuratorListFilterEditor)
-        )
+        self._invalidate_obscured_filter_lookup()
         self._mode = MODE_DASHBOARD
         self._show_mode()
 
@@ -1307,6 +1307,12 @@ class CuratorScreen(RefreshGuard, Screen):
             if item.key not in predefined:
                 custom.append(self._nft_primitive(item))
         return custom
+
+    def _invalidate_obscured_filter_lookup(self) -> None:
+        if self._filter_editor_open:
+            self._invalidate_nft_name_lookup(
+                self.query_one(CuratorListFilterEditor)
+            )
 
     def _invalidate_nft_name_lookup(
         self, editor: CuratorListFilterEditor | None = None
@@ -1656,6 +1662,7 @@ class CuratorScreen(RefreshGuard, Screen):
         ``~/.maxpane/config.toml``, so the choice outlives the process and every
         wallet-scoped dashboard picks it up on the next launch.
         """
+        self._invalidate_obscured_filter_lookup()
         self.app.push_screen(WalletInputScreen(), callback=self._wallet_entered)
 
     def _wallet_entered(

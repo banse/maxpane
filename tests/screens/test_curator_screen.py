@@ -455,15 +455,20 @@ class _DelayedNameManager(_FakeManager):
 
 
 class _NavigationProbeScreen(CuratorScreen):
-    """Expose when Textual dispatches the History action."""
+    """Expose when Textual dispatches navigation actions."""
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.history_action_dispatched = asyncio.Event()
+        self.wallet_action_dispatched = asyncio.Event()
 
     def action_show_history(self) -> None:
         super().action_show_history()
         self.history_action_dispatched.set()
+
+    def action_toggle_mode(self) -> None:
+        super().action_toggle_mode()
+        self.wallet_action_dispatched.set()
 
 
 class _Harness(App):
@@ -3433,6 +3438,140 @@ async def test_delayed_custom_name_does_not_block_history_navigation():
 
         assert editor.values()["nft_collections"] == ()
         assert editor.query_one("#filter-nft-address", Input).value == address
+
+
+async def test_configured_wallet_navigation_invalidates_delayed_custom_name():
+    manager = _DelayedNameManager(_list_payload(1))
+    address = "0x" + "d" * 40
+    key = f"base:{address}"
+    manager.hold_name(key, "Stale Wallet Reader Pass")
+    screen = _NavigationProbeScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=_WALLET,
+        export_dir=_FIXTURES / "no-local-exports",
+    )
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        nft_input = editor.query_one("#filter-nft-address", Input)
+        nft_input.value = address
+        editor.post_message(NftCollectionAddRequested("base", address))
+        await asyncio.wait_for(manager.name_started[key].wait(), timeout=1)
+        screen.set_focus(None)
+
+        navigate = asyncio.create_task(pilot.press("y"))
+        try:
+            await asyncio.wait_for(
+                screen.wallet_action_dispatched.wait(), timeout=1
+            )
+            assert screen._mode == MODE_WALLET
+            await asyncio.wait_for(manager.name_cancelled[key].wait(), timeout=1)
+        finally:
+            manager.name_releases[key].set()
+            await asyncio.gather(navigate, return_exceptions=True)
+        await asyncio.wait_for(manager.name_finished[key].wait(), timeout=1)
+        await pilot.press("l")
+        await pilot.pause()
+
+        assert editor.values()["nft_collections"] == ()
+        assert screen._custom_filter_values["nft_collections"] == ()
+        assert nft_input.value == address
+        assert editor.query_one("#filter-nft-add", Button).disabled is False
+
+
+async def test_analysis_navigation_invalidates_delayed_custom_name_error():
+    from maxpane_dashboard.screens.curator import MODE_ANALYSIS
+
+    manager = _DelayedNameManager(_list_payload(1))
+    address = "0x" + "d" * 40
+    key = f"ethereum:{address}"
+    stale_error = "stale Ethereum NFT holder RPC unavailable"
+    manager.hold_name(key, NftHolderUnavailable(stale_error))
+    screen = CuratorScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=_WALLET,
+        export_dir=_FIXTURES / "no-local-exports",
+    )
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        nft_input = editor.query_one("#filter-nft-address", Input)
+        nft_input.value = address
+        editor.post_message(NftCollectionAddRequested("ethereum", address))
+        await asyncio.wait_for(manager.name_started[key].wait(), timeout=1)
+
+        try:
+            screen.action_toggle_analysis()
+            assert screen._mode == MODE_ANALYSIS
+            await asyncio.wait_for(manager.name_cancelled[key].wait(), timeout=1)
+        finally:
+            manager.name_releases[key].set()
+        await asyncio.wait_for(manager.name_finished[key].wait(), timeout=1)
+        await pilot.press("l")
+        error = editor.query_one("#curator-filter-error")
+        error.scroll_visible(animate=False, top=True, immediate=True)
+        await pilot.pause()
+
+        assert editor.values()["nft_collections"] == ()
+        assert screen._custom_filter_values["nft_collections"] == ()
+        assert nft_input.value == address
+        assert stale_error not in _region_text(app, error, screen)
+        assert editor.query_one("#filter-nft-add", Button).disabled is False
+
+
+async def test_wallet_prompt_invalidates_delayed_custom_name_before_return(
+    saved_wallets,
+):
+    manager = _DelayedNameManager(_list_payload(1))
+    address = "0x" + "d" * 40
+    key = f"base:{address}"
+    manager.hold_name(key, "Stale Prompt Reader Pass")
+    screen = _NavigationProbeScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=None,
+        export_dir=_FIXTURES / "no-local-exports",
+    )
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        nft_input = editor.query_one("#filter-nft-address", Input)
+        nft_input.value = address
+        editor.post_message(NftCollectionAddRequested("base", address))
+        await asyncio.wait_for(manager.name_started[key].wait(), timeout=1)
+        screen.set_focus(None)
+
+        navigate = asyncio.create_task(pilot.press("y"))
+        try:
+            await asyncio.wait_for(
+                screen.wallet_action_dispatched.wait(), timeout=1
+            )
+            await asyncio.wait_for(manager.name_cancelled[key].wait(), timeout=1)
+        finally:
+            manager.name_releases[key].set()
+            await asyncio.gather(navigate, return_exceptions=True)
+        await asyncio.wait_for(manager.name_finished[key].wait(), timeout=1)
+        assert isinstance(app.screen, WalletInputScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert app.screen is screen
+        assert screen._mode == MODE_LIST
+        assert editor.values()["nft_collections"] == ()
+        assert screen._custom_filter_values["nft_collections"] == ()
+        assert nft_input.value == address
+        assert editor.query_one("#filter-nft-add", Button).disabled is False
 
 
 async def test_overlapping_custom_names_only_commit_the_newest_generation():
