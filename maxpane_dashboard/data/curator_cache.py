@@ -701,6 +701,7 @@ class CuratorCache:
         failed = raw.get("failed")
         block = raw.get("block_number")
         ts = raw.get("ts")
+        reference = self._now(now)
         valid_block = block is None or (
             isinstance(block, int) and not isinstance(block, bool) and block >= 0
         )
@@ -719,10 +720,12 @@ class CuratorCache:
             )
             and isinstance(checked, int) and not isinstance(checked, bool)
             and checked >= 0
+            and isinstance(failed, int) and not isinstance(failed, bool)
             and failed == 0
             and valid_block
             and isinstance(ts, (int, float)) and not isinstance(ts, bool)
             and math.isfinite(float(ts)) and float(ts) > 0
+            and float(ts) <= reference + CLOCK_SKEW_TOLERANCE_SECONDS
         ):
             return None
         stamp = float(ts)
@@ -733,7 +736,7 @@ class CuratorCache:
             failed=0,
             block_number=block,
             ts=stamp,
-            fresh=self._now(now) - stamp <= NFT_HOLDER_TTL_SECONDS,
+            fresh=reference - stamp <= NFT_HOLDER_TTL_SECONDS,
         )
 
     # -- series --------------------------------------------------------------

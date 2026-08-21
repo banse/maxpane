@@ -258,6 +258,41 @@ def test_nft_holder_slot_persists_without_moving_global_as_of(
     })
 
 
+@pytest.mark.parametrize("failed", (False, 0.0))
+def test_nft_holders_rejects_non_integer_zero_failed(cache, clock, failed):
+    key = "ethereum:0x" + "d" * 40
+    cache.store_last_good(
+        SLOT_NFT_HOLDERS,
+        {"entries": {key: {
+            "wallet_fingerprint": "wallets",
+            "holders": ["0x" + "4" * 40],
+            "checked": 1,
+            "failed": failed,
+            "block_number": 11,
+            "ts": clock(),
+        }}},
+        ts=clock(),
+    )
+    assert cache.nft_holders(key, "wallets") is None
+
+
+def test_nft_holders_rejects_inner_timestamp_beyond_clock_skew(cache, clock):
+    key = "ethereum:0x" + "e" * 40
+    cache.store_last_good(
+        SLOT_NFT_HOLDERS,
+        {"entries": {key: {
+            "wallet_fingerprint": "wallets",
+            "holders": ["0x" + "5" * 40],
+            "checked": 1,
+            "failed": 0,
+            "block_number": 12,
+            "ts": clock() + CLOCK_SKEW_TOLERANCE_SECONDS + 1,
+        }}},
+        ts=clock(),
+    )
+    assert cache.nft_holders(key, "wallets") is None
+
+
 def test_missing_or_corrupt_nft_holder_slot_degrades_to_no_entry(
     cache, clock
 ):
