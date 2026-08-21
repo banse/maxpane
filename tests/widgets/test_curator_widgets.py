@@ -967,6 +967,14 @@ async def test_filtered_wallet_summary_uses_one_overflow_phrase():
         assert "+" not in detail
 
 
+def test_filtered_wallet_summary_counts_literal_brackets_toward_width():
+    lines = _wallet_lines({
+        "list_view": "filtered",
+        "filter_summary": ("NFT [red]1234[/]",),
+    }, "full", 10)
+    assert lines[2] == "[$success]multiple filters applied[/]"
+
+
 async def test_filtered_table_renders_the_specific_unavailable_source_reason():
     panel = CuratorFilteredList()
     app = _Harness(panel)

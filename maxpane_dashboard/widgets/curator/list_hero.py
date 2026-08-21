@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from rich.cells import cell_len
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Static
@@ -131,7 +132,11 @@ def _compact_filter_summary(summary, tier: str, width: int = 0) -> str:
 
     budget = width or (FULL_WIDTH if tier == "full" else COMPACT_WIDTH)
     complete = " · ".join(clauses)
-    return complete if visible_len(complete) <= budget else "multiple filters applied"
+    return (
+        safe_markup(complete)
+        if cell_len(complete) <= budget
+        else "multiple filters applied"
+    )
 
 
 def _wallet_view(data: dict) -> tuple[str, object, object]:

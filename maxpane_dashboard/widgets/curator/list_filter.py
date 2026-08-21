@@ -368,7 +368,7 @@ class CuratorListFilterEditor(Vertical):
         for index, value in enumerate(self._custom_nfts):
             key = self._nft_key(value["chain"], value["address"])
             container.mount(Horizontal(
-                Label(value["label"]),
+                Label(value["label"], markup=False),
                 Button(
                     "×", id=f"filter-nft-remove-{index}",
                     name=key, compact=True,

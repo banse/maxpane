@@ -3239,6 +3239,42 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
         assert screen._data_manager.collection_name_calls == []
 
 
+async def test_custom_nft_add_renders_chain_markup_as_literal_text():
+    payload = _list_payload(1)
+    screen = _screen(payload)
+    address = "0x" + "c" * 40
+    key = f"base:{address}"
+    screen._data_manager.collection_names[key] = "[red]Reader Pass[/]"
+    screen._data_manager.nft_holders_by_collection[key] = frozenset({
+        payload["leaderboard_rows"][0]["address"].casefold()
+    })
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        editor.query_one("#filter-nft-chain", Select).value = "base"
+        editor.query_one("#filter-nft-address", Input).value = address
+        await pilot.click("#filter-nft-add")
+        await pilot.pause()
+        assert screen._data_manager.collection_name_calls == [key]
+        assert "[red]Reader Pass[/]" in _region_text(app, editor, screen)
+        assert editor.values()["nft_collections"] == ({
+            "label": "[red]Reader Pass[/]",
+            "chain": "base",
+            "address": address,
+        },)
+        await pilot.click("#filter-apply")
+        await pilot.pause()
+        assert "NFT [red]Reader Pass[/]" in screen._filter_summary
+        assert "[red]Reader Pass[/]" in _region_text(
+            app, screen.query_one(CuratorFilteredList), screen
+        )
+        assert "[red]Reader Pass[/]" in _region_text(
+            app, screen.query_one(CuratorListHero), screen
+        )
+
+
 async def test_custom_nft_add_uses_resolved_name_and_retains_it_everywhere():
     payload = _list_payload(1)
     screen = _screen(payload)
