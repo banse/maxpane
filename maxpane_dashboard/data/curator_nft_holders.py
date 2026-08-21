@@ -121,10 +121,44 @@ def _block_number_result(value: object) -> int | None:
 
 
 def _aggregate3_result_is_valid(value: object, count: int) -> bool:
-    return (
-        isinstance(value, str)
-        and len(decode_aggregate3_result(value)) == count
-    )
+    if not isinstance(value, str) or not value.startswith("0x"):
+        return False
+    try:
+        payload = bytes.fromhex(value[2:])
+    except ValueError:
+        return False
+    if len(payload) < 64:
+        return False
+
+    def word(offset: int) -> int:
+        return int.from_bytes(payload[offset : offset + 32], "big")
+
+    array_offset = word(0)
+    if array_offset % 32 or array_offset + 32 > len(payload):
+        return False
+    length = word(array_offset)
+    if length != count:
+        return False
+    elements_start = array_offset + 32
+    if elements_start + length * 32 > len(payload):
+        return False
+    for index in range(length):
+        tuple_offset = word(elements_start + index * 32)
+        if tuple_offset % 32:
+            return False
+        tuple_start = elements_start + tuple_offset
+        if tuple_start + 64 > len(payload):
+            return False
+        bytes_offset = word(tuple_start + 32)
+        if bytes_offset % 32:
+            return False
+        bytes_start = tuple_start + bytes_offset
+        if bytes_start + 32 > len(payload):
+            return False
+        bytes_length = word(bytes_start)
+        if bytes_start + 32 + bytes_length > len(payload):
+            return False
+    return True
 
 
 class NftHolderClient(OwnedHttpClient):

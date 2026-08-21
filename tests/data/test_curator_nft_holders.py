@@ -297,6 +297,34 @@ async def test_collection_name_rejects_a_malformed_aggregate_response():
 
 
 @pytest.mark.asyncio
+async def test_collection_name_rejects_a_truncated_aggregate_return_data():
+    truncated = "0x" + "".join(
+        (
+            encode_uint(32),
+            encode_uint(1),
+            encode_uint(32),
+            encode_uint(1),
+            encode_uint(64),
+            encode_uint(1),
+        )
+    )
+
+    async def handler(request):
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(body["id"], "0x1")
+        if body["method"] == "eth_getCode":
+            return _rpc_result(body["id"], "0x6000")
+        return _rpc_result(body["id"], truncated)
+
+    client, http_client = _client(handler)
+    with pytest.raises(NftHolderUnavailable, match="RPC unavailable"):
+        await client.collection_name(PREDEFINED_NFT_COLLECTIONS[0])
+    await client.close()
+    await http_client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_balance_scans_chunk_at_exactly_500_and_keep_alignment():
     chunks = []
     requests = []
