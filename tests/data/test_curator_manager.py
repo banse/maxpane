@@ -8,6 +8,7 @@ fixture data or ``None``.
 from __future__ import annotations
 
 import asyncio
+import ast
 import inspect
 import json
 import os
@@ -1590,7 +1591,15 @@ def test_the_manager_divides_to_eth_exactly_once(tmp_path, clock):
     _EXPECTED_DIVISION_SITES = 1
     src = inspect.getsource(curator_manager)
     assert src.count("/ _WEI") + src.count("/ 10**18") == _EXPECTED_DIVISION_SITES
-    assert "\ndef _eth(" not in src
+    eth_calls = {
+        node.func.id if isinstance(node.func, ast.Name) else node.func.attr
+        for node in ast.walk(ast.parse(src))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, (ast.Name, ast.Attribute))
+        and (node.func.id if isinstance(node.func, ast.Name) else node.func.attr)
+        .endswith("_eth")
+    }
+    assert eth_calls <= {"_filtered_routed_eth"}
 
 
 def test_an_analytics_failure_is_never_published_as_a_healthy_picture(tmp_path, clock):
