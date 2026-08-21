@@ -25,7 +25,7 @@ from maxpane_dashboard.widgets.curator._table import (
     title_with_hint,
 )
 from maxpane_dashboard.widgets.curator.cleaned_list import EXPORT_FAILED
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
 
 RAW_LIST_TITLE = "THE RAW LIST"
 CLEANED_LIST_TITLE = "THE CLEANED LIST"
@@ -163,6 +163,22 @@ _NUMERIC_SORT_COLUMNS = {
     "hour",
     "window",
 }
+
+
+def _compact_criteria(summary, budget: int) -> str:
+    clauses = tuple(
+        value.strip()
+        for value in (summary or ())
+        if isinstance(value, str) and value.strip()
+    )
+    for shown in range(len(clauses), -1, -1):
+        hidden = len(clauses) - shown
+        candidate = " · ".join(clauses[:shown])
+        if hidden:
+            candidate = f"{candidate} +{hidden}" if candidate else f"+{hidden}"
+        if visible_len(candidate) <= max(budget, 0):
+            return candidate
+    return ""
 
 
 class ListOrderChanged(Message):
@@ -350,11 +366,20 @@ class _ListTable(Vertical):
         self._export_failed = True
         self._render_receipt()
 
-    def mark_filter_applied(self, limited: bool) -> None:
+    def mark_filter_applied(
+        self,
+        limited: bool,
+        holder_receipt: str | None = None,
+    ) -> None:
         """Show the filtered source boundary after a new filter application."""
         self._export_path = None
         self._export_failed = False
-        self._source_receipt = "first 1,000 wallets only" if limited else None
+        receipts = []
+        if limited:
+            receipts.append("first 1,000 wallets only")
+        if holder_receipt:
+            receipts.append(holder_receipt)
+        self._source_receipt = " · ".join(receipts) or None
         self._render_receipt()
 
     def mark_filter_unavailable(self, message: str) -> None:
@@ -413,6 +438,17 @@ class _ListTable(Vertical):
             and count >= 0
             else self.TITLE
         )
+        summary = self._payload.get("filter_summary")
+        if self.KIND == "filtered" and summary:
+            hint_reserve = visible_len(f"  {self._hint}") if self._hint else 0
+            budget = width - visible_len(heading) - 3 - hint_reserve
+            criteria = _compact_criteria(summary, budget)
+            if criteria:
+                heading += (
+                    " [not bold dim]· "
+                    + safe_markup(criteria)
+                    + "[/]"
+                )
         title, placed = title_with_hint(heading, self._hint, width)
         self.query_one(".curator-list-title", Static).update(title)
         if self._sort_column is not None:
@@ -748,7 +784,7 @@ class CuratorFilteredList(_ListTable):
 
     def update_data(
         self, filtered_rows=None, you_list_row=None,
-        filtered_complete=None, **_kwargs
+        filtered_complete=None, filter_summary=None, **_kwargs
     ) -> None:
         self._payload = {
             "rows": filtered_rows,
@@ -757,6 +793,7 @@ class CuratorFilteredList(_ListTable):
                 len(filtered_rows) if isinstance(filtered_rows, list) else None
             ),
             "complete": bool(filtered_complete),
+            "filter_summary": tuple(filter_summary or ()),
             "seen": True,
         }
         self._render_view()

@@ -24,6 +24,11 @@ from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
 FULL_WIDTH = 42
 COMPACT_WIDTH = 28
 
+FILTER_EDITOR_NOTE = (
+    "set ranges or options below · selected patterns and NFT collections "
+    "match any"
+)
+
 _BOX_IDS = (
     "curator-list-hero-summary",
     "curator-list-hero-wallet",
@@ -142,10 +147,17 @@ def _wallet_lines(data: dict, tier: str, width: int = 0) -> list[str]:
     view = data.get("list_view")
     if view == "filtered":
         standing = (
-            f"{_rank(data.get('you_filtered_index'))} of "
-            f"{_total(data.get('filtered_contributors'))} (filtered)"
+            f"[bold]{_rank(data.get('you_filtered_index'))} of "
+            f"{_total(data.get('filtered_contributors'))}[/] · filtered"
         )
         detail = _compact_filter_summary(data.get("filter_summary"), tier, width)
+        return _lines(
+            "THE WALLET",
+            standing,
+            f"[$success]{detail}[/]",
+            f"[$success]{_wallet_identity(data, tier)}[/]",
+            f"[$success][bold]{fmt_points(data.get('you_points'))} pts[/][/]",
+        )
     elif view == "cleaned":
         standing = (
             f"{_rank(data.get('you_clean_rank'))} of "
@@ -198,13 +210,18 @@ def _summary_lines(data: dict, tier: str, width: int = 0) -> list[str]:
 
 
 def _filter_lines(_data: dict, _tier: str, _width: int = 0) -> list[str]:
-    return [
-        "THE FILTER",
+    shortcuts = [
         "'1' - first 1000 wallets",
         "'2' - joined hour 0",
         "'3' - whale splash",
         "'f' - for more filters",
     ]
+    padded_width = max(visible_len(line) for line in shortcuts)
+    padded = [
+        line + " " * (padded_width - visible_len(line))
+        for line in shortcuts
+    ]
+    return _lines("THE FILTER", *padded)
 
 
 _BUILDERS = {
@@ -294,6 +311,7 @@ class CuratorListHero(Vertical):
         filtered_contributors=None,
         filtered_points=None,
         filter_summary=None,
+        filter_editor_open=False,
         **_kwargs,
     ) -> None:
         self._payload = {
@@ -315,6 +333,7 @@ class CuratorListHero(Vertical):
             "filtered_contributors": filtered_contributors,
             "filtered_points": filtered_points,
             "filter_summary": filter_summary,
+            "filter_editor_open": filter_editor_open,
         }
         self._render_view()
 
@@ -339,13 +358,16 @@ class CuratorListHero(Vertical):
             )
 
         width = max(self.content_size.width - 4, 0)
-        for candidate in (
-            LIST_EXPORT_SUBTITLE,
-            LIST_EXPORT_SUBTITLE_SHORT,
-            LIST_EXPORT_SUBTITLE_TINY,
-        ):
-            if not width or len(candidate) <= width:
-                note.update(candidate)
-                break
+        if self._payload.get("filter_editor_open"):
+            note.update(FILTER_EDITOR_NOTE)
         else:
-            note.update(LIST_EXPORT_SUBTITLE_TINY)
+            for candidate in (
+                LIST_EXPORT_SUBTITLE,
+                LIST_EXPORT_SUBTITLE_SHORT,
+                LIST_EXPORT_SUBTITLE_TINY,
+            ):
+                if not width or len(candidate) <= width:
+                    note.update(candidate)
+                    break
+            else:
+                note.update(LIST_EXPORT_SUBTITLE_TINY)

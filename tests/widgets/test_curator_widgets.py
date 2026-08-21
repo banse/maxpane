@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pytest
 from textual.app import App, ComposeResult
-from textual.widgets import Input, Select
+from textual.widgets import DataTable, Input, Select
 
 from maxpane_dashboard.widgets.curator import (
     NO_ENS,
@@ -92,6 +92,12 @@ from maxpane_dashboard.widgets.curator._fmt import (
     fmt_points,
     hhmm,
     short_addr,
+)
+from maxpane_dashboard.widgets.curator.list_hero import (
+    FILTER_EDITOR_NOTE,
+    LIST_EXPORT_SUBTITLE,
+    _filter_lines,
+    _wallet_lines,
 )
 
 #: The package under test, as a directory — the AST guards glob it, so a
@@ -812,7 +818,7 @@ async def test_the_list_hero_names_an_unconfigured_wallet_at_narrow_width():
                 "THE FILTERED LIST",
                 "568 wallets",
                 "1,234,567 pts",
-                "#14 of 568 (filtered)",
+                "#14 of 568 · filtered",
                 "single deposit >=25 ETH",
             ),
             ("#15,234 of 19,522 (raw)", "after linked removal"),
@@ -856,14 +862,55 @@ async def test_third_list_hero_card_is_exact_white_regular_filter_help():
         await pilot.pause()
         box = widget.query_one("#curator-list-hero-filter")
         plain = box.render().plain
-        assert plain.splitlines() == [
+        assert [line.rstrip() for line in plain.splitlines()] == [
             "THE FILTER",
             "'1' - first 1000 wallets",
             "'2' - joined hour 0",
             "'3' - whale splash",
             "'f' - for more filters",
         ]
-        assert "bold" not in str(box.render().get_style_at_offset(0))
+        shortcut_style = box.render().get_style_at_offset(len("THE FILTER\n"))
+        assert not shortcut_style.bold
+
+
+def test_filter_card_title_is_dim_and_shortcuts_share_one_left_edge():
+    lines = _filter_lines({}, "full", 42)
+    assert lines[0] == "[dim]THE FILTER[/]"
+    assert [len(line) for line in lines[1:]] == [
+        len(lines[1])
+    ] * 4
+    assert [line.lstrip().split()[0] for line in lines[1:]] == [
+        "'1'", "'2'", "'3'", "'f'"
+    ]
+
+
+def test_filtered_wallet_uses_regular_suffix_and_three_green_rows():
+    lines = _wallet_lines({
+        "list_view": "filtered",
+        "you_filtered_index": 2,
+        "filtered_contributors": 10,
+        "filter_summary": ("points 10+",),
+        "you_address": "0x" + "1" * 40,
+        "you_points": 99,
+    }, "full", 42)
+    assert lines[1] == "[bold]#2 of 10[/] · filtered"
+    assert lines[2].startswith("[$success]")
+    assert lines[3].startswith("[$success]")
+    assert lines[4].startswith("[$success]")
+    assert "[bold]99 pts[/]" in lines[4]
+
+
+async def test_list_hero_note_changes_only_for_open_filter_editor():
+    hero = CuratorListHero()
+    app = _Harness(hero)
+    async with app.run_test(size=(143, 10)) as pilot:
+        hero.update_data(filter_editor_open=True)
+        await pilot.pause()
+        assert FILTER_EDITOR_NOTE in _screen_text(app)
+        hero.update_data(filter_editor_open=False)
+        await pilot.pause()
+        assert LIST_EXPORT_SUBTITLE in _screen_text(app)
+        assert FILTER_EDITOR_NOTE not in _screen_text(app)
 
 
 async def test_filtered_list_hero_marks_a_wallet_outside_the_visible_list():
@@ -874,7 +921,7 @@ async def test_filtered_list_hero_marks_a_wallet_outside_the_visible_list():
         filtered_contributors=568,
         you_filtered_index=None,
     )
-    assert "-- of 568 (filtered)" in text
+    assert "-- of 568 · filtered" in text
 
 
 async def test_filtered_list_hero_summary_names_the_current_filter_state():
@@ -942,6 +989,51 @@ async def test_filtered_wallet_summary_keeps_stable_early_clauses_then_counts_re
         assert detail == "joined hour 0 +3"
         assert _visible(detail) <= box.content_size.width
         assert box.border_subtitle == ""
+
+
+async def test_filtered_title_styles_and_compacts_active_criteria():
+    panel = CuratorFilteredList()
+    app = _Harness(panel)
+    rows = [{
+        "rank": 1, "address": "0x" + "1" * 40, "points": 1,
+        "credit_eth": 1.0, "weight_eth": 1.0, "tx_count": 1,
+        "first_hour": 0, "first_index": 1, "name": None,
+    }]
+    async with app.run_test(size=(143, 20)) as pilot:
+        panel.update_data(
+            filtered_rows=rows,
+            filtered_complete=True,
+            filter_summary=("join #1-1,000", "NFT Identity.md"),
+        )
+        await pilot.pause()
+        markup = panel.query_one(".curator-list-title").content
+        assert "THE FILTERED LIST - 1 wallets" in markup
+        assert "[not bold dim]· join #1-1,000 · NFT Identity.md[/]" in markup
+
+        panel.update_data(
+            filtered_rows=rows,
+            filtered_complete=True,
+            filter_summary=tuple(f"criterion-{i}-long" for i in range(8)),
+        )
+        await pilot.pause()
+        assert "+" in _screen_text(app)
+        assert panel.query_one(
+            "#curator-filtered-list-table", DataTable
+        ).show_horizontal_scrollbar is False
+
+
+async def test_stale_nft_receipt_coexists_with_limited_source():
+    panel = CuratorFilteredList()
+    app = _Harness(panel)
+    async with app.run_test(size=(143, 12)) as pilot:
+        panel.mark_filter_applied(
+            limited=True,
+            holder_receipt="NFT holders as of 12:34",
+        )
+        await pilot.pause()
+        text = _screen_text(app)
+        assert "first 1,000 wallets only" in text
+        assert "NFT holders as of 12:34" in text
 
 
 # ===========================================================================
@@ -2443,6 +2535,7 @@ _SCREEN_SUPPLIED = {
     "you_first_index",
     "you_first_hour",
     "filter_summary",
+    "filter_editor_open",
     "filtered_rows",
     "filtered_complete",
 }
@@ -2501,7 +2594,13 @@ def test_every_kwarg_has_a_none_default():
         for name, param in inspect.signature(cls.update_data).parameters.items():
             if name == "self" or param.kind is param.VAR_KEYWORD:
                 continue
-            expected = "raw" if (cls is CuratorListHero and name == "list_view") else None
+            expected = (
+                "raw" if (cls is CuratorListHero and name == "list_view")
+                else False if (
+                    cls is CuratorListHero and name == "filter_editor_open"
+                )
+                else None
+            )
             assert param.default == expected, f"{cls.__name__}.{name}"
 
 
@@ -2597,6 +2696,7 @@ def _full_payload() -> dict:
         you_filtered_index=1,
         you_first_index=12,
         filter_summary=("first 1,000 wallets",),
+        filter_editor_open=False,
         activity_rows=[_act_row(log_index=1), _act_row(log_index=2, tx_count=5)],
         closest_call_rows=_call_rows(),
         cluster_rows=_cluster_rows(),
