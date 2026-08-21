@@ -57,12 +57,13 @@ Four rules this module exists to enforce
 Where the division happens
 --------------------------
 
-Nowhere in this module.  Models are wei-native and ``build_signals`` is the
-presentation boundary — it divides once, in ``_eth`` — while the cache's series
-writer divides its own buckets once on the way to disk.  Two divisions is how a
-number silently becomes 1e-18 of itself, so
+Most manager models remain wei-native. ``build_signals`` divides its own
+presentation values once, the cache's series writer divides its buckets once
+on the way to disk, and ``_filtered_routed_eth`` performs this module's one
+intended presentation conversion for the filtered hero. Two divisions is how
+a number silently becomes 1e-18 of itself, so
 ``test_the_manager_divides_to_eth_exactly_once`` pins this module's count at
-zero.
+one.
 """
 
 from __future__ import annotations
@@ -120,6 +121,7 @@ from maxpane_dashboard.data.curator_list_filters import (
     NftCollectionRef,
     custom_nft_label,
     filter_rows,
+    parse_nft_collection,
 )
 from maxpane_dashboard.data.curator_nft_holders import (
     NftHolderClient,
@@ -618,7 +620,7 @@ class CuratorManager:
             logger.warning("Curator cache save failed: %s", exc)
 
     def _history_complete(self, fold: list[Any] | None = None) -> bool:
-        """Whether every enumerated wallet has a retained deposit row."""
+        """Whether the retained deposit history has no known lost rows."""
         rows = self.cache.fold_rows() if fold is None else fold
         return (
             self.cache.dropped_events == 0
@@ -710,7 +712,13 @@ class CuratorManager:
         if self._nft_client is None:
             self._nft_client = self._nft_client_factory()
         name = await self._nft_client.collection_name(collection)
-        label = name or custom_nft_label(collection.chain, collection.address)
+        label = parse_nft_collection(
+            NftCollectionRef(
+                collection.chain,
+                collection.address,
+                name or custom_nft_label(collection.chain, collection.address),
+            )
+        ).label
         self._nft_collection_labels[collection.key] = label
         return label
 
@@ -1105,9 +1113,9 @@ class CuratorManager:
     def _sweep_from_block(self) -> int:
         """Where the next sweep starts.
 
-        A legacy truncation marker wins, then a repair range, the watermark +
-        1, and finally the creation block. A capped cache cannot repair itself
-        incrementally because the missing rows are older than its watermark.
+        A deposit-loss marker wins, then a repair range, the watermark + 1, and
+        finally the creation block. A cache with known loss cannot repair
+        itself incrementally because the missing rows may predate its watermark.
         **Never the head**: an absent watermark means "we have never folded
         anything", and starting from now would leave the whole game unfolded
         behind an empty leaderboard with no error anywhere.  The full backfill
@@ -1166,7 +1174,7 @@ class CuratorManager:
 
         from_block = self._sweep_from_block()
         previous_watermark = self.cache.last_seen_block()
-        repairing_truncation = (
+        repairing_history = (
             self.cache.dropped_events > 0 and from_block == A.CREATION_BLOCK
         )
         sweep = await self._guard(
@@ -1180,13 +1188,16 @@ class CuratorManager:
         failed = self._log_group_failed()
         decoded = [decode_deposit(row) for row in getattr(sweep, "deposits", ())]
         events = [event for event in decoded if event is not None]
-        if len(events) != len(decoded):
+        decode_loss = len(decoded) - len(events)
+        if decode_loss:
             logger.warning(
                 "Curator sweep: %d of %d Deposited row(s) did not decode and were "
                 "dropped rather than zeroed",
-                len(decoded) - len(events),
+                decode_loss,
                 len(decoded),
             )
+            if not repairing_history:
+                self.cache.dropped_events += decode_loss
         self.cache.store_events(events, now=now)
 
         firsts = [decode_first_deposit(row) for row in getattr(sweep, "first_deposits", ())]
@@ -1217,15 +1228,22 @@ class CuratorManager:
         # exists because of.  ``last_block=None`` is its documented "rows in,
         # watermark unchanged" combination: what arrived is kept, and the range
         # is swept again next tick.
-        covered = not any(failed.values())
+        covered = not any(failed.values()) and decode_loss == 0
         sweep_to_block = _opt_int(getattr(sweep, "to_block", None))
-        if not covered:
+        if any(failed.values()):
             logger.warning(
                 "Curator sweep from block %d had a dead filter (%s); the rows it "
                 "did return are folded but the watermark stays put so the range "
                 "is re-read rather than skipped",
                 from_block,
                 ", ".join(sorted(g for g, dead in failed.items() if dead)),
+            )
+        elif decode_loss:
+            logger.warning(
+                "Curator sweep from block %d had undecodable Deposited rows; "
+                "valid rows are folded but the watermark stays put so the "
+                "history is repaired from creation",
+                from_block,
             )
         self._refold(
             config,
@@ -1240,12 +1258,12 @@ class CuratorManager:
                 and sweep_to_block >= previous_watermark
             )
         )
-        if repairing_truncation and covered and repair_covers_watermark:
+        if repairing_history and covered and repair_covers_watermark:
             repaired = self.cache.dropped_events
             self.cache.dropped_events = 0
             logger.info(
                 "Curator history repair restored the creation-block sweep; "
-                "cleared the legacy marker for %d dropped event(s)",
+                "cleared the marker for %d lost event(s)",
                 repaired,
             )
 
@@ -1265,7 +1283,7 @@ class CuratorManager:
         # A partial sweep is still a sweep: the rows that arrived are folded and
         # persisted, and the groups that died reach the user through `degraded`
         # rather than through a silently empty table.
-        self._note(SOURCE_LOGS, not any(failed.values()))
+        self._note(SOURCE_LOGS, covered)
         if self._repair_from_block is not None:
             logger.info(
                 "Curator gap repair swept from block %d and completed", from_block

@@ -867,6 +867,38 @@ def test_the_legacy_drop_marker_survives_until_the_manager_repairs_it(
     assert second.dropped_events == 5
 
 
+def test_persisted_event_loss_combines_once_and_duplicate_keys_are_harmless(
+    tmp_path, clock
+):
+    """Malformed rows are known loss; replayed keys are still retained data."""
+    path = pathlib.Path(tmp_path / "curator_cache.json")
+    first = _deposit(0, 1 * 10**18, index=1)
+    second = dataclasses.replace(
+        _deposit(0, 2 * 10**18, index=2), contributor=first.contributor
+    )
+    seed = CuratorCache(path=str(path), clock=clock)
+    seed.store_events([first, second])
+    seed.dropped_events = 4
+    seed.save()
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["events"][1].pop("amount_wei")
+    unkeyable = dict(raw["events"][0], tx_hash="")
+    raw["events"].append(unkeyable)
+    raw["events"].append(dict(raw["events"][0]))
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    restored = CuratorCache(path=str(path), clock=clock)
+    restored.load(now=NOW)
+    assert restored.events() == [first]
+    assert restored.dropped_events == 6
+
+    # Loading one file is a deterministic restore, not an accumulation.
+    restored.load(now=NOW)
+    assert restored.events() == [first]
+    assert restored.dropped_events == 6
+
+
 @pytest.mark.parametrize("bad", [None, True, -3, "5", 2.0])
 def test_a_bad_drop_count_in_the_file_leaves_the_counter_at_zero(tmp_path, clock, bad):
     """One malformed value costs its own field, never the load."""

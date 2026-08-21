@@ -980,6 +980,43 @@ def test_a_dead_filter_does_not_advance_the_watermark_past_its_range(tmp_path, c
     assert manager.cache.last_seen_block() == 25_770_500
 
 
+def test_an_undecodable_live_deposit_forces_creation_repair_and_fail_closed_eth(
+    tmp_path, clock
+):
+    valid = next(
+        row
+        for row in RPC_ROWS
+        if row["topics"][0].lower() == A.TOPIC_DEPOSITED.lower()
+    )
+    broken = dict(
+        valid,
+        data="0x",
+        transactionHash="0x" + "ef" * 32,
+        logIndex="0x7fff",
+    )
+    client = FakeClient(fetch_logs=lambda *_: _sweep([*RPC_ROWS, broken]))
+    manager = _manager(tmp_path, clock, client=client)
+
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+
+    assert len(manager.cache.events()) == 231
+    assert manager.cache.dropped_events > 0
+    assert manager.cache.last_seen_block() is None
+    assert manager._history_complete() is False
+    assert manager._sweep_from_block() == A.CREATION_BLOCK
+
+    address = manager.cache.fold_rows()[0].address
+    result = manager.filtered_list_rows(
+        tmp_path,
+        expected_count=1,
+        live_rows=[_nft_row(address)],
+        you_row=None,
+        spec=FilterSpec(points_min=0),
+    )
+    assert result.rows == [_nft_row(address)]
+    assert result.routed_eth is None
+
+
 def test_a_group_with_history_still_serves_it_when_its_filter_dies(tmp_path, clock):
     """The other side of the same rule.  A transient dead filter must not blank
     a fold we already hold -- that is what last-good behind `as of HH:MM` is
@@ -1253,6 +1290,44 @@ def test_a_legacy_repair_behind_the_old_watermark_keeps_the_marker(
     asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
 
     assert manager.cache.dropped_events == 5
+    assert manager._sweep_from_block() == A.CREATION_BLOCK
+
+
+def test_a_failed_creation_repair_keeps_the_loss_marker(tmp_path, clock):
+    client = FakeClient(fetch_logs=lambda *_: None)
+    manager = _manager(tmp_path, clock, client=client)
+    manager.cache.store_fold([], last_block=25_770_500, now=NOW)
+    manager.cache.dropped_events = 5
+
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+
+    assert manager.cache.dropped_events == 5
+    assert manager._sweep_from_block() == A.CREATION_BLOCK
+
+
+def test_a_creation_repair_with_repeated_decode_loss_keeps_the_marker(
+    tmp_path, clock
+):
+    valid = next(
+        row
+        for row in RPC_ROWS
+        if row["topics"][0].lower() == A.TOPIC_DEPOSITED.lower()
+    )
+    broken = dict(
+        valid,
+        data="0x",
+        transactionHash="0x" + "de" * 32,
+        logIndex="0x7ffe",
+    )
+    client = FakeClient(fetch_logs=lambda *_: _sweep([*RPC_ROWS, broken]))
+    manager = _manager(tmp_path, clock, client=client)
+    manager.cache.store_fold([], last_block=25_770_500, now=NOW)
+    manager.cache.dropped_events = 1
+
+    asyncio.run(manager._pool_logs({"medium"}, NOW, CONFIG))
+
+    assert manager.cache.dropped_events > 0
+    assert manager.cache.last_seen_block() == 25_770_500
     assert manager._sweep_from_block() == A.CREATION_BLOCK
 
 
@@ -3014,6 +3089,47 @@ def test_filtered_routed_eth_is_none_when_source_is_unavailable(tmp_path, clock)
     assert result.routed_eth is None
 
 
+def test_persisted_second_deposit_loss_is_incomplete_despite_known_wallet(
+    tmp_path, clock
+):
+    path = tmp_path / "curator_cache.json"
+    _slot, fold = _legacy_clean_slot(count=1)
+    address = fold[0].address
+    seed = CuratorCache(path=str(path), clock=clock)
+    seed.store_fold(fold, last_block=25_770_500, now=NOW)
+    seed.store_first_deposits(
+        [{"contributor": address, "index": 1, "ts": NOW}]
+    )
+    seed.store_events(
+        [_deposit(address, 1 * 10**18, 1), _deposit(address, 2 * 10**18, 2)]
+    )
+    seed.save()
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["events"][1].pop("amount_wei")
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    restored = CuratorCache(path=str(path), clock=clock)
+    restored.load(now=NOW)
+    manager = CuratorManager(
+        client=FakeClient(), cache=restored, clock=clock
+    )
+    result = manager.filtered_list_rows(
+        tmp_path,
+        expected_count=1,
+        live_rows=[_nft_row(address)],
+        you_row=None,
+        spec=FilterSpec(points_min=0),
+    )
+
+    assert len(manager.cache.events()) == 1
+    assert manager.cache.dropped_events > 0
+    assert manager._history_complete() is False
+    assert result.rows == [_nft_row(address)]
+    assert result.routed_eth is None
+    assert manager._sweep_from_block() == A.CREATION_BLOCK
+
+
 def test_filtered_rows_use_a_valid_complete_export_and_cached_evidence(tmp_path, clock):
     manager = _manager(tmp_path, clock)
     slot, fold = _legacy_clean_slot(count=3)
@@ -3130,6 +3246,24 @@ async def test_collection_name_is_resolved_once_per_manager_session(tmp_path, cl
     manager = _manager(tmp_path, clock, nft_client_factory=lambda: nft)
     assert await manager.resolve_nft_collection_name(collection) == "Reader Pass"
     assert await manager.resolve_nft_collection_name(collection) == "Reader Pass"
+    assert nft.name_calls == [collection.key]
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_collection_name_is_normalized_before_caching(tmp_path, clock):
+    collection = NftCollectionRef(
+        "ethereum", "0x" + "d" * 40, "ETH 0xdddd…dddd"
+    )
+    nft = FakeNftClient(names=("  Reader\t Pass\n Collection  ",))
+    manager = _manager(tmp_path, clock, nft_client_factory=lambda: nft)
+
+    assert await manager.resolve_nft_collection_name(collection) == (
+        "Reader Pass Collection"
+    )
+    assert await manager.resolve_nft_collection_name(collection) == (
+        "Reader Pass Collection"
+    )
     assert nft.name_calls == [collection.key]
     await manager.close()
 

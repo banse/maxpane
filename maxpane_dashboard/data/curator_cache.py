@@ -79,10 +79,9 @@ _SCHEMA_VERSION = 1
 #: outlive that (H15); the oldest points are dropped, never the newest.
 MAX_SERIES_POINTS = 720
 
-#: Wei per ETH.  The **only** division site outside
-#: ``analytics.curator_signals``: the series are persisted in the presentation
-#: unit the sparklines render, and dividing twice is how a number silently
-#: becomes 1e-18 of itself.
+#: Wei per ETH.  The cache's only division site: the series are persisted in
+#: the presentation unit the sparklines render, and dividing twice is how a
+#: number silently becomes 1e-18 of itself.
 _WEI = 10**18
 
 
@@ -437,10 +436,11 @@ class CuratorCache:
         #: rows, so this is the only place the rest of the game exists.
         self._events: list[DepositEvent] = []
         self._event_keys: set[tuple[str, int]] = set()
-        #: Legacy repair marker. Builds before the complete-list view capped
-        #: the event history and persisted how many rows they dropped. A
-        #: positive value now forces one creation-block backfill; it is cleared
-        #: only after that sweep covers the old watermark successfully.
+        #: Deposit-history loss marker. Builds before the complete-list view
+        #: capped the event history and persisted how many rows they dropped;
+        #: current builds also record malformed persisted/live deposit rows.
+        #: Any positive value forces a creation-block backfill and is cleared
+        #: only after a complete sweep covers the old watermark successfully.
         self.dropped_events: int = 0
         self._first_deposits: list[dict] = []
         self._hour_saved: list[dict] = []
@@ -1174,9 +1174,7 @@ class CuratorCache:
             "settlement": self._settlement_to_dict(),
             "settled_event": dict(self._obituary) if self._obituary else None,
             "events": [_event_to_dict(e) for e in self._events],
-            # Kept as a migration marker for files written by the old capped
-            # cache. Adding the key did not move `_SCHEMA_VERSION`; an older
-            # file simply has none and restores the 0 it always had.
+            # Additive loss marker: older files simply have none and restore 0.
             "dropped_events": int(self.dropped_events),
             "first_deposits": [dict(row) for row in self._first_deposits],
             "hour_saved": [dict(row) for row in self._hour_saved],
@@ -1299,31 +1297,36 @@ class CuratorCache:
 
         try:
             dropped = 0
+            loaded_events: list[DepositEvent] = []
+            loaded_keys: set[tuple[str, int]] = set()
             for raw in payload.get("events") or ():
                 event = _event_from_dict(raw)
                 if event is None:
                     dropped += 1
                     continue
                 key = _event_key(event)
-                if key is None or key in self._event_keys:
+                if key is None:
                     dropped += 1
                     continue
-                self._event_keys.add(key)
-                self._events.append(event)
-            self._events.sort(key=lambda e: (e.block_number, e.log_index))
+                if key in loaded_keys:
+                    continue
+                loaded_keys.add(key)
+                loaded_events.append(event)
+            loaded_events.sort(key=lambda e: (e.block_number, e.log_index))
+            self._events = loaded_events
+            self._event_keys = loaded_keys
             if dropped:
                 logger.warning(
-                    "Dropped %d unusable event row(s) from the curator cache %s",
+                    "Dropped %d malformed event row(s) from the curator cache %s",
                     dropped,
                     target,
                 )
-            # Assigned, not accumulated: this is a *restore* of one file's
-            # counter onto a fresh cache (the manager loads once, in
-            # ``__init__``), so loading the same file twice must not double it.
-            # A negative, a bool or a non-number is not a count and leaves the 0.
             saved_drop = _opt_int(payload.get("dropped_events"))
-            if saved_drop is not None and saved_drop > 0:
-                self.dropped_events = saved_drop
+            saved_drop = saved_drop if saved_drop is not None and saved_drop > 0 else 0
+            # Assigned, not accumulated: loading one file twice reconstructs
+            # the same marker. Duplicate keys are harmless replay, while rows
+            # that cannot produce an event/key are known history loss.
+            self.dropped_events = saved_drop + dropped
         except Exception as exc:  # noqa: BLE001
             logger.warning("Curator events block bad: %s", exc)
 
