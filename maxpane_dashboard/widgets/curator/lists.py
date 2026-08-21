@@ -569,6 +569,9 @@ class _ListTable(Vertical):
     def _healthy_note(self) -> str:
         return ""
 
+    def _unavailable_note(self) -> str:
+        return self.UNAVAILABLE
+
     def set_list_source(self, rows, *, complete: bool) -> None:
         """Swap between the live slice and a validated complete export."""
         selected_complete = complete and isinstance(rows, list)
@@ -648,7 +651,9 @@ class _ListTable(Vertical):
         columns = self._apply_columns(table)
         rows = self._rows()
         if rows is None:
-            self._set_heading(f"[$warning]⚠ {self.UNAVAILABLE}[/]")
+            self._set_heading(
+                f"[$warning]⚠ {safe_markup(self._unavailable_note())}[/]"
+            )
             self._renumber_and_publish(table)
             table.add_row(*cells({}, columns, default=DASH))
             return
@@ -662,7 +667,9 @@ class _ListTable(Vertical):
             else []
         )
         if raw is None or (raw and not usable):
-            self._set_heading(f"[$warning]⚠ {self.UNAVAILABLE}[/]")
+            self._set_heading(
+                f"[$warning]⚠ {safe_markup(self._unavailable_note())}[/]"
+            )
             self._renumber_and_publish(table)
             table.add_row(*cells({}, columns, default=DASH))
             return
@@ -784,7 +791,8 @@ class CuratorFilteredList(_ListTable):
 
     def update_data(
         self, filtered_rows=None, you_list_row=None,
-        filtered_complete=None, filter_summary=None, **_kwargs
+        filtered_complete=None, filter_summary=None,
+        filtered_source_reason=None, **_kwargs
     ) -> None:
         self._payload = {
             "rows": filtered_rows,
@@ -794,6 +802,7 @@ class CuratorFilteredList(_ListTable):
             ),
             "complete": bool(filtered_complete),
             "filter_summary": tuple(filter_summary or ()),
+            "filtered_source_reason": filtered_source_reason,
             "seen": True,
         }
         self._render_view()
@@ -803,6 +812,12 @@ class CuratorFilteredList(_ListTable):
 
     def _row_values(self, row: dict) -> dict:
         return _raw_values(row)
+
+    def _unavailable_note(self) -> str:
+        reason = self._payload.get("filtered_source_reason")
+        if isinstance(reason, str) and reason.strip():
+            return reason.strip()
+        return super()._unavailable_note()
 
     def export_rows(self) -> list[dict]:
         rows = []

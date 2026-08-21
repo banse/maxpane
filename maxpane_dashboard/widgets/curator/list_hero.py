@@ -16,7 +16,6 @@ from maxpane_dashboard.widgets.curator.hero import (
     LIST_EXPORT_SUBTITLE,
     LIST_EXPORT_SUBTITLE_SHORT,
     LIST_EXPORT_SUBTITLE_TINY,
-    PHASE_SETTLED,
     WIDEN_HINT,
 )
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
@@ -55,12 +54,12 @@ def _count(value, noun: str) -> str:
     return f"{value:,} {noun}"
 
 
-def _list_state(phase) -> str:
-    if phase == PHASE_SETTLED:
-        return "[bold]list FROZEN[/]"
-    if phase in ("grace", "judged"):
-        return "[$success]list OPEN[/]"
-    return f"[dim]list {DASH}[/]"
+def _list_label(view: str) -> str:
+    if view == "cleaned":
+        return "[$success]list CLEANED[/]"
+    if view == "filtered":
+        return "[$success]list FILTERED[/]"
+    return "[bold]list FROZEN[/]"
 
 
 def _raw_summary_lines(data: dict, tier: str, _width: int = 0) -> list[str]:
@@ -78,7 +77,7 @@ def _raw_summary_lines(data: dict, tier: str, _width: int = 0) -> list[str]:
         f"[bold]{wallets}[/]",
         f"{volume} ETH",
         "[dim]routed (all refunded)[/]",
-        _list_state(data.get("phase")),
+        _list_label("raw"),
     )
 
 
@@ -130,73 +129,60 @@ def _compact_filter_summary(summary, tier: str, width: int = 0) -> str:
     if not clauses:
         return DASH
 
-    budget = width
-    if budget <= 0:
-        budget = FULL_WIDTH if tier == "full" else COMPACT_WIDTH
-    for shown_count in range(len(clauses), -1, -1):
-        hidden = len(clauses) - shown_count
-        candidate = " · ".join(clauses[:shown_count])
-        if hidden:
-            candidate = f"{candidate} +{hidden}" if candidate else f"+{hidden}"
-        if visible_len(candidate) <= budget:
-            return candidate
-    return DASH
+    budget = width or (FULL_WIDTH if tier == "full" else COMPACT_WIDTH)
+    complete = " · ".join(clauses)
+    return complete if visible_len(complete) <= budget else "multiple filters applied"
+
+
+def _wallet_view(data: dict) -> tuple[str, object, object]:
+    if data.get("list_view") == "filtered":
+        return (
+            "filtered",
+            data.get("you_filtered_index"),
+            data.get("filtered_contributors"),
+        )
+    if data.get("list_view") == "cleaned":
+        return "clean", data.get("you_clean_rank"), data.get("clean_contributors")
+    return "raw", data.get("you_rank"), data.get("contributors_total")
 
 
 def _wallet_lines(data: dict, tier: str, width: int = 0) -> list[str]:
-    view = data.get("list_view")
-    if view == "filtered":
-        standing = (
-            f"[bold]{_rank(data.get('you_filtered_index'))} of "
-            f"{_total(data.get('filtered_contributors'))}[/] · filtered"
-        )
-        detail = _compact_filter_summary(data.get("filter_summary"), tier, width)
-        return _lines(
-            "THE WALLET",
-            standing,
-            f"[$success]{detail}[/]",
-            f"[$success]{_wallet_identity(data, tier)}[/]",
-            f"[$success][bold]{fmt_points(data.get('you_points'))} pts[/][/]",
-        )
-    elif view == "cleaned":
-        standing = (
-            f"{_rank(data.get('you_clean_rank'))} of "
-            f"{_total(data.get('clean_contributors'))} (clean)"
-        )
-        detail = _join_detail(data)
-    else:
-        standing = (
-            f"{_rank(data.get('you_rank'))} of "
-            f"{_total(data.get('contributors_total'))} (raw)"
-        )
-        detail = _join_detail(data)
+    view, rank, total = _wallet_view(data)
+    detail = (
+        _compact_filter_summary(data.get("filter_summary"), tier, width)
+        if view == "filtered" else _join_detail(data)
+    )
+    standing = (
+        f"[$success][bold]{_rank(rank)} of {_total(total)}[/][/] "
+        f"[$success-darken-2]· {view}[/]"
+    )
     return _lines(
-        "THE WALLET",
-        f"[bold]{standing}[/]",
-        detail,
-        _wallet_identity(data, tier),
-        f"[bold]{fmt_points(data.get('you_points'))} pts[/]",
+        "YOUR WALLET",
+        standing,
+        f"[$success]{detail}[/]",
+        f"[$success]{_wallet_identity(data, tier)}[/]",
+        f"[$success][bold]{fmt_points(data.get('you_points'))} pts[/][/]",
     )
 
 
 def _cleaned_summary_lines(data: dict, tier: str, _width: int = 0) -> list[str]:
     note = "after linked removal" if tier != "minimal" else "after removal"
     return _lines(
-        "THE CLEANED LIST",
+        "THE LIST",
         f"[bold]{_count(data.get('clean_contributors'), 'wallets')}[/]",
         f"{fmt_points(data.get('clean_points'))} pts",
         f"[dim]{note}[/]",
-        _list_state(data.get("phase")),
+        _list_label("cleaned"),
     )
 
 
 def _filtered_summary_lines(data: dict, tier: str, _width: int = 0) -> list[str]:
     return _lines(
-        "THE FILTERED LIST",
+        "THE LIST",
         f"[bold]{_count(data.get('filtered_contributors'), 'wallets')}[/]",
         f"{fmt_points(data.get('filtered_points'))} pts",
-        "matching current filters",
-        _list_state(data.get("phase")),
+        f"{fmt_eth_compact(data.get('filtered_routed_eth'))} ETH deposited",
+        _list_label("filtered"),
     )
 
 
@@ -310,6 +296,7 @@ class CuratorListHero(Vertical):
         clean_points=None,
         filtered_contributors=None,
         filtered_points=None,
+        filtered_routed_eth=None,
         filter_summary=None,
         filter_editor_open=False,
         **_kwargs,
@@ -332,6 +319,7 @@ class CuratorListHero(Vertical):
             "clean_points": clean_points,
             "filtered_contributors": filtered_contributors,
             "filtered_points": filtered_points,
+            "filtered_routed_eth": filtered_routed_eth,
             "filter_summary": filter_summary,
             "filter_editor_open": filter_editor_open,
         }

@@ -77,6 +77,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorSignals,
     CuratorSparklines,
 )
+from maxpane_dashboard.widgets.curator.lists import FILTERED_LIST_EMPTY
 from tests.curator_sybil_fixtures import worst_case_rows
 from maxpane_dashboard.widgets.curator._fmt import (
     ADDR_COLS,
@@ -97,6 +98,7 @@ from maxpane_dashboard.widgets.curator.list_hero import (
     FILTER_EDITOR_NOTE,
     LIST_EXPORT_SUBTITLE,
     _filter_lines,
+    _raw_summary_lines,
     _wallet_lines,
 )
 
@@ -810,38 +812,21 @@ async def test_the_list_hero_names_an_unconfigured_wallet_at_narrow_width():
     (
         (
             "raw",
-            (
-                "THE LIST",
-                "19,522 wallets",
-                "28,353 tx",
-                "128.1K ETH",
-                "join #88",
-                "hour 12",
-            ),
-            ("THE CLEANED LIST", "THE FILTERED LIST"),
+            ("19,522 wallets", "28,353 tx", "128.1K ETH", "list FROZEN",
+             "#15,234 of 19,522 · raw"),
+            (),
         ),
         (
             "cleaned",
-            (
-                "THE CLEANED LIST",
-                "8,750 wallets",
-                "12,345,678 pts",
-                "#7,042 of 8,750 (clean)",
-                "join #88",
-                "hour 12",
-            ),
-            ("128.1K ETH", "THE FILTERED LIST"),
+            ("8,750 wallets", "12,345,678 pts", "list CLEANED",
+             "#7,042 of 8,750 · clean"),
+            (),
         ),
         (
             "filtered",
-            (
-                "THE FILTERED LIST",
-                "568 wallets",
-                "1,234,567 pts",
-                "#14 of 568 · filtered",
-                "single deposit >=25 ETH",
-            ),
-            ("#15,234 of 19,522 (raw)", "after linked removal"),
+            ("568 wallets", "1,234,567 pts", "321.50 ETH deposited",
+             "list FILTERED", "#14 of 568 · filtered"),
+            (),
         ),
     ),
 )
@@ -858,6 +843,7 @@ async def test_list_hero_follows_the_visible_list(view, expected, absent):
         clean_points=12_345_678,
         filtered_contributors=568,
         filtered_points=1_234_567,
+        filtered_routed_eth=321.5,
         you_address="0x1234567890abcdef1234567890abcdef12345678",
         you_ens="reader.eth",
         you_rank=15_234,
@@ -868,6 +854,8 @@ async def test_list_hero_follows_the_visible_list(view, expected, absent):
         you_points=42_721,
         filter_summary=("single deposit >=25 ETH",),
     )
+    assert "THE LIST" in text
+    assert "YOUR WALLET" in text
     for value in expected:
         assert value in text
     for value in absent:
@@ -904,20 +892,36 @@ def test_filter_card_title_is_dim_and_shortcuts_share_one_left_edge():
     ]
 
 
-def test_filtered_wallet_uses_regular_suffix_and_three_green_rows():
+@pytest.mark.parametrize("phase", ("grace", "judged", "settled", None))
+def test_raw_list_label_is_frozen_in_every_phase(phase):
+    lines = _raw_summary_lines({"phase": phase}, "full", 42)
+    assert lines[4] == "[bold]list FROZEN[/]"
+
+
+@pytest.mark.parametrize(
+    ("view", "rank_key", "rank", "total_key", "total", "suffix"),
+    (
+        ("raw", "you_rank", 2, "contributors_total", 10, "raw"),
+        ("cleaned", "you_clean_rank", 3, "clean_contributors", 11, "clean"),
+        ("filtered", "you_filtered_index", 4,
+         "filtered_contributors", 12, "filtered"),
+    ),
+)
+def test_wallet_card_uses_one_two_tone_shape_and_three_green_rows(
+    view, rank_key, rank, total_key, total, suffix
+):
     lines = _wallet_lines({
-        "list_view": "filtered",
-        "you_filtered_index": 2,
-        "filtered_contributors": 10,
+        "list_view": view, rank_key: rank, total_key: total,
         "filter_summary": ("points 10+",),
-        "you_address": "0x" + "1" * 40,
-        "you_points": 99,
+        "you_first_index": 8, "you_first_hour": 2,
+        "you_address": "0x" + "1" * 40, "you_points": 99,
     }, "full", 42)
-    assert lines[1] == "[bold]#2 of 10[/] · filtered"
-    assert lines[2].startswith("[$success]")
-    assert lines[3].startswith("[$success]")
-    assert lines[4].startswith("[$success]")
-    assert "[bold]99 pts[/]" in lines[4]
+    assert lines[0] == "[dim]YOUR WALLET[/]"
+    assert lines[1] == (
+        f"[$success][bold]#{rank} of {total}[/][/] "
+        f"[$success-darken-2]· {suffix}[/]"
+    )
+    assert all(line.startswith("[$success]") for line in lines[2:5])
 
 
 async def test_list_hero_note_changes_only_for_open_filter_editor():
@@ -944,71 +948,37 @@ async def test_filtered_list_hero_marks_a_wallet_outside_the_visible_list():
     assert "-- of 568 · filtered" in text
 
 
-async def test_filtered_list_hero_summary_names_the_current_filter_state():
+async def test_filtered_wallet_summary_uses_one_overflow_phrase():
     widget = CuratorListHero()
     app = _Harness(widget)
     async with app.run_test(size=(143, 12)) as pilot:
-        widget.update_data(
-            list_view="filtered",
-            filtered_contributors=568,
-            filtered_points=1_234_567,
-            filter_summary=("single deposit >=25 ETH",),
-        )
-        await pilot.pause()
-        summary = widget.query_one("#curator-list-hero-summary")
-        assert summary.render().plain.splitlines()[3] == "matching current filters"
-
-
-@pytest.mark.parametrize(
-    ("summary", "expected"),
-    (
-        (("amount or sequence or cadence or gas or funding",), "+1"),
-        (
-            (
-                "join #9,223,372,036,854,775,807-9,223,372,036,854,775,807",
-                "points 9,223,372,036,854,775,807-9,223,372,036,854,775,807",
-                "credit 9,223,372,036,854,775,807 ETH",
-            ),
-            "+3",
-        ),
-    ),
-)
-async def test_filtered_wallet_summary_collapses_to_the_rendered_card_width(
-    summary, expected
-):
-    widget = CuratorListHero()
-    app = _Harness(widget)
-    async with app.run_test(size=(143, 12)) as pilot:
-        widget.update_data(list_view="filtered", filter_summary=summary)
-        await pilot.pause()
-        box = widget.query_one("#curator-list-hero-wallet")
-        detail = box.render().plain.splitlines()[2]
-
-        assert detail == expected
-        assert _visible(detail) <= box.content_size.width
-        assert box.border_subtitle == ""
-
-
-async def test_filtered_wallet_summary_keeps_stable_early_clauses_then_counts_rest():
-    widget = CuratorListHero()
-    app = _Harness(widget)
-    async with app.run_test(size=(96, 12)) as pilot:
         widget.update_data(
             list_view="filtered",
             filter_summary=(
-                "joined hour 0",
-                "credit >=25 ETH",
-                "ENS set",
-                "amount or sequence or cadence or gas or funding",
+                "join #9,223,372,036,854,775,807",
+                "points >=9,223,372,036,854,775,807",
             ),
         )
         await pilot.pause()
-        box = widget.query_one("#curator-list-hero-wallet")
-        detail = box.render().plain.splitlines()[2]
+        detail = widget.query_one(
+            "#curator-list-hero-wallet"
+        ).render().plain.splitlines()[2]
+        assert detail == "multiple filters applied"
+        assert "+" not in detail
 
-        assert detail == "joined hour 0 +3"
-        assert _visible(detail) <= box.content_size.width
-        assert box.border_subtitle == ""
+
+async def test_filtered_table_renders_the_specific_unavailable_source_reason():
+    panel = CuratorFilteredList()
+    app = _Harness(panel)
+    async with app.run_test(size=(143, 18)) as pilot:
+        panel.update_data(
+            filtered_rows=None, filtered_complete=False,
+            filtered_source_reason="NFT holder data loading",
+        )
+        await pilot.pause()
+        text = _screen_text(app)
+        assert "NFT holder data loading" in text
+        assert FILTERED_LIST_EMPTY not in text
 
 
 async def test_filtered_title_styles_and_compacts_active_criteria():
@@ -2551,6 +2521,7 @@ _SCREEN_SUPPLIED = {
     "list_view",
     "filtered_contributors",
     "filtered_points",
+    "filtered_routed_eth",
     "you_filtered_index",
     "you_first_index",
     "you_first_hour",
@@ -2558,6 +2529,7 @@ _SCREEN_SUPPLIED = {
     "filter_editor_open",
     "filtered_rows",
     "filtered_complete",
+    "filtered_source_reason",
 }
 
 
@@ -2713,6 +2685,8 @@ def _full_payload() -> dict:
         list_view="filtered",
         filtered_contributors=3,
         filtered_points=30_000,
+        filtered_routed_eth=12.5,
+        filtered_source_reason=None,
         you_filtered_index=1,
         you_first_index=12,
         filter_summary=("first 1,000 wallets",),
