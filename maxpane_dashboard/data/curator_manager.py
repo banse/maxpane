@@ -118,6 +118,7 @@ from maxpane_dashboard.data.curator_list_filters import (
     FilterContext,
     FilterSpec,
     NftCollectionRef,
+    custom_nft_label,
     filter_rows,
 )
 from maxpane_dashboard.data.curator_nft_holders import (
@@ -542,6 +543,7 @@ class CuratorManager:
     ) -> None:
         self._nft_client_factory = nft_client_factory
         self._nft_client: Any = None
+        self._nft_collection_labels: dict[str, str] = {}
         self._nft_task: Any = None
         self._nft_running_request: _NftScanRequest | None = None
         self._nft_queued_request: _NftScanRequest | None = None
@@ -698,6 +700,18 @@ class CuratorManager:
             for event in self.cache.events()
             if event.amount_wei >= floor_wei
         )
+
+    async def resolve_nft_collection_name(
+        self, collection: NftCollectionRef
+    ) -> str:
+        if collection.key in self._nft_collection_labels:
+            return self._nft_collection_labels[collection.key]
+        if self._nft_client is None:
+            self._nft_client = self._nft_client_factory()
+        name = await self._nft_client.collection_name(collection)
+        label = name or custom_nft_label(collection.chain, collection.address)
+        self._nft_collection_labels[collection.key] = label
+        return label
 
     def _queue_nft_scan(
         self,

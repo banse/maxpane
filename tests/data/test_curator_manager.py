@@ -47,6 +47,7 @@ from maxpane_dashboard.data.curator_manager import (
 from maxpane_dashboard.data.curator_list_filters import (
     FilterDataUnavailable,
     FilterSpec,
+    NftCollectionRef,
     PREDEFINED_NFT_COLLECTIONS,
     empty_filter_values,
     parse_filter_values,
@@ -156,10 +157,19 @@ class FakeClient:
 
 
 class FakeNftClient:
-    def __init__(self, answers=()):
+    def __init__(self, answers=(), names=()):
         self.answers = list(answers)
+        self.names = list(names)
         self.calls = []
+        self.name_calls = []
         self.closed = False
+
+    async def collection_name(self, collection):
+        self.name_calls.append(collection.key)
+        answer = self.names.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
 
     async def scan(self, collection, wallets):
         self.calls.append((collection.key, tuple(wallets)))
@@ -3007,6 +3017,50 @@ def test_family_and_whale_filters_refuse_missing_evidence(tmp_path, clock):
 
     with pytest.raises(FilterDataUnavailable, match="deposit history unavailable"):
         manager.filtered_list_rows(tmp_path, expected_count=1, live_rows=[row], you_row=None, spec=preset_filter("3"))
+
+
+@pytest.mark.asyncio
+async def test_collection_name_is_resolved_once_per_manager_session(tmp_path, clock):
+    collection = NftCollectionRef(
+        "ethereum", "0x" + "a" * 40, "ETH 0xaaaa…aaaa"
+    )
+    nft = FakeNftClient(names=("Reader Pass",))
+    manager = _manager(tmp_path, clock, nft_client_factory=lambda: nft)
+    assert await manager.resolve_nft_collection_name(collection) == "Reader Pass"
+    assert await manager.resolve_nft_collection_name(collection) == "Reader Pass"
+    assert nft.name_calls == [collection.key]
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_no_name_uses_and_caches_the_short_address_label(tmp_path, clock):
+    collection = NftCollectionRef(
+        "base", "0x" + "b" * 40, "BASE 0xbbbb…bbbb"
+    )
+    nft = FakeNftClient(names=(None,))
+    manager = _manager(tmp_path, clock, nft_client_factory=lambda: nft)
+    expected = "BASE 0xbbbb…bbbb"
+    assert await manager.resolve_nft_collection_name(collection) == expected
+    assert await manager.resolve_nft_collection_name(collection) == expected
+    assert nft.name_calls == [collection.key]
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_unavailable_collection_name_is_not_cached(tmp_path, clock):
+    collection = NftCollectionRef(
+        "ethereum", "0x" + "c" * 40, "ETH 0xcccc…cccc"
+    )
+    nft = FakeNftClient(names=(
+        NftHolderUnavailable("ethereum NFT holder RPC unavailable"),
+        "Retry Pass",
+    ))
+    manager = _manager(tmp_path, clock, nft_client_factory=lambda: nft)
+    with pytest.raises(NftHolderUnavailable):
+        await manager.resolve_nft_collection_name(collection)
+    assert await manager.resolve_nft_collection_name(collection) == "Retry Pass"
+    assert nft.name_calls == [collection.key, collection.key]
+    await manager.close()
 
 
 @pytest.mark.asyncio
