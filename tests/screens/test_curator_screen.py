@@ -3574,6 +3574,92 @@ async def test_wallet_prompt_invalidates_delayed_custom_name_before_return(
         assert editor.query_one("#filter-nft-add", Button).disabled is False
 
 
+async def test_pending_custom_name_preserves_newer_chain_and_address():
+    manager = _DelayedNameManager(_list_payload(1))
+    requested_address = "0x" + "d" * 40
+    newer_address = "0x" + "e" * 40
+    key = f"ethereum:{requested_address}"
+    manager.hold_name(key, "Ethereum Reader Pass")
+    screen = CuratorScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=_WALLET,
+        export_dir=_FIXTURES / "no-local-exports",
+    )
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        chain = editor.query_one("#filter-nft-chain", Select)
+        nft_input = editor.query_one("#filter-nft-address", Input)
+        nft_input.value = requested_address
+        editor.post_message(NftCollectionAddRequested(
+            "ethereum", requested_address
+        ))
+        await asyncio.wait_for(manager.name_started[key].wait(), timeout=1)
+
+        try:
+            chain.value = "base"
+            nft_input.value = newer_address
+            manager.name_releases[key].set()
+            await asyncio.wait_for(manager.name_finished[key].wait(), timeout=1)
+            await pilot.pause()
+        finally:
+            manager.name_releases[key].set()
+
+        assert editor.values()["nft_collections"] == ({
+            "label": "Ethereum Reader Pass",
+            "chain": "ethereum",
+            "address": requested_address,
+        },)
+        assert chain.value == "base"
+        assert nft_input.value == newer_address
+        assert editor.query_one("#filter-nft-add", Button).disabled is False
+
+
+async def test_pending_custom_name_clears_canonically_unchanged_address():
+    manager = _DelayedNameManager(_list_payload(1))
+    canonical_address = "0x" + "a" * 40
+    entered_address = "  0x" + "A" * 40 + "  "
+    key = f"ethereum:{canonical_address}"
+    manager.hold_name(key, "Canonical Reader Pass")
+    screen = CuratorScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=_WALLET,
+        export_dir=_FIXTURES / "no-local-exports",
+    )
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        nft_input = editor.query_one("#filter-nft-address", Input)
+        nft_input.value = entered_address
+        editor.post_message(NftCollectionAddRequested(
+            "ethereum", entered_address
+        ))
+        await asyncio.wait_for(manager.name_started[key].wait(), timeout=1)
+
+        try:
+            manager.name_releases[key].set()
+            await asyncio.wait_for(manager.name_finished[key].wait(), timeout=1)
+            await pilot.pause()
+        finally:
+            manager.name_releases[key].set()
+
+        assert editor.values()["nft_collections"] == ({
+            "label": "Canonical Reader Pass",
+            "chain": "ethereum",
+            "address": canonical_address,
+        },)
+        assert nft_input.value == ""
+        assert editor.query_one("#filter-nft-add", Button).disabled is False
+
+
 async def test_overlapping_custom_names_only_commit_the_newest_generation():
     manager = _DelayedNameManager(_list_payload(1))
     first_address = "0x" + "d" * 40

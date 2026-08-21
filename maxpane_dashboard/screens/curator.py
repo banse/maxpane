@@ -156,7 +156,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Input, Static
+from textual.widgets import Input, Select, Static
 
 from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 
@@ -1385,7 +1385,19 @@ class CuratorScreen(RefreshGuard, Screen):
         custom = self._custom_nft_values(editor)
         custom.append(self._nft_primitive(resolved))
         editor.set_custom_nfts(custom)
-        editor.query_one("#filter-nft-address", Input).value = ""
+        address_input = editor.query_one("#filter-nft-address", Input)
+        try:
+            current = parse_nft_collection({
+                "chain": str(
+                    editor.query_one("#filter-nft-chain", Select).value
+                ),
+                "address": address_input.value,
+                "label": None,
+            })
+        except FilterValidationError:
+            current = None
+        if current is not None and current.key == item.key:
+            address_input.value = ""
         editor.clear_error()
 
     def on_nft_collection_remove_requested(
