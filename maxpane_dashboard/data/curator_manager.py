@@ -73,7 +73,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -92,6 +92,7 @@ from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import curator_clusters
 from maxpane_dashboard.data.curator_cache import (
     DEFAULT_CACHE_PATH,
+    NFT_HOLDER_TTL_SECONDS,
     SLOT_BLOCKSCOUT,
     SLOT_CONFIG,
     SLOT_LOGS,
@@ -116,7 +117,14 @@ from maxpane_dashboard.data.curator_list_filters import (
     FILTER_FAMILIES,
     FilterContext,
     FilterSpec,
+    NftCollectionRef,
     filter_rows,
+)
+from maxpane_dashboard.data.curator_nft_holders import (
+    NftHolderClient,
+    NftHolderPending,
+    NftHolderUnavailable,
+    wallet_universe_fingerprint,
 )
 from maxpane_dashboard.data.curator_list_source import load_export_list
 from maxpane_dashboard.data.safe_call import safe_call as _safe_call
@@ -494,11 +502,26 @@ CONFIG_PAYLOAD_KEYS: tuple[str, ...] = (
 )
 
 
+NFT_FAILURE_BACKOFF_SECONDS = 300.0
+
+
+@dataclass(frozen=True, slots=True)
+class _NftScanRequest:
+    collections: tuple[NftCollectionRef, ...]
+    wallets: tuple[str, ...]
+    fingerprint: str
+
+    @property
+    def key(self) -> tuple[tuple[str, ...], str]:
+        return tuple(item.key for item in self.collections), self.fingerprint
+
+
 @dataclass(frozen=True, slots=True)
 class FilteredListResult:
     rows: list[dict] | None
     complete: bool
     source_reason: str | None
+    holder_receipt: str | None = None
 
 
 class CuratorManager:
@@ -515,7 +538,14 @@ class CuratorManager:
         cache_path: str = DEFAULT_CACHE_PATH,
         analysis_transport: Any = None,
         analysis_sleep: Any = None,
+        nft_client_factory: Callable[[], Any] = NftHolderClient,
     ) -> None:
+        self._nft_client_factory = nft_client_factory
+        self._nft_client: Any = None
+        self._nft_task: Any = None
+        self._nft_running_request: _NftScanRequest | None = None
+        self._nft_queued_request: _NftScanRequest | None = None
+        self._nft_failed_until: dict[tuple[str, str], float] = {}
         self.poll_interval = poll_interval
         self._clock = clock
         self._cache_path = str(cache_path)
@@ -669,6 +699,130 @@ class CuratorManager:
             if event.amount_wei >= floor_wei
         )
 
+    def _queue_nft_scan(
+        self,
+        collections: tuple[NftCollectionRef, ...],
+        wallets: tuple[str, ...],
+        fingerprint: str,
+    ) -> None:
+        request = _NftScanRequest(collections, wallets, fingerprint)
+        running = self._nft_task
+        if running is not None and not running.done():
+            if (
+                self._nft_running_request is None
+                or self._nft_running_request.key != request.key
+            ):
+                self._nft_queued_request = request
+            return
+        self._nft_task = asyncio.ensure_future(
+            self._run_nft_scan_queue(request)
+        )
+
+    async def _run_nft_scan_queue(
+        self, request: _NftScanRequest
+    ) -> None:
+        try:
+            current: _NftScanRequest | None = request
+            while current is not None:
+                self._nft_running_request = current
+                for collection in current.collections:
+                    hit = self.cache.nft_holders(
+                        collection.key, current.fingerprint
+                    )
+                    if hit is not None and hit.fresh:
+                        continue
+                    failure_key = (collection.key, current.fingerprint)
+                    if self._nft_failed_until.get(failure_key, 0) > self._clock():
+                        continue
+                    if self._nft_client is None:
+                        self._nft_client = self._nft_client_factory()
+                    try:
+                        scan = await self._nft_client.scan(
+                            collection, current.wallets
+                        )
+                    except Exception as exc:  # source degradation boundary
+                        logger.warning("NFT holder scan failed: %s", exc)
+                        self._nft_failed_until[failure_key] = (
+                            self._clock() + NFT_FAILURE_BACKOFF_SECONDS
+                        )
+                        continue
+                    if (
+                        not scan.complete
+                        or scan.checked != len(current.wallets)
+                    ):
+                        self._nft_failed_until[failure_key] = (
+                            self._clock() + NFT_FAILURE_BACKOFF_SECONDS
+                        )
+                        continue
+                    self.cache.store_nft_holders(
+                        collection.key,
+                        wallet_fingerprint=current.fingerprint,
+                        holders=scan.holders,
+                        checked=scan.checked,
+                        failed=scan.failed,
+                        block_number=scan.block_number,
+                        ts=self._clock(),
+                    )
+                    self._nft_failed_until.pop(failure_key, None)
+                current = self._nft_queued_request
+                self._nft_queued_request = None
+        finally:
+            self._nft_running_request = None
+            self._nft_task = None
+
+    def _nft_filter_context(
+        self,
+        spec: FilterSpec,
+        rows: list[dict],
+    ) -> tuple[dict[str, frozenset[str]] | None, str | None]:
+        if not spec.nft_collections:
+            return None, None
+        wallets = tuple(
+            row["address"].casefold()
+            for row in rows
+            if isinstance(row.get("address"), str)
+        )
+        fingerprint = wallet_universe_fingerprint(wallets)
+        found: dict[str, frozenset[str]] = {}
+        stale_stamps: list[float] = []
+        missing: list[NftCollectionRef] = []
+        refresh: list[NftCollectionRef] = []
+        for collection in spec.nft_collections:
+            hit = self.cache.nft_holders(collection.key, fingerprint)
+            if hit is None:
+                missing.append(collection)
+                refresh.append(collection)
+            else:
+                found[collection.key] = hit.holders
+                if not hit.fresh:
+                    stale_stamps.append(hit.ts)
+                    refresh.append(collection)
+        refreshable = tuple(
+            collection for collection in refresh
+            if self._nft_failed_until.get(
+                (collection.key, fingerprint), 0
+            ) <= self._clock()
+        )
+        if refreshable:
+            self._queue_nft_scan(refreshable, wallets, fingerprint)
+        if missing:
+            blocked = any(
+                self._nft_failed_until.get(
+                    (item.key, fingerprint), 0
+                ) > self._clock()
+                for item in missing
+            )
+            if blocked:
+                raise NftHolderUnavailable("NFT holder data unavailable")
+            raise NftHolderPending("NFT holder data loading")
+        receipt = None
+        if stale_stamps:
+            oldest = min(stale_stamps)
+            receipt = "NFT holders as of " + time.strftime(
+                "%H:%M", time.localtime(oldest)
+            )
+        return found, receipt
+
     def filtered_list_rows(
         self,
         directory,
@@ -687,15 +841,33 @@ class CuratorManager:
         )
         if not isinstance(source.rows, list):
             return FilteredListResult(None, source.complete, source.reason)
+        nft_holders, holder_receipt = self._nft_filter_context(
+            spec, source.rows
+        )
         context = FilterContext(
             families_by_address=self._filter_families() if spec.families else None,
             whale_addresses=self._filter_whales(expected_count) if spec.whale else None,
+            nft_holders_by_collection=nft_holders,
         )
         return FilteredListResult(
             filter_rows(source.rows, spec, context),
             source.complete,
             source.reason,
+            holder_receipt,
         )
+
+    async def _cancel_nft_scan(self) -> None:
+        task = self._nft_task
+        self._nft_task = None
+        self._nft_queued_request = None
+        if task is None:
+            return
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
     async def close(self) -> None:
         """Stop both detached tasks, close the client, then persist the cache.
@@ -711,6 +883,12 @@ class CuratorManager:
         walking, and saving in a ``finally`` means a client that throws on the
         way out cannot cost the user the whole game's history.
         """
+        await self._cancel_nft_scan()
+        if self._nft_client is not None:
+            try:
+                await self._nft_client.close()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("closing NFT holder client failed: %s", exc)
         await self._cancel_crosscheck()
         await self._cancel_analysis()
         try:

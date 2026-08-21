@@ -11,12 +11,14 @@ import asyncio
 import inspect
 import json
 import os
+import time
 
 import pytest
 
 from maxpane_dashboard.data import curator_addresses as A
 from maxpane_dashboard.data import curator_manager
 from maxpane_dashboard.data.curator_cache import (
+    NFT_HOLDER_TTL_SECONDS,
     SERIES_INPUT_KEYS,
     SLOT_BLOCKSCOUT,
     SLOT_LOGS,
@@ -44,9 +46,17 @@ from maxpane_dashboard.data.curator_manager import (
 )
 from maxpane_dashboard.data.curator_list_filters import (
     FilterDataUnavailable,
+    FilterSpec,
+    PREDEFINED_NFT_COLLECTIONS,
     empty_filter_values,
     parse_filter_values,
     preset_filter,
+)
+from maxpane_dashboard.data.curator_nft_holders import (
+    NftHolderPending,
+    NftHolderScan,
+    NftHolderUnavailable,
+    wallet_universe_fingerprint,
 )
 from tests.curator_fixtures import capture
 from maxpane_dashboard.analytics.curator_signals import LEADERBOARD_LIMIT, build_signals
@@ -143,6 +153,39 @@ class FakeClient:
         value = self.answers.get("close")
         if isinstance(value, Exception):
             raise value
+
+
+class FakeNftClient:
+    def __init__(self, answers=()):
+        self.answers = list(answers)
+        self.calls = []
+        self.closed = False
+
+    async def scan(self, collection, wallets):
+        self.calls.append((collection.key, tuple(wallets)))
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    async def close(self):
+        self.closed = True
+
+
+def _nft_row(address, points=1):
+    return {
+        "rank": 1,
+        "address": address,
+        "points": points,
+        "credit_eth": 1.0,
+        "tx_count": 1,
+        "flagged": False,
+        "name": None,
+        "weight_eth": 1.0,
+        "first_hour": 0,
+        "first_index": 1,
+        "link_conf": "clean",
+    }
 
 
 def _manager(tmp_path, clock, client=None, **kwargs) -> CuratorManager:
@@ -2964,3 +3007,206 @@ def test_family_and_whale_filters_refuse_missing_evidence(tmp_path, clock):
 
     with pytest.raises(FilterDataUnavailable, match="deposit history unavailable"):
         manager.filtered_list_rows(tmp_path, expected_count=1, live_rows=[row], you_row=None, spec=preset_filter("3"))
+
+
+@pytest.mark.asyncio
+async def test_nft_filter_queues_once_without_blocking_or_opening_early(
+    tmp_path, clock
+):
+    made = []
+    gate = asyncio.Event()
+
+    class BlockingNft(FakeNftClient):
+        async def scan(self, collection, wallets):
+            self.calls.append((collection.key, tuple(wallets)))
+            await gate.wait()
+            return NftHolderScan(
+                collection, frozenset(), len(tuple(wallets)), 0, 1
+            )
+
+    def factory():
+        client = BlockingNft()
+        made.append(client)
+        return client
+
+    manager = _manager(
+        tmp_path, clock, nft_client_factory=factory
+    )
+    assert made == []
+    row = _nft_row("0x" + "1" * 40)
+    spec = parse_filter_values({
+        **empty_filter_values(),
+        "nft_collections": (PREDEFINED_NFT_COLLECTIONS[0],),
+    })
+    with pytest.raises(NftHolderPending, match="loading"):
+        manager.filtered_list_rows(
+            tmp_path, expected_count=1, live_rows=[row],
+            you_row=None, spec=spec
+        )
+    with pytest.raises(NftHolderPending, match="loading"):
+        manager.filtered_list_rows(
+            tmp_path, expected_count=1, live_rows=[row],
+            you_row=None, spec=spec
+        )
+    await asyncio.sleep(0)
+    assert len(made) == 1 and len(made[0].calls) == 1
+    gate.set()
+    await manager._nft_task
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_fresh_and_stale_holder_sets_filter_without_false_empty(
+    tmp_path, clock
+):
+    collection = PREDEFINED_NFT_COLLECTIONS[0]
+    refreshed = NftHolderScan(
+        collection, frozenset({"0x" + "1" * 40}), 2, 0, 2
+    )
+    nft = FakeNftClient([refreshed])
+    made = []
+
+    def factory():
+        made.append(nft)
+        return nft
+
+    manager = _manager(
+        tmp_path, clock,
+        nft_client_factory=factory,
+    )
+    holder = "0x" + "1" * 40
+    other = "0x" + "2" * 40
+    rows = [_nft_row(holder), _nft_row(other)]
+    fingerprint = wallet_universe_fingerprint(
+        row["address"] for row in rows
+    )
+    manager.cache.store_nft_holders(
+        collection.key,
+        wallet_fingerprint=fingerprint,
+        holders=(holder,), checked=2, failed=0,
+        block_number=1, ts=clock(),
+    )
+    spec = FilterSpec(nft_collections=(collection,))
+    fresh = manager.filtered_list_rows(
+        tmp_path, expected_count=2, live_rows=rows,
+        you_row=None, spec=spec
+    )
+    assert fresh.rows == [rows[0]]
+    assert fresh.holder_receipt is None
+    assert made == []
+
+    clock.advance(NFT_HOLDER_TTL_SECONDS + 1)
+    stale = manager.filtered_list_rows(
+        tmp_path, expected_count=2, live_rows=rows,
+        you_row=None, spec=spec
+    )
+    assert stale.rows == [rows[0]]
+    assert stale.holder_receipt == (
+        "NFT holders as of "
+        + time.strftime("%H:%M", time.localtime(NOW))
+    )
+    assert manager._nft_task is not None
+    await manager._nft_task
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_complete_scan_publishes_and_incomplete_scan_preserves_last_good(
+    tmp_path, clock
+):
+    collection = PREDEFINED_NFT_COLLECTIONS[0]
+    holder = "0x" + "1" * 40
+    complete = NftHolderScan(
+        collection, frozenset({holder}), 1, 0, 12
+    )
+    incomplete = NftHolderScan(
+        collection, frozenset(), 0, 0, 13
+    )
+    nft = FakeNftClient([complete, incomplete])
+    manager = _manager(
+        tmp_path, clock, nft_client_factory=lambda: nft
+    )
+    row = _nft_row(holder)
+    spec = FilterSpec(nft_collections=(collection,))
+    with pytest.raises(NftHolderPending):
+        manager.filtered_list_rows(
+            tmp_path, expected_count=1, live_rows=[row],
+            you_row=None, spec=spec
+        )
+    await manager._nft_task
+    hit = manager.filtered_list_rows(
+        tmp_path, expected_count=1, live_rows=[row],
+        you_row=None, spec=spec
+    )
+    assert hit.rows == [row]
+
+    clock.advance(NFT_HOLDER_TTL_SECONDS + 1)
+    manager.filtered_list_rows(
+        tmp_path, expected_count=1, live_rows=[row],
+        you_row=None, spec=spec
+    )
+    await manager._nft_task
+    assert manager.cache.nft_holders(
+        collection.key, wallet_universe_fingerprint([holder])
+    ).holders == frozenset({holder})
+    await manager.close()
+    assert nft.closed is True
+
+
+@pytest.mark.asyncio
+async def test_total_failure_backs_off_without_second_request(
+    tmp_path, clock
+):
+    collection = PREDEFINED_NFT_COLLECTIONS[1]
+    failed = FakeNftClient([
+        NftHolderUnavailable("RPC unavailable")
+    ])
+    manager = _manager(
+        tmp_path, clock, nft_client_factory=lambda: failed
+    )
+    row = _nft_row("0x" + "1" * 40)
+    spec = FilterSpec(nft_collections=(collection,))
+    with pytest.raises(NftHolderPending):
+        manager.filtered_list_rows(
+            tmp_path, expected_count=1, live_rows=[row],
+            you_row=None, spec=spec
+        )
+    await manager._nft_task
+    with pytest.raises(NftHolderUnavailable, match="unavailable"):
+        manager.filtered_list_rows(
+            tmp_path, expected_count=1, live_rows=[row],
+            you_row=None, spec=spec
+        )
+    assert len(failed.calls) == 1
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_close_cancels_and_awaits_active_nft_scan(tmp_path, clock):
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    class BlockingNft(FakeNftClient):
+        async def scan(self, collection, wallets):
+            started.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+    nft = BlockingNft()
+    manager = _manager(
+        tmp_path, clock, nft_client_factory=lambda: nft
+    )
+    row = _nft_row("0x" + "1" * 40)
+    spec = FilterSpec(nft_collections=(PREDEFINED_NFT_COLLECTIONS[0],))
+    with pytest.raises(NftHolderPending):
+        manager.filtered_list_rows(
+            tmp_path, expected_count=1, live_rows=[row],
+            you_row=None, spec=spec
+        )
+    await started.wait()
+    await manager.close()
+    assert cancelled.is_set()
+    assert nft.closed is True
