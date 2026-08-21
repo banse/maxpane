@@ -46,6 +46,8 @@ from maxpane_dashboard.data.curator_manager import CuratorManager
 from maxpane_dashboard.screens.curator import (
     CURATOR_FULL_LAYOUT_COLUMNS,
     CuratorScreen,
+    LIST_RAW,
+    MODE_LIST,
 )
 from maxpane_dashboard.screens.game_select import GAMES, GameSelectScreen
 from maxpane_dashboard.themes import THEMES, THEME_NAMES
@@ -101,6 +103,28 @@ def test_nft_holder_data_layer_and_curator_widgets_keep_mvc_boundaries():
             assert module.split(".")[0] != "httpx", (
                 f"{path.name} imports {module} -- widgets do not make HTTP calls"
             )
+
+
+def test_cr01_name_resolution_stays_in_the_curator_mvc_path():
+    screen = (
+        REPO / "maxpane_dashboard" / "screens" / "curator.py"
+    ).read_text()
+    assert "resolve_nft_collection_name" in screen
+    assert "NftHolderClient" not in screen
+    for path in (REPO / "maxpane_dashboard" / "screens").glob("*.py"):
+        if path.name != "curator.py":
+            assert "FilterApplyRequested" not in path.read_text()
+
+
+def test_cr01_copy_does_not_leak_into_the_shared_curator_hero():
+    shared = (
+        REPO / "maxpane_dashboard" / "widgets" / "curator" / "hero.py"
+    ).read_text()
+    for text in (
+        "YOUR WALLET", "multiple filters applied",
+        "NFT holder data loading",
+    ):
+        assert text not in shared
 
 #: The one menu row this WP adds, asserted verbatim so the copy cannot drift.
 CURATOR_ROW = (
@@ -496,6 +520,8 @@ def test_pressing_the_menu_key_opens_the_curator_screen() -> None:
             assert isinstance(app.screen, CuratorScreen), (
                 f"menu key {key!r} opened {type(app.screen).__name__}"
             )
+            assert app.screen._mode == MODE_LIST
+            assert app.screen._list_view == LIST_RAW
 
     asyncio.run(_run())
 
@@ -875,6 +901,7 @@ def test_the_curator_screen_renders_under_every_registered_theme(theme_name: str
         async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, 48)) as pilot:
             await pilot.pause()
             await screen._do_refresh()
+            await pilot.press("h")
             await pilot.pause()
             return _screen_text(app)
 
@@ -1155,8 +1182,8 @@ def test_no_curator_module_hardcodes_a_contract_parameter() -> None:
 _KEY_TOKENS = (
     "api_key", "apikey", "x-api-key", "authorization", "bearer ",
     "private_key", "privatekey", "keystore", "mnemonic", "secret_key",
-    "eth_sendrawtransaction", "eth_signtransaction", "personal_sign",
-    "signtransaction",
+    "eth_sendrawtransaction", "eth_sendtransaction", "eth_signtransaction",
+    "personal_sign", "signtransaction",
 )
 
 #: Libraries that exist to sign or to hold a key.

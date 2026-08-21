@@ -3549,6 +3549,46 @@ async def test_filter_editor_composite_fits_143_columns_with_actions():
 
 
 @pytest.mark.parametrize(
+    ("keys", "mode", "expected"),
+    (
+        ((), MODE_LIST, CuratorRawList),
+        (("c",), MODE_LIST, CuratorCleanedList),
+        (("c", "c"), MODE_LIST, CuratorFilteredList),
+        (("f",), MODE_LIST, CuratorListFilterEditor),
+        (("h",), MODE_DASHBOARD, CuratorClusters),
+        (("h", "c"), MODE_DASHBOARD, CuratorClosestCalls),
+        (("y",), MODE_WALLET, CuratorWalletLadder),
+    ),
+)
+async def test_cr01_modes_composite_at_143_without_horizontal_scroll(
+    keys, mode, expected
+):
+    screen = _screen(_list_payload(100))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        if keys:
+            await pilot.press(*keys)
+        await pilot.pause()
+        widget = screen.query_one(expected)
+        assert screen._mode == mode
+        assert widget.display is True
+        assert widget.show_horizontal_scrollbar is False
+        if mode == MODE_LIST:
+            hero = screen.query_one(CuratorListHero)
+            assert hero.display is True
+            assert hero.show_horizontal_scrollbar is False
+        if expected is CuratorListFilterEditor:
+            widget.scroll_end(animate=False)
+            await pilot.pause()
+            editor_text = _region_text(app, widget, screen)
+            assert "NFT HOLDERS" in editor_text
+            assert "APPLY FILTER" in editor_text
+            assert "RESET ALL" in editor_text
+            assert "press 'f' to accept filters" not in editor_text
+
+
+@pytest.mark.parametrize(
     ("view", "expected_widget"),
     (
         ("raw", CuratorRawList),
