@@ -5,11 +5,16 @@ import pytest
 from maxpane_dashboard.data.curator_list_filters import (
     FilterContext,
     FilterDataUnavailable,
+    FilterSpec,
     FilterValidationError,
+    NftCollectionRef,
+    PREDEFINED_NFT_COLLECTIONS,
+    custom_nft_label,
     empty_filter_values,
     filter_rows,
     filter_summary,
     parse_filter_values,
+    parse_nft_collection,
     preset_filter,
 )
 
@@ -160,3 +165,183 @@ def test_summaries_are_stable_and_contain_only_active_values():
         "window grace",
         "amount or funding",
     )
+
+
+def test_the_four_predefined_nft_collections_are_exact():
+    assert [
+        (item.label, item.chain, item.address)
+        for item in PREDEFINED_NFT_COLLECTIONS
+    ] == [
+        (
+            "Identity.md",
+            "ethereum",
+            "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d",
+        ),
+        (
+            "Fren Pet",
+            "base",
+            "0x5b51cf49cb48617084ef35e7c7d7a21914769ff1",
+        ),
+        (
+            "Milady",
+            "ethereum",
+            "0x5af0d9827e0c53e4799bb226655a1de152a425a5",
+        ),
+        (
+            "Crypto Punks",
+            "ethereum",
+            "0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb",
+        ),
+    ]
+
+
+def test_custom_nft_collections_validate_normalise_and_deduplicate():
+    address = "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD"
+    spec = parse_filter_values(
+        {
+            "nft_collections": (
+                {"chain": "base", "address": address},
+                {"chain": "base", "address": address.lower()},
+            )
+        }
+    )
+    assert spec.nft_collections == (
+        NftCollectionRef(
+            chain="base",
+            address=address.lower(),
+            label="BASE 0xabcd…abcd",
+        ),
+    )
+    assert custom_nft_label("ethereum", address.lower()) == "ETH 0xabcd…abcd"
+
+
+@pytest.mark.parametrize(
+    ("value", "field"),
+    [
+        ({"chain": "arbitrum", "address": "0x" + "1" * 40}, "nft_collections"),
+        ({"chain": "ethereum", "address": "0x1234"}, "nft_collections"),
+        ({"chain": "ethereum", "address": "0x" + "z" * 40}, "nft_collections"),
+    ],
+)
+def test_invalid_custom_nft_collections_name_the_editor_field(value, field):
+    with pytest.raises(FilterValidationError) as caught:
+        parse_filter_values({"nft_collections": (value,)})
+    assert caught.value.field == field
+
+
+def test_selected_nft_collections_are_or_with_each_other_and_and_with_points():
+    identity, frenpet = PREDEFINED_NFT_COLLECTIONS[:2]
+    rows = [
+        {"address": "0x" + "1" * 40, "points": 10},
+        {"address": "0x" + "2" * 40, "points": 20},
+        {"address": "0x" + "3" * 40, "points": 30},
+    ]
+    context = FilterContext(
+        nft_holders_by_collection={
+            identity.key: frozenset({rows[0]["address"]}),
+            frenpet.key: frozenset({rows[1]["address"]}),
+        }
+    )
+    spec = FilterSpec(
+        points_min=15,
+        nft_collections=(identity, frenpet),
+    )
+    assert [row["address"] for row in filter_rows(rows, spec, context)] == [
+        rows[1]["address"]
+    ]
+
+
+@pytest.mark.parametrize(
+    ("spec_values", "first_values", "second_values"),
+    (
+        ({"join_min": 2}, {"first_index": 2}, {"first_index": 1}),
+        ({"hour_min": 2}, {"first_hour": 2}, {"first_hour": 1}),
+        ({"rank_min": 2}, {"rank": 2}, {"rank": 1}),
+        ({"points_min": 2}, {"points": 2}, {"points": 1}),
+        ({"credit_min": 2}, {"credit_eth": 2}, {"credit_eth": 1}),
+        ({"weight_min": 2}, {"weight_eth": 2}, {"weight_eth": 1}),
+        ({"deposits_min": 2}, {"tx_count": 2}, {"tx_count": 1}),
+        ({"ens": "set"}, {"name": "one.eth"}, {"name": None}),
+        ({"window": "judged"}, {"first_hour": 24}, {"first_hour": 0}),
+        ({"band": "high"}, {"link_conf": "high"}, {"link_conf": "clean"}),
+    ),
+)
+def test_nft_category_ands_with_each_row_backed_category(
+    spec_values, first_values, second_values
+):
+    collection = PREDEFINED_NFT_COLLECTIONS[0]
+    first = {"address": "0x" + "1" * 40, **first_values}
+    second = {"address": "0x" + "2" * 40, **second_values}
+    context = FilterContext(nft_holders_by_collection={
+        collection.key: frozenset({first["address"], second["address"]})
+    })
+    spec = FilterSpec(nft_collections=(collection,), **spec_values)
+    assert filter_rows([first, second], spec, context) == [first]
+
+
+def test_nft_category_ands_with_linked_family_and_whale_evidence():
+    collection = PREDEFINED_NFT_COLLECTIONS[0]
+    first = "0x" + "1" * 40
+    second = "0x" + "2" * 40
+    rows = [{"address": first}, {"address": second}]
+    holders = {collection.key: frozenset({first, second})}
+    family_context = FilterContext(
+        families_by_address={
+            first: frozenset({"amount"}),
+            second: frozenset({"funding"}),
+        },
+        nft_holders_by_collection=holders,
+    )
+    assert filter_rows(
+        rows,
+        FilterSpec(
+            families=frozenset({"amount"}),
+            nft_collections=(collection,),
+        ),
+        family_context,
+    ) == [rows[0]]
+    whale_context = FilterContext(
+        whale_addresses=frozenset({first}),
+        nft_holders_by_collection=holders,
+    )
+    assert filter_rows(
+        rows,
+        FilterSpec(whale=True, nft_collections=(collection,)),
+        whale_context,
+    ) == [rows[0]]
+
+
+def test_every_selected_nft_collection_must_have_truthful_holder_data():
+    identity, frenpet = PREDEFINED_NFT_COLLECTIONS[:2]
+    with pytest.raises(FilterDataUnavailable, match="NFT holder data"):
+        filter_rows(
+            [{"address": "0x" + "1" * 40}],
+            FilterSpec(nft_collections=(identity, frenpet)),
+            FilterContext(
+                nft_holders_by_collection={identity.key: frozenset()}
+            ),
+        )
+
+
+def test_nft_filter_summary_is_stable_and_last():
+    identity, frenpet = PREDEFINED_NFT_COLLECTIONS[:2]
+    assert filter_summary(
+        FilterSpec(
+            join_min=1,
+            join_max=100,
+            nft_collections=(identity, frenpet),
+        )
+    ) == (
+        "join #1-100",
+        "NFT Identity.md or Fren Pet",
+    )
+
+
+def test_integer_bounds_remain_exact_above_binary_float_precision():
+    exact = 2**53 + 1
+    spec = parse_filter_values({"points_max": str(exact - 1)})
+    assert filter_rows(
+        [{"address": "0x" + "1" * 40, "points": exact}],
+        spec,
+        FilterContext(),
+    ) == []

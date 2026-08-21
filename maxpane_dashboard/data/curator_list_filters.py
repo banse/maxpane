@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -35,6 +36,111 @@ class FilterDataUnavailable(ValueError):
     pass
 
 
+NFT_CHAINS = frozenset({"ethereum", "base"})
+_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+
+
+@dataclass(frozen=True, slots=True)
+class NftCollectionRef:
+    chain: str
+    address: str
+    label: str
+
+    @property
+    def key(self) -> str:
+        return nft_collection_key(self.chain, self.address)
+
+
+def nft_collection_key(chain: str, address: str) -> str:
+    return f"{chain}:{address.casefold()}"
+
+
+def custom_nft_label(chain: str, address: str) -> str:
+    prefix = "ETH" if chain == "ethereum" else "BASE"
+    return f"{prefix} {address[:6]}…{address[-4:]}"
+
+
+def parse_nft_collection(value: object) -> NftCollectionRef:
+    if isinstance(value, NftCollectionRef):
+        raw_chain, raw_address, raw_label = (
+            value.chain,
+            value.address,
+            value.label,
+        )
+    elif isinstance(value, Mapping):
+        raw_chain = value.get("chain")
+        raw_address = value.get("address")
+        raw_label = value.get("label")
+    else:
+        raise FilterValidationError(
+            "nft_collections", "invalid NFT collection"
+        )
+    if not isinstance(raw_chain, str) or raw_chain not in NFT_CHAINS:
+        raise FilterValidationError(
+            "nft_collections", "NFT chain must be Ethereum or Base"
+        )
+    if not isinstance(raw_address, str) or not _ADDRESS_RE.fullmatch(
+        raw_address.strip()
+    ):
+        raise FilterValidationError(
+            "nft_collections", "NFT contract must be a 20-byte 0x address"
+        )
+    address = raw_address.strip().casefold()
+    label = (
+        " ".join(raw_label.split())
+        if isinstance(raw_label, str) and raw_label.strip()
+        else custom_nft_label(raw_chain, address)
+    )
+    return NftCollectionRef(raw_chain, address, label)
+
+
+PREDEFINED_NFT_COLLECTIONS = (
+    NftCollectionRef(
+        "ethereum",
+        "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d",
+        "Identity.md",
+    ),
+    NftCollectionRef(
+        "base",
+        "0x5b51cf49cb48617084ef35e7c7d7a21914769ff1",
+        "Fren Pet",
+    ),
+    NftCollectionRef(
+        "ethereum",
+        "0x5af0d9827e0c53e4799bb226655a1de152a425a5",
+        "Milady",
+    ),
+    NftCollectionRef(
+        "ethereum",
+        "0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb",
+        "Crypto Punks",
+    ),
+)
+
+
+def _parse_nft_collections(value: object) -> tuple[NftCollectionRef, ...]:
+    if value in (None, (), []):
+        return ()
+    if isinstance(value, (str, bytes, Mapping)):
+        raise FilterValidationError(
+            "nft_collections", "invalid NFT collection list"
+        )
+    try:
+        candidates = tuple(value)
+    except TypeError as exc:
+        raise FilterValidationError(
+            "nft_collections", "invalid NFT collection list"
+        ) from exc
+    out: list[NftCollectionRef] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        item = parse_nft_collection(candidate)
+        if item.key not in seen:
+            out.append(item)
+            seen.add(item.key)
+    return tuple(out)
+
+
 @dataclass(frozen=True, slots=True)
 class FilterSpec:
     join_min: int | None = None
@@ -56,22 +162,39 @@ class FilterSpec:
     band: str = "any"
     families: frozenset[str] = frozenset()
     whale: bool = False
+    nft_collections: tuple[NftCollectionRef, ...] = ()
 
     @property
     def active(self) -> bool:
         ranged = any(getattr(self, field) is not None for field in (*_INTEGER_FIELDS, *_DECIMAL_FIELDS))
-        return ranged or self.ens != "any" or self.window != "any" or self.band != "any" or bool(self.families) or self.whale
+        return (
+            ranged
+            or self.ens != "any"
+            or self.window != "any"
+            or self.band != "any"
+            or bool(self.families)
+            or self.whale
+            or bool(self.nft_collections)
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class FilterContext:
     families_by_address: Mapping[str, frozenset[str]] | None = None
     whale_addresses: frozenset[str] | None = None
+    nft_holders_by_collection: Mapping[str, frozenset[str]] | None = None
 
 
 def empty_filter_values() -> dict[str, object]:
     values = {field: "" for field in (*_INTEGER_FIELDS, *_DECIMAL_FIELDS)}
-    values.update(ens="any", window="any", band="any", families=frozenset(), whale=False)
+    values.update(
+        ens="any",
+        window="any",
+        band="any",
+        families=frozenset(),
+        whale=False,
+        nft_collections=(),
+    )
     return values
 
 
@@ -80,13 +203,37 @@ def _parse_number(field: str, value: object, *, integer: bool):
         return None
     if isinstance(value, bool):
         raise FilterValidationError(field, f"{field} must be a non-negative number")
+    if integer:
+        if isinstance(value, int):
+            number = value
+        elif isinstance(value, float):
+            if not math.isfinite(value) or not value.is_integer():
+                raise FilterValidationError(
+                    field, f"{field} must be a non-negative number"
+                )
+            number = int(value)
+        elif isinstance(value, str) and value.strip().isdigit():
+            number = int(value.strip())
+        else:
+            raise FilterValidationError(
+                field, f"{field} must be a non-negative number"
+            )
+        if number < 0:
+            raise FilterValidationError(
+                field, f"{field} must be a non-negative number"
+            )
+        return number
     try:
         number = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise FilterValidationError(field, f"{field} must be a non-negative number") from exc
-    if not math.isfinite(number) or number < 0 or (integer and not number.is_integer()):
-        raise FilterValidationError(field, f"{field} must be a non-negative number")
-    return int(number) if integer else number
+        raise FilterValidationError(
+            field, f"{field} must be a non-negative number"
+        ) from exc
+    if not math.isfinite(number) or number < 0:
+        raise FilterValidationError(
+            field, f"{field} must be a non-negative number"
+        )
+    return number
 
 
 def parse_filter_values(values: Mapping[str, object]) -> FilterSpec:
@@ -111,6 +258,9 @@ def parse_filter_values(values: Mapping[str, object]) -> FilterSpec:
     if not isinstance(whale, bool):
         raise FilterValidationError("whale", "whale must be enabled or disabled")
     parsed["whale"] = whale
+    parsed["nft_collections"] = _parse_nft_collections(
+        values.get("nft_collections", ())
+    )
     for low_field, high_field, _row_field in _RANGES:
         low, high = parsed[low_field], parsed[high_field]
         if low is not None and high is not None and low > high:
@@ -118,9 +268,17 @@ def parse_filter_values(values: Mapping[str, object]) -> FilterSpec:
     return FilterSpec(**parsed)
 
 
-def _row_number(row: Mapping[str, object], field: str) -> float | None:
+def _row_number(
+    row: Mapping[str, object], field: str, *, integer: bool
+) -> int | float | None:
     value = row.get(field)
     if isinstance(value, bool):
+        return None
+    if integer:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.strip().isdigit():
+            return int(value.strip())
         return None
     try:
         number = float(value)
@@ -136,6 +294,13 @@ def filter_rows(rows: Any, spec: FilterSpec, context: FilterContext) -> list[dic
         raise FilterDataUnavailable("linked analysis unavailable")
     if spec.whale and context.whale_addresses is None:
         raise FilterDataUnavailable("deposit history unavailable")
+    if spec.nft_collections:
+        holders = context.nft_holders_by_collection
+        if holders is None or any(
+            collection.key not in holders
+            for collection in spec.nft_collections
+        ):
+            raise FilterDataUnavailable("NFT holder data unavailable")
     selected: list[dict] = []
     for row in rows if isinstance(rows, list) else ():
         if not isinstance(row, dict):
@@ -145,7 +310,9 @@ def filter_rows(rows: Any, spec: FilterSpec, context: FilterContext) -> list[dic
             low, high = getattr(spec, low_field), getattr(spec, high_field)
             if low is None and high is None:
                 continue
-            number = _row_number(row, row_field)
+            number = _row_number(
+                row, row_field, integer=low_field in _INTEGER_FIELDS
+            )
             if number is None or (low is not None and number < low) or (high is not None and number > high):
                 rejected = True
                 break
@@ -154,7 +321,7 @@ def filter_rows(rows: Any, spec: FilterSpec, context: FilterContext) -> list[dic
         has_ens = isinstance(row.get("name"), str) and bool(row["name"].strip())
         if spec.ens == "set" and not has_ens or spec.ens == "unset" and has_ens:
             continue
-        hour = _row_number(row, "first_hour")
+        hour = _row_number(row, "first_hour", integer=True)
         window = None if hour is None else ("grace" if hour < 24 else "judged")
         if spec.window != "any" and window != spec.window:
             continue
@@ -167,6 +334,11 @@ def filter_rows(rows: Any, spec: FilterSpec, context: FilterContext) -> list[dic
         if spec.families and not (context.families_by_address.get(key, frozenset()) & spec.families):
             continue
         if spec.whale and key not in context.whale_addresses:
+            continue
+        if spec.nft_collections and not any(
+            key in context.nft_holders_by_collection[collection.key]
+            for collection in spec.nft_collections
+        ):
             continue
         selected.append(row)
     return selected
@@ -216,6 +388,12 @@ def filter_summary(spec: FilterSpec) -> tuple[str, ...]:
         clauses.append(f"band {spec.band}")
     if spec.families:
         clauses.append(" or ".join(family for family in ("amount", "sequence", "cadence", "gas", "funding") if family in spec.families))
+    if spec.nft_collections:
+        clauses.append(
+            "NFT " + " or ".join(
+                collection.label for collection in spec.nft_collections
+            )
+        )
     return tuple(clauses)
 
 
