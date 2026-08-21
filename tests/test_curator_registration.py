@@ -62,6 +62,20 @@ REPO = Path(__file__).resolve().parents[1]
 _TCSS = REPO / "maxpane_dashboard" / "themes" / "minimal.tcss"
 _SCREEN_FIXTURES = REPO / "tests" / "fixtures" / "curator" / "screen"
 
+
+def test_nft_holder_data_layer_and_curator_widgets_keep_mvc_boundaries():
+    holder_source = (
+        REPO / "maxpane_dashboard" / "data" / "curator_nft_holders.py"
+    ).read_text()
+    assert "textual" not in holder_source
+    assert "private_key" not in holder_source
+    assert "eth_send" not in holder_source
+    widget_source = (
+        REPO / "maxpane_dashboard" / "widgets" / "curator" / "list_filter.py"
+    ).read_text()
+    assert "maxpane_dashboard.data" not in widget_source
+    assert "httpx" not in widget_source
+
 #: The one menu row this WP adds, asserted verbatim so the copy cannot drift.
 CURATOR_ROW = (
     "2",
