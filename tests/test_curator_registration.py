@@ -139,11 +139,23 @@ def test_cr01_name_resolution_stays_in_the_curator_mvc_path():
             f"curator.py:{lineno} imports the NFT holder client directly: {target}"
         )
 
-    handler = next(
-        node for node in ast.walk(tree)
+    curator_classes = [
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "CuratorScreen"
+    ]
+    assert len(curator_classes) == 1, (
+        "curator.py must define exactly one module-level CuratorScreen"
+    )
+    handlers = [
+        node for node in curator_classes[0].body
         if isinstance(node, ast.AsyncFunctionDef)
         and node.name == "on_nft_collection_add_requested"
+    ]
+    assert len(handlers) == 1, (
+        "CuratorScreen must define exactly one immediate async "
+        "on_nft_collection_add_requested handler"
     )
+    handler = handlers[0]
     manager_calls = [
         node.value
         for node in ast.walk(handler)
