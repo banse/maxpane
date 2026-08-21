@@ -50,6 +50,7 @@ import os
 import time
 from collections import deque
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -141,6 +142,9 @@ SLOT_WALLET = "wallet"          # the six YOU views
 SLOT_CONFIG = "config"          # the `once` immutables
 SLOT_BLOCKSCOUT = "blockscout"  # the independent cross-check
 SLOT_CLUSTERS = "clusters"      # the detached B+C analysis last-good (WP3)
+SLOT_NFT_HOLDERS = "nft_holders"  # per-collection NFT holder scans
+
+NFT_HOLDER_TTL_SECONDS = 1800.0
 
 #: Adding :data:`SLOT_CLUSTERS` did **not** move ``_SCHEMA_VERSION`` — the
 #: additive-key rule the ``ens``/``dropped_events`` precedent set.  The slot
@@ -153,6 +157,7 @@ SLOTS: tuple[str, ...] = (
     SLOT_CONFIG,
     SLOT_BLOCKSCOUT,
     SLOT_CLUSTERS,
+    SLOT_NFT_HOLDERS,
 )
 
 
@@ -217,6 +222,20 @@ class LastGood:
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<LastGood ts={self.ts!r}>"
+
+
+@dataclass(frozen=True, slots=True)
+class NftHolderCacheEntry:
+    holders: frozenset[str]
+    wallet_fingerprint: str
+    checked: int
+    failed: int
+    block_number: int | None
+    ts: float
+    fresh: bool
+
+    def as_of_hhmm(self) -> str:
+        return time.strftime("%H:%M", time.localtime(self.ts))
 
 
 def _jsonable(value: Any, _depth: int = 0) -> Any:
@@ -589,16 +608,15 @@ class CuratorCache:
     def newest_as_of(self) -> float | None:
         """Timestamp of the freshest successful **read** across the slots.
 
-        :data:`SLOT_CLUSTERS` is deliberately excluded: the analysis sweep
-        re-derives its payload from data that was already fetched, so a
-        publish during a total source outage would otherwise march the title
-        bar's ``as of HH:MM`` forward while nothing had answered — a freshness
-        lie.  The analysis has its own marker, :meth:`analysis_as_of_hhmm`.
+        :data:`SLOT_CLUSTERS` and :data:`SLOT_NFT_HOLDERS` are deliberately
+        excluded: they are derived or cross-chain reads whose publish time is
+        not a dashboard-wide source answer.  Including either would advance
+        the title bar's ``as of HH:MM`` marker during an outage.
         """
         stamps = [
             entry.ts
             for slot, entry in self.last_good.items()
-            if slot != SLOT_CLUSTERS
+            if slot not in {SLOT_CLUSTERS, SLOT_NFT_HOLDERS}
         ]
         return max(stamps) if stamps else None
 
@@ -620,6 +638,103 @@ class CuratorCache:
         """The analysis slot's own freshness marker, on its own schedule."""
         entry = self.get_last_good(SLOT_CLUSTERS)
         return None if entry is None else entry.as_of_hhmm()
+
+    # -- NFT holder last-good entries ---------------------------------------
+
+    def store_nft_holders(
+        self,
+        collection_key: str,
+        *,
+        wallet_fingerprint: str,
+        holders: Any,
+        checked: int,
+        failed: int,
+        block_number: int | None,
+        ts: float,
+    ) -> LastGood:
+        """Persist a complete holder scan for one collection and wallet set."""
+        if failed != 0:
+            raise ValueError("incomplete NFT holder scan cannot be cached")
+        if checked < 0:
+            raise ValueError("NFT checked count must be non-negative")
+        addresses = sorted({
+            value.casefold()
+            for value in holders
+            if isinstance(value, str)
+            and len(value) == 42
+            and value.startswith(("0x", "0X"))
+            and all(char in "0123456789abcdefABCDEF" for char in value[2:])
+        })
+        current = self.get_last_good(SLOT_NFT_HOLDERS)
+        payload = current.payload if current is not None else None
+        raw_entries = payload.get("entries") if isinstance(payload, Mapping) else None
+        entries = dict(raw_entries) if isinstance(raw_entries, Mapping) else {}
+        entries[collection_key] = {
+            "wallet_fingerprint": wallet_fingerprint,
+            "holders": addresses,
+            "checked": checked,
+            "failed": 0,
+            "block_number": block_number,
+            "ts": float(ts),
+        }
+        return self.store_last_good(
+            SLOT_NFT_HOLDERS, {"entries": entries}, ts=ts
+        )
+
+    def nft_holders(
+        self,
+        collection_key: str,
+        wallet_fingerprint: str,
+        *,
+        now: float | None = None,
+    ) -> NftHolderCacheEntry | None:
+        """Return a validated holder scan for the matching wallet universe."""
+        outer = self.get_last_good(SLOT_NFT_HOLDERS)
+        payload = outer.payload if outer is not None else None
+        entries = payload.get("entries") if isinstance(payload, Mapping) else None
+        raw = entries.get(collection_key) if isinstance(entries, Mapping) else None
+        if not isinstance(raw, Mapping):
+            return None
+        holders = raw.get("holders")
+        fingerprint = raw.get("wallet_fingerprint")
+        checked = raw.get("checked")
+        failed = raw.get("failed")
+        block = raw.get("block_number")
+        ts = raw.get("ts")
+        valid_block = block is None or (
+            isinstance(block, int) and not isinstance(block, bool) and block >= 0
+        )
+        if not (
+            fingerprint == wallet_fingerprint
+            and isinstance(holders, list)
+            and all(
+                isinstance(value, str)
+                and len(value) == 42
+                and value.startswith(("0x", "0X"))
+                and all(
+                    char in "0123456789abcdefABCDEF"
+                    for char in value[2:]
+                )
+                for value in holders
+            )
+            and isinstance(checked, int) and not isinstance(checked, bool)
+            and checked >= 0
+            and failed == 0
+            and valid_block
+            and isinstance(ts, (int, float)) and not isinstance(ts, bool)
+            and math.isfinite(float(ts)) and float(ts) > 0
+        ):
+            return None
+        stamp = float(ts)
+        return NftHolderCacheEntry(
+            holders=frozenset(value.casefold() for value in holders),
+            wallet_fingerprint=fingerprint,
+            checked=checked,
+            failed=0,
+            block_number=block,
+            ts=stamp,
+            fresh=self._now(now) - stamp <= NFT_HOLDER_TTL_SECONDS,
+        )
 
     # -- series --------------------------------------------------------------
 
@@ -1277,11 +1392,14 @@ __all__ = [
     "CuratorCache",
     "DEFAULT_CACHE_PATH",
     "LastGood",
+    "NFT_HOLDER_TTL_SECONDS",
+    "NftHolderCacheEntry",
     "SLOTS",
     "SLOT_BLOCKSCOUT",
     "SLOT_CLUSTERS",
     "SLOT_CONFIG",
     "SLOT_LOGS",
+    "SLOT_NFT_HOLDERS",
     "SLOT_STATE",
     "SLOT_WALLET",
     "TIERS",

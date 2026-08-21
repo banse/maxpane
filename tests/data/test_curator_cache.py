@@ -19,11 +19,13 @@ from maxpane_dashboard.data import curator_cache
 from maxpane_dashboard.data.curator_models import ContributorRow, DepositEvent
 from maxpane_dashboard.data.series_points import CLOCK_SKEW_TOLERANCE_SECONDS
 from maxpane_dashboard.data.curator_cache import (
+    NFT_HOLDER_TTL_SECONDS,
     SLOTS,
     SLOT_BLOCKSCOUT,
     SLOT_CLUSTERS,
     SLOT_CONFIG,
     SLOT_LOGS,
+    SLOT_NFT_HOLDERS,
     SLOT_STATE,
     SLOT_WALLET,
     TIERS,
@@ -166,9 +168,7 @@ def test_an_unknown_slot_raises_naming_the_valid_set(cache):
         assert SLOT_STATE in str(excinfo.value)
 
 
-def test_the_six_slots_are_the_six_independently_failing_sources():
-    """Grown 5 -> 6 in WP3.2: the analysis last-good is its own slot, because
-    the detached sweep fails independently of every fetch tier."""
+def test_the_seven_slots_are_the_seven_independently_failing_sources():
     assert SLOTS == (
         SLOT_STATE,
         SLOT_LOGS,
@@ -176,7 +176,98 @@ def test_the_six_slots_are_the_six_independently_failing_sources():
         SLOT_CONFIG,
         SLOT_BLOCKSCOUT,
         SLOT_CLUSTERS,
+        SLOT_NFT_HOLDERS,
     )
+
+
+def test_nft_holder_entry_round_trips_and_expires_for_same_universe(
+    cache, clock
+):
+    key = "ethereum:0x" + "a" * 40
+    cache.store_nft_holders(
+        key,
+        wallet_fingerprint="fingerprint-a",
+        holders=("0x" + "1" * 40,),
+        checked=2,
+        failed=0,
+        block_number=123,
+        ts=clock(),
+    )
+    hit = cache.nft_holders(key, "fingerprint-a")
+    assert hit is not None
+    assert hit.holders == frozenset({"0x" + "1" * 40})
+    assert hit.fresh is True
+    assert (hit.checked, hit.failed, hit.block_number) == (2, 0, 123)
+
+    clock.advance(NFT_HOLDER_TTL_SECONDS + 1)
+    stale = cache.nft_holders(key, "fingerprint-a")
+    assert stale is not None and stale.fresh is False
+    assert cache.nft_holders(key, "fingerprint-b") is None
+
+
+def test_incomplete_nft_scan_cannot_overwrite_last_good(cache, clock):
+    key = "base:0x" + "b" * 40
+    cache.store_nft_holders(
+        key,
+        wallet_fingerprint="wallets",
+        holders=(),
+        checked=3,
+        failed=0,
+        block_number=9,
+        ts=clock(),
+    )
+    with pytest.raises(ValueError, match="incomplete NFT holder scan"):
+        cache.store_nft_holders(
+            key,
+            wallet_fingerprint="wallets",
+            holders=("0x" + "2" * 40,),
+            checked=2,
+            failed=1,
+            block_number=10,
+            ts=clock(),
+        )
+    assert cache.nft_holders(key, "wallets").holders == frozenset()
+
+
+def test_nft_holder_slot_persists_without_moving_global_as_of(
+    tmp_path, clock
+):
+    path = str(tmp_path / "curator_cache.json")
+    cache = CuratorCache(path=path, clock=clock)
+    cache.store_last_good(SLOT_STATE, {"hour": 7}, ts=clock())
+    clock.advance(60)
+    cache.store_nft_holders(
+        "ethereum:0x" + "c" * 40,
+        wallet_fingerprint="wallets",
+        holders=("0x" + "3" * 40,),
+        checked=1,
+        failed=0,
+        block_number=None,
+        ts=clock(),
+    )
+    assert cache.newest_as_of() == NOW
+    cache.save()
+
+    restored = CuratorCache(path=path, clock=clock)
+    restored.load()
+    hit = restored.nft_holders(
+        "ethereum:0x" + "c" * 40, "wallets"
+    )
+    assert hit is not None and hit.holders == frozenset({
+        "0x" + "3" * 40
+    })
+
+
+def test_missing_or_corrupt_nft_holder_slot_degrades_to_no_entry(
+    cache, clock
+):
+    assert cache.nft_holders("ethereum:0x" + "d" * 40, "wallets") is None
+    cache.store_last_good(
+        SLOT_NFT_HOLDERS,
+        {"entries": {"bad": {"holders": "not-a-list"}}},
+        ts=clock(),
+    )
+    assert cache.nft_holders("bad", "wallets") is None
 
 
 def test_storing_none_as_a_last_good_payload_is_refused(cache):
