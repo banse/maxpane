@@ -70,11 +70,33 @@ def test_nft_holder_data_layer_and_curator_widgets_keep_mvc_boundaries():
     assert "textual" not in holder_source
     assert "private_key" not in holder_source
     assert "eth_send" not in holder_source
-    widget_source = (
-        REPO / "maxpane_dashboard" / "widgets" / "curator" / "list_filter.py"
-    ).read_text()
-    assert "maxpane_dashboard.data" not in widget_source
-    assert "httpx" not in widget_source
+    widget_dir = REPO / "maxpane_dashboard" / "widgets" / "curator"
+
+    def imported_modules(path: Path):
+        relative = path.relative_to(REPO).with_suffix("").parts
+        package = relative[:-1]
+        for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+            if isinstance(node, ast.Import):
+                yield from (alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                module = (node.module or "").split(".") if node.module else ()
+                if node.level:
+                    parent = package[: len(package) - (node.level - 1)]
+                    yield ".".join((*parent, *module))
+                elif module:
+                    yield ".".join(module)
+
+    widget_paths = sorted(widget_dir.glob("*.py"))
+    assert widget_paths
+    for path in widget_paths:
+        for module in imported_modules(path):
+            assert not (
+                module == "maxpane_dashboard.data"
+                or module.startswith("maxpane_dashboard.data.")
+            ), f"{path.name} imports data-layer module {module}"
+            assert module.split(".")[0] != "httpx", (
+                f"{path.name} imports {module} -- widgets do not make HTTP calls"
+            )
 
 #: The one menu row this WP adds, asserted verbatim so the copy cannot drift.
 CURATOR_ROW = (

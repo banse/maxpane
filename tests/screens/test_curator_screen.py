@@ -3386,8 +3386,17 @@ async def test_filter_editor_composite_fits_143_columns_and_keeps_footer():
         ).show_horizontal_scrollbar is False
 
 
-@pytest.mark.parametrize("view", ("raw", "cleaned", "filtered"))
-async def test_new_filter_copy_never_leaks_into_non_editor_list_notes(view):
+@pytest.mark.parametrize(
+    ("view", "expected_widget"),
+    (
+        ("raw", CuratorRawList),
+        ("cleaned", CuratorCleanedList),
+        ("filtered", CuratorFilteredList),
+    ),
+)
+async def test_new_filter_copy_never_leaks_into_non_editor_list_notes(
+    view, expected_widget
+):
     screen = _screen(_list_payload(100))
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
@@ -3398,6 +3407,16 @@ async def test_new_filter_copy_never_leaks_into_non_editor_list_notes(view):
         elif view == "filtered":
             await pilot.press("1")
         await pilot.pause()
+        assert screen._list_view == view
+        expected_table = screen.query_one(expected_widget)
+        assert expected_table.display is True
+        for widget in (
+            CuratorRawList,
+            CuratorCleanedList,
+            CuratorFilteredList,
+        ):
+            if widget is not expected_widget:
+                assert screen.query_one(widget).display is False
         hero = _region_text(app, screen.query_one(CuratorListHero), screen)
         assert LIST_EXPORT_SUBTITLE in hero
         assert FILTER_EDITOR_NOTE not in hero
