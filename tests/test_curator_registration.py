@@ -65,6 +65,34 @@ _TCSS = REPO / "maxpane_dashboard" / "themes" / "minimal.tcss"
 _SCREEN_FIXTURES = REPO / "tests" / "fixtures" / "curator" / "screen"
 
 
+def _resolved_imports(path: Path):
+    """Yield ``(line, target)`` for every import, resolved from its package."""
+    relative = path.relative_to(REPO).with_suffix("").parts
+    package = relative[:-1]
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                yield node.lineno, alias.name
+            continue
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if node.level:
+            keep = len(package) - (node.level - 1)
+            assert keep >= 0, f"{path}:{node.lineno} imports beyond package root"
+            base = package[:keep]
+        else:
+            base = ()
+        if node.module:
+            base = (*base, *node.module.split("."))
+        for alias in node.names:
+            yield node.lineno, ".".join((*base, alias.name))
+
+
+def _is_import_beneath(target: str, package: str) -> bool:
+    return target == package or target.startswith(f"{package}.")
+
+
 def test_nft_holder_data_layer_and_curator_widgets_keep_mvc_boundaries():
     holder_source = (
         REPO / "maxpane_dashboard" / "data" / "curator_nft_holders.py"
@@ -74,57 +102,103 @@ def test_nft_holder_data_layer_and_curator_widgets_keep_mvc_boundaries():
     assert "eth_send" not in holder_source
     widget_dir = REPO / "maxpane_dashboard" / "widgets" / "curator"
 
-    def imported_modules(path: Path):
-        relative = path.relative_to(REPO).with_suffix("").parts
-        package = relative[:-1]
-        for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
-            if isinstance(node, ast.Import):
-                yield from (alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom):
-                module = (node.module or "").split(".") if node.module else ()
-                if node.level:
-                    parent = package[: len(package) - (node.level - 1)]
-                    imported_from = (*parent, *module)
-                else:
-                    imported_from = module
-                if imported_from:
-                    yield ".".join(imported_from)
-                for alias in node.names:
-                    yield ".".join((*imported_from, alias.name))
-
     widget_paths = sorted(widget_dir.glob("*.py"))
     assert widget_paths
     for path in widget_paths:
-        for module in imported_modules(path):
-            assert not (
-                module == "maxpane_dashboard.data"
-                or module.startswith("maxpane_dashboard.data.")
-            ), f"{path.name} imports data-layer module {module}"
-            assert module.split(".")[0] != "httpx", (
-                f"{path.name} imports {module} -- widgets do not make HTTP calls"
+        for lineno, target in _resolved_imports(path):
+            for forbidden in (
+                "maxpane_dashboard.data",
+                "maxpane_dashboard.analytics",
+            ):
+                assert not _is_import_beneath(target, forbidden), (
+                    f"{path.name}:{lineno} imports {target} across the MVC boundary"
+                )
+            assert target.split(".")[0] not in {"httpx", "aiohttp"}, (
+                f"{path.name}:{lineno} imports {target} -- widgets do not make "
+                "HTTP calls"
             )
 
 
 def test_cr01_name_resolution_stays_in_the_curator_mvc_path():
-    screen = (
+    screen_path = (
         REPO / "maxpane_dashboard" / "screens" / "curator.py"
-    ).read_text()
-    assert "resolve_nft_collection_name" in screen
-    assert "NftHolderClient" not in screen
+    )
+    tree = ast.parse(
+        screen_path.read_text(encoding="utf-8"), filename=str(screen_path)
+    )
+    client_module = "maxpane_dashboard.data.curator_nft_holders"
+    allowed_holder_signals = {
+        f"{client_module}.NftHolderPending",
+        f"{client_module}.NftHolderUnavailable",
+    }
+    for lineno, target in _resolved_imports(screen_path):
+        assert not (
+            _is_import_beneath(target, client_module)
+            and target not in allowed_holder_signals
+        ), (
+            f"curator.py:{lineno} imports the NFT holder client directly: {target}"
+        )
+
+    handler = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef)
+        and node.name == "on_nft_collection_add_requested"
+    )
+    manager_calls = [
+        node.value
+        for node in ast.walk(handler)
+        if isinstance(node, ast.Await)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Attribute)
+        and node.value.func.attr == "resolve_nft_collection_name"
+        and isinstance(node.value.func.value, ast.Attribute)
+        and node.value.func.value.attr == "_data_manager"
+        and isinstance(node.value.func.value.value, ast.Name)
+        and node.value.func.value.value.id == "self"
+    ]
+    assert len(manager_calls) == 1, (
+        "custom NFT names must be resolved once through "
+        "self._data_manager.resolve_nft_collection_name(...)"
+    )
+
     for path in (REPO / "maxpane_dashboard" / "screens").glob("*.py"):
-        if path.name != "curator.py":
-            assert "FilterApplyRequested" not in path.read_text()
+        if path.name == "curator.py":
+            continue
+        other_tree = ast.parse(
+            path.read_text(encoding="utf-8"), filename=str(path)
+        )
+        for lineno, target in _resolved_imports(path):
+            assert not (
+                target in {
+                    "maxpane_dashboard.widgets.curator.*",
+                    "maxpane_dashboard.widgets.curator.FilterApplyRequested",
+                    "maxpane_dashboard.widgets.curator.list_filter.*",
+                    "maxpane_dashboard.widgets.curator.list_filter.FilterApplyRequested",
+                }
+            ), f"{path.name}:{lineno} imports the curator filter-apply event"
+        for node in ast.walk(other_tree):
+            if isinstance(node, ast.Name):
+                assert node.id != "FilterApplyRequested", (
+                    f"{path.name}:{node.lineno} uses the curator filter-apply event"
+                )
+            elif isinstance(node, ast.Attribute):
+                assert node.attr != "FilterApplyRequested", (
+                    f"{path.name}:{node.lineno} uses the curator filter-apply event"
+                )
 
 
 def test_cr01_copy_does_not_leak_into_the_shared_curator_hero():
-    shared = (
+    shared_path = (
         REPO / "maxpane_dashboard" / "widgets" / "curator" / "hero.py"
-    ).read_text()
-    for text in (
+    )
+    executable_strings = tuple(text for _line, text in _rendered_strings(shared_path))
+    for forbidden in (
         "YOUR WALLET", "multiple filters applied",
         "NFT holder data loading",
     ):
-        assert text not in shared
+        assert all(forbidden not in text for text in executable_strings), (
+            f"shared curator hero contains list-only copy {forbidden!r}"
+        )
 
 #: The one menu row this WP adds, asserted verbatim so the copy cannot drift.
 CURATOR_ROW = (

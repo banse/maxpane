@@ -112,6 +112,31 @@ CURATOR_WIDGETS_DIR = (
 )
 
 
+def _resolved_widget_imports(path: Path):
+    """Yield ``(line, target)`` for absolute and package-relative imports."""
+    repo = CURATOR_WIDGETS_DIR.parents[2]
+    relative = path.relative_to(repo).with_suffix("").parts
+    package = relative[:-1]
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                yield node.lineno, alias.name
+            continue
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if node.level:
+            keep = len(package) - (node.level - 1)
+            assert keep >= 0, f"{path}:{node.lineno} imports beyond package root"
+            base = package[:keep]
+        else:
+            base = ()
+        if node.module:
+            base = (*base, *node.module.split("."))
+        for alias in node.names:
+            yield node.lineno, ".".join((*base, alias.name))
+
+
 # ---------------------------------------------------------------------------
 # harness
 # ---------------------------------------------------------------------------
@@ -404,21 +429,21 @@ async def _rendered(cls, *, size=(143, 24), **kwargs) -> str:
 
 
 def test_no_curator_widget_imports_data_or_analytics():
-    """Structural, by AST — a string scan misses ``importlib`` and aliases."""
+    """Resolve package-relative AST imports, including aliases and stars."""
     modules = sorted(CURATOR_WIDGETS_DIR.glob("*.py"))
     assert modules, "no curator widget modules found to scan"
     for path in modules:
-        tree = ast.parse(path.read_text("utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                mods = [node.module or ""]
-            elif isinstance(node, ast.Import):
-                mods = [a.name for a in node.names]
-            else:
-                continue
-            for m in mods:
-                assert ".data" not in m and ".analytics" not in m, (path.name, m)
-                assert "httpx" not in m and "aiohttp" not in m, (path.name, m)
+        for lineno, target in _resolved_widget_imports(path):
+            for forbidden in (
+                "maxpane_dashboard.data",
+                "maxpane_dashboard.analytics",
+            ):
+                assert not (
+                    target == forbidden or target.startswith(f"{forbidden}.")
+                ), (path.name, lineno, target)
+            assert target.split(".")[0] not in {"httpx", "aiohttp"}, (
+                path.name, lineno, target
+            )
 
 
 def test_no_curator_widget_copies_a_sparkline_helper():
