@@ -313,10 +313,12 @@ async def test_editor_composites_direct_group_controls_at_required_sizes(size):
     editor = CuratorListFilterEditor(nft_choices=NFT_CHOICES)
     app = _Harness(editor)
     async with app.run_test(size=size) as pilot:
+        editor.set_values({"window": "grace", "band": "high"})
         await pilot.pause()
         text = _screen_text(app)
         for control_text in (
-            "Any",
+            "Grace",
+            "High",
             "25 ETH or more",
             "matching amounts",
             "consecutive joins",
