@@ -159,19 +159,25 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Static
+from textual.widgets import Input, Static
 
 from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 
 from maxpane_dashboard import __version__
 from maxpane_dashboard.data.curator_list_filters import (
+    PREDEFINED_NFT_COLLECTIONS,
     FilterDataUnavailable,
     FilterSpec,
     FilterValidationError,
     empty_filter_values,
     filter_summary,
     parse_filter_values,
+    parse_nft_collection,
     preset_filter,
+)
+from maxpane_dashboard.data.curator_nft_holders import (
+    NftHolderPending,
+    NftHolderUnavailable,
 )
 from maxpane_dashboard.data.curator_list_source import (
     CLEANED_LIST_BASENAME,
@@ -203,7 +209,10 @@ from maxpane_dashboard.widgets.curator import (
     CuratorSignals,
     CuratorSparklines,
     FILTERED_LIST_UNAVAILABLE,
+    FilterResetRequested,
     ListOrderChanged,
+    NftCollectionAddRequested,
+    NftCollectionRemoveRequested,
 )
 from maxpane_dashboard.widgets.status_bar import StatusBar
 
@@ -361,6 +370,7 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "you_clean_rank", "you_filtered_index", "you_first_index",
         "you_first_hour", "you_points", "clean_contributors", "clean_points",
         "filtered_contributors", "filtered_points", "filter_summary",
+        "filter_editor_open",
     ),
     "CuratorLeaderboard": ("leaderboard_rows", "you_address"),
     "CuratorSparklines": (
@@ -441,6 +451,7 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     ),
     "CuratorFilteredList": (
         "filtered_rows", "you_list_row", "filtered_complete",
+        "filter_summary",
     ),
 }
 
@@ -449,7 +460,7 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
 SCREEN_SUPPLIED: frozenset[str] = frozenset({
     "you_address", "list_view", "filtered_contributors", "filtered_points",
     "you_filtered_index", "you_first_index", "you_first_hour", "filter_summary",
-    "filtered_rows", "filtered_complete",
+    "filtered_rows", "filtered_complete", "filter_editor_open",
 })
 
 
@@ -938,24 +949,60 @@ class CuratorScreen(RefreshGuard, Screen):
         padding: 0 2;
         overflow-y: auto;
     }
-    CuratorScreen .curator-filter-category {
+    CuratorScreen .curator-filter-groups {
         height: auto;
-        margin-bottom: 1;
-    }
-    CuratorScreen .curator-filter-fields {
-        height: auto;
-        layout: grid;
         grid-size: 4;
         grid-columns: 1fr 1fr 1fr 1fr;
         grid-gutter: 0 1;
+    }
+    CuratorScreen CuratorListFilterEditor.compact-filter .curator-filter-groups {
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+    }
+    CuratorScreen .curator-filter-group {
+        height: auto;
+        min-width: 14;
+        margin-bottom: 1;
+    }
+    CuratorScreen .curator-filter-group-title,
+    CuratorScreen .curator-filter-section-title {
+        height: 1;
+        color: $text-muted;
+    }
+    CuratorScreen .curator-filter-range {
+        height: 3;
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+        grid-gutter: 0 1;
+    }
+    CuratorScreen .curator-filter-group Select,
+    CuratorScreen .curator-filter-group Checkbox {
+        height: 3;
+    }
+    CuratorScreen .curator-filter-nft-presets {
+        height: 3;
+        grid-size: 4;
+        grid-columns: 1fr 1fr 1fr 1fr;
+    }
+    CuratorScreen .curator-filter-nft-add-row {
+        height: 3;
     }
     CuratorScreen .curator-filter-field {
         width: 100%;
         min-width: 14;
     }
-    CuratorScreen CuratorListFilterEditor.compact-filter .curator-filter-fields {
-        grid-size: 2;
-        grid-columns: 1fr 1fr;
+    CuratorScreen #filter-nft-chain { width: 14; }
+    CuratorScreen #filter-nft-address { width: 1fr; }
+    CuratorScreen #filter-nft-add,
+    CuratorScreen .curator-filter-nft-selected Button {
+        width: 5;
+        min-width: 5;
+    }
+    CuratorScreen #curator-filter-accept {
+        width: 100%;
+        height: 1;
+        text-align: center;
+        color: $text-muted;
     }
     CuratorScreen .filter-invalid {
         border: tall $error;
@@ -1020,6 +1067,7 @@ class CuratorScreen(RefreshGuard, Screen):
         self._filtered_rows: list[dict] | None = []
         self._filtered_complete = False
         self._filtered_source_reason: str | None = None
+        self._filtered_holder_receipt: str | None = None
         self._you_filtered_index: int | None = None
         #: True once the reader has pressed ``c``.  From then on the
         #: phase-aware default stops applying: a panel that snaps back while
@@ -1097,7 +1145,10 @@ class CuratorScreen(RefreshGuard, Screen):
             yield CuratorRawList()
             yield CuratorCleanedList()
             yield CuratorFilteredList()
-            yield CuratorListFilterEditor()
+            yield CuratorListFilterEditor(nft_choices=tuple(
+                (item.label, item.chain, item.address)
+                for item in PREDEFINED_NFT_COLLECTIONS
+            ))
 
         yield StatusBar()
 
@@ -1234,6 +1285,72 @@ class CuratorScreen(RefreshGuard, Screen):
             self._list_source_pending = True
             self._load_selected_list_source()
 
+    @staticmethod
+    def _nft_primitive(item) -> dict[str, str]:
+        return {
+            "label": item.label,
+            "chain": item.chain,
+            "address": item.address,
+        }
+
+    def _custom_nft_values(self, editor) -> list[dict[str, str]]:
+        predefined = {item.key for item in PREDEFINED_NFT_COLLECTIONS}
+        custom = []
+        for raw in editor.values().get("nft_collections", ()):
+            item = parse_nft_collection(raw)
+            if item.key not in predefined:
+                custom.append(self._nft_primitive(item))
+        return custom
+
+    def on_nft_collection_add_requested(
+        self, event: NftCollectionAddRequested
+    ) -> None:
+        editor = self.query_one(CuratorListFilterEditor)
+        try:
+            item = parse_nft_collection({
+                "chain": event.chain,
+                "address": event.address,
+                "label": None,
+            })
+            predefined = {value.key for value in PREDEFINED_NFT_COLLECTIONS}
+            existing = {
+                parse_nft_collection(value).key
+                for value in editor.values().get("nft_collections", ())
+            }
+            if item.key in predefined:
+                raise FilterValidationError(
+                    "nft_address", "collection is already available above"
+                )
+            if item.key in existing:
+                raise FilterValidationError(
+                    "nft_address", "collection is already selected"
+                )
+        except FilterValidationError as exc:
+            editor.show_error("nft_address", str(exc))
+            return
+        custom = self._custom_nft_values(editor)
+        custom.append(self._nft_primitive(item))
+        editor.set_custom_nfts(custom)
+        editor.query_one("#filter-nft-address", Input).value = ""
+        editor.clear_error()
+
+    def on_nft_collection_remove_requested(
+        self, event: NftCollectionRemoveRequested
+    ) -> None:
+        editor = self.query_one(CuratorListFilterEditor)
+        custom = [
+            value for value in self._custom_nft_values(editor)
+            if f"{value['chain']}:{value['address'].casefold()}" != event.key
+        ]
+        editor.set_custom_nfts(custom)
+        editor.clear_error()
+
+    def on_filter_reset_requested(self, _event: FilterResetRequested) -> None:
+        self._custom_filter_values = empty_filter_values()
+        editor = self.query_one(CuratorListFilterEditor)
+        editor.set_values(self._custom_filter_values)
+        editor.clear_error()
+
     def _filter_result(self, data: dict, spec: FilterSpec):
         return self._data_manager.filtered_list_rows(
             self._export_dir or Path.home() / ".maxpane",
@@ -1249,6 +1366,7 @@ class CuratorScreen(RefreshGuard, Screen):
         self._filtered_rows = result.rows
         self._filtered_complete = result.complete
         self._filtered_source_reason = result.source_reason
+        self._filtered_holder_receipt = result.holder_receipt
         self._you_filtered_index = None
 
     def _store_filter_unavailable(self, spec: FilterSpec, reason: str) -> None:
@@ -1257,6 +1375,7 @@ class CuratorScreen(RefreshGuard, Screen):
         self._filtered_rows = None
         self._filtered_complete = False
         self._filtered_source_reason = reason
+        self._filtered_holder_receipt = None
         self._you_filtered_index = None
 
     def _apply_filter(self, spec: FilterSpec) -> bool:
@@ -1270,7 +1389,10 @@ class CuratorScreen(RefreshGuard, Screen):
                 result.source_reason or FILTERED_LIST_UNAVAILABLE
             )
         else:
-            panel.mark_filter_applied(limited=not result.complete)
+            panel.mark_filter_applied(
+                limited=not result.complete,
+                holder_receipt=result.holder_receipt,
+            )
         self._dispatch_list_hero(data)
         return True
 
@@ -1297,7 +1419,10 @@ class CuratorScreen(RefreshGuard, Screen):
                     result.source_reason or FILTERED_LIST_UNAVAILABLE
                 )
         elif not preserve_user_receipt:
-            panel.mark_filter_applied(limited=not result.complete)
+            panel.mark_filter_applied(
+                limited=not result.complete,
+                holder_receipt=result.holder_receipt,
+            )
 
     def action_apply_filter_preset(self, key: str) -> None:
         """Apply one list-only filter preset immediately."""
@@ -1336,6 +1461,16 @@ class CuratorScreen(RefreshGuard, Screen):
             return
         try:
             self._apply_filter(spec)
+        except (NftHolderPending, NftHolderUnavailable) as exc:
+            reason = str(exc)
+            data = self._title_data or {}
+            self._store_filter_unavailable(spec, reason)
+            self._dispatch_filtered_list(data)
+            self.query_one(CuratorFilteredList).mark_filter_unavailable(reason)
+            self._dispatch_list_hero(data)
+            self._filter_editor_open = False
+            self._show_list_view()
+            return
         except FilterDataUnavailable as exc:
             editor.show_error(None, str(exc))
             return
@@ -1630,6 +1765,7 @@ class CuratorScreen(RefreshGuard, Screen):
                 **data,
                 "filtered_rows": self._filtered_rows,
                 "filtered_complete": self._filtered_complete,
+                "filter_summary": self._filter_summary,
             },
         )
 
@@ -1657,6 +1793,7 @@ class CuratorScreen(RefreshGuard, Screen):
                 "you_first_index": you_row.get("first_index"),
                 "you_first_hour": you_row.get("first_hour"),
                 "filter_summary": self._filter_summary,
+                "filter_editor_open": self._filter_editor_open,
             },
         )
 

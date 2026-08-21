@@ -93,12 +93,23 @@ import re
 
 import pytest
 from textual.app import App
-from textual.widgets import Input
+from textual.widgets import Checkbox, Input, Select
 
 from maxpane_dashboard import __version__
 from maxpane_dashboard.analytics.curator_signals import MANAGER_OWNED_KEYS
-from maxpane_dashboard.data.curator_list_filters import FilterContext, filter_rows
+from maxpane_dashboard.data.curator_list_filters import (
+    PREDEFINED_NFT_COLLECTIONS,
+    FilterContext,
+    empty_filter_values,
+    filter_rows,
+)
 from maxpane_dashboard.data.curator_manager import FilteredListResult, SOURCES
+from maxpane_dashboard.data.curator_nft_holders import (
+    NftHolderPending,
+    NftHolderUnavailable,
+)
+from maxpane_dashboard.widgets.curator.hero import LIST_EXPORT_SUBTITLE
+from maxpane_dashboard.widgets.curator.list_hero import FILTER_EDITOR_NOTE
 from maxpane_dashboard.data.curator_models import CURATOR_KEYS, PHASES
 from maxpane_dashboard.widgets.curator.wallet import (
     AT_THE_CAP,
@@ -344,8 +355,10 @@ class _FakeManager:
         self.full_list_calls: list[bool] = []
         self.families_by_address: dict[str, frozenset[str]] | None = {}
         self.whale_addresses: frozenset[str] | None = frozenset()
+        self.nft_holders_by_collection: dict[str, frozenset[str]] = {}
         self.filtered_complete = False
         self.filtered_source_reason: str | None = "missing"
+        self.filtered_holder_receipt: str | None = None
 
     async def fetch_and_compute(self) -> dict:
         self.calls += 1
@@ -371,11 +384,16 @@ class _FakeManager:
                 self.families_by_address if spec.families else None
             ),
             whale_addresses=self.whale_addresses if spec.whale else None,
+            nft_holders_by_collection=(
+                self.nft_holders_by_collection
+                if spec.nft_collections else None
+            ),
         )
         return FilteredListResult(
             filter_rows(live_rows, spec, context),
             self.filtered_complete,
             self.filtered_source_reason,
+            self.filtered_holder_receipt,
         )
 
 
@@ -634,6 +652,7 @@ def test_list_hero_screen_primitives_are_explicitly_named():
         "filter_summary",
         "filtered_rows",
         "filtered_complete",
+        "filter_editor_open",
     }
 
 
@@ -3144,6 +3163,209 @@ async def test_f_opens_blank_editor_then_applies_and_retains_custom_values():
         assert editor.values()["hour_min"] == "0"
 
 
+async def test_screen_adds_removes_and_deduplicates_custom_collection():
+    screen = _screen(_list_payload(1))
+    app = _ThemedHarness(screen)
+    address = "0x" + "a" * 40
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        editor = screen.query_one(CuratorListFilterEditor)
+        editor.query_one("#filter-nft-chain", Select).value = "base"
+        editor.query_one("#filter-nft-address", Input).value = address
+        await pilot.pause()
+        await pilot.click("#filter-nft-add")
+        await pilot.pause()
+        assert editor.values()["nft_collections"] == ({
+            "label": "BASE 0xaaaa…aaaa",
+            "chain": "base",
+            "address": address,
+        },)
+        assert editor.query_one("#filter-nft-address", Input).value == ""
+
+        editor.query_one("#filter-nft-address", Input).value = (
+            "0x" + address[2:].upper()
+        )
+        await pilot.pause()
+        await pilot.click("#filter-nft-add")
+        await pilot.pause()
+        assert "already selected" in _screen_text(app)
+        assert len(editor.values()["nft_collections"]) == 1
+
+        await pilot.click("#filter-nft-remove-0")
+        await pilot.pause()
+        assert editor.values()["nft_collections"] == ()
+
+        nft_input = editor.query_one("#filter-nft-address", Input)
+        nft_input.value = "0x1234"
+        await pilot.pause()
+        await pilot.click("#filter-nft-add")
+        await pilot.pause()
+        assert nft_input.has_class("filter-invalid")
+
+        nft_input.value = PREDEFINED_NFT_COLLECTIONS[1].address
+        await pilot.pause()
+        await pilot.click("#filter-nft-add")
+        await pilot.pause()
+        assert "already available above" in _screen_text(app)
+        assert editor.values()["nft_collections"] == ()
+
+
+async def test_reset_all_clears_draft_but_not_active_filter_until_acceptance():
+    payload = _list_payload(3)
+    screen = _screen(payload)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        await pilot.press("2")
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        active = screen._active_filter
+        editor = screen.query_one(CuratorListFilterEditor)
+        editor.query_one("#filter-points-min", Input).value = "10"
+        editor.query_one("#filter-family-amount", Checkbox).value = True
+        await pilot.pause()
+        await pilot.click("#filter-reset-all")
+        await pilot.pause()
+        assert screen._active_filter == active
+        assert editor.values() == empty_filter_values()
+        await pilot.press("f")
+        await pilot.pause()
+        assert screen._active_filter.active is False
+        assert screen._filtered_rows == []
+
+
+async def test_accepting_uncached_nft_filter_closes_editor_and_shows_loading(
+    monkeypatch,
+):
+    payload = _list_payload(1)
+    screen = _screen(payload)
+
+    def pending(*_args, **_kwargs):
+        raise NftHolderPending("NFT holder data loading")
+
+    monkeypatch.setattr(screen._data_manager, "filtered_list_rows", pending)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        screen.query_one("#filter-nft-choice-0", Checkbox).value = True
+        await pilot.press("f")
+        await pilot.pause()
+        assert screen._filter_editor_open is False
+        assert screen.query_one(CuratorFilteredList).display is True
+        assert screen._active_filter.nft_collections == (
+            PREDEFINED_NFT_COLLECTIONS[0],
+        )
+        assert screen._filtered_rows is None
+        assert "NFT holder data loading" in _screen_text(app)
+        assert FILTER_EDITOR_NOTE not in _screen_text(app)
+        assert LIST_EXPORT_SUBTITLE in _screen_text(app)
+
+
+async def test_normal_refresh_publishes_completed_nft_filter_and_title(
+    monkeypatch,
+):
+    payload = _list_payload(2)
+    screen = _screen(payload)
+    calls = 0
+
+    def result(*_args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise NftHolderPending("NFT holder data loading")
+        return FilteredListResult(
+            [payload["leaderboard_rows"][0]], True, None, None
+        )
+
+    monkeypatch.setattr(screen._data_manager, "filtered_list_rows", result)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        screen.query_one("#filter-nft-choice-0", Checkbox).value = True
+        await pilot.press("f")
+        await screen._do_refresh()
+        await pilot.pause()
+        panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
+        assert screen._filtered_rows == [payload["leaderboard_rows"][0]]
+        assert "THE FILTERED LIST - 1 wallets" in panel
+        assert "NFT Identity.md" in panel
+
+
+@pytest.mark.parametrize(
+    ("error", "copy"),
+    (
+        (NftHolderPending("NFT holder data loading"), "loading"),
+        (NftHolderUnavailable("NFT holder data unavailable"), "unavailable"),
+    ),
+)
+async def test_pending_or_unavailable_nft_filter_never_overwrites_export(
+    tmp_path, monkeypatch, error, copy
+):
+    path = tmp_path / "curator_filtered_list.json"
+    path.write_bytes(b'[{"prior": true}]')
+    screen = _export_screen(tmp_path, _list_payload(1))
+
+    def fail(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(screen._data_manager, "filtered_list_rows", fail)
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        screen.query_one("#filter-nft-choice-0", Checkbox).value = True
+        await pilot.press("f")
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        assert copy in _screen_text(app)
+    assert path.read_bytes() == b'[{"prior": true}]'
+
+
+async def test_valid_zero_nft_holders_exports_real_empty_array(tmp_path):
+    payload = _list_payload(2)
+    screen = _export_screen(tmp_path, payload)
+    collection = PREDEFINED_NFT_COLLECTIONS[0]
+    screen._data_manager.nft_holders_by_collection = {
+        collection.key: frozenset()
+    }
+    screen._data_manager.filtered_complete = True
+    screen._data_manager.filtered_source_reason = None
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        screen.query_one("#filter-nft-choice-0", Checkbox).value = True
+        await pilot.press("f")
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+    assert json.loads(
+        (tmp_path / "curator_filtered_list.json").read_text()
+    ) == []
+
+
 async def test_filter_shortcuts_are_list_only_and_editor_blocks_cycle_and_presets():
     screen = _screen(_list_payload(3))
     app = _ThemedHarness(screen)
@@ -3231,7 +3453,7 @@ async def test_filtered_order_message_updates_the_wallet_hero_index():
         await pilot.pause()
         hero = _region_text(app, screen.query_one(CuratorListHero), screen)
     assert screen._you_filtered_index == 2
-    assert "#2 of 3 (filtered)" in hero
+    assert "#2 of 3 · filtered" in hero
 
 
 async def test_l_opens_one_raw_table_and_c_toggles_a_remembered_clean_table():
@@ -3781,7 +4003,7 @@ async def test_refresh_recomputes_active_filter_in_the_current_sort_order(tmp_pa
         assert screen._you_filtered_index == 3
         assert "3 wallets" in hero
         assert "151 pts" in hero
-        assert "#3 of 3 (filtered)" in hero
+        assert "#3 of 3 · filtered" in hero
         assert "saved →" in panel
 
         await pilot.press("e")
