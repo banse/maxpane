@@ -359,6 +359,9 @@ class _FakeManager:
         self.filtered_complete = False
         self.filtered_source_reason: str | None = "missing"
         self.filtered_holder_receipt: str | None = None
+        self.filtered_routed_eth: float | None = None
+        self.collection_names: dict[str, str | Exception | None] = {}
+        self.collection_name_calls: list[str] = []
 
     async def fetch_and_compute(self) -> dict:
         self.calls += 1
@@ -369,6 +372,13 @@ class _FakeManager:
     async def close(self) -> None:
         pass
 
+    async def resolve_nft_collection_name(self, collection) -> str:
+        self.collection_name_calls.append(collection.key)
+        answer = self.collection_names.get(collection.key, collection.label)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer or collection.label
+
     def full_list_rows(self, *, cleaned: bool) -> list[dict] | None:
         self.full_list_calls.append(cleaned)
         rows = self.full_clean_rows if cleaned else self.full_raw_rows
@@ -378,7 +388,12 @@ class _FakeManager:
         self, directory, *, expected_count, live_rows, you_row, spec
     ) -> FilteredListResult:
         if not isinstance(live_rows, list):
-            return FilteredListResult(None, False, "missing")
+            return FilteredListResult(
+                rows=None,
+                complete=False,
+                source_reason="missing",
+                routed_eth=self.filtered_routed_eth,
+            )
         context = FilterContext(
             families_by_address=(
                 self.families_by_address if spec.families else None
@@ -390,10 +405,11 @@ class _FakeManager:
             ),
         )
         return FilteredListResult(
-            filter_rows(live_rows, spec, context),
-            self.filtered_complete,
-            self.filtered_source_reason,
-            self.filtered_holder_receipt,
+            rows=filter_rows(live_rows, spec, context),
+            complete=self.filtered_complete,
+            source_reason=self.filtered_source_reason,
+            holder_receipt=self.filtered_holder_receipt,
+            routed_eth=self.filtered_routed_eth,
         )
 
 
@@ -646,12 +662,14 @@ def test_list_hero_screen_primitives_are_explicitly_named():
         "list_view",
         "filtered_contributors",
         "filtered_points",
+        "filtered_routed_eth",
         "you_filtered_index",
         "you_first_index",
         "you_first_hour",
         "filter_summary",
         "filtered_rows",
         "filtered_complete",
+        "filtered_source_reason",
         "filter_editor_open",
     }
 
@@ -3184,8 +3202,12 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
             "chain": "base",
             "address": address,
         },)
+        assert screen._data_manager.collection_name_calls == [
+            f"base:{address}"
+        ]
         assert editor.query_one("#filter-nft-address", Input).value == ""
 
+        screen._data_manager.collection_name_calls.clear()
         editor.query_one("#filter-nft-address", Input).value = (
             "0x" + address[2:].upper()
         )
@@ -3194,6 +3216,7 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
         await pilot.pause()
         assert "already selected" in _screen_text(app)
         assert len(editor.values()["nft_collections"]) == 1
+        assert screen._data_manager.collection_name_calls == []
 
         await pilot.click("#filter-nft-remove-0")
         await pilot.pause()
@@ -3205,6 +3228,7 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
         await pilot.click("#filter-nft-add")
         await pilot.pause()
         assert nft_input.has_class("filter-invalid")
+        assert screen._data_manager.collection_name_calls == []
 
         nft_input.value = PREDEFINED_NFT_COLLECTIONS[1].address
         await pilot.pause()
@@ -3212,6 +3236,79 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
         await pilot.pause()
         assert "already available above" in _screen_text(app)
         assert editor.values()["nft_collections"] == ()
+        assert screen._data_manager.collection_name_calls == []
+
+
+async def test_custom_nft_add_uses_resolved_name_and_retains_it_everywhere():
+    payload = _list_payload(1)
+    screen = _screen(payload)
+    address = "0x" + "a" * 40
+    key = f"base:{address}"
+    screen._data_manager.collection_names[key] = "Reader Pass"
+    screen._data_manager.nft_holders_by_collection[key] = frozenset({
+        payload["leaderboard_rows"][0]["address"].casefold()
+    })
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        editor.query_one("#filter-nft-chain", Select).value = "base"
+        editor.query_one("#filter-nft-address", Input).value = address
+        await pilot.click("#filter-nft-add")
+        await pilot.pause()
+        assert screen._data_manager.collection_name_calls == [key]
+        assert editor.values()["nft_collections"] == ({
+            "label": "Reader Pass", "chain": "base", "address": address,
+        },)
+        await pilot.click("#filter-apply")
+        await pilot.pause()
+        assert "NFT Reader Pass" in screen._filter_summary
+        assert "Reader Pass" in _region_text(
+            app, screen.query_one(CuratorFilteredList), screen
+        )
+        assert "Reader Pass" in _region_text(
+            app, screen.query_one(CuratorListHero), screen
+        )
+
+
+async def test_unavailable_custom_name_keeps_input_and_shows_error():
+    screen = _screen(_list_payload(1))
+    address = "0x" + "b" * 40
+    key = f"ethereum:{address}"
+    screen._data_manager.collection_names[key] = NftHolderUnavailable(
+        "ethereum NFT holder RPC unavailable"
+    )
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        editor.query_one("#filter-nft-address", Input).value = address
+        await pilot.click("#filter-nft-add")
+        await pilot.pause()
+        assert editor.query_one("#filter-nft-address", Input).value == address
+        assert editor.values()["nft_collections"] == ()
+        assert "RPC unavailable" in _region_text(app, editor, screen)
+
+
+async def test_apply_button_and_f_key_use_the_same_acceptance_result():
+    screen = _screen(_list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        editor.query_one("#filter-hour-min", Input).value = "0"
+        editor.query_one("#filter-hour-max", Input).value = "0"
+        await pilot.click("#filter-apply")
+        await pilot.pause()
+        button_spec = screen._active_filter
+        button_rows = list(screen._filtered_rows)
+        await pilot.press("f", "f")
+        await pilot.pause()
+        assert screen._active_filter == button_spec
+        assert screen._filtered_rows == button_rows
 
 
 async def test_reset_all_clears_draft_but_not_active_filter_until_acceptance():
@@ -3285,7 +3382,11 @@ async def test_normal_refresh_publishes_completed_nft_filter_and_title(
         if calls == 1:
             raise NftHolderPending("NFT holder data loading")
         return FilteredListResult(
-            [payload["leaderboard_rows"][0]], True, None, None
+            rows=[payload["leaderboard_rows"][0]],
+            complete=True,
+            source_reason=None,
+            holder_receipt=None,
+            routed_eth=7.5,
         )
 
     monkeypatch.setattr(screen._data_manager, "filtered_list_rows", result)
@@ -3298,12 +3399,19 @@ async def test_normal_refresh_publishes_completed_nft_filter_and_title(
         await pilot.pause()
         screen.query_one("#filter-nft-choice-0", Checkbox).value = True
         await pilot.press("f")
+        await pilot.pause()
+        pending_panel = _region_text(
+            app, screen.query_one(CuratorFilteredList), screen
+        )
+        assert "NFT holder data loading" in pending_panel
         await screen._do_refresh()
         await pilot.pause()
         panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
+        hero = _region_text(app, screen.query_one(CuratorListHero), screen)
         assert screen._filtered_rows == [payload["leaderboard_rows"][0]]
         assert "THE FILTERED LIST - 1 wallets" in panel
         assert "NFT Identity.md" in panel
+        assert "7.50 ETH deposited" in hero
 
 
 @pytest.mark.parametrize(
@@ -3332,7 +3440,7 @@ async def test_pending_or_unavailable_nft_filter_never_overwrites_export(
         await pilot.press("f")
         await pilot.pause()
         screen.query_one("#filter-nft-choice-0", Checkbox).value = True
-        await pilot.press("f")
+        await pilot.click("#filter-apply")
         await pilot.pause()
         await pilot.press("e")
         await pilot.pause()
@@ -3799,14 +3907,14 @@ async def test_the_list_view_alone_swaps_in_the_record_summary_hero():
         assert "CLOCK" not in text
         assert "THE LIST" in text and "THE FILTER" in text
         assert "THE CLEANED LIST" not in text
-        assert "THE WALLET" in text
+        assert "YOUR WALLET" in text
         assert "reader.eth" in text
         assert (
             text.index("THE LIST")
-            < text.index("THE WALLET")
+            < text.index("YOUR WALLET")
             < text.index("THE FILTER")
         )
-        assert "#15,234 of 19,522 (raw)" in text
+        assert "#15,234 of 19,522 · raw" in text
         assert "clusters" not in text
         assert "removed (via sybilkit)" not in text
         assert "42,721 pts" in text
@@ -3814,9 +3922,10 @@ async def test_the_list_view_alone_swaps_in_the_record_summary_hero():
         await pilot.press("c")
         await pilot.pause()
         cleaned_text = _region_text(app, list_hero, screen)
-        assert "THE CLEANED LIST" in cleaned_text
-        assert "THE LIST" not in cleaned_text
-        assert "#7,042 of 8,750 (clean)" in cleaned_text
+        assert "THE LIST" in cleaned_text
+        assert "THE CLEANED LIST" not in cleaned_text
+        assert "list CLEANED" in cleaned_text
+        assert "#7,042 of 8,750 · clean" in cleaned_text
         assert "8,750 wallets" in cleaned_text
         assert "12,345,678 pts" in cleaned_text
 

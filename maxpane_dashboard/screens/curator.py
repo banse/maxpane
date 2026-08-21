@@ -167,6 +167,7 @@ from maxpane_dashboard import __version__
 from maxpane_dashboard.data.curator_list_filters import (
     PREDEFINED_NFT_COLLECTIONS,
     FilterDataUnavailable,
+    NftCollectionRef,
     FilterSpec,
     FilterValidationError,
     empty_filter_values,
@@ -209,6 +210,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorSignals,
     CuratorSparklines,
     FILTERED_LIST_UNAVAILABLE,
+    FilterApplyRequested,
     FilterResetRequested,
     ListOrderChanged,
     NftCollectionAddRequested,
@@ -369,7 +371,8 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "volume_routed_eth", "you_address", "you_ens", "you_rank",
         "you_clean_rank", "you_filtered_index", "you_first_index",
         "you_first_hour", "you_points", "clean_contributors", "clean_points",
-        "filtered_contributors", "filtered_points", "filter_summary",
+        "filtered_contributors", "filtered_points", "filtered_routed_eth",
+        "filter_summary",
         "filter_editor_open",
     ),
     "CuratorLeaderboard": ("leaderboard_rows", "you_address"),
@@ -451,7 +454,7 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     ),
     "CuratorFilteredList": (
         "filtered_rows", "you_list_row", "filtered_complete",
-        "filter_summary",
+        "filter_summary", "filtered_source_reason",
     ),
 }
 
@@ -459,8 +462,10 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
 #: The filtered values are populated by Task 6's list-view controller.
 SCREEN_SUPPLIED: frozenset[str] = frozenset({
     "you_address", "list_view", "filtered_contributors", "filtered_points",
+    "filtered_routed_eth",
     "you_filtered_index", "you_first_index", "you_first_hour", "filter_summary",
-    "filtered_rows", "filtered_complete", "filter_editor_open",
+    "filtered_rows", "filtered_complete", "filtered_source_reason",
+    "filter_editor_open",
 })
 
 
@@ -1068,6 +1073,7 @@ class CuratorScreen(RefreshGuard, Screen):
         self._filter_summary: tuple[str, ...] = ()
         self._filtered_rows: list[dict] | None = []
         self._filtered_complete = False
+        self._filtered_routed_eth: float | None = None
         self._filtered_source_reason: str | None = None
         self._filtered_holder_receipt: str | None = None
         self._you_filtered_index: int | None = None
@@ -1304,7 +1310,7 @@ class CuratorScreen(RefreshGuard, Screen):
                 custom.append(self._nft_primitive(item))
         return custom
 
-    def on_nft_collection_add_requested(
+    async def on_nft_collection_add_requested(
         self, event: NftCollectionAddRequested
     ) -> None:
         editor = self.query_one(CuratorListFilterEditor)
@@ -1330,6 +1336,12 @@ class CuratorScreen(RefreshGuard, Screen):
         except FilterValidationError as exc:
             editor.show_error("nft_address", str(exc))
             return
+        try:
+            label = await self._data_manager.resolve_nft_collection_name(item)
+        except NftHolderUnavailable as exc:
+            editor.show_error("nft_address", str(exc))
+            return
+        item = NftCollectionRef(item.chain, item.address, label)
         custom = self._custom_nft_values(editor)
         custom.append(self._nft_primitive(item))
         editor.set_custom_nfts(custom)
@@ -1353,6 +1365,12 @@ class CuratorScreen(RefreshGuard, Screen):
         editor.set_values(self._custom_filter_values)
         editor.clear_error()
 
+    def on_filter_apply_requested(
+        self, _event: FilterApplyRequested
+    ) -> None:
+        if self._mode == MODE_LIST and self._filter_editor_open:
+            self._accept_filter_editor()
+
     def _filter_result(self, data: dict, spec: FilterSpec):
         return self._data_manager.filtered_list_rows(
             self._export_dir or Path.home() / ".maxpane",
@@ -1367,6 +1385,7 @@ class CuratorScreen(RefreshGuard, Screen):
         self._filter_summary = filter_summary(spec)
         self._filtered_rows = result.rows
         self._filtered_complete = result.complete
+        self._filtered_routed_eth = result.routed_eth
         self._filtered_source_reason = result.source_reason
         self._filtered_holder_receipt = result.holder_receipt
         self._you_filtered_index = None
@@ -1376,6 +1395,7 @@ class CuratorScreen(RefreshGuard, Screen):
         self._filter_summary = filter_summary(spec)
         self._filtered_rows = None
         self._filtered_complete = False
+        self._filtered_routed_eth = None
         self._filtered_source_reason = reason
         self._filtered_holder_receipt = None
         self._you_filtered_index = None
@@ -1455,6 +1475,10 @@ class CuratorScreen(RefreshGuard, Screen):
             self._show_list_view()
             return
 
+        self._accept_filter_editor()
+
+    def _accept_filter_editor(self) -> None:
+        editor = self.query_one(CuratorListFilterEditor)
         self._custom_filter_values = editor.values()
         try:
             spec = parse_filter_values(self._custom_filter_values)
@@ -1761,6 +1785,12 @@ class CuratorScreen(RefreshGuard, Screen):
             logger.debug("Failed to update %s: %s", name, exc)
 
     def _dispatch_filtered_list(self, data: dict) -> None:
+        source_reason = self._filtered_source_reason
+        if source_reason not in {
+            "NFT holder data loading",
+            "NFT holder data unavailable",
+        }:
+            source_reason = None
         self._dispatch(
             CuratorFilteredList,
             {
@@ -1768,6 +1798,7 @@ class CuratorScreen(RefreshGuard, Screen):
                 "filtered_rows": self._filtered_rows,
                 "filtered_complete": self._filtered_complete,
                 "filter_summary": self._filter_summary,
+                "filtered_source_reason": source_reason,
             },
         )
 
@@ -1791,6 +1822,7 @@ class CuratorScreen(RefreshGuard, Screen):
                     if isinstance(rows, list)
                     else None
                 ),
+                "filtered_routed_eth": self._filtered_routed_eth,
                 "you_filtered_index": self._you_filtered_index,
                 "you_first_index": you_row.get("first_index"),
                 "you_first_hour": you_row.get("first_hour"),
