@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pytest
 from textual.app import App, ComposeResult
-from textual.widgets import DataTable, Input, Select
+from textual.widgets import Button, DataTable, Input, Select
 
 from maxpane_dashboard.widgets.curator import (
     NO_ENS,
@@ -151,6 +151,9 @@ class _MessageHarness(_Harness):
     def on_filter_reset_requested(self, _event):
         self.messages.append(("reset",))
 
+    def on_filter_apply_requested(self, _event):
+        self.messages.append(("apply",))
+
 
 def _screen_text(app) -> str:
     strips = app.screen._compositor.render_strips()
@@ -185,11 +188,10 @@ NFT_CHOICES = (
     ("Identity.md", "ethereum", "0x" + "1" * 40),
     ("Fren Pet", "base", "0x" + "2" * 40),
     ("Milady", "ethereum", "0x" + "3" * 40),
-    ("Crypto Punks", "ethereum", "0x" + "4" * 40),
 )
 
 
-async def test_filter_editor_titles_every_group_and_centers_acceptance_copy():
+async def test_filter_editor_titles_every_group():
     editor = CuratorListFilterEditor(nft_choices=NFT_CHOICES)
     app = _Harness(editor)
     async with app.run_test(size=(143, 42)) as pilot:
@@ -204,9 +206,6 @@ async def test_filter_editor_titles_every_group_and_centers_acceptance_copy():
             assert heading in text
         for label, _chain, _address in NFT_CHOICES:
             assert label in text
-        assert "press 'f' to accept filters" in text
-        footer = editor.query_one("#curator-filter-accept")
-        assert footer.styles.text_align == "center"
         for control_id in (
             "filter-join-min",
             "filter-join-max",
@@ -234,9 +233,30 @@ async def test_filter_editor_titles_every_group_and_centers_acceptance_copy():
             "filter-nft-chain",
             "filter-nft-address",
             "filter-nft-add",
+            "filter-apply",
             "filter-reset-all",
         ):
             assert editor.query_one(f"#{control_id}") is not None
+
+
+async def test_filter_editor_has_centered_apply_then_reset_without_footer():
+    editor = CuratorListFilterEditor(nft_choices=NFT_CHOICES)
+    app = _MessageHarness(editor)
+    async with app.run_test(size=(143, 42)) as pilot:
+        editor.scroll_end(animate=False)
+        await pilot.pause()
+        actions = editor.query_one(".curator-filter-actions")
+        buttons = list(actions.query(Button))
+        assert [button.id for button in buttons] == [
+            "filter-apply", "filter-reset-all"
+        ]
+        assert "press 'f' to accept filters" not in _screen_text(app)
+        left = buttons[0].region.x - actions.content_region.x
+        right = actions.content_region.right - buttons[-1].region.right
+        assert abs(left - right) <= 1
+        await pilot.click("#filter-apply")
+        await pilot.click("#filter-reset-all")
+        assert app.messages[-2:] == [("apply",), ("reset",)]
 
 
 async def test_editor_emits_add_remove_and_reset_commands():

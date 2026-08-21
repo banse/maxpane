@@ -3366,7 +3366,7 @@ async def test_valid_zero_nft_holders_exports_real_empty_array(tmp_path):
     ) == []
 
 
-async def test_filter_editor_composite_fits_143_columns_and_keeps_footer():
+async def test_filter_editor_composite_fits_143_columns_with_actions():
     screen = _screen(_list_payload(100))
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
@@ -3378,8 +3378,9 @@ async def test_filter_editor_composite_fits_143_columns_and_keeps_footer():
         await pilot.pause()
         text = _region_text(app, editor, screen)
         assert "NFT HOLDERS" in text
+        assert "APPLY FILTER" in text
         assert "RESET ALL" in text
-        assert "press 'f' to accept filters" in text
+        assert "press 'f' to accept filters" not in text
         assert editor.show_horizontal_scrollbar is False
         assert screen.query_one(
             CuratorListHero

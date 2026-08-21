@@ -76,6 +76,10 @@ class FilterResetRequested(Message):
     pass
 
 
+class FilterApplyRequested(Message):
+    pass
+
+
 class CuratorListFilterEditor(Vertical):
     """A primitive-value editor; validation and filtering live outside it."""
 
@@ -135,11 +139,13 @@ class CuratorListFilterEditor(Vertical):
         width: 5;
         min-width: 5;
     }
-    CuratorListFilterEditor #curator-filter-accept {
+    CuratorListFilterEditor .curator-filter-actions {
         width: 100%;
-        height: 1;
-        text-align: center;
-        color: $text-muted;
+        height: 3;
+        align: center middle;
+    }
+    CuratorListFilterEditor .curator-filter-actions Button {
+        margin: 0 1;
     }
     CuratorListFilterEditor .filter-invalid {
         border: tall $error;
@@ -231,12 +237,9 @@ class CuratorListFilterEditor(Vertical):
             yield Input(placeholder="0x collection address", id="filter-nft-address")
             yield Button("+", id="filter-nft-add", compact=True)
         yield Vertical(id="filter-nft-custom-list")
-        yield Button("RESET ALL", id="filter-reset-all", compact=True)
-        yield Static(
-            "press 'f' to accept filters",
-            id="curator-filter-accept",
-            markup=False,
-        )
+        with Horizontal(classes="curator-filter-actions"):
+            yield Button("APPLY FILTER", id="filter-apply", compact=True)
+            yield Button("RESET ALL", id="filter-reset-all", compact=True)
 
     def on_resize(self, _event=None) -> None:
         self.set_class(self.content_size.width < 100, "compact-filter")
@@ -341,6 +344,8 @@ class CuratorListFilterEditor(Vertical):
                 str(self.query_one("#filter-nft-chain", Select).value),
                 self.query_one("#filter-nft-address", Input).value,
             ))
+        elif event.button.id == "filter-apply":
+            self.post_message(FilterApplyRequested())
         elif event.button.id == "filter-reset-all":
             self.post_message(FilterResetRequested())
         elif event.button.id and event.button.id.startswith("filter-nft-remove-"):

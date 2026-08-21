@@ -998,11 +998,13 @@ class CuratorScreen(RefreshGuard, Screen):
         width: 5;
         min-width: 5;
     }
-    CuratorScreen #curator-filter-accept {
+    CuratorScreen CuratorListFilterEditor .curator-filter-actions {
         width: 100%;
-        height: 1;
-        text-align: center;
-        color: $text-muted;
+        height: 3;
+        align: center middle;
+    }
+    CuratorScreen CuratorListFilterEditor .curator-filter-actions Button {
+        margin: 0 1;
     }
     CuratorScreen .filter-invalid {
         border: tall $error;

@@ -102,6 +102,7 @@ from .hero import PHASE_UNAVAILABLE, CuratorHero
 from .list_hero import CuratorListHero
 from .list_filter import (
     CuratorListFilterEditor,
+    FilterApplyRequested,
     FilterResetRequested,
     NftCollectionAddRequested,
     NftCollectionRemoveRequested,
@@ -197,6 +198,7 @@ __all__ = [
     "CuratorHero",
     "CuratorListHero",
     "CuratorListFilterEditor",
+    "FilterApplyRequested",
     "FilterResetRequested",
     "NftCollectionAddRequested",
     "NftCollectionRemoveRequested",
