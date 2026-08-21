@@ -25,15 +25,12 @@ Five things here are deliberate rather than incidental.
    ``test_the_screen_reads_no_clock_of_its_own`` can pin it with a source
    scan.
 
-2. **``c`` swaps CLOSEST CALLS and FAN-OUT PATTERNS in the bottom-right slot**,
-   the affordance FWA, TTT and Talismans use for two mutually exclusive tables.
-   The default is *phase-aware*: CLUSTERS while the game is in grace (or while
-   the phase is unknown), CLOSEST CALLS once an hour has actually been judged.
-   A CLOSEST CALLS panel opened during grace shows ``no judged hours yet`` for
-   the dashboard's entire first day; the clusters table has data from the first
-   deposit.  The default stops applying the moment the reader presses ``c``
-   (:attr:`CuratorScreen._user_chose_view`) -- a panel that snaps back while
-   you are reading it is worse than a suboptimal default.
+2. **The screen starts on Raw Lists; History is selected directly with ``h``.**
+   ``l`` returns to Lists and ``esc`` backs out of History, Wallet, or Analysis
+   to Lists. Inside History, ``c`` swaps CLOSEST CALLS and FAN-OUT PATTERNS in
+   the bottom-right slot, the affordance FWA, TTT and Talismans use for two
+   mutually exclusive tables. History always initializes on FAN-OUT PATTERNS;
+   once the reader swaps it, that choice survives refreshes and re-entry.
 
    Both tables stay mounted and both are dispatched to on every refresh, so
    toggling is a visibility flip with no refetch and no blank first frame.
@@ -662,27 +659,13 @@ def _write_filtered_list(directory: Path, rows: list[dict]) -> Path:
     return path
 
 
-def _default_view(phase) -> str:
-    """Which table owns the bottom-right slot before the reader says otherwise.
-
-    CLUSTERS until an hour has actually been judged, then CLOSEST CALLS.  An
-    unknown phase picks CLUSTERS too: it is the one of the two that has rows
-    from the first deposit onwards, so an unknown phase costs the reader a
-    populated table rather than an empty one.
-    """
-    text = str(phase or "").strip().lower()
-    return VIEW_CLOSEST if text in ("judged", "settled") else VIEW_CLUSTERS
-
-
 class CuratorScreen(RefreshGuard, Screen):
     """THE LIST -- WhitelistCurator survival watch (Ethereum mainnet).
 
-    Eleven bindings: ``r`` refresh; ``c`` swaps CLOSEST CALLS and FAN-OUT
-    PATTERNS in the bottom-right slot (see the module docstring); ``w`` sets
-    the wallet; ``y`` swaps the body for the reader's own standing; ``f``
-    opens or applies the list filter; ``l`` opens the record lists; ``1``–``3``
-    apply list presets; ``e`` exports an active list; ``esc`` backs out of a
-    secondary view, one-way. Linked analysis remains callable internally.
+    The screen opens on Raw Lists. ``h`` selects History, whose fixed initial
+    panel is FAN-OUT PATTERNS; ``l`` selects Lists, and ``esc`` returns from a
+    secondary view to Lists. ``c`` swaps panels in History and rotates record
+    lists in Lists. Linked analysis remains callable internally.
     """
 
     BINDINGS = [
@@ -691,11 +674,12 @@ class CuratorScreen(RefreshGuard, Screen):
         Binding("w", "set_wallet", "Wallet", show=True),
         Binding("y", "toggle_mode", "You", show=True),
         Binding("f", "toggle_filter", "Filter", show=False, priority=True),
-        Binding("l", "toggle_list", "Lists", show=True),
+        Binding("h", "show_history", "History", show=True),
+        Binding("l", "show_lists", "Lists", show=True),
         # Only acts in MODE_ANALYSIS or MODE_LIST, so it remains a no-op on the
         # dashboard and wallet view -- the `esc` rule's shape.
         Binding("e", "export_clean_list", "Export", show=False, priority=True),
-        Binding("escape", "back_to_dashboard", "Back", show=False),
+        Binding("escape", "back_to_lists", "Back", show=False),
         Binding("1", "apply_filter_preset('1')", "First 1000", show=False),
         Binding("2", "apply_filter_preset('2')", "Hour 0", show=False),
         Binding("3", "apply_filter_preset('3')", "Whale splash", show=False),
@@ -1057,13 +1041,11 @@ class CuratorScreen(RefreshGuard, Screen):
         #: environment itself, so two screens in one process can watch two
         #: wallets and a test drives it without patching anything.
         self._wallet = wallet or None
-        #: Which table owns the bottom-right slot: ``VIEW_CLUSTERS`` or
-        #: ``VIEW_CLOSEST``.  Starts on the unknown-phase default, which is
-        #: also the grace default, so the first frame is never an empty table.
-        self._active_view: str = _default_view(None)
-        #: Which body is on screen: MODE_DASHBOARD or MODE_WALLET.  The hero and
-        #: the title bar belong to neither and are always visible.
-        self._mode: str = MODE_DASHBOARD
+        #: Which table owns History's bottom-right slot. History always starts
+        #: with FAN-OUT PATTERNS and preserves later reader choices.
+        self._active_view: str = VIEW_CLUSTERS
+        #: Raw Lists is the deterministic startup body.
+        self._mode: str = MODE_LIST
         #: Which of the three precomposed full-width record tables list mode
         #: shows. Kept across leaving and re-entering the mode.
         self._list_view: str = LIST_RAW
@@ -1077,18 +1059,14 @@ class CuratorScreen(RefreshGuard, Screen):
         self._filtered_source_reason: str | None = None
         self._filtered_holder_receipt: str | None = None
         self._you_filtered_index: int | None = None
-        #: True once the reader has pressed ``c``.  From then on the
-        #: phase-aware default stops applying: a panel that snaps back while
-        #: you are reading it is worse than a suboptimal default.
-        self._user_chose_view: bool = False
         #: The last payload the title bar was composed from, kept so
         #: :meth:`_render_title` can re-compose the same line with a different
         #: ``‹ taller`` state when only the terminal's height changed.
         #: ``None`` until the first refresh lands.
         self._title_data: dict | None = None
-        #: Set by a reader-requested list entry or manual refresh that lands
-        #: before fresh manager data. Interval refreshes never set it.
-        self._list_source_pending = False
+        #: Startup and reader-requested list boundaries validate the complete
+        #: export source after fresh manager data lands.
+        self._list_source_pending = True
 
     # ------------------------------------------------------------------
     # Layout
@@ -1170,8 +1148,8 @@ class CuratorScreen(RefreshGuard, Screen):
     #: The full words are pinned against the worst-case (`4 errors` present)
     #: at the measured 138-column curator width.
     KEY_HINTS = (
-        "[dim]c[/] panels [dim]·[/] [dim]y[/] you [dim]·[/] "
-        "[dim]l[/] lists"
+        "[dim]c[/] view [dim]·[/] [dim]h[/] history [dim]·[/] "
+        "[dim]y[/] you [dim]·[/] [dim]l[/] lists"
     )
 
     def on_mount(self) -> None:
@@ -1257,8 +1235,7 @@ class CuratorScreen(RefreshGuard, Screen):
         escaping leaves them where they were.
         """
         if self._mode == MODE_WALLET:
-            self._mode = MODE_DASHBOARD
-            self._show_mode()
+            self.action_show_lists()
             return
         if self._wallet is None:
             self.app.push_screen(
@@ -1279,17 +1256,20 @@ class CuratorScreen(RefreshGuard, Screen):
         is worth opening with no wallet configured -- only the CLEANED LIST's
         "you" line needs one, and it degrades to its own instruction.
         """
-        self._mode = (
-            MODE_DASHBOARD if self._mode == MODE_ANALYSIS else MODE_ANALYSIS
-        )
+        if self._mode == MODE_ANALYSIS:
+            self.action_show_lists()
+            return
+        self._mode = MODE_ANALYSIS
         self._show_mode()
 
-    def action_toggle_list(self) -> None:
-        """``l`` -- swap the body for the selected full-width record list."""
-        entering = self._mode != MODE_LIST
-        self._mode = MODE_LIST if entering else MODE_DASHBOARD
+    def action_show_history(self) -> None:
+        self._mode = MODE_DASHBOARD
         self._show_mode()
-        if entering and self._list_view != LIST_FILTERED:
+
+    def action_show_lists(self) -> None:
+        self._mode = MODE_LIST
+        self._show_mode()
+        if self._list_view != LIST_FILTERED:
             self._list_source_pending = True
             self._load_selected_list_source()
 
@@ -1587,20 +1567,12 @@ class CuratorScreen(RefreshGuard, Screen):
         except Exception as exc:  # noqa: BLE001 -- the file is written either way
             logger.debug("Could not show the export path: %s", exc)
 
-    def action_back_to_dashboard(self) -> None:
-        """``esc`` -- one-way, back to the game from any secondary view. A no-op
-        when already there, so the key never swallows an escape the reader
-        meant for something else."""
-        if self._mode != MODE_DASHBOARD:
-            self._mode = MODE_DASHBOARD
-            self._show_mode()
+    def action_back_to_lists(self) -> None:
+        if self._mode != MODE_LIST:
+            self.action_show_lists()
 
     def action_toggle_view(self) -> None:
-        """Swap CLOSEST CALLS and FAN-OUT PATTERNS in the bottom-right slot.
-
-        Also the moment the phase-aware default stops applying: after this the
-        choice is the reader's, across every later phase change.
-        """
+        """Rotate Lists or swap History's bottom-right panel."""
         if self._mode == MODE_LIST:
             if self._filter_editor_open:
                 return
@@ -1611,10 +1583,11 @@ class CuratorScreen(RefreshGuard, Screen):
                 self._list_source_pending = True
                 self._load_selected_list_source()
             return
+        if self._mode != MODE_DASHBOARD:
+            return
         self._active_view = (
             VIEW_CLUSTERS if self._active_view == VIEW_CLOSEST else VIEW_CLOSEST
         )
-        self._user_chose_view = True
         self._show_active_view()
 
     def action_set_wallet(self) -> None:
@@ -1670,21 +1643,6 @@ class CuratorScreen(RefreshGuard, Screen):
             self._show_mode()
         if moved:
             self.action_refresh()
-
-    def _apply_phase_default(self, phase) -> None:
-        """Move the slot to the phase's default -- unless the reader has chosen.
-
-        Called from ``_do_refresh`` only, and gated on
-        :attr:`_user_chose_view`; running it unconditionally is what makes a
-        panel snap back under the reader's hands when the game crosses out of
-        grace.
-        """
-        if self._user_chose_view:
-            return
-        wanted = _default_view(phase)
-        if wanted != self._active_view:
-            self._active_view = wanted
-        self._show_active_view()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -1899,13 +1857,6 @@ class CuratorScreen(RefreshGuard, Screen):
         # wrote the line itself would drop a marker a resize had just lit.
         self._title_data = data
         self._render_title()
-
-        # The swap slot's phase-aware default, before the tables are filled so
-        # the frame the reader sees is already the right one.
-        try:
-            self._apply_phase_default(data.get("phase"))
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Failed to apply the phase default: %s", exc)
 
         self._refresh_active_filter(data)
 

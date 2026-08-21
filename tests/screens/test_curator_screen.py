@@ -143,10 +143,11 @@ from maxpane_dashboard.screens.curator import (
     VIEW_CLUSTERS,
     WIDGET_SIGNATURES,
     CuratorScreen,
+    LIST_RAW,
     MODE_DASHBOARD,
+    MODE_LIST,
     MODE_WALLET,
     WALLET_HERO_ID,
-    _default_view,
     _fmt_degraded,
     _fmt_int,
     _num,
@@ -190,6 +191,7 @@ from maxpane_dashboard.widgets.curator import (
     NO_JUDGED_HOURS,
     NO_WALLET,
     OPERATORS_TITLE,
+    RAW_LIST_TITLE,
     SEGMENTS_TITLE,
     SIGNAL_LABELS,
     SIGNALS_TITLE,
@@ -500,6 +502,7 @@ async def _render(payload=None, *, width: int = CURATOR_FULL_LAYOUT_COLUMNS,
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
+        await pilot.press("h")
         if view is not None and screen._active_view != view:
             screen.action_toggle_view()
             await pilot.pause()
@@ -527,6 +530,7 @@ async def _panels_asking_for_width(width: int, payload=None,
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
+        await pilot.press("h")
         if view is not None and screen._active_view != view:
             screen.action_toggle_view()
             await pilot.pause()
@@ -555,6 +559,7 @@ async def _first_clean_width(payload=None, view: str | None = None,
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
+        await pilot.press("h")
         if view is not None and screen._active_view != view:
             screen.action_toggle_view()
             await pilot.pause()
@@ -571,17 +576,17 @@ async def _first_clean_width(payload=None, view: str | None = None,
 # =======================================================================
 
 
-def test_the_eleven_bindings_are_the_ones_this_screen_documents():
+def test_the_twelve_bindings_are_the_ones_this_screen_documents():
     """Hand-typed rather than derived: a set compared against itself could not
     catch a binding that was added, renamed or lost.
 
     `r` refresh, `c` swap the bottom-right slot, `w` set the wallet,
-    `y` the wallet view, `f` the list filter, `l` the record-list view,
+    `y` the wallet view, `f` the list filter, `h` History, `l` Lists,
     `e` export the active list view (analysis or record lists), `escape` back
     out of any secondary view, and `1`/`2`/`3` apply list-filter presets.
     """
     assert {binding.key for binding in CuratorScreen.BINDINGS} == {
-        "r", "c", "w", "y", "f", "l", "e", "escape", "1", "2", "3",
+        "r", "c", "w", "y", "f", "h", "l", "e", "escape", "1", "2", "3",
     }
 
 
@@ -632,7 +637,7 @@ async def test_screen_mounts_every_widget():
             False,
             False,
         ]
-        assert lists.display is False
+        assert lists.display is True
         for cls in _PANELS:
             assert screen.query_one(cls) is not None
         # The two ids WP7's stylesheet places the swap pair by.
@@ -923,6 +928,7 @@ async def test_a_widget_that_raises_does_not_cost_the_other_six():
         screen.query_one(CuratorLeaderboard).update_data = boom
         await screen._do_refresh()
         await pilot.pause()
+        await pilot.press("h")
         text = _screen_text(app)
 
     assert "THE LIST · hour 4 · GRACE" in text
@@ -948,76 +954,82 @@ async def test_a_manager_returning_a_non_dict_is_ignored_rather_than_rendered():
 
 
 # =======================================================================
-# WP6.4 -- the `c` swap with a phase-aware default
+# Direct Lists and History navigation
 # =======================================================================
 
 
-def test_the_default_view_follows_the_phase():
-    """Clusters are the interesting table during grace -- there is nothing to
-    survive yet, so a CLOSEST CALLS panel would open on an empty state for the
-    dashboard's whole first day."""
-    assert _default_view("grace") == VIEW_CLUSTERS
-    assert _default_view("judged") == VIEW_CLOSEST
-    assert _default_view("settled") == VIEW_CLOSEST
-    assert _default_view(None) == VIEW_CLUSTERS  # unknown -> the never-empty one
-
-
-async def test_the_default_flips_once_and_does_not_fight_the_user():
-    """The phase-aware default applies until the reader presses ``c``.  After
-    that the choice is theirs, even across a phase change -- a panel that snaps
-    back while you are reading it is worse than a suboptimal default."""
-    screen = _screen(_grace_payload())
+async def test_screen_starts_on_raw_lists_and_loads_the_complete_source(
+    tmp_path
+):
+    payload = _list_payload(3)
+    (tmp_path / "curator_raw_list.json").write_text(
+        json.dumps(payload["leaderboard_rows"]), encoding="utf-8"
+    )
+    manager = _FakeManager(payload)
+    screen = CuratorScreen(
+        manager, poll_interval=30, name="curator", wallet=_WALLET,
+        export_dir=tmp_path,
+    )
     app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
-        await pilot.pause()
+    async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
         await pilot.pause()
-        assert screen._active_view == VIEW_CLUSTERS
+        assert screen._mode == MODE_LIST
+        assert screen._list_view == LIST_RAW
+        assert screen.query_one(CuratorRawList).display is True
+        assert screen.query_one(CuratorListHero).display is True
+        panel = screen.query_one(CuratorRawList)
+        assert panel._payload["complete"] is True
+        assert len(panel._payload["rows"]) == 3
 
+
+async def test_h_l_and_escape_are_direct_history_and_list_selectors():
+    screen = _screen(_list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("h")
+        assert screen._mode == MODE_DASHBOARD
+        assert screen._active_view == VIEW_CLUSTERS
+        await pilot.press("h")
+        assert screen._mode == MODE_DASHBOARD
+        await pilot.press("l")
+        assert screen._mode == MODE_LIST
+        await pilot.press("l")
+        assert screen._mode == MODE_LIST
+        await pilot.press("y")
+        assert screen._mode == MODE_WALLET
+        await pilot.press("escape")
+        assert screen._mode == MODE_LIST
+
+
+async def test_history_c_choice_persists_across_phase_refresh_and_reentry():
+    screen = _screen(_grace_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("h")
+        assert screen._active_view == VIEW_CLUSTERS
         await pilot.press("c")
-        await pilot.pause()
         assert screen._active_view == VIEW_CLOSEST
-
-        screen._data_manager._payload = _judged_payload()
-        await screen._do_refresh()          # phase changed under them
-        await pilot.pause()
-        assert screen._active_view == VIEW_CLOSEST   # unchanged: user chose
-
-        # And the direction that actually bites.  Above, the reader's choice
-        # happens to agree with the new phase's default, so a screen that
-        # re-applied the default on every refresh would still pass -- which is
-        # exactly what the first version of this test did.  Here the reader
-        # picks the table the phase default does *not* want, and it has to
-        # survive two more phase-carrying refreshes.
-        await pilot.press("c")
-        await pilot.pause()
-        assert screen._active_view == VIEW_CLUSTERS
-
-        await screen._do_refresh()                   # still judged
-        await pilot.pause()
-        assert screen._active_view == VIEW_CLUSTERS
-
         screen._data_manager._payload = _settled_payload()
         await screen._do_refresh()
-        await pilot.pause()
-        assert screen._active_view == VIEW_CLUSTERS
-        assert CLUSTERS_TITLE in _screen_text(app)
-
-
-async def test_the_default_moves_with_the_phase_until_the_user_speaks():
-    screen = _screen(_grace_payload())
-    app = _ThemedHarness(screen)
-    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
-        await pilot.pause()
-        await screen._do_refresh()
-        await pilot.pause()
-        assert screen._active_view == VIEW_CLUSTERS
-
-        screen._data_manager._payload = _judged_payload()
-        await screen._do_refresh()
-        await pilot.pause()
+        await pilot.press("l", "h")
         assert screen._active_view == VIEW_CLOSEST
-        assert CLOSEST_CALLS_TITLE in _screen_text(app)
+        assert screen.query_one(f"#{CLOSEST_ID}").display is True
+
+
+async def test_c_is_context_specific_to_lists_and_history():
+    screen = _screen(_list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("y")
+        list_view = screen._list_view
+        history_view = screen._active_view
+        await pilot.press("c")
+        assert screen._list_view == list_view
+        assert screen._active_view == history_view
 
 
 async def test_the_hidden_view_still_receives_updates():
@@ -1030,14 +1042,15 @@ async def test_the_hidden_view_still_receives_updates():
         seen = _record_dispatches(screen)
         await screen._do_refresh()
         await pilot.pause()
-        assert screen._active_view == VIEW_CLOSEST
-        assert screen.query_one(f"#{CLUSTERS_ID}").display is False
+        assert screen._active_view == VIEW_CLUSTERS
+        assert screen.query_one(f"#{CLOSEST_ID}").display is False
         # ... and the hidden one was still handed its rows.
         assert seen["CuratorClusters"]["cluster_rows"]
 
+        await pilot.press("h")
         await pilot.press("c")
         await pilot.pause()
-        assert CLUSTERS_TITLE in _screen_text(app)
+        assert CLOSEST_CALLS_TITLE in _screen_text(app)
 
 
 async def test_both_views_occupy_the_identical_slot():
@@ -1169,6 +1182,7 @@ async def _rail_text(payload=None, *, width: int = CURATOR_FULL_LAYOUT_COLUMNS,
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
+        await pilot.press("h")
         return _region_text(app, screen.query_one(CuratorSignals), screen)
 
 
@@ -1255,6 +1269,7 @@ async def test_the_taller_hint_tracks_a_resize_rather_than_the_last_refresh():
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
+        await pilot.press("h")
         assert TALLER_HINT not in _screen_text(app)
 
         await pilot.resize_terminal(
@@ -1300,6 +1315,7 @@ async def test_the_initial_title_takes_the_marker_too():
         await pilot.pause()
         assert INITIAL_TITLE in _screen_text(app)
         assert TALLER_HINT not in _screen_text(app)
+        await pilot.press("h")
         await pilot.resize_terminal(
             CURATOR_FULL_LAYOUT_COLUMNS, RAIL_FULL_HEIGHT - 1
         )
@@ -1366,6 +1382,7 @@ async def test_the_width_requirement_does_not_move_with_the_terminal_height():
             await pilot.pause()
             await screen._do_refresh()
             await pilot.pause()
+            await pilot.press("h")
             widths[height] = screen.query_one(CuratorSignals).size.width
     assert len(set(widths.values())) == 1, widths
 
@@ -1669,6 +1686,7 @@ async def test_the_you_row_goes_from_no_wallet_to_a_real_rank(saved_wallets):
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
+        await pilot.press("h")
         before = _region_text(app, screen.query_one(CuratorSignals), screen)
         assert NO_WALLET in before
         assert "rank 1" not in before
@@ -1693,7 +1711,9 @@ async def test_the_you_row_goes_from_no_wallet_to_a_real_rank(saved_wallets):
         assert saved_wallets == [_WALLET]
 
 
-async def test_escaping_the_prompt_changes_nothing(saved_wallets):
+async def test_escaping_the_prompt_keeps_the_wallet_unset_and_returns_to_lists(
+    saved_wallets,
+):
     manager = _WalletManager()
     screen = CuratorScreen(manager, poll_interval=30, name="curator", wallet=None)
     app = _ThemedHarness(screen)
@@ -1701,6 +1721,7 @@ async def test_escaping_the_prompt_changes_nothing(saved_wallets):
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
+        await pilot.press("h")
         await pilot.press("w")
         await pilot.pause()
         await pilot.press("escape")
@@ -1709,8 +1730,8 @@ async def test_escaping_the_prompt_changes_nothing(saved_wallets):
         assert manager.set_calls == []
         assert screen._wallet is None
         assert saved_wallets == []
-        text = _region_text(app, screen.query_one(CuratorSignals), screen)
-        assert NO_WALLET in text
+        assert screen._mode == MODE_LIST
+        assert RAW_LIST_TITLE in _screen_text(app)
 
 
 async def test_an_invalid_address_never_reaches_the_manager(saved_wallets):
@@ -1859,6 +1880,7 @@ async def test_y_swaps_the_body_and_keeps_the_clock_on_screen():
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
+        await pilot.press("h")
         dashboard = _screen_text(app)
         assert LEADERBOARD_TITLE in dashboard
         assert LADDER_TITLE not in dashboard
@@ -1891,17 +1913,17 @@ async def test_y_toggles_back_and_escape_only_goes_one_way():
         assert screen._mode == MODE_WALLET
         await pilot.press("y")
         await pilot.pause()
-        assert screen._mode == MODE_DASHBOARD
+        assert screen._mode == MODE_LIST
 
         await pilot.press("y")
         await pilot.pause()
         await pilot.press("escape")
         await pilot.pause()
-        assert screen._mode == MODE_DASHBOARD
-        # Escape on the dashboard is a no-op, never a toggle back in.
+        assert screen._mode == MODE_LIST
+        # Escape on Lists is a no-op, never a toggle back in.
         await pilot.press("escape")
         await pilot.pause()
-        assert screen._mode == MODE_DASHBOARD
+        assert screen._mode == MODE_LIST
 
 
 async def test_the_ladder_renders_every_send_with_the_multiplier_it_got():
@@ -2037,6 +2059,7 @@ async def test_y_swaps_the_hero_for_wallet_metrics_too():
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
+        await pilot.press("h")
         dashboard = _screen_text(app)
         assert "CLOCK" in dashboard and "YOUR RANK" not in dashboard
 
@@ -2058,8 +2081,10 @@ async def test_y_swaps_the_hero_for_wallet_metrics_too():
 
         await pilot.press("y")
         await pilot.pause()
-        assert "CLOCK" in _screen_text(app)
-        assert screen.query_one(CuratorHero).display is True
+        assert screen._mode == MODE_LIST
+        assert screen.query_one(CuratorListHero).display is True
+        assert "CLOCK" not in _screen_text(app)
+        assert screen.query_one(CuratorHero).display is False
         assert screen.query_one(f"#{WALLET_HERO_ID}").display is False
 
 
@@ -2199,8 +2224,8 @@ async def test_the_curator_status_line_names_its_reachable_view_keys():
         await pilot.pause()
         text = _screen_text(app)
 
-    assert "c panels" in text and "y you" in text
-    assert "l lists" in text
+    assert "c view" in text and "h history" in text
+    assert "y you" in text and "l lists" in text
     assert "f linked" not in text
     assert "updated" not in text        # traded for the hints
     assert "quit" in text and "refresh" in text and "menu" in text
@@ -2240,7 +2265,7 @@ async def test_y_with_no_wallet_asks_for_one_instead_of_opening_six_dashes(
         await pilot.pause()
 
         assert isinstance(app.screen, WalletInputScreen)
-        assert screen._mode == MODE_DASHBOARD, "the empty view was opened anyway"
+        assert screen._mode == MODE_LIST, "the empty view was opened anyway"
 
 
 async def test_entering_an_address_from_y_opens_the_view_that_was_asked_for(
@@ -2279,10 +2304,10 @@ async def test_escaping_the_prompt_from_y_leaves_the_reader_where_they_were(
         await pilot.press("escape")
         await pilot.pause()
 
-        assert screen._mode == MODE_DASHBOARD
+        assert screen._mode == MODE_LIST
         assert screen._wallet is None
         assert screen._data_manager.set_calls == []
-        assert LEADERBOARD_TITLE in _screen_text(app)
+        assert RAW_LIST_TITLE in _screen_text(app)
 
 
 async def test_w_alone_sets_the_wallet_without_changing_the_view(saved_wallets):
@@ -2301,7 +2326,7 @@ async def test_w_alone_sets_the_wallet_without_changing_the_view(saved_wallets):
         await pilot.pause()
 
         assert screen._wallet == _WALLET
-        assert screen._mode == MODE_DASHBOARD
+        assert screen._mode == MODE_LIST
 
 
 async def test_y_with_a_wallet_already_set_opens_the_view_directly(saved_wallets):
@@ -2533,6 +2558,7 @@ async def test_the_clock_never_leaves_the_screen_in_the_analysis_view():
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
+        await pilot.press("h")
         hero_before = _region_text(app, screen.query_one(CuratorHero), screen)
 
         screen.action_toggle_analysis()
@@ -2561,17 +2587,17 @@ async def test_f_toggles_back_and_escape_backs_out_one_way():
         assert screen._mode == MODE_ANALYSIS
         screen.action_toggle_analysis()
         await pilot.pause()
-        assert screen._mode == MODE_DASHBOARD
+        assert screen._mode == MODE_LIST
 
         screen.action_toggle_analysis()
         await pilot.pause()
         await pilot.press("escape")
         await pilot.pause()
-        assert screen._mode == MODE_DASHBOARD
-        # Escape on the dashboard stays a no-op, never a toggle back in.
+        assert screen._mode == MODE_LIST
+        # Escape on Lists stays a no-op, never a toggle back in.
         await pilot.press("escape")
         await pilot.pause()
-        assert screen._mode == MODE_DASHBOARD
+        assert screen._mode == MODE_LIST
 
 
 async def test_y_and_f_cross_transitions_land_in_the_right_mode():
@@ -2697,6 +2723,7 @@ async def test_e_on_the_dashboard_is_a_no_op(tmp_path):
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
+        await pilot.press("h")
         await pilot.press("e")
         await pilot.pause()
         assert screen._mode == MODE_DASHBOARD
@@ -3065,10 +3092,11 @@ async def test_dashboard_wallet_and_hidden_analysis_bodies_still_render():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
+        await pilot.press("h")
         assert "CLOCK" in _region_text(app, screen.query_one(CuratorHero), screen)
         await pilot.press("y")
         assert screen._mode == MODE_WALLET
-        screen.action_back_to_dashboard()
+        screen.action_show_lists()
         screen.action_toggle_analysis()
         await pilot.pause()
         assert screen._mode == MODE_ANALYSIS
@@ -3107,6 +3135,8 @@ def _list_payload(row_count: int = 100) -> dict:
     return _analysis_payload(
         leaderboard_rows=raw,
         clean_list_rows=clean,
+        contributors_total=row_count,
+        clean_contributors=row_count,
         you_list_row={
             **raw[0],
             "clean_rank": clean[0]["clean_rank"],
@@ -3119,14 +3149,13 @@ async def test_c_cycles_raw_cleaned_filtered_and_remembers_filtered():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l")
         assert screen._list_view == "raw"
         await pilot.press("c")
         assert screen._list_view == "cleaned"
         await pilot.press("c")
         assert screen._list_view == "filtered"
         assert screen.query_one(CuratorFilteredList).export_rows() == []
-        await pilot.press("l", "l")
+        await pilot.press("h", "l")
         assert screen._list_view == "filtered"
         await pilot.press("c")
         assert screen._list_view == "raw"
@@ -3152,7 +3181,7 @@ async def test_list_presets_switch_to_filtered_and_apply_immediately(
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", key)
+        await pilot.press(key)
         await pilot.pause()
         assert screen._list_view == "filtered"
         assert [
@@ -3169,7 +3198,7 @@ async def test_f_opens_blank_editor_then_applies_and_retains_custom_values():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "f")
+        await pilot.press("f")
         editor = screen.query_one(CuratorListFilterEditor)
         assert screen._list_view == "filtered" and editor.display is True
         assert editor.values()["hour_min"] == ""
@@ -3187,8 +3216,6 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
     address = "0x" + "a" * 40
     async with app.run_test(size=(143, 48)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l")
-        await pilot.pause()
         await pilot.press("f")
         await pilot.pause()
         editor = screen.query_one(CuratorListFilterEditor)
@@ -3251,7 +3278,7 @@ async def test_custom_nft_add_renders_chain_markup_as_literal_text():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "f")
+        await pilot.press("f")
         editor = screen.query_one(CuratorListFilterEditor)
         editor.query_one("#filter-nft-chain", Select).value = "base"
         editor.query_one("#filter-nft-address", Input).value = address
@@ -3287,7 +3314,7 @@ async def test_custom_nft_add_uses_resolved_name_and_retains_it_everywhere():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "f")
+        await pilot.press("f")
         editor = screen.query_one(CuratorListFilterEditor)
         editor.query_one("#filter-nft-chain", Select).value = "base"
         editor.query_one("#filter-nft-address", Input).value = address
@@ -3318,7 +3345,7 @@ async def test_unavailable_custom_name_keeps_input_and_shows_error():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "f")
+        await pilot.press("f")
         editor = screen.query_one(CuratorListFilterEditor)
         editor.query_one("#filter-nft-address", Input).value = address
         await pilot.click("#filter-nft-add")
@@ -3333,7 +3360,7 @@ async def test_apply_button_and_f_key_use_the_same_acceptance_result():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "f")
+        await pilot.press("f")
         editor = screen.query_one(CuratorListFilterEditor)
         editor.query_one("#filter-hour-min", Input).value = "0"
         editor.query_one("#filter-hour-max", Input).value = "0"
@@ -3353,8 +3380,6 @@ async def test_reset_all_clears_draft_but_not_active_filter_until_acceptance():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l")
-        await pilot.pause()
         await pilot.press("2")
         await pilot.pause()
         await pilot.press("f")
@@ -3387,8 +3412,6 @@ async def test_accepting_uncached_nft_filter_closes_editor_and_shows_loading(
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l")
-        await pilot.pause()
         await pilot.press("f")
         await pilot.pause()
         screen.query_one("#filter-nft-choice-0", Checkbox).value = True
@@ -3429,8 +3452,6 @@ async def test_normal_refresh_publishes_completed_nft_filter_and_title(
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l")
-        await pilot.pause()
         await pilot.press("f")
         await pilot.pause()
         screen.query_one("#filter-nft-choice-0", Checkbox).value = True
@@ -3471,8 +3492,6 @@ async def test_pending_or_unavailable_nft_filter_never_overwrites_export(
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l")
-        await pilot.pause()
         await pilot.press("f")
         await pilot.pause()
         screen.query_one("#filter-nft-choice-0", Checkbox).value = True
@@ -3496,8 +3515,6 @@ async def test_valid_zero_nft_holders_exports_real_empty_array(tmp_path):
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l")
-        await pilot.pause()
         await pilot.press("f")
         await pilot.pause()
         screen.query_one("#filter-nft-choice-0", Checkbox).value = True
@@ -3515,7 +3532,7 @@ async def test_filter_editor_composite_fits_143_columns_with_actions():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "f")
+        await pilot.press("f")
         await pilot.pause()
         editor = screen.query_one(CuratorListFilterEditor)
         editor.scroll_end(animate=False)
@@ -3546,7 +3563,6 @@ async def test_new_filter_copy_never_leaks_into_non_editor_list_notes(
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 48)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l")
         if view == "cleaned":
             await pilot.press("c")
         elif view == "filtered":
@@ -3572,6 +3588,7 @@ async def test_filter_shortcuts_are_list_only_and_editor_blocks_cycle_and_preset
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
+        await pilot.press("h")
         await pilot.press("1", "2", "3", "f")
         assert screen._mode == MODE_DASHBOARD
         await pilot.press("l", "f")
@@ -3590,7 +3607,7 @@ async def test_custom_filter_data_unavailable_keeps_the_editor_open():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "f")
+        await pilot.press("f")
         editor = screen.query_one(CuratorListFilterEditor)
         editor.query_one("#filter-family-amount").value = True
         await pilot.press("f")
@@ -3604,7 +3621,7 @@ async def test_invalid_custom_filter_names_and_focuses_the_bad_field():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "f")
+        await pilot.press("f")
         editor = screen.query_one(CuratorListFilterEditor)
         bad = editor.query_one("#filter-hour-min", Input)
         bad.value = "2"
@@ -3625,7 +3642,7 @@ async def test_unavailable_preset_shows_the_filtered_table_without_crashing():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "3")
+        await pilot.press("3")
         await pilot.pause()
         filtered = screen.query_one(CuratorFilteredList)
         assert screen._list_view == "filtered" and filtered.display is True
@@ -3639,7 +3656,7 @@ async def test_filtered_order_message_updates_the_wallet_hero_index():
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "1")
+        await pilot.press("1")
         await pilot.pause()
         addresses = tuple(
             row["address"].casefold()
@@ -3657,8 +3674,7 @@ async def test_filtered_order_message_updates_the_wallet_hero_index():
     assert "#2 of 3 · filtered" in hero
 
 
-async def test_l_opens_one_raw_table_and_c_toggles_a_remembered_clean_table():
-    from maxpane_dashboard.screens.curator import MODE_LIST
+async def test_lists_start_on_one_raw_table_and_c_toggles_a_remembered_clean_table():
     from maxpane_dashboard.widgets.curator import (
         CLEANED_LIST_TITLE,
         RAW_LIST_TITLE,
@@ -3675,8 +3691,6 @@ async def test_l_opens_one_raw_table_and_c_toggles_a_remembered_clean_table():
         raw = screen.query_one(CuratorRawList)
         cleaned = screen.query_one(CuratorCleanedList)
 
-        await pilot.press("l")
-        await pilot.pause()
         assert screen._mode == MODE_LIST
         assert raw.display is True and cleaned.display is False
         raw_panel = _region_text(app, raw, screen)
@@ -3692,25 +3706,23 @@ async def test_l_opens_one_raw_table_and_c_toggles_a_remembered_clean_table():
         assert CLEANED_LIST_TITLE in cleaned_panel
         assert RAW_LIST_TITLE not in cleaned_panel
 
-        await pilot.press("l")
+        await pilot.press("h")
         await pilot.press("l")
         await pilot.pause()
         assert raw.display is False and cleaned.display is True
 
 
-async def test_l_and_escape_back_out_without_resetting_the_selected_list():
-    from maxpane_dashboard.screens.curator import MODE_LIST
-
+async def test_escape_backs_out_to_the_selected_list_without_resetting_it():
     screen = _screen(_list_payload(1))
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
-        await pilot.press("l")
         await pilot.press("c")
+        await pilot.press("h")
         await pilot.press("escape")
         await pilot.pause()
-        assert screen._mode == MODE_DASHBOARD
+        assert screen._mode == MODE_LIST
         await pilot.press("l")
         await pilot.pause()
         assert screen._mode == MODE_LIST
@@ -3723,6 +3735,7 @@ async def test_dashboard_c_toggle_is_unchanged_after_list_mode_was_added():
     async with app.run_test(size=(143, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
+        await pilot.press("h")
         before = screen._active_view
         await pilot.press("c")
         await pilot.pause()
@@ -3738,8 +3751,6 @@ async def test_both_precomposed_lists_receive_data_before_they_are_shown():
     async with app.run_test(size=(143, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
-        await pilot.press("l")
-        await pilot.pause()
         raw = _region_text(app, screen.query_one(CuratorRawList), screen)
         await pilot.press("c")
         await pilot.pause()
@@ -3771,10 +3782,6 @@ async def test_list_entry_uses_a_matching_export_and_missing_clean_export_falls_
         await pilot.pause()
         raw = screen.query_one(CuratorRawList).query_one(DataTable)
         cleaned = screen.query_one(CuratorCleanedList).query_one(DataTable)
-        assert raw.row_count == 1
-
-        await pilot.press("l")
-        await pilot.pause()
         assert raw.row_count == 3
         assert raw_path.read_bytes() == original_bytes
         enriched = tmp_path / "curator_raw_list.enriched.json"
@@ -3813,10 +3820,6 @@ async def test_list_exports_are_checked_only_at_reader_requested_boundaries(
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        assert calls == []
-
-        await pilot.press("l")
-        await pilot.pause()
         assert calls == [False]
 
         await screen._do_refresh()
@@ -3835,7 +3838,7 @@ async def test_list_exports_are_checked_only_at_reader_requested_boundaries(
                 break
         assert calls == [False, True, True]
 
-        await pilot.press("l")
+        await pilot.press("h")
         await pilot.press("l")
         await pilot.pause()
         assert calls == [False, True, True, True]
@@ -3851,9 +3854,6 @@ async def test_the_list_you_row_and_blank_line_sit_immediately_above_status():
     async with app.run_test(size=(143, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
-        await pilot.press("l")
-        await pilot.pause()
-
         raw = screen.query_one(CuratorRawList)
         footer = raw.query_one(".curator-list-you")
         blank = raw.query_one(".curator-list-blank", Static)
@@ -3871,7 +3871,7 @@ async def test_the_filtered_you_row_and_blank_line_sit_immediately_above_status(
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "1")
+        await pilot.press("1")
         await pilot.pause()
 
         filtered = screen.query_one(CuratorFilteredList)
@@ -3894,8 +3894,6 @@ async def test_each_visible_list_table_fills_the_list_body(harness):
     async with app.run_test(size=(143, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
-        await pilot.press("l")
-        await pilot.pause()
         body = screen.query_one(f"#{LIST_BODY_ID}")
         raw = screen.query_one(CuratorRawList)
         assert raw.region.x == body.region.x
@@ -3926,11 +3924,12 @@ async def test_the_list_view_alone_swaps_in_the_record_summary_hero():
     async with app.run_test(size=(143, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
+        await pilot.press("h")
         hero_row = screen.query_one("#hero-row")
         dashboard_hero = _region_text(app, screen.query_one(CuratorHero), screen)
         assert "CLOCK" in dashboard_hero
 
-        # The record hero is precomposed so the first `l` frame is complete.
+        # The record hero is precomposed so the Lists frame is complete.
         assert len(hero_row.children) == 3
         await pilot.press("l")
         await pilot.pause()
@@ -3987,8 +3986,6 @@ async def test_settled_list_title_and_cleaned_freshness_follow_the_toggle():
     async with app.run_test(size=(143, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
-        await pilot.press("l")
-        await pilot.pause()
         raw_screen = _screen_text(app)
         raw = _region_text(app, screen.query_one(CuratorRawList), screen)
         await pilot.press("c")
@@ -4008,7 +4005,7 @@ async def test_the_fourth_hint_preserves_the_worst_case_error_count():
         await screen._do_refresh()
         await pilot.pause()
         text = _screen_text(app)
-    for hint in ("c panels", "y you", "l lists", "4 errors"):
+    for hint in ("c view", "h history", "y you", "l lists", "4 errors"):
         assert hint in text, hint
     assert "f linked" not in text
     assert "[dim]e[/]" not in CuratorScreen.KEY_HINTS
@@ -4022,8 +4019,6 @@ async def test_the_table_owns_row_cursor_and_vertical_scrolling():
     async with app.run_test(size=(143, 30)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
-        await pilot.press("l")
-        await pilot.pause()
         table = screen.query_one("#curator-raw-list-table", DataTable)
         assert table.cursor_type == "row"
         assert table.show_vertical_scrollbar is True
@@ -4051,7 +4046,6 @@ async def test_every_143_column_list_header_fits_beside_the_active_scrollbar(
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, 30)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l")
         if kind == "cleaned":
             await pilot.press("c")
         elif kind == "filtered":
@@ -4073,7 +4067,6 @@ async def _first_list_width(kind: str) -> int | None:
     app = _ThemedHarness(screen)
     async with app.run_test(size=(80, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l")
         # Populate filtered once, then return to raw so every mode starts the
         # measured navigation from the same state with 100 rows behind it.
         await pilot.press("1", "c")
@@ -4114,7 +4107,7 @@ async def test_e_in_filter_editor_writes_nothing_and_names_apply_first(
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "f", "e")
+        await pilot.press("f", "e")
         await pilot.pause()
         assert screen.query_one(CuratorListFilterEditor).display is True
         assert "press f to apply filters first" in _screen_text(app)
@@ -4131,7 +4124,7 @@ async def test_e_exports_filtered_rows_in_visible_sort_order_with_indexes(tmp_pa
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "1")
+        await pilot.press("1")
         table = screen.query_one("#curator-filtered-list-table", DataTable)
         points = [
             column[0] for column in screen.query_one(CuratorFilteredList)._columns
@@ -4166,7 +4159,7 @@ async def test_refresh_recomputes_active_filter_in_the_current_sort_order(tmp_pa
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "3")
+        await pilot.press("3")
         filtered = screen.query_one(CuratorFilteredList)
         table = screen.query_one("#curator-filtered-list-table", DataTable)
         points = [column[0] for column in filtered._columns].index("points")
@@ -4232,7 +4225,7 @@ async def test_refresh_propagates_active_filter_evidence_unavailability(tmp_path
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "3", "e")
+        await pilot.press("3", "e")
         await pilot.pause()
         path = tmp_path / "curator_filtered_list.json"
         good_bytes = path.read_bytes()
@@ -4258,7 +4251,7 @@ async def test_filtered_empty_table_exports_an_empty_array(tmp_path):
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "c", "c", "e")
+        await pilot.press("c", "c", "e")
         await pilot.pause()
         panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
     assert json.loads((tmp_path / "curator_filtered_list.json").read_text()) == []
@@ -4272,7 +4265,7 @@ async def test_missing_filtered_source_stays_unavailable_and_writes_nothing(tmp_
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "1", "e")
+        await pilot.press("1", "e")
         await pilot.pause()
         panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
 
@@ -4289,7 +4282,7 @@ async def test_fallback_filter_receipt_says_only_first_1000_were_filtered(tmp_pa
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "1")
+        await pilot.press("1")
         await pilot.pause()
         panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
     assert "first 1,000 wallets only" in panel
@@ -4309,7 +4302,7 @@ async def test_unavailable_preset_names_the_source_failure_on_filtered_receipt(
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "1")
+        await pilot.press("1")
         await pilot.pause()
         panel = _region_text(app, screen.query_one(CuratorFilteredList), screen)
     assert FILTERED_LIST_UNAVAILABLE in panel
@@ -4325,7 +4318,7 @@ async def test_unavailable_preset_reexport_preserves_the_existing_filtered_file(
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "1", "e")
+        await pilot.press("1", "e")
         await pilot.pause()
         path = tmp_path / "curator_filtered_list.json"
         good_bytes = path.read_bytes()
@@ -4354,7 +4347,7 @@ async def test_a_failed_filtered_reexport_replaces_the_active_receipt(
     app = _ThemedHarness(screen)
     async with app.run_test(size=(143, _TALL)) as pilot:
         await screen._do_refresh()
-        await pilot.press("l", "1", "e")
+        await pilot.press("1", "e")
         await pilot.pause()
         path = tmp_path / "curator_filtered_list.json"
         good_bytes = path.read_bytes()
@@ -4381,7 +4374,6 @@ async def test_e_exports_only_the_full_list_currently_on_screen(tmp_path):
     async with app.run_test(size=(143, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
-        await pilot.press("l")
         await pilot.press("e")
         await pilot.pause()
         raw_receipt = _region_text(app, screen.query_one(CuratorRawList), screen)
@@ -4413,7 +4405,6 @@ async def test_export_immediately_replaces_the_live_slice_with_all_wallets(
     async with app.run_test(size=(143, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
-        await pilot.press("l")
         if cleaned:
             await pilot.press("c")
         await pilot.pause()
@@ -4446,7 +4437,6 @@ async def test_list_export_skips_none_but_writes_an_honest_empty_list(
     async with app.run_test(size=(143, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
-        await pilot.press("l")
         await pilot.press("e")
         await pilot.pause()
     path = tmp_path / "curator_raw_list.json"
@@ -4467,7 +4457,6 @@ async def test_a_failed_list_reexport_replaces_the_active_receipt(
     async with app.run_test(size=(143, _TALL)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
-        await pilot.press("l")
         await pilot.press("e")
         await pilot.pause()
         path = tmp_path / "curator_raw_list.json"
