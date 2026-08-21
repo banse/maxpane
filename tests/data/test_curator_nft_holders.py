@@ -67,23 +67,31 @@ def _client(handler):
 
 @pytest.mark.asyncio
 async def test_ethereum_and_base_route_to_separate_keyless_pools():
-    urls = []
+    requests = []
 
     async def handler(request):
-        urls.append(str(request.url))
         body = json.loads(request.content)
+        requests.append((str(request.url), body["method"]))
         if body["method"] == "eth_getCode":
             return _rpc_result(body["id"], "0x6000")
         if body["method"] == "eth_blockNumber":
             return _rpc_result(body["id"], "0x123")
-        return _rpc_result(body["id"], _results([(True, 0)]))
+        if body["method"] == "eth_call":
+            return _rpc_result(body["id"], _results([(True, 0)]))
+        raise AssertionError(f"unexpected RPC method: {body['method']}")
 
     client, http_client = _client(handler)
     wallet = "0x" + "1" * 40
     await client.scan(PREDEFINED_NFT_COLLECTIONS[0], [wallet])
     await client.scan(PREDEFINED_NFT_COLLECTIONS[1], [wallet])
-    assert any(url.startswith("https://eth.invalid") for url in urls)
-    assert any(url.startswith("https://base.invalid") for url in urls)
+    assert requests == [
+        ("https://eth.invalid", "eth_getCode"),
+        ("https://eth.invalid", "eth_blockNumber"),
+        ("https://eth.invalid", "eth_call"),
+        ("https://base.invalid", "eth_getCode"),
+        ("https://base.invalid", "eth_blockNumber"),
+        ("https://base.invalid", "eth_call"),
+    ]
     await client.close()
     await http_client.aclose()
 
@@ -93,13 +101,18 @@ async def test_dead_endpoint_fails_over_and_total_failure_is_explicit():
     requests = []
 
     async def handler(request):
-        requests.append((request.url.host, json.loads(request.content)["method"]))
         body = json.loads(request.content)
+        method = body["method"]
+        requests.append((str(request.url), method))
+        if method not in {"eth_getCode", "eth_blockNumber", "eth_call"}:
+            raise AssertionError(f"unexpected RPC method: {method}")
         if request.url.host == "dead.invalid":
             return httpx.Response(503)
-        if body["method"] == "eth_getCode":
+        if request.url.host != "good.invalid":
+            raise AssertionError(f"unexpected RPC host: {request.url.host}")
+        if method == "eth_getCode":
             return _rpc_result(body["id"], "0x6000")
-        if body["method"] == "eth_blockNumber":
+        if method == "eth_blockNumber":
             return _rpc_result(body["id"], "0x1")
         return _rpc_result(body["id"], _results([(True, 0)]))
 
@@ -116,9 +129,14 @@ async def test_dead_endpoint_fails_over_and_total_failure_is_explicit():
     await client.scan(
         PREDEFINED_NFT_COLLECTIONS[0], ["0x" + "1" * 40]
     )
-    assert {host for host, _method in requests} == {
-        "dead.invalid", "good.invalid"
-    }
+    assert requests == [
+        ("https://dead.invalid", "eth_getCode"),
+        ("https://good.invalid", "eth_getCode"),
+        ("https://dead.invalid", "eth_blockNumber"),
+        ("https://good.invalid", "eth_blockNumber"),
+        ("https://dead.invalid", "eth_call"),
+        ("https://good.invalid", "eth_call"),
+    ]
 
     dead_only = NftHolderClient(
         http_client=http_client,
@@ -129,6 +147,7 @@ async def test_dead_endpoint_fails_over_and_total_failure_is_explicit():
         await dead_only.scan(
             PREDEFINED_NFT_COLLECTIONS[0], ["0x" + "1" * 40]
         )
+    assert requests[-1] == ("https://dead.invalid", "eth_getCode")
     await client.close()
     await dead_only.close()
     await http_client.aclose()
@@ -137,14 +156,18 @@ async def test_dead_endpoint_fails_over_and_total_failure_is_explicit():
 @pytest.mark.asyncio
 async def test_balance_scans_chunk_at_exactly_500_and_keep_alignment():
     chunks = []
+    requests = []
     wallets = [f"0x{index:040x}" for index in range(1, 1002)]
 
     async def handler(request):
         body = json.loads(request.content)
+        requests.append((str(request.url), body["method"]))
         if body["method"] == "eth_getCode":
             return _rpc_result(body["id"], "0x6000")
         if body["method"] == "eth_blockNumber":
             return _rpc_result(body["id"], "0x999")
+        if body["method"] != "eth_call":
+            raise AssertionError(f"unexpected RPC method: {body['method']}")
         count = _call_count(body["params"][0]["data"])
         chunks.append(count)
         return _rpc_result(
@@ -155,6 +178,13 @@ async def test_balance_scans_chunk_at_exactly_500_and_keep_alignment():
     client, http_client = _client(handler)
     scan = await client.scan(PREDEFINED_NFT_COLLECTIONS[0], wallets)
     assert chunks == [500, 500, 1]
+    assert requests == [
+        ("https://eth.invalid", "eth_getCode"),
+        ("https://eth.invalid", "eth_blockNumber"),
+        ("https://eth.invalid", "eth_call"),
+        ("https://eth.invalid", "eth_call"),
+        ("https://eth.invalid", "eth_call"),
+    ]
     assert (scan.checked, scan.failed) == (1001, 0)
     assert len(scan.holders) == 500
     await client.close()
@@ -163,18 +193,20 @@ async def test_balance_scans_chunk_at_exactly_500_and_keep_alignment():
 
 @pytest.mark.asyncio
 async def test_subcall_failure_is_incomplete_not_a_false_nonholder():
-    methods = []
+    requests = []
 
     async def handler(request):
         body = json.loads(request.content)
-        methods.append(body["method"])
+        requests.append((str(request.url), body["method"]))
         if body["method"] == "eth_getCode":
             return _rpc_result(body["id"], "0x6000")
         if body["method"] == "eth_blockNumber":
             return _rpc_result(body["id"], "0x999")
-        return _rpc_result(body["id"], _results([
-            (True, 0), (False, None)
-        ]))
+        if body["method"] == "eth_call":
+            return _rpc_result(body["id"], _results([
+                (True, 0), (False, None)
+            ]))
+        raise AssertionError(f"unexpected RPC method: {body['method']}")
 
     client, http_client = _client(handler)
     scan = await client.scan(
@@ -182,26 +214,95 @@ async def test_subcall_failure_is_incomplete_not_a_false_nonholder():
         ["0x" + "1" * 40, "0x" + "2" * 40],
     )
     assert (scan.checked, scan.failed, scan.complete) == (1, 1, False)
-    assert methods == ["eth_getCode", "eth_blockNumber", "eth_call"]
+    assert requests == [
+        ("https://eth.invalid", "eth_getCode"),
+        ("https://eth.invalid", "eth_blockNumber"),
+        ("https://eth.invalid", "eth_call"),
+    ]
     await client.close()
     await http_client.aclose()
 
 
 @pytest.mark.asyncio
 async def test_no_code_is_unavailable_and_never_runs_multicall():
-    methods = []
+    requests = []
 
     async def handler(request):
         body = json.loads(request.content)
-        methods.append(body["method"])
-        return _rpc_result(body["id"], "0x")
+        requests.append((str(request.url), body["method"]))
+        if body["method"] == "eth_getCode":
+            return _rpc_result(body["id"], "0x")
+        raise AssertionError(f"unexpected RPC method: {body['method']}")
 
     client, http_client = _client(handler)
     with pytest.raises(NftHolderUnavailable, match="no contract code"):
         await client.scan(
             PREDEFINED_NFT_COLLECTIONS[0], ["0x" + "1" * 40]
         )
-    assert methods == ["eth_getCode"]
+    assert requests == [("https://eth.invalid", "eth_getCode")]
+    await client.close()
+    await http_client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("malformed_method", "malformed_result"),
+    [
+        ("eth_getCode", None),
+        ("eth_getCode", "not-hex-code"),
+        ("eth_blockNumber", "not-a-hex-quantity"),
+        ("eth_call", "0xdeadbeef"),
+    ],
+)
+async def test_malformed_primary_result_fails_over_to_healthy_endpoint(
+    malformed_method,
+    malformed_result,
+):
+    requests = []
+
+    async def handler(request):
+        body = json.loads(request.content)
+        method = body["method"]
+        requests.append((str(request.url), method))
+        if method not in {"eth_getCode", "eth_blockNumber", "eth_call"}:
+            raise AssertionError(f"unexpected RPC method: {method}")
+        if request.url.host == "malformed.invalid" and method == malformed_method:
+            if malformed_result is None:
+                return httpx.Response(
+                    200,
+                    json={"jsonrpc": "2.0", "id": body["id"]},
+                )
+            return _rpc_result(body["id"], malformed_result)
+        if request.url.host not in {"malformed.invalid", "healthy.invalid"}:
+            raise AssertionError(f"unexpected RPC host: {request.url.host}")
+        if method == "eth_getCode":
+            return _rpc_result(body["id"], "0x6000")
+        if method == "eth_blockNumber":
+            return _rpc_result(body["id"], "0x1")
+        return _rpc_result(body["id"], _results([(True, 1)]))
+
+    http_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    )
+    client = NftHolderClient(
+        http_client=http_client,
+        rpc_pools={"ethereum": (
+            "https://malformed.invalid", "https://healthy.invalid"
+        )},
+        min_interval=0,
+    )
+    wallet = "0x" + "1" * 40
+    scan = await client.scan(PREDEFINED_NFT_COLLECTIONS[0], [wallet])
+    assert (scan.holders, scan.checked, scan.failed, scan.block_number) == (
+        frozenset({wallet}), 1, 0, 1
+    )
+    failed_at = requests.index(
+        ("https://malformed.invalid", malformed_method)
+    )
+    assert requests[failed_at : failed_at + 2] == [
+        ("https://malformed.invalid", malformed_method),
+        ("https://healthy.invalid", malformed_method),
+    ]
     await client.close()
     await http_client.aclose()
 

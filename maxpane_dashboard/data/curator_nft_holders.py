@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 import httpx
 
@@ -101,6 +101,30 @@ def _uint_result(value: str) -> int | None:
     return int.from_bytes(raw, "big")
 
 
+def _code_result_is_valid(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and value.startswith("0x")
+        and all(char in "0123456789abcdefABCDEF" for char in value[2:])
+    )
+
+
+def _block_number_result(value: object) -> int | None:
+    if not isinstance(value, str) or not value.startswith("0x"):
+        return None
+    try:
+        return int(value, 16)
+    except ValueError:
+        return None
+
+
+def _aggregate3_result_is_valid(value: object, count: int) -> bool:
+    return (
+        isinstance(value, str)
+        and len(decode_aggregate3_result(value)) == count
+    )
+
+
 class NftHolderClient(OwnedHttpClient):
     def __init__(
         self,
@@ -121,7 +145,13 @@ class NftHolderClient(OwnedHttpClient):
         self._last_rpc_at = 0.0
         self._request_id = 0
 
-    async def _rpc(self, chain: str, method: str, params: list):
+    async def _rpc(
+        self,
+        chain: str,
+        method: str,
+        params: list,
+        result_is_valid: Callable[[object], bool],
+    ):
         urls = self._rpc_pools.get(chain, ())
         if not urls:
             raise NftHolderUnavailable(f"no keyless {chain} RPC")
@@ -149,7 +179,12 @@ class NftHolderClient(OwnedHttpClient):
                     raise RuntimeError(f"{url}: mismatched RPC id")
                 if body.get("error") is not None:
                     raise RuntimeError(f"{url}: {body['error']}")
-                return body.get("result")
+                if "result" not in body:
+                    raise RuntimeError(f"{url}: missing RPC result")
+                result = body["result"]
+                if not result_is_valid(result):
+                    raise RuntimeError(f"{url}: invalid {method} result")
+                return result
             except Exception as exc:
                 last_error = exc
                 logger.warning(
@@ -172,18 +207,19 @@ class NftHolderClient(OwnedHttpClient):
             collection.chain,
             "eth_getCode",
             [collection.address, "latest"],
+            _code_result_is_valid,
         )
         if not isinstance(code, str) or code in ("0x", "0x0"):
             raise NftHolderUnavailable(
                 f"{collection.label}: no contract code"
             )
         raw_block = await self._rpc(
-            collection.chain, "eth_blockNumber", []
+            collection.chain,
+            "eth_blockNumber",
+            [],
+            lambda value: _block_number_result(value) is not None,
         )
-        try:
-            block_number = int(raw_block, 16)
-        except (TypeError, ValueError):
-            block_number = None
+        block_number = _block_number_result(raw_block)
 
         holders: set[str] = set()
         checked = 0
@@ -202,6 +238,9 @@ class NftHolderClient(OwnedHttpClient):
                 collection.chain,
                 "eth_call",
                 [{"to": MULTICALL3, "data": calldata}, "latest"],
+                lambda value: _aggregate3_result_is_valid(
+                    value, len(chunk)
+                ),
             )
             decoded = (
                 decode_aggregate3_result(raw)
