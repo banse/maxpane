@@ -308,6 +308,25 @@ async def test_editor_compact_layout_keeps_titles_with_their_controls():
             assert group.query("Input, Select, Checkbox")
 
 
+@pytest.mark.parametrize("size", ((143, 42), (80, 60)))
+async def test_editor_composites_direct_group_controls_at_required_sizes(size):
+    editor = CuratorListFilterEditor(nft_choices=NFT_CHOICES)
+    app = _Harness(editor)
+    async with app.run_test(size=size) as pilot:
+        await pilot.pause()
+        text = _screen_text(app)
+        for control_text in (
+            "Any",
+            "25 ETH or more",
+            "matching amounts",
+            "consecutive joins",
+            "cadence",
+            "gas fingerprint",
+            "shared funding",
+        ):
+            assert control_text in text
+
+
 async def test_filter_editor_round_trips_values_and_names_an_error():
     editor = CuratorListFilterEditor()
     app = _Harness(editor)

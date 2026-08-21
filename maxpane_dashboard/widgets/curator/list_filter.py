@@ -112,6 +112,10 @@ class CuratorListFilterEditor(Vertical):
         grid-columns: 1fr 1fr;
         grid-gutter: 0 1;
     }
+    CuratorListFilterEditor .curator-filter-group Select,
+    CuratorListFilterEditor .curator-filter-group Checkbox {
+        height: 3;
+    }
     CuratorListFilterEditor .curator-filter-nft-presets {
         height: 3;
         grid-size: 4;
