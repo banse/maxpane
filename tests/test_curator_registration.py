@@ -82,9 +82,13 @@ def test_nft_holder_data_layer_and_curator_widgets_keep_mvc_boundaries():
                 module = (node.module or "").split(".") if node.module else ()
                 if node.level:
                     parent = package[: len(package) - (node.level - 1)]
-                    yield ".".join((*parent, *module))
-                elif module:
-                    yield ".".join(module)
+                    imported_from = (*parent, *module)
+                else:
+                    imported_from = module
+                if imported_from:
+                    yield ".".join(imported_from)
+                for alias in node.names:
+                    yield ".".join((*imported_from, alias.name))
 
     widget_paths = sorted(widget_dir.glob("*.py"))
     assert widget_paths
