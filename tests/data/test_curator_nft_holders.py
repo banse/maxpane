@@ -250,7 +250,7 @@ async def test_subcall_failure_is_incomplete_not_a_false_nonholder():
 
     client, http_client = _client(handler)
     scan = await client.scan(
-        PREDEFINED_NFT_COLLECTIONS[3],
+        PREDEFINED_NFT_COLLECTIONS[2],
         ["0x" + "1" * 40, "0x" + "2" * 40],
     )
     assert (scan.checked, scan.failed, scan.complete) == (1, 1, False)

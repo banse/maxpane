@@ -167,32 +167,36 @@ def test_summaries_are_stable_and_contain_only_active_values():
     )
 
 
-def test_the_four_predefined_nft_collections_are_exact():
-    assert [
-        (item.label, item.chain, item.address)
-        for item in PREDEFINED_NFT_COLLECTIONS
-    ] == [
-        (
-            "Identity.md",
+def test_the_three_predefined_nft_collections_are_exact():
+    assert PREDEFINED_NFT_COLLECTIONS == (
+        NftCollectionRef(
             "ethereum",
             "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d",
+            "Identity.md",
         ),
-        (
-            "Fren Pet",
+        NftCollectionRef(
             "base",
             "0x5b51cf49cb48617084ef35e7c7d7a21914769ff1",
+            "Fren Pet",
         ),
-        (
-            "Milady",
+        NftCollectionRef(
             "ethereum",
             "0x5af0d9827e0c53e4799bb226655a1de152a425a5",
+            "Milady",
         ),
-        (
-            "Crypto Punks",
-            "ethereum",
-            "0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb",
-        ),
-    ]
+    )
+
+
+def test_crypto_punks_remains_a_valid_custom_collection():
+    item = parse_nft_collection({
+        "chain": "ethereum",
+        "address": "0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb",
+        "label": "CryptoPunks",
+    })
+    assert item.key not in {
+        value.key for value in PREDEFINED_NFT_COLLECTIONS
+    }
+    assert item.label == "CryptoPunks"
 
 
 def test_custom_nft_collections_validate_normalise_and_deduplicate():

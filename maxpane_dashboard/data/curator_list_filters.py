@@ -110,11 +110,6 @@ PREDEFINED_NFT_COLLECTIONS = (
         "0x5af0d9827e0c53e4799bb226655a1de152a425a5",
         "Milady",
     ),
-    NftCollectionRef(
-        "ethereum",
-        "0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb",
-        "Crypto Punks",
-    ),
 )
 
 
