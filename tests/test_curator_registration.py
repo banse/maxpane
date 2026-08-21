@@ -55,6 +55,7 @@ from maxpane_dashboard.widgets.curator import (
     ACTIVITY_TITLE,
     CLOSEST_CALLS_TITLE,
     CLUSTERS_TITLE,
+    CuratorListFilterEditor,
     LEADERBOARD_TITLE,
     SIGNAL_LABELS,
     SIGNALS_TITLE,
@@ -148,17 +149,61 @@ def test_cr01_name_resolution_stays_in_the_curator_mvc_path():
     )
     handlers = [
         node for node in curator_classes[0].body
-        if isinstance(node, ast.AsyncFunctionDef)
+        if isinstance(node, ast.FunctionDef)
         and node.name == "on_nft_collection_add_requested"
     ]
     assert len(handlers) == 1, (
-        "CuratorScreen must define exactly one immediate async "
+        "CuratorScreen must define exactly one immediate synchronous "
         "on_nft_collection_add_requested handler"
     )
     handler = handlers[0]
+    assert not any(isinstance(node, ast.Await) for node in ast.walk(handler)), (
+        "the NFT add message handler must not await network work"
+    )
+    scheduled_workers = [
+        node
+        for node in ast.walk(handler)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "self"
+        and node.func.attr == "run_worker"
+        and node.args
+        and isinstance(node.args[0], ast.Call)
+        and isinstance(node.args[0].func, ast.Attribute)
+        and isinstance(node.args[0].func.value, ast.Name)
+        and node.args[0].func.value.id == "self"
+        and node.args[0].func.attr == "_resolve_nft_collection_name"
+        and any(
+            keyword.arg == "group"
+            and isinstance(keyword.value, ast.Name)
+            and keyword.value.id == "_NFT_NAME_LOOKUP_WORKER_GROUP"
+            for keyword in node.keywords
+        )
+        and any(
+            keyword.arg == "exclusive"
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is True
+            for keyword in node.keywords
+        )
+    ]
+    assert len(scheduled_workers) == 1, (
+        "the NFT add handler must schedule one exclusive dedicated-group "
+        "CuratorScreen name worker"
+    )
+
+    workers = [
+        node for node in curator_classes[0].body
+        if isinstance(node, ast.AsyncFunctionDef)
+        and node.name == "_resolve_nft_collection_name"
+    ]
+    assert len(workers) == 1, (
+        "CuratorScreen must define exactly one immediate async NFT name worker"
+    )
+    worker = workers[0]
     manager_calls = [
         node.value
-        for node in ast.walk(handler)
+        for node in ast.walk(worker)
         if isinstance(node, ast.Await)
         and isinstance(node.value, ast.Call)
         and isinstance(node.value.func, ast.Attribute)
@@ -169,7 +214,7 @@ def test_cr01_name_resolution_stays_in_the_curator_mvc_path():
         and node.value.func.value.value.id == "self"
     ]
     assert len(manager_calls) == 1, (
-        "custom NFT names must be resolved once through "
+        "the CuratorScreen worker must resolve custom NFT names once through "
         "self._data_manager.resolve_nft_collection_name(...)"
     )
 
@@ -797,7 +842,10 @@ _SHORTHAND_DEFAULTS = {"padding": "0", "margin": "0"}
 
 #: What this comparison is about: the geometry.  Colour and text properties
 #: belong to the theme and to the widgets' own DEFAULT_CSS.
-_STRUCTURAL = ("width", "height", "min-height", "padding", "margin")
+_STRUCTURAL = (
+    "width", "min-width", "max-width", "height", "min-height", "padding",
+    "margin",
+)
 
 #: The two copies deliberately do **not** cover the same selector set, and the
 #: asymmetry is load-bearing: ``#title-bar`` and ``#separator`` are
@@ -810,7 +858,13 @@ _STRUCTURAL = ("width", "height", "min-height", "padding", "margin")
 #: Pinned as *sets*, not counted.  A count is the vacuity hole: renaming
 #: ``CuratorClusters`` in one copy alone would drop that widget out of the
 #: comparison entirely and still satisfy a length check.
-_DEFAULT_CSS_ONLY = frozenset({"#title-bar", "#separator"})
+_EDITOR_FALLBACK_ONLY = frozenset({
+    "CuratorListFilterEditor .curator-filter-nft-selected",
+    "CuratorListFilterEditor .curator-filter-nft-selected Label",
+})
+_DEFAULT_CSS_ONLY = frozenset({
+    "#title-bar", "#separator", *_EDITOR_FALLBACK_ONLY,
+})
 _BLOCK_ONLY: frozenset[str] = frozenset()
 
 
@@ -895,6 +949,14 @@ def test_the_stylesheet_block_and_default_css_describe_one_layout() -> None:
                     f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
                     f"{right!r} in minimal.tcss"
                 )
+
+
+def test_selected_nft_geometry_matches_widget_and_screen_fallback_css() -> None:
+    """The selected row is widget-owned and restated only for screen fallback."""
+    widget = _rules(CuratorListFilterEditor.DEFAULT_CSS)
+    fallback = _rules(CuratorScreen.DEFAULT_CSS)
+    for selector in _EDITOR_FALLBACK_ONLY:
+        assert fallback[selector] == widget[selector]
 
 
 def test_the_bottom_row_is_one_fr_in_both_copies() -> None:

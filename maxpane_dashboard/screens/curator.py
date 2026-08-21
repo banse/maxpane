@@ -221,6 +221,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, no runtime import
 logger = logging.getLogger(__name__)
 
 _EMDASH = "—"
+_NFT_NAME_LOOKUP_WORKER_GROUP = "curator-nft-name-lookup"
+_NFT_NAME_LOOKUP_WORKER_NAME = "curator-nft-name-lookup"
 
 #: Shown until the first payload lands.
 INITIAL_TITLE = "THE LIST · WhitelistCurator · Ethereum Mainnet"
@@ -987,6 +989,18 @@ class CuratorScreen(RefreshGuard, Screen):
         width: 5;
         min-width: 5;
     }
+    CuratorScreen CuratorListFilterEditor .curator-filter-nft-selected {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+    CuratorScreen CuratorListFilterEditor .curator-filter-nft-selected Label {
+        width: 1fr;
+        min-width: 0;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+        overflow-x: hidden;
+    }
     CuratorScreen CuratorListFilterEditor .curator-filter-actions {
         width: 100%;
         height: 3;
@@ -1050,6 +1064,7 @@ class CuratorScreen(RefreshGuard, Screen):
         #: shows. Kept across leaving and re-entering the mode.
         self._list_view: str = LIST_RAW
         self._filter_editor_open = False
+        self._nft_name_lookup_generation = 0
         self._custom_filter_values = empty_filter_values()
         self._active_filter: FilterSpec | None = None
         self._filter_summary: tuple[str, ...] = ()
@@ -1263,6 +1278,9 @@ class CuratorScreen(RefreshGuard, Screen):
         self._show_mode()
 
     def action_show_history(self) -> None:
+        self._invalidate_nft_name_lookup(
+            self.query_one(CuratorListFilterEditor)
+        )
         self._mode = MODE_DASHBOARD
         self._show_mode()
 
@@ -1290,10 +1308,19 @@ class CuratorScreen(RefreshGuard, Screen):
                 custom.append(self._nft_primitive(item))
         return custom
 
-    async def on_nft_collection_add_requested(
+    def _invalidate_nft_name_lookup(
+        self, editor: CuratorListFilterEditor | None = None
+    ) -> None:
+        self._nft_name_lookup_generation += 1
+        self.workers.cancel_group(self, _NFT_NAME_LOOKUP_WORKER_GROUP)
+        if editor is not None:
+            editor.set_nft_add_pending(False)
+
+    def on_nft_collection_add_requested(
         self, event: NftCollectionAddRequested
     ) -> None:
         editor = self.query_one(CuratorListFilterEditor)
+        self._invalidate_nft_name_lookup(editor)
         try:
             item = parse_nft_collection({
                 "chain": event.chain,
@@ -1316,14 +1343,41 @@ class CuratorScreen(RefreshGuard, Screen):
         except FilterValidationError as exc:
             editor.show_error("nft_address", str(exc))
             return
+        generation = self._nft_name_lookup_generation
+        editor.clear_error()
+        editor.set_nft_add_pending(True)
+        self.run_worker(
+            self._resolve_nft_collection_name(item, editor, generation),
+            name=_NFT_NAME_LOOKUP_WORKER_NAME,
+            group=_NFT_NAME_LOOKUP_WORKER_GROUP,
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def _resolve_nft_collection_name(
+        self,
+        item: NftCollectionRef,
+        editor: CuratorListFilterEditor,
+        generation: int,
+    ) -> None:
         try:
             label = await self._data_manager.resolve_nft_collection_name(item)
         except NftHolderUnavailable as exc:
-            editor.show_error("nft_address", str(exc))
+            if generation == self._nft_name_lookup_generation:
+                editor.show_error("nft_address", str(exc))
             return
-        item = NftCollectionRef(item.chain, item.address, label)
+        finally:
+            if generation == self._nft_name_lookup_generation:
+                editor.set_nft_add_pending(False)
+        if generation != self._nft_name_lookup_generation:
+            return
+        resolved = parse_nft_collection({
+            "chain": item.chain,
+            "address": item.address,
+            "label": label,
+        })
         custom = self._custom_nft_values(editor)
-        custom.append(self._nft_primitive(item))
+        custom.append(self._nft_primitive(resolved))
         editor.set_custom_nfts(custom)
         editor.query_one("#filter-nft-address", Input).value = ""
         editor.clear_error()
@@ -1342,6 +1396,7 @@ class CuratorScreen(RefreshGuard, Screen):
     def on_filter_reset_requested(self, _event: FilterResetRequested) -> None:
         self._custom_filter_values = empty_filter_values()
         editor = self.query_one(CuratorListFilterEditor)
+        self._invalidate_nft_name_lookup(editor)
         editor.set_values(self._custom_filter_values)
         editor.clear_error()
 
@@ -1459,6 +1514,7 @@ class CuratorScreen(RefreshGuard, Screen):
 
     def _accept_filter_editor(self) -> None:
         editor = self.query_one(CuratorListFilterEditor)
+        self._invalidate_nft_name_lookup(editor)
         self._custom_filter_values = editor.values()
         try:
             spec = parse_filter_values(self._custom_filter_values)
@@ -1663,6 +1719,12 @@ class CuratorScreen(RefreshGuard, Screen):
         if self._refresh_timer:
             self._refresh_timer.stop()
             self._refresh_timer = None
+        self._invalidate_nft_name_lookup(
+            self.query_one(CuratorListFilterEditor)
+        )
+
+    def on_unmount(self) -> None:
+        self._invalidate_nft_name_lookup()
 
     def on_resize(self, _event=None) -> None:
         """Keep the ``‹ taller`` marker honest when the terminal is resized.

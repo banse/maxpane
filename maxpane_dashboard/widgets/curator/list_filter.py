@@ -139,6 +139,18 @@ class CuratorListFilterEditor(Vertical):
         width: 5;
         min-width: 5;
     }
+    CuratorListFilterEditor .curator-filter-nft-selected {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+    CuratorListFilterEditor .curator-filter-nft-selected Label {
+        width: 1fr;
+        min-width: 0;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+        overflow-x: hidden;
+    }
     CuratorListFilterEditor .curator-filter-actions {
         width: 100%;
         height: 3;
@@ -375,6 +387,9 @@ class CuratorListFilterEditor(Vertical):
                 ),
                 classes="curator-filter-nft-selected",
             ))
+
+    def set_nft_add_pending(self, pending: bool) -> None:
+        self.query_one("#filter-nft-add", Button).disabled = pending
 
     def clear_error(self) -> None:
         """Clear the visible error and its field marker."""

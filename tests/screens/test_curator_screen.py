@@ -93,7 +93,7 @@ import re
 
 import pytest
 from textual.app import App
-from textual.widgets import Checkbox, Input, Select
+from textual.widgets import Button, Checkbox, Input, Label, Select
 
 from maxpane_dashboard import __version__
 from maxpane_dashboard.analytics.curator_signals import MANAGER_OWNED_KEYS
@@ -178,6 +178,7 @@ from maxpane_dashboard.widgets.curator import (
     CuratorListFilterEditor,
     CuratorRawList,
     ListOrderChanged,
+    NftCollectionAddRequested,
 )
 # Imported, never re-spelled: these are WP4's rendered interface.  A literal
 # retyped here would certify a string nobody renders.
@@ -413,6 +414,56 @@ class _FakeManager:
             holder_receipt=self.filtered_holder_receipt,
             routed_eth=self.filtered_routed_eth,
         )
+
+
+class _DelayedNameManager(_FakeManager):
+    """A cancellation-resistant name resolver with per-request gates."""
+
+    def __init__(self, payload: dict | None = None) -> None:
+        super().__init__(payload)
+        self.name_answers: dict[str, str | Exception] = {}
+        self.name_started: dict[str, asyncio.Event] = {}
+        self.name_releases: dict[str, asyncio.Event] = {}
+        self.name_cancelled: dict[str, asyncio.Event] = {}
+        self.name_finished: dict[str, asyncio.Event] = {}
+
+    def hold_name(self, key: str, answer: str | Exception) -> None:
+        self.name_answers[key] = answer
+        self.name_started[key] = asyncio.Event()
+        self.name_releases[key] = asyncio.Event()
+        self.name_cancelled[key] = asyncio.Event()
+        self.name_finished[key] = asyncio.Event()
+
+    async def resolve_nft_collection_name(self, collection) -> str:
+        key = collection.key
+        self.collection_name_calls.append(key)
+        self.name_started[key].set()
+        try:
+            try:
+                await self.name_releases[key].wait()
+            except asyncio.CancelledError:
+                # A real endpoint may finish after local cancellation. The
+                # controller's generation guard must still reject its result.
+                self.name_cancelled[key].set()
+                await self.name_releases[key].wait()
+            answer = self.name_answers[key]
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+        finally:
+            self.name_finished[key].set()
+
+
+class _NavigationProbeScreen(CuratorScreen):
+    """Expose when Textual dispatches the History action."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.history_action_dispatched = asyncio.Event()
+
+    def action_show_history(self) -> None:
+        super().action_show_history()
+        self.history_action_dispatched.set()
 
 
 class _Harness(App):
@@ -1550,8 +1601,9 @@ def test_refresh_guard_precedes_screen_in_the_mro():
 
 
 def test_the_screen_does_not_hand_roll_the_worker():
-    source = (_ROOT / "maxpane_dashboard" / "screens" / "curator.py").read_text()
+    source = inspect.getsource(CuratorScreen._do_refresh)
     assert "run_worker" not in source
+    assert CuratorScreen.start_refresh is RefreshGuard.start_refresh
 
 
 class _BlockingManager:
@@ -3261,7 +3313,10 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
         await pilot.pause()
         await pilot.click("#filter-nft-add")
         await pilot.pause()
-        assert "already available above" in _screen_text(app)
+        error = editor.query_one("#curator-filter-error")
+        error.scroll_visible(animate=False, top=True, immediate=True)
+        await pilot.pause()
+        assert "already available above" in _region_text(app, error, screen)
         assert editor.values()["nft_collections"] == ()
         assert screen._data_manager.collection_name_calls == []
 
@@ -3302,12 +3357,158 @@ async def test_custom_nft_add_renders_chain_markup_as_literal_text():
         )
 
 
+async def test_delayed_custom_name_does_not_block_reset_or_clear_new_input():
+    manager = _DelayedNameManager(_list_payload(1))
+    address = "0x" + "d" * 40
+    newer_address = "0x" + "e" * 40
+    key = f"ethereum:{address}"
+    manager.hold_name(key, "Stale Reader Pass")
+    screen = CuratorScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=_WALLET,
+        export_dir=_FIXTURES / "no-local-exports",
+    )
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        nft_input = editor.query_one("#filter-nft-address", Input)
+        nft_input.value = address
+        editor.post_message(NftCollectionAddRequested("ethereum", address))
+        await asyncio.wait_for(manager.name_started[key].wait(), timeout=1)
+
+        reset = asyncio.create_task(pilot.click("#filter-reset-all"))
+        try:
+            await asyncio.wait_for(asyncio.shield(reset), timeout=0.25)
+            nft_input.value = newer_address
+        finally:
+            manager.name_releases[key].set()
+            await asyncio.gather(reset, return_exceptions=True)
+        await asyncio.wait_for(manager.name_finished[key].wait(), timeout=1)
+        await pilot.pause()
+
+        assert editor.values()["nft_collections"] == ()
+        assert nft_input.value == newer_address
+        assert editor.query_one("#filter-nft-add", Button).disabled is False
+
+
+async def test_delayed_custom_name_does_not_block_history_navigation():
+    manager = _DelayedNameManager(_list_payload(1))
+    address = "0x" + "d" * 40
+    key = f"base:{address}"
+    manager.hold_name(key, "Stale Reader Pass")
+    screen = _NavigationProbeScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=_WALLET,
+        export_dir=_FIXTURES / "no-local-exports",
+    )
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        editor.query_one("#filter-nft-address", Input).value = address
+        editor.post_message(NftCollectionAddRequested("base", address))
+        await asyncio.wait_for(manager.name_started[key].wait(), timeout=1)
+        screen.set_focus(None)
+
+        navigate = asyncio.create_task(pilot.press("h"))
+        try:
+            await asyncio.wait_for(
+                screen.history_action_dispatched.wait(), timeout=1
+            )
+            assert screen._mode == MODE_DASHBOARD
+            await asyncio.wait_for(manager.name_cancelled[key].wait(), timeout=1)
+        finally:
+            manager.name_releases[key].set()
+            await asyncio.gather(navigate, return_exceptions=True)
+        await asyncio.wait_for(manager.name_finished[key].wait(), timeout=1)
+        await pilot.press("l")
+        await pilot.pause()
+
+        assert editor.values()["nft_collections"] == ()
+        assert editor.query_one("#filter-nft-address", Input).value == address
+
+
+async def test_overlapping_custom_names_only_commit_the_newest_generation():
+    manager = _DelayedNameManager(_list_payload(1))
+    first_address = "0x" + "d" * 40
+    second_address = "0x" + "e" * 40
+    first_key = f"ethereum:{first_address}"
+    second_key = f"base:{second_address}"
+    manager.hold_name(
+        first_key,
+        NftHolderUnavailable("stale Ethereum NFT holder RPC unavailable"),
+    )
+    manager.hold_name(second_key, "Newest Reader Pass")
+    screen = CuratorScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=_WALLET,
+        export_dir=_FIXTURES / "no-local-exports",
+    )
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        nft_input = editor.query_one("#filter-nft-address", Input)
+        nft_input.value = first_address
+        editor.post_message(NftCollectionAddRequested("ethereum", first_address))
+        await asyncio.wait_for(manager.name_started[first_key].wait(), timeout=1)
+        try:
+            add = editor.query_one("#filter-nft-add", Button)
+            assert add.disabled is True
+            assert editor.query_one("#filter-reset-all", Button).disabled is False
+            assert editor.query_one("#filter-apply", Button).disabled is False
+            assert nft_input.disabled is False
+
+            nft_input.value = second_address
+            editor.post_message(NftCollectionAddRequested("base", second_address))
+            await asyncio.wait_for(
+                manager.name_started[second_key].wait(), timeout=0.25
+            )
+            await asyncio.wait_for(
+                manager.name_cancelled[first_key].wait(), timeout=1
+            )
+
+            manager.name_releases[second_key].set()
+            await asyncio.wait_for(
+                manager.name_finished[second_key].wait(), timeout=1
+            )
+            await pilot.pause()
+            manager.name_releases[first_key].set()
+            await asyncio.wait_for(
+                manager.name_finished[first_key].wait(), timeout=1
+            )
+            await pilot.pause()
+
+            assert editor.values()["nft_collections"] == ({
+                "label": "Newest Reader Pass",
+                "chain": "base",
+                "address": second_address,
+            },)
+            assert "stale Ethereum NFT holder RPC unavailable" not in _region_text(
+                app, editor, screen
+            )
+            assert add.disabled is False
+        finally:
+            manager.name_releases[first_key].set()
+            manager.name_releases[second_key].set()
+
+
 async def test_custom_nft_add_uses_resolved_name_and_retains_it_everywhere():
     payload = _list_payload(1)
     screen = _screen(payload)
     address = "0x" + "a" * 40
     key = f"base:{address}"
-    screen._data_manager.collection_names[key] = "Reader Pass"
+    screen._data_manager.collection_names[key] = "  Reader\n  Pass   Deluxe  "
     screen._data_manager.nft_holders_by_collection[key] = frozenset({
         payload["leaderboard_rows"][0]["address"].casefold()
     })
@@ -3322,15 +3523,15 @@ async def test_custom_nft_add_uses_resolved_name_and_retains_it_everywhere():
         await pilot.pause()
         assert screen._data_manager.collection_name_calls == [key]
         assert editor.values()["nft_collections"] == ({
-            "label": "Reader Pass", "chain": "base", "address": address,
+            "label": "Reader Pass Deluxe", "chain": "base", "address": address,
         },)
         await pilot.click("#filter-apply")
         await pilot.pause()
-        assert "NFT Reader Pass" in screen._filter_summary
-        assert "Reader Pass" in _region_text(
+        assert "NFT Reader Pass Deluxe" in screen._filter_summary
+        assert "Reader Pass Deluxe" in _region_text(
             app, screen.query_one(CuratorFilteredList), screen
         )
-        assert "Reader Pass" in _region_text(
+        assert "Reader Pass Deluxe" in _region_text(
             app, screen.query_one(CuratorListHero), screen
         )
 
@@ -3546,6 +3747,39 @@ async def test_filter_editor_composite_fits_143_columns_with_actions():
         assert screen.query_one(
             CuratorListHero
         ).show_horizontal_scrollbar is False
+
+
+async def test_filter_editor_bounds_a_128_double_width_collection_label():
+    screen = _screen(_list_payload(1))
+    app = _ThemedHarness(screen)
+    label = "界" * 128
+    address = "0x" + "f" * 40
+    async with app.run_test(size=(143, 48)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        editor.set_custom_nfts(({
+            "label": label,
+            "chain": "ethereum",
+            "address": address,
+        },))
+        editor.scroll_end(animate=False)
+        await pilot.pause()
+
+        row = editor.query_one(".curator-filter-nft-selected")
+        rendered_label = row.query_one(Label)
+        remove = row.query_one(Button)
+        assert row.region.x >= editor.content_region.x
+        assert row.region.right <= editor.content_region.right
+        assert rendered_label.region.right <= remove.region.x
+        assert remove.region.right <= editor.content_region.right
+        assert remove.region.width == 5
+        assert editor.show_horizontal_scrollbar is False
+        assert editor.values()["nft_collections"] == ({
+            "label": label,
+            "chain": "ethereum",
+            "address": address,
+        },)
 
 
 @pytest.mark.parametrize(
