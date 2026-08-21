@@ -15,6 +15,7 @@ from maxpane_dashboard.data.curator_list_filters import (
 )
 from maxpane_dashboard.data.evm_abi import (
     decode_aggregate3_result,
+    decode_string,
     encode_aggregate3,
 )
 from maxpane_dashboard.data.rpc_common import (
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 MULTICALL3 = "0xca11bde05977b3631167028862be2a173976ca11"
 BALANCE_OF = "0x70a08231"
+NAME = "0x06fdde03"
 MAX_BALANCES_PER_CALL = 500
 DEFAULT_MIN_INTERVAL = 0.12
 RPC_POOLS: Mapping[str, tuple[str, ...]] = {
@@ -196,6 +198,33 @@ class NftHolderClient(OwnedHttpClient):
         raise NftHolderUnavailable(
             f"{chain} NFT holder RPC unavailable"
         ) from last_error
+
+    async def collection_name(
+        self, collection: NftCollectionRef
+    ) -> str | None:
+        raw_block = await self._rpc(
+            collection.chain,
+            "eth_blockNumber",
+            [],
+            lambda value: _block_number_result(value) is not None,
+        )
+        code = await self._rpc(
+            collection.chain,
+            "eth_getCode",
+            [collection.address, raw_block],
+            _code_result_is_valid,
+        )
+        if not isinstance(code, str) or code in ("0x", "0x0"):
+            raise NftHolderUnavailable(f"{collection.label}: no contract code")
+        calldata = encode_aggregate3([(collection.address, NAME, True)])
+        raw = await self._rpc(
+            collection.chain,
+            "eth_call",
+            [{"to": MULTICALL3, "data": calldata}, raw_block],
+            lambda value: _aggregate3_result_is_valid(value, 1),
+        )
+        [(success, value)] = decode_aggregate3_result(raw)
+        return decode_string(value) if success else None
 
     async def scan(
         self,

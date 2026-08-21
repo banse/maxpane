@@ -50,6 +50,37 @@ def _results(values: list[tuple[bool, int | None]]) -> str:
     )
 
 
+def _byte_results(values: list[tuple[bool, str]]) -> str:
+    tuples = []
+    for success, value in values:
+        body = value[2:] if value.startswith("0x") else value
+        padded = body + "0" * ((64 - len(body) % 64) % 64)
+        tuples.append(
+            encode_uint(1 if success else 0)
+            + encode_uint(64)
+            + encode_uint(len(body) // 2)
+            + padded
+        )
+    cursor = len(values) * 32
+    offsets = []
+    for item in tuples:
+        offsets.append(encode_uint(cursor))
+        cursor += len(item) // 2
+    return "0x" + "".join(
+        (encode_uint(32), encode_uint(len(values)), *offsets, *tuples)
+    )
+
+
+def _dynamic_string(value: str) -> str:
+    body = value.encode().hex()
+    padded = body + "0" * ((64 - len(body) % 64) % 64)
+    return "0x" + encode_uint(32) + encode_uint(len(body) // 2) + padded
+
+
+def _bytes32_string(value: str) -> str:
+    return "0x" + value.encode().hex().ljust(64, "0")
+
+
 def _client(handler):
     http_client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler)
@@ -114,6 +145,12 @@ async def test_dead_endpoint_fails_over_and_total_failure_is_explicit():
             return _rpc_result(body["id"], "0x6000")
         if method == "eth_blockNumber":
             return _rpc_result(body["id"], "0x1")
+        data = body["params"][0]["data"]
+        if "06fdde03" in data:
+            return _rpc_result(
+                body["id"],
+                _byte_results([(True, _dynamic_string("Reader Pass"))]),
+            )
         return _rpc_result(body["id"], _results([(True, 0)]))
 
     http_client = httpx.AsyncClient(
@@ -138,6 +175,23 @@ async def test_dead_endpoint_fails_over_and_total_failure_is_explicit():
         ("https://good.invalid", "eth_call"),
     ]
 
+    requests.clear()
+    assert (
+        await client.collection_name(PREDEFINED_NFT_COLLECTIONS[0])
+        == "Reader Pass"
+    )
+    assert requests == [
+        ("https://dead.invalid", "eth_blockNumber"),
+        ("https://good.invalid", "eth_blockNumber"),
+        ("https://dead.invalid", "eth_getCode"),
+        ("https://good.invalid", "eth_getCode"),
+        ("https://dead.invalid", "eth_call"),
+        ("https://good.invalid", "eth_call"),
+    ]
+    assert {method for _, method in requests} <= {
+        "eth_blockNumber", "eth_getCode", "eth_call"
+    }
+
     dead_only = NftHolderClient(
         http_client=http_client,
         rpc_pools={"ethereum": ("https://dead.invalid",)},
@@ -148,8 +202,97 @@ async def test_dead_endpoint_fails_over_and_total_failure_is_explicit():
             PREDEFINED_NFT_COLLECTIONS[0], ["0x" + "1" * 40]
         )
     assert requests[-1] == ("https://dead.invalid", "eth_blockNumber")
+    with pytest.raises(NftHolderUnavailable, match="RPC unavailable"):
+        await dead_only.collection_name(PREDEFINED_NFT_COLLECTIONS[0])
+    assert requests[-1] == ("https://dead.invalid", "eth_blockNumber")
     await client.close()
     await dead_only.close()
+    await http_client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("encoded", "expected"),
+    (
+        (_dynamic_string("Reader Pass"), "Reader Pass"),
+        (_bytes32_string("Legacy Pass"), "Legacy Pass"),
+        ("0x1234", None),
+    ),
+)
+async def test_collection_name_decodes_at_one_pinned_block(encoded, expected):
+    requests = []
+
+    async def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(body["id"], "0xabc")
+        if body["method"] == "eth_getCode":
+            return _rpc_result(body["id"], "0x6000")
+        assert body["method"] == "eth_call"
+        assert "06fdde03" in body["params"][0]["data"]
+        return _rpc_result(body["id"], _byte_results([(True, encoded)]))
+
+    client, http_client = _client(handler)
+    assert await client.collection_name(PREDEFINED_NFT_COLLECTIONS[0]) == expected
+    assert [item["method"] for item in requests] == [
+        "eth_blockNumber", "eth_getCode", "eth_call"
+    ]
+    assert [item["params"][-1] for item in requests[1:]] == [
+        "0xabc", "0xabc"
+    ]
+    await client.close()
+    await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_failed_name_subcall_is_a_supported_no_name_result():
+    async def handler(request):
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(body["id"], "0x1")
+        if body["method"] == "eth_getCode":
+            return _rpc_result(body["id"], "0x6000")
+        return _rpc_result(body["id"], _byte_results([(False, "0x")]))
+
+    client, http_client = _client(handler)
+    assert await client.collection_name(PREDEFINED_NFT_COLLECTIONS[0]) is None
+    await client.close()
+    await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_collection_name_rejects_no_code_before_multicall():
+    methods = []
+
+    async def handler(request):
+        body = json.loads(request.content)
+        methods.append(body["method"])
+        result = "0x1" if body["method"] == "eth_blockNumber" else "0x"
+        return _rpc_result(body["id"], result)
+
+    client, http_client = _client(handler)
+    with pytest.raises(NftHolderUnavailable, match="no contract code"):
+        await client.collection_name(PREDEFINED_NFT_COLLECTIONS[0])
+    assert methods == ["eth_blockNumber", "eth_getCode"]
+    await client.close()
+    await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_collection_name_rejects_a_malformed_aggregate_response():
+    async def handler(request):
+        body = json.loads(request.content)
+        if body["method"] == "eth_blockNumber":
+            return _rpc_result(body["id"], "0x1")
+        if body["method"] == "eth_getCode":
+            return _rpc_result(body["id"], "0x6000")
+        return _rpc_result(body["id"], "0xdead")
+
+    client, http_client = _client(handler)
+    with pytest.raises(NftHolderUnavailable, match="RPC unavailable"):
+        await client.collection_name(PREDEFINED_NFT_COLLECTIONS[0])
+    await client.close()
     await http_client.aclose()
 
 
