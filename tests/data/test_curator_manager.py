@@ -1584,13 +1584,13 @@ def test_the_manager_divides_to_eth_exactly_once(tmp_path, clock):
     divisions is how a number becomes 1e-18 of itself, silently.
 
     ``build_signals`` owns that division and the cache's series writer owns the
-    only other one, so this module's own count is ZERO -- and a division
-    appearing here is exactly the second one.
+    only other one.  Filtered-list routed ETH is a second presentation boundary,
+    so this module owns exactly one conversion for that result.
     """
-    _EXPECTED_DIVISION_SITES = 0
+    _EXPECTED_DIVISION_SITES = 1
     src = inspect.getsource(curator_manager)
     assert src.count("/ _WEI") + src.count("/ 10**18") == _EXPECTED_DIVISION_SITES
-    assert "_eth(" not in src
+    assert "\ndef _eth(" not in src
 
 
 def test_an_analytics_failure_is_never_published_as_a_healthy_picture(tmp_path, clock):
@@ -2910,6 +2910,99 @@ def _deposit(address: str, amount_wei: int, index: int) -> DepositEvent:
         log_index=0,
         ts=NOW,
     )
+
+
+def _store_complete_filter_history(manager, fold, events):
+    manager.cache.store_fold(fold, last_block=None, now=NOW)
+    manager.cache.store_first_deposits([
+        {"contributor": row.address, "index": index, "ts": NOW}
+        for index, row in enumerate(fold, start=1)
+    ])
+    manager.cache.store_events(events)
+
+
+def test_filtered_routed_eth_sums_matching_wallets_and_deposits_once(
+    tmp_path, clock
+):
+    manager = _manager(tmp_path, clock)
+    _slot, fold = _legacy_clean_slot(count=3)
+    first, second, third = (row.address for row in fold)
+    one = _deposit(first, 1 * 10**18, 1)
+    two = _deposit(first, 2 * 10**18, 2)
+    duplicate = _deposit(first, 2 * 10**18, 2)
+    second_wallet = _deposit(second, 5 * 10**18, 3)
+    excluded = _deposit(third, 7 * 10**18, 4)
+    _store_complete_filter_history(
+        manager, fold, [one, two, duplicate, second_wallet, excluded]
+    )
+    rows = [
+        _nft_row(first.upper(), points=10),
+        _nft_row(second, points=10),
+        _nft_row(third, points=1),
+    ]
+    result = manager.filtered_list_rows(
+        tmp_path, expected_count=3, live_rows=rows, you_row=None,
+        spec=FilterSpec(points_min=10),
+    )
+
+    assert [row["address"] for row in result.rows] == [
+        first.upper(), second
+    ]
+    assert result.routed_eth == 8.0
+
+
+def test_filtered_routed_eth_is_zero_for_a_valid_empty_result(tmp_path, clock):
+    manager = _manager(tmp_path, clock)
+    _slot, fold = _legacy_clean_slot(count=1)
+    address = fold[0].address
+    _store_complete_filter_history(
+        manager, fold, [_deposit(address, 4 * 10**18, 1)]
+    )
+    result = manager.filtered_list_rows(
+        tmp_path, expected_count=1,
+        live_rows=[_nft_row(address, points=1)], you_row=None,
+        spec=FilterSpec(points_min=2),
+    )
+
+    assert result.rows == []
+    assert result.routed_eth == 0.0
+
+
+def test_filtered_routed_eth_is_none_when_history_is_incomplete(tmp_path, clock):
+    manager = _manager(tmp_path, clock)
+    _slot, fold = _legacy_clean_slot(count=1)
+    address = fold[0].address
+    manager.cache.store_fold(fold, last_block=None, now=NOW)
+    manager.cache.store_first_deposits([
+        {"contributor": address, "index": 1, "ts": NOW},
+        {"contributor": "0x" + "f" * 40, "index": 2, "ts": NOW},
+    ])
+    manager.cache.store_events([_deposit(address, 4 * 10**18, 1)])
+    result = manager.filtered_list_rows(
+        tmp_path, expected_count=1, live_rows=[_nft_row(address)],
+        you_row=None, spec=FilterSpec(),
+    )
+
+    assert result.rows is not None
+    assert result.routed_eth is None
+
+
+def test_filtered_routed_eth_is_none_when_source_is_unavailable(tmp_path, clock):
+    manager = _manager(tmp_path, clock)
+    _slot, fold = _legacy_clean_slot(count=1)
+    address = fold[0].address
+    _store_complete_filter_history(
+        manager, fold, [_deposit(address, 4 * 10**18, 1)]
+    )
+
+    result = manager.filtered_list_rows(
+        tmp_path, expected_count=1, live_rows=None, you_row=None,
+        spec=FilterSpec(),
+    )
+
+    assert result.rows is None
+    assert result.source_reason == "missing"
+    assert result.routed_eth is None
 
 
 def test_filtered_rows_use_a_valid_complete_export_and_cached_evidence(tmp_path, clock):

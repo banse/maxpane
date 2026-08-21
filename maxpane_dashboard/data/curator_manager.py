@@ -523,6 +523,7 @@ class FilteredListResult:
     complete: bool
     source_reason: str | None
     holder_receipt: str | None = None
+    routed_eth: float | None = None
 
 
 class CuratorManager:
@@ -869,12 +870,35 @@ class CuratorManager:
             whale_addresses=self._filter_whales(expected_count) if spec.whale else None,
             nft_holders_by_collection=nft_holders,
         )
+        rows = filter_rows(source.rows, spec, context)
         return FilteredListResult(
-            filter_rows(source.rows, spec, context),
+            rows,
             source.complete,
             source.reason,
             holder_receipt,
+            self._filtered_routed_eth(rows),
         )
+
+    def _filtered_routed_eth(
+        self, rows: list[dict] | None
+    ) -> float | None:
+        if rows is None or not self._history_complete():
+            return None
+        addresses = {
+            address.casefold()
+            for row in rows
+            if isinstance(row, dict)
+            and isinstance((address := row.get("address")), str)
+            and len(address) == 42
+            and address.startswith(("0x", "0X"))
+            and all(char in "0123456789abcdefABCDEF" for char in address[2:])
+        }
+        total_wei = sum(
+            event.amount_wei
+            for event in self.cache.events()
+            if event.contributor.casefold() in addresses
+        )
+        return total_wei / 10**18
 
     async def _cancel_nft_scan(self) -> None:
         task = self._nft_task
