@@ -203,16 +203,6 @@ class NftHolderClient(OwnedHttpClient):
         wallets: Iterable[object],
     ) -> NftHolderScan:
         addresses = _normalise_wallets(wallets)
-        code = await self._rpc(
-            collection.chain,
-            "eth_getCode",
-            [collection.address, "latest"],
-            _code_result_is_valid,
-        )
-        if not isinstance(code, str) or code in ("0x", "0x0"):
-            raise NftHolderUnavailable(
-                f"{collection.label}: no contract code"
-            )
         raw_block = await self._rpc(
             collection.chain,
             "eth_blockNumber",
@@ -220,6 +210,16 @@ class NftHolderClient(OwnedHttpClient):
             lambda value: _block_number_result(value) is not None,
         )
         block_number = _block_number_result(raw_block)
+        code = await self._rpc(
+            collection.chain,
+            "eth_getCode",
+            [collection.address, raw_block],
+            _code_result_is_valid,
+        )
+        if not isinstance(code, str) or code in ("0x", "0x0"):
+            raise NftHolderUnavailable(
+                f"{collection.label}: no contract code"
+            )
 
         holders: set[str] = set()
         checked = 0
@@ -237,7 +237,7 @@ class NftHolderClient(OwnedHttpClient):
             raw = await self._rpc(
                 collection.chain,
                 "eth_call",
-                [{"to": MULTICALL3, "data": calldata}, "latest"],
+                [{"to": MULTICALL3, "data": calldata}, raw_block],
                 lambda value: _aggregate3_result_is_valid(
                     value, len(chunk)
                 ),
