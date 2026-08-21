@@ -5,41 +5,26 @@ from __future__ import annotations
 from typing import Mapping
 
 from textual.app import ComposeResult
-from textual.containers import Grid, Vertical
+from textual.containers import Grid, Horizontal, Vertical
 from textual.css.query import NoMatches
-from textual.widgets import Checkbox, Input, Label, Select, Static
+from textual.message import Message
+from textual.widgets import Button, Checkbox, Input, Label, Select, Static
 
 
-RANGE_FIELDS = (
-    (
-        "JOIN",
-        (
-            ("join_min", "join from"),
-            ("join_max", "join to"),
-            ("hour_min", "hour from"),
-            ("hour_max", "hour to"),
-        ),
-    ),
-    (
-        "SCORE",
-        (
-            ("rank_min", "rank from"),
-            ("rank_max", "rank to"),
-            ("points_min", "points from"),
-            ("points_max", "points to"),
-        ),
-    ),
-    (
-        "CONTRIBUTION",
-        (
-            ("credit_min", "credit from"),
-            ("credit_max", "credit to"),
-            ("weight_min", "weight from"),
-            ("weight_max", "weight to"),
-            ("deposits_min", "deposits from"),
-            ("deposits_max", "deposits to"),
-        ),
-    ),
+FILTER_GROUPS = (
+    ("JOIN", (("join_min", "from"), ("join_max", "to"))),
+    ("HOUR JOINED", (("hour_min", "from"), ("hour_max", "to"))),
+    ("RANK", (("rank_min", "from"), ("rank_max", "to"))),
+    ("POINTS", (("points_min", "from"), ("points_max", "to"))),
+    ("CREDIT", (("credit_min", "from"), ("credit_max", "to"))),
+    ("WEIGHT", (("weight_min", "from"), ("weight_max", "to"))),
+    ("DEPOSITS", (("deposits_min", "from"), ("deposits_max", "to"))),
+)
+
+OPTION_GROUPS = (
+    ("ENS", "ens"),
+    ("WINDOW", "window"),
+    ("LINK BAND", "band"),
 )
 
 FAMILIES = ("amount", "sequence", "cadence", "gas", "funding")
@@ -50,9 +35,16 @@ FAMILY_LABELS = {
     "gas": "gas fingerprint",
     "funding": "shared funding",
 }
+FAMILY_TITLES = {
+    "amount": "AMOUNT",
+    "sequence": "SEQUENCE",
+    "cadence": "CADENCE",
+    "gas": "GAS",
+    "funding": "FUNDING",
+}
 
 _RANGE_NAMES = tuple(
-    field for _category, fields in RANGE_FIELDS for field, _label in fields
+    field for _title, fields in FILTER_GROUPS for field, _placeholder in fields
 )
 _SELECT_OPTIONS = {
     "ens": (("Any", "any"), ("Set", "set"), ("Unset", "unset")),
@@ -67,6 +59,23 @@ _SELECT_OPTIONS = {
 }
 
 
+class NftCollectionAddRequested(Message):
+    def __init__(self, chain: str, address: str) -> None:
+        super().__init__()
+        self.chain = chain
+        self.address = address
+
+
+class NftCollectionRemoveRequested(Message):
+    def __init__(self, key: str) -> None:
+        super().__init__()
+        self.key = key
+
+
+class FilterResetRequested(Message):
+    pass
+
+
 class CuratorListFilterEditor(Vertical):
     """A primitive-value editor; validation and filtering live outside it."""
 
@@ -77,24 +86,56 @@ class CuratorListFilterEditor(Vertical):
         padding: 0 2;
         overflow-y: auto;
     }
-    CuratorListFilterEditor .curator-filter-category {
+    CuratorListFilterEditor .curator-filter-groups {
         height: auto;
-        margin-bottom: 1;
-    }
-    CuratorListFilterEditor .curator-filter-fields {
-        height: auto;
-        layout: grid;
         grid-size: 4;
         grid-columns: 1fr 1fr 1fr 1fr;
         grid-gutter: 0 1;
+    }
+    CuratorListFilterEditor.compact-filter .curator-filter-groups {
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+    }
+    CuratorListFilterEditor .curator-filter-group {
+        height: auto;
+        min-width: 14;
+        margin-bottom: 1;
+    }
+    CuratorListFilterEditor .curator-filter-group-title,
+    CuratorListFilterEditor .curator-filter-section-title {
+        height: 1;
+        color: $text-muted;
+    }
+    CuratorListFilterEditor .curator-filter-range {
+        height: 3;
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+        grid-gutter: 0 1;
+    }
+    CuratorListFilterEditor .curator-filter-nft-presets {
+        height: 3;
+        grid-size: 4;
+        grid-columns: 1fr 1fr 1fr 1fr;
+    }
+    CuratorListFilterEditor .curator-filter-nft-add-row {
+        height: 3;
     }
     CuratorListFilterEditor .curator-filter-field {
         width: 100%;
         min-width: 14;
     }
-    CuratorListFilterEditor.compact-filter .curator-filter-fields {
-        grid-size: 2;
-        grid-columns: 1fr 1fr;
+    CuratorListFilterEditor #filter-nft-chain { width: 14; }
+    CuratorListFilterEditor #filter-nft-address { width: 1fr; }
+    CuratorListFilterEditor #filter-nft-add,
+    CuratorListFilterEditor .curator-filter-nft-selected Button {
+        width: 5;
+        min-width: 5;
+    }
+    CuratorListFilterEditor #curator-filter-accept {
+        width: 100%;
+        height: 1;
+        text-align: center;
+        color: $text-muted;
     }
     CuratorListFilterEditor .filter-invalid {
         border: tall $error;
@@ -105,18 +146,36 @@ class CuratorListFilterEditor(Vertical):
     }
     """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(
+        self,
+        *args,
+        nft_choices: tuple[tuple[str, str, str], ...] = (),
+        **kwargs,
+    ) -> None:
         super().__init__(*args, **kwargs)
         self._error_field: str | None = None
+        self._nft_choices = tuple(nft_choices)
+        self._custom_nfts: tuple[dict[str, str], ...] = ()
+
+    @staticmethod
+    def _nft_key(chain: str, address: str) -> str:
+        return f"{chain}:{address.casefold()}"
+
+    def _titled_group(self, title: str, *controls):
+        return Vertical(
+            Label(title, classes="curator-filter-group-title"),
+            *controls,
+            classes="curator-filter-group",
+        )
 
     def compose(self) -> ComposeResult:
         yield Static("", id="curator-filter-error", markup=False)
-        for category, fields in RANGE_FIELDS:
-            with Vertical(classes="curator-filter-category"):
-                yield Label(category)
-                with Grid(classes="curator-filter-fields"):
-                    for field, placeholder in fields:
-                        yield Input(
+        with Grid(classes="curator-filter-groups"):
+            for title, fields in FILTER_GROUPS:
+                yield self._titled_group(
+                    title,
+                    Grid(*(
+                        Input(
                             placeholder=placeholder,
                             type="number",
                             valid_empty=True,
@@ -124,52 +183,56 @@ class CuratorListFilterEditor(Vertical):
                             id=f"filter-{field.replace('_', '-')}",
                             classes="curator-filter-field",
                         )
-        with Vertical(classes="curator-filter-category"):
-            yield Label("IDENTITY")
-            with Grid(classes="curator-filter-fields"):
-                yield Select(
-                    _SELECT_OPTIONS["ens"],
-                    allow_blank=False,
-                    value="any",
-                    compact=True,
-                    id="filter-ens",
-                    classes="curator-filter-field",
+                        for field, placeholder in fields
+                    ), classes="curator-filter-range"),
                 )
-        with Vertical(classes="curator-filter-category"):
-            yield Label("WINDOW")
-            with Grid(classes="curator-filter-fields"):
-                yield Select(
-                    _SELECT_OPTIONS["window"],
-                    allow_blank=False,
-                    value="any",
-                    compact=True,
-                    id="filter-window",
-                    classes="curator-filter-field",
+            for title, field in OPTION_GROUPS:
+                yield self._titled_group(
+                    title,
+                    Select(
+                        _SELECT_OPTIONS[field], allow_blank=False,
+                        value="any", compact=True,
+                        id=f"filter-{field}",
+                        classes="curator-filter-field",
+                    ),
                 )
-                yield Select(
-                    _SELECT_OPTIONS["band"],
-                    allow_blank=False,
-                    value="any",
-                    compact=True,
-                    id="filter-band",
-                    classes="curator-filter-field",
-                )
-                yield Checkbox(
-                    "whale deposits",
-                    compact=True,
-                    id="filter-whale",
-                    classes="curator-filter-field",
-                )
-        with Vertical(classes="curator-filter-category"):
-            yield Label("LINKED PATTERNS")
-            with Grid(classes="curator-filter-fields"):
-                for family in FAMILIES:
-                    yield Checkbox(
-                        FAMILY_LABELS[family],
-                        compact=True,
+            yield self._titled_group(
+                "WHALE DEPOSIT",
+                Checkbox(
+                    "25 ETH or more", compact=True,
+                    id="filter-whale", classes="curator-filter-field",
+                ),
+            )
+        yield Label("LINKED PATTERNS", classes="curator-filter-section-title")
+        with Grid(classes="curator-filter-groups"):
+            for family in FAMILIES:
+                yield self._titled_group(
+                    FAMILY_TITLES[family],
+                    Checkbox(
+                        FAMILY_LABELS[family], compact=True,
                         id=f"filter-family-{family}",
                         classes="curator-filter-field",
-                    )
+                    ),
+                )
+        yield Label("NFT HOLDERS", classes="curator-filter-section-title")
+        with Grid(classes="curator-filter-nft-presets"):
+            for index, (label, _chain, _address) in enumerate(self._nft_choices):
+                yield Checkbox(label, compact=True, id=f"filter-nft-choice-{index}")
+        with Horizontal(classes="curator-filter-nft-add-row"):
+            yield Select(
+                (("Ethereum", "ethereum"), ("Base", "base")),
+                allow_blank=False, value="ethereum", compact=True,
+                id="filter-nft-chain",
+            )
+            yield Input(placeholder="0x collection address", id="filter-nft-address")
+            yield Button("+", id="filter-nft-add", compact=True)
+        yield Vertical(id="filter-nft-custom-list")
+        yield Button("RESET ALL", id="filter-reset-all", compact=True)
+        yield Static(
+            "press 'f' to accept filters",
+            id="curator-filter-accept",
+            markup=False,
+        )
 
     def on_resize(self, _event=None) -> None:
         self.set_class(self.content_size.width < 100, "compact-filter")
@@ -194,6 +257,13 @@ class CuratorListFilterEditor(Vertical):
             for family in FAMILIES
             if self.query_one(f"#filter-family-{family}", Checkbox).value
         )
+        selected = []
+        for index, (label, chain, address) in enumerate(self._nft_choices):
+            if self.query_one(f"#filter-nft-choice-{index}", Checkbox).value:
+                selected.append({
+                    "label": label, "chain": chain, "address": address,
+                })
+        values["nft_collections"] = tuple(selected) + self._custom_nfts
         return values
 
     def set_values(self, values: Mapping[str, object]) -> None:
@@ -227,6 +297,75 @@ class CuratorListFilterEditor(Vertical):
             families = frozenset()
         for family in FAMILIES:
             self.query_one(f"#filter-family-{family}", Checkbox).value = family in families
+
+        predefined = {
+            self._nft_key(chain, address): index
+            for index, (_label, chain, address) in enumerate(self._nft_choices)
+        }
+        for index in range(len(self._nft_choices)):
+            self.query_one(f"#filter-nft-choice-{index}", Checkbox).value = False
+        custom = []
+        for raw in values.get("nft_collections", ()):
+            if not isinstance(raw, Mapping):
+                continue
+            chain = raw.get("chain")
+            address = raw.get("address")
+            label = raw.get("label")
+            if not (
+                isinstance(chain, str)
+                and isinstance(address, str)
+                and isinstance(label, str)
+            ):
+                continue
+            value = {
+                "label": label,
+                "chain": chain,
+                "address": address.casefold(),
+            }
+            index = predefined.get(self._nft_key(chain, address))
+            if index is None:
+                custom.append(value)
+            else:
+                self.query_one(f"#filter-nft-choice-{index}", Checkbox).value = True
+        self.set_custom_nfts(custom)
+        self.query_one("#filter-nft-chain", Select).value = "ethereum"
+        self.query_one("#filter-nft-address", Input).value = ""
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "filter-nft-add":
+            self.post_message(NftCollectionAddRequested(
+                str(self.query_one("#filter-nft-chain", Select).value),
+                self.query_one("#filter-nft-address", Input).value,
+            ))
+        elif event.button.id == "filter-reset-all":
+            self.post_message(FilterResetRequested())
+        elif event.button.id and event.button.id.startswith("filter-nft-remove-"):
+            self.post_message(NftCollectionRemoveRequested(str(event.button.name)))
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "filter-nft-address":
+            self.post_message(NftCollectionAddRequested(
+                str(self.query_one("#filter-nft-chain", Select).value),
+                event.value,
+            ))
+
+    def set_custom_nfts(self, values) -> None:
+        self._custom_nfts = tuple(dict(value) for value in values)
+        try:
+            container = self.query_one("#filter-nft-custom-list", Vertical)
+        except NoMatches:
+            return
+        container.remove_children()
+        for index, value in enumerate(self._custom_nfts):
+            key = self._nft_key(value["chain"], value["address"])
+            container.mount(Horizontal(
+                Label(value["label"]),
+                Button(
+                    "×", id=f"filter-nft-remove-{index}",
+                    name=key, compact=True,
+                ),
+                classes="curator-filter-nft-selected",
+            ))
 
     def clear_error(self) -> None:
         """Clear the visible error and its field marker."""

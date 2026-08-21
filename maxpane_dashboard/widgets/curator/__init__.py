@@ -100,7 +100,12 @@ from .clusters import (
 )
 from .hero import PHASE_UNAVAILABLE, CuratorHero
 from .list_hero import CuratorListHero
-from .list_filter import CuratorListFilterEditor
+from .list_filter import (
+    CuratorListFilterEditor,
+    FilterResetRequested,
+    NftCollectionAddRequested,
+    NftCollectionRemoveRequested,
+)
 from .signals import (
     NEVER_SAVED,
     NO_WALLET,
@@ -192,6 +197,9 @@ __all__ = [
     "CuratorHero",
     "CuratorListHero",
     "CuratorListFilterEditor",
+    "FilterResetRequested",
+    "NftCollectionAddRequested",
+    "NftCollectionRemoveRequested",
     "NEVER_SAVED",
     "NO_JUDGED_HOURS",
     "NO_WALLET",

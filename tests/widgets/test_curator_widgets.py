@@ -33,6 +33,7 @@ from pathlib import Path
 
 import pytest
 from textual.app import App, ComposeResult
+from textual.widgets import Input, Select
 
 from maxpane_dashboard.widgets.curator import (
     NO_ENS,
@@ -130,6 +131,21 @@ class _OrderHarness(_Harness):
         self.orders.append((event.kind, event.addresses))
 
 
+class _MessageHarness(_Harness):
+    def __init__(self, widget):
+        super().__init__(widget)
+        self.messages = []
+
+    def on_nft_collection_add_requested(self, event):
+        self.messages.append(("add", event.chain, event.address))
+
+    def on_nft_collection_remove_requested(self, event):
+        self.messages.append(("remove", event.key))
+
+    def on_filter_reset_requested(self, _event):
+        self.messages.append(("reset",))
+
+
 def _screen_text(app) -> str:
     strips = app.screen._compositor.render_strips()
     return "\n".join("".join(seg.text for seg in strip) for strip in strips)
@@ -159,29 +175,32 @@ def _row_cells(text: str, anchor: str) -> list[str]:
 # ===========================================================================
 
 
-async def test_filter_editor_renders_every_approved_category_and_control():
-    editor = CuratorListFilterEditor()
+NFT_CHOICES = (
+    ("Identity.md", "ethereum", "0x" + "1" * 40),
+    ("Fren Pet", "base", "0x" + "2" * 40),
+    ("Milady", "ethereum", "0x" + "3" * 40),
+    ("Crypto Punks", "ethereum", "0x" + "4" * 40),
+)
+
+
+async def test_filter_editor_titles_every_group_and_centers_acceptance_copy():
+    editor = CuratorListFilterEditor(nft_choices=NFT_CHOICES)
     app = _Harness(editor)
-    async with app.run_test(size=(143, 30)) as pilot:
+    async with app.run_test(size=(143, 42)) as pilot:
         await pilot.pause()
         text = _screen_text(app)
-        for label in (
-            "JOIN",
-            "SCORE",
-            "CONTRIBUTION",
-            "IDENTITY",
-            "WINDOW",
-            "LINKED PATTERNS",
+        for heading in (
+            "JOIN", "HOUR JOINED", "RANK", "POINTS", "CREDIT",
+            "WEIGHT", "DEPOSITS", "ENS", "WINDOW", "LINK BAND",
+            "WHALE DEPOSIT", "LINKED PATTERNS", "AMOUNT", "SEQUENCE",
+            "CADENCE", "GAS", "FUNDING", "NFT HOLDERS",
         ):
+            assert heading in text
+        for label, _chain, _address in NFT_CHOICES:
             assert label in text
-        for label in (
-            "matching amounts",
-            "consecutive joins",
-            "cadence",
-            "gas fingerprint",
-            "shared funding",
-        ):
-            assert label in text
+        assert "press 'f' to accept filters" in text
+        footer = editor.query_one("#curator-filter-accept")
+        assert footer.styles.text_align == "center"
         for control_id in (
             "filter-join-min",
             "filter-join-max",
@@ -206,8 +225,87 @@ async def test_filter_editor_renders_every_approved_category_and_control():
             "filter-family-cadence",
             "filter-family-gas",
             "filter-family-funding",
+            "filter-nft-chain",
+            "filter-nft-address",
+            "filter-nft-add",
+            "filter-reset-all",
         ):
             assert editor.query_one(f"#{control_id}") is not None
+
+
+async def test_editor_emits_add_remove_and_reset_commands():
+    editor = CuratorListFilterEditor(nft_choices=NFT_CHOICES)
+    app = _MessageHarness(editor)
+    async with app.run_test(size=(143, 42)) as pilot:
+        editor.query_one("#filter-nft-chain", Select).value = "base"
+        editor.query_one("#filter-nft-address", Input).value = (
+            "0x" + "a" * 40
+        )
+        await pilot.click("#filter-nft-add")
+        assert app.messages[-1] == (
+            "add", "base", "0x" + "a" * 40
+        )
+
+        address_input = editor.query_one("#filter-nft-address", Input)
+        address_input.value = "0x" + "b" * 40
+        address_input.focus()
+        await pilot.press("enter")
+        assert app.messages[-1] == (
+            "add", "base", "0x" + "b" * 40
+        )
+
+        editor.set_custom_nfts(({
+            "label": "BASE 0xaaaa…aaaa",
+            "chain": "base",
+            "address": "0x" + "a" * 40,
+        },))
+        await pilot.pause()
+        await pilot.click("#filter-nft-remove-0")
+        assert app.messages[-1] == (
+            "remove", "base:0x" + "a" * 40
+        )
+
+        await pilot.click("#filter-reset-all")
+        assert app.messages[-1] == ("reset",)
+
+
+async def test_editor_round_trips_predefined_and_custom_nfts():
+    editor = CuratorListFilterEditor(nft_choices=NFT_CHOICES)
+    app = _Harness(editor)
+    custom = {
+        "label": "ETH 0xbbbb…bbbb",
+        "chain": "ethereum",
+        "address": "0x" + "b" * 40,
+    }
+    async with app.run_test(size=(143, 42)) as pilot:
+        editor.set_values({
+            "points_min": "10",
+            "nft_collections": (
+                {"label": NFT_CHOICES[0][0], "chain": NFT_CHOICES[0][1],
+                 "address": NFT_CHOICES[0][2]},
+                custom,
+            ),
+        })
+        await pilot.pause()
+        values = editor.values()
+        assert values["points_min"] == "10"
+        assert values["nft_collections"] == (
+            {"label": NFT_CHOICES[0][0], "chain": NFT_CHOICES[0][1],
+             "address": NFT_CHOICES[0][2]},
+            custom,
+        )
+        assert "ETH 0xbbbb…bbbb" in _screen_text(app)
+
+
+async def test_editor_compact_layout_keeps_titles_with_their_controls():
+    editor = CuratorListFilterEditor(nft_choices=NFT_CHOICES)
+    app = _Harness(editor)
+    async with app.run_test(size=(80, 60)) as pilot:
+        await pilot.pause()
+        assert editor.has_class("compact-filter")
+        for group in editor.query(".curator-filter-group"):
+            assert group.query_one(".curator-filter-group-title")
+            assert group.query("Input, Select, Checkbox")
 
 
 async def test_filter_editor_round_trips_values_and_names_an_error():
