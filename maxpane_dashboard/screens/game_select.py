@@ -104,5 +104,6 @@ class GameSelectScreen(Screen):
         """
         for key, game_id, _name, _desc in GAMES:
             if event.character == key:
+                event.stop()
                 self.dismiss(game_id)
                 return
