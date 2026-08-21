@@ -3130,6 +3130,65 @@ def test_persisted_second_deposit_loss_is_incomplete_despite_known_wallet(
     assert manager._sweep_from_block() == A.CREATION_BLOCK
 
 
+@pytest.mark.parametrize(
+    "events_value",
+    [
+        pytest.param(42, id="integer"),
+        pytest.param({}, id="mapping"),
+        pytest.param("bad", id="string"),
+    ],
+)
+def test_malformed_persisted_event_container_forces_creation_repair(
+    tmp_path, clock, events_value
+):
+    path = tmp_path / "curator_cache.json"
+    _slot, fold = _legacy_clean_slot(count=1)
+    address = fold[0].address
+    seed = CuratorCache(path=str(path), clock=clock)
+    seed.store_fold(fold, last_block=25_770_500, now=NOW)
+    seed.store_first_deposits(
+        [{"contributor": address, "index": 1, "ts": NOW}]
+    )
+    seed.store_events(
+        [_deposit(address, 1 * 10**18, 1), _deposit(address, 2 * 10**18, 2)]
+    )
+    seed.save()
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["events"] = events_value
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    restored = CuratorCache(path=str(path), clock=clock)
+    restored.load(now=NOW)
+    assert restored.events() == []
+    assert restored.dropped_events == 1
+    restored.load(now=NOW)
+    assert restored.dropped_events == 1
+
+    raw["dropped_events"] = 4
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    restored.load(now=NOW)
+    assert restored.dropped_events == 5
+    restored.load(now=NOW)
+    assert restored.dropped_events == 5
+
+    manager = CuratorManager(
+        client=FakeClient(), cache=restored, clock=clock
+    )
+    result = manager.filtered_list_rows(
+        tmp_path,
+        expected_count=1,
+        live_rows=[_nft_row(address)],
+        you_row=None,
+        spec=FilterSpec(points_min=0),
+    )
+
+    assert manager._history_complete() is False
+    assert result.rows == [_nft_row(address)]
+    assert result.routed_eth is None
+    assert manager._sweep_from_block() == A.CREATION_BLOCK
+
+
 def test_filtered_rows_use_a_valid_complete_export_and_cached_evidence(tmp_path, clock):
     manager = _manager(tmp_path, clock)
     slot, fold = _legacy_clean_slot(count=3)

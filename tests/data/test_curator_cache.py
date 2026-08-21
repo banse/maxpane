@@ -899,6 +899,27 @@ def test_persisted_event_loss_combines_once_and_duplicate_keys_are_harmless(
     assert restored.dropped_events == 6
 
 
+@pytest.mark.parametrize("container", ["absent", "null"])
+def test_absent_or_null_legacy_event_container_is_empty_not_loss(
+    tmp_path, clock, container
+):
+    path = pathlib.Path(tmp_path / "curator_cache.json")
+    seed = CuratorCache(path=str(path), clock=clock)
+    seed.save()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if container == "absent":
+        raw.pop("events")
+    else:
+        raw["events"] = None
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    restored = CuratorCache(path=str(path), clock=clock)
+    restored.load(now=NOW)
+
+    assert restored.events() == []
+    assert restored.dropped_events == 0
+
+
 @pytest.mark.parametrize("bad", [None, True, -3, "5", 2.0])
 def test_a_bad_drop_count_in_the_file_leaves_the_counter_at_zero(tmp_path, clock, bad):
     """One malformed value costs its own field, never the load."""

@@ -1296,10 +1296,22 @@ class CuratorCache:
             logger.warning("Curator ENS block bad: %s", exc)
 
         try:
+            raw_events = payload.get("events")
+            container_loss = 0
+            if raw_events is None:
+                raw_events = ()
+            elif not isinstance(raw_events, list):
+                container_loss = 1
+                raw_events = ()
+                logger.warning(
+                    "Malformed curator event container in %s; treating the "
+                    "history as incomplete",
+                    target,
+                )
             dropped = 0
             loaded_events: list[DepositEvent] = []
             loaded_keys: set[tuple[str, int]] = set()
-            for raw in payload.get("events") or ():
+            for raw in raw_events:
                 event = _event_from_dict(raw)
                 if event is None:
                     dropped += 1
@@ -1325,8 +1337,9 @@ class CuratorCache:
             saved_drop = saved_drop if saved_drop is not None and saved_drop > 0 else 0
             # Assigned, not accumulated: loading one file twice reconstructs
             # the same marker. Duplicate keys are harmless replay, while rows
-            # that cannot produce an event/key are known history loss.
-            self.dropped_events = saved_drop + dropped
+            # that cannot produce an event/key and malformed whole containers
+            # are known history loss.
+            self.dropped_events = saved_drop + container_loss + dropped
         except Exception as exc:  # noqa: BLE001
             logger.warning("Curator events block bad: %s", exc)
 
