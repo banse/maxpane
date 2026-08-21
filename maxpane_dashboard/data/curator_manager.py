@@ -777,11 +777,17 @@ class CuratorManager:
     ) -> tuple[dict[str, frozenset[str]] | None, str | None]:
         if not spec.nft_collections:
             return None, None
-        wallets = tuple(
+        wallets = tuple(sorted({
             row["address"].casefold()
             for row in rows
             if isinstance(row.get("address"), str)
-        )
+            and len(row["address"]) == 42
+            and row["address"].startswith(("0x", "0X"))
+            and all(
+                char in "0123456789abcdefABCDEF"
+                for char in row["address"][2:]
+            )
+        }))
         fingerprint = wallet_universe_fingerprint(wallets)
         found: dict[str, frozenset[str]] = {}
         stale_stamps: list[float] = []

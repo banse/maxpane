@@ -3056,6 +3056,37 @@ async def test_nft_filter_queues_once_without_blocking_or_opening_early(
 
 
 @pytest.mark.asyncio
+async def test_nft_scan_deduplicates_the_display_row_wallet_universe(
+    tmp_path, clock
+):
+    collection = PREDEFINED_NFT_COLLECTIONS[0]
+    holder = "0x" + "a" * 40
+    nft = FakeNftClient([
+        NftHolderScan(collection, frozenset({holder}), 1, 0, 1)
+    ])
+    manager = _manager(
+        tmp_path, clock, nft_client_factory=lambda: nft
+    )
+    rows = [_nft_row(holder), _nft_row(holder.upper())]
+    spec = FilterSpec(nft_collections=(collection,))
+
+    with pytest.raises(NftHolderPending):
+        manager.filtered_list_rows(
+            tmp_path, expected_count=2, live_rows=rows,
+            you_row=None, spec=spec
+        )
+    await manager._nft_task
+
+    assert nft.calls == [(collection.key, (holder,))]
+    hit = manager.cache.nft_holders(
+        collection.key, wallet_universe_fingerprint([holder])
+    )
+    assert hit is not None
+    assert hit.holders == frozenset({holder})
+    await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_fresh_and_stale_holder_sets_filter_without_false_empty(
     tmp_path, clock
 ):
