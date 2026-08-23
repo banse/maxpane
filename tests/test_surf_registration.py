@@ -1244,6 +1244,38 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     # Same age_s-only-on-FIRED reasoning as the six existing sig_*_age_s
     # entries just above -- these three new detectors follow the identical
     # widgets/surf/signals.py `_head()` pattern once Task 9 wires them.
+    # Final fix wave (I3): two probes moved BACK here, because rendering them
+    # proved they were asserting the absence of strings the outage scenario
+    # cannot produce. A vacuous probe is worse than an honest exclusion --
+    # it reads as coverage while testing nothing, which is the rule the
+    # `lp_liquidity` entry at the top of this dict already states.
+    #
+    # `identities_written` has NO widget consumer at all. The hero box that
+    # used to render it (`_update_gate`) was replaced by POOL/LP/BURN/SUPPLY
+    # in Task 8, and `screens/surf.py` does not dispatch the key anywhere
+    # (its own comment says so); IDENTITY.MD's `N/2000 written` cell reads
+    # `nft_written`, which has its own probe below. The information still
+    # reaches the screen -- through `sig_gate_detail`, a *string* the manager
+    # composes inside `build_signals` from the LOG-window count, not from
+    # this key -- so a payload-level zero here renders nothing to probe.
+    # Verified by rendering: `identities_written=0` with every other key
+    # `None` composites no `0/2000` anywhere on the screen.
+    "identities_written": (
+        "no widget consumes this key -- the hero GATE box it was measured "
+        "against was replaced in Task 8 and screens/surf.py dispatches it "
+        "nowhere; verified by rendering"
+    ),
+    # `launchpad_coin_count` IS rendered (`SurfLaunchpadCoins._set_note`), but
+    # never under a full outage: `_set_note` checks `coins is None` FIRST and
+    # renders `⚠ launchpad unavailable` instead of any count, which is the
+    # correct behaviour. Giving this test a payload where `coins` is a list
+    # would not fix it -- that payload is not an outage, and a genuine 0
+    # SHOULD then render `0 coins`. Verified by rendering both ways.
+    "launchpad_coin_count": (
+        "SurfLaunchpadCoins._set_note pre-empts the count with 'launchpad "
+        "unavailable' whenever `coins` is None, which a full outage always "
+        "is -- so a zero has no rendering here to probe; verified by rendering"
+    ),
     "sig_decoy_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_burnready_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_hot_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
@@ -1264,7 +1296,6 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     "feed_last_post_age_s": "(0s)",              # screens/surf.py _fmt_age
     "lp_imd": "0 IMD",                           # hero.py _update_lp
     "lp_weth": "0.00 WETH",                      # hero.py _update_lp
-    "identities_written": "0/2000 writt",        # hero.py _update_gate
     "imd_supply": "0 IMD",                       # hero.py _update_supply
     # The field's own honest zero rendering (distinct from `imd_burned_cum
     # is None` -> "burned --"): this is the exact shape the house rule
@@ -1272,17 +1303,36 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     # nothing moved" instead of the honest "we could not read this".
     "imd_burned_cum": "no burn obser",           # hero.py _update_supply
     "imd_price_usd": "$0.00",                    # market.py fmt_price (pre-existing check)
-    "fp_price_usd": "FP $0.00",                  # market.py fmt_price
-    "imd_change_24h_pct": "+0.00% 24h",          # market.py _fmt_change
+    # The gap is TWO spaces and it is not a typo: `_labelled` pads every row
+    # label to the width of the widest (`IMD`), so `FP` renders one column
+    # short and then its own separator. Verified by rendering the real
+    # SurfScreen at (143, 48) with only this key set to 0.0 -- the old
+    # single-space `FP $0.00` composited nowhere and probed nothing.
+    "fp_price_usd": "FP  $0.00",                 # market.py fmt_price
+    # Same shape one row down: `_window` pads `24h ±` to the width of
+    # `parity`. Verified by rendering with this key 0.0 AND `imd_price_usd`
+    # set -- the change cell renders beside the price row, and the old
+    # `+0.00% 24h` had the two halves in the wrong order entirely.
+    "imd_change_24h_pct": "24h ±  ● +0.00%",     # market.py _fmt_change
     "imd_vol_24h_usd": "vol 24h $0",             # market.py fmt_compact
     "pool_liquidity_usd": "pool $0",             # market.py fmt_compact
+    # Correct as it stood, but it needed re-verifying the hard way: `_parts`
+    # gates the parity cell on all THREE market keys, so a payload with only
+    # `parity_pct` set renders `parity --` and proves nothing. Rendered with
+    # `imd_price_usd` and `fp_price_usd` set alongside it.
     "parity_pct": "parity ● +0.00%",        # market.py _fmt_parity
     # Task 8 (2026-08-23): SurfHero's POOL/BURN boxes. `screens/surf.py`
     # doesn't route these keys through yet (Task 12), so these four were
     # verified by mounting `SurfHero` directly rather than the real
     # `SurfScreen` -- see the comment on the four keys' old home in
     # `_NUMERIC_KEYS_EXCLUDED` above for exactly how.
-    "pool_fee_bps": "1% fee",                    # hero.py _pool_lines (10000 bps -> 1%)
+    # WAS `1% fee`, which is the rendering of **10000 bps** -- the live pool's
+    # real fee tier, not a zero. `_pool_lines` divides by 10000 and formats
+    # with `%g`, so a genuine 0 composites `0% fee`; the old needle asserted
+    # the absence of a string a zero cannot produce and probed nothing.
+    # Re-verified by rendering the real SurfScreen at (143, 48) with this key
+    # 0 (`0% fee`) and again with it 10000 (`1% fee`).
+    "pool_fee_bps": "0% fee",                    # hero.py _pool_lines
     "decoy_pool_count": "1 of 1 pools",          # hero.py _pool_lines (0 decoys -> "1 of 1")
     "burn_accrued": "acc 0",                     # hero.py _burn_lines
     "burn_staged": "stg 0",                      # hero.py _burn_lines
@@ -1305,7 +1355,6 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     # `SurfLaunchpadCoins`/`SurfCurveFlow`/`SurfBurnPipeline` directly, one
     # field zeroed at a time with every other field on that widget `None`,
     # against the true all-`None` baseline of the same widget.
-    "launchpad_coin_count": "0 coins",           # launchpad.py SurfLaunchpadCoins._set_note
     "launchpad_swap_count": "0 swaps",           # launchpad.py _flow_lines
     "launchpad_trader_count": "0 traders",       # launchpad.py _flow_lines
     "launchpad_creator_eth_owed": "owed 0.0000 ETH",  # launchpad.py _flow_lines / _fmt_eth_owed
@@ -1366,6 +1415,13 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
     (``widgets/surf/signals.py``'s Quiet-collapse section). All nine must
     therefore still keep their own line under a full outage; none may
     disappear into a quiet summary that would misreport a dead read as calm.
+
+    **Both bodies** (final fix wave, I3). ``l`` swaps the dashboard body for
+    the launchpad's three panels, and this test used to sweep only the first
+    one -- so five of the six launchpad needles asserted the absence of a
+    string from a body that never composited, and the sweep silently stopped
+    covering the whole ``l`` view the day it was added. The needles are swept
+    against the concatenation of both renders, so a zero in either is caught.
     """
     key = next(k for k, game_id, *_ in GAMES if game_id == "surf")
 
@@ -1378,7 +1434,8 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             await pilot.press(key)
             await pilot.pause()
 
-            text = _screen_text(app)
+            dashboard_text = _screen_text(app)
+            text = dashboard_text
             for label in (
                 "NEW POST",
                 "LP MOVE",
@@ -1401,11 +1458,13 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             # *whole* six-name list reaches a pixel through the real app at
             # 143x48, on a row that wraps out of existence rather than
             # ellipsising -- see WORST_CASE_TITLE_COLUMNS, which measures it
-            # at 137. It does **not** pin the vocabulary: the double's
+            # at 142 (it was 137 across six source groups, before
+            # SOURCE_LAUNCHPAD made it seven). It does **not** pin the
+            # vocabulary: the double's
             # `_degraded` is `sorted(SOURCES)` too, so a renamed group
             # renames both sides and stays green here. The rename tripwire
             # is test_degraded_sources_ride_the_house_warning_glyph_not_the_word
-            # in tests/screens/test_surf_screen.py, which spells the six out.
+            # in tests/screens/test_surf_screen.py, which spells them out.
             from maxpane_dashboard.data.surf_manager import SOURCES
 
             assert "⚠ " + ", ".join(sorted(SOURCES)) in text, (
@@ -1415,8 +1474,28 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 "a signal fired on an outage -- baselines moved on a failed read"
             )
             assert "$0.00" not in text, "a missing price rendered as zero"
+
+            # ...and now the OTHER body. `l` (2026-08-23) swaps the five
+            # dashboard panels for LAUNCHPAD COINS / CURVE FLOW / BURN
+            # PIPELINE; the hero row stays mounted either way. Six of the
+            # probes below only ever render in here, so sweeping one body
+            # covered neither the launchpad panels nor the fact that the
+            # swap happened at all.
+            await pilot.press("l")
+            await pilot.pause()
+            launchpad_text = _screen_text(app)
+            from maxpane_dashboard.widgets.surf.launchpad import (
+                COINS_UNAVAILABLE,
+            )
+
+            assert COINS_UNAVAILABLE in launchpad_text, (
+                "pressing `l` did not reach the launchpad body -- the sweep "
+                "below would be measuring the dashboard twice"
+            )
+            swept = dashboard_text + "\n" + launchpad_text
+
             for probe_key, needle in _NUMERIC_ZERO_PROBES.items():
-                assert needle not in text, (
+                assert needle not in swept, (
                     f"{probe_key} rendered its zero-formatted string "
                     f"{needle!r} under a full outage -- a failed read must "
                     "never render as a real 0"
