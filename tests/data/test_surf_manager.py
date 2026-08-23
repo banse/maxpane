@@ -2180,6 +2180,49 @@ async def test_a_channel_action_never_claims_the_tx_pages_were_read(tmp_path):
     assert SOURCE_ACTIVITY in data["degraded"]
 
 
+def test_feed_rows_carry_the_recipient():
+    """Threading needs to know who an answer was sent to.
+
+    `_feed_items` reads `to_addr` to classify and then dropped it, which is
+    why the announcement wallet's answers could not be nested under the
+    question they answer (a later task). Real channel nonce 23's own shape.
+
+    Built off ``SurfManager.__new__`` rather than the ``manager`` fixture:
+    ``_feed_items`` touches no ``self`` state (it is pure given ``rows``),
+    and the fixture's default ``FakeSurfClient`` currently fails in
+    ``__init__`` on an unrelated, already-known pre-existing defect
+    (``LaunchpadCoin.__init__() got an unexpected keyword argument
+    'change_1h_pct'`` — Task 7's own file, not this one's).
+    """
+    bare = SurfManager.__new__(SurfManager)
+    answer_hex = "0x" + "Yes the goal is".encode().hex()
+    rows = [
+        ChannelTx(tx_hash="0xaa", ts=1.0, nonce=23, from_addr=ANNOUNCE,
+                  to_addr=REPLIER, value_wei=0, input_hex=answer_hex),
+    ]
+    items = bare._feed_items(rows)
+    assert items[0]["to_addr"] == REPLIER
+    assert items[0]["kind"] == "answer"
+
+
+def test_an_answer_never_reaches_the_deploy_detector():
+    """NEW DEPLOY reads channel items with kind == "action" and labels them
+    with the decoded method, falling back to the first four calldata bytes.
+
+    So before `answer` existed the answer above entered the deploy stream
+    labelled `0x59657320` -- the ASCII for "Yes ". NEW DEPLOY could fire on
+    the dev writing a sentence that begins with the right letters.
+
+    ``_deploy_events`` is a ``@staticmethod`` (Task 3's own extraction), so
+    it needs no manager instance at all -- called on the class directly, the
+    same pattern ``SurfManager._valid_launch(...)`` already uses elsewhere
+    in this file for another staticmethod.
+    """
+    items = [{"ts": 1.0, "kind": "answer", "tx_hash": "0xaa", "label": "0x59657320"}]
+    events = SurfManager._deploy_events(items, activity_rows=[], activity_read=True)
+    assert [e["tx_hash"] for e in events] == []
+
+
 async def test_an_older_deploy_and_a_newer_action_both_reach_the_detector(tmp_path):
     """Both streams are carried, newest first — and one of them is not reported.
 

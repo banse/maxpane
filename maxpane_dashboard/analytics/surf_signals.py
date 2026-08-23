@@ -371,14 +371,30 @@ def classify_channel_tx(
     Order matters, and it is the dev's own filter order (channel nonce 2):
 
     1. ``from == to == channel`` -> ``self``.  A post.
-    2. ``from == channel`` -> ``action``.  The channel EOA doing something
-       onchain — the ERC-8004 ``register()`` at nonce 4 is this, and NEW DEPLOY
-       watches for the next one.  ``to = None`` (a deployment) lands here too.
-    3. ``from`` is a dev wallet **and** (value moved **or** the calldata is not
+    2. ``from == channel``, ``value == 0`` and the calldata decodes as text
+       -> ``answer``.  0xTXT (`0x/packages/protocol/src/surf.ts`,
+       ``classifySurfTransaction``) calls this shape ``legacy-reply``: an
+       *authenticated* answer from the announce wallet to somebody who wrote
+       to it — channel nonce 23 answering nonce 17's question is the real
+       example.  Both guards are the reference implementation's own:
+       ``transaction.value === 0n`` (nonce 16 sent 0.05 ETH with empty
+       calldata and is a payment, not a message — it must stay ``action``)
+       and calldata that fails to decode is a contract call, not a reply.
+       Classifying this shape ``action`` used to be more than a mislabel: NEW
+       DEPLOY reads ``action`` rows off the channel and labels them with the
+       decoded method or the first four calldata bytes, so a dev answer
+       beginning "Yes the goal is…" entered that stream labelled
+       ``0x59657320`` — the ASCII for "Yes " — and could fire the detector on
+       a sentence.
+    3. ``from == channel`` otherwise -> ``action``.  The channel EOA doing
+       something onchain that is neither a self-post nor an answer — the
+       ERC-8004 ``register()`` at nonce 4 is this, and NEW DEPLOY watches for
+       the next one.  ``to = None`` (a deployment) lands here too.
+    4. ``from`` is a dev wallet **and** (value moved **or** the calldata is not
        a message) -> ``fund``.  A dev wallet that writes a readable message is
        a ``reply``, because the feed prints these kinds next to the message and
        calling a message "fund" would be wrong on screen.
-    4. everything else -> ``reply``.
+    5. everything else -> ``reply``.
 
     ``value_wei`` never promotes a stranger: the begging tx sent 1e13 wei and
     is still a reply.  Nothing here raises — a missing address is ``""``, a
@@ -387,7 +403,11 @@ def classify_channel_tx(
     src = _addr(from_addr)
     dst = _addr(to_addr)
     if src == _CHANNEL:
-        return "self" if dst == _CHANNEL else "action"
+        if dst == _CHANNEL:
+            return "self"
+        if (_as_int(value_wei) or 0) == 0 and decode_utf8_calldata(input_hex) is not None:
+            return "answer"
+        return "action"
     if src in _DEV_WALLETS:
         value = _as_int(value_wei) or 0
         if value > 0 or decode_utf8_calldata(input_hex) is None:

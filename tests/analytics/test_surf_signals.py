@@ -257,6 +257,84 @@ def test_case_and_missing_addresses_never_raise():
     assert sig.CHANNEL_KINDS is surf_models.CHANNEL_KINDS
 
 
+# --- classify_channel_tx: the channel's own answers ("answer") -------------
+#
+# 0xTXT (`0x/packages/protocol/src/surf.ts::classifySurfTransaction`) calls
+# this shape `legacy-reply`: an *authenticated* answer from the announce
+# wallet to somebody who wrote to it.  Real channel evidence: nonce 23
+# (`announce -> 0x6eacf11c…`, value 0, "Yes the goal is...") answers nonce
+# 17's question, and nonce 16 (`announce -> 0xcb0b0531…`, 0.05 ETH, empty
+# calldata) is a payment and must stay `action`.  None of these three rows
+# are in the ``calldata`` fixture above (it predates this kind), so they are
+# built inline the same way ``test_dev_wallet_message_is_not_mislabelled_as_
+# funding`` and ``test_case_and_missing_addresses_never_raise`` already do.
+
+
+def test_the_channel_answering_a_stranger_is_an_answer_not_a_contract_call():
+    """Classifying it `action` put the dev's replies in the contract-call
+    bucket, detached from the question they answer — channel nonce 23's own
+    shape (abbreviated to its first four words for the assertion).
+    """
+    from maxpane_dashboard.data.surf_addresses import ANNOUNCE
+
+    stranger = "0x6eacf11c0000000000000000000000000000dead"
+    answer_hex = "0x" + "Yes the goal is".encode().hex()
+    assert sig.classify_channel_tx(ANNOUNCE, stranger, 0, answer_hex) == "answer"
+
+
+def test_the_channel_sending_value_with_no_message_is_still_an_action():
+    """Channel nonce 16: `announce -> 0xcb0b0531…`, 0.05 ETH, empty calldata.
+
+    A payment is not a message.  The ``value == 0`` guard is the reference
+    implementation's own ``transaction.value === 0n`` test.
+    """
+    from maxpane_dashboard.data.surf_addresses import ANNOUNCE
+
+    stranger = "0x6eacf11c0000000000000000000000000000dead"
+    assert (
+        sig.classify_channel_tx(ANNOUNCE, stranger, 50_000_000_000_000_000, "0x")
+        == "action"
+    )
+
+
+def test_the_channel_sending_value_alongside_a_real_message_is_still_an_action():
+    """The value guard alone, isolated from the decode guard.
+
+    The nonce-16 test above pairs its nonzero value with *empty* calldata, so
+    ``decode_utf8_calldata`` already returns ``None`` and blocks ``answer`` on
+    its own — a ``value == 0`` mutated to ``value >= 0`` would slip past it
+    undetected (verified: it does). Pairing a nonzero value with *decodable*
+    text isolates the guard this docstring is actually about.
+    """
+    from maxpane_dashboard.data.surf_addresses import ANNOUNCE
+
+    stranger = "0x6eacf11c0000000000000000000000000000dead"
+    answer_hex = "0x" + "Yes the goal is".encode().hex()
+    assert (
+        sig.classify_channel_tx(ANNOUNCE, stranger, 1, answer_hex) == "action"
+    )
+
+
+def test_the_channel_making_a_real_contract_call_is_still_an_action():
+    """Calldata that is not UTF-8 (the ERC-8004 ``register()`` shape) stays
+    ``action`` — it fails the "calldata decodes as a message" guard.
+    """
+    from maxpane_dashboard.data.surf_addresses import ANNOUNCE
+
+    stranger = "0x6eacf11c0000000000000000000000000000dead"
+    assert sig.classify_channel_tx(ANNOUNCE, stranger, 0, "0xffffffff") == "action"
+
+
+def test_a_self_post_is_unaffected_by_the_answer_branch():
+    """``from == to == channel`` must still win over the new answer guard,
+    even when the calldata would otherwise decode as a message.
+    """
+    from maxpane_dashboard.data.surf_addresses import ANNOUNCE
+
+    answer_hex = "0x" + "Yes the goal is".encode().hex()
+    assert sig.classify_channel_tx(ANNOUNCE, ANNOUNCE, 0, answer_hex) == "self"
+
+
 # --- parity_pct and detail formatting ---------------------------------------
 #
 # IMD is FP bridged 1:1 (FP locks on Base, IMD mints on mainnet), so the two

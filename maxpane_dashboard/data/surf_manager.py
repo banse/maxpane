@@ -1238,15 +1238,23 @@ class SurfManager:
         ``method`` when it has one, the 4-byte selector when it does not. NEW
         DEPLOY renders its ``action`` rows with it (Task WP4.11), and both halves
         are third-party-influenced strings escaped at the widget, never here.
+
+        ``to_addr`` (Task 1's ``SURF_ROW_KEYS["feed_items"]``, Task 3's own
+        addition to this row) is threading's raw material: an ``answer``'s
+        recipient is who asked the question it answers, and a later task nests
+        the row under that question by matching on it. Three-state, same as
+        ``_parse_channel_tx`` already documents for the field it comes from:
+        ``None`` for a contract creation, never ``""``.
         """
         items: list[dict[str, Any]] = []
         for row in rows or ():
             from_addr = str(_field(row, "from_addr") or "")
+            to_addr = str(_field(row, "to_addr") or "") or None
             input_hex = str(_field(row, "input_hex") or "")
             kind = _safe_call(
                 classify_channel_tx,
                 from_addr,
-                str(_field(row, "to_addr") or ""),
+                to_addr or "",
                 _opt_int(_field(row, "value_wei")) or 0,
                 input_hex,
                 default=None,
@@ -1256,6 +1264,7 @@ class SurfManager:
                     "ts": _opt_float(_field(row, "ts")),
                     "kind": kind,
                     "from_addr": from_addr,
+                    "to_addr": to_addr,
                     "from_label": KNOWN_LABELS.get(from_addr.lower()),
                     "text": _safe_call(decode_utf8_calldata, input_hex, default=None),
                     "tx_hash": str(_field(row, "tx_hash") or ""),
@@ -1589,8 +1598,11 @@ class SurfManager:
         channel = channel or {}
         # The same list `_cycle` renders the feed from — unpacked here rather than
         # passed as a sixth argument, so the rows the panel shows and the rows the
-        # detectors read can never be two different lists.
-        feed_items = list(channel.get("items") or ())
+        # detectors read can never be two different lists. `None`, not `[]`, when
+        # `channel` itself is falsy: `_deploy_events` needs to tell "the channel
+        # page has never answered" apart from "it answered and held nothing", and
+        # collapsing that here would erase the distinction before it gets there.
+        feed_items = list(channel.get("items") or ()) if channel else None
         read: dict[str, Any] = dict.fromkeys(READING_KEYS)
 
         # -- fast tier: three nonces, every refresh, the whole early edge -----
@@ -1684,62 +1696,15 @@ class SurfManager:
             ]
 
         # -- NEW DEPLOY reads two streams, and only one is the tx pages -------
-        # PRD §3 #4: "new tx with ``created_contract``, **or** announce-EOA
-        # outbound *contract call*". The second never appears in
-        # ``fetch_dev_activity`` -- that fetches the two dev wallets' pages, and
-        # the announce EOA is neither of them -- so it has to come off the
-        # channel page, where `classify_channel_tx` already labels it ``action``.
-        # The ERC-8004 registration at channel nonce 4 is the PRD's own worked
-        # example of the shape, and without this branch it would not fire.
-        #
-        # The channel branch is gated on `activity_read` as well as on
-        # `channel`, and that is load-bearing: `[]` is a claim that "the deploy
-        # window was read and held nothing", and it seeds WP2's `deploy_tx` /
-        # `deploy_ts` baselines. One source may not make that claim on the
-        # other's behalf — a channel page answering while Blockscout's tx pages
-        # are down would seed the baseline before the tx-page source has ever
-        # produced a row, and the first real deploy would then be measured
-        # against a baseline it never contributed to.
-        events: list[dict[str, Any]] | None = None
-        if activity_read:
-            events = [
-                {
-                    "ts": row.get("ts"),
-                    "tx_hash": row.get("tx_hash"),
-                    "kind": "deploy",
-                    "label": row.get("counterparty"),
-                    "wallet_label": row.get("wallet_label"),
-                }
-                for row in activity_rows or ()
-                if row.get("kind") == "deploy"
-            ]
-        if channel and activity_read:
-            events = [
-                *(events or []),
-                *(
-                    {
-                        "ts": item.get("ts"),
-                        "tx_hash": item.get("tx_hash"),
-                        "kind": "action",
-                        # Blockscout's decoded method name when it has one, the
-                        # 4-byte selector when it does not. WP2 prints it
-                        # verbatim: "action register() · announce".
-                        "label": item.get("label") or "",
-                        "wallet_label": "announce",
-                    }
-                    for item in feed_items or ()
-                    if item.get("kind") == "action"
-                ),
-            ]
-            # Newest first, so `_newest` and the row order agree. Two streams on
-            # two cadences share one `(deploy_tx, deploy_ts)` baseline pair, and
-            # WP2 reports only the newest row — so a channel `action` can still
-            # bury an older tx-page `deploy` here. That is a WP2 contract
-            # question, not a WP4 one; see Open issue 12.
-            events.sort(
-                key=lambda e: (e["ts"] is not None, e["ts"] or 0.0), reverse=True
-            )
-        read["deploy_events"] = events
+        # Extracted to `_deploy_events` (Task 3) so a manager-level test can
+        # drive it directly with a synthetic `answer` item — the false
+        # positive it fixed (an `answer` entering this stream labelled with
+        # its own first four calldata bytes) is otherwise invisible from
+        # here, since the feed panel never renders `label`. See that method's
+        # docstring for the two-stream, two-gate story.
+        read["deploy_events"] = self._deploy_events(
+            feed_items, activity_rows, activity_read
+        )
 
         # -- fix round 1: the five Task 7 reading keys (see rule 5 above) -----
         slot = launchpad_slot if isinstance(launchpad_slot, dict) else {}
@@ -1766,6 +1731,88 @@ class SurfManager:
             float(launchpad_ts) if isinstance(launchpad_ts, (int, float)) else None
         )
         return read
+
+    @staticmethod
+    def _deploy_events(
+        feed_items: list[dict[str, Any]] | None,
+        activity_rows: list[dict[str, Any]] | None,
+        activity_read: bool,
+    ) -> list[dict[str, Any]] | None:
+        """NEW DEPLOY's event stream: dev-wallet deploys plus channel actions.
+
+        PRD §3 #4: "new tx with ``created_contract``, **or** announce-EOA
+        outbound *contract call*". The second never appears in
+        ``fetch_dev_activity`` — that fetches the two dev wallets' pages, and
+        the announce EOA is neither of them — so it has to come off the
+        channel page, where ``classify_channel_tx`` already labels it
+        ``action``. The ERC-8004 registration at channel nonce 4 is the PRD's
+        own worked example of the shape, and without the second stream below
+        it would not fire.
+
+        ``answer`` rows are excluded by the ``kind == "action"`` filter, and
+        that exclusion is the point of Task 3, not incidental to it: before
+        ``answer`` existed, the channel's own authenticated replies were
+        classified ``action`` too and entered here labelled with the first
+        four bytes of their own calldata — a reply beginning "Yes the goal
+        is…" fired this detector under the label ``0x59657320``, the ASCII
+        for "Yes ". The filter needed no change; ``answer`` rows simply
+        stopped matching it the moment ``classify_channel_tx`` learned the
+        kind.
+
+        ``feed_items`` carries a distinction ``_readings`` used to spell with
+        two separate checks (``channel and activity_read``): ``None`` means
+        the channel page has never answered, a list — even ``[]`` — means it
+        has. Only the second may extend or sort ``events``: extending it from
+        ``None`` would be the same lie ``[]`` vs ``None`` always is in this
+        file, "the deploy window was read and held nothing", and that claim
+        seeds WP2's ``deploy_tx``/``deploy_ts`` baselines — a channel page
+        answering while Blockscout's tx pages are down must not seed that
+        baseline on the tx-page source's behalf. ``activity_read`` gates both
+        streams: the first directly (only a successful read of the tx pages
+        may report deploys as ``[]`` instead of ``None``), and the second
+        again so a channel-only cycle cannot make that claim through the
+        merge either.
+        """
+        events: list[dict[str, Any]] | None = None
+        if activity_read:
+            events = [
+                {
+                    "ts": row.get("ts"),
+                    "tx_hash": row.get("tx_hash"),
+                    "kind": "deploy",
+                    "label": row.get("counterparty"),
+                    "wallet_label": row.get("wallet_label"),
+                }
+                for row in activity_rows or ()
+                if row.get("kind") == "deploy"
+            ]
+        if feed_items is not None and activity_read:
+            events = [
+                *(events or []),
+                *(
+                    {
+                        "ts": item.get("ts"),
+                        "tx_hash": item.get("tx_hash"),
+                        "kind": "action",
+                        # Blockscout's decoded method name when it has one, the
+                        # 4-byte selector when it does not. WP2 prints it
+                        # verbatim: "action register() · announce".
+                        "label": item.get("label") or "",
+                        "wallet_label": "announce",
+                    }
+                    for item in feed_items or ()
+                    if item.get("kind") == "action"
+                ),
+            ]
+            # Newest first, so `_newest` and the row order agree. Two streams on
+            # two cadences share one `(deploy_tx, deploy_ts)` baseline pair, and
+            # WP2 reports only the newest row — so a channel `action` can still
+            # bury an older tx-page `deploy` here. That is a WP2 contract
+            # question, not this method's; see Open issue 12.
+            events.sort(
+                key=lambda e: (e["ts"] is not None, e["ts"] or 0.0), reverse=True
+            )
+        return events
 
     @staticmethod
     def _swaps_by_coin(value: Any) -> dict[str, int] | None:
