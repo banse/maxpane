@@ -11,7 +11,11 @@ whole PRD hangs on — must never let a failed read move a baseline.
 
 from __future__ import annotations
 
+import asyncio
 import math
+import tempfile
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -20,8 +24,10 @@ from maxpane_dashboard.data.surf_cache import (
     SERIES_IMD_PRICE_USD,
     SERIES_IMD_SUPPLY,
     SLOT_CHANNEL,
+    SLOT_LAUNCHPAD,
     SLOT_LOGS,
     SLOT_NFT,
+    TIER_LAUNCHPAD,
     SurfCache,
 )
 from maxpane_dashboard.data.surf_manager import (
@@ -29,6 +35,7 @@ from maxpane_dashboard.data.surf_manager import (
     SOURCE_ACTIVITY,
     SOURCE_CHAIN,
     SOURCE_CHANNEL,
+    SOURCE_LAUNCHPAD,
     SOURCE_LOGS,
     SOURCE_MARKET,
     SOURCE_NFT,
@@ -36,13 +43,17 @@ from maxpane_dashboard.data.surf_manager import (
 )
 from maxpane_dashboard.data.surf_models import (
     SURF_KEYS,
+    SURF_ROW_KEYS,
     ChainState,
     ChannelTx,
     DevTx,
+    LaunchpadCoin,
+    LaunchpadState,
     LogWindow,
     MarketSnapshot,
     NftStats,
     NonceSet,
+    PoolV4State,
 )
 from maxpane_dashboard.data.surf_addresses import (
     ANNOUNCE,
@@ -564,6 +575,71 @@ def _nft_stats(**overrides) -> NftStats:
     return NftStats(**fields)
 
 
+#: A plausible v4 pool id (bytes32). Never the real one — this is a double.
+POOL_ID = "0x" + "c0" * 32
+
+
+def _pool_v4_state(**overrides) -> PoolV4State:
+    """A WP0.4 ``PoolV4State``, keyword-for-keyword. Resolves through the hook
+    by default; a test wanting the fallback path overrides
+    ``pool_id_source="fallback"``.
+    """
+    fields = {
+        "pool_id": POOL_ID,
+        "sqrt_price_x96": 4_181_066_022_637_632_195_530_919_936,
+        "tick": -3466,
+        "lp_fee": 10_000,
+        "liquidity": 987_654_321_098_765,
+        "pool_id_source": "hook",
+    }
+    fields.update(overrides)
+    return PoolV4State(**fields)
+
+
+def _launchpad_coin(**overrides) -> LaunchpadCoin:
+    """A WP0.4 ``LaunchpadCoin``. ``creator`` defaults to an address with no
+    ``KNOWN_LABELS`` entry — a test wanting the known-creator branch overrides
+    ``creator=DEV_WALLET``.
+    """
+    fields = {
+        "ticker": "ICE",
+        "name": "Icecream",
+        "creator": "0x" + "c1" * 20,
+        "age_s": 3_600.0,
+        "price_eth": 0.000123,
+        "change_1h_pct": 7.2727,
+        "swaps_1h": 5,
+        "imd_burned": 0.42,
+    }
+    fields.update(overrides)
+    return LaunchpadCoin(**fields)
+
+
+def _launchpad_state(**overrides) -> LaunchpadState:
+    """A WP0.4 ``LaunchpadState``, keyword-for-keyword.
+
+    ``coin_count`` is deliberately **not** 146 — the tripwire's own "a
+    146-coin sweep" and the stale-seed regression test's literal ``146`` both
+    need a default that cannot be confused with either by coincidence.
+    """
+    fields = {
+        "coin_count": 12,
+        "imd_to_burn_wei": round(15.06 * 10**18),
+        "total_real_imd_wei": round(500_000 * 10**18),
+        "burn_fee_bps": 50,
+        "creator_fee_bps": 50,
+        "creator_eth_owed_wei": round(0.25 * 10**18),
+        "executor_balance_wei": round(3.0 * 10**18),
+        "min_bridge_wei": round(10.0 * 10**18),
+        "coins": (_launchpad_coin(),),
+        "swap_count": 25,
+        "trader_count": 12,
+        "burned_total_wei": round(90.0 * 10**18),
+    }
+    fields.update(overrides)
+    return LaunchpadState(**fields)
+
+
 class FakeSurfClient:
     """A SurfClient-shaped double. Any method set to ``None`` reports failure."""
 
@@ -597,6 +673,12 @@ class FakeSurfClient:
             # the exact shape of the defect it exists to close. A test that
             # wants a launch attributed says whose it is.
             "fetch_tx_senders": {},
+            "fetch_pool_v4": _pool_v4_state(),
+            "fetch_launchpad": _launchpad_state(),
+            # ``(count, newest_row)`` — the real client's shape. The newest
+            # row is ``None`` here because no manager key reads it; only the
+            # count reaches ``SURF_KEYS`` (``decoy_pool_count``).
+            "fetch_decoy_pool_count": (4, None),
         }
         self._returns.update(overrides)
 
@@ -624,6 +706,12 @@ class FakeSurfClient:
     async def fetch_market(self):        return await self._answer("fetch_market")
     async def fetch_recent_logs(self):   return await self._answer("fetch_recent_logs")
     async def fetch_nft_stats(self):     return await self._answer("fetch_nft_stats")
+    async def fetch_pool_v4(self):       return await self._answer("fetch_pool_v4")
+    async def fetch_launchpad(self):     return await self._answer("fetch_launchpad")
+
+    async def fetch_decoy_pool_count(self, real_pool_id):
+        """Ignores ``real_pool_id`` — the double just answers the fixed pair."""
+        return await self._answer("fetch_decoy_pool_count")
 
     async def close(self):
         self.closed = True
@@ -648,6 +736,32 @@ def manager(tmp_path):
     return _manager(tmp_path)
 
 
+def _manager_with(**method_overrides) -> SurfManager:
+    """A healthy manager whose client has the given coroutine(s) replaced.
+
+    No ``tmp_path`` fixture: used by tests (the Task 6 tripwire and its
+    siblings) that take no fixture parameters of their own, mirroring
+    curator's equivalent helper. Owns a throwaway cache directory instead.
+    """
+    client = FakeSurfClient()
+    for name, coro in method_overrides.items():
+        setattr(client, name, coro)
+    return _manager(Path(tempfile.mkdtemp()), client=client)
+
+
+def _manager_with_last_good(
+    slot: str, payload: Any, *, at: float = 0.0
+) -> SurfManager:
+    """A manager whose cache already holds ``payload`` as ``slot``'s last-good,
+    stamped at ``at`` — or, when ``payload`` is ``None``, a cache that has
+    never populated ``slot`` at all (the "nothing to serve" case).
+    """
+    manager = _manager_with()
+    if payload is not None:
+        manager.cache.store_last_good(slot, payload, ts=at)
+    return manager
+
+
 # ---------------------------------------------------------------------------
 # The frozen contract
 # ---------------------------------------------------------------------------
@@ -662,7 +776,7 @@ async def test_returns_exactly_surf_keys(manager):
 async def test_every_source_group_is_named(manager):
     assert SOURCES == (
         SOURCE_CHAIN, SOURCE_CHANNEL, SOURCE_MARKET,
-        SOURCE_LOGS, SOURCE_NFT, SOURCE_ACTIVITY,
+        SOURCE_LOGS, SOURCE_NFT, SOURCE_ACTIVITY, SOURCE_LAUNCHPAD,
     )
 
 
@@ -1759,7 +1873,11 @@ async def test_a_read_but_empty_page_is_an_empty_list_not_none(tmp_path):
 
 async def test_a_healthy_cycle_reports_nothing_degraded(manager):
     data = await manager.fetch_and_compute()
-    assert data["degraded"] == []
+    # `launchpad` is the one group that can never be healthy on a single cold
+    # cycle: its sweep is detached (Task 6) and cannot land inside the cycle
+    # that spawned it, so a brand-new cache always shows it here alongside
+    # whatever else genuinely failed -- nothing failed here, so it is alone.
+    assert data["degraded"] == [SOURCE_LAUNCHPAD]
     assert data["as_of"] == pytest.approx(NOW)
     # This cycle's sample is already in the sparkline, not one refresh behind.
     assert data["supply_series"] == [[1_786_190_400.0, pytest.approx(IMD_SUPPLY)]]
@@ -1767,9 +1885,14 @@ async def test_a_healthy_cycle_reports_nothing_degraded(manager):
 
 
 async def test_a_chain_outage_degrades_only_the_chain_group(tmp_path):
+    """...of the five groups a single cold cycle can actually finish reading.
+    ``launchpad`` rides along here too, but for an unrelated reason (Task 6:
+    its detached sweep never lands inside the cycle that spawned it) — see
+    ``test_a_healthy_cycle_reports_nothing_degraded`` for that one in isolation.
+    """
     client = FakeSurfClient(fetch_nonces=None, fetch_chain_state=None)
     data = await _manager(tmp_path, client=client).fetch_and_compute()
-    assert data["degraded"] == [SOURCE_CHAIN]
+    assert data["degraded"] == [SOURCE_CHAIN, SOURCE_LAUNCHPAD]
     assert data["imd_price_usd"] == pytest.approx(IMD_PRICE_USD)
     assert data["nft_holders"] == NFT_HOLDERS
     assert data["imd_supply"] is None
@@ -2243,7 +2366,8 @@ def _dead_client() -> FakeSurfClient:
     return FakeSurfClient(
         fetch_nonces=None, fetch_chain_state=None, fetch_channel_txs=None,
         fetch_dev_activity=None, fetch_market=None, fetch_recent_logs=None,
-        fetch_nft_stats=None,
+        fetch_nft_stats=None, fetch_pool_v4=None, fetch_launchpad=None,
+        fetch_decoy_pool_count=None,
     )
 
 
@@ -2360,7 +2484,8 @@ async def test_no_exception_escapes_when_every_call_raises(tmp_path):
         fetch_nonces=RuntimeError("dns"), fetch_chain_state=RuntimeError("dns"),
         fetch_channel_txs=RuntimeError("dns"), fetch_dev_activity=RuntimeError("dns"),
         fetch_market=RuntimeError("dns"), fetch_recent_logs=RuntimeError("dns"),
-        fetch_nft_stats=RuntimeError("dns"),
+        fetch_nft_stats=RuntimeError("dns"), fetch_pool_v4=RuntimeError("dns"),
+        fetch_launchpad=RuntimeError("dns"), fetch_decoy_pool_count=RuntimeError("dns"),
     )
     data = await _manager(tmp_path, client=boom).fetch_and_compute()
     assert set(data) == set(SURF_KEYS)
@@ -2523,4 +2648,237 @@ async def test_a_client_flagged_partial_failure_names_only_that_group(tmp_path):
     client = FakeSurfClient()
     client.activity_truncated = True
     data = await _manager(tmp_path, client=client).fetch_and_compute()
-    assert data["degraded"] == [SOURCE_ACTIVITY]
+    # `launchpad` rides along on cold start: the detached sweep this cycle
+    # offers cannot land inside the cycle that spawned it (Task 6), so a
+    # brand-new cache always shows it alongside whatever else is down.
+    assert data["degraded"] == [SOURCE_ACTIVITY, SOURCE_LAUNCHPAD]
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — the launchpad tier: v4 pool, decoy scan, hook/factory/executor,
+# wired as a detached sweep off its own TIER_LAUNCHPAD.
+# ---------------------------------------------------------------------------
+
+
+async def test_the_first_payload_is_not_behind_the_launchpad_read() -> None:
+    """The sweep is spawned, never awaited.  This fails by timing out.
+
+    Modelled on curator's ``_spawn_crosscheck`` tripwire: a launchpad read
+    that blocks ``fetch_and_compute`` would push first paint behind a
+    146-coin sweep.
+    """
+    never = asyncio.Event()
+
+    async def _hangs(*_a, **_kw):
+        await never.wait()
+
+    manager = _manager_with(fetch_launchpad=_hangs)
+    payload = await asyncio.wait_for(manager.fetch_and_compute(), timeout=2.0)
+    assert payload["imd_supply"] is not None
+    assert payload["launchpad_coin_count"] is None
+
+
+async def test_a_failed_sweep_serves_last_good_behind_as_of() -> None:
+    """Stale is a marker, not a degraded group -- degradation is for nothing
+    to serve at all."""
+    manager = _manager_with_last_good(SLOT_LAUNCHPAD, {"coin_count": 146}, at=1000.0)
+    payload = await manager.fetch_and_compute()
+    assert payload["launchpad_coin_count"] == 146
+    assert payload["launchpad_as_of_hhmm"] is not None
+    assert "launchpad" not in payload["degraded"]
+
+
+async def test_a_failed_sweep_with_nothing_to_serve_degrades() -> None:
+    manager = _manager_with_last_good(SLOT_LAUNCHPAD, None)
+    payload = await manager.fetch_and_compute()
+    assert "launchpad" in payload["degraded"]
+
+
+async def test_a_healthy_launchpad_sweep_populates_every_payload_key() -> None:
+    """One populated slot -> every Task 1 key reads off it, correctly mapped
+    and correctly scaled — the wei->token division happens exactly once, in
+    ``_cycle``, never inside the cached slot itself."""
+    coin = _launchpad_coin(creator=DEV_WALLET)          # a KNOWN_LABELS hit
+    slot_payload = {
+        "pool_id": POOL_ID,
+        "pool_fee": 10_000,
+        "pool_liquidity": 987_654_321_098_765,
+        "pool_id_source": "hook",
+        "decoy_pool_count": 4,
+        "coin_count": 12,
+        "imd_to_burn_wei": round(15.06 * 10**18),
+        "executor_balance_wei": round(3.0 * 10**18),
+        "min_bridge_wei": round(10.0 * 10**18),
+        "creator_eth_owed_wei": round(0.25 * 10**18),
+        "burned_total_wei": round(90.0 * 10**18),
+        "swap_count": 25,
+        "trader_count": 12,
+        "coins": [
+            {
+                "ticker": coin.ticker, "name": coin.name, "creator": coin.creator,
+                "creator_known": True, "age_s": coin.age_s,
+                "price_eth": coin.price_eth, "change_1h_pct": coin.change_1h_pct,
+                "swaps_1h": coin.swaps_1h, "imd_burned": coin.imd_burned,
+            }
+        ],
+    }
+    manager = _manager_with_last_good(SLOT_LAUNCHPAD, slot_payload, at=NOW - 30.0)
+    payload = await manager.fetch_and_compute()
+
+    assert payload["pool_fee_bps"] == 10_000
+    assert payload["pool_liquidity_raw"] == 987_654_321_098_765
+    assert payload["pool_id_source"] == "hook"
+    assert payload["decoy_pool_count"] == 4
+    assert payload["launchpad_coin_count"] == 12
+    assert payload["launchpad_swap_count"] == 25
+    assert payload["launchpad_trader_count"] == 12
+    assert payload["burn_accrued"] == pytest.approx(15.06)
+    assert payload["burn_staged"] == pytest.approx(3.0)
+    assert payload["burn_min_bridge"] == pytest.approx(10.0)
+    assert payload["burn_ready"] is True                 # 15.06 >= max(10.0, 1)
+    assert payload["launchpad_creator_eth_owed"] == pytest.approx(0.25)
+    assert payload["launchpad_burned_total"] == pytest.approx(90.0)
+    assert payload["launchpad_as_of_hhmm"] is not None
+    row = payload["launchpad_coins"][0]
+    assert set(row) == set(SURF_ROW_KEYS["launchpad_coins"])
+    assert row["ticker"] == "ICE"
+    assert row["creator_known"] is True                  # DEV_WALLET is labelled
+
+
+async def test_burn_ready_is_none_not_false_when_either_leg_is_unread() -> None:
+    """The Task 6 tri-state rule: "we cannot tell" is not "not ready"."""
+    only_accrued = {"imd_to_burn_wei": round(5.0 * 10**18)}   # no min_bridge_wei
+    manager = _manager_with_last_good(SLOT_LAUNCHPAD, only_accrued, at=NOW)
+    payload = await manager.fetch_and_compute()
+    assert payload["burn_accrued"] == pytest.approx(5.0)
+    assert payload["burn_min_bridge"] is None
+    assert payload["burn_ready"] is None
+
+    only_min_bridge = {"min_bridge_wei": round(2.0 * 10**18)}  # no imd_to_burn_wei
+    manager2 = _manager_with_last_good(SLOT_LAUNCHPAD, only_min_bridge, at=NOW)
+    payload2 = await manager2.fetch_and_compute()
+    assert payload2["burn_accrued"] is None
+    assert payload2["burn_ready"] is None
+
+
+async def test_burn_ready_is_false_when_accrued_is_below_the_floor() -> None:
+    """``max(min_bridge, 1)``: a zero ``min_bridge`` still needs at least one
+    whole IMD accrued before bridging is "ready", not "any accrual at all"."""
+    slot_payload = {
+        "imd_to_burn_wei": round(0.5 * 10**18),
+        "min_bridge_wei": 0,
+    }
+    manager = _manager_with_last_good(SLOT_LAUNCHPAD, slot_payload, at=NOW)
+    payload = await manager.fetch_and_compute()
+    assert payload["burn_accrued"] == pytest.approx(0.5)
+    assert payload["burn_min_bridge"] == 0.0
+    assert payload["burn_ready"] is False
+
+
+async def test_representable_zeros_survive_as_zero_not_none() -> None:
+    """A genuine on-chain zero must never collapse into "unread"."""
+    slot_payload = {
+        "decoy_pool_count": 0,
+        "coin_count": 0,
+        "swap_count": 0,
+        "trader_count": 0,
+        "burned_total_wei": 0,
+        "coins": [],
+    }
+    manager = _manager_with_last_good(SLOT_LAUNCHPAD, slot_payload, at=NOW)
+    payload = await manager.fetch_and_compute()
+    assert payload["decoy_pool_count"] == 0
+    assert payload["launchpad_coin_count"] == 0
+    assert payload["launchpad_swap_count"] == 0
+    assert payload["launchpad_trader_count"] == 0
+    assert payload["launchpad_burned_total"] == 0.0
+    assert payload["launchpad_coins"] == []
+    # A cold-start `lp_position_count` still separates "0 positions, read" from
+    # "we could not read it" -- exercised directly against `_chain_state`.
+
+
+async def test_lp_state_and_position_count_pass_through_the_chain_read(
+    tmp_path,
+) -> None:
+    """These two ride the fast tier (``ChainState``), never the launchpad
+    slot -- they must be available the very first cycle, unlike everything
+    else this task wires."""
+    client = FakeSurfClient(
+        fetch_chain_state=_chain_state(lp_state="gone", lp_position_count=0)
+    )
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["lp_state"] == "gone"
+    assert data["lp_position_count"] == 0
+    assert data["pool_venue"] == "v4"
+
+
+async def test_pool_venue_reads_v3_while_the_v3_position_still_answers(
+    tmp_path,
+) -> None:
+    client = FakeSurfClient(
+        fetch_chain_state=_chain_state(lp_state="live", lp_position_count=1)
+    )
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["pool_venue"] == "v3"
+
+
+async def test_pool_venue_is_none_when_neither_sub_call_answered(tmp_path) -> None:
+    client = FakeSurfClient(
+        fetch_chain_state=_chain_state(lp_state=None, lp_position_count=None)
+    )
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["pool_venue"] is None
+    assert data["lp_state"] is None
+    assert data["lp_position_count"] is None
+
+
+async def test_a_decoy_scan_failure_does_not_blank_the_rest_of_the_sweep(
+    tmp_path,
+) -> None:
+    """A decoy-count read that failed on its own must not invalidate the
+    pool/launchpad data the same sweep otherwise read cleanly.
+
+    Two cycles, and the task explicitly awaited in between: the sweep
+    spawned by cycle 1 is never visible to cycle 1's *own* payload (Task 6's
+    whole point), so this reads it back on cycle 2, once it has genuinely
+    landed -- not by luck of how the event loop happened to interleave it.
+    """
+    client = FakeSurfClient(fetch_decoy_pool_count=None)
+    m = _manager(tmp_path, client=client)
+    await m.fetch_and_compute()
+    await asyncio.wait_for(m._launchpad_task, timeout=2.0)
+    data = await m.fetch_and_compute()
+    assert data["decoy_pool_count"] is None
+    assert data["pool_id_source"] == "hook"
+    assert data["launchpad_coin_count"] == 12
+
+
+async def test_a_launchpad_outage_degrades_only_the_launchpad_group(
+    tmp_path,
+) -> None:
+    client = FakeSurfClient(fetch_pool_v4=None, fetch_launchpad=None)
+    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    assert data["degraded"] == [SOURCE_LAUNCHPAD]
+    assert data["imd_supply"] is not None                # the rest is untouched
+
+
+async def test_close_cancels_an_in_flight_launchpad_sweep() -> None:
+    """Quitting mid-sweep must not leak the task or crash on the way out."""
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _blocking(*_a, **_kw):
+        started.set()
+        await release.wait()
+        return _launchpad_state()
+
+    m = _manager_with(fetch_launchpad=_blocking)
+    await m.fetch_and_compute()
+    await asyncio.wait_for(started.wait(), timeout=2.0)
+    task = m._launchpad_task
+    assert task is not None and not task.done()
+
+    release.set()
+    await asyncio.wait_for(m.close(), timeout=2.0)
+    assert task.done()
+    assert m._launchpad_task is None

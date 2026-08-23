@@ -141,12 +141,14 @@ from maxpane_dashboard.data.surf_cache import (
     SLOT_ACTIVITY,
     SLOT_CHAIN,
     SLOT_CHANNEL,
+    SLOT_LAUNCHPAD,
     SLOT_LOGS,
     SLOT_MARKET,
     SLOT_NFT,
     SERIES_IMD_PRICE_USD,
     SERIES_IMD_SUPPLY,
     TIER_FAST,
+    TIER_LAUNCHPAD,
     TIER_MEDIUM,
     TIER_SLOW,
     SurfCache,
@@ -166,6 +168,14 @@ SOURCE_MARKET = "market"
 SOURCE_LOGS = "logs"
 SOURCE_NFT = "nft"
 SOURCE_ACTIVITY = "activity"
+#: The v4 pool / decoy scan / launchpad hook+factory+executor sweep (Task 6,
+#: curator ``TIER_ANALYSIS`` precedent). Unlike the other six groups this one
+#: is **never** noted through :meth:`SurfManager._note` on a per-attempt
+#: basis: a sweep that ran and failed while a last-good payload is already on
+#: hand is a stale ``launchpad_as_of_hhmm`` marker, not a degradation — only
+#: "nothing to serve at all" (``GROUP_SLOT``'s own no-last-good clause below)
+#: puts this name in :meth:`SurfManager._degraded`'s output.
+SOURCE_LAUNCHPAD = "launchpad"
 
 SOURCES: tuple[str, ...] = (
     SOURCE_CHAIN,
@@ -174,6 +184,7 @@ SOURCES: tuple[str, ...] = (
     SOURCE_LOGS,
     SOURCE_NFT,
     SOURCE_ACTIVITY,
+    SOURCE_LAUNCHPAD,
 )
 
 #: group -> the cache slot holding its last-good payload.
@@ -184,6 +195,7 @@ GROUP_SLOT: dict[str, str] = {
     SOURCE_LOGS: SLOT_LOGS,
     SOURCE_NFT: SLOT_NFT,
     SOURCE_ACTIVITY: SLOT_ACTIVITY,
+    SOURCE_LAUNCHPAD: SLOT_LAUNCHPAD,
 }
 
 #: Rows handed to the widgets. The feed renders fewer at narrow tiers; the
@@ -488,6 +500,10 @@ class SurfManager:
         #: lookups are remembered, so an RPC outage never freezes an
         #: attribution. Bounded by :data:`_SIGNER_MEMO_CAP`.
         self._launch_signer_memo: dict[str, str] = {}
+        #: The in-flight detached launchpad sweep, or ``None``. Held so the
+        #: task is never garbage-collected mid-flight and so :meth:`close` can
+        #: cancel it before the client's sockets go. See :meth:`_spawn_launchpad`.
+        self._launchpad_task: Any = None
 
         try:
             self.cache.load()
@@ -503,7 +519,15 @@ class SurfManager:
             logger.warning("SURF cache save failed: %s", exc)
 
     async def close(self) -> None:
-        """Persist the cache and close the client. Never raises."""
+        """Stop the detached launchpad sweep, persist the cache, close the client.
+
+        Never raises. The sweep holds the same client the rest of this
+        manager uses, so it is cancelled and awaited *first* — closing
+        sockets out from under a task still mid-request is how a clean quit
+        turns into a traceback on the way down (curator's ``close()``
+        precedent, ``_cancel_crosscheck``/``_cancel_analysis``).
+        """
+        await self._cancel_launchpad()
         self.save_cache()
         try:
             await self.client.close()
@@ -1233,6 +1257,223 @@ class SurfManager:
         items.sort(key=lambda i: (i["ts"] is not None, i["ts"] or 0.0), reverse=True)
         return items[:FEED_ITEM_LIMIT]
 
+    # -- the launchpad tier: v4 pool, decoy scan, hook/factory/executor -------
+    #
+    # Its own tier (``TIER_LAUNCHPAD``, curator's ``TIER_ANALYSIS`` precedent)
+    # and its own detached sweep: ``_spawn_launchpad`` schedules
+    # ``_pool_launchpad`` and never awaits it, so first paint never sits behind
+    # a 146-coin ``getLogs`` sweep. ``_cycle`` captures whatever this slot
+    # already held *before* offering a new sweep — see ``_spawn_launchpad``'s
+    # docstring for why that capture-then-spawn order, not "no ``await`` after
+    # spawning", is what makes the read race-free regardless of how the event
+    # loop happens to interleave this cycle's big ``gather`` with an in-flight
+    # or freshly spawned sweep.
+
+    def _spawn_launchpad(self, tiers: set[str], now: float) -> Any:
+        """Start the v4/launchpad sweep **detached**; never wait for it.
+
+        ``fetch_pool_v4`` + ``fetch_decoy_pool_count`` + ``fetch_launchpad``
+        together are a handful of ``eth_call`` rounds plus three ``getLogs``
+        sweeps over the launchpad's own (wide) window — far cheaper than
+        curator's whole-history cross-check, but still enough that awaiting it
+        in ``_cycle`` would put first paint behind it, which is exactly the
+        tripwire this module's test suite pins by timeout rather than by
+        assertion. ``TIER_LAUNCHPAD`` reads as immediately due on every fresh
+        launch (tier due-marks are not persisted across restarts — see
+        ``data/surf_cache.py``), so this is offered from the very first cycle,
+        not only from later ones.
+
+        One at a time: while a sweep is in flight the tier stays due (only a
+        *completed* ``_pool_launchpad`` marks it fetched or failed), so every
+        cycle offers again and the guard here is what keeps a slow read from
+        stacking up behind a fast poll.
+        """
+        if TIER_LAUNCHPAD not in tiers:
+            return None
+        running = self._launchpad_task
+        if running is not None and not running.done():
+            logger.debug("SURF launchpad sweep still in flight; not starting another")
+            return running
+        self._launchpad_task = asyncio.ensure_future(
+            self._launchpad_detached(tiers, now)
+        )
+        return self._launchpad_task
+
+    async def _launchpad_detached(self, tiers: set[str], now: float) -> None:
+        """``_pool_launchpad`` with nobody to raise at.
+
+        A detached task's exception surfaces as an "exception was never
+        retrieved" line at garbage-collection time and never as a
+        degradation, so it is caught here and logged instead.
+        ``CancelledError`` is re-raised: that one is :meth:`close` doing its
+        job and must propagate so the cancellation actually completes.
+        """
+        try:
+            await self._pool_launchpad(tiers, now)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:        # noqa: BLE001 — nobody awaits this task
+            self._error_count += 1
+            logger.warning("SURF launchpad sweep failed: %s", exc)
+
+    async def _cancel_launchpad(self) -> None:
+        """Stop an in-flight launchpad sweep and wait for it to actually be gone."""
+        task = self._launchpad_task
+        self._launchpad_task = None
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception) as exc:  # noqa: BLE001
+            logger.debug("SURF launchpad sweep stopped on close: %s", exc)
+
+    async def _pool_launchpad(self, tiers: set[str], now: float) -> Any:
+        """Read the v4 pool, the decoy scan and the launchpad getters+logs.
+
+        Mirrors :meth:`_pool_nft`'s shape: a simple ``ok`` gate, never
+        raising. ``fetch_pool_v4`` and ``fetch_launchpad`` never return bare
+        ``None`` on their own (their own docstrings: "the pool is real, so
+        there is no does-not-exist case, only 'we could not read it right
+        now'") — a ``None`` here means :meth:`_guard` caught an actual
+        exception, which is rare but not impossible, so ``ok`` still checks
+        for it rather than assuming success.
+
+        ``fetch_decoy_pool_count`` needs the *real* pool id ``fetch_pool_v4``
+        resolves — telling a stranger's decoy from the real pool is the whole
+        point of that call — so the two cannot be issued concurrently.
+        ``fetch_launchpad`` is independent of both and runs alongside
+        ``fetch_pool_v4``. A decoy-scan failure on its own does **not**
+        invalidate the rest of the sweep: it degrades to ``None`` inside an
+        otherwise-successful payload, the same granularity every other group
+        in this module already uses (e.g. ``NftStats.transfers_24h`` beside a
+        healthy ``holders``).
+        """
+        if TIER_LAUNCHPAD not in tiers:
+            return None
+        pool_state, launchpad_state = await asyncio.gather(
+            self._guard(self.client.fetch_pool_v4, "fetch_pool_v4"),
+            self._guard(self.client.fetch_launchpad, "fetch_launchpad"),
+        )
+        real_pool_id = _field(pool_state, "pool_id")
+        decoy_result = await self._guard(
+            lambda: self.client.fetch_decoy_pool_count(real_pool_id),
+            "fetch_decoy_pool_count",
+        )
+        decoy_count = (
+            decoy_result[0]
+            if isinstance(decoy_result, tuple) and len(decoy_result) == 2
+            else None
+        )
+        ok = pool_state is not None and launchpad_state is not None
+        if ok:
+            self.cache.store_last_good(
+                SLOT_LAUNCHPAD,
+                self._launchpad_payload(pool_state, decoy_count, launchpad_state),
+                ts=now,
+            )
+            self.cache.mark_fetched(TIER_LAUNCHPAD, now)
+        else:
+            self.cache.mark_failed(TIER_LAUNCHPAD, now)
+        return {
+            "pool": pool_state,
+            "decoy_count": decoy_count,
+            "launchpad": launchpad_state,
+            "ok": ok,
+        }
+
+    @staticmethod
+    def _launchpad_payload(
+        pool_state: Any, decoy_count: int | None, launchpad_state: Any
+    ) -> dict[str, Any]:
+        """The whole combined slot: pool, decoy scan, launchpad — one dict,
+        one slot, one ``launchpad_as_of_hhmm`` marker for all of it.
+
+        Wei-native (WP0's "models are wei-native, the flat dict is the
+        presentation boundary"): ``_cycle`` divides exactly once when it reads
+        this back. Keys mirror the source dataclasses' own field names
+        (``coin_count``, not ``launchpad_coin_count``) rather than the flat
+        ``SURF_KEYS`` vocabulary — this slot caches what the client returned,
+        not the PRD's name for it; the mapping to flat names lives in
+        ``_cycle`` alone, matching every other ``*_wei`` field in this
+        module. ``total_real_imd_wei``/``burn_fee_bps``/``creator_fee_bps``
+        are read off ``LaunchpadState`` by the client but have no
+        ``SURF_KEYS`` home yet, so they are not cached here — nothing reads
+        them.
+        """
+        return {
+            "pool_id": _field(pool_state, "pool_id"),
+            "pool_fee": _opt_int(_field(pool_state, "lp_fee")),
+            "pool_liquidity": _opt_int(_field(pool_state, "liquidity")),
+            "pool_id_source": _field(pool_state, "pool_id_source"),
+            "decoy_pool_count": decoy_count,
+            "coin_count": _opt_int(_field(launchpad_state, "coin_count")),
+            "imd_to_burn_wei": _opt_int(_field(launchpad_state, "imd_to_burn_wei")),
+            "executor_balance_wei": _opt_int(
+                _field(launchpad_state, "executor_balance_wei")
+            ),
+            "min_bridge_wei": _opt_int(_field(launchpad_state, "min_bridge_wei")),
+            "creator_eth_owed_wei": _opt_int(
+                _field(launchpad_state, "creator_eth_owed_wei")
+            ),
+            "burned_total_wei": _opt_int(_field(launchpad_state, "burned_total_wei")),
+            "swap_count": _opt_int(_field(launchpad_state, "swap_count")),
+            "trader_count": _opt_int(_field(launchpad_state, "trader_count")),
+            "coins": SurfManager._launchpad_coin_rows(_field(launchpad_state, "coins")),
+        }
+
+    @staticmethod
+    def _launchpad_coin_rows(coins: Any) -> list[dict[str, Any]]:
+        """``LaunchpadCoin`` rows -> ``SURF_ROW_KEYS["launchpad_coins"]`` dicts.
+
+        ``creator_known`` is **derived here**, not carried on ``LaunchpadCoin``
+        (WP0's dataclass has no such field): the client's own ``rank_coins``
+        input already computes it from :data:`KNOWN_LABELS`
+        (``surf_client._label_for``) but the dataclass construction drops it
+        on the floor, so it is re-derived from the raw ``creator`` address
+        against the same allowlist — never a second, divergent implementation
+        of "known", just the one ``KNOWN_LABELS`` lookup this module already
+        uses for ``dev_activity``/``feed_items``.
+
+        ``ticker``/``name`` are carried through **raw**: ``launch(string,
+        string)`` is permissionless and both are attacker-chosen, escaped at
+        the widget and never here (the same rule ``feed_items``' ``text`` and
+        ``label`` follow).
+        """
+        rows: list[dict[str, Any]] = []
+        for coin in coins or ():
+            creator = str(_field(coin, "creator") or "")
+            rows.append(
+                {
+                    "ticker": _field(coin, "ticker"),
+                    "name": _field(coin, "name"),
+                    "creator": creator,
+                    "creator_known": KNOWN_LABELS.get(creator.lower()) is not None,
+                    "age_s": _opt_float(_field(coin, "age_s")),
+                    "price_eth": _opt_float(_field(coin, "price_eth")),
+                    "change_1h_pct": _opt_float(_field(coin, "change_1h_pct")),
+                    "swaps_1h": _opt_int(_field(coin, "swaps_1h")),
+                    "imd_burned": _opt_float(_field(coin, "imd_burned")),
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _pool_venue(lp_state: Any) -> str | None:
+        """Which pool is currently live, derived from ``ChainState.lp_state``.
+
+        ``"live"`` means the ops wallet's v3 NFPM position still answers, so
+        v3 is still the venue; ``"gone"`` means it now reverts
+        ``Invalid token ID`` — the migration happened, so v4 is live.
+        ``None`` (no sub-call answered) stays an honest unknown rather than a
+        guess either way.
+        """
+        if lp_state == "live":
+            return "v3"
+        if lp_state == "gone":
+            return "v4"
+        return None
+
     # -- signals -------------------------------------------------------------
 
     def _readings(
@@ -1483,6 +1724,16 @@ class SurfManager:
         dev_nonce = _opt_int(_field(nonces, "dev"))
         ops_nonce = _opt_int(_field(nonces, "ops"))
 
+        # Captured now, as a plain local snapshot, *before* offering this
+        # cycle's own sweep: whatever ``_spawn_launchpad`` schedules below can
+        # only ever update ``self.cache.last_good`` itself, never mutate this
+        # already-extracted value, so this payload reads whatever the slot
+        # held going into this cycle — never a sweep this same cycle just
+        # spawned, no matter how the event loop interleaves it with the
+        # ``gather`` a few lines down. See ``_spawn_launchpad``'s docstring.
+        launchpad_entry = self.cache.get_last_good(SLOT_LAUNCHPAD)
+        self._spawn_launchpad(tiers, now)
+
         market, logs, channel, nft, activity = await asyncio.gather(
             self._pool_market(tiers, now),
             self._pool_logs(tiers, now),
@@ -1585,6 +1836,28 @@ class SurfManager:
         imd_price = market_payload.get("imd_price_usd")
         fp_price = market_payload.get("fp_price_usd")
 
+        # The launchpad slot, exactly as it stood before this cycle's own
+        # sweep was offered (``launchpad_entry``, captured above) — never
+        # this cycle's fresh result, which a detached sweep can only ever
+        # publish for a *later* cycle to read. `{}` on a cold cache or a
+        # sweep that has never produced a payload: every `.get()` below then
+        # answers `None`, the honest "not yet run" state rather than a guess.
+        launchpad_slot: dict[str, Any] = (
+            dict(launchpad_entry.payload)
+            if launchpad_entry is not None and isinstance(launchpad_entry.payload, dict)
+            else {}
+        )
+        burn_accrued = _tokens(launchpad_slot.get("imd_to_burn_wei"))
+        burn_min_bridge = _tokens(launchpad_slot.get("min_bridge_wei"))
+        # Tri-state on purpose (Task 6 brief): "we cannot tell" is not "not
+        # ready". `None` unless *both* legs were actually read this-or-a-prior
+        # sweep; only then does it become a real `True`/`False`.
+        burn_ready = (
+            None
+            if burn_accrued is None or burn_min_bridge is None
+            else burn_accrued >= max(burn_min_bridge, 1)
+        )
+
         data: dict[str, Any] = {
             "as_of": self.cache.newest_as_of(),
             "degraded": self._degraded(),
@@ -1627,6 +1900,33 @@ class SurfManager:
             "nft_last_sales": nft_payload.get("nft_last_sales"),
             "nft_floor": None,
             "dev_activity": activity_rows,
+            # ---- pool (v3 -> v4 migration) — off the fast-tier chain read,
+            # so it never waits on the launchpad sweep --------------------
+            "pool_venue": self._pool_venue(_field(state, "lp_state")),
+            "lp_state": _field(state, "lp_state"),
+            "lp_position_count": _opt_int(_field(state, "lp_position_count")),
+            # ---- the rest of the pool group, plus burn executor and the
+            # launchpad panels — all off the launchpad slot captured above,
+            # never this cycle's own (detached, not-yet-landed) sweep -------
+            "pool_fee_bps": launchpad_slot.get("pool_fee"),
+            "pool_liquidity_raw": launchpad_slot.get("pool_liquidity"),
+            "pool_id_source": launchpad_slot.get("pool_id_source"),
+            "decoy_pool_count": launchpad_slot.get("decoy_pool_count"),
+            "burn_accrued": burn_accrued,
+            "burn_staged": _tokens(launchpad_slot.get("executor_balance_wei")),
+            "burn_ready": burn_ready,
+            "burn_min_bridge": burn_min_bridge,
+            "launchpad_coin_count": launchpad_slot.get("coin_count"),
+            "launchpad_swap_count": launchpad_slot.get("swap_count"),
+            "launchpad_trader_count": launchpad_slot.get("trader_count"),
+            "launchpad_burned_total": _tokens(launchpad_slot.get("burned_total_wei")),
+            "launchpad_creator_eth_owed": _tokens(
+                launchpad_slot.get("creator_eth_owed_wei")
+            ),
+            "launchpad_coins": launchpad_slot.get("coins"),
+            "launchpad_as_of_hhmm": (
+                launchpad_entry.as_of_hhmm() if launchpad_entry is not None else None
+            ),
         }
 
         data.update(
