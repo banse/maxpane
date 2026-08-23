@@ -1,17 +1,19 @@
-"""The six-detector panel for the surf dashboard (PRD §3).
+"""The nine-detector panel for the surf dashboard (PRD §3, grown by v4).
 
-One row per detector: NEW POST · LP MIGRATION · GATE OPEN · NEW DEPLOY ·
-BRIDGE STAGE · BURN.  Each row renders ``state · age · one-line detail``
-with the state always spelled in words:
+One row per detector: NEW POST · LP MOVE · GATE OPEN · NEW DEPLOY ·
+BRIDGE STAGE · BURN · DECOY POOL · BURN READY · HOT COIN.  Each row renders
+``state · age · one-line detail`` with the state always spelled in words:
 
 * ``fired`` -- ``▶ NEW POST FIRED 2h ago · detail`` in loud bold ``$error``.
   The 24 h FIRED persistence and the baseline math live in
   ``analytics/surf_signals.py``; this widget renders whatever state string
   the manager hands it and adds nothing.
 * ``watch`` -- ``◐ NEW DEPLOY WATCH · detail`` in ``$warning``.
-* ``ok``    -- ``● LP MIGRATION OK · detail`` dim.
-* ``None``/unknown -- ``● LP MIGRATION --`` dim: an unreadable detector is
-  unknown, never OK (PRD §6.1's rendering half).
+* ``ok``    -- ``● LP MOVE OK · detail`` dim.  An ``ok`` row never keeps its
+  own line for long: see "Quiet-collapse" below.
+* ``None``/unknown -- ``● LP MOVE --`` dim: an unreadable detector is
+  unknown, never OK (PRD §6.1's rendering half), and -- unlike ``ok`` -- it
+  never folds either (see "Quiet-collapse").
 
 The labels are the PRD §3 names in full, at *every* width -- they are an
 interface, asserted against composited output by the screen WP and by two
@@ -55,7 +57,29 @@ the layout to clear it would push ``FULL_LAYOUT_COLUMNS`` to ~190 -- past the
 ~169 columns a laptop gets at the forced 17 pt, i.e. a full layout nobody can
 reach.  ``fwa_signals.py`` records the same trap in its ``_GATE_WORDS`` note.
 
-Row budget: title + spacer + 6 rows = 8 lines.
+Quiet-collapse -- the rail must not eat the table below it
+------------------------------------------------------------
+
+Nine detectors is three more rows than this panel used to carry, and a row
+per detector at all times would grow the panel enough to start eating the
+dev-activity table beneath it.  So FIRED and WATCH rows always render, one
+line each, in PRD §3 order -- but every row whose state is *exactly*
+``"ok"`` folds into a single dim ``· N quiet`` line instead of N lines.
+
+The rule this exists to get right, because a nearby dashboard shipped it
+backwards: **unknown and dead rows never fold.**  Curator's rail folded a
+dead detector group in with its healthy ones and rendered ``none yet`` --
+confident and green straight through an outage.  Here, a row whose state is
+``None`` or any word outside ``{fired, watch, ok}`` always keeps its own
+``--`` line; only a *successful* read of ``ok`` is quiet enough to summarize
+away.  ``_fold`` is the predicate; ``_visible_rows`` is its pure, testable
+surface, decoupled from age/detail formatting.
+
+Row budget: title + spacer + up to nine rows, minus whatever folds into the
+one quiet line.  The panel breathes: roughly 6 lines on a calm day (a few
+detectors keep their own line, the rest summarize into one ``quiet`` line)
+up to 11 when everything fires (title + spacer + all nine rows, nothing to
+fold).
 
 Primitives only -- this module imports nothing from the data layer.
 """
@@ -146,17 +170,23 @@ def _cut_detail(text: str, budget: int) -> str:
     kept = kept.rstrip()
     return f"{kept}…" if kept else ""
 
-#: The six detector labels, PRD §3 spelling, PRD §3 order.  **Interface**:
-#: the screen tests and the app-level acceptance tests assert these exact
-#: strings reach the compositor -- import this tuple, never retype it, and
-#: never shorten a label to save columns (see the module docstring).
+#: The nine detector labels, PRD §3 spelling (v4-grown), PRD §3 order.
+#: **Interface**: the screen tests and the app-level acceptance tests assert
+#: these exact strings reach the compositor -- import this tuple, never
+#: retype it, and never shorten a label to save columns (see the module
+#: docstring).  ``BRIDGE STAGE`` (12 chars) is the widest and must stay the
+#: widest: the row head is unshrinkable, so a longer label costs panel width
+#: and this dashboard's layout constants do not move for it.
 DETECTOR_LABELS = (
     "NEW POST",
-    "LP MIGRATION",
+    "LP MOVE",
     "GATE OPEN",
     "NEW DEPLOY",
     "BRIDGE STAGE",
     "BURN",
+    "DECOY POOL",
+    "BURN READY",
+    "HOT COIN",
 )
 
 #: payload prefix + child id per detector, aligned 1:1 with DETECTOR_LABELS.
@@ -167,9 +197,12 @@ _ROW_KEYS = (
     ("deploy", "#surf-sig-deploy"),
     ("bridge", "#surf-sig-bridge"),
     ("burn", "#surf-sig-burn"),
+    ("decoy", "#surf-sig-decoy"),
+    ("burnready", "#surf-sig-burnready"),
+    ("hot", "#surf-sig-hot"),
 )
 
-#: (payload prefix, row label, child id) for the six detectors, in PRD order.
+#: (payload prefix, row label, child id) for the nine detectors, in PRD order.
 _ROWS = tuple(
     (prefix, label, selector)
     for (prefix, selector), label in zip(_ROW_KEYS, DETECTOR_LABELS)
@@ -193,6 +226,62 @@ def _head(label: str, state, age_s) -> str:
         return f"  [$success]●[/] [dim]{label} OK[/]"
     # None or an unknown vocabulary word: unknown, never OK.
     return f"  [dim]● {label} {DASH}[/]"
+
+
+#: The glyph and style for the collapsed ``ok`` summary line.  Dim, like an
+#: OK row's own state word -- quiet detectors should read as quiet.
+_QUIET_GLYPH = "·"
+
+
+def _fold(states: dict) -> tuple[list[str], int]:
+    """Split detector prefixes into (rows that keep their own line, quiet count).
+
+    ``states`` maps a short detector prefix (``"post"``, ``"lp"``, ... -- the
+    same prefixes as :data:`_ROW_KEYS`) to its raw state value.
+
+    Only a state that is *exactly* ``"ok"`` folds.  ``None`` and anything
+    else outside the known vocabulary is unknown, and an unknown row always
+    keeps its own line -- see the module docstring's Quiet-collapse section:
+    this is the rule curator's rail shipped backwards, where a dead detector
+    group folded in with the healthy ones and read as confident and green
+    straight through an outage.
+    """
+    visible_prefixes: list[str] = []
+    quiet = 0
+    for prefix, _selector in _ROW_KEYS:
+        state = states.get(prefix)
+        # NOTE: this predicate is the thing under test -- deliberately
+        # comparing the *raw* state to the literal string "ok", not a
+        # normalised/lower-cased form, so that `None` cannot accidentally
+        # satisfy it.  See test_an_unknown_row_never_folds's mutation proof.
+        if state == "ok":
+            quiet += 1
+        else:
+            visible_prefixes.append(prefix)
+    return visible_prefixes, quiet
+
+
+#: prefix -> PRD §3 label, built once from the two aligned tuples above.
+_LABEL_BY_PREFIX = dict(zip((prefix for prefix, _ in _ROW_KEYS), DETECTOR_LABELS))
+
+
+def _visible_rows(states: dict) -> str:
+    """Pure preview of the fold rule, keyed by short prefix -> raw state.
+
+    This is a test surface for :func:`_fold`, decoupled from age/detail
+    formatting: each row that keeps its own line renders as just its label,
+    and every state-``"ok"`` row is summarized into one trailing
+    ``"· N quiet"`` line (omitted entirely when nothing is quiet).  The real
+    per-row rendering -- state word, age, detail -- happens in
+    ``SurfSignals._render_view``, which calls :func:`_fold` for the same
+    split and then builds each visible row with :func:`_head` /
+    :func:`_fmt_signal_row` as before.
+    """
+    visible_prefixes, quiet = _fold(states)
+    lines = [_LABEL_BY_PREFIX[prefix] for prefix in visible_prefixes]
+    if quiet:
+        lines.append(f"{_QUIET_GLYPH} {quiet} quiet")
+    return "\n".join(lines)
 
 
 def _fmt_signal_row(label: str, state, detail, age_s, available=None) -> str:
@@ -232,7 +321,7 @@ def _fmt_signal_row(label: str, state, detail, age_s, available=None) -> str:
 
 
 class SurfSignals(Vertical):
-    """Detector panel with six rows."""
+    """Detector panel with up to nine rows, collapsing quiet ones."""
 
     DEFAULT_CSS = """
     SurfSignals > .surf-signals-title {
@@ -258,6 +347,10 @@ class SurfSignals(Vertical):
         yield Static("", classes="surf-signals-body", id="surf-sig-spacer")
         for _, _, selector in _ROWS:
             yield Static("", classes="surf-signals-body", id=selector.lstrip("#"))
+        # The one collapsed-``ok`` summary line, positioned after all nine
+        # detector slots so it always reads as "and everything else" rather
+        # than displacing whichever detectors happen to keep their own line.
+        yield Static("", classes="surf-signals-body", id="surf-sig-quiet")
 
     def update_data(
         self,
@@ -279,9 +372,18 @@ class SurfSignals(Vertical):
         sig_burn_state=None,
         sig_burn_detail=None,
         sig_burn_age_s=None,
+        sig_decoy_state=None,
+        sig_decoy_detail=None,
+        sig_decoy_age_s=None,
+        sig_burnready_state=None,
+        sig_burnready_detail=None,
+        sig_burnready_age_s=None,
+        sig_hot_state=None,
+        sig_hot_detail=None,
+        sig_hot_age_s=None,
         **_kwargs,
     ) -> None:
-        """Refresh the six rows.  Kwargs are exactly the PRD §5 signal keys."""
+        """Refresh the nine rows.  Kwargs are exactly the PRD §5 signal keys."""
         self._payload = {
             "sig_post_state": sig_post_state,
             "sig_post_detail": sig_post_detail,
@@ -301,6 +403,15 @@ class SurfSignals(Vertical):
             "sig_burn_state": sig_burn_state,
             "sig_burn_detail": sig_burn_detail,
             "sig_burn_age_s": sig_burn_age_s,
+            "sig_decoy_state": sig_decoy_state,
+            "sig_decoy_detail": sig_decoy_detail,
+            "sig_decoy_age_s": sig_decoy_age_s,
+            "sig_burnready_state": sig_burnready_state,
+            "sig_burnready_detail": sig_burnready_detail,
+            "sig_burnready_age_s": sig_burnready_age_s,
+            "sig_hot_state": sig_hot_state,
+            "sig_hot_detail": sig_hot_detail,
+            "sig_hot_age_s": sig_hot_age_s,
         }
         self._render_view()
 
@@ -317,7 +428,28 @@ class SurfSignals(Vertical):
         available = max(self.content_size.width - 2, 0) or None
         clipped = False
 
+        states = {prefix: payload.get(f"sig_{prefix}_state") for prefix, _, _ in _ROWS}
+        visible_prefixes, quiet = _fold(states)
+        visible = set(visible_prefixes)
+
         for prefix, label, selector in _ROWS:
+            try:
+                row = self.query_one(selector, Static)
+            except QueryError:
+                # Not composed yet -- none of the rows are, so there is
+                # nothing left to update this cycle.  Distinct from the
+                # render-failure branch below: this is "the widget tree
+                # isn't ready", not "a detail broke the markup parser".
+                return
+
+            if prefix not in visible:
+                # Folded into the quiet line below: no line of its own, so
+                # nothing to measure for clipping and nothing to render --
+                # an ``ok`` row's detail is never shown once it is quiet.
+                row.display = False
+                continue
+            row.display = True
+
             state = payload.get(f"sig_{prefix}_state")
             age_s = payload.get(f"sig_{prefix}_age_s")
             head = _head(label, state, age_s)
@@ -335,15 +467,6 @@ class SurfSignals(Vertical):
                 clipped = True
 
             try:
-                row = self.query_one(selector, Static)
-            except QueryError:
-                # Not composed yet -- none of the six rows are, so there is
-                # nothing left to update this cycle.  Distinct from the
-                # render-failure branch below: this is "the widget tree
-                # isn't ready", not "a detail broke the markup parser".
-                return
-
-            try:
                 row.update(markup)
             except Exception as exc:
                 # A detail string can clear ``safe_markup`` (which only
@@ -351,7 +474,7 @@ class SurfSignals(Vertical):
                 # stricter ``textual.markup`` parser -- the ``]][[/][/
                 # malformed`` shape is a real example, and the announce
                 # channel this quotes is attacker-writable (PRD §6.4). This
-                # must stay a *per-row* failure: the other five detectors
+                # must stay a *per-row* failure: the other visible detectors
                 # still updated this cycle, so this one must not stop them.
                 # ``head`` alone is always safe to render -- it is built
                 # entirely from this module's own trusted strings (the
@@ -369,6 +492,19 @@ class SurfSignals(Vertical):
                     row.update(f"{head} [$error]{RENDER_FAILED_DETAIL}[/]")
                 except Exception:
                     pass  # even the fallback failed -- leave prior content
+
+        try:
+            quiet_row = self.query_one("#surf-sig-quiet", Static)
+        except QueryError:
+            return
+        if quiet:
+            quiet_row.display = True
+            quiet_text = f"  [dim]{_QUIET_GLYPH} {quiet} quiet[/]"
+            if available and visible_len(quiet_text) > available:
+                clipped = True
+            quiet_row.update(quiet_text)
+        else:
+            quiet_row.display = False
 
         try:
             title = self.query_one("#surf-sig-title", Static)

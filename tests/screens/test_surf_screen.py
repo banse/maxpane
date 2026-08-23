@@ -1154,18 +1154,24 @@ async def test_a_terminal_too_short_for_six_detectors_says_so():
 #: reading the market as present long after it had gone.
 _MARKET_FIELDS = ("$0.7074", "vol 24h", "parity", "price ", "supply")
 
-#: The six detectors, in the order the panel renders them; BURN is last and so
-#: always the first to be scrolled off.
-_DETECTORS = ("NEW POST", "LP MIGRATION", "GATE OPEN", "NEW DEPLOY",
-              "BRIDGE STAGE", "BURN")
+#: The panel now carries nine detectors, but this fixture's fixed *rendered*
+#: row count is still six: post/bridge are `fired` and decoy/burnready/hot
+#: are unknown (this fixture never sets them), so all five keep their own
+#: line, while lp/gate/deploy/burn are all `ok` and fold into one dim
+#: "N quiet" line (widgets/surf/signals.py's Quiet-collapse section). The
+#: quiet line renders last, after every detector slot, and so is always the
+#: first thing scrolled off -- the role BURN's own row used to play.
+_DETECTORS = ("NEW POST", "BRIDGE STAGE", "DECOY POOL", "BURN READY",
+              "HOT COIN", "4 quiet")
 
 #: The activity rows the sweep payload produces, once the dust row is dropped.
 #: Composited fragments, unique to that panel.
 _ACTIVITY_ROWS = ("0x61CC704c…73f14E", "NFPM", "OFT endpoint")
 
 #: The height at and above which the whole rail fits: ``SurfSignals`` is 8 rows
-#: (title, spacer, six detectors) plus the one-row margin that separates it
-#: from the activity panel, and ``SurfDevActivity`` is floored at
+#: (title, spacer, six body rows -- see ``_DETECTORS``) plus the one-row
+#: margin that separates it from the activity panel, and ``SurfDevActivity``
+#: is floored at
 #: ``ACTIVITY_MIN_HEIGHT``, so the rail's content is a constant 16 and the
 #: other rows of the screen cost a fixed 21. Measured, not derived -- the
 #: arithmetic is here to explain the number, the sweep below is what pins it.
@@ -2420,10 +2426,18 @@ async def test_a_whole_quantity_still_survives_where_it_fits():
 
     Without this, dropping every trailing digit run unconditionally would
     pass the test above and quietly cost the reader a figure that fitted.
+
+    ``burn`` is ``ok`` in this fixture, so quiet-collapse folds it away and
+    its ``15,745`` detail never reaches a pixel at all -- that is the panel
+    working as designed (``widgets/surf/signals.py``'s Quiet-collapse
+    section), not the truncation this test guards against. ``bridge`` is
+    ``fired`` and never folds, so its ``114,367`` is the quantity that stays
+    on its own line at every width; the full width is where it must survive
+    whole.
     """
     wide = await _signals_panel(MEASURED_FULL_LAYOUT_COLUMNS)
-    assert "15,745" in wide, (
-        "the burn row's quantity no longer survives whole at the full width"
+    assert "114,367" in wide, (
+        "the bridge row's quantity no longer survives whole at the full width"
     )
 
 

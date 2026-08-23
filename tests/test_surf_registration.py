@@ -670,6 +670,14 @@ def test_all_six_detectors_survive_the_real_stylesheet() -> None:
     This is a regression guard rather than the driver for the block: it also
     passes with DEFAULT_CSS alone today.  It is what turns red if a future
     theme edit -- or a "tidy" of the block above -- costs the screen a row.
+
+    The panel now carries nine detectors, not six, and ``_FakeManager()``'s
+    default fixture (``lp``/``gate``/``deploy``/``burn`` all ``ok``) exercises
+    quiet-collapse: those four fold into one ``· 4 quiet`` line rather than
+    keeping their own -- see ``widgets/surf/signals.py``'s Quiet-collapse
+    section. ``decoy``/``burnready``/``hot`` are absent from that fixture, so
+    they read as unknown and -- unlike ``ok`` -- never fold, which is what
+    keeps them each individually visible below.
     """
     from maxpane_dashboard.screens.surf import SURF_FULL_LAYOUT_COLUMNS
 
@@ -687,13 +695,16 @@ def test_all_six_detectors_survive_the_real_stylesheet() -> None:
             text = harness._screen_text(app)
             for label in (
                 "NEW POST",
-                "LP MIGRATION",
-                "GATE OPEN",
-                "NEW DEPLOY",
                 "BRIDGE STAGE",
-                "BURN",
+                "DECOY POOL",
+                "BURN READY",
+                "HOT COIN",
             ):
                 assert label in text, f"{label} never reached the compositor"
+            assert "4 quiet" in text, (
+                "lp/gate/deploy/burn are all ok in this fixture and should "
+                "fold into one quiet line"
+            )
 
     asyncio.run(_run())
 
@@ -1298,6 +1309,12 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
     never 0" exists because a zeroed supply reads as a 100% burn. Checked
     across the numeric surface of ``SURF_KEYS`` (see ``_NUMERIC_ZERO_PROBES``
     above), not just the price.
+
+    ``DeadSourcesManager`` sets every ``SURF_KEYS`` entry to ``None``, so all
+    nine detectors are unknown -- and unlike ``ok``, unknown rows never fold
+    (``widgets/surf/signals.py``'s Quiet-collapse section). All nine must
+    therefore still keep their own line under a full outage; none may
+    disappear into a quiet summary that would misreport a dead read as calm.
     """
     key = next(k for k, game_id, *_ in GAMES if game_id == "surf")
 
@@ -1313,13 +1330,20 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             text = _screen_text(app)
             for label in (
                 "NEW POST",
-                "LP MIGRATION",
+                "LP MOVE",
                 "GATE OPEN",
                 "NEW DEPLOY",
                 "BRIDGE STAGE",
                 "BURN",
+                "DECOY POOL",
+                "BURN READY",
+                "HOT COIN",
             ):
                 assert label in text, f"{label} vanished under outage"
+            assert "quiet" not in text, (
+                "an unknown (dead-read) row folded into the quiet summary -- "
+                "unknown rows must never fold"
+            )
             # The title bar names every failing group behind the house
             # warning glyph (the prefix was the word "degraded" until
             # 2026-08-12). What this pins is end-to-end and geometric: the

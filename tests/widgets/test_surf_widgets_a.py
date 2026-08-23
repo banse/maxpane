@@ -520,11 +520,15 @@ from maxpane_dashboard.widgets.surf.signals import (  # noqa: E402
     _cut_detail,
     _fmt_signal_row,
     _head,
+    _visible_rows,
 )
 
 #: A realistic mixed payload: the 2026-08-07 morning, 12 minutes after the
 #: staging mint (ops_eth_token_transfers.json: +114,366.9 IMD OFT-minted to
 #: frenpet.eth at 04:21:35) and two hours after the nonce-13 announce post.
+#: ``lp``, ``gate``, ``burn`` and ``hot`` are ``ok`` -- deliberately, so this
+#: fixture also exercises the quiet-collapse: four rows fold into one line
+#: and the other five (two FIRED, two WATCH... see below) keep their own.
 _FULL_SIGNALS = {
     "sig_post_state": "fired",
     "sig_post_detail": "#14 · I moved 33 eth to the LP on mainnet",
@@ -544,64 +548,116 @@ _FULL_SIGNALS = {
     "sig_burn_state": "ok",
     "sig_burn_detail": "last burn 15,745 IMD",
     "sig_burn_age_s": None,
+    "sig_decoy_state": "watch",
+    "sig_decoy_detail": "decoy #4 · fee unknown",
+    "sig_decoy_age_s": None,
+    "sig_burnready_state": "fired",
+    "sig_burnready_detail": "burn ready · balance 12,000 IMD",
+    "sig_burnready_age_s": 300.0,
+    "sig_hot_state": "ok",
+    "sig_hot_detail": "5 coins tracked, none hot",
+    "sig_hot_age_s": None,
 }
 
+#: How many of ``_FULL_SIGNALS``' nine detectors fold: lp, gate, burn, hot.
+_FULL_SIGNALS_QUIET_COUNT = 4
 
-async def test_signals_labels_are_the_prd_names_wp5_and_wp6_assert_on():
-    """The label vocabulary is a cross-WP interface, pinned in one place.
 
-    WP5's screen test and WP6's stylesheet/outage acceptance tests assert
-    these exact PRD §3 strings against composited output.  If someone
-    shortens a label for width, this goes red *here* -- in the widget WP
-    that owns the string -- instead of in two WPs that only consume it.
+async def test_detector_labels_are_the_nine():
+    """The label vocabulary is a cross-task interface, pinned in one place.
+
+    The screen tests and the app-level acceptance tests assert these exact
+    PRD §3 strings against composited output.  If someone shortens a label
+    for width, this goes red *here* -- in the widget module that owns the
+    string -- instead of in the tasks that only consume it.
     """
     assert DETECTOR_LABELS == (
-        "NEW POST",
-        "LP MIGRATION",
-        "GATE OPEN",
-        "NEW DEPLOY",
-        "BRIDGE STAGE",
-        "BURN",
+        "NEW POST", "LP MOVE", "GATE OPEN", "NEW DEPLOY", "BRIDGE STAGE",
+        "BURN", "DECOY POOL", "BURN READY", "HOT COIN",
     )
 
 
+def test_no_label_is_longer_than_the_old_widest():
+    """The head is unshrinkable, so a longer label costs panel width.
+    `BRIDGE STAGE` (12) was the widest before and must stay the widest."""
+    assert max(len(x) for x in DETECTOR_LABELS) == len("BRIDGE STAGE")
+
+
+def test_ok_rows_fold_into_one_quiet_line():
+    rows = _visible_rows({
+        "post": "fired", "lp": "ok", "gate": "ok", "deploy": "ok",
+        "bridge": "ok", "burn": "ok", "decoy": "fired", "burnready": "watch",
+        "hot": "ok",
+    })
+    assert "NEW POST" in rows and "DECOY POOL" in rows and "BURN READY" in rows
+    assert "6 quiet" in rows
+
+
+def test_an_unknown_row_never_folds():
+    """The rule curator's rail shipped wrong: a dead detector folded in with
+    the OK ones reads confident and green through an outage."""
+    rows = _visible_rows({
+        "post": "ok", "lp": "ok", "gate": None, "deploy": "ok",
+        "bridge": "ok", "burn": "ok", "decoy": "ok", "burnready": "ok",
+        "hot": "ok",
+    })
+    assert "GATE OPEN" in rows
+    assert "8 quiet" in rows
+
+
+def test_all_quiet_still_renders_the_panel():
+    rows = _visible_rows({k: "ok" for k in
+                          ("post", "lp", "gate", "deploy", "bridge", "burn",
+                           "decoy", "burnready", "hot")})
+    assert "9 quiet" in rows
+
+
 async def test_signals_fired_rows_carry_state_and_age_in_words():
-    """FIRED must survive greyscale: the word, the age, the glyph -- in text."""
+    """FIRED and WATCH must survive greyscale: the word, the age, the glyph --
+    in text -- and stay on their own line rather than folding.
+    """
     widget = SurfSignals()
     app = _Harness(widget)
-    async with app.run_test(size=(120, 14)) as pilot:
+    async with app.run_test(size=(120, 16)) as pilot:
         widget.update_data(**_FULL_SIGNALS)
         await pilot.pause()
         screen = _screen_text(app)
         assert "NEW POST FIRED 2h ago" in screen
         assert "BRIDGE STAGE FIRED 12m ago" in screen
         assert "NEW DEPLOY WATCH" in screen
-        assert "LP MIGRATION OK" in screen
-        assert "GATE OPEN OK" in screen
-        assert "BURN OK" in screen
-        # Details ride along.
+        assert "DECOY POOL WATCH" in screen
+        assert "BURN READY FIRED 5m ago" in screen
+        # Details ride along on the rows that keep their own line.
         assert "+114,367 IMD minted to frenpet.eth" in screen
         assert "frenpet.eth nonce 29→30" in screen
+        # lp, gate, burn and hot are all `ok` in this fixture -- quiet-collapse
+        # folds them into one line, so none of their own "... OK" text survives.
+        assert "LP MOVE OK" not in screen
+        assert "GATE OPEN OK" not in screen
+        assert "BURN OK" not in screen
+        assert "HOT COIN OK" not in screen
+        assert f"{_FULL_SIGNALS_QUIET_COUNT} quiet" in screen
 
 
-async def test_signals_all_six_rows_always_render():
-    """None-state rows are dashes -- six rows on screen no matter what."""
+async def test_signals_all_nine_rows_always_render_when_nothing_is_ok():
+    """None-state rows are unknown, not OK -- nine rows on screen, no fold."""
     widget = SurfSignals()
     app = _Harness(widget)
-    async with app.run_test(size=(120, 14)) as pilot:
+    async with app.run_test(size=(120, 16)) as pilot:
         widget.update_data()
         await pilot.pause()
         screen = _screen_text(app)
         for label in DETECTOR_LABELS:
             assert f"{label} --" in screen, label
-        # No invented state: nothing fired, nothing ok.
+        # No invented state: nothing fired, nothing ok, nothing folded.
         assert "FIRED" not in screen
         assert "OK" not in screen.replace("SIGNALS", "")
+        assert "quiet" not in screen
 
 
 async def test_signals_fired_without_age_omits_the_age_not_the_state():
-    row = _fmt_signal_row("LP MIGRATION", "fired", "liquidity -37%", None)
-    assert "LP MIGRATION FIRED" in row
+    row = _fmt_signal_row("LP MOVE", "fired", "liquidity -37%", None)
+    assert "LP MOVE FIRED" in row
     assert "ago" not in row
     assert "-- ago" not in row
 
@@ -629,7 +685,7 @@ async def test_signals_hostile_markup_survivor_degrades_only_its_own_row():
     """
     widget = SurfSignals()
     app = _Harness(widget)
-    async with app.run_test(size=(120, 14)) as pilot:
+    async with app.run_test(size=(120, 16)) as pilot:
         widget.update_data(
             **{**_FULL_SIGNALS, "sig_post_detail": "]][[/][/ malformed"}
         )
@@ -642,16 +698,18 @@ async def test_signals_hostile_markup_survivor_degrades_only_its_own_row():
         assert RENDER_FAILED_DETAIL in screen
         assert "malformed" not in screen
         assert "NEW POST --" not in screen
-        # This is the assertion that actually matters: every other detector
-        # still updated normally in the *same* refresh cycle -- one poisoned
-        # row cannot freeze the panel at stale content.
+        # This is the assertion that actually matters: every other *visible*
+        # detector still updated normally in the *same* refresh cycle -- one
+        # poisoned row cannot freeze the panel at stale content.
         assert "BRIDGE STAGE FIRED 12m ago" in screen
         assert "+114,367 IMD minted to frenpet.eth" in screen
         assert "NEW DEPLOY WATCH" in screen
         assert "frenpet.eth nonce 29→30" in screen
-        assert "LP MIGRATION OK" in screen
-        assert "GATE OPEN OK" in screen
-        assert "BURN OK" in screen
+        assert "DECOY POOL WATCH" in screen
+        assert "BURN READY FIRED 5m ago" in screen
+        # The folded rows are unaffected by the poisoned FIRED row -- still
+        # one summary line, not frozen or dropped.
+        assert f"{_FULL_SIGNALS_QUIET_COUNT} quiet" in screen
 
 
 async def test_signals_detail_is_escaped_and_newline_flattened():
