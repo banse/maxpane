@@ -1292,8 +1292,19 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
 #: shortened to survive box truncation at this width (e.g. ``identities_written``
 #: renders ``"0/2000 writt…"`` inside the narrow GATE hero box).
 _NUMERIC_ZERO_PROBES: dict[str, str] = {
-    "feed_nonce": "feed #0",                    # screens/surf.py _fmt_int
-    "feed_last_post_age_s": "(0s)",              # screens/surf.py _fmt_age
+    # RE-POINTED at the ANNOUNCE panel's own title (final fix wave, N1).
+    # Both needles used to read the title bar's `feed #N (age)` segment, which
+    # was the ONLY render path either key had -- and I4 traded that segment
+    # away one commit after I3 fixed exactly this class of defect, so both
+    # probes went vacuous in the same wave that was auditing them. The suite
+    # stayed green because these assertions test *absence*, which is the trap.
+    # `widgets/surf/feed.py::_set_title` composes `ANNOUNCE FEED · #N · last
+    # <age> ago`, so a genuine zero in either key still reaches a pixel there.
+    # Re-verified by rendering the real SurfScreen at (143, 48) with one key
+    # 0 and every other None: both appear, and neither is in the all-`None`
+    # baseline, which composites `ANNOUNCE FEED · unavailable`.
+    "feed_nonce": "· #0 ·",                      # feed.py _set_title
+    "feed_last_post_age_s": "last 0s ago",       # feed.py _set_title
     "lp_imd": "0 IMD",                           # hero.py _update_lp
     "lp_weth": "0.00 WETH",                      # hero.py _update_lp
     "imd_supply": "0 IMD",                       # hero.py _update_supply

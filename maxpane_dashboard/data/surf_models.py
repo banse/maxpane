@@ -404,7 +404,14 @@ SURF_KEYS: tuple[str, ...] = (
     # machinery it used to read (`hook_launch`, `v4_hook_pools`) is
     # unaffected -- analytics/surf_signals.py still advances a baseline
     # off it.
-    "lp_liquidity",          # float | None — raw v3 L, rendered abbreviated
+    # Raw v3 L off `NFPM.positions(LP_POSITION_ID)`. **Reads `None` forever**:
+    # the ops wallet burned that position on 2026-08-17 and the call reverts.
+    # Nothing renders it (the hero's LP box went to POOL/LP/BURN/SUPPLY in
+    # Task 8) and, since the final fix wave's C2, no detector reads it either
+    # -- `_detect_lp` watches `lp_position_count` on the v4 side. Kept in the
+    # contract rather than removed, deliberately and late; do not re-describe
+    # it as feeding anything.
+    "lp_liquidity",          # float | None — raw v3 L, no consumer
     "lp_imd",                # float | None — IMD side, whole tokens
     "lp_weth",                # float | None — WETH side, whole tokens
     "lp_owner_ok",            # bool | None — ownerOf(1167726) == OPS_WALLET

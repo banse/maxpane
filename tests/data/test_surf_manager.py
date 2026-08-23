@@ -442,6 +442,14 @@ def _chain_state(**overrides) -> ChainState:
         "imd_name": "Identity.md",
         "imd_symbol": "IMD",
         "block_number": BLOCK,
+        # Final fix wave (N2): LP MOVE's actual subject,
+        # `PositionManager.balanceOf(OPS_WALLET)` on the v4 side. It defaulted
+        # to `ChainState`'s own `None`, so every manager-level test drove that
+        # detector with a failed read -- the `v4 position count unavailable`
+        # state C2 exists to remove -- and `_readings`' wiring line for it
+        # could be deleted with a fully green suite. One position held is the
+        # ordinary post-migration state.
+        "lp_position_count": 1,
     }
     fields.update(overrides)
     return ChainState(**fields)
@@ -2413,6 +2421,55 @@ async def test_a_burn_executor_call_is_the_burn_precursor(tmp_path):
     assert data["dev_activity"][0]["kind"] == "burn"
     assert data["sig_burn_state"] == "watch"        # supply flat, executor called
     assert "BurnExecutor" in (data["sig_burn_detail"] or "")
+
+
+async def test_a_v4_position_leaving_the_ops_wallet_fires_lp_move(tmp_path):
+    """C2 end to end, through the manager (final fix wave, N2).
+
+    `_readings` reading `ChainState.lp_position_count` is the single line the
+    whole Critical fix turns on, and until this test existed it could be
+    deleted with a fully green suite: `_chain_state()` never set the field, so
+    every manager-level cycle drove LP MOVE with a `None` reading and the row
+    reported `v4 position count unavailable` -- the exact state C2 exists to
+    remove -- whether the wiring was there or not.
+
+    MUTATION CHECK (run it, watch it go red, restore): in
+    ``surf_manager._readings`` replace the `lp_position_count` assignment with
+    ``read["lp_position_count"] = None``.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+
+    first = await m.fetch_and_compute()
+    # Cycle 1 seeds the baseline off a real reading -- not an outage, which is
+    # what the whole finding was about.
+    assert first["sig_lp_state"] == "ok"
+    assert first["sig_lp_detail"] == "1 v4 held · baseline set"
+
+    client._returns["fetch_chain_state"] = _chain_state(lp_position_count=0)
+    clock.advance(30.0)
+    data = await m.fetch_and_compute()
+
+    assert data["sig_lp_state"] == "fired"
+    assert data["sig_lp_detail"] == "v4 position OUT · 1→0 held"
+
+
+async def test_the_lp_reading_comes_from_the_model_the_client_actually_returns(tmp_path):
+    """The wiring line, asserted directly rather than only through a detector.
+
+    ``_readings`` takes the ``ChainState`` as an argument with a ``None``
+    default (it has to: two existing call sites pass four positional arguments
+    and are testing other things). A future caller that forgets it would fail
+    exactly the way C2 did -- silently, with a detector reporting an outage it
+    never had -- so this pins the value's provenance at the seam itself.
+    """
+    m = _manager(tmp_path)
+    state = _chain_state(lp_position_count=3)
+    assert m._readings({}, None, {}, [], None, state=state)["lp_position_count"] == 3
+    # ...and the honest `None` when nobody hands one over, which is what makes
+    # the omission a *detectable* outage rather than an invented number.
+    assert m._readings({}, None, {}, [])["lp_position_count"] is None
 
 
 async def test_the_post_body_lands_in_the_same_cycle_the_signal_fires(tmp_path):

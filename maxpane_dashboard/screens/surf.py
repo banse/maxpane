@@ -955,14 +955,31 @@ class SurfScreen(RefreshGuard, Screen):
         # 2026-08-23 for the v4 migration (widgets/surf/hero.py). The old
         # HOOK/GATE-era keys (``hook_status``, ``lp_liquidity``, ``gate_open``,
         # ``identities_written``) are not dispatched here any more -- the
-        # hero no longer has a box for them. ``hook_status`` measures a v4
-        # hook launch the dev has publicly retracted and reaches no widget
-        # at all any more; ``gate_open``/``identities_written``/``lp_liquidity``
-        # still feed the GATE/LP detectors inside the manager (see
-        # ``surf_manager._readings``), which is how their information
-        # still reaches the screen -- through ``sig_gate_*``/``sig_lp_*``
-        # below, dispatched to SurfSignals as it always was. See
-        # ``META_KEYS`` in the test module for the fuller accounting.
+        # hero no longer has a box for them.
+        #
+        # Where each of them actually goes now, because getting this wrong is
+        # what produced the C2 defect (a detector left pointed at a burned
+        # position because a comment said the wiring was already there):
+        #
+        # * ``gate_open`` DOES still feed a detector -- ``_detect_gate``, via
+        #   ``surf_manager._readings`` -- so its information reaches the
+        #   screen through ``sig_gate_*`` below, dispatched to SurfSignals as
+        #   it always was.
+        # * ``identities_written`` does NOT. The manager feeds the GATE
+        #   detector the *log-window* write count off ``SLOT_LOGS``, which is
+        #   a different number (``_readings`` says so at the assignment); this
+        #   flat key is the lifetime count off ``NftStats.written`` and no
+        #   widget reads it. IDENTITY.MD's ``N/2000 written`` cell renders
+        #   ``nft_written``, which is the same value under its own name.
+        # * ``lp_liquidity`` does NOT any more either (final fix wave, C2).
+        #   ``_detect_lp`` was repointed at ``lp_position_count`` -- the v4
+        #   position count -- precisely because this key reads
+        #   ``NFPM.positions()`` on the v3 position the ops wallet burned on
+        #   2026-08-17, so it reverts and the value is ``None`` forever.
+        # * ``hook_status`` measures a v4 hook launch the dev has publicly
+        #   retracted and reaches no widget at all any more.
+        #
+        # See ``META_KEYS`` in the test module for the fuller accounting.
         try:
             self.query_one(SurfHero).update_data(
                 pool_venue=data.get("pool_venue"),
