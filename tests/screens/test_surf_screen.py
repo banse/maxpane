@@ -83,6 +83,25 @@ SURF_WIDGET_SIGNATURES = {
 #: ``degraded`` (title bar), ``eth_usd`` (context; unrendered in v1).
 META_KEYS = frozenset({"as_of", "degraded", "eth_usd"})
 
+#: Keys frozen by Task 1's contract whose screen consumers land in Tasks 8-12.
+#: This is an ENUMERATION, not a blanket exemption: a key that regresses outside
+#: this list still fails. Task 12 empties it -- an entry left here after the
+#: launchpad view ships is a bug, not a waiver.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset(
+    {
+        "pool_venue", "pool_fee_bps", "pool_liquidity_raw", "pool_id_source",
+        "decoy_pool_count", "lp_state", "lp_position_count",
+        "burn_accrued", "burn_staged", "burn_ready", "burn_min_bridge",
+        "launchpad_coin_count", "launchpad_swap_count",
+        "launchpad_trader_count", "launchpad_burned_total",
+        "launchpad_creator_eth_owed", "launchpad_coins",
+        "launchpad_as_of_hhmm",
+        "sig_decoy_state", "sig_decoy_detail", "sig_decoy_age_s",
+        "sig_burnready_state", "sig_burnready_detail", "sig_burnready_age_s",
+        "sig_hot_state", "sig_hot_detail", "sig_hot_age_s",
+    }
+)
+
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
 _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z
 _TS_POST_12 = 1_785_903_575   # announce nonce 12, 2026-08-05T04:19:35Z
@@ -397,13 +416,15 @@ def test_surf_keys_covers_the_local_signature_map():
     This is the tripwire for WP0<->WP5 drift (the contract vs. this screen's
     dispatch map) while SURF_WIDGET_SIGNATURES lives locally: a key added to
     SURF_KEYS that no widget receives, or a kwarg here that left the contract,
-    both fail loudly.
+    both fail loudly. ``_KEYS_PENDING_CONSUMERS`` is a named, enumerated
+    carve-out for the v4/launchpad keys Tasks 8-12 have not wired yet -- a
+    key regressing outside that list still fails here.
     """
     dispatched = {k for sig in SURF_WIDGET_SIGNATURES.values() for k in sig}
     assert dispatched <= set(SURF_KEYS), (
         f"dispatch kwargs not in SURF_KEYS: {sorted(dispatched - set(SURF_KEYS))}"
     )
-    unconsumed = set(SURF_KEYS) - dispatched - META_KEYS
+    unconsumed = set(SURF_KEYS) - dispatched - META_KEYS - _KEYS_PENDING_CONSUMERS
     assert not unconsumed, f"contract keys reach no widget: {sorted(unconsumed)}"
 
 
@@ -686,8 +707,10 @@ async def test_screen_dispatches_every_data_key():
             dispatched |= set(kwargs)
 
         # Nothing in the contract goes unrendered: it is either a widget
-        # kwarg or a meta key the screen itself consumes.
-        unconsumed = set(SURF_KEYS) - dispatched - META_KEYS
+        # kwarg, a meta key the screen itself consumes, or one of the
+        # v4/launchpad keys explicitly enumerated as pending its Task 8-12
+        # consumer in `_KEYS_PENDING_CONSUMERS`.
+        unconsumed = set(SURF_KEYS) - dispatched - META_KEYS - _KEYS_PENDING_CONSUMERS
         assert not unconsumed, f"contract keys reach no widget: {sorted(unconsumed)}"
 
 

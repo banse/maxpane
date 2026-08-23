@@ -1116,6 +1116,14 @@ _NON_NUMERIC_KEYS = frozenset(
         "sig_deploy_detail", "sig_bridge_detail", "sig_burn_detail",
         "hook_status", "lp_owner_ok", "gate_open",
         "supply_series", "price_series", "nft_last_sales", "dev_activity",
+        # v4 migration + IMD launchpad (Task 1, 2026-08-23): strings, a
+        # tri-state bool and a list -- same reasoning as the block above,
+        # applied to the new contract surface.
+        "pool_venue", "pool_id_source", "lp_state", "launchpad_as_of_hhmm",
+        "burn_ready", "launchpad_coins",
+        "sig_decoy_state", "sig_decoy_detail",
+        "sig_burnready_state", "sig_burnready_detail",
+        "sig_hot_state", "sig_hot_detail",
     }
 )
 
@@ -1158,6 +1166,38 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     "sig_deploy_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_bridge_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_burn_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
+    # v4 migration + IMD launchpad (Task 1, 2026-08-23). Every key below
+    # HAS a representable zero at the model/manager layer -- "0" means "we
+    # looked and nothing has accrued/happened", distinguishable from a
+    # failed-read `None` -- so none of these belong in `_NON_NUMERIC_KEYS`.
+    # They are excluded from `_NUMERIC_ZERO_PROBES` for a narrower reason:
+    # no widget dispatches any of them yet (Tasks 8-12 wire the screen;
+    # see `tests/screens/test_surf_screen.py::_KEYS_PENDING_CONSUMERS`), so
+    # there is no real render to verify a zero-substring against today --
+    # putting an unverified guess in `_NUMERIC_ZERO_PROBES` would pass this
+    # test for the wrong reason, exactly the anti-pattern the `lp_liquidity`
+    # entry above was already moved here to avoid. Each one must move to
+    # `_NUMERIC_ZERO_PROBES` with a real, screen-verified substring in the
+    # same change that wires its consumer -- same rule as `eth_usd` and
+    # `lp_liquidity` above, just newly arrived.
+    "pool_fee_bps": "no widget consumes this key yet; Task 8 wires SurfHero's _pool_lines()",
+    "pool_liquidity_raw": "no widget consumes this key yet; pool_liquidity_usd is the one rendered",
+    "decoy_pool_count": "no widget consumes this key yet; Task 8 wires SurfHero's _pool_lines()",
+    "lp_position_count": "no widget consumes this key yet; no task's Consumes list names it",
+    "burn_accrued": "no widget consumes this key yet; Task 11's SurfBurnPipeline wires it",
+    "burn_staged": "no widget consumes this key yet; Task 11's SurfBurnPipeline wires it",
+    "burn_min_bridge": "no widget consumes this key yet; Task 11's SurfBurnPipeline wires it",
+    "launchpad_coin_count": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
+    "launchpad_swap_count": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
+    "launchpad_trader_count": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
+    "launchpad_burned_total": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
+    "launchpad_creator_eth_owed": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
+    # Same age_s-only-on-FIRED reasoning as the six existing sig_*_age_s
+    # entries just above -- these three new detectors follow the identical
+    # widgets/surf/signals.py `_head()` pattern once Task 9 wires them.
+    "sig_decoy_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
+    "sig_burnready_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
+    "sig_hot_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
 }
 
 #: Numeric keys this test DOES probe: key -> the exact substring the real
