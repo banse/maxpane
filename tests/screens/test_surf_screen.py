@@ -20,26 +20,36 @@ from textual.app import App
 
 from maxpane_dashboard import __version__
 from maxpane_dashboard.data.surf_models import SURF_KEYS
-from maxpane_dashboard.screens.surf import INITIAL_TITLE, TALLER_HINT, SurfScreen
+from maxpane_dashboard.screens.surf import (
+    INITIAL_TITLE,
+    LAUNCHPAD_BODY_ID,
+    MODE_DASHBOARD,
+    MODE_LAUNCHPAD,
+    TALLER_HINT,
+    SurfScreen,
+)
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surf import (
+    SurfBurnPipeline,
+    SurfCurveFlow,
     SurfDevActivity,
     SurfFeed,
     SurfHero,
+    SurfLaunchpadCoins,
     SurfMarket,
     SurfNft,
     SurfSignals,
 )
-# Imported, never re-spelled: the hook vocabulary is WP4's
-# ``SurfManager._hook_status()`` ("LAUNCHED" / "NOT LIVE" / None), frozen in
-# WP0's SURF_KEYS comment and PRD §4, and WP3's SurfHero branches on these two
-# constants. A lowercase-snake literal here would drive the widget's unknown-
-# value arm, so this file would certify a render nobody will ever see.
-from maxpane_dashboard.widgets.surf.hero import HOOK_NOT_LIVE
 
 _THEMES = Path(__file__).resolve().parents[2] / "maxpane_dashboard" / "themes"
 _TCSS = _THEMES / "minimal.tcss"
 
+#: The six dashboard-body widgets: always mounted, always ``display is True``
+#: (``test_screen_mounts_all_six_widgets``'s "nothing is hidden" check).  The
+#: launchpad trio is a separate mapping (:data:`_LAUNCHPAD_WIDGET_CLASSES`)
+#: precisely because it is *not* always visible -- it is composed hidden and
+#: only ``l`` shows it, so folding it into this dict would make that same
+#: "nothing is hidden" check false the moment it was added.
 _WIDGET_CLASSES = {
     "SurfHero": SurfHero,
     "SurfSignals": SurfSignals,
@@ -49,62 +59,182 @@ _WIDGET_CLASSES = {
     "SurfNft": SurfNft,
 }
 
+#: The ``l`` LAUNCHPAD body's three widgets (2026-08-23).  Kept apart from
+#: :data:`_WIDGET_CLASSES` for the reason documented there; combined with it
+#: as :data:`_ALL_WIDGET_CLASSES` for the dispatch-completeness tests, which
+#: care whether ``update_data`` was called, not whether the widget is shown.
+_LAUNCHPAD_WIDGET_CLASSES = {
+    "SurfLaunchpadCoins": SurfLaunchpadCoins,
+    "SurfCurveFlow": SurfCurveFlow,
+    "SurfBurnPipeline": SurfBurnPipeline,
+}
+
+_ALL_WIDGET_CLASSES = {**_WIDGET_CLASSES, **_LAUNCHPAD_WIDGET_CLASSES}
+
 #: The WP3<->WP5 dispatch contract: exactly the PRD §5 key groups.  Local copy
 #: until WP0 exports SURF_WIDGET_SIGNATURES beside SURF_KEYS (open issue) --
 #: the mechanical dispatch test below still catches any drift against
 #: SURF_KEYS.
-SURF_WIDGET_SIGNATURES = {
-    "SurfHero": (
-        "hook_status", "lp_liquidity", "lp_imd", "lp_weth", "lp_owner_ok",
-        "gate_open", "identities_written", "imd_supply", "imd_burned_cum",
-    ),
-    "SurfSignals": (
-        "sig_post_state", "sig_post_detail", "sig_post_age_s",
-        "sig_lp_state", "sig_lp_detail", "sig_lp_age_s",
-        "sig_gate_state", "sig_gate_detail", "sig_gate_age_s",
-        "sig_deploy_state", "sig_deploy_detail", "sig_deploy_age_s",
-        "sig_bridge_state", "sig_bridge_detail", "sig_bridge_age_s",
-        "sig_burn_state", "sig_burn_detail", "sig_burn_age_s",
-    ),
-    "SurfFeed": ("feed_items", "feed_nonce", "feed_last_post_age_s"),
-    "SurfDevActivity": ("dev_activity",),
-    "SurfMarket": (
-        "imd_price_usd", "imd_change_24h_pct", "imd_vol_24h_usd",
-        "pool_liquidity_usd", "fp_price_usd", "parity_pct",
-        "supply_series", "price_series",
-    ),
-    "SurfNft": (
-        "nft_holders", "nft_transfers_24h", "nft_dev_holdings",
-        "nft_written", "nft_last_sales", "nft_floor",
-    ),
+#:
+#: ``{widget name: {SURF_KEYS name: update_data kwarg name}}`` -- a dict of
+#: dicts, not the flat ``{widget name: (kwarg, ...)}`` this used to be.  Every
+#: widget through Task 8/9/10 happens to name its kwargs identically to the
+#: SURF_KEYS field it carries, so a flat tuple of names served for both "what
+#: SURF_KEYS key is this" and "what kwarg does the screen pass" at once.  The
+#: three Task 11 launchpad widgets break that coincidence on purpose -- they
+#: are primitives-only and reusable, so they take their own short names
+#: (``coins``, ``as_of_hhmm``, ``burned_total``) rather than the
+#: ``launchpad_``-prefixed PRD vocabulary -- so the two questions need two
+#: answers per entry now. Keys equal to their values is not redundancy to
+#: simplify away: it is the (common) case where the coincidence still holds.
+SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
+    "SurfHero": {
+        "pool_venue": "pool_venue",
+        "pool_fee_bps": "pool_fee_bps",
+        "pool_liquidity_usd": "pool_liquidity_usd",
+        "pool_id_source": "pool_id_source",
+        "decoy_pool_count": "decoy_pool_count",
+        "lp_state": "lp_state",
+        "lp_imd": "lp_imd",
+        "lp_weth": "lp_weth",
+        "lp_owner_ok": "lp_owner_ok",
+        "burn_accrued": "burn_accrued",
+        "burn_staged": "burn_staged",
+        "burn_ready": "burn_ready",
+        "imd_supply": "imd_supply",
+        "imd_burned_cum": "imd_burned_cum",
+    },
+    "SurfSignals": {
+        "sig_post_state": "sig_post_state",
+        "sig_post_detail": "sig_post_detail",
+        "sig_post_age_s": "sig_post_age_s",
+        "sig_lp_state": "sig_lp_state",
+        "sig_lp_detail": "sig_lp_detail",
+        "sig_lp_age_s": "sig_lp_age_s",
+        "sig_gate_state": "sig_gate_state",
+        "sig_gate_detail": "sig_gate_detail",
+        "sig_gate_age_s": "sig_gate_age_s",
+        "sig_deploy_state": "sig_deploy_state",
+        "sig_deploy_detail": "sig_deploy_detail",
+        "sig_deploy_age_s": "sig_deploy_age_s",
+        "sig_bridge_state": "sig_bridge_state",
+        "sig_bridge_detail": "sig_bridge_detail",
+        "sig_bridge_age_s": "sig_bridge_age_s",
+        "sig_burn_state": "sig_burn_state",
+        "sig_burn_detail": "sig_burn_detail",
+        "sig_burn_age_s": "sig_burn_age_s",
+        "sig_decoy_state": "sig_decoy_state",
+        "sig_decoy_detail": "sig_decoy_detail",
+        "sig_decoy_age_s": "sig_decoy_age_s",
+        "sig_burnready_state": "sig_burnready_state",
+        "sig_burnready_detail": "sig_burnready_detail",
+        "sig_burnready_age_s": "sig_burnready_age_s",
+        "sig_hot_state": "sig_hot_state",
+        "sig_hot_detail": "sig_hot_detail",
+        "sig_hot_age_s": "sig_hot_age_s",
+    },
+    "SurfFeed": {
+        "feed_items": "feed_items",
+        "feed_nonce": "feed_nonce",
+        "feed_last_post_age_s": "feed_last_post_age_s",
+    },
+    "SurfDevActivity": {"dev_activity": "dev_activity"},
+    "SurfMarket": {
+        "imd_price_usd": "imd_price_usd",
+        "imd_change_24h_pct": "imd_change_24h_pct",
+        "imd_vol_24h_usd": "imd_vol_24h_usd",
+        "pool_liquidity_usd": "pool_liquidity_usd",
+        "fp_price_usd": "fp_price_usd",
+        "parity_pct": "parity_pct",
+        "supply_series": "supply_series",
+        "price_series": "price_series",
+        "legacy_pool_liquidity_usd": "legacy_pool_liquidity_usd",
+        "price_source_disagreement_pct": "price_source_disagreement_pct",
+    },
+    "SurfNft": {
+        "nft_holders": "nft_holders",
+        "nft_transfers_24h": "nft_transfers_24h",
+        "nft_dev_holdings": "nft_dev_holdings",
+        "nft_written": "nft_written",
+        "nft_last_sales": "nft_last_sales",
+        "nft_floor": "nft_floor",
+    },
+    # -- the l LAUNCHPAD view's three widgets (2026-08-23) -----------------
+    "SurfLaunchpadCoins": {
+        "launchpad_coins": "coins",
+        "launchpad_coin_count": "coin_count",
+        "launchpad_as_of_hhmm": "as_of_hhmm",
+    },
+    "SurfCurveFlow": {
+        "launchpad_swap_count": "swap_count",
+        "launchpad_trader_count": "trader_count",
+        "launchpad_creator_eth_owed": "creator_eth_owed",
+        "launchpad_as_of_hhmm": "as_of_hhmm",
+    },
+    "SurfBurnPipeline": {
+        # burn_accrued/burn_staged/burn_ready are also dispatched to SurfHero
+        # above -- both widgets render the same live executor state, in two
+        # different shapes (a five-line box vs. a full standalone panel), and
+        # the manager guarantees the two can never disagree (surf_manager.py
+        # builds both from the same read).
+        "burn_accrued": "burn_accrued",
+        "burn_staged": "burn_staged",
+        "burn_ready": "burn_ready",
+        "burn_min_bridge": "burn_min_bridge",
+        "launchpad_burned_total": "burned_total",
+        "launchpad_as_of_hhmm": "as_of_hhmm",
+    },
 }
 
-#: Keys the screen itself consumes: ``as_of`` (freshness bookkeeping),
-#: ``degraded`` (title bar), ``eth_usd`` (context; unrendered in v1).
-META_KEYS = frozenset({"as_of", "degraded", "eth_usd"})
+#: Keys the screen itself consumes without a 1:1 widget kwarg.
+#:
+#: ``as_of`` (freshness bookkeeping), ``degraded`` (title bar), ``eth_usd``
+#: (context; unrendered in v1) are the original three.
+#:
+#: Task 12 adds six more, all orphaned by the same event: the hero's
+#: 2026-08-23 POOL/LP/BURN/SUPPLY rebuild (widgets/surf/hero.py) dropped the
+#: HOOK/GATE-era kwargs it used to take, and grepping every widget in
+#: ``widgets/surf/`` for each name (``rg -n '"hook_status"|hook_status='
+#: maxpane_dashboard/widgets/surf/`` and five siblings) turns up nothing --
+#: these six reach no ``update_data`` call anywhere, dashboard or launchpad.
+#: They split into two groups:
+#:
+#: * ``gate_open``, ``identities_written``, ``lp_liquidity`` still do real
+#:   work: ``surf_manager._readings`` reads them straight off this
+#:   same flat dict to build the GATE/LP detectors
+#:   (``sig_gate_*``/``sig_lp_*``), which *are* dispatched, to SurfSignals,
+#:   above. Their information still reaches the screen -- through the
+#:   detector text, not as raw values -- so "no widget kwarg" is not "no
+#:   consumer downstream of this dict", just no *direct* one.
+#: * ``hook_status``, ``pool_liquidity_raw``, ``lp_position_count`` are not
+#:   that: nothing downstream reads them either.  ``hook_status`` measures a
+#:   v4 hook launch the dev has publicly retracted (hero.py's own module
+#:   docstring); ``pool_liquidity_raw``/``lp_position_count`` are the raw
+#:   uint128/count twins of ``pool_liquidity_usd`` (which the hero and
+#:   SurfMarket both render) and were already flagged as "genuinely still
+#:   unrendered" at Task 8 (2026-08-23 progress ledger). These three are a
+#:   genuine finding, not a wiring gap this task can close: emptying
+#:   ``_KEYS_PENDING_CONSUMERS`` only requires giving every key a *home* in
+#:   this contract, and ``data/surf_models.py``/``data/surf_manager.py`` are
+#:   not this task's files (screens/surf.py and themes/minimal.tcss are, per
+#:   its brief) -- removing them from ``SURF_KEYS`` would also have to touch
+#:   both of those and every one of the several dozen ``test_surf_manager.py``
+#:   /``test_surf_cache.py`` assertions that pin ``set(data) ==
+#:   set(SURF_KEYS)`` against a manager that still populates all three.
+#:   Reported in task-12-report.md as a candidate for a future, narrowly-
+#:   scoped cleanup of ``SURF_KEYS`` itself.
+META_KEYS = frozenset({
+    "as_of", "degraded", "eth_usd",
+    "gate_open", "identities_written", "lp_liquidity",
+    "hook_status", "pool_liquidity_raw", "lp_position_count",
+})
 
-#: Keys frozen by Task 1's contract whose screen consumers land in Tasks 8-12.
-#: This is an ENUMERATION, not a blanket exemption: a key that regresses outside
-#: this list still fails. Task 12 empties it -- an entry left here after the
-#: launchpad view ships is a bug, not a waiver.
-_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset(
-    {
-        "pool_venue", "pool_fee_bps", "pool_liquidity_raw", "pool_id_source",
-        "decoy_pool_count", "lp_state", "lp_position_count",
-        "burn_accrued", "burn_staged", "burn_ready", "burn_min_bridge",
-        "launchpad_coin_count", "launchpad_swap_count",
-        "launchpad_trader_count", "launchpad_burned_total",
-        "launchpad_creator_eth_owed", "launchpad_coins",
-        "launchpad_as_of_hhmm",
-        "sig_decoy_state", "sig_decoy_detail", "sig_decoy_age_s",
-        "sig_burnready_state", "sig_burnready_detail", "sig_burnready_age_s",
-        "sig_hot_state", "sig_hot_detail", "sig_hot_age_s",
-        # Fix round 10a (2026-08-24): the v4-pool-id-matched market fix.
-        # Task 10 wires the market panel's legacy-liquidity note and
-        # disagreement flag.
-        "legacy_pool_liquidity_usd", "price_source_disagreement_pct",
-    }
-)
+#: Emptied by Task 12 (was: the 27 v4/launchpad keys Task 1 froze before their
+#: consumers existed).  Every key SURF_KEYS carries now reaches either a
+#: widget kwarg (:data:`SURF_WIDGET_SIGNATURES`) or :data:`META_KEYS`; an
+#: entry regressing into this set again is a bug, not a waiver -- see the
+#: docstring above for the two keys' worth of genuine, reported exceptions.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
 
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
 _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z
@@ -215,22 +345,40 @@ def _sample_data() -> dict:
         "sig_burn_state": "ok",
         "sig_burn_detail": "supply flat · last: burn 15,745 IMD",
         "sig_burn_age_s": _AS_OF - _TS_POST_12,   # 2.99 d -> relaxed past FIRED_TTL_S
-        # -- hero -----------------------------------------------------------
-        # ``hook_status`` is spelled the way the *producer* spells it: WP4's
-        # ``SurfManager._hook_status()`` returns exactly "LAUNCHED" / "NOT
-        # LIVE" / None, WP0's SURF_KEYS comment freezes it, and WP3's
-        # SurfHero branches on HOOK_NOT_LIVE / HOOK_LAUNCHED. The constant is
-        # imported rather than retyped so this fixture cannot drift back to
-        # the lowercase-snake form, which canonicalises to "NOT_LIVE", misses
-        # both branches and renders the widget's fallback arm ("NOT_LIVE" /
-        # "unrecognized status") -- a render no live payload can produce.
-        "hook_status": HOOK_NOT_LIVE,
-        "lp_liquidity": 2_162_384_733_113_558_190,   # raw uint128, abbreviated by the widget
+        # -- hero (POOL / LP / BURN / SUPPLY, rebuilt 2026-08-23) ------------
+        # This fixture's own instant (2026-08-08) predates the v3->v4
+        # migration (2026-08-17) and the launchpad's public launch, so the
+        # LP position that was still live *then* is what is exercised here
+        # (``lp_state="live"``, ``pool_venue="v3"``) -- the pre-migration
+        # shape a Task 8 review minor flagged as untested at integration
+        # level anywhere in the suite ("FLAG PROMINENTLY TO THE FINAL
+        # REVIEW"), closed here as a side effect of using real captured
+        # values instead of a synthetic post-migration snapshot.
+        # ``gate_open``/``identities_written``/``lp_liquidity`` are kept
+        # (unlike ``hook_status``, dropped below) even though none reaches a
+        # widget kwarg any more: they still feed the GATE/LP detectors
+        # inside the real manager (see ``META_KEYS`` above), and their
+        # values here are the same real 2026-08-08 capture the sig_gate/
+        # sig_lp detail strings above were transcribed from -- keeping them
+        # documents that link even though nothing in *this* fixture computes
+        # one from the other.
+        "lp_liquidity": 2_162_384_733_113_558_190,   # raw uint128; pool_liquidity_raw's sibling, neither reaches a widget
+        "gate_open": False,
+        "identities_written": 1,
+        # -- pool (v3 -> v4 migration): the *live* pool this instant, v3 --
+        "pool_venue": "v3",
+        "pool_fee_bps": 10_000,                     # 1%, Uniswap fee units (fee / 1e6)
+        "pool_id_source": "hook",
+        "decoy_pool_count": 37,                     # 38 ETH/IMD v4 pools seen; 1 real
+        "lp_state": "live",
         "lp_imd": 388_421.0,
         "lp_weth": 142.7067,
         "lp_owner_ok": True,
-        "gate_open": False,
-        "identities_written": 1,
+        # -- burn executor (v1 -> v2): the permissionless bridge-and-burn --
+        "burn_accrued": 1_234.56,
+        "burn_staged": 45.0,
+        "burn_ready": True,
+        "burn_min_bridge": 500.0,
         "imd_supply": 2_376_731.868679,
         # The observed 2026-08-05 event, NOT the 58,848 all-time ledger of
         # PRD §1: ``imd_burned_cum`` is observation-scoped (WP4.5 --
@@ -245,6 +393,14 @@ def _sample_data() -> dict:
         "imd_change_24h_pct": 30.89,
         "imd_vol_24h_usd": 244_178.0,
         "pool_liquidity_usd": 548_701.21,
+        # No superseded pool yet at this pre-migration instant (the live pool
+        # *is* v3, not a v4 pool with a v3 "legacy" left behind) -- unlike
+        # ``legacy_pool_liquidity_usd``, ``price_source_disagreement_pct`` is
+        # always computable (it compares the two live sources against each
+        # other, not against a pool that may not exist yet), so it carries a
+        # small, healthy value rather than ``None``.
+        "legacy_pool_liquidity_usd": None,
+        "price_source_disagreement_pct": 0.4,
         "fp_price_usd": 0.7274,
         "parity_pct": -2.7495188834204012,   # (0.7074/0.7274 - 1) * 100
         "supply_series": [
@@ -336,6 +492,44 @@ def _sample_data() -> dict:
                 "tx_hash": "0x" + "1a" * 32,
             },
         ],
+        # -- launchpad (detached sweep, its own slower "as of") -------------
+        # The magnitudes CLAUDE.md records for the real 2026-08-19 launchpad
+        # state four days in (146 coins, 73 creators, 4,683 swaps, 673
+        # traders, 3,299 IMD burned) -- not invented, and ``launchpad_burned_
+        # total`` matches the same figure ``tests/widgets/
+        # test_surf_launchpad_widgets.py`` already uses for SurfBurnPipeline.
+        # Deliberately left unset (``None`` via ``_frozen_payload``'s
+        # ``.get()``): sig_decoy_state/sig_burnready_state/sig_hot_state.
+        # Setting any of the three to a real "ok" here would fold that
+        # detector into the quiet-collapse summary (widgets/surf/signals.py)
+        # and change the visible-row/quiet-count shape every width sweep in
+        # this file below keys off ``_widen_sweep_payload`` (built from this
+        # same fixture) -- leaving them unknown keeps every one of those
+        # sweeps' pre-existing counts correct, and "the sweep never ran"
+        # is exactly the state a v1 install reaching this tier for the first
+        # time is really in.
+        "launchpad_coin_count": 146,
+        "launchpad_swap_count": 4_683,
+        "launchpad_trader_count": 673,
+        "launchpad_burned_total": 3_299.0,
+        "launchpad_creator_eth_owed": 2.4187,
+        "launchpad_coins": [
+            {
+                "ticker": "PANE", "name": "MaxPane Coin",
+                "creator": "0x9D2C9B1F5C3f8b6f7D9C1a5E4b3A2F1D0c9B8A7E",
+                "creator_known": False, "age_s": 3_600.0,
+                "price_eth": 0.0071, "change_1h_pct": 34.0,
+                "swaps_1h": 12, "imd_burned": 88.4,
+            },
+            {
+                "ticker": "SURF", "name": "Surf Launch",
+                "creator": "0x4E1c3A0Ad54418Fe843953C71dF23637DE732Cee",
+                "creator_known": False, "age_s": 7_200.0,
+                "price_eth": 0.00021, "change_1h_pct": None,
+                "swaps_1h": 0, "imd_burned": 0.0,
+            },
+        ],
+        "launchpad_as_of_hhmm": "01:14",
     }
 
 
@@ -432,20 +626,232 @@ def test_surf_keys_covers_the_local_signature_map():
     assert not unconsumed, f"contract keys reach no widget: {sorted(unconsumed)}"
 
 
-def test_refresh_is_the_only_binding():
-    """``c`` is gone: nothing is hidden, so nothing can be swapped in.
+def test_the_bindings_are_refresh_and_the_launchpad_toggle():
+    """``c`` is still gone; ``l``/``escape`` (2026-08-23) are not a return of it.
 
-    The key existed only because the announce feed and the dev-activity panel
+    ``c`` existed only because the announce feed and the dev-activity panel
     shared one slot. Both are permanently on screen since the three-row
     restructure, so a swap key would toggle two panels that are both already
-    visible -- and the status bar would advertise a "view" that is not a view.
+    visible -- and the status bar would advertise a "view" that is not a
+    view. That reasoning still holds for ``c``, which is why this test used
+    to assert ``BINDINGS`` was ``{"r"}`` alone; it does not extend to ``l``,
+    which swaps the whole dashboard body for an unrelated second view
+    (curator's ``y``/``f`` precedent) rather than reviving a same-slot swap.
     """
     keys = {binding.key for binding in SurfScreen.BINDINGS}
-    assert keys == {"r"}
+    assert keys == {"r", "l", "escape"}
     assert not hasattr(SurfScreen, "action_toggle_view"), (
-        "the swap action outlived its binding -- an action with no key is a "
-        "surface nobody can reach and nobody maintains"
+        "the old c-swap action outlived its binding -- an action with no key "
+        "is a surface nobody can reach and nobody maintains"
     )
+    assert hasattr(SurfScreen, "action_toggle_launchpad")
+    assert hasattr(SurfScreen, "action_show_dashboard")
+
+
+# -- the l LAUNCHPAD view (2026-08-23) ------------------------------------
+
+
+def _surf_app(payload: dict | None = None) -> App:
+    """A themed harness around a fresh SurfScreen, for the mode-toggle tests.
+
+    Themed (the real ``minimal.tcss`` loaded), so the launchpad body's CSS
+    block is exercised the same way a live app renders it, not just
+    ``SurfScreen.DEFAULT_CSS`` in isolation.
+    """
+    manager = _FakeManager(payload)
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    return _ThemedHarness(screen)
+
+
+async def test_l_swaps_the_body_and_keeps_the_hero() -> None:
+    """Body swap on curator's y/f precedent: the hero never leaves."""
+    async with _surf_app().run_test() as pilot:
+        await pilot.press("l")
+        assert pilot.app.screen.query_one(f"#{LAUNCHPAD_BODY_ID}").display is True
+        assert pilot.app.screen.query_one(SurfHero).display is True
+        assert pilot.app.screen.query_one("#middle-row").display is False
+
+
+async def test_escape_backs_out_one_way() -> None:
+    async with _surf_app().run_test() as pilot:
+        await pilot.press("l")
+        await pilot.press("escape")
+        assert pilot.app.screen.query_one("#middle-row").display is True
+
+
+async def test_l_is_idempotent_and_toggles_back() -> None:
+    async with _surf_app().run_test() as pilot:
+        await pilot.press("l")
+        await pilot.press("l")
+        assert pilot.app.screen.query_one("#middle-row").display is True
+
+
+async def test_the_status_hint_names_the_new_view() -> None:
+    async with _surf_app().run_test() as pilot:
+        await pilot.pause()
+        strips = pilot.app.screen._compositor.render_strips()
+        text = "\n".join(seg.text for s in strips for seg in s)
+        assert "l launchpad" in text
+
+
+async def test_l_also_hides_the_separator_and_bottom_row() -> None:
+    """The brief's own test only names ``#middle-row``; the other two rows
+    of the dashboard body must not be left showing under the launchpad
+    body, or the screen would render both stacked on top of each other."""
+    async with _surf_app().run_test() as pilot:
+        await pilot.press("l")
+        assert pilot.app.screen.query_one("#separator").display is False
+        assert pilot.app.screen.query_one("#bottom-row").display is False
+
+
+async def test_the_launchpad_widgets_are_dispatched_hidden_before_l_is_pressed() -> None:
+    """Composed-once-shown-by-display: the first ``l`` paints a complete
+    frame, not a blank one that fills in a beat later (curator's own reason
+    for dispatching its `f`/`l` bodies whether or not they are showing)."""
+    async with _surf_app().run_test(size=(150, 46)) as pilot:
+        await pilot.pause()
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        coins = pilot.app.screen.query_one(SurfLaunchpadCoins)
+        # The widget's own ``.display`` is untouched by ``_show_mode`` --
+        # only the container's is set, and it is what actually hides
+        # everything inside it -- so this checks the container, not the
+        # child.
+        assert pilot.app.screen.query_one(f"#{LAUNCHPAD_BODY_ID}").display is False
+        # Dispatched: the note line has moved off its "Loading" placeholder
+        # even though nothing has displayed it yet. ``_plain`` reads the
+        # widget's own visual directly, unlike ``_screen_text`` -- a hidden
+        # widget reaches no compositor row at all.
+        note = coins.query_one("#surf-lpc-note")
+        assert "146 coins" in _plain(note)
+
+
+# -- the launchpad body's CSS, in agreement (Task 12 addendum) ------------
+#
+# In the shape of curator's
+# ``test_selected_nft_geometry_matches_widget_and_screen_fallback_css``: an
+# automated structural comparator, not a sentence promising the two copies
+# match. That exact class of drift shipped as recently as v0.8.2 (a widget's
+# own ``DEFAULT_CSS`` gained a property the screen's fallback copy did not),
+# and ``tests/test_surf_registration.py::
+# test_the_stylesheet_block_and_default_css_describe_one_layout`` already
+# guards the *whole* surf screen's two CSS copies the same way -- this is a
+# second, narrower guard scoped to just the launchpad-body selectors this
+# task adds, living in this task's own test file rather than depending on a
+# file this task does not own to keep catching drift in the code it owns.
+
+_LAUNCHPAD_CSS_STRUCTURAL = (
+    "width", "min-width", "max-width", "height", "min-height", "padding",
+    "margin",
+)
+#: Shorthand properties whose absence means "the CSS default" -- so one copy
+#: spelling ``padding: 0 0`` and the other omitting it is agreement, not
+#: drift. Mirrors ``tests/test_surf_registration.py``'s own constant.
+_LAUNCHPAD_CSS_SHORTHAND_DEFAULTS = {"padding": "0", "margin": "0"}
+
+_LAUNCHPAD_CSS_SELECTORS = (
+    f"#{LAUNCHPAD_BODY_ID}", "SurfLaunchpadCoins", "SurfCurveFlow",
+    "SurfBurnPipeline",
+)
+
+
+def _expand_css_box(value: str) -> tuple[str, ...]:
+    """CSS box shorthand -> four values, so ``0 0`` == ``0`` == ``0 0 0 0``."""
+    parts = value.split()
+    if len(parts) == 1:
+        return tuple(parts * 4)
+    if len(parts) == 2:
+        return (parts[0], parts[1], parts[0], parts[1])
+    if len(parts) == 3:
+        return (parts[0], parts[1], parts[2], parts[1])
+    return tuple(parts[:4])
+
+
+def _css_rules(css: str) -> dict[str, dict[str, str]]:
+    """``{selector: {property: value}}`` for the structural properties.
+
+    A leading ``SurfScreen `` is stripped: ``DEFAULT_CSS`` scopes every rule
+    to the screen, while the stylesheet block scopes only the ids (the
+    shared ``#middle-row``/``#bottom-row`` rules elsewhere in the file are
+    law for ten other screens) and leaves the ``Surf*`` types unscoped,
+    since those types exist nowhere else. The two spellings mean the same
+    thing here -- the same reasoning ``tests/test_surf_registration.py``
+    already applies to the rest of this screen's CSS.
+    """
+    import re
+
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    out: dict[str, dict[str, str]] = {}
+    for chunk in css.split("}"):
+        if "{" not in chunk:
+            continue
+        head, body = chunk.split("{", 1)
+        props: dict[str, str] = {}
+        for decl in body.split(";"):
+            if ":" not in decl:
+                continue
+            name, _, value = decl.partition(":")
+            name = name.strip()
+            if name in _LAUNCHPAD_CSS_STRUCTURAL:
+                props[name] = " ".join(value.split())
+        if not props:
+            continue
+        for selector in head.split(","):
+            selector = " ".join(selector.split())
+            if selector.startswith("SurfScreen "):
+                selector = selector[len("SurfScreen "):]
+            out.setdefault(selector, {}).update(props)
+    return out
+
+
+def _surf_stylesheet_block() -> str:
+    """The surf section of the shared stylesheet, or ``''`` if absent."""
+    text = _TCSS.read_text(encoding="utf-8")
+    marker = "/* ── Surf screen"
+    if marker not in text:
+        return ""
+    start = text.index(marker)
+    nxt = text.find("/* ── ", start + len(marker))
+    return text[start:] if nxt == -1 else text[start:nxt]
+
+
+def test_the_launchpad_body_css_agrees_between_default_css_and_the_stylesheet() -> None:
+    """``SurfScreen.DEFAULT_CSS`` and the surf block in ``minimal.tcss`` must
+    describe the launchpad body's geometry identically -- edit both or
+    neither. The app stylesheet is what actually renders (it outranks
+    ``DEFAULT_CSS``); ``DEFAULT_CSS`` is what keeps the screen correctly
+    proportioned when it is reviewed or mounted without the app stylesheet.
+    """
+    fallback = _css_rules(SurfScreen.DEFAULT_CSS)
+    block = _css_rules(_surf_stylesheet_block())
+
+    for selector in _LAUNCHPAD_CSS_SELECTORS:
+        assert selector in fallback, (
+            f"{selector} is not styled in SurfScreen.DEFAULT_CSS"
+        )
+        assert selector in block, (
+            f"{selector} is not styled in the surf block of minimal.tcss"
+        )
+        for prop in _LAUNCHPAD_CSS_STRUCTURAL:
+            default = _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS.get(prop)
+            left = fallback[selector].get(prop, default)
+            right = block[selector].get(prop, default)
+            if left is None and right is None:
+                continue
+            assert left is not None and right is not None, (
+                f"{selector}: {prop} is declared in only one copy "
+                f"(DEFAULT_CSS={left!r}, minimal.tcss={right!r})"
+            )
+            if prop in _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS:
+                assert _expand_css_box(left) == _expand_css_box(right), (
+                    f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
+                    f"{right!r} in minimal.tcss"
+                )
+            else:
+                assert left == right, (
+                    f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
+                    f"{right!r} in minimal.tcss"
+                )
 
 
 def test_the_initial_title_names_the_dashboard_the_menu_names():
@@ -495,6 +901,13 @@ async def test_screen_mounts_all_six_widgets():
         # Nothing is hidden -- that is the whole point of the three-row grid.
         for cls in _WIDGET_CLASSES.values():
             assert screen.query_one(cls).display is True, f"{cls.__name__} is hidden"
+        # The launchpad trio (2026-08-23) is the one deliberate exception:
+        # composed once, mounted, and hidden until `l` shows it.
+        for cls in _LAUNCHPAD_WIDGET_CLASSES.values():
+            screen.query_one(cls)  # mounted...
+        assert screen.query_one(f"#{LAUNCHPAD_BODY_ID}").display is False, (
+            "the launchpad body is visible before l is pressed"
+        )
         # WP5.3 wires ``_title_line`` into ``_do_refresh``, and RefreshGuard
         # fires that refresh on screen resume, so by the time ``pilot.pause()``
         # returns the placeholder ``INITIAL_TITLE`` has already been replaced
@@ -677,8 +1090,14 @@ def test_title_line_with_a_malformed_degraded_value_never_reads_healthy():
 
 
 def _record_dispatches(screen) -> dict[str, list[dict]]:
-    """Wrap every widget's ``update_data`` so we can see what it was handed."""
-    calls: dict[str, list[dict]] = {name: [] for name in _WIDGET_CLASSES}
+    """Wrap every widget's ``update_data`` so we can see what it was handed.
+
+    ``_ALL_WIDGET_CLASSES``, not ``_WIDGET_CLASSES``: this records dispatch
+    calls, which the launchpad trio receives every refresh whether or not
+    ``l`` is showing it (see ``_do_refresh``) -- unlike the "nothing is
+    hidden" mount test, visibility is not what this helper is checking.
+    """
+    calls: dict[str, list[dict]] = {name: [] for name in _ALL_WIDGET_CLASSES}
 
     def _wrap(name: str, original):
         def recorder(**kwargs):
@@ -687,7 +1106,7 @@ def _record_dispatches(screen) -> dict[str, list[dict]]:
 
         return recorder
 
-    for name, cls in _WIDGET_CLASSES.items():
+    for name, cls in _ALL_WIDGET_CLASSES.items():
         widget = screen.query_one(cls)
         widget.update_data = _wrap(name, widget.update_data)
 
@@ -695,7 +1114,15 @@ def _record_dispatches(screen) -> dict[str, list[dict]]:
 
 
 async def test_screen_dispatches_every_data_key():
-    """Every ``SURF_KEYS`` group reaches the widget that owns it."""
+    """Every ``SURF_KEYS`` group reaches the widget that owns it.
+
+    ``signature`` is now ``{SURF_KEYS name: update_data kwarg name}``, not a
+    flat tuple of kwarg names (see the module comment on
+    ``SURF_WIDGET_SIGNATURES``): the launchpad trio's kwargs are not spelled
+    like their SURF_KEYS names, so the two questions -- "what did the
+    dispatch call actually pass" and "what contract key does that answer
+    for" -- need their own comparisons instead of one set equality.
+    """
     manager = _FakeManager()
     screen = SurfScreen(manager, poll_interval=30, name="surf")
     app = _Harness(screen)
@@ -710,11 +1137,12 @@ async def test_screen_dispatches_every_data_key():
         for name, signature in SURF_WIDGET_SIGNATURES.items():
             assert calls[name], f"{name}.update_data was never called"
             kwargs = calls[name][-1]
-            assert set(kwargs) == set(signature), (
-                f"{name} got {sorted(set(kwargs) ^ set(signature))} "
+            expected_kwargs = set(signature.values())
+            assert set(kwargs) == expected_kwargs, (
+                f"{name} got {sorted(set(kwargs) ^ expected_kwargs)} "
                 "off-contract"
             )
-            dispatched |= set(kwargs)
+            dispatched |= set(signature)   # SURF_KEYS names, not kwarg names
 
         # Nothing in the contract goes unrendered: it is either a widget
         # kwarg, a meta key the screen itself consumes, or one of the
@@ -742,32 +1170,36 @@ async def test_refresh_renders_title_and_all_panels():
         assert "ANNOUNCE FEED" in text
         assert "MARKET" in text
         assert "IDENTITY.MD" in text
-        # The hook vocabulary the manager actually emits reaches the hero in
-        # words. ``NOT_LIVE`` (underscore) is WP3's *fallback* headline for an
-        # unrecognised value, so asserting its absence is the tripwire against
-        # this fixture drifting back to the lowercase-snake spelling — both
-        # forms are 8 characters, so both survive the hero box's
-        # ``text-overflow: ellipsis`` here and the two stay separable.
-        assert "NOT LIVE" in text
-        assert "NOT_LIVE" not in text
+        # The hero's own titles reach the compositor -- POOL/LP/BURN/SUPPLY,
+        # rebuilt 2026-08-23 for the v4 migration (widgets/surf/hero.py).
+        assert "POOL" in text
+        assert "IMD SUPPLY" in text
         # The observed burn reached the hero, and PRD §1's all-time ledger is
-        # nowhere on screen — the manager cannot produce it. At 150 columns a
-        # hero box has ~15 content columns (150·3/5 = 90, −2 screen padding
-        # = 88, ÷4 boxes = 22, −2 margin −2 border −4 padding), which selects
-        # the hero's ``minimal`` tier: the copy is the short ``burn 15,745``,
-        # and the quantity is *whole*. This used to assert the prefix
-        # ``"burned 15,7"`` because the full copy was ellipsised here to
-        # ``burned 15,74…`` — a number cut mid-digits, with nothing marking
-        # the cut. That was final-review I-2; the shed field replaced it.
-        assert "burn 15,745" in text
+        # nowhere on screen — the manager cannot produce it. At 150 columns
+        # the hero owns the full row (unlike the pre-2026-08-09 layout this
+        # comment used to measure, which shared it 3fr:2fr with the signals
+        # panel): swept, a hero box has content columns comfortably past
+        # ``COMPACT_WIDTH`` (22) here, so this renders the *compact* copy,
+        # ``burned 15,745 observed`` -- the quantity whole either way. This
+        # used to assert the prefix ``"burned 15,7"`` because the full copy
+        # was ellipsised here to ``burned 15,74…`` — a number cut mid-digits,
+        # with nothing marking the cut. That was final-review I-2; the shed
+        # field (at narrower widths) replaced it.
+        assert "burned 15,745 observed" in text
         assert "burned 15,74…" not in text
         assert "58,848" not in text
-        # The clipping trap: all six detector rows reach the compositor.
-        # SurfSignals is six rows + title inside #hero-row's fixed height —
-        # if a theme or CSS change costs it a row, BURN (the last) goes first.
-        for label in ("NEW POST", "LP MIGRATION", "GATE OPEN",
-                      "NEW DEPLOY", "BRIDGE STAGE", "BURN"):
+        # The clipping trap: every detector row that keeps its own line
+        # reaches the compositor. SurfSignals now carries nine detectors
+        # with quiet-collapse (Task 9): this fixture's lp/gate/deploy/burn
+        # are all `ok` and fold into one dim "4 quiet" line (the labels
+        # themselves are therefore *not* on screen for those four -- folding
+        # is what quiet-collapse means), so the quiet line is what a CSS
+        # regression would eat first, the role BURN's own row used to play
+        # when there were only six and nothing folded.
+        for label in ("NEW POST", "BRIDGE STAGE", "DECOY POOL",
+                      "BURN READY", "HOT COIN"):
             assert label in text, f"detector row {label!r} clipped or missing"
+        assert "4 quiet" in text
         # The floor is explicitly unavailable, never faked (PRD §4).
         assert "no keyless source" in text
 
@@ -791,7 +1223,14 @@ async def test_screen_survives_manager_exception():
 
         status = screen.query_one(StatusBar).query_one("#status-left")
         rendered = _plain(status)
-        assert "updated 999s ago" in rendered
+        # Not "updated 999s ago" any more: surf opted into the status bar's
+        # key-hints label (2026-08-23, ``SurfScreen.KEY_HINTS``) so ``l
+        # launchpad`` could be named there, and ``StatusBar._ordinary_status``
+        # trades the freshness segment for the hints segment when a screen
+        # sets one -- the same tradeoff curator already made for its own
+        # hints. The error count is unaffected; it is appended either way.
+        assert "l launchpad" in rendered
+        assert "updated" not in rendered
         assert "3 errors" in rendered   # manager's _error_count is surfaced
 
         # The title bar was not half-overwritten with a broken frame -- and
@@ -862,7 +1301,7 @@ async def test_the_feed_and_the_activity_panel_are_both_on_screen_at_once():
 
         text = _screen_text(app)
         for title in ("ANNOUNCE FEED", "SIGNALS", "DEV ACTIVITY",
-                      "IMD MARKET", "IDENTITY.MD", "V4 HOOK"):
+                      "IMD MARKET", "IDENTITY.MD", "POOL"):
             assert title in text, f"{title} is not on screen"
 
 
@@ -1118,34 +1557,53 @@ async def test_a_taller_terminal_hands_every_new_row_to_the_feed():
     assert tall["nft"] == short["nft"]
 
 
-async def test_a_terminal_too_short_for_six_detectors_says_so():
+async def test_a_terminal_too_short_for_nine_detectors_says_so():
     """Rows are the columns problem again: the loss must be advertised.
+
+    Renamed from "...six_detectors..." (Task 9 grew the rail to nine, with
+    quiet-collapse folding ``ok`` rows into one dim summary line); the
+    behaviour this asserts is unchanged.
 
     Sizing every row to its content is what removed the dead space, and the
     price is that the rail is only as tall as the middle row -- where the old
     layout gave the signals a fixed ten-row band that survived down to a
-    ~16-row terminal. Below 29 rows the sixth detector (BURN, always the
-    first to go) no longer fits. ``overflow-y: auto`` on the rail is the
-    row-wise ``‹ widen``: nothing is drawn while everything fits, and the
-    scrollbar appears exactly when something is missing.
+    ~16-row terminal. ``overflow-y: auto`` on the rail is the row-wise
+    ``‹ widen``: nothing is drawn while everything fits, and the scrollbar
+    appears exactly when something is missing.
 
-    Both halves are asserted, because a rail that scrolled *always* would
-    satisfy the second one while being the permanently-lit marker this
-    codebase keeps warning about.
+    **The sentinel changed, the mechanism did not (Task 8/12 addendum).**
+    ``BURN`` used to be this test's sentinel for "the rail scrolled away",
+    because it was the rail's own last detector. It cannot be any more: the
+    2026-08-23 hero rebuild put a card titled ``BURN`` on the hero row too,
+    and the hero row never scrolls -- so ``"BURN" not in text`` could never
+    go true again regardless of what the rail lost. ``HOT COIN`` is the
+    rail-only replacement: it is the last of the nine detector labels
+    (PRD §3 order) and, with this fixture's lp/gate/deploy/burn all quiet-
+    collapsed into "4 quiet" already, the last row the rail draws before
+    that summary line -- swept at the same two heights the old test used
+    (46, 28), it is present at 46 and gone at 28, same as ``BURN`` used to
+    be. Neither detector label was renamed: CLAUDE.md holds them as an
+    interface two app-level acceptance tests also assert, and lengthening
+    one would cost the rail's unshrinkable head width it does not have to
+    spend.
     """
     async with _screen_at(150, 46) as (app, screen, _pilot):
         text = _screen_text(app)
-        for label in ("NEW POST", "LP MIGRATION", "GATE OPEN",
-                      "NEW DEPLOY", "BRIDGE STAGE", "BURN"):
+        for label in ("NEW POST", "BRIDGE STAGE", "DECOY POOL",
+                      "BURN READY", "HOT COIN"):
             assert label in text, f"{label} is missing at a normal height"
+        assert "4 quiet" in text, (
+            "lp/gate/deploy/burn are all `ok` in this fixture and should "
+            "fold into one summary line"
+        )
         assert screen.query_one(_RAIL).show_vertical_scrollbar is False, (
             "the rail scrolls even when everything fits -- a marker that is "
             "always on says nothing"
         )
 
     async with _screen_at(150, 28) as (app, screen, _pilot):
-        assert "BURN" not in _screen_text(app), (
-            "28 rows fits all six detectors after all -- re-measure"
+        assert "HOT COIN" not in _screen_text(app), (
+            "28 rows fits every detector after all -- re-measure"
         )
         assert screen.query_one(_RAIL).show_vertical_scrollbar is True, (
             "a detector row was dropped with nothing on screen to say so"
@@ -2199,24 +2657,27 @@ def _hero_fields(text: str) -> set[str]:
 
 
 async def test_the_hero_cuts_neither_a_number_nor_a_title_at_the_pinned_width():
-    """I-2: ``burned 15,74…`` and ``IDENTITY GA…`` must not be reachable.
+    """I-2, re-measured against POOL/LP/BURN/SUPPLY (2026-08-23).
 
     A truncated *word* is a shortened word; a truncated *number* still reads
     as a number, and a truncated panel title reads as a different panel. The
     hero sheds whole fields instead, so at the pinned width every title and
-    every quantity arrives intact.
+    every quantity arrives intact. The list below is what the real screen
+    renders at ``SURF_FULL_LAYOUT_COLUMNS`` today, swept, not carried over
+    from the HOOK/GATE-era assertions this test used to make.
     """
     hero = await _hero_text(SURF_FULL_LAYOUT_COLUMNS)
 
     for whole in (
-        "V4 HOOK", "LP #1167726", "IDENTITY GATE", "IMD SUPPLY",   # the titles
-        "2,376,732 IMD", "388.4K IMD", "142.71 WETH",              # the numbers
-        "1/2000", "NOT LIVE", "CLOSED", "owner ✓",
+        "POOL", "LP", "BURN", "IMD SUPPLY",                         # the titles
+        "2,376,732 IMD", "388.4K IMD", "142.71 WETH", "$548.7K",    # the numbers
+        "v3", "READY", "owner ✓",
         # Since the hero took the full row this width reaches the *widest*
         # tier, so the fields the narrow tiers shed are all present too --
-        # whole, and with the word that scopes them ("observed") intact.
+        # whole, and with the words that scope them ("observed", "of 38",
+        # "stg") intact.
+        "1% · 1 of 38", "acc 1.2K · stg 45.0",
         "burned 15,745 observed", "owner ✓ frenpet.eth",
-        "since 2026-05-14", "detectors armed", "1/2000 written",
     ):
         assert whole in hero, f"{whole!r} did not survive the hero row whole"
 
@@ -2231,16 +2692,20 @@ async def test_the_hero_cuts_neither_a_number_nor_a_title_at_the_pinned_width():
 
 
 async def test_the_hero_spends_new_columns_in_the_documented_order():
-    """Widening restores the shed fields cheapest-last: `written`, then owner/burn.
+    """Widening restores the shed fields at the tier boundary: burn/owner detail.
 
-    Pins the *order* rather than just the endpoints, because the order is the
-    product decision about what a reader can most afford to lose.
-
-    The widths are measured on the real full-width row, not guessed -- a box
-    gets roughly a quarter of the terminal minus its own frame, so the tiers
-    land at 91 / 99 / 119 columns (see the sweep in the module docstring of
-    ``widgets/surf/hero.py``). They used to be 139 / 200 / 240 when the hero
-    had half a row.
+    Re-measured against POOL/LP/BURN/SUPPLY (Task 8's carried-forward note):
+    swept width by width (78-121, see task-12-report.md), the short<->long
+    boundary the old test pinned at 91/99 vs. 119/127 **did not move** -- 118
+    is still the last short-form width and 119 the first long one, so those
+    four widths are kept rather than re-chosen. What changed is *why* 91 and
+    99 no longer need separate names: none of POOL/LP/BURN/SUPPLY's bodies
+    branch on ``tight`` vs. ``minimal`` beyond the shared ``_short()`` check
+    (unlike the retired GATE box, which used to shed ``written`` at
+    ``minimal`` and keep it at ``tight``), so the two tiers render *the same
+    text* for this payload -- asserted below rather than assumed, so a body
+    that starts differentiating them again would turn this from a tautology
+    back into a real two-tier check.
 
     A fourth tier used to sit above these three, holding ``· L <liquidity>``.
     The field was dropped on request, and the tier went with it rather than
@@ -2260,6 +2725,9 @@ async def test_the_hero_spends_new_columns_in_the_documented_order():
         assert "· L " not in text
         assert "e+" not in text, "a raw uint128 is rendering somewhere in the hero"
 
+    # minimal and tight are identical for this payload -- see the docstring.
+    assert _hero_fields(narrow) == _hero_fields(tight)
+
     # Past `compact`, extra columns buy nothing: the two widest renders agree
     # field for field. Without this the collapsed ladder would be untested.
     assert _hero_fields(mid) == _hero_fields(wide)
@@ -2276,9 +2744,14 @@ async def test_the_hero_spends_new_columns_in_the_documented_order():
     assert "owner ✓" in tight and "frenpet.eth" not in tight
     assert "owner ✓ frenpet.eth" in mid
 
-    # `N/2000 written` and `since <date>` are the minimal tier's own drops.
-    assert "1/2000" in narrow and "written" not in narrow
-    assert "1/2000 written" in tight
+    # POOL's decoy count and BURN's accrued/staged pair are the same shape:
+    # a compressed slash/dot form below `compact`, the full connective words
+    # (`of`, `·`, `stg`) at and above it.
+    assert "1% 1/38" in narrow and "of 38" not in narrow
+    assert "1% 1/38" in tight and "of 38" not in tight
+    assert "1% · 1 of 38" in mid
+    assert "1.2K/45.0" in narrow and "stg" not in narrow
+    assert "acc 1.2K · stg 45.0" in mid
 
     # Nothing is truncated at any of the four widths.
     for text in (narrow, tight, mid, wide):
@@ -2293,19 +2766,23 @@ async def test_the_hero_marker_is_dark_on_every_terminal_anyone_owns():
     past the ~169 a laptop gets at the forced 17 pt. A marker that is on
     everywhere means nothing (the trap ``widgets/surf/signals.py``
     documents). Tying it to the narrowest tier keeps it dark, and the
-    full-width row lowers the floor much further: 82 columns, which is
-    narrower than any terminal this dashboard is usable in at all.
+    full-width row lowers the floor much further: **80 columns**, re-swept
+    for POOL/LP/BURN/SUPPLY (a column narrower than the old HOOK/GATE-era
+    82 -- ``2,376,732 IMD``, the SUPPLY quantity, is one column longer than
+    the old GATE box's widest minimal-tier line, so the box needs one more
+    column to clear it) -- still narrower than any terminal this dashboard
+    is usable in at all.
     """
     assert HERO_WIDEN_HINT == "‹ widen"
 
-    for width in (82, 100, SURF_FULL_LAYOUT_COLUMNS, 143, 169, 200, 240):
+    for width in (80, 100, SURF_FULL_LAYOUT_COLUMNS, 143, 169, 200, 240):
         assert HERO_WIDEN_HINT not in await _hero_text(width), (
             f"the hero advertises a loss at {width} columns"
         )
 
     # ...and it is not merely unreachable: one column narrower a box can no
     # longer fit ``OWNER CHANGED``/``2,376,732 IMD`` at any tier, and says so.
-    assert HERO_WIDEN_HINT in await _hero_text(81)
+    assert HERO_WIDEN_HINT in await _hero_text(79)
 
 
 # -- the activity panel's own width tiers (final-review I-1) -------------

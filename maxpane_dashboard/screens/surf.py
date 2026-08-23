@@ -11,6 +11,11 @@ Layout: three content rows, every widget on screen at once::
     #bottom-row        SurfMarket (7fr) | SurfNft (6fr)
     StatusBar
 
+``l`` swaps ``#middle-row``/``#separator``/``#bottom-row`` for a fourth body
+(``#surf-launchpad-body``, MODE_LAUNCHPAD) holding the v4 launchpad's own
+three panels; ``#hero-row`` is never touched by that swap and stays on
+screen in both modes. See "The 2026-08-23 ``l`` view" below.
+
 Both rows below the hero are split 7:6 on the same seam, so the two rows
 read as one grid rather than two unrelated bands.
 
@@ -50,6 +55,16 @@ tests went with the slot they served. The market did not cost the bottom
 row a single row on the way: ``SurfNft`` is the taller of the two (its
 last-sales block runs to four lines), so an ``auto`` row sized to the NFT
 panel already had room for the market's seven.
+
+**The 2026-08-23 ``l`` view is a different shape of "hidden," not a return
+of this one.** It does not put two panels back in one slot the way ``c``
+did; it swaps the *whole* three-row dashboard body for the v4 launchpad's
+own three panels (``SurfLaunchpadCoins``, ``SurfCurveFlow``,
+``SurfBurnPipeline``), on curator's ``y``/``f`` precedent, and ``escape``
+backs out one-way. The hero row is untouched by the swap and stays mounted
+and visible in both modes, so nothing it tracks (POOL/LP/BURN/SUPPLY) ever
+goes dark. The five dashboard-body panels above still never share a slot
+with each other -- only the *body as a whole* now has a second view.
 
 ``SurfSignals`` is ``auto`` (a title, a spacer and six detector rows) with a
 one-row bottom margin, and ``SurfDevActivity`` takes the rest of the rail at
@@ -116,9 +131,12 @@ from textual.widgets import Static
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surf import (
+    SurfBurnPipeline,
+    SurfCurveFlow,
     SurfDevActivity,
     SurfFeed,
     SurfHero,
+    SurfLaunchpadCoins,
     SurfMarket,
     SurfNft,
     SurfSignals,
@@ -271,6 +289,16 @@ ACTIVITY_MIN_HEIGHT = 7
 #: Do not raise this toward 216 to silence a linked post's marker: that
 #: marker is correct, and 216 is a "full layout" nobody could reach.
 SURF_FULL_LAYOUT_COLUMNS = 143
+
+#: The two bodies ``l``/``escape`` swap between. Named on curator's
+#: MODE_DASHBOARD/MODE_ANALYSIS precedent -- this screen only ever needs two,
+#: so there is no MODE_WALLET/MODE_LIST sibling to grow into.
+MODE_DASHBOARD = "dashboard"
+MODE_LAUNCHPAD = "launchpad"
+
+#: The launchpad body's container id -- exported so the test module and any
+#: future consumer can query it without retyping the literal.
+LAUNCHPAD_BODY_ID = "surf-launchpad-body"
 
 
 # -- format helpers ----------------------------------------------------
@@ -440,12 +468,39 @@ def _title_line(data: dict, row_hint: bool = False) -> str:
 class SurfScreen(RefreshGuard, Screen):
     """surfsurf.eth Surfboard dashboard."""
 
-    #: No ``c``: the swap it drove died with the shared slot (see the module
-    #: docstring). A key that hides half the screen has nothing to offer a
-    #: layout whose whole point is that nothing is hidden.
+    #: Still no ``c``: the swap it drove died with the shared slot (see the
+    #: module docstring), and nothing here has grown a second shared slot for
+    #: it to revive.
+    #:
+    #: ``l``/``escape`` (2026-08-23) are a different shape of key, not a
+    #: return of ``c``. This comment used to say a key that hides half the
+    #: screen has nothing to offer this layout -- that was true of ``c``,
+    #: which swapped two panels that were both worth seeing inside one slot,
+    #: but ``l`` swaps the whole dashboard body for an unrelated second view
+    #: (curator's ``y``/``f`` precedent), and the hero row it leaves mounted
+    #: is the reason that is safe: nothing the hero tracks ever goes dark.
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
+        Binding("l", "toggle_launchpad", "Launchpad", show=False),
+        Binding("escape", "show_dashboard", show=False),
     ]
+
+    #: Named in the status bar's left label (``StatusBar.set_key_hints``),
+    #: curator's own vocabulary (``"c panels · y you · f linked · l lists"``)
+    #: -- this screen's sole entry. Opting in trades the bar's ``updated Ns
+    #: ago`` freshness segment for this hint (``StatusBar._ordinary_status``);
+    #: surf has no title-bar ``as of HH:MM`` to fall back on the way curator
+    #: does, but one key is worth naming and the freshness a poll-interval
+    #: reader loses is the same information the title bar's own ``feed
+    #: #N (age)`` already gestures at.
+    #:
+    #: One markup run, not curator's "``[dim]l[/]`` letter, plain word" split:
+    #: Rich/Textual compositing keeps adjacent differently-styled runs as
+    #: separate ``Segment``s, so a letter-only ``[dim]`` tag would put ``l``
+    #: and `` launchpad`` in two segments that never sit on the same
+    #: composited line together -- and the app-level acceptance test greps
+    #: for the whole phrase ``l launchpad`` as one contiguous string.
+    KEY_HINTS = "[dim]l launchpad[/]"
 
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "surf-refresh"
@@ -567,6 +622,36 @@ class SurfScreen(RefreshGuard, Screen):
         height: auto;
         padding: 0 1;
     }
+
+    /* The ``l`` LAUNCHPAD body (2026-08-23): composed hidden, shown in place
+     * of #middle-row/#separator/#bottom-row by `_show_mode`. `1fr` so the
+     * coin table -- the one panel here with real content to scroll -- gets
+     * the screen's spare rows the same way #middle-row does in dashboard
+     * mode; the two summary panels below it are `auto` and take only what
+     * their five/six lines need. `margin: 1 0 0 0` matches #middle-row's own
+     * top margin, so swapping bodies does not also move the hero's breathing
+     * room.
+     */
+    SurfScreen #surf-launchpad-body {
+        height: 1fr;
+        width: 100%;
+        margin: 1 0 0 0;
+    }
+    SurfScreen SurfLaunchpadCoins {
+        width: 100%;
+        height: 1fr;
+        padding: 0 1;
+    }
+    SurfScreen SurfCurveFlow {
+        width: 100%;
+        height: auto;
+        padding: 0 1;
+    }
+    SurfScreen SurfBurnPipeline {
+        width: 100%;
+        height: auto;
+        padding: 0 1;
+    }
     """
 
     def __init__(
@@ -585,6 +670,10 @@ class SurfScreen(RefreshGuard, Screen):
         #: without a refetch. ``None`` until the first payload lands, which
         #: is also the degraded-manager state -- see ``_render_title``.
         self._title_data: dict | None = None
+        #: Which body is showing: MODE_DASHBOARD (the three rows below the
+        #: hero) or MODE_LAUNCHPAD (the ``l`` view). The hero row is not
+        #: part of either -- it stays mounted and visible regardless.
+        self._mode: str = MODE_DASHBOARD
 
     # ------------------------------------------------------------------
     # Layout
@@ -612,11 +701,25 @@ class SurfScreen(RefreshGuard, Screen):
             yield SurfMarket()
             yield SurfNft()
 
+        # The `l` LAUNCHPAD view (2026-08-23): the v4 launchpad's own three
+        # panels, composed once and hidden until `l` shows them -- the same
+        # composed-once-shown-by-display contract curator's `f`/`l` bodies
+        # use, so the first keypress paints a complete frame instead of a
+        # blank one. The hero above is outside this container and is never
+        # touched by the swap.
+        with Vertical(id=LAUNCHPAD_BODY_ID):
+            yield SurfLaunchpadCoins()
+            yield SurfCurveFlow()
+            yield SurfBurnPipeline()
+
         yield StatusBar()
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
+
+    def on_mount(self) -> None:
+        self._show_mode()
 
     def on_screen_resume(self) -> None:
         self._do_initial_refresh()
@@ -626,6 +729,7 @@ class SurfScreen(RefreshGuard, Screen):
         try:
             self.query_one(StatusBar).set_theme_name(self.app.theme)
             self.query_one(StatusBar).set_game_name("surf")
+            self.query_one(StatusBar).set_key_hints(self.KEY_HINTS)
             # No set_active_view: no slot on this screen has two views, so a
             # `view:` word on the shared bar would name something that does
             # not exist.
@@ -647,6 +751,51 @@ class SurfScreen(RefreshGuard, Screen):
         one that no longer does. Both are worse than no marker.
         """
         self.call_after_refresh(self._render_title)
+
+    # ------------------------------------------------------------------
+    # Mode toggle -- ``l`` LAUNCHPAD / ``escape`` back to the dashboard
+    # ------------------------------------------------------------------
+
+    def _show_mode(self) -> None:
+        """Apply ``self._mode`` to the launchpad body's visibility.
+
+        Curator's ``y``/``f`` shape, minus the hero swap: curator mounts a
+        second hero per mode and toggles which one shows, but this screen
+        has exactly one hero and it is not part of either body -- it is
+        outside ``#surf-launchpad-body`` entirely (see ``compose``) and this
+        method never touches its ``display``, so it is on in both modes.
+        """
+        launchpad = self._mode == MODE_LAUNCHPAD
+        try:
+            self.query_one("#middle-row").display = not launchpad
+            self.query_one("#separator").display = not launchpad
+            self.query_one("#bottom-row").display = not launchpad
+            self.query_one(f"#{LAUNCHPAD_BODY_ID}").display = launchpad
+        except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
+            logger.debug("surf mode toggle failed: %s", exc)
+        # The row marker is about whichever body is now showing (only the
+        # dashboard body's right rail can scroll), so it has to be re-read --
+        # deferred, exactly like ``on_resize``, because the newly-shown body
+        # has not been laid out when this method returns.
+        self.call_after_refresh(self._render_title)
+
+    def action_toggle_launchpad(self) -> None:
+        """``l`` -- swap the dashboard body for the v4 launchpad panels.
+
+        Idempotent: pressing ``l`` again from MODE_LAUNCHPAD returns to the
+        dashboard rather than doing nothing, so the key is also its own way
+        back (curator's ``action_toggle_analysis`` does the same for ``f``).
+        """
+        if self._mode == MODE_LAUNCHPAD:
+            self.action_show_dashboard()
+            return
+        self._mode = MODE_LAUNCHPAD
+        self._show_mode()
+
+    def action_show_dashboard(self) -> None:
+        """``escape`` -- one-way back out of the launchpad view."""
+        self._mode = MODE_DASHBOARD
+        self._show_mode()
 
     def _rail_is_cut(self) -> bool:
         """Does the right rail hold more than this height can show?
@@ -713,23 +862,41 @@ class SurfScreen(RefreshGuard, Screen):
         self._title_data = data
         self._render_title()
 
-        # Hero (the full-width top row)
+        # Hero (the full-width top row): POOL / LP / BURN / SUPPLY, rebuilt
+        # 2026-08-23 for the v4 migration (widgets/surf/hero.py). The old
+        # HOOK/GATE-era keys (``hook_status``, ``lp_liquidity``, ``gate_open``,
+        # ``identities_written``) are not dispatched here any more -- the
+        # hero no longer has a box for them. ``hook_status`` measures a v4
+        # hook launch the dev has publicly retracted and reaches no widget
+        # at all any more; ``gate_open``/``identities_written``/``lp_liquidity``
+        # still feed the GATE/LP detectors inside the manager (see
+        # ``surf_manager._readings``), which is how their information
+        # still reaches the screen -- through ``sig_gate_*``/``sig_lp_*``
+        # below, dispatched to SurfSignals as it always was. See
+        # ``META_KEYS`` in the test module for the fuller accounting.
         try:
             self.query_one(SurfHero).update_data(
-                hook_status=data.get("hook_status"),
-                lp_liquidity=data.get("lp_liquidity"),
+                pool_venue=data.get("pool_venue"),
+                pool_fee_bps=data.get("pool_fee_bps"),
+                pool_liquidity_usd=data.get("pool_liquidity_usd"),
+                pool_id_source=data.get("pool_id_source"),
+                decoy_pool_count=data.get("decoy_pool_count"),
+                lp_state=data.get("lp_state"),
                 lp_imd=data.get("lp_imd"),
                 lp_weth=data.get("lp_weth"),
                 lp_owner_ok=data.get("lp_owner_ok"),
-                gate_open=data.get("gate_open"),
-                identities_written=data.get("identities_written"),
+                burn_accrued=data.get("burn_accrued"),
+                burn_staged=data.get("burn_staged"),
+                burn_ready=data.get("burn_ready"),
                 imd_supply=data.get("imd_supply"),
                 imd_burned_cum=data.get("imd_burned_cum"),
             )
         except Exception as exc:
             logger.debug("Failed to update SurfHero: %s", exc)
 
-        # Signals (right rail, top) -- the six detectors
+        # Signals (right rail, top) -- the nine detectors (Task 9 grew this
+        # from six: DECOY POOL, BURN READY, HOT COIN are the v4-launchpad
+        # additions, quiet-collapsed like every other ``ok`` row).
         try:
             self.query_one(SurfSignals).update_data(
                 sig_post_state=data.get("sig_post_state"),
@@ -750,6 +917,15 @@ class SurfScreen(RefreshGuard, Screen):
                 sig_burn_state=data.get("sig_burn_state"),
                 sig_burn_detail=data.get("sig_burn_detail"),
                 sig_burn_age_s=data.get("sig_burn_age_s"),
+                sig_decoy_state=data.get("sig_decoy_state"),
+                sig_decoy_detail=data.get("sig_decoy_detail"),
+                sig_decoy_age_s=data.get("sig_decoy_age_s"),
+                sig_burnready_state=data.get("sig_burnready_state"),
+                sig_burnready_detail=data.get("sig_burnready_detail"),
+                sig_burnready_age_s=data.get("sig_burnready_age_s"),
+                sig_hot_state=data.get("sig_hot_state"),
+                sig_hot_detail=data.get("sig_hot_detail"),
+                sig_hot_age_s=data.get("sig_hot_age_s"),
             )
         except Exception as exc:
             logger.debug("Failed to update SurfSignals: %s", exc)
@@ -783,6 +959,10 @@ class SurfScreen(RefreshGuard, Screen):
                 parity_pct=data.get("parity_pct"),
                 supply_series=data.get("supply_series"),
                 price_series=data.get("price_series"),
+                legacy_pool_liquidity_usd=data.get("legacy_pool_liquidity_usd"),
+                price_source_disagreement_pct=data.get(
+                    "price_source_disagreement_pct"
+                ),
             )
         except Exception as exc:
             logger.debug("Failed to update SurfMarket: %s", exc)
@@ -799,6 +979,43 @@ class SurfScreen(RefreshGuard, Screen):
             )
         except Exception as exc:
             logger.debug("Failed to update SurfNft: %s", exc)
+
+        # Launchpad body (`l` view) -- dispatched every refresh whether or
+        # not `l` is showing it, exactly like curator's `f`/`l` bodies: a
+        # body that starts rendering only when it becomes visible is blank
+        # for a beat after the keypress. ``launchpad_as_of_hhmm`` is the
+        # detached launchpad tier's own slower clock (surf_manager.py's
+        # ``_launchpad_payload``), shared by all three panels below.
+        try:
+            self.query_one(SurfLaunchpadCoins).update_data(
+                coins=data.get("launchpad_coins"),
+                coin_count=data.get("launchpad_coin_count"),
+                as_of_hhmm=data.get("launchpad_as_of_hhmm"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfLaunchpadCoins: %s", exc)
+
+        try:
+            self.query_one(SurfCurveFlow).update_data(
+                swap_count=data.get("launchpad_swap_count"),
+                trader_count=data.get("launchpad_trader_count"),
+                creator_eth_owed=data.get("launchpad_creator_eth_owed"),
+                as_of_hhmm=data.get("launchpad_as_of_hhmm"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfCurveFlow: %s", exc)
+
+        try:
+            self.query_one(SurfBurnPipeline).update_data(
+                burn_accrued=data.get("burn_accrued"),
+                burn_staged=data.get("burn_staged"),
+                burn_ready=data.get("burn_ready"),
+                burn_min_bridge=data.get("burn_min_bridge"),
+                burned_total=data.get("launchpad_burned_total"),
+                as_of_hhmm=data.get("launchpad_as_of_hhmm"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfBurnPipeline: %s", exc)
 
         # Status bar. A refresh that reaches this line just fetched, so the
         # staleness is honestly 0 without consulting any clock; ``as_of`` is

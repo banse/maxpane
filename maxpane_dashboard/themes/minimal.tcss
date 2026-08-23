@@ -2091,6 +2091,42 @@ SurfDevActivity > RichLog {
     height: 1fr;
 }
 
+/* The `l` LAUNCHPAD body (2026-08-23): curator's `f`/`l` composed-once-
+ * hidden-until-shown shape, applied to surf for the first time. `_show_mode`
+ * swaps this container in for `#middle-row`/`#separator`/`#bottom-row`; the
+ * hero row is outside it and is never touched by the swap.
+ *
+ * `1fr` on the container and on `SurfLaunchpadCoins` -- the one panel here
+ * with a scrolling `DataTable` -- so the coin table gets the screen's spare
+ * rows the same way `#middle-row` does in dashboard mode. `SurfCurveFlow`
+ * and `SurfBurnPipeline` are `auto`: four/five content lines each, not
+ * slack. `margin: 1 0 0 0` matches `#middle-row`'s own top margin, so
+ * swapping bodies does not also move the hero's breathing room. */
+SurfScreen #surf-launchpad-body {
+    height: 1fr;
+    width: 100%;
+    padding: 0 0;
+    margin: 1 0 0 0;
+}
+
+SurfLaunchpadCoins {
+    width: 100%;
+    height: 1fr;
+    padding: 0 1;
+}
+
+SurfCurveFlow {
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+}
+
+SurfBurnPipeline {
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+}
+
 /* ── Curator screen (THE LIST) ────────────────────────────────────────── */
 
 /* Structure only, restating CuratorScreen.DEFAULT_CSS. An app stylesheet
