@@ -1380,37 +1380,72 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     # the key `None`. Its sibling `price_source_disagreement_pct` stays in
     # `_NUMERIC_KEYS_EXCLUDED` above precisely because the same
     # side-by-side check found no such needle for it.
-    "legacy_pool_liquidity_usd": "legacy: v3 pool $0",  # market.py _parts legacy_line
 }
+
+#: Keys whose rendering consumer lands in a LATER task of this plan. They are
+#: numeric and they WILL need real zero-catch probes -- but a probe string
+#: invented before the widget exists passes by absence and proves nothing,
+#: which is how four of ten needles went vacuous on the predecessor branch.
+#: Task 12 empties this set and moves every entry into `_NUMERIC_ZERO_PROBES`
+#: with a needle read off composited output.
+_KEYS_PENDING_CONSUMERS = frozenset({
+    "launchpad_launch_count",
+    "launchpad_new_24h",
+    "launchpad_creator_count",
+})
 
 
 def test_every_surf_key_is_triaged_for_the_zero_catch() -> None:
     """A SURF_KEYS key added later must be triaged, not silently uncovered.
 
-    Three disjoint buckets -- checked, numeric-but-unobservable, and
-    structurally non-numeric -- must partition ``SURF_KEYS`` exactly. This is
-    what "drive it from the real key list" means in practice: a hand-typed
-    list of fields to check would silently stop covering the contract the
-    moment ``SURF_KEYS`` grows, which is exactly the shape of the finding
-    this test exists to close.
+    Four disjoint buckets -- checked, numeric-but-unobservable, structurally
+    non-numeric, and (temporarily) pending-a-consumer -- must partition
+    ``SURF_KEYS`` exactly. This is what "drive it from the real key list"
+    means in practice: a hand-typed list of fields to check would silently
+    stop covering the contract the moment ``SURF_KEYS`` grows, which is
+    exactly the shape of the finding this test exists to close.
+
+    ``_KEYS_PENDING_CONSUMERS`` is scaffolding, not a permanent fourth
+    bucket -- see ``test_the_pending_consumer_bucket_is_empty_by_the_end_of_this_plan``,
+    which is what stops it from becoming one.
     """
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
     checked = set(_NUMERIC_ZERO_PROBES)
     excluded = set(_NUMERIC_KEYS_EXCLUDED)
     non_numeric = set(_NON_NUMERIC_KEYS)
+    pending = set(_KEYS_PENDING_CONSUMERS)
 
-    overlap = (checked & excluded) | (checked & non_numeric) | (excluded & non_numeric)
+    overlap = (
+        (checked & excluded)
+        | (checked & non_numeric)
+        | (checked & pending)
+        | (excluded & non_numeric)
+        | (excluded & pending)
+        | (non_numeric & pending)
+    )
     assert not overlap, f"a key is triaged into more than one bucket: {overlap}"
 
-    covered = checked | excluded | non_numeric
+    covered = checked | excluded | non_numeric | pending
     missing = set(SURF_KEYS) - covered
     assert not missing, (
         f"SURF_KEYS grew a key this test never triaged: {missing} -- add it "
-        "to _NUMERIC_ZERO_PROBES, _NUMERIC_KEYS_EXCLUDED or _NON_NUMERIC_KEYS"
+        "to _NUMERIC_ZERO_PROBES, _NUMERIC_KEYS_EXCLUDED, _NON_NUMERIC_KEYS "
+        "or _KEYS_PENDING_CONSUMERS"
     )
     extra = covered - set(SURF_KEYS)
     assert not extra, f"triaged a key SURF_KEYS no longer has: {extra}"
+
+
+@pytest.mark.xfail(strict=False, reason="emptied by Task 12")
+def test_the_pending_consumer_bucket_is_empty_by_the_end_of_this_plan():
+    """`_KEYS_PENDING_CONSUMERS` is scaffolding with an expiry date.
+
+    Task 12 wires the last consumer and moves every entry into
+    `_NUMERIC_ZERO_PROBES` with a needle verified against composited output.
+    This test is what stops the scaffolding from becoming permanent.
+    """
+    assert _KEYS_PENDING_CONSUMERS == frozenset()
 
 
 def test_a_full_outage_renders_explicit_states_not_zeros() -> None:

@@ -39,9 +39,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-#: The four announcement-channel classifications (analytics/surf_signals.py
+#: The five announcement-channel classifications (analytics/surf_signals.py
 #: ``classify_channel_tx`` returns exactly one of these).
-CHANNEL_KINDS: tuple[str, ...] = ("self", "reply", "action", "fund")
+#:
+#: ``answer`` is the announcement wallet replying to a ``reply``: per 0xTXT
+#: (``0x/packages/protocol/src/surf.ts``) a `surf -> X` zero-value tx carrying
+#: UTF-8 is a `legacy-reply`, not a contract call. Folding it into ``action``
+#: is what detached the dev's answers from the questions they answer -- a
+#: reader could see a question in the feed and never see it get answered,
+#: because the answer rendered identically to an unrelated contract call.
+CHANNEL_KINDS: tuple[str, ...] = ("self", "reply", "answer", "action", "fund")
 
 #: Signal states rendered by ``SurfSignals``.  ``None`` means "not evaluated".
 SIGNAL_STATES: tuple[str, ...] = ("ok", "watch", "fired")
@@ -305,6 +312,18 @@ class LaunchpadCoin:
 
     ``ticker`` and ``name`` are **attacker-chosen**: ``launch(string,string)``
     is permissionless.  They are carried raw here and escaped at render.
+
+    ``swaps_24h`` is the ranking key and ``swaps_all`` the tiebreak (fix
+    round 2's ``swaps_1h``/hour window undercounted a coin that traded
+    heavily on day one and then went quiet -- a day-long window is what the
+    PRD's LAUNCHPAD COINS table actually sorts by). Both are plain ``int``
+    with a **representable zero**: a coin that has never traded really has
+    ``0`` swaps, in either window, and that is a fact worth ranking on, not
+    a failed read to hide. ``change_24h_pct`` stays ``float | None`` because
+    it genuinely can fail to exist: it is ``None`` when fewer than two
+    in-window swaps carry a usable price to diff -- *"no measurable move"
+    is not the claim "a flat day"*, and collapsing the two would let a coin
+    with one swap (or none) rank as unchanged instead of unmeasured.
     """
 
     ticker: str
@@ -312,8 +331,9 @@ class LaunchpadCoin:
     creator: str
     age_s: float | None
     price_eth: float | None
-    change_1h_pct: float | None
-    swaps_1h: int
+    change_24h_pct: float | None
+    swaps_24h: int
+    swaps_all: int
     imd_burned: float | None
 
 
@@ -325,9 +345,10 @@ class LaunchpadState:
     zero** -- 0 means "we looked and nothing has accrued" and must stay
     distinguishable from ``None``, which means the read failed.
 
-    ``swaps_by_coin`` (fix round 2, 2026-08-24) is the **full** per-coin
-    in-window swap count -- every coin with at least one swap in the hour,
-    not the ``LAUNCHPAD_RENDER_LIMIT``-capped slice ``coins`` carries. The
+    ``swaps_by_coin`` (fix round 2, 2026-08-24; window widened hour -> 24 h
+    by this plan's Task 1) is the **full** per-coin in-window swap count --
+    every coin with at least one swap in the 24 h window, not the
+    ``LAUNCHPAD_RENDER_LIMIT``-capped slice ``coins`` carries. The
     two serve different callers on purpose: ``coins`` is how many rows the
     panel draws, ``swaps_by_coin`` is the input
     ``analytics/surf_launchpad.hot_coin_threshold`` takes a *median* over --
@@ -349,6 +370,34 @@ class LaunchpadState:
     both shrank the population ``hot_coin_threshold`` takes a median over and
     let a coin clear the bar on a stranger's volume. ``coin_tickers`` carries
     the raw ticker: escaping is the render layer's job, never this one's.
+
+    ``launch_count`` is what the log sweep actually found (a count of
+    ``Launched`` events over however much history the sweep has covered so
+    far); ``coin_count`` above is what ``LaunchpadFactory.coinCount()``
+    claims. They are two different reads of the same population and are
+    deliberately never reconciled into one number here — when a resumable
+    sweep is mid-catch-up the two *will* disagree, and the panel has to be
+    able to say so (`launch_count of coin_count launched`) rather than
+    silently ranking whatever subset the sweep has reached so far as if it
+    were the whole population. ``new_24h`` is the same sweep's count of
+    ``Launched`` events inside the last day, and ``creator_count`` the
+    distinct-creator count over its **full** history, not the render-capped
+    ``coins`` slice. All three are ``int | None`` with a representable
+    zero -- 0 launches, 0 today, 0 distinct creators are all real answers a
+    swept-but-quiet history can give, distinct from the sweep never having
+    completed a pass at all.
+
+    ``cursor`` is the launchpad sweep's own resumable position, on the
+    ``SLOT_CLUSTERS`` precedent from curator's linked-wallet analysis: an
+    append-only log sweep that re-fetched its whole history every tick would
+    never catch up as the history grows, so the slot persists
+    ``{"last_block": int, "launches": {pool_id: {...}}, "swaps_all":
+    {pool_id: int}}`` and each sweep resumes from ``last_block`` instead of
+    block zero. ``None`` means "no sweep has ever completed a pass" -- not
+    "the history is empty" -- and it is the manager's job to keep serving
+    last-good ``coins``/``launch_count``/etc. behind an ``as of`` marker
+    while a cursor is still ``None`` or stale, never to block first paint on
+    it.
     """
 
     coin_count: int | None
@@ -365,6 +414,10 @@ class LaunchpadState:
     burned_total_wei: int | None
     swaps_by_coin: dict[str, int] | None
     coin_tickers: dict[str, str] | None = None
+    launch_count: int | None = None
+    new_24h: int | None = None
+    creator_count: int | None = None
+    cursor: dict | None = None
 
 
 #: Every key ``SurfManager.fetch_and_compute()`` returns — the parallel-agent
@@ -442,7 +495,6 @@ SURF_KEYS: tuple[str, ...] = (
     "imd_change_24h_pct",
     "imd_vol_24h_usd",
     "pool_liquidity_usd",      # float | None — the LIVE v4 pool, matched by pool id
-    "legacy_pool_liquidity_usd",  # float | None — the superseded v3 pool, fix round 10a
     "price_source_disagreement_pct",  # float | None — dex vs chain price, % of chain
     "fp_price_usd",
     "parity_pct",             # float | None — (imd/fp - 1) * 100, computed live
@@ -459,6 +511,9 @@ SURF_KEYS: tuple[str, ...] = (
     "dev_activity",           # list[dict] — SURF_ROW_KEYS["dev_activity"]
     # ---- launchpad (detached sweep, its own slower "as of") -----------------
     "launchpad_coin_count",         # int | None — LaunchpadFactory.coinCount()
+    "launchpad_launch_count",       # int | None — Launched events swept, vs coin_count
+    "launchpad_new_24h",            # int | None — Launched events in the last 24h
+    "launchpad_creator_count",      # int | None — distinct creators, full history
     "launchpad_swap_count",         # int | None — CurveSwap logs seen this sweep
     "launchpad_trader_count",       # int | None — distinct swap senders
     "launchpad_burned_total",       # float | None — cumulative from ImdBurned logs
@@ -480,7 +535,9 @@ SURF_KEYS: tuple[str, ...] = (
 #: Row shapes for the list-of-dict payloads.  Widgets index these keys
 #: directly, so adding one is a contract change, not an implementation detail.
 SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
-    "feed_items": ("ts", "kind", "from_addr", "from_label", "text", "tx_hash"),
+    "feed_items": (
+        "ts", "kind", "from_addr", "to_addr", "from_label", "text", "tx_hash",
+    ),
     "nft_last_sales": ("ts", "token_id", "eth"),
     "dev_activity": (
         "ts",
@@ -498,8 +555,9 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "creator_known",
         "age_s",
         "price_eth",
-        "change_1h_pct",
-        "swaps_1h",
+        "change_24h_pct",
+        "swaps_24h",
+        "swaps_all",
         "imd_burned",
     ),
 }

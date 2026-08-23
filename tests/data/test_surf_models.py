@@ -95,14 +95,15 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
         "pool_id_source",
     ),
     LaunchpadCoin: (
-        "ticker", "name", "creator", "age_s", "price_eth", "change_1h_pct",
-        "swaps_1h", "imd_burned",
+        "ticker", "name", "creator", "age_s", "price_eth", "change_24h_pct",
+        "swaps_24h", "swaps_all", "imd_burned",
     ),
     LaunchpadState: (
         "coin_count", "imd_to_burn_wei", "total_real_imd_wei", "burn_fee_bps",
         "creator_fee_bps", "creator_eth_owed_wei", "executor_balance_wei",
         "min_bridge_wei", "coins", "swap_count", "trader_count",
-        "burned_total_wei", "swaps_by_coin", "coin_tickers",
+        "burned_total_wei", "swaps_by_coin", "coin_tickers", "launch_count",
+        "new_24h", "creator_count", "cursor",
     ),
 }
 
@@ -227,13 +228,18 @@ def test_log_window_groups_default_to_empty_not_missing() -> None:
     assert window.seaport_sales == ()
 
 
-def test_channel_tx_kinds_are_the_four_frozen_strings() -> None:
+def test_channel_tx_kinds_are_the_five_frozen_strings() -> None:
     """CHANNEL_KINDS is the vocabulary ``classify_channel_tx`` returns — it is
     deliberately *not* a ChannelTx field: the client returns raw rows and the
-    pure layer classifies them (PRD §6 rule 4)."""
+    pure layer classifies them (PRD §6 rule 4).
+
+    Five, not four, since Task 1 (2026-08-23 plan) split ``answer`` out of
+    ``action`` — see ``test_channel_kinds_carries_the_authenticated_answer``
+    for why.
+    """
     from maxpane_dashboard.data.surf_models import CHANNEL_KINDS
 
-    assert CHANNEL_KINDS == ("self", "reply", "action", "fund")
+    assert CHANNEL_KINDS == ("self", "reply", "answer", "action", "fund")
     assert "kind" not in {f.name for f in dataclasses.fields(ChannelTx)}
     assert "text" not in {f.name for f in dataclasses.fields(ChannelTx)}
 
@@ -294,7 +300,6 @@ EXPECTED_KEYS = {
     "imd_change_24h_pct",
     "imd_vol_24h_usd",
     "pool_liquidity_usd",
-    "legacy_pool_liquidity_usd",
     "price_source_disagreement_pct",
     "fp_price_usd",
     "parity_pct",
@@ -322,6 +327,9 @@ EXPECTED_KEYS = {
     "burn_min_bridge",
     # launchpad (detached sweep)
     "launchpad_coin_count",
+    "launchpad_launch_count",
+    "launchpad_new_24h",
+    "launchpad_creator_count",
     "launchpad_swap_count",
     "launchpad_trader_count",
     "launchpad_burned_total",
@@ -345,7 +353,7 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 74
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 76
 
 
 def test_every_signal_has_all_three_facets() -> None:
@@ -381,6 +389,7 @@ def test_row_key_sets_match_the_prd() -> None:
         "ts",
         "kind",
         "from_addr",
+        "to_addr",
         "from_label",
         "text",
         "tx_hash",
@@ -463,5 +472,57 @@ def test_lp_migration_signal_keys_are_renamed_not_dropped() -> None:
 def test_launchpad_coin_row_keys() -> None:
     assert SURF_ROW_KEYS["launchpad_coins"] == (
         "ticker", "name", "creator", "creator_known",
-        "age_s", "price_eth", "change_1h_pct", "swaps_1h", "imd_burned",
+        "age_s", "price_eth", "change_24h_pct", "swaps_24h", "swaps_all",
+        "imd_burned",
     )
+
+
+# ---------------------------------------------------------------------------
+# feed threading + launchpad repair — the frozen contract addition (Task 1,
+# 2026-08-23 plan)
+# ---------------------------------------------------------------------------
+
+
+def test_channel_kinds_carries_the_authenticated_answer():
+    """`answer` is the announcement wallet replying to a reply.
+
+    Per 0xTXT (`0x/packages/protocol/src/surf.ts`) a `surf -> X` zero-value tx
+    carrying UTF-8 is a `legacy-reply`, not a contract call. Folding it into
+    `action` is what detached the dev's answers from the questions they answer.
+    """
+    from maxpane_dashboard.data.surf_models import CHANNEL_KINDS
+
+    assert CHANNEL_KINDS == ("self", "reply", "answer", "action", "fund")
+
+
+def test_feed_rows_carry_the_recipient_threading_needs():
+    from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS
+
+    assert "to_addr" in SURF_ROW_KEYS["feed_items"]
+
+
+def test_launchpad_rows_rank_on_a_day_and_keep_the_all_time_tiebreak():
+    from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS
+
+    row = SURF_ROW_KEYS["launchpad_coins"]
+    assert "swaps_24h" in row and "swaps_all" in row and "change_24h_pct" in row
+    assert "swaps_1h" not in row and "change_1h_pct" not in row
+
+
+def test_the_superseded_v3_liquidity_key_is_gone():
+    """Removed with its whole supply chain, not orphaned in the contract.
+
+    A key nothing renders is a key nobody can tell is broken -- the exact
+    shape of open follow-ups 4 from the predecessor branch.
+    """
+    from maxpane_dashboard.data.surf_models import SURF_KEYS
+
+    assert "legacy_pool_liquidity_usd" not in SURF_KEYS
+
+
+def test_the_launchpad_population_keys_exist():
+    from maxpane_dashboard.data.surf_models import SURF_KEYS
+
+    for key in ("launchpad_launch_count", "launchpad_new_24h",
+                "launchpad_creator_count"):
+        assert key in SURF_KEYS
