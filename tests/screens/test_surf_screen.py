@@ -14,6 +14,7 @@ payloads fetched 2026-08-08 -- not invented.
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 import pytest
@@ -226,6 +227,11 @@ _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z
 _TS_POST_12 = 1_785_903_575   # announce nonce 12, 2026-08-05T04:19:35Z
 _TS_REPLY = 1_785_795_251     # pasta-sauce reply, 2026-08-03T22:14:11Z
 _AS_OF = 1_786_161_600.0      # the fetch instant: 2026-08-08T04:00:00Z
+#: ``_AS_OF`` as the title bar renders it (final fix wave, I4). Computed, not
+#: typed: ``_fmt_hhmm`` renders **local** time, so a literal would pin these
+#: tests to whichever timezone they were written in and go red on a laptop
+#: that travels.
+_AS_OF_HHMM = time.strftime("%H:%M", time.localtime(_AS_OF))
 _ANNOUNCE = "0x200E710aCAA6A93bbc77146026328C40F1d60fB1"
 _REPLIER = "0x1c3A0Ad54418Fe843953C71dF23637DE732Ce159"
 # Full 42-char addresses, never pre-shortened: WP3's ``long_addr`` returns any
@@ -994,7 +1000,10 @@ async def test_screen_mounts_all_six_widgets():
         # output**, not the widget's content string (house rule): a title
         # that never reaches the compositor would still pass a ``_plain()``
         # check while being invisible to a real user.
-        assert "SURFBOARD · IMD $0.71 · parity -2.7% · feed #14 (23h)" in _screen_text(app)
+        assert (
+            f"SURFBOARD · IMD $0.71 · parity -2.7% · as of {_AS_OF_HHMM}"
+            in _screen_text(app)
+        )
 
 
 # -- title line (pure) ---------------------------------------------------
@@ -1004,11 +1013,16 @@ from maxpane_dashboard.screens import surf as surf_mod
 
 def test_title_line_composes_the_mandated_format():
     line = surf_mod._title_line(_frozen_payload())
-    # PRD §4: SURFBOARD · IMD $x.xx · parity ±x.x% · feed #N (age) + flags
-    assert line.startswith("SURFBOARD · IMD $0.71 · parity -2.7% · feed #14 (23h)")
+    # PRD §4: SURFBOARD · IMD $x.xx · parity ±x.x% · as of HH:MM + flags.
+    # `feed #N (age)` was the fourth field until the final fix wave (I4); it
+    # is rendered verbatim by the ANNOUNCE panel's own title one row down
+    # (`ANNOUNCE · #14 · last 23h ago`), and its seventeen columns bought the
+    # freshness marker this screen had nowhere at all.
+    head = f"SURFBOARD · IMD $0.71 · parity -2.7% · as of {_AS_OF_HHMM}"
+    assert line.startswith(head)
     # Nothing follows the healthy figures: no flags in this sample, and the
     # version tail went in 2026-08-12 (the StatusBar already carries it).
-    assert line == "SURFBOARD · IMD $0.71 · parity -2.7% · feed #14 (23h)"
+    assert line == head
     assert "⚠" not in line                 # nothing degraded in the sample
 
 
@@ -1016,7 +1030,9 @@ def test_title_line_all_none_shows_emdashes_never_zeros():
     line = surf_mod._title_line(_all_none_payload())
     assert "IMD —" in line
     assert "parity —" in line
-    assert "feed #— (—)" in line
+    # The marker never disappears: "we have never read anything" is a state
+    # this row must be able to say, not one it may go quiet about.
+    assert "as of —" in line
     assert "$0.00" not in line and "0.0%" not in line   # None is never 0-coerced
 
 
@@ -1240,7 +1256,7 @@ async def test_refresh_renders_title_and_all_panels():
         await pilot.pause()
 
         title = _plain(screen.query_one("#title-bar"))
-        assert "SURFBOARD · IMD $0.71 · parity -2.7% · feed #14 (23h)" in title
+        assert f"SURFBOARD · IMD $0.71 · parity -2.7% · as of {_AS_OF_HHMM}" in title
 
         text = _screen_text(app)
         # Panel titles (the WP3 widget-interface strings).
@@ -1336,7 +1352,7 @@ async def test_screen_survives_all_none_payload():
         await pilot.pause()
 
         title = _plain(screen.query_one("#title-bar"))
-        assert "SURFBOARD · IMD — · parity — · feed #— (—)" in title
+        assert "SURFBOARD · IMD — · parity — · as of —" in title
         text = _screen_text(app)
         assert "$0.00" not in text     # a None price is never a zero price
         assert "no keyless source" in text
@@ -2058,22 +2074,61 @@ async def test_the_row_marker_survives_a_title_bar_full_of_warnings():
         assert TALLER_HINT not in _screen_text(app)
 
 
+async def test_the_freshness_marker_survives_the_launchpad_swap():
+    """I4: the one tier with a DETACHED sweep must not be the one whose
+    staleness the default view cannot show.
+
+    ``l`` swaps the whole dashboard body, so the launchpad's own ``as of
+    HH:MM`` (inside ``SurfBurnPipeline``/``SurfLaunchpadCoins``) is invisible
+    from the dashboard and every panel that could carry one is invisible from
+    the launchpad. ``#title-bar`` is outside both bodies and is the only place
+    a reader can see, in either mode, that the numbers stopped moving --
+    which is exactly why opting into the StatusBar's key hints (and giving up
+    its ``updated Ns ago``) is defensible here at all.
+    """
+    async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, 48) as (app, screen, pilot):
+        assert f"as of {_AS_OF_HHMM}" in _screen_text(app).split("\n")[0]
+        await pilot.press("l")
+        await pilot.pause()
+        assert screen._mode == MODE_LAUNCHPAD
+        assert f"as of {_AS_OF_HHMM}" in _screen_text(app).split("\n")[0], (
+            "the freshness marker went away with the dashboard body"
+        )
+
+
+async def test_a_cold_cache_still_says_as_of_rather_than_going_quiet():
+    """A marker that disappears when there is nothing to be fresh about reads
+    identically to a healthy one -- the FARM/HOUR SAVED bug, on the row that
+    covers the whole screen."""
+    async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, 48, payload=_all_none_payload()) as (
+        app, _screen, _p
+    ):
+        row0 = _screen_text(app).split("\n")[0]
+        assert "as of —" in row0, row0
+
+
 #: The narrowest terminal on which the **whole** worst-case title bar reaches
-#: a pixel: the board's name, every figure, ``‹ taller``, the LP warning and
-#: **all seven** degraded groups, all on the one row of this screen that
-#: cannot ellipsise. Swept over the real screen rather than counted -- ``⚠``
+#: a pixel: the board's name, every figure, the ``as of`` marker,
+#: ``‹ taller``, the LP warning and **all seven** degraded groups, all on the
+#: one row of this screen that cannot ellipsise. Swept over the real screen rather than counted -- ``⚠``
 #: is not a one-column glyph on every width table, so the arithmetic is not
 #: the test.
 #:
-#: **142** (Task 6 fix round 1, controller finding 2; was 137 across six
-#: groups). ``data/surf_manager.py`` grew a seventh source,
-#: ``SOURCE_LAUNCHPAD`` -- and it is rendered ``"pad"`` rather than
-#: ``"launchpad"`` specifically *because* appending the long form measured
-#: past both the old 137 pin and ``SURF_FULL_LAYOUT_COLUMNS`` (143): this
-#: repo's standing rule is to shorten the label, not widen the layout
-#: (curator's own precedent). Even at three characters the seventh name still
-#: costs five columns (``, pad``), so the pin moved 137 -> 142 -- measured by
-#: sweeping the real render, not computed. It read **111** for one commit,
+#: **139** (final fix wave, I4; was 142, and 137 before that across six
+#: source groups). The row gained ``as of HH:MM`` -- this screen had no
+#: freshness signal anywhere, which stopped being survivable once the
+#: launchpad arrived as a **detached** sweep -- and paid for it by dropping
+#: ``feed #N (age)``, which the ANNOUNCE panel's own title renders verbatim
+#: one row down (``ANNOUNCE · #14 · last 23h ago``). Adding the marker alone
+#: measured **156**, past ``SURF_FULL_LAYOUT_COLUMNS`` (143), where this
+#: row's tail is *gone* rather than clipped; the seventeen columns the
+#: duplicate segment was spending bought it with three to spare. Shorten the
+#: copy, do not widen the layout -- the same rule that turned
+#: ``SOURCE_LAUNCHPAD`` into ``"pad"`` rather than raising this pin when the
+#: seventh source group arrived (the long form measured past 143 on its own,
+#: and even at three characters the name still cost five columns, ``, pad``,
+#: taking the pin 137 -> 142). Measured by sweeping the real render 130-149,
+#: not computed. It read **111** for one commit,
 #: measured against a fixture carrying three degraded groups -- but
 #: ``SurfManager``'s outermost guard emits ``list(SOURCES)``, every group,
 #: and a full outage is precisely when this row is read. The fixture derives
@@ -2081,11 +2136,11 @@ async def test_the_row_marker_survives_a_title_bar_full_of_warnings():
 #: number moves with the vocabulary instead of behind it -- which is exactly
 #: the mutation that moved this constant this time.
 #:
-#: ``SURF_FULL_LAYOUT_COLUMNS`` (143) clears this by one column, not six: a
-#: title bar that needed 143 would already be losing its tail on surf's own
-#: full layout. 142 is the tight number on purpose -- see the companion test
+#: ``SURF_FULL_LAYOUT_COLUMNS`` (143) clears this by four columns: a title
+#: bar that needed 144 would already be losing its tail on surf's own full
+#: layout. 139 is the tight number on purpose -- see the companion test
 #: below, which fails one column either side of it.
-WORST_CASE_TITLE_COLUMNS = 142
+WORST_CASE_TITLE_COLUMNS = 139
 
 
 async def test_the_worst_case_title_bar_keeps_its_whole_tail_from_here():
@@ -3626,7 +3681,7 @@ async def test_overrun_tick_is_skipped_never_queued_or_cancelled():
         assert manager.calls == 1                      # nothing ran after
         assert screen._refresh_in_flight is False      # flag lowered
         # ...and the completed refresh actually rendered.
-        assert "feed #14" in _plain(screen.query_one("#title-bar"))
+        assert f"as of {_AS_OF_HHMM}" in _plain(screen.query_one("#title-bar"))
 
 
 async def test_manual_refresh_and_interval_tick_share_one_guard():
@@ -3792,7 +3847,7 @@ async def test_surf_first_refresh_joins_the_startup_prefetch():
         # never concurrently -- and it produced the real first paint.
         assert manager.calls == 2
         assert manager.max_concurrent == 1
-        assert "feed #14" in _plain(screen.query_one("#title-bar"))
+        assert f"as of {_AS_OF_HHMM}" in _plain(screen.query_one("#title-bar"))
 
 
 async def test_a_raising_refresh_lowers_the_guard_flag_and_the_next_tick_still_runs():
@@ -3832,4 +3887,4 @@ async def test_a_raising_refresh_lowers_the_guard_flag_and_the_next_tick_still_r
             await asyncio.sleep(0)
         await pilot.pause()
         assert screen._refresh_in_flight is False
-        assert "feed #14" in _plain(screen.query_one("#title-bar"))
+        assert f"as of {_AS_OF_HHMM}" in _plain(screen.query_one("#title-bar"))

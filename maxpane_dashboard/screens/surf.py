@@ -2,7 +2,7 @@
 
 Layout: three content rows, every widget on screen at once::
 
-    #title-bar         SURFBOARD · IMD $x.xx · parity ±x.x% · feed #N (age)
+    #title-bar         SURFBOARD · IMD $x.xx · parity ±x.x% · as of HH:MM
     #hero-row          SurfHero (full width, four boxes)
     #middle-row        SurfFeed (7fr)   | #surf-right-rail (6fr)
                                         |   SurfSignals     (auto, +1 margin)
@@ -120,6 +120,7 @@ Written against the frozen ``SURF_KEYS`` contract, not against
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
@@ -417,6 +418,24 @@ def _fmt_age(value) -> str:
     return f"{int(seconds // 86400)}d"
 
 
+def _fmt_hhmm(ts) -> str:
+    """An epoch stamp as local ``HH:MM``, or the em-dash when there is none.
+
+    Deliberately **not** a clock read: the value is handed in, so this stays
+    as deterministic as every other formatter on this row (CLAUDE.md's
+    "inject the clock" -- the rule is about *reading* the time, and nothing
+    here does).  ``None`` is the honest state on a cold cache, and it renders
+    ``as of —`` rather than disappearing: a freshness marker that vanishes
+    when there is nothing to be fresh about is the FARM/HOUR SAVED bug.
+    """
+    if isinstance(ts, bool) or not isinstance(ts, (int, float)):
+        return _EMDASH
+    try:
+        return time.strftime("%H:%M", time.localtime(float(ts)))
+    except (ValueError, OSError, OverflowError):
+        return _EMDASH
+
+
 def _fmt_degraded(sources) -> str:
     """``· ⚠ logs, market`` — or an empty string when all is well.
 
@@ -490,12 +509,32 @@ def _title_line(data: dict, row_hint: bool = False) -> str:
     ``tests/screens/test_surf_screen.WORST_CASE_TITLE_COLUMNS``, and
     ``test_the_status_bar_still_carries_the_version_to_a_pixel`` for the
     other half of that argument -- the StatusBar has to actually render it.
+
+    **``as of HH:MM`` arrived, and ``feed #N (age)`` paid for it** (final fix
+    wave, I4 -- the same argument as the version tail, one segment further
+    on). This screen had *no* freshness signal anywhere: opting into the
+    StatusBar's ``KEY_HINTS`` costs both ``tab switch`` and ``updated Ns
+    ago`` (``StatusBar._ordinary_status``), and unlike curator -- which makes
+    exactly that trade -- surf had no title-bar marker to fall back on. That
+    was survivable while every tier moved on the poll loop; it stopped being
+    survivable when the launchpad arrived as a **detached** sweep whose only
+    ``as of`` marker lives inside the hidden ``l`` body. A wedged refresh
+    worker now shows a stalling clock instead of confident numbers.
+
+    ``feed #N (age)`` is what it cost, and the announce panel's own title
+    already renders both halves of it verbatim (``ANNOUNCE · #14 · last 23h
+    ago``, ``widgets/surf/feed.py``) -- seventeen columns of the one row that
+    cannot ellipsise, spent saying something twice. The row is measured, not
+    counted: adding the marker without paying for it took the worst case past
+    ``SURF_FULL_LAYOUT_COLUMNS``, where the tail is *gone* rather than
+    clipped, and this repo's standing rule is to shorten the copy rather than
+    widen the layout. The marker is not optional and rides ahead of both
+    warnings and the row hint, matching curator's order.
     """
-    feed_age = _fmt_age(data.get("feed_last_post_age_s"))
     line = (
         f"SURFBOARD · IMD {_fmt_usd(data.get('imd_price_usd'))} · "
         f"parity {_fmt_signed_pct(data.get('parity_pct'))} · "
-        f"feed #{_fmt_int(data.get('feed_nonce'))} ({feed_age})"
+        f"as of {_fmt_hhmm(data.get('as_of'))}"
     )
 
     if row_hint:
@@ -531,11 +570,18 @@ class SurfScreen(RefreshGuard, Screen):
     #: Named in the status bar's left label (``StatusBar.set_key_hints``),
     #: curator's own vocabulary (``"c panels · y you · f linked · l lists"``)
     #: -- this screen's sole entry. Opting in trades the bar's ``updated Ns
-    #: ago`` freshness segment for this hint (``StatusBar._ordinary_status``);
-    #: surf has no title-bar ``as of HH:MM`` to fall back on the way curator
-    #: does, but one key is worth naming and the freshness a poll-interval
-    #: reader loses is the same information the title bar's own ``feed
-    #: #N (age)`` already gestures at.
+    #: ago`` freshness segment for this hint (``StatusBar._ordinary_status``).
+    #:
+    #: That trade used to be made on the argument that the title bar's own
+    #: ``feed #N (age)`` "gestures at" freshness. It does not: that is the age
+    #: of the last announce POST, not of the data, and it sits still for weeks
+    #: at a time while the dashboard keeps polling. So the hint was bought
+    #: with the screen's only freshness signal and nothing replaced it -- a
+    #: wedged refresh worker showed confident numbers with no staleness marker
+    #: anywhere, on the one dashboard that had just gained a **detached**
+    #: sweep. The trade is fine; the missing half was. ``_title_line`` now
+    #: carries curator's own ``as of HH:MM`` fallback, which is what made
+    #: opting in defensible there in the first place.
     #:
     #: One markup run, not curator's "``[dim]l[/]`` letter, plain word" split:
     #: Rich/Textual compositing keeps adjacent differently-styled runs as

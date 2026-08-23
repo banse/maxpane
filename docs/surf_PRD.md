@@ -92,7 +92,7 @@ the title bar advertises rows lost off the bottom of the right rail with `‹ ta
 
 | Slot | Widget | Content |
 |---|---|---|
-| title bar | — | `SURFBOARD · IMD $x.xx · parity ±x.x% · feed #N (age)` + `‹ taller` + `⚠ LP owner changed` + `⚠ <failing source groups>` — no version (see amendment 5) |
+| title bar | — | `SURFBOARD · IMD $x.xx · parity ±x.x% · as of HH:MM` + `‹ taller` + `⚠ LP owner changed` + `⚠ <failing source groups>` — no version (see amendment 5). `feed #N (age)` was the fourth field until 2026-08-24: it is rendered verbatim by the ANNOUNCE panel's own title one row down, and its columns bought the freshness marker this screen had nowhere at all (the StatusBar's `updated Ns ago` went when the screen opted into key hints) |
 | hero row (full width) | `SurfHero` | experiment status in four boxes: v4 hook NOT LIVE / LAUNCHED; LP position (IMD/WETH sides, owner=frenpet.eth sanity flag); gate CLOSED/OPEN + written x/2000; supply + burns observed since this install began (never an all-time figure — no keyless source; renders "no burn observed yet" until the first one) |
 | middle left | `SurfFeed` | announce feed: date · kind (`self` / `reply` / `action` / `fund`) · message. Full text at wide tiers, truncated + `‹ widen` below |
 | middle right rail, top | `SurfSignals` | the six detectors, FIRED rows styled loud |

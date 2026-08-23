@@ -1458,8 +1458,9 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             # *whole* six-name list reaches a pixel through the real app at
             # 143x48, on a row that wraps out of existence rather than
             # ellipsising -- see WORST_CASE_TITLE_COLUMNS, which measures it
-            # at 142 (it was 137 across six source groups, before
-            # SOURCE_LAUNCHPAD made it seven). It does **not** pin the
+            # at 139 (137 across six source groups, 142 once
+            # SOURCE_LAUNCHPAD made it seven, 139 once the title bar traded
+            # `feed #N (age)` for `as of HH:MM`). It does **not** pin the
             # vocabulary: the double's
             # `_degraded` is `sorted(SOURCES)` too, so a renamed group
             # renames both sides and stays green here. The rename tripwire
