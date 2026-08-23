@@ -397,14 +397,9 @@ LP_POST_TEXT = (
 )
 LP_POST_DETAIL = '#14 "I moved 33 eth to the LP on mainnet https://eth…"'
 
-# SYNTHETIC: no hooked IMD v4 pool exists yet — all 19 live ones have
-# hooks=0x0.  The hook address is the dev's *existing* Vibecoins launchpad
-# hook, used here only to give the row a realistic non-zero value.
-HOOKLESS_POOL = {
-    "ts": 1_786_000_000.0,
-    "tx_hash": "0x" + "b0" * 32,
-    "hooks": "0x0000000000000000000000000000000000000000",
-}
+# SYNTHETIC: a hooked IMD v4 pool -- LP MIGRATION's old flagship event, now
+# spent (2026-08-17).  Kept only for test_a_hooked_v4_pool_no_longer_moves_
+# this_row, which proves the now-removed branch stays removed.
 HOOKED_POOL = {
     "ts": 1_786_079_000.0,
     "tx_hash": "0x" + "a5" * 32,
@@ -417,6 +412,21 @@ SUPPLY_BEFORE = 2_252_364.969423
 SUPPLY_AFTER_MINTS = 2_376_731.868679
 LP_LIQUIDITY_BEFORE = 1_000_000_000_000
 LP_LIQUIDITY_AFTER_ADD = 1_330_000_000_000     # +33.0%
+
+# --- v4-launchpad fixtures (Task 7) -----------------------------------------
+#
+# CLAUDE.md: "37 decoy pools mean 'which pool is this' is a question with a
+# wrong answer" -- 36 is the day-before baseline, 37 the live count.
+DECOY_POOL_COUNT_BEFORE = 36
+DECOY_POOL_COUNT_AFTER = 37
+DECOY_NEWEST_FEE_BPS = 8_000  # 80% -- a predatory fee tier meant to look rich
+
+# HOT COIN: five quiet coins plus one that clears the relative bar.  Reused
+# verbatim between the escaped-detail test and the matrix's FIRED row so
+# there is exactly one "hostile ticker crosses the bar" fixture in the file.
+HOT_COIN_COUNTS_THIN = {"a": 50, "b": 1}                    # 2 active < HOT_MIN_ACTIVE
+HOT_COIN_COUNTS_FIRED = {**{f"c{i}": 1 for i in range(5)}, "[/x]": 99}
+HOT_COIN_COUNTS_WATCH = {"a": 2, "b": 2, "c": 2, "d": 2, "e": 4}
 
 
 def _baseline(**overrides) -> dict:
@@ -438,6 +448,7 @@ def _baseline(**overrides) -> dict:
         "v4_ts": 0.0,
         "burn_tx": BURN_0731["tx_hash"],
         "burn_ts": BURN_0731["ts"],
+        "decoy_pool_count": DECOY_POOL_COUNT_BEFORE,
         "fired": {},
     }
     base.update(overrides)
@@ -461,6 +472,12 @@ def _readings(**overrides) -> dict:
         "bridge_mints": [],
         "burn_transfers": [],
         "imd_supply": SUPPLY_BEFORE,
+        # -- v4-launchpad additions (Task 7) --
+        "decoy_pool_count": DECOY_POOL_COUNT_BEFORE,
+        "decoy_newest_fee_bps": None,
+        "burn_ready": False,
+        "burn_accrued": 0.0,
+        "launchpad_swaps_by_coin": {},
     }
     read.update(overrides)
     return read
@@ -480,10 +497,23 @@ def test_output_keys_are_exactly_the_prd_contract():
     out, _ = sig.build_signals(_baseline(), _readings(), NOW)
     assert set(out) == set(sig.SIGNAL_OUTPUT_KEYS)
     # WP2.4 landed NEW POST; WP2.5 appended LP MIGRATION; WP2.6 appended GATE
-    # OPEN and NEW DEPLOY; WP2.7 appends BRIDGE STAGE and BURN, completing the
-    # six-name PRD §3 roster.
-    assert sig.SIGNAL_NAMES == ("post", "lp", "gate", "deploy", "bridge", "burn")
-    assert len(sig.SIGNAL_OUTPUT_KEYS) == 18
+    # OPEN and NEW DEPLOY; WP2.7 appended BRIDGE STAGE and BURN, completing
+    # the original six-name PRD §3 roster.  Task 7 (v4 launchpad) appends
+    # DECOY POOL, BURN READY and HOT COIN, and LP MIGRATION -- spent, its
+    # migration finished -- is re-aimed rather than replaced, so ``lp`` stays
+    # the payload prefix.
+    assert sig.SIGNAL_NAMES == (
+        "post", "lp", "gate", "deploy", "bridge", "burn", "decoy", "burnready", "hot",
+    )
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 27
+
+
+def test_signal_output_keys_grew_to_twenty_seven():
+    """SIGNAL_OUTPUT_KEYS is DERIVED from _DETECTORS, so registering the three
+    new detectors is what publishes their keys -- there is no second list to
+    keep in step inside this module."""
+    assert len(sig.SIGNAL_NAMES) == 9
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 27
 
 
 def test_quiet_refresh_leaves_post_ok():
@@ -594,56 +624,64 @@ def test_fired_events_survive_a_restart_through_the_returned_baselines():
     assert sig._short_addr(None) == ""
 
 
-# --- 2. LP MIGRATION --------------------------------------------------------
+# --- 2. LP MOVE --------------------------------------------------------------
 #
-# He promised onchain to announce before moving the LP (nonce 8), so the
-# decrease is the act itself.  An *increase* is movement worth watching but is
-# the opposite event -- that is exactly what 2026-08-07 was.
+# LP MIGRATION fired on 2026-08-17 (the ops wallet withdrew and burned v3
+# position #1167726) and the migration it watched for is finished, so this
+# row is re-aimed at the v4 position rather than re-armed for a second
+# launch: the payload prefix stays ``lp``, only the meaning and wording move.
+# The escalation itself survives unchanged from the old migration precursor:
+# liquidity down fires, liquidity up or any frenpet.eth nonce move watches.
+
+
+def test_lp_move_watches_the_v4_position_not_the_migration():
+    """LP MIGRATION is spent -- it fired, and the migration is finished."""
+    state, detail, _age = _sig("lp", {"lp_liquidity": 100}, {"lp_liquidity": 90})
+    assert state == "fired"
+    assert "v4" in detail or "position" in detail
 
 
 def test_liquidity_holding_is_ok():
-    assert _sig("lp", _baseline(), _readings()) == ("ok", "liquidity holds", None)
+    assert _sig("lp", _baseline(), _readings()) == ("ok", "v4 position holds", None)
 
 
 def test_liquidity_decrease_fires():
     assert _sig("lp", _baseline(), _readings(lp_liquidity=677_000_000_000)) == (
-        "fired", "LIQUIDITY OUT -32.3%", 0.0
+        "fired", "v4 position OUT -32.3%", 0.0
     )
 
 
 def test_liquidity_increase_is_a_watch_not_a_fire():
     """The 2026-08-07 add: 33 ETH *into* the pool, not out of it."""
     assert _sig("lp", _baseline(), _readings(lp_liquidity=LP_LIQUIDITY_AFTER_ADD)) == (
-        "watch", "LP added +33.0%", None
+        "watch", "v4 position +33.0%", None
     )
 
 
 def test_any_frenpet_eth_activity_is_a_watch():
-    """29 lifetime txs on that wallet: any nonce move is signal (PRD §3 #2)."""
+    """The ops wallet holds the v4 LP NFT(s); any nonce move is signal."""
     assert _sig("lp", _baseline(), _readings(ops_nonce=37)) == (
         "watch", "frenpet.eth active · nonce 37", None
     )
 
 
-def test_hooked_v4_initialize_fires_as_the_launch():
-    """SYNTHETIC event, real rule: currency IMD and hooks != 0x0 IS the launch."""
-    state, detail, age = _sig("lp", _baseline(), _readings(v4_hook_pools=[HOOKED_POOL]))
-    assert state == "fired"
-    assert detail == "V4 LAUNCH · hooks 0xd6C6d48e…CF7A44"
-    assert age == pytest.approx(NOW - HOOKED_POOL["ts"])
+def test_a_hooked_v4_pool_no_longer_moves_this_row():
+    """The migration this reading used to watch for already happened.
 
-
-def test_hookless_pools_are_noise():
-    """All 19 live IMD v4 pools are third-party and hookless.
-
-    Firing on them would make the flagship detector permanently wrong on day
-    one, and would advance the baseline past a real hooked pool.
+    Before Task 7 a hooked ``Initialize`` was the flagship, highest-priority
+    branch of this detector (``test_hooked_v4_initialize_fires_as_the_launch``,
+    now removed). ``v4_hook_pools`` is still wired by ``surf_manager.py`` (a
+    file this task does not own) but this detector no longer consults it --
+    a hooked row must not move this row at all, whatever the reading says.
     """
-    state, detail, _ = _sig("lp", _baseline(), _readings(v4_hook_pools=[HOOKLESS_POOL]))
+    state, detail, _ = _sig("lp", _baseline(), _readings(v4_hook_pools=[HOOKED_POOL]))
     assert state == "ok"
-    assert detail == "liquidity holds"
-    _, advanced = sig.build_signals(_baseline(), _readings(v4_hook_pools=[HOOKLESS_POOL]), NOW)
-    assert advanced["v4_tx"] == ""
+    assert detail == "v4 position holds"
+    _, advanced = sig.build_signals(_baseline(), _readings(v4_hook_pools=[HOOKED_POOL]), NOW)
+    # The v4_tx/v4_ts/v4_seq baseline still advances (BASELINE_EVENT_KEYS is
+    # untouched -- surf_manager.py still produces the reading) but nothing
+    # reads it back any more, so this is bookkeeping, not behaviour.
+    assert advanced["v4_tx"] == HOOKED_POOL["tx_hash"]
 
 
 def test_lp_outage_is_none():
@@ -651,7 +689,7 @@ def test_lp_outage_is_none():
         "lp",
         _baseline(),
         _readings(lp_liquidity=None, ops_nonce=None, v4_hook_pools=None),
-    ) == (None, "LP state unavailable", None)
+    ) == (None, "v4 position unavailable", None)
 
 
 # --- 3. GATE OPEN -----------------------------------------------------------
@@ -848,6 +886,187 @@ def test_burn_outage_is_none():
     ) == (None, "supply unavailable", None)
 
 
+# --- 7. DECOY POOL -----------------------------------------------------------
+#
+# 37 third-party pools compete for the ETH/IMD pair (CLAUDE.md); nobody
+# "un-deploys" a Uniswap pool, so a rising count is unambiguous.  Needs a
+# baseline -- unlike BURN READY and HOT COIN below, this is a genuine delta.
+
+
+def test_decoy_pool_count_holding_is_ok():
+    assert _sig("decoy", _baseline(), _readings()) == ("ok", "36 decoy pools", None)
+
+
+def test_decoy_pool_fires_on_a_new_spoof_pool():
+    state, _, _ = _sig(
+        "decoy",
+        {"decoy_pool_count": 36},
+        {"decoy_pool_count": 37, "decoy_newest_fee_bps": 8000},
+    )
+    assert state == "fired"
+
+
+def test_decoy_pool_fires_with_the_fee_in_the_detail():
+    assert _sig(
+        "decoy",
+        _baseline(),
+        _readings(decoy_pool_count=DECOY_POOL_COUNT_AFTER, decoy_newest_fee_bps=DECOY_NEWEST_FEE_BPS),
+    ) == ("fired", "decoy #37 · fee 80.0%", 0.0)
+
+
+def test_a_new_decoy_pool_with_an_unread_fee_is_a_watch_not_a_fire():
+    """Mirrors BURN READY's own rule: a partial read is not a confident one."""
+    assert _sig("decoy", _baseline(), _readings(decoy_pool_count=DECOY_POOL_COUNT_AFTER)) == (
+        "watch", "decoy #37 · fee unknown", None
+    )
+
+
+def test_first_ever_decoy_read_seeds_the_baseline_and_never_fires():
+    state, detail, age = _sig("decoy", {}, _readings(decoy_pool_count=37))
+    assert state == "ok"
+    assert detail == "37 decoy pools · baseline set"
+    assert age is None
+
+
+def test_decoy_pool_is_unknown_when_the_scan_failed():
+    """Not OK. An unreadable detector is unknown -- never a clean bill."""
+    state, _, _ = _sig("decoy", {}, {"decoy_pool_count": None})
+    assert state is None
+
+
+def test_a_lagging_decoy_scan_cannot_drag_the_count_baseline_down():
+    """Same protection as the five original counters: nobody un-deploys a pool."""
+    _, advanced = sig.build_signals(
+        _baseline(decoy_pool_count=37), _readings(decoy_pool_count=36), NOW
+    )
+    assert advanced["decoy_pool_count"] == 37
+
+
+# --- 8. BURN READY -------------------------------------------------------------
+#
+# The launchpad's own burn gate (imdToBurn >= minBridgeAmount), tri-state and
+# level-checked: no baseline, unlike DECOY POOL above.
+
+
+def test_burn_ready_fires_only_when_both_inputs_read():
+    ready, _, _ = _sig("burnready", {}, {"burn_ready": True, "burn_accrued": 15.06})
+    assert ready == "fired"
+
+    unknown, _, _ = _sig("burnready", {}, {"burn_ready": None})
+    assert unknown is None
+
+    idle, _, _ = _sig("burnready", {}, {"burn_ready": False, "burn_accrued": 0.0})
+    assert idle == "ok"
+
+
+def test_burn_ready_with_nothing_accrued_is_ok():
+    assert _sig("burnready", _baseline(), _readings()) == ("ok", "not ready", None)
+
+
+def test_burn_accruing_but_not_ready_is_a_watch():
+    assert _sig("burnready", _baseline(), _readings(burn_accrued=500.0)) == (
+        "watch", "500.00 IMD accruing", None
+    )
+
+
+def test_burn_ready_fires_with_the_accrued_amount():
+    state, detail, age = _sig(
+        "burnready", _baseline(), _readings(burn_ready=True, burn_accrued=15.06)
+    )
+    assert state == "fired"
+    assert detail == "ready to burn · 15.06 IMD accrued"
+    assert age == 0.0
+
+
+def test_burn_readiness_outage_is_none():
+    assert _sig("burnready", _baseline(), _readings(burn_ready=None)) == (
+        None, "burn readiness unavailable", None
+    )
+
+
+def test_a_non_bool_burn_ready_reading_is_unknown_not_a_fire():
+    """The gate_open regression, replayed: an int 0/1 must not read as a flag."""
+    assert _sig("burnready", _baseline(), _readings(burn_ready=1)) == (
+        None, "burn readiness unavailable", None
+    )
+
+
+# --- 9. HOT COIN -----------------------------------------------------------------
+#
+# The bar is analytics/surf_launchpad.hot_coin_threshold, never reimplemented
+# here.  None (a thin hour) renders OK, never a fire.  Level-checked, no
+# baseline, same as BURN READY.
+
+
+def test_hot_coin_is_ok_not_fired_on_a_thin_hour():
+    """Fewer than 5 active coins: no meaningful median, so no fire."""
+    state, _, _ = _sig("hot", {}, {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_THIN})
+    assert state == "ok"
+
+
+def test_hot_coin_with_no_activity_at_all_is_also_a_thin_hour():
+    state, detail, _ = _sig("hot", _baseline(), _readings())
+    assert state == "ok"
+    assert detail == "hour too thin to judge"
+
+
+def test_hot_coin_below_the_watch_bar_is_ok_with_a_count_not_a_ticker():
+    """Five active coins, none within reach of the bar: quiet, not a fire."""
+    counts = {"a": 5, "b": 5, "c": 5, "d": 5, "e": 5}
+    state, detail, _ = _sig("hot", _baseline(), _readings(launchpad_swaps_by_coin=counts))
+    assert state == "ok"
+    assert detail == "busiest 5 swaps · below 15"
+
+
+def test_hot_coin_warming_is_a_watch_below_the_bar():
+    state, detail, _ = _sig(
+        "hot", _baseline(), _readings(launchpad_swaps_by_coin=HOT_COIN_COUNTS_WATCH)
+    )
+    assert state == "watch"
+    assert detail == "e warming · 4 swaps (<6)"
+
+
+def test_hot_coin_fires_when_a_coin_clears_the_bar():
+    state, detail, age = _sig(
+        "hot", _baseline(), _readings(launchpad_swaps_by_coin=HOT_COIN_COUNTS_FIRED)
+    )
+    assert state == "fired"
+    assert detail == "x · 99 swaps (≥5)"
+    assert age == 0.0
+
+
+def test_hot_coin_detail_is_escaped():
+    """The ticker is attacker-chosen: launch() is permissionless."""
+    counts = {f"c{i}": 1 for i in range(5)}
+    counts["[/x]"] = 99
+    _, detail, _ = _sig("hot", {}, {"launchpad_swaps_by_coin": counts})
+    assert "[/x]" not in detail
+
+
+def test_hot_coin_falls_back_to_a_generic_word_when_nothing_survives_the_filter():
+    """A ticker built entirely from unsafe characters is not silently empty."""
+    counts = {f"c{i}": 1 for i in range(4)}
+    counts["[[[["] = 50
+    _, detail, _ = _sig("hot", {}, {"launchpad_swaps_by_coin": counts})
+    assert "coin" in detail
+    assert "[" not in detail
+
+
+def test_hot_coin_outage_is_none():
+    assert _sig("hot", _baseline(), _readings(launchpad_swaps_by_coin=None)) == (
+        None, "swap distribution unavailable", None
+    )
+
+
+def test_hot_coin_ignores_malformed_rows_without_crashing():
+    """A non-int count or a non-str ticker must not take the row down."""
+    counts = {"good": 50, "bad": "lots", 7: 12, "ok2": True}
+    state, _, _ = _sig("hot", {}, {"launchpad_swaps_by_coin": counts})
+    # Only "good" (50) is a valid str->int entry, and one active coin is
+    # still a thin hour.
+    assert state == "ok"
+
+
 # --- ordering: equal timestamps must not hide a genuinely new event ---------
 #
 # Two ways a stream arrives with equal ``ts`` values, and both are ordinary:
@@ -1029,7 +1248,10 @@ def test_every_baseline_scalar_has_a_coercer():
 
 @pytest.mark.parametrize(
     "key",
-    ["dev_nonce", "announce_nonce", "channel_tx_count", "ops_nonce", "identities_written"],
+    [
+        "dev_nonce", "announce_nonce", "channel_tx_count", "ops_nonce",
+        "identities_written", "decoy_pool_count",
+    ],
 )
 def test_a_bool_reading_never_corrupts_any_counter_baseline(key):
     """The dev_nonce=True exploit, generalised to every affected counter.
@@ -1110,11 +1332,11 @@ MATRIX: tuple[tuple[str, str, dict, str], ...] = (
      LP_POST_DETAIL),
     ("post", None, {"announce_nonce": None, "channel_tx_count": None}, "channel unavailable"),
 
-    ("lp", "ok", {}, "liquidity holds"),
+    ("lp", "ok", {}, "v4 position holds"),
     ("lp", "watch", {"ops_nonce": 37}, "frenpet.eth active · nonce 37"),
-    ("lp", "fired", {"lp_liquidity": 677_000_000_000}, "LIQUIDITY OUT -32.3%"),
+    ("lp", "fired", {"lp_liquidity": 677_000_000_000}, "v4 position OUT -32.3%"),
     ("lp", None, {"lp_liquidity": None, "ops_nonce": None, "v4_hook_pools": None},
-     "LP state unavailable"),
+     "v4 position unavailable"),
 
     ("gate", "ok", {}, "closed · 1 written"),
     ("gate", "watch", {"identities_written": 2}, "1→2 written · gate closed"),
@@ -1136,6 +1358,24 @@ MATRIX: tuple[tuple[str, str, dict, str], ...] = (
     ("burn", "watch", {"burn_transfers": [BURN_0805]}, "15,745 IMD → BurnExecutor"),
     ("burn", "fired", {"imd_supply": SUPPLY_BEFORE - 15_745.0}, "burn 15,745 IMD"),
     ("burn", None, {"imd_supply": None, "burn_transfers": None}, "supply unavailable"),
+
+    ("decoy", "ok", {}, "36 decoy pools"),
+    ("decoy", "watch", {"decoy_pool_count": DECOY_POOL_COUNT_AFTER}, "decoy #37 · fee unknown"),
+    ("decoy", "fired",
+     {"decoy_pool_count": DECOY_POOL_COUNT_AFTER, "decoy_newest_fee_bps": DECOY_NEWEST_FEE_BPS},
+     "decoy #37 · fee 80.0%"),
+    ("decoy", None, {"decoy_pool_count": None}, "decoy scan unavailable"),
+
+    ("burnready", "ok", {}, "not ready"),
+    ("burnready", "watch", {"burn_accrued": 500.0}, "500.00 IMD accruing"),
+    ("burnready", "fired", {"burn_ready": True, "burn_accrued": 15.06},
+     "ready to burn · 15.06 IMD accrued"),
+    ("burnready", None, {"burn_ready": None}, "burn readiness unavailable"),
+
+    ("hot", "ok", {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_THIN}, "hour too thin to judge"),
+    ("hot", "watch", {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_WATCH}, "e warming · 4 swaps (<6)"),
+    ("hot", "fired", {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_FIRED}, "x · 99 swaps (≥5)"),
+    ("hot", None, {"launchpad_swaps_by_coin": None}, "swap distribution unavailable"),
 )
 
 
@@ -1232,19 +1472,19 @@ def test_an_lp_outage_cannot_un_fire_a_migration():
     outage clears a FIRED row that is 1 h old.
     """
     fired_at = NOW - 3600.0
-    base = _baseline(fired={"lp": {"ts": fired_at, "detail": "LIQUIDITY OUT -32.3%"}})
+    base = _baseline(fired={"lp": {"ts": fired_at, "detail": "v4 position OUT -32.3%"}})
     state, detail, age = _sig(
         "lp", base, _readings(lp_liquidity=None, ops_nonce=None, v4_hook_pools=None)
     )
     assert state == "fired"
-    assert detail == "LIQUIDITY OUT -32.3%"
+    assert detail == "v4 position OUT -32.3%"
     assert age == pytest.approx(3600.0)
 
 
 def test_an_outage_does_not_extend_or_reset_the_fired_age():
     """The age tracks the event, not the last successful poll."""
     fired_at = NOW - 7200.0
-    base = _baseline(fired={"lp": {"ts": fired_at, "detail": "LIQUIDITY OUT -32.3%"}})
+    base = _baseline(fired={"lp": {"ts": fired_at, "detail": "v4 position OUT -32.3%"}})
     _, advanced = sig.build_signals(base, _readings(lp_liquidity=None), NOW)
     assert advanced["fired"]["lp"]["ts"] == fired_at
     _, _, age = _sig("lp", advanced, _readings(lp_liquidity=None), now=NOW + 600.0)
@@ -1254,11 +1494,11 @@ def test_an_outage_does_not_extend_or_reset_the_fired_age():
 def test_a_fired_row_relaxes_but_the_event_is_never_forgotten():
     """After the TTL the row is ok/watch again and still names what happened."""
     base = _baseline(
-        fired={"lp": {"ts": NOW - sig.FIRED_TTL_S - 1.0, "detail": "LIQUIDITY OUT -32.3%"}}
+        fired={"lp": {"ts": NOW - sig.FIRED_TTL_S - 1.0, "detail": "v4 position OUT -32.3%"}}
     )
     state, detail, age = _sig("lp", base, _readings())
     assert state == "ok"
-    assert detail == "liquidity holds · last: LIQUIDITY OUT -32.3%"
+    assert detail == "v4 position holds · last: v4 position OUT -32.3%"
     assert age == pytest.approx(float(sig.FIRED_TTL_S) + 1.0)
 
 
@@ -1313,7 +1553,7 @@ def test_the_2026_08_07_sequence_fires_bridge_before_post():
         T2_ADDED,
     )
     assert out2["sig_lp_state"] == "watch"
-    assert out2["sig_lp_detail"] == "LP added +33.0%"
+    assert out2["sig_lp_detail"] == "v4 position +33.0%"
     assert out2["sig_bridge_state"] == "fired"
     assert out2["sig_bridge_age_s"] == pytest.approx(T2_ADDED - MINT_2["ts"])
     assert out2["sig_post_state"] == "ok"
@@ -1458,18 +1698,28 @@ def test_module_is_pure():
         "from textual", "import textual",
         "time.time(", "datetime.now(", "utcnow(",
         "maxpane_dashboard.data.surf_client", "maxpane_dashboard.data.surf_cache",
+        # Task 7's HOT COIN ticker filter is local (_safe_ticker); every
+        # detail is still escaped once, uniformly, at the widget layer.
+        "maxpane_dashboard.widgets", "maxpane_dashboard.data.surf_manager",
     ):
         assert forbidden not in code, forbidden
 
 
-def test_the_only_data_imports_are_the_two_wp0_boundary_modules():
-    """WP0 is the single dependency, and it is exactly two stdlib-only modules.
+def test_the_only_data_imports_are_the_three_documented_boundary_modules():
+    """Analytics-internal dependencies only, and the list is exact.
 
-    ``surf_addresses`` and ``surf_models`` are boundary declarations — constants
-    and dataclasses, no I/O — so importing them does not cost this module its
-    purity.  The client (WP1), the cache and the manager (WP4) are not importable
-    from here at any point, and the list is compared exactly rather than by
-    substring so a third import cannot arrive unnoticed.
+    ``surf_addresses`` and ``surf_models`` are WP0's boundary declarations —
+    constants and dataclasses, no I/O.  ``surf_launchpad`` (Task 7) is the
+    third: HOT COIN's threshold is computed there and must not be
+    reimplemented here (the brief is explicit about this), and that module is
+    itself analytics-pure (no I/O, no Textual, its own docstring says so).
+    The client (WP1), the cache and the manager (WP4) are not importable from
+    here at any point, and the list is compared exactly rather than by
+    substring so a fourth import cannot arrive unnoticed -- in particular,
+    ``widgets.markup_safety`` never appears here: HOT COIN's ticker is
+    filtered locally (:func:`sig._safe_ticker`), and every detail -- HOT
+    COIN's included -- is still escaped once, uniformly, at the widget,
+    exactly like the other eight.
 
     The second half is the re-export rule: ``CHANNEL_KINDS`` is frozen once, in
     WP0's models module.  A local literal would give one closed vocabulary two
@@ -1481,6 +1731,7 @@ def test_the_only_data_imports_are_the_two_wp0_boundary_modules():
 
     imports = [line for line in _MODULE_SOURCE.splitlines() if line.startswith("from maxpane")]
     assert imports == [
+        "from maxpane_dashboard.analytics.surf_launchpad import hot_coin_threshold",
         "from maxpane_dashboard.data.surf_addresses import ANNOUNCE, DEV_WALLET, OPS_WALLET",
         "from maxpane_dashboard.data.surf_models import CHANNEL_KINDS",
     ]
@@ -1510,12 +1761,12 @@ def test_public_surface_is_the_frozen_one():
 
 
 def test_signal_output_keys_match_the_prd_naming():
-    """PRD §5: ``sig_{post,lp,gate,deploy,bridge,burn}_{state,detail,age_s}``."""
-    assert len(sig.SIGNAL_OUTPUT_KEYS) == 18
+    """PRD §5: ``sig_{name}_{state,detail,age_s}`` for all nine detectors."""
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 27
     assert sig.SIGNAL_OUTPUT_KEYS[:3] == ("sig_post_state", "sig_post_detail", "sig_post_age_s")
     assert set(sig.SIGNAL_OUTPUT_KEYS) == {
         f"sig_{name}_{field}"
-        for name in ("post", "lp", "gate", "deploy", "bridge", "burn")
+        for name in ("post", "lp", "gate", "deploy", "bridge", "burn", "decoy", "burnready", "hot")
         for field in ("state", "detail", "age_s")
     }
 

@@ -1,9 +1,9 @@
 """Signal analytics for the surfsurf.eth ("SURF") dashboard — PURE functions.
 
 No I/O, no clients, no cache, no Textual, no ``time``.  Everything here takes
-plain values and returns plain values, which is what lets the six detectors be
-tested against fixed fixtures at a fixed instant, and what lets the manager,
-the widgets and the screen all replay the same 2026-08-07 sequence.
+plain values and returns plain values, which is what lets the nine detectors
+be tested against fixed fixtures at a fixed instant, and what lets the
+manager, the widgets and the screen all replay the same 2026-08-07 sequence.
 
 Three public pieces:
 
@@ -14,8 +14,12 @@ Three public pieces:
 * :func:`classify_channel_tx` — ``self`` / ``reply`` / ``action`` / ``fund``.
   The channel is permissionless: anyone can post, and a scam reply and a
   begging tx are already in it (PRD §6.4).
-* :func:`build_signals` — the six detectors of PRD §3 as one state machine over
-  (persisted baselines, this refresh's readings, injected clock).
+* :func:`build_signals` — the nine detectors of PRD §3 as one state machine
+  over (persisted baselines, this refresh's readings, injected clock).  The
+  last three (DECOY POOL, BURN READY, HOT COIN) are the v4-launchpad
+  additions: LP MIGRATION fired on 2026-08-17 and the migration it watched
+  for is finished, so its slot is re-aimed at the v4 position (``lp`` stays
+  the payload prefix) rather than re-armed for a second launch.
 
 The rule this module exists to enforce
 --------------------------------------
@@ -47,6 +51,7 @@ from __future__ import annotations
 import math
 from typing import Any, NamedTuple
 
+from maxpane_dashboard.analytics.surf_launchpad import hot_coin_threshold
 from maxpane_dashboard.data.surf_addresses import ANNOUNCE, DEV_WALLET, OPS_WALLET
 from maxpane_dashboard.data.surf_models import CHANNEL_KINDS
 
@@ -102,6 +107,14 @@ READING_KEYS: tuple[str, ...] = (
     "bridge_mints",         # [{ts, tx_hash, amount, to_label}] OFT mints to dev
     "burn_transfers",       # [{ts, tx_hash, amount}] IMD -> BurnExecutor
     "imd_supply",           # IMD.totalSupply() in whole tokens
+    # -- v4-launchpad additions (Task 7): fed by surf_manager._readings()
+    # off the launchpad slot and the flat hero payload, not READING_KEYS'
+    # own six original sources above.
+    "decoy_pool_count",         # count of third-party ETH/IMD-look-alike pools
+    "decoy_newest_fee_bps",     # fee tier of the newest decoy pool, if read
+    "burn_ready",               # tri-state: imdToBurn >= minBridgeAmount
+    "burn_accrued",             # imdToBurn in whole IMD, awaiting the burn bridge
+    "launchpad_swaps_by_coin",  # {ticker: swap_count} -- the FULL in-window population
 )
 
 #: Scalar baselines: copied from the matching reading, only when it is not
@@ -115,6 +128,7 @@ BASELINE_SCALARS: tuple[str, ...] = (
     "gate_open",
     "identities_written",
     "imd_supply",
+    "decoy_pool_count",
 )
 
 #: Per-scalar coercion applied by :func:`_advance` *before* the ``is None``
@@ -173,6 +187,7 @@ _SCALAR_COERCERS: dict[str, Any] = {
     "gate_open": lambda value: value if isinstance(value, bool) else None,
     "identities_written": lambda value: _as_int(value),
     "imd_supply": lambda value: _as_float(value),
+    "decoy_pool_count": lambda value: _as_int(value),
 }
 
 #: Event streams: ``reading key -> (tx key, ts key, sequence key)``.  Three
@@ -211,6 +226,10 @@ MONOTONIC_BASELINES: tuple[str, ...] = (
     "dev_nonce",
     "ops_nonce",
     "identities_written",
+    # Nobody "un-deploys" a Uniswap pool: a lagging scan replica that answers
+    # with a smaller decoy count must not drag this baseline down either, for
+    # the same reason as the five counters above it.
+    "decoy_pool_count",
 )
 
 #: Control characters a real post may legitimately contain.  Everything else
@@ -419,8 +438,47 @@ def _short_addr(value: Any) -> str:
     return f"{text[:10]}…{text[-6:]}"
 
 
+#: Characters a launched coin's ticker may keep in a HOT COIN detail.
+#: Everything else -- brackets, quotes, slashes, unicode look-alikes, control
+#: characters -- is dropped outright rather than kept-but-escaped.  This is
+#: deliberately narrower than "escaping": the widget's own ``safe_markup``
+#: call (applied to every detector's detail, uniformly, downstream) only ever
+#: *prepends* a backslash to a ``[`` -- it cannot remove the bracket, so
+#: ``"[/x]"`` in is ``"[/x]"`` out, fully legible on screen.  That is correct
+#: for every other third-party string in this module (a Blockscout ``label``
+#: is passed through raw and escaped only at the widget -- see
+#: ``_detect_deploy``), but ``launch(string,string)`` is permissionless and
+#: unpriced beyond gas (CLAUDE.md), so a ticker is the single most
+#: attacker-chosen string this dashboard ever shows, and HOT COIN is the
+#: first detector whose detail contains one.
+_TICKER_SAFE_CHARS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.$"
+)
+
+#: A ticker with nothing safe left in it still needs a word in the detail.
+_TICKER_FALLBACK = "coin"
+
+#: Space budget for a ticker inside a HOT COIN detail: generous next to real
+#: symbols (``IMD``, ``ICE``, ``K-256``) but bounded, so a long safe-looking
+#: string cannot crowd the swap count and threshold off the row.
+_TICKER_LIMIT = 16
+
+
+def _safe_ticker(value: Any) -> str:
+    """A launched coin's ticker, filtered to :data:`_TICKER_SAFE_CHARS`.
+
+    A real ticker (``IMD``, ``FP``, ``K-256``) survives untouched.  A hostile
+    one built to read as ``"[/x]"`` on screen loses every character that made
+    it hostile and, if nothing safe is left, renders as :data:`_TICKER_FALLBACK`
+    rather than an empty string.
+    """
+    text = value if isinstance(value, str) else ""
+    kept = "".join(ch for ch in text if ch in _TICKER_SAFE_CHARS)[:_TICKER_LIMIT]
+    return kept or _TICKER_FALLBACK
+
+
 # ---------------------------------------------------------------------------
-# The six detectors
+# The nine detectors
 # ---------------------------------------------------------------------------
 
 
@@ -586,7 +644,7 @@ def _fresh_event(
 def _detect_post(base: dict, read: dict, now: float) -> _Det:
     """Channel nonce moved -> the dev posted (PRD §3 #1).
 
-    The cheapest and earliest of the six: these txs emit **no logs**, so every
+    The cheapest and earliest of the nine: these txs emit **no logs**, so every
     event-driven watcher is structurally blind to them and a nonce poll sees a
     post within one refresh interval.  ``channel_tx_count`` moving without the
     nonce means somebody *else* wrote to the channel — worth a WATCH, never a
@@ -613,41 +671,47 @@ def _detect_post(base: dict, read: dict, now: float) -> _Det:
     return _ok(f"nonce {nonce} · no new post")
 
 
-# --- 2. LP MIGRATION -------------------------------------------------------
+# --- 2. LP MOVE --------------------------------------------------------------
 
 
 def _detect_lp(base: dict, read: dict, now: float) -> _Det:
-    """The next launch's watchable precondition (PRD §3 #2).
+    """The v4 position's liquidity (PRD §3 #2, re-aimed).
 
-    Escalating order, strongest first:
+    LP MIGRATION — the v3→v4 event this row used to watch for, a PoolManager
+    ``Initialize`` for IMD with ``hooks != 0x0`` — already fired: the ops
+    wallet withdrew and burned v3 position #1167726 on 2026-08-17, and the v4
+    IMD/ETH pool now exists.  That is a completed migration, not a repeating
+    one, so the hooked-``Initialize`` branch this row used to check first is
+    gone rather than re-armed for a second launch that is not coming;
+    ``v4_hook_pools``/``BASELINE_EVENT_KEYS["v4_hook_pools"]`` stay wired
+    (``surf_manager.py`` still produces the reading; this task does not own
+    that file) but nothing in this function consults them any more.
 
-    1. a PoolManager ``Initialize`` for IMD with ``hooks != 0x0`` — that log
-       *is* the launch.  Hookless initialisations are third-party noise and are
-       filtered upstream in :func:`_event_rows`.
-    2. liquidity **down** on position #1167726 — the act he promised to
-       announce before performing.
-    3. liquidity **up**, or any frenpet.eth nonce movement — precursors.  The
-       2026-08-07 add was both.
+    What is left is the same escalation the migration precursor already used,
+    now permanently the row's whole job rather than its fallback: liquidity
+    **down** fires, liquidity **up** or any frenpet.eth nonce movement
+    watches.  The payload prefix stays ``lp`` (Task 9's row alignment depends
+    on it); only the meaning and the wording move.
 
-    A liquidity read of ``None`` produces no comparison at all.  It also cannot
-    un-fire anything: the FIRED store is applied by :func:`build_signals`
-    independently of what this returns.
+    ``lp_liquidity``'s *source* is not this task's to change: it is still
+    ``ChainState.lp_liquidity`` off ``NFPM.positions(LP_POSITION_ID)``, and
+    ``LP_POSITION_ID`` is still the v3 id — a live read against the v4
+    position (or ``lp_position_count``, the v4-side sibling field
+    ``surf_manager.py``'s hero payload already carries) is not threaded into
+    this module's reading contract, so it is reported rather than reached
+    for; see the task report.  A liquidity read of ``None`` produces no
+    comparison at all. It also cannot un-fire anything: the FIRED store is
+    applied by :func:`build_signals` independently of what this returns.
     """
-    hooked = _event_rows("v4_hook_pools", read.get("v4_hook_pools"))
-    launch = _fresh_event(base, *BASELINE_EVENT_KEYS["v4_hook_pools"], hooked)
-    if launch is not None:
-        hooks = _short_addr(launch.get("hooks"))
-        return _fired(f"V4 LAUNCH · hooks {hooks}", _as_float(launch.get("ts")))
-
     liquidity = _as_int(read.get("lp_liquidity"))
     base_liquidity = _as_int(base.get("lp_liquidity"))
     if liquidity is not None and base_liquidity is not None and base_liquidity > 0:
         if liquidity < base_liquidity:
             drop = 100.0 * (base_liquidity - liquidity) / base_liquidity
-            return _fired(f"LIQUIDITY OUT -{drop:.1f}%", now)
+            return _fired(f"v4 position OUT -{drop:.1f}%", now)
         if liquidity > base_liquidity:
             rise = 100.0 * (liquidity - base_liquidity) / base_liquidity
-            return _watch(f"LP added +{rise:.1f}%")
+            return _watch(f"v4 position +{rise:.1f}%")
 
     ops_nonce = _as_int(read.get("ops_nonce"))
     base_ops = _as_int(base.get("ops_nonce"))
@@ -655,10 +719,10 @@ def _detect_lp(base: dict, read: dict, now: float) -> _Det:
         return _watch(f"frenpet.eth active · nonce {ops_nonce}")
 
     if liquidity is None:
-        return _dead("LP state unavailable")
+        return _dead("v4 position unavailable")
     if base_liquidity is None:
-        return _ok("liquidity baseline set")
-    return _ok("liquidity holds")
+        return _ok("v4 position baseline set")
+    return _ok("v4 position holds")
 
 
 # --- 3. GATE OPEN ------------------------------------------------------------
@@ -805,6 +869,127 @@ def _detect_burn(base: dict, read: dict, now: float) -> _Det:
     return _ok("supply flat")
 
 
+# --- 7. DECOY POOL -----------------------------------------------------------
+
+
+def _detect_decoy(base: dict, read: dict, now: float) -> _Det:
+    """A new third-party pool joins the decoy count, or an existing scan
+    read stays unchanged (the v4-launchpad addition, Task 7).
+
+    ``LaunchpadHook.imdEthPoolId()`` names the *real* IMD/ETH pool; the other
+    37 pools competing for the same pair are third-party impostors, each free
+    to set its own fee tier to look attractive.  Nobody "un-deploys" a
+    Uniswap pool, so a rising count is unambiguous and fires on its own —
+    unlike DECOY's siblings below, this needs a baseline (``decoy_pool_count``
+    is in :data:`BASELINE_SCALARS` and :data:`MONOTONIC_BASELINES`), because
+    the signal *is* the delta, not a level.
+
+    The newest pool's fee is read alongside the count and, when that second
+    read also succeeded, goes into the FIRED detail.  A count that moved but
+    whose fee could not be read is still worth a row — just not a confident
+    one, mirroring BURN READY's own "both inputs must read to fire" rule —
+    so it renders WATCH instead of FIRED rather than being swallowed.
+    """
+    count = _as_int(read.get("decoy_pool_count"))
+    if count is None:
+        return _dead("decoy scan unavailable")
+
+    base_count = _as_int(base.get("decoy_pool_count"))
+    if base_count is None:
+        return _ok(f"{count} decoy pools · baseline set")
+
+    if count > base_count:
+        fee_bps = _as_int(read.get("decoy_newest_fee_bps"))
+        if fee_bps is not None:
+            return _fired(f"decoy #{count} · fee {fee_bps / 100.0:.1f}%", now)
+        return _watch(f"decoy #{count} · fee unknown")
+
+    return _ok(f"{count} decoy pools")
+
+
+# --- 8. BURN READY ------------------------------------------------------------
+
+
+def _detect_burn_ready(base: dict, read: dict, now: float) -> _Det:
+    """The launchpad's own burn gate: ``imdToBurn >= minBridgeAmount``
+    (the v4-launchpad addition, Task 7).
+
+    A level check, not a transition — there is no "previous ready" worth
+    comparing against, so unlike DECOY POOL this needs no baseline.
+    ``burn_ready`` is tri-state (``surf_manager.py``'s own doc: "we cannot
+    tell" is not "not ready"): ``None`` means the gate itself could not be
+    read and must render unknown, never a quiet OK — an outage here would
+    otherwise look identical to "checked, and it is not ready yet".
+    ``False`` with nothing accrued is OK; ``False`` with something accrued is
+    a WATCH, the same "building toward it" shape BURN's own transfer
+    precursor already uses.
+    """
+    ready = read.get("burn_ready")
+    ready = ready if isinstance(ready, bool) else None
+    accrued = _as_float(read.get("burn_accrued"))
+
+    if ready is None:
+        return _dead("burn readiness unavailable")
+
+    if ready:
+        amount = f"{_fmt_amount(accrued)} IMD accrued" if accrued is not None else "amount unread"
+        return _fired(f"ready to burn · {amount}", now)
+
+    if accrued is not None and accrued > 0:
+        return _watch(f"{_fmt_amount(accrued)} IMD accruing")
+
+    return _ok("not ready")
+
+
+# --- 9. HOT COIN ---------------------------------------------------------------
+
+
+def _detect_hot_coin(base: dict, read: dict, now: float) -> _Det:
+    """A launched coin's in-window swap count clears a relative bar (the
+    v4-launchpad addition, Task 7).
+
+    The bar is :func:`surf_launchpad.hot_coin_threshold` — never
+    reimplemented here — computed off the *whole* in-window population Task 6
+    hands in (``launchpad_swaps_by_coin``), not the rendered top-20 slice.
+    ``None`` means the hour is too thin to judge (fewer than five coins
+    traded) and renders OK, never a fire: at ~1,170 swaps/day across ~146
+    coins a fixed threshold would light this row permanently, and a marker
+    that is always on means nothing.
+
+    A level check over this hour's own distribution, not a transition, so
+    (like BURN READY) it needs no baseline.  The busiest coin's ticker is the
+    most attacker-controlled string on this dashboard — ``launch(string,
+    string)`` is permissionless and unpriced beyond gas — so it is bounded
+    through :func:`_safe_ticker` before the detail is built, and the whole
+    detail is flattened and cut through :func:`_truncate` last, so a cut can
+    never bisect anything :func:`_safe_ticker` left behind.
+    """
+    counts = read.get("launchpad_swaps_by_coin")
+    if not isinstance(counts, dict):
+        return _dead("swap distribution unavailable")
+
+    active = {
+        ticker: n
+        for ticker, n in counts.items()
+        if isinstance(ticker, str) and isinstance(n, int) and not isinstance(n, bool) and n > 0
+    }
+    threshold = hot_coin_threshold(active)
+    if threshold is None:
+        return _ok("hour too thin to judge")
+
+    ticker, count = max(active.items(), key=lambda pair: pair[1])
+    name = _safe_ticker(ticker)
+
+    if count >= threshold:
+        return _fired(_truncate(f"{name} · {count} swaps (≥{threshold})"), now)
+
+    watch_bar = max(1, threshold // 2)
+    if count >= watch_bar:
+        return _watch(_truncate(f"{name} warming · {count} swaps (<{threshold})"))
+
+    return _ok(f"busiest {count} swaps · below {threshold}")
+
+
 # --- registry --------------------------------------------------------------
 
 #: ``(name, detector)`` in render order.  :data:`SIGNAL_NAMES` and
@@ -817,6 +1002,9 @@ _DETECTORS: tuple[tuple[str, Any], ...] = (
     ("deploy", _detect_deploy),
     ("bridge", _detect_bridge),
     ("burn", _detect_burn),
+    ("decoy", _detect_decoy),
+    ("burnready", _detect_burn_ready),
+    ("hot", _detect_hot_coin),
 )
 
 SIGNAL_NAMES: tuple[str, ...] = tuple(name for name, _ in _DETECTORS)
