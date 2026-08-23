@@ -6,15 +6,21 @@ survives a restart*. It holds no clients, does no I/O other than reading and
 writing its own JSON file, and imports nothing from the project except the
 dependency-free :mod:`maxpane_dashboard.data.series_points` leaf.
 
-Three refresh tiers, sized from PRD §5:
+Four refresh tiers, the first three sized from PRD §5:
 
-``fast``    every refresh (TTL 0). Three ``eth_getTransactionCount`` reads plus
-            one batched ``eth_call`` round. The announce channel emits **no
-            logs**, so nonce polling is the only detector that exists for it and
-            the whole "how early am I" claim rests on it running every tick.
-``medium``  90 s. ``eth_getLogs`` windows, GeckoTerminal/DexScreener, and the
-            Blockscout channel bodies — the last only when the nonce moved.
-``slow``    420 s. Blockscout counters/holders and the dev tx pages.
+``fast``        every refresh (TTL 0). Three ``eth_getTransactionCount`` reads
+                plus one batched ``eth_call`` round. The announce channel
+                emits **no logs**, so nonce polling is the only detector that
+                exists for it and the whole "how early am I" claim rests on
+                it running every tick.
+``medium``      90 s. ``eth_getLogs`` windows, GeckoTerminal/DexScreener, and
+                the Blockscout channel bodies — the last only when the nonce
+                moved.
+``slow``        420 s. Blockscout counters/holders and the dev tx pages.
+``launchpad``   600 s, on the curator ``TIER_ANALYSIS`` precedent: a slower
+                clock than the title bar's for a detached factory/hook/executor
+                and log-aggregate sweep, so its panels carry their own
+                `as of HH:MM` and a slow sweep can never block first paint.
 
 A failure never marks a tier fetched; it only spaces the retry
 (:data:`TIER_FAILURE_BACKOFF_SECONDS`), so a rate-limited host is not hammered
@@ -55,18 +61,26 @@ TIER_FAST = "fast"
 TIER_MEDIUM = "medium"
 TIER_SLOW = "slow"
 
-TIERS: tuple[str, ...] = (TIER_FAST, TIER_MEDIUM, TIER_SLOW)
+#: The launchpad / decoy-pool sweep. Its own long tier — modelled on curator's
+#: ``TIER_ANALYSIS`` — so the launchpad panels carry an `as of HH:MM` on a
+#: slower clock than the title bar's, deliberately. Task 6 hangs a detached
+#: sweep off this tier so it cannot block first paint.
+TIER_LAUNCHPAD = "launchpad"
+
+TIERS: tuple[str, ...] = (TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD)
 
 TIER_TTL_SECONDS: dict[str, float] = {
     TIER_FAST: 0.0,       # every refresh — see the module docstring
     TIER_MEDIUM: 90.0,    # PRD §5 says 60-120 s
     TIER_SLOW: 420.0,     # PRD §5 says 5-10 min
+    TIER_LAUNCHPAD: 600.0,
 }
 
 TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
     TIER_FAST: 15.0,
     TIER_MEDIUM: 60.0,
     TIER_SLOW: 120.0,
+    TIER_LAUNCHPAD: 180.0,
 }
 
 
@@ -80,6 +94,7 @@ SLOT_MARKET = "market"        # GeckoTerminal / DexScreener / CoinGecko
 SLOT_LOGS = "logs"            # logs RPC pool (mints, identity writes, v4, Seaport)
 SLOT_NFT = "nft"              # Blockscout token counters / holders
 SLOT_ACTIVITY = "activity"    # Blockscout dev tx pages
+SLOT_LAUNCHPAD = "launchpad"  # factory/hook/executor getters + log aggregates
 
 SLOTS: tuple[str, ...] = (
     SLOT_CHAIN,
@@ -88,6 +103,7 @@ SLOTS: tuple[str, ...] = (
     SLOT_LOGS,
     SLOT_NFT,
     SLOT_ACTIVITY,
+    SLOT_LAUNCHPAD,
 )
 
 
@@ -787,6 +803,7 @@ __all__ = [
     "SLOT_ACTIVITY",
     "SLOT_CHAIN",
     "SLOT_CHANNEL",
+    "SLOT_LAUNCHPAD",
     "SLOT_LOGS",
     "SLOT_MARKET",
     "SLOT_NFT",
@@ -794,6 +811,7 @@ __all__ = [
     "TIERS",
     "TIER_FAILURE_BACKOFF_SECONDS",
     "TIER_FAST",
+    "TIER_LAUNCHPAD",
     "TIER_MEDIUM",
     "TIER_SLOW",
     "TIER_TTL_SECONDS",

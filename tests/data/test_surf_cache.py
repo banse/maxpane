@@ -13,7 +13,9 @@ import pytest
 
 from maxpane_dashboard.data.surf_cache import (
     DEFAULT_CACHE_PATH,
+    TIER_FAILURE_BACKOFF_SECONDS,
     TIER_FAST,
+    TIER_LAUNCHPAD,
     TIER_MEDIUM,
     TIER_SLOW,
     TIERS,
@@ -46,11 +48,11 @@ def _cache(tmp_path, clock=None) -> SurfCache:
 
 
 def test_tier_ttls_match_the_prd(tmp_path):
-    """fast is due every refresh; medium 90 s; slow 420 s."""
+    """fast is due every refresh; medium 90 s; slow 420 s; launchpad 600 s."""
     clock = FakeClock()
     c = _cache(tmp_path, clock)
 
-    assert TIERS == (TIER_FAST, TIER_MEDIUM, TIER_SLOW)
+    assert TIERS == (TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD)
     assert TIER_TTL_SECONDS[TIER_FAST] == 0.0
     assert 60.0 <= TIER_TTL_SECONDS[TIER_MEDIUM] <= 120.0
     assert 300.0 <= TIER_TTL_SECONDS[TIER_SLOW] <= 600.0
@@ -66,9 +68,26 @@ def test_tier_ttls_match_the_prd(tmp_path):
     clock.advance(TIER_TTL_SECONDS[TIER_MEDIUM])
     assert TIER_MEDIUM in c.tiers_due()
     assert TIER_SLOW not in c.tiers_due()
+    assert TIER_LAUNCHPAD not in c.tiers_due()
 
     clock.advance(TIER_TTL_SECONDS[TIER_SLOW])
+    assert TIER_SLOW in c.tiers_due()
+    assert TIER_LAUNCHPAD not in c.tiers_due()
+
+    clock.advance(TIER_TTL_SECONDS[TIER_LAUNCHPAD])
     assert set(c.tiers_due()) == set(TIERS)
+
+
+def test_launchpad_tier_is_slow_and_backs_off_shorter(tmp_path):
+    """The analysis-tier shape: a long TTL, a shorter failure backoff.
+
+    Deliberately slower than the title bar's clock -- the panel carries its
+    own `as of HH:MM` and says so (the curator `TIER_ANALYSIS` precedent).
+    """
+    assert TIER_LAUNCHPAD in TIERS
+    assert TIER_TTL_SECONDS[TIER_LAUNCHPAD] == 600.0
+    assert TIER_FAILURE_BACKOFF_SECONDS[TIER_LAUNCHPAD] == 180.0
+    assert TIER_FAILURE_BACKOFF_SECONDS[TIER_LAUNCHPAD] < TIER_TTL_SECONDS[TIER_LAUNCHPAD]
 
 
 def test_failed_tier_backs_off_instead_of_hammering(tmp_path):
@@ -107,6 +126,7 @@ def test_default_cache_path_is_the_maxpane_convention():
 from maxpane_dashboard.data.surf_cache import (   # noqa: E402  (appended import)
     SLOTS,
     SLOT_CHAIN,
+    SLOT_LAUNCHPAD,
     SLOT_MARKET,
     LastGood,
 )
@@ -160,7 +180,7 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     clock.advance(120.0)
     c.store_last_good(SLOT_MARKET, {})
     assert c.newest_as_of() == clock.t
-    assert len(SLOTS) == 6
+    assert len(SLOTS) == 7
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):
@@ -667,6 +687,26 @@ def test_every_tier_is_due_again_after_a_restart(tmp_path):
     restored = SurfCache(path=path, clock=clock)
     restored.load()
     assert set(restored.tiers_due()) == set(TIERS)
+
+
+def test_launchpad_slot_round_trips_through_the_cache_file(tmp_path):
+    """The detached launchpad sweep's last-good payload survives a restart.
+
+    Task 6 hangs a slow, detached launchpad sweep off ``TIER_LAUNCHPAD`` /
+    ``SLOT_LAUNCHPAD``; this only proves the slot exists and round-trips --
+    the sweep itself is out of scope here.
+    """
+    clock = FakeClock()
+    path = str(tmp_path / "surf_cache.json")
+    c = SurfCache(path=path, clock=clock)
+
+    assert SLOT_LAUNCHPAD in SLOTS
+    c.store_last_good(SLOT_LAUNCHPAD, {"coin_count": 146})
+    c.save()
+
+    restored = SurfCache(path=path, clock=clock)
+    restored.load()
+    assert restored.get_last_good(SLOT_LAUNCHPAD).payload == {"coin_count": 146}
 
 
 def test_a_null_poisoned_series_costs_only_that_point(tmp_path, caplog):
