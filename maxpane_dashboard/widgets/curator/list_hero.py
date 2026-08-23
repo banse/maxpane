@@ -9,9 +9,9 @@ from textual.widgets import Static
 
 from maxpane_dashboard.widgets.curator._fmt import (
     DASH,
+    fmt_eth,
     fmt_eth_compact,
     fmt_points,
-    short_label,
 )
 from maxpane_dashboard.widgets.curator.hero import (
     LIST_EXPORT_SUBTITLE,
@@ -44,9 +44,9 @@ def _tier_for(width: int) -> str:
     return "minimal"
 
 
-def _lines(title: str, *body: str) -> list[str]:
+def _lines(title: str, *body: str, title_style: str = "dim") -> list[str]:
     rows = list(body[:4]) + [""] * (4 - len(body[:4]))
-    return [f"[dim]{title}[/]", *rows]
+    return [f"[{title_style}]{title}[/]", *rows]
 
 
 def _count(value, noun: str) -> str:
@@ -82,18 +82,18 @@ def _raw_summary_lines(data: dict, tier: str, _width: int = 0) -> list[str]:
     )
 
 
-def _wallet_identity(data: dict, tier: str) -> str:
-    ens = data.get("you_ens")
+def _wallet_address(data: dict) -> str:
     address = data.get("you_address")
-    has_ens = isinstance(ens, str) and bool(ens.strip())
-    has_address = isinstance(address, str) and bool(address.strip())
-    if not has_ens and not has_address:
+    if not isinstance(address, str) or not address.strip():
         return "WALLET NOT SET"
-    if tier != "full":
-        return safe_markup(short_label(ens, address))
-    if has_ens:
-        return safe_markup(" ".join(ens.split()))
     return safe_markup(address.strip())
+
+
+def _wallet_title(data: dict) -> str:
+    ens = data.get("you_ens")
+    if not isinstance(ens, str) or not ens.strip():
+        return "YOUR WALLET"
+    return safe_markup(" ".join(ens.split()))
 
 
 def _rank(value) -> str:
@@ -162,11 +162,13 @@ def _wallet_lines(data: dict, tier: str, width: int = 0) -> list[str]:
         f"[$success-darken-2]· {view}[/]"
     )
     return _lines(
-        "YOUR WALLET",
+        _wallet_title(data),
         standing,
-        f"[$success]{detail}[/]",
-        f"[$success]{_wallet_identity(data, tier)}[/]",
-        f"[$success][bold]{fmt_points(data.get('you_points'))} pts[/][/]",
+        f"[$success-darken-2]{detail}[/]",
+        f"[$success][bold]{fmt_points(data.get('you_points'))} pts · "
+        f"{fmt_eth(data.get('you_credit_eth'))} ETH[/][/]",
+        f"[$success]{_wallet_address(data)}[/]",
+        title_style="$success",
     )
 
 
@@ -186,7 +188,7 @@ def _filtered_summary_lines(data: dict, tier: str, _width: int = 0) -> list[str]
         "THE LIST",
         f"[bold]{_count(data.get('filtered_contributors'), 'wallets')}[/]",
         f"{fmt_points(data.get('filtered_points'))} pts",
-        f"{fmt_eth_compact(data.get('filtered_routed_eth'))} ETH deposited",
+        f"{fmt_eth_compact(data.get('filtered_routed_eth'))} ETH",
         _list_label("filtered"),
     )
 
@@ -205,7 +207,7 @@ def _filter_lines(_data: dict, _tier: str, _width: int = 0) -> list[str]:
         "'1' - first 1000 wallets",
         "'2' - joined hour 0",
         "'3' - whale splash",
-        "'f' - for more filters",
+        "'f' - more filters",
     ]
     padded_width = max(visible_len(line) for line in shortcuts)
     padded = [
@@ -297,6 +299,7 @@ class CuratorListHero(Vertical):
         you_first_index=None,
         you_first_hour=None,
         you_points=None,
+        you_credit_eth=None,
         clean_contributors=None,
         clean_points=None,
         filtered_contributors=None,
@@ -320,6 +323,7 @@ class CuratorListHero(Vertical):
             "you_first_index": you_first_index,
             "you_first_hour": you_first_hour,
             "you_points": you_points,
+            "you_credit_eth": you_credit_eth,
             "clean_contributors": clean_contributors,
             "clean_points": clean_points,
             "filtered_contributors": filtered_contributors,

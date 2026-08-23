@@ -197,6 +197,26 @@ or funding present and `low` means exactly two — a numeric cut would band noth
 own 0.5 flag threshold is likewise structurally inert: everything that survives the ≥ 2-family,
 ≥ 5-member gate is already above it, so `flagged` == clustered.)
 
+### THE LIST record-view filters and hero contract (2026-08-23)
+
+An empty filter is not an empty result: applying a filter with every field unset returns the raw
+list and switches the view back to RAW. In the NFT HOLDERS editor, custom collection controls and
+the selected collections share two outer columns. Selected collections use their own compact
+two-column, row-major grid: first row left, first row right, then the next row, with no blank rows
+between entries.
+
+The three record-list hero cards have a five-line contract. Keep the order stable:
+
+1. The summary card shows `THE LIST`, wallet count, the view's primary total, its context, then
+   `list FROZEN`, `list CLEANED`, or `list FILTERED`. The raw primary total is routed ETH, cleaned
+   uses points, and filtered uses points followed by routed ETH without a `deposited` suffix.
+2. The wallet card shows the verified ENS name or `YOUR WALLET`; `#rank of total · raw|clean|filtered`;
+   join/hour detail or the active filter summary; `points · credited ETH`; and the full wallet
+   address. The address stays visible even when ENS exists. The title, standing, points/ETH, and
+   address use success green; the detail line uses `$success-darken-2`, matching the view word.
+3. The filter card shows `THE FILTER`, then the four shortcuts: `'1' - first 1000 wallets`,
+   `'2' - joined hour 0`, `'3' - whale splash`, and `'f' - more filters`.
+
 ## Build & run
 
 ```bash
@@ -364,11 +384,11 @@ memory when a bug report cites one.
 ## Tests
 
 ```bash
-pytest                                    # ~4650 tests, must be green
-pytest tests/analytics/                   # pure math
-pytest -x                                 # stop on first failure
-cd sybilkit && python -m pytest           # the second distribution, ~290 tests
-cargo test                                # the Rust intro crate, from maxpane/ (443)
+.venv/bin/python -m pytest                    # 4,988 tests, must be green
+.venv/bin/python -m pytest tests/analytics/   # pure math
+.venv/bin/python -m pytest -x                 # stop on first failure
+.venv/bin/python -m pytest sybilkit            # the second distribution, ~290 tests
+cargo test                                    # the Rust intro crate, from maxpane/ (443)
 ```
 
 Use `.venv/bin/python -m pytest` — the system `python3` lacks the deps and produces alarming
@@ -419,6 +439,13 @@ both TTLs. Rendering one costs columns: curator caps a name at 12 (`NAME_COLS`,
 exactly `surfsurf.eth`) because 15 moved its full layout 138 → 144, past the
 app-wide 143 — measure before widening an identity cell, and show the whole name
 only where there is room for it.
+
+For record lists, the **complete raw list is the sole ENS network-hydration boundary**. Cleaned
+and filtered lists reuse the raw-list ENS cache; changing filters must never start hydration
+again. When hydration finishes, repaint whichever derived list is visible so newly matched names
+appear immediately. Long-running ENS, JSON export, and list-reload work owns the centered footer
+message while it runs (`fetching ENS …`, for example) and clears only its own message when it
+finishes, so an older operation cannot erase the status of a newer one.
 
 **Escape every third-party string before it reaches markup or a `DataTable`.** Use
 `widgets/markup_safety.safe_markup`. Textual defers `Text.from_markup` into the message pump, so

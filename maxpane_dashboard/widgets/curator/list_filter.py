@@ -125,8 +125,23 @@ class CuratorListFilterEditor(Vertical):
         grid-size: 4;
         grid-columns: 1fr 1fr 1fr 1fr;
     }
+    CuratorListFilterEditor .curator-filter-nft-custom-grid {
+        height: auto;
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+        grid-gutter: 0 1;
+    }
     CuratorListFilterEditor .curator-filter-nft-add-row {
+        width: 100%;
         height: 3;
+    }
+    CuratorListFilterEditor #filter-nft-custom-list {
+        width: 100%;
+        min-width: 0;
+        height: auto;
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+        grid-gutter: 0 1;
     }
     CuratorListFilterEditor .curator-filter-field {
         width: 100%;
@@ -142,6 +157,7 @@ class CuratorListFilterEditor(Vertical):
     CuratorListFilterEditor .curator-filter-nft-selected {
         width: 100%;
         max-width: 100%;
+        height: 1;
         overflow-x: hidden;
     }
     CuratorListFilterEditor .curator-filter-nft-selected Label {
@@ -240,15 +256,18 @@ class CuratorListFilterEditor(Vertical):
         with Grid(classes="curator-filter-nft-presets"):
             for index, (label, _chain, _address) in enumerate(self._nft_choices):
                 yield Checkbox(label, compact=True, id=f"filter-nft-choice-{index}")
-        with Horizontal(classes="curator-filter-nft-add-row"):
-            yield Select(
-                (("Ethereum", "ethereum"), ("Base", "base")),
-                allow_blank=False, value="ethereum", compact=True,
-                id="filter-nft-chain",
-            )
-            yield Input(placeholder="0x collection address", id="filter-nft-address")
-            yield Button("+", id="filter-nft-add", compact=True)
-        yield Vertical(id="filter-nft-custom-list")
+        with Grid(classes="curator-filter-nft-custom-grid"):
+            with Horizontal(classes="curator-filter-nft-add-row"):
+                yield Select(
+                    (("Ethereum", "ethereum"), ("Base", "base")),
+                    allow_blank=False, value="ethereum", compact=True,
+                    id="filter-nft-chain",
+                )
+                yield Input(
+                    placeholder="0x collection address", id="filter-nft-address"
+                )
+                yield Button("+", id="filter-nft-add", compact=True)
+            yield Grid(id="filter-nft-custom-list")
         with Horizontal(classes="curator-filter-actions"):
             yield Button("APPLY FILTER", id="filter-apply", compact=True)
             yield Button("RESET ALL", id="filter-reset-all", compact=True)
@@ -373,7 +392,7 @@ class CuratorListFilterEditor(Vertical):
     def set_custom_nfts(self, values) -> None:
         self._custom_nfts = tuple(dict(value) for value in values)
         try:
-            container = self.query_one("#filter-nft-custom-list", Vertical)
+            container = self.query_one("#filter-nft-custom-list", Grid)
         except NoMatches:
             return
         container.remove_children()

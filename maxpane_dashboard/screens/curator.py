@@ -145,6 +145,7 @@ The screen is written against the frozen ``CURATOR_KEYS`` contract, not against
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import json
 import logging
@@ -223,6 +224,10 @@ logger = logging.getLogger(__name__)
 _EMDASH = "—"
 _NFT_NAME_LOOKUP_WORKER_GROUP = "curator-nft-name-lookup"
 _NFT_NAME_LOOKUP_WORKER_NAME = "curator-nft-name-lookup"
+_LIST_ENS_WORKER_GROUP = "curator-list-ens"
+_LIST_ENS_WORKER_NAME = "curator-list-ens"
+_LIST_EXPORT_WORKER_GROUP = "curator-list-export"
+_LIST_EXPORT_WORKER_NAME = "curator-list-export"
 
 #: Shown until the first payload lands.
 INITIAL_TITLE = "THE LIST · WhitelistCurator · Ethereum Mainnet"
@@ -369,9 +374,9 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "phase", "list_view", "contributors_total", "deposits_total",
         "volume_routed_eth", "you_address", "you_ens", "you_rank",
         "you_clean_rank", "you_filtered_index", "you_first_index",
-        "you_first_hour", "you_points", "clean_contributors", "clean_points",
-        "filtered_contributors", "filtered_points", "filtered_routed_eth",
-        "filter_summary",
+        "you_first_hour", "you_points", "you_credit_eth",
+        "clean_contributors", "clean_points", "filtered_contributors",
+        "filtered_points", "filtered_routed_eth", "filter_summary",
         "filter_editor_open",
     ),
     "CuratorLeaderboard": ("leaderboard_rows", "you_address"),
@@ -992,6 +997,7 @@ class CuratorScreen(RefreshGuard, Screen):
     CuratorScreen CuratorListFilterEditor .curator-filter-nft-selected {
         width: 100%;
         max-width: 100%;
+        height: 1;
         overflow-x: hidden;
     }
     CuratorScreen CuratorListFilterEditor .curator-filter-nft-selected Label {
@@ -1065,6 +1071,10 @@ class CuratorScreen(RefreshGuard, Screen):
         self._list_view: str = LIST_RAW
         self._filter_editor_open = False
         self._nft_name_lookup_generation = 0
+        self._list_ens_generation = 0
+        self._raw_list_ens_fingerprint: tuple[str, ...] | None = None
+        self._background_status_generation = 0
+        self._list_export_running = False
         self._custom_filter_values = empty_filter_values()
         self._active_filter: FilterSpec | None = None
         self._filter_summary: tuple[str, ...] = ()
@@ -1322,6 +1332,50 @@ class CuratorScreen(RefreshGuard, Screen):
         if editor is not None:
             editor.set_nft_add_pending(False)
 
+    def _invalidate_list_ens_hydration(
+        self, *, reset_raw: bool = False
+    ) -> None:
+        self._list_ens_generation += 1
+        self.workers.cancel_group(self, _LIST_ENS_WORKER_GROUP)
+        if reset_raw:
+            self._raw_list_ens_fingerprint = None
+
+    def _show_background_status(self, message: str) -> int:
+        """Show one THE LIST operation and return its ownership token."""
+        self._background_status_generation += 1
+        token = self._background_status_generation
+        try:
+            self.query_one(StatusBar).set_message(message)
+        except Exception as exc:  # noqa: BLE001 -- status is never load-bearing
+            logger.debug("Could not show background status: %s", exc)
+        return token
+
+    def _update_background_status(self, token: int, message: str) -> None:
+        """Advance an operation only while it still owns the footer."""
+        if token != self._background_status_generation:
+            return
+        try:
+            self.query_one(StatusBar).set_message(message)
+        except Exception as exc:  # noqa: BLE001 -- status is never load-bearing
+            logger.debug("Could not update background status: %s", exc)
+
+    def _clear_background_status(self, token: int) -> None:
+        """Clear an operation without erasing a newer operation's message."""
+        if token != self._background_status_generation:
+            return
+        try:
+            self.query_one(StatusBar).set_message("")
+        except Exception as exc:  # noqa: BLE001 -- status is never load-bearing
+            logger.debug("Could not clear background status: %s", exc)
+
+    def _reset_background_status(self) -> None:
+        """Invalidate every owner and restore the ordinary footer."""
+        self._background_status_generation += 1
+        try:
+            self.query_one(StatusBar).set_message("")
+        except Exception as exc:  # noqa: BLE001 -- may not be composed yet
+            logger.debug("Could not reset background status: %s", exc)
+
     def on_nft_collection_add_requested(
         self, event: NftCollectionAddRequested
     ) -> None:
@@ -1453,8 +1507,25 @@ class CuratorScreen(RefreshGuard, Screen):
         self._filtered_holder_receipt = None
         self._you_filtered_index = None
 
+    def _clear_filter(self) -> None:
+        self._active_filter = None
+        self._filter_summary = ()
+        self._filtered_rows = []
+        self._filtered_complete = False
+        self._filtered_routed_eth = None
+        self._filtered_source_reason = None
+        self._filtered_holder_receipt = None
+        self._you_filtered_index = None
+
     def _apply_filter(self, spec: FilterSpec) -> bool:
         data = self._title_data or {}
+        if not spec.active:
+            self._clear_filter()
+            self._list_view = LIST_RAW
+            self._dispatch_filtered_list(data)
+            self.query_one(CuratorFilteredList).mark_filter_applied(limited=False)
+            self._dispatch_list_hero(data)
+            return True
         result = self._filter_result(data, spec)
         self._store_filter_result(spec, result)
         self._dispatch_filtered_list(data)
@@ -1595,29 +1666,27 @@ class CuratorScreen(RefreshGuard, Screen):
                 return
             cleaned = self._list_view == LIST_CLEANED
             panel = CuratorCleanedList if cleaned else CuratorRawList
-            try:
-                rows = self._data_manager.full_list_rows(cleaned=cleaned)
-            except Exception as exc:  # noqa: BLE001 -- visible export is optional
-                logger.debug("List export read failed: %s", exc)
-                rows = None
-            if not isinstance(rows, list):
-                logger.debug("List export skipped: selected list unavailable")
+            if self._list_export_running:
                 return
-            directory = self._export_dir or Path.home() / ".maxpane"
+            kind = "cleaned" if cleaned else "raw"
+            status_token = self._show_background_status(
+                f"exporting {kind} JSON list …"
+            )
+            self._list_export_running = True
             try:
-                json_path = _write_list(directory, rows, cleaned=cleaned)
-            except Exception as exc:  # noqa: BLE001 -- visible, never fatal
-                logger.debug("List export failed: %s", exc)
-                try:
-                    self.query_one(panel).mark_export_failed()
-                except Exception as inner:  # noqa: BLE001
-                    logger.debug("Could not show the list export failure: %s", inner)
-                return
-            try:
-                self.query_one(panel).mark_exported(str(json_path))
-            except Exception as exc:  # noqa: BLE001 -- the file exists either way
-                logger.debug("Could not show the list export path: %s", exc)
-            self._load_selected_list_source()
+                self.run_worker(
+                    self._export_and_reload_list(
+                        cleaned, panel, kind, status_token
+                    ),
+                    name=_LIST_EXPORT_WORKER_NAME,
+                    group=_LIST_EXPORT_WORKER_GROUP,
+                    exclusive=True,
+                    exit_on_error=False,
+                )
+            except Exception as exc:  # noqa: BLE001 -- scheduling is optional
+                self._list_export_running = False
+                self._clear_background_status(status_token)
+                logger.debug("Could not start the list export: %s", exc)
             return
 
         if self._mode != MODE_ANALYSIS:
@@ -1640,6 +1709,52 @@ class CuratorScreen(RefreshGuard, Screen):
             self.query_one(CuratorCleanList).mark_exported(str(json_path))
         except Exception as exc:  # noqa: BLE001 -- the file is written either way
             logger.debug("Could not show the export path: %s", exc)
+
+    async def _export_and_reload_list(
+        self,
+        cleaned: bool,
+        panel_cls,
+        kind: str,
+        status_token: int,
+    ) -> None:
+        """Write one complete list off-loop, then load its validated source."""
+        try:
+            try:
+                rows = await asyncio.to_thread(
+                    self._data_manager.full_list_rows, cleaned=cleaned
+                )
+            except Exception as exc:  # noqa: BLE001 -- export is optional
+                logger.debug("List export read failed: %s", exc)
+                rows = None
+            if not isinstance(rows, list):
+                logger.debug("List export skipped: selected list unavailable")
+                return
+
+            directory = self._export_dir or Path.home() / ".maxpane"
+            try:
+                json_path = await asyncio.to_thread(
+                    _write_list, directory, rows, cleaned=cleaned
+                )
+            except Exception as exc:  # noqa: BLE001 -- visible, never fatal
+                logger.debug("List export failed: %s", exc)
+                try:
+                    self.query_one(panel_cls).mark_export_failed()
+                except Exception as inner:  # noqa: BLE001
+                    logger.debug("Could not show the list export failure: %s", inner)
+                return
+
+            try:
+                self.query_one(panel_cls).mark_exported(str(json_path))
+            except Exception as exc:  # noqa: BLE001 -- the file exists either way
+                logger.debug("Could not show the list export path: %s", exc)
+
+            self._update_background_status(
+                status_token, f"loading {kind} list …"
+            )
+            await self._reload_exported_list(cleaned)
+        finally:
+            self._list_export_running = False
+            self._clear_background_status(status_token)
 
     def action_back_to_lists(self) -> None:
         if self._mode != MODE_LIST:
@@ -1741,9 +1856,17 @@ class CuratorScreen(RefreshGuard, Screen):
         self._invalidate_nft_name_lookup(
             self.query_one(CuratorListFilterEditor)
         )
+        self.workers.cancel_group(self, _LIST_EXPORT_WORKER_GROUP)
+        self._list_export_running = False
+        self._invalidate_list_ens_hydration(reset_raw=True)
+        self._reset_background_status()
 
     def on_unmount(self) -> None:
         self._invalidate_nft_name_lookup()
+        self.workers.cancel_group(self, _LIST_EXPORT_WORKER_GROUP)
+        self._list_export_running = False
+        self._invalidate_list_ens_hydration(reset_raw=True)
+        self._reset_background_status()
 
     def on_resize(self, _event=None) -> None:
         """Keep the ``‹ taller`` marker honest when the terminal is resized.
@@ -1888,30 +2011,135 @@ class CuratorScreen(RefreshGuard, Screen):
         if not isinstance(data, dict):
             return
         cleaned = self._list_view == LIST_CLEANED
-        rows_key = "clean_list_rows" if cleaned else "leaderboard_rows"
-        count_key = "clean_contributors" if cleaned else "contributors_total"
-        panel_cls = CuratorCleanedList if cleaned else CuratorRawList
-        live_rows = data.get(rows_key)
+        source = self._list_source_context(data, cleaned)
+        panel_cls, live_rows, expected_count = source
         try:
             result = load_export_list(
                 self._export_dir or Path.home() / ".maxpane",
                 cleaned=cleaned,
-                expected_count=data.get(count_key),
+                expected_count=expected_count,
                 live_rows=live_rows,
                 you_row=data.get("you_list_row"),
             )
-            self.query_one(panel_cls).set_list_source(
-                result.rows, complete=result.complete
-            )
+            self._apply_list_source(panel_cls, result)
         except Exception as exc:  # noqa: BLE001 -- a local file is optional
             logger.debug("Curator list source load failed: %s", exc)
-            try:
-                self.query_one(panel_cls).set_list_source(
-                    live_rows, complete=False
-                )
-            except Exception as inner:  # noqa: BLE001
-                logger.debug("Could not restore the live list slice: %s", inner)
+            self._restore_live_list_source(panel_cls, live_rows)
         self._list_source_pending = False
+
+    @staticmethod
+    def _list_source_context(data: dict, cleaned: bool):
+        """Return the selected panel and validation inputs from one payload."""
+        rows_key = "clean_list_rows" if cleaned else "leaderboard_rows"
+        count_key = "clean_contributors" if cleaned else "contributors_total"
+        panel_cls = CuratorCleanedList if cleaned else CuratorRawList
+        return panel_cls, data.get(rows_key), data.get(count_key)
+
+    def _restore_live_list_source(self, panel_cls, live_rows) -> None:
+        """Fall back to the manager's capped rows after a local-source error."""
+        try:
+            self.query_one(panel_cls).set_list_source(live_rows, complete=False)
+        except Exception as exc:  # noqa: BLE001 -- a repaint is never load-bearing
+            logger.debug("Could not restore the live list slice: %s", exc)
+
+    def _apply_list_source(self, panel_cls, result) -> None:
+        """Paint cached names; hydrate ENS once per complete raw address set."""
+        rows = result.rows
+        if isinstance(rows, list):
+            try:
+                rows = self._data_manager.cached_list_rows_with_ens(rows)
+            except Exception as exc:  # noqa: BLE001 -- names are decoration
+                logger.debug("Could not read cached list ENS names: %s", exc)
+        self.query_one(panel_cls).set_list_source(
+            rows, complete=result.complete
+        )
+        if not (
+            panel_cls is CuratorRawList
+            and result.complete
+            and isinstance(rows, list)
+        ):
+            return
+        fingerprint = tuple(
+            row["address"].casefold()
+            for row in rows
+            if isinstance(row, dict) and isinstance(row.get("address"), str)
+        )
+        if fingerprint == self._raw_list_ens_fingerprint:
+            return
+        self._invalidate_list_ens_hydration()
+        self._raw_list_ens_fingerprint = fingerprint
+        if not any(
+            not isinstance(row.get("name"), str) or not row["name"].strip()
+            for row in rows
+            if isinstance(row, dict)
+        ):
+            return
+        generation = self._list_ens_generation
+        status_token = self._show_background_status("fetching ENS …")
+        self.run_worker(
+            self._hydrate_list_ens(
+                panel_cls, rows, generation, status_token
+            ),
+            name=_LIST_ENS_WORKER_NAME,
+            group=_LIST_ENS_WORKER_GROUP,
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def _reload_exported_list(self, cleaned: bool) -> None:
+        """Re-read a just-written list without blocking the Textual loop."""
+        data = self._title_data
+        if not isinstance(data, dict):
+            return
+        panel_cls, live_rows, expected_count = self._list_source_context(
+            data, cleaned
+        )
+        try:
+            result = await asyncio.to_thread(
+                load_export_list,
+                self._export_dir or Path.home() / ".maxpane",
+                cleaned=cleaned,
+                expected_count=expected_count,
+                live_rows=live_rows,
+                you_row=data.get("you_list_row"),
+            )
+            self._apply_list_source(panel_cls, result)
+        except Exception as exc:  # noqa: BLE001 -- a local file is optional
+            logger.debug("Curator list source reload failed: %s", exc)
+            self._restore_live_list_source(panel_cls, live_rows)
+        self._list_source_pending = False
+
+    async def _hydrate_list_ens(
+        self,
+        panel_cls,
+        rows: list[dict],
+        generation: int,
+        status_token: int | None = None,
+    ) -> None:
+        """Hydrate a complete local list without blocking its first paint."""
+        try:
+            try:
+                labelled = await self._data_manager.label_list_rows_with_ens(rows)
+            except Exception as exc:  # noqa: BLE001 -- names are decoration
+                logger.debug("Complete-list ENS hydration failed: %s", exc)
+                if generation == self._list_ens_generation:
+                    self._raw_list_ens_fingerprint = None
+                return
+            if generation != self._list_ens_generation:
+                return
+            try:
+                self.query_one(panel_cls).set_list_source(labelled, complete=True)
+            except Exception as exc:  # noqa: BLE001 -- repaint is optional
+                logger.debug("Could not repaint the ENS-labelled list: %s", exc)
+            if self._active_filter is not None and self._title_data is not None:
+                self._refresh_active_filter(self._title_data)
+                self._dispatch_filtered_list(self._title_data)
+                self._dispatch_list_hero(self._title_data)
+            if self._list_view == LIST_CLEANED:
+                self._load_selected_list_source()
+        finally:
+            if status_token is not None:
+                self._clear_background_status(status_token)
 
     async def _do_refresh(self) -> None:
         try:

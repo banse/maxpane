@@ -88,6 +88,7 @@ import asyncio
 import inspect
 import json
 from pathlib import Path
+import threading
 
 import re
 
@@ -365,6 +366,9 @@ class _FakeManager:
         self.filtered_routed_eth: float | None = None
         self.collection_names: dict[str, str | Exception | None] = {}
         self.collection_name_calls: list[str] = []
+        self.list_ens_calls: list[tuple[str, ...]] = []
+        self.list_ens_names: dict[str, str] = {}
+        self.list_ens_cached_names: dict[str, str] = {}
 
     async def fetch_and_compute(self) -> dict:
         self.calls += 1
@@ -381,6 +385,24 @@ class _FakeManager:
         if isinstance(answer, Exception):
             raise answer
         return answer or collection.label
+
+    async def label_list_rows_with_ens(self, rows) -> list[dict]:
+        self.list_ens_calls.append(
+            tuple(row["address"].casefold() for row in rows)
+        )
+        self.list_ens_cached_names.update(self.list_ens_names)
+        return self.cached_list_rows_with_ens(rows)
+
+    def cached_list_rows_with_ens(self, rows) -> list[dict]:
+        return [
+            {
+                **row,
+                "name": self.list_ens_cached_names.get(
+                    row["address"].casefold(), row.get("name")
+                ),
+            }
+            for row in rows
+        ]
 
     def full_list_rows(self, *, cleaned: bool) -> list[dict] | None:
         self.full_list_calls.append(cleaned)
@@ -408,7 +430,9 @@ class _FakeManager:
             ),
         )
         return FilteredListResult(
-            rows=filter_rows(live_rows, spec, context),
+            rows=filter_rows(
+                self.cached_list_rows_with_ens(live_rows), spec, context
+            ),
             complete=self.filtered_complete,
             source_reason=self.filtered_source_reason,
             holder_receipt=self.filtered_holder_receipt,
@@ -452,6 +476,28 @@ class _DelayedNameManager(_FakeManager):
             return answer
         finally:
             self.name_finished[key].set()
+
+
+class _DelayedListEnsManager(_FakeManager):
+    """Hold complete-list ENS hydration open while the footer is inspected."""
+
+    def __init__(self, payload: dict | None = None) -> None:
+        super().__init__(payload)
+        self.list_ens_started = asyncio.Event()
+        self.list_ens_release = asyncio.Event()
+        self.list_ens_finished = asyncio.Event()
+
+    async def label_list_rows_with_ens(self, rows) -> list[dict]:
+        self.list_ens_calls.append(
+            tuple(row["address"].casefold() for row in rows)
+        )
+        self.list_ens_started.set()
+        try:
+            await self.list_ens_release.wait()
+            self.list_ens_cached_names.update(self.list_ens_names)
+            return self.cached_list_rows_with_ens(rows)
+        finally:
+            self.list_ens_finished.set()
 
 
 class _NavigationProbeScreen(CuratorScreen):
@@ -3267,6 +3313,26 @@ async def test_f_opens_blank_editor_then_applies_and_retains_custom_values():
         assert editor.values()["hour_min"] == "0"
 
 
+async def test_applying_blank_filter_dialog_renders_the_raw_list():
+    screen = _screen(_list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        assert editor.values() == empty_filter_values()
+
+        await pilot.click("#filter-apply")
+        await pilot.pause()
+
+        raw = screen.query_one(CuratorRawList)
+        assert screen._list_view == LIST_RAW
+        assert screen._active_filter is None
+        assert raw.display is True
+        assert screen.query_one(CuratorFilteredList).display is False
+        assert "raw1.eth" in _region_text(app, raw, screen)
+
+
 async def test_screen_adds_removes_and_deduplicates_custom_collection():
     screen = _screen(_list_payload(1))
     app = _ThemedHarness(screen)
@@ -3800,7 +3866,7 @@ async def test_apply_button_and_f_key_use_the_same_acceptance_result():
         assert screen._filtered_rows == button_rows
 
 
-async def test_reset_all_clears_draft_but_not_active_filter_until_acceptance():
+async def test_reset_all_keeps_active_filter_until_acceptance_then_shows_raw():
     payload = _list_payload(3)
     screen = _screen(payload)
     app = _ThemedHarness(screen)
@@ -3821,7 +3887,9 @@ async def test_reset_all_clears_draft_but_not_active_filter_until_acceptance():
         assert editor.values() == empty_filter_values()
         await pilot.press("f")
         await pilot.pause()
-        assert screen._active_filter.active is False
+        assert screen._active_filter is None
+        assert screen._list_view == LIST_RAW
+        assert screen.query_one(CuratorRawList).display is True
         assert screen._filtered_rows == []
 
 
@@ -3894,7 +3962,8 @@ async def test_normal_refresh_publishes_completed_nft_filter_and_title(
         assert screen._filtered_rows == [payload["leaderboard_rows"][0]]
         assert "THE FILTERED LIST - 1 wallets" in panel
         assert "NFT Identity.md" in panel
-        assert "7.50 ETH deposited" in hero
+        assert "7.50 ETH" in hero
+        assert "deposited" not in hero
 
 
 @pytest.mark.parametrize(
@@ -4171,6 +4240,7 @@ async def test_filtered_order_message_updates_the_wallet_hero_index():
         hero = _region_text(app, screen.query_one(CuratorListHero), screen)
     assert screen._you_filtered_index == 2
     assert "#2 of 3 · filtered" in hero
+    assert "30,853 pts · 490.90 ETH" in hero
 
 
 async def test_lists_start_on_one_raw_table_and_c_toggles_a_remembered_clean_table():
@@ -4290,6 +4360,223 @@ async def test_list_entry_uses_a_matching_export_and_missing_clean_export_falls_
         await pilot.pause()
         assert cleaned.row_count == 1
         assert not (tmp_path / "curator_cleaned_list.enriched.json").exists()
+
+
+async def test_complete_list_source_is_hydrated_with_ens_after_loading(tmp_path):
+    from textual.widgets import DataTable
+    from maxpane_dashboard.widgets.curator import CuratorRawList
+
+    exported = _list_payload(3)
+    for row in exported["leaderboard_rows"]:
+        row["name"] = None
+    live = _list_payload(1)
+    live.update(contributors_total=3)
+    target = exported["leaderboard_rows"][-1]["address"].casefold()
+    (tmp_path / "curator_raw_list.json").write_text(
+        json.dumps(exported["leaderboard_rows"]), encoding="utf-8"
+    )
+    manager = _FakeManager(live)
+    manager.list_ens_names[target] = "complete-list.eth"
+    screen = CuratorScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=_WALLET,
+        export_dir=tmp_path,
+    )
+    app = _ThemedHarness(screen)
+
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        for _ in range(10):
+            await pilot.pause()
+            if manager.list_ens_calls:
+                break
+        table = screen.query_one(CuratorRawList).query_one(DataTable)
+
+        assert manager.list_ens_calls == [
+            tuple(
+                row["address"].casefold()
+                for row in exported["leaderboard_rows"]
+            )
+        ]
+        assert "complete-list.eth" in tuple(table.get_row_at(2))
+
+
+async def test_footer_reports_ens_hydration_until_the_complete_list_is_ready(
+    tmp_path,
+):
+    from maxpane_dashboard.widgets.status_bar import StatusBar
+
+    exported = _list_payload(3)
+    for row in exported["leaderboard_rows"]:
+        row["name"] = None
+    live = _list_payload(1)
+    live.update(contributors_total=3)
+    (tmp_path / "curator_raw_list.json").write_text(
+        json.dumps(exported["leaderboard_rows"]), encoding="utf-8"
+    )
+    manager = _DelayedListEnsManager(live)
+    screen = CuratorScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=_WALLET,
+        export_dir=tmp_path,
+    )
+    app = _ThemedHarness(screen)
+
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        try:
+            await screen._do_refresh()
+            await asyncio.wait_for(manager.list_ens_started.wait(), timeout=1)
+            await pilot.pause()
+
+            footer = _region_text(
+                app, screen.query_one(StatusBar), screen
+            )
+            assert (
+                footer.index("30s poll")
+                < footer.index("fetching ENS …")
+                < footer.index("maxpane")
+            )
+        finally:
+            manager.list_ens_release.set()
+
+        await asyncio.wait_for(manager.list_ens_finished.wait(), timeout=1)
+        for _ in range(10):
+            await pilot.pause()
+            footer = _region_text(app, screen.query_one(StatusBar), screen)
+            if "fetching ENS …" not in footer:
+                break
+
+        assert "fetching ENS …" not in footer
+        assert "30s poll" in footer and "c view" in footer
+
+
+async def test_raw_ens_hydration_repaints_all_lists_and_runs_once(tmp_path):
+    from textual.widgets import DataTable
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList, CuratorRawList
+
+    exported = _list_payload(3)
+    exported["clean_list_rows"] = exported["clean_list_rows"][:2]
+    for key in ("leaderboard_rows", "clean_list_rows"):
+        for row in exported[key]:
+            row["name"] = None
+    live = _list_payload(1)
+    live.update(contributors_total=3, clean_contributors=2)
+    for key in ("leaderboard_rows", "clean_list_rows"):
+        for row in live[key]:
+            row["name"] = None
+    for basename, key in (
+        ("curator_raw_list.json", "leaderboard_rows"),
+        ("curator_cleaned_list.json", "clean_list_rows"),
+    ):
+        (tmp_path / basename).write_text(
+            json.dumps(exported[key]), encoding="utf-8"
+        )
+
+    manager = _DelayedListEnsManager(live)
+    target = exported["leaderboard_rows"][0]["address"].casefold()
+    manager.list_ens_names[target] = "raw-cache.eth"
+    screen = CuratorScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=_WALLET,
+        export_dir=tmp_path,
+    )
+    app = _ThemedHarness(screen)
+
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        try:
+            await screen._do_refresh()
+            await asyncio.wait_for(manager.list_ens_started.wait(), timeout=1)
+            await pilot.press("1")
+            await pilot.pause()
+            filtered = screen.query_one(CuratorFilteredList).query_one(DataTable)
+            assert "raw-cache.eth" not in tuple(filtered.get_row_at(0))
+        finally:
+            manager.list_ens_release.set()
+        await asyncio.wait_for(manager.list_ens_finished.wait(), timeout=1)
+        for _ in range(10):
+            await pilot.pause()
+            filtered = screen.query_one(CuratorFilteredList).query_one(DataTable)
+            if "raw-cache.eth" in tuple(filtered.get_row_at(0)):
+                break
+        assert "raw-cache.eth" in tuple(filtered.get_row_at(0))
+
+        await pilot.press("c")
+        await pilot.pause()
+        raw = screen.query_one(CuratorRawList).query_one(DataTable)
+        assert "raw-cache.eth" in tuple(raw.get_row_at(0))
+
+        await pilot.press("c")
+        for _ in range(10):
+            await pilot.pause()
+            cleaned = screen.query_one(CuratorCleanedList).query_one(DataTable)
+            if "raw-cache.eth" in tuple(cleaned.get_row_at(0)):
+                break
+        assert "raw-cache.eth" in tuple(cleaned.get_row_at(0))
+
+    assert len(manager.list_ens_calls) == 1
+
+
+async def test_an_older_background_task_cannot_clear_a_newer_status():
+    from maxpane_dashboard.widgets.status_bar import StatusBar
+
+    screen = _screen(_list_payload(1))
+    app = _ThemedHarness(screen)
+
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.pause()
+        old = screen._show_background_status("fetching ENS …")
+        current = screen._show_background_status("loading raw list …")
+
+        screen._clear_background_status(old)
+        await pilot.pause()
+        footer = _region_text(app, screen.query_one(StatusBar), screen)
+        assert "loading raw list …" in footer
+
+        screen._clear_background_status(current)
+        await pilot.pause()
+        footer = _region_text(app, screen.query_one(StatusBar), screen)
+        assert "loading raw list …" not in footer
+        assert "30s poll" in footer
+
+
+async def test_stale_complete_list_ens_result_cannot_replace_newer_rows(tmp_path):
+    from textual.widgets import DataTable
+    from maxpane_dashboard.widgets.curator import CuratorRawList
+
+    payload = _list_payload(1)
+    payload["leaderboard_rows"][0]["name"] = None
+    manager = _FakeManager(payload)
+    target = payload["leaderboard_rows"][0]["address"].casefold()
+    manager.list_ens_names[target] = "stale-result.eth"
+    screen = CuratorScreen(
+        manager,
+        poll_interval=30,
+        name="curator",
+        wallet=_WALLET,
+        export_dir=tmp_path,
+    )
+    app = _ThemedHarness(screen)
+
+    async with app.run_test(size=(143, _TALL)):
+        await screen._do_refresh()
+        stale_generation = screen._list_ens_generation
+        screen._invalidate_list_ens_hydration()
+
+        await screen._hydrate_list_ens(
+            CuratorRawList,
+            payload["leaderboard_rows"],
+            stale_generation,
+        )
+
+        table = screen.query_one(CuratorRawList).query_one(DataTable)
+        assert "stale-result.eth" not in tuple(table.get_row_at(0))
 
 
 async def test_list_exports_are_checked_only_at_reader_requested_boundaries(
@@ -4416,6 +4703,7 @@ async def test_the_list_view_alone_swaps_in_the_record_summary_hero():
         you_rank=15_234,
         you_clean_rank=7_042,
         you_points=42_721,
+        you_credit_eth=490.9,
         you_ens="reader.eth",
     )
     screen = _screen(payload)
@@ -4441,17 +4729,18 @@ async def test_the_list_view_alone_swaps_in_the_record_summary_hero():
         assert "CLOCK" not in text
         assert "THE LIST" in text and "THE FILTER" in text
         assert "THE CLEANED LIST" not in text
-        assert "YOUR WALLET" in text
         assert "reader.eth" in text
+        assert "YOUR WALLET" not in text
+        assert _WALLET in text
         assert (
             text.index("THE LIST")
-            < text.index("YOUR WALLET")
+            < text.index("reader.eth")
             < text.index("THE FILTER")
         )
         assert "#15,234 of 19,522 · raw" in text
         assert "clusters" not in text
         assert "removed (via sybilkit)" not in text
-        assert "42,721 pts" in text
+        assert "42,721 pts · 490.90 ETH" in text
 
         await pilot.press("c")
         await pilot.pause()
@@ -4462,6 +4751,9 @@ async def test_the_list_view_alone_swaps_in_the_record_summary_hero():
         assert "#7,042 of 8,750 · clean" in cleaned_text
         assert "8,750 wallets" in cleaned_text
         assert "12,345,678 pts" in cleaned_text
+        assert "reader.eth" in cleaned_text
+        assert _WALLET in cleaned_text
+        assert "42,721 pts · 490.90 ETH" in cleaned_text
 
         # The linked-analysis view still uses the original dashboard hero.
         screen.action_toggle_analysis()
@@ -4889,6 +5181,68 @@ async def test_e_exports_only_the_full_list_currently_on_screen(tmp_path):
     assert len(json.loads((tmp_path / "curator_cleaned_list.json").read_text())) == 1_100
     assert "saved →" in raw_receipt and "curator_raw_list.json" in raw_receipt
     assert "saved →" in clean_receipt and "curator_cleaned_list.json" in clean_receipt
+
+
+async def test_full_list_export_reports_export_then_reload_and_clears_status(
+    tmp_path, monkeypatch
+):
+    from maxpane_dashboard.widgets.status_bar import StatusBar
+
+    screen = _export_screen(tmp_path, _list_payload(3))
+    app = _ThemedHarness(screen)
+    messages: list[str] = []
+    export_started = threading.Event()
+    export_release = threading.Event()
+    original_rows = screen._data_manager.full_list_rows
+
+    def held_rows(*, cleaned: bool):
+        export_started.set()
+        export_release.wait(timeout=2)
+        return original_rows(cleaned=cleaned)
+
+    monkeypatch.setattr(screen._data_manager, "full_list_rows", held_rows)
+
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.pause()
+        status = screen.query_one(StatusBar)
+        original = getattr(status, "set_message", None)
+
+        def track_message(message: str) -> None:
+            messages.append(message)
+            if original is not None:
+                original(message)
+
+        monkeypatch.setattr(status, "set_message", track_message, raising=False)
+        try:
+            await pilot.press("e")
+            for _ in range(10):
+                await pilot.pause()
+                if export_started.is_set():
+                    break
+            assert export_started.is_set()
+            assert "exporting raw JSON list …" in _region_text(
+                app, status, screen
+            )
+        finally:
+            export_release.set()
+
+        for _ in range(20):
+            await pilot.pause()
+            if messages and messages[-1] == "":
+                break
+
+        footer = _region_text(app, status, screen)
+        observed = list(messages)
+
+    assert observed == [
+        "exporting raw JSON list …",
+        "loading raw list …",
+        "",
+    ]
+    assert "exporting raw JSON list …" not in footer
+    assert "loading raw list …" not in footer
+    assert "30s poll" in footer
 
 
 @pytest.mark.parametrize("cleaned", (False, True))

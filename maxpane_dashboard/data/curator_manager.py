@@ -627,6 +627,18 @@ class CuratorManager:
             and len(rows) == len(self.cache.first_deposits())
         )
 
+    def cached_list_rows_with_ens(self, rows) -> list[dict]:
+        """Copy list rows and attach only fresh names already in the cache."""
+        labelled = [dict(row) for row in rows if isinstance(row, Mapping)]
+        known = self.cache.ens.names_fresh(
+            ens.DEFAULT_TTL_SECONDS, float(self._clock())
+        )
+        for row in labelled:
+            address = row.get("address")
+            if isinstance(address, str):
+                row["name"] = known.get(address.lower())
+        return labelled
+
     def full_list_rows(self, *, cleaned: bool) -> list[dict] | None:
         """Return one complete export list from held data, without network I/O."""
         fold = self.cache.fold_rows()
@@ -665,14 +677,7 @@ class CuratorManager:
             )
             curator_clusters.merge_leaderboard_grade(rows, slot)
 
-        known = self.cache.ens.names_fresh(
-            ens.DEFAULT_TTL_SECONDS, float(self._clock())
-        )
-        for row in rows:
-            address = row.get("address")
-            if isinstance(address, str):
-                row["name"] = known.get(address.lower())
-        return rows
+        return self.cached_list_rows_with_ens(rows)
 
     def _filter_families(self) -> dict[str, frozenset[str]] | None:
         entry = self.cache.analysis_last_good()
@@ -870,15 +875,16 @@ class CuratorManager:
         )
         if not isinstance(source.rows, list):
             return FilteredListResult(None, source.complete, source.reason)
+        rows = self.cached_list_rows_with_ens(source.rows)
         nft_holders, holder_receipt = self._nft_filter_context(
-            spec, source.rows
+            spec, rows
         )
         context = FilterContext(
             families_by_address=self._filter_families() if spec.families else None,
             whale_addresses=self._filter_whales(expected_count) if spec.whale else None,
             nft_holders_by_collection=nft_holders,
         )
-        rows = filter_rows(source.rows, spec, context)
+        rows = filter_rows(rows, spec, context)
         return FilteredListResult(
             rows,
             source.complete,
@@ -2183,6 +2189,65 @@ class CuratorManager:
             out.append(self.wallet)
         return out
 
+    async def _ens_names_for_addresses(
+        self, addresses, now: float
+    ) -> dict[str, str]:
+        """Resolve every uncached address in bounded THE LIST-only batches."""
+        known = self.cache.ens.names_fresh(ens.DEFAULT_TTL_SECONDS, now)
+        misses = self.cache.ens.misses_fresh(ens.MISS_TTL_SECONDS, now)
+        wanted: list[str] = []
+        seen: set[str] = set()
+        for address in addresses:
+            if not _looks_like_address(address):
+                continue
+            key = address.lower()
+            if key in known or key in misses or key in seen:
+                continue
+            seen.add(key)
+            wanted.append(address)
+
+        for start in range(0, len(wanted), ens.MAX_ADDRESSES):
+            batch = wanted[start : start + ens.MAX_ADDRESSES]
+            resolved = await self._guard(
+                lambda batch=batch: self.client.fetch_ens_names(batch),
+                "fetch_ens_names",
+            )
+            if resolved is None:
+                continue
+            if not isinstance(resolved, Mapping):
+                logger.warning(
+                    "Curator fetch_ens_names returned %r, not a mapping",
+                    type(resolved),
+                )
+                continue
+            batch_keys = {address.lower() for address in batch}
+            new_names = {
+                address.lower(): name
+                for address, name in resolved.items()
+                if isinstance(address, str)
+                and address.lower() in batch_keys
+                and isinstance(name, str)
+                and name
+            }
+            if new_names:
+                _safe_call(self.cache.ens.set_names, new_names, ts=now)
+                known.update(new_names)
+            _safe_call(
+                self.cache.ens.note_misses,
+                [address for address in batch if address.lower() not in known],
+                ts=now,
+            )
+        return known
+
+    async def label_list_rows_with_ens(self, rows) -> list[dict]:
+        """Copy and ENS-label a validated complete raw or cleaned list."""
+        labelled = [dict(row) for row in rows if isinstance(row, Mapping)]
+        now = float(self._clock())
+        await self._ens_names_for_addresses(
+            (row.get("address") for row in labelled), now
+        )
+        return self.cached_list_rows_with_ens(labelled)
+
     async def _label_with_ens(self, payload: dict[str, Any], now: float) -> None:
         """Attach verified reverse-ENS names to the addresses being rendered.
 
@@ -2193,33 +2258,9 @@ class CuratorManager:
         most wallets would be re-queried on every tick forever, because most
         wallets have no reverse record.
         """
-        known = self.cache.ens.names_fresh(ens.DEFAULT_TTL_SECONDS, now)
-        misses = self.cache.ens.misses_fresh(ens.MISS_TTL_SECONDS, now)
-
-        wanted: list[str] = []
-        seen: set[str] = set()
-        for addr in self._rendered_addresses(payload):
-            key = addr.lower()
-            if key in known or key in misses or key in seen:
-                continue
-            seen.add(key)
-            wanted.append(addr)
-
-        if wanted:
-            resolved = await self._guard(
-                lambda: self.client.fetch_ens_names(wanted), "fetch_ens_names"
-            ) or {}
-            if resolved:
-                _safe_call(self.cache.ens.set_names, resolved, ts=now)
-                known = {**known, **{a.lower(): n for a, n in resolved.items()}}
-            # Everything asked for and not answered has no name.  Recorded so
-            # the next cycle does not ask again; a shorter TTL lets a wallet
-            # that registers one be picked up.
-            _safe_call(
-                self.cache.ens.note_misses,
-                [a for a in wanted if a.lower() not in known],
-                ts=now,
-            )
+        known = await self._ens_names_for_addresses(
+            self._rendered_addresses(payload), now
+        )
 
         if not known:
             return

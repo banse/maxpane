@@ -2021,6 +2021,42 @@ def test_a_resolved_name_reaches_every_place_that_address_renders(tmp_path, cloc
     assert payload.get("whale_ens") is None
 
 
+def test_every_rendered_address_is_resolved_in_bounded_ens_batches(
+    tmp_path, clock
+):
+    """THE LIST renders more wallets than one shared ENS resolver batch."""
+    count = ens.MAX_ADDRESSES * 2 + 1
+    addresses = ["0x" + f"{index:040x}" for index in range(1, count + 1)]
+    last = addresses[-1]
+    asked: list[tuple[str, ...]] = []
+
+    def resolve(batch):
+        asked.append(tuple(batch))
+        attempted = batch[: ens.MAX_ADDRESSES]
+        return {last: "last-wallet.eth"} if last in attempted else {}
+
+    manager = _manager(
+        tmp_path, clock, client=FakeClient(fetch_ens_names=resolve)
+    )
+    payload = {
+        "leaderboard_rows": [
+            {"address": address, "name": None} for address in addresses
+        ]
+    }
+
+    asyncio.run(manager._label_with_ens(payload, NOW))
+
+    assert [len(batch) for batch in asked] == [
+        ens.MAX_ADDRESSES,
+        ens.MAX_ADDRESSES,
+        1,
+    ]
+    assert payload["leaderboard_rows"][-1]["name"] == "last-wallet.eth"
+    assert last not in manager.cache.ens.misses_fresh(
+        ens.MISS_TTL_SECONDS, NOW
+    )
+
+
 def test_a_failed_resolution_leaves_every_row_exactly_as_it_was(tmp_path, clock):
     """Names are decoration: the failure costs the label, never the row."""
     client = FakeClient(fetch_ens_names=RuntimeError("all endpoints down"))
@@ -2031,6 +2067,55 @@ def test_a_failed_resolution_leaves_every_row_exactly_as_it_was(tmp_path, clock)
 
     assert payload["leaderboard_rows"][0]["name"] is None
     assert payload["you_ens"] is None if "you_ens" in payload else True
+    assert manager.cache.ens.misses_fresh(ens.MISS_TTL_SECONDS, NOW) == set()
+
+
+def test_complete_list_rows_are_copied_and_hydrated_past_one_batch(
+    tmp_path, clock
+):
+    count = ens.MAX_ADDRESSES + 1
+    rows = [
+        {
+            "rank": index,
+            "address": "0x" + f"{index:040x}",
+            "name": None,
+        }
+        for index in range(1, count + 1)
+    ]
+    last = rows[-1]["address"]
+
+    def resolve(batch):
+        return {last: "complete-list.eth"} if last in batch else {}
+
+    manager = _manager(
+        tmp_path, clock, client=FakeClient(fetch_ens_names=resolve)
+    )
+
+    hydrated = asyncio.run(manager.label_list_rows_with_ens(rows))
+
+    assert hydrated[-1]["name"] == "complete-list.eth"
+    assert rows[-1]["name"] is None, "the validated export was mutated"
+
+
+def test_filtered_list_reuses_names_cached_by_raw_hydration(tmp_path, clock):
+    address = "0x" + "12" * 20
+    row = _nft_row(address)
+    (tmp_path / "curator_raw_list.json").write_text(
+        json.dumps([row]), encoding="utf-8"
+    )
+    manager = _manager(tmp_path, clock)
+    manager.cache.ens.set_names({address: "raw-cache.eth"}, ts=NOW)
+
+    result = manager.filtered_list_rows(
+        tmp_path,
+        expected_count=1,
+        live_rows=[row],
+        you_row=None,
+        spec=FilterSpec(ens="set"),
+    )
+
+    assert result.rows[0]["name"] == "raw-cache.eth"
+    assert manager.client.calls == []
 
 
 def test_an_address_with_no_name_is_asked_once_not_every_tick(tmp_path, clock):

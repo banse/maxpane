@@ -350,6 +350,51 @@ async def test_editor_round_trips_predefined_and_custom_nfts():
         assert "ETH 0xbbbb…bbbb" in _screen_text(app)
 
 
+@pytest.mark.parametrize("size", ((143, 42), (80, 60)))
+async def test_nft_add_controls_and_selected_collections_share_two_grid_columns(
+    size,
+):
+    editor = CuratorListFilterEditor(nft_choices=NFT_CHOICES)
+    app = _Harness(editor)
+    async with app.run_test(size=size) as pilot:
+        editor.set_custom_nfts(tuple(
+            {
+                "label": label,
+                "chain": "base",
+                "address": "0x" + digit * 40,
+            }
+            for label, digit in (
+                ("One", "a"),
+                ("Two", "b"),
+                ("Three", "c"),
+                ("Four", "d"),
+            )
+        ))
+        await pilot.pause()
+
+        nft_grid = editor.query_one(".curator-filter-nft-custom-grid")
+        add_controls = editor.query_one(".curator-filter-nft-add-row")
+        selected = editor.query_one("#filter-nft-custom-list")
+        collection_rows = list(editor.query(".curator-filter-nft-selected"))
+        filter_grid = editor.query_one(".curator-filter-groups")
+
+        assert nft_grid.region.x == filter_grid.region.x
+        assert nft_grid.region.right == filter_grid.region.right
+        assert add_controls.region.y == selected.region.y
+        assert add_controls.region.right < selected.region.x
+        assert abs(add_controls.region.width - selected.region.width) <= 1
+        assert len(collection_rows) == 4
+        first, second, third, fourth = collection_rows
+        assert first.region.y == second.region.y
+        assert third.region.y == fourth.region.y == first.region.bottom
+        assert first.region.x == third.region.x
+        assert second.region.x == fourth.region.x
+        assert first.region.right < second.region.x
+        assert all(row.region.height == 1 for row in collection_rows)
+        assert selected.region.height == 2
+        assert nft_grid.region.height == 3
+
+
 async def test_editor_compact_layout_keeps_titles_with_their_controls():
     editor = CuratorListFilterEditor(nft_choices=NFT_CHOICES)
     app = _Harness(editor)
@@ -849,9 +894,9 @@ async def test_the_list_hero_names_an_unconfigured_wallet_at_narrow_width():
         ),
         (
             "filtered",
-            ("568 wallets", "1,234,567 pts", "321.50 ETH deposited",
+            ("568 wallets", "1,234,567 pts", "321.50 ETH",
              "list FILTERED", "#14 of 568 · filtered"),
-            (),
+            ("deposited",),
         ),
     ),
 )
@@ -877,10 +922,13 @@ async def test_list_hero_follows_the_visible_list(view, expected, absent):
         you_first_index=88,
         you_first_hour=12,
         you_points=42_721,
+        you_credit_eth=3.6,
         filter_summary=("single deposit >=25 ETH",),
     )
     assert "THE LIST" in text
-    assert "YOUR WALLET" in text
+    assert "reader.eth" in text
+    assert "YOUR WALLET" not in text
+    assert "42,721 pts · 3.60 ETH" in text
     for value in expected:
         assert value in text
     for value in absent:
@@ -900,7 +948,7 @@ async def test_third_list_hero_card_is_exact_white_regular_filter_help():
             "'1' - first 1000 wallets",
             "'2' - joined hour 0",
             "'3' - whale splash",
-            "'f' - for more filters",
+            "'f' - more filters",
         ]
         shortcut_style = box.render().get_style_at_offset(len("THE FILTER\n"))
         assert not shortcut_style.bold
@@ -928,25 +976,63 @@ def test_raw_list_label_is_frozen_in_every_phase(phase):
     (
         ("raw", "you_rank", 2, "contributors_total", 10, "raw"),
         ("cleaned", "you_clean_rank", 3, "clean_contributors", 11, "clean"),
-        ("filtered", "you_filtered_index", 4,
-         "filtered_contributors", 12, "filtered"),
     ),
 )
-def test_wallet_card_uses_one_two_tone_shape_and_three_green_rows(
+def test_raw_and_cleaned_wallet_cards_share_the_filtered_identity_and_value_rows(
     view, rank_key, rank, total_key, total, suffix
 ):
+    address = "0x" + "1" * 40
     lines = _wallet_lines({
         "list_view": view, rank_key: rank, total_key: total,
         "filter_summary": ("points 10+",),
         "you_first_index": 8, "you_first_hour": 2,
-        "you_address": "0x" + "1" * 40, "you_points": 99,
+        "you_address": address, "you_ens": "reader.eth",
+        "you_points": 99, "you_credit_eth": 3.6,
     }, "full", 42)
-    assert lines[0] == "[dim]YOUR WALLET[/]"
-    assert lines[1] == (
+    assert lines == [
+        "[$success]reader.eth[/]",
         f"[$success][bold]#{rank} of {total}[/][/] "
-        f"[$success-darken-2]· {suffix}[/]"
-    )
-    assert all(line.startswith("[$success]") for line in lines[2:5])
+        f"[$success-darken-2]· {suffix}[/]",
+        "[$success-darken-2]join #8 · hour 2[/]",
+        "[$success][bold]99 pts · 3.60 ETH[/][/]",
+        f"[$success]{address}[/]",
+    ]
+
+
+def test_filtered_wallet_card_promotes_ens_and_keeps_the_full_address():
+    address = "0x1234567890abcdef1234567890abcdef12345678"
+    lines = _wallet_lines({
+        "list_view": "filtered",
+        "you_filtered_index": 4,
+        "filtered_contributors": 12,
+        "filter_summary": ("points 10+",),
+        "you_address": address,
+        "you_ens": "reader.eth",
+        "you_points": 99,
+        "you_credit_eth": 3.6,
+    }, "full", 42)
+    assert lines == [
+        "[$success]reader.eth[/]",
+        "[$success][bold]#4 of 12[/][/] "
+        "[$success-darken-2]· filtered[/]",
+        "[$success-darken-2]points 10+[/]",
+        "[$success][bold]99 pts · 3.60 ETH[/][/]",
+        f"[$success]{address}[/]",
+    ]
+
+
+def test_filtered_wallet_card_keeps_your_wallet_title_without_ens():
+    address = "0x1234567890abcdef1234567890abcdef12345678"
+    lines = _wallet_lines({
+        "list_view": "filtered",
+        "you_filtered_index": 4,
+        "filtered_contributors": 12,
+        "filter_summary": ("points 10+",),
+        "you_address": address,
+        "you_points": 99,
+    }, "full", 42)
+    assert lines[0] == "[$success]YOUR WALLET[/]"
+    assert lines[4] == f"[$success]{address}[/]"
 
 
 async def test_list_hero_note_changes_only_for_open_filter_editor():
@@ -997,7 +1083,7 @@ def test_filtered_wallet_summary_counts_literal_brackets_toward_width():
         "list_view": "filtered",
         "filter_summary": ("NFT [red]1234[/]",),
     }, "full", 10)
-    assert lines[2] == "[$success]multiple filters applied[/]"
+    assert lines[2] == "[$success-darken-2]multiple filters applied[/]"
 
 
 async def test_filtered_table_renders_the_specific_unavailable_source_reason():
@@ -2997,6 +3083,35 @@ def test_hints_replace_tab_switch_and_the_cycle_age_but_never_the_errors():
     assert "updated" not in text
     assert "4 errors" in text
     assert "30s poll" in text
+
+
+def test_a_transient_status_message_uses_the_gap_between_footer_sides():
+    from maxpane_dashboard.widgets.status_bar import StatusBar
+
+    bar = StatusBar()
+    rendered = {}
+
+    class Sink:
+        def __init__(self, selector: str) -> None:
+            self.selector = selector
+
+        def update(self, text: str) -> None:
+            rendered[self.selector] = text
+
+    bar.query_one = lambda selector, *a, **k: Sink(selector)
+    bar.set_key_hints("[dim]c[/] view")
+    bar.update_data(last_updated_seconds_ago=3, error_count=0, poll_interval=30)
+    ordinary = rendered["#status-left"]
+
+    bar.set_message("fetching ENS …")
+
+    assert rendered["#status-left"] == ordinary
+    assert rendered["#status-message"] == "[$warning]fetching ENS …[/]"
+
+    bar.set_message("")
+
+    assert rendered["#status-left"] == ordinary
+    assert rendered["#status-message"] == ""
 
 
 # ===========================================================================

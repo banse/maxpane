@@ -43,8 +43,12 @@ class StatusBar(Horizontal):
         padding: 0 1;
     }
     StatusBar > .status-left {
-        width: 1fr;
+        width: auto;
         content-align: left middle;
+    }
+    StatusBar > .status-message {
+        width: 1fr;
+        content-align: center middle;
     }
     StatusBar > .status-right {
         width: auto;
@@ -64,6 +68,10 @@ class StatusBar(Horizontal):
         #: the screens that want hints (curator) carry their data freshness in
         #: their own title bar as ``as of HH:MM``.
         self._key_hints: str = ""
+        #: Optional one-line operation state. Screens opt in explicitly; an
+        #: empty value leaves every existing footer byte-for-byte unchanged.
+        self._message: str = ""
+        self._last_update: tuple[float, int, int] | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(
@@ -73,6 +81,7 @@ class StatusBar(Horizontal):
             classes="status-left",
             id="status-left",
         )
+        yield Static("", classes="status-message", id="status-message")
         yield Static(
             f"[dim]maxpane v{__version__} \u00b7 {self._theme_name}[/]",
             classes="status-right",
@@ -103,6 +112,54 @@ class StatusBar(Horizontal):
         """Name this screen's own keys in the left label (see ``_key_hints``)."""
         self._key_hints = hints or ""
 
+    def set_message(self, message: str) -> None:
+        """Show an operation between the normal left and right footer text."""
+        self._message = message or ""
+        text = f"[$warning]{self._message}[/]" if self._message else ""
+        self.query_one("#status-message", Static).update(text)
+
+    def _update_left(self) -> None:
+        """Render the latest ordinary status without touching the message."""
+        if self._last_update is None:
+            text = (
+                "[dim]q[/] quit [dim]\u00b7[/] [dim]r[/] refresh "
+                "[dim]\u00b7[/] [dim]m[/] menu [dim]\u00b7[/] "
+                "[dim]tab[/] switch [dim]\u00b7[/] connecting..."
+            )
+        else:
+            text = self._ordinary_status(*self._last_update)
+        self.query_one("#status-left", Static).update(text)
+
+    def _ordinary_status(
+        self,
+        last_updated_seconds_ago: float,
+        error_count: int,
+        poll_interval: int,
+    ) -> str:
+        """Compose the normal left footer without changing widget state."""
+        color = _staleness_color(last_updated_seconds_ago)
+        seconds_int = int(last_updated_seconds_ago)
+
+        error_str = ""
+        if error_count > 0:
+            error_str = f" [dim]\u00b7[/] [red]{error_count} errors[/]"
+
+        keys = (
+            f"[dim]q[/] quit [dim]\u00b7[/] [dim]r[/] refresh [dim]\u00b7[/] "
+            f"[dim]m[/] menu"
+        )
+        if self._key_hints:
+            keys += f" [dim]\u00b7[/] {self._key_hints}"
+            freshness = f"{poll_interval}s poll"
+        else:
+            keys += " [dim]\u00b7[/] [dim]tab[/] switch"
+            freshness = (
+                f"{poll_interval}s poll [dim]\u00b7[/] "
+                f"[{color}]updated {seconds_int}s ago[/]"
+            )
+
+        return f"{keys} [dim]\u00b7[/] {freshness}{error_str}"
+
     def _update_right(self) -> None:
         """Refresh the right-side label."""
         try:
@@ -124,32 +181,9 @@ class StatusBar(Horizontal):
         poll_interval: int,
     ) -> None:
         """Update the status bar with freshness and error info."""
-        color = _staleness_color(last_updated_seconds_ago)
-        seconds_int = int(last_updated_seconds_ago)
-
-        error_str = ""
-        if error_count > 0:
-            error_str = f" [dim]\u00b7[/] [red]{error_count} errors[/]"
-
-        keys = (
-            f"[dim]q[/] quit [dim]\u00b7[/] [dim]r[/] refresh [dim]\u00b7[/] "
-            f"[dim]m[/] menu"
+        self._last_update = (
+            last_updated_seconds_ago,
+            error_count,
+            poll_interval,
         )
-        if self._key_hints:
-            # This screen's own keys instead of ``tab switch`` and ``updated Ns
-            # ago``: measured, the line holds the hints or those two, not both,
-            # and an error count must never be the thing that falls off the
-            # end.  A screen asking for hints shows freshness in its own title
-            # bar, and `tab` still works unnamed.
-            keys += f" [dim]\u00b7[/] {self._key_hints}"
-            freshness = f"{poll_interval}s poll"
-        else:
-            keys += " [dim]\u00b7[/] [dim]tab[/] switch"
-            freshness = (
-                f"{poll_interval}s poll [dim]\u00b7[/] "
-                f"[{color}]updated {seconds_int}s ago[/]"
-            )
-
-        self.query_one("#status-left", Static).update(
-            f"{keys} [dim]\u00b7[/] {freshness}{error_str}"
-        )
+        self._update_left()
