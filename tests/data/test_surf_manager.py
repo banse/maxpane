@@ -74,6 +74,7 @@ from maxpane_dashboard.data.surf_addresses import (
     TOPIC_V4_INITIALIZE,
     WETH,
 )
+from maxpane_dashboard.data.surf_client import LAUNCHPAD_RENDER_LIMIT
 
 # --- live values, captured 2026-08-08 (tests/fixtures/surf/captures/) -------
 #
@@ -632,6 +633,13 @@ def _launchpad_coin(**overrides) -> LaunchpadCoin:
     """A WP0.4 ``LaunchpadCoin``. ``creator`` defaults to an address with no
     ``KNOWN_LABELS`` entry — a test wanting the known-creator branch overrides
     ``creator=DEV_WALLET``.
+
+    Task 1/7 renamed the ranking fields from an hour window to a day window
+    (``change_1h_pct``/``swaps_1h`` -> ``change_24h_pct``/``swaps_24h``) and
+    added ``swaps_all`` as the all-time tiebreak; ``swaps_all`` defaults
+    higher than ``swaps_24h`` (a coin can only have traded *at least* as
+    often lifetime as it did in the last day), never equal by coincidence
+    with a default that would hide a swapped-argument bug.
     """
     fields = {
         "ticker": "ICE",
@@ -639,8 +647,9 @@ def _launchpad_coin(**overrides) -> LaunchpadCoin:
         "creator": "0x" + "c1" * 20,
         "age_s": 3_600.0,
         "price_eth": 0.000123,
-        "change_1h_pct": 7.2727,
-        "swaps_1h": 5,
+        "change_24h_pct": 7.2727,
+        "swaps_24h": 5,
+        "swaps_all": 9,
         "imd_burned": 0.42,
     }
     fields.update(overrides)
@@ -655,7 +664,7 @@ def _launchpad_state(**overrides) -> LaunchpadState:
     need a default that cannot be confused with either by coincidence.
 
     ``swaps_by_coin`` (fix round 2) carries the default ``coins`` row's own
-    ``swaps_1h`` (5, off ``_launchpad_coin``'s default) plus five quieter
+    ``swaps_24h`` (5, off ``_launchpad_coin``'s default) plus five quieter
     coins that never reach the render-capped ``coins`` tuple — which is
     exactly what the field is for: the FULL in-window population, not the
     capped slice. It is keyed by ``pool_id`` and paired with
@@ -672,6 +681,16 @@ def _launchpad_state(**overrides) -> LaunchpadState:
     never noticed it firing off a day-old last-good slot. With six coins the
     hour is judgeable and ICE (5) clears the bar (median 1 -> floor 5), so
     the invariant now actually bites HOT COIN.
+
+    Task 8 adds the population counts and the cursor. ``launch_count``
+    agrees with ``coin_count`` (both 12) -- the healthy, fully-caught-up
+    case -- deliberately, so a test that wants the mid-catch-up disagreement
+    overrides one or the other explicitly rather than inheriting it by
+    accident. ``cursor`` carries all six of the real cursor's keys (Ruling
+    R13: ``last_block``/``launches``/``swaps_all``/``traders``/
+    ``burn_by_coin``/``burned_total_wei`` -- not the three-key shape an
+    earlier draft of this plan described), so a test asserting the round
+    trip is comparing the same shape the client actually produces.
     """
     fields = {
         "coin_count": 12,
@@ -693,6 +712,17 @@ def _launchpad_state(**overrides) -> LaunchpadState:
             "0xice": "ICE", "0xaaa": "AAA", "0xbbb": "BBB", "0xccc": "CCC",
             "0xddd": "DDD", "0xeee": "EEE",
         },
+        "launch_count": 12,
+        "new_24h": 3,
+        "creator_count": 8,
+        "cursor": {
+            "last_block": 20_500_000,
+            "launches": {"0xice": {"ticker": "ICE", "block": 20_499_000}},
+            "swaps_all": {"0xice": 5},
+            "traders": ["0x" + "aa" * 20, "0x" + "bb" * 20],
+            "burn_by_coin": {"0xice": round(0.42 * 10**18)},
+            "burned_total_wei": round(90.0 * 10**18),
+        },
     }
     fields.update(overrides)
     return LaunchpadState(**fields)
@@ -705,6 +735,13 @@ class FakeSurfClient:
         self.http = DeadTransport()
         self.calls: list[str] = []
         self.closed = False
+        # Task 8: the ``resume`` the manager most recently passed in --
+        # ``None`` until a sweep has actually happened. This is a spy on the
+        # real ``SurfClient.fetch_launchpad(resume=...)`` contract, not part
+        # of ``self._returns``, because the manager is the caller under test
+        # here and this file has no other way to see what it handed the
+        # client.
+        self.last_launchpad_resume: dict | None = None
         self._returns = {
             "fetch_nonces": NonceSet(
                 announce=ANNOUNCE_NONCE, dev=DEV_NONCE, ops=OPS_NONCE,
@@ -766,7 +803,10 @@ class FakeSurfClient:
     async def fetch_recent_logs(self):   return await self._answer("fetch_recent_logs")
     async def fetch_nft_stats(self):     return await self._answer("fetch_nft_stats")
     async def fetch_pool_v4(self):       return await self._answer("fetch_pool_v4")
-    async def fetch_launchpad(self):     return await self._answer("fetch_launchpad")
+
+    async def fetch_launchpad(self, resume=None):
+        self.last_launchpad_resume = resume
+        return await self._answer("fetch_launchpad")
 
     async def fetch_decoy_pool_count(self, real_pool_id):
         """Ignores ``real_pool_id`` — the double just answers the fixed pair."""
@@ -2188,11 +2228,13 @@ def test_feed_rows_carry_the_recipient():
     question they answer (a later task). Real channel nonce 23's own shape.
 
     Built off ``SurfManager.__new__`` rather than the ``manager`` fixture:
-    ``_feed_items`` touches no ``self`` state (it is pure given ``rows``),
-    and the fixture's default ``FakeSurfClient`` currently fails in
-    ``__init__`` on an unrelated, already-known pre-existing defect
-    (``LaunchpadCoin.__init__() got an unexpected keyword argument
-    'change_1h_pct'`` — Task 7's own file, not this one's).
+    ``_feed_items`` touches no ``self`` state (it is pure given ``rows``), so
+    there is no reason to pay for a full client double (and, at the time
+    this test was written, the fixture's default ``FakeSurfClient`` failed
+    in ``__init__`` on an unrelated pre-existing defect --
+    ``LaunchpadCoin.__init__()`` rejecting the stale ``change_1h_pct``
+    keyword, Task 8 fixed alongside the rest of this file's launchpad
+    fixtures).
     """
     bare = SurfManager.__new__(SurfManager)
     answer_hex = "0x" + "Yes the goal is".encode().hex()
@@ -2909,7 +2951,17 @@ async def test_a_failed_sweep_with_nothing_to_serve_degrades() -> None:
 async def test_a_healthy_launchpad_sweep_populates_every_payload_key() -> None:
     """One populated slot -> every Task 1 key reads off it, correctly mapped
     and correctly scaled — the wei->token division happens exactly once, in
-    ``_cycle``, never inside the cached slot itself."""
+    ``_cycle``, never inside the cached slot itself.
+
+    This slot dict is what ``_launchpad_payload`` actually caches (row dicts
+    already shaped like ``SURF_ROW_KEYS["launchpad_coins"]``, not
+    ``LaunchpadCoin`` objects), so Task 8's population counts
+    (``launch_count``/``new_24h``/``creator_count``) and the ``change_24h_pct``/
+    ``swaps_24h``/``swaps_all`` row fields (Task 1/7's day-window rename) are
+    asserted here alongside the fields this test already covered — one
+    "every key from a healthy slot" test, not two half-tests that could drift
+    apart.
+    """
     coin = _launchpad_coin(creator=DEV_WALLET)          # a KNOWN_LABELS hit
     slot_payload = {
         "pool_id": POOL_ID,
@@ -2924,12 +2976,16 @@ async def test_a_healthy_launchpad_sweep_populates_every_payload_key() -> None:
         "burned_total_wei": round(90.0 * 10**18),
         "swap_count": 25,
         "trader_count": 12,
+        "launch_count": 11,       # deliberately != coin_count: a mid-catch-up
+        "new_24h": 3,             # sweep, and the two must publish independently
+        "creator_count": 8,
         "coins": [
             {
                 "ticker": coin.ticker, "name": coin.name, "creator": coin.creator,
                 "creator_known": True, "age_s": coin.age_s,
-                "price_eth": coin.price_eth, "change_1h_pct": coin.change_1h_pct,
-                "swaps_1h": coin.swaps_1h, "imd_burned": coin.imd_burned,
+                "price_eth": coin.price_eth, "change_24h_pct": coin.change_24h_pct,
+                "swaps_24h": coin.swaps_24h, "swaps_all": coin.swaps_all,
+                "imd_burned": coin.imd_burned,
             }
         ],
     }
@@ -2940,6 +2996,9 @@ async def test_a_healthy_launchpad_sweep_populates_every_payload_key() -> None:
     assert payload["pool_id_source"] == "hook"
     assert payload["decoy_pool_count"] == 4
     assert payload["launchpad_coin_count"] == 12
+    assert payload["launchpad_launch_count"] == 11
+    assert payload["launchpad_new_24h"] == 3
+    assert payload["launchpad_creator_count"] == 8
     assert payload["launchpad_swap_count"] == 25
     assert payload["launchpad_trader_count"] == 12
     assert payload["burn_accrued"] == pytest.approx(15.06)
@@ -2952,6 +3011,10 @@ async def test_a_healthy_launchpad_sweep_populates_every_payload_key() -> None:
     row = payload["launchpad_coins"][0]
     assert set(row) == set(SURF_ROW_KEYS["launchpad_coins"])
     assert row["ticker"] == "ICE"
+    assert row["change_24h_pct"] == pytest.approx(coin.change_24h_pct)
+    assert row["swaps_24h"] == coin.swaps_24h
+    assert row["swaps_all"] == coin.swaps_all
+    assert row["creator_known"] is True                  # DEV_WALLET is labelled
     assert row["creator_known"] is True                  # DEV_WALLET is labelled
 
 
@@ -3118,7 +3181,7 @@ def test_readings_feed_the_three_future_detectors_off_the_launchpad_slot(
         "decoy_pool_count": 4,
         "decoy_newest_fee_bps": 98_000,
         "coins": [
-            {"ticker": "ICE", "swaps_1h": 9},
+            {"ticker": "ICE", "swaps_24h": 9},
         ],
         "swaps_by_coin": {"ICE": 9, "FIRE": 2, "QUIET": 1},
     }
@@ -3176,3 +3239,94 @@ async def test_a_missing_newest_decoy_row_leaves_the_fee_unread(tmp_path) -> Non
     entry = m.cache.get_last_good(SLOT_LAUNCHPAD)
     assert entry.payload["decoy_pool_count"] == 0
     assert entry.payload["decoy_newest_fee_bps"] is None
+
+
+# ---------------------------------------------------------------------------
+# Task 8 — the manager persists the launchpad cursor and publishes the three
+# population counts (``launchpad_launch_count``/``launchpad_new_24h``/
+# ``launchpad_creator_count``) Task 1 froze on ``SURF_KEYS``.
+# ---------------------------------------------------------------------------
+
+
+async def test_the_cursor_round_trips_through_the_launchpad_slot(tmp_path) -> None:
+    """The slot is what makes the sweep incremental. If the cursor does not
+    survive a cache round trip, every sweep is a cold sweep across the whole
+    launchpad history from ``LAUNCHPAD_FIRST_BLOCK`` (~34k blocks of
+    ``eth_getLogs`` instead of a handful since the last cursor) -- and the
+    only symptom is slowness, never a wrong number on screen, which is
+    exactly the kind of defect that ships unnoticed. Proven by mutation in
+    the task report: forcing ``_pool_launchpad`` to pass ``resume=None``
+    unconditionally turns the second assertion below red without touching
+    anything else in this test.
+
+    Called directly against ``_pool_launchpad`` rather than through
+    ``fetch_and_compute``/``_spawn_launchpad``: the detached-task wrapper
+    (Task 6) is what every other launchpad test in this file already
+    exercises, and adding a second layer of `asyncio.wait_for` indirection
+    here would only make a false negative (a swallowed exception inside the
+    detached task) harder to see, not the round trip easier to prove.
+    """
+    cursor = {
+        "last_block": 20_500_000,
+        "launches": {"0xice": {"ticker": "ICE", "block": 20_499_000}},
+        "swaps_all": {"0xice": 5},
+        "traders": ["0x" + "aa" * 20],
+        "burn_by_coin": {"0xice": round(0.1 * 10**18)},
+        "burned_total_wei": round(0.1 * 10**18),
+    }
+    client = FakeSurfClient(fetch_launchpad=_launchpad_state(cursor=cursor))
+    m = _manager(tmp_path, client=client)
+
+    await m._pool_launchpad({TIER_LAUNCHPAD}, now=1000.0)
+    assert client.last_launchpad_resume is None      # nothing cached yet: cold sweep
+    entry = m.cache.get_last_good(SLOT_LAUNCHPAD)
+    assert entry.payload["cursor"] == cursor          # cached verbatim, opaque
+
+    await m._pool_launchpad({TIER_LAUNCHPAD}, now=2000.0)
+    assert client.last_launchpad_resume == cursor     # read back and handed to the client
+
+
+async def test_the_flat_payload_publishes_the_population_counts(tmp_path) -> None:
+    """Task 1 froze ``launchpad_launch_count``/``launchpad_new_24h``/
+    ``launchpad_creator_count`` on ``SURF_KEYS``; ``test_returns_exactly_surf_keys``
+    already proves the *set* of keys is exactly right, so this proves the
+    *values* are the ones the slot actually holds, and that an unpopulated
+    slot answers ``None`` for all three rather than a fabricated ``0``
+    (CLAUDE.md: a failed read is ``None``, never ``0``).
+    """
+    manager = _manager_with_last_good(
+        SLOT_LAUNCHPAD,
+        {"launch_count": 141, "new_24h": 7, "creator_count": 63},
+        at=NOW,
+    )
+    payload = await manager.fetch_and_compute()
+    assert payload["launchpad_launch_count"] == 141
+    assert payload["launchpad_new_24h"] == 7
+    assert payload["launchpad_creator_count"] == 63
+
+    unpopulated = _manager_with_last_good(SLOT_LAUNCHPAD, {}, at=NOW)
+    empty_payload = await unpopulated.fetch_and_compute()
+    assert empty_payload["launchpad_launch_count"] is None
+    assert empty_payload["launchpad_new_24h"] is None
+    assert empty_payload["launchpad_creator_count"] is None
+
+
+def test_hot_coin_reads_the_day_distribution_not_the_rendered_rows(tmp_path) -> None:
+    """A median over the render-capped top ``LAUNCHPAD_RENDER_LIMIT`` (20)
+    rows runs several times too high -- the cap keeps exactly the busiest
+    coins (fix round 2's finding, ``_swaps_by_coin``'s own docstring). Task 7
+    widened the ranking window hour -> day; this proves the *wiring* between
+    the slot and ``_readings`` did not move underneath that window change --
+    ``launchpad_swaps_by_coin`` must still carry more entries than the
+    render cap whenever the slot does, not something re-truncated on the way
+    through.
+    """
+    swaps_by_coin = {
+        f"0x{i:040x}": i + 1 for i in range(LAUNCHPAD_RENDER_LIMIT + 5)
+    }
+    slot_payload = {"swaps_by_coin": swaps_by_coin}
+    m = _manager(tmp_path)
+    readings = m._readings({}, None, {}, [], slot_payload)
+    assert readings["launchpad_swaps_by_coin"] is not None
+    assert len(readings["launchpad_swaps_by_coin"]) > LAUNCHPAD_RENDER_LIMIT
+    assert readings["launchpad_swaps_by_coin"] == swaps_by_coin

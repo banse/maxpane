@@ -1369,12 +1369,34 @@ class SurfManager:
         otherwise-successful payload, the same granularity every other group
         in this module already uses (e.g. ``NftStats.transfers_24h`` beside a
         healthy ``holders``).
+
+        Task 8: the cursor is read out of ``SLOT_LAUNCHPAD``'s own last-good
+        payload **before** calling the client — the previous sweep's own
+        cache write, never this cycle's, so a cursor is available from the
+        very first sweep after a restart (last-good survives the process,
+        this cycle's ``launchpad_state`` does not exist yet). It is handed to
+        ``fetch_launchpad`` opaquely: this method does not know or check its
+        shape, only that ``dict.get`` on a non-dict slot answers ``None``
+        (a cold sweep), which is the same safe degradation
+        ``_coerce_launchpad_resume`` gives a corrupt persisted one on the
+        client side. Skipping this read (passing ``resume=None``
+        unconditionally) does not fail loudly — every existing assertion
+        about a *healthy* sweep still passes, because the client answers the
+        same fixture either way — it just silently turns every sweep into a
+        cold ~34k-block re-read forever; the round-trip test earns its keep
+        by mutation, not by inspection.
         """
         if TIER_LAUNCHPAD not in tiers:
             return None
+        prior_entry = self.cache.get_last_good(SLOT_LAUNCHPAD)
+        prior_slot = prior_entry.payload if prior_entry is not None else None
+        cursor = prior_slot.get("cursor") if isinstance(prior_slot, dict) else None
         pool_state, launchpad_state = await asyncio.gather(
             self._guard(self.client.fetch_pool_v4, "fetch_pool_v4"),
-            self._guard(self.client.fetch_launchpad, "fetch_launchpad"),
+            self._guard(
+                lambda: self.client.fetch_launchpad(resume=cursor),
+                "fetch_launchpad",
+            ),
         )
         real_pool_id = _field(pool_state, "pool_id")
         decoy_result = await self._guard(
@@ -1452,6 +1474,21 @@ class SurfManager:
         all: it fed only ``pool_liquidity_raw``, which came out of
         ``SURF_KEYS`` because no widget ever read it -- unlike the fields
         above, it has no other consumer to keep it alive for.
+
+        Task 8 adds four more of the same shape. ``cursor`` is the odd one
+        out among them -- an opaque ``dict | None`` this method never
+        inspects, only stores, so :meth:`_pool_launchpad`'s *next* call can
+        read it back off this same slot and hand it to ``fetch_launchpad``
+        as ``resume``; drop this key and the sweep still renders correctly
+        today and silently goes cold (re-reads the whole launchpad history)
+        on every future poll, which is why the round-trip is asserted at
+        the cache boundary and not inferred from a healthy payload.
+        ``launch_count``/``new_24h``/``creator_count`` are plain aggregates,
+        mirroring ``LaunchpadState``'s own field names like everything above
+        them: ``launch_count`` is deliberately kept *separate* from
+        ``coin_count`` (the factory's own claim) rather than merged into it
+        -- ``_cycle`` publishes both under different flat keys so the two
+        can be compared at render time, per Task 1's contract.
         """
         return {
             "pool_id": _field(pool_state, "pool_id"),
@@ -1479,6 +1516,10 @@ class SurfManager:
             "coin_tickers": _field(launchpad_state, "coin_tickers"),
             "coins": SurfManager._launchpad_coin_rows(_field(launchpad_state, "coins")),
             "swaps_by_coin": _field(launchpad_state, "swaps_by_coin"),
+            "launch_count": _opt_int(_field(launchpad_state, "launch_count")),
+            "new_24h": _opt_int(_field(launchpad_state, "new_24h")),
+            "creator_count": _opt_int(_field(launchpad_state, "creator_count")),
+            "cursor": _field(launchpad_state, "cursor"),
         }
 
     @staticmethod
@@ -1498,6 +1539,17 @@ class SurfManager:
         string)`` is permissionless and both are attacker-chosen, escaped at
         the widget and never here (the same rule ``feed_items``' ``text`` and
         ``label`` follow).
+
+        Task 7 widened the ranking window from an hour to a day and Task 1
+        renamed the row shape to match: ``change_1h_pct``/``swaps_1h`` are
+        gone, replaced by ``change_24h_pct`` (still ``float | None`` -- it is
+        unmeasured, not zero, below two in-window priced swaps) and
+        ``swaps_24h``/``swaps_all`` (both a representable ``int`` zero, never
+        ``None``, per ``LaunchpadCoin``'s own docstring). ``_opt_int``/
+        ``_opt_float`` are still applied rather than trusted raw: a
+        hand-edited last-good payload replayed through ``_launchpad_coin_rows``
+        on some future call site is exactly the kind of third-party input
+        this module never trusts without coercing first.
         """
         rows: list[dict[str, Any]] = []
         for coin in coins or ():
@@ -1510,8 +1562,9 @@ class SurfManager:
                     "creator_known": KNOWN_LABELS.get(creator.lower()) is not None,
                     "age_s": _opt_float(_field(coin, "age_s")),
                     "price_eth": _opt_float(_field(coin, "price_eth")),
-                    "change_1h_pct": _opt_float(_field(coin, "change_1h_pct")),
-                    "swaps_1h": _opt_int(_field(coin, "swaps_1h")),
+                    "change_24h_pct": _opt_float(_field(coin, "change_24h_pct")),
+                    "swaps_24h": _opt_int(_field(coin, "swaps_24h")),
+                    "swaps_all": _opt_int(_field(coin, "swaps_all")),
                     "imd_burned": _opt_float(_field(coin, "imd_burned")),
                 }
             )
@@ -2172,6 +2225,15 @@ class SurfManager:
             "burn_ready": burn_ready,
             "burn_min_bridge": burn_min_bridge,
             "launchpad_coin_count": launchpad_slot.get("coin_count"),
+            # Task 8: the sweep's own population reads, deliberately published
+            # alongside `launchpad_coin_count` (the factory's claim) rather
+            # than reconciled with it here -- the two agree on a healthy full
+            # sweep and every way of disagreeing (a cursor mid-catch-up, a
+            # truncated provider page, a too-late first block) is a render-
+            # time comparison, per `LaunchpadState`'s own docstring.
+            "launchpad_launch_count": launchpad_slot.get("launch_count"),
+            "launchpad_new_24h": launchpad_slot.get("new_24h"),
+            "launchpad_creator_count": launchpad_slot.get("creator_count"),
             "launchpad_swap_count": launchpad_slot.get("swap_count"),
             "launchpad_trader_count": launchpad_slot.get("trader_count"),
             "launchpad_burned_total": _tokens(launchpad_slot.get("burned_total_wei")),
