@@ -1125,7 +1125,7 @@ _NON_NUMERIC_KEYS = frozenset(
         "sig_deploy_state", "sig_bridge_state", "sig_burn_state",
         "sig_post_detail", "sig_lp_detail", "sig_gate_detail",
         "sig_deploy_detail", "sig_bridge_detail", "sig_burn_detail",
-        "hook_status", "lp_owner_ok", "gate_open",
+        "lp_owner_ok", "gate_open",
         "supply_series", "price_series", "nft_last_sales", "dev_activity",
         # v4 migration + IMD launchpad (Task 1, 2026-08-23): strings, a
         # tri-state bool and a list -- same reasoning as the block above,
@@ -1214,8 +1214,6 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     # field zeroed, every other field `None`, checked against the true
     # all-`None` baseline of the *same widget*), because `screens/surf.py`
     # still cannot reach these keys until Task 12 wires the `l` view.
-    "pool_liquidity_raw": "no widget consumes this key yet; pool_liquidity_usd is the one rendered",
-    "lp_position_count": "no widget consumes this key yet; no task's Consumes list names it",
     # Fix round 10a (2026-08-24): the v4-pool-id-matched market fix. Both
     # are None-on-failure floats with no meaningful representable zero --
     # judged the same way their siblings above are -- and neither has a

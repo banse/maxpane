@@ -191,42 +191,25 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
 #: ``as_of`` (freshness bookkeeping), ``degraded`` (title bar), ``eth_usd``
 #: (context; unrendered in v1) are the original three.
 #:
-#: Task 12 adds six more, all orphaned by the same event: the hero's
-#: 2026-08-23 POOL/LP/BURN/SUPPLY rebuild (widgets/surf/hero.py) dropped the
-#: HOOK/GATE-era kwargs it used to take, and grepping every widget in
-#: ``widgets/surf/`` for each name (``rg -n '"hook_status"|hook_status='
-#: maxpane_dashboard/widgets/surf/`` and five siblings) turns up nothing --
-#: these six reach no ``update_data`` call anywhere, dashboard or launchpad.
-#: They split into two groups:
+#: Task 12 added three more: ``gate_open``, ``identities_written``,
+#: ``lp_liquidity`` still do real work even though the hero's 2026-08-23
+#: POOL/LP/BURN/SUPPLY rebuild dropped their direct kwargs --
+#: ``surf_manager._readings`` reads them straight off this same flat dict to
+#: build the GATE/LP detectors (``sig_gate_*``/``sig_lp_*``), which *are*
+#: dispatched, to SurfSignals, above. Their information still reaches the
+#: screen -- through the detector text, not as raw values -- so "no widget
+#: kwarg" is not "no consumer downstream of this dict", just no *direct* one.
 #:
-#: * ``gate_open``, ``identities_written``, ``lp_liquidity`` still do real
-#:   work: ``surf_manager._readings`` reads them straight off this
-#:   same flat dict to build the GATE/LP detectors
-#:   (``sig_gate_*``/``sig_lp_*``), which *are* dispatched, to SurfSignals,
-#:   above. Their information still reaches the screen -- through the
-#:   detector text, not as raw values -- so "no widget kwarg" is not "no
-#:   consumer downstream of this dict", just no *direct* one.
-#: * ``hook_status``, ``pool_liquidity_raw``, ``lp_position_count`` are not
-#:   that: nothing downstream reads them either.  ``hook_status`` measures a
-#:   v4 hook launch the dev has publicly retracted (hero.py's own module
-#:   docstring); ``pool_liquidity_raw``/``lp_position_count`` are the raw
-#:   uint128/count twins of ``pool_liquidity_usd`` (which the hero and
-#:   SurfMarket both render) and were already flagged as "genuinely still
-#:   unrendered" at Task 8 (2026-08-23 progress ledger). These three are a
-#:   genuine finding, not a wiring gap this task can close: emptying
-#:   ``_KEYS_PENDING_CONSUMERS`` only requires giving every key a *home* in
-#:   this contract, and ``data/surf_models.py``/``data/surf_manager.py`` are
-#:   not this task's files (screens/surf.py and themes/minimal.tcss are, per
-#:   its brief) -- removing them from ``SURF_KEYS`` would also have to touch
-#:   both of those and every one of the several dozen ``test_surf_manager.py``
-#:   /``test_surf_cache.py`` assertions that pin ``set(data) ==
-#:   set(SURF_KEYS)`` against a manager that still populates all three.
-#:   Reported in task-12-report.md as a candidate for a future, narrowly-
-#:   scoped cleanup of ``SURF_KEYS`` itself.
+#: ``hook_status``, ``pool_liquidity_raw`` and ``lp_position_count`` USED to
+#: sit here too, parked rather than removed: Task 12 found nothing downstream
+#: read any of the three but did not own ``data/surf_models.py``/
+#: ``data/surf_manager.py`` to remove them from ``SURF_KEYS`` itself, and
+#: flagged the cleanup in task-12-report.md. Task 6 fix round 12a did that
+#: cleanup -- all three are gone from ``SURF_KEYS`` now, not merely
+#: unconsumed, so they no longer belong in this set either.
 META_KEYS = frozenset({
     "as_of", "degraded", "eth_usd",
     "gate_open", "identities_written", "lp_liquidity",
-    "hook_status", "pool_liquidity_raw", "lp_position_count",
 })
 
 #: Emptied by Task 12 (was: the 27 v4/launchpad keys Task 1 froze before their

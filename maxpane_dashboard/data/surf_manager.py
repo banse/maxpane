@@ -39,16 +39,19 @@ Four rules this module exists to enforce
 4. **A permissionless event is not a claim until someone unforgeable made
    it.** Uniswap v4 ``initialize()`` is open to anyone, so an ``Initialize``
    log naming IMD with a non-zero hook costs a stranger one transaction's gas
-   and says nothing about who sent it. ``hook_status`` and the LP MIGRATION
-   detector therefore act only on a row whose enclosing transaction a dev
-   wallet signed (``client.fetch_tx_senders`` → :meth:`_attribute_launches` →
+   and says nothing about who sent it. The hooked-``Initialize`` attribution
+   therefore acts only on a row whose enclosing transaction a dev wallet
+   signed (``client.fetch_tx_senders`` → :meth:`_attribute_launches` →
    :meth:`_valid_launch`); a hooked row we could not attribute renders as an
    explicit unknown, never as a launch. The persisted ``hook_launch`` record
    holds that evidence and is re-validated on every read, so it is durable
    without being a latch — the previous ``hook_live = bool(hooked) or
    previously_live`` was an unconditional OR over third-party input, and one
    griefing transaction pinned the hero to LAUNCHED for the life of the cache
-   file.
+   file. (Fix round 12a, 2026-08-24: the hero's own ``hook_status`` flat key
+   this attribution used to feed is gone — no widget rendered it — but
+   ``v4_hook_pools``/the persisted ``hook_launch`` record stay wired, because
+   ``analytics/surf_signals.py`` still advances a baseline off them.)
 5. **"Not due to retry" is not "healthy."** :meth:`SurfCache.is_fresh` /
    ``tiers_due`` answer *whether to attempt a fetch*, and only that:
    ``mark_failed`` advances the same ``_tier_next_due`` clock ``mark_fetched``
@@ -287,18 +290,6 @@ _SIGNER_MEMO_CAP = 256
 #: Wei per whole token / per ETH. The models are wei-native and this module is
 #: the single place that divides (WP0.4).
 WEI = 10**18
-
-#: The hero's v4-hook vocabulary (PRD §4, WP0's ``SURF_KEYS`` comment).
-#: Spelled to match ``widgets/surf/hero.py``'s ``HOOK_NOT_LIVE``/``HOOK_LAUNCHED``
-#: **exactly**, but deliberately not imported from there: widgets never import
-#: from ``data/``/``analytics/`` and this module must not import from
-#: ``widgets/`` either (CLAUDE.md's one-directional data flow), so the two
-#: string pairs are independently frozen literals on both sides rather than a
-#: shared import. A prior reviewer found a sibling widget branching on a
-#: lowercase/snake vocabulary ("not_live"/"launched") that the manager never
-#: actually emitted — these constants exist so that mistake cannot repeat here.
-HOOK_NOT_LIVE = "NOT LIVE"
-HOOK_LAUNCHED = "LAUNCHED"
 
 
 def _field(obj: Any, name: str) -> Any:
@@ -1454,11 +1445,14 @@ class SurfManager:
         the authoritative on-chain ``imd_price_usd`` and the market
         cross-check -- no ``SURF_KEYS`` entry of its own either, since the
         derived USD figures are what the payload actually publishes.
+        ``PoolV4State.liquidity`` (fix round 12a) is no longer cached here at
+        all: it fed only ``pool_liquidity_raw``, which came out of
+        ``SURF_KEYS`` because no widget ever read it -- unlike the fields
+        above, it has no other consumer to keep it alive for.
         """
         return {
             "pool_id": _field(pool_state, "pool_id"),
             "pool_fee": _opt_int(_field(pool_state, "lp_fee")),
-            "pool_liquidity": _opt_int(_field(pool_state, "liquidity")),
             "pool_id_source": _field(pool_state, "pool_id_source"),
             "sqrt_price_x96": _opt_int(_field(pool_state, "sqrt_price_x96")),
             "decoy_pool_count": decoy_count,
@@ -2050,7 +2044,6 @@ class SurfManager:
             "parity_pct": parity_pct(imd_price, fp_price),
             "feed_items": feed_items,
             "feed_last_post_age_s": self._last_post_age(feed_items or [], now),
-            "hook_status": self._hook_status(),
             "nft_holders": nft_payload.get("nft_holders"),
             "nft_transfers_24h": nft_payload.get("nft_transfers_24h"),
             "nft_dev_holdings": nft_payload.get("nft_dev_holdings"),
@@ -2064,14 +2057,18 @@ class SurfManager:
             "dev_activity": activity_rows,
             # ---- pool (v3 -> v4 migration) — off the fast-tier chain read,
             # so it never waits on the launchpad sweep --------------------
+            # `state.lp_position_count` is deliberately not published here
+            # any more (fix round 12a: no widget ever read it). The client
+            # still fetches it -- ChainState.lp_position_count and the
+            # PositionManager.balanceOf(OPS_WALLET) leg behind it are kept,
+            # available for a future owner-sanity signal without re-adding
+            # the multicall leg; see the task report for the reasoning.
             "pool_venue": self._pool_venue(_field(state, "lp_state")),
             "lp_state": _field(state, "lp_state"),
-            "lp_position_count": _opt_int(_field(state, "lp_position_count")),
             # ---- the rest of the pool group, plus burn executor and the
             # launchpad panels — all off the launchpad slot captured above,
             # never this cycle's own (detached, not-yet-landed) sweep -------
             "pool_fee_bps": launchpad_slot.get("pool_fee"),
-            "pool_liquidity_raw": launchpad_slot.get("pool_liquidity"),
             "pool_id_source": launchpad_slot.get("pool_id_source"),
             "decoy_pool_count": launchpad_slot.get("decoy_pool_count"),
             "burn_accrued": burn_accrued,
@@ -2203,38 +2200,6 @@ class SurfManager:
         out |= self._client_degradation()
         return sorted(out)
 
-    # -- hero: v4 hook status --------------------------------------------------
-
-    def _hook_status(self) -> str | None:
-        """``"LAUNCHED"`` / ``"NOT LIVE"`` / ``None`` when we cannot honestly say.
-
-        Reads the persisted ``hook_launch`` **record** written by ``_pool_logs``,
-        never ``v4_hook_pools`` — those rows fall out of the ~8 h log window and
-        a launch does not — and re-validates it through :meth:`_valid_launch`
-        rather than trusting the boolean a file happened to contain.
-
-        Two shapes produce ``None``, and both mean "no answer this cycle
-        earned":
-
-        * the logs group has never produced a payload at all;
-        * the window held a hooked ``Initialize`` whose signer we could not
-          read (``hook_unverified``). ``PoolManager.initialize()`` is
-          permissionless, so an unattributed hooked pool is evidence of
-          *somebody*, and naming the dev would be a guess on the one event the
-          dashboard exists to catch.
-
-        A confirmed-empty window is a real answer and renders ``NOT LIVE``
-        (PRD §4).
-        """
-        entry = self.cache.get_last_good(SLOT_LOGS)
-        if entry is None or not isinstance(entry.payload, dict):
-            return None
-        if self._valid_launch(entry.payload.get("hook_launch")) is not None:
-            return HOOK_LAUNCHED
-        if entry.payload.get("hook_unverified"):
-            return None
-        return HOOK_NOT_LIVE
-
     # -- contract enforcement ------------------------------------------------
 
     def _finalise(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -2284,8 +2249,6 @@ __all__ = [
     "DEV_ACTIVITY_LIMIT",
     "FEED_ITEM_LIMIT",
     "GROUP_SLOT",
-    "HOOK_LAUNCHED",
-    "HOOK_NOT_LIVE",
     "NFT_SALES_LIMIT",
     "SIGNAL_NAMES",      # re-export of analytics.surf_signals.SIGNAL_NAMES
     "SOURCES",

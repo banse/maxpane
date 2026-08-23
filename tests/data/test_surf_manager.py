@@ -1108,10 +1108,35 @@ LAUNCH_TX = "0x" + "a5" * 32
 STRANGER = "0x" + "ee" * 20
 
 
+def _hook_launch_status(m) -> str | None:
+    """Mirrors the removed ``SurfManager._hook_status()`` exactly, against
+    the persisted ``hook_launch``/``hook_unverified`` ``SLOT_LOGS`` fields.
+
+    Fix round 12a removed the flat ``hook_status`` ``SURF_KEYS`` entry (no
+    widget ever read it) and the method that computed it, but not the
+    attribution machinery underneath (``_attribute_launches``/
+    ``_valid_launch``/the persisted ``hook_launch`` record): those still
+    write into ``SLOT_LOGS`` and ``analytics/surf_signals.py`` still advances
+    a baseline off ``v4_hook_pools``. This helper is what lets the tests
+    below -- particularly "a stranger cannot launch the hook for the price
+    of gas", a security regression, not a rendering one -- keep asserting
+    against that live mechanism directly instead of through the dead key.
+    """
+    entry = m.cache.get_last_good(SLOT_LOGS)
+    if entry is None or not isinstance(entry.payload, dict):
+        return None
+    if SurfManager._valid_launch(entry.payload.get("hook_launch")) is not None:
+        return "LAUNCHED"
+    if entry.payload.get("hook_unverified"):
+        return None
+    return "NOT LIVE"
+
+
 async def test_hook_status_reads_not_live_until_a_hooked_initialize_appears(tmp_path):
     client = FakeSurfClient(fetch_tx_senders={LAUNCH_TX: DEV_WALLET})
     m = _manager(tmp_path, client=client)
-    assert (await m.fetch_and_compute())["hook_status"] == "NOT LIVE"
+    await m.fetch_and_compute()
+    assert _hook_launch_status(m) == "NOT LIVE"
 
     client._returns["fetch_recent_logs"] = LogWindow(
         from_block=BLOCK - 5_000,
@@ -1124,7 +1149,8 @@ async def test_hook_status_reads_not_live_until_a_hooked_initialize_appears(tmp_
         seaport_sales=(),
     )
     m._clock_double.advance(600.0)
-    assert (await m.fetch_and_compute())["hook_status"] == "LAUNCHED"
+    await m.fetch_and_compute()
+    assert _hook_launch_status(m) == "LAUNCHED"
 
 
 async def test_a_stranger_can_not_launch_the_hook_for_the_price_of_gas(tmp_path):
@@ -1156,7 +1182,7 @@ async def test_a_stranger_can_not_launch_the_hook_for_the_price_of_gas(tmp_path)
     m = _manager(tmp_path, client=client, clock=FakeClock())
     data = await m.fetch_and_compute()
 
-    assert data["hook_status"] == "NOT LIVE"
+    assert _hook_launch_status(m) == "NOT LIVE"
     assert data["sig_lp_state"] != "fired"
     assert "V4 LAUNCH" not in (data["sig_lp_detail"] or "")
     # ...and it is still not the dev's launch 150 days and many clean windows
@@ -1167,7 +1193,7 @@ async def test_a_stranger_can_not_launch_the_hook_for_the_price_of_gas(tmp_path)
     )
     m._clock_double.advance(150 * 86400.0)
     later = await m.fetch_and_compute()
-    assert later["hook_status"] == "NOT LIVE"
+    assert _hook_launch_status(m) == "NOT LIVE"
     assert later["sig_lp_state"] != "fired"
 
 
@@ -1189,8 +1215,9 @@ async def test_an_unattributable_hooked_pool_is_unknown_never_launched(tmp_path)
         ),
         fetch_tx_senders={},          # the state pool could not read the tx
     )
-    data = await _manager(tmp_path, client=client).fetch_and_compute()
-    assert data["hook_status"] is None
+    m = _manager(tmp_path, client=client)
+    data = await m.fetch_and_compute()
+    assert _hook_launch_status(m) is None
     assert data["sig_lp_state"] != "fired"
 
 
@@ -1221,11 +1248,11 @@ async def test_a_persisted_launch_that_no_longer_names_a_dev_wallet_is_dropped(t
         },
         ts=NOW - 3600.0,
     )
-    assert m._hook_status() == "NOT LIVE"
+    assert _hook_launch_status(m) == "NOT LIVE"
 
     clock.advance(600.0)
-    data = await m.fetch_and_compute()
-    assert data["hook_status"] == "NOT LIVE"
+    await m.fetch_and_compute()
+    assert _hook_launch_status(m) == "NOT LIVE"
     # ...and the unusable record is gone from the slot rather than lying dormant.
     assert m.cache.get_last_good(SLOT_LOGS).payload.get("hook_launch") is None
 
@@ -1261,7 +1288,8 @@ async def test_a_launch_is_never_un_launched_when_the_log_window_moves_past_it(t
         fetch_tx_senders={LAUNCH_TX: OPS_WALLET},
     )
     m = _manager(tmp_path, client=client)
-    assert (await m.fetch_and_compute())["hook_status"] == "LAUNCHED"
+    await m.fetch_and_compute()
+    assert _hook_launch_status(m) == "LAUNCHED"
 
     # The pool is still there — the window has simply moved past its Initialize.
     client._returns["fetch_recent_logs"] = LogWindow(
@@ -1269,9 +1297,9 @@ async def test_a_launch_is_never_un_launched_when_the_log_window_moves_past_it(t
         bridge_mints=(), identity_updates=(), v4_initializes=(), seaport_sales=(),
     )
     m._clock_double.advance(600.0)
-    later = await m.fetch_and_compute()
+    await m.fetch_and_compute()
 
-    assert later["hook_status"] == "LAUNCHED"
+    assert _hook_launch_status(m) == "LAUNCHED"
     # ...and the *rows* still mean "seen in this window", so the panel does not
     # claim a pool was initialized in a window that did not contain it.
     assert m.cache.get_last_good(SLOT_LOGS).payload["v4_hook_pools"] == []
@@ -1289,14 +1317,16 @@ async def test_a_hookless_third_party_pool_does_not_launch_the_hook(tmp_path):
             seaport_sales=(),
         )
     )
-    data = await _manager(tmp_path, client=client).fetch_and_compute()
-    assert data["hook_status"] == "NOT LIVE"
+    m = _manager(tmp_path, client=client)
+    await m.fetch_and_compute()
+    assert _hook_launch_status(m) == "NOT LIVE"
 
 
 async def test_hook_status_is_none_when_the_logs_pool_never_answered(tmp_path):
     client = FakeSurfClient(fetch_recent_logs=None)
-    data = await _manager(tmp_path, client=client).fetch_and_compute()
-    assert data["hook_status"] is None
+    m = _manager(tmp_path, client=client)
+    data = await m.fetch_and_compute()
+    assert _hook_launch_status(m) is None
     assert SOURCE_LOGS in data["degraded"]
 
 
@@ -1441,8 +1471,9 @@ async def test_a_real_hookless_pool_does_not_launch_the_hook(tmp_path):
             v4_initializes=(real_log,),
         )
     )
-    data = await _manager(tmp_path, client=client).fetch_and_compute()
-    assert data["hook_status"] == "NOT LIVE"
+    m = _manager(tmp_path, client=client)
+    await m.fetch_and_compute()
+    assert _hook_launch_status(m) == "NOT LIVE"
 
 
 async def test_a_hooked_pool_shaped_like_the_real_capture_launches_the_hook(tmp_path):
@@ -1468,8 +1499,9 @@ async def test_a_hooked_pool_shaped_like_the_real_capture_launches_the_hook(tmp_
         ),
         fetch_tx_senders={hooked_log["transactionHash"]: DEV_WALLET},
     )
-    data = await _manager(tmp_path, client=client).fetch_and_compute()
-    assert data["hook_status"] == "LAUNCHED"
+    m = _manager(tmp_path, client=client)
+    await m.fetch_and_compute()
+    assert _hook_launch_status(m) == "LAUNCHED"
 
 
 # ---------------------------------------------------------------------------
@@ -1511,7 +1543,8 @@ async def test_a_failed_log_group_reaches_degraded_even_on_an_otherwise_ok_windo
 ):
     """The exact failure this product exists to prevent: an empty ``bridge_mints``
     that is a *filter failure*, not "no mints", flagged even though the rest of
-    the sweep answered fine and ``hook_status`` still reads a real value.
+    the sweep answered fine and the hook-launch attribution still reads a real
+    value.
 
     This test used to stop at ``degraded`` — which its own docstring promised
     more than. ``degraded`` was the *only* place ``log_group_failed`` reached,
@@ -1528,11 +1561,12 @@ async def test_a_failed_log_group_reaches_degraded_even_on_an_otherwise_ok_windo
         )
     )
     client.log_group_failed = _group_failure(bridge_mints=True)
-    data = await _manager(tmp_path, client=client).fetch_and_compute()
+    m = _manager(tmp_path, client=client)
+    data = await m.fetch_and_compute()
     assert SOURCE_LOGS in data["degraded"]
     # The rest of the sweep is trustworthy — a per-group failure must not sink
     # a hero value that a different group answered cleanly.
-    assert data["hook_status"] == "NOT LIVE"
+    assert _hook_launch_status(m) == "NOT LIVE"
     # ...and the failed group is unavailable, NOT an affirmative all-clear.
     assert data["sig_bridge_state"] is None
     assert data["sig_bridge_detail"] == "bridge logs unavailable"
@@ -2412,7 +2446,7 @@ async def test_a_total_outage_returns_the_full_key_set_with_nothing_invented(tmp
         "eth_usd", "imd_price_usd", "imd_change_24h_pct", "imd_vol_24h_usd",
         "pool_liquidity_usd", "fp_price_usd", "parity_pct", "imd_supply",
         "lp_liquidity", "lp_imd", "lp_weth", "lp_owner_ok", "gate_open",
-        "identities_written", "imd_burned_cum", "hook_status", "feed_nonce",
+        "identities_written", "imd_burned_cum", "feed_nonce",
         "feed_last_post_age_s", "nft_holders", "nft_transfers_24h",
         "nft_dev_holdings", "nft_written", "nft_floor", "as_of",
         # The three source-backed lists are `None` too, and that is the whole
@@ -2761,7 +2795,6 @@ async def test_a_healthy_launchpad_sweep_populates_every_payload_key() -> None:
     slot_payload = {
         "pool_id": POOL_ID,
         "pool_fee": 10_000,
-        "pool_liquidity": 987_654_321_098_765,
         "pool_id_source": "hook",
         "decoy_pool_count": 4,
         "coin_count": 12,
@@ -2785,7 +2818,6 @@ async def test_a_healthy_launchpad_sweep_populates_every_payload_key() -> None:
     payload = await manager.fetch_and_compute()
 
     assert payload["pool_fee_bps"] == 10_000
-    assert payload["pool_liquidity_raw"] == 987_654_321_098_765
     assert payload["pool_id_source"] == "hook"
     assert payload["decoy_pool_count"] == 4
     assert payload["launchpad_coin_count"] == 12
@@ -2856,39 +2888,39 @@ async def test_representable_zeros_survive_as_zero_not_none() -> None:
     # "we could not read it" -- exercised directly against `_chain_state`.
 
 
-async def test_lp_state_and_position_count_pass_through_the_chain_read(
-    tmp_path,
-) -> None:
-    """These two ride the fast tier (``ChainState``), never the launchpad
-    slot -- they must be available the very first cycle, unlike everything
-    else this task wires."""
-    client = FakeSurfClient(
-        fetch_chain_state=_chain_state(lp_state="gone", lp_position_count=0)
-    )
+async def test_lp_state_passes_through_the_chain_read(tmp_path) -> None:
+    """``lp_state`` rides the fast tier (``ChainState``), never the launchpad
+    slot -- it must be available the very first cycle, unlike everything else
+    this task wires.
+
+    ``lp_position_count`` used to be asserted here too; fix round 12a
+    dropped it from ``SURF_KEYS`` (no widget ever read it) and from this
+    payload, though ``ChainState.lp_position_count`` itself -- and the
+    ``PositionManager.balanceOf(OPS_WALLET)`` read behind it -- are kept
+    (see the task report). ``tests/data/test_surf_client.py`` still covers
+    that field's own construction directly; there is nothing left for this
+    manager-level test to prove about it now that nothing downstream reads it.
+    """
+    client = FakeSurfClient(fetch_chain_state=_chain_state(lp_state="gone"))
     data = await _manager(tmp_path, client=client).fetch_and_compute()
     assert data["lp_state"] == "gone"
-    assert data["lp_position_count"] == 0
     assert data["pool_venue"] == "v4"
+    assert "lp_position_count" not in data
 
 
 async def test_pool_venue_reads_v3_while_the_v3_position_still_answers(
     tmp_path,
 ) -> None:
-    client = FakeSurfClient(
-        fetch_chain_state=_chain_state(lp_state="live", lp_position_count=1)
-    )
+    client = FakeSurfClient(fetch_chain_state=_chain_state(lp_state="live"))
     data = await _manager(tmp_path, client=client).fetch_and_compute()
     assert data["pool_venue"] == "v3"
 
 
 async def test_pool_venue_is_none_when_neither_sub_call_answered(tmp_path) -> None:
-    client = FakeSurfClient(
-        fetch_chain_state=_chain_state(lp_state=None, lp_position_count=None)
-    )
+    client = FakeSurfClient(fetch_chain_state=_chain_state(lp_state=None))
     data = await _manager(tmp_path, client=client).fetch_and_compute()
     assert data["pool_venue"] is None
     assert data["lp_state"] is None
-    assert data["lp_position_count"] is None
 
 
 async def test_a_decoy_scan_failure_does_not_blank_the_rest_of_the_sweep(

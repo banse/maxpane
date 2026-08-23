@@ -281,7 +281,6 @@ EXPECTED_KEYS = {
     "sig_burn_detail",
     "sig_burn_age_s",
     # hero
-    "hook_status",
     "lp_liquidity",
     "lp_imd",
     "lp_weth",
@@ -313,11 +312,9 @@ EXPECTED_KEYS = {
     # pool (v3 -> v4 migration)
     "pool_venue",
     "pool_fee_bps",
-    "pool_liquidity_raw",
     "pool_id_source",
     "decoy_pool_count",
     "lp_state",
-    "lp_position_count",
     # burn executor (v1 -> v2)
     "burn_accrued",
     "burn_staged",
@@ -348,7 +345,7 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 77
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 74
 
 
 def test_every_signal_has_all_three_facets() -> None:
@@ -443,8 +440,8 @@ def test_pool_id_source_is_recorded_not_inferred() -> None:
 
 def test_new_payload_keys_exist() -> None:
     for key in (
-        "pool_venue", "pool_fee_bps", "pool_liquidity_raw", "pool_id_source",
-        "decoy_pool_count", "lp_state", "lp_position_count",
+        "pool_venue", "pool_fee_bps", "pool_id_source",
+        "decoy_pool_count", "lp_state",
         "burn_accrued", "burn_staged", "burn_ready", "burn_min_bridge",
         "launchpad_coin_count", "launchpad_swap_count",
         "launchpad_trader_count", "launchpad_burned_total",

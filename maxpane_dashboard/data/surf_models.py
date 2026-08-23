@@ -388,7 +388,11 @@ SURF_KEYS: tuple[str, ...] = (
     "sig_burn_detail",
     "sig_burn_age_s",
     # ---- hero ---------------------------------------------------------------
-    "hook_status",           # str — "NOT LIVE" until an Initialize with hooks!=0
+    # `hook_status` removed 2026-08-24 (fix round 12a): no widget ever
+    # rendered it after the HOOK hero card was dropped. The attribution
+    # machinery it used to read (`hook_launch`, `v4_hook_pools`) is
+    # unaffected -- analytics/surf_signals.py still advances a baseline
+    # off it.
     "lp_liquidity",          # float | None — raw v3 L, rendered abbreviated
     "lp_imd",                # float | None — IMD side, whole tokens
     "lp_weth",                # float | None — WETH side, whole tokens
@@ -400,11 +404,15 @@ SURF_KEYS: tuple[str, ...] = (
     # ---- pool (v3 -> v4 migration) -------------------------------------------
     "pool_venue",             # "v3" | "v4" | None — which pool is currently live
     "pool_fee_bps",           # int | None — the live pool's LP fee, in bps
-    "pool_liquidity_raw",     # int | None — raw v4 liquidity (PoolV4State.liquidity)
+    # `pool_liquidity_raw` removed 2026-08-24 (fix round 12a): zero
+    # references anywhere; `pool_liquidity_usd` is the one the hero renders.
     "pool_id_source",         # "hook" | "fallback" | None — see PoolV4State
     "decoy_pool_count",       # int | None — other ETH/IMD v4 pools seen (37 known)
     "lp_state",               # "live" | "gone" | None — ops wallet's v4 position
-    "lp_position_count",      # int | None — PositionManager.balanceOf(OPS_WALLET)
+    # `lp_position_count` removed 2026-08-24 (fix round 12a): zero
+    # references anywhere. `ChainState.lp_position_count` (the model field,
+    # PositionManager.balanceOf(OPS_WALLET)) is kept regardless — see
+    # surf_manager.py's task-12a report for why.
     # ---- burn executor (v1 -> v2) --------------------------------------------
     "burn_accrued",           # float | None — IMD accrued for burn, whole tokens
     "burn_staged",            # float | None — IMD balance sitting at BURN_EXECUTOR_V2
