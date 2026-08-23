@@ -1455,9 +1455,9 @@ def test_hot_coin_ignores_malformed_rows_without_crashing():
 
 
 def test_the_hot_coin_staleness_bound_is_the_window_it_measures():
-    """``HOT_MAX_AGE_S`` is the hour the distribution counts, not a guess.
+    """``HOT_MAX_AGE_S`` is the day the distribution counts, not a guess.
 
-    ``surf_client`` owns the window (``LAUNCHPAD_HOUR_BLOCKS`` blocks at
+    ``surf_client`` owns the window (``LAUNCHPAD_DAY_BLOCKS`` blocks at
     ``_LAUNCHPAD_BLOCK_SECONDS`` each); analytics may not import the client,
     so the two are pinned together here instead.  Re-cut the window and this
     goes red rather than letting the bound silently outgrow it.
@@ -1465,7 +1465,7 @@ def test_the_hot_coin_staleness_bound_is_the_window_it_measures():
     from maxpane_dashboard.data import surf_client
 
     assert (
-        surf_client.LAUNCHPAD_HOUR_BLOCKS * surf_client._LAUNCHPAD_BLOCK_SECONDS
+        surf_client.LAUNCHPAD_DAY_BLOCKS * surf_client._LAUNCHPAD_BLOCK_SECONDS
         == L.HOT_MAX_AGE_S
     )
 

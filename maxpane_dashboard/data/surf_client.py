@@ -150,6 +150,15 @@ LAUNCHPAD_RENDER_LIMIT = 20
 #: ``eth_getLogs`` rows carry no timestamp of their own on every endpoint.
 #: Matches the ~12 s/block assumption ``LOG_WINDOW_BLOCKS`` already documents.
 _LAUNCHPAD_BLOCK_SECONDS = 12.0
+#: 24 hours at ``_LAUNCHPAD_BLOCK_SECONDS``/block -- the window ``rank_coins``
+#: now treats as "the day" for ``swaps_24h`` and HOT COIN, replacing the
+#: single hour that had 1 CurveSwap across 146 coins on a live measurement
+#: (2026-08-23) and left every coin tied at 0. Derived, not the literal
+#: ``7_200``, so a block-time change moves this and
+#: ``surf_launchpad.HOT_MAX_AGE_S`` together --
+#: ``test_the_hot_coin_staleness_bound_is_the_window_it_measures`` pins the
+#: two against each other for exactly that reason.
+LAUNCHPAD_DAY_BLOCKS = int(86_400 / _LAUNCHPAD_BLOCK_SECONDS)   # 7_200
 #: Search floor for the decoy-pool sweep: ``Initialize`` logs on the v4
 #: PoolManager filtered to ``currency1 == IMD`` exist from this block on
 #: (2026-08-23 research sweep).
@@ -2138,6 +2147,7 @@ __all__ = [
     "LOG_WINDOW_BLOCKS",
     "LAUNCHPAD_LOG_WINDOW_BLOCKS",
     "LAUNCHPAD_HOUR_BLOCKS",
+    "LAUNCHPAD_DAY_BLOCKS",
     "LAUNCHPAD_RENDER_LIMIT",
     "V4_INITIALIZE_SEARCH_FROM_BLOCK",
     "MAX_CHANNEL_PAGES",
