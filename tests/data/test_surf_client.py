@@ -942,6 +942,187 @@ async def test_fetch_chain_state_total_outage_returns_none():
 
 
 # ---------------------------------------------------------------------------
+# Task 3 — fetch_pool_v4 (v4 pool state via extsload)
+# ---------------------------------------------------------------------------
+
+from maxpane_dashboard.data import surf_v4  # noqa: E402
+
+FIXTURE_V4 = json.loads(
+    (Path(__file__).parent.parent / "fixtures" / "surf" / "v4" / "v4_pool_state.json")
+    .read_text()
+)
+
+
+def _pool_v4_handler(
+    *,
+    pool_id: str,
+    hook_result: tuple[bool, str] | None,
+    slot0_result: tuple[bool, str],
+    liquidity_result: tuple[bool, str],
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Answers the two sequential ``eth_call`` rounds ``fetch_pool_v4`` issues.
+
+    Round 1 is a single-call ``aggregate3`` against
+    ``LaunchpadHook.imdEthPoolId()``. Round 2 is a two-call ``aggregate3``
+    against ``PoolManager.extsload()``, whose slot arguments are asserted
+    against *pool_id* — this is what proves the client recomputed the slot
+    from whichever pool id round 1 actually produced, rather than a stale or
+    hardcoded pool id leaking into the second round.
+    """
+    expected_slot0, expected_liq = surf_v4.pool_state_slots(
+        pool_id, A.V4_POOLS_MAPPING_SLOT
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["method"] == "eth_call"
+        call = payload["params"][0]
+        assert call["to"].lower() == surf_client.MULTICALL3.lower()
+        inner = decode_aggregate3_calldata(call["data"])
+        if len(inner) == 1:
+            target, _allow, cd = inner[0]
+            assert target.lower() == A.LAUNCHPAD_HOOK.lower()
+            assert cd.lower() == A.SEL_IMD_ETH_POOL_ID.lower()
+            result = encode_aggregate3_result(
+                [hook_result if hook_result is not None else (False, "0x")]
+            )
+        else:
+            assert len(inner) == 2
+            for (target, _allow, cd), expected_slot in zip(
+                inner, (expected_slot0, expected_liq)
+            ):
+                assert target.lower() == A.POOL_MANAGER_V4.lower()
+                expected_cd = A.SEL_EXTSLOAD + _strip0x(expected_slot)
+                assert cd.lower() == expected_cd.lower()
+            result = encode_aggregate3_result([slot0_result, liquidity_result])
+        return httpx.Response(200, json=_rpc_ok(payload, result))
+
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_fetch_pool_v4_prefers_the_hook_id() -> None:
+    """The live id comes from the hook; the constant is only a fallback."""
+    hook_id = "0x" + "ab" * 32
+    handler = _pool_v4_handler(
+        pool_id=hook_id,
+        hook_result=(True, hook_id),
+        slot0_result=(True, FIXTURE_V4["slot0_word"]),
+        liquidity_result=(True, FIXTURE_V4["liquidity_word"]),
+    )
+    async with _client_on(RecordingTransport(handler)) as client:
+        state = await client.fetch_pool_v4()
+    assert state.pool_id == hook_id
+    assert state.pool_id_source == "hook"
+    assert state.sqrt_price_x96 == FIXTURE_V4["expected"]["sqrt_price_x96"]
+    assert state.tick == FIXTURE_V4["expected"]["tick"]
+    assert state.lp_fee == FIXTURE_V4["expected"]["lp_fee"]
+    assert state.liquidity == FIXTURE_V4["expected"]["liquidity"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_pool_v4_falls_back_and_says_so() -> None:
+    """A failed hook read must not silently pretend the constant is live."""
+    handler = _pool_v4_handler(
+        pool_id=A.POOL_V4_ID_FALLBACK,
+        hook_result=(False, "0x"),
+        slot0_result=(True, FIXTURE_V4["slot0_word"]),
+        liquidity_result=(True, FIXTURE_V4["liquidity_word"]),
+    )
+    async with _client_on(RecordingTransport(handler)) as client:
+        state = await client.fetch_pool_v4()
+    assert state.pool_id == A.POOL_V4_ID_FALLBACK
+    assert state.pool_id_source == "fallback"
+    assert state.liquidity == FIXTURE_V4["expected"]["liquidity"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_pool_v4_hook_returning_empty_data_also_falls_back() -> None:
+    """``allowFailure`` success with empty return data is not a real pool id.
+
+    A ``(True, "0x")`` leg is what a bare EOA or an un-set storage slot can
+    look like — success flag set, nothing behind it. Treating that as a live
+    id would point the panel at ``bytes32(0)``, not fall back honestly.
+    """
+    handler = _pool_v4_handler(
+        pool_id=A.POOL_V4_ID_FALLBACK,
+        hook_result=(True, "0x"),
+        slot0_result=(True, FIXTURE_V4["slot0_word"]),
+        liquidity_result=(True, FIXTURE_V4["liquidity_word"]),
+    )
+    async with _client_on(RecordingTransport(handler)) as client:
+        state = await client.fetch_pool_v4()
+    assert state.pool_id == A.POOL_V4_ID_FALLBACK
+    assert state.pool_id_source == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_fetch_pool_v4_negative_tick_decodes_as_signed_through_the_client() -> None:
+    """The signed-int24 hazard, exercised through the real client path too —
+    not just the pure ``surf_v4`` unit test."""
+    word = "0x" + ("000000" + "ffffff" + "0" * 40).rjust(64, "0")
+    handler = _pool_v4_handler(
+        pool_id=A.POOL_V4_ID_FALLBACK,
+        hook_result=(False, "0x"),
+        slot0_result=(True, word),
+        liquidity_result=(True, FIXTURE_V4["liquidity_word"]),
+    )
+    async with _client_on(RecordingTransport(handler)) as client:
+        state = await client.fetch_pool_v4()
+    assert state.tick == -1
+    assert state.tick != 16_777_215
+
+
+@pytest.mark.asyncio
+async def test_fetch_pool_v4_one_reverted_extsload_leg_degrades_only_that_field() -> None:
+    """Every sub-call keeps allowFailure=True: a reverted liquidity slot must
+    not blank out the price the sibling slot0 leg already decoded."""
+    handler = _pool_v4_handler(
+        pool_id=A.POOL_V4_ID_FALLBACK,
+        hook_result=(False, "0x"),
+        slot0_result=(True, FIXTURE_V4["slot0_word"]),
+        liquidity_result=(False, "0x"),
+    )
+    async with _client_on(RecordingTransport(handler)) as client:
+        state = await client.fetch_pool_v4()
+    assert state.sqrt_price_x96 == FIXTURE_V4["expected"]["sqrt_price_x96"]
+    assert state.tick == FIXTURE_V4["expected"]["tick"]
+    assert state.lp_fee == FIXTURE_V4["expected"]["lp_fee"]
+    assert state.liquidity is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_pool_v4_is_exactly_two_state_pool_round_trips() -> None:
+    handler = _pool_v4_handler(
+        pool_id=A.POOL_V4_ID_FALLBACK,
+        hook_result=(False, "0x"),
+        slot0_result=(True, FIXTURE_V4["slot0_word"]),
+        liquidity_result=(True, FIXTURE_V4["liquidity_word"]),
+    )
+    transport = RecordingTransport(handler)
+    async with _client_on(transport) as client:
+        await client.fetch_pool_v4()
+    assert len(transport.requests) == 2
+    assert all("publicnode" in u for u in transport.urls())
+
+
+@pytest.mark.asyncio
+async def test_fetch_pool_v4_total_outage_still_returns_a_labelled_state() -> None:
+    """Unlike every other fetcher, total outage is NOT ``None``: the pool is
+    real, so the honest degraded state is a fully-``None``-fielded
+    ``PoolV4State`` whose ``pool_id_source`` truthfully says "fallback"."""
+    async with _offline_client() as client:
+        state = await client.fetch_pool_v4()
+    assert state is not None
+    assert state.pool_id == A.POOL_V4_ID_FALLBACK
+    assert state.pool_id_source == "fallback"
+    assert state.sqrt_price_x96 is None
+    assert state.tick is None
+    assert state.lp_fee is None
+    assert state.liquidity is None
+
+
+# ---------------------------------------------------------------------------
 # WP1.5 — fetch_channel_txs
 # ---------------------------------------------------------------------------
 
@@ -2296,7 +2477,7 @@ def _public_fetchers() -> list[str]:
     exception. Derived from ``dir(SurfClient)`` instead, so a new fetcher is
     swept automatically.
 
-    ``fetch_tx_senders`` is the one explicit exclusion, and the reason is that
+    ``fetch_tx_senders`` is one explicit exclusion, and the reason is that
     the two sweeps below would assert the wrong contract for it. It is not a
     source-group fetcher: it takes a list of hashes and answers a **per-hash
     map**, so its outage encoding is *absence of a key*, not a ``None`` return
@@ -2305,11 +2486,20 @@ def _public_fetchers() -> list[str]:
     behaviour is pinned by
     ``test_an_unreadable_transaction_is_absent_not_a_zero_address``, which
     drives it through ``_offline_client`` exactly as these sweeps do.
+
+    ``fetch_pool_v4`` is the second exclusion, for the mirror-image reason:
+    ``PoolV4State``'s own docstring (WP0/Task 1's frozen contract) says "the
+    pool is real, so there is no does-not-exist case here" — every field
+    degrades to ``None`` on a failed read, but the method always hands back a
+    ``PoolV4State``, never a bare ``None``, so a downstream caller can always
+    read ``.pool_id_source`` to learn whether even the *fallback* constant is
+    all it got. Its own outage behaviour is pinned by
+    ``test_fetch_pool_v4_total_outage_still_returns_a_labelled_state``.
     """
     return sorted(
         name for name in dir(SurfClient)
         if name.startswith("fetch_") and not name.startswith("_")
-        and name != "fetch_tx_senders"
+        and name not in ("fetch_tx_senders", "fetch_pool_v4")
     )
 
 

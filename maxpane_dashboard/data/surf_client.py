@@ -42,6 +42,7 @@ from urllib.parse import urlparse
 import httpx
 
 from maxpane_dashboard.data import surf_addresses as A
+from maxpane_dashboard.data import surf_v4
 from maxpane_dashboard.data.evm_abi import (
     decode_address,
     decode_aggregate3_result,
@@ -66,6 +67,7 @@ from maxpane_dashboard.data.surf_models import (
     MarketSnapshot,
     NftStats,
     NonceSet,
+    PoolV4State,
 )
 
 logger = logging.getLogger(__name__)
@@ -760,6 +762,92 @@ class SurfClient(OwnedHttpClient):
             block_number=(
                 None if block_raw is None else decode_uint(block_raw, 0)
             ),
+        )
+
+    async def fetch_pool_v4(self) -> PoolV4State:
+        """Read the live IMD/ETH v4 pool via two sequential ``aggregate3`` rounds.
+
+        v4 has no ``slot0()`` getter, and the *id* of the live pool is not a
+        constant either: 38 ETH/IMD v4 pools exist on mainnet and 37 are
+        decoys at other fee tiers, so which one is real is a question with a
+        wrong answer. Round 1 reads ``LaunchpadHook.imdEthPoolId()`` — the
+        dev's own on-chain declaration of his pool. Round 2 needs that id
+        first, because it computes the pool's storage slot from it, which is
+        why this cannot be folded into one multicall: the two rounds are
+        necessarily sequential, not a batching opportunity missed.
+
+        A failed hook read falls back to the vendored
+        ``A.POOL_V4_ID_FALLBACK`` constant, and ``pool_id_source`` records
+        which one was actually used ("hook" or "fallback") so a failed hook
+        read can never silently masquerade as a confirmed pool. Every
+        sub-call keeps ``allowFailure=True``, so a reverted view degrades one
+        field to ``None`` rather than the round — and unlike the other
+        ``fetch_*`` methods, this one always returns a ``PoolV4State``: the
+        pool is real, so there is no "does not exist" case, only "we could
+        not read it right now".
+        """
+        pool_id: str | None = None
+        hook_call = encode_aggregate3(
+            [(A.LAUNCHPAD_HOOK, A.SEL_IMD_ETH_POOL_ID, True)]
+        )
+        try:
+            raw = await self._rpc_state(
+                "eth_call", [{"to": MULTICALL3, "data": hook_call}, "latest"]
+            )
+            hook_results = decode_aggregate3_result(raw or "0x")
+            if hook_results:
+                success, ret = hook_results[0]
+                ret_hex = strip0x(ret)
+                if success and len(ret_hex) >= 64:
+                    pool_id = "0x" + ret_hex[:64]
+        except RuntimeError as exc:
+            logger.warning("fetch_pool_v4: hook read failed: %s", exc)
+
+        if pool_id is not None:
+            pool_id_source = "hook"
+        else:
+            pool_id = A.POOL_V4_ID_FALLBACK
+            pool_id_source = "fallback"
+
+        slot0_key, liquidity_key = surf_v4.pool_state_slots(
+            pool_id, A.V4_POOLS_MAPPING_SLOT
+        )
+        state_call = encode_aggregate3(
+            [
+                (A.POOL_MANAGER_V4, A.SEL_EXTSLOAD + strip0x(slot0_key), True),
+                (A.POOL_MANAGER_V4, A.SEL_EXTSLOAD + strip0x(liquidity_key), True),
+            ]
+        )
+        sqrt_price_x96: int | None = None
+        tick: int | None = None
+        lp_fee: int | None = None
+        liquidity: int | None = None
+        try:
+            raw = await self._rpc_state(
+                "eth_call", [{"to": MULTICALL3, "data": state_call}, "latest"]
+            )
+            state_results = decode_aggregate3_result(raw or "0x")
+            if len(state_results) == 2:
+                def ok(i: int) -> str | None:
+                    success, ret = state_results[i]
+                    return ret if success and strip0x(ret) else None
+
+                slot0_word = ok(0)
+                liquidity_word = ok(1)
+                if slot0_word is not None:
+                    sqrt_price_x96, tick, lp_fee = surf_v4.decode_slot0(slot0_word)
+                if liquidity_word is not None:
+                    liquidity = surf_v4.decode_liquidity(liquidity_word)
+        except RuntimeError as exc:
+            logger.warning("fetch_pool_v4: extsload read failed: %s", exc)
+
+        return PoolV4State(
+            pool_id=pool_id,
+            sqrt_price_x96=sqrt_price_x96,
+            tick=tick,
+            lp_fee=lp_fee,
+            liquidity=liquidity,
+            pool_id_source=pool_id_source,
         )
 
     # ------------------------------------------------------------------
