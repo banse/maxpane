@@ -364,7 +364,7 @@ def test_this_wp_constructs_against_wp0s_frozen_field_names():
             "imd_price_usd", "imd_price_usd_gecko", "imd_change_24h_pct",
             "imd_vol_24h_usd", "pool_liquidity_usd", "pool_imd", "pool_weth",
             "fp_price_usd", "fdv_usd", "eth_usd", "indexer_name",
-            "indexer_symbol", "sources_agree", "legacy_pool_liquidity_usd",
+            "indexer_symbol", "sources_agree",
         },
         m.LogWindow: {
             "from_block", "to_block", "bridge_mints", "identity_updates",
@@ -1865,8 +1865,8 @@ def _market_handler(
 async def test_fetch_market_cross_checked_real_values():
     """``real_pool_id`` (fix round 10a) matched against the fixture's v4
     pair -- the fixture also carries the superseded v3 pair in the SAME
-    response, unmatched by that id, which is exactly the shape DexScreener
-    returns in production and is what ``legacy_pool_liquidity_usd`` reads.
+    response, unmatched by that id and never picked, which is exactly the
+    shape DexScreener returns in production.
     """
     async with _client_on(RecordingTransport(_market_handler())) as client:
         snap = await client.fetch_market(real_pool_id=A.POOL_V4_ID_FALLBACK)
@@ -1877,9 +1877,6 @@ async def test_fetch_market_cross_checked_real_values():
     assert snap.imd_change_24h_pct == pytest.approx(30.89)
     assert snap.imd_vol_24h_usd == pytest.approx(244178.0)
     assert snap.pool_liquidity_usd == pytest.approx(548701.21)
-    # The v3 pair's own figure, present in the SAME response, never blended
-    # into `pool_liquidity_usd` above.
-    assert snap.legacy_pool_liquidity_usd == pytest.approx(548701.21)
     assert snap.pool_imd == pytest.approx(388421.0)
     assert snap.pool_weth == pytest.approx(142.7067)
     assert snap.fdv_usd == pytest.approx(1647147.0)
@@ -1900,8 +1897,7 @@ async def test_fetch_market_cross_checked_real_values():
 async def test_fetch_market_without_a_known_pool_id_matches_nothing():
     """Fix round 10a: a cold cache (the launchpad sweep has not landed yet,
     so the caller has no ``real_pool_id``) must not guess. The v4 pair goes
-    unmatched -- never a silent fallback to whichever pair is deepest, and
-    never the v3 pair either, even though it IS in the same response.
+    unmatched -- never a silent fallback to whichever pair is deepest.
     """
     async with _client_on(RecordingTransport(_market_handler())) as client:
         snap = await client.fetch_market()          # real_pool_id defaults to None
@@ -1910,9 +1906,6 @@ async def test_fetch_market_without_a_known_pool_id_matches_nothing():
     # total DexScreener outage already does.
     assert snap.imd_price_usd == pytest.approx(0.7127337345)
     assert snap.indexer_name is None                # Gecko's stale name never leaks in
-    # The v3 pair needs no `real_pool_id` at all -- it is matched by its own
-    # known address regardless of whether the v4 id is known yet.
-    assert snap.legacy_pool_liquidity_usd == pytest.approx(548701.21)
 
 
 @pytest.mark.asyncio

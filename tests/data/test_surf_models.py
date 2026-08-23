@@ -80,7 +80,7 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
         "imd_price_usd", "imd_price_usd_gecko", "imd_change_24h_pct",
         "imd_vol_24h_usd", "pool_liquidity_usd", "pool_imd", "pool_weth",
         "fp_price_usd", "fdv_usd", "eth_usd", "indexer_name", "indexer_symbol",
-        "sources_agree", "legacy_pool_liquidity_usd",
+        "sources_agree",
     ),
     LogWindow: (
         "from_block", "to_block", "bridge_mints", "identity_updates",

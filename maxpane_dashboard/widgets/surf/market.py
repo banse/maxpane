@@ -198,21 +198,24 @@ disagree -- pinned anyway by
 Fix round 10a (v3->v4 repoint, price-source disagreement)
 -----------------------------------------------------------
 
-Two additions, both re-measured against the 73-column ceiling above rather
-than assumed to fit under it. Neither moved it: the legacy line lives on
-the previously-blank ``#surf-mkt-gap`` seam (``full`` tier only, never a
-right-hand segment, so :func:`_second_column` cannot see it -- its own text
-tops out around 25 columns even at a nine-figure legacy value, nowhere near
-the panel's binding row); the disagreement marker is two characters on the
-price row, whose LEFT already sat one column under the mechanism sentence
-that pins :func:`_second_column`, so the marker becomes the new pin by one
-column and the panel's worst measured case is still **73** -- the same
-number the module already documented for a tight peg, unmoved by either
-addition. ``pool_liquidity_usd`` needs no gating any more: the manager now
-matches the DexScreener pair by the dev's own on-chain pool id rather than
-by size (fix round 10a, ``surf_client.SurfClient._pick_imd_pair``), so it is
-always the live pool's own figure and ``legacy_pool_liquidity_usd`` is
-always a genuinely separate number, gated on nothing but its own presence.
+The disagreement marker was re-measured against the 73-column ceiling above
+rather than assumed to fit under it, and did not move it: it is two
+characters on the price row, whose LEFT already sat one column under the
+mechanism sentence that pins :func:`_second_column`, so the marker becomes
+the new pin by one column and the panel's worst measured case is still
+**73** -- the same number the module already documented for a tight peg.
+``pool_liquidity_usd`` needs no gating any more: the manager now matches
+the DexScreener pair by the dev's own on-chain pool id rather than by size
+(fix round 10a, ``surf_client.SurfClient._pick_imd_pair``), so it is always
+the live pool's own figure.
+
+Fix round 10a also added a labelled ``legacy: v3 pool $...`` line on the
+``#surf-mkt-gap`` seam, carrying the superseded v3 pool's own liquidity
+apart from the live figure above. Task 2 (2026-08-23) removed it and its
+whole supply chain: the v3 pool was drained on 2026-08-17 and its LP
+position burned, so that number had stopped being a second opinion on the
+live pool's and become a number about a pool that no longer exists. The
+seam row is back to permanently blank.
 """
 
 from __future__ import annotations
@@ -406,16 +409,16 @@ WIDEN_HINTS: dict[str, str] = {
 #: codebase allows.
 SHORT_HINT = "‹ widen"
 
-#: The five data rows, in compose order.  ``#surf-mkt-gap`` was the blank
-#: seam between the token figures and the bridge block and was never written
-#: to until fix round 10a: it now carries the dim ``legacy`` line naming the
-#: superseded v3 pool's own liquidity when :func:`_parts` has one to show
-#: (``legacy_pool_liquidity_usd`` is ``None`` when the v3 pair goes
-#: unmatched), and stays blank otherwise -- a payload with no legacy figure
-#: renders exactly as before, which is what keeps
+#: The five data rows, in compose order.  ``#surf-mkt-gap`` is the blank
+#: seam between the token figures and the bridge block -- fix round 10a
+#: (2026-08-12) briefly wrote a dim ``legacy`` line naming the superseded
+#: v3 pool's own liquidity onto it, and Task 2 (2026-08-23) removed that
+#: line along with the rest of the ``legacy_pool_liquidity_usd`` chain once
+#: the v3 pool itself was drained and its LP position burned, so the seam
+#: is permanently blank again -- exactly what keeps
 #: ``test_market_blank_row_separates_the_token_figures_from_the_bridge``
 #: green.  It carries no right-hand segment, ever, so it is invisible to
-#: :func:`_second_column` -- adding it cannot move the sparklines.
+#: :func:`_second_column`.
 _ROW_IDS = (
     "#surf-mkt-price",
     "#surf-mkt-vol",
@@ -556,7 +559,6 @@ def _parts(
     parity_pct,
     supply_series,
     price_series,
-    legacy_pool_liquidity_usd=None,
     price_source_disagreement_pct=None,
 ) -> dict:
     """Every rendered fragment the tiers choose between, formatted once.
@@ -578,20 +580,6 @@ def _parts(
     # cell's availability from it is what stops ``parity ▼ -2.75%`` appearing
     # beside ``⚠ spread unavailable`` -- three keys, one answer.
     measurable = bool(spread)
-
-    # The superseded v3 pool, kept legible rather than silently vanishing.
-    # ``pool`` above is always the LIVE pool now (fix round 10a matches the
-    # DexScreener pair by the dev's own on-chain pool id, never by size), so
-    # this is a genuinely separate figure, not a relabelling of the same
-    # number -- gated purely on presence: ``legacy_pool_liquidity_usd`` is
-    # ``None`` exactly when the v3 pair went unmatched, which is the same
-    # "cannot verify" rule every other field in this payload already follows.
-    legacy = as_float(legacy_pool_liquidity_usd)
-    legacy_line = (
-        f"  [dim]legacy: v3 pool ${fmt_compact(legacy)}[/]"
-        if legacy is not None
-        else ""
-    )
 
     return {
         "price": _labelled(
@@ -615,7 +603,6 @@ def _parts(
         # spread onto the parity cell without appearing beside "level with FP",
         # where there is no gap to be gross about.
         "gross": GROSS_CAVEAT in spread,
-        "legacy_line": legacy_line,
     }
 
 
@@ -685,13 +672,12 @@ def _rows_for(tier: str, parts: dict) -> list[tuple[str, str]]:
         )
     right_bridge = "" if "flow" in gone else parts["direction"]
 
-    # The legacy-pool seam: never touches ``_second_column`` (no right-hand
-    # segment, ever) and is shown only at ``full`` -- the migration note is
-    # informative, not load-bearing, and every narrower tier is already
-    # shedding fields the parity/bridge rows actually need.  Its own text is
-    # ~24 columns, far under every tier's floor, so it is never itself the
-    # widest line even where it does render.
-    left_gap = parts["legacy_line"] if tier == "full" else ""
+    # The seam between the token figures and the bridge block.  Fix round
+    # 10a briefly used it for a dim v3-pool liquidity note; Task 2
+    # (2026-08-23) removed that note along with the rest of the legacy
+    # chain once the v3 pool was drained and its LP position burned, so the
+    # row stays blank.
+    left_gap = ""
 
     return [
         (left_price, right_price),
@@ -775,17 +761,11 @@ class SurfMarket(Vertical):
         parity_pct=None,
         supply_series=None,
         price_series=None,
-        legacy_pool_liquidity_usd=None,
         price_source_disagreement_pct=None,
         **_kwargs,
     ) -> None:
         """Refresh all rows.  Kwargs are exactly the PRD §5 market keys.
 
-        ``legacy_pool_liquidity_usd`` (fix round 10a) is the superseded v3
-        pool's own figure, kept legible as a dim seam-row line rather than
-        vanishing -- ``pool_liquidity_usd`` above is always the LIVE pool
-        now (the manager matches it by the dev's own on-chain pool id, never
-        by size), so the two are never the same number wearing two labels.
         ``price_source_disagreement_pct`` never changes which price renders
         -- ``imd_price_usd`` is already whichever the manager preferred (the
         on-chain read when available) by the time it reaches this widget --
@@ -801,7 +781,6 @@ class SurfMarket(Vertical):
             "parity_pct": parity_pct,
             "supply_series": supply_series,
             "price_series": price_series,
-            "legacy_pool_liquidity_usd": legacy_pool_liquidity_usd,
             "price_source_disagreement_pct": price_source_disagreement_pct,
         }
         self._render_view()

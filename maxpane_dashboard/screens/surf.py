@@ -1065,7 +1065,6 @@ class SurfScreen(RefreshGuard, Screen):
                 parity_pct=data.get("parity_pct"),
                 supply_series=data.get("supply_series"),
                 price_series=data.get("price_series"),
-                legacy_pool_liquidity_usd=data.get("legacy_pool_liquidity_usd"),
                 price_source_disagreement_pct=data.get(
                     "price_source_disagreement_pct"
                 ),

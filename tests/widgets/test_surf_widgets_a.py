@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import inspect
 
+import pytest
 from textual.app import App, ComposeResult
 
 from maxpane_dashboard.widgets.surf import _fmt
@@ -1853,68 +1854,36 @@ async def test_market_re_tiers_when_the_panel_is_resized():
 # The v3 pool drained to $2,195 while the live v4 pool holds $805,927 --
 # quoting v3 as the panel's own number under-reported the dashboard's subject
 # by ~370x. Fix round 10a repointed ``pool_liquidity_usd`` at the live pool
-# (matched by the dev's own on-chain pool id rather than by size) and added
-# ``legacy_pool_liquidity_usd`` as a genuinely separate figure -- this widget
-# needs no venue gating at all any more: ``pool`` is always the live number,
-# and ``legacy`` is gated purely on its own presence (``None`` when the v3
-# pair goes unmatched). The line lives on the seam row (``#surf-mkt-gap``)
-# that used to be permanently blank, at the ``full`` tier only, and carries
-# no right-hand segment -- ``_second_column`` cannot see it, so it never
-# moves a sparkline (see ``market._ROW_IDS``).
+# (matched by the dev's own on-chain pool id rather than by size); this
+# widget needs no venue gating at all any more, ``pool`` is always the live
+# number. Fix round 10a also added a ``legacy_pool_liquidity_usd`` line on
+# the seam row (``#surf-mkt-gap``) naming the v3 pool's own figure apart from
+# it -- Task 2 (2026-08-23) removed that line and its whole supply chain,
+# because the v3 pool itself was drained for good on 2026-08-17 and its LP
+# position burned: that number was never a second opinion on the live
+# pool's, it was a number about a pool that no longer exists.
 
 
-async def test_market_shows_the_live_v4_pool_and_keeps_v3_as_legacy():
+async def test_the_market_panel_no_longer_carries_the_superseded_v3_pool():
+    """The v3 pool was drained on 2026-08-17 and its LP position burned.
+
+    ``update_data`` swallows unknown kwargs through ``**_kwargs``, so a call
+    routed through it can never raise and proves nothing about the removal;
+    the private builder the payload actually flows through, ``_parts``,
+    does not have that escape hatch and is what must reject the key.
+    """
     widget = SurfMarket()
     app = _Harness(widget)
-    async with app.run_test(size=(100, 14)) as pilot:
-        widget.update_data(
-            **{
-                **_FULL_MARKET,
-                "pool_liquidity_usd": 805927.0,
-                "legacy_pool_liquidity_usd": 2195.0,
-            }
-        )
-        await pilot.pause()
-        screen = _screen_text(app)
-        assert "pool $805.9K" in screen   # the live pool figure, primary
-        assert "legacy" in screen
-        assert "$2.2K" in screen          # the retired v3 figure, dim
-
-
-async def test_market_the_legacy_line_stays_silent_when_the_v3_pair_is_unmatched():
-    """``legacy_pool_liquidity_usd is None`` (the v3 pair went unmatched, or
-    the payload predates fix round 10a) must render exactly as before this
-    fix round -- which is what keeps
-    ``test_market_blank_row_separates_the_token_figures_from_the_bridge``
-    green with no changes there."""
-    widget = SurfMarket()
-    app = _Harness(widget)
-    async with app.run_test(size=(100, 14)) as pilot:
+    async with app.run_test(size=(90, 14)) as pilot:
         widget.update_data(**_FULL_MARKET)
         await pilot.pause()
-        assert "legacy" not in _screen_text(app)
-
-
-async def test_market_the_legacy_line_survives_even_with_no_live_pool_figure():
-    """A cold cache before the launchpad sweep first lands can leave
-    ``pool_liquidity_usd`` unread while ``legacy_pool_liquidity_usd`` (keyed
-    on the v3 pair's own known address, no pool id needed) still answers --
-    the legacy note must not be silently withheld waiting for a figure it
-    does not depend on."""
-    widget = SurfMarket()
-    app = _Harness(widget)
-    async with app.run_test(size=(100, 14)) as pilot:
-        widget.update_data(
-            **{
-                **_FULL_MARKET,
-                "pool_liquidity_usd": None,
-                "legacy_pool_liquidity_usd": 2195.0,
-            }
-        )
-        await pilot.pause()
         screen = _screen_text(app)
-        assert "legacy" in screen
-        assert "$2.2K" in screen
+
+    assert "legacy" not in screen.lower()
+    assert "pool $548.7K" in screen   # the LIVE pool still renders
+
+    with pytest.raises(TypeError):
+        _market._parts(**_FULL_MARKET, legacy_pool_liquidity_usd=1.0)
 
 
 async def test_market_marks_a_price_source_disagreement():
@@ -1986,22 +1955,22 @@ async def test_market_a_failed_price_read_carries_no_disagreement_marker():
 
 
 async def test_market_worst_case_combined_width_matches_the_documented_ceiling():
-    """Legacy line + disagreement marker together, against a tight peg (the
-    module's own existing worst case) -- re-measured per fix round 10a
-    rather than assumed, since the payload's shape changed. Must not exceed
-    the 73-column ceiling ``SURF_FULL_LAYOUT_COLUMNS``/``FULL_LAYOUT_COLUMNS``
-    were already sized against.
+    """The disagreement marker against a tight peg (the module's own
+    existing worst case) -- re-measured per Task 2's removal of the
+    ``legacy_pool_liquidity_usd`` line rather than assumed, since the
+    payload's shape changed again. Must not exceed the 73-column ceiling
+    ``SURF_FULL_LAYOUT_COLUMNS``/``FULL_LAYOUT_COLUMNS`` were already sized
+    against.
     """
     worst = {
         **_FULL_MARKET,
         "imd_price_usd": 0.71,
         "fp_price_usd": 0.7071,
         "pool_liquidity_usd": 805927.0,
-        "legacy_pool_liquidity_usd": 2195.0,
         "price_source_disagreement_pct": 7.4,
     }
     parts = _market._parts(**worst)
     width = max(
         visible_len(line) for line in _market._lines_for("full", parts)
     )
-    assert width <= 73, f"fix round 10a widened the panel's full tier to {width}"
+    assert width <= 73, f"the disagreement marker widened the panel's full tier to {width}"

@@ -1717,22 +1717,6 @@ class SurfClient(OwnedHttpClient):
         return None
 
     @staticmethod
-    def _pick_v3_pair(body: Any) -> dict | None:
-        """The superseded v3 pair, by its own known address -- ``legacy_pool_liquidity_usd``'s source only.
-
-        Unlike the v4 pool there is exactly one canonical v3 pool address
-        (``surf_addresses.POOL_V3``) and no fleet of decoys squatting around
-        it, so an exact match is sufficient; a "closest by liquidity"
-        fallback is neither needed here nor wanted, for the same reason
-        ``_pick_imd_pair`` no longer has one.
-        """
-        target = A.POOL_V3.lower()
-        for p in (body or {}).get("pairs") or []:
-            if str(p.get("pairAddress", "")).lower() == target:
-                return p
-        return None
-
-    @staticmethod
     def _f(value: Any) -> float | None:
         """Lenient float parse: None/absent/garbage stays None, never 0."""
         if value is None:
@@ -1769,7 +1753,6 @@ class SurfClient(OwnedHttpClient):
         eth_usd = self._f(((eth_body or {}).get("ethereum") or {}).get("usd"))
 
         pair = self._pick_imd_pair(dex_body, real_pool_id)
-        v3_pair = self._pick_v3_pair(dex_body)
         gecko_price = None
         gecko_pool = None
         if isinstance(gecko_body, dict):
@@ -1831,13 +1814,6 @@ class SurfClient(OwnedHttpClient):
             indexer_name=((pair or {}).get("baseToken") or {}).get("name"),
             indexer_symbol=((pair or {}).get("baseToken") or {}).get("symbol"),
             sources_agree=agree,
-            # Fix round 10a: the drained v3 pool's own liquidity, kept as a
-            # labelled legacy figure -- never blended into `pool_liquidity_usd`,
-            # which is the *live* v4 pool's number now that `pair` is matched
-            # by pool id instead of by size.
-            legacy_pool_liquidity_usd=self._f(
-                ((v3_pair or {}).get("liquidity") or {}).get("usd")
-            ),
         )
 
     # ------------------------------------------------------------------

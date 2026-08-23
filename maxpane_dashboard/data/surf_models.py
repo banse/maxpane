@@ -194,13 +194,12 @@ class MarketSnapshot:
     ``sources_agree`` is ``None`` unless *both* sources answered: two prices that
     were never compared are not two prices that disagreed.
 
-    ``legacy_pool_liquidity_usd`` (fix round 10a) is the superseded v3 pool's
-    own liquidity -- ``pool_liquidity_usd`` above is the *live* v4 pool's,
-    now that the client matches ``pair`` by pool id rather than by size. The
-    two are never blended: a reader who wants "how much is still sitting in
-    the old pool" gets an honestly separate, clearly-labelled figure instead
-    of it silently winning the "deepest pair" contest the live pool should
-    always win.
+    Fix round 10a (v3->v4 repoint) added a ``legacy_pool_liquidity_usd``
+    field carrying the superseded v3 pool's own liquidity apart from the
+    live ``pool_liquidity_usd`` above. Task 2 (2026-08-23) removed it: the
+    v3 pool was drained on 2026-08-17 and its LP position burned, so that
+    number had stopped being a second opinion on the live pool's and become
+    a number about a pool that no longer exists.
     """
 
     imd_price_usd: float | None
@@ -216,7 +215,6 @@ class MarketSnapshot:
     indexer_name: str | None
     indexer_symbol: str | None
     sources_agree: bool | None = None
-    legacy_pool_liquidity_usd: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

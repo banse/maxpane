@@ -646,7 +646,7 @@ class SurfManager:
     def _market_payload(snap: Any) -> dict[str, Any]:
         """The whole PRD §5 market view, scaled once and cached as one dict.
 
-        **All seven values, not just the two prices.** The slot is what `_cycle`
+        **All six values, not just the two prices.** The slot is what `_cycle`
         falls back to on a skipped medium tier, so anything left out of it is a
         key that renders `--` on two refreshes out of three — while `_degraded`
         correctly says the market group is healthy, because a skip never reaches
@@ -666,12 +666,6 @@ class SurfManager:
             "imd_change_24h_pct": _opt_float(_field(snap, "imd_change_24h_pct")),
             "imd_vol_24h_usd": _opt_float(_field(snap, "imd_vol_24h_usd")),
             "pool_liquidity_usd": _opt_float(_field(snap, "pool_liquidity_usd")),
-            # Fix round 10a: the superseded v3 pool's own figure, kept apart
-            # from `pool_liquidity_usd` above -- never blended, never a
-            # fallback for it.
-            "legacy_pool_liquidity_usd": _opt_float(
-                _field(snap, "legacy_pool_liquidity_usd")
-            ),
             "fp_price_usd": _opt_float(_field(snap, "fp_price_usd")),
             "eth_usd": _opt_float(_field(snap, "eth_usd")),
         }
@@ -2091,9 +2085,6 @@ class SurfManager:
             "imd_change_24h_pct": market_payload.get("imd_change_24h_pct"),
             "imd_vol_24h_usd": market_payload.get("imd_vol_24h_usd"),
             "pool_liquidity_usd": market_payload.get("pool_liquidity_usd"),
-            "legacy_pool_liquidity_usd": market_payload.get(
-                "legacy_pool_liquidity_usd"
-            ),
             "price_source_disagreement_pct": price_source_disagreement_pct,
             "fp_price_usd": fp_price,
             # The one implementation, imported from analytics/ — never a copy.
