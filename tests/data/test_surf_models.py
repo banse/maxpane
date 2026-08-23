@@ -80,7 +80,7 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
         "imd_price_usd", "imd_price_usd_gecko", "imd_change_24h_pct",
         "imd_vol_24h_usd", "pool_liquidity_usd", "pool_imd", "pool_weth",
         "fp_price_usd", "fdv_usd", "eth_usd", "indexer_name", "indexer_symbol",
-        "sources_agree",
+        "sources_agree", "legacy_pool_liquidity_usd",
     ),
     LogWindow: (
         "from_block", "to_block", "bridge_mints", "identity_updates",
@@ -295,6 +295,8 @@ EXPECTED_KEYS = {
     "imd_change_24h_pct",
     "imd_vol_24h_usd",
     "pool_liquidity_usd",
+    "legacy_pool_liquidity_usd",
+    "price_source_disagreement_pct",
     "fp_price_usd",
     "parity_pct",
     "supply_series",
@@ -346,7 +348,7 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 75
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 77
 
 
 def test_every_signal_has_all_three_facets() -> None:

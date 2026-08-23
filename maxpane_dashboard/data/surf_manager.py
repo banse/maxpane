@@ -155,6 +155,7 @@ from maxpane_dashboard.data.surf_cache import (
 )
 from maxpane_dashboard.data.surf_client import SurfClient
 from maxpane_dashboard.data.surf_models import SURF_KEYS
+from maxpane_dashboard.data.surf_v4 import price_eth_per_imd
 
 logger = logging.getLogger(__name__)
 
@@ -611,8 +612,15 @@ class SurfManager:
 
     # -- the medium tier: market, logs, channel ------------------------------
 
-    async def _pool_market(self, tiers: set[str], now: float) -> Any:
+    async def _pool_market(
+        self, tiers: set[str], now: float, real_pool_id: str | None
+    ) -> Any:
         """Fetch the market view when the medium tier is due. Never raises.
+
+        ``real_pool_id`` (fix round 10a) is the live v4 pool id, threaded in
+        from the launchpad slot ``_cycle`` already unpacked -- it is what
+        lets ``SurfClient._pick_imd_pair`` tell the real pair from a decoy,
+        and costs no extra request (it is a plain argument, not a fetch).
 
         The skip predicate is the tier's due-ness and **nothing else**. It used
         to read ``TIER_MEDIUM not in tiers and get_last_good(SLOT) is not
@@ -635,7 +643,9 @@ class SurfManager:
         """
         if TIER_MEDIUM not in tiers:
             return None                     # skip, not a failure: no `_note` above
-        snap = await self._guard(self.client.fetch_market, "fetch_market")
+        snap = await self._guard(
+            lambda: self.client.fetch_market(real_pool_id), "fetch_market"
+        )
         self._note(SOURCE_MARKET, snap is not None)
         if snap is not None:
             self.cache.store_last_good(SLOT_MARKET, self._market_payload(snap), ts=now)
@@ -665,6 +675,12 @@ class SurfManager:
             "imd_change_24h_pct": _opt_float(_field(snap, "imd_change_24h_pct")),
             "imd_vol_24h_usd": _opt_float(_field(snap, "imd_vol_24h_usd")),
             "pool_liquidity_usd": _opt_float(_field(snap, "pool_liquidity_usd")),
+            # Fix round 10a: the superseded v3 pool's own figure, kept apart
+            # from `pool_liquidity_usd` above -- never blended, never a
+            # fallback for it.
+            "legacy_pool_liquidity_usd": _opt_float(
+                _field(snap, "legacy_pool_liquidity_usd")
+            ),
             "fp_price_usd": _opt_float(_field(snap, "fp_price_usd")),
             "eth_usd": _opt_float(_field(snap, "eth_usd")),
         }
@@ -1433,12 +1449,18 @@ class SurfManager:
         biases that median several times too high, because the cap keeps
         exactly the busiest coins and drops everything else — see
         ``LaunchpadState.swaps_by_coin``'s own docstring for the mechanism.
+        ``sqrt_price_x96`` (fix round 10a) is cached the same way: the raw
+        input to ``surf_v4.price_eth_per_imd``, which ``_cycle`` turns into
+        the authoritative on-chain ``imd_price_usd`` and the market
+        cross-check -- no ``SURF_KEYS`` entry of its own either, since the
+        derived USD figures are what the payload actually publishes.
         """
         return {
             "pool_id": _field(pool_state, "pool_id"),
             "pool_fee": _opt_int(_field(pool_state, "lp_fee")),
             "pool_liquidity": _opt_int(_field(pool_state, "liquidity")),
             "pool_id_source": _field(pool_state, "pool_id_source"),
+            "sqrt_price_x96": _opt_int(_field(pool_state, "sqrt_price_x96")),
             "decoy_pool_count": decoy_count,
             "decoy_newest_fee_bps": decoy_newest_fee_bps,
             "coin_count": _opt_int(_field(launchpad_state, "coin_count")),
@@ -1833,10 +1855,22 @@ class SurfManager:
         # spawned, no matter how the event loop interleaves it with the
         # ``gather`` a few lines down. See ``_spawn_launchpad``'s docstring.
         launchpad_entry = self.cache.get_last_good(SLOT_LAUNCHPAD)
+        # Built here, ahead of the gather, rather than beside `market_payload`
+        # below (fix round 10a): `_pool_market` now needs `real_pool_id` to
+        # tell the live v4 pair from a decoy, so the slot has to be unpacked
+        # before it is handed in, not after. `{}` on a cold cache or a sweep
+        # that has never produced a payload: every `.get()` below then
+        # answers `None`, the honest "not yet run" state rather than a guess.
+        launchpad_slot: dict[str, Any] = (
+            dict(launchpad_entry.payload)
+            if launchpad_entry is not None and isinstance(launchpad_entry.payload, dict)
+            else {}
+        )
+        real_pool_id = launchpad_slot.get("pool_id")
         self._spawn_launchpad(tiers, now)
 
         market, logs, channel, nft, activity = await asyncio.gather(
-            self._pool_market(tiers, now),
+            self._pool_market(tiers, now, real_pool_id),
             self._pool_logs(tiers, now),
             self._pool_channel(tiers, now, announce_nonce),
             self._pool_nft(tiers, now),
@@ -1934,20 +1968,43 @@ class SurfManager:
                 getattr(self.cache.get_last_good(SLOT_MARKET), "payload", None) or {}
             )
         )
-        imd_price = market_payload.get("imd_price_usd")
+        dex_imd_price = market_payload.get("imd_price_usd")
         fp_price = market_payload.get("fp_price_usd")
 
-        # The launchpad slot, exactly as it stood before this cycle's own
-        # sweep was offered (``launchpad_entry``, captured above) — never
-        # this cycle's fresh result, which a detached sweep can only ever
-        # publish for a *later* cycle to read. `{}` on a cold cache or a
-        # sweep that has never produced a payload: every `.get()` below then
-        # answers `None`, the honest "not yet run" state rather than a guess.
-        launchpad_slot: dict[str, Any] = (
-            dict(launchpad_entry.payload)
-            if launchpad_entry is not None and isinstance(launchpad_entry.payload, dict)
-            else {}
-        )
+        # Fix round 10a: the authoritative price is the on-chain extsload
+        # read, not DexScreener's -- a third-party aggregator's number is a
+        # cross-check now, never the number of record. `sqrt_price_x96`
+        # comes off the same `launchpad_slot` snapshot `real_pool_id` above
+        # already unpacked, so this costs no extra request either.
+        chain_price_usd = None
+        sqrt_price_x96 = launchpad_slot.get("sqrt_price_x96")
+        eth_usd = market_payload.get("eth_usd")
+        if sqrt_price_x96 is not None and eth_usd is not None:
+            eth_per_imd = price_eth_per_imd(sqrt_price_x96)
+            if eth_per_imd is not None:
+                chain_price_usd = eth_per_imd * eth_usd
+        # Falls back to the (now correctly v4-matched) DexScreener price only
+        # while the chain read is unavailable -- a cold cache before the
+        # launchpad sweep's first landing, typically one or two poll cycles,
+        # never the full 600 s TTL. Blanking the market panel's headline
+        # price on every fresh launch for a source that is merely "not yet
+        # due" is a worse outcome than a graceful, honestly-labelled
+        # cross-check taking over for a cycle or two.
+        imd_price = chain_price_usd if chain_price_usd is not None else dex_imd_price
+        # "A missing source is not agreement" -- `None` unless BOTH read.
+        # Signed, not absolute: a disagreement is information about
+        # direction as well as magnitude, and this repo does not average,
+        # clamp or hide it.
+        price_source_disagreement_pct = None
+        if (
+            dex_imd_price is not None
+            and chain_price_usd is not None
+            and chain_price_usd != 0
+        ):
+            price_source_disagreement_pct = (
+                (dex_imd_price - chain_price_usd) / chain_price_usd * 100.0
+            )
+
         burn_accrued = _tokens(launchpad_slot.get("imd_to_burn_wei"))
         burn_min_bridge = _tokens(launchpad_slot.get("min_bridge_wei"))
         # Tri-state on purpose (Task 6 brief): "we cannot tell" is not "not
@@ -1982,6 +2039,10 @@ class SurfManager:
             "imd_change_24h_pct": market_payload.get("imd_change_24h_pct"),
             "imd_vol_24h_usd": market_payload.get("imd_vol_24h_usd"),
             "pool_liquidity_usd": market_payload.get("pool_liquidity_usd"),
+            "legacy_pool_liquidity_usd": market_payload.get(
+                "legacy_pool_liquidity_usd"
+            ),
+            "price_source_disagreement_pct": price_source_disagreement_pct,
             "fp_price_usd": fp_price,
             # The one implementation, imported from analytics/ — never a copy.
             # IMD is FP bridged 1:1, so the spread is a real arbitrage/health

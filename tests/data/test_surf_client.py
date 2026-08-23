@@ -364,7 +364,7 @@ def test_this_wp_constructs_against_wp0s_frozen_field_names():
             "imd_price_usd", "imd_price_usd_gecko", "imd_change_24h_pct",
             "imd_vol_24h_usd", "pool_liquidity_usd", "pool_imd", "pool_weth",
             "fp_price_usd", "fdv_usd", "eth_usd", "indexer_name",
-            "indexer_symbol", "sources_agree",
+            "indexer_symbol", "sources_agree", "legacy_pool_liquidity_usd",
         },
         m.LogWindow: {
             "from_block", "to_block", "bridge_mints", "identity_updates",
@@ -1808,8 +1808,13 @@ def _market_handler(
 
 @pytest.mark.asyncio
 async def test_fetch_market_cross_checked_real_values():
+    """``real_pool_id`` (fix round 10a) matched against the fixture's v4
+    pair -- the fixture also carries the superseded v3 pair in the SAME
+    response, unmatched by that id, which is exactly the shape DexScreener
+    returns in production and is what ``legacy_pool_liquidity_usd`` reads.
+    """
     async with _client_on(RecordingTransport(_market_handler())) as client:
-        snap = await client.fetch_market()
+        snap = await client.fetch_market(real_pool_id=A.POOL_V4_ID_FALLBACK)
     assert snap is not None
     assert snap.imd_price_usd == pytest.approx(0.7074)          # DexScreener
     assert snap.imd_price_usd_gecko == pytest.approx(0.7127337345)
@@ -1817,6 +1822,9 @@ async def test_fetch_market_cross_checked_real_values():
     assert snap.imd_change_24h_pct == pytest.approx(30.89)
     assert snap.imd_vol_24h_usd == pytest.approx(244178.0)
     assert snap.pool_liquidity_usd == pytest.approx(548701.21)
+    # The v3 pair's own figure, present in the SAME response, never blended
+    # into `pool_liquidity_usd` above.
+    assert snap.legacy_pool_liquidity_usd == pytest.approx(548701.21)
     assert snap.pool_imd == pytest.approx(388421.0)
     assert snap.pool_weth == pytest.approx(142.7067)
     assert snap.fdv_usd == pytest.approx(1647147.0)
@@ -1834,11 +1842,66 @@ async def test_fetch_market_cross_checked_real_values():
 
 
 @pytest.mark.asyncio
+async def test_fetch_market_without_a_known_pool_id_matches_nothing():
+    """Fix round 10a: a cold cache (the launchpad sweep has not landed yet,
+    so the caller has no ``real_pool_id``) must not guess. The v4 pair goes
+    unmatched -- never a silent fallback to whichever pair is deepest, and
+    never the v3 pair either, even though it IS in the same response.
+    """
+    async with _client_on(RecordingTransport(_market_handler())) as client:
+        snap = await client.fetch_market()          # real_pool_id defaults to None
+    assert snap is not None
+    # No v4 match -> falls through to the existing Gecko path, exactly as a
+    # total DexScreener outage already does.
+    assert snap.imd_price_usd == pytest.approx(0.7127337345)
+    assert snap.indexer_name is None                # Gecko's stale name never leaks in
+    # The v3 pair needs no `real_pool_id` at all -- it is matched by its own
+    # known address regardless of whether the v4 id is known yet.
+    assert snap.legacy_pool_liquidity_usd == pytest.approx(548701.21)
+
+
+@pytest.mark.asyncio
+async def test_fetch_market_a_decoy_never_outranks_the_real_pair_by_size():
+    """The regression this whole fix round exists to close: a higher-
+    liquidity decoy in the SAME DexScreener response must never win.
+
+    38 ETH/IMD v4 pools exist on mainnet and 37 are third-party decoys, and
+    the old ``_pick_imd_pair`` picked whichever pair was deepest -- fundable
+    by anyone. This fixture puts a decoy at 10x the real pair's liquidity
+    and asserts the real pair (matched by pool id) still wins.
+    """
+    fixture = load_fixture("dexscreener_imd.json")
+    real_pair = next(
+        p for p in fixture["pairs"] if p["pairAddress"] == A.POOL_V4_ID_FALLBACK
+    )
+    decoy = json.loads(json.dumps(real_pair))
+    decoy["pairAddress"] = "0xa2e09ca34C324137Ea20C2b1F92727d18E22c5B9"
+    decoy["liquidity"] = {"usd": 5_489_006.20, "base": 1, "quote": 1}  # 10x deeper
+    decoy["priceUsd"] = "0.0001"       # a wildly different price a decoy could carry
+    fixture["pairs"] = [decoy, real_pair]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "dexscreener" in url and A.IMD_TOKEN.lower() in url.lower():
+            return httpx.Response(200, json=fixture)
+        return _market_handler()(request)
+
+    async with _client_on(RecordingTransport(handler)) as client:
+        snap = await client.fetch_market(real_pool_id=A.POOL_V4_ID_FALLBACK)
+
+    assert snap is not None
+    # The real pair's own numbers, not the decoy's -- price and liquidity both.
+    assert snap.imd_price_usd == pytest.approx(0.7074)
+    assert snap.pool_liquidity_usd == pytest.approx(548701.21)
+    assert snap.pool_liquidity_usd != pytest.approx(5_489_006.20)
+
+
+@pytest.mark.asyncio
 async def test_fetch_market_gecko_down_degrades_cross_check_not_price():
     async with _client_on(
         RecordingTransport(_market_handler(gecko=False))
     ) as client:
-        snap = await client.fetch_market()
+        snap = await client.fetch_market(real_pool_id=A.POOL_V4_ID_FALLBACK)
     assert snap is not None
     assert snap.imd_price_usd == pytest.approx(0.7074)
     assert snap.imd_price_usd_gecko is None
@@ -1861,7 +1924,10 @@ async def test_fetch_market_dexscreener_down_falls_back_to_gecko_price():
 @pytest.mark.asyncio
 async def test_fetch_market_disagreement_is_flagged_not_averaged():
     fixture = load_fixture("dexscreener_imd.json")
-    fixture["pairs"][0]["priceUsd"] = "0.90"  # ~23 % off Gecko's 0.7127
+    v4_pair = next(
+        p for p in fixture["pairs"] if p["pairAddress"] == A.POOL_V4_ID_FALLBACK
+    )
+    v4_pair["priceUsd"] = "0.90"  # ~23 % off Gecko's 0.7127
 
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
@@ -1870,7 +1936,7 @@ async def test_fetch_market_disagreement_is_flagged_not_averaged():
         return _market_handler()(request)
 
     async with _client_on(RecordingTransport(handler)) as client:
-        snap = await client.fetch_market()
+        snap = await client.fetch_market(real_pool_id=A.POOL_V4_ID_FALLBACK)
     assert snap.sources_agree is False
     assert snap.imd_price_usd == pytest.approx(0.90)  # still reported raw
 
@@ -1881,7 +1947,7 @@ async def test_fetch_market_coingecko_down_is_none_never_zero():
     not be copied here: an ETH price of 0 makes every ETH-denominated figure
     downstream render as free rather than as unavailable."""
     async with _client_on(RecordingTransport(_market_handler(eth=False))) as client:
-        snap = await client.fetch_market()
+        snap = await client.fetch_market(real_pool_id=A.POOL_V4_ID_FALLBACK)
     assert snap is not None
     assert snap.eth_usd is None
     assert snap.eth_usd != 0.0

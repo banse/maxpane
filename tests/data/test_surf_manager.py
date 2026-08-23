@@ -599,10 +599,18 @@ def _pool_v4_state(**overrides) -> PoolV4State:
     """A WP0.4 ``PoolV4State``, keyword-for-keyword. Resolves through the hook
     by default; a test wanting the fallback path overrides
     ``pool_id_source="fallback"``.
+
+    ``sqrt_price_x96`` (fix round 10a) is chosen, not copied from
+    ``_chain_state``'s v3 slot0 value: it is reverse-solved so
+    ``surf_v4.price_eth_per_imd(sqrt) * ETH_USD == IMD_PRICE_USD`` exactly,
+    so the default double represents one coherent world where the on-chain
+    price (now authoritative) and the market fixtures' DexScreener price
+    agree -- a test that wants a genuine chain/market disagreement overrides
+    ``sqrt_price_x96`` explicitly instead of inheriting an accidental one.
     """
     fields = {
         "pool_id": POOL_ID,
-        "sqrt_price_x96": 4_181_066_022_637_632_195_530_919_936,
+        "sqrt_price_x96": 4_125_170_652_482_305_403_204_344_479_744,
         "tick": -3466,
         "lp_fee": 10_000,
         "liquidity": 987_654_321_098_765,
@@ -726,7 +734,8 @@ class FakeSurfClient:
     async def fetch_chain_state(self):   return await self._answer("fetch_chain_state")
     async def fetch_channel_txs(self):   return await self._answer("fetch_channel_txs")
     async def fetch_dev_activity(self):  return await self._answer("fetch_dev_activity")
-    async def fetch_market(self):        return await self._answer("fetch_market")
+    async def fetch_market(self, real_pool_id=None):
+        return await self._answer("fetch_market")
     async def fetch_recent_logs(self):   return await self._answer("fetch_recent_logs")
     async def fetch_nft_stats(self):     return await self._answer("fetch_nft_stats")
     async def fetch_pool_v4(self):       return await self._answer("fetch_pool_v4")

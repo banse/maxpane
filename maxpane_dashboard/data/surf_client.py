@@ -1639,17 +1639,55 @@ class SurfClient(OwnedHttpClient):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _pick_imd_pair(body: Any) -> dict | None:
-        """The canonical v3 pool's pair, else the deepest pair, else None."""
-        pairs = (body or {}).get("pairs") or []
-        for p in pairs:
-            if str(p.get("pairAddress", "")).lower() == A.POOL_V3.lower():
+    def _pick_imd_pair(body: Any, real_pool_id: str | None) -> dict | None:
+        """The live v4 pair, matched by pool id -- never by liquidity size.
+
+        Fix round 10a. 38 ETH/IMD v4 pools exist on mainnet and 37 are
+        third-party decoys at other fee tiers (some squatting within one pip
+        of the real 1% tier), and DexScreener returns them in the *same*
+        response as the real pair -- "pick the deepest pair" (the old
+        fallback this method used to have) is not merely imprecise, it is
+        exploitable: anyone can fund a decoy past the real pool's liquidity
+        and take over this panel. It already had: the drained v3 pair's
+        ~$2,195 rendered while the live v4 pool held ~$805,927 -- a ~370x
+        under-report of the dashboard's own subject.
+
+        ``real_pool_id`` is the dev's own on-chain declaration
+        (``LaunchpadHook.imdEthPoolId()``, via ``fetch_pool_v4()``) of which
+        pool is his. DexScreener represents a v4 pool's ``pairAddress`` as
+        that same bytes32 pool id -- v4 has no per-pool contract address the
+        way v2/v3 do -- so matching the two directly is an exact identity
+        check, not a heuristic.
+
+        ``None`` -- never a guess -- when ``real_pool_id`` is not yet known
+        (the launchpad sweep has not landed this process) or when no pair in
+        the response matches it. Both are "cannot verify", and this repo's
+        rule for "cannot verify" is ``None``, not "pick the closest-looking
+        one".
+        """
+        if not real_pool_id:
+            return None
+        target = str(real_pool_id).lower()
+        for p in (body or {}).get("pairs") or []:
+            if str(p.get("pairAddress", "")).lower() == target:
                 return p
-        return max(
-            pairs,
-            key=lambda p: ((p.get("liquidity") or {}).get("usd") or 0.0),
-            default=None,
-        )
+        return None
+
+    @staticmethod
+    def _pick_v3_pair(body: Any) -> dict | None:
+        """The superseded v3 pair, by its own known address -- ``legacy_pool_liquidity_usd``'s source only.
+
+        Unlike the v4 pool there is exactly one canonical v3 pool address
+        (``surf_addresses.POOL_V3``) and no fleet of decoys squatting around
+        it, so an exact match is sufficient; a "closest by liquidity"
+        fallback is neither needed here nor wanted, for the same reason
+        ``_pick_imd_pair`` no longer has one.
+        """
+        target = A.POOL_V3.lower()
+        for p in (body or {}).get("pairs") or []:
+            if str(p.get("pairAddress", "")).lower() == target:
+                return p
+        return None
 
     @staticmethod
     def _f(value: Any) -> float | None:
@@ -1661,11 +1699,22 @@ class SurfClient(OwnedHttpClient):
         except (TypeError, ValueError):
             return None
 
-    async def fetch_market(self) -> MarketSnapshot | None:
+    async def fetch_market(self, real_pool_id: str | None = None) -> MarketSnapshot | None:
         """IMD + FP market data, DexScreener primary, GeckoTerminal check.
 
         GeckoTerminal serves a STALE token name for IMD ("Vibe Coins") — its
         numbers are welcome, its strings are not (PRD §6 rule 3).
+
+        ``real_pool_id`` (fix round 10a) is the live v4 pool id the caller
+        already holds from a prior ``fetch_pool_v4()`` read (the manager
+        threads it through from the launchpad slot) -- it costs no extra
+        request here, it is only how ``_pick_imd_pair`` tells the real pair
+        from a decoy. ``None`` when the caller does not have it yet (a cold
+        cache before the launchpad sweep first lands): the v4 pair is then
+        honestly unmatched rather than guessed, and every field this method
+        would otherwise derive from it falls back through the existing
+        Gecko path below, exactly as it already does on a total DexScreener
+        outage.
         """
         dex_body, gecko_body, fp_body, eth_body = await asyncio.gather(
             self._get_json(f"{DEXSCREENER_TOKENS_API}/{A.IMD_TOKEN}"),
@@ -1676,7 +1725,8 @@ class SurfClient(OwnedHttpClient):
         )
         eth_usd = self._f(((eth_body or {}).get("ethereum") or {}).get("usd"))
 
-        pair = self._pick_imd_pair(dex_body)
+        pair = self._pick_imd_pair(dex_body, real_pool_id)
+        v3_pair = self._pick_v3_pair(dex_body)
         gecko_price = None
         gecko_pool = None
         if isinstance(gecko_body, dict):
@@ -1738,6 +1788,13 @@ class SurfClient(OwnedHttpClient):
             indexer_name=((pair or {}).get("baseToken") or {}).get("name"),
             indexer_symbol=((pair or {}).get("baseToken") or {}).get("symbol"),
             sources_agree=agree,
+            # Fix round 10a: the drained v3 pool's own liquidity, kept as a
+            # labelled legacy figure -- never blended into `pool_liquidity_usd`,
+            # which is the *live* v4 pool's number now that `pair` is matched
+            # by pool id instead of by size.
+            legacy_pool_liquidity_usd=self._f(
+                ((v3_pair or {}).get("liquidity") or {}).get("usd")
+            ),
         )
 
     # ------------------------------------------------------------------

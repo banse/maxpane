@@ -186,6 +186,14 @@ class MarketSnapshot:
 
     ``sources_agree`` is ``None`` unless *both* sources answered: two prices that
     were never compared are not two prices that disagreed.
+
+    ``legacy_pool_liquidity_usd`` (fix round 10a) is the superseded v3 pool's
+    own liquidity -- ``pool_liquidity_usd`` above is the *live* v4 pool's,
+    now that the client matches ``pair`` by pool id rather than by size. The
+    two are never blended: a reader who wants "how much is still sitting in
+    the old pool" gets an honestly separate, clearly-labelled figure instead
+    of it silently winning the "deepest pair" contest the live pool should
+    always win.
     """
 
     imd_price_usd: float | None
@@ -201,6 +209,7 @@ class MarketSnapshot:
     indexer_name: str | None
     indexer_symbol: str | None
     sources_agree: bool | None = None
+    legacy_pool_liquidity_usd: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,10 +411,13 @@ SURF_KEYS: tuple[str, ...] = (
     "burn_ready",             # bool | None — None unless both accrued & min_bridge read
     "burn_min_bridge",        # float | None — BurnExecutor.minBridgeAmount(), whole IMD
     # ---- market -------------------------------------------------------------
-    "imd_price_usd",
+    "imd_price_usd",           # float | None — on-chain (extsload) when available,
+                                # else DexScreener/Gecko; see surf_manager._cycle
     "imd_change_24h_pct",
     "imd_vol_24h_usd",
-    "pool_liquidity_usd",
+    "pool_liquidity_usd",      # float | None — the LIVE v4 pool, matched by pool id
+    "legacy_pool_liquidity_usd",  # float | None — the superseded v3 pool, fix round 10a
+    "price_source_disagreement_pct",  # float | None — dex vs chain price, % of chain
     "fp_price_usd",
     "parity_pct",             # float | None — (imd/fp - 1) * 100, computed live
     "supply_series",          # list[[ts, supply]] — burns step it down

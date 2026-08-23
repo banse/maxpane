@@ -99,6 +99,10 @@ _KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset(
         "sig_decoy_state", "sig_decoy_detail", "sig_decoy_age_s",
         "sig_burnready_state", "sig_burnready_detail", "sig_burnready_age_s",
         "sig_hot_state", "sig_hot_detail", "sig_hot_age_s",
+        # Fix round 10a (2026-08-24): the v4-pool-id-matched market fix.
+        # Task 10 wires the market panel's legacy-liquidity note and
+        # disagreement flag.
+        "legacy_pool_liquidity_usd", "price_source_disagreement_pct",
     }
 )
 

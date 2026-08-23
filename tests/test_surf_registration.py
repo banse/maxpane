@@ -1212,6 +1212,13 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     "launchpad_trader_count": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
     "launchpad_burned_total": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
     "launchpad_creator_eth_owed": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
+    # Fix round 10a (2026-08-24): the v4-pool-id-matched market fix. Both
+    # are None-on-failure floats with no meaningful representable zero --
+    # judged the same way their siblings above are -- and neither has a
+    # widget consumer yet; Task 10 wires the market panel's legacy/decoy
+    # note and the price-disagreement flag.
+    "legacy_pool_liquidity_usd": "no widget consumes this key yet; Task 10 wires the market panel's legacy note",
+    "price_source_disagreement_pct": "no widget consumes this key yet; Task 10 wires the market panel's disagreement flag",
     # Same age_s-only-on-FIRED reasoning as the six existing sig_*_age_s
     # entries just above -- these three new detectors follow the identical
     # widgets/surf/signals.py `_head()` pattern once Task 9 wires them.
