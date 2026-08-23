@@ -25,11 +25,21 @@ fee recipients exist in frenpet.eth's history today):
 * ``counterparty_known`` truthy -> ``counterparty`` is a label from the
   vendored ``KNOWN_LABELS`` map, resolved upstream; rendered cyan.  The
   map itself lives in ``data/surf_addresses.py`` and is deliberately NOT
-  imported here -- widgets receive primitives only.
+  imported here -- widgets receive primitives only.  ``LAUNCHPAD_HOOK``,
+  ``LAUNCHPAD_FACTORY`` and ``BURN_EXECUTOR_V2`` joined that map for the
+  v3->v4 migration (2026-08-23): LaunchpadHook was the dev's single most
+  frequent counterparty and used to render as an anonymous truncated hex
+  address purely because it was absent from the allowlist.  This module
+  needed no change for the fix -- it already renders whatever
+  ``counterparty``/``counterparty_known`` it is handed -- which is exactly
+  why the allowlist, not a fallback or fuzzy match here, is the right place
+  for that decision to live.
 * unknown -> dimmed ``0x`` + first 8 + ``…`` + last 6, never styled as
   trusted.  The window is wide enough to distinguish the live spoof pair
   (``0xF3084Bc7…D60eE6`` vs ``0xF3083828…f60Ee6``), which the classic
-  first-6/last-4 short form is not.
+  first-6/last-4 short form is not.  A launchpad-address lookalike absent
+  from the allowlist falls through to this same window -- no fallback, no
+  fuzzy match, no prefix match, ever (PRD §4).
 * dust never renders: ``kind == "dust"`` rows are dropped outright, and a
   ``transfer`` at-or-below dust value (see ``_DUST_ETH`` below) from an
   unknown counterparty -- exactly the poisoning shape -- is dropped even

@@ -1181,6 +1181,84 @@ async def test_activity_unavailable_vs_empty_vs_none_args():
         assert "activity unavailable" in _screen_text(app)
 
 
+# -- SurfDevActivity: the launchpad label allowlist ----------------------
+#
+# LaunchpadHook was the dev's single most frequent counterparty and used to
+# render as an anonymous truncated hex address purely because it was absent
+# from the label allowlist -- WP1 (Task 1 of the v4/launchpad plan) added
+# LAUNCHPAD_HOOK, LAUNCHPAD_FACTORY and BURN_EXECUTOR_V2 to
+# ``data/surf_addresses.KNOWN_LABELS``. This widget never imports that map
+# (widgets receive primitives only, CLAUDE.md) and renders whatever
+# ``counterparty`` / ``counterparty_known`` it is handed, so the fix lives
+# entirely upstream in the manager's allowlist lookup; what belongs here is
+# proof the render side actually surfaces it, and proof a lookalike absent
+# from the allowlist still renders dimmed and truncated -- no fallback, no
+# fuzzy match, no prefix match (PRD §4 / CLAUDE.md's address-poisoning
+# defense).
+
+
+async def test_activity_a_known_launchpad_counterparty_renders_as_its_label():
+    """``burnAccruedImd`` -- the dev's most frequent call -- classifies as
+    the existing ``burn`` kind (``surf_client.DEV_TX_KINDS`` already carried
+    it), so this exercises the exact row shape the migration produces."""
+    row = {
+        "ts": 1000.0,
+        "wallet_label": "dev",
+        "kind": "burn",
+        "counterparty": "LaunchpadHook",
+        "counterparty_known": True,
+        "value_eth": 0.0,
+        "tx_hash": "0x" + "aa" * 32,
+    }
+    lines = await _activity_lines(110, [row])
+    text = "\n".join(lines)
+    assert "LaunchpadHook" in text
+    assert "burn" in text
+
+
+async def test_activity_an_unknown_launchpad_lookalike_still_renders_dimmed_and_truncated():
+    """The allowlist is the poisoning defence: a lookalike that is one hex
+    digit off the real ``LAUNCHPAD_HOOK`` address and arrives with
+    ``counterparty_known=False`` must still render through the anti-
+    poisoning window, never the trusted label -- proving there is no
+    fallback, fuzzy, or prefix match anywhere in the render path either.
+    """
+    from maxpane_dashboard.data.surf_addresses import LAUNCHPAD_HOOK
+    from maxpane_dashboard.widgets.surf._fmt import long_addr
+
+    lookalike = "0x" + ("0" if LAUNCHPAD_HOOK[2] != "0" else "1") + LAUNCHPAD_HOOK[3:]
+    assert lookalike.lower() != LAUNCHPAD_HOOK.lower()
+    row = {
+        "ts": 1000.0,
+        "wallet_label": "dev",
+        "kind": "burn",
+        "counterparty": lookalike,
+        "counterparty_known": False,
+        "value_eth": 0.0,
+        "tx_hash": "0x" + "bb" * 32,
+    }
+    lines = await _activity_lines(110, [row])
+    text = "\n".join(lines)
+    assert "LaunchpadHook" not in text
+    assert long_addr(lookalike) in text
+
+
+def test_the_kind_vocabulary_did_not_grow():
+    """``burnAccruedImd`` maps onto the existing ``burn`` kind, so the kind
+    cell's width is unchanged and surf's 142/143 columns are safe. A
+    standing guard, not a regression test: shorten a label if a future kind
+    ever needs one, and never widen the layout for it.
+    """
+    from maxpane_dashboard.data.surf_client import DEV_TX_KINDS
+    from maxpane_dashboard.widgets.surf.activity import _KIND_COLS
+
+    assert DEV_TX_KINDS == frozenset(
+        {"deploy", "lp", "burn", "bridge", "fwa claim", "transfer", "other"}
+    )
+    assert max(len(k) for k in DEV_TX_KINDS) == len("fwa claim")
+    assert _KIND_COLS == 9
+
+
 # ---------------------------------------------------------------------
 # SurfNft
 # ---------------------------------------------------------------------
