@@ -66,17 +66,7 @@ LAUNCHPAD_FACTORY = "0x73d1ae084F04f793A5bbd6B623d74400C9Fc3f42"
 #: Uniswap v4 PositionManager -- holds the ops wallet's single LP position.
 POSITION_MANAGER_V4 = "0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e"
 #: Base-side sink the executor bridges to; mainnet supply drops on arrival.
-#:
-#: KNOWN ANOMALY (flagged 2026-08-23, not corrected): unlike its four
-#: siblings above, this literal does not satisfy EIP-55 -- this module's own
-#: keccak recomputes a different casing pattern for the same 20 bytes
-#: (``0xf9d7CBf5Bef2f5c9ba93a70F31DdCA6457716793``), cross-checked with
-#: pycryptodome's independent keccak to rule out a bug in ours. The
-#: lowercase digits are identical either way, so this is the same account
-#: either way -- only the self-check casing is off. Left byte-for-byte as
-#: handed down rather than re-cased, so ``test_every_address_is_checksummed``
-#: is the one deliberately red case in the suite; see its docstring.
-BASE_BURN_RECEIVER = "0xf9d7cbf5bEF2f5c9bA93a70F31dDCa6457716793"
+BASE_BURN_RECEIVER = "0xf9d7CBf5Bef2f5c9ba93a70F31DdCA6457716793"
 
 #: **Fallback only.**  The live pool id is read from
 #: ``LaunchpadHook.imdEthPoolId()`` every chain round.  38 ETH/IMD v4 pools

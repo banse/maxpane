@@ -60,32 +60,7 @@ def to_checksum(addr: str) -> str:
     )
 
 
-#: ``BASE_BURN_RECEIVER`` is the one deliberate exception: handed down in the
-#: v4/launchpad research sweep with a casing that does not satisfy EIP-55
-#: under this repo's own keccak (cross-checked independently with
-#: pycryptodome to rule out a bug in ours) -- the lowercase digits are
-#: identical either way, so it is the same 20-byte account, only the
-#: self-check casing is off. It is kept byte-for-byte as given rather than
-#: silently re-cased (see the constant's own docstring in surf_addresses.py),
-#: so it is marked ``xfail(strict=True)`` here: a documented, visible
-#: known-issue rather than a silent pass *or* a hidden failure. If a future
-#: correction re-cases the constant, this turns into an XPASS and fails loudly,
-#: which is the prompt to delete this marker.
-_CHECKSUM_CASES = tuple(
-    pytest.param(
-        name,
-        marks=pytest.mark.xfail(
-            reason="BASE_BURN_RECEIVER's given casing fails EIP-55; bytes unchanged",
-            strict=True,
-        ),
-    )
-    if name == "BASE_BURN_RECEIVER"
-    else name
-    for name in PRIMARY + SECONDARY
-)
-
-
-@pytest.mark.parametrize("name", _CHECKSUM_CASES)
+@pytest.mark.parametrize("name", PRIMARY + SECONDARY)
 def test_every_address_is_checksummed(name: str) -> None:
     value = getattr(A, name)
     assert isinstance(value, str), name
@@ -273,7 +248,7 @@ def test_launchpad_addresses_are_pinned() -> None:
     assert A.LAUNCHPAD_FACTORY == "0x73d1ae084F04f793A5bbd6B623d74400C9Fc3f42"
     assert A.BURN_EXECUTOR_V2 == "0xe29386719C155B6847aD5a4E97C6674f10ffc750"
     assert A.POSITION_MANAGER_V4 == "0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e"
-    assert A.BASE_BURN_RECEIVER == "0xf9d7cbf5bEF2f5c9bA93a70F31dDCa6457716793"
+    assert A.BASE_BURN_RECEIVER == "0xf9d7CBf5Bef2f5c9ba93a70F31DdCA6457716793"
 
 
 def test_burn_executor_v1_is_kept_and_distinct() -> None:

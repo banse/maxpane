@@ -352,7 +352,10 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
 def test_every_signal_has_all_three_facets() -> None:
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
-    for base in ("post", "lp", "gate", "deploy", "bridge", "burn"):
+    for base in (
+        "post", "lp", "gate", "deploy", "bridge", "burn",
+        "decoy", "burnready", "hot",
+    ):
         for suffix in ("state", "detail", "age_s"):
             assert f"sig_{base}_{suffix}" in SURF_KEYS
 
