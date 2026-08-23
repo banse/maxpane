@@ -3095,14 +3095,18 @@ async def test_fetch_launchpad_ranks_and_decodes_the_real_fixture() -> None:
     assert state.executor_balance_wei == reads["executor_balance_wei"]
     assert state.min_bridge_wei == reads["min_bridge_wei"]
 
-    # Lifetime aggregates, decoded from all 24 CurveSwap rows and all 3
-    # ImdBurned rows -- independent of the 1h ranking window.
-    assert state.swap_count == 24
-    assert state.trader_count == 11
+    # Lifetime aggregates, decoded from all 25 CurveSwap rows (24 attributed
+    # + 1 whose poolId matches no launch, still counted here per fix round 1
+    # point 7) and all 3 ImdBurned rows -- independent of the 1h window.
+    assert state.swap_count == 25
+    assert state.trader_count == 12
     assert state.burned_total_wei == 3_299_000_000_000_000_000  # 3,299 IMD
 
-    # Ranking: ICE has 9 in-window swaps, the most of any coin.
+    # Ranking: ICE has 9 in-window swaps, the most of any coin. Attribution
+    # is by poolId (CurveSwap carries no coin-address field at all -- fix
+    # round 1), never by a field that happens to hold an address.
     tickers = [c.ticker for c in state.coins]
+    assert None not in tickers          # the unattributed swap never ranks
     assert tickers[0] == "ICE"
     ice = state.coins[0]
     assert ice.swaps_1h == 9
@@ -3111,6 +3115,14 @@ async def test_fetch_launchpad_ranks_and_decodes_the_real_fixture() -> None:
     assert ice.age_s == pytest.approx(
         (logs_data["head_block"] - 26_022_000) * 12.0
     )
+    # change_1h_pct is derived from logs alone (ethAmount/coinAmount, first
+    # vs last in-hour swap for that coin) -- no price field exists on the
+    # real CurveSwap event. ICE's swaps rise; DAOs' two swaps are flat.
+    assert ice.change_1h_pct == pytest.approx(7.272727272726032)
+    daos = next(c for c in state.coins if c.ticker == "DAOs")
+    assert daos.change_1h_pct == pytest.approx(0.0)   # a measured flat hour
+    k256 = next(c for c in state.coins if c.ticker == "K-256")
+    assert k256.change_1h_pct is None                 # one swap: unmeasurable
 
     # The hostile ticker exists in the fixture and survives completely raw:
     # no escaping happens at this layer (Task 11 owns that, at render time).
@@ -3203,3 +3215,100 @@ async def test_fetch_decoy_pool_count_filters_currency1_equals_imd() -> None:
             real_pool_id=A.POOL_V4_ID_FALLBACK
         )
     assert count == 37
+
+
+# ---------------------------------------------------------------------------
+# Task 5 fix round 1 (2026-08-24) — CurveSwap has no coin-address field
+#
+# The original guess read topics[2] as a coin address; the real, verified
+# LaunchpadHook ABI has NO such field at all (topics[2] is trader, topics[3]
+# is router). Attribution to a launched coin was, and remains, done by
+# joining CurveSwap.poolId against the Launched sweep -- this test is the
+# assertion the OLD fixture could never fail, because it was generated from
+# the same wrong assumption the decoder held.
+# ---------------------------------------------------------------------------
+
+
+def _minimal_launched_row(pool_id: str, creator: str, name: str, ticker: str,
+                           block: int) -> dict:
+    def _str_enc(s: str) -> str:
+        b = s.encode("utf-8")
+        data_hex = b.hex()
+        padded = data_hex + "0" * ((64 - (len(data_hex) % 64)) % 64 if data_hex else 0)
+        return _encode_uint(len(b)) + padded
+
+    name_enc, ticker_enc = _str_enc(name), _str_enc(ticker)
+    name_off = 4 * 32
+    ticker_off = name_off + len(name_enc) // 2
+    data = (
+        "0x" + _encode_uint(name_off) + _encode_uint(ticker_off)
+        + _encode_uint(10**27) + _encode_uint(6695853418114)
+        + name_enc + ticker_enc
+    )
+    return {
+        "address": A.LAUNCHPAD_FACTORY.lower(),
+        "topics": [A.TOPIC_LAUNCHED, pool_id, _addr_topic("0x" + "ca" * 20),
+                   _addr_topic(creator)],
+        "data": data,
+        "blockNumber": hex(block),
+        "transactionHash": "0x" + "01" * 32,
+    }
+
+
+def _minimal_curve_swap_row(pool_id: str, trader: str, router: str,
+                             block: int, tx: int) -> dict:
+    data = (
+        "0x" + _encode_uint(1)                 # buy
+        + _encode_uint(6695853418114)           # ethAmount
+        + _encode_uint(66958534181140)          # imdAmount
+        + _encode_uint(10**18)                  # coinAmount
+        + _encode_uint(33_000_000_000)          # creatorFeeEth
+        + _encode_uint(330_000_000)             # burnFeeImd
+    )
+    return {
+        "address": A.LAUNCHPAD_HOOK.lower(),
+        "topics": [A.TOPIC_CURVE_SWAP, pool_id, _addr_topic(trader),
+                   _addr_topic(router)],
+        "data": data,
+        "blockNumber": hex(block),
+        "transactionHash": "0x" + f"{tx:064x}",
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_curve_swap_is_attributed_by_pool_id_and_an_unknown_pool_id_is_skipped() -> None:
+    """A CurveSwap whose poolId matches a launched coin increments that
+    coin's swaps_1h; one whose poolId matches nothing is skipped -- never
+    crashes the rank -- and still counts toward the lifetime swap total.
+    """
+    reads = _load_launchpad("launchpad_reads.json")
+    head = 30_000_000
+    pid_foo = "0x" + "11" * 32
+    pid_unknown = "0x" + "99" * 32
+
+    logs_data = {
+        "head_block": head,
+        "launched": [
+            _minimal_launched_row(pid_foo, A.DEV_WALLET, "Foo Coin", "FOO",
+                                   head - 1000),
+        ],
+        "curve_swap": [
+            _minimal_curve_swap_row(pid_foo, "0x" + "aa" * 20, "0x" + "bb" * 20,
+                                     head - 100, 1),
+            _minimal_curve_swap_row(pid_foo, "0x" + "cc" * 20, "0x" + "bb" * 20,
+                                     head - 50, 2),
+            # Matches no Launched row at all -- must be skipped from the
+            # rank, not raise, and still count in the lifetime total.
+            _minimal_curve_swap_row(pid_unknown, "0x" + "dd" * 20, "0x" + "bb" * 20,
+                                     head - 30, 3),
+        ],
+        "imd_burned": [],
+    }
+    handler = _launchpad_fixture_handler(reads, logs_data, {})
+    async with _client_on(RecordingTransport(handler)) as client:
+        state = await client.fetch_launchpad()  # must not raise
+
+    assert [c.ticker for c in state.coins] == ["FOO"]
+    assert state.coins[0].swaps_1h == 2       # only the two matched swaps
+    assert state.swap_count == 3              # all three, incl. the unknown one
+    assert state.trader_count == 3            # 0xaa.., 0xcc.., 0xdd.. all distinct

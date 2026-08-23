@@ -382,11 +382,24 @@ def _decode_launched_log(row: dict) -> dict | None:
 def _decode_curve_swap_log(row: dict) -> dict | None:
     """One raw ``CurveSwap`` row -> its fields, or ``None`` if malformed.
 
-    Topic layout mirrors ``Launched``: ``[topic0, poolId, coin, trader]``.
-    Data is six same-size static words (``bool`` costs a full word like any
-    other type) -- ``isBuy, imdAmount, coinAmount, priceAfterWad,
-    burnFeeWei, creatorFeeWei`` -- so no dynamic-offset decoding is needed
-    here, unlike ``Launched``.
+    Fix round 1 (2026-08-24): the layout below is the REAL verified
+    ``LaunchpadHook`` ABI (fetched from Blockscout), not the guess the
+    Task 5 brief's frozen preimage alone could support -- topic0 hashing
+    only pins the *type* list, never field names or which types are
+    indexed. ``event CurveSwap(bytes32 indexed poolId, address indexed
+    trader, address indexed router, bool buy, uint256 ethAmount, uint256
+    imdAmount, uint256 coinAmount, uint256 creatorFeeEth, uint256
+    burnFeeImd)``.
+
+    There is **no coin-address field anywhere in this event** -- the
+    original guess read ``topics[2]`` as a coin address and ``topics[3]``
+    as trader; both were wrong (``topics[2]`` is trader, ``topics[3]`` is
+    router, and no slot names the coin at all). A swap is attributed to a
+    launched coin exclusively by joining ``poolId`` against the
+    ``Launched`` sweep -- see ``_launchpad_logs``, which already did that
+    join correctly (on ``pool_id``, never on this now-removed field), so
+    this fix changes what the fields mean, not how they get used.
+    ``router`` is decoded but nothing currently consumes it.
     """
     topics = row.get("topics") or []
     if len(topics) < 4:
@@ -400,14 +413,14 @@ def _decode_curve_swap_log(row: dict) -> dict | None:
         return None
     return {
         "pool_id": str(topics[1]).lower(),
-        "coin": decode_address(topics[2]),
-        "trader": decode_address(topics[3]),
+        "trader": decode_address(topics[2]),
+        "router": decode_address(topics[3]),
         "is_buy": decode_uint(raw, 0) != 0,
-        "imd_amount_wei": decode_uint(raw, 1),
-        "coin_amount_wei": decode_uint(raw, 2),
-        "price_after_wad": decode_uint(raw, 3),
-        "burn_fee_wei": decode_uint(raw, 4),
-        "creator_fee_wei": decode_uint(raw, 5),
+        "eth_amount_wei": decode_uint(raw, 1),
+        "imd_amount_wei": decode_uint(raw, 2),
+        "coin_amount_wei": decode_uint(raw, 3),
+        "creator_fee_eth_wei": decode_uint(raw, 4),
+        "burn_fee_imd_wei": decode_uint(raw, 5),
         "block": block,
     }
 
@@ -1237,21 +1250,29 @@ class SurfClient(OwnedHttpClient):
                 }
                 all_swaps.append(swap)
                 if launch is not None and launch["imd_burned_wei"] is not None:
-                    launch["imd_burned_wei"] += parsed["burn_fee_wei"]
+                    launch["imd_burned_wei"] += parsed["burn_fee_imd_wei"]
                 if parsed["block"] >= head - LAUNCHPAD_HOUR_BLOCKS:
                     hour_swaps.append(swap)
                     if ticker:
                         by_coin_hour.setdefault(ticker, []).append(parsed)
-            # change_1h_pct is derived from log data alone (first vs last
-            # in-hour price for that coin) -- no RPC call, unlike price_eth.
+            # change_1h_pct is derived from log data alone -- no RPC call,
+            # unlike price_eth. CurveSwap carries no price field (fix round
+            # 1), so the effective price of a swap is ethAmount/coinAmount;
+            # first vs last in-hour swap for that coin gives the move.
+            # None -- never 0.0 -- whenever fewer than two swaps in the
+            # window carry a usable (nonzero coinAmount) price: "no
+            # measurable move" is not the same claim as "a flat hour".
             for entries in by_coin_hour.values():
                 entries.sort(key=lambda p: p["block"])
-                first_price = entries[0]["price_after_wad"]
-                last_price = entries[-1]["price_after_wad"]
+                priced = [p for p in entries if p["coin_amount_wei"] > 0]
+                if len(priced) < 2:
+                    continue
+                first_price = priced[0]["eth_amount_wei"] / priced[0]["coin_amount_wei"]
+                last_price = priced[-1]["eth_amount_wei"] / priced[-1]["coin_amount_wei"]
                 launch = pool_to_launch.get(entries[0]["pool_id"])
                 if launch is not None and first_price:
                     launch["change_1h_pct"] = (
-                        (last_price - first_price) / first_price * 100.0
+                        (last_price / first_price - 1.0) * 100.0
                     )
 
         for entry in launches:
