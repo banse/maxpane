@@ -1,0 +1,7 @@
+{"items": [
+ {"ts": 1787281619, "kind": "self",   "from_addr": "0x200e710acaa6a93bbc77146026328c40f1d60fb1", "to_addr": "0x200e710acaa6a93bbc77146026328c40f1d60fb1", "from_label": "announce", "text": "To help bootstrap the protocol's compute power you'll need an NFT", "tx_hash": "0xpost1"},
+ {"ts": 1787329979, "kind": "reply",  "from_addr": "0xef5212b20000000000000000000000000000beef", "to_addr": "0x200e710acaa6a93bbc77146026328c40f1d60fb1", "from_label": null, "text": "Should we have one VPS one GPT/Claude sub for every NFT?", "tx_hash": "0xq1"},
+ {"ts": 1787331155, "kind": "answer", "from_addr": "0x200e710acaa6a93bbc77146026328c40f1d60fb1", "to_addr": "0xef5212b20000000000000000000000000000beef", "from_label": "announce", "text": "you can run multiple per vps on same sub but need one NFT per daemon", "tx_hash": "0xa1"},
+ {"ts": 1787380451, "kind": "reply",  "from_addr": "0x6eacf11c0000000000000000000000000000dead", "to_addr": "0x200e710acaa6a93bbc77146026328c40f1d60fb1", "from_label": null, "text": "will my IMD NFT generate me $IMD rewards?", "tx_hash": "0xq2"},
+ {"ts": 1787435327, "kind": "answer", "from_addr": "0x200e710acaa6a93bbc77146026328c40f1d60fb1", "to_addr": "0x6eacf11c0000000000000000000000000000dead", "from_label": "announce", "text": "Yes the goal is for the protocol to be able to pay users compute", "tx_hash": "0xa2"}
+]}
