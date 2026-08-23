@@ -51,7 +51,7 @@ from __future__ import annotations
 import math
 from typing import Any, NamedTuple
 
-from maxpane_dashboard.analytics.surf_launchpad import hot_coin_threshold
+from maxpane_dashboard.analytics.surf_launchpad import HOT_MAX_AGE_S, hot_coin_threshold
 from maxpane_dashboard.data.surf_addresses import ANNOUNCE, DEV_WALLET, OPS_WALLET
 from maxpane_dashboard.data.surf_models import CHANNEL_KINDS
 
@@ -115,6 +115,12 @@ READING_KEYS: tuple[str, ...] = (
     "burn_ready",               # tri-state: imdToBurn >= minBridgeAmount
     "burn_accrued",             # imdToBurn in whole IMD, awaiting the burn bridge
     "launchpad_swaps_by_coin",  # {ticker: swap_count} -- the FULL in-window population
+    # Final fix wave (C1). When the sweep that produced the distribution above
+    # actually ran, epoch seconds -- the launchpad slot's own ``LastGood.ts``.
+    # ``launchpad_swaps_by_coin`` is served from a last-good slot that never
+    # expires, so without this the row cannot tell "40 swaps this hour" from
+    # "40 swaps in an hour that ended yesterday": see ``HOT_MAX_AGE_S``.
+    "launchpad_swaps_ts",       # float | None — when the distribution was read
 )
 
 #: Scalar baselines: copied from the matching reading, only when it is not
@@ -133,6 +139,14 @@ BASELINE_SCALARS: tuple[str, ...] = (
     # to tell "already reported" from "just became callable" (see
     # _detect_burn_ready).
     "burn_ready",
+    # Final fix wave (C1): HOT COIN became an edge for the same reason, and
+    # needs to remember WHICH coin was over the bar. Unlike every other entry
+    # here this one is **derived, not read**: no source hands us "who is hot",
+    # it is this module's own conclusion about the distribution. It is computed
+    # once in ``build_signals`` -- through the same ``_hot_leader_name`` helper
+    # the detector's own verdict comes from, so the row and the baseline can
+    # never disagree about who was hot -- and injected into the readings there.
+    "hot_leader",
 )
 
 #: Per-scalar coercion applied by :func:`_advance` *before* the ``is None``
@@ -193,6 +207,13 @@ _SCALAR_COERCERS: dict[str, Any] = {
     "imd_supply": lambda value: _as_float(value),
     "decoy_pool_count": lambda value: _as_int(value),
     "burn_ready": lambda value: value if isinstance(value, bool) else None,
+    # A ticker is the most attacker-controlled string on this dashboard and
+    # this baseline is **persisted to disk**, so it is accepted only as a str
+    # -- and only ever written as one ``_safe_ticker`` already bounded and
+    # filtered (see ``_hot_leader_name``). A read-back value that is not a
+    # string is treated as a failed read: the previous leader survives rather
+    # than being overwritten with something no detector could have produced.
+    "hot_leader": lambda value: value if isinstance(value, str) else None,
 }
 
 #: Event streams: ``reading key -> (tx key, ts key, sequence key)``.  Three
@@ -978,9 +999,60 @@ def _detect_burn_ready(base: dict, read: dict, now: float) -> _Det:
 # --- 9. HOT COIN ---------------------------------------------------------------
 
 
+def _hot_state(counts: Any, ts: Any, now: float) -> tuple[str, int, int] | None:
+    """``(safe_ticker, swaps, threshold)`` for the hour's busiest coin.
+
+    ``None`` when the hour cannot be judged at all, which is three different
+    situations the caller separates by re-inspecting its inputs: the
+    distribution was never read, it is older than :data:`HOT_MAX_AGE_S`, or
+    fewer than ``HOT_MIN_ACTIVE`` coins traded.
+
+    One implementation, called from both :func:`_detect_hot_coin` and
+    :func:`_hot_leader_name`, so the row the reader sees and the baseline the
+    next refresh compares against can never disagree about who was hot.
+    """
+    if not isinstance(counts, dict):
+        return None
+    age = _as_float(ts)
+    if age is None or now - age > HOT_MAX_AGE_S:
+        return None
+    active = {
+        ticker: n
+        for ticker, n in counts.items()
+        if isinstance(ticker, str) and isinstance(n, int) and not isinstance(n, bool) and n > 0
+    }
+    threshold = hot_coin_threshold(active)
+    if threshold is None:
+        return None
+    ticker, count = max(active.items(), key=lambda pair: pair[1])
+    return _safe_ticker(ticker), count, threshold
+
+
+def _hot_leader_name(readings: dict, now: float) -> str | None:
+    """Which coin is over this hour's bar, as the persisted baseline stores it.
+
+    Three values, and the difference between the last two is the whole edge:
+
+    * the coin's ``_safe_ticker`` — it is over the bar;
+    * ``""`` — the hour **was** judged and nobody cleared the bar;
+    * ``None`` — the hour could not be judged (unread, stale or too thin), so
+      :func:`_advance` leaves the previous leader untouched rather than
+      seeding a conclusion out of a read that did not happen.
+    """
+    state = _hot_state(
+        readings.get("launchpad_swaps_by_coin"),
+        readings.get("launchpad_swaps_ts"),
+        now,
+    )
+    if state is None:
+        return None
+    name, count, threshold = state
+    return name if count >= threshold else ""
+
+
 def _detect_hot_coin(base: dict, read: dict, now: float) -> _Det:
-    """A launched coin's in-window swap count clears a relative bar (the
-    v4-launchpad addition, Task 7).
+    """A launched coin *becomes* the one clearing a relative bar (the
+    v4-launchpad addition, Task 7; re-shaped in the final fix wave).
 
     The bar is :func:`surf_launchpad.hot_coin_threshold` — never
     reimplemented here — computed off the *whole* in-window population Task 6
@@ -990,31 +1062,56 @@ def _detect_hot_coin(base: dict, read: dict, now: float) -> _Det:
     coins a fixed threshold would light this row permanently, and a marker
     that is always on means nothing.
 
-    A level check over this hour's own distribution, not a transition, so
-    (like BURN READY) it needs no baseline.  The busiest coin's ticker is the
-    most attacker-controlled string on this dashboard — ``launch(string,
-    string)`` is permissionless and unpriced beyond gas — so it is bounded
-    through :func:`_safe_ticker` before the detail is built, and the whole
-    detail is flattened and cut through :func:`_truncate` last, so a cut can
-    never bisect anything :func:`_safe_ticker` left behind.
+    **This is an EDGE, not a level** (final fix wave, C1 — Ruling D's shape,
+    finally applied to BURN READY's sibling).  A level check fired on every
+    single refresh for as long as a coin stayed hot, and — because
+    ``launchpad_swaps_by_coin`` is served from a last-good slot that never
+    expires and is persisted to ``~/.maxpane/surf_cache.json`` — it kept
+    firing with a fresh ``age 0.0s`` through a total outage, off a
+    distribution read the day before.  So: a *new* leader over the bar FIREs,
+    the same leader still over it WATCHes, and the first judgeable hour seeds
+    the baseline without firing.  Under an outage no new reading arrives, the
+    leader does not change, and nothing fires.
+
+    The edge alone is not enough, because this reading is a **windowed**
+    statistic rather than a standing fact: "40 swaps this hour", replayed a
+    day later, is a false present-tense claim even as a WATCH.  So the
+    distribution is also refused outright once it is older than the window it
+    measures (:data:`HOT_MAX_AGE_S`) — reported as explicitly unknown, never
+    as a quiet ``ok``.  An *unstamped* distribution takes the same branch: a
+    reading that cannot be shown to be current is treated as stale, which is
+    the failing-safe direction.
+
+    The busiest coin's ticker is the most attacker-controlled string on this
+    dashboard — ``launch(string, string)`` is permissionless and unpriced
+    beyond gas — so it is bounded through :func:`_safe_ticker` before the
+    detail is built *and* before it is written to the persisted baseline, and
+    the whole detail is flattened and cut through :func:`_truncate` last, so a
+    cut can never bisect anything :func:`_safe_ticker` left behind.
     """
     counts = read.get("launchpad_swaps_by_coin")
     if not isinstance(counts, dict):
         return _dead("swap distribution unavailable")
 
-    active = {
-        ticker: n
-        for ticker, n in counts.items()
-        if isinstance(ticker, str) and isinstance(n, int) and not isinstance(n, bool) and n > 0
-    }
-    threshold = hot_coin_threshold(active)
-    if threshold is None:
-        return _ok("hour too thin to judge")
+    ts = _as_float(read.get("launchpad_swaps_ts"))
+    if ts is None or now - ts > HOT_MAX_AGE_S:
+        return _dead("swap distribution stale")
 
-    ticker, count = max(active.items(), key=lambda pair: pair[1])
-    name = _safe_ticker(ticker)
+    state = _hot_state(counts, ts, now)
+    if state is None:
+        return _ok("hour too thin to judge")
+    name, count, threshold = state
 
     if count >= threshold:
+        base_leader = base.get("hot_leader")
+        base_leader = base_leader if isinstance(base_leader, str) else None
+        if base_leader is None:
+            # First judgeable hour we have ever seen: seed, report, do not
+            # fire (the don't-fire-on-first-sight rule every other edge on
+            # this rail follows).
+            return _watch(_truncate(f"{name} hot · {count} swaps (≥{threshold})"))
+        if base_leader == name:
+            return _watch(_truncate(f"{name} still hot · {count} swaps (≥{threshold})"))
         return _fired(_truncate(f"{name} · {count} swaps (≥{threshold})"), now)
 
     watch_bar = max(1, threshold // 2)
@@ -1161,6 +1258,16 @@ def build_signals(
     base = baselines if isinstance(baselines, dict) else {}
     read = readings if isinstance(readings, dict) else {}
     now = float(now_ts)
+
+    # ``hot_leader`` is this module's own conclusion about the swap
+    # distribution, not a value any source hands us, so it is derived here --
+    # once, from the same helper ``_detect_hot_coin`` reaches its verdict
+    # through -- and injected into the readings the detectors and
+    # :func:`_advance` both see. Doing it here rather than inside ``_advance``
+    # is what gives the derivation access to ``now``, which the staleness bound
+    # needs: a distribution too old to render must also be too old to seed a
+    # baseline from.
+    read = {**read, "hot_leader": _hot_leader_name(read, now)}
 
     fired = _fired_store(base)
     signals: dict[str, Any] = {}

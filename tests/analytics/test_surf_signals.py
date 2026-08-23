@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from maxpane_dashboard.analytics import surf_launchpad as L
 from maxpane_dashboard.analytics import surf_signals as sig
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "surf"
@@ -482,6 +483,10 @@ def _readings(**overrides) -> dict:
         "burn_ready": False,
         "burn_accrued": 0.0,
         "launchpad_swaps_by_coin": {},
+        # Final fix wave (C1): the distribution's own read time. A quiet
+        # refresh reads it *now*; a row that wants the stale branch overrides
+        # this, which is the point -- the slot it comes from never expires.
+        "launchpad_swaps_ts": NOW,
     }
     read.update(overrides)
     return read
@@ -1060,13 +1065,28 @@ def test_a_non_bool_burn_ready_baseline_never_corrupts_the_persisted_value():
 # --- 9. HOT COIN -----------------------------------------------------------------
 #
 # The bar is analytics/surf_launchpad.hot_coin_threshold, never reimplemented
-# here.  None (a thin hour) renders OK, never a fire.  Level-checked, no
-# baseline, same as BURN READY.
+# here.  None (a thin hour) renders OK, never a fire.
+#
+# Final fix wave (C1): this is now an EDGE with a `hot_leader` baseline, like
+# BURN READY -- a *new* coin over the bar fires, the same one still over it
+# watches, the first judgeable hour seeds -- AND it refuses a distribution
+# older than the hour it measures.  Both halves exist because the reading is
+# served from a last-good slot that never expires: as a level it re-fired on
+# every refresh through a total outage, off a distribution read the day before.
+
+
+def _hot(counts, ts=NOW, **base_overrides):
+    """``(state, detail, age)`` for HOT COIN off one distribution."""
+    return _sig(
+        "hot",
+        _baseline(**base_overrides),
+        _readings(launchpad_swaps_by_coin=counts, launchpad_swaps_ts=ts),
+    )
 
 
 def test_hot_coin_is_ok_not_fired_on_a_thin_hour():
     """Fewer than 5 active coins: no meaningful median, so no fire."""
-    state, _, _ = _sig("hot", {}, {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_THIN})
+    state, _, _ = _hot(HOT_COIN_COUNTS_THIN)
     assert state == "ok"
 
 
@@ -1078,27 +1098,132 @@ def test_hot_coin_with_no_activity_at_all_is_also_a_thin_hour():
 
 def test_hot_coin_below_the_watch_bar_is_ok_with_a_count_not_a_ticker():
     """Five active coins, none within reach of the bar: quiet, not a fire."""
-    counts = {"a": 5, "b": 5, "c": 5, "d": 5, "e": 5}
-    state, detail, _ = _sig("hot", _baseline(), _readings(launchpad_swaps_by_coin=counts))
+    state, detail, _ = _hot({"a": 5, "b": 5, "c": 5, "d": 5, "e": 5})
     assert state == "ok"
     assert detail == "busiest 5 swaps · below 15"
 
 
 def test_hot_coin_warming_is_a_watch_below_the_bar():
-    state, detail, _ = _sig(
-        "hot", _baseline(), _readings(launchpad_swaps_by_coin=HOT_COIN_COUNTS_WATCH)
-    )
+    state, detail, _ = _hot(HOT_COIN_COUNTS_WATCH)
     assert state == "watch"
     assert detail == "e warming · 4 swaps (<6)"
 
 
-def test_hot_coin_fires_when_a_coin_clears_the_bar():
-    state, detail, age = _sig(
-        "hot", _baseline(), _readings(launchpad_swaps_by_coin=HOT_COIN_COUNTS_FIRED)
-    )
+def test_the_first_judgeable_hour_seeds_the_leader_without_firing():
+    """The don't-fire-on-first-sight rule every other edge on this rail keeps.
+
+    An unset ``hot_leader`` means we have never judged an hour, so a coin
+    already over the bar the first time we look is a *state*, not an event.
+    """
+    state, detail, age = _hot(HOT_COIN_COUNTS_FIRED)
+    assert state == "watch"
+    assert detail == "x hot · 99 swaps (≥5)"
+    assert age is None
+
+
+def test_hot_coin_fires_when_a_new_coin_clears_the_bar():
+    """Nobody was over the bar (``""``), now somebody is: that is the event."""
+    state, detail, age = _hot(HOT_COIN_COUNTS_FIRED, hot_leader="")
     assert state == "fired"
     assert detail == "x · 99 swaps (≥5)"
     assert age == 0.0
+
+
+def test_hot_coin_fires_again_when_the_lead_changes_hands():
+    """A different coin over the bar is new news, not the same news."""
+    state, detail, _ = _hot(HOT_COIN_COUNTS_FIRED, hot_leader="ICE")
+    assert state == "fired"
+    assert detail == "x · 99 swaps (≥5)"
+
+
+def test_the_same_hot_coin_stays_a_watch_and_never_re_fires():
+    """The level-detector bug in one assertion: hot yesterday and hot today is
+    one event, and the rail's vocabulary reserves FIRED for events."""
+    state, detail, age = _hot(HOT_COIN_COUNTS_FIRED, hot_leader="x")
+    assert state == "watch"
+    assert detail == "x still hot · 99 swaps (≥5)"
+    assert age is None
+
+
+def test_a_stale_swap_distribution_is_unknown_never_a_fire():
+    """C1's regression test: the launchpad slot never expires.
+
+    ``launchpad_swaps_by_coin`` is a *windowed* statistic ("swaps this hour"),
+    unlike ``burn_ready``, which is a standing fact.  Replayed a day later it
+    is a false present-tense claim in **any** state -- so past
+    ``HOT_MAX_AGE_S`` the row goes explicitly unknown rather than quiet, and
+    certainly rather than firing.
+    """
+    fresh = _hot(HOT_COIN_COUNTS_FIRED, hot_leader="")
+    assert fresh[0] == "fired"
+
+    state, detail, age = _hot(
+        HOT_COIN_COUNTS_FIRED, ts=NOW - L.HOT_MAX_AGE_S - 1.0, hot_leader=""
+    )
+    assert state is None
+    assert detail == "swap distribution stale"
+    assert age is None
+
+
+def test_an_unstamped_swap_distribution_is_treated_as_stale():
+    """A reading that cannot be shown to be current fails safe, not open."""
+    state, detail, _ = _hot(HOT_COIN_COUNTS_FIRED, ts=None, hot_leader="")
+    assert state is None
+    assert detail == "swap distribution stale"
+
+
+def test_a_stale_distribution_never_seeds_the_leader_baseline():
+    """Too old to render is too old to conclude anything from.
+
+    Otherwise a restart against a day-old cache would seed ``hot_leader`` from
+    it, and the first genuinely fresh sweep naming the same coin would then
+    read as "already reported" and never fire.
+    """
+    base = _baseline()
+    _, advanced = sig.build_signals(
+        base,
+        _readings(
+            launchpad_swaps_by_coin=HOT_COIN_COUNTS_FIRED,
+            launchpad_swaps_ts=NOW - L.HOT_MAX_AGE_S - 1.0,
+        ),
+        NOW,
+    )
+    assert "hot_leader" not in advanced
+
+
+def test_a_judged_hour_with_nobody_hot_seeds_the_empty_leader():
+    """``""`` is a real conclusion ("we judged, nobody cleared it") and is what
+    lets the *next* coin over the bar fire instead of merely seeding."""
+    _, advanced = sig.build_signals(
+        _baseline(),
+        _readings(
+            launchpad_swaps_by_coin=HOT_COIN_COUNTS_WATCH, launchpad_swaps_ts=NOW
+        ),
+        NOW,
+    )
+    assert advanced["hot_leader"] == ""
+
+
+def test_the_persisted_leader_is_the_filtered_ticker_not_the_raw_one():
+    """This baseline goes to disk; a hostile ticker must not go with it."""
+    _, advanced = sig.build_signals(
+        _baseline(),
+        _readings(
+            launchpad_swaps_by_coin=HOT_COIN_COUNTS_FIRED, launchpad_swaps_ts=NOW
+        ),
+        NOW,
+    )
+    assert advanced["hot_leader"] == "x"
+
+
+def test_a_non_str_hot_leader_baseline_never_corrupts_the_persisted_value():
+    """Mirrors the gate_open/burn_ready regressions on the write side."""
+    _, advanced = sig.build_signals(
+        _baseline(hot_leader="ICE"),
+        _readings(launchpad_swaps_by_coin=None, launchpad_swaps_ts=None),
+        NOW,
+    )
+    assert advanced["hot_leader"] == "ICE"
 
 
 def test_hot_coin_detail_never_carries_an_unescaped_markup_tag():
@@ -1121,7 +1246,7 @@ def test_hot_coin_detail_never_carries_an_unescaped_markup_tag():
     """
     counts = {f"c{i}": 1 for i in range(5)}
     counts["[/x]"] = 99
-    _, detail, _ = _sig("hot", {}, {"launchpad_swaps_by_coin": counts})
+    _, detail, _ = _hot(counts, hot_leader="")
     assert "[" not in detail
     # _safe_ticker keeps "x" -- the one character of "[/x]" in the safe set
     # -- so the coin stays identifiable even though the hostile wrapper is gone.
@@ -1132,24 +1257,38 @@ def test_hot_coin_falls_back_to_a_generic_word_when_nothing_survives_the_filter(
     """A ticker built entirely from unsafe characters is not silently empty."""
     counts = {f"c{i}": 1 for i in range(4)}
     counts["[[[["] = 50
-    _, detail, _ = _sig("hot", {}, {"launchpad_swaps_by_coin": counts})
+    _, detail, _ = _hot(counts, hot_leader="")
     assert "coin" in detail
     assert "[" not in detail
 
 
 def test_hot_coin_outage_is_none():
-    assert _sig("hot", _baseline(), _readings(launchpad_swaps_by_coin=None)) == (
-        None, "swap distribution unavailable", None
-    )
+    assert _hot(None) == (None, "swap distribution unavailable", None)
 
 
 def test_hot_coin_ignores_malformed_rows_without_crashing():
     """A non-int count or a non-str ticker must not take the row down."""
     counts = {"good": 50, "bad": "lots", 7: 12, "ok2": True}
-    state, _, _ = _sig("hot", {}, {"launchpad_swaps_by_coin": counts})
+    state, _, _ = _hot(counts)
     # Only "good" (50) is a valid str->int entry, and one active coin is
     # still a thin hour.
     assert state == "ok"
+
+
+def test_the_hot_coin_staleness_bound_is_the_window_it_measures():
+    """``HOT_MAX_AGE_S`` is the hour the distribution counts, not a guess.
+
+    ``surf_client`` owns the window (``LAUNCHPAD_HOUR_BLOCKS`` blocks at
+    ``_LAUNCHPAD_BLOCK_SECONDS`` each); analytics may not import the client,
+    so the two are pinned together here instead.  Re-cut the window and this
+    goes red rather than letting the bound silently outgrow it.
+    """
+    from maxpane_dashboard.data import surf_client
+
+    assert (
+        surf_client.LAUNCHPAD_HOUR_BLOCKS * surf_client._LAUNCHPAD_BLOCK_SECONDS
+        == L.HOT_MAX_AGE_S
+    )
 
 
 # --- ordering: equal timestamps must not hide a genuinely new event ---------
@@ -1461,10 +1600,14 @@ MATRIX: tuple[tuple[str, str, dict, dict, str], ...] = (
      "ready to burn · 15.06 IMD accrued"),
     ("burnready", None, {}, {"burn_ready": None}, "burn readiness unavailable"),
 
+    # Final fix wave (C1): HOT COIN is an edge too, so FIRED needs a baseline
+    # that already judged an hour and found nobody over the bar ("") --
+    # reachable only with a baseline override, exactly like BURN READY above.
     ("hot", "ok", {}, {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_THIN}, "hour too thin to judge"),
     ("hot", "watch", {}, {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_WATCH},
      "e warming · 4 swaps (<6)"),
-    ("hot", "fired", {}, {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_FIRED}, "x · 99 swaps (≥5)"),
+    ("hot", "fired", {"hot_leader": ""}, {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_FIRED},
+     "x · 99 swaps (≥5)"),
     ("hot", None, {}, {"launchpad_swaps_by_coin": None}, "swap distribution unavailable"),
 )
 
@@ -1823,7 +1966,7 @@ def test_the_only_data_imports_are_the_three_documented_boundary_modules():
 
     imports = [line for line in _MODULE_SOURCE.splitlines() if line.startswith("from maxpane")]
     assert imports == [
-        "from maxpane_dashboard.analytics.surf_launchpad import hot_coin_threshold",
+        "from maxpane_dashboard.analytics.surf_launchpad import HOT_MAX_AGE_S, hot_coin_threshold",
         "from maxpane_dashboard.data.surf_addresses import ANNOUNCE, DEV_WALLET, OPS_WALLET",
         "from maxpane_dashboard.data.surf_models import CHANNEL_KINDS",
     ]

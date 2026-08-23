@@ -21,6 +21,25 @@ HOT_MULTIPLE = 3
 HOT_FLOOR = 5
 #: Below this many active coins there is no meaningful median at all.
 HOT_MIN_ACTIVE = 5
+#: How old a swap distribution may be before HOT COIN refuses to read it.
+#:
+#: The distribution is a **windowed** statistic -- "how many swaps each coin
+#: took in the last hour" -- so it decays in a way its siblings on this rail do
+#: not.  ``burn_ready`` ("imdToBurn >= minBridgeAmount") is a standing fact that
+#: is still true an hour after it was read; "40 swaps this hour", read
+#: yesterday, describes an hour that has entirely passed and says nothing at all
+#: about now.  Serving it from the launchpad tier's never-expiring last-good
+#: slot is what let HOT COIN report ``ICE · 40 swaps`` off a day-old cache
+#: through a total outage (final-fix-wave C1) -- the "never a stale number
+#: presented as live" rule, on the one reading here that cannot survive being
+#: replayed.
+#:
+#: The bound is the **window's own length**, not a tier interval: once the
+#: reading is older than the hour it measured, zero of that hour overlaps now.
+#: ``surf_client.LAUNCHPAD_HOUR_BLOCKS`` * ``_LAUNCHPAD_BLOCK_SECONDS`` is that
+#: hour, and ``test_the_hot_coin_staleness_bound_is_the_window_it_measures``
+#: pins the two together so a re-cut window cannot silently outgrow this.
+HOT_MAX_AGE_S = 3600.0
 
 
 def hot_coin_threshold(swaps_by_coin: Mapping[str, int]) -> int | None:

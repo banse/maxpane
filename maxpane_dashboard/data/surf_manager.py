@@ -1534,6 +1534,7 @@ class SurfManager:
         channel: dict[str, Any],
         activity_rows: list[dict[str, Any]],
         launchpad_slot: dict[str, Any] | None = None,
+        launchpad_ts: float | None = None,
     ) -> dict[str, Any]:
         """This cycle's values for the nine detectors, keyed by ``READING_KEYS``
         plus the five Task 7 will need that ``READING_KEYS`` does not name yet.
@@ -1737,6 +1738,20 @@ class SurfManager:
         read["burn_accrued"] = data.get("burn_accrued")
         read["launchpad_swaps_by_coin"] = self._swaps_by_coin(
             slot.get("swaps_by_coin")
+        )
+        # -- final fix wave (C1): WHEN that distribution was read -------------
+        # ``SLOT_LAUNCHPAD``'s own ``LastGood.ts``, passed in by ``_cycle``
+        # from the entry it already unpacked. This is the only reading here
+        # that is a fact about the *slot* rather than about the chain, and it
+        # exists because ``launchpad_swaps_by_coin`` is a **windowed**
+        # statistic served from a last-good slot that never expires: without
+        # it HOT COIN cannot tell "40 swaps this hour" from "40 swaps in an
+        # hour that ended yesterday", and reported the second as the first
+        # through a total outage. ``None`` before the sweep has ever landed,
+        # which the detector reads as "cannot be shown to be current" and
+        # renders unknown -- the failing-safe direction.
+        read["launchpad_swaps_ts"] = (
+            float(launchpad_ts) if isinstance(launchpad_ts, (int, float)) else None
         )
         return read
 
@@ -2091,7 +2106,14 @@ class SurfManager:
         data.update(
             self._signal_keys(
                 self._readings(
-                    data, nonces, channel_payload, activity_rows, launchpad_slot
+                    data,
+                    nonces,
+                    channel_payload,
+                    activity_rows,
+                    launchpad_slot,
+                    launchpad_ts=(
+                        launchpad_entry.ts if launchpad_entry is not None else None
+                    ),
                 ),
                 now,
             )

@@ -646,11 +646,21 @@ def _launchpad_state(**overrides) -> LaunchpadState:
     146-coin sweep" and the stale-seed regression test's literal ``146`` both
     need a default that cannot be confused with either by coincidence.
 
-    ``swaps_by_coin`` (fix round 2) defaults to matching the single default
-    ``coins`` row exactly (``{"ICE": 5}``, off ``_launchpad_coin``'s own
-    ``swaps_1h`` default) — the two are the same fact by default, so a test
-    that does not care about the full-vs-capped distinction never has to
-    think about it.
+    ``swaps_by_coin`` (fix round 2) carries the default ``coins`` row's own
+    ``swaps_1h`` (``ICE: 5``, off ``_launchpad_coin``'s default) plus five
+    quieter coins that never reach the render-capped ``coins`` tuple — which
+    is exactly what the field is for: the FULL in-window population, not the
+    capped slice.
+
+    **Six** active coins, not one (final fix wave, C1). The one-coin default
+    sat below ``surf_launchpad.HOT_MIN_ACTIVE`` (5), so
+    ``hot_coin_threshold`` returned ``None`` and HOT COIN answered "hour too
+    thin to judge" whatever the detector did — which meant
+    ``test_no_signal_fires_and_no_baseline_moves_under_a_total_outage``, the
+    flagship outage invariant, passed **vacuously** for that detector and
+    never noticed it firing off a day-old last-good slot. With six coins the
+    hour is judgeable and ICE (5) clears the bar (median 1 -> floor 5), so
+    the invariant now actually bites HOT COIN.
     """
     fields = {
         "coin_count": 12,
@@ -665,7 +675,7 @@ def _launchpad_state(**overrides) -> LaunchpadState:
         "swap_count": 25,
         "trader_count": 12,
         "burned_total_wei": round(90.0 * 10**18),
-        "swaps_by_coin": {"ICE": 5},
+        "swaps_by_coin": {"ICE": 5, "AAA": 1, "BBB": 1, "CCC": 2, "DDD": 1, "EEE": 2},
     }
     fields.update(overrides)
     return LaunchpadState(**fields)
