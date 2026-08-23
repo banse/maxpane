@@ -175,7 +175,18 @@ SOURCE_ACTIVITY = "activity"
 #: hand is a stale ``launchpad_as_of_hhmm`` marker, not a degradation — only
 #: "nothing to serve at all" (``GROUP_SLOT``'s own no-last-good clause below)
 #: puts this name in :meth:`SurfManager._degraded`'s output.
-SOURCE_LAUNCHPAD = "launchpad"
+#:
+#: Spelled ``"pad"``, not ``"launchpad"`` (fix round 1, controller finding 2):
+#: ``screens/surf.py``'s title bar renders every ``degraded`` member verbatim
+#: on a ``height: 1`` ``Static`` with no ellipsis and no scrollbar, and
+#: ``WORST_CASE_TITLE_COLUMNS`` is a *tight* measurement of that row —
+#: appending the full word pushed the worst case past both that pin and
+#: ``FULL_LAYOUT_COLUMNS``, silently truncating the one row that exists to
+#: tell the reader something is down. This repo's standing rule is to shorten
+#: the label rather than widen the layout (curator's own precedent). Do not
+#: "improve" this back to the long form without re-measuring
+#: ``WORST_CASE_TITLE_COLUMNS`` — that is the whole reason it is terse.
+SOURCE_LAUNCHPAD = "pad"
 
 SOURCES: tuple[str, ...] = (
     SOURCE_CHAIN,
@@ -1360,16 +1371,24 @@ class SurfManager:
             lambda: self.client.fetch_decoy_pool_count(real_pool_id),
             "fetch_decoy_pool_count",
         )
-        decoy_count = (
-            decoy_result[0]
-            if isinstance(decoy_result, tuple) and len(decoy_result) == 2
-            else None
-        )
+        decoy_count: int | None = None
+        decoy_newest_fee_bps: int | None = None
+        if isinstance(decoy_result, tuple) and len(decoy_result) == 2:
+            decoy_count = decoy_result[0]
+            newest = decoy_result[1]
+            if isinstance(newest, dict):
+                # Task 6 fix round 1: the newest decoy's own fee tier, fed to
+                # Task 7's DECOY POOL detail line via `_readings`. Not a
+                # `SURF_KEYS` entry — no widget renders it yet — so it is
+                # cached here rather than surfaced through the flat payload.
+                decoy_newest_fee_bps = _opt_int(newest.get("fee"))
         ok = pool_state is not None and launchpad_state is not None
         if ok:
             self.cache.store_last_good(
                 SLOT_LAUNCHPAD,
-                self._launchpad_payload(pool_state, decoy_count, launchpad_state),
+                self._launchpad_payload(
+                    pool_state, decoy_count, decoy_newest_fee_bps, launchpad_state
+                ),
                 ts=now,
             )
             self.cache.mark_fetched(TIER_LAUNCHPAD, now)
@@ -1384,7 +1403,10 @@ class SurfManager:
 
     @staticmethod
     def _launchpad_payload(
-        pool_state: Any, decoy_count: int | None, launchpad_state: Any
+        pool_state: Any,
+        decoy_count: int | None,
+        decoy_newest_fee_bps: int | None,
+        launchpad_state: Any,
     ) -> dict[str, Any]:
         """The whole combined slot: pool, decoy scan, launchpad — one dict,
         one slot, one ``launchpad_as_of_hhmm`` marker for all of it.
@@ -1399,7 +1421,9 @@ class SurfManager:
         module. ``total_real_imd_wei``/``burn_fee_bps``/``creator_fee_bps``
         are read off ``LaunchpadState`` by the client but have no
         ``SURF_KEYS`` home yet, so they are not cached here — nothing reads
-        them.
+        them. ``decoy_newest_fee_bps`` (fix round 1) is the same story:
+        cached for Task 7's DECOY POOL detector to read via ``_readings``,
+        no ``SURF_KEYS`` entry of its own.
         """
         return {
             "pool_id": _field(pool_state, "pool_id"),
@@ -1407,6 +1431,7 @@ class SurfManager:
             "pool_liquidity": _opt_int(_field(pool_state, "liquidity")),
             "pool_id_source": _field(pool_state, "pool_id_source"),
             "decoy_pool_count": decoy_count,
+            "decoy_newest_fee_bps": decoy_newest_fee_bps,
             "coin_count": _opt_int(_field(launchpad_state, "coin_count")),
             "imd_to_burn_wei": _opt_int(_field(launchpad_state, "imd_to_burn_wei")),
             "executor_balance_wei": _opt_int(
@@ -1482,8 +1507,10 @@ class SurfManager:
         nonces: Any,
         channel: dict[str, Any],
         activity_rows: list[dict[str, Any]],
+        launchpad_slot: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """This cycle's values for the six detectors, keyed by ``READING_KEYS``.
+        """This cycle's values for the nine detectors, keyed by ``READING_KEYS``
+        plus the five Task 7 will need that ``READING_KEYS`` does not name yet.
 
         Built as ``dict.fromkeys(READING_KEYS)`` and filled in place, so a key WP2
         adds arrives here as an explicit ``None`` instead of as a detector that
@@ -1513,6 +1540,23 @@ class SurfManager:
            fresh-or-last-good by ``_cycle``.
         4. **A post body is only quoted under the nonce it was read at.** See the
            comment below; this one is load-bearing for the FIRED age.
+        5. **Fix round 1 (controller finding 1):** ``decoy_pool_count``,
+           ``decoy_newest_fee_bps``, ``burn_ready``, ``burn_accrued`` and
+           ``launchpad_swaps_by_coin`` are fed here for the three detectors
+           Task 7 (``analytics/surf_signals.py``, not this file) adds —
+           DECOY POOL, BURN READY, HOT COIN. They are **not yet** in
+           ``READING_KEYS``: that tuple is Task 7's own file to grow, and
+           this method assigning extra keys beyond ``dict.fromkeys(READING_KEYS)``
+           is harmless — ``build_signals`` reads whatever dict it is handed,
+           key by key, with no membership check against ``READING_KEYS``
+           anywhere. Left unfed, those three detectors would watch nothing
+           forever the moment Task 7 registers them, a defect that would ship
+           green (every existing test passes; nothing asserts these three
+           signals ever leave ``None``) and be invisible without reading this
+           method. The first three are read straight off ``data`` — the
+           manager's own already-assembled flat payload — for the same reason
+           rule 2 above gives: the hero, the launchpad panel and this detector
+           input must not be able to disagree.
         """
         logs = dict(getattr(self.cache.get_last_good(SLOT_LOGS), "payload", None) or {})
         channel = channel or {}
@@ -1658,7 +1702,56 @@ class SurfManager:
                 key=lambda e: (e["ts"] is not None, e["ts"] or 0.0), reverse=True
             )
         read["deploy_events"] = events
+
+        # -- fix round 1: the five Task 7 reading keys (see rule 5 above) -----
+        slot = launchpad_slot if isinstance(launchpad_slot, dict) else {}
+        read["decoy_pool_count"] = data.get("decoy_pool_count")
+        read["decoy_newest_fee_bps"] = slot.get("decoy_newest_fee_bps")
+        read["burn_ready"] = data.get("burn_ready")
+        read["burn_accrued"] = data.get("burn_accrued")
+        read["launchpad_swaps_by_coin"] = self._swaps_by_coin(slot.get("coins"))
         return read
+
+    @staticmethod
+    def _swaps_by_coin(coins: Any) -> dict[str, int] | None:
+        """``{ticker: swaps_1h}`` off the same rendered rows ``launchpad_coins``
+        already carries — HOT COIN's (Task 7) own input.
+
+        ``None`` when the slot has never held rows at all (unread, not "an
+        hour with nothing to show"): ``surf_launchpad.hot_coin_threshold``'s
+        own contract already treats a thin-or-empty map as "too thin to
+        judge" via ``HOT_MIN_ACTIVE``, so an unread map and a genuinely quiet
+        one both landing on that same conclusion is a feature, not a
+        collision to avoid — but only the unread case should ever be spelled
+        ``None`` here, and ``coins is None`` (never ``[]``) is exactly that
+        case (CLAUDE.md: a failed read is ``None``, never a stand-in claim).
+
+        **Known limitation, flagged rather than silently accepted:** this is
+        capped at the ``LAUNCHPAD_RENDER_LIMIT`` (20) coins ``fetch_launchpad``
+        actually renders, not the full ~146-coin population. The client
+        computes the full per-coin hourly swap distribution internally
+        (``surf_client._launchpad_logs``'s ``by_coin_hour``) but never returns
+        it — only the top-20-by-swap-count rows survive into ``LaunchpadState
+        .coins``. A median taken over only the busiest 20 coins is biased
+        high relative to the true population median, so HOT COIN's threshold
+        (``hot_coin_threshold``: ``median * HOT_MULTIPLE``, floored at
+        ``HOT_FLOOR``) runs a little hot — a coin that would clear the *true*
+        median-based bar might not clear this narrower one. Fixing this for
+        real means ``fetch_launchpad()`` returning the full map, which is
+        ``surf_client.py`` — a different task's file. This is the best signal
+        available from what this module receives today.
+        """
+        if coins is None:
+            return None
+        out: dict[str, int] = {}
+        for row in coins:
+            if not isinstance(row, dict):
+                continue
+            ticker = row.get("ticker")
+            swaps = row.get("swaps_1h")
+            if ticker and isinstance(swaps, int) and not isinstance(swaps, bool):
+                out[str(ticker)] = swaps
+        return out
 
     def _signal_keys(self, readings: dict[str, Any], now: float) -> dict[str, Any]:
         """Run ``build_signals`` and expand its result into the 18 ``sig_*`` keys."""
@@ -1931,7 +2024,10 @@ class SurfManager:
 
         data.update(
             self._signal_keys(
-                self._readings(data, nonces, channel_payload, activity_rows), now
+                self._readings(
+                    data, nonces, channel_payload, activity_rows, launchpad_slot
+                ),
+                now,
             )
         )
 

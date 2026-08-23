@@ -595,18 +595,24 @@ def test_degraded_sources_ride_the_house_warning_glyph_not_the_word():
     """``⚠ activity`` -- the glyph ``⚠ feed unavailable`` already uses.
 
     The source names themselves are untouched: they are the manager's own
-    ``SOURCES`` vocabulary, and the six are spelled out here against a
+    ``SOURCES`` vocabulary, and the seven are spelled out here against a
     ``sorted(SOURCES)`` derived from the manager so a rename reddens this
     rather than quietly re-wording the most prominent row on the screen.
+
+    ``"pad"`` (not ``"launchpad"``) is the seventh: Task 6 fix round 1
+    (controller finding 2) renders it terse because the worst-case title bar
+    (see ``WORST_CASE_TITLE_COLUMNS`` below) is width-bound -- widening the
+    layout to fit the long form was rejected in favour of shortening the
+    label, this repo's standing rule.
     """
     from maxpane_dashboard.data.surf_manager import SOURCES
 
     assert surf_mod._fmt_degraded(["activity"]) == " · ⚠ activity"
     assert surf_mod._fmt_degraded(sorted(SOURCES)) == (
-        " · ⚠ activity, chain, channel, logs, market, nft"
+        " · ⚠ activity, chain, channel, logs, market, nft, pad"
     )
     assert sorted(SOURCES) == [
-        "activity", "chain", "channel", "logs", "market", "nft"
+        "activity", "chain", "channel", "logs", "market", "nft", "pad"
     ], "a source group was renamed -- the title bar's vocabulary follows it"
     assert "degraded" not in surf_mod._fmt_degraded(sorted(SOURCES))
 
@@ -1508,29 +1514,32 @@ async def test_the_row_marker_survives_a_title_bar_full_of_warnings():
 
 #: The narrowest terminal on which the **whole** worst-case title bar reaches
 #: a pixel: the board's name, every figure, ``‹ taller``, the LP warning and
-#: **all six** degraded groups, all on the one row of this screen that cannot
-#: ellipsise. Swept over the real screen rather than counted -- ``⚠`` is not a
-#: one-column glyph on every width table, so the arithmetic is not the test.
+#: **all seven** degraded groups, all on the one row of this screen that
+#: cannot ellipsise. Swept over the real screen rather than counted -- ``⚠``
+#: is not a one-column glyph on every width table, so the arithmetic is not
+#: the test.
 #:
-#: The line is 133 columns and the screen spends 4 on padding, so the terminal
-#: has to be **137**. It read **111** for one commit, measured against a
-#: fixture carrying three degraded groups -- but ``SurfManager``'s outermost
-#: guard emits ``list(SOURCES)``, all six, and a full outage is precisely when
-#: this row is read. The fixture now derives its list from ``SOURCES``
-#: (:func:`_worst_case_title_payload`), so the number moves with the
-#: vocabulary instead of behind it.
+#: **142** (Task 6 fix round 1, controller finding 2; was 137 across six
+#: groups). ``data/surf_manager.py`` grew a seventh source,
+#: ``SOURCE_LAUNCHPAD`` -- and it is rendered ``"pad"`` rather than
+#: ``"launchpad"`` specifically *because* appending the long form measured
+#: past both the old 137 pin and ``SURF_FULL_LAYOUT_COLUMNS`` (143): this
+#: repo's standing rule is to shorten the label, not widen the layout
+#: (curator's own precedent). Even at three characters the seventh name still
+#: costs five columns (``, pad``), so the pin moved 137 -> 142 -- measured by
+#: sweeping the real render, not computed. It read **111** for one commit,
+#: measured against a fixture carrying three degraded groups -- but
+#: ``SurfManager``'s outermost guard emits ``list(SOURCES)``, every group,
+#: and a full outage is precisely when this row is read. The fixture derives
+#: its list from ``SOURCES`` (:func:`_worst_case_title_payload`), so the
+#: number moves with the vocabulary instead of behind it -- which is exactly
+#: the mutation that moved this constant this time.
 #:
-#: Still a saving, measured the same way both times: the old copy's six-group
-#: line (``SURF``, ``degraded: ``, the duplicated ``· v0.6.0`` tail) was 145
-#: columns and needed 149. Naming the board in full costs five, the glyph and
-#: the dropped tail give seventeen back. Twelve columns on a row whose
-#: overflow is *silent* -- the whole reason the ordering inside ``_title_line``
-#: had to be argued in the first place.
-#:
-#: ``SURF_FULL_LAYOUT_COLUMNS`` (143) clears this by six, so the full layout
-#: still shows the whole row under a total outage; nothing outside this file
-#: needs to move.
-WORST_CASE_TITLE_COLUMNS = 137
+#: ``SURF_FULL_LAYOUT_COLUMNS`` (143) clears this by one column, not six: a
+#: title bar that needed 143 would already be losing its tail on surf's own
+#: full layout. 142 is the tight number on purpose -- see the companion test
+#: below, which fails one column either side of it.
+WORST_CASE_TITLE_COLUMNS = 142
 
 
 async def test_the_worst_case_title_bar_keeps_its_whole_tail_from_here():

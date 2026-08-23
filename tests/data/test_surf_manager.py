@@ -129,6 +129,22 @@ BLOCK = 25_707_780
 #: ``LogWindow`` double needs some plausible ``from_block``.
 LOG_WINDOW = 2400
 
+#: Task 6 fix round 1 (controller finding 1): the five reading keys
+#: ``_readings()`` feeds for Task 7's not-yet-registered detectors (DECOY
+#: POOL, BURN READY, HOT COIN). Not in ``surf_signals.READING_KEYS`` — that
+#: tuple is Task 7's own file to grow — so the "exactly WP2's contract" test
+#: below names them itself rather than compare against an import that
+#: doesn't know about them yet.
+LAUNCHPAD_READING_KEYS = frozenset(
+    {
+        "decoy_pool_count",
+        "decoy_newest_fee_bps",
+        "burn_ready",
+        "burn_accrued",
+        "launchpad_swaps_by_coin",
+    }
+)
+
 
 def _word(value: int) -> str:
     return f"{value & (2**256 - 1):064x}"
@@ -2034,7 +2050,7 @@ def test_the_readings_dict_is_exactly_wp2s_contract(tmp_path):
     """
     m = _manager(tmp_path)
     readings = m._readings({}, None, {}, [])
-    assert set(readings) == set(surf_signals.READING_KEYS)
+    assert set(readings) == set(surf_signals.READING_KEYS) | LAUNCHPAD_READING_KEYS
     # Cold cache, nothing read: nothing may claim it was. No 0, no [], no False.
     assert set(readings.values()) == {None}
 
@@ -2680,18 +2696,25 @@ async def test_the_first_payload_is_not_behind_the_launchpad_read() -> None:
 
 async def test_a_failed_sweep_serves_last_good_behind_as_of() -> None:
     """Stale is a marker, not a degraded group -- degradation is for nothing
-    to serve at all."""
+    to serve at all.
+
+    Checked against ``SOURCE_LAUNCHPAD``, not the literal ``"launchpad"``
+    the brief originally spelled this assertion with: fix round 1 (controller
+    finding 2) renders this group as ``"pad"`` to keep the title bar's
+    worst-case width inside its pin, and the group's *identity* -- "is this
+    group degraded" -- is what this test is actually about.
+    """
     manager = _manager_with_last_good(SLOT_LAUNCHPAD, {"coin_count": 146}, at=1000.0)
     payload = await manager.fetch_and_compute()
     assert payload["launchpad_coin_count"] == 146
     assert payload["launchpad_as_of_hhmm"] is not None
-    assert "launchpad" not in payload["degraded"]
+    assert SOURCE_LAUNCHPAD not in payload["degraded"]
 
 
 async def test_a_failed_sweep_with_nothing_to_serve_degrades() -> None:
     manager = _manager_with_last_good(SLOT_LAUNCHPAD, None)
     payload = await manager.fetch_and_compute()
-    assert "launchpad" in payload["degraded"]
+    assert SOURCE_LAUNCHPAD in payload["degraded"]
 
 
 async def test_a_healthy_launchpad_sweep_populates_every_payload_key() -> None:
@@ -2882,3 +2905,73 @@ async def test_close_cancels_an_in_flight_launchpad_sweep() -> None:
     await asyncio.wait_for(m.close(), timeout=2.0)
     assert task.done()
     assert m._launchpad_task is None
+
+
+# ---------------------------------------------------------------------------
+# Task 6 fix round 1 (controller finding 1) — the five reading keys Task 7's
+# not-yet-registered detectors (DECOY POOL, BURN READY, HOT COIN) will need.
+# ---------------------------------------------------------------------------
+
+
+def test_readings_feed_the_three_future_detectors_off_the_launchpad_slot(
+    tmp_path,
+) -> None:
+    """The three keys already flat-published (`decoy_pool_count`,
+    `burn_ready`, `burn_accrued`) come off `data`; the two that aren't
+    `SURF_KEYS` entries (`decoy_newest_fee_bps`, `launchpad_swaps_by_coin`)
+    come off the raw slot dict passed alongside it."""
+    slot_payload = {
+        "decoy_pool_count": 4,
+        "decoy_newest_fee_bps": 98_000,
+        "coins": [
+            {"ticker": "ICE", "swaps_1h": 9},
+            {"ticker": "FIRE", "swaps_1h": 2},
+        ],
+    }
+    m = _manager(tmp_path)
+    data = {"decoy_pool_count": 4, "burn_ready": True, "burn_accrued": 15.06}
+    readings = m._readings(data, None, {}, [], slot_payload)
+    assert readings["decoy_pool_count"] == 4
+    assert readings["decoy_newest_fee_bps"] == 98_000
+    assert readings["burn_ready"] is True
+    assert readings["burn_accrued"] == pytest.approx(15.06)
+    assert readings["launchpad_swaps_by_coin"] == {"ICE": 9, "FIRE": 2}
+
+
+def test_swaps_by_coin_is_none_only_when_never_fetched(tmp_path) -> None:
+    """``None`` (unread) and ``{}`` (read, genuinely nothing) are different
+    claims, exactly as everywhere else in this module."""
+    m = _manager(tmp_path)
+    assert m._swaps_by_coin(None) is None
+    assert m._swaps_by_coin([]) == {}
+    assert m._swaps_by_coin([{"ticker": "ICE", "swaps_1h": 3}]) == {"ICE": 3}
+    # A malformed row (missing/garbage swaps_1h) is dropped, not crashed on
+    # or coerced into a lie.
+    assert m._swaps_by_coin([{"ticker": "BAD", "swaps_1h": None}]) == {}
+
+
+async def test_the_launchpad_sweep_captures_the_newest_decoys_own_fee(
+    tmp_path,
+) -> None:
+    """``decoy_newest_fee_bps`` is threaded from the client's
+    ``(count, newest)`` return into the slot, for ``_readings`` to read back
+    and feed DECOY POOL's detail line (Task 7)."""
+    client = FakeSurfClient(
+        fetch_decoy_pool_count=(3, {"fee": 98_000, "pool_id": "0x" + "d1" * 32})
+    )
+    m = _manager(tmp_path, client=client)
+    await m.fetch_and_compute()
+    await asyncio.wait_for(m._launchpad_task, timeout=2.0)
+    entry = m.cache.get_last_good(SLOT_LAUNCHPAD)
+    assert entry.payload["decoy_newest_fee_bps"] == 98_000
+
+
+async def test_a_missing_newest_decoy_row_leaves_the_fee_unread(tmp_path) -> None:
+    """No decoys at all (``(0, None)``) must not fabricate a fee tier."""
+    client = FakeSurfClient(fetch_decoy_pool_count=(0, None))
+    m = _manager(tmp_path, client=client)
+    await m.fetch_and_compute()
+    await asyncio.wait_for(m._launchpad_task, timeout=2.0)
+    entry = m.cache.get_last_good(SLOT_LAUNCHPAD)
+    assert entry.payload["decoy_pool_count"] == 0
+    assert entry.payload["decoy_newest_fee_bps"] is None
