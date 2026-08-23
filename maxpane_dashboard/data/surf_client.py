@@ -36,7 +36,7 @@ import math
 import time
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 from urllib.parse import urlparse
 
 import httpx
@@ -129,18 +129,18 @@ LOG_WINDOW_BLOCKS = 2400
 _LOG_MIN_WINDOW = 300
 _LOG_MAX_SHRINKS = 3
 
-#: The launchpad shipped 2026-08-19; this window covers its whole observed
-#: lifetime (~4.5 days at 12 s/block) so ``Launched`` enumeration never
-#: silently drops the launchpad's early coins the way the 8 h
-#: ``LOG_WINDOW_BLOCKS`` would. Deliberately its own, much wider, constant --
-#: not a multiple of the recent-window one, because the two answer different
-#: questions ("what launched, ever" vs "what happened recently").
-LAUNCHPAD_LOG_WINDOW_BLOCKS = 33_000
-#: One hour at ~12 s/block -- the window ``rank_coins`` / ``hot_coin_threshold``
-#: treat as "this hour" for ``swaps_1h`` and HOT COIN. CurveSwap rows outside
-#: this many blocks of the sweep's own head are excluded from both, but still
-#: count toward the lifetime ``curve_flow`` totals.
-LAUNCHPAD_HOUR_BLOCKS = 300
+#: There is deliberately no ``LAUNCHPAD_LOG_WINDOW_BLOCKS`` here any more, and
+#: no ``LAUNCHPAD_HOUR_BLOCKS`` either. The first was a 33,000-block window
+#: measured back from the *chain head*; the launch history it was trying to
+#: read is fixed at its *start*, so the window walked off the far end of that
+#: history one block per block. Measured 2026-08-23: 146 launches existed, the
+#: earliest 33,702 blocks back, and the window saw 66 of them -- including
+#: neither of the two busiest pools on the launchpad, which therefore had no
+#: ticker, no name and no creator and could not reach the table at any sort
+#: order. A history that only grows is swept from its first block through a
+#: cursor (``A.LAUNCHPAD_FIRST_BLOCK`` + ``LaunchpadState.cursor``), never
+#: through a rolling window. The hour constant went with it: see
+#: ``LAUNCHPAD_DAY_BLOCKS`` below for the window that replaced it.
 #: Curve state (spot price) is read only for the rows actually rendered --
 #: never per the full coin population (WP5 design idea 1). This bounds the
 #: follow-up multicall's size regardless of ``coinCount``.
@@ -441,6 +441,137 @@ def _decode_imd_burned_amount(row: dict) -> int | None:
     if len(raw) < 64:
         return None
     return decode_uint(raw, 0)
+
+
+class _LaunchpadSweep(NamedTuple):
+    """Everything ``fetch_launchpad`` needs out of one pass over the logs.
+
+    A ``NamedTuple`` rather than the bare 6-tuple this used to return: the
+    cursor rewrite took it to eleven fields, and eleven positional unpackings
+    at the call site is exactly how a pair of same-typed neighbours
+    (``launch_count``/``new_24h``, ``swap_count``/``trader_count``) gets
+    silently transposed.
+
+    ``launches`` is the **merged** population -- the cursor's history plus
+    whatever this pass added -- not the rows this pass decoded, so it is what
+    ``launch_count``/``creator_count`` are taken over. ``day_swaps`` is the
+    opposite: a windowed slice, only the rows inside
+    ``LAUNCHPAD_DAY_BLOCKS`` of the head, which is why it is re-read every
+    pass instead of accumulated (see ``_launchpad_logs``).
+
+    Every aggregate is ``None`` on a failed sweep and never ``0``; the
+    dict-shaped ones (``swaps_all``, ``swaps_by_coin``, ``coin_tickers``)
+    keep the same split, with ``{}`` reserved for "swept, and quiet".
+    """
+
+    launches: list[dict]
+    day_swaps: list[dict]
+    swaps_all: dict[str, int]
+    swap_count: int | None
+    trader_count: int | None
+    burned_total_wei: int | None
+    swaps_by_coin: dict[str, int] | None
+    coin_tickers: dict[str, str] | None
+    launch_count: int | None
+    new_24h: int | None
+    creator_count: int | None
+    cursor: dict | None
+
+
+def _failed_launchpad_sweep(resume: dict | None) -> _LaunchpadSweep:
+    """The all-unknown sweep, carrying *resume* back out untouched.
+
+    The cursor is the one field a failure must **return, not reset**:
+    ``swaps_all``, the trader set and the burn totals inside it are persisted
+    accumulators, and CLAUDE.md's "a failed read is ``None``, never ``0``"
+    bites hardest on those -- a zero written into an accumulator outlives the
+    outage that produced it, and no later sweep can tell it was ever wrong.
+    So nothing merges, nothing advances, nothing zeroes: the very object we
+    were handed goes back, and every aggregate reads unknown.
+    """
+    return _LaunchpadSweep(
+        launches=[], day_swaps=[], swaps_all={}, swap_count=None,
+        trader_count=None, burned_total_wei=None, swaps_by_coin=None,
+        coin_tickers=None, launch_count=None, new_24h=None,
+        creator_count=None, cursor=resume,
+    )
+
+
+def _coerce_launchpad_resume(resume: Any) -> dict | None:
+    """A persisted launchpad cursor -> its normalised form, or ``None``.
+
+    ``None`` means "sweep cold, from :data:`surf_addresses.LAUNCHPAD_FIRST_BLOCK`",
+    which is always a *safe* degradation: a cold sweep rebuilds every
+    accumulator from chain, so the worst a rejected cursor costs is one
+    wide sweep.  That is why anything structurally unusable is rejected whole
+    rather than patched -- half-trusting a cursor is how a corrupt
+    ``last_block`` would skip real history forever.
+
+    The cache file is third-party input (curator's
+    ``pattern_language()`` makes the same point about strings read back out of
+    a persisted payload: a hand-edited cache is not our own data), so every
+    field is coerced per entry rather than trusted wholesale, and an
+    individually broken launch row is dropped instead of taking the cursor
+    with it.  ``traders`` comes back as a ``set`` for the union that follows;
+    it is re-serialised sorted, because a JSON cursor has to round-trip.
+    """
+    if not isinstance(resume, dict):
+        return None
+    last_block = resume.get("last_block")
+    if isinstance(last_block, bool) or not isinstance(last_block, int):
+        return None
+    if last_block < 0:
+        return None
+
+    launches: dict[str, dict] = {}
+    raw_launches = resume.get("launches")
+    if isinstance(raw_launches, dict):
+        for pool_id, rec in raw_launches.items():
+            if not isinstance(pool_id, str) or not isinstance(rec, dict):
+                continue
+            block = rec.get("block")
+            if isinstance(block, bool) or not isinstance(block, int):
+                continue
+            launches[pool_id.lower()] = {
+                "ticker": str(rec.get("ticker") or ""),
+                "name": str(rec.get("name") or ""),
+                "creator": str(rec.get("creator") or ""),
+                "block": block,
+            }
+
+    def counter(key: str) -> dict[str, int]:
+        raw = resume.get(key)
+        out: dict[str, int] = {}
+        if isinstance(raw, dict):
+            for pool_id, count in raw.items():
+                if not isinstance(pool_id, str):
+                    continue
+                if isinstance(count, bool) or not isinstance(count, int):
+                    continue
+                if count < 0:
+                    continue
+                out[pool_id.lower()] = count
+        return out
+
+    burned_total = resume.get("burned_total_wei")
+    if isinstance(burned_total, bool) or not isinstance(burned_total, int):
+        burned_total = 0
+    burned_total = max(burned_total, 0)
+
+    traders = {
+        addr.lower()
+        for addr in (resume.get("traders") or ())
+        if isinstance(addr, str) and addr
+    }
+
+    return {
+        "last_block": last_block,
+        "launches": launches,
+        "swaps_all": counter("swaps_all"),
+        "burn_by_coin": counter("burn_by_coin"),
+        "burned_total_wei": burned_total,
+        "traders": traders,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1068,9 +1199,16 @@ class SurfClient(OwnedHttpClient):
     # State + logs RPC — the launchpad tier
     # ------------------------------------------------------------------
 
-    async def fetch_launchpad(self) -> LaunchpadState:
+    async def fetch_launchpad(self, resume: dict | None = None) -> LaunchpadState:
         """The launchpad tier: one getter multicall, three log sweeps, then
         ``rank_coins`` off the swap logs alone.
+
+        *resume* is the previous sweep's persisted cursor (``LaunchpadState.
+        cursor``, cached in ``SLOT_LAUNCHPAD``), or ``None`` for a cold sweep
+        from ``A.LAUNCHPAD_FIRST_BLOCK``. The returned state carries the
+        cursor to persist and hand back next time. Passing ``None`` forever
+        is correct, just wasteful: every sweep then re-reads the whole
+        history and arrives at the same numbers.
 
         Cost is flat in ``coinCount``: ranking never issues a per-coin call
         (design idea 1 — see the analytics module docstring). Curve state —
@@ -1094,6 +1232,22 @@ class SurfClient(OwnedHttpClient):
         ``coins`` carries. See ``LaunchpadState``'s own docstring for why the
         two must stay separate: one is what the panel draws, the other is
         what HOT COIN's median is taken over.
+
+        **The cursor carries more than ``last_block``/``launches``/
+        ``swaps_all``**, and the extra keys are not bookkeeping -- they are
+        the only thing keeping four *lifetime* figures lifetime once the
+        sweep stopped re-reading all of history every tick.
+        ``swap_count`` falls out of ``swaps_all`` for free, but
+        ``trader_count`` (distinct traders, ``traders``),
+        ``burned_total_wei`` (the ``ImdBurned`` running total) and each
+        coin's ``imd_burned`` (``burn_by_coin``) have no additive shortcut
+        from a 10-minute delta: a cardinality cannot be deduplicated after
+        the fact, and a total cannot be recovered from its newest addend. So
+        they are accumulated in the cursor, and a sweep that dropped them
+        would keep rendering the same four labels over numbers that had
+        quietly become "since the last tick". Every one of them is read back
+        through ``_coerce_launchpad_resume``, because a cache file is
+        third-party input.
         """
         getters = [
             (A.LAUNCHPAD_HOOK, A.SEL_IMD_TO_BURN),
@@ -1110,22 +1264,13 @@ class SurfClient(OwnedHttpClient):
             creator_eth_owed_wei, coin_count, executor_balance_wei, min_bridge_wei,
         ) = await self._launchpad_getters(getters)
 
-        (
-            launches, all_swaps, hour_swaps, burned_total_wei, swaps_by_coin,
-            coin_tickers,
-        ) = await self._launchpad_logs()
+        sweep = await self._launchpad_logs(resume)
 
         rows = surf_launchpad.rank_coins(
-            launches, hour_swaps, now_ts=self._now_fn(), limit=LAUNCHPAD_RENDER_LIMIT,
+            sweep.launches, sweep.day_swaps, sweep.swaps_all,
+            now_ts=self._now_fn(), limit=LAUNCHPAD_RENDER_LIMIT,
         )
         rows = await self._price_rendered_rows(rows)
-
-        if all_swaps is None:
-            swap_count = trader_count = None
-        else:
-            flow = surf_launchpad.curve_flow(all_swaps)
-            swap_count = flow["swap_count"]
-            trader_count = flow["trader_count"]
 
         coins = tuple(
             LaunchpadCoin(
@@ -1134,8 +1279,9 @@ class SurfClient(OwnedHttpClient):
                 creator=row["creator"],
                 age_s=row["age_s"],
                 price_eth=row["price_eth"],
-                change_1h_pct=row["change_1h_pct"],
-                swaps_1h=row["swaps_1h"],
+                change_24h_pct=row["change_24h_pct"],
+                swaps_24h=row["swaps_24h"],
+                swaps_all=row["swaps_all"],
                 imd_burned=row["imd_burned"],
             )
             for row in rows
@@ -1151,11 +1297,15 @@ class SurfClient(OwnedHttpClient):
             executor_balance_wei=executor_balance_wei,
             min_bridge_wei=min_bridge_wei,
             coins=coins,
-            swap_count=swap_count,
-            trader_count=trader_count,
-            burned_total_wei=burned_total_wei,
-            swaps_by_coin=swaps_by_coin,
-            coin_tickers=coin_tickers,
+            swap_count=sweep.swap_count,
+            trader_count=sweep.trader_count,
+            burned_total_wei=sweep.burned_total_wei,
+            swaps_by_coin=sweep.swaps_by_coin,
+            coin_tickers=sweep.coin_tickers,
+            launch_count=sweep.launch_count,
+            new_24h=sweep.new_24h,
+            creator_count=sweep.creator_count,
+            cursor=sweep.cursor,
         )
 
     async def _launchpad_getters(
@@ -1190,163 +1340,237 @@ class SurfClient(OwnedHttpClient):
             for i in range(len(getters))
         )
 
-    async def _launchpad_logs(
-        self,
-    ) -> tuple[
-        list[dict], list[dict] | None, list[dict], int | None,
-        dict[str, int] | None, dict[str, str] | None,
-    ]:
+    async def _launchpad_logs(self, resume: dict | None) -> _LaunchpadSweep:
         """Sweep ``Launched`` / ``CurveSwap`` / ``ImdBurned`` on the LOGS pool
-        over the launchpad's own (much wider) window.
+        from the launchpad's first block, resuming through *resume*.
 
-        Returns ``(launches, all_swaps, hour_swaps, burned_total_wei,
-        swaps_by_coin, coin_tickers)``. ``launches`` degrades to ``[]`` on failure —
-        ``LaunchpadState.coins`` has no way to tell "empty" from "failed"
-        apart in its tuple, the same ambiguity ``LogWindow`` accepts and
-        reports one layer up instead of here. ``all_swaps`` is ``None`` only
-        when the CurveSwap sweep itself failed, so ``swap_count``/
-        ``trader_count`` can stay ``None`` rather than render a false zero;
-        ``hour_swaps`` — the ``LAUNCHPAD_HOUR_BLOCKS`` slice
-        ``rank_coins``/HOT COIN use — is always a (possibly empty) list.
-        ``burned_total_wei`` keeps the same None-on-failure / 0-on-empty
-        split as the getters.
+        **Why a cursor and not a window.** The launch history only ever grows
+        and its start never moves, so any window measured back from the chain
+        head walks off the far end of it one block per block. The 33,000-block
+        window this replaced was already 702 blocks short on the day it was
+        measured (2026-08-23: 146 launches, the earliest 33,702 blocks back)
+        and it showed 66 of them -- with the launchpad's two busiest pools
+        among the 80 it could not see, so they had no ticker, no name and no
+        creator and could not reach the table at any sort order. An
+        append-only log deserves an append-only read.
 
-        ``swaps_by_coin`` (fix round 2) is the **full** in-window per-coin
-        swap count — every coin with activity, not the
-        ``LAUNCHPAD_RENDER_LIMIT``-capped slice ``rank_coins`` returns for
-        ``coins``. Counted alongside ``hour_swaps`` from the same sweep, so
-        it costs no extra request; ``None`` exactly when ``all_swaps`` is
-        (the CurveSwap sweep itself failed), ``{}`` for a swept-but-quiet
-        hour.
+        **Cost.** A cold sweep (``resume is None``) covers everything from
+        ``A.LAUNCHPAD_FIRST_BLOCK`` to the head -- ~34k blocks today, once.
+        After that ``Launched`` and ``ImdBurned`` resume from
+        ``last_block + 1``, so at the 600 s launchpad tier they are a few
+        hundred blocks each. ``CurveSwap`` is the exception and never starts
+        later than ``head - LAUNCHPAD_DAY_BLOCKS``: it feeds *windowed*
+        statistics (``swaps_24h``, ``swaps_by_coin``, ``change_24h_pct``)
+        which cannot be accumulated forward the way a lifetime total can --
+        yesterday's swap has to *leave* the day. Re-reading a fixed 7,200
+        blocks beats persisting a day of raw swap rows in the cache file and
+        then having to trust them back: a re-read is self-healing, a
+        persisted buffer is one more third-party structure to validate per
+        point. The two ranges do not double count -- the accumulators only
+        ever consume rows at or above ``from_block``, the day slice only ever
+        rows at or above the day floor.
 
-        **It is keyed by ``pool_id``, the coin's identity — never by its
-        ticker** (final fix wave, I1). ``launch(string,string)`` is
-        permissionless and unpriced beyond gas, so two coins can carry the
-        same ticker; keying on it merged their buckets and let a coin cross
-        HOT COIN's relative bar on a stranger's volume, while also shrinking
-        the population the median is taken over. ``coin_tickers`` is the
-        companion ``{pool_id: ticker}`` map, and it exists **only** so a row
-        can be labelled: the ticker never decides anything again. Same
-        ``None``-on-failure / ``{}``-on-quiet split as ``swaps_by_coin``.
+        **Resume is strictly greater than.** ``from_block = last_block + 1``.
+        The boundary block was fully swept last time, so re-including it
+        would add its swaps to ``swaps_all`` a second time -- and an
+        off-by-one into a *persisted counter* corrupts it permanently and
+        invisibly, because no later sweep can tell an inflated total from a
+        real one.
+
+        **A partial sweep is an outage.** If any of the three sweeps returns
+        ``None``, nothing merges, nothing advances and nothing zeroes: the
+        untouched *resume* goes back out as the cursor and every aggregate
+        reads ``None``. There is no honest way to advance ``last_block`` past
+        blocks whose ``CurveSwap`` rows were never read -- doing so would
+        drop them from ``swaps_all`` forever while presenting the total as
+        complete. Serving last-good behind an ``as of`` marker is the
+        manager's job (``SLOT_LAUNCHPAD``), not this method's.
+
+        ``launches`` is the merged population -- the cursor's history plus
+        this pass -- keyed by ``pool_id``, so a re-seen ``Launched`` (a reorg
+        replay, or a boundary block swept twice) overwrites its row rather
+        than duplicating it. ``launch_count`` is its size, ``creator_count``
+        the distinct ``creator`` over it, and ``new_24h`` the subset launched
+        within ``LAUNCHPAD_DAY_BLOCKS`` of the head -- all three over the
+        *full* history, never the ``LAUNCHPAD_RENDER_LIMIT``-capped slice
+        ``coins`` carries.
+
+        ``swaps_by_coin`` is the **full** per-coin day distribution -- every
+        coin with a swap today, not the render-capped slice -- because
+        ``surf_launchpad.hot_coin_threshold`` takes a *median* over it and a
+        median of only the busiest 20 runs several times too high. It is
+        keyed by ``pool_id``, the coin's identity, and never by ticker
+        (``launch(string,string)`` is permissionless, so two coins can share
+        one); ``coin_tickers`` is the companion ``{pool_id: ticker}`` map that
+        exists only so a row can be *labelled*, carrying the ticker raw
+        because escaping belongs to the render layer.
         """
+        prior = _coerce_launchpad_resume(resume)
         try:
             head_hex = await self._rpc_logs("eth_blockNumber", [])
             head = int(head_hex, 16)
         except (RuntimeError, TypeError, ValueError) as exc:
             logger.warning("fetch_launchpad logs head: %s", exc)
-            return [], None, [], None, None, None
+            return _failed_launchpad_sweep(resume)
 
-        from_block = head - LAUNCHPAD_LOG_WINDOW_BLOCKS
+        from_block = (
+            A.LAUNCHPAD_FIRST_BLOCK if prior is None else prior["last_block"] + 1
+        )
+        day_from = max(A.LAUNCHPAD_FIRST_BLOCK, head - LAUNCHPAD_DAY_BLOCKS)
+        # The swap sweep has to cover both the unread tail AND the whole day;
+        # clamped to the head so a cursor that is somehow ahead of the chain
+        # (a lagging endpoint, a reorg) asks for a degenerate range instead of
+        # a negative one.
+        swap_from = min(min(from_block, day_from), head)
+
         launched_rows = await self._get_logs_shrinking(
             {"address": A.LAUNCHPAD_FACTORY, "topics": [A.TOPIC_LAUNCHED]},
-            from_block, head, group="launchpad_launched",
+            min(from_block, head), head, group="launchpad_launched",
         )
         swap_rows = await self._get_logs_shrinking(
             {"address": A.LAUNCHPAD_HOOK, "topics": [A.TOPIC_CURVE_SWAP]},
-            from_block, head, group="launchpad_curve_swap",
+            swap_from, head, group="launchpad_curve_swap",
         )
         burned_rows = await self._get_logs_shrinking(
             {"address": A.LAUNCHPAD_HOOK, "topics": [A.TOPIC_IMD_BURNED]},
-            from_block, head, group="launchpad_imd_burned",
+            min(from_block, head), head, group="launchpad_imd_burned",
         )
+        if launched_rows is None or swap_rows is None or burned_rows is None:
+            return _failed_launchpad_sweep(resume)
 
-        now_ts = self._now_fn()
-        launches: list[dict] = []
-        pool_to_launch: dict[str, dict] = {}
+        # ---- merge: the cursor's history, then this pass on top -----------
+        merged: dict[str, dict] = dict(prior["launches"]) if prior else {}
         for row in launched_rows or ():
             parsed = _decode_launched_log(row)
-            if parsed is None:
+            if parsed is None or parsed["block"] < from_block:
                 continue
-            entry = {
+            merged[parsed["pool_id"]] = {
                 "ticker": parsed["ticker"],
                 "name": parsed["name"],
                 "creator": parsed["creator"],
-                "creator_known": _label_for(parsed["creator"]) is not None,
-                "ts": now_ts - (head - parsed["block"]) * _LAUNCHPAD_BLOCK_SECONDS,
-                "pool_id": parsed["pool_id"],
-                "price_eth": None,       # filled in for rendered rows only
-                "change_1h_pct": None,   # filled in below when swaps allow it
-                "imd_burned_wei": 0 if swap_rows is not None else None,
+                "block": parsed["block"],
             }
-            launches.append(entry)
-            pool_to_launch[parsed["pool_id"]] = entry
 
-        all_swaps: list[dict] | None
-        hour_swaps: list[dict] = []
-        # The full population, HOT COIN's own input (fix round 2) -- never
-        # the render-capped slice `coins` ends up with. Counted the same way
-        # `rank_coins` counts `swaps_1h` internally (one increment per
-        # in-window swap attributed to a launched pool), just not thrown away
-        # afterward. Keyed by `pool_id`, never by ticker (final fix wave, I1).
-        swaps_by_coin: dict[str, int] | None
-        coin_tickers: dict[str, str] | None
-        if swap_rows is None:
-            all_swaps = None
-            swaps_by_coin = None
-            coin_tickers = None
-        else:
-            all_swaps = []
-            swaps_by_coin = {}
-            coin_tickers = {
-                pool_id: entry["ticker"] for pool_id, entry in pool_to_launch.items()
-            }
-            by_pool_hour: dict[str, list[dict]] = {}
-            for row in swap_rows:
-                parsed = _decode_curve_swap_log(row)
-                if parsed is None:
-                    continue
-                pool_id = parsed["pool_id"]
-                launch = pool_to_launch.get(pool_id)
-                swap = {
+        swaps_all: dict[str, int] = dict(prior["swaps_all"]) if prior else {}
+        burn_by_coin: dict[str, int] = dict(prior["burn_by_coin"]) if prior else {}
+        traders: set[str] = set(prior["traders"]) if prior else set()
+        burned_total_wei: int = prior["burned_total_wei"] if prior else 0
+
+        day_swaps: list[dict] = []
+        day_priced: dict[str, list[dict]] = {}
+        swaps_by_coin: dict[str, int] = {}
+        for row in swap_rows:
+            parsed = _decode_curve_swap_log(row)
+            if parsed is None:
+                continue
+            pool_id = parsed["pool_id"]
+            block = parsed["block"]
+            # Lifetime accumulators: only the never-before-read tail. Rows
+            # below `from_block` are here for the day window alone and were
+            # already counted by the sweep that first read them.
+            if block >= from_block:
+                swaps_all[pool_id] = swaps_all.get(pool_id, 0) + 1
+                if parsed["trader"]:
+                    traders.add(parsed["trader"].lower())
+                if pool_id in merged:
+                    burn_by_coin[pool_id] = (
+                        burn_by_coin.get(pool_id, 0) + parsed["burn_fee_imd_wei"]
+                    )
+            if block >= day_from:
+                day_swaps.append({
                     "pool_id": pool_id,
                     "trader": parsed["trader"],
                     "is_buy": parsed["is_buy"],
-                }
-                all_swaps.append(swap)
-                if launch is not None and launch["imd_burned_wei"] is not None:
-                    launch["imd_burned_wei"] += parsed["burn_fee_imd_wei"]
-                if parsed["block"] >= head - LAUNCHPAD_HOUR_BLOCKS:
-                    hour_swaps.append(swap)
-                    if launch is not None:
-                        by_pool_hour.setdefault(pool_id, []).append(parsed)
-                        swaps_by_coin[pool_id] = swaps_by_coin.get(pool_id, 0) + 1
-            # change_1h_pct is derived from log data alone -- no RPC call,
-            # unlike price_eth. CurveSwap carries no price field (fix round
-            # 1), so the effective price of a swap is ethAmount/coinAmount;
-            # first vs last in-hour swap for that coin gives the move.
-            # None -- never 0.0 -- whenever fewer than two swaps in the
-            # window carry a usable (nonzero coinAmount) price: "no
-            # measurable move" is not the same claim as "a flat hour".
-            for entries in by_pool_hour.values():
-                entries.sort(key=lambda p: p["block"])
-                priced = [p for p in entries if p["coin_amount_wei"] > 0]
-                if len(priced) < 2:
-                    continue
-                first_price = priced[0]["eth_amount_wei"] / priced[0]["coin_amount_wei"]
-                last_price = priced[-1]["eth_amount_wei"] / priced[-1]["coin_amount_wei"]
-                launch = pool_to_launch.get(entries[0]["pool_id"])
-                if launch is not None and first_price:
-                    launch["change_1h_pct"] = (
-                        (last_price / first_price - 1.0) * 100.0
-                    )
+                })
+                if pool_id in merged:
+                    swaps_by_coin[pool_id] = swaps_by_coin.get(pool_id, 0) + 1
+                    day_priced.setdefault(pool_id, []).append(parsed)
 
-        for entry in launches:
-            burned_wei = entry.pop("imd_burned_wei")
-            entry["imd_burned"] = None if burned_wei is None else burned_wei / 1e18
+        for row in burned_rows:
+            try:
+                block = int(row.get("blockNumber"), 16)
+            except (TypeError, ValueError):
+                continue
+            if block < from_block:
+                continue
+            amount = _decode_imd_burned_amount(row)
+            if amount is not None:
+                burned_total_wei += amount
 
-        burned_total_wei: int | None
-        if burned_rows is None:
-            burned_total_wei = None
-        else:
-            burned_total_wei = 0
-            for row in burned_rows:
-                amount = _decode_imd_burned_amount(row)
-                if amount is not None:
-                    burned_total_wei += amount
+        # ---- derive the payload -------------------------------------------
+        now_ts = self._now_fn()
+        # change_24h_pct comes from log data alone -- no RPC call, unlike
+        # price_eth. CurveSwap carries no price field, so a swap's effective
+        # price is ethAmount/coinAmount and the day's move is first vs last.
+        # None -- never 0.0 -- when fewer than two in-window swaps carry a
+        # usable (non-zero coinAmount) price: "no measurable move" is not the
+        # claim "a flat day", and collapsing the two would rank a coin with
+        # one swap as unchanged rather than unmeasured.
+        change_by_pool: dict[str, float] = {}
+        for pool_id, entries in day_priced.items():
+            entries.sort(key=lambda p: p["block"])
+            priced = [p for p in entries if p["coin_amount_wei"] > 0]
+            if len(priced) < 2:
+                continue
+            first = priced[0]["eth_amount_wei"] / priced[0]["coin_amount_wei"]
+            last = priced[-1]["eth_amount_wei"] / priced[-1]["coin_amount_wei"]
+            if first:
+                change_by_pool[pool_id] = (last / first - 1.0) * 100.0
 
-        return (
-            launches, all_swaps, hour_swaps, burned_total_wei, swaps_by_coin,
-            coin_tickers,
+        launches = [
+            {
+                "pool_id": pool_id,
+                "ticker": rec["ticker"],
+                "name": rec["name"],
+                "creator": rec["creator"],
+                "creator_known": _label_for(rec["creator"]) is not None,
+                "ts": now_ts - (head - rec["block"]) * _LAUNCHPAD_BLOCK_SECONDS,
+                "price_eth": None,     # filled in for rendered rows only
+                "change_24h_pct": change_by_pool.get(pool_id),
+                # A representable zero: a coin that has launched and never
+                # traded really has burned nothing.
+                "imd_burned": burn_by_coin.get(pool_id, 0) / 1e18,
+            }
+            for pool_id, rec in sorted(
+                merged.items(), key=lambda kv: (kv[1]["block"], kv[0])
+            )
+        ]
+
+        cursor = {
+            # Never backwards: `swaps_all` and the trader set are
+            # accumulators, and a cursor that retreated would re-count the
+            # blocks it gave back.
+            "last_block": head if prior is None else max(head, prior["last_block"]),
+            "launches": {
+                pool_id: dict(rec) for pool_id, rec in merged.items()
+            },
+            "swaps_all": swaps_all,
+            "burn_by_coin": burn_by_coin,
+            "burned_total_wei": burned_total_wei,
+            # A sorted list, not a set: this round-trips through JSON. It is
+            # the one part of the cursor that grows with *traders* rather than
+            # with coins (673 addresses on 2026-08-23, ~30 KB), and it is
+            # here because distinct-trader cardinality is the one lifetime
+            # aggregate with no additive shortcut -- a count cannot be
+            # deduplicated after the fact.
+            "traders": sorted(traders),
+        }
+
+        return _LaunchpadSweep(
+            launches=launches,
+            day_swaps=day_swaps,
+            swaps_all=swaps_all,
+            swap_count=sum(swaps_all.values()),
+            trader_count=len(traders),
+            burned_total_wei=burned_total_wei,
+            swaps_by_coin=swaps_by_coin,
+            coin_tickers={
+                pool_id: rec["ticker"] for pool_id, rec in merged.items()
+            },
+            launch_count=len(merged),
+            new_24h=sum(1 for rec in merged.values() if rec["block"] >= day_from),
+            creator_count=len({rec["creator"] for rec in merged.values()}),
+            cursor=cursor,
         )
 
     async def _price_rendered_rows(self, rows: list[dict]) -> list[dict]:
@@ -2145,8 +2369,6 @@ __all__ = [
     "GECKO_TOKEN_API",
     "COINGECKO_ETH_URL",
     "LOG_WINDOW_BLOCKS",
-    "LAUNCHPAD_LOG_WINDOW_BLOCKS",
-    "LAUNCHPAD_HOUR_BLOCKS",
     "LAUNCHPAD_DAY_BLOCKS",
     "LAUNCHPAD_RENDER_LIMIT",
     "V4_INITIALIZE_SEARCH_FROM_BLOCK",

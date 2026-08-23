@@ -78,6 +78,27 @@ POOL_V4_ID_FALLBACK = (
 #: Storage slot of ``PoolManager._pools``; v4 has no ``slot0()`` getter.
 V4_POOLS_MAPPING_SLOT = 6
 
+#: Block of the launchpad's FIRST ``Launched`` event -- the floor every
+#: launchpad log sweep starts from, and the one number that makes that sweep
+#: complete rather than rolling.
+#:
+#: Vendored on the same footing as a contract address, and for a stronger
+#: reason than most constants here earn: CLAUDE.md's "read values live, never
+#: hardcode a documented one" is about values that *drift* -- a documented 5%
+#: fee that is 1% on chain, a "4.0x" ratio that measured 3.885x then 3.49x.
+#: A mined block cannot drift. 25,786,048 is where the first ``Launched``
+#: was emitted and it will still be where it was emitted in a decade, so
+#: reading it live every tick would cost a full-history scan to rediscover a
+#: constant.
+#:
+#: Measured 2026-08-23: ``LaunchpadFactory.coinCount()`` = 146, and all 146
+#: ``Launched`` events sit at or above this block (33,702 blocks back from a
+#: then-head of 25,819,750).  The 33,000-block rolling window this replaces
+#: was 702 blocks too short on the day it was measured and grew worse every
+#: block -- it saw 66 of the 146, and the two busiest pools on the launchpad
+#: were among the 80 it could not see at any sort order.
+LAUNCHPAD_FIRST_BLOCK = 25_786_048
+
 # --- Base chain (read-only bridge counterpart) ------------------------------
 #: The original Fren Pet ERC-20 on Base.  IMD mints 1:1 against FP locked here.
 FP_TOKEN_BASE = "0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105"

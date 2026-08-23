@@ -3219,21 +3219,25 @@ async def test_fetch_launchpad_ranks_and_decodes_the_real_fixture() -> None:
     assert state.trader_count == 12
     assert state.burned_total_wei == 3_299_000_000_000_000_000  # 3,299 IMD
 
-    # Ranking: ICE has 9 in-window swaps, the most of any coin. Attribution
+    # Ranking: ICE has 13 in-window swaps, the most of any coin. Attribution
     # is by poolId (CurveSwap carries no coin-address field at all -- fix
     # round 1), never by a field that happens to hold an address.
     tickers = [c.ticker for c in state.coins]
     assert None not in tickers          # the unattributed swap never ranks
     assert tickers[0] == "ICE"
     ice = state.coins[0]
-    assert ice.swaps_1h == 9
+    assert ice.swaps_24h == 13
+    # Every one of ICE's swaps is inside the day here, so the lifetime
+    # tiebreak agrees with the window -- they are still two different counts
+    # off two different sources (the cursor's accumulator vs the day slice).
+    assert ice.swaps_all == 13
     # Fix round 2: the full distribution agrees with the rendered row for a
     # coin both cover -- same sweep, two independent counters, and this is
     # the one fixture-backed proof they never drift apart. Final fix wave
     # (I1): both are keyed and attributed by poolId, never by the ticker,
     # and `coin_tickers` is the label map that lets a row be named.
     ice_pool_id = next(l["pool_id"] for l in launches if l["ticker"] == "ICE")
-    assert state.swaps_by_coin[ice_pool_id] == ice.swaps_1h == 9
+    assert state.swaps_by_coin[ice_pool_id] == ice.swaps_24h == 13
     assert state.coin_tickers[ice_pool_id] == "ICE"
     assert set(state.swaps_by_coin) <= set(state.coin_tickers), (
         "a counted pool with no label cannot be named on screen"
@@ -3245,14 +3249,24 @@ async def test_fetch_launchpad_ranks_and_decodes_the_real_fixture() -> None:
     assert ice.age_s == pytest.approx(
         (logs_data["head_block"] - 26_022_000) * 12.0
     )
-    # change_1h_pct is derived from logs alone (ethAmount/coinAmount, first
-    # vs last in-hour swap for that coin) -- no price field exists on the
+    # change_24h_pct is derived from logs alone (ethAmount/coinAmount, first
+    # vs last in-window swap for that coin) -- no price field exists on the
     # real CurveSwap event. ICE's swaps rise; DAOs' two swaps are flat.
-    assert ice.change_1h_pct == pytest.approx(7.272727272726032)
+    assert ice.change_24h_pct == pytest.approx(17.999999999992223)
     daos = next(c for c in state.coins if c.ticker == "DAOs")
-    assert daos.change_1h_pct == pytest.approx(0.0)   # a measured flat hour
+    assert daos.change_24h_pct == pytest.approx(0.0)  # a measured flat day
     k256 = next(c for c in state.coins if c.ticker == "K-256")
-    assert k256.change_1h_pct is None                 # one swap: unmeasurable
+    assert k256.change_24h_pct is None                # one swap: unmeasurable
+
+    # The population counts come off the FULL merged history, never the
+    # render-capped slice: 13 launches by 13 distinct creators, 5 of them
+    # inside the day window (blocks 26,042,800..26,050,000).
+    assert state.launch_count == 13
+    assert state.creator_count == 13
+    assert state.new_24h == 5
+    assert state.cursor is not None
+    assert state.cursor["last_block"] == logs_data["head_block"]
+    assert len(state.cursor["launches"]) == 13
 
     # The hostile ticker exists in the fixture and survives completely raw:
     # no escaping happens at this layer (Task 11 owns that, at render time).
@@ -3439,7 +3453,7 @@ async def test_a_curve_swap_is_attributed_by_pool_id_and_an_unknown_pool_id_is_s
         state = await client.fetch_launchpad()  # must not raise
 
     assert [c.ticker for c in state.coins] == ["FOO"]
-    assert state.coins[0].swaps_1h == 2       # only the two matched swaps
+    assert state.coins[0].swaps_24h == 2      # only the two matched swaps
     assert state.swap_count == 3              # all three, incl. the unknown one
     assert state.trader_count == 3            # 0xaa.., 0xcc.., 0xdd.. all distinct
 
@@ -3475,9 +3489,9 @@ async def test_swaps_by_coin_is_the_full_population_not_the_rendered_cap() -> No
 
     reads = _load_launchpad("launchpad_reads.json")
     head = 30_000_000
-    launched_block = head - 1000     # outside the hour window; Launched
-                                      # doesn't need to be inside it
-    swap_block = head - 10           # comfortably inside LAUNCHPAD_HOUR_BLOCKS
+    launched_block = head - 1000     # inside the day window, which is what
+                                      # `new_24h` counts over
+    swap_block = head - 10           # comfortably inside LAUNCHPAD_DAY_BLOCKS
 
     launched_rows: list[dict] = []
     curve_swap_rows: list[dict] = []
@@ -3524,7 +3538,7 @@ async def test_swaps_by_coin_is_the_full_population_not_the_rendered_cap() -> No
 
     # The render cap genuinely bites: 45 active coins, only 20 rendered.
     assert len(state.coins) == 20
-    assert {c.swaps_1h for c in state.coins} == {8}
+    assert {c.swaps_24h for c in state.coins} == {8}
     assert all(c.ticker.startswith("HOT") for c in state.coins)
 
     # The full population is what LaunchpadState carries, not the 20 rendered.
@@ -3535,7 +3549,7 @@ async def test_swaps_by_coin_is_the_full_population_not_the_rendered_cap() -> No
 
     full_threshold = hot_coin_threshold(state.swaps_by_coin)
     capped_threshold = hot_coin_threshold(
-        {c.ticker: c.swaps_1h for c in state.coins}
+        {c.ticker: c.swaps_24h for c in state.coins}
     )
     assert full_threshold == 5        # the floor: true median is 1
     assert capped_threshold == 24     # the fix-round-1 bug, reproduced
@@ -3543,3 +3557,389 @@ async def test_swaps_by_coin_is_the_full_population_not_the_rendered_cap() -> No
         "the full-population threshold must be materially lower than the "
         "one a render-capped distribution would have produced"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 6 (2026-08-24) -- the launchpad sweep: cursor, full population, day
+# aggregates.
+#
+# The rolling 33,000-block window this replaces was measured back from the
+# chain head while the launch history it read is fixed at its START, so it
+# walked off the far end of that history one block per block. Ground truth
+# read live 2026-08-23: coinCount() = 146, all 146 `Launched` events at or
+# above block 25,786,048 (33,702 back from a head of 25,819,750), the window
+# saw 66 of them, and the launchpad's two busiest pools were among the 80 it
+# could not see -- so they had no ticker, no name and no creator and could
+# not reach the table at any sort order.
+#
+# The fixtures below are generated, not measured: `full_history.json` mirrors
+# the SHAPE of that ground truth (146 launches, 73 distinct creators, all
+# older than a day, swaps spread over three days) at a size a test can carry,
+# and every number asserted against it is derived from the fixture itself.
+# ---------------------------------------------------------------------------
+
+#: The generated fixture's head. Chosen just above the real 2026-08-23 head so
+#: A.LAUNCHPAD_FIRST_BLOCK is genuinely below it and a cold sweep spans a
+#: realistic ~34k blocks.
+FIXTURE_HEAD_BLOCK = 25_820_000
+
+
+def _launchpad_getters_all_revert(payload: dict) -> httpx.Response:
+    """Answer an aggregate3 with every leg reverted.
+
+    The sweep tests are about `eth_getLogs` ranges, not getters; a reverted
+    leg is the honest "we could not read it" the client turns into `None`,
+    and it keeps these doubles from having to restate the eight getter values
+    that `_launchpad_fixture_handler` already owns.
+    """
+    inner = decode_aggregate3_calldata(payload["params"][0]["data"])
+    return httpx.Response(
+        200,
+        json=_rpc_ok(payload, encode_aggregate3_result([(False, "0x")] * len(inner))),
+    )
+
+
+def _client_recording_getlogs(
+    *, head_block: int = FIXTURE_HEAD_BLOCK,
+) -> tuple[SurfClient, list[dict]]:
+    """A client whose every log sweep comes back EMPTY, keeping the filters.
+
+    An empty page is data, not failure, so the sweep runs to completion and
+    the recorded filters are the whole point: `fromBlock` is what says where
+    the cursor put the sweep, and it cannot be read off the returned state.
+    """
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] == "eth_blockNumber":
+            return httpx.Response(200, json=_rpc_ok(payload, hex(head_block)))
+        if payload["method"] == "eth_getLogs":
+            calls.append(payload["params"][0])
+            return httpx.Response(200, json=_rpc_ok(payload, []))
+        assert payload["method"] == "eth_call", payload["method"]
+        return _launchpad_getters_all_revert(payload)
+
+    return _client_on(httpx.MockTransport(handler)), calls
+
+
+def _client_serving(fixture_name: str, **kw: Any) -> SurfClient:
+    """A client serving one committed launchpad log fixture end to end."""
+    handler = _launchpad_fixture_handler(
+        _load_launchpad("launchpad_reads.json"), _load_launchpad(fixture_name), {}
+    )
+    kw.setdefault("now_fn", lambda: 2_000_000_000.0)
+    return _client_on(RecordingTransport(handler), **kw)
+
+
+def _client_whose_getlogs_fails(
+    *, head_block: int = FIXTURE_HEAD_BLOCK,
+) -> SurfClient:
+    """The head reads fine; every `eth_getLogs` dies.
+
+    Deliberately NOT a total outage: the interesting failure is the one that
+    gets far enough to compute a `from_block` and could therefore advance the
+    cursor past blocks it never actually read.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] == "eth_blockNumber":
+            return httpx.Response(200, json=_rpc_ok(payload, hex(head_block)))
+        if payload["method"] == "eth_getLogs":
+            return httpx.Response(200, json={
+                "jsonrpc": "2.0", "id": payload.get("id"),
+                "error": {"code": -32000, "message": "server error"},
+            })
+        assert payload["method"] == "eth_call", payload["method"]
+        return _launchpad_getters_all_revert(payload)
+
+    return _client_on(httpx.MockTransport(handler))
+
+
+def _launched_filters(calls: list[dict]) -> list[dict]:
+    return [
+        c for c in calls
+        if c.get("address", "").lower() == A.LAUNCHPAD_FACTORY.lower()
+    ]
+
+
+def _swap_filters(calls: list[dict]) -> list[dict]:
+    return [
+        c for c in calls
+        if c.get("address", "").lower() == A.LAUNCHPAD_HOOK.lower()
+        and c["topics"][0] == A.TOPIC_CURVE_SWAP
+    ]
+
+
+def test_the_day_window_is_a_pinned_value_and_the_block_time_agrees_with_it():
+    """A block-time change must move both together, or the window silently
+    stops being a day.
+
+    The brief's form of this test was ``LAUNCHPAD_DAY_BLOCKS == int(86_400 /
+    _LAUNCHPAD_BLOCK_SECONDS)``, which is the constant's own definition
+    restated: it compares an expression against itself and can never go red,
+    whatever either value becomes. What CAN fail is the pair pinned
+    independently plus the arithmetic that has to hold between them -- that
+    catches the real mistake, which is retyping the derived literal (or the
+    block time) and leaving the other where it was.
+    """
+    from maxpane_dashboard.data import surf_client as sc
+
+    assert sc.LAUNCHPAD_DAY_BLOCKS == 7_200
+    assert sc._LAUNCHPAD_BLOCK_SECONDS == 12.0
+    assert sc.LAUNCHPAD_DAY_BLOCKS * sc._LAUNCHPAD_BLOCK_SECONDS == 86_400.0
+
+
+def test_the_rolling_window_constants_are_gone():
+    """Not merely unused -- absent. A rolling window over an append-only
+    history is the defect this task exists to remove, and leaving the
+    constant behind is how it comes back."""
+    from maxpane_dashboard.data import surf_client as sc
+
+    assert not hasattr(sc, "LAUNCHPAD_LOG_WINDOW_BLOCKS")
+    assert not hasattr(sc, "LAUNCHPAD_HOUR_BLOCKS")
+    assert "LAUNCHPAD_LOG_WINDOW_BLOCKS" not in sc.__all__
+    assert "LAUNCHPAD_HOUR_BLOCKS" not in sc.__all__
+
+
+def test_the_launchpads_first_block_is_pinned_below_the_earliest_launch():
+    """25,786,048 is where the first ``Launched`` was emitted (measured
+    2026-08-23, 33,702 blocks back from a head of 25,819,750). A mined block
+    cannot drift, which is exactly why this one is vendored rather than
+    rediscovered by a full-history scan every tick."""
+    assert A.LAUNCHPAD_FIRST_BLOCK == 25_786_048
+    assert isinstance(A.LAUNCHPAD_FIRST_BLOCK, int)
+
+
+@pytest.mark.asyncio
+async def test_a_cold_sweep_starts_at_the_launchpads_first_block() -> None:
+    client, calls = _client_recording_getlogs()
+    async with client:
+        await client.fetch_launchpad(resume=None)
+    launched = _launched_filters(calls)
+    assert launched, "no Launched sweep was issued"
+    assert min(int(c["fromBlock"], 16) for c in launched) == A.LAUNCHPAD_FIRST_BLOCK
+
+
+@pytest.mark.asyncio
+async def test_a_warm_sweep_starts_one_block_after_the_cursor() -> None:
+    """Strictly greater than, so a re-swept boundary block cannot double-count."""
+    client, calls = _client_recording_getlogs()
+    async with client:
+        await client.fetch_launchpad(
+            resume={"last_block": 25_800_000, "launches": {}, "swaps_all": {}}
+        )
+    launched = _launched_filters(calls)
+    assert launched, "no Launched sweep was issued"
+    assert min(int(c["fromBlock"], 16) for c in launched) == 25_800_001
+
+
+@pytest.mark.asyncio
+async def test_the_swap_sweep_never_starts_later_than_the_day_it_has_to_serve() -> None:
+    """`swaps_24h` / `swaps_by_coin` / `change_24h_pct` are WINDOWED, and a
+    window cannot be accumulated forward the way a lifetime total can --
+    yesterday's swap has to leave the day. So CurveSwap is read from
+    `min(cursor + 1, head - LAUNCHPAD_DAY_BLOCKS)` even when the cursor is
+    minutes old, while `Launched` (append-only, merged into the cursor) stays
+    purely incremental. A sweep that took the cursor literally for both would
+    report a 10-minute slice under a 24-hour label.
+    """
+    client, calls = _client_recording_getlogs()
+    async with client:
+        await client.fetch_launchpad(
+            resume={"last_block": 25_819_000, "launches": {}, "swaps_all": {}}
+        )
+    day_floor = FIXTURE_HEAD_BLOCK - surf_client.LAUNCHPAD_DAY_BLOCKS
+    assert min(int(c["fromBlock"], 16) for c in _launched_filters(calls)) == 25_819_001
+    assert min(int(c["fromBlock"], 16) for c in _swap_filters(calls)) == day_floor
+
+
+@pytest.mark.asyncio
+async def test_resuming_does_not_double_count_a_launch_or_a_swap_on_the_boundary() -> None:
+    """The fixture replays the cursor's own boundary block: one `Launched`
+    and one `CurveSwap` at exactly `last_block`, plus two swaps above it.
+
+    Both halves matter and they fail differently. The launch re-merges by
+    `pool_id`, so a re-seen launch OVERWRITES and `launch_count` stays 1
+    whether or not the `+ 1` is there -- that assertion alone cannot catch an
+    off-by-one. The swap is what catches it: `swaps_all` is a persisted
+    accumulator, so a boundary block counted twice inflates it permanently
+    and no later sweep can tell.
+
+    The day slice is the deliberate exception: it re-reads the boundary swap
+    because that swap is still inside the day, and reading it there costs
+    nothing (it is not accumulated). 3 swaps in the day, 2 added to the
+    lifetime total.
+    """
+    pool = "0x" + "aa" * 32
+    resume = {
+        "last_block": 25_790_000,
+        "launches": {pool: {"ticker": "A", "name": "Alpha",
+                            "creator": "0x" + "1" * 40, "block": 25_790_000}},
+        "swaps_all": {pool: 5},
+    }
+    async with _client_serving("cursor_resume.json") as client:
+        state = await client.fetch_launchpad(resume=resume)
+
+    assert state.launch_count == 1               # the same launch, not two
+    assert state.cursor["swaps_all"][pool] == 5 + 2   # only the 2 new swaps
+    assert state.swap_count == 7
+    assert state.swaps_by_coin[pool] == 3        # the day re-reads the boundary
+    assert state.coins[0].swaps_24h == 3
+    assert state.coins[0].swaps_all == 7
+
+
+@pytest.mark.asyncio
+async def test_a_failed_sweep_leaves_the_cursor_and_every_counter_untouched() -> None:
+    """The persisted-accumulator hazard: a failed read must never become a 0
+    that outlives the outage, and a partial sweep must not advance the block.
+
+    `state.cursor is resume` is the strong form on purpose. Equality would
+    pass for a freshly built dict that happened to agree; identity says the
+    failure path constructed nothing at all, which is the only way to be sure
+    it zeroed nothing either.
+    """
+    resume = {"last_block": 25_790_000, "launches": {},
+              "swaps_all": {"0x" + "aa" * 32: 5}}
+    async with _client_whose_getlogs_fails() as client:
+        state = await client.fetch_launchpad(resume=resume)
+
+    assert state.cursor is resume            # byte-identical, not merely equal
+    assert state.cursor == {"last_block": 25_790_000, "launches": {},
+                            "swaps_all": {"0x" + "aa" * 32: 5}}
+    assert state.swaps_by_coin is None       # honest unknown, never {}
+    assert state.swap_count is None
+    assert state.trader_count is None
+    assert state.burned_total_wei is None
+    assert state.launch_count is None
+    assert state.new_24h is None
+    assert state.creator_count is None
+    assert state.coin_tickers is None
+    assert state.coins == ()
+
+
+@pytest.mark.asyncio
+async def test_the_swap_buffer_is_pruned_to_the_day_it_serves() -> None:
+    """Swaps spread over three days: the windowed counts see one day, the
+    lifetime ones see all three. A fixture where they agreed would let the
+    two be the same number by accident.
+    """
+    async with _client_serving("full_history.json") as client:
+        state = await client.fetch_launchpad(resume=None)
+
+    assert state.swaps_by_coin
+    assert max(state.swaps_by_coin.values()) == 15   # the day's busiest coin
+    assert state.swap_count == 165                   # all-time total, NOT pruned
+    assert state.trader_count == 32                  # traders repeat in the fixture
+    assert state.burned_total_wei == 3_299_000_000_000_000_000
+
+    busiest = state.coins[0]
+    assert busiest.ticker == "C0"
+    assert busiest.swaps_24h == 15
+    assert busiest.swaps_all == 70                   # 30 + 25 + 15 across 3 days
+    assert busiest.swaps_all > busiest.swaps_24h, (
+        "the windowed and the lifetime count must be able to disagree"
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_population_counts_come_off_the_full_history() -> None:
+    """146 launches by 73 creators -- the numbers the rolling window could
+    only ever report as 66 and change -- and a representable zero for a day
+    with no launch in it."""
+    async with _client_serving("full_history.json") as client:
+        state = await client.fetch_launchpad(resume=None)
+
+    assert state.launch_count == 146
+    assert state.creator_count == 73
+    assert state.new_24h == 0               # representable zero, never None
+    # The render cap still bites; the population counts are not taken over it.
+    assert len(state.coins) == surf_client.LAUNCHPAD_RENDER_LIMIT
+    assert state.launch_count > len(state.coins)
+
+
+@pytest.mark.asyncio
+async def test_the_cursor_round_trips_through_json_and_re_reading_adds_nothing() -> None:
+    """The cursor is persisted to `~/.maxpane/surf_cache.json`, so it has to
+    survive `json.dumps`/`loads` -- the trader set is a sorted list for
+    exactly that reason. And a second sweep at the same head must be a no-op:
+    if resuming re-counted anything, every accumulator would climb on every
+    tick with no chain activity at all.
+    """
+    async with _client_serving("full_history.json") as client:
+        first = await client.fetch_launchpad(resume=None)
+        persisted = json.loads(json.dumps(first.cursor))
+        second = await client.fetch_launchpad(resume=persisted)
+
+    assert second.swap_count == first.swap_count
+    assert second.trader_count == first.trader_count
+    assert second.launch_count == first.launch_count
+    assert second.creator_count == first.creator_count
+    assert second.burned_total_wei == first.burned_total_wei
+    assert second.cursor["swaps_all"] == first.cursor["swaps_all"]
+    assert second.cursor["last_block"] == first.cursor["last_block"]
+    # The day slice is re-read, not accumulated, so it survives the round trip
+    # too -- and it must, or HOT COIN's median would decay to nothing.
+    assert second.swaps_by_coin == first.swaps_by_coin
+
+
+@pytest.mark.asyncio
+async def test_an_unusable_persisted_cursor_degrades_to_a_cold_sweep() -> None:
+    """A hand-edited cache file is third-party input (curator's
+    `pattern_language()` makes the same point about strings read back out of a
+    persisted payload). Rejecting a structurally broken cursor WHOLE is the
+    safe degradation -- a cold sweep rebuilds every accumulator from chain --
+    whereas half-trusting one would let a corrupt `last_block` skip real
+    history forever.
+    """
+    for broken in (
+        {"launches": {}, "swaps_all": {}},              # no last_block at all
+        {"last_block": "25790000"},                     # a string, not an int
+        {"last_block": True},                           # bool is not a block
+        {"last_block": -1},                             # before genesis
+        "not a dict",
+    ):
+        client, calls = _client_recording_getlogs()
+        async with client:
+            await client.fetch_launchpad(resume=broken)
+        launched = _launched_filters(calls)
+        assert min(int(c["fromBlock"], 16) for c in launched) == (
+            A.LAUNCHPAD_FIRST_BLOCK
+        ), broken
+
+
+@pytest.mark.asyncio
+async def test_the_cursor_never_moves_backwards() -> None:
+    """`swaps_all` and the trader set are accumulators, so a cursor that
+    retreated would re-count every block it gave back. A head BELOW the
+    stored `last_block` (a lagging endpoint, a reorg) therefore leaves
+    `last_block` where it was rather than adopting the smaller number.
+    """
+    client, _calls = _client_recording_getlogs(head_block=25_800_000)
+    async with client:
+        state = await client.fetch_launchpad(
+            resume={"last_block": 25_805_000, "launches": {}, "swaps_all": {}}
+        )
+    assert state.cursor["last_block"] == 25_805_000
+
+
+@pytest.mark.asyncio
+async def test_the_launchpad_sweep_keeps_the_standing_pool_split() -> None:
+    """State calls to publicnode, every `eth_getLogs` (and the logs pool's own
+    `eth_blockNumber`) to tenderly/drpc -- publicnode refuses archive
+    `eth_getLogs`, and the cursor rewrite made those sweeps far wider, so the
+    split matters more now than it did, not less."""
+    handler = _launchpad_fixture_handler(
+        _load_launchpad("launchpad_reads.json"),
+        _load_launchpad("full_history.json"), {},
+    )
+    transport = RecordingTransport(handler)
+    async with _client_on(transport, now_fn=lambda: 2_000_000_000.0) as client:
+        await client.fetch_launchpad(resume=None)
+
+    calls = [(u, p.get("method")) for (u, _m, p) in transport.requests if p]
+    state_urls = [u for u, m in calls if m == "eth_call"]
+    logs_urls = [u for u, m in calls if m in ("eth_getLogs", "eth_blockNumber")]
+    assert state_urls and logs_urls
+    assert all("publicnode" in u for u in state_urls)
+    assert all("publicnode" not in u for u in logs_urls)
