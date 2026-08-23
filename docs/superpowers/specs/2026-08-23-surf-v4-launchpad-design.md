@@ -94,9 +94,20 @@ Three new verified contracts:
 | LaunchpadHook | `0x51768F5dA32BA2008304cC81674da51aCb802888` |
 | BurnExecutor (v2) | `0xe29386719C155B6847aD5a4E97C6674f10ffc750` |
 
-Since 2026-08-19: **146 coins launched by 146 distinct creators**, **4,683
+Since 2026-08-19: **146 coins launched by 73 distinct creators**, **4,683
 `CurveSwap` events by 673 distinct traders**, **3,299 IMD burned across 66
-`ImdBurned` events**. Live reads: `imdToBurn = 15.06 IMD`,
+`ImdBurned` events**. Launch activity is concentrated, not evenly spread: 26
+creators launched more than once, the busiest launched 14, and 99 of the 146
+launches came from repeat creators.
+
+> Corrected 2026-08-23 during implementation. The first draft of this section
+> said "146 distinct creators (one each)". That was a decoding error in the
+> research probe, which counted `topics[2]` as the launcher. The verified
+> `LaunchpadFactory` ABI has three indexed parameters —
+> `Launched(bytes32 indexed poolId, address indexed coin, address indexed creator, …)` —
+> so `topics[2]` is the **coin** and `topics[3]` is the **creator**. Counting
+> distinct coin addresses trivially returns the launch count. The client decodes
+> the correct slots. Live reads: `imdToBurn = 15.06 IMD`,
 `totalRealImd = 20,577.66 IMD`, `burnFeeBps = 50`, `creatorFeeBps = 50`
 (`MAX_FEE_BPS = 500`), `totalCreatorEthOwed = 0.0749 ETH`,
 `coinSupply = 1e27`, `initialPriceWad = 6695853418114`.
