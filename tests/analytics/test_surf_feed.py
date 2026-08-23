@@ -126,3 +126,32 @@ def test_the_captured_channel_threads_the_way_the_screen_shows_it():
     assert any(
         r["depth"] == 2 for t in threads for r in t["replies"]
     ), "the capture contains an answer to a reply; threading must find it"
+
+
+def test_an_inbound_reply_does_not_leak_across_a_new_root():
+    """Fix round 1: `inbound_by_author` must reset on every `self`.
+
+    Root A gets a reply from ASKER. Root B opens. An answer to ASKER must
+    not resolve to root A's reply -- that reply lives in a different
+    thread's `replies` list, so nesting the answer at depth 2 under root B
+    with a `parent_tx_hash` root B never contains is wrong linkage: no
+    crash, nothing dropped, but the screen would show a nested reply whose
+    parent is nowhere in its own thread, while root A's real question
+    looks unanswered.
+    """
+    threads = build_threads([
+        _item(100, "self", "0xrootA"),
+        _item(150, "reply", "0xqA", frm=_ASKER, to=_ANN),
+        _item(200, "self", "0xrootB"),
+        _item(250, "answer", "0xa", frm=_ANN, to=_ASKER),
+    ])
+    by_hash = {t["item"]["tx_hash"]: t for t in threads}
+    root_b_reply_hashes = {r["item"]["tx_hash"] for r in by_hash["0xrootB"]["replies"]}
+    assert "0xa" in root_b_reply_hashes
+    answer_row = next(r for r in by_hash["0xrootB"]["replies"] if r["item"]["tx_hash"] == "0xa")
+    # No inbound reply exists in root B's own thread, so this must fall
+    # back to depth 1 under root B -- not depth 2 pointing at 0xqA, which
+    # lives in root A.
+    assert answer_row["depth"] == 1
+    assert answer_row["parent_tx_hash"] == "0xrootB"
+    assert all(r["item"]["tx_hash"] != "0xa" for r in by_hash["0xrootA"]["replies"])

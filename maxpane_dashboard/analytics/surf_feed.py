@@ -129,6 +129,15 @@ def build_threads(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             row = _row(item, 0, None)
             roots.append(row)
             active_root = row
+            # Scoped per thread, not per walk (fix round 1): an inbound
+            # reply from a given address only answers a question asked
+            # *in this thread*. Carrying the dict across a "self" would let
+            # an answer in thread B resolve to a reply that lives in
+            # thread A's `replies` list -- `parent_tx_hash` pointing at a
+            # tx_hash the answer's own root never contains. No crash, no
+            # drop, just wrong linkage, which is worse than either because
+            # it reads as correct on screen.
+            inbound_by_author = {}
             continue
 
         if kind == "reply":
