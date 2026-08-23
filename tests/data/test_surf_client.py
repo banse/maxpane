@@ -1597,6 +1597,61 @@ async def test_a_deploy_row_is_labelled_from_created_contract():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "to_addr,label",
+    [
+        (A.LAUNCHPAD_HOOK, "burnAccruedImd() on the launchpad hook"),
+        (A.BURN_EXECUTOR_V2, "bridgeToBaseBurnReceiver() on the live executor"),
+        (A.BURN_EXECUTOR_V1, "the superseded executor, still in the history"),
+    ],
+)
+async def test_every_live_burn_destination_classifies_as_burn(to_addr, label):
+    """Final fix wave (I2): the burn pipeline moved and this map did not.
+
+    Measured on chain: `burnAccruedImd` goes to the LAUNCHPAD HOOK and
+    `bridgeToBaseBurnReceiver` now goes to `BURN_EXECUTOR_V2`; both used to
+    classify as `other`, and only the RETIRED V1 executor produced a `burn`
+    row. `surf_manager._readings` builds `burn_transfers` -- BURN's WATCH
+    precursor -- from `kind == "burn"`, so the whole pipeline could run with
+    the rail silent until the supply drop landed a tier later. Spec §6.4 and
+    §9 both required otherwise.
+
+    V1 is parametrised alongside the two new ones because its rows are still
+    on the pages we read: this is three burn destinations, not a swap.
+    """
+    page = load_fixture("dev_txs_page1.json")
+    row = dict(page["items"][0])
+    row |= {
+        "hash": "0x" + "b0" * 32,
+        "to": {"hash": to_addr},
+        "method": "burnAccruedImd",
+        "created_contract": None,
+    }
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [{"items": [row], "next_page_params": None}],
+        A.OPS_WALLET: [{"items": [], "next_page_params": None}],
+    })
+    async with _client_on(RecordingTransport(handler)) as client:
+        rows = await client.fetch_dev_activity()
+
+    assert len(rows) == 1
+    assert rows[0].kind == "burn", label
+
+
+@pytest.mark.asyncio
+async def test_the_kind_vocabulary_did_not_grow_for_the_burn_repoint():
+    """Three burn destinations, still one word: no column got wider.
+
+    `widgets/surf/activity.py` sizes its kind cell against `DEV_TX_KINDS`, so
+    a NEW kind would be a width change; `burn` was already a member.
+    """
+    assert "burn" in surf_client.DEV_TX_KINDS
+    assert surf_client.DEV_TX_KINDS == frozenset(
+        {"deploy", "lp", "burn", "bridge", "fwa claim", "transfer", "other"}
+    )
+
+
+@pytest.mark.asyncio
 async def test_poisoning_dust_never_becomes_an_activity_row():
     """PRD §4 + §6.5 — the whole point of the sender keying.
 

@@ -1553,14 +1553,32 @@ class SurfClient(OwnedHttpClient):
         address is what the dashboard trusts (CLAUDE.md: trust the address,
         never the name).  `method` only ever narrows a decision the address
         has already made.
+
+        **The burn pipeline moved and this map did not** (final fix wave, I2).
+        Measured on chain today: `burnAccruedImd()` goes to the LAUNCHPAD HOOK
+        and `bridgeToBaseBurnReceiver()` now goes to `BURN_EXECUTOR_V2`, so
+        both classified as `other` while only the *retired* V1 executor
+        classified as `burn`. That silently disabled BURN's WATCH precursor,
+        which `surf_manager._readings` builds from `kind == "burn"` rows: the
+        whole burn pipeline could run with the rail saying nothing until the
+        supply drop landed. Spec §6.4 and §9 both required otherwise. V1 stays
+        for history -- its transactions are still on the pages we read -- so
+        this is three burn destinations, not a replacement.
         """
         if created:
             return "deploy"
         if to_addr == A.NFPM.lower():
             return "lp"
-        if to_addr == A.BURN_EXECUTOR_V1.lower():
+        if to_addr == A.LAUNCHPAD_HOOK.lower():
+            # burnAccruedImd(): the hook holds the accrued IMD and is where
+            # the (permissionless) burn is kicked off. Read-only dashboard --
+            # we render that it happened, we never offer to call it.
+            return "burn"
+        if to_addr in (A.BURN_EXECUTOR_V2.lower(), A.BURN_EXECUTOR_V1.lower()):
             # bridgeToBaseBurnReceiver(): it bridges in order to burn, and the
-            # burn is what signal 6 and the supply sparkline care about.
+            # burn is what signal 6 and the supply sparkline care about. V2 is
+            # the live executor; V1 is the superseded one whose history is
+            # still on the dev wallets' pages.
             return "burn"
         if to_addr == A.RELAY_DEPOSITORY.lower():
             return "bridge"
