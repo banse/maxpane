@@ -151,7 +151,6 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "parity_pct": "parity_pct",
         "supply_series": "supply_series",
         "price_series": "price_series",
-        "legacy_pool_liquidity_usd": "legacy_pool_liquidity_usd",
         "price_source_disagreement_pct": "price_source_disagreement_pct",
     },
     "SurfNft": {
@@ -384,13 +383,9 @@ def _sample_data() -> dict:
         "imd_change_24h_pct": 30.89,
         "imd_vol_24h_usd": 244_178.0,
         "pool_liquidity_usd": 548_701.21,
-        # No superseded pool yet at this pre-migration instant (the live pool
-        # *is* v3, not a v4 pool with a v3 "legacy" left behind) -- unlike
-        # ``legacy_pool_liquidity_usd``, ``price_source_disagreement_pct`` is
-        # always computable (it compares the two live sources against each
-        # other, not against a pool that may not exist yet), so it carries a
-        # small, healthy value rather than ``None``.
-        "legacy_pool_liquidity_usd": None,
+        # ``price_source_disagreement_pct`` is always computable (it compares
+        # the two live sources against each other), so it carries a small,
+        # healthy value here rather than ``None``.
         "price_source_disagreement_pct": 0.4,
         "fp_price_usd": 0.7274,
         "parity_pct": -2.7495188834204012,   # (0.7074/0.7274 - 1) * 100
