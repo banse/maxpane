@@ -339,6 +339,16 @@ class LaunchpadState:
     when that sweep failed outright (mirrors ``all_swaps`` in
     ``SurfClient._launchpad_logs``); a swept-but-quiet hour is the
     representable ``{}``.
+
+    **``swaps_by_coin`` is keyed by ``pool_id``, the coin's identity — never
+    by its ticker** (final fix wave, I1), and ``coin_tickers`` is the
+    companion ``{pool_id: ticker}`` map that exists only so a row can be
+    *labelled*. ``LaunchpadFactory.launch(string,string)`` is permissionless
+    and unpriced beyond gas, so a ticker is an attacker-chosen display string
+    that two coins can share; joining on it merged their swap buckets, which
+    both shrank the population ``hot_coin_threshold`` takes a median over and
+    let a coin clear the bar on a stranger's volume. ``coin_tickers`` carries
+    the raw ticker: escaping is the render layer's job, never this one's.
     """
 
     coin_count: int | None
@@ -354,6 +364,7 @@ class LaunchpadState:
     trader_count: int | None
     burned_total_wei: int | None
     swaps_by_coin: dict[str, int] | None
+    coin_tickers: dict[str, str] | None = None
 
 
 #: Every key ``SurfManager.fetch_and_compute()`` returns — the parallel-agent

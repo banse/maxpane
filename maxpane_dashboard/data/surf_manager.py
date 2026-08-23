@@ -1469,6 +1469,11 @@ class SurfManager:
             "burned_total_wei": _opt_int(_field(launchpad_state, "burned_total_wei")),
             "swap_count": _opt_int(_field(launchpad_state, "swap_count")),
             "trader_count": _opt_int(_field(launchpad_state, "trader_count")),
+            # Final fix wave (I1): the {pool_id: ticker} label map that goes
+            # with the pool-keyed `swaps_by_coin` below. Cached for the same
+            # reason -- no `SURF_KEYS` home, one detector consumer -- and it
+            # is a *label* map only: nothing joins on a ticker any more.
+            "coin_tickers": _field(launchpad_state, "coin_tickers"),
             "coins": SurfManager._launchpad_coin_rows(_field(launchpad_state, "coins")),
             "swaps_by_coin": _field(launchpad_state, "swaps_by_coin"),
         }
@@ -1751,6 +1756,7 @@ class SurfManager:
         read["launchpad_swaps_by_coin"] = self._swaps_by_coin(
             slot.get("swaps_by_coin")
         )
+        read["launchpad_coin_tickers"] = self._coin_tickers(slot.get("coin_tickers"))
         # -- final fix wave (C1): WHEN that distribution was read -------------
         # ``SLOT_LAUNCHPAD``'s own ``LastGood.ts``, passed in by ``_cycle``
         # from the entry it already unpacked. This is the only reading here
@@ -1799,10 +1805,35 @@ class SurfManager:
         if not isinstance(value, dict):
             return None
         out: dict[str, int] = {}
-        for ticker, swaps in value.items():
+        for pool_id, swaps in value.items():
             if isinstance(swaps, int) and not isinstance(swaps, bool):
-                out[str(ticker)] = swaps
+                out[str(pool_id)] = swaps
         return out
+
+    @staticmethod
+    def _coin_tickers(value: Any) -> dict[str, str] | None:
+        """``{pool_id: ticker}`` off whatever the slot holds — the LABEL map.
+
+        Final fix wave (I1). ``swaps_by_coin`` is keyed by ``pool_id``
+        because ``LaunchpadFactory.launch(string,string)`` is permissionless
+        and two coins can carry the same ticker; this map is what lets HOT
+        COIN still *name* the coin it is talking about, and it decides
+        nothing. The tickers stay raw — attacker-chosen strings are bounded
+        and filtered at the point of display (``surf_signals._safe_ticker``),
+        never sanitised here, so the one filter has one caller.
+
+        ``None`` when the slot has never held one (a cache file persisted
+        before this fix, or a client double predating the field): the honest
+        "unread" rather than a guess. Malformed entries are dropped
+        individually, the same per-point tolerance ``_swaps_by_coin`` uses.
+        """
+        if not isinstance(value, dict):
+            return None
+        return {
+            str(pool_id): ticker
+            for pool_id, ticker in value.items()
+            if isinstance(ticker, str)
+        }
 
     def _signal_keys(self, readings: dict[str, Any], now: float) -> dict[str, Any]:
         """Run ``build_signals`` and expand its result into the 18 ``sig_*`` keys."""

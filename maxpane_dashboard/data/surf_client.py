@@ -1101,14 +1101,15 @@ class SurfClient(OwnedHttpClient):
             creator_eth_owed_wei, coin_count, executor_balance_wei, min_bridge_wei,
         ) = await self._launchpad_getters(getters)
 
-        launches, all_swaps, hour_swaps, burned_total_wei, swaps_by_coin = (
-            await self._launchpad_logs()
-        )
+        (
+            launches, all_swaps, hour_swaps, burned_total_wei, swaps_by_coin,
+            coin_tickers,
+        ) = await self._launchpad_logs()
 
         rows = surf_launchpad.rank_coins(
             launches, hour_swaps, now_ts=self._now_fn(), limit=LAUNCHPAD_RENDER_LIMIT,
         )
-        rows = await self._price_rendered_rows(rows, launches)
+        rows = await self._price_rendered_rows(rows)
 
         if all_swaps is None:
             swap_count = trader_count = None
@@ -1145,6 +1146,7 @@ class SurfClient(OwnedHttpClient):
             trader_count=trader_count,
             burned_total_wei=burned_total_wei,
             swaps_by_coin=swaps_by_coin,
+            coin_tickers=coin_tickers,
         )
 
     async def _launchpad_getters(
@@ -1183,13 +1185,13 @@ class SurfClient(OwnedHttpClient):
         self,
     ) -> tuple[
         list[dict], list[dict] | None, list[dict], int | None,
-        dict[str, int] | None,
+        dict[str, int] | None, dict[str, str] | None,
     ]:
         """Sweep ``Launched`` / ``CurveSwap`` / ``ImdBurned`` on the LOGS pool
         over the launchpad's own (much wider) window.
 
         Returns ``(launches, all_swaps, hour_swaps, burned_total_wei,
-        swaps_by_coin)``. ``launches`` degrades to ``[]`` on failure —
+        swaps_by_coin, coin_tickers)``. ``launches`` degrades to ``[]`` on failure —
         ``LaunchpadState.coins`` has no way to tell "empty" from "failed"
         apart in its tuple, the same ambiguity ``LogWindow`` accepts and
         reports one layer up instead of here. ``all_swaps`` is ``None`` only
@@ -1207,13 +1209,23 @@ class SurfClient(OwnedHttpClient):
         it costs no extra request; ``None`` exactly when ``all_swaps`` is
         (the CurveSwap sweep itself failed), ``{}`` for a swept-but-quiet
         hour.
+
+        **It is keyed by ``pool_id``, the coin's identity — never by its
+        ticker** (final fix wave, I1). ``launch(string,string)`` is
+        permissionless and unpriced beyond gas, so two coins can carry the
+        same ticker; keying on it merged their buckets and let a coin cross
+        HOT COIN's relative bar on a stranger's volume, while also shrinking
+        the population the median is taken over. ``coin_tickers`` is the
+        companion ``{pool_id: ticker}`` map, and it exists **only** so a row
+        can be labelled: the ticker never decides anything again. Same
+        ``None``-on-failure / ``{}``-on-quiet split as ``swaps_by_coin``.
         """
         try:
             head_hex = await self._rpc_logs("eth_blockNumber", [])
             head = int(head_hex, 16)
         except (RuntimeError, TypeError, ValueError) as exc:
             logger.warning("fetch_launchpad logs head: %s", exc)
-            return [], None, [], None, None
+            return [], None, [], None, None, None
 
         from_block = head - LAUNCHPAD_LOG_WINDOW_BLOCKS
         launched_rows = await self._get_logs_shrinking(
@@ -1255,23 +1267,29 @@ class SurfClient(OwnedHttpClient):
         # The full population, HOT COIN's own input (fix round 2) -- never
         # the render-capped slice `coins` ends up with. Counted the same way
         # `rank_coins` counts `swaps_1h` internally (one increment per
-        # ticker-attributed in-window swap), just not thrown away afterward.
+        # in-window swap attributed to a launched pool), just not thrown away
+        # afterward. Keyed by `pool_id`, never by ticker (final fix wave, I1).
         swaps_by_coin: dict[str, int] | None
+        coin_tickers: dict[str, str] | None
         if swap_rows is None:
             all_swaps = None
             swaps_by_coin = None
+            coin_tickers = None
         else:
             all_swaps = []
             swaps_by_coin = {}
-            by_coin_hour: dict[str, list[dict]] = {}
+            coin_tickers = {
+                pool_id: entry["ticker"] for pool_id, entry in pool_to_launch.items()
+            }
+            by_pool_hour: dict[str, list[dict]] = {}
             for row in swap_rows:
                 parsed = _decode_curve_swap_log(row)
                 if parsed is None:
                     continue
-                launch = pool_to_launch.get(parsed["pool_id"])
-                ticker = launch["ticker"] if launch else None
+                pool_id = parsed["pool_id"]
+                launch = pool_to_launch.get(pool_id)
                 swap = {
-                    "coin": ticker,
+                    "pool_id": pool_id,
                     "trader": parsed["trader"],
                     "is_buy": parsed["is_buy"],
                 }
@@ -1280,9 +1298,9 @@ class SurfClient(OwnedHttpClient):
                     launch["imd_burned_wei"] += parsed["burn_fee_imd_wei"]
                 if parsed["block"] >= head - LAUNCHPAD_HOUR_BLOCKS:
                     hour_swaps.append(swap)
-                    if ticker:
-                        by_coin_hour.setdefault(ticker, []).append(parsed)
-                        swaps_by_coin[ticker] = swaps_by_coin.get(ticker, 0) + 1
+                    if launch is not None:
+                        by_pool_hour.setdefault(pool_id, []).append(parsed)
+                        swaps_by_coin[pool_id] = swaps_by_coin.get(pool_id, 0) + 1
             # change_1h_pct is derived from log data alone -- no RPC call,
             # unlike price_eth. CurveSwap carries no price field (fix round
             # 1), so the effective price of a swap is ethAmount/coinAmount;
@@ -1290,7 +1308,7 @@ class SurfClient(OwnedHttpClient):
             # None -- never 0.0 -- whenever fewer than two swaps in the
             # window carry a usable (nonzero coinAmount) price: "no
             # measurable move" is not the same claim as "a flat hour".
-            for entries in by_coin_hour.values():
+            for entries in by_pool_hour.values():
                 entries.sort(key=lambda p: p["block"])
                 priced = [p for p in entries if p["coin_amount_wei"] > 0]
                 if len(priced) < 2:
@@ -1317,24 +1335,31 @@ class SurfClient(OwnedHttpClient):
                 if amount is not None:
                     burned_total_wei += amount
 
-        return launches, all_swaps, hour_swaps, burned_total_wei, swaps_by_coin
+        return (
+            launches, all_swaps, hour_swaps, burned_total_wei, swaps_by_coin,
+            coin_tickers,
+        )
 
-    async def _price_rendered_rows(
-        self, rows: list[dict], launches: list[dict]
-    ) -> list[dict]:
+    async def _price_rendered_rows(self, rows: list[dict]) -> list[dict]:
         """Read live ``spotPriceEthPerCoin`` for exactly the rows
         ``rank_coins`` returned — never the full coin population.
 
         A missing/failed leg leaves that row's ``price_eth`` at whatever
         ``rank_coins`` already gave it (``None``), never a guessed value.
+
+        The pool comes off the **row's own** ``pool_id`` (final fix wave, I1).
+        It used to be looked up through a ``{ticker: pool_id}`` map built from
+        the launches, which silently collapsed two coins sharing a ticker —
+        so the impostor's pool could be quoted and rendered as the real coin's
+        price. ``launch(string,string)`` is permissionless, so that is a
+        thing anyone can arrange for the price of gas.
         """
         if not rows:
             return rows
-        pool_by_ticker = {launch["ticker"]: launch["pool_id"] for launch in launches}
         calls: list[tuple[str, str]] = []
         order: list[int] = []
         for i, row in enumerate(rows):
-            pool_id = pool_by_ticker.get(row["ticker"])
+            pool_id = row.get("pool_id")
             if not pool_id:
                 continue
             calls.append(

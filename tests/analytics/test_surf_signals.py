@@ -428,6 +428,12 @@ DECOY_NEWEST_FEE_BPS = 8_000  # 80% -- a predatory fee tier meant to look rich
 HOT_COIN_COUNTS_THIN = {"a": 50, "b": 1}                    # 2 active < HOT_MIN_ACTIVE
 HOT_COIN_COUNTS_FIRED = {**{f"c{i}": 1 for i in range(5)}, "[/x]": 99}
 HOT_COIN_COUNTS_WATCH = {"a": 2, "b": 2, "c": 2, "d": 2, "e": 4}
+# Final fix wave (I1): the distribution is keyed by pool id, so these fixtures'
+# keys ARE pool ids and these maps are what turn one back into a label. Each
+# key doubles as its own ticker, which keeps the fixtures readable while still
+# routing every name through the label map rather than through the key.
+HOT_COIN_TICKERS_FIRED = {key: key for key in HOT_COIN_COUNTS_FIRED}
+HOT_COIN_TICKERS_WATCH = {key: key for key in HOT_COIN_COUNTS_WATCH}
 
 
 def _baseline(**overrides) -> dict:
@@ -487,6 +493,11 @@ def _readings(**overrides) -> dict:
         "burn_ready": False,
         "burn_accrued": 0.0,
         "launchpad_swaps_by_coin": {},
+        # Final fix wave (I1): the {pool_id: ticker} LABEL map. The
+        # distribution above is keyed by pool id -- a ticker is an
+        # attacker-chosen display string two coins can share -- so this is
+        # what lets the row still name a coin.
+        "launchpad_coin_tickers": {},
         # Final fix wave (C1): the distribution's own read time. A quiet
         # refresh reads it *now*; a row that wants the stale branch overrides
         # this, which is the point -- the slot it comes from never expires.
@@ -1113,12 +1124,23 @@ def test_a_non_bool_burn_ready_baseline_never_corrupts_the_persisted_value():
 # every refresh through a total outage, off a distribution read the day before.
 
 
-def _hot(counts, ts=NOW, **base_overrides):
-    """``(state, detail, age)`` for HOT COIN off one distribution."""
+def _hot(counts, ts=NOW, tickers=None, **base_overrides):
+    """``(state, detail, age)`` for HOT COIN off one distribution.
+
+    The distribution is keyed by ``pool_id``; unless a row says otherwise
+    each key doubles as its own ticker, so a fixture stays readable and the
+    identity/label distinction is still exercised wherever it matters.
+    """
+    if tickers is None and isinstance(counts, dict):
+        tickers = {key: key for key in counts}
     return _sig(
         "hot",
         _baseline(**base_overrides),
-        _readings(launchpad_swaps_by_coin=counts, launchpad_swaps_ts=ts),
+        _readings(
+            launchpad_swaps_by_coin=counts,
+            launchpad_coin_tickers=tickers,
+            launchpad_swaps_ts=ts,
+        ),
     )
 
 
@@ -1177,10 +1199,34 @@ def test_hot_coin_fires_again_when_the_lead_changes_hands():
 def test_the_same_hot_coin_stays_a_watch_and_never_re_fires():
     """The level-detector bug in one assertion: hot yesterday and hot today is
     one event, and the rail's vocabulary reserves FIRED for events."""
-    state, detail, age = _hot(HOT_COIN_COUNTS_FIRED, hot_leader="x")
+    state, detail, age = _hot(HOT_COIN_COUNTS_FIRED, hot_leader="[/x]")
     assert state == "watch"
     assert detail == "x still hot · 99 swaps (≥5)"
     assert age is None
+
+
+def test_two_coins_sharing_a_ticker_are_two_different_leaders():
+    """I1, at the edge: the baseline is the coin's identity, not its label.
+
+    ``launch(string,string)`` is permissionless, so an impostor can carry the
+    real coin's ticker. Keyed on the label, the lead changing hands between
+    them reads as "same coin, still hot" and the row never fires.
+    """
+    counts = {**{f"0xc{i}": 1 for i in range(5)}, "0xfake": 99}
+    tickers = {**{f"0xc{i}": f"c{i}" for i in range(5)}, "0xfake": "ICE"}
+    state, detail, _ = _hot(
+        counts, tickers=tickers, hot_leader="0xreal"
+    )
+    assert state == "fired"
+    assert detail == "ICE · 99 swaps (≥5)"
+
+
+def test_an_unlabelled_pool_is_named_generically_not_by_its_pool_id():
+    """A 66-character hex id on a detector row would be useless and too wide."""
+    counts = {**{f"0xc{i}": 1 for i in range(5)}, "0xorphan": 99}
+    state, detail, _ = _hot(counts, tickers={}, hot_leader="")
+    assert state == "fired"
+    assert detail == "coin · 99 swaps (≥5)"
 
 
 def test_a_stale_swap_distribution_is_unknown_never_a_fire():
@@ -1242,16 +1288,33 @@ def test_a_judged_hour_with_nobody_hot_seeds_the_empty_leader():
     assert advanced["hot_leader"] == ""
 
 
-def test_the_persisted_leader_is_the_filtered_ticker_not_the_raw_one():
-    """This baseline goes to disk; a hostile ticker must not go with it."""
+def test_the_persisted_leader_is_the_coins_identity_not_its_label():
+    """The baseline holds the ``pool_id``; only the rendered detail is a ticker."""
     _, advanced = sig.build_signals(
         _baseline(),
         _readings(
-            launchpad_swaps_by_coin=HOT_COIN_COUNTS_FIRED, launchpad_swaps_ts=NOW
+            launchpad_swaps_by_coin=HOT_COIN_COUNTS_FIRED,
+            launchpad_coin_tickers={"[/x]": "[/x]"},
+            launchpad_swaps_ts=NOW,
         ),
         NOW,
     )
-    assert advanced["hot_leader"] == "x"
+    assert advanced["hot_leader"] == "[/x]"
+
+
+def test_an_oversized_hot_leader_baseline_is_refused():
+    """The baseline is persisted; a read-back value of an unexpected shape is
+    treated as a failed read rather than written back and grown."""
+    _, advanced = sig.build_signals(
+        _baseline(hot_leader="0xreal"),
+        _readings(
+            launchpad_swaps_by_coin={"x" * 200: 99, **{f"p{i}": 1 for i in range(5)}},
+            launchpad_coin_tickers={},
+            launchpad_swaps_ts=NOW,
+        ),
+        NOW,
+    )
+    assert advanced["hot_leader"] == "0xreal"
 
 
 def test_a_non_str_hot_leader_baseline_never_corrupts_the_persisted_value():
@@ -1642,9 +1705,13 @@ MATRIX: tuple[tuple[str, str, dict, dict, str], ...] = (
     # that already judged an hour and found nobody over the bar ("") --
     # reachable only with a baseline override, exactly like BURN READY above.
     ("hot", "ok", {}, {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_THIN}, "hour too thin to judge"),
-    ("hot", "watch", {}, {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_WATCH},
+    ("hot", "watch", {},
+     {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_WATCH,
+      "launchpad_coin_tickers": HOT_COIN_TICKERS_WATCH},
      "e warming · 4 swaps (<6)"),
-    ("hot", "fired", {"hot_leader": ""}, {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_FIRED},
+    ("hot", "fired", {"hot_leader": ""},
+     {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_FIRED,
+      "launchpad_coin_tickers": HOT_COIN_TICKERS_FIRED},
      "x · 99 swaps (≥5)"),
     ("hot", None, {}, {"launchpad_swaps_by_coin": None}, "swap distribution unavailable"),
 )

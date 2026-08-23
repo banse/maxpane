@@ -119,7 +119,8 @@ READING_KEYS: tuple[str, ...] = (
     "decoy_newest_fee_bps",     # fee tier of the newest decoy pool, if read
     "burn_ready",               # tri-state: imdToBurn >= minBridgeAmount
     "burn_accrued",             # imdToBurn in whole IMD, awaiting the burn bridge
-    "launchpad_swaps_by_coin",  # {ticker: swap_count} -- the FULL in-window population
+    "launchpad_swaps_by_coin",  # {pool_id: swap_count} -- the FULL in-window population
+    "launchpad_coin_tickers",   # {pool_id: ticker} -- the LABEL map, joins on nothing
     # Final fix wave (C1). When the sweep that produced the distribution above
     # actually ran, epoch seconds -- the launchpad slot's own ``LastGood.ts``.
     # ``launchpad_swaps_by_coin`` is served from a last-good slot that never
@@ -148,7 +149,8 @@ BASELINE_SCALARS: tuple[str, ...] = (
     # _detect_burn_ready).
     "burn_ready",
     # Final fix wave (C1): HOT COIN became an edge for the same reason, and
-    # needs to remember WHICH coin was over the bar. Unlike every other entry
+    # needs to remember WHICH coin was over the bar (by ``pool_id``, its
+    # identity -- see I1). Unlike every other entry
     # here this one is **derived, not read**: no source hands us "who is hot",
     # it is this module's own conclusion about the distribution. It is computed
     # once in ``build_signals`` -- through the same ``_hot_leader_name`` helper
@@ -216,13 +218,18 @@ _SCALAR_COERCERS: dict[str, Any] = {
     "imd_supply": lambda value: _as_float(value),
     "decoy_pool_count": lambda value: _as_int(value),
     "burn_ready": lambda value: value if isinstance(value, bool) else None,
-    # A ticker is the most attacker-controlled string on this dashboard and
-    # this baseline is **persisted to disk**, so it is accepted only as a str
-    # -- and only ever written as one ``_safe_ticker`` already bounded and
-    # filtered (see ``_hot_leader_name``). A read-back value that is not a
-    # string is treated as a failed read: the previous leader survives rather
-    # than being overwritten with something no detector could have produced.
-    "hot_leader": lambda value: value if isinstance(value, str) else None,
+    # The hot coin's *identity* -- its ``pool_id`` -- never its ticker (final
+    # fix wave, I1): two coins can share a ticker, and an edge keyed on the
+    # label would miss the lead changing hands between them. It is persisted
+    # to disk, so it is accepted only as a bounded str; a read-back value of
+    # any other shape is treated as a failed read and the previous leader
+    # survives rather than being overwritten with something no detector could
+    # have produced. The bound is generous against a 66-char pool id and
+    # exists so a decoder change upstream cannot grow the cache file without
+    # limit.
+    "hot_leader": lambda value: (
+        value if isinstance(value, str) and len(value) <= 80 else None
+    ),
 }
 
 #: Event streams: ``reading key -> (tx key, ts key, sequence key)``.  Three
@@ -1018,33 +1025,43 @@ def _detect_burn_ready(base: dict, read: dict, now: float) -> _Det:
 # --- 9. HOT COIN ---------------------------------------------------------------
 
 
-def _hot_state(counts: Any, ts: Any, now: float) -> tuple[str, int, int] | None:
-    """``(safe_ticker, swaps, threshold)`` for the hour's busiest coin.
+def _hot_state(readings: dict, now: float) -> tuple[str, str, int, int] | None:
+    """``(pool_id, safe_ticker, swaps, threshold)`` for the hour's busiest coin.
 
     ``None`` when the hour cannot be judged at all, which is three different
     situations the caller separates by re-inspecting its inputs: the
     distribution was never read, it is older than :data:`HOT_MAX_AGE_S`, or
     fewer than ``HOT_MIN_ACTIVE`` coins traded.
 
+    The distribution is keyed by ``pool_id`` — the coin's identity — and the
+    ticker is looked up purely to *label* the row (final fix wave, I1);
+    ``launch(string,string)`` is permissionless, so a ticker is a display
+    string two coins can share and it may never decide anything. A pool with
+    no label falls back to :data:`_TICKER_FALLBACK` rather than printing a
+    66-character pool id at a detector row.
+
     One implementation, called from both :func:`_detect_hot_coin` and
     :func:`_hot_leader_name`, so the row the reader sees and the baseline the
     next refresh compares against can never disagree about who was hot.
     """
+    counts = readings.get("launchpad_swaps_by_coin")
     if not isinstance(counts, dict):
         return None
-    age = _as_float(ts)
-    if age is None or now - age > HOT_MAX_AGE_S:
+    ts = _as_float(readings.get("launchpad_swaps_ts"))
+    if ts is None or now - ts > HOT_MAX_AGE_S:
         return None
     active = {
-        ticker: n
-        for ticker, n in counts.items()
-        if isinstance(ticker, str) and isinstance(n, int) and not isinstance(n, bool) and n > 0
+        pool_id: n
+        for pool_id, n in counts.items()
+        if isinstance(pool_id, str) and isinstance(n, int) and not isinstance(n, bool) and n > 0
     }
     threshold = hot_coin_threshold(active)
     if threshold is None:
         return None
-    ticker, count = max(active.items(), key=lambda pair: pair[1])
-    return _safe_ticker(ticker), count, threshold
+    pool_id, count = max(active.items(), key=lambda pair: pair[1])
+    tickers = readings.get("launchpad_coin_tickers")
+    ticker = tickers.get(pool_id) if isinstance(tickers, dict) else None
+    return pool_id, _safe_ticker(ticker), count, threshold
 
 
 def _hot_leader_name(readings: dict, now: float) -> str | None:
@@ -1052,21 +1069,19 @@ def _hot_leader_name(readings: dict, now: float) -> str | None:
 
     Three values, and the difference between the last two is the whole edge:
 
-    * the coin's ``_safe_ticker`` — it is over the bar;
+    * the coin's ``pool_id`` — it is over the bar.  Its **identity**, never its
+      ticker: two coins can share a label, and an edge keyed on the label
+      would miss the lead changing hands between them (final fix wave, I1);
     * ``""`` — the hour **was** judged and nobody cleared the bar;
     * ``None`` — the hour could not be judged (unread, stale or too thin), so
       :func:`_advance` leaves the previous leader untouched rather than
       seeding a conclusion out of a read that did not happen.
     """
-    state = _hot_state(
-        readings.get("launchpad_swaps_by_coin"),
-        readings.get("launchpad_swaps_ts"),
-        now,
-    )
+    state = _hot_state(readings, now)
     if state is None:
         return None
-    name, count, threshold = state
-    return name if count >= threshold else ""
+    pool_id, _name, count, threshold = state
+    return pool_id if count >= threshold else ""
 
 
 def _detect_hot_coin(base: dict, read: dict, now: float) -> _Det:
@@ -1104,9 +1119,12 @@ def _detect_hot_coin(base: dict, read: dict, now: float) -> _Det:
     The busiest coin's ticker is the most attacker-controlled string on this
     dashboard — ``launch(string, string)`` is permissionless and unpriced
     beyond gas — so it is bounded through :func:`_safe_ticker` before the
-    detail is built *and* before it is written to the persisted baseline, and
-    the whole detail is flattened and cut through :func:`_truncate` last, so a
-    cut can never bisect anything :func:`_safe_ticker` left behind.
+    detail is built, and the whole detail is flattened and cut through
+    :func:`_truncate` last, so a cut can never bisect anything
+    :func:`_safe_ticker` left behind.  It is also *only* a label: the
+    distribution is keyed by ``pool_id`` and so is the baseline, because two
+    coins can carry one ticker and joining on it let a coin cross this bar on
+    a stranger's volume (final fix wave, I1).
     """
     counts = read.get("launchpad_swaps_by_coin")
     if not isinstance(counts, dict):
@@ -1116,10 +1134,10 @@ def _detect_hot_coin(base: dict, read: dict, now: float) -> _Det:
     if ts is None or now - ts > HOT_MAX_AGE_S:
         return _dead("swap distribution stale")
 
-    state = _hot_state(counts, ts, now)
+    state = _hot_state(read, now)
     if state is None:
         return _ok("hour too thin to judge")
-    name, count, threshold = state
+    pool_id, name, count, threshold = state
 
     if count >= threshold:
         base_leader = base.get("hot_leader")
@@ -1129,7 +1147,7 @@ def _detect_hot_coin(base: dict, read: dict, now: float) -> _Det:
             # fire (the don't-fire-on-first-sight rule every other edge on
             # this rail follows).
             return _watch(_truncate(f"{name} hot · {count} swaps (≥{threshold})"))
-        if base_leader == name:
+        if base_leader == pool_id:
             return _watch(_truncate(f"{name} still hot · {count} swaps (≥{threshold})"))
         return _fired(_truncate(f"{name} · {count} swaps (≥{threshold})"), now)
 

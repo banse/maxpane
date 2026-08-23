@@ -82,12 +82,19 @@ def rank_coins(
 
     ``ticker`` and ``name`` are carried through raw: they are attacker-chosen
     and are escaped at render, not here.
+
+    Swaps are attributed by ``pool_id`` -- the coin's identity -- and never by
+    ticker (final fix wave, I1).  ``launch(string,string)`` is permissionless
+    and unpriced beyond gas, so two coins can share a ticker; counting by it
+    handed the impostor and the real coin one merged total, which each then
+    rendered as its own swap count and ranked on.  Each returned row carries
+    its ``pool_id`` for the same reason: it is what the caller prices against.
     """
     counts: dict[str, int] = {}
     for swap in swaps:
-        coin = swap.get("coin")
-        if coin:
-            counts[coin] = counts.get(coin, 0) + 1
+        pool_id = swap.get("pool_id")
+        if pool_id:
+            counts[pool_id] = counts.get(pool_id, 0) + 1
 
     rows: list[dict[str, Any]] = []
     for launch in launches:
@@ -95,6 +102,7 @@ def rank_coins(
         ts = launch.get("ts")
         rows.append(
             {
+                "pool_id": launch.get("pool_id"),
                 "ticker": ticker,
                 "name": launch.get("name"),
                 "creator": launch.get("creator"),
@@ -103,7 +111,7 @@ def rank_coins(
                 "price_eth": launch.get("price_eth"),
                 # No swaps this hour is not a flat hour: None, never 0.0.
                 "change_1h_pct": launch.get("change_1h_pct"),
-                "swaps_1h": counts.get(ticker, 0),
+                "swaps_1h": counts.get(launch.get("pool_id"), 0),
                 "imd_burned": launch.get("imd_burned"),
             }
         )

@@ -102,7 +102,7 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
         "coin_count", "imd_to_burn_wei", "total_real_imd_wei", "burn_fee_bps",
         "creator_fee_bps", "creator_eth_owed_wei", "executor_balance_wei",
         "min_bridge_wei", "coins", "swap_count", "trader_count",
-        "burned_total_wei", "swaps_by_coin",
+        "burned_total_wei", "swaps_by_coin", "coin_tickers",
     ),
 }
 

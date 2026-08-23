@@ -647,10 +647,13 @@ def _launchpad_state(**overrides) -> LaunchpadState:
     need a default that cannot be confused with either by coincidence.
 
     ``swaps_by_coin`` (fix round 2) carries the default ``coins`` row's own
-    ``swaps_1h`` (``ICE: 5``, off ``_launchpad_coin``'s default) plus five
-    quieter coins that never reach the render-capped ``coins`` tuple — which
-    is exactly what the field is for: the FULL in-window population, not the
-    capped slice.
+    ``swaps_1h`` (5, off ``_launchpad_coin``'s default) plus five quieter
+    coins that never reach the render-capped ``coins`` tuple — which is
+    exactly what the field is for: the FULL in-window population, not the
+    capped slice. It is keyed by ``pool_id`` and paired with
+    ``coin_tickers``, the label map (final fix wave, I1): a ticker is an
+    attacker-chosen display string that two coins can share, so it labels and
+    never joins.
 
     **Six** active coins, not one (final fix wave, C1). The one-coin default
     sat below ``surf_launchpad.HOT_MIN_ACTIVE`` (5), so
@@ -675,7 +678,13 @@ def _launchpad_state(**overrides) -> LaunchpadState:
         "swap_count": 25,
         "trader_count": 12,
         "burned_total_wei": round(90.0 * 10**18),
-        "swaps_by_coin": {"ICE": 5, "AAA": 1, "BBB": 1, "CCC": 2, "DDD": 1, "EEE": 2},
+        "swaps_by_coin": {
+            "0xice": 5, "0xaaa": 1, "0xbbb": 1, "0xccc": 2, "0xddd": 1, "0xeee": 2,
+        },
+        "coin_tickers": {
+            "0xice": "ICE", "0xaaa": "AAA", "0xbbb": "BBB", "0xccc": "CCC",
+            "0xddd": "DDD", "0xeee": "EEE",
+        },
     }
     fields.update(overrides)
     return LaunchpadState(**fields)

@@ -28,20 +28,41 @@ def test_no_threshold_below_five_active_coins() -> None:
 
 def test_ranking_is_by_recent_swaps_desc_and_bounded() -> None:
     launches = [
-        {"ticker": "A", "name": "Alpha", "creator": "0x1", "ts": 100.0},
-        {"ticker": "B", "name": "Beta", "creator": "0x2", "ts": 200.0},
-        {"ticker": "C", "name": "Gamma", "creator": "0x3", "ts": 300.0},
+        {"pool_id": "0xa", "ticker": "A", "name": "Alpha", "creator": "0x1", "ts": 100.0},
+        {"pool_id": "0xb", "ticker": "B", "name": "Beta", "creator": "0x2", "ts": 200.0},
+        {"pool_id": "0xc", "ticker": "C", "name": "Gamma", "creator": "0x3", "ts": 300.0},
     ]
-    swaps = [{"coin": "B"}] * 9 + [{"coin": "A"}] * 4 + [{"coin": "C"}]
+    swaps = [{"pool_id": "0xb"}] * 9 + [{"pool_id": "0xa"}] * 4 + [{"pool_id": "0xc"}]
     rows = L.rank_coins(launches, swaps, now_ts=1000.0, limit=2)
     assert [r["ticker"] for r in rows] == ["B", "A"]
     assert rows[0]["swaps_1h"] == 9
     assert rows[0]["age_s"] == 800.0
+    assert rows[0]["pool_id"] == "0xb"
+
+
+def test_two_coins_sharing_a_ticker_keep_their_own_swap_counts() -> None:
+    """`launch(string,string)` is permissionless: a ticker is not an identity.
+
+    Counting by ticker handed the impostor and the real coin one merged total
+    -- 10 swaps each here -- which each row then rendered as its own and
+    ranked on. Attribution is by `pool_id` (final fix wave, I1).
+    """
+    launches = [
+        {"pool_id": "0xreal", "ticker": "ICE", "name": "Icecream", "creator": "0x1",
+         "ts": 100.0},
+        {"pool_id": "0xfake", "ticker": "ICE", "name": "Icecream", "creator": "0x2",
+         "ts": 200.0},
+    ]
+    swaps = [{"pool_id": "0xreal"}] * 9 + [{"pool_id": "0xfake"}]
+    rows = L.rank_coins(launches, swaps, now_ts=1000.0, limit=5)
+    by_pool = {row["pool_id"]: row["swaps_1h"] for row in rows}
+    assert by_pool == {"0xreal": 9, "0xfake": 1}
 
 
 def test_a_coin_with_no_swaps_has_none_change_not_zero() -> None:
     """`0%` asserts we measured a flat hour; `None` is 'nothing traded'."""
-    launches = [{"ticker": "Q", "name": "Quiet", "creator": "0x9", "ts": 10.0}]
+    launches = [{"pool_id": "0xq", "ticker": "Q", "name": "Quiet", "creator": "0x9",
+                 "ts": 10.0}]
     rows = L.rank_coins(launches, [], now_ts=100.0, limit=5)
     assert rows[0]["swaps_1h"] == 0
     assert rows[0]["change_1h_pct"] is None

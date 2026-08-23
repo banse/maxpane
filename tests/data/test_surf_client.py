@@ -3180,10 +3180,19 @@ async def test_fetch_launchpad_ranks_and_decodes_the_real_fixture() -> None:
     ice = state.coins[0]
     assert ice.swaps_1h == 9
     # Fix round 2: the full distribution agrees with the rendered row for a
-    # ticker both cover -- same sweep, two independent counters, and this is
-    # the one fixture-backed proof they never drift apart.
-    assert state.swaps_by_coin["ICE"] == ice.swaps_1h == 9
+    # coin both cover -- same sweep, two independent counters, and this is
+    # the one fixture-backed proof they never drift apart. Final fix wave
+    # (I1): both are keyed and attributed by poolId, never by the ticker,
+    # and `coin_tickers` is the label map that lets a row be named.
     ice_pool_id = next(l["pool_id"] for l in launches if l["ticker"] == "ICE")
+    assert state.swaps_by_coin[ice_pool_id] == ice.swaps_1h == 9
+    assert state.coin_tickers[ice_pool_id] == "ICE"
+    assert set(state.swaps_by_coin) <= set(state.coin_tickers), (
+        "a counted pool with no label cannot be named on screen"
+    )
+    assert not any(
+        key.upper() == "ICE" for key in state.swaps_by_coin
+    ), "the distribution is keyed by poolId, not by an attacker-chosen ticker"
     assert ice.price_eth == pytest.approx(prices[ice_pool_id] / 1e18)
     assert ice.age_s == pytest.approx(
         (logs_data["head_block"] - 26_022_000) * 12.0
