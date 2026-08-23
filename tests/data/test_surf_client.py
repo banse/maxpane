@@ -2651,11 +2651,26 @@ def _public_fetchers() -> list[str]:
     read ``.pool_id_source`` to learn whether even the *fallback* constant is
     all it got. Its own outage behaviour is pinned by
     ``test_fetch_pool_v4_total_outage_still_returns_a_labelled_state``.
+
+    ``fetch_launchpad`` is the third exclusion, on exactly the ``fetch_pool_v4``
+    precedent: ``LaunchpadState`` always comes back, all-``None``-fielded on a
+    total outage, never a bare ``None`` — pinned by
+    ``test_fetch_launchpad_total_outage_still_returns_a_labelled_state``.
+
+    ``fetch_decoy_pool_count`` is the fourth: it is not a source-group
+    fetcher either — it takes a required ``real_pool_id`` argument (so the
+    zero-args ``getattr(client, name)()`` call these two sweeps make would
+    ``TypeError`` before ever reaching the transport) and its outage encoding
+    is the tuple ``(None, None)``, not a bare ``None``. Its own outage
+    behaviour is pinned by ``test_fetch_decoy_pool_count_total_outage_is_none_none``.
     """
     return sorted(
         name for name in dir(SurfClient)
         if name.startswith("fetch_") and not name.startswith("_")
-        and name not in ("fetch_tx_senders", "fetch_pool_v4")
+        and name not in (
+            "fetch_tx_senders", "fetch_pool_v4",
+            "fetch_launchpad", "fetch_decoy_pool_count",
+        )
     )
 
 
@@ -2856,3 +2871,335 @@ def test_degradation_signals_are_part_of_the_clients_contract():
         if f.name not in ("from_block", "to_block")
     }
     assert set(client.log_group_failed) == log_window_group_fields
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — fetch_launchpad and fetch_decoy_pool_count
+#
+# Fixtures live under tests/fixtures/surf/launchpad/ (a dedicated
+# subdirectory, per test_the_fixtures_root_holds_directories_only), and were
+# generated from the ground-truth values read live on 2026-08-23: coinCount =
+# 146, imdToBurn = 15.062422197243027626 IMD, totalRealImd =
+# 20,577.661206302839565537 IMD, burnFeeBps = 50, creatorFeeBps = 50,
+# totalCreatorEthOwed = 0.074934283907946169 ETH, executor tokenBalance =
+# 953674883767 wei, minBridgeAmount = 0.
+# ---------------------------------------------------------------------------
+
+LAUNCHPAD_FIXTURES = Path(__file__).parent.parent / "fixtures" / "surf" / "launchpad"
+
+
+def _load_launchpad(name: str) -> Any:
+    with open(LAUNCHPAD_FIXTURES / name) as fh:
+        return json.load(fh)
+
+
+def _word(v: int) -> str:
+    return "0x" + _encode_uint(v)
+
+
+def _client_with_canned_calls(
+    calls: dict[tuple[str, str], str], *, head_block: int = 30_000_000,
+) -> SurfClient:
+    """A client whose ``eth_call`` aggregate3 sub-calls answer only *calls*
+    (keyed lowercase ``(target, selector)`` -> a raw return word); every
+    other sub-call reverts ``(False, "0x")``, mirroring ``_chain_state_subcall``.
+    ``eth_blockNumber`` answers *head_block*; ``eth_getLogs`` answers an
+    empty list -- the minimal double for a test that only cares about one
+    getter's representable-zero contract, not the log sweep.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] == "eth_blockNumber":
+            return httpx.Response(200, json=_rpc_ok(payload, hex(head_block)))
+        if payload["method"] == "eth_getLogs":
+            return httpx.Response(200, json=_rpc_ok(payload, []))
+        assert payload["method"] == "eth_call"
+        call = payload["params"][0]
+        assert call["to"].lower() == surf_client.MULTICALL3.lower()
+        inner = decode_aggregate3_calldata(call["data"])
+        results = [
+            (True, calls[(t.lower(), cd[:10].lower())])
+            if (t.lower(), cd[:10].lower()) in calls else (False, "0x")
+            for (t, _allow, cd) in inner
+        ]
+        result = encode_aggregate3_result(results)
+        return httpx.Response(200, json=_rpc_ok(payload, result))
+
+    return _client_on(httpx.MockTransport(handler))
+
+
+def _client_with_canned_logs(
+    rows: list[dict], *, head_block: int | None = None,
+) -> SurfClient:
+    """A client whose LOGS pool answers ``eth_getLogs`` with *rows*
+    (real position-aware topic matching via ``_topics_match``) and
+    ``eth_blockNumber`` with a head safely above every row's own block. Does
+    not answer ``eth_call`` at all -- for tests that exercise exactly one
+    getLogs sweep and never touch the state pool.
+    """
+    if head_block is None:
+        head_block = max(
+            (int(r.get("blockNumber", "0x0"), 16) for r in rows), default=0
+        ) + 1000
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] == "eth_blockNumber":
+            return httpx.Response(200, json=_rpc_ok(payload, hex(head_block)))
+        assert payload["method"] == "eth_getLogs", payload["method"]
+        flt = payload["params"][0]
+        matched = [r for r in rows if _topics_match(r["topics"], flt["topics"])]
+        return httpx.Response(200, json=_rpc_ok(payload, matched))
+
+    return _client_on(httpx.MockTransport(handler))
+
+
+def _launchpad_fixture_handler(
+    reads: dict, logs_data: dict, prices_by_pool_id: dict[str, int],
+) -> Callable[[httpx.Request], httpx.Response]:
+    """The full launchpad-tier double: eight getters, three log sweeps
+    (keyed by their filter's ``topics[0]``) and the follow-up
+    ``spotPriceEthPerCoin`` round for whichever rows ``fetch_launchpad``
+    decides to price.
+    """
+    sel_to_key = {
+        A.SEL_IMD_TO_BURN.lower(): "imd_to_burn_wei",
+        A.SEL_TOTAL_REAL_IMD.lower(): "total_real_imd_wei",
+        A.SEL_BURN_FEE_BPS.lower(): "burn_fee_bps",
+        A.SEL_CREATOR_FEE_BPS.lower(): "creator_fee_bps",
+        A.SEL_TOTAL_CREATOR_ETH_OWED.lower(): "creator_eth_owed_wei",
+        A.SEL_COIN_COUNT.lower(): "coin_count",
+        A.SEL_TOKEN_BALANCE.lower(): "executor_balance_wei",
+        A.SEL_MIN_BRIDGE_AMOUNT.lower(): "min_bridge_wei",
+    }
+    logs_by_topic0 = {
+        A.TOPIC_LAUNCHED: logs_data["launched"],
+        A.TOPIC_CURVE_SWAP: logs_data["curve_swap"],
+        A.TOPIC_IMD_BURNED: logs_data["imd_burned"],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        method = payload["method"]
+        if method == "eth_blockNumber":
+            return httpx.Response(
+                200, json=_rpc_ok(payload, hex(logs_data["head_block"]))
+            )
+        if method == "eth_getLogs":
+            flt = payload["params"][0]
+            topic0 = flt["topics"][0]
+            return httpx.Response(
+                200, json=_rpc_ok(payload, logs_by_topic0.get(topic0, []))
+            )
+        assert method == "eth_call", method
+        call = payload["params"][0]
+        assert call["to"].lower() == surf_client.MULTICALL3.lower()
+        inner = decode_aggregate3_calldata(call["data"])
+        results: list[tuple[bool, str]] = []
+        for _target, _allow, cd in inner:
+            sel = cd[:10].lower()
+            if sel == A.SEL_SPOT_PRICE_ETH_PER_COIN.lower():
+                pool_id = "0x" + cd[10:]
+                price = prices_by_pool_id.get(pool_id)
+                results.append(
+                    (True, _word(price)) if price is not None else (False, "0x")
+                )
+                continue
+            key = sel_to_key.get(sel)
+            value = reads.get(key) if key else None
+            results.append((True, _word(value)) if value is not None else (False, "0x"))
+        result = encode_aggregate3_result(results)
+        return httpx.Response(200, json=_rpc_ok(payload, result))
+
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_launchpad_fetch_never_touches_the_network_in_tests() -> None:
+    """Every request this method makes must route through the injected
+    transport -- proven by handing it one that raises on any dispatch, the
+    same technique the whole suite relies on for "no test touches the
+    network" (CLAUDE.md hard constraint 3). ``fetch_launchpad`` genuinely
+    does issue requests, so the raise from ``_raising_client``'s double must
+    propagate straight out, exactly as its own module docstring describes.
+    """
+    async with _raising_client() as client:
+        with pytest.raises(AssertionError):
+            await client.fetch_launchpad()
+
+
+@pytest.mark.asyncio
+async def test_zero_accrued_imd_is_zero_not_none() -> None:
+    """A representable zero: 'we looked, nothing accrued'."""
+    async with _client_with_canned_calls(
+        {(A.LAUNCHPAD_HOOK.lower(), A.SEL_IMD_TO_BURN.lower()): _word(0)}
+    ) as client:
+        state = await client.fetch_launchpad()
+    assert state.imd_to_burn_wei == 0
+    # every other getter was never provided by the double -> a real failure,
+    # never a zero borrowed from the one leg that WAS provided.
+    assert state.total_real_imd_wei is None
+    assert state.coin_count is None
+    assert state.executor_balance_wei is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_launchpad_total_outage_still_returns_a_labelled_state() -> None:
+    """Unlike most fetchers, total outage is NOT a bare ``None`` here: the
+    launchpad is real, so the honest degraded state is an all-``None``-fielded
+    ``LaunchpadState`` with an empty coin tuple -- the same contract
+    ``fetch_pool_v4`` already keeps."""
+    async with _offline_client() as client:
+        state = await client.fetch_launchpad()
+    assert state.coin_count is None
+    assert state.imd_to_burn_wei is None
+    assert state.total_real_imd_wei is None
+    assert state.burn_fee_bps is None
+    assert state.creator_fee_bps is None
+    assert state.creator_eth_owed_wei is None
+    assert state.executor_balance_wei is None
+    assert state.min_bridge_wei is None
+    assert state.coins == ()
+    assert state.swap_count is None
+    assert state.trader_count is None
+    assert state.burned_total_wei is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_launchpad_ranks_and_decodes_the_real_fixture() -> None:
+    """End to end off the committed fixtures: getters, three log sweeps and
+    the price-of-rendered-rows round.  The hostile ``[/x]`` ticker and its
+    markup-laden name flow through RAW -- escaping is Task 11's job, never
+    this layer's.
+    """
+    reads = _load_launchpad("launchpad_reads.json")
+    logs_data = _load_launchpad("launchpad_logs.json")
+    launches = [surf_client._decode_launched_log(r) for r in logs_data["launched"]]
+    assert all(l is not None for l in launches)
+    # A synthetic price per launched coin so the follow-up round is
+    # exercised end to end and not just left at None.
+    prices = {l["pool_id"]: 5_000_000_000_000 + i for i, l in enumerate(launches)}
+
+    handler = _launchpad_fixture_handler(reads, logs_data, prices)
+    transport = RecordingTransport(handler)
+    async with _client_on(transport, now_fn=lambda: 2_000_000_000.0) as client:
+        state = await client.fetch_launchpad()
+
+    # The eight getters, verbatim off the fixture (ground truth 2026-08-23).
+    assert state.coin_count == reads["coin_count"]
+    assert state.imd_to_burn_wei == reads["imd_to_burn_wei"]
+    assert state.total_real_imd_wei == reads["total_real_imd_wei"]
+    assert state.burn_fee_bps == reads["burn_fee_bps"]
+    assert state.creator_fee_bps == reads["creator_fee_bps"]
+    assert state.creator_eth_owed_wei == reads["creator_eth_owed_wei"]
+    assert state.executor_balance_wei == reads["executor_balance_wei"]
+    assert state.min_bridge_wei == reads["min_bridge_wei"]
+
+    # Lifetime aggregates, decoded from all 24 CurveSwap rows and all 3
+    # ImdBurned rows -- independent of the 1h ranking window.
+    assert state.swap_count == 24
+    assert state.trader_count == 11
+    assert state.burned_total_wei == 3_299_000_000_000_000_000  # 3,299 IMD
+
+    # Ranking: ICE has 9 in-window swaps, the most of any coin.
+    tickers = [c.ticker for c in state.coins]
+    assert tickers[0] == "ICE"
+    ice = state.coins[0]
+    assert ice.swaps_1h == 9
+    ice_pool_id = next(l["pool_id"] for l in launches if l["ticker"] == "ICE")
+    assert ice.price_eth == pytest.approx(prices[ice_pool_id] / 1e18)
+    assert ice.age_s == pytest.approx(
+        (logs_data["head_block"] - 26_022_000) * 12.0
+    )
+
+    # The hostile ticker exists in the fixture and survives completely raw:
+    # no escaping happens at this layer (Task 11 owns that, at render time).
+    assert "[/x]" in tickers
+    hostile = next(c for c in state.coins if c.ticker == "[/x]")
+    assert hostile.name == "[bold red]hostile[/]"
+
+
+@pytest.mark.asyncio
+async def test_fetch_launchpad_uses_the_standing_pool_split() -> None:
+    """State calls go to publicnode; every ``eth_getLogs`` (and the logs
+    pool's own ``eth_blockNumber``) goes to tenderly/drpc."""
+    reads = _load_launchpad("launchpad_reads.json")
+    logs_data = _load_launchpad("launchpad_logs.json")
+    handler = _launchpad_fixture_handler(reads, logs_data, {})
+    transport = RecordingTransport(handler)
+    async with _client_on(transport, now_fn=lambda: 2_000_000_000.0) as client:
+        await client.fetch_launchpad()
+
+    calls = [(u, p.get("method")) for (u, _m, p) in transport.requests if p]
+    state_urls = [u for u, m in calls if m == "eth_call"]
+    logs_urls = [u for u, m in calls if m in ("eth_getLogs", "eth_blockNumber")]
+    assert state_urls, "no eth_call requests recorded"
+    assert logs_urls, "no logs-pool requests recorded"
+    assert all("publicnode" in u for u in state_urls)
+    assert all("publicnode" not in u for u in logs_urls)
+
+
+@pytest.mark.asyncio
+async def test_decoy_count_excludes_the_real_pool() -> None:
+    """38 Initialize logs, one of which is the live pool: 37 decoys."""
+    rows = _load_launchpad("v4_initializes.json")["rows"]
+    async with _client_with_canned_logs(rows) as client:
+        count, newest = await client.fetch_decoy_pool_count(
+            real_pool_id=A.POOL_V4_ID_FALLBACK
+        )
+    assert count == 37
+    assert newest["fee"] == 80000
+
+
+@pytest.mark.asyncio
+async def test_decoy_count_zero_decoys_is_representable_not_none() -> None:
+    """We looked, and the only Initialize log was the real pool: 0, not
+    unknown."""
+    real = A.POOL_V4_ID_FALLBACK
+    only_real = [
+        row for row in _load_launchpad("v4_initializes.json")["rows"]
+        if str(row["topics"][1]).lower() == real.lower()
+    ]
+    assert only_real  # sanity: the fixture really does contain the real row
+    async with _client_with_canned_logs(only_real) as client:
+        count, newest = await client.fetch_decoy_pool_count(real_pool_id=real)
+    assert count == 0
+    assert newest is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_decoy_pool_count_total_outage_is_none_none() -> None:
+    async with _offline_client() as client:
+        count, newest = await client.fetch_decoy_pool_count(
+            real_pool_id=A.POOL_V4_ID_FALLBACK
+        )
+    assert count is None
+    assert newest is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_decoy_pool_count_filters_currency1_equals_imd() -> None:
+    """The filter is exact: TOPIC_V4_INITIALIZE, currency1 == IMD -- not
+    currency0, and not left as a wildcard."""
+    rows = _load_launchpad("v4_initializes.json")["rows"]
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] == "eth_blockNumber":
+            return httpx.Response(200, json=_rpc_ok(payload, hex(26_100_000)))
+        assert payload["method"] == "eth_getLogs"
+        flt = payload["params"][0]
+        assert flt["address"].lower() == A.POOL_MANAGER_V4.lower()
+        assert flt["topics"][0] == A.TOPIC_V4_INITIALIZE
+        assert flt["topics"][1] is None
+        assert flt["topics"][2] is None
+        assert flt["topics"][3].lower() == _addr_topic(A.IMD_TOKEN)
+        matched = [r for r in rows if _topics_match(r["topics"], flt["topics"])]
+        return httpx.Response(200, json=_rpc_ok(payload, matched))
+
+    transport = RecordingTransport(_handler)
+    async with _client_on(transport) as client:
+        count, _newest = await client.fetch_decoy_pool_count(
+            real_pool_id=A.POOL_V4_ID_FALLBACK
+        )
+    assert count == 37

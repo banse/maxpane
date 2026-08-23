@@ -1,0 +1,10 @@
+{
+  "coin_count": 146,
+  "imd_to_burn_wei": 15062422197243027626,
+  "total_real_imd_wei": 20577661206302839565537,
+  "burn_fee_bps": 50,
+  "creator_fee_bps": 50,
+  "creator_eth_owed_wei": 74934283907946169,
+  "executor_balance_wei": 953674883767,
+  "min_bridge_wei": 0
+}

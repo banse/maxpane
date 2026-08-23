@@ -41,6 +41,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from maxpane_dashboard.analytics import surf_launchpad
 from maxpane_dashboard.data import surf_addresses as A
 from maxpane_dashboard.data import surf_v4
 from maxpane_dashboard.data.evm_abi import (
@@ -63,6 +64,8 @@ from maxpane_dashboard.data.surf_models import (
     ChainState,
     ChannelTx,
     DevTx,
+    LaunchpadCoin,
+    LaunchpadState,
     LogWindow,
     MarketSnapshot,
     NftStats,
@@ -125,6 +128,32 @@ _INTER_CALL_DELAY = 0.12  # publicnode 429s under bursts; measured in fwa_client
 LOG_WINDOW_BLOCKS = 2400
 _LOG_MIN_WINDOW = 300
 _LOG_MAX_SHRINKS = 3
+
+#: The launchpad shipped 2026-08-19; this window covers its whole observed
+#: lifetime (~4.5 days at 12 s/block) so ``Launched`` enumeration never
+#: silently drops the launchpad's early coins the way the 8 h
+#: ``LOG_WINDOW_BLOCKS`` would. Deliberately its own, much wider, constant --
+#: not a multiple of the recent-window one, because the two answer different
+#: questions ("what launched, ever" vs "what happened recently").
+LAUNCHPAD_LOG_WINDOW_BLOCKS = 33_000
+#: One hour at ~12 s/block -- the window ``rank_coins`` / ``hot_coin_threshold``
+#: treat as "this hour" for ``swaps_1h`` and HOT COIN. CurveSwap rows outside
+#: this many blocks of the sweep's own head are excluded from both, but still
+#: count toward the lifetime ``curve_flow`` totals.
+LAUNCHPAD_HOUR_BLOCKS = 300
+#: Curve state (spot price) is read only for the rows actually rendered --
+#: never per the full coin population (WP5 design idea 1). This bounds the
+#: follow-up multicall's size regardless of ``coinCount``.
+LAUNCHPAD_RENDER_LIMIT = 20
+#: Real-chain seconds per block, used only to turn a raw log row's
+#: ``blockNumber`` into an approximate epoch timestamp for ``age_s`` --
+#: ``eth_getLogs`` rows carry no timestamp of their own on every endpoint.
+#: Matches the ~12 s/block assumption ``LOG_WINDOW_BLOCKS`` already documents.
+_LAUNCHPAD_BLOCK_SECONDS = 12.0
+#: Search floor for the decoy-pool sweep: ``Initialize`` logs on the v4
+#: PoolManager filtered to ``currency1 == IMD`` exist from this block on
+#: (2026-08-23 research sweep).
+V4_INITIALIZE_SEARCH_FROM_BLOCK = 25_000_000
 
 MAX_CHANNEL_PAGES = 3   # 21 txs fit one page today; growth must not break us
 MAX_ACTIVITY_PAGES = 2  # per wallet
@@ -281,6 +310,115 @@ def _position_amounts_wei(
     amount0 = (liquidity * _Q96 * (sb - sp)) // (sp * sb) if sp * sb else 0
     amount1 = (liquidity * (sp - sa)) // _Q96
     return amount0, amount1
+
+
+# ---------------------------------------------------------------------------
+# Launchpad log decoding.  ``ticker`` and ``name`` are carried through
+# RAW here -- ``launch(string,string)`` is permissionless, so both are
+# attacker-chosen strings, and escaping happens at render (Task 11), never
+# here. Every helper returns ``None`` on a short/malformed row rather than
+# guessing; a dropped row is simply absent from the ranked list, never a
+# zero-filled placeholder in it.
+# ---------------------------------------------------------------------------
+
+
+def _decode_launched_data(data_hex: str) -> tuple[str, str, int, int] | None:
+    """``(string name, string ticker, uint256 coinSupply, uint256
+    initialPriceWad)`` -- the non-indexed tail of ``Launched``.
+
+    Hand-rolled rather than a shared multi-field ABI decoder (there is no
+    second caller in this codebase that needs one -- see ``evm_abi``'s own
+    docstring on what does and does not belong there). Each dynamic field is
+    re-wrapped with a synthetic leading offset word so ``evm_abi.decode_string``
+    -- built for a single top-level dynamic value -- can decode it in place.
+    """
+    raw = strip0x(data_hex or "")
+    if len(raw) < 4 * 64:
+        return None
+    try:
+        name_off = decode_uint(raw, 0) * 2   # bytes -> hex chars
+        ticker_off = decode_uint(raw, 1) * 2
+        coin_supply = decode_uint(raw, 2)
+        initial_price_wad = decode_uint(raw, 3)
+    except ValueError:
+        return None
+    name = decode_string("0x" + pad_left("20", 64) + raw[name_off:])
+    ticker = decode_string("0x" + pad_left("20", 64) + raw[ticker_off:])
+    if name is None or ticker is None:
+        return None
+    return name, ticker, coin_supply, initial_price_wad
+
+
+def _decode_launched_log(row: dict) -> dict | None:
+    """One raw ``Launched`` row -> its fields, or ``None`` if malformed.
+
+    Topic layout: ``[topic0, poolId, coin, creator]`` -- three indexed
+    fields, matching the vendored ``Launched(bytes32,address,address,string,
+    string,uint256,uint256)`` preimage's first three types.
+    """
+    topics = row.get("topics") or []
+    if len(topics) < 4:
+        return None
+    decoded = _decode_launched_data(row.get("data") or "0x")
+    if decoded is None:
+        return None
+    name, ticker, coin_supply_wei, initial_price_wad = decoded
+    try:
+        block = int(row.get("blockNumber"), 16)
+    except (TypeError, ValueError):
+        return None
+    return {
+        "pool_id": str(topics[1]).lower(),
+        "coin": decode_address(topics[2]),
+        "creator": decode_address(topics[3]),
+        "name": name,
+        "ticker": ticker,
+        "coin_supply_wei": coin_supply_wei,
+        "initial_price_wad": initial_price_wad,
+        "block": block,
+    }
+
+
+def _decode_curve_swap_log(row: dict) -> dict | None:
+    """One raw ``CurveSwap`` row -> its fields, or ``None`` if malformed.
+
+    Topic layout mirrors ``Launched``: ``[topic0, poolId, coin, trader]``.
+    Data is six same-size static words (``bool`` costs a full word like any
+    other type) -- ``isBuy, imdAmount, coinAmount, priceAfterWad,
+    burnFeeWei, creatorFeeWei`` -- so no dynamic-offset decoding is needed
+    here, unlike ``Launched``.
+    """
+    topics = row.get("topics") or []
+    if len(topics) < 4:
+        return None
+    raw = strip0x(row.get("data") or "0x")
+    if len(raw) < 6 * 64:
+        return None
+    try:
+        block = int(row.get("blockNumber"), 16)
+    except (TypeError, ValueError):
+        return None
+    return {
+        "pool_id": str(topics[1]).lower(),
+        "coin": decode_address(topics[2]),
+        "trader": decode_address(topics[3]),
+        "is_buy": decode_uint(raw, 0) != 0,
+        "imd_amount_wei": decode_uint(raw, 1),
+        "coin_amount_wei": decode_uint(raw, 2),
+        "price_after_wad": decode_uint(raw, 3),
+        "burn_fee_wei": decode_uint(raw, 4),
+        "creator_fee_wei": decode_uint(raw, 5),
+        "block": block,
+    }
+
+
+def _decode_imd_burned_amount(row: dict) -> int | None:
+    """``ImdBurned(uint256 amount)`` -- one hook-wide aggregate per event,
+    never per coin: the burn pipeline batches whatever has accrued."""
+    raw = strip0x(row.get("data") or "0x")
+    if len(raw) < 64:
+        return None
+    return decode_uint(raw, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -903,6 +1041,338 @@ class SurfClient(OwnedHttpClient):
             liquidity=liquidity,
             pool_id_source=pool_id_source,
         )
+
+    # ------------------------------------------------------------------
+    # State + logs RPC — the launchpad tier
+    # ------------------------------------------------------------------
+
+    async def fetch_launchpad(self) -> LaunchpadState:
+        """The launchpad tier: one getter multicall, three log sweeps, then
+        ``rank_coins`` off the swap logs alone.
+
+        Cost is flat in ``coinCount``: ranking never issues a per-coin call
+        (design idea 1 — see the analytics module docstring). Curve state —
+        the live ``spotPriceEthPerCoin`` — is read only for the rows this
+        method actually returns, in one more bounded ``aggregate3`` batch,
+        never for the full coin population.
+
+        State calls go to publicnode; every ``eth_getLogs`` goes to
+        tenderly/drpc — the standing split (publicnode refuses archive
+        ``eth_getLogs``).
+
+        Always returns a ``LaunchpadState``, never ``None``: the launchpad is
+        real, so a total outage is an honestly all-``None`` state, the same
+        contract ``fetch_pool_v4`` keeps. ``imd_to_burn_wei`` and
+        ``executor_balance_wei`` carry a representable zero; every other
+        getter is ``None`` on failure, never ``0``.
+        """
+        getters = [
+            (A.LAUNCHPAD_HOOK, A.SEL_IMD_TO_BURN),
+            (A.LAUNCHPAD_HOOK, A.SEL_TOTAL_REAL_IMD),
+            (A.LAUNCHPAD_HOOK, A.SEL_BURN_FEE_BPS),
+            (A.LAUNCHPAD_HOOK, A.SEL_CREATOR_FEE_BPS),
+            (A.LAUNCHPAD_HOOK, A.SEL_TOTAL_CREATOR_ETH_OWED),
+            (A.LAUNCHPAD_FACTORY, A.SEL_COIN_COUNT),
+            (A.BURN_EXECUTOR_V2, A.SEL_TOKEN_BALANCE),
+            (A.BURN_EXECUTOR_V2, A.SEL_MIN_BRIDGE_AMOUNT),
+        ]
+        (
+            imd_to_burn_wei, total_real_imd_wei, burn_fee_bps, creator_fee_bps,
+            creator_eth_owed_wei, coin_count, executor_balance_wei, min_bridge_wei,
+        ) = await self._launchpad_getters(getters)
+
+        launches, all_swaps, hour_swaps, burned_total_wei = (
+            await self._launchpad_logs()
+        )
+
+        rows = surf_launchpad.rank_coins(
+            launches, hour_swaps, now_ts=self._now_fn(), limit=LAUNCHPAD_RENDER_LIMIT,
+        )
+        rows = await self._price_rendered_rows(rows, launches)
+
+        if all_swaps is None:
+            swap_count = trader_count = None
+        else:
+            flow = surf_launchpad.curve_flow(all_swaps)
+            swap_count = flow["swap_count"]
+            trader_count = flow["trader_count"]
+
+        coins = tuple(
+            LaunchpadCoin(
+                ticker=row["ticker"],
+                name=row["name"],
+                creator=row["creator"],
+                age_s=row["age_s"],
+                price_eth=row["price_eth"],
+                change_1h_pct=row["change_1h_pct"],
+                swaps_1h=row["swaps_1h"],
+                imd_burned=row["imd_burned"],
+            )
+            for row in rows
+        )
+
+        return LaunchpadState(
+            coin_count=coin_count,
+            imd_to_burn_wei=imd_to_burn_wei,
+            total_real_imd_wei=total_real_imd_wei,
+            burn_fee_bps=burn_fee_bps,
+            creator_fee_bps=creator_fee_bps,
+            creator_eth_owed_wei=creator_eth_owed_wei,
+            executor_balance_wei=executor_balance_wei,
+            min_bridge_wei=min_bridge_wei,
+            coins=coins,
+            swap_count=swap_count,
+            trader_count=trader_count,
+            burned_total_wei=burned_total_wei,
+        )
+
+    async def _launchpad_getters(
+        self, getters: list[tuple[str, str]]
+    ) -> tuple[int | None, ...]:
+        """One ``aggregate3`` over the hook / factory / executor getters.
+
+        Each leg is individually ``None`` on failure, never ``0`` — except
+        that a genuine on-chain ``0`` (``imdToBurn``, ``tokenBalance``,
+        ``minBridgeAmount``) decodes to the real integer ``0``, exactly the
+        representable-zero contract ``LaunchpadState`` documents.
+        """
+        data = encode_aggregate3([(target, sel, True) for target, sel in getters])
+        try:
+            raw = await self._rpc_state(
+                "eth_call", [{"to": MULTICALL3, "data": data}, "latest"]
+            )
+        except RuntimeError as exc:
+            logger.warning("fetch_launchpad getters: %s", exc)
+            return (None,) * len(getters)
+        results = decode_aggregate3_result(raw or "0x")
+        if len(results) != len(getters):
+            logger.warning("fetch_launchpad getters: short aggregate3 reply")
+            return (None,) * len(getters)
+
+        def ok(i: int) -> str | None:
+            success, ret = results[i]
+            return ret if success and strip0x(ret) else None
+
+        return tuple(
+            decode_uint(ok(i), 0) if ok(i) is not None else None
+            for i in range(len(getters))
+        )
+
+    async def _launchpad_logs(
+        self,
+    ) -> tuple[list[dict], list[dict] | None, list[dict], int | None]:
+        """Sweep ``Launched`` / ``CurveSwap`` / ``ImdBurned`` on the LOGS pool
+        over the launchpad's own (much wider) window.
+
+        Returns ``(launches, all_swaps, hour_swaps, burned_total_wei)``.
+        ``launches`` degrades to ``[]`` on failure — ``LaunchpadState.coins``
+        has no way to tell "empty" from "failed" apart in its tuple, the same
+        ambiguity ``LogWindow`` accepts and reports one layer up instead of
+        here. ``all_swaps`` is ``None`` only when the CurveSwap sweep itself
+        failed, so ``swap_count``/``trader_count`` can stay ``None`` rather
+        than render a false zero; ``hour_swaps`` — the
+        ``LAUNCHPAD_HOUR_BLOCKS`` slice ``rank_coins``/HOT COIN use — is
+        always a (possibly empty) list. ``burned_total_wei`` keeps the same
+        None-on-failure / 0-on-empty split as the getters.
+        """
+        try:
+            head_hex = await self._rpc_logs("eth_blockNumber", [])
+            head = int(head_hex, 16)
+        except (RuntimeError, TypeError, ValueError) as exc:
+            logger.warning("fetch_launchpad logs head: %s", exc)
+            return [], None, [], None
+
+        from_block = head - LAUNCHPAD_LOG_WINDOW_BLOCKS
+        launched_rows = await self._get_logs_shrinking(
+            {"address": A.LAUNCHPAD_FACTORY, "topics": [A.TOPIC_LAUNCHED]},
+            from_block, head, group="launchpad_launched",
+        )
+        swap_rows = await self._get_logs_shrinking(
+            {"address": A.LAUNCHPAD_HOOK, "topics": [A.TOPIC_CURVE_SWAP]},
+            from_block, head, group="launchpad_curve_swap",
+        )
+        burned_rows = await self._get_logs_shrinking(
+            {"address": A.LAUNCHPAD_HOOK, "topics": [A.TOPIC_IMD_BURNED]},
+            from_block, head, group="launchpad_imd_burned",
+        )
+
+        now_ts = self._now_fn()
+        launches: list[dict] = []
+        pool_to_launch: dict[str, dict] = {}
+        for row in launched_rows or ():
+            parsed = _decode_launched_log(row)
+            if parsed is None:
+                continue
+            entry = {
+                "ticker": parsed["ticker"],
+                "name": parsed["name"],
+                "creator": parsed["creator"],
+                "creator_known": _label_for(parsed["creator"]) is not None,
+                "ts": now_ts - (head - parsed["block"]) * _LAUNCHPAD_BLOCK_SECONDS,
+                "pool_id": parsed["pool_id"],
+                "price_eth": None,       # filled in for rendered rows only
+                "change_1h_pct": None,   # filled in below when swaps allow it
+                "imd_burned_wei": 0 if swap_rows is not None else None,
+            }
+            launches.append(entry)
+            pool_to_launch[parsed["pool_id"]] = entry
+
+        all_swaps: list[dict] | None
+        hour_swaps: list[dict] = []
+        if swap_rows is None:
+            all_swaps = None
+        else:
+            all_swaps = []
+            by_coin_hour: dict[str, list[dict]] = {}
+            for row in swap_rows:
+                parsed = _decode_curve_swap_log(row)
+                if parsed is None:
+                    continue
+                launch = pool_to_launch.get(parsed["pool_id"])
+                ticker = launch["ticker"] if launch else None
+                swap = {
+                    "coin": ticker,
+                    "trader": parsed["trader"],
+                    "is_buy": parsed["is_buy"],
+                }
+                all_swaps.append(swap)
+                if launch is not None and launch["imd_burned_wei"] is not None:
+                    launch["imd_burned_wei"] += parsed["burn_fee_wei"]
+                if parsed["block"] >= head - LAUNCHPAD_HOUR_BLOCKS:
+                    hour_swaps.append(swap)
+                    if ticker:
+                        by_coin_hour.setdefault(ticker, []).append(parsed)
+            # change_1h_pct is derived from log data alone (first vs last
+            # in-hour price for that coin) -- no RPC call, unlike price_eth.
+            for entries in by_coin_hour.values():
+                entries.sort(key=lambda p: p["block"])
+                first_price = entries[0]["price_after_wad"]
+                last_price = entries[-1]["price_after_wad"]
+                launch = pool_to_launch.get(entries[0]["pool_id"])
+                if launch is not None and first_price:
+                    launch["change_1h_pct"] = (
+                        (last_price - first_price) / first_price * 100.0
+                    )
+
+        for entry in launches:
+            burned_wei = entry.pop("imd_burned_wei")
+            entry["imd_burned"] = None if burned_wei is None else burned_wei / 1e18
+
+        burned_total_wei: int | None
+        if burned_rows is None:
+            burned_total_wei = None
+        else:
+            burned_total_wei = 0
+            for row in burned_rows:
+                amount = _decode_imd_burned_amount(row)
+                if amount is not None:
+                    burned_total_wei += amount
+
+        return launches, all_swaps, hour_swaps, burned_total_wei
+
+    async def _price_rendered_rows(
+        self, rows: list[dict], launches: list[dict]
+    ) -> list[dict]:
+        """Read live ``spotPriceEthPerCoin`` for exactly the rows
+        ``rank_coins`` returned — never the full coin population.
+
+        A missing/failed leg leaves that row's ``price_eth`` at whatever
+        ``rank_coins`` already gave it (``None``), never a guessed value.
+        """
+        if not rows:
+            return rows
+        pool_by_ticker = {launch["ticker"]: launch["pool_id"] for launch in launches}
+        calls: list[tuple[str, str]] = []
+        order: list[int] = []
+        for i, row in enumerate(rows):
+            pool_id = pool_by_ticker.get(row["ticker"])
+            if not pool_id:
+                continue
+            calls.append(
+                (A.LAUNCHPAD_HOOK, A.SEL_SPOT_PRICE_ETH_PER_COIN + strip0x(pool_id))
+            )
+            order.append(i)
+        if not calls:
+            return rows
+        data = encode_aggregate3([(t, cd, True) for t, cd in calls])
+        try:
+            raw = await self._rpc_state(
+                "eth_call", [{"to": MULTICALL3, "data": data}, "latest"]
+            )
+        except RuntimeError as exc:
+            logger.warning("fetch_launchpad price round: %s", exc)
+            return rows
+        results = decode_aggregate3_result(raw or "0x")
+        if len(results) != len(calls):
+            logger.warning("fetch_launchpad price round: short aggregate3 reply")
+            return rows
+        priced = list(rows)
+        for idx, (success, ret) in zip(order, results):
+            if success and strip0x(ret):
+                priced[idx] = {**priced[idx], "price_eth": decode_uint(ret, 0) / 1e18}
+        return priced
+
+    async def fetch_decoy_pool_count(
+        self, real_pool_id: str | None
+    ) -> tuple[int | None, dict | None]:
+        """How many OTHER ETH/IMD v4 pools exist, and the newest one's row.
+
+        One ``getLogs`` on ``TOPIC_V4_INITIALIZE`` filtered to
+        ``currency1 == IMD`` — LOGS POOL ONLY — minus *real_pool_id*. 37 of
+        38 such pools are third-party decoys (some squatting within one pip
+        of the real 1% fee tier), so the count is itself a signal worth
+        rendering, and "the newest" surfaces the most recent squat rather
+        than a fixed historical one.
+
+        Returns ``(None, None)`` on total outage — the read failed, we do not
+        know. An empty, successfully-read sweep (no decoys at all) is the
+        representable ``(0, None)``: we looked, and there were none.
+        """
+        try:
+            head_hex = await self._rpc_logs("eth_blockNumber", [])
+            head = int(head_hex, 16)
+        except (RuntimeError, TypeError, ValueError) as exc:
+            logger.warning("fetch_decoy_pool_count head: %s", exc)
+            return None, None
+        rows = await self._get_logs_shrinking(
+            {
+                "address": A.POOL_MANAGER_V4,
+                "topics": [A.TOPIC_V4_INITIALIZE, None, None,
+                           _addr_topic(A.IMD_TOKEN)],
+            },
+            V4_INITIALIZE_SEARCH_FROM_BLOCK, head, group="v4_decoy_pools",
+        )
+        if rows is None:
+            return None, None
+
+        real = (real_pool_id or "").lower()
+        decoys = [
+            row for row in rows
+            if len(row.get("topics") or []) > 1
+            and str(row["topics"][1]).lower() != real
+        ]
+        if not decoys:
+            return 0, None
+
+        newest_row = max(decoys, key=lambda r: int(r.get("blockNumber") or "0x0", 16))
+        topics = newest_row.get("topics") or []
+        data = strip0x(newest_row.get("data") or "0x")
+        newest = {
+            "pool_id": str(topics[1]).lower() if len(topics) > 1 else None,
+            "currency0": decode_address(topics[2]) if len(topics) > 2 else None,
+            "currency1": decode_address(topics[3]) if len(topics) > 3 else None,
+            "fee": decode_uint(data, 0) if len(data) >= 64 else None,
+            "tick_spacing": (
+                _decode_int24(decode_uint(data, 1)) if len(data) >= 128 else None
+            ),
+            "hooks": decode_address(data, 2) if len(data) >= 192 else None,
+            "sqrt_price_x96": decode_uint(data, 3) if len(data) >= 256 else None,
+            "tick": (
+                _decode_int24(decode_uint(data, 4)) if len(data) >= 320 else None
+            ),
+            "block_number": int(newest_row.get("blockNumber") or "0x0", 16),
+        }
+        return len(decoys), newest
 
     # ------------------------------------------------------------------
     # Blockscout REST — announcement channel
@@ -1541,6 +2011,10 @@ __all__ = [
     "GECKO_TOKEN_API",
     "COINGECKO_ETH_URL",
     "LOG_WINDOW_BLOCKS",
+    "LAUNCHPAD_LOG_WINDOW_BLOCKS",
+    "LAUNCHPAD_HOUR_BLOCKS",
+    "LAUNCHPAD_RENDER_LIMIT",
+    "V4_INITIALIZE_SEARCH_FROM_BLOCK",
     "MAX_CHANNEL_PAGES",
     "MAX_ACTIVITY_PAGES",
     "MAX_NFT_TRANSFER_PAGES",
