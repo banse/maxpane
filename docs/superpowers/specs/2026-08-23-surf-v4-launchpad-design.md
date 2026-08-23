@@ -15,7 +15,7 @@ misleading, or structurally unanswerable state.
 This change has two parts:
 
 1. **repair** the default view against the post-migration contracts; and
-2. **add one context view** (`g`, LAUNCHPAD) for the launchpad, on the body-swap
+2. **add one context view** (`l`, LAUNCHPAD) for the launchpad, on the body-swap
    precedent set by curator's `y` and `f`.
 
 `app.py`, `__main__.py` and `GAMES` are untouched: this is an expansion of an
@@ -244,12 +244,26 @@ line, so the migration stays legible rather than vanishing.
 `KNOWN_LABELS`, and `DEV_TX_KINDS` grows the launchpad selectors so
 `burnAccruedImd` renders as a named kind instead of `other`.
 
-> **Measurement debt.** `SurfDevActivity`'s cells are sized to the exact
-> vocabularies its producer emits; that sizing is what took surf 152 -> 142
-> columns. A kind string longer than `fwa claim` (9 cols) widens the kind cell
-> and may push surf past FWA's 143. **Re-measure; do not assume.** If a longer
-> name would move the app-wide constant, shorten the name — `burn` over
-> `burn accrued` — rather than moving `FULL_LAYOUT_COLUMNS`.
+The launchpad kind is named **`burn`**, not `burn accrued`. This is decided, not
+a fallback.
+
+> **Shorten the label; do not widen the layout.** `SurfDevActivity`'s cells are
+> sized to the exact vocabularies its producer emits, and that sizing is what
+> took surf 152 -> 142 columns. A kind string longer than `fwa claim` (9 cols)
+> widens the kind cell and can push surf past FWA's 143.
+>
+> The standing rule for this dashboard: when a new value would widen a sized
+> cell, **shorten the value**. Moving `FULL_LAYOUT_COLUMNS` is reserved for cases
+> where no honest short name exists — the app-wide number is a budget every
+> dashboard spends against, and it has only ever gone up once in six changes.
+>
+> Re-measure after naming; do not assume `burn` is free just because it is
+> short. The kind cell's width is the max over the whole vocabulary, so the
+> binding string may be one that already exists.
+
+When this work lands, that rule belongs in CLAUDE.md's Conventions section: it
+is repo-wide, not surf-specific, and every dashboard that sizes a cell to a
+vocabulary is one careless label away from spending the app-wide budget.
 
 ## 7. The BURN Hero Card And Pipeline
 
@@ -267,9 +281,9 @@ unchanged; a permissionless function is simply public state worth rendering.
 `None`, which means the read failed. Observed cumulative burn keeps the existing
 `observed` wording — it covers this install's window and nothing before it.
 
-## 8. The `g` LAUNCHPAD View
+## 8. The `l` LAUNCHPAD View
 
-`g` swaps the dashboard body for the launchpad; the hero row stays in place.
+`l` swaps the dashboard body for the launchpad; the hero row stays in place.
 `esc` backs out, one-way. This matches curator's `y` and `f` exactly.
 
 ```
@@ -353,16 +367,16 @@ Surf currently measures **142**, one column under FWA's 143, and the app-wide
 `FULL_LAYOUT_COLUMNS` is FWA's. The default-view repairs must not move surf past
 143; §6.4 names the one change likely to try.
 
-The `g` body is full-width and the COINS table is expected to bind it. It gets
+The `l` body is full-width and the COINS table is expected to bind it. It gets
 its own width sweep, **started deliberately away from the pin** so a sweep cannot
 agree with the constant by construction — the shape of
 `test_the_analysis_binding_panel_is_the_operators_table`. A binding-panel test
 names the panel, so this document is not the pin.
 
-If the `g` body needs more than 143, the fix is a narrower tier that sheds
+If the `l` body needs more than 143, the fix is a narrower tier that sheds
 columns and advertises `‹ widen`, **not** raising the app-wide constant.
 
-Status hints grow `g launchpad`. The existing hint line was already cut down to
+Status hints grow `l launchpad`. The existing hint line was already cut down to
 fit; the new label must be measured into it rather than appended on faith.
 
 ## 11. Verification
