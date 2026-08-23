@@ -194,6 +194,25 @@ picks a tier by one width and paints another, i.e. clips with the marker
 dark.  Here the measured object *is* the painted object, so the two cannot
 disagree -- pinned anyway by
 ``test_market_tier_budget_matches_what_it_actually_renders``.
+
+Fix round 10a (v3->v4 repoint, price-source disagreement)
+-----------------------------------------------------------
+
+Two additions, both re-measured against the 73-column ceiling above rather
+than assumed to fit under it. Neither moved it: the legacy line lives on
+the previously-blank ``#surf-mkt-gap`` seam (``full`` tier only, never a
+right-hand segment, so :func:`_second_column` cannot see it -- its own text
+tops out around 25 columns even at a nine-figure legacy value, nowhere near
+the panel's binding row); the disagreement marker is two characters on the
+price row, whose LEFT already sat one column under the mechanism sentence
+that pins :func:`_second_column`, so the marker becomes the new pin by one
+column and the panel's worst measured case is still **73** -- the same
+number the module already documented for a tight peg, unmoved by either
+addition. ``pool_liquidity_usd`` needs no gating any more: the manager now
+matches the DexScreener pair by the dev's own on-chain pool id rather than
+by size (fix round 10a, ``surf_client.SurfClient._pick_imd_pair``), so it is
+always the live pool's own figure and ``legacy_pool_liquidity_usd`` is
+always a genuinely separate number, gated on nothing but its own presence.
 """
 
 from __future__ import annotations
@@ -304,6 +323,21 @@ _GAP_EPSILON = 5e-7
 #: does not show.
 _PARITY_EPSILON = 0.005
 
+#: Fix round 10a wired two independent keyless price sources into the
+#: payload: the on-chain ``extsload`` read (now the preferred
+#: ``imd_price_usd``) and DexScreener (a cross-check now, never the number
+#: of record).  Past this threshold, expressed as a percentage of the chain
+#: price, the disagreement is surfaced rather than silently absorbed by
+#: whichever source happened to win the preference.  Observed agreement
+#: today is 0.2%; 2% is roughly a tenfold margin over that normal drift, not
+#: a taste number.
+_PRICE_DISAGREEMENT_PCT = 2.0
+
+#: Appended to the price figure when the two sources disagree past
+#: :data:`_PRICE_DISAGREEMENT_PCT`.  One glyph: the price row is not this
+#: panel's binding row today, and a wordier marker would make it one.
+_PRICE_DISAGREEMENT_MARKER = " [yellow]?[/]"
+
 #: The width ladder: ``(tier, fields this tier gives up)``, widest first and
 #: **cumulative** -- each tier has also given up everything above it.  The
 #: reasoning for the order, and the measurement behind each pairing, is in
@@ -372,15 +406,41 @@ WIDEN_HINTS: dict[str, str] = {
 #: codebase allows.
 SHORT_HINT = "‹ widen"
 
-#: The four data rows, in compose order.  ``#surf-mkt-gap`` is not here: it is
-#: the blank seam between the token figures and the bridge block and is never
-#: written to.
+#: The five data rows, in compose order.  ``#surf-mkt-gap`` was the blank
+#: seam between the token figures and the bridge block and was never written
+#: to until fix round 10a: it now carries the dim ``legacy`` line naming the
+#: superseded v3 pool's own liquidity when :func:`_parts` has one to show
+#: (``legacy_pool_liquidity_usd`` is ``None`` when the v3 pair goes
+#: unmatched), and stays blank otherwise -- a payload with no legacy figure
+#: renders exactly as before, which is what keeps
+#: ``test_market_blank_row_separates_the_token_figures_from_the_bridge``
+#: green.  It carries no right-hand segment, ever, so it is invisible to
+#: :func:`_second_column` -- adding it cannot move the sparklines.
 _ROW_IDS = (
     "#surf-mkt-price",
     "#surf-mkt-vol",
+    "#surf-mkt-gap",
     "#surf-mkt-parity",
     "#surf-mkt-bridge",
 )
+
+
+def _price_marker(disagreement_pct) -> str:
+    """``[yellow]?[/]`` when the two price sources disagree past the
+    threshold, else ``""``.
+
+    ``None`` -- one source missing -- is not agreement and must not render
+    as agreement, but it is also not a disagreement to flag: it renders no
+    marker at all, same as a value inside the threshold.  Never chooses
+    between the two readings itself -- ``imd_price_usd`` is already
+    whichever the manager preferred (the on-chain read when available) by
+    the time it reaches :func:`_parts`; this only flags that DexScreener's
+    figure disagrees with it enough to be worth a second look.
+    """
+    v = as_float(disagreement_pct)
+    if v is None or abs(v) <= _PRICE_DISAGREEMENT_PCT:
+        return ""
+    return _PRICE_DISAGREEMENT_MARKER
 
 
 def _fmt_change(value) -> str:
@@ -496,6 +556,8 @@ def _parts(
     parity_pct,
     supply_series,
     price_series,
+    legacy_pool_liquidity_usd=None,
+    price_source_disagreement_pct=None,
 ) -> dict:
     """Every rendered fragment the tiers choose between, formatted once.
 
@@ -505,6 +567,7 @@ def _parts(
     differ only in *which* fields they carry, never in what a field says.
     """
     price = fmt_price(imd_price_usd)
+    marker = _price_marker(price_source_disagreement_pct) if price != DASH else ""
     vol = as_float(imd_vol_24h_usd)
     liq = as_float(pool_liquidity_usd)
     fp = fmt_price(fp_price_usd)
@@ -516,9 +579,24 @@ def _parts(
     # beside ``⚠ spread unavailable`` -- three keys, one answer.
     measurable = bool(spread)
 
+    # The superseded v3 pool, kept legible rather than silently vanishing.
+    # ``pool`` above is always the LIVE pool now (fix round 10a matches the
+    # DexScreener pair by the dev's own on-chain pool id, never by size), so
+    # this is a genuinely separate figure, not a relabelling of the same
+    # number -- gated purely on presence: ``legacy_pool_liquidity_usd`` is
+    # ``None`` exactly when the v3 pair went unmatched, which is the same
+    # "cannot verify" rule every other field in this payload already follows.
+    legacy = as_float(legacy_pool_liquidity_usd)
+    legacy_line = (
+        f"  [dim]legacy: v3 pool ${fmt_compact(legacy)}[/]"
+        if legacy is not None
+        else ""
+    )
+
     return {
         "price": _labelled(
-            "imd", f"[bold]{price}[/]" if price != DASH else f"[dim]{DASH}[/]"
+            "imd",
+            f"[bold]{price}[/]{marker}" if price != DASH else f"[dim]{DASH}[/]",
         ),
         "change": _fmt_change(imd_change_24h_pct),
         "vol": f"${fmt_compact(vol)}" if vol is not None else DASH,
@@ -537,11 +615,12 @@ def _parts(
         # spread onto the parity cell without appearing beside "level with FP",
         # where there is no gap to be gross about.
         "gross": GROSS_CAVEAT in spread,
+        "legacy_line": legacy_line,
     }
 
 
 def _rows_for(tier: str, parts: dict) -> list[tuple[str, str]]:
-    """``(left, right)`` markup for the four data rows at *tier*.
+    """``(left, right)`` markup for the five data rows at *tier*.
 
     The single source of both the measurement and the render: :func:`_tier_for`
     lays these out to decide, and :meth:`SurfMarket._render_view` lays the
@@ -606,16 +685,25 @@ def _rows_for(tier: str, parts: dict) -> list[tuple[str, str]]:
         )
     right_bridge = "" if "flow" in gone else parts["direction"]
 
+    # The legacy-pool seam: never touches ``_second_column`` (no right-hand
+    # segment, ever) and is shown only at ``full`` -- the migration note is
+    # informative, not load-bearing, and every narrower tier is already
+    # shedding fields the parity/bridge rows actually need.  Its own text is
+    # ~24 columns, far under every tier's floor, so it is never itself the
+    # widest line even where it does render.
+    left_gap = parts["legacy_line"] if tier == "full" else ""
+
     return [
         (left_price, right_price),
         (left_token, right_token),
+        (left_gap, ""),
         (left_parity, right_parity),
         (left_bridge, right_bridge),
     ]
 
 
 def _lines_for(tier: str, parts: dict) -> list[str]:
-    """The four rendered rows at *tier*, padded onto their common column."""
+    """The five rendered rows at *tier*, padded onto their common column."""
     rows = _rows_for(tier, parts)
     return _lay_out(rows, _second_column(rows))
 
@@ -687,9 +775,23 @@ class SurfMarket(Vertical):
         parity_pct=None,
         supply_series=None,
         price_series=None,
+        legacy_pool_liquidity_usd=None,
+        price_source_disagreement_pct=None,
         **_kwargs,
     ) -> None:
-        """Refresh all rows.  Kwargs are exactly the PRD §5 market keys."""
+        """Refresh all rows.  Kwargs are exactly the PRD §5 market keys.
+
+        ``legacy_pool_liquidity_usd`` (fix round 10a) is the superseded v3
+        pool's own figure, kept legible as a dim seam-row line rather than
+        vanishing -- ``pool_liquidity_usd`` above is always the LIVE pool
+        now (the manager matches it by the dev's own on-chain pool id, never
+        by size), so the two are never the same number wearing two labels.
+        ``price_source_disagreement_pct`` never changes which price renders
+        -- ``imd_price_usd`` is already whichever the manager preferred (the
+        on-chain read when available) by the time it reaches this widget --
+        it only marks the row when DexScreener's figure disagrees with it
+        past :data:`_PRICE_DISAGREEMENT_PCT`.
+        """
         self._payload = {
             "imd_price_usd": imd_price_usd,
             "imd_change_24h_pct": imd_change_24h_pct,
@@ -699,6 +801,8 @@ class SurfMarket(Vertical):
             "parity_pct": parity_pct,
             "supply_series": supply_series,
             "price_series": price_series,
+            "legacy_pool_liquidity_usd": legacy_pool_liquidity_usd,
+            "price_source_disagreement_pct": price_source_disagreement_pct,
         }
         self._render_view()
 

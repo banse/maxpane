@@ -1828,3 +1828,162 @@ async def test_market_re_tiers_when_the_panel_is_resized():
         title = _lines(app)[0]
         assert "widen" not in title, f"still shedding after the widen: {title!r}"
         assert "vol 24h" in "\n".join(_panel_rows(app))
+
+
+# -- SurfMarket: fix round 10a -- v3 -> v4 repoint, price-source disagreement
+#
+# The v3 pool drained to $2,195 while the live v4 pool holds $805,927 --
+# quoting v3 as the panel's own number under-reported the dashboard's subject
+# by ~370x. Fix round 10a repointed ``pool_liquidity_usd`` at the live pool
+# (matched by the dev's own on-chain pool id rather than by size) and added
+# ``legacy_pool_liquidity_usd`` as a genuinely separate figure -- this widget
+# needs no venue gating at all any more: ``pool`` is always the live number,
+# and ``legacy`` is gated purely on its own presence (``None`` when the v3
+# pair goes unmatched). The line lives on the seam row (``#surf-mkt-gap``)
+# that used to be permanently blank, at the ``full`` tier only, and carries
+# no right-hand segment -- ``_second_column`` cannot see it, so it never
+# moves a sparkline (see ``market._ROW_IDS``).
+
+
+async def test_market_shows_the_live_v4_pool_and_keeps_v3_as_legacy():
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        widget.update_data(
+            **{
+                **_FULL_MARKET,
+                "pool_liquidity_usd": 805927.0,
+                "legacy_pool_liquidity_usd": 2195.0,
+            }
+        )
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "pool $805.9K" in screen   # the live pool figure, primary
+        assert "legacy" in screen
+        assert "$2.2K" in screen          # the retired v3 figure, dim
+
+
+async def test_market_the_legacy_line_stays_silent_when_the_v3_pair_is_unmatched():
+    """``legacy_pool_liquidity_usd is None`` (the v3 pair went unmatched, or
+    the payload predates fix round 10a) must render exactly as before this
+    fix round -- which is what keeps
+    ``test_market_blank_row_separates_the_token_figures_from_the_bridge``
+    green with no changes there."""
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        widget.update_data(**_FULL_MARKET)
+        await pilot.pause()
+        assert "legacy" not in _screen_text(app)
+
+
+async def test_market_the_legacy_line_survives_even_with_no_live_pool_figure():
+    """A cold cache before the launchpad sweep first lands can leave
+    ``pool_liquidity_usd`` unread while ``legacy_pool_liquidity_usd`` (keyed
+    on the v3 pair's own known address, no pool id needed) still answers --
+    the legacy note must not be silently withheld waiting for a figure it
+    does not depend on."""
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        widget.update_data(
+            **{
+                **_FULL_MARKET,
+                "pool_liquidity_usd": None,
+                "legacy_pool_liquidity_usd": 2195.0,
+            }
+        )
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "legacy" in screen
+        assert "$2.2K" in screen
+
+
+async def test_market_marks_a_price_source_disagreement():
+    """Two independent keyless sources agree to 0.2% today; 2% is ~10x that.
+
+    ``imd_price_usd`` is already whichever the manager preferred (the
+    on-chain ``extsload`` read when available) by the time it reaches this
+    widget -- the marker never re-chooses between the two, it only flags
+    that DexScreener's figure disagrees with it past the threshold, so the
+    disagreement is visible rather than silently absorbed.
+    """
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        widget.update_data(
+            **{
+                **_FULL_MARKET,
+                "imd_price_usd": 1.08,
+                "price_source_disagreement_pct": 7.4,
+            }
+        )
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "IMD $1.08" in screen   # the preferred read, rendered as-is
+        assert "?" in screen
+
+
+async def test_market_price_agreement_within_threshold_shows_no_marker():
+    """0.2% agreement (today's real number) must not read as degraded."""
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        widget.update_data(
+            **{**_FULL_MARKET, "price_source_disagreement_pct": 0.2}
+        )
+        await pilot.pause()
+        assert "?" not in _screen_text(app)
+
+
+async def test_market_a_missing_disagreement_source_is_not_agreement_or_disagreement():
+    """``None`` means one source was missing -- that must not render as
+    agreement (no claim either way is being made) but it is also not a
+    disagreement to flag, so no marker either."""
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        widget.update_data(
+            **{**_FULL_MARKET, "price_source_disagreement_pct": None}
+        )
+        await pilot.pause()
+        assert "?" not in _screen_text(app)
+
+
+async def test_market_a_failed_price_read_carries_no_disagreement_marker():
+    """``None`` never renders ``$0.00`` and it must not grow a ``?`` beside
+    a dash either -- there is no figure for the marker to sit next to."""
+    widget = SurfMarket()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 14)) as pilot:
+        widget.update_data(
+            **{
+                **_FULL_MARKET,
+                "imd_price_usd": None,
+                "price_source_disagreement_pct": 7.4,
+            }
+        )
+        await pilot.pause()
+        assert "?" not in _screen_text(app)
+
+
+async def test_market_worst_case_combined_width_matches_the_documented_ceiling():
+    """Legacy line + disagreement marker together, against a tight peg (the
+    module's own existing worst case) -- re-measured per fix round 10a
+    rather than assumed, since the payload's shape changed. Must not exceed
+    the 73-column ceiling ``SURF_FULL_LAYOUT_COLUMNS``/``FULL_LAYOUT_COLUMNS``
+    were already sized against.
+    """
+    worst = {
+        **_FULL_MARKET,
+        "imd_price_usd": 0.71,
+        "fp_price_usd": 0.7071,
+        "pool_liquidity_usd": 805927.0,
+        "legacy_pool_liquidity_usd": 2195.0,
+        "price_source_disagreement_pct": 7.4,
+    }
+    parts = _market._parts(**worst)
+    width = max(
+        visible_len(line) for line in _market._lines_for("full", parts)
+    )
+    assert width <= 73, f"fix round 10a widened the panel's full tier to {width}"
