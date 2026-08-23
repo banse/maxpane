@@ -2422,10 +2422,30 @@ async def test_a_total_outage_returns_the_full_key_set_with_nothing_invented(tmp
 
 
 async def test_no_signal_fires_and_no_baseline_moves_under_a_total_outage(tmp_path):
+    """Test-isolation fix (Task 6, post-Task-7): cycle 1 *spawns* the
+    detached launchpad sweep but cannot see its own result -- Task 6's whole
+    point is that the sweep can never land inside the cycle that started it.
+    A ``before`` snapshot taken right after cycle 1 is therefore taken
+    mid-flight: the sweep lands afterwards, in the background, and only the
+    *next* cycle's ``_readings()`` actually reads it and lets ``_advance()``
+    fold a scalar like ``burn_ready`` into the baselines. Comparing that
+    snapshot against a later cycle's baselines was comparing across "an
+    outage plus a sweep landing", not across an outage -- ``burn_ready`` was
+    the first baseline scalar whose source (Task 7) survives an outage, so
+    it is the first to expose the gap.
+
+    The fix is to let the sweep settle *and* let one more healthy cycle fold
+    it into the baselines before the snapshot is taken -- explicitly
+    awaiting the task, never a sleep, so this stays exactly as deterministic
+    as every other test in this suite.
+    """
     clock = FakeClock()
     m = _manager(tmp_path, client=FakeSurfClient(), clock=clock)
-    await m.fetch_and_compute()                      # establish real baselines
-    before = m.cache.get_baselines()
+    await m.fetch_and_compute()                      # cycle 1: spawns the sweep
+    if m._launchpad_task is not None:
+        await asyncio.wait_for(m._launchpad_task, timeout=2.0)  # let it land
+    await m.fetch_and_compute()                      # cycle 2: folds it into baselines
+    before = m.cache.get_baselines()                 # now a genuine "established" snapshot
 
     m.client = _dead_client()
     clock.advance(120.0)
