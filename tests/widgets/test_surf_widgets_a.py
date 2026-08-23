@@ -133,18 +133,18 @@ def test_hhmm_mmdd_fallbacks():
 # ---------------------------------------------------------------------
 
 from maxpane_dashboard.widgets.surf.hero import (  # noqa: E402
-    HOOK_LAUNCHED,
-    HOOK_NOT_LIVE,
     SurfHero,
+    _burn_lines,
+    _lp_lines,
+    _pool_lines,
 )
 
-#: Live 2026-08-08 chain state: pool sides from dexscreener_imd.json
-#: liquidity.base/quote, supply from imd_token.json total_supply/1e18.
-#:
-#: ``hook_status`` is spelled the way the *manager* spells it (WP4
-#: ``_hook_status`` -> "NOT LIVE" / "LAUNCHED" / None, frozen in WP0's
-#: SURF_KEYS comment and PRD §4).  A lowercase-snake fixture here would make
-#: this whole file green against a widget that mis-renders every live payload.
+#: 2026-08-23 chain state, post-migration: the v3 LP position (#1167726) was
+#: burned 2026-08-17 (``lp_state == "gone"``), the live pool is the hookless
+#: v4 pool (``pool_venue == "v4"``), and 37 of the 38 ETH/IMD v4 pools on
+#: mainnet are third-party decoys at fee tiers up to 98% -- this pool's own
+#: fee is 1% (``pool_fee_bps == 10000``, Uniswap's fee unit is hundredths of
+#: a bip: ``fee / 1e6``).
 #:
 #: ``imd_burned_cum`` is 15,745 -- the single 2026-08-05 event -- and NOT the
 #: 58,848 all-time ledger (12039+31064+15745) of PRD §1.  WP4 accumulates this
@@ -153,16 +153,62 @@ from maxpane_dashboard.widgets.surf.hero import (  # noqa: E402
 #: produce, and would quietly certify all-time copy in the widget.  See the
 #: ``imd_burned_cum`` note in WP3.2 and WP4 open issue 4.
 _FULL_HERO = {
-    "hook_status": HOOK_NOT_LIVE,
-    "lp_liquidity": 26010397574917496158,
-    "lp_imd": 388421.0,
-    "lp_weth": 142.7067,
-    "lp_owner_ok": True,
-    "gate_open": False,
-    "identities_written": 1,
+    "pool_venue": "v4",
+    "pool_fee_bps": 10000,
+    "pool_liquidity_usd": 805_927.0,
+    "pool_id_source": "hook",
+    "decoy_pool_count": 37,
+    "lp_state": "gone",
+    "lp_imd": None,
+    "lp_weth": None,
+    "lp_owner_ok": None,
+    "burn_accrued": 1_234.56,
+    "burn_staged": 45.0,
+    "burn_ready": False,
     "imd_supply": 2376731.868679,
     "imd_burned_cum": 15745.0,
 }
+
+
+# -- the four brief-mandated pure-function tests (Task 8 step 1) -------
+
+
+def test_lp_card_says_migrated_not_unknown() -> None:
+    lines = _lp_lines(lp_state="gone", lp_imd=None, lp_weth=None, lp_owner_ok=None, tier="full")
+    text = " ".join(lines)
+    assert "migrated" in text
+    assert "unknown" not in text and "--" not in text
+
+
+def test_lp_card_still_says_unknown_on_a_failed_read() -> None:
+    lines = _lp_lines(lp_state=None, lp_imd=None, lp_weth=None, lp_owner_ok=None, tier="full")
+    assert "migrated" not in " ".join(lines)
+
+
+def test_pool_card_names_the_venue_and_the_decoys() -> None:
+    lines = _pool_lines(pool_venue="v4", pool_fee_bps=10000, pool_liquidity_usd=805927.0,
+                        decoy_pool_count=37, pool_id_source="hook", tier="full")
+    text = " ".join(lines)
+    assert "v4" in text and "1%" in text and "38" in text
+
+
+def test_pool_card_flags_a_fallback_id() -> None:
+    """If the hook read failed the panel must not imply it knows the pool."""
+    lines = _pool_lines(pool_venue="v4", pool_fee_bps=None, pool_liquidity_usd=None,
+                        decoy_pool_count=None, pool_id_source="fallback", tier="full")
+    assert "?" in " ".join(lines) or "unverified" in " ".join(lines)
+
+
+def test_burn_card_distinguishes_zero_from_unread() -> None:
+    zero = _burn_lines(burn_accrued=0.0, burn_staged=0.0, burn_ready=False,
+                       imd_burned_cum=3299.0, tier="full")
+    unread = _burn_lines(burn_accrued=None, burn_staged=None, burn_ready=None,
+                         imd_burned_cum=None, tier="full")
+    assert " ".join(zero) != " ".join(unread)
+    assert "0" in " ".join(zero)
+
+
+# -- SurfHero integration tests (composited output) ---------------------
 
 
 async def test_hero_full_payload_renders_all_four_boxes_on_screen():
@@ -172,22 +218,16 @@ async def test_hero_full_payload_renders_all_four_boxes_on_screen():
         widget.update_data(**_FULL_HERO)
         await pilot.pause()
         screen = _screen_text(app)
-        # HOOK: the launch state is words, not colour (PRD §3/§11).
-        assert "NOT LIVE" in screen
-        # LP: both pool sides and the owner sanity flag.
-        assert "388.4K IMD" in screen
-        assert "142.71 WETH" in screen
-        # The raw v3 ``L`` used to render beside the WETH side as
-        # ``2.60e+19``. It was dropped on request: scientific notation of an
-        # unnamed unit told a reader nothing the WETH side does not. The
-        # payload still carries ``lp_liquidity`` -- the LP MIGRATION detector
-        # reads it -- so this asserts the *box* dropped it, not the key.
-        assert "2.60e+19" not in screen
-        assert "· L " not in screen
-        assert "owner ✓ frenpet.eth" in screen
-        # GATE: closed, 1/2000 written (identity_counters + research).
-        assert "CLOSED" in screen
-        assert "1/2000 written" in screen
+        # POOL: venue, fee tier and the decoy-inclusive pool count.
+        assert "v4" in screen
+        assert "1%" in screen
+        assert "38" in screen
+        assert "$805.9K" in screen
+        # LP: a completed migration is a fact in words, not a dash.
+        assert "MIGRATED" in screen
+        assert "v3 position migrated" in screen
+        # BURN: the tri-state headline plus the pipeline's own numbers.
+        assert "NOT READY" in screen
         # SUPPLY: full-precision supply + the burn this install has observed.
         # The word "observed" is load-bearing: the widget cannot know the
         # all-time total, so it must not imply one (WP4 open issue 4).
@@ -205,6 +245,8 @@ async def test_hero_zero_observed_burn_never_claims_none_was_ever_burned():
     burned before the install existed (PRD §1).  Printing ``burned 0`` there is
     a confident false statement about the token, so ``0.0`` gets its own
     phrasing and no quantity is formatted.  ``None`` stays the unavailable dash.
+    This same accumulator now also feeds BURN's own cumulative line, so the
+    distinction is checked there too.
     """
     widget = SurfHero()
     app = _Harness(widget)
@@ -226,67 +268,110 @@ async def test_hero_zero_observed_burn_never_claims_none_was_ever_burned():
         assert f"burned {_fmt.DASH}" in screen   # _fmt is imported at file top
 
 
-async def test_hero_launched_and_gate_open_flip_the_words():
-    widget = SurfHero()
-    app = _Harness(widget)
-    async with app.run_test(size=(160, 12)) as pilot:
-        widget.update_data(**{**_FULL_HERO, "hook_status": HOOK_LAUNCHED, "gate_open": True})
-        await pilot.pause()
-        screen = _screen_text(app)
-        assert "LAUNCHED" in screen
-        assert "NOT LIVE" not in screen
-        assert "OPEN" in screen
-        assert "CLOSED" not in screen
+async def test_hero_burn_ready_flips_between_true_false_and_unknown():
+    """``burn_ready`` is tri-state: three renders, never two.
 
-
-async def test_hero_real_hook_vocabulary_never_hits_the_fallback():
-    """The two values the manager actually emits must reach dedicated states.
-
-    Both literals render *something* through the fallback arm too -- it
-    uppercases whatever it is handed -- so asserting "NOT LIVE" in the screen
-    proves nothing about which branch ran.  The subtitle is the tell: only the
-    fallback says "unrecognized status".  This is the regression guard for the
-    vocabulary mismatch (widget on ``not_live``/``launched`` vs manager on
-    ``NOT LIVE``/``LAUNCHED``), which was silent on day one and would have
-    stripped the $success styling from launch day itself.
+    ``False`` ("not ready yet") and ``None`` ("cannot tell") must not
+    collapse into the same word -- the inverse of the rail bug where a dead
+    group's ``-- unknown`` and a real "none yet" both read confident and
+    green through an outage.
     """
-    assert (HOOK_NOT_LIVE, HOOK_LAUNCHED) == ("NOT LIVE", "LAUNCHED")
-
-    for status, expected_sub in (
-        (HOOK_NOT_LIVE, "detectors armed"),
-        (HOOK_LAUNCHED, "v4 hook live"),
-        # Case/spacing drift from the manager still lands on the real state.
-        ("not live", "detectors armed"),
-        ("launched", "v4 hook live"),
+    for ready, expect, forbid in (
+        (True, "READY", "NOT READY"),
+        (False, "NOT READY", None),
+        (None, None, "READY"),
     ):
         widget = SurfHero()
         app = _Harness(widget)
         async with app.run_test(size=(160, 12)) as pilot:
-            widget.update_data(**{**_FULL_HERO, "hook_status": status})
+            widget.update_data(**{**_FULL_HERO, "burn_ready": ready})
             await pilot.pause()
             screen = _screen_text(app)
-            assert expected_sub in screen, status
-            assert "unrecognized status" not in screen, status
+            if expect is not None:
+                assert expect in screen, (ready, screen)
+            if forbid is not None:
+                assert forbid not in screen, (ready, screen)
+
+
+async def test_hero_pool_venue_both_values_render_distinctly():
+    """Both real values the manager emits (v3 pre-migration, v4 post) must
+    reach the box, not just the one ``_FULL_HERO`` happens to use."""
+    for venue in ("v3", "v4"):
+        widget = SurfHero()
+        app = _Harness(widget)
+        async with app.run_test(size=(160, 12)) as pilot:
+            widget.update_data(**{**_FULL_HERO, "pool_venue": venue})
+            await pilot.pause()
+            assert venue in _screen_text(app), venue
+
+
+async def test_hero_pool_id_source_fallback_warns_on_screen():
+    """A fallback pool id must not carry fee/decoy numbers that might be
+    somebody else's pool (CLAUDE.md rule 3)."""
+    widget = SurfHero()
+    app = _Harness(widget)
+    async with app.run_test(size=(160, 12)) as pilot:
+        widget.update_data(**{
+            **_FULL_HERO,
+            "pool_fee_bps": None,
+            "pool_liquidity_usd": None,
+            "decoy_pool_count": None,
+            "pool_id_source": "fallback",
+        })
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "pool id unverified" in screen
+        assert "1%" not in screen
 
 
 async def test_hero_owner_changed_is_loud_words_not_colour():
     """lp_owner_ok=False means the LP NFT moved -- the launch precondition."""
+    live_lp = {**_FULL_HERO, "lp_state": "live", "lp_imd": 388421.0, "lp_weth": 142.7067}
+
     widget = SurfHero()
     app = _Harness(widget)
     async with app.run_test(size=(160, 12)) as pilot:
-        widget.update_data(**{**_FULL_HERO, "lp_owner_ok": False})
+        widget.update_data(**{**live_lp, "lp_owner_ok": False})
         await pilot.pause()
         screen = _screen_text(app)
         assert "OWNER CHANGED" in screen
         assert "owner ✓" not in screen
+        assert "MIGRATED" not in screen
 
         # And None is unknown -- neither the checkmark nor the alarm.
-        widget.update_data(**{**_FULL_HERO, "lp_owner_ok": None})
+        widget.update_data(**{**live_lp, "lp_owner_ok": None})
         await pilot.pause()
         screen = _screen_text(app)
         assert "OWNER CHANGED" not in screen
         assert "owner ✓" not in screen
         assert "owner --" in screen
+
+
+async def test_hero_lp_gone_renders_migrated_not_unknown_on_screen():
+    """``lp_state == "gone"`` is a completed migration, read live off-chain --
+    it must never render as ``unknown`` (the bug this rebuild fixes)."""
+    widget = SurfHero()
+    app = _Harness(widget)
+    async with app.run_test(size=(160, 12)) as pilot:
+        widget.update_data(**{**_FULL_HERO, "lp_state": "gone",
+                              "lp_imd": None, "lp_weth": None, "lp_owner_ok": None})
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "MIGRATED" in screen
+        assert "OWNER CHANGED" not in screen
+
+
+async def test_hero_lp_unread_state_stays_unknown_on_screen():
+    """``lp_state is None`` -- nobody answered -- stays the honest dash."""
+    widget = SurfHero()
+    app = _Harness(widget)
+    async with app.run_test(size=(160, 12)) as pilot:
+        widget.update_data(**{**_FULL_HERO, "lp_state": None,
+                              "lp_imd": None, "lp_weth": None, "lp_owner_ok": None})
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "MIGRATED" not in screen
+        assert "—" in screen
 
 
 async def test_hero_no_args_and_all_none_render_dashes_never_zero():
@@ -303,19 +388,24 @@ async def test_hero_no_args_and_all_none_render_dashes_never_zero():
         # (the false-BURN hazard, game_mechanics §Hazards 5).
         assert "0 IMD" not in screen
         assert "burned 0" not in screen
+        assert "acc 0" not in screen
+        assert "stg 0" not in screen
+        assert "MIGRATED" not in screen
+        # burn_ready is None here, not False -- must not read as "not ready".
+        assert "READY" not in screen
 
 
-async def test_hero_unknown_hook_status_is_escaped_not_parsed():
-    """The manager owns the vocabulary; a new value must render, not crash."""
+async def test_hero_garbage_pool_venue_is_escaped_not_parsed():
+    """``pool_venue`` is manager-controlled today, but the render path
+    escapes defensively anyway -- the crash would happen inside the message
+    pump, well outside any try/except around the refresh call."""
     widget = SurfHero()
     app = _Harness(widget)
     async with app.run_test(size=(160, 12)) as pilot:
-        widget.update_data(**{**_FULL_HERO, "hook_status": "[/x] holder-gated"})
+        widget.update_data(**{**_FULL_HERO, "pool_venue": "[/x] v5"})
         await pilot.pause()  # the crash would happen inside the message pump
         screen = _screen_text(app)
-        assert "HOLDER-GATED" in screen
-        # This is the arm the two real values must never reach.
-        assert "unrecognized status" in screen
+        assert "v5" in screen
 
 
 def test_hero_tier_table_is_measured_not_rounded():
@@ -357,28 +447,26 @@ def test_every_hero_tier_fits_the_width_it_advertises():
     box lights the marker instead (see the test below).
     """
     from maxpane_dashboard.widgets.markup_safety import visible_len
-    from maxpane_dashboard.widgets.surf.hero import (
-        TIER_WIDTHS,
-        _gate_lines,
-        _hook_lines,
-        _lp_lines,
-        _supply_lines,
-    )
+    from maxpane_dashboard.widgets.surf.hero import TIER_WIDTHS, _supply_lines
 
     for tier, need in TIER_WIDTHS.items():
         renderings = []
-        for status in (HOOK_NOT_LIVE, HOOK_LAUNCHED, None, "", "holder-gated"):
-            renderings.append(_hook_lines(status, tier))
-        for owner in (True, False, None):
-            renderings.append(_lp_lines(388421.0, 142.7067, owner, tier))
-        for gate in (True, False, None):
-            # 2000 is the IDMD cap and therefore the counter's widest
-            # reachable value, not a hypothetical: ``2000/2000 written`` is
-            # 17 columns and used to overflow the tight tier's advertised 16
-            # with nothing in this sweep to catch it. A bounded quantity's
-            # bound belongs in the measurement.
-            for written in (1, None, 999, 2000):
-                renderings.append(_gate_lines(gate, written, tier))
+        for venue in ("v3", "v4", None, ""):
+            for source in ("hook", "fallback", None):
+                for decoy in (0, 37, None):
+                    renderings.append(
+                        _pool_lines(venue, 10000, 805_927.0, source, decoy, tier)
+                    )
+        for state in ("live", "gone", None):
+            for owner in (True, False, None):
+                renderings.append(_lp_lines(state, 388421.0, 142.7067, owner, tier))
+        for ready in (True, False, None):
+            # 15,745 is the real observed single-event burn (PRD §1); the
+            # combined accrued/staged line is the one this box compacts
+            # (fmt_compact), unlike LP/SUPPLY's full-precision quantities --
+            # see the "why compact" note in ``_burn_lines``'s own docstring.
+            for accrued in (0.0, 1_234.56, 15_745.0, None):
+                renderings.append(_burn_lines(accrued, 45.0, ready, 15_745.0, tier))
         for burned in (15745.0, 0.0, None):
             renderings.append(_supply_lines(2376731.868679, burned, tier))
 
@@ -415,30 +503,6 @@ async def test_hero_a_number_too_big_for_its_box_is_announced_not_cut_in_silence
         widget2.update_data(**_FULL_HERO)
         await pilot.pause()
         assert WIDEN_HINT not in _screen_text(app2)
-
-
-async def test_hero_unreadable_hook_says_unconfirmed_not_that_nothing_was_read():
-    """``hook_status is None`` now has two producers, and one of them read.
-
-    WP4's ``_hook_status`` returns ``None`` both when the logs group never
-    answered *and* when the window held a hooked ``Initialize`` whose signer
-    could not be attributed (``hook_unverified``) -- ``PoolManager.initialize``
-    is permissionless, so naming the dev there would be a guess. The copy has
-    to be true of both: "unconfirmed" is, "status unknown" reads only as the
-    first.
-    """
-    widget = SurfHero()
-    app = _Harness(widget)
-    async with app.run_test(size=(160, 12)) as pilot:
-        widget.update_data(**{**_FULL_HERO, "hook_status": None})
-        await pilot.pause()
-        screen = _screen_text(app)
-        assert "unconfirmed" in screen
-        # Never the two answers we have not earned.
-        assert "NOT LIVE" not in screen
-        assert "LAUNCHED" not in screen
-        # ...and never the fallback arm, which means something else entirely.
-        assert "unrecognized status" not in screen
 
 
 # ---------------------------------------------------------------------

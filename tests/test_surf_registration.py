@@ -1180,12 +1180,21 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     # `_NUMERIC_ZERO_PROBES` with a real, screen-verified substring in the
     # same change that wires its consumer -- same rule as `eth_usd` and
     # `lp_liquidity` above, just newly arrived.
-    "pool_fee_bps": "no widget consumes this key yet; Task 8 wires SurfHero's _pool_lines()",
+    #
+    # `pool_fee_bps`, `decoy_pool_count`, `burn_accrued` and `burn_staged`
+    # moved out of this dict in Task 8 (SurfHero's `_pool_lines`/
+    # `_burn_lines` now render all four) -- see `_NUMERIC_ZERO_PROBES` below.
+    # `screens/surf.py` itself is not rewired yet (Task 12), so the
+    # needles were verified by mounting `SurfHero` directly (one field
+    # zeroed at a time, all others `None`, against the true all-`None`
+    # baseline), not against the real running `SurfScreen` -- the same
+    # method the pre-existing entries below document, just against the box
+    # rather than the screen because the screen cannot reach these keys
+    # yet. They become genuinely screen-verified the moment Task 12 wires
+    # `update_data(pool_fee_bps=..., decoy_pool_count=..., burn_accrued=...,
+    # burn_staged=...)` through.
     "pool_liquidity_raw": "no widget consumes this key yet; pool_liquidity_usd is the one rendered",
-    "decoy_pool_count": "no widget consumes this key yet; Task 8 wires SurfHero's _pool_lines()",
     "lp_position_count": "no widget consumes this key yet; no task's Consumes list names it",
-    "burn_accrued": "no widget consumes this key yet; Task 11's SurfBurnPipeline wires it",
-    "burn_staged": "no widget consumes this key yet; Task 11's SurfBurnPipeline wires it",
     "burn_min_bridge": "no widget consumes this key yet; Task 11's SurfBurnPipeline wires it",
     "launchpad_coin_count": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
     "launchpad_swap_count": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
@@ -1228,6 +1237,15 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     "imd_vol_24h_usd": "vol 24h $0",             # market.py fmt_compact
     "pool_liquidity_usd": "pool $0",             # market.py fmt_compact
     "parity_pct": "parity ● +0.00%",        # market.py _fmt_parity
+    # Task 8 (2026-08-23): SurfHero's POOL/BURN boxes. `screens/surf.py`
+    # doesn't route these keys through yet (Task 12), so these four were
+    # verified by mounting `SurfHero` directly rather than the real
+    # `SurfScreen` -- see the comment on the four keys' old home in
+    # `_NUMERIC_KEYS_EXCLUDED` above for exactly how.
+    "pool_fee_bps": "1% fee",                    # hero.py _pool_lines (10000 bps -> 1%)
+    "decoy_pool_count": "1 of 1 pools",          # hero.py _pool_lines (0 decoys -> "1 of 1")
+    "burn_accrued": "acc 0",                     # hero.py _burn_lines
+    "burn_staged": "stg 0",                      # hero.py _burn_lines
     "nft_holders": "0 holders",                  # nft.py _fmt_count
     "nft_transfers_24h": "0 transfers/24h",      # nft.py _fmt_count
     "nft_dev_holdings": "dev holds 0 identities",  # nft.py _dev_row
