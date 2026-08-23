@@ -23,6 +23,22 @@ from maxpane_dashboard.data.surf_cache import (
     SurfCache,
 )
 
+# Task 8 fix round 1: the launchpad cursor's round trip is only a meaningful
+# proof if the cursor comes from the real ``fetch_launchpad`` sweep rather
+# than a hand-typed literal here -- a literal would keep passing after the
+# real cursor's shape moved, which is exactly the failure mode this test
+# exists to catch. Imported rather than copied, on the same precedent as
+# ``tests/data/test_fwa_refresh_budget.py`` importing ``test_fwa_client``'s
+# harness: a cursor built by a different double than the one the client's
+# own unit tests trust is a cursor whose shape this test cannot vouch for.
+from maxpane_dashboard.data import surf_client
+from tests.data.test_surf_client import (
+    RecordingTransport,
+    _client_on,
+    _launchpad_fixture_handler,
+    _load_launchpad,
+)
+
 
 class FakeClock:
     """Monotonic-by-hand clock so TTL tests never sleep."""
@@ -707,6 +723,82 @@ def test_launchpad_slot_round_trips_through_the_cache_file(tmp_path):
     restored = SurfCache(path=path, clock=clock)
     restored.load()
     assert restored.get_last_good(SLOT_LAUNCHPAD).payload == {"coin_count": 146}
+
+
+async def test_the_launchpad_cursors_real_shape_round_trips_through_the_cache_file(
+    tmp_path,
+) -> None:
+    """The test above proves the SLOT round-trips at all, with a one-key toy
+    payload. It does not prove the **cursor** survives, because the cursor is
+    the one field in that slot with real internal structure -- six keys, three
+    of them nested dicts, one a list -- and nothing about
+    ``test_launchpad_slot_round_trips_through_the_cache_file``'s
+    ``{"coin_count": 146}`` exercises any of that.
+
+    Task 8's own round-trip test (``test_surf_manager.py``) already proves
+    the *manager* reads the cursor back out of the slot and hands it to
+    ``fetch_launchpad`` on the next sweep -- but it reads that slot out of
+    ``SurfCache``'s in-memory dict, never through an actual ``save()``/
+    ``load()``. This is the other half: the cursor a *real*
+    ``SurfClient.fetch_launchpad()`` sweep produces, written to an actual
+    cache file and read back, asserted equal.
+
+    The cursor comes from a real sweep against the committed launchpad
+    fixtures (the same double ``test_fetch_launchpad_ranks_and_decodes_the_
+    real_fixture`` in ``test_surf_client.py`` uses) rather than a hand-typed
+    dict here: a hand-typed literal would keep this test green even after
+    ``_launchpad_logs`` changed what it puts in the cursor, which is the one
+    kind of drift a round-trip test is supposed to catch.
+
+    ``traders`` (a ``sorted()`` list, never the raw ``set`` -- see
+    ``_launchpad_logs``'s own comment) is deliberately not sanity-checked as
+    a list *before* the save/load round trip below: ``SurfCache._jsonable``
+    already coerces a bare ``set`` into a list on the way to disk, so a
+    regression there does not crash ``save()`` (which is documented "never
+    raises" and means it) and does not drop the slot either -- both milder
+    than they sound. What it *does* break is exactly what the final
+    assertion below checks: a Python ``set`` is never ``==`` to the ``list``
+    it round-trips into, so a dropped ``sorted()`` still fails this test,
+    just via a value mismatch after ``save()``/``load()`` rather than a
+    crash during either.
+    """
+    reads = _load_launchpad("launchpad_reads.json")
+    logs_data = _load_launchpad("launchpad_logs.json")
+    launches = [surf_client._decode_launched_log(r) for r in logs_data["launched"]]
+    assert all(launch is not None for launch in launches)
+    prices = {launch["pool_id"]: 5_000_000_000_000 + i for i, launch in enumerate(launches)}
+
+    handler = _launchpad_fixture_handler(reads, logs_data, prices)
+    transport = RecordingTransport(handler)
+    async with _client_on(transport, now_fn=lambda: 2_000_000_000.0) as client:
+        state = await client.fetch_launchpad()
+
+    cursor = state.cursor
+    assert cursor is not None
+    # Ruling R13: all six keys, never the three-key shape an earlier draft of
+    # this plan described -- and this assertion is itself read off the real
+    # sweep's own output, not typed here, so it moves with the client rather
+    # than silently going stale against it.
+    assert set(cursor) == {
+        "last_block", "launches", "swaps_all", "traders",
+        "burn_by_coin", "burned_total_wei",
+    }
+    # A rich shape, not a degenerate all-empty default -- the two fields the
+    # `traders` mutation below does not touch, so they stay a meaningful
+    # sanity check under it rather than being what actually catches it.
+    assert isinstance(cursor["launches"], dict) and cursor["launches"]
+    assert all(isinstance(rec, dict) for rec in cursor["launches"].values())
+    assert isinstance(cursor["swaps_all"], dict) and cursor["swaps_all"]
+
+    clock = FakeClock()
+    path = str(tmp_path / "surf_cache.json")
+    c = SurfCache(path=path, clock=clock)
+    c.store_last_good(SLOT_LAUNCHPAD, {"cursor": cursor})
+    c.save()
+
+    restored = SurfCache(path=path, clock=clock)
+    restored.load()
+    assert restored.get_last_good(SLOT_LAUNCHPAD).payload["cursor"] == cursor
 
 
 def test_a_null_poisoned_series_costs_only_that_point(tmp_path, caplog):
