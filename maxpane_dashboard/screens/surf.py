@@ -324,7 +324,7 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: (measured down to 60 columns without truncating); neither ever
 #: composites a marker, which is what the binding-panel test asserts.
 #:
-#: **93, twelve columns under FWA's 143** -- so this task moves neither
+#: **93, fifty columns under FWA's 143** -- so this task moves neither
 #: :data:`SURF_FULL_LAYOUT_COLUMNS` nor ``__main__.FULL_LAYOUT_COLUMNS``,
 #: and the ``198 -> 172 -> 143 -> 176 -> 152 -> 143`` record in CLAUDE.md is
 #: correctly **not** appended to: that record tracks changes to the

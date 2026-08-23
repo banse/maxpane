@@ -474,7 +474,7 @@ def _opt_int(value: Any) -> int | None:
 
 
 class SurfManager:
-    """Fetches SURF data across six source groups and returns a flat dict."""
+    """Fetches SURF data across seven source groups and returns a flat dict."""
 
     def __init__(
         self,

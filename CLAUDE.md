@@ -417,7 +417,7 @@ memory when a bug report cites one.
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest                    # 4,988 tests, must be green
+.venv/bin/python -m pytest                    # 5,228 tests, must be green
 .venv/bin/python -m pytest tests/analytics/   # pure math
 .venv/bin/python -m pytest -x                 # stop on first failure
 .venv/bin/python -m pytest sybilkit            # the second distribution, ~290 tests
