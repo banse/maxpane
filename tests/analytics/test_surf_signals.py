@@ -436,6 +436,9 @@ def _baseline(**overrides) -> dict:
         "announce_nonce": 13,
         "channel_tx_count": 20,
         "lp_liquidity": LP_LIQUIDITY_BEFORE,
+        # Final fix wave (C2): LP MOVE's real subject. One v4 position, held
+        # by frenpet.eth -- the quiet, day-after-the-migration default.
+        "lp_position_count": 1,
         "ops_nonce": 36,
         "dev_nonce": 2350,
         "gate_open": False,
@@ -468,6 +471,7 @@ def _readings(**overrides) -> dict:
         "announce_last_text": None,
         "announce_last_ts": None,
         "lp_liquidity": LP_LIQUIDITY_BEFORE,
+        "lp_position_count": 1,
         "ops_nonce": 36,
         "dev_nonce": 2350,
         "v4_hook_pools": [],
@@ -637,34 +641,68 @@ def test_fired_events_survive_a_restart_through_the_returned_baselines():
 #
 # LP MIGRATION fired on 2026-08-17 (the ops wallet withdrew and burned v3
 # position #1167726) and the migration it watched for is finished, so this
-# row is re-aimed at the v4 position rather than re-armed for a second
-# launch: the payload prefix stays ``lp``, only the meaning and wording move.
-# The escalation itself survives unchanged from the old migration precursor:
-# liquidity down fires, liquidity up or any frenpet.eth nonce move watches.
+# row is re-aimed at the v4 position rather than re-armed for a second launch:
+# the payload prefix stays ``lp``, only the meaning and wording move.
+#
+# Final fix wave (C2): the rename landed in Task 7, the REPOINT did not. The
+# row's only numeric input was ``lp_liquidity``, off ``NFPM.positions()`` on
+# the position the dev burned -- a call that reverts, so the reading is
+# ``None`` forever and no comparison in this detector was ever reachable. Its
+# subject is now ``lp_position_count`` (``PositionManager.balanceOf`` on the
+# v4 side, already riding the same aggregate3), which is a value that moves.
 
 
-def test_lp_move_watches_the_v4_position_not_the_migration():
-    """LP MIGRATION is spent -- it fired, and the migration is finished."""
-    state, detail, _age = _sig("lp", {"lp_liquidity": 100}, {"lp_liquidity": 90})
-    assert state == "fired"
-    assert "v4" in detail or "position" in detail
+def test_the_lp_row_no_longer_reads_the_burned_v3_position():
+    """C2's regression test, and the one assertion that would have caught it.
+
+    ``lp_liquidity`` is ``NFPM.positions(1167726).liquidity``; that NFT was
+    burned on 2026-08-17 so the call reverts and the reading is ``None`` in
+    production forever. A detector whose only input is permanently ``None``
+    is a permanently dark row, so a *moving* v3 liquidity must not be what
+    decides this row -- only the v4 count may.
+    """
+    state, detail, _ = _sig(
+        "lp",
+        _baseline(lp_position_count=1),
+        _readings(lp_position_count=1, lp_liquidity=677_000_000_000),
+    )
+    assert state == "ok", "a v3 liquidity move still moved the row"
+    assert "1 v4 position held" == detail
 
 
-def test_liquidity_holding_is_ok():
-    assert _sig("lp", _baseline(), _readings()) == ("ok", "v4 position holds", None)
-
-
-def test_liquidity_decrease_fires():
-    assert _sig("lp", _baseline(), _readings(lp_liquidity=677_000_000_000)) == (
-        "fired", "v4 position OUT -32.3%", 0.0
+def test_a_position_leaving_the_ops_wallet_fires():
+    assert _sig("lp", _baseline(), _readings(lp_position_count=0)) == (
+        "fired", "v4 position OUT · 1→0 held", 0.0
     )
 
 
-def test_liquidity_increase_is_a_watch_not_a_fire():
-    """The 2026-08-07 add: 33 ETH *into* the pool, not out of it."""
-    assert _sig("lp", _baseline(), _readings(lp_liquidity=LP_LIQUIDITY_AFTER_ADD)) == (
-        "watch", "v4 position +33.0%", None
+def test_a_new_position_is_a_watch_not_a_fire():
+    """A fresh mint is news, but it is not the LP leaving."""
+    assert _sig("lp", _baseline(), _readings(lp_position_count=2)) == (
+        "watch", "v4 position IN · 1→2 held", None
     )
+
+
+def test_holding_the_position_is_ok():
+    assert _sig("lp", _baseline(), _readings()) == (
+        "ok", "1 v4 position held", None
+    )
+
+
+def test_a_zero_position_count_is_a_state_not_an_outage():
+    """``balanceOf`` has a representable zero: 0 held is a fact we read."""
+    state, detail, _ = _sig(
+        "lp", _baseline(lp_position_count=0), _readings(lp_position_count=0)
+    )
+    assert state == "ok"
+    assert detail == "0 v4 positions held"
+
+
+def test_an_unset_position_baseline_seeds_without_firing():
+    base = {k: v for k, v in _baseline().items() if k != "lp_position_count"}
+    state, detail, _ = _sig("lp", base, _readings(lp_position_count=1))
+    assert state == "ok"
+    assert detail == "1 v4 held · baseline set"
 
 
 def test_any_frenpet_eth_activity_is_a_watch():
@@ -685,7 +723,7 @@ def test_a_hooked_v4_pool_no_longer_moves_this_row():
     """
     state, detail, _ = _sig("lp", _baseline(), _readings(v4_hook_pools=[HOOKED_POOL]))
     assert state == "ok"
-    assert detail == "v4 position holds"
+    assert detail == "1 v4 position held"
     _, advanced = sig.build_signals(_baseline(), _readings(v4_hook_pools=[HOOKED_POOL]), NOW)
     # The v4_tx/v4_ts/v4_seq baseline still advances (BASELINE_EVENT_KEYS is
     # untouched -- surf_manager.py still produces the reading) but nothing
@@ -697,8 +735,8 @@ def test_lp_outage_is_none():
     assert _sig(
         "lp",
         _baseline(),
-        _readings(lp_liquidity=None, ops_nonce=None, v4_hook_pools=None),
-    ) == (None, "v4 position unavailable", None)
+        _readings(lp_position_count=None, ops_nonce=None, v4_hook_pools=None),
+    ) == (None, "v4 position count unavailable", None)
 
 
 # --- 3. GATE OPEN -----------------------------------------------------------
@@ -1556,11 +1594,11 @@ MATRIX: tuple[tuple[str, str, dict, dict, str], ...] = (
      LP_POST_DETAIL),
     ("post", None, {}, {"announce_nonce": None, "channel_tx_count": None}, "channel unavailable"),
 
-    ("lp", "ok", {}, {}, "v4 position holds"),
+    ("lp", "ok", {}, {}, "1 v4 position held"),
     ("lp", "watch", {}, {"ops_nonce": 37}, "frenpet.eth active · nonce 37"),
-    ("lp", "fired", {}, {"lp_liquidity": 677_000_000_000}, "v4 position OUT -32.3%"),
-    ("lp", None, {}, {"lp_liquidity": None, "ops_nonce": None, "v4_hook_pools": None},
-     "v4 position unavailable"),
+    ("lp", "fired", {}, {"lp_position_count": 0}, "v4 position OUT · 1→0 held"),
+    ("lp", None, {}, {"lp_position_count": None, "ops_nonce": None, "v4_hook_pools": None},
+     "v4 position count unavailable"),
 
     ("gate", "ok", {}, {}, "closed · 1 written"),
     ("gate", "watch", {}, {"identities_written": 2}, "1→2 written · gate closed"),
@@ -1733,7 +1771,7 @@ def test_a_fired_row_relaxes_but_the_event_is_never_forgotten():
     )
     state, detail, age = _sig("lp", base, _readings())
     assert state == "ok"
-    assert detail == "v4 position holds · last: v4 position OUT -32.3%"
+    assert detail == "1 v4 position held · last: v4 position OUT -32.3%"
     assert age == pytest.approx(float(sig.FIRED_TTL_S) + 1.0)
 
 
@@ -1777,6 +1815,13 @@ def test_the_2026_08_07_sequence_fires_bridge_before_post():
 
     # --- poll 2: 04:25:00Z.  33 ETH went in; the LP row escalates to WATCH and
     # BRIDGE stays FIRED without re-firing on the mints it already reported.
+    #
+    # The escalation now comes from the frenpet.eth nonce rather than from a
+    # liquidity delta (final fix wave, C2): the increaseLiquidity multicall IS
+    # an ops-wallet transaction, and the liquidity number this replay used to
+    # read is `NFPM.positions()` on a position that has since been burned. The
+    # ordering claim -- LP escalates before the announcement -- is unchanged;
+    # only which of the row's two inputs carries it moved.
     out2, base = sig.build_signals(
         base,
         _readings(
@@ -1788,7 +1833,7 @@ def test_the_2026_08_07_sequence_fires_bridge_before_post():
         T2_ADDED,
     )
     assert out2["sig_lp_state"] == "watch"
-    assert out2["sig_lp_detail"] == "v4 position +33.0%"
+    assert out2["sig_lp_detail"] == "frenpet.eth active · nonce 38"
     assert out2["sig_bridge_state"] == "fired"
     assert out2["sig_bridge_age_s"] == pytest.approx(T2_ADDED - MINT_2["ts"])
     assert out2["sig_post_state"] == "ok"

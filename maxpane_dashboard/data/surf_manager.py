@@ -1535,6 +1535,7 @@ class SurfManager:
         activity_rows: list[dict[str, Any]],
         launchpad_slot: dict[str, Any] | None = None,
         launchpad_ts: float | None = None,
+        state: Any = None,
     ) -> dict[str, Any]:
         """This cycle's values for the nine detectors, keyed by ``READING_KEYS``
         plus the five Task 7 will need that ``READING_KEYS`` does not name yet.
@@ -1602,6 +1603,17 @@ class SurfManager:
         read["lp_liquidity"] = data.get("lp_liquidity")
         read["gate_open"] = data.get("gate_open")
         read["imd_supply"] = data.get("imd_supply")
+        # -- final fix wave (C2): LP MOVE's actual subject -------------------
+        # The one chain scalar read off the MODEL rather than off the payload,
+        # and rule 2's reasoning is why: it is not in `SURF_KEYS` at all (fix
+        # round 12a removed the flat key -- no widget renders it), so there is
+        # no panel for a detector to disagree with. Skipping this wiring is
+        # exactly what left `_detect_lp` pointed at `lp_liquidity`, i.e. at
+        # `NFPM.positions()` on the v3 position the dev BURNED on 2026-08-17:
+        # that call reverts, the reading is `None` forever, and the row could
+        # never fire. `PositionManager.balanceOf(OPS_WALLET)` already rides in
+        # the same `aggregate3` (`surf_client.py`), so this costs no request.
+        read["lp_position_count"] = _opt_int(_field(state, "lp_position_count"))
 
         # -- the GATE detail's write count is the WINDOW count ----------------
         # Not `data["identities_written"]`, which is the hero's *lifetime*
@@ -2114,6 +2126,7 @@ class SurfManager:
                     launchpad_ts=(
                         launchpad_entry.ts if launchpad_entry is not None else None
                     ),
+                    state=state,
                 ),
                 now,
             )

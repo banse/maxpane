@@ -98,6 +98,11 @@ READING_KEYS: tuple[str, ...] = (
     "announce_last_text",   # decoded body of the newest self-post
     "announce_last_ts",     # unix ts of the newest self-post
     "lp_liquidity",         # NFPM.positions(LP_POSITION_ID).liquidity, raw uint128
+    # Final fix wave (C2). PositionManager.balanceOf(OPS_WALLET) on the v4
+    # side -- how many v4 LP positions frenpet.eth holds. This is LP MOVE's
+    # numeric subject; `lp_liquidity` above is the BURNED v3 position and can
+    # only ever read `None` now, which is why the row could never fire.
+    "lp_position_count",    # v4 PositionManager.balanceOf(OPS_WALLET)
     "ops_nonce",            # eth_getTransactionCount(OPS_WALLET) -- frenpet.eth
     "dev_nonce",            # eth_getTransactionCount(DEV_WALLET) -- surfsurf.eth
     "v4_hook_pools",        # [{ts, tx_hash, hooks}] PoolManager Initialize, IMD
@@ -129,6 +134,9 @@ BASELINE_SCALARS: tuple[str, ...] = (
     "announce_nonce",
     "channel_tx_count",
     "lp_liquidity",
+    # Final fix wave (C2): LP MOVE compares against this, not against the
+    # burned v3 position's liquidity.
+    "lp_position_count",
     "ops_nonce",
     "dev_nonce",
     "gate_open",
@@ -200,6 +208,7 @@ _SCALAR_COERCERS: dict[str, Any] = {
     "announce_nonce": lambda value: _as_int(value),
     "channel_tx_count": lambda value: _as_int(value),
     "lp_liquidity": lambda value: _as_int(value),
+    "lp_position_count": lambda value: _as_int(value),
     "ops_nonce": lambda value: _as_int(value),
     "dev_nonce": lambda value: _as_int(value),
     "gate_open": lambda value: value if isinstance(value, bool) else None,
@@ -701,7 +710,7 @@ def _detect_post(base: dict, read: dict, now: float) -> _Det:
 
 
 def _detect_lp(base: dict, read: dict, now: float) -> _Det:
-    """The v4 position's liquidity (PRD §3 #2, re-aimed).
+    """The dev's v4 LP position count (PRD §9, re-aimed — and finally repointed).
 
     LP MIGRATION — the v3→v4 event this row used to watch for, a PoolManager
     ``Initialize`` for IMD with ``hooks != 0x0`` — already fired: the ops
@@ -710,45 +719,55 @@ def _detect_lp(base: dict, read: dict, now: float) -> _Det:
     one, so the hooked-``Initialize`` branch this row used to check first is
     gone rather than re-armed for a second launch that is not coming;
     ``v4_hook_pools``/``BASELINE_EVENT_KEYS["v4_hook_pools"]`` stay wired
-    (``surf_manager.py`` still produces the reading; this task does not own
-    that file) but nothing in this function consults them any more.
+    (``surf_manager.py`` still produces the reading) but nothing in this
+    function consults them any more.
 
-    What is left is the same escalation the migration precursor already used,
-    now permanently the row's whole job rather than its fallback: liquidity
-    **down** fires, liquidity **up** or any frenpet.eth nonce movement
-    watches.  The payload prefix stays ``lp`` (Task 9's row alignment depends
-    on it); only the meaning and the wording move.
+    **The repoint, which the rename shipped without** (final fix wave, C2).
+    Until now the only numeric input here was ``lp_liquidity``, off
+    ``NFPM.positions(LP_POSITION_ID)`` — *the position the dev burned*. That
+    call reverts, so the value is ``None`` forever, no comparison was ever
+    reachable, and the row rendered a permanently dark ``● LP MOVE --`` whose
+    unknown-state string blamed a v4 position nothing had tried to read. An
+    earlier version of this docstring said the hero payload "already carries"
+    ``lp_position_count``; that sentence was the reasoning that left this
+    unwired, and it was doubly false by the time it was read — the flat key
+    had been removed in fix round 12a, and no detector consumed it either.
 
-    ``lp_liquidity``'s *source* is not this task's to change: it is still
-    ``ChainState.lp_liquidity`` off ``NFPM.positions(LP_POSITION_ID)``, and
-    ``LP_POSITION_ID`` is still the v3 id — a live read against the v4
-    position (or ``lp_position_count``, the v4-side sibling field
-    ``surf_manager.py``'s hero payload already carries) is not threaded into
-    this module's reading contract, so it is reported rather than reached
-    for; see the task report.  A liquidity read of ``None`` produces no
-    comparison at all. It also cannot un-fire anything: the FIRED store is
-    applied by :func:`build_signals` independently of what this returns.
+    So the subject is now ``lp_position_count`` —
+    ``PositionManager.balanceOf(OPS_WALLET)`` on the v4 side, which already
+    rides in the same ``aggregate3`` as every other chain scalar and costs no
+    request. It is coarser than v3 liquidity was (a position's size can move
+    without the count moving) but it is *real*, which the old input is not: a
+    position leaving the ops wallet is exactly the "LP moved" event this row
+    is named for, and it has a **representable zero** — 0 held is a fact, not
+    an outage.
+
+    Fewer positions FIREs, more positions WATCHes (a fresh mint is news but
+    not an exit), and any frenpet.eth nonce movement still WATCHes as the
+    cheap precursor.  The payload prefix stays ``lp`` (Task 9's row alignment
+    depends on it).  An unset baseline seeds without firing, the rule every
+    edge on this rail keeps.  A count of ``None`` produces no comparison at
+    all, and it cannot un-fire anything: the FIRED store is applied by
+    :func:`build_signals` independently of what this returns.
     """
-    liquidity = _as_int(read.get("lp_liquidity"))
-    base_liquidity = _as_int(base.get("lp_liquidity"))
-    if liquidity is not None and base_liquidity is not None and base_liquidity > 0:
-        if liquidity < base_liquidity:
-            drop = 100.0 * (base_liquidity - liquidity) / base_liquidity
-            return _fired(f"v4 position OUT -{drop:.1f}%", now)
-        if liquidity > base_liquidity:
-            rise = 100.0 * (liquidity - base_liquidity) / base_liquidity
-            return _watch(f"v4 position +{rise:.1f}%")
+    count = _as_int(read.get("lp_position_count"))
+    base_count = _as_int(base.get("lp_position_count"))
+    if count is not None and base_count is not None:
+        if count < base_count:
+            return _fired(f"v4 position OUT · {base_count}→{count} held", now)
+        if count > base_count:
+            return _watch(f"v4 position IN · {base_count}→{count} held")
 
     ops_nonce = _as_int(read.get("ops_nonce"))
     base_ops = _as_int(base.get("ops_nonce"))
     if ops_nonce is not None and base_ops is not None and ops_nonce > base_ops:
         return _watch(f"frenpet.eth active · nonce {ops_nonce}")
 
-    if liquidity is None:
-        return _dead("v4 position unavailable")
-    if base_liquidity is None:
-        return _ok("v4 position baseline set")
-    return _ok("v4 position holds")
+    if count is None:
+        return _dead("v4 position count unavailable")
+    if base_count is None:
+        return _ok(f"{count} v4 held · baseline set")
+    return _ok(f"{count} v4 position{'' if count == 1 else 's'} held")
 
 
 # --- 3. GATE OPEN ------------------------------------------------------------
