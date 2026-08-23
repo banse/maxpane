@@ -187,6 +187,39 @@ def _decode_positions(raw_hex: str) -> dict | None:
     }
 
 
+def _lp_state(
+    positions_result: tuple[bool, str] | None,
+    owner_result: tuple[bool, str] | None,
+) -> str | None:
+    """Classify the v3 LP position from its raw ``aggregate3`` sub-calls.
+
+    Three outcomes, and the middle one is the point. ``aggregate3`` with
+    ``allowFailure=True`` returns ``success=False`` for a revert — which is an
+    *answer*: the position does not exist. That is not a failed read, so it
+    must not collapse into the same ``None`` a transport outage produces
+    (CLAUDE.md: "a row whose real negative has no representable value ...
+    renders None identically for 'we looked and there was nothing' and 'we
+    could not look'"). Verified live 2026-08-17: ``positions(1167726)`` now
+    reverts ``Invalid token ID`` and ``ownerOf(1167726)`` reverts
+    ``ERC721: owner query for nonexistent token`` — the ops wallet withdrew
+    and burned the position.
+
+    ``positions_result``/``owner_result`` are the raw ``(success, returnData)``
+    tuples ``decode_aggregate3_result`` hands back, or ``None`` when no
+    sub-call answered at all (there is no such entry to read). Only that
+    double-``None`` case is unknown; a revert with either leg present is
+    evidence.
+    """
+    if positions_result is None and owner_result is None:
+        return None
+    reverted = positions_result is not None and not positions_result[0]
+    if reverted:
+        return "gone"
+    if positions_result is not None and positions_result[0]:
+        return "live"
+    return None
+
+
 def _decode_slot0(raw_hex: str) -> dict | None:
     raw = strip0x(raw_hex or "")
     if len(raw) < _SLOT0_RETURN_WORDS * 64:
@@ -664,17 +697,23 @@ class SurfClient(OwnedHttpClient):
         )
 
     async def fetch_chain_state(self) -> ChainState | None:
-        """The fast-tier eth_call round: one aggregate3 over eight views.
+        """The fast-tier eth_call round: one aggregate3 over nine views.
 
         Sub-call order is positional and mirrored in the decode below.
         Every sub-call is ``allowFailure=True``: a single reverted view
-        degrades one field to ``None``, never the round.
+        degrades one field to ``None``, never the round — except the first
+        two, where a revert is decoded as ``ChainState.lp_state == "gone"``
+        rather than ``None``: see ``_lp_state``.
 
         The eighth sub-call is Multicall3's own ``getBlockNumber()``, which is
         how ``ChainState.block_number`` gets a producer without a second round
         trip. Reading the height inside the same ``eth_call`` also makes it
         *the* height of this state: fetch it separately and a reorg or a
         rotated endpoint can hand back a block the other seven never saw.
+
+        The ninth sub-call is the v4 side of the 2026-08-17 migration:
+        ``PositionManager.balanceOf(OPS_WALLET)`` — how many v4 position NFTs
+        the ops wallet now holds. Verified live: exactly 1.
         """
         calls = [
             (A.NFPM, A.SEL_POSITIONS + encode_uint(A.LP_POSITION_ID)),
@@ -685,6 +724,10 @@ class SurfClient(OwnedHttpClient):
             (A.IMD_TOKEN, A.SEL_NAME),
             (A.IMD_TOKEN, A.SEL_SYMBOL),
             (MULTICALL3, _SEL_GET_BLOCK_NUMBER),
+            (
+                A.POSITION_MANAGER_V4,
+                A.SEL_BALANCE_OF + pad_left(strip0x(A.OPS_WALLET).lower(), 64),
+            ),
         ]
         # NOTE the tuple order evm_abi.encode_aggregate3 actually takes:
         # (target, callData, allowFailure) -- NOT (target, allow, data).
@@ -714,6 +757,13 @@ class SurfClient(OwnedHttpClient):
         slot0 = _decode_slot0(ok(4)) if ok(4) else None
         name_raw, sym_raw = ok(5), ok(6)
         block_raw = ok(7)
+        balance_raw = ok(8)
+
+        # `ok()` collapses success/failure into `ret or None`, which is
+        # exactly the conflation this field exists to undo: `results[0]` is
+        # the raw `(success, returnData)` pair, so a revert (success=False)
+        # is still visible as evidence, not indistinguishable from silence.
+        lp_state = _lp_state(results[0], results[1])
 
         # The two LP side amounts (PRD §5 `lp_imd` / `lp_weth`).  Mapped by
         # ADDRESS: this pool orders WETH as token0, but trusting the index
@@ -761,6 +811,10 @@ class SurfClient(OwnedHttpClient):
             imd_symbol=decode_string(sym_raw) if sym_raw else None,
             block_number=(
                 None if block_raw is None else decode_uint(block_raw, 0)
+            ),
+            lp_state=lp_state,
+            lp_position_count=(
+                None if balance_raw is None else decode_uint(balance_raw, 0)
             ),
         )
 

@@ -84,6 +84,17 @@ class ChainState:
     There is no ``identities_written``: the verified IdentityMD source has
     ``totalSupply`` and ``identityAllowed`` and no written-hash counter, so that
     number is ``NftStats.written``'s problem, not a getter's.
+
+    ``lp_state``/``lp_position_count`` are the 2026-08-17 migration addition.
+    The ops wallet withdrew and burned v3 position ``LP_POSITION_ID``, so
+    ``positions()``/``ownerOf()`` now revert ``Invalid token ID`` — a revert is
+    an *answer* ("this position does not exist"), never a failed read, so it is
+    encoded as ``"gone"``, not collapsed into the same ``None`` a transport
+    outage produces. ``"live"`` is the ordinary case (the call succeeded);
+    ``None`` means no sub-call answered at all. ``lp_position_count`` is
+    ``PositionManager.balanceOf(OPS_WALLET)`` on the v4 side and has a
+    **representable zero** — 0 means the wallet genuinely holds no v4 position,
+    a real value distinct from "we could not read it".
     """
 
     lp_liquidity: int | None
@@ -102,6 +113,8 @@ class ChainState:
     imd_name: str | None
     imd_symbol: str | None
     block_number: int | None = None
+    lp_state: str | None = None  # "live" | "gone" | None
+    lp_position_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

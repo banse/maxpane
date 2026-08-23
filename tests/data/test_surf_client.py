@@ -349,6 +349,7 @@ def test_this_wp_constructs_against_wp0s_frozen_field_names():
             "lp_imd_wei", "lp_weth_wei",
             "identity_allowed", "imd_supply_wei", "sqrt_price_x96", "pool_tick",
             "imd_name", "imd_symbol", "block_number",
+            "lp_state", "lp_position_count",
         },
         m.ChannelTx: {
             "tx_hash", "ts", "nonce", "from_addr", "to_addr", "value_wei",
@@ -665,6 +666,20 @@ def encode_string_return(s: str) -> str:
     return "0x" + _encode_uint(0x20) + _encode_uint(len(b)) + padded
 
 
+def _revert(reason: str) -> str:
+    """ABI-encode a Solidity ``revert(reason)`` — ``Error(string)``.
+
+    Selector ``0x08c379a0`` followed by the standard ``string`` ABI encoding
+    (``encode_string_return`` already produces exactly that tail). Checked
+    byte-for-byte against a real mainnet revert captured for
+    ``positions(1167726)`` -> "Invalid token ID", the shape the position now
+    reverts with since the 2026-08-17 migration burned it:
+
+        0x08c379a0000...0020000...0010496e76616c696420746f6b656e2049440...0
+    """
+    return "0x08c379a0" + encode_string_return(reason)[2:]
+
+
 IMD_SUPPLY_WEI = 2376731868679000000000000  # imd_token.json total_supply
 
 
@@ -693,6 +708,10 @@ def _chain_state_subcall(target: str, calldata: str) -> tuple[bool, str]:
         # Multicall3 answering about itself — the eighth leg, so the state and
         # the height it was read at are the same round trip.
         return True, "0x" + _encode_uint(HEAD_BLOCK)
+    if t == A.POSITION_MANAGER_V4.lower() and sel == A.SEL_BALANCE_OF:
+        # The ninth leg — PositionManager.balanceOf(OPS_WALLET). Verified
+        # live: the ops wallet holds exactly one v4 position NFT.
+        return True, "0x" + _encode_uint(1)
     return False, "0x"
 
 
@@ -939,6 +958,143 @@ async def test_fetch_chain_state_failed_subcall_with_plausible_data_is_still_non
 async def test_fetch_chain_state_total_outage_returns_none():
     async with _offline_client() as client:
         assert await client.fetch_chain_state() is None
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — a revert is not a failed read: ChainState.lp_state / lp_position_count
+#
+# On 2026-08-17 the ops wallet withdrew and burned v3 position 1167726.
+# `positions()`/`ownerOf()` now revert `Invalid token ID` /
+# `ERC721: owner query for nonexistent token`. Under aggregate3 with
+# allowFailure=True, that revert comes back as success=False on the sub-call
+# -- a *result*, not an absence -- so it must decode to `lp_state == "gone"`,
+# never the same `None` a transport outage produces.
+# ---------------------------------------------------------------------------
+
+
+def test_a_revert_is_gone_not_unknown() -> None:
+    """positions(1167726) reverts `Invalid token ID`: the contract answered.
+
+    Collapsing that into None renders a completed, announced migration as a
+    failed RPC call -- the exact "we looked and there was nothing" versus "we
+    could not look" confusion the conventions forbid.
+    """
+    state = surf_client._lp_state(
+        positions_result=(False, _revert("Invalid token ID")),
+        owner_result=(False, _revert("ERC721: owner query for nonexistent token")),
+    )
+    assert state == "gone"
+
+
+def test_a_transport_failure_is_still_unknown() -> None:
+    """No answer at all stays None -- only a revert is evidence."""
+    assert surf_client._lp_state(None, None) is None
+
+
+def test_a_live_position_is_live() -> None:
+    state = surf_client._lp_state(
+        positions_result=(True, encode_positions_return(liquidity=123)),
+        owner_result=(True, "0x" + _word_addr(A.OPS_WALLET)),
+    )
+    assert state == "live"
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_a_burned_position_reads_gone_end_to_end():
+    """Integration: the actual 2026-08-17 migration shape, through the real
+    nine-call multicall round, not just the isolated classifier.
+
+    Both `positions()` and `ownerOf()` revert with a reason. `lp_state` reads
+    "gone" and every field that depended on decoding the (nonexistent)
+    position data -- liquidity, owner, the derived LP sides -- stays `None`,
+    because a revert is evidence about *existence*, not a license to decode
+    garbage return data.
+    """
+    def subcall(target, calldata):
+        sel = "0x" + _strip0x(calldata)[:8]
+        if target.lower() == A.NFPM.lower() and sel == A.SEL_POSITIONS:
+            return False, _revert("Invalid token ID")
+        if target.lower() == A.NFPM.lower() and sel == A.SEL_OWNER_OF:
+            return False, _revert("ERC721: owner query for nonexistent token")
+        return _chain_state_subcall(target, calldata)
+
+    async with _client_on(RecordingTransport(_chain_state_handler(subcall))) as client:
+        state = await client.fetch_chain_state()
+    assert state is not None
+    assert state.lp_state == "gone"
+    assert state.lp_liquidity is None
+    assert state.lp_owner is None
+    assert state.lp_imd_wei is None and state.lp_weth_wei is None
+    # Sibling legs that genuinely succeeded still decode normally -- the
+    # revert degrades only the two LP-position legs, not the whole round.
+    assert state.imd_supply_wei == IMD_SUPPLY_WEI
+    assert state.block_number == HEAD_BLOCK
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_live_position_reports_lp_state_live():
+    async with _client_on(RecordingTransport(_chain_state_handler())) as client:
+        state = await client.fetch_chain_state()
+    assert state.lp_state == "live"
+    assert state.lp_liquidity == LP_LIQUIDITY
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_reads_v4_position_count():
+    """PositionManager.balanceOf(OPS_WALLET) -- verified live: exactly 1."""
+    async with _client_on(RecordingTransport(_chain_state_handler())) as client:
+        state = await client.fetch_chain_state()
+    assert state.lp_position_count == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_lp_position_count_zero_is_representable():
+    """0 means "ops holds no v4 position" -- real, and distinct from a failed
+    read, per the house rule: a failed read is None, never 0."""
+    def subcall(target, calldata):
+        sel = "0x" + _strip0x(calldata)[:8]
+        if target.lower() == A.POSITION_MANAGER_V4.lower() and sel == A.SEL_BALANCE_OF:
+            return True, "0x" + _encode_uint(0)
+        return _chain_state_subcall(target, calldata)
+
+    async with _client_on(RecordingTransport(_chain_state_handler(subcall))) as client:
+        state = await client.fetch_chain_state()
+    assert state.lp_position_count == 0
+    assert state.lp_position_count is not None
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_lp_position_count_is_none_on_failed_read():
+    def subcall(target, calldata):
+        sel = "0x" + _strip0x(calldata)[:8]
+        if target.lower() == A.POSITION_MANAGER_V4.lower() and sel == A.SEL_BALANCE_OF:
+            return False, "0x"
+        return _chain_state_subcall(target, calldata)
+
+    async with _client_on(RecordingTransport(_chain_state_handler(subcall))) as client:
+        state = await client.fetch_chain_state()
+    assert state is not None
+    assert state.lp_position_count is None
+    assert state.lp_state == "live"  # sibling leg unaffected
+
+
+@pytest.mark.asyncio
+async def test_fetch_chain_state_v4_balance_call_targets_ops_wallet():
+    """The balanceOf argument is the ops wallet, not the dev wallet or some
+    other address -- a wrong argument would silently read someone else's v4
+    position count and render it as this dashboard's own."""
+    transport = RecordingTransport(_chain_state_handler())
+    async with _client_on(transport) as client:
+        await client.fetch_chain_state()
+    _url, _method, payload = transport.requests[0]
+    calldata = payload["params"][0]["data"]
+    inner = decode_aggregate3_calldata(calldata)
+    balance_calls = [
+        cd for (t, _allow, cd) in inner
+        if t.lower() == A.POSITION_MANAGER_V4.lower()
+    ]
+    assert len(balance_calls) == 1
+    assert balance_calls[0] == A.SEL_BALANCE_OF + _word_addr(A.OPS_WALLET)
 
 
 # ---------------------------------------------------------------------------

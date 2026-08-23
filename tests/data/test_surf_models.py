@@ -66,7 +66,7 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
         "lp_tokens_owed0_wei", "lp_tokens_owed1_wei", "lp_imd_wei",
         "lp_weth_wei", "lp_owner", "identity_allowed", "imd_supply_wei",
         "sqrt_price_x96", "pool_tick", "imd_name", "imd_symbol",
-        "block_number",
+        "block_number", "lp_state", "lp_position_count",
     ),
     ChannelTx: (
         "tx_hash", "ts", "nonce", "from_addr", "to_addr", "value_wei",
