@@ -171,6 +171,31 @@ COINS_TITLE = "LAUNCHPAD COINS"
 COINS_UNAVAILABLE = "launchpad unavailable"
 COINS_EMPTY = "no coins launched yet"
 
+#: The bare hint (SurfMarket's ``SHORT_HINT``/curator's own convention):
+#: this panel has exactly one tier, whole or clipped, so there is no
+#: shorter-but-still-descriptive form to fall back to the way SurfMarket's
+#: ``WIDEN_HINTS`` ladder does -- one word is both the widest and the only
+#: one that ever needs to fit beside ``LAUNCHPAD COINS``.
+COINS_WIDEN_HINT = "‹ widen"
+
+#: This panel's own binding width, in ``self.size.width`` terms (Task 13,
+#: measured against composited output in
+#: ``tests/screens/test_surf_screen.py``'s ``l``-body sweep -- see
+#: ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`` in ``screens/surf.py`` for the
+#: screen-width counterpart, two columns higher for the panel's own
+#: ``padding: 0 1``).
+#:
+#: **Cannot be read off ``DataTable.show_horizontal_scrollbar``.** That flag
+#: reads ``True`` several columns before any character is actually lost --
+#: at ``self.size.width == 93`` (two above this constant) the whole header
+#: still reaches the compositor, ``BURNED`` and all, yet the scrollbar flag
+#: is already lit. A marker keyed off it would fire early and disagree with
+#: what the screen actually shows, so this is a literal measured threshold
+#: instead: the eight fixed columns (``_TICKER_COLS`` .. ``_BURNED_COLS`` --
+#: 79) plus the DataTable's own internal cell gutter, swept column by column
+#: until the compositor stopped truncating ``BURNED``'s last character.
+_TABLE_FULL_WIDTH = 91
+
 #: Defensive re-cap.  The manager already caps ``launchpad_coins`` at
 #: ``LAUNCHPAD_RENDER_LIMIT`` (20, ``data/surf_client.py``); this widget
 #: cannot import that constant (primitives only) so it re-states the same
@@ -338,6 +363,20 @@ class SurfLaunchpadCoins(Vertical):
         table.add_column("1H%", width=_PCT_COLS)
         table.add_column("SWAPS", width=_SWAPS_COLS)
         table.add_column("BURNED", width=_BURNED_COLS)
+        self._set_title()
+
+    def on_resize(self, _event=None) -> None:
+        """Keep the title's marker honest across a live resize.
+
+        This panel is composed hidden (``#surf-launchpad-body``'s
+        ``display`` starts ``False``) and only laid out once ``l`` shows
+        it, so this is also what lights the marker correctly on the very
+        first reveal -- ``on_mount`` runs before the widget has a real
+        size (``self.size.width`` is ``0``), and :meth:`_set_title` treats
+        that as "not measured yet" rather than "too narrow", the same
+        optimistic reading ``SurfMarket._tier_for`` gives ``width <= 0``.
+        """
+        self._set_title()
 
     def update_data(self, coins=None, coin_count=None, as_of_hhmm=None, **_kwargs) -> None:
         """Refresh the table.
@@ -353,6 +392,23 @@ class SurfLaunchpadCoins(Vertical):
             "seen": True,
         }
         self._render_view()
+
+    def _set_title(self) -> None:
+        """``LAUNCHPAD COINS  ‹ widen``, width permitting.
+
+        Appended, not swapped in -- the title itself never changes, so
+        ``"LAUNCHPAD COINS" in text`` holds at every width, the same
+        contract ``SurfMarket._set_title`` keeps for its own panel title.
+        """
+        try:
+            title = self.query_one("#surf-lpc-title", Static)
+        except Exception:  # not composed yet
+            return
+        width = self.size.width
+        text = COINS_TITLE
+        if width and width < _TABLE_FULL_WIDTH:
+            text += f"  [yellow]{COINS_WIDEN_HINT}[/]"
+        title.update(text)
 
     def _set_note(self) -> None:
         try:
@@ -378,6 +434,10 @@ class SurfLaunchpadCoins(Vertical):
             table = self.query_one("#surf-lpc-table", DataTable)
         except Exception:  # not composed yet
             return
+        # Geometry-only, so it is correct whether or not there is a
+        # payload yet -- a refresh must never blank a marker a resize
+        # already lit, nor light one a resize has not earned.
+        self._set_title()
         if not self._payload:
             return
 

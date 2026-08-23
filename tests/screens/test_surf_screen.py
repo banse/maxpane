@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
 from textual.app import App
 
 from maxpane_dashboard import __version__
@@ -25,6 +26,7 @@ from maxpane_dashboard.screens.surf import (
     LAUNCHPAD_BODY_ID,
     MODE_DASHBOARD,
     MODE_LAUNCHPAD,
+    SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS,
     TALLER_HINT,
     SurfScreen,
 )
@@ -835,6 +837,99 @@ def test_the_launchpad_body_css_agrees_between_default_css_and_the_stylesheet() 
                     f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
                     f"{right!r} in minimal.tcss"
                 )
+
+
+# -- Task 13: the l body's own measured width (2026-08-23) ---------------
+#
+# ``SURF_FULL_LAYOUT_COLUMNS`` (this screen) and ``__main__.FULL_LAYOUT_
+# COLUMNS`` (the app) are FWA's 143 and this task moves neither -- the
+# measurement, the binding panel, and why the CLAUDE.md width record is not
+# appended to are all in ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``'s own
+# docstring in ``screens/surf.py``.
+#
+# The sweep below runs 80..105: comfortably below *and* above the measured
+# 93, and never starting at it, so it could not agree with the pin by
+# construction. It is a deliberate narrowing of this task's own planning
+# brief, whose suggested ``range(120, 175)`` sat entirely above the real
+# crossover -- run against the code as it stood before this task, that
+# range would have exercised only the "at or above the pin" branch and
+# could never have caught a padded number.
+
+
+def _title_text(pilot) -> str:
+    """Composited screen text, named for this task's own sweep pseudocode.
+
+    Not just row 0: the marker this task adds lives on the binding panel's
+    *own* title (``SurfLaunchpadCoins``, the ``SurfMarket``/curator
+    ``CuratorOperators`` idiom), not a screen-wide banner the way
+    ``TALLER_HINT`` is -- curator's own ``_analysis_view_text`` returns the
+    whole composited screen for the identical reason.
+    """
+    return _screen_text(pilot.app)
+
+
+@pytest.mark.parametrize("width", range(80, 106))
+async def test_the_launchpad_body_is_whole_from_its_pinned_width(width) -> None:
+    """Start the sweep away from the pin: a sweep that began at the constant
+    would agree with it by construction.
+
+    The dashboard body's own widen marker (the announce feed's linked-tx
+    post, deliberately excluded from ``_widen_sweep_payload`` -- see that
+    fixture's own docstring) cannot contaminate this sweep: ``#middle-row``
+    is hidden in ``MODE_LAUNCHPAD``, so nothing it composites reaches the
+    screen while ``l`` is showing.
+    """
+    async with _surf_app().run_test(size=(width, 46)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        title = _title_text(pilot)
+        if width >= SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS:
+            assert "‹ widen" not in title, width
+        else:
+            assert "‹ widen" in title, width
+
+
+async def test_the_launchpad_binding_panel_is_the_coins_table() -> None:
+    """Pinned by a test, not by a sentence in CLAUDE.md (curator's own
+    ``test_the_analysis_binding_panel_is_the_operators_table`` precedent):
+    ``SurfLaunchpadCoins`` -- its ``DataTable``'s eight fixed columns -- is
+    the ``l`` body's binder, and the other two panels never mark at all."""
+    async with _surf_app().run_test(
+        size=(SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS - 1, 46)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        screen = pilot.app.screen
+        marked = {
+            name
+            for name, cls in _LAUNCHPAD_WIDGET_CLASSES.items()
+            if "‹ widen" in _region_text(pilot.app, screen.query_one(cls))
+        }
+    assert marked == {"SurfLaunchpadCoins"}, marked
+
+
+async def test_the_default_view_still_clears_at_the_app_wide_width() -> None:
+    """Nothing in this change may move ``FULL_LAYOUT_COLUMNS``.
+
+    ``_widen_sweep_payload()``, not the raw sample: the dashboard body
+    (unlike the launchpad body above) stays on screen here, and the sample
+    fixture's first announce post glues a URL to a raw tx hash -- a real,
+    deliberate marker (``test_a_linked_post_advertises_widen_at_the_full_
+    layout_width``) that is not the one this test is about.
+    """
+    from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
+
+    assert FULL_LAYOUT_COLUMNS == 143
+    async with _surf_app(_widen_sweep_payload()).run_test(
+        size=(FULL_LAYOUT_COLUMNS, 46)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        assert "‹ widen" not in _screen_text(pilot.app)
 
 
 def test_the_initial_title_names_the_dashboard_the_menu_names():

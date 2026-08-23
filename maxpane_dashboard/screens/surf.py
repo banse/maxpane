@@ -290,6 +290,49 @@ ACTIVITY_MIN_HEIGHT = 7
 #: marker is correct, and 216 is a "full layout" nobody could reach.
 SURF_FULL_LAYOUT_COLUMNS = 143
 
+#: The ``l`` LAUNCHPAD body's own measured width (Task 13, 2026-08-23) --
+#: a **separate, independently-named** constant, never a rewrite of
+#: :data:`SURF_FULL_LAYOUT_COLUMNS` above or ``__main__.FULL_LAYOUT_COLUMNS``.
+#: Swept column by column over the real screen
+#: (``tests/screens/test_surf_screen.py``'s
+#: ``test_the_launchpad_body_is_whole_from_its_pinned_width``), starting well
+#: away from the number it settled on so the sweep could not agree with the
+#: pin by construction.
+#:
+#: **The binding panel is ``SurfLaunchpadCoins``**, pinned by
+#: ``test_the_launchpad_binding_panel_is_the_coins_table`` rather than by
+#: this sentence (curator's own
+#: ``test_the_analysis_binding_panel_is_the_operators_table`` precedent).
+#: Its ``DataTable`` has eight fixed columns (``_TICKER_COLS`` ..
+#: ``_BURNED_COLS``, 79 content columns) that do not shrink with the
+#: terminal -- unlike every other surf widget, this panel had **no width
+#: tiering at all** before this task (Task 11's own finding): below its
+#: structural width a column was clipped with no on-screen trace, which is
+#: exactly the silent-clipping CLAUDE.md forbids.  ``DataTable``'s own
+#: ``show_horizontal_scrollbar`` cannot be read as that signal either -- it
+#: is already ``True`` several columns before anything is actually lost, so
+#: a marker keyed off it would fire early and disagree with the compositor.
+#: ``SurfLaunchpadCoins`` (``widgets/surf/launchpad.py``) now advertises the
+#: loss on its own title, the same idiom ``SurfMarket``/curator's
+#: ``CuratorOperators`` already use for their own column tiers -- one tier
+#: here, not a ladder, because a fixed-column ``DataTable`` has nothing
+#: shorter to fall back to.
+#:
+#: The other two launchpad panels (``SurfCurveFlow``, ``SurfBurnPipeline``)
+#: are plain label/value lines and clear at every width this sweep tests
+#: (measured down to 60 columns without truncating); neither ever
+#: composites a marker, which is what the binding-panel test asserts.
+#:
+#: **93, twelve columns under FWA's 143** -- so this task moves neither
+#: :data:`SURF_FULL_LAYOUT_COLUMNS` nor ``__main__.FULL_LAYOUT_COLUMNS``,
+#: and the ``198 -> 172 -> 143 -> 176 -> 152 -> 143`` record in CLAUDE.md is
+#: correctly **not** appended to: that record tracks changes to the
+#: app-wide number only (CLAUDE.md says so twice already, about curator's
+#: own screen pin and its ``f`` view). The hero row, which stays mounted in
+#: both modes, clears on its own well below this (its widest box's marker
+#: goes dark at 80), so it never competes for the binder role either.
+SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 93
+
 #: The two bodies ``l``/``escape`` swap between. Named on curator's
 #: MODE_DASHBOARD/MODE_ANALYSIS precedent -- this screen only ever needs two,
 #: so there is no MODE_WALLET/MODE_LIST sibling to grow into.

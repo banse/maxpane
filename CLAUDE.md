@@ -92,7 +92,7 @@ imports it — `data/curator_clusters.py` — and that import is guarded (see th
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
-| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel + launch detectors |
+| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel, nine launch detectors, v3→v4 migration + launchpad (`l`) view |
 | 2 | `curator` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock, linked-wallet analysis |
 | 3 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
 | 4 | `base` | Base | trending tokens, volume, signals |
@@ -343,9 +343,42 @@ settled layout for: the app-wide number is FWA's 143, so surf clearing at 139
 would move nothing a user sees. Re-sweep before re-seaming, and only when one
 of the two panels' needs moves again.
 
+**Surf's `l` LAUNCHPAD view (2026-08-23) measures 93 and moves nothing.** The
+v4 launchpad's own three panels (`SurfLaunchpadCoins`, `SurfCurveFlow`,
+`SurfBurnPipeline`) arrived fifty columns under FWA's 143, so neither
+`SURF_FULL_LAYOUT_COLUMNS` nor the app-wide `FULL_LAYOUT_COLUMNS` moved, and
+the record above is again **not** appended to — it tracks the app-wide
+number only, the same point made twice already about curator's own screen
+pin and its `f` view. The binding panel is `SurfLaunchpadCoins`, pinned by
+`test_the_launchpad_binding_panel_is_the_coins_table` rather than by this
+sentence (curator's `test_the_analysis_binding_panel_is_the_operators_table`
+precedent): its `DataTable` has eight fixed columns that do not shrink with
+the terminal, and before this task it was the one surf widget with **no
+width tiering at all** — below its structural width a column was clipped
+with no on-screen trace, exactly the silent clipping this file forbids. A
+marker now lives on its own title (the `SurfMarket`/curator idiom, one tier
+rather than a ladder, because a fixed-column `DataTable` has nothing shorter
+to fall back to) — and it could not be read off `DataTable`'s own
+`show_horizontal_scrollbar`: that flag is already `True` several columns
+before any character is actually lost, so a marker keyed off it would fire
+early and disagree with what the compositor shows. The other two launchpad
+panels are plain label/value lines and never mark at all, clear down to 60
+columns. The hero row, which stays mounted in both modes so nothing it
+tracks (POOL/LP/BURN/SUPPLY) ever goes dark, clears on its own by 80 and
+never competes for the binder role. The sweep lives in
+`tests/screens/test_surf_screen.py` and — the standing rule — starts away
+from the pin (80..105, not at 93), so it could not agree with the number by
+construction.
+
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Per-dashboard: `c` swaps the shared bottom-right slot (FWA, TTT, Talismans,
-curator); **`y` on curator** swaps the whole body for the reader's own
+curator); **`l` on surf** swaps the whole dashboard body for the v4
+launchpad's own three panels (LAUNCHPAD COINS / CURVE FLOW / BURN PIPELINE,
+curator's `y`/`f` precedent), with the hero (POOL/LP/BURN/SUPPLY) left in
+place so nothing it tracks ever goes dark (`esc` backs out, one-way); surf's
+status hint reads `l launchpad`. Surf's own `l` and curator's own `l` (the
+record view, described below) are unrelated bindings on two different
+screens, not one shared key. **`y` on curator** swaps the whole body for the reader's own
 standing — ladder, share, and what passing the rank above would cost — with the
 hero left in place so the doomsday clock never leaves the screen (`esc` backs
 out, one-way); **`f` on curator** swaps in the linked-wallet analysis (OPERATORS
@@ -439,6 +472,15 @@ both TTLs. Rendering one costs columns: curator caps a name at 12 (`NAME_COLS`,
 exactly `surfsurf.eth`) because 15 moved its full layout 138 → 144, past the
 app-wide 143 — measure before widening an identity cell, and show the whole name
 only where there is room for it.
+
+**When a new value would widen a sized cell, shorten the value.** Moving
+`FULL_LAYOUT_COLUMNS` — or any dashboard's own full-layout pin — is reserved
+for when no honest short name exists. Curator's `NAME_COLS` cap just above is
+one instance of the rule; FWA's buy-gate signal was shortened rather than let
+the app-wide number grow past 143 once the signals panel became the binding
+constraint (see the `c` paragraph in "Build & run"). A cell earns a shorter
+form only once a width sweep shows it is the one actually asking for the
+extra columns — never on a guess, and never by raising the constant instead.
 
 For record lists, the **complete raw list is the sole ENS network-hydration boundary**. Cleaned
 and filtered lists reuse the raw-list ENS cache; changing filters must never start hydration

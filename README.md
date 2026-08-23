@@ -11,7 +11,7 @@ kind, no wallet, no signing, no transactions.
 
 | Game | Chain | What you see |
 |------|-------|-------------|
-| **Surfboard** | Ethereum | surfsurf.eth announce feed, six launch detectors, IMD market, IDMD NFT |
+| **Surfboard** | Ethereum | surfsurf.eth announce feed, nine launch detectors, IMD market, v4 launchpad, IDMD NFT |
 | **THE LIST** | Ethereum | Zero-custody allowlist game: hourly doomsday clock, survival signals, fan-out patterns, linked-wallet analysis |
 | **FWA** | Ethereum | NFT gacha pool, inverse-weighted VRF draws, pull EV |
 | **Base Trading** | Base | Trending tokens, volume, ETH price, signals |
@@ -45,14 +45,21 @@ by sending **UTF-8 calldata to himself** — a channel that emits no logs at all
 event-driven watcher is structurally blind to it and a nonce poll sees a post within one refresh
 interval. That asymmetry is the whole point of the dashboard.
 
-Six detectors answer one question continuously:
+Nine detectors answer one question continuously:
 
 > **Did something just happen in the surfsurf universe — and how early am I?**
 
-New post · LP migration · identity gate · new deploy · bridge staging · burn. Each renders
-`state · age · one-line detail`, and a detector only re-fires on a *new* event: baselines advance
-on the successful read that detected the last one, and never on a failed read — an outage cannot
-fire a burn or un-fire a migration.
+New post · LP migration · identity gate · new deploy · bridge staging · burn · decoy pool ·
+burn readiness · hot coin. Each renders `state · age · one-line detail`, and a detector only
+re-fires on a *new* event: baselines advance on the successful read that detected the last one,
+and never on a failed read — an outage cannot fire a burn or un-fire a migration.
+
+The hero (POOL · LP · BURN · SUPPLY) tracks the 2026-08-17 v3→v4 migration: the old LP position
+is gone — burned, not stolen, read live off-chain rather than assumed — and the live IMD/ETH pool
+is hookless. An earlier v4 hook launch was announced and then publicly retracted by the dev on
+2026-08-16; nothing on this dashboard watches for it any more. Press **`l`** to swap the whole
+dashboard body for the v4 launchpad's own view — LAUNCHPAD COINS, CURVE FLOW, BURN PIPELINE —
+with the hero left on screen the whole time; `esc` backs out, one-way.
 
 The NFT floor is shown as `n/a — no keyless source`, not estimated. There is no keyless floor
 feed for this collection, and a made-up number on a dashboard people trade against is worse than
@@ -278,7 +285,12 @@ the other, so a single manager owns the command.
 | `q` | Quit |
 
 Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap panels; in THE
-LIST's `l` view it switches the full-width raw and cleaned tables. **THE LIST binds `y`** for your own standing — every send you
+LIST's `l` view it switches the full-width raw and cleaned tables. **Surfboard binds `l`** to swap
+the whole dashboard body for the v4 launchpad's own view — LAUNCHPAD COINS, CURVE FLOW, BURN
+PIPELINE — with the hero (POOL · LP · BURN · SUPPLY) left on screen the whole time; `esc` backs
+out, one-way, and its status hint reads `l launchpad`. (THE LIST's `l` and Surfboard's `l` are two
+different dashboards' own bindings, not one shared key — see each dashboard's own row above for
+what it does there.) **THE LIST binds `y`** for your own standing — every send you
 made with the multiplier it got, what each one actually credited, your share of all weight, the
 single send that would pass the rank above you, and (from the linked-wallet analysis) whether you
 are in a group and what your rank is without one (`esc` goes back; the clock stays on screen either

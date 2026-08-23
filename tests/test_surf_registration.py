@@ -1214,13 +1214,33 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     # field zeroed, every other field `None`, checked against the true
     # all-`None` baseline of the *same widget*), because `screens/surf.py`
     # still cannot reach these keys until Task 12 wires the `l` view.
-    # Fix round 10a (2026-08-24): the v4-pool-id-matched market fix. Both
-    # are None-on-failure floats with no meaningful representable zero --
-    # judged the same way their siblings above are -- and neither has a
-    # widget consumer yet; Task 10 wires the market panel's legacy/decoy
-    # note and the price-disagreement flag.
-    "legacy_pool_liquidity_usd": "no widget consumes this key yet; Task 10 wires the market panel's legacy note",
-    "price_source_disagreement_pct": "no widget consumes this key yet; Task 10 wires the market panel's disagreement flag",
+    # Fix round 10a (2026-08-24): the v4-pool-id-matched market fix.
+    # `legacy_pool_liquidity_usd` USED to sit here too ("no widget consumer
+    # yet") -- stale since Task 10 wired `market.py`'s `legacy_line`
+    # (`_parts`); it moved to `_NUMERIC_ZERO_PROBES` below once Task 13
+    # verified its needle by rendering the real screen.
+    #
+    # `price_source_disagreement_pct` is also dispatched to
+    # `SurfMarket.update_data()` now (Task 10), but stays here -- not
+    # because nothing consumes it, but because its one render path
+    # genuinely cannot distinguish a genuine 0 from a failed read.
+    # `_price_marker` (widgets/surf/market.py): `if v is None or abs(v) <=
+    # _PRICE_DISAGREEMENT_PCT: return ""` -- a real 0.0 (perfect agreement)
+    # and a failed `None` read take the *same* branch to the *same* empty
+    # string, by design (the docstring: "[None] is also not a disagreement
+    # to flag: it renders no marker at all, same as a value inside the
+    # threshold"). Verified by rendering `SurfMarket` side by side (Task
+    # 13): `price_source_disagreement_pct=0.0` and `=None` composite a
+    # byte-identical price row (`IMD $0.7074`, no marker), while `=5.0`
+    # (past the 2.0-point threshold) composites `IMD $0.7074 ?` -- proving
+    # the code path is real and that 0 specifically does not reach it.
+    # There is no substring a genuine 0 produces that `None` does not, so
+    # unlike its sibling above this key has no zero-catch needle to probe.
+    "price_source_disagreement_pct": (
+        "dispatched to SurfMarket.update_data(); _price_marker renders a "
+        "genuine 0 and a failed None read identically (both take the "
+        "'no marker' branch), verified by rendering -- no needle exists"
+    ),
     # Same age_s-only-on-FIRED reasoning as the six existing sig_*_age_s
     # entries just above -- these three new detectors follow the identical
     # widgets/surf/signals.py `_head()` pattern once Task 9 wires them.
@@ -1291,6 +1311,16 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     "launchpad_creator_eth_owed": "owed 0.0000 ETH",  # launchpad.py _flow_lines / _fmt_eth_owed
     "burn_min_bridge": "min bridge 0 IMD",       # launchpad.py _pipeline_lines (fmt_compact)
     "launchpad_burned_total": "burned 0 IMD (all-time)",  # launchpad.py _pipeline_lines / _fmt_total
+    # Fix round 10a / Task 13 (2026-08-23): `screens/surf.py` now routes
+    # this through `SurfMarket.update_data()` (`market.py`'s `legacy_line`
+    # in `_parts`, gated on `legacy is not None` -- a genuine 0.0 passes
+    # that gate, `None` does not). Verified by rendering the real
+    # `SurfScreen` at the pinned (143, 48) size with only this key set to
+    # `0.0`: the market panel composites `legacy: v3 pool $0`, absent with
+    # the key `None`. Its sibling `price_source_disagreement_pct` stays in
+    # `_NUMERIC_KEYS_EXCLUDED` above precisely because the same
+    # side-by-side check found no such needle for it.
+    "legacy_pool_liquidity_usd": "legacy: v3 pool $0",  # market.py _parts legacy_line
 }
 
 

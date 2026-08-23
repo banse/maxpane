@@ -295,12 +295,30 @@ async def test_hero_burn_ready_flips_between_true_false_and_unknown():
 
 async def test_hero_pool_venue_both_values_render_distinctly():
     """Both real values the manager emits (v3 pre-migration, v4 post) must
-    reach the box, not just the one ``_FULL_HERO`` happens to use."""
+    reach the box, not just the one ``_FULL_HERO`` happens to use.
+
+    ``lp_state`` must NOT be left at ``_FULL_HERO``'s own ``"gone"`` here:
+    that renders ``"v3 position migrated"`` in the LP box (see
+    ``test_hero_lp_gone_renders_migrated_not_unknown_on_screen``), and that
+    string contains the literal substring ``"v3"`` -- so the ``venue ==
+    "v3"`` case would pass on the LP box's own leakage even if the POOL box
+    rendered nothing resembling ``v3`` at all (a Task 13 review finding).
+    ``lp_state="live"`` -- the sibling ``test_hero_owner_changed_is_loud_
+    words_not_colour`` fixture, which renders IMD/WETH amounts instead --
+    keeps the LP box's text free of both venue words, so this assertion is
+    genuinely checking the POOL box alone.
+    """
     for venue in ("v3", "v4"):
         widget = SurfHero()
         app = _Harness(widget)
         async with app.run_test(size=(160, 12)) as pilot:
-            widget.update_data(**{**_FULL_HERO, "pool_venue": venue})
+            widget.update_data(**{
+                **_FULL_HERO,
+                "pool_venue": venue,
+                "lp_state": "live",
+                "lp_imd": 388_421.0,
+                "lp_weth": 142.7067,
+            })
             await pilot.pause()
             assert venue in _screen_text(app), venue
 
