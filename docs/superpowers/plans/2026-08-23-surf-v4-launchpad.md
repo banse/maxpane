@@ -45,7 +45,7 @@
 | ETH/IMD v4 pools since block 25,000,000 | 38 (1 real, 37 decoys) |
 | Launchpad | `coinCount = 146`, `coinSupply = 1e27`, `initialPriceWad = 6695853418114` |
 | Hook | `imdToBurn = 15062422197243027626`, `totalRealImd = 20577661206302839565537`, `burnFeeBps = 50`, `creatorFeeBps = 50`, `MAX_FEE_BPS = 500`, `totalCreatorEthOwed = 74934283907946169` |
-| Executor v2 | `tokenBalance = 953674883767`, `minBridgeAmount = 0`, `baseBurnReceiver = 0xf9d7cbf5bEF2f5c9bA93a70F31dDCa6457716793` |
+| Executor v2 | `tokenBalance = 953674883767`, `minBridgeAmount = 0`, `baseBurnReceiver = 0xf9d7CBf5Bef2f5c9ba93a70F31DdCA6457716793` |
 | Ops v4 positions | `PositionManager.balanceOf(OPS_WALLET) = 1` |
 
 ---
@@ -128,7 +128,7 @@ def test_launchpad_addresses_are_pinned() -> None:
     assert A.LAUNCHPAD_FACTORY == "0x73d1ae084F04f793A5bbd6B623d74400C9Fc3f42"
     assert A.BURN_EXECUTOR_V2 == "0xe29386719C155B6847aD5a4E97C6674f10ffc750"
     assert A.POSITION_MANAGER_V4 == "0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e"
-    assert A.BASE_BURN_RECEIVER == "0xf9d7cbf5bEF2f5c9bA93a70F31dDCa6457716793"
+    assert A.BASE_BURN_RECEIVER == "0xf9d7CBf5Bef2f5c9ba93a70F31DdCA6457716793"
 
 
 def test_burn_executor_v1_is_kept_and_distinct() -> None:
@@ -178,7 +178,7 @@ LAUNCHPAD_FACTORY = "0x73d1ae084F04f793A5bbd6B623d74400C9Fc3f42"
 #: Uniswap v4 PositionManager -- holds the ops wallet's single LP position.
 POSITION_MANAGER_V4 = "0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e"
 #: Base-side sink the executor bridges to; mainnet supply drops on arrival.
-BASE_BURN_RECEIVER = "0xf9d7cbf5bEF2f5c9bA93a70F31dDCa6457716793"
+BASE_BURN_RECEIVER = "0xf9d7CBf5Bef2f5c9ba93a70F31DdCA6457716793"
 
 #: **Fallback only.**  The live pool id is read from
 #: ``LaunchpadHook.imdEthPoolId()`` every chain round.  38 ETH/IMD v4 pools
