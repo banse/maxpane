@@ -449,6 +449,10 @@ def _baseline(**overrides) -> dict:
         "burn_tx": BURN_0731["tx_hash"],
         "burn_ts": BURN_0731["ts"],
         "decoy_pool_count": DECOY_POOL_COUNT_BEFORE,
+        # fix round 1: BURN READY's own edge baseline. False -- "was not
+        # ready" -- is the quiet, day-before default; a True->True quiet
+        # refresh is exercised explicitly where it matters.
+        "burn_ready": False,
         "fired": {},
     }
     base.update(overrides)
@@ -944,13 +948,24 @@ def test_a_lagging_decoy_scan_cannot_drag_the_count_baseline_down():
 
 # --- 8. BURN READY -------------------------------------------------------------
 #
-# The launchpad's own burn gate (imdToBurn >= minBridgeAmount), tri-state and
-# level-checked: no baseline, unlike DECOY POOL above.
+# fix round 1: the launchpad's own burn gate (imdToBurn >= minBridgeAmount) is
+# an EDGE detector with its own boolean baseline, not a level check. The first
+# cut fired on every cycle burn_ready read True, which fired straight through
+# a total outage (the launchpad slot's last-good is deliberately still served
+# when the fast-tier chain read is dead) and broke this rail's own vocabulary
+# -- FIRED means "something happened", never "a condition holds". WATCH is the
+# right resting state for "callable right now and nobody has called it": the
+# dev asked publicly for a bot to fire this, so a persistently callable
+# pipeline is genuinely worth a row, just not as a fresh event forever.
 
 
-def test_burn_ready_fires_only_when_both_inputs_read():
-    ready, _, _ = _sig("burnready", {}, {"burn_ready": True, "burn_accrued": 15.06})
-    assert ready == "fired"
+def test_burn_ready_seeds_on_an_unset_baseline_and_does_not_fire():
+    """The coordinator's own corrected table: an empty baseline is WATCH,
+    not FIRED -- the false-first-sweep guard every other detector in this
+    file already has for its own edge (GATE OPEN, NEW POST, ...)."""
+    ready, detail, _ = _sig("burnready", {}, {"burn_ready": True, "burn_accrued": 15.06})
+    assert ready == "watch"
+    assert detail == "ready to burn · 15.06 IMD accrued"
 
     unknown, _, _ = _sig("burnready", {}, {"burn_ready": None})
     assert unknown is None
@@ -963,19 +978,58 @@ def test_burn_ready_with_nothing_accrued_is_ok():
     assert _sig("burnready", _baseline(), _readings()) == ("ok", "not ready", None)
 
 
-def test_burn_accruing_but_not_ready_is_a_watch():
+def test_burn_not_ready_but_accruing_is_ok_not_a_watch():
+    """fix round 1: False is always OK, whatever is accrued -- the amount
+    still rides along in the detail so the row is never silent about it."""
     assert _sig("burnready", _baseline(), _readings(burn_accrued=500.0)) == (
-        "watch", "500.00 IMD accruing", None
+        "ok", "not ready · 500.00 IMD accrued", None
     )
 
 
-def test_burn_ready_fires_with_the_accrued_amount():
-    state, detail, age = _sig(
-        "burnready", _baseline(), _readings(burn_ready=True, burn_accrued=15.06)
+def test_burn_ready_transition_fires_exactly_once():
+    """The edge itself: not-ready -> ready fires; a second cycle at the same
+    level does not re-fire (build_signals' own persistence carries the
+    visible FIRED state forward, aging, without the detector re-declaring
+    it -- exactly like every other edge detector in this file)."""
+    base = _baseline(burn_ready=False)
+    out1, advanced = sig.build_signals(
+        base, _readings(burn_ready=True, burn_accrued=15.06), NOW
     )
-    assert state == "fired"
-    assert detail == "ready to burn · 15.06 IMD accrued"
-    assert age == 0.0
+    assert out1["sig_burnready_state"] == "fired"
+    assert out1["sig_burnready_detail"] == "ready to burn · 15.06 IMD accrued"
+    assert out1["sig_burnready_age_s"] == 0.0
+    assert advanced["burn_ready"] is True
+    fired_ts = advanced["fired"]["burnready"]["ts"]
+
+    # Second cycle, 120s later, still ready: the row still reads FIRED (aged),
+    # but the recorded event does not move -- the detector itself now sees
+    # base_ready=True and would return WATCH; it is build_signals' persisted
+    # entry that keeps the row FIRED, not a re-fire.
+    out2, advanced2 = sig.build_signals(
+        advanced, _readings(burn_ready=True, burn_accrued=15.06), NOW + 120.0
+    )
+    assert out2["sig_burnready_state"] == "fired"
+    assert out2["sig_burnready_age_s"] == pytest.approx(120.0)
+    assert advanced2["fired"]["burnready"]["ts"] == fired_ts
+
+
+def test_burn_readiness_outage_leaves_the_fired_baseline_untouched():
+    """The invariant this whole finding is about, at this layer: a cycle
+    whose readings all went None must not move the burn_ready baseline or
+    the fired store, whatever was recorded before it."""
+    base = _baseline(burn_ready=False)
+    _, seeded = sig.build_signals(base, _readings(burn_ready=True, burn_accrued=15.06), NOW)
+    assert seeded["burn_ready"] is True
+    assert "burnready" in seeded["fired"]
+
+    out, advanced = sig.build_signals(
+        seeded, _readings(burn_ready=None, burn_accrued=None), NOW + 240.0
+    )
+    # Outage: the row still shows FIRED (an outage may never un-fire a row --
+    # PRD's own rule, shared by every detector here), but nothing NEW moved.
+    assert out["sig_burnready_state"] == "fired"
+    assert advanced["burn_ready"] == seeded["burn_ready"]
+    assert advanced["fired"] == seeded["fired"]
 
 
 def test_burn_readiness_outage_is_none():
@@ -989,6 +1043,18 @@ def test_a_non_bool_burn_ready_reading_is_unknown_not_a_fire():
     assert _sig("burnready", _baseline(), _readings(burn_ready=1)) == (
         None, "burn readiness unavailable", None
     )
+
+
+def test_a_non_bool_burn_ready_baseline_never_corrupts_the_persisted_value():
+    """Mirrors the gate_open regression on the write side: a malformed
+    baseline (e.g. a stray int) must not sail past the coercer either."""
+    _, advanced = sig.build_signals(
+        _baseline(burn_ready=True), _readings(burn_ready=0), NOW
+    )
+    # 0 is not a bool reading (isinstance(0, bool) is False in Python, but
+    # the coercer's own isinstance guard still rejects a genuine non-bool
+    # int) -- the prior valid True survives untouched.
+    assert advanced["burn_ready"] is True
 
 
 # --- 9. HOT COIN -----------------------------------------------------------------
@@ -1035,12 +1101,31 @@ def test_hot_coin_fires_when_a_coin_clears_the_bar():
     assert age == 0.0
 
 
-def test_hot_coin_detail_is_escaped():
-    """The ticker is attacker-chosen: launch() is permissionless."""
+def test_hot_coin_detail_never_carries_an_unescaped_markup_tag():
+    """fix round 1, finding 2: the real property, not the wrong assertion.
+
+    The original version of this test asserted ``"[/x]" not in detail``,
+    which no *escaping* scheme can ever satisfy: ``rich.markup.escape``
+    (this dashboard's standard treatment, applied to every detail at the
+    widget layer) only ever prepends a backslash to a ``[`` -- it never
+    removes the bracket, so the raw 4-char substring always survives intact
+    inside the escaped text. That assertion could only ever pass because
+    :func:`sig._safe_ticker` *drops* unsafe characters rather than escaping
+    them -- a real, useful property, but the test was accidentally coupled
+    to one specific implementation rather than to what actually matters.
+
+    What actually matters: a hostile ticker must not be able to introduce a
+    ``[`` into this module's own output at all -- the one character that can
+    open a markup tag -- and the row must still name *a* coin rather than
+    going silent about which one is hot.
+    """
     counts = {f"c{i}": 1 for i in range(5)}
     counts["[/x]"] = 99
     _, detail, _ = _sig("hot", {}, {"launchpad_swaps_by_coin": counts})
-    assert "[/x]" not in detail
+    assert "[" not in detail
+    # _safe_ticker keeps "x" -- the one character of "[/x]" in the safe set
+    # -- so the coin stays identifiable even though the hostile wrapper is gone.
+    assert "x" in detail
 
 
 def test_hot_coin_falls_back_to_a_generic_word_when_nothing_survives_the_filter():
@@ -1323,69 +1408,74 @@ def test_a_bool_announce_nonce_reading_does_not_swallow_the_next_genuine_post():
 # machine-checkable half of success criterion 3.
 # ---------------------------------------------------------------------------
 
-MATRIX: tuple[tuple[str, str, dict, str], ...] = (
-    # (signal, expected state, reading overrides, expected detail)
-    ("post", "ok", {}, "nonce 13 · no new post"),
-    ("post", "watch", {"channel_tx_count": 21}, "reply on channel · 21 txs"),
-    ("post", "fired",
+MATRIX: tuple[tuple[str, str, dict, dict, str], ...] = (
+    # (signal, expected state, baseline overrides, reading overrides, expected detail)
+    ("post", "ok", {}, {}, "nonce 13 · no new post"),
+    ("post", "watch", {}, {"channel_tx_count": 21}, "reply on channel · 21 txs"),
+    ("post", "fired", {},
      {"announce_nonce": 14, "announce_last_text": LP_POST_TEXT, "announce_last_ts": LP_POST_TS},
      LP_POST_DETAIL),
-    ("post", None, {"announce_nonce": None, "channel_tx_count": None}, "channel unavailable"),
+    ("post", None, {}, {"announce_nonce": None, "channel_tx_count": None}, "channel unavailable"),
 
-    ("lp", "ok", {}, "v4 position holds"),
-    ("lp", "watch", {"ops_nonce": 37}, "frenpet.eth active · nonce 37"),
-    ("lp", "fired", {"lp_liquidity": 677_000_000_000}, "v4 position OUT -32.3%"),
-    ("lp", None, {"lp_liquidity": None, "ops_nonce": None, "v4_hook_pools": None},
+    ("lp", "ok", {}, {}, "v4 position holds"),
+    ("lp", "watch", {}, {"ops_nonce": 37}, "frenpet.eth active · nonce 37"),
+    ("lp", "fired", {}, {"lp_liquidity": 677_000_000_000}, "v4 position OUT -32.3%"),
+    ("lp", None, {}, {"lp_liquidity": None, "ops_nonce": None, "v4_hook_pools": None},
      "v4 position unavailable"),
 
-    ("gate", "ok", {}, "closed · 1 written"),
-    ("gate", "watch", {"identities_written": 2}, "1→2 written · gate closed"),
-    ("gate", "fired", {"gate_open": True}, "GATE OPEN · 1 written"),
-    ("gate", None, {"gate_open": None, "identities_written": None}, "gate unavailable"),
+    ("gate", "ok", {}, {}, "closed · 1 written"),
+    ("gate", "watch", {}, {"identities_written": 2}, "1→2 written · gate closed"),
+    ("gate", "fired", {}, {"gate_open": True}, "GATE OPEN · 1 written"),
+    ("gate", None, {}, {"gate_open": None, "identities_written": None}, "gate unavailable"),
 
-    ("deploy", "ok", {}, "no new contract"),
-    ("deploy", "watch", {"dev_nonce": 2351}, "surfsurf.eth nonce 2350→2351"),
-    ("deploy", "fired", {"deploy_events": [FRESH_ACTION]}, "action register() · announce"),
-    ("deploy", None, {"deploy_events": None, "dev_nonce": None}, "dev activity unavailable"),
+    ("deploy", "ok", {}, {}, "no new contract"),
+    ("deploy", "watch", {}, {"dev_nonce": 2351}, "surfsurf.eth nonce 2350→2351"),
+    ("deploy", "fired", {}, {"deploy_events": [FRESH_ACTION]}, "action register() · announce"),
+    ("deploy", None, {}, {"deploy_events": None, "dev_nonce": None}, "dev activity unavailable"),
 
-    ("bridge", "ok", {}, "no mints in window"),
-    ("bridge", "watch", {"imd_supply": SUPPLY_BEFORE + 10_000.0},
+    ("bridge", "ok", {}, {}, "no mints in window"),
+    ("bridge", "watch", {}, {"imd_supply": SUPPLY_BEFORE + 10_000.0},
      "supply +10,000 · no dev-wallet mint"),
-    ("bridge", "fired", {"bridge_mints": [MINT_1, MINT_2]}, "mint 114,367 IMD → frenpet.eth"),
-    ("bridge", None, {"bridge_mints": None, "imd_supply": None}, "bridge logs unavailable"),
+    ("bridge", "fired", {}, {"bridge_mints": [MINT_1, MINT_2]}, "mint 114,367 IMD → frenpet.eth"),
+    ("bridge", None, {}, {"bridge_mints": None, "imd_supply": None}, "bridge logs unavailable"),
 
-    ("burn", "ok", {}, "supply flat"),
-    ("burn", "watch", {"burn_transfers": [BURN_0805]}, "15,745 IMD → BurnExecutor"),
-    ("burn", "fired", {"imd_supply": SUPPLY_BEFORE - 15_745.0}, "burn 15,745 IMD"),
-    ("burn", None, {"imd_supply": None, "burn_transfers": None}, "supply unavailable"),
+    ("burn", "ok", {}, {}, "supply flat"),
+    ("burn", "watch", {}, {"burn_transfers": [BURN_0805]}, "15,745 IMD → BurnExecutor"),
+    ("burn", "fired", {}, {"imd_supply": SUPPLY_BEFORE - 15_745.0}, "burn 15,745 IMD"),
+    ("burn", None, {}, {"imd_supply": None, "burn_transfers": None}, "supply unavailable"),
 
-    ("decoy", "ok", {}, "36 decoy pools"),
-    ("decoy", "watch", {"decoy_pool_count": DECOY_POOL_COUNT_AFTER}, "decoy #37 · fee unknown"),
-    ("decoy", "fired",
+    ("decoy", "ok", {}, {}, "36 decoy pools"),
+    ("decoy", "watch", {}, {"decoy_pool_count": DECOY_POOL_COUNT_AFTER}, "decoy #37 · fee unknown"),
+    ("decoy", "fired", {},
      {"decoy_pool_count": DECOY_POOL_COUNT_AFTER, "decoy_newest_fee_bps": DECOY_NEWEST_FEE_BPS},
      "decoy #37 · fee 80.0%"),
-    ("decoy", None, {"decoy_pool_count": None}, "decoy scan unavailable"),
+    ("decoy", None, {}, {"decoy_pool_count": None}, "decoy scan unavailable"),
 
-    ("burnready", "ok", {}, "not ready"),
-    ("burnready", "watch", {"burn_accrued": 500.0}, "500.00 IMD accruing"),
-    ("burnready", "fired", {"burn_ready": True, "burn_accrued": 15.06},
+    # fix round 1: BURN READY is an edge detector, so WATCH (still callable,
+    # already reported) needs a baseline that already says True -- reachable
+    # only with a baseline override, unlike its siblings' reading-only rows.
+    ("burnready", "ok", {}, {}, "not ready"),
+    ("burnready", "watch", {"burn_ready": True}, {"burn_ready": True, "burn_accrued": 15.06},
      "ready to burn · 15.06 IMD accrued"),
-    ("burnready", None, {"burn_ready": None}, "burn readiness unavailable"),
+    ("burnready", "fired", {"burn_ready": False}, {"burn_ready": True, "burn_accrued": 15.06},
+     "ready to burn · 15.06 IMD accrued"),
+    ("burnready", None, {}, {"burn_ready": None}, "burn readiness unavailable"),
 
-    ("hot", "ok", {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_THIN}, "hour too thin to judge"),
-    ("hot", "watch", {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_WATCH}, "e warming · 4 swaps (<6)"),
-    ("hot", "fired", {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_FIRED}, "x · 99 swaps (≥5)"),
-    ("hot", None, {"launchpad_swaps_by_coin": None}, "swap distribution unavailable"),
+    ("hot", "ok", {}, {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_THIN}, "hour too thin to judge"),
+    ("hot", "watch", {}, {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_WATCH},
+     "e warming · 4 swaps (<6)"),
+    ("hot", "fired", {}, {"launchpad_swaps_by_coin": HOT_COIN_COUNTS_FIRED}, "x · 99 swaps (≥5)"),
+    ("hot", None, {}, {"launchpad_swaps_by_coin": None}, "swap distribution unavailable"),
 )
 
 
 @pytest.mark.parametrize(
-    "name,expected_state,overrides,expected_detail",
+    "name,expected_state,base_overrides,overrides,expected_detail",
     MATRIX,
     ids=[f"{row[0]}-{row[1] or 'outage'}" for row in MATRIX],
 )
-def test_signal_matrix(name, expected_state, overrides, expected_detail):
-    state, detail, _ = _sig(name, _baseline(), _readings(**overrides))
+def test_signal_matrix(name, expected_state, base_overrides, overrides, expected_detail):
+    state, detail, _ = _sig(name, _baseline(**base_overrides), _readings(**overrides))
     assert state == expected_state
     assert detail == expected_detail
 
@@ -1400,11 +1490,13 @@ def test_the_matrix_covers_every_detector_and_every_state():
     assert covered == expected
 
 
-@pytest.mark.parametrize("name,expected_state,overrides,_detail", MATRIX,
+@pytest.mark.parametrize("name,expected_state,base_overrides,overrides,_detail", MATRIX,
                          ids=[f"{row[0]}-{row[1] or 'outage'}" for row in MATRIX])
-def test_no_row_of_the_matrix_moves_an_unread_baseline(name, expected_state, overrides, _detail):
+def test_no_row_of_the_matrix_moves_an_unread_baseline(
+    name, expected_state, base_overrides, overrides, _detail
+):
     """Whatever a detector decides, a ``None`` reading never writes a baseline."""
-    base = _baseline()
+    base = _baseline(**base_overrides)
     _, advanced = sig.build_signals(base, _readings(**overrides), NOW)
     for key, value in overrides.items():
         if value is None and key in sig.BASELINE_SCALARS:
@@ -1773,8 +1865,8 @@ def test_signal_output_keys_match_the_prd_naming():
 
 def test_every_state_value_is_one_of_the_four():
     """No detector may invent a fifth state string (PRD §5)."""
-    for _name, expected_state, overrides, _detail in MATRIX:
-        out, _ = sig.build_signals(_baseline(), _readings(**overrides), NOW)
+    for _name, expected_state, base_overrides, overrides, _detail in MATRIX:
+        out, _ = sig.build_signals(_baseline(**base_overrides), _readings(**overrides), NOW)
         for key, value in out.items():
             if key.endswith("_state"):
                 assert value in ("ok", "watch", "fired", None), (key, value)
@@ -1789,8 +1881,8 @@ def test_details_fit_the_signals_panel():
     composed ``… · last: …`` form deliberately exceeds it when both halves are
     long, and truncating that is the widget's call, not this module's.
     """
-    for _name, _state, overrides, _detail in MATRIX:
-        out, _ = sig.build_signals(_baseline(), _readings(**overrides), NOW)
+    for _name, _state, base_overrides, overrides, _detail in MATRIX:
+        out, _ = sig.build_signals(_baseline(**base_overrides), _readings(**overrides), NOW)
         for key, value in out.items():
             if key.endswith("_detail"):
                 assert len(value) <= 55, (key, len(value), value)

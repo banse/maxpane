@@ -129,6 +129,10 @@ BASELINE_SCALARS: tuple[str, ...] = (
     "identities_written",
     "imd_supply",
     "decoy_pool_count",
+    # fix round 1: BURN READY became an edge detector and needs a baseline
+    # to tell "already reported" from "just became callable" (see
+    # _detect_burn_ready).
+    "burn_ready",
 )
 
 #: Per-scalar coercion applied by :func:`_advance` *before* the ``is None``
@@ -188,6 +192,7 @@ _SCALAR_COERCERS: dict[str, Any] = {
     "identities_written": lambda value: _as_int(value),
     "imd_supply": lambda value: _as_float(value),
     "decoy_pool_count": lambda value: _as_int(value),
+    "burn_ready": lambda value: value if isinstance(value, bool) else None,
 }
 
 #: Event streams: ``reading key -> (tx key, ts key, sequence key)``.  Three
@@ -914,31 +919,60 @@ def _detect_burn_ready(base: dict, read: dict, now: float) -> _Det:
     """The launchpad's own burn gate: ``imdToBurn >= minBridgeAmount``
     (the v4-launchpad addition, Task 7).
 
-    A level check, not a transition — there is no "previous ready" worth
-    comparing against, so unlike DECOY POOL this needs no baseline.
+    **An EDGE detector with a baseline, not a level check** (fix round 1).
+    The first cut of this row fired on every cycle ``burn_ready`` read
+    ``True``, which is wrong for two reasons at once: it violates the "an
+    outage is never read as an event" invariant every other detector in this
+    file holds, because the launchpad slot's last-good is deliberately still
+    served through an otherwise-total outage, so a stale-but-true reading
+    kept firing straight through one (caught by
+    ``tests/data/test_surf_manager.py::test_no_signal_fires_and_no_
+    baseline_moves_under_a_total_outage`` — a manager-owned test, not
+    touched); and it broke this rail's own vocabulary, where FIRED means
+    "something happened" (a *transition*), not "a condition holds" — NEW
+    POST fires on a *new* post, BRIDGE STAGE on a *new* mint, BURN on a
+    supply *decrease*, never on a level that merely continues to be true.
+
+    So ``burn_ready`` now has its own boolean baseline (``BASELINE_SCALARS``,
+    coerced like ``gate_open``): ``True`` while the baseline says ``False``
+    is the transition and FIRES; ``True`` while the baseline is already
+    ``True`` is WATCH — still callable, nobody has fired it, and the dev
+    asked publicly for a bot to call it, so a persistently-callable pipeline
+    is genuinely worth a resting row rather than silence.  An **unset**
+    baseline (first successful read ever) seeds and reports WATCH rather
+    than firing — the same false-first-sweep guard ``_detect_gate`` uses for
+    ``gate_open`` — so day one does not report a gate that has been callable
+    for hours as breaking news.
+
     ``burn_ready`` is tri-state (``surf_manager.py``'s own doc: "we cannot
     tell" is not "not ready"): ``None`` means the gate itself could not be
-    read and must render unknown, never a quiet OK — an outage here would
-    otherwise look identical to "checked, and it is not ready yet".
-    ``False`` with nothing accrued is OK; ``False`` with something accrued is
-    a WATCH, the same "building toward it" shape BURN's own transfer
-    precursor already uses.
+    read and must render unknown, never a quiet OK.  ``False`` is always OK
+    — "we looked, it is not ready" — whatever is or is not accrued; the
+    accrued amount still rides along in the detail so the row never goes
+    silent about the thing it watches.
     """
     ready = read.get("burn_ready")
     ready = ready if isinstance(ready, bool) else None
     accrued = _as_float(read.get("burn_accrued"))
+    amount = f"{_fmt_amount(accrued)} IMD accrued" if accrued is not None else "amount unread"
 
     if ready is None:
         return _dead("burn readiness unavailable")
 
-    if ready:
-        amount = f"{_fmt_amount(accrued)} IMD accrued" if accrued is not None else "amount unread"
-        return _fired(f"ready to burn · {amount}", now)
+    if not ready:
+        if accrued is not None and accrued > 0:
+            return _ok(f"not ready · {_fmt_amount(accrued)} IMD accrued")
+        return _ok("not ready")
 
-    if accrued is not None and accrued > 0:
-        return _watch(f"{_fmt_amount(accrued)} IMD accruing")
+    base_ready = base.get("burn_ready")
+    base_ready = base_ready if isinstance(base_ready, bool) else None
 
-    return _ok("not ready")
+    if base_ready is None or base_ready:
+        # Unset baseline (first successful read: seed, don't fire) or already
+        # True (still callable, already reported) -- either way, WATCH.
+        return _watch(f"ready to burn · {amount}")
+
+    return _fired(f"ready to burn · {amount}", now)
 
 
 # --- 9. HOT COIN ---------------------------------------------------------------
