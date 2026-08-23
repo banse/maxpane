@@ -13,6 +13,19 @@ Widget                  Slot in ``screens/surf.SurfScreen``
 ``SurfNft``             bottom row, right -- IDMD collection
 ======================  ===================================================
 
+Plus three more (``launchpad.py``, v4 migration, 2026-08-23) that exist in
+this package and are exported here, but have **no slot yet** -- Task 12 wires
+them behind the new ``l`` view (``screens/surf.py`` is that task's file, not
+this one's):
+
+======================  ===================================================
+Widget                  Data
+======================  ===================================================
+``SurfLaunchpadCoins``  ranked coin table -- ticker, name, creator, etc.
+``SurfCurveFlow``       aggregate swap/trader/creator-revenue numbers
+``SurfBurnPipeline``    the permissionless bridge-and-burn executor's state
+======================  ===================================================
+
 The classes are re-exported here because the package root is the import
 surface the screen and its tests use, exactly as ``widgets/ttt`` and
 ``widgets/talismans`` do it and as ``screens/fwa.py`` consumes
@@ -31,6 +44,7 @@ and no network present (pinned by ``tests/widgets/test_surf_widget_contract.py``
 from .activity import SurfDevActivity
 from .feed import FEED_TITLE, SurfFeed
 from .hero import SurfHero
+from .launchpad import SurfBurnPipeline, SurfCurveFlow, SurfLaunchpadCoins
 from .market import SurfMarket
 from .nft import FLOOR_UNAVAILABLE, SurfNft
 from .signals import DETECTOR_LABELS, SurfSignals
@@ -39,9 +53,12 @@ __all__ = [
     "DETECTOR_LABELS",
     "FEED_TITLE",
     "FLOOR_UNAVAILABLE",
+    "SurfBurnPipeline",
+    "SurfCurveFlow",
     "SurfDevActivity",
     "SurfFeed",
     "SurfHero",
+    "SurfLaunchpadCoins",
     "SurfMarket",
     "SurfNft",
     "SurfSignals",

@@ -1,0 +1,608 @@
+"""IMD launchpad panels: the coin table, the curve-swap flow, the burn pipe.
+
+Three render-only widgets, added for the v4 migration (2026-08-19 -- 146
+coins by 73 distinct creators, 4,683 curve swaps by 673 traders, 3,299 IMD
+burned, all in four days):
+
+* :class:`SurfLaunchpadCoins` -- one row per launched coin, already ranked
+  and capped upstream (``LAUNCHPAD_RENDER_LIMIT`` = 20, ``data/surf_client.py``).
+* :class:`SurfCurveFlow` -- the aggregate swap/trader/creator-revenue numbers
+  for the whole launchpad, read from the same slow tier as the coin table.
+* :class:`SurfBurnPipeline` -- the permissionless bridge-and-burn executor's
+  own state.  **Read-only** (CLAUDE.md hard constraint 1 -- no signer, no
+  transactor, no calldata construction anywhere in this repo): this panel
+  *displays* that ``bridgeToBaseBurnReceiver()`` is callable by anyone, the
+  same framing ``hero.py``'s BURN box and ``data/surf_addresses.py`` already
+  use for the same executor.  It never offers to call it, never builds
+  calldata and never quotes gas for the purpose of sending.
+
+**Ticker and name are attacker-chosen.**  ``LaunchpadFactory.launch(string,
+string)`` is permissionless and costs only gas, so any wallet can name a coin
+``[/x]`` or ``[bold red]pwn[/]`` -- this is the first surf panel whose text is
+picked by a hostile party rather than merely quoted from the announce
+channel (``data/surf_client.py``'s own docstring: "escaping is Task 11's job,
+never this layer's" -- ticker/name reach this module completely raw).
+
+Every ``ticker`` and ``name`` goes through :func:`_sanitize`, which does
+three things in a fixed order -- flatten, strip, escape:
+
+1. flatten embedded newlines/control whitespace to single spaces (the same
+   first step ``feed.py`` uses for announce-channel text);
+2. **strip complete ``[...]``-shaped bracket runs outright**, rather than
+   merely escaping them.  A ticker or a coin name has no legitimate use for
+   a literal square bracket (unlike a free-form announce post, which
+   ``feed.py`` handles by escaping alone) -- this is the same "strip the
+   known-hostile shape, then escape whatever remains" pattern
+   ``widgets/frenpet/wallet/fpw_pets.py`` already uses for emoji in pet
+   names.  It is also load-bearing here in a way the emoji case is not: a
+   *well-formed* Rich style tag like ``[bold red]pwn[/]`` parses without
+   error (verified against this repo's live Rich/Textual versions) and would
+   silently apply arbitrary styling to an attacker's choice of text if it
+   ever reached ``Text.from_markup`` unescaped -- escaping alone would still
+   neutralise it, but the literal tag characters would then render *as
+   text*, which is a second, milder but still unwanted, form of the same
+   problem (a coin's display name showing raw markup punctuation instead of
+   the coin's actual name);
+3. truncate to the cell's column budget, then escape via
+   ``widgets/markup_safety.safe_markup`` -- truncation always runs before
+   escaping so a cut can never bisect an escape sequence (the ``feed.py``
+   ordering), and ``safe_markup`` still runs unconditionally, last, as the
+   actual crash-safety net for anything step 2 does not catch (an unbalanced
+   bracket with no matching close, for one -- see the mutation-proof note on
+   :func:`_sanitize`).
+
+``creator`` is never freeform text -- it is always a 20-byte address the
+client formats as ``0x`` + 40 hex chars -- so it only gets ``safe_markup``
+through :func:`_creator_cell`, the same treatment ``activity.py`` gives
+``counterparty``, no stripping needed.
+
+Three-state rendering rules this module holds itself to (CLAUDE.md, "a
+failed read is None, never 0"):
+
+* ``change_1h_pct is None`` means no swap happened in the coin's window --
+  rendered as a dash, never ``0%``, which would assert a measured flat hour
+  that never occurred.  A genuine ``0.0`` (traded, ended flat) still renders
+  ``+0.0%``, honestly distinct from the dash.
+* ``burn_ready`` is tri-state.  ``hero.py``'s BURN box already renders this
+  exact field as ``READY``/``NOT READY``/an em-dash; this panel says the
+  same three facts in different words (``ready``/``not yet``/``unknown``,
+  deliberately lower-case) so a reader never has to reconcile two
+  vocabularies for one field, while ``None`` still never collapses into
+  either a confident "ready" or a confident "not yet".
+* ``burn_accrued``/``burn_staged``/``burn_min_bridge`` have a representable
+  zero -- ``0`` means "we looked and nothing has accrued/is required" --
+  formatted through ``fmt_compact`` (turns ``None`` into ``"--"``, never
+  ``"0"``), the same helper and the same reasoning ``hero.py`` uses for the
+  same three fields.  ``launchpad_burned_total`` (the ``burned_total`` param)
+  is the one exception: it is the headline cumulative figure, so it gets
+  exact comma-grouped digits (:func:`_fmt_total`) rather than a K/M
+  abbreviation, mirroring ``hero.py``'s own non-short-tier ``cum_line``.
+
+Primitives only -- this module imports nothing from ``data/`` or
+``analytics/``.
+"""
+
+from __future__ import annotations
+
+import re
+
+from textual.app import ComposeResult
+from textual.containers import Vertical
+from textual.widgets import DataTable, Static
+
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.surf._fmt import (
+    DASH,
+    as_float,
+    fmt_age,
+    fmt_compact,
+    long_addr,
+)
+
+__all__ = ["SurfBurnPipeline", "SurfCurveFlow", "SurfLaunchpadCoins"]
+
+# ---------------------------------------------------------------------------
+# shared text-cleaning helpers (ticker / name -- attacker-chosen)
+# ---------------------------------------------------------------------------
+
+#: A complete ``[...]`` bracket run with no nested bracket -- catches both a
+#: well-formed style tag (``[bold red]``) and a bare closing tag
+#: (``[/x]``).  Deliberately *not* anchored to Rich's own tag grammar: a
+#: ticker/name has no legitimate use for literal brackets at all, so every
+#: complete pair is dropped rather than only the ones that would parse.
+_TAG_LIKE = re.compile(r"\[[^\[\]]*\]")
+
+
+def _flatten(value: object) -> str:
+    """Collapse embedded newlines/control whitespace to single spaces.
+
+    On-chain strings can contain raw newlines the same way announce-channel
+    posts can (``feed.py``), and this has to run before both stripping and
+    truncation so neither operates on a string that still has embedded line
+    breaks in it.
+    """
+    if value is None:
+        return ""
+    return " ".join(str(value).split())
+
+
+def _clip(value: str, width: int) -> str:
+    """Truncate already-flattened, already-stripped, still-unescaped text to
+    ``width`` columns, marked with ``…`` when it was cut.
+
+    Must run before :func:`safe_markup` -- escaping first and truncating
+    after can cut a ``\\[`` escape pair in half at the boundary.
+    """
+    if width <= 0 or len(value) <= width:
+        return value
+    if width == 1:
+        return "…"
+    return value[: width - 1] + "…"
+
+
+def _sanitize(value: object, width: int) -> str:
+    """Flatten, strip bracket-tag-shaped noise, truncate, escape -- in that
+    order.  See the module docstring for why each step exists and why the
+    order is fixed.
+
+    Mutation-proof note (Task 11, Step 5): removing the final
+    ``safe_markup`` call here does **not** turn
+    ``test_hostile_ticker_and_name_never_reach_markup`` red for the exact
+    fixture in that test, because step 2 already removes every complete
+    ``[...]`` pair before ``safe_markup`` would ever run on it -- there is
+    nothing left for the escape call to neutralise in that specific input.
+    ``safe_markup`` still matters for anything step 2 does not catch (a lone
+    unmatched ``[`` with no closing bracket, which ``_TAG_LIKE`` cannot
+    match and therefore cannot strip); see ``task-11-report.md`` for the
+    empirical follow-up that demonstrates the crash with stripping disabled.
+    """
+    flat = _flatten(value)
+    stripped = _TAG_LIKE.sub("", flat)
+    stripped = " ".join(stripped.split())
+    clipped = _clip(stripped, width)
+    return safe_markup(clipped)
+
+
+# ---------------------------------------------------------------------------
+# SurfLaunchpadCoins -- the ranked coin table
+# ---------------------------------------------------------------------------
+
+COINS_TITLE = "LAUNCHPAD COINS"
+COINS_UNAVAILABLE = "launchpad unavailable"
+COINS_EMPTY = "no coins launched yet"
+
+#: Defensive re-cap.  The manager already caps ``launchpad_coins`` at
+#: ``LAUNCHPAD_RENDER_LIMIT`` (20, ``data/surf_client.py``); this widget
+#: cannot import that constant (primitives only) so it re-states the same
+#: number rather than trusting the payload never to grow.
+MAX_COIN_ROWS = 20
+
+#: Column budget, in rendered columns.  Ticker/name width is no longer a
+#: security control (:func:`_sanitize` strips hostile bracket content before
+#: truncation ever runs), so these are sized for legibility against the real
+#: fixture's tickers (``ICE``, ``DAOs``, ``K-256``) and generous coin names,
+#: not against the length of an attack payload.
+_TICKER_COLS = 8
+_NAME_COLS = 18
+#: The window ``activity.py`` calls ``ADDR_COLS`` -- ``0x`` + 8 hex + ``…`` +
+#: 6.  Re-used here for the same reason: a shorter window risks two
+#: different creator addresses reading identically once truncated.
+_ADDR_COLS = 17
+_AGE_COLS = 4
+_PRICE_COLS = 10
+_PCT_COLS = 7
+_SWAPS_COLS = 6
+_BURNED_COLS = 9
+
+
+def _ticker_cell(ticker: object) -> str:
+    cleaned = _sanitize(ticker, _TICKER_COLS)
+    return f"[bold]{cleaned}[/]" if cleaned else f"[dim]{DASH}[/]"
+
+
+def _name_cell(name: object) -> str:
+    cleaned = _sanitize(name, _NAME_COLS)
+    return f"[dim]{cleaned}[/]" if cleaned else f"[dim]{DASH}[/]"
+
+
+def _creator_cell(creator: object, known: bool) -> str:
+    """The anti-poisoning window (:data:`_ADDR_COLS`), never a friendly
+    label: ``creator_known`` is a bool the manager derives against its own
+    allowlist, not a label string, so this widget has nothing to substitute
+    even when it is ``True`` -- it can only style the raw address, cyan when
+    known, dim otherwise (``activity.py``'s exact convention for
+    ``counterparty``).
+    """
+    window = long_addr(creator)
+    escaped = safe_markup(window)
+    colour = "cyan" if known else "dim"
+    return f"[{colour}]{escaped}[/]"
+
+
+def _price_cell(value: object) -> str:
+    """Curve price in ETH, no unit suffix (the column header carries it)."""
+    v = as_float(value)
+    if v is None:
+        return DASH
+    if v == 0:
+        return "0"
+    a = abs(v)
+    if a >= 1:
+        return f"{v:,.3f}"
+    if a >= 0.0001:
+        return f"{v:.5f}"
+    return f"{v:.2e}"
+
+
+def _pct_cell(value: object) -> str:
+    """1h change.  ``None`` -> dash, never ``0%`` -- see the module
+    docstring.  A genuine ``0.0`` (traded, ended flat) still renders
+    ``+0.0%``, honestly distinct from the dash.
+
+    Plain Rich colour names, never a ``$``-prefixed theme token: this cell
+    is a ``DataTable`` value, and ``DataTable``'s ``default_cell_formatter``
+    calls plain ``rich.text.Text.from_markup`` directly rather than
+    Textual's CSS-variable-aware renderer, so ``[$success]`` raises
+    ``MarkupError`` there even though the identical token works fine in a
+    ``Static`` (``hero.py``/``market.py``/``signals.py`` all rely on that
+    ``Static``-only resolution).  Discovered empirically while implementing
+    this module: :func:`_pct_cell` originally read ``[$success]``/
+    ``[$error]`` and crashed the very first render.  ``activity.py`` and
+    every curator ``DataTable`` widget already avoid the token for the same
+    reason, using plain names (``"cyan"``, ``"dim"``, ``"yellow"``) instead.
+    """
+    v = as_float(value)
+    if v is None:
+        return DASH
+    if v > 0:
+        return f"[green]+{v:.1f}%[/]"
+    if v < 0:
+        return f"[red]{v:.1f}%[/]"
+    return "[dim]+0.0%[/]"
+
+
+def _swaps_cell(value: object) -> str:
+    try:
+        return str(int(value))
+    except (TypeError, ValueError):
+        return DASH
+
+
+def _coin_row(coin: object) -> tuple[str, ...] | None:
+    """One coin dict -> the table row's cells; ``None`` drops it.
+
+    A single malformed row must never take down the whole panel (the
+    ``activity.py``/``leaderboard.py`` precedent).
+    """
+    if not isinstance(coin, dict):
+        return None
+    try:
+        return (
+            _ticker_cell(coin.get("ticker")),
+            _name_cell(coin.get("name")),
+            _creator_cell(coin.get("creator"), bool(coin.get("creator_known"))),
+            fmt_age(coin.get("age_s")),
+            _price_cell(coin.get("price_eth")),
+            _pct_cell(coin.get("change_1h_pct")),
+            _swaps_cell(coin.get("swaps_1h")),
+            fmt_compact(coin.get("imd_burned")),
+        )
+    except Exception:
+        return None
+
+
+class SurfLaunchpadCoins(Vertical):
+    """One row per launched coin: ticker, name, creator, age, price, 1h
+    change, swaps, IMD burned -- ranked and capped upstream.
+    """
+
+    DEFAULT_CSS = """
+    SurfLaunchpadCoins > .surf-lpc-title {
+        width: 100%;
+        padding: 0 1;
+        text-style: bold;
+        color: $text-muted;
+    }
+    SurfLaunchpadCoins > .surf-lpc-note {
+        width: 100%;
+        height: 1;
+        padding: 0 1;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+    }
+    SurfLaunchpadCoins > DataTable {
+        height: 1fr;
+    }
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # Raw payload, not formatted rows -- kept so a later refresh always
+        # starts from the same source the first render did.
+        self._payload: dict = {}
+
+    def compose(self) -> ComposeResult:
+        yield Static(COINS_TITLE, classes="surf-lpc-title", id="surf-lpc-title")
+        yield Static("", classes="surf-lpc-note", id="surf-lpc-note")
+        yield DataTable(id="surf-lpc-table", classes="surf-lpc-table")
+
+    def on_mount(self) -> None:
+        table = self.query_one("#surf-lpc-table", DataTable)
+        table.cursor_type = "row"
+        table.zebra_stripes = True
+        table.add_column("TICKER", width=_TICKER_COLS)
+        table.add_column("NAME", width=_NAME_COLS)
+        table.add_column("CREATOR", width=_ADDR_COLS)
+        table.add_column("AGE", width=_AGE_COLS)
+        table.add_column("PRICE", width=_PRICE_COLS)
+        table.add_column("1H%", width=_PCT_COLS)
+        table.add_column("SWAPS", width=_SWAPS_COLS)
+        table.add_column("BURNED", width=_BURNED_COLS)
+
+    def update_data(self, coins=None, coin_count=None, as_of_hhmm=None, **_kwargs) -> None:
+        """Refresh the table.
+
+        ``coins=None`` means the launchpad sweep failed outright; ``[]``
+        means it ran and genuinely found nothing (the current chain state
+        has 146 coins, but the contract has to say so honestly regardless).
+        """
+        self._payload = {
+            "coins": coins,
+            "coin_count": coin_count,
+            "as_of_hhmm": as_of_hhmm,
+            "seen": True,
+        }
+        self._render_view()
+
+    def _set_note(self) -> None:
+        try:
+            note = self.query_one("#surf-lpc-note", Static)
+        except Exception:  # not composed yet
+            return
+        coins = self._payload.get("coins")
+        if coins is None:
+            note.update(f"[$warning]⚠ {COINS_UNAVAILABLE}[/]")
+            return
+        try:
+            count_str = str(int(self._payload.get("coin_count")))
+        except (TypeError, ValueError):
+            count_str = DASH
+        parts = [f"{count_str} coins"]
+        as_of = self._payload.get("as_of_hhmm")
+        if as_of:
+            parts.append(f"as of {safe_markup(str(as_of))}")
+        note.update(f"[dim]{' · '.join(parts)}[/]")
+
+    def _render_view(self) -> None:
+        try:
+            table = self.query_one("#surf-lpc-table", DataTable)
+        except Exception:  # not composed yet
+            return
+        if not self._payload:
+            return
+
+        self._set_note()
+        table.clear()
+
+        coins = self._payload.get("coins")
+        if coins is None:
+            # Plain "yellow", not "$warning" -- see the note on `$`-tokens
+            # in _pct_cell; this is a DataTable cell too.
+            table.add_row(f"[yellow]{COINS_UNAVAILABLE}[/]", *([DASH] * 7))
+            return
+
+        try:
+            usable = list(coins)[:MAX_COIN_ROWS]
+        except TypeError:
+            usable = []
+
+        if not usable:
+            table.add_row(f"[dim]{COINS_EMPTY}[/]", *([DASH] * 7))
+            return
+
+        for coin in usable:
+            row = _coin_row(coin)
+            if row is not None:
+                table.add_row(*row)
+
+
+# ---------------------------------------------------------------------------
+# SurfCurveFlow -- swap/trader/creator-revenue aggregate
+# ---------------------------------------------------------------------------
+
+FLOW_TITLE = "CURVE FLOW"
+
+
+def _fmt_eth_owed(value: object) -> str:
+    v = as_float(value)
+    if v is None:
+        return DASH
+    return f"{v:,.4f}"
+
+
+def _flow_lines(swap_count, trader_count, creator_eth_owed, as_of_hhmm) -> list[str]:
+    try:
+        swap_str = str(int(swap_count))
+    except (TypeError, ValueError):
+        swap_str = DASH
+    try:
+        trader_str = str(int(trader_count))
+    except (TypeError, ValueError):
+        trader_str = DASH
+
+    swaps_v = as_float(swap_count)
+    traders_v = as_float(trader_count)
+    if swaps_v is not None and traders_v is not None and traders_v > 0:
+        avg_str = f"{swaps_v / traders_v:.1f} swaps/trader"
+    else:
+        avg_str = f"{DASH} swaps/trader"
+
+    owed = _fmt_eth_owed(creator_eth_owed)
+
+    lines = [
+        f"[dim]{FLOW_TITLE}[/]",
+        f"{swap_str} swaps · {trader_str} traders",
+        f"[dim]{avg_str}[/]",
+        f"[dim]owed {owed} ETH to creators[/]",
+    ]
+    if as_of_hhmm:
+        lines.append(f"[dim]as of {safe_markup(str(as_of_hhmm))}[/]")
+    return lines
+
+
+class SurfCurveFlow(Vertical):
+    """Aggregate bonding-curve activity: swaps, traders, creator ETH owed.
+
+    Read from the same slow "launchpad" tier as :class:`SurfLaunchpadCoins`
+    and :class:`SurfBurnPipeline` (``data/surf_manager.py``'s
+    ``_launchpad_payload`` -- one combined cache slot), so ``as_of_hhmm``
+    carries the same slower-clock staleness marker curator's analysis panels
+    already use for the same reason: this tier ticks slower than the title
+    bar's own clock, on purpose.
+    """
+
+    DEFAULT_CSS = """
+    SurfCurveFlow {
+        height: auto;
+    }
+    SurfCurveFlow > Static {
+        width: 100%;
+        padding: 0 1;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Static(f"[dim]{FLOW_TITLE}[/]", id="surf-flow-body")
+
+    def update_data(
+        self,
+        swap_count=None,
+        trader_count=None,
+        creator_eth_owed=None,
+        as_of_hhmm=None,
+        **_kwargs,
+    ) -> None:
+        lines = _flow_lines(swap_count, trader_count, creator_eth_owed, as_of_hhmm)
+        try:
+            self.query_one("#surf-flow-body", Static).update("\n".join(lines))
+        except Exception:  # not composed yet
+            pass
+
+
+# ---------------------------------------------------------------------------
+# SurfBurnPipeline -- the permissionless bridge-and-burn executor
+# ---------------------------------------------------------------------------
+
+BURN_TITLE = "BURN PIPELINE"
+
+
+def _ready_word(ready) -> str:
+    """``ready`` / ``not yet`` / ``unknown`` -- deliberately lower-case and
+    deliberately different words from ``hero.py``'s ``READY``/``NOT
+    READY``/em-dash for the *same* ``burn_ready`` field: this panel is a
+    full standalone view rather than a five-line box, so it can afford
+    words instead of a compressed headline, and ``"not yet"``/``"unknown"``
+    share no substring with ``"ready"`` -- unlike ``"NOT READY"``, which
+    contains ``"ready"`` -- so a reader (or a test) grepping for the word
+    can never mistake an indeterminate read for a confident negative one.
+    ``None`` must never render as ready and never as a confident "not
+    ready" (CLAUDE.md, the tri-state sibling of "a failed read is None,
+    never 0").
+    """
+    if ready is True:
+        return "[bold $success]ready[/]"
+    if ready is False:
+        return "[bold]not yet[/]"
+    return "[dim]unknown[/]"
+
+
+def _fmt_total(value: object) -> str:
+    """Exact, comma-grouped -- the headline cumulative figure, unlike the
+    compact ``fmt_compact`` used for the smaller/faster-moving accrued,
+    staged and min-bridge amounts.  Mirrors ``hero.py``'s own non-short-tier
+    ``cum_line`` (``f"burned {cum:,.0f} observed"``), which draws the same
+    distinction for the same reason.
+    """
+    v = as_float(value)
+    if v is None:
+        return DASH
+    return f"{v:,.0f}"
+
+
+def _pipeline_lines(
+    burn_accrued, burn_staged, burn_min_bridge, burn_ready, burned_total,
+    as_of_hhmm,
+) -> list[str]:
+    acc = fmt_compact(burn_accrued)
+    stg = fmt_compact(burn_staged)
+    min_b = fmt_compact(burn_min_bridge)
+    burned = _fmt_total(burned_total)
+
+    lines = [
+        f"[dim]{BURN_TITLE}[/]",
+        f"status: {_ready_word(burn_ready)}",
+        f"[dim]accrued {acc} IMD · staged {stg} IMD[/]",
+        f"[dim]min bridge {min_b} IMD[/]",
+        f"[dim]burned {burned} IMD (all-time)[/]",
+    ]
+    if as_of_hhmm:
+        lines.append(f"[dim]as of {safe_markup(str(as_of_hhmm))}[/]")
+    return lines
+
+
+class SurfBurnPipeline(Vertical):
+    """The permissionless bridge-and-burn executor's own state.
+
+    Read-only (CLAUDE.md hard constraint 1 -- no signer, no transactor, no
+    calldata construction anywhere in this repo): this panel *displays*
+    that ``bridgeToBaseBurnReceiver()`` is callable by anyone; it never
+    offers to call it, never builds calldata, and never quotes gas for the
+    purpose of sending.  See the module docstring and ``hero.py``'s BURN
+    box for the same framing applied to the same executor.
+    """
+
+    DEFAULT_CSS = """
+    SurfBurnPipeline {
+        height: auto;
+    }
+    SurfBurnPipeline > Static {
+        width: 100%;
+        padding: 0 1;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Static(f"[dim]{BURN_TITLE}[/]", id="surf-burn-body")
+
+    def update_data(
+        self,
+        burn_accrued=None,
+        burn_staged=None,
+        burn_ready=None,
+        burn_min_bridge=None,
+        burned_total=None,
+        as_of_hhmm=None,
+        **_kwargs,
+    ) -> None:
+        """Refresh the panel.
+
+        ``**_kwargs`` swallows any keyword a caller passes that this
+        signature does not name -- ``burn_events`` in particular has no
+        ``SURF_KEYS`` home: no sweep counts individual burn events, only
+        the cumulative ``launchpad_burned_total`` (this widget's
+        ``burned_total``), so it is accepted and silently ignored rather
+        than raising, the same contract ``SurfHero.update_data`` documents
+        for its own un-rewired callers.
+        """
+        lines = _pipeline_lines(
+            burn_accrued, burn_staged, burn_min_bridge, burn_ready,
+            burned_total, as_of_hhmm,
+        )
+        try:
+            self.query_one("#surf-burn-body", Static).update("\n".join(lines))
+        except Exception:  # not composed yet
+            pass

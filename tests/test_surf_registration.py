@@ -1204,14 +1204,18 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     # yet. They become genuinely screen-verified the moment Task 12 wires
     # `update_data(pool_fee_bps=..., decoy_pool_count=..., burn_accrued=...,
     # burn_staged=...)` through.
+    #
+    # `burn_min_bridge`, `launchpad_coin_count`, `launchpad_swap_count`,
+    # `launchpad_trader_count`, `launchpad_burned_total` and
+    # `launchpad_creator_eth_owed` moved out the same way in Task 11
+    # (`widgets/surf/launchpad.py`'s three new widgets now render all six)
+    # -- see `_NUMERIC_ZERO_PROBES` below. Same method again: mounted
+    # `SurfLaunchpadCoins`/`SurfCurveFlow`/`SurfBurnPipeline` directly (one
+    # field zeroed, every other field `None`, checked against the true
+    # all-`None` baseline of the *same widget*), because `screens/surf.py`
+    # still cannot reach these keys until Task 12 wires the `l` view.
     "pool_liquidity_raw": "no widget consumes this key yet; pool_liquidity_usd is the one rendered",
     "lp_position_count": "no widget consumes this key yet; no task's Consumes list names it",
-    "burn_min_bridge": "no widget consumes this key yet; Task 11's SurfBurnPipeline wires it",
-    "launchpad_coin_count": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
-    "launchpad_swap_count": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
-    "launchpad_trader_count": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
-    "launchpad_burned_total": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
-    "launchpad_creator_eth_owed": "no widget consumes this key yet; Task 11's launchpad widgets wire it",
     # Fix round 10a (2026-08-24): the v4-pool-id-matched market fix. Both
     # are None-on-failure floats with no meaningful representable zero --
     # judged the same way their siblings above are -- and neither has a
@@ -1277,6 +1281,18 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     # faked, never 0, never silently blank". A genuine 0 renders with units;
     # a failed read must render `FLOOR_UNAVAILABLE`, never this string.
     "nft_floor": "0.000 ETH",                    # nft.py update_data
+    # Task 11 (2026-08-23): the launchpad widgets. `screens/surf.py` doesn't
+    # route these keys through yet either (Task 12), so -- same method as
+    # the Task 8 four just above -- these were verified by mounting
+    # `SurfLaunchpadCoins`/`SurfCurveFlow`/`SurfBurnPipeline` directly, one
+    # field zeroed at a time with every other field on that widget `None`,
+    # against the true all-`None` baseline of the same widget.
+    "launchpad_coin_count": "0 coins",           # launchpad.py SurfLaunchpadCoins._set_note
+    "launchpad_swap_count": "0 swaps",           # launchpad.py _flow_lines
+    "launchpad_trader_count": "0 traders",       # launchpad.py _flow_lines
+    "launchpad_creator_eth_owed": "owed 0.0000 ETH",  # launchpad.py _flow_lines / _fmt_eth_owed
+    "burn_min_bridge": "min bridge 0 IMD",       # launchpad.py _pipeline_lines (fmt_compact)
+    "launchpad_burned_total": "burned 0 IMD (all-time)",  # launchpad.py _pipeline_lines / _fmt_total
 }
 
 
