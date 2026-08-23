@@ -23,6 +23,7 @@ were derived by decoding those files, never typed from memory.
 from __future__ import annotations
 
 import json
+import logging
 from collections import Counter
 from pathlib import Path
 from typing import Any, Callable
@@ -37,6 +38,7 @@ from maxpane_dashboard.data.evm_abi import (
     strip0x as _strip0x,
 )
 from maxpane_dashboard.data.surf_client import SurfClient
+from maxpane_dashboard.data.surf_models import LaunchpadState
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "surf" / "client"
 
@@ -2873,7 +2875,9 @@ def test_state_pool_is_structurally_logless():
             docstring_ids.add(id(body[0].value))
 
     # The logs section, named — not wherever it happens to sit in the file.
-    _LOG_SECTION_FUNCS = {"_rpc_logs", "_get_logs_shrinking", "fetch_recent_logs"}
+    _LOG_SECTION_FUNCS = {
+        "_rpc_logs", "_get_logs_shrinking", "_get_logs_paged", "fetch_recent_logs",
+    }
     protected_ids: set[int] = set()
     found_log_funcs: set[str] = set()
     for node in ast.walk(tree):
@@ -3070,11 +3074,23 @@ def _client_with_canned_logs(
 
 def _launchpad_fixture_handler(
     reads: dict, logs_data: dict, prices_by_pool_id: dict[str, int],
+    *, range_cap: int | None = None,
 ) -> Callable[[httpx.Request], httpx.Response]:
     """The full launchpad-tier double: eight getters, three log sweeps
     (keyed by their filter's ``topics[0]``) and the follow-up
     ``spotPriceEthPerCoin`` round for whichever rows ``fetch_launchpad``
     decides to price.
+
+    The log sweeps HONOUR ``fromBlock``/``toBlock``, because the launchpad
+    reads its history in pages now: a range-blind double would serve every
+    row to every page and the sweep would count each one fifteen times. It
+    also means the in-code ``block < from_block`` guard is exercised against
+    a double that behaves like a real endpoint rather than one that hands
+    back the whole log whatever it is asked.
+
+    *range_cap*, when set, makes the double refuse any window wider than that
+    many blocks with the JSON-RPC error real range-limited endpoints send --
+    the shape that used to be answered by silently truncating toward the head.
     """
     sel_to_key = {
         A.SEL_IMD_TO_BURN.lower(): "imd_to_burn_wei",
@@ -3102,9 +3118,20 @@ def _launchpad_fixture_handler(
         if method == "eth_getLogs":
             flt = payload["params"][0]
             topic0 = flt["topics"][0]
-            return httpx.Response(
-                200, json=_rpc_ok(payload, logs_by_topic0.get(topic0, []))
-            )
+            lo = int(flt["fromBlock"], 16)
+            hi = int(flt["toBlock"], 16)
+            if range_cap is not None and (hi - lo + 1) > range_cap:
+                return httpx.Response(200, json={
+                    "jsonrpc": "2.0", "id": payload.get("id"),
+                    "error": {"code": -32005,
+                              "message": "query returned more than 10000 results, "
+                                         "block range too large"},
+                })
+            rows = [
+                r for r in logs_by_topic0.get(topic0, [])
+                if lo <= int(r["blockNumber"], 16) <= hi
+            ]
+            return httpx.Response(200, json=_rpc_ok(payload, rows))
         assert method == "eth_call", method
         call = payload["params"][0]
         assert call["to"].lower() == surf_client.MULTICALL3.lower()
@@ -3706,9 +3733,29 @@ def test_the_launchpads_first_block_is_pinned_below_the_earliest_launch():
     """25,786,048 is where the first ``Launched`` was emitted (measured
     2026-08-23, 33,702 blocks back from a head of 25,819,750). A mined block
     cannot drift, which is exactly why this one is vendored rather than
-    rediscovered by a full-history scan every tick."""
+    rediscovered by a full-history scan every tick.
+
+    The name promises a comparison, so it makes one. Pinning the literal
+    alone would have been true of any number, and the failure this guards is
+    a floor that sits *after* a real launch -- which loses history silently
+    and permanently, since the cursor never goes back for it. Both committed
+    log fixtures are checked: `full_history` starts exactly on the floor (an
+    off-by-one upward would drop its first launch) and the real-shape
+    `launchpad_logs` sits above it.
+    """
     assert A.LAUNCHPAD_FIRST_BLOCK == 25_786_048
-    assert isinstance(A.LAUNCHPAD_FIRST_BLOCK, int)
+
+    earliest = min(
+        int(row["blockNumber"], 16)
+        for row in _load_launchpad("full_history.json")["launched"]
+    )
+    assert earliest == A.LAUNCHPAD_FIRST_BLOCK, (
+        "the floor must be AT the first launch, not after it"
+    )
+    assert min(
+        int(row["blockNumber"], 16)
+        for row in _load_launchpad("launchpad_logs.json")["launched"]
+    ) > A.LAUNCHPAD_FIRST_BLOCK
 
 
 @pytest.mark.asyncio
@@ -3898,6 +3945,10 @@ async def test_an_unusable_persisted_cursor_degrades_to_a_cold_sweep() -> None:
         {"last_block": True},                           # bool is not a block
         {"last_block": -1},                             # before genesis
         "not a dict",
+        5,                                              # not even a mapping
+        ["last_block", 25_790_000],                     # a list that looks close
+        {"last_block": 25.5},                           # a float block number
+        {"last_block": None},
     ):
         client, calls = _client_recording_getlogs()
         async with client:
@@ -3943,3 +3994,330 @@ async def test_the_launchpad_sweep_keeps_the_standing_pool_split() -> None:
     assert state_urls and logs_urls
     assert all("publicnode" in u for u in state_urls)
     assert all("publicnode" not in u for u in logs_urls)
+
+
+# ---------------------------------------------------------------------------
+# Task 6, fix round 1 (2026-08-24) -- the paged read, the reconciliation
+# detector, and the cursor's third-party-input hardening.
+#
+# C1 was the one that mattered: `_get_logs_shrinking` answers a too-wide ask
+# by pulling `fromBlock` toward the head and returning the SHORT list as a
+# success. Harmless for the recent-window callers it was written for, fatal
+# for a history sweep -- the blocks it discards are the oldest, which are
+# exactly the launches this task exists to recover, and the cursor then
+# advances past them. Measured on `full_history.json` with a 10,000-block
+# cap: 2 launches of 146 and 45 swaps of 165, reported as a clean read.
+# ---------------------------------------------------------------------------
+
+
+def _client_serving_capped(
+    fixture_name: str, range_cap: int, **kw: Any
+) -> tuple[SurfClient, RecordingTransport]:
+    """A client whose endpoint refuses any window wider than *range_cap*."""
+    handler = _launchpad_fixture_handler(
+        _load_launchpad("launchpad_reads.json"), _load_launchpad(fixture_name), {},
+        range_cap=range_cap,
+    )
+    transport = RecordingTransport(handler)
+    kw.setdefault("now_fn", lambda: 2_000_000_000.0)
+    return _client_on(transport, **kw), transport
+
+
+def _client_with_one_failing_sweep(
+    dead_topic0: str, *, head_block: int = FIXTURE_HEAD_BLOCK,
+) -> SurfClient:
+    """Every launchpad sweep succeeds except the one filtered on *dead_topic0*.
+
+    The partial-outage double. Its whole purpose is that the three sweeps are
+    joined by an `or`-chain, and an `or`-chain that has only ever been tested
+    with all three dead cannot tell you which of its three terms are load
+    bearing.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] == "eth_blockNumber":
+            return httpx.Response(200, json=_rpc_ok(payload, hex(head_block)))
+        if payload["method"] == "eth_getLogs":
+            if payload["params"][0]["topics"][0] == dead_topic0:
+                return httpx.Response(200, json={
+                    "jsonrpc": "2.0", "id": payload.get("id"),
+                    "error": {"code": -32000, "message": "server error"},
+                })
+            return httpx.Response(200, json=_rpc_ok(payload, []))
+        assert payload["method"] == "eth_call", payload["method"]
+        return _launchpad_getters_all_revert(payload)
+
+    return _client_on(httpx.MockTransport(handler))
+
+
+@pytest.mark.asyncio
+async def test_a_range_capped_endpoint_still_yields_the_whole_history() -> None:
+    """C1, the regression itself. A 10,000-block cap is the shape a real
+    keyless endpoint imposes, and it used to cost 144 of 146 launches.
+
+    Paging into `LOG_WINDOW_BLOCKS` chunks makes the cap invisible: every
+    block in the range is asked for exactly once, so the answer is complete.
+    The cap is deliberately far wider than the page -- this is not "we
+    happened to fit under it", it is "we never ask for more than 2,400".
+    """
+    client, _t = _client_serving_capped("full_history.json", 10_000)
+    async with client:
+        state = await client.fetch_launchpad(resume=None)
+
+    assert state.launch_count == 146      # was 2 through _get_logs_shrinking
+    assert state.swap_count == 165        # was 45
+    assert state.creator_count == 73
+
+
+@pytest.mark.asyncio
+async def test_a_range_cap_below_the_minimum_page_fails_rather_than_truncating() -> None:
+    """C1's other half: when the range genuinely cannot be read, the sweep
+    must FAIL, not return whatever it managed.
+
+    A 100-block cap is under `_LOG_MIN_WINDOW`, so no page size this client
+    is willing to use can satisfy it. The old reader would have shrunk to the
+    floor, given up on that one call and returned `None` -- but only because
+    the whole call failed; a cap of 10,000 produced a *short list* instead,
+    which is the case with no honest signal. Now both are the same answer,
+    and the cursor stays exactly where it was.
+    """
+    resume = {"last_block": 25_800_000, "launches": {}, "swaps_all": {"0xa": 4}}
+    client, _t = _client_serving_capped("full_history.json", 100)
+    async with client:
+        state = await client.fetch_launchpad(resume=resume)
+
+    assert state.cursor is resume                   # not advanced, not rebuilt
+    assert state.cursor["last_block"] == 25_800_000
+    assert state.launch_count is None               # unknown, never a short count
+    assert state.swap_count is None
+    assert state.trader_count is None
+    assert state.burned_total_wei is None
+    assert state.coins == ()
+
+
+@pytest.mark.asyncio
+async def test_the_paged_read_tiles_its_range_with_no_gap_and_no_overlap() -> None:
+    """The structural guarantee behind C1: every block between `from` and
+    `head` is inside exactly one requested page.
+
+    A gap is silent data loss the cursor then makes permanent; an overlap
+    double-counts straight into a persisted accumulator. Asserting the pages
+    tile catches both, and it catches them without depending on what the
+    fixture happens to contain -- a test that only checked the row count
+    would pass on a reader that skipped an empty region.
+    """
+    client, transport = _client_serving_capped("full_history.json", 10_000)
+    async with client:
+        await client.fetch_launchpad(resume=None)
+
+    pages = sorted(
+        (int(p["params"][0]["fromBlock"], 16), int(p["params"][0]["toBlock"], 16))
+        for (_u, _m, p) in transport.requests
+        if p and p.get("method") == "eth_getLogs"
+        and p["params"][0]["topics"][0] == A.TOPIC_LAUNCHED
+    )
+    assert len(pages) > 1, "the range was not paged at all"
+    assert pages[0][0] == A.LAUNCHPAD_FIRST_BLOCK
+    assert pages[-1][1] == FIXTURE_HEAD_BLOCK
+    for (_lo, prev_hi), (lo, _hi) in zip(pages, pages[1:]):
+        assert lo == prev_hi + 1, f"gap or overlap at {prev_hi} -> {lo}"
+    assert all(hi - lo + 1 <= surf_client.LOG_WINDOW_BLOCKS for lo, hi in pages)
+
+
+@pytest.mark.asyncio
+async def test_a_range_error_retries_the_same_start_and_never_skips_forward() -> None:
+    """The halving must shrink the PAGE, never advance the cursor over the
+    blocks it could not read. `_get_logs_shrinking` moved `fromBlock` toward
+    `toBlock` on exactly this signal, which is how the truncation happened.
+    """
+    client, transport = _client_serving_capped("full_history.json", 1_000)
+    async with client:
+        state = await client.fetch_launchpad(resume=None)
+
+    asks = [
+        (int(p["params"][0]["fromBlock"], 16), int(p["params"][0]["toBlock"], 16))
+        for (_u, _m, p) in transport.requests
+        if p and p.get("method") == "eth_getLogs"
+        and p["params"][0]["topics"][0] == A.TOPIC_LAUNCHED
+    ]
+    refused = [lo for lo, hi in asks if hi - lo + 1 > 1_000]
+    assert refused, "the cap was never actually hit -- this proves nothing"
+    # Every refused ask was re-issued from the SAME first block, narrower.
+    for lo in refused:
+        narrower = [hi - lo2 + 1 for lo2, hi in asks if lo2 == lo]
+        assert len(narrower) > 1 and min(narrower) < max(narrower), (
+            f"page starting at {lo} was never retried narrower"
+        )
+    assert state.launch_count == 146     # and it still completed
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_reports_when_its_population_disagrees_with_coincount(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """C2: `coinCount()` and the swept `launch_count` are two independent
+    reads of one population, and a disagreement is the only in-band signal
+    that the sweep is not seeing everything.
+
+    It is what C1 needed and did not have: a truncating endpoint reported 2
+    launches beside a `coinCount()` of 146 and nothing said a word. The two
+    are still published separately rather than reconciled -- a cursor
+    mid-catch-up disagrees legitimately -- but the disagreement is no longer
+    silent.
+    """
+    with caplog.at_level(logging.WARNING, logger="maxpane_dashboard.data.surf_client"):
+        async with _client_serving("launchpad_logs.json") as client:
+            state = await client.fetch_launchpad(resume=None)
+
+    assert state.launch_count == 13 and state.coin_count == 146
+    mismatch = [r for r in caplog.records if "population mismatch" in r.message]
+    assert len(mismatch) == 1
+    assert mismatch[0].args[:2] == (13, 146)
+    assert "behind" in (mismatch[0].getMessage())
+
+
+@pytest.mark.asyncio
+async def test_a_population_that_agrees_with_coincount_says_nothing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The other half of C2, and the half that keeps it useful: a warning
+    that fires on a healthy sweep is a warning nobody reads. `full_history`
+    holds exactly the 146 `coinCount()` claims."""
+    with caplog.at_level(logging.WARNING, logger="maxpane_dashboard.data.surf_client"):
+        async with _client_serving("full_history.json") as client:
+            state = await client.fetch_launchpad(resume=None)
+
+    assert state.launch_count == state.coin_count == 146
+    assert not [r for r in caplog.records if "population mismatch" in r.message]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "dead, label",
+    [
+        (A.TOPIC_LAUNCHED, "Launched"),
+        (A.TOPIC_CURVE_SWAP, "CurveSwap"),
+        (A.TOPIC_IMD_BURNED, "ImdBurned"),
+    ],
+)
+async def test_any_single_dead_sweep_fails_the_whole_pass(dead, label) -> None:
+    """C7: a partial sweep is indistinguishable from an outage and is treated
+    as one -- proven one term at a time.
+
+    The guard is an `or`-chain over three reads. With only the all-three-dead
+    case covered, deleting any one term left the suite green while the cursor
+    advanced past blocks whose `CurveSwap` rows were never counted, or while
+    `burned_total_wei` silently skipped a batch of burns. Each case here goes
+    red for exactly one deleted term.
+    """
+    resume = {"last_block": 25_800_000, "launches": {}, "swaps_all": {"0xa": 4}}
+    async with _client_with_one_failing_sweep(dead) as client:
+        state = await client.fetch_launchpad(resume=resume)
+
+    assert state.cursor is resume, f"{label} died and the cursor still moved"
+    assert state.launch_count is None
+    assert state.swap_count is None
+    assert state.burned_total_wei is None
+    assert state.swaps_by_coin is None
+
+
+@pytest.mark.asyncio
+async def test_a_hand_edited_cursor_cannot_crash_or_inflate_the_sweep() -> None:
+    """C3: `fetch_launchpad` promises it always returns a `LaunchpadState`,
+    and a cache file is third-party input.
+
+    `resume.get("traders") or ()` honoured that for `None` and `[]` and broke
+    for everything else: `5` is truthy and not iterable (`TypeError` straight
+    out of the fetcher), and `"abc"` iterates as three one-character
+    "addresses" -- an inflated `trader_count` off a typo. Only a real
+    sequence is a trader list.
+    """
+    base = {"last_block": 25_800_000, "launches": {}, "swaps_all": {}}
+    for traders in (5, "abc", {"a": 1}, None, [], [1, 2, None], ["0xAA", "0xaa"]):
+        async with _client_serving("full_history.json") as client:
+            state = await client.fetch_launchpad(resume={**base, "traders": traders})
+        assert isinstance(state, LaunchpadState), traders
+        assert isinstance(state.trader_count, int), traders
+
+    # The counts, against a baseline the fixture's own swaps set. A string
+    # must contribute NOTHING -- not three one-character traders -- while a
+    # real two-element list contributes exactly two. Comparing against the
+    # baseline rather than against 0 is what makes this bite: the fixture
+    # already carries traders above this cursor, so an absolute number would
+    # have to be re-derived every time the fixture moved.
+    async with _client_serving("full_history.json") as client:
+        baseline = await client.fetch_launchpad(resume={**base, "traders": None})
+        from_typo = await client.fetch_launchpad(resume={**base, "traders": "abc"})
+        from_list = await client.fetch_launchpad(
+            resume={**base, "traders": ["0x" + "e1" * 20, "0x" + "e2" * 20]}
+        )
+        cased = await client.fetch_launchpad(
+            resume={**base, "traders": ["0xAA", "0xaa"]}
+        )
+    assert from_typo.trader_count == baseline.trader_count, (
+        '"abc" must read as no traders, never as three'
+    )
+    assert from_list.trader_count == baseline.trader_count + 2
+    # A duplicate that differs only in case is one trader, not two.
+    assert cased.trader_count == baseline.trader_count + 1
+
+
+@pytest.mark.asyncio
+async def test_an_unusable_cursor_never_becomes_the_returned_cursor() -> None:
+    """C4: `LaunchpadState.cursor` is declared `dict | None` and the manager
+    dereferences it as `payload["cursor"]["last_block"]`.
+
+    Handing a string back out would honour "leave the cursor untouched" by
+    breaking the field's own type, and the crash would surface a layer away
+    from the cache file that caused it. Unusable is `None` -- which is what
+    the cold sweep already means.
+    """
+    for junk in ("not a dict", 5, ["last_block", 1], None):
+        async with _client_whose_getlogs_fails() as client:
+            state = await client.fetch_launchpad(resume=junk)
+        assert state.cursor is None, junk
+        assert isinstance(state, LaunchpadState)
+
+
+@pytest.mark.asyncio
+async def test_an_attacker_chosen_name_cannot_grow_the_persisted_cursor() -> None:
+    """C5: `launch(string,string)` is permissionless and costs only gas, and
+    this task is what turned those strings into cache-file content that is
+    re-read and rewritten every tick.
+
+    Uncapped, one launch with a megabyte name grows
+    `~/.maxpane/surf_cache.json` by a megabyte forever. Capped on BOTH sides
+    of the file -- on the way in from the decode and on the way back out of a
+    persisted payload, because a hand-edited cursor can carry a string no
+    chain event ever produced.
+    """
+    head = 25_820_000
+    pool = "0x" + "77" * 32
+    logs_data = {
+        "head_block": head,
+        "launched": [_minimal_launched_row(
+            pool, A.DEV_WALLET, "N" * 5_000, "T" * 5_000, head - 100,
+        )],
+        "curve_swap": [], "imd_burned": [],
+    }
+    handler = _launchpad_fixture_handler(
+        _load_launchpad("launchpad_reads.json"), logs_data, {})
+    async with _client_on(RecordingTransport(handler)) as client:
+        state = await client.fetch_launchpad(resume=None)
+
+    cap = surf_client._LAUNCHPAD_TEXT_MAX
+    rec = state.cursor["launches"][pool]
+    assert len(rec["name"]) == len(rec["ticker"]) == cap
+    assert len(state.coins[0].name) == cap
+    assert len(json.dumps(state.cursor)) < 2_000, "the cursor grew with the name"
+
+    # And on the read side: a hand-edited cursor cannot smuggle one past.
+    async with _client_on(RecordingTransport(handler)) as client:
+        second = await client.fetch_launchpad(resume={
+            "last_block": head,
+            "launches": {pool: {"ticker": "T" * 9_000, "name": "N" * 9_000,
+                                "creator": "0x" + "9" * 9_000, "block": head - 100}},
+            "swaps_all": {},
+        })
+    rec2 = second.cursor["launches"][pool]
+    assert len(rec2["name"]) == len(rec2["ticker"]) == len(rec2["creator"]) == cap

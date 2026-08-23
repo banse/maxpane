@@ -478,6 +478,32 @@ class _LaunchpadSweep(NamedTuple):
     cursor: dict | None
 
 
+#: Length cap for the two attacker-chosen strings the launchpad cursor
+#: PERSISTS. ``LaunchpadFactory.launch(string,string)`` is permissionless and
+#: unpriced beyond gas, so a name is whatever somebody paid calldata for --
+#: and this task is what turned those strings from transient decode output
+#: into cache-file content that is re-read and rewritten every tick. Without
+#: a cap, one launch with a megabyte name grows ``~/.maxpane/surf_cache.json``
+#: by a megabyte forever. 64 is deliberately generous against the widest cell
+#: that ever shows one (``widgets/surf/launchpad._NAME_COLS`` = 18): the cap
+#: is a bound on the FILE, not a display decision, and truncating to the
+#: column width here would throw away a name the layout might one day widen.
+_LAUNCHPAD_TEXT_MAX = 64
+
+
+def _launchpad_text(value: Any) -> str:
+    """One attacker-chosen launchpad string, bounded, for persistence.
+
+    Applied on both sides of the cache file -- on the way in from a decoded
+    ``Launched`` and on the way back out of a cursor -- because a hand-edited
+    payload can carry a string no chain event ever produced. Escaping is
+    still the render layer's job and deliberately does NOT happen here.
+    """
+    if not isinstance(value, str):
+        value = "" if value is None else str(value)
+    return value[:_LAUNCHPAD_TEXT_MAX]
+
+
 def _failed_launchpad_sweep(resume: dict | None) -> _LaunchpadSweep:
     """The all-unknown sweep, carrying *resume* back out untouched.
 
@@ -488,12 +514,21 @@ def _failed_launchpad_sweep(resume: dict | None) -> _LaunchpadSweep:
     outage that produced it, and no later sweep can tell it was ever wrong.
     So nothing merges, nothing advances, nothing zeroes: the very object we
     were handed goes back, and every aggregate reads unknown.
+
+    The one thing it will not hand back is a *non-dict*.
+    ``LaunchpadState.cursor`` is declared ``dict | None``, and the manager
+    reads ``payload["cursor"]["last_block"]`` off it; passing a string or an
+    int straight through would honour "untouched" by breaking the field's own
+    type, and the crash would land one layer away from the cache file that
+    caused it. Something unusable is ``None`` -- "no cursor", which is the
+    same thing the cold sweep already means.
     """
     return _LaunchpadSweep(
         launches=[], day_swaps=[], swaps_all={}, swap_count=None,
         trader_count=None, burned_total_wei=None, swaps_by_coin=None,
         coin_tickers=None, launch_count=None, new_24h=None,
-        creator_count=None, cursor=resume,
+        creator_count=None,
+        cursor=resume if isinstance(resume, dict) else None,
     )
 
 
@@ -533,9 +568,9 @@ def _coerce_launchpad_resume(resume: Any) -> dict | None:
             if isinstance(block, bool) or not isinstance(block, int):
                 continue
             launches[pool_id.lower()] = {
-                "ticker": str(rec.get("ticker") or ""),
-                "name": str(rec.get("name") or ""),
-                "creator": str(rec.get("creator") or ""),
+                "ticker": _launchpad_text(rec.get("ticker")),
+                "name": _launchpad_text(rec.get("name")),
+                "creator": _launchpad_text(rec.get("creator")),
                 "block": block,
             }
 
@@ -558,11 +593,21 @@ def _coerce_launchpad_resume(resume: Any) -> dict | None:
         burned_total = 0
     burned_total = max(burned_total, 0)
 
-    traders = {
-        addr.lower()
-        for addr in (resume.get("traders") or ())
-        if isinstance(addr, str) and addr
-    }
+    # `resume.get("traders") or ()` was not enough: a hand-edited `5` is
+    # truthy and not iterable (TypeError straight out of a `fetch_*` that
+    # promises it always returns a state), and a hand-edited `"abc"` iterates
+    # as three one-character "addresses". Only a real sequence is a trader
+    # list; anything else is no traders at all.
+    raw_traders = resume.get("traders")
+    traders = (
+        {
+            addr.lower()[:_LAUNCHPAD_TEXT_MAX]
+            for addr in raw_traders
+            if isinstance(addr, str) and addr
+        }
+        if isinstance(raw_traders, (list, tuple, set, frozenset))
+        else set()
+    )
 
     return {
         "last_block": last_block,
@@ -1287,6 +1332,30 @@ class SurfClient(OwnedHttpClient):
             for row in rows
         )
 
+        # The two population reads, compared -- deliberately here and not
+        # reconciled into one number. `coinCount()` is what the factory says
+        # it minted; `launch_count` is what the log sweep actually found. They
+        # agree on a healthy full sweep, and every way of NOT agreeing is
+        # worth saying out loud: a cursor mid-catch-up (fine, transient), a
+        # provider that truncated a page (was silent until this task paged the
+        # reads), or a first block that is too late (permanent, and invisible
+        # in the panel, which would just show fewer coins). This is the check
+        # that would have caught the 33,000-block window reporting 66 of 146
+        # as if it were the whole launchpad.
+        if (
+            coin_count is not None
+            and sweep.launch_count is not None
+            and sweep.launch_count != coin_count
+        ):
+            logger.warning(
+                "launchpad population mismatch: the sweep found %d Launched "
+                "event(s) but coinCount() says %d -- the sweep is %s the "
+                "factory (cursor at %s)",
+                sweep.launch_count, coin_count,
+                "behind" if sweep.launch_count < coin_count else "ahead of",
+                None if sweep.cursor is None else sweep.cursor.get("last_block"),
+            )
+
         return LaunchpadState(
             coin_count=coin_count,
             imd_to_burn_wei=imd_to_burn_wei,
@@ -1423,15 +1492,19 @@ class SurfClient(OwnedHttpClient):
         # a negative one.
         swap_from = min(min(from_block, day_from), head)
 
-        launched_rows = await self._get_logs_shrinking(
+        # `_get_logs_paged`, never `_get_logs_shrinking`: the shrinking
+        # reader answers a wide ask by discarding the OLDEST blocks and
+        # returning the remainder as a success, and the oldest blocks are
+        # precisely the launches this sweep exists to recover.
+        launched_rows = await self._get_logs_paged(
             {"address": A.LAUNCHPAD_FACTORY, "topics": [A.TOPIC_LAUNCHED]},
             min(from_block, head), head, group="launchpad_launched",
         )
-        swap_rows = await self._get_logs_shrinking(
+        swap_rows = await self._get_logs_paged(
             {"address": A.LAUNCHPAD_HOOK, "topics": [A.TOPIC_CURVE_SWAP]},
             swap_from, head, group="launchpad_curve_swap",
         )
-        burned_rows = await self._get_logs_shrinking(
+        burned_rows = await self._get_logs_paged(
             {"address": A.LAUNCHPAD_HOOK, "topics": [A.TOPIC_IMD_BURNED]},
             min(from_block, head), head, group="launchpad_imd_burned",
         )
@@ -1445,9 +1518,12 @@ class SurfClient(OwnedHttpClient):
             if parsed is None or parsed["block"] < from_block:
                 continue
             merged[parsed["pool_id"]] = {
-                "ticker": parsed["ticker"],
-                "name": parsed["name"],
-                "creator": parsed["creator"],
+                # Bounded before it is ever persisted: `launch(string,string)`
+                # is permissionless, and the cursor is a file we rewrite every
+                # tick.
+                "ticker": _launchpad_text(parsed["ticker"]),
+                "name": _launchpad_text(parsed["name"]),
+                "creator": _launchpad_text(parsed["creator"]),
                 "block": parsed["block"],
             }
 
@@ -2230,6 +2306,18 @@ class SurfClient(OwnedHttpClient):
         Halving our own window converges in <= _LOG_MAX_SHRINKS steps or
         fails honestly.
 
+        **It shrinks toward the HEAD, and a shrunk read returns as a
+        success.** ``toBlock`` stays pinned while ``fromBlock`` walks
+        forward, so a range-capped endpoint yields the newest slice of the
+        ask and the older blocks are silently dropped -- the caller cannot
+        tell that from a complete answer. That is deliberate and harmless
+        for the recent-window callers this exists for, which only ever want
+        the newest ``LOG_WINDOW_BLOCKS`` and treat a short window as a
+        smaller *recent*. It is **wrong for any caller reading history**:
+        the blocks it discards are the oldest ones, which is exactly what
+        such a caller is there for. Use ``_get_logs_paged`` instead -- it
+        tiles the range and fails rather than skipping.
+
         *group* is a label only — one of the ``LogWindow`` field names — used
         solely so a warning can say WHICH filter died. It does not affect the
         request; the caller still owns turning a ``None`` return into
@@ -2258,6 +2346,69 @@ class SurfClient(OwnedHttpClient):
             group, window, _LOG_MAX_SHRINKS + 1,
         )
         return None
+
+    async def _get_logs_paged(
+        self, base_filter: dict, from_block: int, to_block: int, *, group: str
+    ) -> list[dict] | None:
+        """eth_getLogs over an arbitrarily wide range, in complete pages.
+
+        The reader for anything that sweeps *history*.
+        ``_get_logs_shrinking`` cannot do this job: it answers a too-wide ask
+        by pulling ``fromBlock`` toward the head and returning the short
+        result as a success, so a range-capped endpoint hands back the newest
+        slice and drops the oldest blocks with no trace. For the launchpad
+        that is not a degraded read, it is a *silent* one -- and the cursor
+        then advances past the blocks that were never read, which turns a
+        transient provider limit into permanent data loss. Measured on the
+        committed 146-launch fixture with a 10,000-block cap: the shrinking
+        reader returned 2 launches and 45 swaps as a clean success.
+
+        So the range is tiled into ``LOG_WINDOW_BLOCKS``-sized pages (2,400 --
+        this client's working window everywhere else) and **any page that
+        cannot be read fails the whole call**, ``None``. A range error halves
+        the page size and retries *the same start*: the cursor never moves
+        over a block whose logs were not seen. Bounded by ``_LOG_MAX_SHRINKS``
+        halvings and the ``_LOG_MIN_WINDOW`` floor, then honest failure --
+        never a livelock, and never a suggested range followed verbatim.
+
+        Cost is one request per 2,400 blocks: ~15 per event type for today's
+        ~34k-block cold sweep, 3 for the 7,200-block day re-read. An empty
+        page is data; ``[]`` overall means "swept, and nothing happened".
+        """
+        if from_block > to_block:
+            return []
+        rows: list[dict] = []
+        page = LOG_WINDOW_BLOCKS
+        shrinks = 0
+        start = from_block
+        while start <= to_block:
+            end = min(start + page - 1, to_block)
+            flt = dict(base_filter)
+            flt["fromBlock"] = hex(start)
+            flt["toBlock"] = hex(end)
+            try:
+                result = await self._rpc_logs("eth_getLogs", [flt])
+            except _LogRangeError as exc:
+                if page <= _LOG_MIN_WINDOW or shrinks >= _LOG_MAX_SHRINKS:
+                    logger.warning(
+                        "getLogs paged: %s still range-limited at a %d-block "
+                        "page after %d halving(s) -- failing rather than "
+                        "skipping blocks %d..%d: %s",
+                        group, page, shrinks, start, end, exc,
+                    )
+                    return None
+                page = max(page // 2, _LOG_MIN_WINDOW)
+                shrinks += 1
+                continue          # the SAME start -- never skip forward
+            except RuntimeError as exc:
+                logger.warning("getLogs paged failed for %s: %s", group, exc)
+                return None
+            if not isinstance(result, list):
+                logger.warning("getLogs paged: %s returned a non-list", group)
+                return None
+            rows.extend(result)
+            start = end + 1
+        return rows
 
     async def fetch_recent_logs(self) -> LogWindow | None:
         """The recent-window log sweep for signals 2/3/5 and NFT sales.

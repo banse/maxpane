@@ -390,12 +390,31 @@ class LaunchpadState:
     append-only log sweep that re-fetched its whole history every tick would
     never catch up as the history grows, so the slot persists
     ``{"last_block": int, "launches": {pool_id: {...}}, "swaps_all":
-    {pool_id: int}}`` and each sweep resumes from ``last_block`` instead of
-    block zero. ``None`` means "no sweep has ever completed a pass" -- not
-    "the history is empty" -- and it is the manager's job to keep serving
-    last-good ``coins``/``launch_count``/etc. behind an ``as of`` marker
-    while a cursor is still ``None`` or stale, never to block first paint on
-    it.
+    {pool_id: int}}`` **plus the three accumulators the lifetime aggregates
+    above need** -- ``traders`` (a sorted address list), ``burn_by_coin``
+    (``{pool_id: wei}``) and ``burned_total_wei`` -- and each sweep resumes
+    from ``last_block`` instead of block zero.
+
+    Those three are not bookkeeping. ``swap_count`` falls out of
+    ``swaps_all`` for free, but ``trader_count``, ``burned_total_wei`` and
+    each coin's ``imd_burned`` have no additive shortcut from an
+    interval-sized delta: a cardinality cannot be deduplicated after the
+    fact, and a total cannot be recovered from its newest addend. A cursor
+    that dropped them would keep rendering the same labels over numbers that
+    had quietly become "since the last tick" -- the exact defect class the
+    cursor was introduced to remove. The 24 h swap slice is the one thing
+    deliberately NOT in here: a window cannot be accumulated forward at all
+    (yesterday's swap has to *leave* the day), so ``SurfClient`` re-reads it
+    every sweep instead.
+
+    ``None`` means "no sweep has ever completed a pass" -- not "the history
+    is empty" -- and it is the manager's job to keep serving last-good
+    ``coins``/``launch_count``/etc. behind an ``as of`` marker while a cursor
+    is still ``None`` or stale, never to block first paint on it. It is
+    always a ``dict`` or ``None`` even when a persisted payload was
+    unreadable: ``SurfClient`` coerces a non-dict to ``None`` rather than
+    passing it through, so ``payload["cursor"]["last_block"]`` cannot be
+    handed a string.
     """
 
     coin_count: int | None
