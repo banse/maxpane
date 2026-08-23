@@ -255,6 +255,69 @@ class NftStats:
     floor_eth: None = None
 
 
+@dataclass(frozen=True, slots=True)
+class PoolV4State:
+    """One ``extsload`` round against the live IMD/ETH v4 pool.
+
+    v4 has no ``slot0()``; state is read out of ``PoolManager._pools`` by
+    computing the mapping slot.  Every field is ``None`` on a failed read --
+    the pool is real, so there is no "does not exist" case here.
+
+    ``pool_id_source`` is ``"hook"`` when ``LaunchpadHook.imdEthPoolId()``
+    answered and ``"fallback"`` when the vendored constant was used.  It is
+    recorded rather than inferred because the panel has to be able to say so:
+    37 decoy pools mean "which pool is this" is a question with a wrong answer.
+    """
+
+    pool_id: str | None
+    sqrt_price_x96: int | None
+    tick: int | None
+    lp_fee: int | None
+    liquidity: int | None
+    pool_id_source: str  # "hook" | "fallback"
+
+
+@dataclass(frozen=True, slots=True)
+class LaunchpadCoin:
+    """One launched coin, ranked from logs.
+
+    ``ticker`` and ``name`` are **attacker-chosen**: ``launch(string,string)``
+    is permissionless.  They are carried raw here and escaped at render.
+    """
+
+    ticker: str
+    name: str
+    creator: str
+    age_s: float | None
+    price_eth: float | None
+    change_1h_pct: float | None
+    swaps_1h: int
+    imd_burned: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class LaunchpadState:
+    """The launchpad tier's payload: getters plus log aggregates.
+
+    ``imd_to_burn_wei`` and ``executor_balance_wei`` have a **representable
+    zero** -- 0 means "we looked and nothing has accrued" and must stay
+    distinguishable from ``None``, which means the read failed.
+    """
+
+    coin_count: int | None
+    imd_to_burn_wei: int | None
+    total_real_imd_wei: int | None
+    burn_fee_bps: int | None
+    creator_fee_bps: int | None
+    creator_eth_owed_wei: int | None
+    executor_balance_wei: int | None
+    min_bridge_wei: int | None
+    coins: tuple[LaunchpadCoin, ...]
+    swap_count: int | None
+    trader_count: int | None
+    burned_total_wei: int | None
+
+
 #: Every key ``SurfManager.fetch_and_compute()`` returns — the parallel-agent
 #: interface, frozen by docs/surf_PRD.md §5.  Every numeric is ``float|int|None``
 #: and ``None`` renders as the widget's unavailable state, never as 0.
@@ -296,6 +359,19 @@ SURF_KEYS: tuple[str, ...] = (
     "identities_written",     # int | None — 1 of 2000 on 2026-08-08
     "imd_supply",             # float | None — whole IMD, never 0 on failure
     "imd_burned_cum",         # float | None — cumulative, from the burn ledger
+    # ---- pool (v3 -> v4 migration) -------------------------------------------
+    "pool_venue",             # "v3" | "v4" | None — which pool is currently live
+    "pool_fee_bps",           # int | None — the live pool's LP fee, in bps
+    "pool_liquidity_raw",     # int | None — raw v4 liquidity (PoolV4State.liquidity)
+    "pool_id_source",         # "hook" | "fallback" | None — see PoolV4State
+    "decoy_pool_count",       # int | None — other ETH/IMD v4 pools seen (37 known)
+    "lp_state",               # "live" | "gone" | None — ops wallet's v4 position
+    "lp_position_count",      # int | None — PositionManager.balanceOf(OPS_WALLET)
+    # ---- burn executor (v1 -> v2) --------------------------------------------
+    "burn_accrued",           # float | None — IMD accrued for burn, whole tokens
+    "burn_staged",            # float | None — IMD balance sitting at BURN_EXECUTOR_V2
+    "burn_ready",             # bool | None — None unless both accrued & min_bridge read
+    "burn_min_bridge",        # float | None — BurnExecutor.minBridgeAmount(), whole IMD
     # ---- market -------------------------------------------------------------
     "imd_price_usd",
     "imd_change_24h_pct",
@@ -314,9 +390,27 @@ SURF_KEYS: tuple[str, ...] = (
     "nft_floor",              # always None in v1 — explicit unavailable state
     # ---- activity -----------------------------------------------------------
     "dev_activity",           # list[dict] — SURF_ROW_KEYS["dev_activity"]
+    # ---- launchpad (detached sweep, its own slower "as of") -----------------
+    "launchpad_coin_count",         # int | None — LaunchpadFactory.coinCount()
+    "launchpad_swap_count",         # int | None — CurveSwap logs seen this sweep
+    "launchpad_trader_count",       # int | None — distinct swap senders
+    "launchpad_burned_total",       # float | None — cumulative from ImdBurned logs
+    "launchpad_creator_eth_owed",   # float | None — LaunchpadHook.totalCreatorEthOwed()
+    "launchpad_coins",              # list[dict] — SURF_ROW_KEYS["launchpad_coins"]
+    "launchpad_as_of_hhmm",         # str | None — slower tier's own staleness marker
+    # ---- signals: three new detectors, state/detail/age each ----------------
+    "sig_decoy_state",
+    "sig_decoy_detail",
+    "sig_decoy_age_s",
+    "sig_burnready_state",
+    "sig_burnready_detail",
+    "sig_burnready_age_s",
+    "sig_hot_state",
+    "sig_hot_detail",
+    "sig_hot_age_s",
 )
 
-#: Row shapes for the three list-of-dict payloads.  Widgets index these keys
+#: Row shapes for the list-of-dict payloads.  Widgets index these keys
 #: directly, so adding one is a contract change, not an implementation detail.
 SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
     "feed_items": ("ts", "kind", "from_addr", "from_label", "text", "tx_hash"),
@@ -329,5 +423,16 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "counterparty_known",
         "value_eth",
         "tx_hash",
+    ),
+    "launchpad_coins": (
+        "ticker",
+        "name",
+        "creator",
+        "creator_known",
+        "age_s",
+        "price_eth",
+        "change_1h_pct",
+        "swaps_1h",
+        "imd_burned",
     ),
 }

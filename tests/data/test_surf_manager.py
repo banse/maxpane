@@ -46,7 +46,7 @@ from maxpane_dashboard.data.surf_models import (
 )
 from maxpane_dashboard.data.surf_addresses import (
     ANNOUNCE,
-    BURN_EXECUTOR,
+    BURN_EXECUTOR_V1,
     DEV_WALLET,
     FWA_SPLITTER,
     IDENTITY_REGISTRY,
@@ -2191,9 +2191,9 @@ async def test_a_burn_executor_call_is_the_burn_precursor(tmp_path):
     client._returns["fetch_dev_activity"] = [
         _dev_tx(tx_hash="0xcfb8f6e2c733742615519cfc5596a6524daabb1efe0e628ee10da5b00f24964c",
                 ts=NOW + 60.0, wallet_label="dev", from_addr=DEV_WALLET,
-                to_addr=BURN_EXECUTOR, method="bridgeToBaseBurnReceiver",
-                counterparty=BURN_EXECUTOR,
-                counterparty_label=KNOWN_LABELS[BURN_EXECUTOR.lower()],
+                to_addr=BURN_EXECUTOR_V1, method="bridgeToBaseBurnReceiver",
+                counterparty=BURN_EXECUTOR_V1,
+                counterparty_label=KNOWN_LABELS[BURN_EXECUTOR_V1.lower()],
                 kind="burn", value_wei=30_466_501_051_555),
     ]
     client._returns["fetch_nonces"] = NonceSet(

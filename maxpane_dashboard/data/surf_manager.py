@@ -124,7 +124,7 @@ from maxpane_dashboard.analytics.surf_signals import (
 from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 from maxpane_dashboard.data.surf_addresses import (
     ANNOUNCE,
-    BURN_EXECUTOR,
+    BURN_EXECUTOR_V1,
     DEV_WALLET,
     FWA_SPLITTER,
     IDMD_NFT,

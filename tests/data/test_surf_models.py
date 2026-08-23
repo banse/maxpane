@@ -14,10 +14,13 @@ from maxpane_dashboard.data.surf_models import (
     ChainState,
     ChannelTx,
     DevTx,
+    LaunchpadCoin,
+    LaunchpadState,
     LogWindow,
     MarketSnapshot,
     NftStats,
     NonceSet,
+    PoolV4State,
 )
 
 ALL_MODELS = (
@@ -28,6 +31,9 @@ ALL_MODELS = (
     MarketSnapshot,
     LogWindow,
     NftStats,
+    PoolV4State,
+    LaunchpadCoin,
+    LaunchpadState,
 )
 
 
@@ -83,6 +89,20 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
     NftStats: (
         "holders", "total_supply", "transfers_total", "dev_holdings",
         "transfers_24h", "written", "floor_eth",
+    ),
+    PoolV4State: (
+        "pool_id", "sqrt_price_x96", "tick", "lp_fee", "liquidity",
+        "pool_id_source",
+    ),
+    LaunchpadCoin: (
+        "ticker", "name", "creator", "age_s", "price_eth", "change_1h_pct",
+        "swaps_1h", "imd_burned",
+    ),
+    LaunchpadState: (
+        "coin_count", "imd_to_burn_wei", "total_real_imd_wei", "burn_fee_bps",
+        "creator_fee_bps", "creator_eth_owed_wei", "executor_balance_wei",
+        "min_bridge_wei", "coins", "swap_count", "trader_count",
+        "burned_total_wei",
     ),
 }
 
@@ -288,6 +308,37 @@ EXPECTED_KEYS = {
     "nft_floor",
     # activity
     "dev_activity",
+    # pool (v3 -> v4 migration)
+    "pool_venue",
+    "pool_fee_bps",
+    "pool_liquidity_raw",
+    "pool_id_source",
+    "decoy_pool_count",
+    "lp_state",
+    "lp_position_count",
+    # burn executor (v1 -> v2)
+    "burn_accrued",
+    "burn_staged",
+    "burn_ready",
+    "burn_min_bridge",
+    # launchpad (detached sweep)
+    "launchpad_coin_count",
+    "launchpad_swap_count",
+    "launchpad_trader_count",
+    "launchpad_burned_total",
+    "launchpad_creator_eth_owed",
+    "launchpad_coins",
+    "launchpad_as_of_hhmm",
+    # signals — three new detectors x (state, detail, age)
+    "sig_decoy_state",
+    "sig_decoy_detail",
+    "sig_decoy_age_s",
+    "sig_burnready_state",
+    "sig_burnready_detail",
+    "sig_burnready_age_s",
+    "sig_hot_state",
+    "sig_hot_detail",
+    "sig_hot_age_s",
 }
 
 
@@ -295,7 +346,7 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 48
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 75
 
 
 def test_every_signal_has_all_three_facets() -> None:
@@ -354,3 +405,61 @@ def test_no_wei_key_leaks_into_the_flat_dict() -> None:
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
     assert not [k for k in SURF_KEYS if k.endswith("_wei")]
+
+
+# ---------------------------------------------------------------------------
+# v4 migration + IMD launchpad — the frozen contract addition (2026-08-23)
+# ---------------------------------------------------------------------------
+
+from maxpane_dashboard.data.surf_models import SURF_KEYS, SURF_ROW_KEYS
+
+
+def test_pool_v4_state_fields() -> None:
+    s = PoolV4State(
+        pool_id="0xb07d",
+        sqrt_price_x96=3757351088368496721754945570926,
+        tick=77186,
+        lp_fee=10000,
+        liquidity=7393092836965392068604,
+        pool_id_source="hook",
+    )
+    assert s.lp_fee == 10000
+    assert s.pool_id_source == "hook"
+
+
+def test_pool_id_source_is_recorded_not_inferred() -> None:
+    """The panel must be able to say the id came from the fallback."""
+    s = PoolV4State(
+        pool_id="0xb07d", sqrt_price_x96=None, tick=None, lp_fee=None,
+        liquidity=None, pool_id_source="fallback",
+    )
+    assert s.pool_id_source == "fallback"
+
+
+def test_new_payload_keys_exist() -> None:
+    for key in (
+        "pool_venue", "pool_fee_bps", "pool_liquidity_raw", "pool_id_source",
+        "decoy_pool_count", "lp_state", "lp_position_count",
+        "burn_accrued", "burn_staged", "burn_ready", "burn_min_bridge",
+        "launchpad_coin_count", "launchpad_swap_count",
+        "launchpad_trader_count", "launchpad_burned_total",
+        "launchpad_creator_eth_owed", "launchpad_coins",
+        "launchpad_as_of_hhmm",
+        "sig_decoy_state", "sig_decoy_detail", "sig_decoy_age_s",
+        "sig_burnready_state", "sig_burnready_detail", "sig_burnready_age_s",
+        "sig_hot_state", "sig_hot_detail", "sig_hot_age_s",
+    ):
+        assert key in SURF_KEYS, key
+
+
+def test_lp_migration_signal_keys_are_renamed_not_dropped() -> None:
+    """LP MIGRATION became LP MOVE; the prefix stays `lp` so the widget's
+    _ROW_KEYS alignment is unchanged."""
+    assert "sig_lp_state" in SURF_KEYS
+
+
+def test_launchpad_coin_row_keys() -> None:
+    assert SURF_ROW_KEYS["launchpad_coins"] == (
+        "ticker", "name", "creator", "creator_known",
+        "age_s", "price_eth", "change_1h_pct", "swaps_1h", "imd_burned",
+    )

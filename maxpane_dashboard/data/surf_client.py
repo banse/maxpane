@@ -872,7 +872,7 @@ class SurfClient(OwnedHttpClient):
             return "deploy"
         if to_addr == A.NFPM.lower():
             return "lp"
-        if to_addr == A.BURN_EXECUTOR.lower():
+        if to_addr == A.BURN_EXECUTOR_V1.lower():
             # bridgeToBaseBurnReceiver(): it bridges in order to burn, and the
             # burn is what signal 6 and the supply sparkline care about.
             return "burn"

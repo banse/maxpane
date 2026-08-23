@@ -46,14 +46,47 @@ IDENTITY_REGISTRY = "0x000008061ccac597a321a75E3470a3E8fAF9dD2d"
 POOL_V3 = "0xD6A822D028bbf7b6EDfA1533e110Ee40c08551d9"
 #: Uniswap v3 NonfungiblePositionManager — holder of LP_POSITION_ID.
 NFPM = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
-#: ``bridgeToBaseBurnReceiver()`` — LP-fee IMD leaves mainnet supply here.
-BURN_EXECUTOR = "0x2EC59BEd2fB9deE447bbEC6e3BCA249782C9B88B"
+#: Superseded burn executor.  Kept: it holds 0.664 IMD of residue and appears
+#: in the historical burn ledger.  ``rescueToken`` drained it on 2026-08-20.
+BURN_EXECUTOR_V1 = "0x2EC59BEd2fB9deE447bbEC6e3BCA249782C9B88B"
+#: The live executor.  ``bridgeToBaseBurnReceiver()`` is **permissionless** --
+#: the dashboard renders that state and never calls it.
+BURN_EXECUTOR_V2 = "0xe29386719C155B6847aD5a4E97C6674f10ffc750"
 #: Canonical ERC-8004 Trustless-Agents registry (ANNOUNCE registered here).
 ERC8004_REGISTRY = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
 #: Uniswap v4 PoolManager — ``Initialize`` with hooks != 0x0 IS the launch.
 POOL_MANAGER_V4 = "0x000000000004444c5dc75cB358380D2e3dE08A90"
 #: Canonical WETH9 — the pool's token0.
 WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+#: v4 hook behind the IMD launchpad: bonding curves, 0.5% burn + 0.5% creator.
+#: It hooks *launchpad coin* pools; the IMD/ETH pool itself is hookless.
+LAUNCHPAD_HOOK = "0x51768F5dA32BA2008304cC81674da51aCb802888"
+#: ``launch(string,string)`` -- permissionless, unpriced beyond gas.
+LAUNCHPAD_FACTORY = "0x73d1ae084F04f793A5bbd6B623d74400C9Fc3f42"
+#: Uniswap v4 PositionManager -- holds the ops wallet's single LP position.
+POSITION_MANAGER_V4 = "0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e"
+#: Base-side sink the executor bridges to; mainnet supply drops on arrival.
+#:
+#: KNOWN ANOMALY (flagged 2026-08-23, not corrected): unlike its four
+#: siblings above, this literal does not satisfy EIP-55 -- this module's own
+#: keccak recomputes a different casing pattern for the same 20 bytes
+#: (``0xf9d7CBf5Bef2f5c9ba93a70F31DdCA6457716793``), cross-checked with
+#: pycryptodome's independent keccak to rule out a bug in ours. The
+#: lowercase digits are identical either way, so this is the same account
+#: either way -- only the self-check casing is off. Left byte-for-byte as
+#: handed down rather than re-cased, so ``test_every_address_is_checksummed``
+#: is the one deliberately red case in the suite; see its docstring.
+BASE_BURN_RECEIVER = "0xf9d7cbf5bEF2f5c9bA93a70F31dDCa6457716793"
+
+#: **Fallback only.**  The live pool id is read from
+#: ``LaunchpadHook.imdEthPoolId()`` every chain round.  38 ETH/IMD v4 pools
+#: exist and 37 are decoys, so a stale constant is not merely wrong, it points
+#: at somebody else's 98%-fee pool.  Used only when the hook read fails.
+POOL_V4_ID_FALLBACK = (
+    "0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3"
+)
+#: Storage slot of ``PoolManager._pools``; v4 has no ``slot0()`` getter.
+V4_POOLS_MAPPING_SLOT = 6
 
 # --- Base chain (read-only bridge counterpart) ------------------------------
 #: The original Fren Pet ERC-20 on Base.  IMD mints 1:1 against FP locked here.
@@ -98,7 +131,7 @@ LABELED_ADDRESSES: tuple[str, ...] = (
     IDENTITY_REGISTRY,
     POOL_V3,
     NFPM,
-    BURN_EXECUTOR,
+    BURN_EXECUTOR_V1,
     ERC8004_REGISTRY,
     POOL_MANAGER_V4,
     WETH,
@@ -115,6 +148,11 @@ LABELED_ADDRESSES: tuple[str, ...] = (
     IDMD_BASE_TWIN,
     KRAKEN_HOT,
     ZERO_ADDRESS,
+    BURN_EXECUTOR_V2,
+    LAUNCHPAD_HOOK,
+    LAUNCHPAD_FACTORY,
+    POSITION_MANAGER_V4,
+    BASE_BURN_RECEIVER,
 )
 
 # --- Event topics -----------------------------------------------------------
@@ -137,6 +175,26 @@ TOPIC_V4_INITIALIZE = (
 TOPIC_SEAPORT_ORDER_FULFILLED = (
     "0x9d9af8e38d66c62e2c12f0225249fd9d721c54b83f48d9352c97c6cacdcb6f31"
 )
+#: v4 PoolManager -- liquidity add/remove against the IMD/ETH pool.
+TOPIC_MODIFY_LIQUIDITY = (
+    "0xf208f4912782fd25c7f114ca3723a2d5dd6f3bcc3ac8db5af63baa85f711d5ec"
+)
+#: LaunchpadFactory -- one per ``launch(string,string)`` call.
+TOPIC_LAUNCHED = (
+    "0xedc96a45101454b126fdf99206bee0947b2cc3ce06933cb22a2b9434bb4eaa9e"
+)
+#: LaunchpadHook -- one per bonding-curve trade against a launched coin.
+TOPIC_CURVE_SWAP = (
+    "0x4e041a3c3c349dd253ff446bef131680ef40e9d33b823aedaa99e0893bee4dcf"
+)
+#: BurnExecutor -- fires when staged IMD is actually burned.
+TOPIC_IMD_BURNED = (
+    "0xb95f82a5dcec67b396bc59a79ad4a1757d5ea6d29690b8c6bcd88d720adee5d6"
+)
+#: LaunchpadHook -- the 0.5% creator-fee half of every curve swap.
+TOPIC_CREATOR_FEE_ACCRUED = (
+    "0xb26ec14e06ac4ca6c33b6f1eb87160c44cd1a6237e0f884c947a89e61f98b4c6"
+)
 
 #: constant name -> the exact Solidity event signature it hashes.
 TOPIC_PREIMAGES: dict[str, str] = {
@@ -150,6 +208,18 @@ TOPIC_PREIMAGES: dict[str, str] = {
         "(uint8,address,uint256,uint256)[],"
         "(uint8,address,uint256,uint256,address)[])"
     ),
+    "TOPIC_MODIFY_LIQUIDITY": (
+        "ModifyLiquidity(bytes32,address,int24,int24,int256,bytes32)"
+    ),
+    "TOPIC_LAUNCHED": (
+        "Launched(bytes32,address,address,string,string,uint256,uint256)"
+    ),
+    "TOPIC_CURVE_SWAP": (
+        "CurveSwap(bytes32,address,address,bool,uint256,uint256,uint256,"
+        "uint256,uint256)"
+    ),
+    "TOPIC_IMD_BURNED": "ImdBurned(uint256)",
+    "TOPIC_CREATOR_FEE_ACCRUED": "CreatorFeeAccrued(address,uint256)",
 }
 
 # --- Function selectors -----------------------------------------------------
@@ -165,6 +235,24 @@ SEL_SYMBOL = "0x95d89b41"            # symbol() — shared by ERC-20 and ERC-721
 #: returns in the verified source and are not read through these selectors.
 SEL_OWNER_OF = "0x6352211e"          # ERC-721 ownerOf(uint256) — NFPM position
 
+# --- v4 / launchpad selectors -------------------------------------------
+SEL_EXTSLOAD = "0x1e2eaeaf"          # PoolManager.extsload(bytes32)
+SEL_COIN_COUNT = "0x678fd289"        # LaunchpadFactory.coinCount()
+SEL_ALL_COINS = "0x13560cac"         # LaunchpadFactory.allCoins(uint256)
+SEL_POOL_ID_OF = "0x30040054"        # LaunchpadFactory.poolIdOf(address)
+SEL_IMD_ETH_POOL_ID = "0x45e9a4a4"   # LaunchpadHook.imdEthPoolId()
+SEL_IMD_TO_BURN = "0x8feff8aa"       # LaunchpadHook.imdToBurn()
+SEL_TOTAL_REAL_IMD = "0x7cadd0a2"    # LaunchpadHook.totalRealImd()
+SEL_BURN_FEE_BPS = "0xa5189810"      # LaunchpadHook.burnFeeBps()
+SEL_CREATOR_FEE_BPS = "0x17773ebb"   # LaunchpadHook.creatorFeeBps()
+SEL_TOTAL_CREATOR_ETH_OWED = "0x8e0ff96e"    # LaunchpadHook.totalCreatorEthOwed()
+SEL_SPOT_PRICE_ETH_PER_COIN = "0x39c051d9"   # LaunchpadHook.spotPriceEthPerCoin(bytes32)
+SEL_GET_CURVE = "0x8c7171b5"         # LaunchpadHook.getCurve(bytes32)
+SEL_TOKEN_BALANCE = "0x9e1a4d19"     # BurnExecutor.tokenBalance()
+SEL_MIN_BRIDGE_AMOUNT = "0xc3c22475"  # BurnExecutor.minBridgeAmount()
+SEL_PREVIEW_BRIDGE = "0xe102463d"    # BurnExecutor.previewBridge()
+SEL_BALANCE_OF = "0x70a08231"        # ERC-20 balanceOf(address) — IMD @ BurnExecutor
+
 #: constant name -> the exact Solidity function signature it hashes.
 SELECTOR_PREIMAGES: dict[str, str] = {
     "SEL_POSITIONS": "positions(uint256)",
@@ -174,6 +262,22 @@ SELECTOR_PREIMAGES: dict[str, str] = {
     "SEL_NAME": "name()",
     "SEL_SYMBOL": "symbol()",
     "SEL_OWNER_OF": "ownerOf(uint256)",
+    "SEL_EXTSLOAD": "extsload(bytes32)",
+    "SEL_COIN_COUNT": "coinCount()",
+    "SEL_ALL_COINS": "allCoins(uint256)",
+    "SEL_POOL_ID_OF": "poolIdOf(address)",
+    "SEL_IMD_ETH_POOL_ID": "imdEthPoolId()",
+    "SEL_IMD_TO_BURN": "imdToBurn()",
+    "SEL_TOTAL_REAL_IMD": "totalRealImd()",
+    "SEL_BURN_FEE_BPS": "burnFeeBps()",
+    "SEL_CREATOR_FEE_BPS": "creatorFeeBps()",
+    "SEL_TOTAL_CREATOR_ETH_OWED": "totalCreatorEthOwed()",
+    "SEL_SPOT_PRICE_ETH_PER_COIN": "spotPriceEthPerCoin(bytes32)",
+    "SEL_GET_CURVE": "getCurve(bytes32)",
+    "SEL_TOKEN_BALANCE": "tokenBalance()",
+    "SEL_MIN_BRIDGE_AMOUNT": "minBridgeAmount()",
+    "SEL_PREVIEW_BRIDGE": "previewBridge()",
+    "SEL_BALANCE_OF": "balanceOf(address)",
 }
 
 #: Lowercase address -> the label ``SurfDevActivity`` may render as trusted.
@@ -191,7 +295,6 @@ KNOWN_LABELS: dict[str, str] = {
     IDENTITY_REGISTRY.lower(): "IdentityRegistry",
     POOL_V3.lower(): "IMD/WETH v3 pool",
     NFPM.lower(): "Uniswap v3 NFPM",
-    BURN_EXECUTOR.lower(): "BurnExecutor",
     ERC8004_REGISTRY.lower(): "ERC-8004 registry",
     POOL_MANAGER_V4.lower(): "v4 PoolManager",
     WETH.lower(): "WETH",
@@ -208,4 +311,10 @@ KNOWN_LABELS: dict[str, str] = {
     IDMD_BASE_TWIN.lower(): "IDMD twin · Base",
     KRAKEN_HOT.lower(): "Kraken hot wallet",
     ZERO_ADDRESS.lower(): "0x0 mint/burn",
+    BURN_EXECUTOR_V2.lower(): "BurnExecutor",
+    BURN_EXECUTOR_V1.lower(): "BurnExecutor v1",
+    LAUNCHPAD_HOOK.lower(): "LaunchpadHook",
+    LAUNCHPAD_FACTORY.lower(): "LaunchpadFactory",
+    POSITION_MANAGER_V4.lower(): "v4 PositionManager",
+    BASE_BURN_RECEIVER.lower(): "Base burn sink",
 }
