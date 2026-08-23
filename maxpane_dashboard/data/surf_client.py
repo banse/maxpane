@@ -1078,6 +1078,13 @@ class SurfClient(OwnedHttpClient):
         contract ``fetch_pool_v4`` keeps. ``imd_to_burn_wei`` and
         ``executor_balance_wei`` carry a representable zero; every other
         getter is ``None`` on failure, never ``0``.
+
+        ``swaps_by_coin`` (fix round 2) rides the same ``CurveSwap`` sweep
+        ``coins``/``swap_count``/``trader_count`` already read — the full
+        per-coin distribution, not the ``LAUNCHPAD_RENDER_LIMIT``-capped one
+        ``coins`` carries. See ``LaunchpadState``'s own docstring for why the
+        two must stay separate: one is what the panel draws, the other is
+        what HOT COIN's median is taken over.
         """
         getters = [
             (A.LAUNCHPAD_HOOK, A.SEL_IMD_TO_BURN),
@@ -1094,7 +1101,7 @@ class SurfClient(OwnedHttpClient):
             creator_eth_owed_wei, coin_count, executor_balance_wei, min_bridge_wei,
         ) = await self._launchpad_getters(getters)
 
-        launches, all_swaps, hour_swaps, burned_total_wei = (
+        launches, all_swaps, hour_swaps, burned_total_wei, swaps_by_coin = (
             await self._launchpad_logs()
         )
 
@@ -1137,6 +1144,7 @@ class SurfClient(OwnedHttpClient):
             swap_count=swap_count,
             trader_count=trader_count,
             burned_total_wei=burned_total_wei,
+            swaps_by_coin=swaps_by_coin,
         )
 
     async def _launchpad_getters(
@@ -1173,27 +1181,39 @@ class SurfClient(OwnedHttpClient):
 
     async def _launchpad_logs(
         self,
-    ) -> tuple[list[dict], list[dict] | None, list[dict], int | None]:
+    ) -> tuple[
+        list[dict], list[dict] | None, list[dict], int | None,
+        dict[str, int] | None,
+    ]:
         """Sweep ``Launched`` / ``CurveSwap`` / ``ImdBurned`` on the LOGS pool
         over the launchpad's own (much wider) window.
 
-        Returns ``(launches, all_swaps, hour_swaps, burned_total_wei)``.
-        ``launches`` degrades to ``[]`` on failure — ``LaunchpadState.coins``
-        has no way to tell "empty" from "failed" apart in its tuple, the same
-        ambiguity ``LogWindow`` accepts and reports one layer up instead of
-        here. ``all_swaps`` is ``None`` only when the CurveSwap sweep itself
-        failed, so ``swap_count``/``trader_count`` can stay ``None`` rather
-        than render a false zero; ``hour_swaps`` — the
-        ``LAUNCHPAD_HOUR_BLOCKS`` slice ``rank_coins``/HOT COIN use — is
-        always a (possibly empty) list. ``burned_total_wei`` keeps the same
-        None-on-failure / 0-on-empty split as the getters.
+        Returns ``(launches, all_swaps, hour_swaps, burned_total_wei,
+        swaps_by_coin)``. ``launches`` degrades to ``[]`` on failure —
+        ``LaunchpadState.coins`` has no way to tell "empty" from "failed"
+        apart in its tuple, the same ambiguity ``LogWindow`` accepts and
+        reports one layer up instead of here. ``all_swaps`` is ``None`` only
+        when the CurveSwap sweep itself failed, so ``swap_count``/
+        ``trader_count`` can stay ``None`` rather than render a false zero;
+        ``hour_swaps`` — the ``LAUNCHPAD_HOUR_BLOCKS`` slice
+        ``rank_coins``/HOT COIN use — is always a (possibly empty) list.
+        ``burned_total_wei`` keeps the same None-on-failure / 0-on-empty
+        split as the getters.
+
+        ``swaps_by_coin`` (fix round 2) is the **full** in-window per-coin
+        swap count — every coin with activity, not the
+        ``LAUNCHPAD_RENDER_LIMIT``-capped slice ``rank_coins`` returns for
+        ``coins``. Counted alongside ``hour_swaps`` from the same sweep, so
+        it costs no extra request; ``None`` exactly when ``all_swaps`` is
+        (the CurveSwap sweep itself failed), ``{}`` for a swept-but-quiet
+        hour.
         """
         try:
             head_hex = await self._rpc_logs("eth_blockNumber", [])
             head = int(head_hex, 16)
         except (RuntimeError, TypeError, ValueError) as exc:
             logger.warning("fetch_launchpad logs head: %s", exc)
-            return [], None, [], None
+            return [], None, [], None, None
 
         from_block = head - LAUNCHPAD_LOG_WINDOW_BLOCKS
         launched_rows = await self._get_logs_shrinking(
@@ -1232,10 +1252,17 @@ class SurfClient(OwnedHttpClient):
 
         all_swaps: list[dict] | None
         hour_swaps: list[dict] = []
+        # The full population, HOT COIN's own input (fix round 2) -- never
+        # the render-capped slice `coins` ends up with. Counted the same way
+        # `rank_coins` counts `swaps_1h` internally (one increment per
+        # ticker-attributed in-window swap), just not thrown away afterward.
+        swaps_by_coin: dict[str, int] | None
         if swap_rows is None:
             all_swaps = None
+            swaps_by_coin = None
         else:
             all_swaps = []
+            swaps_by_coin = {}
             by_coin_hour: dict[str, list[dict]] = {}
             for row in swap_rows:
                 parsed = _decode_curve_swap_log(row)
@@ -1255,6 +1282,7 @@ class SurfClient(OwnedHttpClient):
                     hour_swaps.append(swap)
                     if ticker:
                         by_coin_hour.setdefault(ticker, []).append(parsed)
+                        swaps_by_coin[ticker] = swaps_by_coin.get(ticker, 0) + 1
             # change_1h_pct is derived from log data alone -- no RPC call,
             # unlike price_eth. CurveSwap carries no price field (fix round
             # 1), so the effective price of a swap is ethAmount/coinAmount;
@@ -1289,7 +1317,7 @@ class SurfClient(OwnedHttpClient):
                 if amount is not None:
                     burned_total_wei += amount
 
-        return launches, all_swaps, hour_swaps, burned_total_wei
+        return launches, all_swaps, hour_swaps, burned_total_wei, swaps_by_coin
 
     async def _price_rendered_rows(
         self, rows: list[dict], launches: list[dict]

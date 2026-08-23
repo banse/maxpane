@@ -637,6 +637,12 @@ def _launchpad_state(**overrides) -> LaunchpadState:
     ``coin_count`` is deliberately **not** 146 — the tripwire's own "a
     146-coin sweep" and the stale-seed regression test's literal ``146`` both
     need a default that cannot be confused with either by coincidence.
+
+    ``swaps_by_coin`` (fix round 2) defaults to matching the single default
+    ``coins`` row exactly (``{"ICE": 5}``, off ``_launchpad_coin``'s own
+    ``swaps_1h`` default) — the two are the same fact by default, so a test
+    that does not care about the full-vs-capped distinction never has to
+    think about it.
     """
     fields = {
         "coin_count": 12,
@@ -651,6 +657,7 @@ def _launchpad_state(**overrides) -> LaunchpadState:
         "swap_count": 25,
         "trader_count": 12,
         "burned_total_wei": round(90.0 * 10**18),
+        "swaps_by_coin": {"ICE": 5},
     }
     fields.update(overrides)
     return LaunchpadState(**fields)
@@ -2919,14 +2926,21 @@ def test_readings_feed_the_three_future_detectors_off_the_launchpad_slot(
     """The three keys already flat-published (`decoy_pool_count`,
     `burn_ready`, `burn_accrued`) come off `data`; the two that aren't
     `SURF_KEYS` entries (`decoy_newest_fee_bps`, `launchpad_swaps_by_coin`)
-    come off the raw slot dict passed alongside it."""
+    come off the raw slot dict passed alongside it.
+
+    Fix round 2: `launchpad_swaps_by_coin` reads the slot's own
+    `swaps_by_coin` key -- the FULL population `SurfClient.fetch_launchpad`
+    now returns -- never derived from the render-capped `coins` rows, which
+    is deliberately given a *different* (and smaller) distribution here to
+    prove the two are not conflated.
+    """
     slot_payload = {
         "decoy_pool_count": 4,
         "decoy_newest_fee_bps": 98_000,
         "coins": [
             {"ticker": "ICE", "swaps_1h": 9},
-            {"ticker": "FIRE", "swaps_1h": 2},
         ],
+        "swaps_by_coin": {"ICE": 9, "FIRE": 2, "QUIET": 1},
     }
     m = _manager(tmp_path)
     data = {"decoy_pool_count": 4, "burn_ready": True, "burn_accrued": 15.06}
@@ -2935,19 +2949,26 @@ def test_readings_feed_the_three_future_detectors_off_the_launchpad_slot(
     assert readings["decoy_newest_fee_bps"] == 98_000
     assert readings["burn_ready"] is True
     assert readings["burn_accrued"] == pytest.approx(15.06)
-    assert readings["launchpad_swaps_by_coin"] == {"ICE": 9, "FIRE": 2}
+    assert readings["launchpad_swaps_by_coin"] == {"ICE": 9, "FIRE": 2, "QUIET": 1}
 
 
 def test_swaps_by_coin_is_none_only_when_never_fetched(tmp_path) -> None:
     """``None`` (unread) and ``{}`` (read, genuinely nothing) are different
-    claims, exactly as everywhere else in this module."""
+    claims, exactly as everywhere else in this module.
+
+    Fix round 2: this now validates the slot's own ``swaps_by_coin`` dict
+    directly (the full population `SurfClient.fetch_launchpad` returns),
+    not a derivation from ``launchpad_coins`` rows -- there is no list
+    shape to parse here any more.
+    """
     m = _manager(tmp_path)
     assert m._swaps_by_coin(None) is None
-    assert m._swaps_by_coin([]) == {}
-    assert m._swaps_by_coin([{"ticker": "ICE", "swaps_1h": 3}]) == {"ICE": 3}
-    # A malformed row (missing/garbage swaps_1h) is dropped, not crashed on
-    # or coerced into a lie.
-    assert m._swaps_by_coin([{"ticker": "BAD", "swaps_1h": None}]) == {}
+    assert m._swaps_by_coin("not a dict") is None       # malformed slot value
+    assert m._swaps_by_coin({}) == {}
+    assert m._swaps_by_coin({"ICE": 3, "FIRE": 1}) == {"ICE": 3, "FIRE": 1}
+    # A malformed entry (a non-int count, or a bool masquerading as one) is
+    # dropped individually, not crashed on or coerced into a lie.
+    assert m._swaps_by_coin({"ICE": 3, "BAD": None, "WORSE": True}) == {"ICE": 3}
 
 
 async def test_the_launchpad_sweep_captures_the_newest_decoys_own_fee(

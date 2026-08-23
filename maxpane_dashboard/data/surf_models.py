@@ -315,6 +315,21 @@ class LaunchpadState:
     ``imd_to_burn_wei`` and ``executor_balance_wei`` have a **representable
     zero** -- 0 means "we looked and nothing has accrued" and must stay
     distinguishable from ``None``, which means the read failed.
+
+    ``swaps_by_coin`` (fix round 2, 2026-08-24) is the **full** per-coin
+    in-window swap count -- every coin with at least one swap in the hour,
+    not the ``LAUNCHPAD_RENDER_LIMIT``-capped slice ``coins`` carries. The
+    two serve different callers on purpose: ``coins`` is how many rows the
+    panel draws, ``swaps_by_coin`` is the input
+    ``analytics/surf_launchpad.hot_coin_threshold`` takes a *median* over --
+    and a median taken over only the render-capped top 20 runs several times
+    too high (the busiest coins are exactly the ones the cap keeps), so HOT
+    COIN would almost never fire if it read the capped list instead. Costs
+    no extra request: it is counted from the same ``CurveSwap`` sweep
+    ``coins``/``swap_count``/``trader_count`` already read. ``None`` only
+    when that sweep failed outright (mirrors ``all_swaps`` in
+    ``SurfClient._launchpad_logs``); a swept-but-quiet hour is the
+    representable ``{}``.
     """
 
     coin_count: int | None
@@ -329,6 +344,7 @@ class LaunchpadState:
     swap_count: int | None
     trader_count: int | None
     burned_total_wei: int | None
+    swaps_by_coin: dict[str, int] | None
 
 
 #: Every key ``SurfManager.fetch_and_compute()`` returns — the parallel-agent

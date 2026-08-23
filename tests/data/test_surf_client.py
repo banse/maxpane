@@ -3063,6 +3063,9 @@ async def test_fetch_launchpad_total_outage_still_returns_a_labelled_state() -> 
     assert state.swap_count is None
     assert state.trader_count is None
     assert state.burned_total_wei is None
+    # Fix round 2: mirrors `all_swaps` -- the CurveSwap sweep itself failed,
+    # so the full distribution is exactly as unread as the capped one.
+    assert state.swaps_by_coin is None
 
 
 @pytest.mark.asyncio
@@ -3110,6 +3113,10 @@ async def test_fetch_launchpad_ranks_and_decodes_the_real_fixture() -> None:
     assert tickers[0] == "ICE"
     ice = state.coins[0]
     assert ice.swaps_1h == 9
+    # Fix round 2: the full distribution agrees with the rendered row for a
+    # ticker both cover -- same sweep, two independent counters, and this is
+    # the one fixture-backed proof they never drift apart.
+    assert state.swaps_by_coin["ICE"] == ice.swaps_1h == 9
     ice_pool_id = next(l["pool_id"] for l in launches if l["ticker"] == "ICE")
     assert ice.price_eth == pytest.approx(prices[ice_pool_id] / 1e18)
     assert ice.age_s == pytest.approx(
@@ -3312,3 +3319,104 @@ async def test_a_curve_swap_is_attributed_by_pool_id_and_an_unknown_pool_id_is_s
     assert state.coins[0].swaps_1h == 2       # only the two matched swaps
     assert state.swap_count == 3              # all three, incl. the unknown one
     assert state.trader_count == 3            # 0xaa.., 0xcc.., 0xdd.. all distinct
+
+
+# ---------------------------------------------------------------------------
+# Fix round 2 (2026-08-24) -- swaps_by_coin must be the FULL population, not
+# the LAUNCHPAD_RENDER_LIMIT-capped slice `coins` carries. hot_coin_threshold
+# takes a median, and a median of only the busiest 20 coins runs several
+# times too high -- this is the test that would catch feeding it the wrong
+# distribution, which every test above (built from small, sub-cap fixtures)
+# cannot.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_swaps_by_coin_is_the_full_population_not_the_rendered_cap() -> None:
+    """20 coins get 8 in-window swaps each (more than the render cap of 20
+    coins can hold once the 25 quiet ones are added); 25 more get exactly 1
+    each. 45 active coins total -- comfortably over ``LAUNCHPAD_RENDER_LIMIT``
+    (20), so the render cap genuinely bites and only the 20 hot coins survive
+    into ``state.coins``.
+
+    The true population median is 1 (25 of 45 coins have exactly one swap),
+    giving a threshold at the floor (5). The median of just the rendered
+    top 20 (all eights) is 8, giving a threshold of 24 -- the exact
+    "threshold near 24 instead of near the floor of 5" the fix-round-2
+    controller message described. This test asserts the correct, full-
+    population number is what ``LaunchpadState.swaps_by_coin`` actually
+    carries, and separately proves the capped list -- fix round 1's bug --
+    would have produced the wrong one.
+    """
+    from maxpane_dashboard.analytics.surf_launchpad import hot_coin_threshold
+
+    reads = _load_launchpad("launchpad_reads.json")
+    head = 30_000_000
+    launched_block = head - 1000     # outside the hour window; Launched
+                                      # doesn't need to be inside it
+    swap_block = head - 10           # comfortably inside LAUNCHPAD_HOUR_BLOCKS
+
+    launched_rows: list[dict] = []
+    curve_swap_rows: list[dict] = []
+    tx = 0
+    for i in range(20):
+        pool_id = "0x" + format(i + 1, "064x")
+        ticker = f"HOT{i}"
+        launched_rows.append(
+            _minimal_launched_row(
+                pool_id, A.DEV_WALLET, ticker, ticker, launched_block
+            )
+        )
+        for _ in range(8):
+            tx += 1
+            trader = "0x" + format(tx, "040x")
+            curve_swap_rows.append(
+                _minimal_curve_swap_row(
+                    pool_id, trader, "0x" + "bb" * 20, swap_block, tx
+                )
+            )
+    for i in range(25):
+        pool_id = "0x" + format(i + 101, "064x")
+        ticker = f"QUIET{i}"
+        launched_rows.append(
+            _minimal_launched_row(
+                pool_id, A.DEV_WALLET, ticker, ticker, launched_block
+            )
+        )
+        tx += 1
+        trader = "0x" + format(tx, "040x")
+        curve_swap_rows.append(
+            _minimal_curve_swap_row(pool_id, trader, "0x" + "bb" * 20, swap_block, tx)
+        )
+
+    logs_data = {
+        "head_block": head,
+        "launched": launched_rows,
+        "curve_swap": curve_swap_rows,
+        "imd_burned": [],
+    }
+    handler = _launchpad_fixture_handler(reads, logs_data, {})
+    async with _client_on(RecordingTransport(handler)) as client:
+        state = await client.fetch_launchpad()
+
+    # The render cap genuinely bites: 45 active coins, only 20 rendered.
+    assert len(state.coins) == 20
+    assert {c.swaps_1h for c in state.coins} == {8}
+    assert all(c.ticker.startswith("HOT") for c in state.coins)
+
+    # The full population is what LaunchpadState carries, not the 20 rendered.
+    assert state.swaps_by_coin is not None
+    assert len(state.swaps_by_coin) == 45
+    assert sum(1 for v in state.swaps_by_coin.values() if v == 8) == 20
+    assert sum(1 for v in state.swaps_by_coin.values() if v == 1) == 25
+
+    full_threshold = hot_coin_threshold(state.swaps_by_coin)
+    capped_threshold = hot_coin_threshold(
+        {c.ticker: c.swaps_1h for c in state.coins}
+    )
+    assert full_threshold == 5        # the floor: true median is 1
+    assert capped_threshold == 24     # the fix-round-1 bug, reproduced
+    assert full_threshold < capped_threshold, (
+        "the full-population threshold must be materially lower than the "
+        "one a render-capped distribution would have produced"
+    )

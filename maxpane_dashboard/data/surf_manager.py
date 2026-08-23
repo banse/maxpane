@@ -1423,7 +1423,16 @@ class SurfManager:
         ``SURF_KEYS`` home yet, so they are not cached here — nothing reads
         them. ``decoy_newest_fee_bps`` (fix round 1) is the same story:
         cached for Task 7's DECOY POOL detector to read via ``_readings``,
-        no ``SURF_KEYS`` entry of its own.
+        no ``SURF_KEYS`` entry of its own. ``swaps_by_coin`` (fix round 2) is
+        cached the same way, and deliberately *separate* from ``coins``
+        below: ``coins`` is the render-capped row list this slot has always
+        carried, ``swaps_by_coin`` is the **full** per-coin in-window swap
+        count ``SurfClient.fetch_launchpad`` now also returns — the input
+        Task 7's ``hot_coin_threshold`` takes a median over. Feeding it the
+        capped list instead (as the fix-round-1 version of this method did)
+        biases that median several times too high, because the cap keeps
+        exactly the busiest coins and drops everything else — see
+        ``LaunchpadState.swaps_by_coin``'s own docstring for the mechanism.
         """
         return {
             "pool_id": _field(pool_state, "pool_id"),
@@ -1445,6 +1454,7 @@ class SurfManager:
             "swap_count": _opt_int(_field(launchpad_state, "swap_count")),
             "trader_count": _opt_int(_field(launchpad_state, "trader_count")),
             "coins": SurfManager._launchpad_coin_rows(_field(launchpad_state, "coins")),
+            "swaps_by_coin": _field(launchpad_state, "swaps_by_coin"),
         }
 
     @staticmethod
@@ -1709,47 +1719,45 @@ class SurfManager:
         read["decoy_newest_fee_bps"] = slot.get("decoy_newest_fee_bps")
         read["burn_ready"] = data.get("burn_ready")
         read["burn_accrued"] = data.get("burn_accrued")
-        read["launchpad_swaps_by_coin"] = self._swaps_by_coin(slot.get("coins"))
+        read["launchpad_swaps_by_coin"] = self._swaps_by_coin(
+            slot.get("swaps_by_coin")
+        )
         return read
 
     @staticmethod
-    def _swaps_by_coin(coins: Any) -> dict[str, int] | None:
-        """``{ticker: swaps_1h}`` off the same rendered rows ``launchpad_coins``
-        already carries — HOT COIN's (Task 7) own input.
+    def _swaps_by_coin(value: Any) -> dict[str, int] | None:
+        """The full per-coin in-window swap distribution, validated off
+        whatever the slot holds — HOT COIN's (Task 7) own input.
 
-        ``None`` when the slot has never held rows at all (unread, not "an
-        hour with nothing to show"): ``surf_launchpad.hot_coin_threshold``'s
-        own contract already treats a thin-or-empty map as "too thin to
-        judge" via ``HOT_MIN_ACTIVE``, so an unread map and a genuinely quiet
-        one both landing on that same conclusion is a feature, not a
-        collision to avoid — but only the unread case should ever be spelled
-        ``None`` here, and ``coins is None`` (never ``[]``) is exactly that
-        case (CLAUDE.md: a failed read is ``None``, never a stand-in claim).
+        **Fix round 2.** The fix-round-1 version of this method derived a
+        ``{ticker: swaps_1h}`` map from ``launchpad_coins``, the
+        ``LAUNCHPAD_RENDER_LIMIT``-capped row list this slot has always
+        carried — and that was the bug: ``hot_coin_threshold`` takes the
+        *median* of active coins, and the median of only the busiest 20 runs
+        several times higher than the median of the full population (a
+        threshold near 24 instead of near the floor of 5, measured against a
+        real-shaped distribution). The cap is about how many rows the panel
+        draws; it was never meant to also decide how many coins the
+        statistic sees. This method now reads the **full** distribution
+        ``SurfClient.fetch_launchpad`` returns as ``LaunchpadState
+        .swaps_by_coin`` and ``_launchpad_payload`` caches unmodified under
+        the same key — no derivation from the capped rows any more.
 
-        **Known limitation, flagged rather than silently accepted:** this is
-        capped at the ``LAUNCHPAD_RENDER_LIMIT`` (20) coins ``fetch_launchpad``
-        actually renders, not the full ~146-coin population. The client
-        computes the full per-coin hourly swap distribution internally
-        (``surf_client._launchpad_logs``'s ``by_coin_hour``) but never returns
-        it — only the top-20-by-swap-count rows survive into ``LaunchpadState
-        .coins``. A median taken over only the busiest 20 coins is biased
-        high relative to the true population median, so HOT COIN's threshold
-        (``hot_coin_threshold``: ``median * HOT_MULTIPLE``, floored at
-        ``HOT_FLOOR``) runs a little hot — a coin that would clear the *true*
-        median-based bar might not clear this narrower one. Fixing this for
-        real means ``fetch_launchpad()`` returning the full map, which is
-        ``surf_client.py`` — a different task's file. This is the best signal
-        available from what this module receives today.
+        ``None`` when the slot has never held one at all: a cache file
+        persisted before this fix, or a client double that predates the
+        field, both look like "unread" and both get the honest ``None``
+        rather than a guess reconstructed from a differently-scoped number
+        (CLAUDE.md: a failed read is ``None``, never a stand-in claim).
+        Malformed entries (a non-``dict`` value, or a per-coin count that is
+        not a plain ``int``) are dropped individually rather than discarding
+        the whole map — the same per-point tolerance ``series_points
+        .coerce_points`` uses for a persisted history.
         """
-        if coins is None:
+        if not isinstance(value, dict):
             return None
         out: dict[str, int] = {}
-        for row in coins:
-            if not isinstance(row, dict):
-                continue
-            ticker = row.get("ticker")
-            swaps = row.get("swaps_1h")
-            if ticker and isinstance(swaps, int) and not isinstance(swaps, bool):
+        for ticker, swaps in value.items():
+            if isinstance(swaps, int) and not isinstance(swaps, bool):
                 out[str(ticker)] = swaps
         return out
 
