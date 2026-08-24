@@ -1239,6 +1239,14 @@ class SurfManager:
         DEPLOY renders its ``action`` rows with it (Task WP4.11), and both halves
         are third-party-influenced strings escaped at the widget, never here.
 
+        ``value_eth`` is what the row is *for* when it has neither: a plain
+        value transfer has empty calldata by definition, so ``text`` is
+        ``None`` and ``label`` is ``""``, and the amount is the only fact
+        left. The widget falls back to it rather than rendering a badge
+        beside a blank line. ``None`` and not ``0.0`` when ``value_wei`` will
+        not read -- a zero-value post is the *normal* shape on this channel,
+        so a sentinel zero here would be indistinguishable from the truth.
+
         ``to_addr`` (Task 1's ``SURF_ROW_KEYS["feed_items"]``, Task 3's own
         addition to this row) is threading's raw material: an ``answer``'s
         recipient is who asked the question it answers, and a later task nests
@@ -1273,6 +1281,7 @@ class SurfManager:
                         if _field(row, "method")
                         else (input_hex[:10] if len(input_hex) >= 10 else "")
                     ),
+                    "value_eth": _tokens(_field(row, "value_wei")),
                 }
             )
         items.sort(key=lambda i: (i["ts"] is not None, i["ts"] or 0.0), reverse=True)

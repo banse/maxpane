@@ -18,6 +18,8 @@ import json
 import re
 from pathlib import Path
 
+from rich.cells import cell_len
+
 import pytest
 from textual.app import App, ComposeResult
 from textual.color import Color
@@ -25,9 +27,9 @@ from textual.color import Color
 from maxpane_dashboard.themes import THEMES
 from maxpane_dashboard.widgets.surf.feed import (
     ANSWER_BADGE,
+    NO_MESSAGE,
     FEED_TITLE,
     FULL_TEXT_WIDTH,
-    NO_MESSAGE,
     TOGGLE_COLLAPSED,
     TOGGLE_EXPANDED,
     UNAVAILABLE_LINE,
@@ -350,9 +352,11 @@ async def test_feed_malformed_bracket_shape_that_defeats_escaping_cannot_crash()
     """``]][[/][/ malformed`` survives ``rich.markup.escape`` and still trips
     Textual's *own*, stricter ``textual.markup`` parser (this is the same
     shape ``SurfSignals`` documents in its ``RENDER_FAILED_DETAIL`` note).
-    ``SurfFeed`` renders through ``RichLog`` (Rich's own ``Text.from_markup``,
-    not ``textual.markup``), so this specific shape does not trip *this*
-    widget's parser -- but the point of this test is structural: whatever
+    ``SurfFeed`` pre-parses each row with Rich's own ``Text.from_markup``
+    (not ``textual.markup``) inside its own ``try``, so this specific shape
+    does not trip *this* widget's parser -- it did while the rows were handed
+    to ``Static`` as markup strings, which is what the mutation drill for
+    that swap turns back on. The point of this test is structural: whatever
     the widget renders through, one attacker-authored row must never be able
     to kill the app or leave the rest of the feed unrendered.  At narrow
     width the same string is also truncated mid-string, which is exactly
@@ -662,23 +666,42 @@ async def test_feed_an_answer_is_indented_one_column_past_the_reply_it_answers()
         assert _indent_of(answer) == _indent_of(reply) + 1
 
 
+#: A post of double-width glyphs. One ``str`` element, two terminal cells:
+#: the shape that ``len()`` cannot see and that reflowed the whole panel
+#: until ``_cell_fit`` and ``text-wrap: nowrap`` landed. Both scripts,
+#: because emoji and CJK reach ``cell_len`` by different routes.
+_WIDE_POSTS = {"emoji": "🎉" * 200, "cjk": "転" * 200}
+
+
 async def test_feed_no_row_is_wider_than_the_column_it_goes_in_when_expanded():
     """Indenting must cost the message, never the panel.
 
     The nested rows are the ones that could overflow, so the check is run
     with the thread open -- collapsed, it would pass without ever measuring
     an indented row.
+
+    Measured in ``cell_len``, not ``len``. With ``len`` this guard is blind
+    to the failure it exists for: a row of 59 double-width glyphs is 59
+    characters and 118 columns, so it passes a 120-column check while
+    painting past the panel and reflowing onto the rows below.
     """
-    widget = SurfFeed()
-    app = _Harness(widget)
-    async with app.run_test(size=(120, 30)) as pilot:
-        widget.update_data(feed_nonce=14, feed_items=_THREADED)
-        await pilot.pause()
-        await _expand_every_thread(widget, pilot)
-        usable = widget.query_one("#surf-feed-body").scrollable_content_region.width
-        assert any(ANSWER_BADGE in line for line in _screen_lines(app))
-        for line in _screen_lines(app):
-            assert len(line) <= usable + 1  # +1: the panel's own left gutter
+    for label, wide in (("ascii", None), *(( k, v) for k, v in _WIDE_POSTS.items())):
+        items = list(_THREADED)
+        if wide is not None:
+            items = [*items, {**_ITEM_POST_ALONE, "text": wide,
+                              "tx_hash": f"0xwide-{label}", "ts": 1787999997}]
+        widget = SurfFeed()
+        app = _Harness(widget)
+        async with app.run_test(size=(120, 40)) as pilot:
+            widget.update_data(feed_nonce=14, feed_items=items)
+            await pilot.pause()
+            await _expand_every_thread(widget, pilot)
+            usable = widget.query_one("#surf-feed-body").scrollable_content_region.width
+            assert any(ANSWER_BADGE in line for line in _screen_lines(app)), label
+            for line in _screen_lines(app):
+                assert cell_len(line) <= usable + 1, (  # +1: the left gutter
+                    f"{label}: {cell_len(line)} columns of {usable}: {line!r}"
+                )
 
 
 async def test_feed_an_answer_wears_the_post_colour_not_the_contract_call_one():
@@ -881,6 +904,250 @@ async def test_feed_a_collapsed_truncation_does_not_advertise_widen():
             if expand:
                 await _expand_every_thread(widget, pilot)
             assert (WIDEN_HINT in _screen_text(app)) is expected
+
+
+async def test_feed_a_double_width_message_stays_on_its_badge_line():
+    """The message goes beside the badge, whatever script it is written in.
+
+    A ``Static`` wraps by default and the Rich ``Text`` handed to it cannot
+    say otherwise -- Textual 8 rebuilds it through ``Content.from_rich_text``,
+    which carries the spans and drops ``no_wrap``/``overflow``. So a post of
+    double-width glyphs rendered ``08-07 06:27  POST`` followed by *nothing*,
+    with the text reflowed onto the rows beneath at column zero and every
+    nested row's indent lost. ``RichLog(wrap=False)`` never did that, so this
+    was a regression introduced by swapping the rendering primitive, and it
+    is invisible to any assertion written in ``len``.
+    """
+    for label, wide in _WIDE_POSTS.items():
+        widget = SurfFeed()
+        app = _Harness(widget)
+        async with app.run_test(size=(120, 24)) as pilot:
+            widget.update_data(
+                feed_nonce=14,
+                feed_items=[{**_ITEM_POST_ALONE, "text": wide}],
+            )
+            await pilot.pause()
+            usable = widget.query_one("#surf-feed-body").scrollable_content_region.width
+            lines = _screen_lines(app)
+            badge = next(l for l in lines if "POST" in l)
+
+            assert wide[0] in badge, (
+                f"{label}: the badge line carries no message -- "
+                f"{badge!r}"
+            )
+            for line in lines:
+                assert cell_len(line) <= usable + 1, (label, line)
+            # The ``…`` has to be *on screen*, not merely in the string the
+            # widget built. A ``len``-based cut leaves the line 193 columns
+            # wide in a 117-column panel; ``text-wrap: nowrap`` then clips it
+            # and takes the marker off the right-hand edge with it, so the
+            # row reads as a complete message that simply ends. This is the
+            # assertion that can tell a cell-aware cut from a character one.
+            assert "…" in badge, f"{label}: the truncation marker was clipped"
+            assert WIDEN_HINT in _screen_text(app), label
+
+
+async def test_feed_a_wide_script_message_wraps_whole_instead_of_being_halved():
+    """The wide tier's promise -- the *whole* message -- in any script.
+
+    ``textwrap`` counts characters and the budget is columns, so a wrapped
+    chunk of a double-width script is twice as wide as it was asked to be.
+    Left alone, ``_cell_fit`` then cuts every one of those chunks in half:
+    the panel shows a neat ellipsis on each line and roughly half the words
+    of the post are simply gone -- announced, technically, and unreadable in
+    fact. ``_char_budget`` scales the wrap target by the text's own mean cell
+    width so the chunks land at the right *width* and nothing is cut at all.
+
+    Asserted by counting glyphs rather than by looking for a tail word: the
+    words are identical by construction, and a count cannot be satisfied by
+    a line that merely looks plausible.
+    """
+    message = " ".join("転" * 10 for _ in range(20))
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(
+            feed_nonce=14, feed_items=[{**_ITEM_POST_ALONE, "text": message}]
+        )
+        await pilot.pause()
+        screen = _screen_text(app)
+        usable = widget.query_one("#surf-feed-body").scrollable_content_region.width
+
+        assert screen.count("転") == 200, (
+            f"{screen.count('転')} of 200 glyphs survived -- the wrap cut the "
+            "message rather than folding it"
+        )
+        assert "…" not in screen, "nothing needed truncating at this width"
+        assert WIDEN_HINT not in screen
+        for line in _screen_lines(app):
+            assert cell_len(line) <= usable + 1, line
+
+
+async def test_feed_a_row_too_wide_for_the_panel_is_clipped_not_reflowed():
+    """``text-wrap: nowrap``, proved on the case the cell-fit cannot cover.
+
+    ``_cell_fit`` keeps every line inside the budget, but the budget has a
+    floor -- ``_MIN_TEXT_BUDGET`` stops it shrinking below 10 columns -- so
+    below roughly 30 columns the fitted line is genuinely wider than the
+    panel and only the CSS decides what happens to it. Without the rule the
+    ``Static`` reflows: the badge row renders ``08-07 06:27  POST`` and
+    nothing else, the message lands on the row beneath at column zero, and
+    every nested row's indent goes with it.
+
+    Measured as the *spacing between two posts* on the composited rows,
+    because that is what a reader sees: one content row and one blank
+    between posts, never two content rows. A width check cannot see this --
+    each reflowed fragment is narrower than the panel, which is the whole
+    problem.
+    """
+    items = [
+        {**_ITEM_POST_ALONE, "ts": 1786076831, "tx_hash": "0xfirst",
+         "text": "the first message is long enough to need cutting"},
+        {**_ITEM_POST_ALONE, "ts": 1786076731, "tx_hash": "0xsecond",
+         "text": "the second message is also long enough"},
+    ]
+    for width in (24, 28):
+        widget = SurfFeed()
+        app = _Harness(widget)
+        async with app.run_test(size=(width, 24)) as pilot:
+            widget.update_data(feed_nonce=14, feed_items=items)
+            await pilot.pause()
+            lines = _screen_lines(app)
+            starts = [
+                i for i, line in enumerate(lines)
+                if re.match(r"\s*\d\d-\d\d \d\d:\d\d\s", line)
+            ]
+            assert len(starts) == 2, (width, starts, lines[:8])
+            assert starts[1] - starts[0] == 2, (
+                f"width {width}: the first post occupies "
+                f"{starts[1] - starts[0] - 1} rows, not one -- it reflowed"
+            )
+            # ...and the message is beside its badge, not under it.
+            assert lines[starts[0]].split("POST")[-1].strip(), (
+                f"width {width}: the badge row carries no message"
+            )
+
+
+async def test_feed_an_undated_row_renders_instead_of_disappearing():
+    """``ts`` that will not parse is a row we could not date, not a row.
+
+    ``build_threads`` drops it, and ``SurfManager._feed_items`` fills ``ts``
+    from ``_opt_float``, which returns ``None`` for a missing or unparseable
+    Blockscout timestamp -- so a dropped row is a real message vanishing off
+    a permissionless channel with no trace at all.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 24)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=[
+            {**_ITEM_POST_ALONE, "ts": None, "text": "the timestamp did not parse"},
+        ])
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "the timestamp did not parse" in screen
+        assert "??-?? ??:??" in screen     # dated as unknown, not invented
+        assert "POST" in screen
+
+
+async def test_feed_all_rows_undated_is_not_reported_as_an_empty_window():
+    """``no posts in window`` is a claim about the chain, not about us.
+
+    When every row's timestamp fails to parse, the old partition left the
+    thread list empty and the panel said the window was empty -- which is
+    the unavailable-versus-empty distinction this panel exists to keep,
+    collapsed in the one direction that reads confident and green.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 24)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=[
+            {**_ITEM_POST_ALONE, "ts": None, "text": "first", "tx_hash": "0xa"},
+            {**_ITEM_POST_ALONE, "ts": "not-a-number", "text": "second",
+             "tx_hash": "0xb"},
+        ])
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "no posts in window" not in screen
+        assert "first" in screen and "second" in screen
+
+
+def test_the_feed_partitions_exactly_what_build_threads_drops():
+    """Two copies of one rule; this is what keeps them one rule.
+
+    ``_has_readable_ts`` mirrors ``analytics/surf_feed._coerce_ts`` rather
+    than importing it (that function is private to a pure module with its
+    own tests). Drift in either direction is a defect: a row the widget
+    thinks is datable but ``build_threads`` drops disappears again, and one
+    the widget claims is undated while ``build_threads`` keeps it renders
+    twice.
+    """
+    from maxpane_dashboard.analytics.surf_feed import build_threads
+    from maxpane_dashboard.widgets.surf.feed import _has_readable_ts
+
+    for value in (None, "", "abc", True, False, 0, 1, -1, 1.5, "1.5", "1e3",
+                  [], {}, object(), "  ", "0x10"):
+        item = {**_ITEM_POST_ALONE, "ts": value}
+        kept = bool(build_threads([item]))
+        assert _has_readable_ts(item) == kept, (
+            f"ts={value!r}: the widget says readable={_has_readable_ts(item)} "
+            f"and build_threads {'kept' if kept else 'dropped'} it"
+        )
+
+
+def test_an_absurd_or_non_finite_eth_amount_is_never_printed_as_a_number():
+    """A wei value is attacker-influenced, and ``float()`` accepts too much.
+
+    ``float("nan")`` and ``float("inf")`` both succeed, and the panel would
+    print ``sent nan ETH`` in complete sincerity. A 1e30 value comma-groups
+    into a 40-column cell inside a panel whose whole text budget is 71.
+    Neither is reachable until ``value_eth`` is wired through the manager --
+    which is exactly when an unhardened helper ships.
+    """
+    from maxpane_dashboard.widgets.surf.feed import _eth_amount
+
+    for bad in (float("nan"), float("inf"), float("-inf"), "nan", "inf"):
+        assert _eth_amount(bad) is None, bad
+
+    huge = _eth_amount(1e30)
+    assert huge is not None and "," not in huge and len(huge) <= 12, huge
+
+    # ...and the ordinary amounts still read as amounts.
+    assert _eth_amount(0.05) == "0.05"
+    assert _eth_amount(0.054) == "0.054"
+    assert _eth_amount(33.25) == "33.25"
+    assert _eth_amount(1e-9) == "1e-09"      # 1 gwei: never a false zero
+    assert _eth_amount(0.0) == "0"
+    assert _eth_amount(None) is None
+
+
+async def test_feed_a_repaint_keeps_the_reader_on_the_toggle_they_focused():
+    """The 30-second refresh must not cost a keyboard reader their place.
+
+    The repaint rebuilds every row, so without this the focused toggle is
+    destroyed and Textual hands focus to the scroll container -- twice a
+    minute, in the middle of reading. Asserted by *using* the keyboard after
+    the repaint, not by inspecting ``app.focused``: a focus that is restored
+    but not usable is not restored.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+        _toggle_for(widget, "0xpost1").focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert _NESTED_QUESTION in _screen_text(app)
+
+        widget.update_data(feed_nonce=15, feed_items=[_NEWER_POST, *_THREADED])
+        await pilot.pause()
+        assert isinstance(app.focused, SurfFeedToggle)
+        assert app.focused.tx_hash == "0xpost1"
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert _NESTED_QUESTION not in _screen_text(app)
 
 
 # ---------------------------------------------------------------------

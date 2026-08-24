@@ -552,8 +552,23 @@ SURF_KEYS: tuple[str, ...] = (
 #: Row shapes for the list-of-dict payloads.  Widgets index these keys
 #: directly, so adding one is a contract change, not an implementation detail.
 SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
+    # ``label`` is what an outbound call *did* -- the decoded method name, or
+    # the 4-byte selector when Blockscout has no ABI for it. It has been
+    # emitted since Task WP4.11 and went four releases *undeclared*, which is
+    # the reason ``value_eth`` could be specified by a brief and simply not
+    # exist in the payload: nothing compared the two lists until
+    # ``test_every_feed_row_key_is_declared_in_the_contract``.
+    #
+    # ``value_eth`` is whole ETH (``value_wei / 1e18``), ``None`` when the
+    # value could not be read -- never ``0``, which is a real amount on a
+    # channel where almost every tx is a zero-value calldata post. It is the
+    # last thing a row has to say when it has no ``text`` and no decoded
+    # ``label``: the channel's own funding tx (0.054 ETH, ``input: 0x``) is
+    # exactly that shape on chain and rendered its badge followed by a blank
+    # line until the feed had this field to fall back on.
     "feed_items": (
         "ts", "kind", "from_addr", "to_addr", "from_label", "text", "tx_hash",
+        "label", "value_eth",
     ),
     "nft_last_sales": ("ts", "token_id", "eth"),
     "dev_activity": (

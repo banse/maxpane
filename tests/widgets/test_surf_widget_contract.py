@@ -106,19 +106,36 @@ def test_every_widget_accepts_the_whole_flat_dict(cls):
 #:
 #: The name check alone would be a weaker guard than the blanket ban it
 #: replaces, so ``test_the_allowed_analytics_modules_are_themselves_pure``
-#: re-proves the property the ban was really about -- transitively, on the
-#: allowed module's own source.
+#: re-proves the property the ban was really about, transitively: it follows
+#: every ``maxpane_dashboard.analytics.*`` import out of an allowed module and
+#: scans that one too, to a fixed point. A depth-1 version of this test was
+#: green while ``analytics/surf_feed`` imported ``analytics/surf_signals``,
+#: which reaches ``data`` in one further hop -- so the allowance really did
+#: open a path to the data layer, and the recursion is what closes it.
 _PURE_ANALYTICS_ALLOWED = frozenset({"maxpane_dashboard.analytics.surf_feed"})
 
 
 def _imported_names(module) -> list[str]:
+    """Every dotted name a module's own source imports.
+
+    ``from X import Y`` yields **both** ``X`` and ``X.Y``. Yielding only ``X``
+    is what made the recursion below blind: ``from maxpane_dashboard.analytics
+    import surf_signals`` reads as an import of the *package*, and walking the
+    package's ``__init__`` finds nothing, so a widget could reach
+    ``analytics.surf_signals`` -- which imports ``data.surf_addresses`` and
+    ``data.surf_models`` -- through an allowed module with the suite green.
+    ``X.Y`` is not always a module (it is often a function); the caller tries
+    to import it and ignores the ones that are not.
+    """
     tree = ast.parse(inspect.getsource(module))
     imported: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imported += [a.name for a in node.names]
         elif isinstance(node, ast.ImportFrom):
-            imported.append(node.module or "")
+            base = node.module or ""
+            imported.append(base)
+            imported += [f"{base}.{a.name}" if base else a.name for a in node.names]
     return imported
 
 
@@ -128,14 +145,34 @@ def test_the_allowed_analytics_modules_are_themselves_pure():
     A widget importing ``analytics.surf_feed`` is only harmless for as long
     as ``analytics.surf_feed`` is: the moment it grows an ``httpx`` import or
     reaches into ``data``, the surf widgets have a transitive path to the
-    network and the guard above would still be green. This closes that by
-    scanning the allowed module's own source for the same forbidden names.
+    network and the guard above would still be green.
+
+    **Transitively**, and that word is load-bearing. Scanning only the named
+    modules leaves the path open one hop further out: adding ``from
+    maxpane_dashboard.analytics import surf_signals`` to
+    ``analytics/surf_feed`` -- a module that itself imports
+    ``data.surf_addresses`` and ``data.surf_models`` -- left a depth-1
+    version of this test green. The walk below follows every
+    ``maxpane_dashboard.analytics.*`` name it finds, to a fixed point.
     """
     import importlib
 
     assert _PURE_ANALYTICS_ALLOWED, "an empty allowance would make this vacuous"
-    for name in sorted(_PURE_ANALYTICS_ALLOWED):
-        module = importlib.import_module(name)
+    seen: set[str] = set()
+    queue = sorted(_PURE_ANALYTICS_ALLOWED)
+    scanned = 0
+    while queue:
+        name = queue.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        try:
+            module = importlib.import_module(name)
+        except ImportError:
+            # ``X.Y`` where Y is a function, not a module. Its module ``X``
+            # was queued alongside it, so nothing goes unscanned.
+            continue
+        scanned += 1
         for imported in _imported_names(module):
             assert "maxpane_dashboard.data" not in imported, (name, imported)
             assert "textual" not in imported, (name, imported)
@@ -143,6 +180,12 @@ def test_the_allowed_analytics_modules_are_themselves_pure():
                 name,
                 imported,
             )
+            if imported.startswith("maxpane_dashboard.analytics"):
+                queue.append(imported)
+    assert scanned >= len(_PURE_ANALYTICS_ALLOWED), (
+        "fewer modules were actually scanned than are allowed -- the walk "
+        "imported nothing and proved nothing"
+    )
 
 
 def test_widget_modules_import_no_data_layer_and_no_analytics():
@@ -170,7 +213,12 @@ def test_widget_modules_import_no_data_layer_and_no_analytics():
         for name in _imported_names(module):
             assert "maxpane_dashboard.data" not in name, (module.__name__, name)
             if "analytics" in name:
-                assert name in _PURE_ANALYTICS_ALLOWED, (module.__name__, name)
+                # Prefix match: ``_imported_names`` yields ``X`` and ``X.Y``
+                # for a ``from X import Y``, and the allowlist names modules.
+                assert any(
+                    name == allowed or name.startswith(f"{allowed}.")
+                    for allowed in _PURE_ANALYTICS_ALLOWED
+                ), (module.__name__, name)
             assert "surf_addresses" not in name, (module.__name__, name)
             assert "surf_client" not in name, (module.__name__, name)
             assert "httpx" not in name and "aiohttp" not in name, (module.__name__, name)

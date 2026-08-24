@@ -95,9 +95,11 @@ the import list here.
 
 from __future__ import annotations
 
+import math
 import re
 import textwrap
 
+from rich.cells import cell_len, set_cell_size
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -161,9 +163,18 @@ ANSWER_BADGE = "ANSWER"
 TOGGLE_COLLAPSED = "▸"
 TOGGLE_EXPANDED = "▾"
 
-#: Max feed items rendered per refresh.  Applied to the *items*, before
-#: threading, so a capped feed still shows whole conversations rather than a
-#: root whose replies were sliced off by the cap.
+#: Max feed items rendered per refresh.  Applied to the *items*, newest
+#: first, **before** threading -- which is what slices a conversation, not
+#: what keeps one whole: 25 replies newer than the post they answer push
+#: that post out of the window, and each of them then renders as its own
+#: top-level ``REPLY`` root with no post above it and no toggle (the
+#: "a reply that predates the first self-post" fallback in
+#: ``analytics/surf_feed``). That is the honest outcome of a cap measured in
+#: rows -- nothing is silently dropped and the replies stay readable -- but
+#: it is a cap on *rows*, not on threads, and this comment used to claim the
+#: opposite. A thread-aware cap would have to walk the threads first and
+#: count roots, which is a different budget than the one the panel's height
+#: is sized against.
 _MAX_ROWS = 25
 
 #: ``MM-DD HH:MM`` (11) + 2 spaces + badge column (6) + 1 space.
@@ -204,8 +215,15 @@ _KIND_STYLES = {
 _ID_SAFE = re.compile(r"[^A-Za-z0-9_-]")
 
 
+#: Above this the amount is printed in exponent form rather than grouped.
+#: More ETH than exists (supply is ~120 M), so anything past it is a decode
+#: artefact or a hostile value, and ``sent 1,000,000,000,000,000,019,884,624,838,656 ETH``
+#: is a 40-column cell in a panel whose whole budget is 71.
+_ABSURD_ETH = 1e9
+
+
 def _eth_amount(value) -> str | None:
-    """``0.05`` -> ``"0.05"``; junk and ``None`` -> ``None``.
+    """``0.05`` -> ``"0.05"``; junk, ``None`` and non-finite -> ``None``.
 
     Trailing zeros are trimmed because this string is a *fallback* for a row
     that has nothing else to say, and ``0.050000 ETH`` reads like a precision
@@ -213,17 +231,64 @@ def _eth_amount(value) -> str | None:
     that would round to a bare ``0`` -- a 1-gwei dust transfer is a real row
     on this channel and ``sent 0 ETH`` would be a false zero, which is the
     one thing this repo never renders.
+
+    The input is a wei value divided by 1e18 and wei is attacker-influenced,
+    so the two shapes a naive ``float()`` lets through are closed here:
+    ``nan``/``inf`` (``float("nan")`` succeeds, and ``sent nan ETH`` is a
+    string this panel would print in full sincerity) and magnitudes past
+    :data:`_ABSURD_ETH`, whose comma-grouped form is wider than the panel.
+    Both fall back to a form the reader can see is not a normal amount --
+    ``None`` for the non-finite ones, which drops the row to
+    :data:`NO_MESSAGE` rather than inventing a number.
     """
     if isinstance(value, bool) or value is None:
         return None
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
+    if not math.isfinite(number):
+        return None
+    if abs(number) >= _ABSURD_ETH:
+        return f"{number:.6g}"
     trimmed = f"{number:,.6f}".rstrip("0").rstrip(".")
     if trimmed in ("", "0", "-0") and number != 0:
         return f"{number:g}"
     return trimmed or "0"
+
+
+def _has_readable_ts(item) -> bool:
+    """Would :func:`build_threads` keep this row, or silently drop it?
+
+    It drops anything whose ``ts`` will not coerce -- and ``ts`` comes from
+    ``SurfManager._feed_items``' ``_opt_float``, which returns ``None`` for a
+    missing or unparseable Blockscout timestamp, so this is reachable rather
+    than theoretical.  A dropped row is worse than an undated one: at best a
+    real message disappears, and when *every* row is undated the panel falls
+    through to ``no posts in window`` -- claiming the window was empty when
+    the truth is that we could not read it.  That is the one distinction
+    this panel exists to keep, so the widget partitions the rows itself and
+    renders the undated ones as their own top-level entries, stamped
+    ``??-?? ??:??`` by ``mmdd``/``hhmm``.
+
+    The rule is a deliberate mirror of ``analytics/surf_feed._coerce_ts``
+    rather than an import of it -- that function is private to a pure module
+    with its own tests -- and
+    ``test_the_feed_partitions_exactly_what_build_threads_drops`` is the
+    agreement test that fails if the two ever disagree.
+    """
+    value = item.get("ts") if isinstance(item, dict) else None
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return True
+    if isinstance(value, str):
+        try:
+            float(value)
+        except ValueError:
+            return False
+        return True
+    return False
 
 
 def _message_of(item) -> str:
@@ -247,6 +312,48 @@ def _message_of(item) -> str:
     if amount is not None:
         return f"sent {amount} ETH"
     return NO_MESSAGE
+
+
+def _char_budget(raw: str, budget: int) -> int:
+    """``budget`` columns expressed as the character count that fills them.
+
+    ``textwrap`` has no notion of cell width, so the only lever it offers is
+    the number it counts.  Dividing the column budget by the text's own mean
+    cell width lands each wrapped chunk near the right *width* instead of
+    the right *length* -- exact for a uniform script, and for mixed text the
+    residue is trimmed by :func:`_cell_fit`.
+    """
+    chars = len(raw)
+    if not chars:
+        return budget
+    mean_cells = cell_len(raw) / chars
+    if mean_cells <= 1.0:
+        return budget
+    return max(int(budget / mean_cells), _MIN_TEXT_BUDGET)
+
+
+def _cell_fit(value: str, budget: int) -> tuple[str, bool]:
+    """Cut *value* to at most ``budget`` **terminal cells**, ``…``-marked.
+
+    ``len()`` is the wrong ruler here and the difference is visible, not
+    academic: one CJK ideograph or one emoji is one ``str`` element and two
+    columns, so a 71-character budget measured with ``len`` admits a
+    142-column line.  Nothing downstream catches that -- see
+    :class:`SurfFeedRow`'s CSS note -- so this panel measures the way the
+    terminal paints.
+
+    Returns ``(fitted, was_cut)`` so the caller can light ``‹ widen``:
+    a cut this module makes is always announced, a cut the compositor makes
+    is not, which is the whole reason the fitting happens here.
+    """
+    if budget <= 0:
+        return "", bool(value)
+    if cell_len(value) <= budget:
+        return value, False
+    # `set_cell_size` cuts on cell boundaries and pads a half-taken wide
+    # character back out with a space; the strip drops that filler so the
+    # ellipsis lands flush against the last whole glyph.
+    return set_cell_size(value, max(budget - 1, 0)).rstrip() + "…", True
 
 
 def _wrap_no_widow(raw: str, budget: int) -> list[str]:
@@ -315,7 +422,14 @@ def _item_lines(item, width: int, depth: int = 0) -> tuple[list[str], bool] | No
         budget = max(width - _PREFIX_WIDTH - depth, _MIN_TEXT_BUDGET)
 
         if width >= FULL_TEXT_WIDTH:
-            wrapped = _wrap_no_widow(raw, budget)
+            # `textwrap` counts characters and the budget is columns, so the
+            # target width is scaled by the text's own average cell width
+            # before wrapping: pure ASCII scales by 1.0 and wraps exactly as
+            # it always has, a wall of CJK scales by 2.0 and wraps at half
+            # the character count, which is the same number of columns.
+            # Approximate on mixed text by construction -- `_cell_fit` below
+            # is the exact backstop, and it announces whatever it takes.
+            wrapped = _wrap_no_widow(raw, _char_budget(raw, budget))
             # An unbreakable token -- a base64 blob, a long URL, a hash --
             # is exactly what ``textwrap.wrap(..., break_long_words=False)``
             # will not split: it lands on its own line wider than ``budget``
@@ -328,17 +442,15 @@ def _item_lines(item, width: int, depth: int = 0) -> tuple[list[str], bool] | No
             clipped = False
             fitted = []
             for chunk in wrapped:
-                if len(chunk) > budget:
-                    chunk = chunk[: max(budget - 1, 0)] + "…"
-                    clipped = True
+                chunk, was_cut = _cell_fit(chunk, budget)
+                clipped = clipped or was_cut
                 fitted.append(chunk)
             lines = [prefix + safe_markup(fitted[0])]
             lines += [indent + safe_markup(chunk) for chunk in fitted[1:]]
             return lines, clipped
 
-        if len(raw) > budget:
-            return [prefix + safe_markup(raw[: budget - 1] + "…")], True
-        return [prefix + safe_markup(raw)], False
+        fitted, clipped = _cell_fit(raw, budget)
+        return [prefix + safe_markup(fitted)], clipped
     except Exception:
         # A single malformed item must never take down the panel.
         return None
@@ -354,20 +466,20 @@ def _row_text(item, width: int, depth: int = 0) -> tuple[Text, bool] | None:
     parsed here, the identical failure degrades to a skipped row, which is
     the contract ``_item_lines`` has always had for a malformed ``ts``.
 
-    ``no_wrap``/``overflow`` are set because every line has already been
-    fitted to the column budget above: a second, silent wrap by the
-    compositor would put text on a line this widget never counted, and a
-    crop is the failure mode the ``…`` marker is there to announce.
+    Nothing here asks the ``Text`` not to wrap, and that is deliberate
+    rather than an omission: Textual 8's ``visualize()`` funnels a Rich
+    ``Text`` through ``Content.from_rich_text``, which carries the *spans*
+    and drops ``no_wrap``/``overflow`` entirely -- setting them reads as a
+    guarantee and is a no-op.  The real guarantee is ``text-wrap: nowrap``
+    on :class:`SurfFeedRow`, plus ``_cell_fit`` having already measured
+    every line in terminal cells so there is nothing left to wrap.
     """
     try:
         rendered = _item_lines(item, width, depth)
         if rendered is None:
             return None
         lines, clipped = rendered
-        text = Text.from_markup("\n".join(lines))
-        text.no_wrap = True
-        text.overflow = "crop"
-        return text, clipped
+        return Text.from_markup("\n".join(lines)), clipped
     except Exception:
         return None
 
@@ -379,12 +491,28 @@ class SurfFeedRow(Static):
     threaded feed needs per-row widgets to hang click targets off; this class
     carries no behaviour of its own and exists so the CSS (and the tests) can
     name a feed row without matching every ``Static`` on the screen.
+
+    ``text-wrap: nowrap`` is load-bearing and is the *only* thing that
+    enforces it.  ``RichLog(wrap=False)`` used to do this job; a ``Static``
+    wraps by default, and the Rich ``Text`` handed to it cannot say
+    otherwise -- Textual 8's ``visualize()`` rebuilds it through
+    ``Content.from_rich_text``, which does not carry ``no_wrap`` or
+    ``overflow``.  Without this rule a message of double-width glyphs
+    reflowed onto continuation rows: the badge line rendered
+    ``08-07 06:27  POST`` and then *nothing*, the text landed on the rows
+    below at column zero, and every nested row lost its indent -- a
+    regression the ``RichLog`` never had.  ``text-overflow: clip`` matches:
+    the ``…`` this panel prints is put there by ``_cell_fit``, which also
+    lights ``‹ widen``; an ellipsis the compositor adds silently would be a
+    cut with no announcement.
     """
 
     DEFAULT_CSS = """
     SurfFeedRow {
         width: 100%;
         height: auto;
+        text-wrap: nowrap;
+        text-overflow: clip;
     }
     SurfFeedRow.surf-feed-gap {
         height: 1;
@@ -413,6 +541,8 @@ class SurfFeedToggle(Static):
     SurfFeedToggle {
         width: 100%;
         height: 1;
+        text-wrap: nowrap;
+        text-overflow: clip;
     }
     SurfFeedToggle:focus {
         text-style: reverse;
@@ -489,7 +619,26 @@ class SurfFeed(Vertical):
             "age_s": feed_last_post_age_s,
             "items": feed_items,
         }
-        self._render_view()
+        # A repaint rebuilds every row, so a reader who has a thread open and
+        # focused loses both their focus and their scroll position -- twice a
+        # minute, on a panel they were in the middle of reading. Restoring
+        # them is only correct while the panel *is* being read, which is what
+        # a focused toggle means; with nothing focused the feed still scrolls
+        # home, because the newest post is the point of a refresh.
+        focus_tx = self._focused_toggle_tx()
+        self._render_view(keep_position=focus_tx is not None, focus_tx=focus_tx)
+
+    def _focused_toggle_tx(self) -> str | None:
+        """The hash of the toggle this feed currently has focus on, if any."""
+        try:
+            focused = self.screen.focused
+        except Exception:  # no screen yet
+            return None
+        if not isinstance(focused, SurfFeedToggle):
+            return None
+        # Two feeds could be mounted at once (a test harness, a future
+        # split view); only this one's toggle is ours to restore.
+        return focused.tx_hash if self in focused.ancestors else None
 
     def on_resize(self, _event=None) -> None:
         """Re-lay out: the tier and every wrap depend on the width.
@@ -564,10 +713,7 @@ class SurfFeed(Vertical):
     def _toggle_line(self, count: int, expanded: bool) -> Text:
         glyph = TOGGLE_EXPANDED if expanded else TOGGLE_COLLAPSED
         word = "reply" if count == 1 else "replies"
-        text = Text(f" {glyph} {count} {word}", style="dim")
-        text.no_wrap = True
-        text.overflow = "crop"
-        return text
+        return Text(f" {glyph} {count} {word}", style="dim")
 
     def _build_rows(self, items, width: int) -> tuple[list, bool]:
         """Widgets for every visible row, plus whether any of them clipped.
@@ -580,7 +726,10 @@ class SurfFeed(Vertical):
         clipped_any = False
         used_ids: set[str] = set()
 
-        for root in build_threads(items):
+        datable = [item for item in items if _has_readable_ts(item)]
+        undated = [item for item in items if not _has_readable_ts(item)]
+
+        for root in build_threads(datable):
             rendered = _row_text(root["item"], width, 0)
             if rendered is not None:
                 text, clipped = rendered
@@ -627,6 +776,20 @@ class SurfFeed(Vertical):
             # single message. After the last one too: the panel scrolls, so a
             # trailing blank costs nothing, and omitting it would drop the
             # separator exactly when the final post is what got scrolled to.
+            rows.append(SurfFeedRow(Text(" "), classes="surf-feed-gap"))
+
+        # Undated rows last, which is where the producer already puts them:
+        # ``_feed_items`` sorts on ``(ts is not None, ts)`` descending, so a
+        # row it could not date sits at the end of the list it hands over.
+        # They are never threaded -- an undated row has no position in a
+        # conversation, and guessing one would be worse than showing it flat.
+        for item in undated:
+            rendered = _row_text(item, width, 0)
+            if rendered is None:
+                continue
+            text, clipped = rendered
+            clipped_any = clipped_any or clipped
+            rows.append(SurfFeedRow(text))
             rows.append(SurfFeedRow(Text(" "), classes="surf-feed-gap"))
 
         return rows, clipped_any
@@ -698,12 +861,31 @@ class SurfFeed(Vertical):
             # thread once and did nothing on the second press.
             for row in rows:
                 if isinstance(row, SurfFeedToggle) and row.tx_hash == focus_tx:
-                    row.focus()
+                    self._take_focus(row)
                     break
         if keep_position:
             body.scroll_to(y=offset.y, animate=False)
         else:
             self.call_after_refresh(body.scroll_home, animate=False)
+
+    def _take_focus(self, row: "SurfFeedToggle") -> None:
+        """Focus *row* now, not on a later tick.
+
+        ``Widget.focus()`` defers through ``App.call_later``, and the deferred
+        callback silently does nothing when the repaint was driven from
+        outside the message pump -- which is exactly how a refresh arrives:
+        the screen calls ``update_data`` from its worker, not from a key
+        handler. The keyboard route (inside the pump) worked and the
+        30-second repaint did not, which is the harder half to notice.
+        ``Screen.set_focus`` is the synchronous form and behaves the same in
+        both. ``scroll_visible=False`` because the caller restores the exact
+        offset the reader was at a few lines below; letting focus scroll
+        first would fight it.
+        """
+        try:
+            self.screen.set_focus(row, scroll_visible=False)
+        except Exception:  # no screen, or the row is not focusable yet
+            row.focus()
 
     @staticmethod
     def _mount_rows(body: VerticalScroll, rows: list) -> None:

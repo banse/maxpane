@@ -393,6 +393,8 @@ def test_row_key_sets_match_the_prd() -> None:
         "from_label",
         "text",
         "tx_hash",
+        "label",
+        "value_eth",
     )
     assert SURF_ROW_KEYS["nft_last_sales"] == ("ts", "token_id", "eth")
     assert SURF_ROW_KEYS["dev_activity"] == (

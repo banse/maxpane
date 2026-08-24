@@ -2247,6 +2247,55 @@ def test_feed_rows_carry_the_recipient():
     assert items[0]["kind"] == "answer"
 
 
+def test_feed_rows_carry_the_value_so_an_empty_row_still_says_something():
+    """The channel's own funding tx has no text and no decoded method.
+
+    Nonce 2266 in ``tests/fixtures/surf/captures/announce_eth_txs.json``:
+    0.054 ETH, ``input: 0x``. ``decode_utf8_calldata`` returns ``None`` and
+    ``label`` is ``""`` for a sub-10-character input, so the feed rendered
+    that row's badge beside a blank line until it had the amount to fall
+    back on. Whole ETH, not wei, matching ``dev_activity``'s own field.
+
+    And ``None`` rather than ``0.0`` when the value will not read: a
+    zero-value tx is the *ordinary* shape on this channel -- every text post
+    is one -- so a sentinel zero here is indistinguishable from the truth,
+    which is the failure mode ``_tokens``/``_opt_int`` exist to avoid.
+    """
+    bare = SurfManager.__new__(SurfManager)
+    rows = [
+        ChannelTx(tx_hash="0xfund", ts=1.0, nonce=2266, from_addr=DEV_WALLET,
+                  to_addr=ANNOUNCE, value_wei=54_000_000_000_000_000,
+                  input_hex="0x"),
+        ChannelTx(tx_hash="0xunread", ts=2.0, nonce=1, from_addr=DEV_WALLET,
+                  to_addr=ANNOUNCE, value_wei="not-a-number", input_hex="0x"),
+    ]
+    items = {item["tx_hash"]: item for item in bare._feed_items(rows)}
+    assert items["0xfund"]["value_eth"] == 0.054
+    assert items["0xfund"]["text"] is None and items["0xfund"]["label"] == ""
+    assert items["0xunread"]["value_eth"] is None
+
+
+def test_every_feed_row_key_is_declared_in_the_contract():
+    """The producer and ``SURF_ROW_KEYS["feed_items"]`` name the same fields.
+
+    ``label`` was emitted for four releases without being declared, which is
+    how ``value_eth`` came to be *specified* by a brief and absent from the
+    payload: nothing compared the two lists. Asserted in one direction only
+    -- the contract may declare a key a particular row happens not to carry
+    -- but every key the manager emits has to be in it.
+    """
+    bare = SurfManager.__new__(SurfManager)
+    rows = [
+        ChannelTx(tx_hash="0xaa", ts=1.0, nonce=1, from_addr=ANNOUNCE,
+                  to_addr=ANNOUNCE, value_wei=0,
+                  input_hex="0x" + b"hello".hex()),
+    ]
+    declared = set(SURF_ROW_KEYS["feed_items"])
+    for item in bare._feed_items(rows):
+        undeclared = set(item) - declared
+        assert not undeclared, f"emitted but undeclared: {sorted(undeclared)}"
+
+
 def test_an_answer_never_reaches_the_deploy_detector():
     """NEW DEPLOY reads channel items with kind == "action" and labels them
     with the decoded method, falling back to the first four calldata bytes.
