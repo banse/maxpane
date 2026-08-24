@@ -59,10 +59,11 @@ through :func:`_creator_cell`, the same treatment ``activity.py`` gives
 Three-state rendering rules this module holds itself to (CLAUDE.md, "a
 failed read is None, never 0"):
 
-* ``change_1h_pct is None`` means no swap happened in the coin's window --
-  rendered as a dash, never ``0%``, which would assert a measured flat hour
-  that never occurred.  A genuine ``0.0`` (traded, ended flat) still renders
-  ``+0.0%``, honestly distinct from the dash.
+* ``change_24h_pct is None`` means fewer than two priced swaps landed in the
+  coin's day-long ranking window (Task 7's widened window, Task 1's renamed
+  row shape) -- rendered as a dash, never ``0%``, which would assert a
+  measured flat day that never occurred.  A genuine ``0.0`` (traded, ended
+  flat) still renders ``+0.0%``, honestly distinct from the dash.
 * ``burn_ready`` is tri-state.  ``hero.py``'s BURN box already renders this
   exact field as ``READY``/``NOT READY``/an em-dash; this panel says the
   same three facts in different words (``ready``/``not yet``/``unknown``,
@@ -96,7 +97,6 @@ from maxpane_dashboard.widgets.surf._fmt import (
     as_float,
     fmt_age,
     fmt_compact,
-    long_addr,
 )
 
 __all__ = ["SurfBurnPipeline", "SurfCurveFlow", "SurfLaunchpadCoins"]
@@ -191,9 +191,19 @@ COINS_WIDEN_HINT = "‹ widen"
 #: still reaches the compositor, ``BURNED`` and all, yet the scrollbar flag
 #: is already lit. A marker keyed off it would fire early and disagree with
 #: what the screen actually shows, so this is a literal measured threshold
-#: instead: the eight fixed columns (``_TICKER_COLS`` .. ``_BURNED_COLS`` --
-#: 79) plus the DataTable's own internal cell gutter, swept column by column
-#: until the compositor stopped truncating ``BURNED``'s last character.
+#: instead: the nine fixed columns (``_TICKER_COLS`` .. ``_BURNED_COLS``, now
+#: including ``_SWAPS_ALL_COLS`` -- still 79) plus the DataTable's own
+#: internal cell gutter, swept column by column until the compositor
+#: stopped truncating ``BURNED``'s last character.
+#:
+#: **Not re-measured by Task 11.** The column *count* went 8 -> 9 (SWAPS
+#: ALL), which costs one more column's worth of ``DataTable`` cell padding
+#: even though the width-constant sum held at 79 -- this threshold was swept
+#: for eight columns and is therefore stale for nine. Left at its pre-Task-11
+#: value rather than guessed at: Task 11's brief scopes this constant out
+#: (only the column widths, the row builder and the note line), and Task 13
+#: owns the compositor-measured screen-width sweep this value belongs to.
+#: Re-sweep before trusting the marker at the boundary again.
 _TABLE_FULL_WIDTH = 91
 
 #: Defensive re-cap.  The manager already caps ``launchpad_coins`` at
@@ -207,17 +217,31 @@ MAX_COIN_ROWS = 20
 #: truncation ever runs), so these are sized for legibility against the real
 #: fixture's tickers (``ICE``, ``DAOs``, ``K-256``) and generous coin names,
 #: not against the length of an attack payload.
+#:
+#: Fixed total, 79, unchanged by Task 11 (``test_the_table_still_needs_
+#: exactly_seventy_nine_columns``): SWAPS ALL is a new column paid for by
+#: shrinking CREATOR, not by widening the panel -- this repo's rule ("when a
+#: new value would widen a sized cell, shorten the value") applied literally,
+#: because a truncated address is an honest short form and there was no
+#: honest way to shrink SWAPS ALL itself (it is already a bare integer).
 _TICKER_COLS = 8
 _NAME_COLS = 18
-#: The window ``activity.py`` calls ``ADDR_COLS`` -- ``0x`` + 8 hex + ``…`` +
-#: 6.  Re-used here for the same reason: a shorter window risks two
-#: different creator addresses reading identically once truncated.
-_ADDR_COLS = 17
+#: 11, was 17 (``activity.py``'s own ``ADDR_COLS`` still uses the wider
+#: form unchanged -- that panel never needed to pay for a tenth column).
+#: :func:`_short_addr`, not ``_fmt.long_addr``, renders to this width: six
+#: leading characters (``0x`` + 4 hex) + an ellipsis + four trailing, an
+#: honest short form of the same anti-poisoning idea at half the window.
+_ADDR_COLS = 11
 _AGE_COLS = 4
 _PRICE_COLS = 10
 _PCT_COLS = 7
+#: SWAPS 24H -- the day-long ranking window (Task 7).
 _SWAPS_COLS = 6
+#: SWAPS ALL -- the all-time tiebreak (Task 7), new in Task 11.  What pays
+#: for this column is CREATOR's 17 -> 11 shrink above, not a widened total.
+_SWAPS_ALL_COLS = 6
 _BURNED_COLS = 9
+# 8+18+11+4+10+7+6+6+9 = 79
 
 
 def _ticker_cell(ticker: object) -> str:
@@ -230,15 +254,41 @@ def _name_cell(name: object) -> str:
     return f"[dim]{cleaned}[/]" if cleaned else f"[dim]{DASH}[/]"
 
 
-def _creator_cell(creator: object, known: bool) -> str:
-    """The anti-poisoning window (:data:`_ADDR_COLS`), never a friendly
-    label: ``creator_known`` is a bool the manager derives against its own
-    allowlist, not a label string, so this widget has nothing to substitute
-    even when it is ``True`` -- it can only style the raw address, cyan when
-    known, dim otherwise (``activity.py``'s exact convention for
-    ``counterparty``).
+def _short_addr(value: object) -> str:
+    """``0x`` + first 4 hex + ``…`` + last 4 -- this table's own 11-column
+    anti-poisoning window (:data:`_ADDR_COLS`), narrower than
+    ``_fmt.long_addr``'s shared 17-column form.  Kept as a local helper
+    rather than widening ``long_addr``'s own contract with a width
+    parameter: ``activity.py``'s ``ADDR_COLS`` still needs the wider
+    8-hex/6-hex split unchanged, and that call site has no reason to grow a
+    parameter it would never vary.
+
+    Six leading characters (``0x`` + 4 hex), an ellipsis, four trailing --
+    half of ``long_addr``'s collision-resistance window, but this column
+    lost half its own width to pay for SWAPS ALL (Task 11) and a truncated
+    address is still an honest short form of the same idea, per this
+    repo's "shorten the value, not the constant" rule.
     """
-    window = long_addr(creator)
+    if not value:
+        return DASH
+    s = str(value).strip()
+    if not s:
+        return DASH
+    if len(s) <= _ADDR_COLS:
+        return s
+    return f"{s[:6]}…{s[-4:]}"
+
+
+def _creator_cell(creator: object, known: bool) -> str:
+    """The anti-poisoning window (:func:`_short_addr`, :data:`_ADDR_COLS`),
+    never a friendly label: ``creator_known`` is a bool the manager derives
+    against its own allowlist (Task 1's frozen ``SURF_ROW_KEYS
+    ["launchpad_coins"]`` carries no label field alongside it), so this
+    widget has nothing to substitute even when it is ``True`` -- it can only
+    style the raw address, cyan when known, dim otherwise (``activity.py``'s
+    exact convention for ``counterparty``).
+    """
+    window = _short_addr(creator)
     escaped = safe_markup(window)
     colour = "cyan" if known else "dim"
     return f"[{colour}]{escaped}[/]"
@@ -260,9 +310,9 @@ def _price_cell(value: object) -> str:
 
 
 def _pct_cell(value: object) -> str:
-    """1h change.  ``None`` -> dash, never ``0%`` -- see the module
-    docstring.  A genuine ``0.0`` (traded, ended flat) still renders
-    ``+0.0%``, honestly distinct from the dash.
+    """24h change (Task 7's day-long ranking window).  ``None`` -> dash,
+    never ``0%`` -- see the module docstring.  A genuine ``0.0`` (traded,
+    ended flat) still renders ``+0.0%``, honestly distinct from the dash.
 
     Plain Rich colour names, never a ``$``-prefixed theme token: this cell
     is a ``DataTable`` value, and ``DataTable``'s ``default_cell_formatter``
@@ -287,6 +337,12 @@ def _pct_cell(value: object) -> str:
 
 
 def _swaps_cell(value: object) -> str:
+    """Shared by SWAPS 24H and SWAPS ALL: both are a representable ``int``
+    zero, never ``None``, per ``LaunchpadCoin``'s own docstring (a coin that
+    has never traded really has ``0`` swaps in either window -- that is a
+    fact worth ranking on, not a failed read to hide), so this one formatter
+    already renders both honestly without a second copy.
+    """
     try:
         return str(int(value))
     except (TypeError, ValueError):
@@ -308,8 +364,9 @@ def _coin_row(coin: object) -> tuple[str, ...] | None:
             _creator_cell(coin.get("creator"), bool(coin.get("creator_known"))),
             fmt_age(coin.get("age_s")),
             _price_cell(coin.get("price_eth")),
-            _pct_cell(coin.get("change_1h_pct")),
-            _swaps_cell(coin.get("swaps_1h")),
+            _pct_cell(coin.get("change_24h_pct")),
+            _swaps_cell(coin.get("swaps_24h")),
+            _swaps_cell(coin.get("swaps_all")),
             fmt_compact(coin.get("imd_burned")),
         )
     except Exception:
@@ -317,8 +374,9 @@ def _coin_row(coin: object) -> tuple[str, ...] | None:
 
 
 class SurfLaunchpadCoins(Vertical):
-    """One row per launched coin: ticker, name, creator, age, price, 1h
-    change, swaps, IMD burned -- ranked and capped upstream.
+    """One row per launched coin: ticker, name, creator, age, price, 24h
+    change, swaps in the last 24h, all-time swaps, IMD burned -- ranked on
+    the 24h window with an all-time tiebreak (Task 7) and capped upstream.
     """
 
     DEFAULT_CSS = """
@@ -360,8 +418,9 @@ class SurfLaunchpadCoins(Vertical):
         table.add_column("CREATOR", width=_ADDR_COLS)
         table.add_column("AGE", width=_AGE_COLS)
         table.add_column("PRICE", width=_PRICE_COLS)
-        table.add_column("1H%", width=_PCT_COLS)
-        table.add_column("SWAPS", width=_SWAPS_COLS)
+        table.add_column("24H%", width=_PCT_COLS)
+        table.add_column("SWAPS 24H", width=_SWAPS_COLS)
+        table.add_column("SWAPS ALL", width=_SWAPS_ALL_COLS)
         table.add_column("BURNED", width=_BURNED_COLS)
         self._set_title()
 
@@ -378,16 +437,28 @@ class SurfLaunchpadCoins(Vertical):
         """
         self._set_title()
 
-    def update_data(self, coins=None, coin_count=None, as_of_hhmm=None, **_kwargs) -> None:
+    def update_data(
+        self, coins=None, coin_count=None, launch_count=None, as_of_hhmm=None,
+        **_kwargs,
+    ) -> None:
         """Refresh the table.
 
         ``coins=None`` means the launchpad sweep failed outright; ``[]``
         means it ran and genuinely found nothing (the current chain state
         has 146 coins, but the contract has to say so honestly regardless).
+
+        ``launch_count`` (Task 8's ``launchpad_launch_count``, Task 6's
+        cursor-resumed full-history sweep) is the population the sweep
+        actually *read*, kept separate from ``coin_count`` (the factory's
+        own ``coinCount()`` claim) so :meth:`_set_note` can compare the two
+        rather than silently rendering whichever subset the sweep produced
+        as though it were the whole population -- see the module-level note
+        on Task 6's review finding for why that comparison exists at all.
         """
         self._payload = {
             "coins": coins,
             "coin_count": coin_count,
+            "launch_count": launch_count,
             "as_of_hhmm": as_of_hhmm,
             "seen": True,
         }
@@ -411,6 +482,17 @@ class SurfLaunchpadCoins(Vertical):
         title.update(text)
 
     def _set_note(self) -> None:
+        """``146 coins`` when the sweep read the whole population,
+        ``146 coins · 66 read`` when it did not -- the detector that would
+        have caught this branch's worst bug (Task 6's review found a
+        truncating sweep returning 2 of 146 launches as a *success*; the
+        missing comparison to the factory's own ``coinCount()`` is what let
+        it look healthy).  ``launch_count is None`` means the sweep failed
+        outright, not merely "read fewer than claimed" -- there is nothing
+        to compare against, so this stays silent about the population
+        rather than asserting either agreement or disagreement, same as
+        today's behaviour before this comparison existed.
+        """
         try:
             note = self.query_one("#surf-lpc-note", Static)
         except Exception:  # not composed yet
@@ -419,11 +501,25 @@ class SurfLaunchpadCoins(Vertical):
         if coins is None:
             note.update(f"[$warning]⚠ {COINS_UNAVAILABLE}[/]")
             return
+        coin_count = self._payload.get("coin_count")
+        launch_count = self._payload.get("launch_count")
         try:
-            count_str = str(int(self._payload.get("coin_count")))
+            count_str = str(int(coin_count))
         except (TypeError, ValueError):
             count_str = DASH
-        parts = [f"{count_str} coins"]
+        population = f"{count_str} coins"
+        if launch_count is not None and coin_count is not None:
+            try:
+                disagree = int(launch_count) != int(coin_count)
+            except (TypeError, ValueError):
+                disagree = False  # can't compare -- say nothing extra
+            if disagree:
+                try:
+                    read_str = str(int(launch_count))
+                except (TypeError, ValueError):
+                    read_str = DASH
+                population = f"{count_str} coins · {read_str} read"
+        parts = [population]
         as_of = self._payload.get("as_of_hhmm")
         if as_of:
             parts.append(f"as of {safe_markup(str(as_of))}")
@@ -447,8 +543,9 @@ class SurfLaunchpadCoins(Vertical):
         coins = self._payload.get("coins")
         if coins is None:
             # Plain "yellow", not "$warning" -- see the note on `$`-tokens
-            # in _pct_cell; this is a DataTable cell too.
-            table.add_row(f"[yellow]{COINS_UNAVAILABLE}[/]", *([DASH] * 7))
+            # in _pct_cell; this is a DataTable cell too. 8 dashes: nine
+            # columns total since Task 11 added SWAPS ALL, minus this cell.
+            table.add_row(f"[yellow]{COINS_UNAVAILABLE}[/]", *([DASH] * 8))
             return
 
         try:
@@ -457,7 +554,7 @@ class SurfLaunchpadCoins(Vertical):
             usable = []
 
         if not usable:
-            table.add_row(f"[dim]{COINS_EMPTY}[/]", *([DASH] * 7))
+            table.add_row(f"[dim]{COINS_EMPTY}[/]", *([DASH] * 8))
             return
 
         for coin in usable:
