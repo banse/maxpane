@@ -14,7 +14,9 @@ Composited-output assertions throughout; zero network.
 from __future__ import annotations
 
 import inspect
+import json
 import re
+from pathlib import Path
 
 import pytest
 from textual.app import App, ComposeResult
@@ -22,11 +24,17 @@ from textual.color import Color
 
 from maxpane_dashboard.themes import THEMES
 from maxpane_dashboard.widgets.surf.feed import (
+    ANSWER_BADGE,
     FEED_TITLE,
     FULL_TEXT_WIDTH,
+    NO_MESSAGE,
+    TOGGLE_COLLAPSED,
+    TOGGLE_EXPANDED,
     UNAVAILABLE_LINE,
     WIDEN_HINT,
     SurfFeed,
+    SurfFeedRow,
+    SurfFeedToggle,
 )
 
 
@@ -214,12 +222,19 @@ async def test_feed_title_carries_nonce_and_age():
 
 
 async def test_feed_kind_badges_render_and_replies_are_not_dev_styled():
-    """All four kinds badge in words; a reply never wears the self badge."""
+    """All four kinds badge in words; a reply never wears the self badge.
+
+    The reply in ``_FEED_ITEMS`` nests under the post above it and is
+    therefore collapsed on first paint, so this opens every thread first --
+    the badge vocabulary is what is under test here, not the collapse, which
+    has its own tests below.
+    """
     widget = SurfFeed()
     app = _Harness(widget)
     async with app.run_test(size=(120, 24)) as pilot:
         widget.update_data(feed_nonce=14, feed_items=_FEED_ITEMS)
         await pilot.pause()
+        await _expand_every_thread(widget, pilot)
         screen = _screen_text(app)
         assert "POST" in screen
         assert "REPLY" in screen
@@ -423,8 +438,8 @@ async def test_feed_unbreakable_token_past_budget_is_truncated_and_advertised():
         assert 120 - 4 >= FULL_TEXT_WIDTH  # still the wide tier
         widget.update_data(feed_nonce=14, feed_items=hostile)
         await pilot.pause()
-        log = widget.query_one("#surf-feed-log")
-        usable = log.scrollable_content_region.width
+        body = widget.query_one("#surf-feed-body")
+        usable = body.scrollable_content_region.width
         screen = _screen_text(app)
 
         # No rendered row exceeds the usable width (RichLog's own shrink
@@ -468,6 +483,404 @@ async def test_feed_no_args_and_all_none_do_not_raise():
         widget.update_data(**_none_payload(widget))
         await pilot.pause()
         assert UNAVAILABLE_LINE in _screen_text(app)
+
+
+# ---------------------------------------------------------------------
+# SurfFeed -- threading
+#
+# The fixture is the committed one WP4's threading tests already read
+# (``tests/fixtures/surf/feed/threaded_channel.json``): one dev post, two
+# strangers' questions, and the announce wallet's own answer to each. It is
+# the shape this feature exists for, and reusing it keeps the pure rule and
+# its rendering pinned to the same bytes rather than to two hand-typed
+# approximations of them.
+# ---------------------------------------------------------------------
+
+_THREADED = json.loads(
+    (Path(__file__).parent.parent / "fixtures/surf/feed/threaded_channel.json").read_text()
+)["items"]
+
+#: The one question whose answer sits at depth 2, quoted here so a test can
+#: say "this row is not on screen" about a specific string.
+_NESTED_QUESTION = "will my IMD NFT generate"
+
+#: A root with no replies at all: the toggle must not appear for it.
+_ITEM_POST_ALONE = {
+    "ts": 1786076831,
+    "kind": "self",
+    "from_addr": _CHANNEL,
+    "to_addr": _CHANNEL,
+    "from_label": "channel",
+    "text": "soon",
+    "tx_hash": "0xalone",
+}
+
+#: Newer than every row in ``_THREADED``, so a repaint puts it on top and
+#: renumbers every row below it -- which is the whole point of keying the
+#: expansion state on the hash instead.
+_NEWER_POST = {
+    "ts": 1787999999,
+    "kind": "self",
+    "from_addr": _CHANNEL,
+    "to_addr": _CHANNEL,
+    "from_label": "channel",
+    "text": "one more thing",
+    "tx_hash": "0xnewer",
+}
+
+
+def _indent_of(line: str) -> int:
+    """Leading blanks of a composited row, i.e. its nesting depth plus padding."""
+    return len(line) - len(line.lstrip(" "))
+
+
+async def _expand_every_thread(widget, pilot) -> None:
+    """Open every collapsed thread through the widget's own toggle path.
+
+    The hashes are collected first: opening one rebuilds every row, so the
+    ``SurfFeedToggle`` objects from the first query are detached by the time
+    the second would be used.
+    """
+    for tx_hash in [toggle.tx_hash for toggle in widget.query(SurfFeedToggle)]:
+        widget.toggle_thread(tx_hash)
+    await pilot.pause()
+
+
+def _toggle_for(widget, tx_hash: str) -> SurfFeedToggle:
+    return next(t for t in widget.query(SurfFeedToggle) if t.tx_hash == tx_hash)
+
+
+async def test_feed_replies_are_collapsed_behind_a_count_by_default():
+    """First paint is the roots and nothing else."""
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert f"{TOGGLE_COLLAPSED} 2 replies" in screen
+        assert _NESTED_QUESTION not in screen
+        assert "bootstrap the protocol" in screen   # the root still renders
+
+
+async def test_feed_the_toggle_counts_direct_replies_not_every_hidden_row():
+    """``2 replies``, not ``4``: the count is the conversations, not the rows.
+
+    The fixture's root carries four descendants -- two strangers' questions
+    and the announce wallet's own answer to each -- and an answer is not a
+    reply to the post, it is part of the question it answers. Pinned in both
+    directions because the two numbers are one ``len()`` apart in the source
+    and only one of them is what the reader is being offered.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "2 replies" in screen
+        assert "4 replies" not in screen
+
+
+async def test_feed_clicking_the_toggle_expands_and_clicking_again_collapses():
+    """The mouse route, both directions, against composited output."""
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+
+        await pilot.click(_toggle_for(widget, "0xpost1"))
+        await pilot.pause()
+        assert _NESTED_QUESTION in _screen_text(app)
+        assert TOGGLE_EXPANDED in _screen_text(app)
+
+        # Re-queried, not reused: the repaint replaced every row widget.
+        await pilot.click(_toggle_for(widget, "0xpost1"))
+        await pilot.pause()
+        assert _NESTED_QUESTION not in _screen_text(app)
+
+
+async def test_feed_the_toggle_answers_the_keyboard_too():
+    """``enter`` twice, so the second press proves focus survived the repaint.
+
+    One press would pass even if the rebuild left nothing focused, which is
+    what it did before ``toggle_thread`` re-focused the toggle it just
+    rebuilt -- the keyboard route would then have worked exactly once per
+    thread and looked fine in a single-press test.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+        _toggle_for(widget, "0xpost1").focus()
+        await pilot.pause()
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert _NESTED_QUESTION in _screen_text(app)
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert _NESTED_QUESTION not in _screen_text(app)
+
+
+async def test_feed_the_space_bar_toggles_as_well_as_enter():
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+        _toggle_for(widget, "0xpost1").focus()
+        await pilot.pause()
+        await pilot.press("space")
+        await pilot.pause()
+        assert _NESTED_QUESTION in _screen_text(app)
+
+
+async def test_feed_an_answer_is_indented_one_column_past_the_reply_it_answers():
+    """Each depth is exactly one column right of its parent.
+
+    Measured on the composited rows rather than on the markup: the indent is
+    spent out of the row's own text budget, so a version that indented by
+    adding columns instead of subtracting them would render identically here
+    and clip on the right at the pinned width.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+        await _expand_every_thread(widget, pilot)
+        lines = _screen_lines(app)
+
+        root = next(l for l in lines if "POST" in l)
+        reply = next(l for l in lines if "REPLY" in l)
+        answer = next(l for l in lines if ANSWER_BADGE in l)
+        assert _indent_of(reply) == _indent_of(root) + 1
+        assert _indent_of(answer) == _indent_of(reply) + 1
+
+
+async def test_feed_no_row_is_wider_than_the_column_it_goes_in_when_expanded():
+    """Indenting must cost the message, never the panel.
+
+    The nested rows are the ones that could overflow, so the check is run
+    with the thread open -- collapsed, it would pass without ever measuring
+    an indented row.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+        await _expand_every_thread(widget, pilot)
+        usable = widget.query_one("#surf-feed-body").scrollable_content_region.width
+        assert any(ANSWER_BADGE in line for line in _screen_lines(app))
+        for line in _screen_lines(app):
+            assert len(line) <= usable + 1  # +1: the panel's own left gutter
+
+
+async def test_feed_an_answer_wears_the_post_colour_not_the_contract_call_one():
+    """It is authenticated -- same author as ``POST`` -- so it must not wear
+    ``ACTION``'s colour, which is what made it read as a contract call.
+
+    Asserted as a *colour*, read back off the compositor, because the badge
+    word alone cannot see this: ``ANSWER`` is still spelled ``ANSWER`` when
+    it is painted yellow, so ``"ACTION" not in screen`` stays green through
+    exactly the regression this test is named for.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 40)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=[*_THREADED, _FEED_ITEMS[3]])
+        await pilot.pause()
+        await _expand_every_thread(widget, pilot)
+
+        post = _painted(app, "POST")
+        answer = _painted(app, ANSWER_BADGE)
+        action = _painted(app, "ACTION")
+        assert post is not None and answer is not None and action is not None
+        assert answer == post, "an answer must be painted like the post it belongs to"
+        assert answer != action
+
+
+async def test_feed_a_post_with_no_replies_shows_no_toggle():
+    """No affordance where there is nothing to open."""
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 24)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=[_ITEM_POST_ALONE])
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "soon" in screen
+        assert TOGGLE_COLLAPSED not in screen and TOGGLE_EXPANDED not in screen
+        assert not list(widget.query(SurfFeedToggle))
+
+
+async def test_feed_expansion_survives_a_repaint_with_a_new_post_on_top():
+    """Keyed by tx hash, not row index.
+
+    The panel repaints every 30 s; re-collapsing what the reader just opened
+    twice a minute makes the feature unusable. The new post is *prepended*,
+    so a row-index key would survive a plain repaint and fail only this one.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+        await pilot.click(_toggle_for(widget, "0xpost1"))
+        await pilot.pause()
+        assert _NESTED_QUESTION in _screen_text(app)
+
+        widget.update_data(feed_nonce=15, feed_items=[_NEWER_POST, *_THREADED])
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "one more thing" in screen           # the repaint landed...
+        assert _NESTED_QUESTION in screen           # ...and the thread stayed open
+
+
+async def test_feed_an_action_with_neither_text_nor_label_renders_its_value():
+    """A badge followed by nothing is indistinguishable from a rendering bug.
+
+    The announce channel's own funding tx is exactly this shape on chain --
+    empty calldata, so no text and no decoded method -- and the amount is
+    then the only fact the row has.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 24)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=[{
+            "ts": 1786076831, "kind": "action", "text": None, "label": "",
+            "value_eth": 0.05, "tx_hash": "0xpay", "from_addr": _CHANNEL,
+            "to_addr": "0x" + "ab" * 20, "from_label": "channel",
+        }])
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "ACTION" in screen
+        assert "sent 0.05 ETH" in screen
+
+
+async def test_feed_a_row_with_nothing_at_all_still_says_so():
+    """No text, no label, no value: the row names its own emptiness.
+
+    ``value_eth`` is genuinely absent for a row the manager could not read a
+    value for, and ``None`` is not ``0`` -- rendering ``sent 0 ETH`` there
+    would be the false zero this repo forbids everywhere else.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 24)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=[{
+            "ts": 1786076831, "kind": "action", "text": None, "label": None,
+            "value_eth": None, "tx_hash": "0xnothing", "from_addr": _CHANNEL,
+            "to_addr": _CHANNEL, "from_label": "channel",
+        }])
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert NO_MESSAGE in screen
+        assert "0 ETH" not in screen
+
+
+async def test_feed_every_row_is_handed_a_pre_parsed_text_never_a_markup_string():
+    """The structural half of the deferred-markup guard.
+
+    ``Static.update`` defers ``Content.from_markup`` into the message pump,
+    so a malformed third-party string raises outside the screen's
+    ``try/except`` and kills the app -- the ``DataTable`` crash CLAUDE.md
+    documents. Parsing here, inside the widget's own ``try``, is what turns
+    that into a skipped row; this asserts the rows really are pre-parsed
+    rather than trusting that no test happened to hit a bad string.
+    """
+    from rich.text import Text as RichText
+
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+        await _expand_every_thread(widget, pilot)
+        rows = list(widget.query(SurfFeedRow)) + list(widget.query(SurfFeedToggle))
+        assert rows, "nothing was rendered, so nothing was checked"
+        for row in rows:
+            assert isinstance(row.content, RichText), (
+                f"{row!r} was handed {type(row.content).__name__}, which "
+                "Textual would parse as markup inside the message pump"
+            )
+
+
+async def test_feed_a_hostile_name_cannot_kill_the_app_through_deferred_markup():
+    """The behavioural half: the same string, rendered rather than parsed."""
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 24)) as pilot:
+        widget.update_data(
+            feed_nonce=14,
+            feed_items=[{**_ITEM_POST_ALONE, "text": "[/x] [bold red]"}],
+        )
+        await pilot.pause()  # a deferred MarkupError would raise here
+        screen = _screen_text(app)
+        assert "[/x]" in screen        # rendered as literal text...
+        assert "[bold red]" in screen  # ...tags and all
+        assert "\\" not in screen      # and no escape sequence on screen
+
+
+async def test_feed_a_hostile_tx_hash_cannot_reach_a_widget_id():
+    """Textual raises ``BadIdentifier`` for an id with the wrong shape.
+
+    A ``tx_hash`` is third-party text on a permissionless channel, and it is
+    what the toggle's id is built from, so it is filtered rather than
+    trusted. Two hostile hashes that filter down to the same string are the
+    second half of the same problem: a duplicate id inside one container is
+    a hard crash, not a cosmetic clash.
+    """
+    def _thread(root_hash: str, ts: float) -> list[dict]:
+        return [
+            {"ts": ts, "kind": "self", "from_addr": _CHANNEL, "to_addr": _CHANNEL,
+             "from_label": "channel", "text": "root", "tx_hash": root_hash},
+            {"ts": ts + 1, "kind": "reply", "from_addr": "0x" + "ab" * 20,
+             "to_addr": _CHANNEL, "from_label": None, "text": "q",
+             "tx_hash": f"{root_hash}-q"},
+        ]
+
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=[
+            *_thread("0x a!b[]", 1786076831),
+            *_thread("0xa!b", 1786076931),      # filters to the same string
+        ])
+        await pilot.pause()
+        assert "root" in _screen_text(app)
+        ids = [t.id for t in widget.query(SurfFeedToggle)]
+        assert len(ids) == 2 and len(set(ids)) == 2, ids
+
+
+async def test_feed_a_collapsed_truncation_does_not_advertise_widen():
+    """``\u2039 widen`` promises the reader something they can then see.
+
+    A row inside a collapsed thread is not on screen, so a truncation in it
+    is not a truncation the reader can do anything about. The same payload
+    at the same width must light the marker once the thread is open.
+    """
+    long_reply = {
+        "ts": 1787999998, "kind": "reply", "from_addr": "0x" + "cd" * 20,
+        "to_addr": _CHANNEL, "from_label": None, "tx_hash": "0xlongq",
+        "text": "unbreakable" + "x" * 200,
+    }
+    for expand, expected in ((False, False), (True, True)):
+        widget = SurfFeed()
+        app = _Harness(widget)
+        async with app.run_test(size=(60, 30)) as pilot:
+            widget.update_data(
+                feed_nonce=14, feed_items=[{**_ITEM_POST_ALONE, "text": "root"},
+                                           long_reply],
+            )
+            await pilot.pause()
+            if expand:
+                await _expand_every_thread(widget, pilot)
+            assert (WIDEN_HINT in _screen_text(app)) is expected
 
 
 # ---------------------------------------------------------------------

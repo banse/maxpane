@@ -6,14 +6,18 @@ Four structural guarantees, one place:
    PRD §5 contract (``data/surf_models.SURF_KEYS``) -- the screen splats
    the manager dict at each widget, so a stray kwarg is a silent no-op and
    a typo'd one never receives data.
-2. Widget modules import nothing from ``maxpane_dashboard.data`` or
-   ``maxpane_dashboard.analytics`` -- primitives only, and the structural
-   proof that widgets cannot touch the network.
+2. Widget modules import nothing from ``maxpane_dashboard.data``, and from
+   ``maxpane_dashboard.analytics`` only the pure modules named in
+   ``_PURE_ANALYTICS_ALLOWED`` -- primitives only, and the structural proof
+   that widgets cannot touch the network. The allowance is not a hole in
+   that proof: every allowed module is itself scanned, so a widget can only
+   reach analytics code that reaches nothing.
 3. No-args and all-``None`` ``update_data`` calls never raise, for all six
    widgets in one sweep, asserted against composited output.
 4. No Textual theme token (``[$name]``, e.g. ``[$warning]``) reaches a
-   Rich-parsed surface (``RichLog.write``) -- Rich's own markup parser does
-   not know Textual's ``$name`` design-token extension and raises
+   Rich-parsed surface (``RichLog.write`` in the activity panel,
+   ``Text.from_markup`` in the feed) -- Rich's own markup parser does not
+   know Textual's ``$name`` design-token extension and raises
    ``MarkupError`` instead of degrading. This is not hypothetical: the
    identical token crashed every ACTION row of the FWA activity feed until
    a human caught it by eye (``widgets/fwa/fwa_activity_feed.py``,
@@ -87,6 +91,60 @@ def test_every_widget_accepts_the_whole_flat_dict(cls):
     assert has_var_kw, f"{cls.__name__}.update_data lacks **_kwargs"
 
 
+#: Analytics modules a surf widget may import, and the reason the list is a
+#: list rather than a blanket ban.
+#:
+#: ``analytics/surf_feed`` is the announce channel's threading rule
+#: (``build_threads``): stdlib-only, no I/O, no clock, no Textual. The feed
+#: widget renders what it returns, and the alternative -- routing the threads
+#: through the manager -- would put a *derived view shape* into the frozen
+#: PRD §5 payload, where the widget's own collapse state would have to travel
+#: with it. Widgets elsewhere in this repo already import pure analytics
+#: helpers (``widgets/base/*`` take their formatters from
+#: ``analytics/base_tokens``, ``widgets/frenpet/*`` from
+#: ``analytics/frenpet_battle``); this is the surf dashboard's first.
+#:
+#: The name check alone would be a weaker guard than the blanket ban it
+#: replaces, so ``test_the_allowed_analytics_modules_are_themselves_pure``
+#: re-proves the property the ban was really about -- transitively, on the
+#: allowed module's own source.
+_PURE_ANALYTICS_ALLOWED = frozenset({"maxpane_dashboard.analytics.surf_feed"})
+
+
+def _imported_names(module) -> list[str]:
+    tree = ast.parse(inspect.getsource(module))
+    imported: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported += [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            imported.append(node.module or "")
+    return imported
+
+
+def test_the_allowed_analytics_modules_are_themselves_pure():
+    """The allowance carries its own proof, rather than trusting a name.
+
+    A widget importing ``analytics.surf_feed`` is only harmless for as long
+    as ``analytics.surf_feed`` is: the moment it grows an ``httpx`` import or
+    reaches into ``data``, the surf widgets have a transitive path to the
+    network and the guard above would still be green. This closes that by
+    scanning the allowed module's own source for the same forbidden names.
+    """
+    import importlib
+
+    assert _PURE_ANALYTICS_ALLOWED, "an empty allowance would make this vacuous"
+    for name in sorted(_PURE_ANALYTICS_ALLOWED):
+        module = importlib.import_module(name)
+        for imported in _imported_names(module):
+            assert "maxpane_dashboard.data" not in imported, (name, imported)
+            assert "textual" not in imported, (name, imported)
+            assert "httpx" not in imported and "aiohttp" not in imported, (
+                name,
+                imported,
+            )
+
+
 def test_widget_modules_import_no_data_layer_and_no_analytics():
     """Primitives only -- also the structural no-network proof.
 
@@ -109,16 +167,10 @@ def test_widget_modules_import_no_data_layer_and_no_analytics():
     import maxpane_dashboard.widgets.surf.signals as sig_mod
 
     for module in (fmt_mod, hero_mod, sig_mod, feed_mod, act_mod, mkt_mod, nft_mod):
-        tree = ast.parse(inspect.getsource(module))
-        imported: list[str] = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                imported += [a.name for a in node.names]
-            elif isinstance(node, ast.ImportFrom):
-                imported.append(node.module or "")
-        for name in imported:
+        for name in _imported_names(module):
             assert "maxpane_dashboard.data" not in name, (module.__name__, name)
-            assert "analytics" not in name, (module.__name__, name)
+            if "analytics" in name:
+                assert name in _PURE_ANALYTICS_ALLOWED, (module.__name__, name)
             assert "surf_addresses" not in name, (module.__name__, name)
             assert "surf_client" not in name, (module.__name__, name)
             assert "httpx" not in name and "aiohttp" not in name, (module.__name__, name)
@@ -152,11 +204,15 @@ async def test_no_args_and_all_none_render_without_raising(cls):
 # brief's own reference feed code and crash every ACTION row.
 # ---------------------------------------------------------------------------
 
-#: The two surf modules that render lines through ``RichLog`` (``markup=True``),
-#: i.e. Rich's own ``Text.from_markup`` parser. ``SurfHero``, ``SurfSignals``,
-#: ``SurfMarket`` and ``SurfNft`` render through ``Static`` -- Textual Content
-#: markup -- and legitimately use ``$success``/``$warning``/``$error`` design
-#: tokens there, so they are correctly excluded from this scan.
+#: The two surf modules whose lines are parsed by *Rich*'s own
+#: ``Text.from_markup``: the activity panel writes them into a ``RichLog``
+#: (``markup=True``), and the feed calls ``Text.from_markup`` itself and hands
+#: the resulting ``Text`` to a ``Static`` -- the same parser either way, and
+#: the same reason ``$``-tokens are illegal in both. ``SurfHero``,
+#: ``SurfSignals``, ``SurfMarket`` and ``SurfNft`` pass *strings* to
+#: ``Static.update`` -- Textual Content markup -- and legitimately use
+#: ``$success``/``$warning``/``$error`` design tokens there, so they are
+#: correctly excluded from this scan.
 _RICH_PARSED_MODULE_NAMES = (
     "maxpane_dashboard.widgets.surf.feed",
     "maxpane_dashboard.widgets.surf.activity",
@@ -175,12 +231,13 @@ def _rich_parsed_modules():
 def test_no_theme_token_reaches_a_rich_parsing_surface():
     """``$``-tokens are Textual *Content* markup only.
 
-    ``SurfFeed`` and ``SurfDevActivity`` write every line through
-    ``RichLog.write`` (``markup=True``), which parses with Rich's own
-    ``Text.from_markup`` -- the parser ``rich.markup.escape``/``safe_markup``
-    is built against, not Textual's ``Content.from_markup``/``$token``
-    extension that ``Static.update()`` understands. ``[$warning]`` is not
-    valid Rich markup and raises ``MarkupError`` at write time instead of
+    ``SurfDevActivity`` writes every line through ``RichLog.write``
+    (``markup=True``) and ``SurfFeed`` calls ``Text.from_markup`` directly;
+    both are Rich's own parser -- the one ``rich.markup.escape``/
+    ``safe_markup`` is built against, not Textual's
+    ``Content.from_markup``/``$token`` extension that ``Static.update()``
+    understands when it is handed a *string*. ``[$warning]`` is not valid
+    Rich markup and raises ``MarkupError`` at parse time instead of
     degrading.
 
     Only string literals are inspected: the prose explaining this rule

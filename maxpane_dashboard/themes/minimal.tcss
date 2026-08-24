@@ -2072,21 +2072,30 @@ SurfNft {
     padding: 0 1;
 }
 
-/* The two scrolling panes. `SurfFeed` and `SurfDevActivity` each compose a
- * title `Static` plus a `RichLog` (see their DEFAULT_CSS), and the `RichLog`
- * is what must absorb the leftover height -- without `height: 1fr` it sizes to
- * its content and the panel grows or shrinks as posts arrive.
+/* The two scrolling panes. Each composes a title `Static` plus one scrolling
+ * child (see their DEFAULT_CSS), and that child is what must absorb the
+ * leftover height -- without `height: 1fr` it sizes to its content and the
+ * panel grows or shrinks as posts arrive.
+ *
+ * They are **two rules, not one shared selector**, because the two panes no
+ * longer mount the same widget: the feed threads its replies behind per-row
+ * click targets, which a `RichLog` cannot carry, so its scrolling child is a
+ * `VerticalScroll` (`#surf-feed-body`) holding one `SurfFeedRow` per row. The
+ * activity panel still writes lines into a `RichLog`. Folding the two back
+ * into one selector would leave whichever pane it no longer matches sizing to
+ * its content -- a layout regression with no error anywhere.
  *
  * No `DataTable` rule here on purpose: not one of the six surf widgets mounts
- * a `DataTable`. Feed and activity use `RichLog`; hero, signals, market and
- * NFT are `Static` rows only. A selector for a widget that is never mounted
- * matches nothing and reads, to the next person, as though it were load-
- * bearing.
+ * a `DataTable`. A selector for a widget that is never mounted matches
+ * nothing and reads, to the next person, as though it were load-bearing.
  *
  * `padding` and `scrollbar-size` are deliberately *not* restated: the widget
  * DEFAULT_CSS owns them, this block already pads the containing widget, and
  * restating the padding here would double it. */
-SurfFeed > RichLog,
+SurfFeed > #surf-feed-body {
+    height: 1fr;
+}
+
 SurfDevActivity > RichLog {
     height: 1fr;
 }

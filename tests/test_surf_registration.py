@@ -509,9 +509,14 @@ _STRUCTURAL = ("width", "height", "min-height", "padding", "margin")
 #: * ``#title-bar`` / ``#separator`` are DEFAULT_CSS-only. The shared
 #:   stylesheet already styles those two ids for every screen (lines 12-130);
 #:   the surf block restating them would give a shared rule a second owner.
-#: * The two ``> RichLog`` rules are block-only: they are the app-stylesheet
-#:   half of the feed/activity height, and the widgets' own DEFAULT_CSS owns
-#:   the rest.
+#: * The feed's ``> #surf-feed-body`` rule and the activity panel's
+#:   ``> RichLog`` rule are block-only: they are the app-stylesheet half of
+#:   the feed/activity height, and the widgets' own DEFAULT_CSS owns the rest.
+#:   They were one shared selector until the feed swapped its ``RichLog`` for
+#:   a scroll container of per-row click targets; keeping the set spelled out
+#:   in full is what turns a future re-fold of the two back into one selector
+#:   -- which would silently stop matching one of the panes -- into a failure
+#:   here rather than a layout that quietly sizes to its content.
 #:
 #: Pinned as *sets*, not counted. A count is the vacuity hole it was meant to
 #: close: the guard used to read ``len(shared) >= 8`` against a real overlap
@@ -519,7 +524,7 @@ _STRUCTURAL = ("width", "height", "min-height", "padding", "margin")
 #: dropped the market out of the comparison entirely and left nine -- still
 #: green, with the two copies' market geometry never compared again.
 _DEFAULT_CSS_ONLY = frozenset({"#title-bar", "#separator"})
-_BLOCK_ONLY = frozenset({"SurfFeed > RichLog", "SurfDevActivity > RichLog"})
+_BLOCK_ONLY = frozenset({"SurfFeed > #surf-feed-body", "SurfDevActivity > RichLog"})
 
 
 def _expand(value: str) -> tuple[str, ...]:
