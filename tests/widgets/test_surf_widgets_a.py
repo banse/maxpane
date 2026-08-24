@@ -282,6 +282,45 @@ async def test_the_launchpad_boxes_carry_their_own_slower_clock():
     assert "20:20" in out
 
 
+async def test_the_narrow_tiers_still_carry_a_staleness_marker():
+    """2026-08-24 fix round 1: dropping the clock outright below ``compact``
+    left a narrow terminal with no way to tell LAUNCHPAD/FLOW's up-to-ten-
+    -minute-old numbers from BURN/SUPPLY's this-second ones -- exactly the
+    selective "stale number presented as live" CLAUDE.md forbids, just
+    reached by running out of columns instead of by an oversight. Every
+    tier must carry *some* distinguishing marker: the full clock at
+    ``compact``, the same clock minus its separator at ``tight``, and
+    ``_SLOW_MARKER`` at ``minimal`` where there is no room for a timestamp
+    at all.
+
+    The three widths below were chosen by probing ``SurfHeroBox.content_
+    size`` directly (not guessed) to land cleanly on each tier without also
+    tripping ``‹ widen`` -- this test would be checking the wrong thing if
+    the widen marker fired at the same time as the tier boundary.
+    """
+    from maxpane_dashboard.widgets.surf.hero import WIDEN_HINT
+
+    payload = dict(
+        launchpad_coin_count=146, launchpad_as_of_hhmm="20:20",
+        launchpad_swap_count=4_724, launchpad_trader_count=673,
+        launchpad_creator_eth_owed=0.0751,
+    )
+    for width, launchpad_title, flow_title in (
+        (120, "LAUNCHPAD · 20:20", "FLOW · 20:20"),   # compact
+        (100, "LAUNCHPAD 20:20", "FLOW 20:20"),       # tight
+        (90, "LAUNCHPAD slow", "FLOW slow"),          # minimal
+    ):
+        widget = SurfHero()
+        app = _Harness(widget)
+        async with app.run_test(size=(width, 12)) as pilot:
+            widget.update_data(**payload)
+            await pilot.pause()
+            screen = _screen_text(app)
+            assert launchpad_title in screen, (width, screen)
+            assert flow_title in screen, (width, screen)
+            assert WIDEN_HINT not in screen, (width, screen)
+
+
 async def test_hero_full_payload_renders_all_four_boxes_on_screen():
     _, screen = await _render_hero(**_FULL_HERO)
     # LAUNCHPAD: population, growth, builders and its own slower clock.
@@ -436,9 +475,30 @@ def test_every_hero_tier_fits_the_width_it_advertises():
     on someone's terminal. Live *numbers* are deliberately out of scope --
     they cannot be shortened without lying, so a quantity that outgrows its
     box lights the marker instead (see the test below).
+
+    2026-08-24 fix round 1: this sweep used to exercise only today's small
+    captured LAUNCHPAD/FLOW magnitudes, which proved the constants against
+    where those fields are *now*, not where three of them -- unbounded
+    accumulating counters, unlike SUPPLY's roughly-static ~2.4M IMD -- are
+    plausibly headed over an install's life. ``_GROWN_LAUNCHPAD``/
+    ``_GROWN_FLOW`` below add one clearly-labelled plausible-future
+    magnitude per field alongside today's real ones, and that combined
+    sweep is what set ``MINIMAL_WIDTH`` at 15 (not a value picked before
+    measuring): the widest minimal-tier line among everything below is 15
+    columns, tied by the grown coin count, the grown swap count and the
+    grown creator count.
     """
     from maxpane_dashboard.widgets.markup_safety import visible_len
     from maxpane_dashboard.widgets.surf.hero import TIER_WIDTHS, _supply_lines
+
+    #: Plausible future growth, not today's captured state -- the reviewer's
+    #: own examples from fix round 1: a 7-digit count for the two fields
+    #: that are literally the same shape of counter (coins launched, swaps
+    #: executed), a 5-digit count for the two human-population fields
+    #: (new-in-24h, creators/traders), and a 5-digit-whole ETH figure for
+    #: the accumulating creator payout.
+    _GROWN_LAUNCHPAD = (1_234_567, 1_234, 12_345)
+    _GROWN_FLOW = (1_234_567, 12_345, 12345.6789)
 
     for tier, need in TIER_WIDTHS.items():
         renderings = []
@@ -454,10 +514,12 @@ def test_every_hero_tier_fits_the_width_it_advertises():
                 for new in (0, 5, None):
                     for creators in (73, 0, None):
                         renderings.append(_launchpad_lines(count, new, creators, as_of, tier))
+            renderings.append(_launchpad_lines(*_GROWN_LAUNCHPAD, as_of, tier))
             for swaps in (4_724, 0, None):
                 for traders in (673, 0, None):
                     for eth in (0.0751, 0.0, None):
                         renderings.append(_flow_lines(swaps, traders, eth, as_of, tier))
+            renderings.append(_flow_lines(*_GROWN_FLOW, as_of, tier))
         for ready in (True, False, None):
             # 15,745 is the real observed single-event burn (PRD §1); the
             # combined accrued/staged line is the one this box compacts

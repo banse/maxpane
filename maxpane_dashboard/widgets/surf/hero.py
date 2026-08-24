@@ -44,11 +44,20 @@ titles BURN and SUPPLY keep. The title bar above shows the *fast* tier's
 curator ``f`` analysis precedent), so a bare title would let these two boxes
 sit under a clock claiming seconds while the numbers beneath it are up to
 ten minutes old -- exactly "a stale number presented as live" (CLAUDE.md
-Conventions). The clock shows only at ``compact``: at ``tight``/``minimal``
-there is no room for it without crowding the numbers it exists to keep
-honest about, and a terminal narrow enough to need those tiers (see Width
-behaviour below) has nowhere near enough columns to read the whole row
-anyway.
+Conventions).
+
+The clock **narrows with the tier rather than disappearing** (2026-08-24 fix
+round 1). It used to be dropped outright below ``compact``, which was wrong
+for the same reason a bare title would be: at ``tight``/``minimal`` a
+BURN/SUPPLY number that is fresh this second would sit right next to a
+LAUNCHPAD/FLOW number that can be ten minutes old with nothing telling them
+apart. "No room for the honest marker" is a reason to shrink the marker, not
+drop it. ``compact`` keeps the full ``· HH:MM``; ``tight`` keeps the full
+``HH:MM``, just without the separator (``LAUNCHPAD 20:20``, 15 columns,
+inside its 17-column budget); only ``minimal`` -- which has no room for a
+timestamp at all -- substitutes ``_SLOW_MARKER`` (``"slow"``, chosen over a
+symbol because a glyph like ``*`` doubles as a footnote mark and would be
+misread as one).
 
 When *every* one of a box's own inputs is ``None`` -- the sweep has simply
 never completed, not "completed and found nothing" -- that box's second
@@ -95,29 +104,43 @@ roughly the terminal's columns over four: measured on the real screen,
 column apart, which is why each box picks its tier from *its own* width
 rather than the row's (see :meth:`SurfHeroBox.render_lines_at_tier`).
 
-The three tiers -- and their widths -- are unchanged by this rewrite:
 ``compact`` needs 22 columns and gives up nothing; ``tight`` needs 17 and
 drops trailing words (``burned N observed`` -> ``burn N``, LAUNCHPAD's own
-``· 24h`` and its clock); ``minimal`` needs 13 and drops units and
-connective words down to bare numbers and flags.
+``· 24h``) but keeps the launchpad clock, just without its separator (see
+above); ``minimal`` needs 15 and drops units and connective words down to
+bare numbers and flags, substituting ``_SLOW_MARKER`` for the clock it has
+no room to spell out.
 
-``MINIMAL_WIDTH`` is still 13, but its anchor changed hands. It used to be
-tied for widest by two strings: LP's alarm ``OWNER CHANGED`` and SUPPLY's
-own quantity (``2,376,732 IMD``, both 13 columns). LP is gone, and nothing
-LAUNCHPAD or FLOW renders comes close -- their longest minimal-tier line is
-11 columns (``73 creators`` / ``-- creators``, and ``4,724 swaps``, from the
-real 2026-08-23 launchpad state this row now reads). SUPPLY's quantity is
-therefore the sole anchor left, unaccompanied rather than tied, and the
-constant did not need to move to stay true: ``test_every_hero_tier_fits_
-the_width_it_advertises`` still measures every state at every tier rather
-than trusting this paragraph.
+``MINIMAL_WIDTH`` moved, 13 -> 15, in the same 2026-08-24 fix round that
+narrowed the clock instead of dropping it. Task 9's own re-derivation left it
+at 13, re-anchored on SUPPLY's quantity (``2,376,732 IMD``) once LP's
+``OWNER CHANGED`` left with LP -- true of *today's* magnitudes, but
+``launchpad_swap_count``, ``launchpad_trader_count`` and
+``launchpad_creator_eth_owed`` are unbounded accumulating counters, not a
+roughly-static ~2.4M-IMD supply, and are far likelier to grow past 13
+columns over an install's life than SUPPLY ever is. Review caught the gap:
+the width sweep only exercised today's small captured values, so nothing
+would go red the day that growth arrived. The sweep now also renders one
+plausible-future magnitude per LAUNCHPAD/FLOW field alongside today's real
+ones -- a 7-digit coin/swap count, a 5-digit new-in-24h/creator/trader
+count, a 5-digit-whole ETH-owed figure -- and *that* combined sweep is what
+sets the constant: 15 columns, tied by ``1,234,567 coins``,
+``1,234,567 swaps`` and ``12,345 creators``, comfortably inside
+``TIGHT_WIDTH``'s 17 so the tier ordering does not need to change. This is
+a near/medium-term bound, not an infinite one -- a magnitude that outgrows
+even this (see the marker note below) still falls back to the ``‹ widen``
+border marker rather than lying, the same way SUPPLY's own quantity always
+has.
 
 Titles and quantities are never shortened by tier: they are rendered whole
-at every width (LAUNCHPAD/FLOW's own ``as of`` clock is the one exception,
-and it is dropped rather than shortened -- see above). A quantity that
-outgrows its box lights the border ``‹ widen`` marker instead of being cut
--- a number cut mid-digit still reads as a number, which is worse than an
-announced omission.
+at every width. LAUNCHPAD/FLOW's own ``as of`` clock is the one thing on
+this row that *is* progressively shortened rather than rendered whole or
+dropped (see above) -- because unlike a quantity, a shortened clock
+(``HH:MM`` without its separator, then ``_SLOW_MARKER``) still tells the
+truth about freshness, where a shortened *number* would not. A quantity
+that outgrows its box lights the border ``‹ widen`` marker instead of being
+cut -- a number cut mid-digit still reads as a number, which is worse than
+an announced omission.
 """
 
 from __future__ import annotations
@@ -139,13 +162,27 @@ from maxpane_dashboard.widgets.surf._fmt import (
 #: height-7 frame and have no sixth to spare (see the DEFAULT_CSS note below).
 WIDEN_HINT = "‹ widen"
 
+#: LAUNCHPAD/FLOW's own narrow-tier stand-in for their clock (2026-08-24 fix
+#: round 1). At ``minimal`` there is no room for even a shortened ``HH:MM``
+#: beside the numbers it exists to keep honest, but dropping it outright was
+#: wrong: a BURN/SUPPLY number that is fresh this second would then sit right
+#: next to a LAUNCHPAD/FLOW number that can be ten minutes old with nothing
+#: telling them apart -- exactly the "stale number presented as live" the
+#: house rules forbid, just reached by running out of columns instead of by
+#: an oversight. "No room for the honest marker" is a reason to shrink the
+#: marker, not to drop it. A word rather than a symbol: an asterisk is the
+#: classic footnote glyph and would be misread as one; "slow" cannot be
+#: mistaken for an error or a footnote to something else, and it is also
+#: literally true -- these two boxes read a genuinely slower tier.
+_SLOW_MARKER = "slow"
+
 #: Rendered columns each layout needs.  Measured from the strings the boxes
 #: below actually emit -- ``test_every_hero_tier_fits_the_width_it_advertises``
 #: renders every state at every tier and measures it, so a copy edit that
 #: outgrows its tier fails there rather than on a user's terminal.
 COMPACT_WIDTH = 22  # "burned 15,745 observed"
 TIGHT_WIDTH = 17    # "2000/2000 written" -- see below
-MINIMAL_WIDTH = 13  # "2,376,732 IMD" (SUPPLY's quantity -- see the docstring)
+MINIMAL_WIDTH = 15  # a plausible-future LAUNCHPAD/FLOW count -- see the docstring
 
 TIER_WIDTHS = {
     "compact": COMPACT_WIDTH,
@@ -201,8 +238,13 @@ def _launchpad_lines(coin_count, new_24h, creator_count, as_of_hhmm, tier: str) 
     above shows the fast tier's ``as of``, and these numbers are up to ten
     minutes older than that -- rendering them under the fast clock would be
     exactly the "stale number presented as live" the house rules forbid.
-    At ``tight``/``minimal`` the clock is dropped; those widths belong to
-    terminals with nowhere near enough columns to read the whole row anyway.
+    The clock itself narrows with the tier rather than disappearing (2026-08-24
+    fix round 1: dropping it outright at ``tight``/``minimal`` left those two
+    tiers with no way to tell a ten-minute-old LAUNCHPAD/FLOW number from a
+    this-second BURN/SUPPLY one): ``compact`` keeps the full ``· HH:MM``,
+    ``tight`` keeps the full ``HH:MM`` minus the separator (still 15 columns,
+    inside its 17-column budget), and only ``minimal`` -- which has no room
+    for a timestamp at all -- substitutes ``_SLOW_MARKER``.
 
     ``new_24h`` gets its own three-state handling within the box: a genuine
     ``0`` (zero launches today, a real and common state) renders as ``0``,
@@ -211,8 +253,14 @@ def _launchpad_lines(coin_count, new_24h, creator_count, as_of_hhmm, tier: str) 
     instead -- three distinct claims, not two.
     """
     title = "LAUNCHPAD"
-    if as_of_hhmm and not _short(tier):
-        title = f"LAUNCHPAD · {safe_markup(str(as_of_hhmm))}"
+    if as_of_hhmm:
+        clock = safe_markup(str(as_of_hhmm))
+        if tier == "compact":
+            title = f"LAUNCHPAD · {clock}"
+        elif tier == "tight":
+            title = f"LAUNCHPAD {clock}"
+        else:
+            title = f"LAUNCHPAD {_SLOW_MARKER}"
 
     count = _as_int(coin_count)
     new = _as_int(new_24h)
@@ -240,15 +288,24 @@ def _flow_lines(swap_count, trader_count, creator_eth_owed, as_of_hhmm, tier: st
 
     Same slower clock as LAUNCHPAD, off the identical ``as_of_hhmm`` -- both
     boxes are fed by the same 600s sweep, so they carry the same freshness
-    marker rather than each guessing independently. ``creator_eth_owed`` is
-    the ETH side of the pipeline BURN's own box displays the IMD side of
-    (``burn_accrued``/``burn_staged``); the two never disagree because the
-    manager builds both from the same read, but this box is the only one on
-    the row that names the ETH the pipeline currently owes its creators.
+    marker rather than each guessing independently, and it narrows with the
+    tier the same way LAUNCHPAD's does (see that function's docstring for
+    why dropping it outright at ``tight``/``minimal`` was wrong).
+    ``creator_eth_owed`` is the ETH side of the pipeline BURN's own box
+    displays the IMD side of (``burn_accrued``/``burn_staged``); the two
+    never disagree because the manager builds both from the same read, but
+    this box is the only one on the row that names the ETH the pipeline
+    currently owes its creators.
     """
     title = "FLOW"
-    if as_of_hhmm and not _short(tier):
-        title = f"FLOW · {safe_markup(str(as_of_hhmm))}"
+    if as_of_hhmm:
+        clock = safe_markup(str(as_of_hhmm))
+        if tier == "compact":
+            title = f"FLOW · {clock}"
+        elif tier == "tight":
+            title = f"FLOW {clock}"
+        else:
+            title = f"FLOW {_SLOW_MARKER}"
 
     swaps = _as_int(swap_count)
     traders = _as_int(trader_count)
