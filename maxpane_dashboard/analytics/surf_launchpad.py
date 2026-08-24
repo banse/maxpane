@@ -1,4 +1,4 @@
-"""Launchpad ranking, thresholds and flow aggregates.
+"""Launchpad ranking and thresholds.
 
 Pure functions.  No I/O, no Textual, and no direct wall-clock read of any
 kind -- every entry point takes ``now_ts`` instead.
@@ -59,19 +59,6 @@ def hot_coin_threshold(swaps_by_coin: Mapping[str, int]) -> int | None:
     if len(active) < HOT_MIN_ACTIVE:
         return None
     return max(HOT_FLOOR, int(statistics.median(active)) * HOT_MULTIPLE)
-
-
-def curve_flow(swaps: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """Aggregate swap rows into the CURVE FLOW panel's numbers."""
-    buys = sum(1 for s in swaps if s.get("is_buy"))
-    total = len(swaps)
-    traders = {s.get("trader") for s in swaps if s.get("trader")}
-    return {
-        "swap_count": total,
-        "trader_count": len(traders),
-        "buy_pct": (100.0 * buys / total) if total else None,
-        "sell_pct": (100.0 * (total - buys) / total) if total else None,
-    }
 
 
 def rank_coins(
