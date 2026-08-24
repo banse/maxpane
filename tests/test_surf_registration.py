@@ -1535,7 +1535,7 @@ def test_every_surf_key_is_triaged_for_the_zero_catch() -> None:
     assert not extra, f"triaged a key SURF_KEYS no longer has: {extra}"
 
 
-def test_the_pending_consumer_bucket_is_empty_by_the_end_of_this_plan():
+def test_no_surf_key_is_still_waiting_for_a_consumer():
     """`_KEYS_PENDING_CONSUMERS` is scaffolding with an expiry date.
 
     Task 12 wired the last consumer and re-triaged every entry with a needle
@@ -1544,8 +1544,38 @@ def test_the_pending_consumer_bucket_is_empty_by_the_end_of_this_plan():
     marker in the same change that emptied the set -- a self-deleting marker
     left behind outlives the thing it was waiting for and turns a real
     regression back into an expected failure.
+
+    It used to read ``assert _KEYS_PENDING_CONSUMERS == frozenset()``, which
+    compares a constant defined a few dozen lines above against the literal
+    it was assigned and can therefore only fail if somebody edits that line
+    on purpose. Adding an unconsumed key to ``SURF_KEYS`` and parking it in
+    the pending bucket -- the exact regression the scaffolding could decay
+    into -- left it green.
+
+    The honest form of the same claim is against the **contract**: every
+    ``SURF_KEYS`` key must land in one of the three buckets that carry a
+    rendering claim (a zero-probe needle, a documented reason it cannot be
+    observed, or "not a number"). The pending bucket carries no such claim,
+    so a key in it is a key nothing has looked at.
     """
-    assert _KEYS_PENDING_CONSUMERS == frozenset()
+    from maxpane_dashboard.data.surf_models import SURF_KEYS
+
+    triaged = (
+        set(_NUMERIC_ZERO_PROBES)
+        | set(_NUMERIC_KEYS_EXCLUDED)
+        | set(_NON_NUMERIC_KEYS)
+    )
+    waiting = set(SURF_KEYS) - triaged
+    assert not waiting, (
+        f"{sorted(waiting)} reach no consumer yet -- give each one a probe "
+        "needle, an exclusion with a reason, or a place in "
+        "_NON_NUMERIC_KEYS, rather than leaving it in "
+        "_KEYS_PENDING_CONSUMERS"
+    )
+    # ...and the bucket really is the empty scaffolding the paragraph above
+    # says it is, which is now a *consequence* of the line above rather than
+    # the whole test.
+    assert not set(_KEYS_PENDING_CONSUMERS) - waiting
 
 
 def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
