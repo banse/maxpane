@@ -3758,6 +3758,33 @@ def test_the_launchpads_first_block_is_pinned_below_the_earliest_launch():
     ) > A.LAUNCHPAD_FIRST_BLOCK
 
 
+def _cursor(last_block: int, **fields) -> dict:
+    """A **complete** launchpad cursor -- every key ``fetch_launchpad`` writes.
+
+    Since 2026-08-24 a cursor missing (or mistyping) any accumulator is
+    rejected whole and the sweep runs cold, so a hand-written six-key cursor
+    is the only kind that resumes. That is deliberate and it is the fix for
+    the finding these helpers exist under: the old coercion patched a
+    malformed field to its empty value while *keeping* ``last_block``, and
+    since the sweep resumes strictly above ``last_block`` the blocks that
+    would rebuild the total were never read again -- a sentinel zero written
+    into a lifetime accumulator, permanently, and rendered green.
+
+    Tests that mean "resume from here" say so with this helper; tests that
+    mean "this cursor is unusable" hand ``fetch_launchpad`` a broken dict
+    directly, so the difference is visible at the call site.
+    """
+    return {
+        "last_block": last_block,
+        "launches": {},
+        "swaps_all": {},
+        "burn_by_coin": {},
+        "burned_total_wei": 0,
+        "traders": [],
+        **fields,
+    }
+
+
 @pytest.mark.asyncio
 async def test_a_cold_sweep_starts_at_the_launchpads_first_block() -> None:
     client, calls = _client_recording_getlogs()
@@ -3774,7 +3801,7 @@ async def test_a_warm_sweep_starts_one_block_after_the_cursor() -> None:
     client, calls = _client_recording_getlogs()
     async with client:
         await client.fetch_launchpad(
-            resume={"last_block": 25_800_000, "launches": {}, "swaps_all": {}}
+            resume=_cursor(25_800_000)
         )
     launched = _launched_filters(calls)
     assert launched, "no Launched sweep was issued"
@@ -3794,7 +3821,7 @@ async def test_the_swap_sweep_never_starts_later_than_the_day_it_has_to_serve() 
     client, calls = _client_recording_getlogs()
     async with client:
         await client.fetch_launchpad(
-            resume={"last_block": 25_819_000, "launches": {}, "swaps_all": {}}
+            resume=_cursor(25_819_000)
         )
     day_floor = FIXTURE_HEAD_BLOCK - surf_client.LAUNCHPAD_DAY_BLOCKS
     assert min(int(c["fromBlock"], 16) for c in _launched_filters(calls)) == 25_819_001
@@ -3819,12 +3846,12 @@ async def test_resuming_does_not_double_count_a_launch_or_a_swap_on_the_boundary
     lifetime total.
     """
     pool = "0x" + "aa" * 32
-    resume = {
-        "last_block": 25_790_000,
-        "launches": {pool: {"ticker": "A", "name": "Alpha",
-                            "creator": "0x" + "1" * 40, "block": 25_790_000}},
-        "swaps_all": {pool: 5},
-    }
+    resume = _cursor(
+        25_790_000,
+        launches={pool: {"ticker": "A", "name": "Alpha",
+                         "creator": "0x" + "1" * 40, "block": 25_790_000}},
+        swaps_all={pool: 5},
+    )
     async with _client_serving("cursor_resume.json") as client:
         state = await client.fetch_launchpad(resume=resume)
 
@@ -3969,7 +3996,7 @@ async def test_the_cursor_never_moves_backwards() -> None:
     client, _calls = _client_recording_getlogs(head_block=25_800_000)
     async with client:
         state = await client.fetch_launchpad(
-            resume={"last_block": 25_805_000, "launches": {}, "swaps_all": {}}
+            resume=_cursor(25_805_000)
         )
     assert state.cursor["last_block"] == 25_805_000
 
@@ -4231,35 +4258,173 @@ async def test_a_hand_edited_cursor_cannot_crash_or_inflate_the_sweep() -> None:
     out of the fetcher), and `"abc"` iterates as three one-character
     "addresses" -- an inflated `trader_count` off a typo. Only a real
     sequence is a trader list.
+
+    Since 2026-08-24 a malformed `traders` no longer reads as *no* traders
+    either: it rejects the whole cursor (`_coerce_launchpad_resume`), because
+    reading zero while keeping `last_block` froze `trader_count` at 0 for
+    good -- the blocks that would rebuild it are never swept again. So the
+    two properties this test holds are still "never crashes" and "never
+    inflates", and a third has joined them: a rejected cursor sweeps COLD,
+    which is the state that can recover.
     """
-    base = {"last_block": 25_800_000, "launches": {}, "swaps_all": {}}
     for traders in (5, "abc", {"a": 1}, None, [], [1, 2, None], ["0xAA", "0xaa"]):
         async with _client_serving("full_history.json") as client:
-            state = await client.fetch_launchpad(resume={**base, "traders": traders})
+            state = await client.fetch_launchpad(
+                resume=_cursor(25_800_000, traders=traders))
         assert isinstance(state, LaunchpadState), traders
         assert isinstance(state.trader_count, int), traders
 
-    # The counts, against a baseline the fixture's own swaps set. A string
-    # must contribute NOTHING -- not three one-character traders -- while a
-    # real two-element list contributes exactly two. Comparing against the
-    # baseline rather than against 0 is what makes this bite: the fixture
-    # already carries traders above this cursor, so an absolute number would
-    # have to be re-derived every time the fixture moved.
+    # Three comparisons, one baseline. `cold` is the no-cursor sweep: every
+    # malformed `traders` must land exactly on it, because the cursor was
+    # thrown away entirely -- not merely "contribute no traders" while
+    # resuming, which is the behaviour that wrote the permanent zero.
+    # A well-formed cursor still resumes and still adds its own traders on
+    # top of the swept ones, which is what keeps this from passing against a
+    # function that rejected every cursor it was handed.
     async with _client_serving("full_history.json") as client:
-        baseline = await client.fetch_launchpad(resume={**base, "traders": None})
-        from_typo = await client.fetch_launchpad(resume={**base, "traders": "abc"})
+        cold = await client.fetch_launchpad(resume=None)
+        from_typo = await client.fetch_launchpad(
+            resume=_cursor(25_800_000, traders="abc"))
+        missing = await client.fetch_launchpad(
+            resume={"last_block": 25_800_000, "launches": {}, "swaps_all": {}})
+        warm = await client.fetch_launchpad(resume=_cursor(25_800_000))
         from_list = await client.fetch_launchpad(
-            resume={**base, "traders": ["0x" + "e1" * 20, "0x" + "e2" * 20]}
+            resume=_cursor(25_800_000,
+                           traders=["0x" + "e1" * 20, "0x" + "e2" * 20])
         )
         cased = await client.fetch_launchpad(
-            resume={**base, "traders": ["0xAA", "0xaa"]}
+            resume=_cursor(25_800_000, traders=["0xAA", "0xaa"])
         )
-    assert from_typo.trader_count == baseline.trader_count, (
-        '"abc" must read as no traders, never as three'
+    assert from_typo.trader_count == cold.trader_count, (
+        '"abc" must sweep cold, never resume with three one-character traders'
     )
-    assert from_list.trader_count == baseline.trader_count + 2
+    assert missing.trader_count == cold.trader_count, (
+        "a cursor with no `traders` key at all is as corrupt as a mistyped "
+        "one -- `last_block` would survive either way"
+    )
+    assert from_list.trader_count == warm.trader_count + 2
     # A duplicate that differs only in case is one trader, not two.
-    assert cased.trader_count == baseline.trader_count + 1
+    assert cased.trader_count == warm.trader_count + 1
+
+
+@pytest.mark.asyncio
+async def test_a_corrupt_accumulator_field_sweeps_cold_instead_of_zeroing() -> None:
+    """The fix for the 2026-08-24 finding, one field at a time.
+
+    `_coerce_launchpad_resume`'s own docstring has always said "anything
+    structurally unusable is rejected whole rather than patched -- half-
+    trusting a cursor is how a corrupt `last_block` would skip real history
+    forever". It patched instead: a malformed `swaps_all` became `{}`, a
+    malformed `traders` became an empty set, a malformed `burned_total_wei`
+    became `0`, a malformed `launches` became `{}` -- and `last_block`
+    survived every one of them. Since the sweep resumes strictly above
+    `last_block`, the blocks that would rebuild the total are never read
+    again, so each of those was a sentinel zero written into a *persisted*
+    lifetime accumulator, permanently, and rendered green and confident on
+    the hero's FLOW box (`0 swaps / 0 traders`) and in BURN PIPELINE
+    (`burned 0 IMD (all-time)`).
+
+    It is reachable without a text editor: a value that reaches
+    `SurfCache._jsonable` as a `Decimal` or `bytes` hits its fallback and
+    lands in the file as `null`.
+
+    The assertion is against the COLD sweep, not against "not zero": the
+    whole promise is that a rejected cursor costs exactly one wide sweep and
+    rebuilds every aggregate from chain. `None` is used as the corruption
+    because it is the shape `_jsonable` actually produces, and the absent
+    key is checked beside it because a cursor this module wrote always
+    carries all five.
+    """
+    async with _client_serving("full_history.json") as client:
+        cold = await client.fetch_launchpad(resume=None)
+
+    # A cold sweep off this fixture has to have something to lose, or every
+    # comparison below would hold against a function that zeroed everything.
+    assert cold.swap_count and cold.trader_count and cold.launch_count, (
+        "the fixture no longer produces non-zero aggregates -- this test "
+        "would pass against the very bug it exists for"
+    )
+
+    for field in ("launches", "swaps_all", "burn_by_coin",
+                  "burned_total_wei", "traders"):
+        for corruption in ("null", "absent"):
+            resume = _cursor(25_800_000)
+            if corruption == "null":
+                resume[field] = None
+            else:
+                del resume[field]
+            async with _client_serving("full_history.json") as client:
+                state = await client.fetch_launchpad(resume=resume)
+            label = f"{field}/{corruption}"
+            assert state.swap_count == cold.swap_count, label
+            assert state.trader_count == cold.trader_count, label
+            assert state.burned_total_wei == cold.burned_total_wei, label
+            assert state.launch_count == cold.launch_count, label
+            assert state.cursor["last_block"] == cold.cursor["last_block"], label
+
+
+@pytest.mark.asyncio
+async def test_a_cursor_far_ahead_of_the_chain_recovers_instead_of_sticking() -> None:
+    """`max(head, prior["last_block"])` is right and was also a one-way trap.
+
+    Never moving the cursor backwards is what stops a lagging endpoint from
+    re-counting blocks into a persisted accumulator. But one bad
+    `eth_blockNumber` -- or a hand-edited cache -- puts `last_block` above
+    the head, and `max()` then guarantees it stays above the head for every
+    sweep that follows: `from_block` is always past the tip, every lifetime
+    aggregate freezes, and nothing recovers it but deleting the cache file.
+
+    Three sweeps, because one would not tell a stuck cursor from a slow one.
+    """
+    ahead = _cursor(FIXTURE_HEAD_BLOCK + 5_000_000)
+    async with _client_serving("full_history.json") as client:
+        cold = await client.fetch_launchpad(resume=None)
+        state = await client.fetch_launchpad(resume=ahead)
+        for _ in range(2):
+            state = await client.fetch_launchpad(resume=state.cursor)
+
+    assert state.cursor["last_block"] == FIXTURE_HEAD_BLOCK
+    assert state.swap_count == cold.swap_count
+    assert state.trader_count == cold.trader_count
+    assert state.launch_count == cold.launch_count
+
+
+@pytest.mark.asyncio
+async def test_a_cursor_a_little_ahead_still_resumes() -> None:
+    """The other half of the same rule, and the reason the tolerance is a day
+    rather than zero.
+
+    An endpoint answering a few blocks behind the one that wrote the cursor
+    is ordinary, not corruption, and rejecting it would turn every such tick
+    into a full cold sweep of the whole launchpad history. Anything inside
+    `LAUNCHPAD_DAY_BLOCKS` of the head still resumes -- and `max()` still
+    keeps the higher number, which is the double-count guard the paragraph
+    above must not undo.
+
+    Swept from both sides of the boundary so the constant itself is pinned:
+    one block under the day still resumes, one block over it does not.
+    """
+    head = 25_800_000
+    day = surf_client.LAUNCHPAD_DAY_BLOCKS
+
+    client, calls = _client_recording_getlogs(head_block=head)
+    async with client:
+        state = await client.fetch_launchpad(resume=_cursor(head + day - 1))
+    assert state.cursor["last_block"] == head + day - 1
+    # It resumed: the `Launched` sweep never reaches back to the launchpad's
+    # first block. (It does not start at `last_block + 1` either -- the paged
+    # reader clamps a from-block past the tip to the head, which is the
+    # degenerate range a cursor slightly ahead of a lagging endpoint asks
+    # for, and is exactly what makes this case harmless.)
+    assert (min(int(c["fromBlock"], 16) for c in _launched_filters(calls))
+            > A.LAUNCHPAD_FIRST_BLOCK)
+
+    client, calls = _client_recording_getlogs(head_block=head)
+    async with client:
+        state = await client.fetch_launchpad(resume=_cursor(head + day + 1))
+    assert state.cursor["last_block"] == head
+    assert (min(int(c["fromBlock"], 16) for c in _launched_filters(calls))
+            == A.LAUNCHPAD_FIRST_BLOCK)
 
 
 @pytest.mark.asyncio
@@ -4313,11 +4478,10 @@ async def test_an_attacker_chosen_name_cannot_grow_the_persisted_cursor() -> Non
 
     # And on the read side: a hand-edited cursor cannot smuggle one past.
     async with _client_on(RecordingTransport(handler)) as client:
-        second = await client.fetch_launchpad(resume={
-            "last_block": head,
-            "launches": {pool: {"ticker": "T" * 9_000, "name": "N" * 9_000,
-                                "creator": "0x" + "9" * 9_000, "block": head - 100}},
-            "swaps_all": {},
-        })
+        second = await client.fetch_launchpad(resume=_cursor(
+            head,
+            launches={pool: {"ticker": "T" * 9_000, "name": "N" * 9_000,
+                             "creator": "0x" + "9" * 9_000, "block": head - 100}},
+        ))
     rec2 = second.cursor["launches"][pool]
     assert len(rec2["name"]) == len(rec2["ticker"]) == len(rec2["creator"]) == cap

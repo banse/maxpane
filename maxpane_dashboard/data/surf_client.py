@@ -549,6 +549,27 @@ def _coerce_launchpad_resume(resume: Any) -> dict | None:
     individually broken launch row is dropped instead of taking the cursor
     with it.  ``traders`` comes back as a ``set`` for the union that follows;
     it is re-serialised sorted, because a JSON cursor has to round-trip.
+
+    **Every accumulator field is required, and a bad one rejects the whole
+    cursor.**  This is the rule the paragraph above promises and the one this
+    function did not keep until 2026-08-24: it patched instead, defaulting a
+    malformed ``swaps_all``/``burn_by_coin`` to ``{}``, a malformed
+    ``burned_total_wei`` to ``0`` and a malformed ``traders`` to an empty set
+    -- while *keeping* ``last_block``.  Since the sweep resumes strictly
+    above ``last_block``, the blocks that would rebuild those totals are
+    never read again, so one unreadable field wrote a permanent zero into a
+    lifetime accumulator and the hero rendered it green and confident
+    (``0 swaps``, ``0 traders``, ``burned 0 IMD (all-time)``).  That is
+    CLAUDE.md's first convention exactly -- a failed read is ``None``, never
+    ``0``, and the zero then gets persisted, so the corruption outlives the
+    outage.
+
+    It is reachable without anyone hand-editing anything: a field that
+    reaches ``SurfCache._jsonable`` as a ``Decimal`` or ``bytes`` falls
+    through to its fallback and lands in the file as ``null``.
+
+    ``None`` here costs exactly one cold sweep, which rebuilds all six fields
+    from chain.
     """
     if not isinstance(resume, dict):
         return None
@@ -556,6 +577,32 @@ def _coerce_launchpad_resume(resume: Any) -> dict | None:
     if isinstance(last_block, bool) or not isinstance(last_block, int):
         return None
     if last_block < 0:
+        return None
+
+    # Present and well-typed, or no cursor at all.  A cursor this module
+    # wrote always carries all six keys, so a missing one is as much a sign
+    # of corruption as a wrongly-typed one -- and is just as permanent,
+    # because ``last_block`` would survive either way.
+    for key, types in (
+        ("launches", dict),
+        ("swaps_all", dict),
+        ("burn_by_coin", dict),
+        ("burned_total_wei", int),
+        ("traders", (list, tuple, set, frozenset)),
+    ):
+        value = resume.get(key)
+        if isinstance(value, bool) or not isinstance(value, types):
+            logger.warning(
+                "launchpad cursor rejected: %s is %s -- sweeping cold rather "
+                "than persisting a zeroed accumulator",
+                key, type(value).__name__,
+            )
+            return None
+    if resume["burned_total_wei"] < 0:
+        logger.warning(
+            "launchpad cursor rejected: burned_total_wei is negative -- "
+            "sweeping cold rather than persisting a zeroed accumulator"
+        )
         return None
 
     launches: dict[str, dict] = {}
@@ -588,26 +635,21 @@ def _coerce_launchpad_resume(resume: Any) -> dict | None:
                 out[pool_id.lower()] = count
         return out
 
-    burned_total = resume.get("burned_total_wei")
-    if isinstance(burned_total, bool) or not isinstance(burned_total, int):
-        burned_total = 0
-    burned_total = max(burned_total, 0)
+    # Type and sign are already guaranteed by the required-field gate above.
+    burned_total = resume["burned_total_wei"]
 
     # `resume.get("traders") or ()` was not enough: a hand-edited `5` is
     # truthy and not iterable (TypeError straight out of a `fetch_*` that
     # promises it always returns a state), and a hand-edited `"abc"` iterates
     # as three one-character "addresses". Only a real sequence is a trader
-    # list; anything else is no traders at all.
-    raw_traders = resume.get("traders")
-    traders = (
-        {
-            addr.lower()[:_LAUNCHPAD_TEXT_MAX]
-            for addr in raw_traders
-            if isinstance(addr, str) and addr
-        }
-        if isinstance(raw_traders, (list, tuple, set, frozenset))
-        else set()
-    )
+    # list -- and since 2026-08-24 anything else is no *cursor* at all
+    # (the required-field gate above), not merely no traders: reading zero
+    # traders while keeping `last_block` froze `trader_count` at 0 forever.
+    traders = {
+        addr.lower()[:_LAUNCHPAD_TEXT_MAX]
+        for addr in resume["traders"]
+        if isinstance(addr, str) and addr
+    }
 
     return {
         "last_block": last_block,
@@ -1481,6 +1523,25 @@ class SurfClient(OwnedHttpClient):
         except (RuntimeError, TypeError, ValueError) as exc:
             logger.warning("fetch_launchpad logs head: %s", exc)
             return _failed_launchpad_sweep(resume)
+
+        # **A cursor ahead of the chain is corrupt, not merely stale.**  The
+        # `max(head, prior["last_block"])` below is right -- a lagging
+        # endpoint must not drag `last_block` backwards and re-count blocks
+        # into a persisted accumulator -- but on its own it is also a trap
+        # with no exit: one bad `eth_blockNumber`, or a hand-edited cache,
+        # pins `last_block` above the head and `max()` then guarantees it
+        # stays there for every sweep that follows.  Every lifetime
+        # aggregate freezes and nothing but deleting the cache file recovers
+        # it.  A day of blocks is the tolerance, not zero, because a
+        # genuinely lagging endpoint answering a block or two behind the one
+        # that wrote the cursor is ordinary and must still resume.
+        if prior is not None and prior["last_block"] > head + LAUNCHPAD_DAY_BLOCKS:
+            logger.warning(
+                "launchpad cursor rejected: last_block %d is %d blocks ahead "
+                "of head %d -- sweeping cold rather than never resuming",
+                prior["last_block"], prior["last_block"] - head, head,
+            )
+            prior = None
 
         from_block = (
             A.LAUNCHPAD_FIRST_BLOCK if prior is None else prior["last_block"] + 1
