@@ -244,9 +244,11 @@ _ADDR_COLS = 11
 _AGE_COLS = 4
 _PRICE_COLS = 10
 _PCT_COLS = 7
-#: SWAPS 24H -- the day-long ranking window (Task 7).
+#: ``SW 24H`` on screen -- the day-long ranking window (Task 7).  The header
+#: is the short form because 6 columns is all there is; see ``on_mount``.
 _SWAPS_COLS = 6
-#: SWAPS ALL -- the all-time tiebreak (Task 7), new in Task 11.  What pays
+#: ``SW ALL`` on screen -- the all-time tiebreak (Task 7), new in Task 11.
+#: What pays
 #: for this column is CREATOR's 17 -> 11 shrink above, not a widened total.
 _SWAPS_ALL_COLS = 6
 _BURNED_COLS = 9
@@ -428,8 +430,24 @@ class SurfLaunchpadCoins(Vertical):
         table.add_column("AGE", width=_AGE_COLS)
         table.add_column("PRICE", width=_PRICE_COLS)
         table.add_column("24H%", width=_PCT_COLS)
-        table.add_column("SWAPS 24H", width=_SWAPS_COLS)
-        table.add_column("SWAPS ALL", width=_SWAPS_ALL_COLS)
+        # ``SW 24H``/``SW ALL``, not ``SWAPS 24H``/``SWAPS ALL``: these two
+        # columns are 6 wide, and ``DataTable`` truncates a header to its
+        # column width with no ellipsis and no other trace, so both of the
+        # long forms rendered as the bare word ``SWAPS`` -- two adjacent
+        # columns, one header, different numbers under it (41 and 977), at
+        # EVERY width including the full layout. That defeats the column
+        # Task 11 added and is worse than not adding it, because the two
+        # counts invite being read as each other. Both short forms are
+        # exactly 6 cells, so they fit whole and the 79-column total is
+        # untouched -- this repo's "shorten the value, not the constant"
+        # rule applied to a header instead of a cell.
+        #
+        # ``SW`` and not ``24H``/``ALL`` alone: the neighbouring column is
+        # ``24H%``, and ``24H%`` beside a bare ``24H`` is the same collision
+        # one column to the left. The ``SW`` prefix is what says these two
+        # count swaps while the ``%`` says the other is a price move.
+        table.add_column("SW 24H", width=_SWAPS_COLS)
+        table.add_column("SW ALL", width=_SWAPS_ALL_COLS)
         table.add_column("BURNED", width=_BURNED_COLS)
         self._set_title()
 

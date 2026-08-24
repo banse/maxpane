@@ -1271,6 +1271,66 @@ async def test_the_launchpad_binding_panel_is_the_coins_table() -> None:
     assert marked == {"SurfLaunchpadCoins"}, marked
 
 
+async def test_every_coin_column_header_reaches_the_screen_whole_and_distinct() -> None:
+    """No two columns may render the same header, and none may be cut.
+
+    ``DataTable`` truncates a header to its column width with **no ellipsis
+    and no other trace** -- so a label longer than its column is lost in
+    silence, and two labels that share a prefix longer than their columns
+    become the *same word on screen*. Both happened here: ``SWAPS 24H`` and
+    ``SWAPS ALL`` are 9 characters in 6-column cells, so the table rendered
+    ``SWAPS   SWAPS`` at every width including the full layout, with 41 and
+    977 underneath. A reader could not tell the day count from the all-time
+    one, which defeats the column Task 11 added.
+
+    The assertion is deliberately **not** "some expected substring is
+    present" -- that shape passes while the screen shows nothing of the
+    kind. It reads the labels off the table itself (never retyped here, so
+    a renamed column cannot leave a stale literal behind), then requires
+    three things of the *composited* header row at the pinned width:
+
+    1. every label appears in it **verbatim** -- a truncated header does
+       not, which is the truncation half;
+    2. the labels are pairwise distinct -- which is the collision half, and
+       the half a presence check cannot make;
+    3. they appear **in declaration order and without overlapping** -- so
+       "found" means "found in its own column", not matched inside a
+       neighbour's text.
+    """
+    from textual.widgets import DataTable
+
+    async with _surf_app().run_test(
+        size=(SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, 46)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        screen = pilot.app.screen
+        table = screen.query_one("#surf-lpc-table", DataTable)
+        labels = [str(column.label) for column in table.columns.values()]
+        panel = _region_text(pilot.app, screen.query_one(SurfLaunchpadCoins))
+
+    assert len(labels) == 9, labels
+    assert len(set(labels)) == len(labels), (
+        f"two coin columns declare the same header, so the screen shows one "
+        f"word over two different numbers: {labels}"
+    )
+
+    header = next((line for line in panel.split("\n") if labels[0] in line), None)
+    assert header is not None, f"no header row composited:\n{panel}"
+
+    cursor = 0
+    for label in labels:
+        found = header.find(label, cursor)
+        assert found >= 0, (
+            f"the {label!r} header does not reach the screen whole at "
+            f"{SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS} columns -- DataTable cut it "
+            f"and said nothing:\n{header!r}"
+        )
+        cursor = found + len(label)
+
+
 async def test_the_default_view_still_clears_at_the_app_wide_width() -> None:
     """Nothing in this change may move ``FULL_LAYOUT_COLUMNS``.
 
