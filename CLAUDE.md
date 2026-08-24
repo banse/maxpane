@@ -75,8 +75,27 @@ scripts/                    one-shot tooling (ABI vendoring etc). Imported by no
 
 **Data flow:** `client` (fetch, keyless) → `cache` (tiered TTL, persisted to `~/.maxpane/`) →
 `manager` (`fetch_and_compute()` → a flat dict) → `screen` (dispatch to widgets) → `widgets`
-(render primitives only). Widgets never import from `data/` or `analytics/`; they receive
-`str`/`int`/`float`/`bool`/`dict`/`list[dict]`.
+(render primitives only): they receive `str`/`int`/`float`/`bool`/`dict`/`list[dict]`.
+
+**Widgets may import pure, stdlib-only helpers from `analytics/`; they may not import
+`data/`.** This line used to read "widgets never import from `data/` or `analytics/`", and
+that was fiction on both halves — measured on 2026-08-24, **22 widget modules across four
+dashboards already import `analytics/`** (`base/*` ×12 take their formatters from
+`analytics/base_tokens`, `frenpet/*` ×5 from `analytics/frenpet_battle`, the bakery-era
+`ev_table`/`cookie_chart`/`hero_metrics`/`leaderboard` ×4, and `surf/feed` ×1) and **10 still
+import `data/`** (`base/*` ×8 for `data.base_models`, `leaderboard`/`activity_feed` for
+`data.models`). Those ten are legacy debt, not licence: a widget that imports `data/` is
+importing a layer that imports `httpx`. What the rule is really protecting is *purity* — no
+I/O, no clock, no Textual, nothing that can reach the network — so state it that way and
+prove it rather than banning a name.
+
+`tests/widgets/test_surf_widget_contract.py` is the worked example and is stronger than the
+ban it replaced: an allowlist of analytics modules a surf widget may import, plus
+`test_the_allowed_analytics_modules_are_themselves_pure`, which AST-walks each allowed
+module's **own** imports — and every `maxpane_dashboard.analytics.*` it finds from there, to a
+fixed point — asserting none of them reaches `data`, `textual`, `httpx` or `aiohttp`. The
+recursion is the part that bites: a depth-1 version was green while `analytics/surf_feed`
+imported `analytics/surf_signals`, which reaches `data` in one more hop.
 
 **`sybilkit/` is a second Python distribution in this repo**, a sibling of the `maxpane/` Rust
 crate rather than a package inside `maxpane_dashboard/`: its own `pyproject.toml`, its own
@@ -92,7 +111,7 @@ imports it — `data/curator_clusters.py` — and that import is guarded (see th
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
-| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel, nine launch detectors, v3→v4 migration + launchpad (`l`) view |
+| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel (replies threaded behind an expand/collapse toggle), nine launch detectors, v3→v4 migration + launchpad (`l`) view |
 | 2 | `curator` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock, linked-wallet analysis |
 | 3 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
 | 4 | `base` | Base | trending tokens, volume, signals |
@@ -343,32 +362,100 @@ settled layout for: the app-wide number is FWA's 143, so surf clearing at 139
 would move nothing a user sees. Re-sweep before re-seaming, and only when one
 of the two panels' needs moves again.
 
-**Surf's `l` LAUNCHPAD view (2026-08-23) measures 93 and moves nothing.** The
-v4 launchpad's own three panels (`SurfLaunchpadCoins`, `SurfCurveFlow`,
-`SurfBurnPipeline`) arrived fifty columns under FWA's 143, so neither
-`SURF_FULL_LAYOUT_COLUMNS` nor the app-wide `FULL_LAYOUT_COLUMNS` moved, and
-the record above is again **not** appended to — it tracks the app-wide
-number only, the same point made twice already about curator's own screen
-pin and its `f` view. The binding panel is `SurfLaunchpadCoins`, pinned by
+**Re-swept 2026-08-24 after the announce feed was rewritten, and surf's own
+143 did not move.** `SurfFeed` stopped being a `RichLog` and became per-row
+widgets with replies threaded behind a toggle, which indents a nested row one
+column per depth — so the obvious suspicion is that an open thread costs the
+screen up to two columns. It costs **none**, and the sweep says so in both
+states: 128..152 with threads collapsed and again with them expanded
+reproduces the 2026-08-12 table exactly (three markers 128–134, two 135–141,
+one at 142, none from 143), so `SurfMarket` is still the binder and
+`feed.FULL_TEXT_WIDTH` stays 71. `_item_lines` subtracts `depth` from the
+row's own *text budget* instead of adding it to the line, so a nested row is
+one column narrower than its parent rather than one column wider than the
+panel — **threading is paid in rows**, which is the currency this panel has to
+spare. Two traps here, both hit: the committed capture cannot exercise
+threading at all (its one `reply` is *older* than the post it follows, so
+`build_threads` makes it a root of its own and nothing is ever indented), and
+the composited screen **cannot see the failure** if the accounting is wrong —
+pay the indent out of the line and the row overflows by `depth` columns, but
+`_cell_fit` measured the chunk against the budget it was given, reports no
+truncation, and `text-wrap: nowrap` has the compositor clip it with no marker
+and no `…`. The invariant is therefore asserted in cells on `_item_lines`
+itself (`test_a_nested_row_is_never_wider_than_the_panel`), with the
+whole-screen marker comparison as the second half.
+
+**Surf's `l` LAUNCHPAD view measures 135 on a `12:5` seam, and moves
+nothing.** It measured 93 when it shipped (2026-08-23) with all three panels
+full width and stacked; the 2026-08-24 rail put `SurfLaunchpadCoins` beside
+`SurfCurveFlow`/`SurfBurnPipeline` instead, which made this number a function
+of a seam nobody had swept. Both halves were re-measured *in situ* first —
+the coin table needs **95** screen columns (93 content, immovable: its
+`DataTable`'s nine fixed columns plus the table's own cell gutters, and at 94
+the compositor eats `BURNED`'s D), the rail needs **39**, measured **inside**
+`#surf-launchpad-rail` and not in a bare harness, because its widest line pays
+the panel's padding, the inner `Static`'s padding *and* the reserved
+`scrollbar-gutter: stable` column. Measured without the gutter the answer is
+38, and a body pinned to that is one column short on the real screen.
+
+95 + 39 = **134** is the arithmetic floor. Swept seam by seam over the real
+screen: `3:2` 159 · `7:6` **177** · `9:7` 169 · `11:9` 173 · `2:1` 143 ·
+`12:5` **135** · `3:1` 153. The provisional `7:6` this body was built with is
+the worst of the seven — it hands a 71/29 split 54/46, so the table reached 95
+only at 177, past FWA's 143 *and* past the ~169 a laptop gets at the forced
+17 pt, i.e. the `l` view would have lit `‹ widen` on every terminal anybody
+owns. **This seam is deliberately not the other two rows' 7:6**; it balances a
+fixed-width `DataTable` against a rail of short label/value lines, and must not
+be tidied into agreement with them.
+
+**12:5 is pinned and is not quite the cheapest, for a reason worth more than
+the column.** `5:2` and `22:9` both collect the floor at 134; 5:2 is
+*disqualified* because below the pin the only panel that can mark has to be
+the one that binds — at 5:2 the table is clean from 133 while the rail still
+needs 134, so 133 clips a rail line with no `‹ widen` anywhere (the rail
+panels are plain `Static`s with no marker of their own). `3:1` fails the same
+test far more loudly (table clean from 127, rail not until 153). 22:9 survives
+it but is a seam nobody can read, for one column nobody can see. Of the seams
+that keep the marked panel the binder, `12:5` and `17:7` both collect 135 and
+12:5 is simpler — the same tie-break that chose 7:6 for `#middle-row`. The
+rail's 39 is also **data-dependent and the fixture is the small case**:
+`accrued 12.3K IMD · staged 500.0 IMD` takes it to 41, at which 12:5 collects
+137 and 5:2 would have needed 141.
+
+The binding panel is `SurfLaunchpadCoins`, pinned by
 `test_the_launchpad_binding_panel_is_the_coins_table` rather than by this
 sentence (curator's `test_the_analysis_binding_panel_is_the_operators_table`
-precedent): its `DataTable` has eight fixed columns that do not shrink with
-the terminal, and before this task it was the one surf widget with **no
-width tiering at all** — below its structural width a column was clipped
-with no on-screen trace, exactly the silent clipping this file forbids. A
-marker now lives on its own title (the `SurfMarket`/curator idiom, one tier
-rather than a ladder, because a fixed-column `DataTable` has nothing shorter
-to fall back to) — and it could not be read off `DataTable`'s own
+precedent). Before this task series it was the one surf widget with **no
+width tiering at all** — below its structural width a column was clipped with
+no on-screen trace, exactly the silent clipping this file forbids. Its marker
+lives on its own title (the `SurfMarket`/curator idiom, one tier rather than a
+ladder, because a fixed-column `DataTable` has nothing shorter to fall back
+to) — and it could not be read off `DataTable`'s own
 `show_horizontal_scrollbar`: that flag is already `True` several columns
 before any character is actually lost, so a marker keyed off it would fire
-early and disagree with what the compositor shows. The other two launchpad
-panels are plain label/value lines and never mark at all, clear down to 60
-columns. The hero row, which stays mounted in both modes so nothing it
-tracks (POOL/LP/BURN/SUPPLY) ever goes dark, clears on its own by 80 and
-never competes for the binder role. The sweep lives in
-`tests/screens/test_surf_screen.py` and — the standing rule — starts away
-from the pin (80..105, not at 93), so it could not agree with the number by
-construction.
+early and disagree with what the compositor shows. Its threshold
+(`launchpad._TABLE_FULL_WIDTH`) went **91 → 93** here, and those two columns
+were a live silent clip: Task 11 took the table from eight columns to nine,
+which buys another cell gutter even though the width constants still sum to
+79, so at content widths 91 and 92 the header rendered `BURN`/`BURNE` with the
+marker dark. The other two launchpad panels never mark at all. The hero row,
+which stays mounted in both modes so nothing it tracks (POOL/LP/BURN/SUPPLY)
+ever goes dark, clears on its own at **87** — re-measured, not inherited: the
+long-quoted "by 80" was true when `hero.MINIMAL_WIDTH` was 13 and it is 15
+since 2026-08-24. 87 is still 48 columns below the pin, so the conclusion that
+sentence was quoted for holds and the hero never competes for the binder role.
+
+135 is eight columns under FWA's 143, so neither `SURF_FULL_LAYOUT_COLUMNS`
+nor the app-wide `FULL_LAYOUT_COLUMNS` moved, and the record above is again
+**not** appended to — it tracks the app-wide number only, the same point made
+twice already about curator's own screen pin and its `f` view. The sweep lives
+in `tests/screens/test_surf_screen.py` and — the standing rule — starts away
+from the pin (120..145, not at 135), so it could not agree with the number by
+construction; it asserts the rail is un-ellipsised as well as the marker being
+dark, which is what makes the 5:2 disqualification a red test rather than an
+opinion. **Re-centre that range whenever the pin moves**: it was 80..105 for
+the stacked body, which would now sit entirely below the crossover and
+exercise only one branch.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Per-dashboard: `c` swaps the shared bottom-right slot (FWA, TTT, Talismans,
@@ -417,10 +504,10 @@ memory when a bug report cites one.
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest                    # 5,230 tests, must be green
+.venv/bin/python -m pytest                    # 5,336 tests, must be green
 .venv/bin/python -m pytest tests/analytics/   # pure math
 .venv/bin/python -m pytest -x                 # stop on first failure
-.venv/bin/python -m pytest sybilkit            # the second distribution, ~290 tests
+.venv/bin/python -m pytest sybilkit            # the second distribution, 422 tests + 1 xfail
 cargo test                                    # the Rust intro crate, from maxpane/ (443)
 ```
 
@@ -493,6 +580,22 @@ finishes, so an older operation cannot erase the status of a newer one.
 `widgets/markup_safety.safe_markup`. Textual defers `Text.from_markup` into the message pump, so
 a malformed name raises *outside* the screen's `try/except` and kills the app. Token symbols are
 attacker-controlled: anyone can deploy an ERC-20 named `[/x]`.
+
+**A widget that renders third-party text through `Static` hands it a pre-built
+`rich.text.Text`, never a markup string.** Same defect as the rule above, one layer out:
+`Static.update("…[/x]…")` does not parse anything at call time — Textual defers
+`Content.from_markup` into the message pump, so the parse failure raises *outside* the screen's
+`try/except` and takes the app down. Parse it yourself, synchronously, inside your own `try`
+(`Text.from_markup(...)`) and a malformed row degrades to a skipped row instead. `SurfFeed`'s
+`_row_text` is the worked example.
+
+Two things do **not** help and must not be mistaken for the guarantee. `Text.no_wrap` and
+`Text.overflow` are **inert** through Textual 8: `visualize()` funnels a Rich `Text` through
+`Content.from_rich_text`, which carries the spans and drops both attributes — setting them reads
+as a promise and is a no-op. Clipping has to come from CSS (`text-wrap: nowrap` on the row
+widget) or from having already fitted every line on `rich.cells.cell_len`. And a *sized cell* is
+not a fitted one: `len()` counts characters where the terminal counts cells, so CJK and emoji
+overflow a budget that arithmetic says they fit.
 
 **Validate persisted series per point.** Use `data/series_points.coerce_points`. A single `null`
 in a cache file used to abort startup for *every* dashboard.

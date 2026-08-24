@@ -187,7 +187,7 @@ COINS_WIDEN_HINT = "‹ widen"
 #:
 #: **Cannot be read off ``DataTable.show_horizontal_scrollbar``.** That flag
 #: reads ``True`` several columns before any character is actually lost --
-#: at ``self.size.width == 93`` (two above this constant) the whole header
+#: at ``self.size.width == 95`` (two above this constant) the whole header
 #: still reaches the compositor, ``BURNED`` and all, yet the scrollbar flag
 #: is already lit. A marker keyed off it would fire early and disagree with
 #: what the screen actually shows, so this is a literal measured threshold
@@ -196,15 +196,24 @@ COINS_WIDEN_HINT = "‹ widen"
 #: internal cell gutter, swept column by column until the compositor
 #: stopped truncating ``BURNED``'s last character.
 #:
-#: **Not re-measured by Task 11.** The column *count* went 8 -> 9 (SWAPS
-#: ALL), which costs one more column's worth of ``DataTable`` cell padding
-#: even though the width-constant sum held at 79 -- this threshold was swept
-#: for eight columns and is therefore stale for nine. Left at its pre-Task-11
-#: value rather than guessed at: Task 11's brief scopes this constant out
-#: (only the column widths, the row builder and the note line), and Task 13
-#: owns the compositor-measured screen-width sweep this value belongs to.
-#: Re-sweep before trusting the marker at the boundary again.
-_TABLE_FULL_WIDTH = 91
+#: **91 -> 93, re-measured by Task 13 (2026-08-24), and the two columns were
+#: a live silent clip.** The column *count* went 8 -> 9 in Task 11 (SWAPS
+#: ALL), which buys one more ``DataTable`` cell gutter even though the
+#: width-constant sum held at 79 -- 91 was swept for eight columns and had
+#: been stale for nine ever since. Task 11 left it alone deliberately rather
+#: than guessing, and the guess would have been wrong in the dangerous
+#: direction: swept again with the panel rendered full width, the header
+#: reads ``BURNE`` at a content width of 92 and ``BURN`` at 91, so at both
+#: of those widths the table was losing a character with the marker dark --
+#: exactly the silent clipping CLAUDE.md forbids, and the reason this is a
+#: measured literal rather than arithmetic over the column constants.
+#: 93 is the first content width at which the whole header, ``BURNED``
+#: included, reaches the compositor.
+#:
+#: In screen terms that is 95 (this panel's own ``padding: 0 1``), which is
+#: what ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``'s seam arithmetic is built on.
+#: Re-sweep -- never re-derive -- if a column is ever added or removed again.
+_TABLE_FULL_WIDTH = 93
 
 #: Defensive re-cap.  The manager already caps ``launchpad_coins`` at
 #: ``LAUNCHPAD_RENDER_LIMIT`` (20, ``data/surf_client.py``); this widget

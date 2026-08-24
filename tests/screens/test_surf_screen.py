@@ -1179,13 +1179,17 @@ def test_the_launchpad_body_css_agrees_between_default_css_and_the_stylesheet() 
 # appended to are all in ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``'s own
 # docstring in ``screens/surf.py``.
 #
-# The sweep below runs 80..105: comfortably below *and* above the measured
-# 93, and never starting at it, so it could not agree with the pin by
-# construction. It is a deliberate narrowing of this task's own planning
-# brief, whose suggested ``range(120, 175)`` sat entirely above the real
-# crossover -- run against the code as it stood before this task, that
-# range would have exercised only the "at or above the pin" branch and
-# could never have caught a padded number.
+# The sweep below runs 120..145: comfortably below *and* above the measured
+# 135, and never starting at it, so it could not agree with the pin by
+# construction.
+#
+# It ran 80..105 until 2026-08-24, which was right for the body it was
+# written against -- three full-width panels stacked, binding at 93. The rail
+# made this number a function of the seam, the seam was swept, and 12:5 put
+# the crossover 42 columns higher; a range left at 80..105 would now sit
+# entirely *below* it and exercise only the "narrower than the pin" branch,
+# the exact mirror of the failure the original comment here describes.
+# Re-centre the range whenever the pin moves.
 
 
 def _title_text(pilot) -> str:
@@ -1200,7 +1204,7 @@ def _title_text(pilot) -> str:
     return _screen_text(pilot.app)
 
 
-@pytest.mark.parametrize("width", range(80, 106))
+@pytest.mark.parametrize("width", range(120, 146))
 async def test_the_launchpad_body_is_whole_from_its_pinned_width(width) -> None:
     """Start the sweep away from the pin: a sweep that began at the constant
     would agree with it by construction.
@@ -1210,6 +1214,16 @@ async def test_the_launchpad_body_is_whole_from_its_pinned_width(width) -> None:
     fixture's own docstring) cannot contaminate this sweep: ``#middle-row``
     is hidden in ``MODE_LAUNCHPAD``, so nothing it composites reaches the
     screen while ``l`` is showing.
+
+    **Whole means the whole body, not merely the panel that can say so.**
+    Since the 2026-08-24 rail, ``SurfLaunchpadCoins`` shares the body with
+    two plain label/value panels that carry no ``‹ widen`` of their own --
+    they ellipsise and go quiet. Asserting only on the marker would
+    therefore have accepted a seam whose *rail* binds, which is exactly how
+    the two seams cheaper than 12:5 were disqualified: at 5:2 the table is
+    clean from 133 while the rail still needs 134, so 133 renders a clipped
+    rail line with nothing on screen asking to be widened. The rail check
+    below is what makes that a failure instead of a green sweep.
     """
     async with _surf_app().run_test(size=(width, 46)) as pilot:
         await pilot.app.screen._do_refresh()
@@ -1217,8 +1231,15 @@ async def test_the_launchpad_body_is_whole_from_its_pinned_width(width) -> None:
         await pilot.press("l")
         await pilot.pause()
         title = _title_text(pilot)
+        rail = _region_text(
+            pilot.app, pilot.app.screen.query_one(f"#{LAUNCHPAD_RAIL_ID}")
+        )
         if width >= SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS:
             assert "‹ widen" not in title, width
+            assert "…" not in rail, (
+                f"at {width} the rail is clipping a line and nothing on "
+                f"screen says so:\n{rail}"
+            )
         else:
             assert "‹ widen" in title, width
 
@@ -1226,8 +1247,14 @@ async def test_the_launchpad_body_is_whole_from_its_pinned_width(width) -> None:
 async def test_the_launchpad_binding_panel_is_the_coins_table() -> None:
     """Pinned by a test, not by a sentence in CLAUDE.md (curator's own
     ``test_the_analysis_binding_panel_is_the_operators_table`` precedent):
-    ``SurfLaunchpadCoins`` -- its ``DataTable``'s eight fixed columns -- is
-    the ``l`` body's binder, and the other two panels never mark at all."""
+    ``SurfLaunchpadCoins`` -- its ``DataTable``'s nine fixed columns -- is
+    the ``l`` body's binder, and the other two panels never mark at all.
+
+    Re-checked against the 12:5 seam (2026-08-24) rather than assumed:
+    the rail's own need is 39 columns and 12:5 hands it 39 at 134, so
+    one column below the pin the table is the only panel with anything
+    to say -- which is the property that chose this seam over the two
+    that collect the floor. See ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``."""
     async with _surf_app().run_test(
         size=(SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS - 1, 46)
     ) as pilot:
@@ -3053,6 +3080,122 @@ async def test_the_two_columns_now_clear_at_the_same_width():
     assert "‹ widen" not in await _activity_panel(
         MEASURED_FULL_LAYOUT_COLUMNS - 1
     )
+
+
+def _threaded_sweep_payload() -> dict:
+    """``_widen_sweep_payload()``, restaged so its reply actually threads.
+
+    The committed capture cannot exercise threading at all: its one
+    ``kind="reply"`` is *older* than the post it follows, so
+    ``build_threads`` sorts it first, finds no active root and returns it as
+    a root of its own. Nothing is ever indented, and a width sweep against
+    that fixture measures the flat list the feed rendered before it grew
+    threads -- while quietly reading as though it had covered them.
+
+    Same two real messages, nothing invented: only the reply's ``ts`` moves,
+    to ten minutes *after* the post, which is what a reply normally is.
+    """
+    items = [dict(item) for item in _representative_feed_items()]
+    post = next(item for item in items if item["kind"] == "self")
+    reply = next(item for item in items if item["kind"] == "reply")
+    reply["ts"] = post["ts"] + 600
+    return _tight_peg(_frozen_payload(feed_items=[post, reply]))
+
+
+async def _markers_with_threads_open(width: int, expand: bool) -> int:
+    """Whole-screen ``‹ widen`` count at *width*, threads open or shut.
+
+    Expansion is set on the panel's own ``_expanded`` map rather than by
+    pressing ``enter``: the keyboard route needs the toggle focused, and a
+    sweep that silently failed to focus it would report the collapsed
+    number for both halves of the comparison -- which is precisely the
+    false green this test exists to rule out. The assertion below that a
+    thread really was opened is what keeps that honest.
+    """
+    from maxpane_dashboard.analytics.surf_feed import build_threads
+
+    payload = _threaded_sweep_payload()
+    manager = _FakeManager(payload=payload)
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(width, 48)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        feed = screen.query_one(SurfFeed)
+        opened = 0
+        if expand:
+            for root in build_threads(payload["feed_items"]):
+                tx = str(root["item"].get("tx_hash") or "")
+                if tx and root.get("replies"):
+                    feed._expanded[tx] = True
+                    opened += 1
+            assert opened, (
+                "nothing threaded -- the fixture no longer nests a reply and "
+                "this sweep would compare the collapsed layout against itself"
+            )
+            feed._render_view()
+            await pilot.pause()
+            await pilot.pause()
+        return _screen_text(app).count("‹ widen")
+
+
+@pytest.mark.parametrize("depth", (0, 1, 2, 3))
+def test_a_nested_row_is_never_wider_than_the_panel(depth):
+    """The claim the full-layout width rests on, asserted where it is decided.
+
+    ``_item_lines`` pays ``depth`` out of the row's own *text budget*
+    (``width - _PREFIX_WIDTH - depth``) instead of adding it to the line, so
+    a nested row comes out one column narrower than its parent rather than
+    one column wider than the panel. That is the whole reason opening a
+    thread costs the screen no columns.
+
+    It is asserted on the function rather than on the screen because the
+    screen **cannot see the failure**: pay the indent out of the line and
+    the row overflows by ``depth`` columns, but ``_cell_fit`` measured the
+    chunk against the budget it was given, reports no truncation, and
+    ``text-wrap: nowrap`` then has the compositor clip the overflow with no
+    ``‹ widen`` and no ``…`` anywhere. A whole-screen marker count is
+    identical before and after -- the defect is invisible to exactly the
+    kind of test this file is otherwise made of, which is why this one
+    measures cells.
+
+    Widths start at 40: below ``30 + depth`` the ``_MIN_TEXT_BUDGET`` floor
+    deliberately stops shrinking and lets CSS clip, so the invariant does
+    not hold there and is not claimed to.
+    """
+    from rich.text import Text
+
+    from maxpane_dashboard.widgets.surf.feed import _item_lines
+
+    item = next(
+        it for it in _representative_feed_items() if it["kind"] == "reply"
+    )
+    for width in range(40, 121):
+        rendered = _item_lines(item, width, depth)
+        assert rendered is not None, (width, depth)
+        lines, _clipped = rendered
+        widest = max(Text.from_markup(line).cell_len for line in lines)
+        assert widest <= width, (
+            f"depth {depth} at {width} columns renders a {widest}-cell row -- "
+            f"the indent is being added to the line instead of taken out of "
+            f"the text budget, and nothing on screen can say so"
+        )
+
+
+@pytest.mark.parametrize("width", (134, 135, 141, 142, MEASURED_FULL_LAYOUT_COLUMNS))
+async def test_an_open_thread_costs_the_screen_no_columns(width):
+    """The composited half of the same claim, on the real screen.
+
+    The widths straddle the pin and both marker hand-overs below it (142
+    market-only, 135 the activity panel dropping out), so a regime that
+    moved by even one column on either side of the boundary shows up here.
+    Paired with ``test_a_nested_row_is_never_wider_than_the_panel`` above,
+    which carries the assertion this one is structurally unable to make.
+    """
+    assert await _markers_with_threads_open(width, expand=True) == (
+        await _markers_with_threads_open(width, expand=False)
+    ), width
 
 
 async def test_the_documented_width_still_covers_the_measured_one():

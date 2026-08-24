@@ -11,7 +11,7 @@ kind, no wallet, no signing, no transactions.
 
 | Game | Chain | What you see |
 |------|-------|-------------|
-| **Surfboard** | Ethereum | surfsurf.eth announce feed, nine launch detectors, IMD market, v4 launchpad, IDMD NFT |
+| **Surfboard** | Ethereum | surfsurf.eth announce feed (threaded replies), nine launch detectors, IMD market, v4 launchpad, IDMD NFT |
 | **THE LIST** | Ethereum | Zero-custody allowlist game: hourly doomsday clock, survival signals, fan-out patterns, linked-wallet analysis |
 | **FWA** | Ethereum | NFT gacha pool, inverse-weighted VRF draws, pull EV |
 | **Base Trading** | Base | Trending tokens, volume, ETH price, signals |
@@ -57,9 +57,22 @@ and never on a failed read — an outage cannot fire a burn or un-fire a migrati
 The hero (POOL · LP · BURN · SUPPLY) tracks the 2026-08-17 v3→v4 migration: the old LP position
 is gone — burned, not stolen, read live off-chain rather than assumed — and the live IMD/ETH pool
 is hookless. An earlier v4 hook launch was announced and then publicly retracted by the dev on
-2026-08-16; nothing on this dashboard watches for it any more. Press **`l`** to swap the whole
-dashboard body for the v4 launchpad's own view — LAUNCHPAD COINS, CURVE FLOW, BURN PIPELINE —
-with the hero left on screen the whole time; `esc` backs out, one-way.
+2026-08-16; nothing on this dashboard watches for it any more.
+
+The announce feed **threads replies**. A post that drew answers shows one `▸ 3 replies` line
+instead of three more rows; click it — or focus it and press `enter` or `space` — and the
+answers unfold, indented one column per level, with `▾` marking an open thread. The feed
+remembers which threads you opened across refreshes, so a 30-second repaint never folds a
+conversation back up under you. The indent is taken out of the reply's own text width rather
+than added to the row, so opening a thread costs rows and never columns — nothing else on the
+screen moves.
+
+Press **`l`** to swap the whole dashboard body for the v4 launchpad's own view: LAUNCHPAD COINS
+takes the left column and CURVE FLOW over BURN PIPELINE share a rail on the right — the same
+two-column shape the main dashboard uses, split wider because the coin table has nine fixed
+columns and cannot give any of them back. The hero (POOL · LP · BURN · SUPPLY) stays on screen
+the whole time; `esc` backs out, one-way. The launchpad view is whole from **135 columns**,
+inside the 143 the widest dashboard already asks for.
 
 The NFT floor is shown as `n/a — no keyless source`, not estimated. There is no keyless floor
 feed for this collection, and a made-up number on a dashboard people trade against is worse than
@@ -286,9 +299,11 @@ the other, so a single manager owns the command.
 
 Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap panels; in THE
 LIST's `l` view it switches the full-width raw and cleaned tables. **Surfboard binds `l`** to swap
-the whole dashboard body for the v4 launchpad's own view — LAUNCHPAD COINS, CURVE FLOW, BURN
-PIPELINE — with the hero (POOL · LP · BURN · SUPPLY) left on screen the whole time; `esc` backs
-out, one-way, and its status hint reads `l launchpad`. (THE LIST's `l` and Surfboard's `l` are two
+the whole dashboard body for the v4 launchpad's own view — LAUNCHPAD COINS on the left, CURVE
+FLOW over BURN PIPELINE in a right-hand rail — with the hero (POOL · LP · BURN · SUPPLY) left on
+screen the whole time; `esc` backs out, one-way, and its status hint reads `l launchpad`. In
+Surfboard's announce feed, `enter` or `space` on a `▸ n replies` line (or a click) opens and
+closes that thread. (THE LIST's `l` and Surfboard's `l` are two
 different dashboards' own bindings, not one shared key — see each dashboard's own row above for
 what it does there.) **THE LIST binds `y`** for your own standing — every send you
 made with the multiplier it got, what each one actually credited, your share of all weight, the
@@ -339,6 +354,12 @@ they need 76 and 63 now, which a seam nearer 76:63 would collect at 139 rather t
 columns are real and deliberately unspent: the app-wide number is FWA's 143, so a surf screen
 clearing at 139 would not change a single width a user sees — and that seam is no longer what binds
 surf anyway, since the market panel in the row below it asks for 143.
+
+Surfboard's `l` launchpad view is a second layout with its own number: **135 columns**, on a
+12:5 split rather than the dashboard's 7:6. It gets its own seam because it balances different
+things — a nine-column coin table that cannot shrink at all against a rail of short label/value
+lines — and on the dashboard's 7:6 the table would not have got its columns until a 177-column
+terminal, wider than any laptop reaches. 135 is inside 143, so the app-wide number is unchanged.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why
