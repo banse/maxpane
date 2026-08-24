@@ -23,6 +23,18 @@ _ROW = {
 }
 _ROWS = [_ROW]
 
+#: Render size for every mount in this module.  **Not** Textual's default
+#: 80x24, and that is the whole point: ``SurfLaunchpadCoins``' nine fixed
+#: columns need ``launchpad._TABLE_FULL_WIDTH`` (93) before the last of them
+#: reaches a pixel, so at 80 the ``SW ALL`` header and every ``swaps_all``
+#: value are clipped by the compositor and *no* assertion in this file could
+#: see them. That is not hypothetical: this module rendered at 80 until
+#: 2026-08-24, so Task 11's whole ``SW ALL`` column could have been deleted
+#: with these tests green. 100 clears 93 with room to spare and keeps the
+#: panel's own ``‹ widen`` marker unlit, which is the state the column
+#: assertions want to measure.
+_RENDER_SIZE = (100, 24)
+
 
 async def _render_coins(coins, **kwargs):
     """Mount ``SurfLaunchpadCoins``, feed it ``coins`` (and any
@@ -39,7 +51,7 @@ async def _render_coins(coins, **kwargs):
         def compose(self):
             yield SurfLaunchpadCoins()
 
-    async with _A().run_test() as pilot:
+    async with _A().run_test(size=_RENDER_SIZE) as pilot:
         widget = pilot.app.query_one(SurfLaunchpadCoins)
         widget.update_data(coins=coins, **kwargs)
         await pilot.pause()
@@ -59,7 +71,7 @@ async def test_hostile_ticker_and_name_never_reach_markup() -> None:
         def compose(self):
             yield SurfLaunchpadCoins()
 
-    async with _A().run_test() as pilot:
+    async with _A().run_test(size=_RENDER_SIZE) as pilot:
         widget = pilot.app.query_one(SurfLaunchpadCoins)
         widget.update_data(coins=[HOSTILE], coin_count=146, as_of_hhmm="01:14")
         await pilot.pause()
@@ -79,7 +91,7 @@ async def test_a_quiet_coin_renders_a_dash_not_zero_percent() -> None:
         def compose(self):
             yield SurfLaunchpadCoins()
 
-    async with _A().run_test() as pilot:
+    async with _A().run_test(size=_RENDER_SIZE) as pilot:
         widget = pilot.app.query_one(SurfLaunchpadCoins)
         widget.update_data(coins=[quiet], coin_count=1, as_of_hhmm="01:14")
         await pilot.pause()
@@ -94,7 +106,7 @@ async def test_burn_pipeline_shows_ready_only_when_ready() -> None:
         def compose(self):
             yield SurfBurnPipeline()
 
-    async with _A().run_test() as pilot:
+    async with _A().run_test(size=_RENDER_SIZE) as pilot:
         widget = pilot.app.query_one(SurfBurnPipeline)
         widget.update_data(burn_accrued=15.06, burn_staged=0.0, burn_ready=True,
                            burned_total=3299.0, burn_events=66)
@@ -109,7 +121,7 @@ async def test_burn_pipeline_unknown_is_not_ready() -> None:
         def compose(self):
             yield SurfBurnPipeline()
 
-    async with _A().run_test() as pilot:
+    async with _A().run_test(size=_RENDER_SIZE) as pilot:
         widget = pilot.app.query_one(SurfBurnPipeline)
         widget.update_data(burn_accrued=None, burn_staged=None, burn_ready=None,
                            burned_total=None, burn_events=None)
@@ -140,6 +152,27 @@ def test_the_table_still_needs_exactly_seventy_nine_columns():
 async def test_the_table_names_the_day_not_the_hour():
     _, out = await _render_coins(_ROWS)
     assert "24H%" in out and "1H%" not in out
+
+
+@pytest.mark.asyncio
+async def test_both_swap_columns_reach_the_compositor_with_their_own_value():
+    """``SW 24H`` and ``SW ALL`` are two columns carrying two fields.
+
+    The header half is cheap and was already covered; the *value* half was
+    not, and it is the half that can silently disappear. ``SW ALL`` is the
+    ninth and last fixed column, so it is the first thing the compositor
+    drops -- at Textual's default 80 columns neither its header nor its
+    number is ever painted, which is how this module could have gone on
+    passing with ``_coin_row`` reading the pre-rename ``swaps_1h`` for both
+    cells (or reading nothing at all for the second one).
+
+    Two distinct values, deliberately: 41 today against 97 all-time. A row
+    where the two agreed would pass just as happily against a widget that
+    rendered one field twice.
+    """
+    _, out = await _render_coins(_ROWS)
+    assert "SW 24H" in out and "SW ALL" in out
+    assert "41" in out and "97" in out
 
 
 @pytest.mark.asyncio

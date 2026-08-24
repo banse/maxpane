@@ -339,12 +339,36 @@ def _sample_data() -> dict:
         # -- feed ---------------------------------------------------------
         "feed_nonce": 14,           # eth_getTransactionCount(announce)
         "feed_last_post_age_s": _AS_OF - _TS_POST_13,   # 84769.0 -> "23h"
+        # Every row carries the whole frozen ``SURF_ROW_KEYS["feed_items"]``
+        # shape, ``to_addr``/``label``/``value_eth`` included -- pinned by
+        # ``test_every_list_row_in_the_fixture_matches_the_frozen_row_shape``.
+        # Those three were absent until 2026-08-24, the same drift the
+        # launchpad rows had: harmless on screen while every row here carries
+        # ``text`` (``feed.py`` only falls back to ``label`` and then
+        # ``value_eth`` when it does not), but a fixture that is missing a
+        # contract field cannot be what a screen test measures the contract
+        # against.
+        #
+        # All three values are the producer's own, not invented.
+        # ``to_addr`` is the channel for all three rows: a ``self`` post is
+        # ``from == to == channel`` by definition (``classify_channel_tx``),
+        # and a ``reply`` is a stranger writing *to* the channel.
+        # ``label`` is what ``surf_manager._feed_items`` emits for a row with
+        # no decoded ``method``: the first four calldata bytes as hex, which
+        # for a text post is the first four characters of the message
+        # ("I mo", "@Rek", "Bro ").  ``value_eth`` is ``0.0`` -- a real,
+        # measured zero, which is the normal shape on this channel (a post is
+        # calldata, not a payment) and honestly distinct from the ``None``
+        # the manager writes when ``value_wei`` will not read.
         "feed_items": [
             {
                 "ts": _TS_POST_13,
                 "kind": "self",
                 "from_addr": _ANNOUNCE,
+                "to_addr": _ANNOUNCE.lower(),
                 "from_label": "announce",
+                "label": "0x49206d6f",
+                "value_eth": 0.0,
                 "text": (
                     "I moved 33 eth to the LP on mainnet "
                     "https://etherscan.io/tx/0x90a0f8e2b039e8d86d1b10e33e6"
@@ -359,7 +383,10 @@ def _sample_data() -> dict:
                 "ts": _TS_POST_12,
                 "kind": "self",
                 "from_addr": _ANNOUNCE,
+                "to_addr": _ANNOUNCE.lower(),
                 "from_label": "announce",
+                "label": "0x4052656b",
+                "value_eth": 0.0,
                 "text": "@RektSconey created this explorer of the NFTs "
                         "https://idmd-reader.pages.dev. Burned 15745 more "
                         "tokens from the LP fees, made huge progress today "
@@ -374,7 +401,10 @@ def _sample_data() -> dict:
                 "ts": _TS_REPLY,
                 "kind": "reply",
                 "from_addr": _REPLIER,
+                "to_addr": _ANNOUNCE.lower(),
                 "from_label": None,
+                "label": "0x42726f20",
+                "value_eth": 0.0,
                 "text": "Bro cooked this so hard it smells like my "
                         "grandma’s pasta sauce after marinating "
                         "overnight. Absolute Michelin alpha.",
@@ -601,20 +631,39 @@ def _sample_data() -> dict:
         "launchpad_trader_count": 673,
         "launchpad_burned_total": 3_299.0,
         "launchpad_creator_eth_owed": 2.4187,
+        # ``change_24h_pct``/``swaps_24h``/``swaps_all`` -- Task 1's frozen
+        # ``SURF_ROW_KEYS["launchpad_coins"]``, pinned field-for-field by
+        # ``test_every_list_row_in_the_fixture_matches_the_frozen_row_shape``
+        # below. These rows carried the pre-branch ``change_1h_pct``/
+        # ``swaps_1h`` and no ``swaps_all`` until 2026-08-24, which meant
+        # ``24H%``, ``SW 24H`` and ``SW ALL`` rendered ``--`` in every screen
+        # test in this file: the whole Task 1/7/11 rename could be reverted
+        # with the suite green.
+        #
+        # The two swap counts are deliberately different per row -- a fixture
+        # where ``swaps_24h == swaps_all`` would pass just as happily against
+        # a widget that rendered one field into both cells.
         "launchpad_coins": [
             {
                 "ticker": "PANE", "name": "MaxPane Coin",
                 "creator": "0x9D2C9B1F5C3f8b6f7D9C1a5E4b3A2F1D0c9B8A7E",
                 "creator_known": False, "age_s": 3_600.0,
-                "price_eth": 0.0071, "change_1h_pct": 34.0,
-                "swaps_1h": 12, "imd_burned": 88.4,
+                "price_eth": 0.0071, "change_24h_pct": 34.0,
+                "swaps_24h": 12, "swaps_all": 31, "imd_burned": 88.4,
             },
             {
+                # The three-state row: fewer than two priced swaps in the
+                # day-long window, so ``change_24h_pct`` is ``None`` (a dash,
+                # never ``0%``) and ``swaps_24h`` is a real, representable
+                # zero -- while ``swaps_all`` is 3, the coin having traded
+                # before today. That combination is exactly what the widened
+                # window (Task 7) exists to show and what the hour-long one
+                # could not say at all.
                 "ticker": "SURF", "name": "Surf Launch",
                 "creator": "0x4E1c3A0Ad54418Fe843953C71dF23637DE732Cee",
                 "creator_known": False, "age_s": 7_200.0,
-                "price_eth": 0.00021, "change_1h_pct": None,
-                "swaps_1h": 0, "imd_burned": 0.0,
+                "price_eth": 0.00021, "change_24h_pct": None,
+                "swaps_24h": 0, "swaps_all": 3, "imd_burned": 0.0,
             },
         ],
         "launchpad_as_of_hhmm": "01:14",
@@ -3749,6 +3798,67 @@ async def _activity_usable_columns(width: int) -> int:
 #: and the widget's own ``FULL_WIDTH``, then pinned against a real render, so
 #: it is not a third literal to keep in step by hand.
 ACTIVITY_FIRST_FULL_TERMINAL = 135
+
+
+def test_every_list_row_in_the_fixture_matches_the_frozen_row_shape():
+    """Every list-of-dict row here carries exactly ``SURF_ROW_KEYS``.
+
+    The root cause of the 2026-08-23 branch's one Critical finding: this
+    file named ``SURF_ROW_KEYS`` nowhere at all, so nothing compared its
+    fixture rows against the contract they claim to be instances of. The
+    launchpad rows still carried the pre-branch ``change_1h_pct``/
+    ``swaps_1h`` and had no ``swaps_all`` -- so ``24H%``, ``SW 24H`` and
+    ``SW ALL`` rendered ``--`` in *every* screen test in this module, and
+    the whole Task 1/7/11 rename could be reverted with the suite green.
+    The feed rows had the same drift in the other direction, missing
+    ``to_addr``, ``label`` and ``value_eth``.
+
+    Cross-layer for the same reason
+    ``test_the_activity_fixture_speaks_the_producers_vocabularies`` below
+    is, and modelled on it: this file may import ``data/`` (the widgets may
+    not), and without that import the fixture is free to invent a row shape
+    the pipeline never emits -- which is exactly what it did.
+
+    Both directions, and mechanically over *every* list key rather than a
+    hand-typed three: a missing field renders as a dash and a stray one is
+    simply never read, and both read as a passing test. Walking
+    ``_sample_data()`` rather than naming keys is what makes a fourth
+    list-of-dict payload covered the day it is written -- the same reason
+    ``_ALL_WIDGET_CLASSES`` above is derived rather than typed out.
+    """
+    from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS
+
+    sample = _sample_data()
+    rows_seen = 0
+    for key, value in sample.items():
+        if not isinstance(value, list):
+            continue
+        if not value or not all(isinstance(row, dict) for row in value):
+            continue
+        assert key in SURF_ROW_KEYS, (
+            f"the fixture carries a list-of-dict payload {key!r} that "
+            "SURF_ROW_KEYS does not declare a row shape for"
+        )
+        declared = set(SURF_ROW_KEYS[key])
+        for index, row in enumerate(value):
+            assert set(row) == declared, (
+                f"{key}[{index}] is missing "
+                f"{sorted(declared - set(row))} and carries stray "
+                f"{sorted(set(row) - declared)} -- the screen tests are "
+                "measuring a row shape the pipeline never emits"
+            )
+            rows_seen += 1
+
+    # The walk itself has to be able to fail: a fixture that stopped
+    # carrying list payloads (or a filter that stopped matching them) would
+    # loop zero times and pass.  Every declared row shape must be exercised.
+    assert set(SURF_ROW_KEYS) <= {
+        key for key, value in sample.items() if isinstance(value, list)
+    }, (
+        f"declared row shapes {sorted(set(SURF_ROW_KEYS))} are not all "
+        "present in the fixture -- one of them is unmeasured here"
+    )
+    assert rows_seen >= len(SURF_ROW_KEYS)
 
 
 def test_the_activity_fixture_speaks_the_producers_vocabularies():
