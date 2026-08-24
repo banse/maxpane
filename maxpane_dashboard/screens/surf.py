@@ -12,9 +12,28 @@ Layout: three content rows, every widget on screen at once::
     StatusBar
 
 ``l`` swaps ``#middle-row``/``#separator``/``#bottom-row`` for a fourth body
-(``#surf-launchpad-body``, MODE_LAUNCHPAD) holding the v4 launchpad's own
-three panels; ``#hero-row`` is never touched by that swap and stays on
-screen in both modes. See "The 2026-08-23 ``l`` view" below.
+holding the v4 launchpad's own three panels, laid out on ``#middle-row``'s
+own shape::
+
+    #surf-launchpad-body   SurfLaunchpadCoins (7fr) | #surf-launchpad-rail (6fr)
+                                                    |   SurfCurveFlow    (auto, +1 margin)
+                                                    |   SurfBurnPipeline (1fr)
+
+``#hero-row`` is never touched by that swap and stays on screen in both
+modes. See "The 2026-08-23 ``l`` view" below.
+
+The rail arrived 2026-08-24. The two summary panels were stacked *under*
+the coin table until then, which spent eleven of the body's rows on ten
+lines of label/value text that never grow, while the one panel here with
+a variable row count -- the table, whose rows are the launchpad's own
+population -- absorbed the loss. Beside the table they cost columns
+instead. That trade is only worth making because rows are the scarce
+currency in this body and columns are not: the coin table's
+``DataTable`` has eight fixed columns, so what it needs horizontally is a
+constant, and what it can *show* vertically is not. The seam is
+``7fr:6fr`` provisionally; it has not been swept yet, and
+``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`` still holds the pre-rail
+measurement -- see its own docstring.
 
 Both rows below the hero are split 7:6 on the same seam, so the two rows
 read as one grid rather than two unrelated bands.
@@ -62,8 +81,8 @@ did; it swaps the *whole* three-row dashboard body for the v4 launchpad's
 own three panels (``SurfLaunchpadCoins``, ``SurfCurveFlow``,
 ``SurfBurnPipeline``), on curator's ``y``/``f`` precedent, and ``escape``
 backs out one-way. The hero row is untouched by the swap and stays mounted
-and visible in both modes, so nothing it tracks (POOL/LP/BURN/SUPPLY) ever
-goes dark. The five dashboard-body panels above still never share a slot
+and visible in both modes, so nothing it tracks (LAUNCHPAD/FLOW/BURN/SUPPLY
+since the 2026-08-24 rebuild) ever goes dark. The five dashboard-body panels above still never share a slot
 with each other -- only the *body as a whole* now has a second view.
 
 ``SurfSignals`` is ``auto`` (a title, a spacer and six detector rows) with a
@@ -332,6 +351,16 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: own screen pin and its ``f`` view). The hero row, which stays mounted in
 #: both modes, clears on its own well below this (its widest box's marker
 #: goes dark at 80), so it never competes for the binder role either.
+#: **Stale as of 2026-08-24 and deliberately left alone.** 93 was measured
+#: when all three launchpad panels were full width and stacked; the rail put
+#: ``SurfLaunchpadCoins`` on ``7fr`` of a two-column body, so the table now
+#: reaches its 91 rendered columns at a much wider terminal and this number
+#: no longer describes the body. It is **not** updated here on purpose: the
+#: seam it depends on is provisional, the task that sweeps the seam is the
+#: task that re-measures this, and a number moved twice -- once on a guess
+#: and once on a measurement -- is a number nobody can audit. Until then
+#: ``test_the_launchpad_body_is_whole_from_its_pinned_width`` fails against
+#: it, which is the correct state for a pin whose subject moved.
 SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 93
 
 #: The two bodies ``l``/``escape`` swap between. Named on curator's
@@ -343,6 +372,13 @@ MODE_LAUNCHPAD = "launchpad"
 #: The launchpad body's container id -- exported so the test module and any
 #: future consumer can query it without retyping the literal.
 LAUNCHPAD_BODY_ID = "surf-launchpad-body"
+
+#: The launchpad body's right rail (2026-08-24), holding CURVE FLOW over BURN
+#: PIPELINE beside the coin table -- ``#surf-right-rail``'s opposite number in
+#: the other body, and named for it. Exported for the same reason as
+#: :data:`LAUNCHPAD_BODY_ID`: the id is queried from the test module and
+#: retyping a literal in two files is how one of them goes stale.
+LAUNCHPAD_RAIL_ID = "surf-launchpad-rail"
 
 
 # -- format helpers ----------------------------------------------------
@@ -716,10 +752,30 @@ class SurfScreen(RefreshGuard, Screen):
      * of #middle-row/#separator/#bottom-row by `_show_mode`. `1fr` so the
      * coin table -- the one panel here with real content to scroll -- gets
      * the screen's spare rows the same way #middle-row does in dashboard
-     * mode; the two summary panels below it are `auto` and take only what
-     * their five/six lines need. `margin: 1 0 0 0` matches #middle-row's own
-     * top margin, so swapping bodies does not also move the hero's breathing
-     * room.
+     * mode. `margin: 1 0 0 0` matches #middle-row's own top margin, so
+     * swapping bodies does not also move the hero's breathing room.
+     *
+     * A ROW since 2026-08-24, on #middle-row's own shape: the coin table
+     * left, a rail of CURVE FLOW over BURN PIPELINE right. Stacked, the two
+     * summary panels took eleven rows off the one panel here that has rows
+     * to lose -- their ten lines are label/value text that never grows,
+     * while the table's row count is the launchpad's own population. The
+     * seam is `7fr:6fr` as a starting point only; Task 13 sweeps it, and
+     * the number the sweep lands on is what
+     * `SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS` will then be re-measured to.
+     *
+     * The rail carries `scrollbar-gutter: stable` for curator's own reason
+     * (`#curator-right-rail`): without it the scrollbar takes its column
+     * out of the panel beside it only on terminals short enough to overflow,
+     * so the layout's WIDTH requirement would move with its HEIGHT and a
+     * width pin measured at 48 rows would be one column short at 40.
+     * SurfCurveFlow is `auto` (five lines) with the one-row bottom margin
+     * `SurfSignals` uses in the other rail -- the two panels sat flush and
+     * read as one block. SurfBurnPipeline takes the remainder at `1fr`,
+     * floored at its own six lines: a `1fr` child cannot overflow a scroll
+     * container, it shrinks, so without the floor it would shed a line per
+     * terminal row down to a bare title with no scrollbar and no trace --
+     * exactly what `min-height` under `SurfDevActivity` exists to stop.
      */
     SurfScreen #surf-launchpad-body {
         height: 1fr;
@@ -727,18 +783,27 @@ class SurfScreen(RefreshGuard, Screen):
         margin: 1 0 0 0;
     }
     SurfScreen SurfLaunchpadCoins {
-        width: 100%;
+        width: 7fr;
         height: 1fr;
         padding: 0 1;
     }
+    SurfScreen #surf-launchpad-rail {
+        width: 6fr;
+        height: 1fr;
+        overflow-y: auto;
+        scrollbar-size: 1 1;
+        scrollbar-gutter: stable;
+    }
     SurfScreen SurfCurveFlow {
-        width: 100%;
+        width: 1fr;
         height: auto;
         padding: 0 1;
+        margin: 0 0 1 0;
     }
     SurfScreen SurfBurnPipeline {
-        width: 100%;
-        height: auto;
+        width: 1fr;
+        height: 1fr;
+        min-height: 6;
         padding: 0 1;
     }
     """
@@ -796,10 +861,18 @@ class SurfScreen(RefreshGuard, Screen):
         # use, so the first keypress paints a complete frame instead of a
         # blank one. The hero above is outside this container and is never
         # touched by the swap.
-        with Vertical(id=LAUNCHPAD_BODY_ID):
+        #
+        # A `Horizontal` since 2026-08-24, mirroring `#middle-row`: the coin
+        # table is the only panel here with rows to scroll, and stacking the
+        # two summary panels *under* it spent eleven of the body's rows on
+        # ten lines of label/value text that never grow. Beside it they cost
+        # the table columns instead, which is the cheaper currency for a
+        # panel whose height is its content and whose width is fixed.
+        with Horizontal(id=LAUNCHPAD_BODY_ID):
             yield SurfLaunchpadCoins()
-            yield SurfCurveFlow()
-            yield SurfBurnPipeline()
+            with Vertical(id=LAUNCHPAD_RAIL_ID):
+                yield SurfCurveFlow()
+                yield SurfBurnPipeline()
 
         yield StatusBar()
 
@@ -951,11 +1024,38 @@ class SurfScreen(RefreshGuard, Screen):
         self._title_data = data
         self._render_title()
 
-        # Hero (the full-width top row): POOL / LP / BURN / SUPPLY, rebuilt
-        # 2026-08-23 for the v4 migration (widgets/surf/hero.py). The old
-        # HOOK/GATE-era keys (``hook_status``, ``lp_liquidity``, ``gate_open``,
-        # ``identities_written``) are not dispatched here any more -- the
-        # hero no longer has a box for them.
+        # Hero (the full-width top row): LAUNCHPAD / FLOW / BURN / SUPPLY,
+        # rebuilt 2026-08-24 (widgets/surf/hero.py). The v3->v4 migration had
+        # already replaced the HOOK/GATE boxes with POOL/LP; this wave retires
+        # those two in turn, so the pool and LP keys are no longer dispatched
+        # here either. Both boxes read the launchpad sweep that already runs
+        # for the ``l`` view -- no new request -- and both carry that tier's
+        # own ``launchpad_as_of_hhmm`` clock rather than the title bar's
+        # faster one, because these numbers can be ten minutes older than it.
+        #
+        # Where the retired boxes' keys went, because getting this wrong is
+        # what produced the C2 defect (a detector left pointed at a burned
+        # position because a comment said the wiring was already there):
+        #
+        # * ``decoy_pool_count`` still reaches the screen -- through the DECOY
+        #   POOL detector, which ``surf_manager._readings`` builds off this
+        #   same flat key, so it is dispatched as ``sig_decoy_*`` below.
+        # * ``pool_liquidity_usd`` still reaches SurfMarket (``pool $548.7K``),
+        #   which is where POOL's headline figure was already duplicated.
+        # * ``lp_owner_ok`` still reaches ``_title_line`` as the ``⚠ LP owner
+        #   changed`` warning, which is the whole of what the LP box's
+        #   ``owner ✓`` was saying.
+        # * ``pool_venue``, ``pool_fee_bps``, ``pool_id_source``, ``lp_state``,
+        #   ``lp_imd`` and ``lp_weth`` now reach NOTHING. They are published by
+        #   the manager and rendered nowhere; they belong in the same cleanup
+        #   that removed ``hook_status``/``pool_liquidity_raw`` from
+        #   ``SURF_KEYS``, which this task does not own
+        #   (``data/surf_models.py``) -- see task-12-report.md. Deliberately
+        #   listed rather than quietly dropped: an unconsumed contract key
+        #   that nobody has written down reads, to the next person, as a
+        #   dispatch somebody forgot.
+        #
+        # The older accounting below still holds for the HOOK/GATE-era keys:
         #
         # Where each of them actually goes now, because getting this wrong is
         # what produced the C2 defect (a detector left pointed at a burned
@@ -982,15 +1082,13 @@ class SurfScreen(RefreshGuard, Screen):
         # See ``META_KEYS`` in the test module for the fuller accounting.
         try:
             self.query_one(SurfHero).update_data(
-                pool_venue=data.get("pool_venue"),
-                pool_fee_bps=data.get("pool_fee_bps"),
-                pool_liquidity_usd=data.get("pool_liquidity_usd"),
-                pool_id_source=data.get("pool_id_source"),
-                decoy_pool_count=data.get("decoy_pool_count"),
-                lp_state=data.get("lp_state"),
-                lp_imd=data.get("lp_imd"),
-                lp_weth=data.get("lp_weth"),
-                lp_owner_ok=data.get("lp_owner_ok"),
+                launchpad_coin_count=data.get("launchpad_coin_count"),
+                launchpad_new_24h=data.get("launchpad_new_24h"),
+                launchpad_creator_count=data.get("launchpad_creator_count"),
+                launchpad_swap_count=data.get("launchpad_swap_count"),
+                launchpad_trader_count=data.get("launchpad_trader_count"),
+                launchpad_creator_eth_owed=data.get("launchpad_creator_eth_owed"),
+                launchpad_as_of_hhmm=data.get("launchpad_as_of_hhmm"),
                 burn_accrued=data.get("burn_accrued"),
                 burn_staged=data.get("burn_staged"),
                 burn_ready=data.get("burn_ready"),
@@ -1095,6 +1193,14 @@ class SurfScreen(RefreshGuard, Screen):
             self.query_one(SurfLaunchpadCoins).update_data(
                 coins=data.get("launchpad_coins"),
                 coin_count=data.get("launchpad_coin_count"),
+                launch_count=data.get("launchpad_launch_count"),
+                # The sweep's OWN population count, beside the factory's
+                # ``coinCount()`` claim. Without it ``_set_note`` has nothing
+                # to compare and stays silent about a disagreement -- which is
+                # how a truncating sweep returned 2 of 146 launches looking
+                # perfectly healthy (Task 6's review finding). The widget has
+                # accepted this kwarg since Task 11; the screen simply never
+                # passed it, so the detector could not fire in the running app.
                 as_of_hhmm=data.get("launchpad_as_of_hhmm"),
             )
         except Exception as exc:

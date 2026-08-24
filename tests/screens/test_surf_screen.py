@@ -25,6 +25,7 @@ from maxpane_dashboard.data.surf_models import SURF_KEYS
 from maxpane_dashboard.screens.surf import (
     INITIAL_TITLE,
     LAUNCHPAD_BODY_ID,
+    LAUNCHPAD_RAIL_ID,
     MODE_DASHBOARD,
     MODE_LAUNCHPAD,
     SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS,
@@ -91,16 +92,21 @@ _ALL_WIDGET_CLASSES = {**_WIDGET_CLASSES, **_LAUNCHPAD_WIDGET_CLASSES}
 #: answers per entry now. Keys equal to their values is not redundancy to
 #: simplify away: it is the (common) case where the coincidence still holds.
 SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
+    # LAUNCHPAD / FLOW / BURN / SUPPLY since 2026-08-24. The POOL and LP boxes
+    # this row carried for one day are gone (widgets/surf/hero.py says why),
+    # and with them nine kwargs -- see ``META_KEYS`` and
+    # ``_KEYS_WITHOUT_A_RENDERER`` below for where each of those keys ended up.
+    # The first three names here are the coincidence this map's own comment
+    # warns about breaking: the hero takes the ``launchpad_``-prefixed PRD
+    # names verbatim, while the ``l`` view's three widgets take short ones.
     "SurfHero": {
-        "pool_venue": "pool_venue",
-        "pool_fee_bps": "pool_fee_bps",
-        "pool_liquidity_usd": "pool_liquidity_usd",
-        "pool_id_source": "pool_id_source",
-        "decoy_pool_count": "decoy_pool_count",
-        "lp_state": "lp_state",
-        "lp_imd": "lp_imd",
-        "lp_weth": "lp_weth",
-        "lp_owner_ok": "lp_owner_ok",
+        "launchpad_coin_count": "launchpad_coin_count",
+        "launchpad_new_24h": "launchpad_new_24h",
+        "launchpad_creator_count": "launchpad_creator_count",
+        "launchpad_swap_count": "launchpad_swap_count",
+        "launchpad_trader_count": "launchpad_trader_count",
+        "launchpad_creator_eth_owed": "launchpad_creator_eth_owed",
+        "launchpad_as_of_hhmm": "launchpad_as_of_hhmm",
         "burn_accrued": "burn_accrued",
         "burn_staged": "burn_staged",
         "burn_ready": "burn_ready",
@@ -165,6 +171,14 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
     "SurfLaunchpadCoins": {
         "launchpad_coins": "coins",
         "launchpad_coin_count": "coin_count",
+        # The sweep's own population count. `SurfLaunchpadCoins.update_data`
+        # has named this kwarg since Task 11 and the screen did not pass it,
+        # so `_set_note`'s comparison against the factory's `coinCount()`
+        # could not run in the real app at all -- the detector for exactly
+        # the bug Task 6's review found (a truncating sweep returning 2 of
+        # 146 launches as a success) was dark in production while its unit
+        # tests passed.
+        "launchpad_launch_count": "launch_count",
         "launchpad_as_of_hhmm": "as_of_hhmm",
     },
     "SurfCurveFlow": {
@@ -209,16 +223,62 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
 #: flagged the cleanup in task-12-report.md. Task 6 fix round 12a did that
 #: cleanup -- all three are gone from ``SURF_KEYS`` now, not merely
 #: unconsumed, so they no longer belong in this set either.
+#:
+#: 2026-08-24 added two more of the same shape, both from the hero's
+#: LAUNCHPAD/FLOW rebuild:
+#:
+#: * ``decoy_pool_count`` -- ``surf_manager._readings`` reads it straight off
+#:   this flat dict to feed ``_detect_decoy``, so it reaches the screen as
+#:   ``sig_decoy_*``, dispatched to SurfSignals. Identical in kind to
+#:   ``gate_open`` above, and the hero's own module docstring names DECOY POOL
+#:   on the signals rail as where the retired POOL box's decoy count went.
+#: * ``lp_owner_ok`` -- ``_title_line`` in this very screen turns a ``False``
+#:   into ``⚠ LP owner changed`` on the title bar, which is the whole of what
+#:   the retired LP box's ``owner ✓`` line was saying. The screen consuming a
+#:   key directly is the original meaning of this set.
 META_KEYS = frozenset({
     "as_of", "degraded", "eth_usd",
     "gate_open", "identities_written", "lp_liquidity",
+    "decoy_pool_count", "lp_owner_ok",
+})
+
+#: Contract keys the manager still publishes that now reach **nothing** --
+#: not a widget, not a detector, not this screen. Distinct from
+#: :data:`META_KEYS`, which asserts the screen consumes them: folding these in
+#: there would make that set's own docstring false, and "consumed somewhere"
+#: is precisely the claim nobody can check once the two are mixed.
+#:
+#: All six are the hero's retired POOL and LP boxes' fields, orphaned by the
+#: 2026-08-24 rebuild (``widgets/surf/hero.py`` argues each retirement). Their
+#: information either moved (``pool_liquidity_usd`` to SurfMarket,
+#: ``decoy_pool_count`` and ``lp_owner_ok`` to the two entries just added to
+#: ``META_KEYS``) or simply ran out: ``lp_state`` has read ``"gone"``
+#: permanently since the ops wallet burned the v3 position on 2026-08-17, and
+#: ``pool_venue`` has read ``"v4"`` with no path back ever since.
+#:
+#: **Parked, not blessed.** The real fix is to remove them from ``SURF_KEYS``,
+#: which lives in ``data/surf_models.py`` -- a file the task that orphaned
+#: them does not own. That is exactly how ``hook_status``,
+#: ``pool_liquidity_raw`` and ``lp_position_count`` were handled one wave
+#: earlier (see ``META_KEYS``'s own note on them): parked here, flagged in the
+#: task report, and removed from the contract by the module's owner in the
+#: following round, at which point this set shrinks. It is scaffolding with
+#: the same expiry date ``_KEYS_PENDING_CONSUMERS`` had.
+#:
+#: ``test_the_unrendered_keys_are_named_by_no_widget_signature`` is what stops
+#: an entry rotting here after somebody re-wires it: re-add ``lp_imd=`` to a
+#: widget's ``update_data`` and this list is what goes red.
+_KEYS_WITHOUT_A_RENDERER = frozenset({
+    "pool_venue", "pool_fee_bps", "pool_id_source",
+    "lp_state", "lp_imd", "lp_weth",
 })
 
 #: Emptied by Task 12 (was: the 27 v4/launchpad keys Task 1 froze before their
 #: consumers existed).  Every key SURF_KEYS carries now reaches either a
-#: widget kwarg (:data:`SURF_WIDGET_SIGNATURES`) or :data:`META_KEYS`; an
-#: entry regressing into this set again is a bug, not a waiver -- see the
-#: docstring above for the two keys' worth of genuine, reported exceptions.
+#: widget kwarg (:data:`SURF_WIDGET_SIGNATURES`), :data:`META_KEYS`, or the
+#: explicitly-parked :data:`_KEYS_WITHOUT_A_RENDERER`; an entry regressing
+#: into this set again is a bug, not a waiver -- see the docstrings above for
+#: the keys' worth of genuine, reported exceptions.
 _KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
 
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
@@ -495,6 +555,21 @@ def _sample_data() -> dict:
         # is exactly the state a v1 install reaching this tier for the first
         # time is really in.
         "launchpad_coin_count": 146,
+        # The sweep's own population, agreeing with the factory's claim above
+        # -- the healthy state, in which `SurfLaunchpadCoins._set_note` says
+        # nothing extra. A disagreement is the abnormal one and belongs in the
+        # widget's own tests, not in the fixture every width sweep in this file
+        # measures against.
+        "launchpad_launch_count": 146,
+        # 146 launches over the four days to 2026-08-19 is a mean of 36 a day.
+        # Set rather than left `None` because the hero's LAUNCHPAD box renders
+        # an unread field as a dash, and a width measured against a dash is a
+        # width measured against a state the data is not normally in
+        # (CLAUDE.md's IMD/FP peg lesson). It happens to cost nothing here --
+        # `36 new · 24h` and `-- new · 24h` are the same twelve columns -- but
+        # that is a measurement, not a reason to have left it out.
+        "launchpad_new_24h": 36,
+        "launchpad_creator_count": 73,
         "launchpad_swap_count": 4_683,
         "launchpad_trader_count": 673,
         "launchpad_burned_total": 3_299.0,
@@ -608,8 +683,56 @@ def test_surf_keys_covers_the_local_signature_map():
     assert dispatched <= set(SURF_KEYS), (
         f"dispatch kwargs not in SURF_KEYS: {sorted(dispatched - set(SURF_KEYS))}"
     )
-    unconsumed = set(SURF_KEYS) - dispatched - META_KEYS - _KEYS_PENDING_CONSUMERS
+    unconsumed = (
+        set(SURF_KEYS)
+        - dispatched
+        - META_KEYS
+        - _KEYS_WITHOUT_A_RENDERER
+        - _KEYS_PENDING_CONSUMERS
+    )
     assert not unconsumed, f"contract keys reach no widget: {sorted(unconsumed)}"
+    # The carve-outs are carve-outs from something. A key that left SURF_KEYS
+    # but stayed listed here is a waiver nobody is using any more, and it
+    # would hide the next real orphan by absorbing its name.
+    stale = (META_KEYS | _KEYS_WITHOUT_A_RENDERER) - set(SURF_KEYS)
+    assert not stale, f"a carve-out names a key SURF_KEYS no longer has: {sorted(stale)}"
+    assert not (META_KEYS & _KEYS_WITHOUT_A_RENDERER), (
+        "a key claims both to be consumed by the screen and to reach nothing"
+    )
+    assert not (dispatched & _KEYS_WITHOUT_A_RENDERER), (
+        "a key is parked as unrendered while a widget is dispatched it: "
+        f"{sorted(dispatched & _KEYS_WITHOUT_A_RENDERER)}"
+    )
+
+
+def test_the_unrendered_keys_are_named_by_no_widget_signature():
+    """``_KEYS_WITHOUT_A_RENDERER`` has to keep being *true*, not just listed.
+
+    Every surf widget's ``update_data`` ends in ``**_kwargs``, so re-wiring
+    one of these keys raises nothing and changes no test on its own -- the
+    parked list would simply go on claiming the key reaches nothing while a
+    box rendered it. Reading the real signatures is what turns that into a
+    failure: name ``lp_imd=`` in an ``update_data`` again and this goes red,
+    with the instruction to move it back into ``SURF_WIDGET_SIGNATURES``.
+    """
+    import inspect
+
+    named: dict[str, set[str]] = {}
+    for name, cls in _ALL_WIDGET_CLASSES.items():
+        params = inspect.signature(cls.update_data).parameters
+        for param in params.values():
+            if param.kind is inspect.Parameter.VAR_KEYWORD:
+                continue
+            named.setdefault(param.name, set()).add(name)
+
+    still_named = {
+        key: sorted(named[key]) for key in _KEYS_WITHOUT_A_RENDERER if key in named
+    }
+    assert not still_named, (
+        "these keys are parked as reaching no renderer, but a widget names "
+        f"them in its update_data signature: {still_named} -- move them back "
+        "into SURF_WIDGET_SIGNATURES"
+    )
 
 
 def test_the_bindings_are_refresh_and_the_launchpad_toggle():
@@ -712,6 +835,116 @@ async def test_the_launchpad_widgets_are_dispatched_hidden_before_l_is_pressed()
         assert "146 coins" in _plain(note)
 
 
+# -- the launchpad body's right rail (2026-08-24) -------------------------
+
+
+async def test_the_launchpad_summary_panels_sit_beside_the_coins_table() -> None:
+    """CURVE FLOW and BURN PIPELINE moved out from under the coin table.
+
+    Stacked, the two summary panels took eleven rows off the one panel in
+    this body whose row count is real data -- their own ten lines are
+    label/value text that never grows. Beside the table they cost columns
+    instead, which is the currency a fixed-column ``DataTable`` was already
+    spending a constant amount of.
+
+    ``_surf_app`` is the **themed** harness, and that is load-bearing here:
+    the app stylesheet outranks ``SurfScreen.DEFAULT_CSS``, so a rail written
+    into ``DEFAULT_CSS`` alone would leave ``minimal.tcss``'s own
+    ``SurfLaunchpadCoins { width: 100% }`` in charge and put the rail back
+    under the table with nothing raising. This test is what notices.
+    """
+    async with _surf_app().run_test(size=(150, 46)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        screen = pilot.app.screen
+
+        rail = screen.query_one(f"#{LAUNCHPAD_RAIL_ID}")
+        coins = screen.query_one(SurfLaunchpadCoins)
+        flow = screen.query_one(SurfCurveFlow)
+        pipeline = screen.query_one(SurfBurnPipeline)
+
+        assert [type(c).__name__ for c in rail.children] == [
+            "SurfCurveFlow", "SurfBurnPipeline",
+        ]
+        # To the RIGHT of the table, and beside it rather than below.
+        assert coins.region.right <= rail.region.x
+        assert flow.region.x >= rail.region.x
+        assert flow.region.y < coins.region.bottom
+        # Stacked inside the rail, flow above the pipeline, same column.
+        assert flow.region.x == pipeline.region.x
+        assert flow.region.bottom <= pipeline.region.y
+        # Composited, not merely laid out: both titles reach a pixel while
+        # the table is on screen, and the table keeps the screen's spare rows.
+        rail_text = _region_text(pilot.app, rail)
+        assert "CURVE FLOW" in rail_text and "BURN PIPELINE" in rail_text
+        assert coins.region.height > flow.region.height
+
+
+async def test_the_launchpad_rail_reserves_its_scrollbar_gutter() -> None:
+    """Curator's ``#curator-right-rail`` bug, pre-empted.
+
+    Without ``scrollbar-gutter: stable`` the rail's scrollbar takes its
+    column out of the panel beside it *only* on terminals short enough for
+    the rail to overflow -- so this layout's WIDTH requirement would move
+    with its HEIGHT, and the width Task 13 pins at one terminal height would
+    be a column short at another. Curator shipped exactly that: one pin true
+    at 48 rows and one column short at 40.
+    """
+    async with _surf_app().run_test(size=(150, 46)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        rail = pilot.app.screen.query_one(f"#{LAUNCHPAD_RAIL_ID}")
+        assert "stable" in str(rail.styles.scrollbar_gutter)
+
+    # ...and the property is what it is *for*: the coin table beside the rail
+    # is the same width whether or not the rail is tall enough to overflow.
+    widths = {}
+    for height in (46, 24):
+        async with _surf_app().run_test(size=(150, height)) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.pause()
+            await pilot.press("l")
+            await pilot.pause()
+            screen = pilot.app.screen
+            widths[height] = (
+                screen.query_one(SurfLaunchpadCoins).region.width,
+                screen.query_one(f"#{LAUNCHPAD_RAIL_ID}").show_vertical_scrollbar,
+            )
+    assert widths[46][0] == widths[24][0], (
+        f"the coin table's width moved with the terminal's height: {widths}"
+    )
+
+
+async def test_the_hero_survives_the_launchpad_body_swap() -> None:
+    """The hero is outside ``#surf-launchpad-body``, so nothing it tracks
+    goes dark when ``l`` swaps the body underneath it.
+
+    Asserted against the hero's **own region**, not the whole screen: three
+    of its four box titles are words the launchpad panels also composite
+    (``LAUNCHPAD COINS``, ``CURVE FLOW``'s numbers, ``BURN PIPELINE``), so a
+    whole-screen substring check would pass with the hero unmounted entirely.
+    """
+    async with _surf_app().run_test(size=(150, 46)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        screen = pilot.app.screen
+        assert screen.query_one(f"#{LAUNCHPAD_BODY_ID}").display is True
+
+        hero = _region_text(pilot.app, screen.query_one(SurfHero))
+        for title in ("LAUNCHPAD", "FLOW", "BURN", "IMD SUPPLY"):
+            assert title in hero, f"the hero lost its {title} box under `l`"
+        # The live numbers, not just the frame: BURN and SUPPLY read the fast
+        # tier and are the pair that would go dark if the hero were swapped.
+        assert "2,376,732 IMD" in hero
+        assert "READY" in hero
+
+
 # -- the launchpad body's CSS, in agreement (Task 12 addendum) ------------
 #
 # In the shape of curator's
@@ -726,9 +959,19 @@ async def test_the_launchpad_widgets_are_dispatched_hidden_before_l_is_pressed()
 # task adds, living in this task's own test file rather than depending on a
 # file this task does not own to keep catching drift in the code it owns.
 
+#: ``overflow-y`` and ``scrollbar-gutter`` joined the geometry in 2026-08-24,
+#: with the rail. They are not decoration here: the gutter is what stops the
+#: rail's scrollbar from taking a column out of the coin table beside it on
+#: short terminals only, and a property declared in one copy and not the other
+#: is *invisible* rather than conflicting -- Textual falls back to DEFAULT_CSS
+#: for a property the app stylesheet never mentions, so the layout would be
+#: right under both stylesheets today and wrong under one of them the moment
+#: either copy's value changed. This is the only guard the pair has: the
+#: repo-wide comparator in ``tests/test_surf_registration.py`` compares
+#: ``_STRUCTURAL`` only, and neither property is in it.
 _LAUNCHPAD_CSS_STRUCTURAL = (
     "width", "min-width", "max-width", "height", "min-height", "padding",
-    "margin",
+    "margin", "overflow-y", "scrollbar-gutter",
 )
 #: Shorthand properties whose absence means "the CSS default" -- so one copy
 #: spelling ``padding: 0 0`` and the other omitting it is agreement, not
@@ -736,8 +979,8 @@ _LAUNCHPAD_CSS_STRUCTURAL = (
 _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS = {"padding": "0", "margin": "0"}
 
 _LAUNCHPAD_CSS_SELECTORS = (
-    f"#{LAUNCHPAD_BODY_ID}", "SurfLaunchpadCoins", "SurfCurveFlow",
-    "SurfBurnPipeline",
+    f"#{LAUNCHPAD_BODY_ID}", f"#{LAUNCHPAD_RAIL_ID}", "SurfLaunchpadCoins",
+    "SurfCurveFlow", "SurfBurnPipeline",
 )
 
 
@@ -1233,11 +1476,18 @@ async def test_screen_dispatches_every_data_key():
             )
             dispatched |= set(signature)   # SURF_KEYS names, not kwarg names
 
-        # Nothing in the contract goes unrendered: it is either a widget
-        # kwarg, a meta key the screen itself consumes, or one of the
-        # v4/launchpad keys explicitly enumerated as pending its Task 8-12
-        # consumer in `_KEYS_PENDING_CONSUMERS`.
-        unconsumed = set(SURF_KEYS) - dispatched - META_KEYS - _KEYS_PENDING_CONSUMERS
+        # Nothing in the contract goes unrendered by accident: it is either a
+        # widget kwarg, a meta key the screen itself consumes, or one of the
+        # six keys explicitly parked in `_KEYS_WITHOUT_A_RENDERER` as having
+        # been orphaned by the hero rebuild and awaiting removal from
+        # SURF_KEYS by that module's owner.
+        unconsumed = (
+            set(SURF_KEYS)
+            - dispatched
+            - META_KEYS
+            - _KEYS_WITHOUT_A_RENDERER
+            - _KEYS_PENDING_CONSUMERS
+        )
         assert not unconsumed, f"contract keys reach no widget: {sorted(unconsumed)}"
 
 
@@ -2785,34 +3035,45 @@ def _hero_fields(text: str) -> set[str]:
 
 
 async def test_the_hero_cuts_neither_a_number_nor_a_title_at_the_pinned_width():
-    """I-2, re-measured against POOL/LP/BURN/SUPPLY (2026-08-23).
+    """I-2, re-measured against LAUNCHPAD/FLOW/BURN/SUPPLY (2026-08-24).
 
     A truncated *word* is a shortened word; a truncated *number* still reads
     as a number, and a truncated panel title reads as a different panel. The
     hero sheds whole fields instead, so at the pinned width every title and
     every quantity arrives intact. The list below is what the real screen
-    renders at ``SURF_FULL_LAYOUT_COLUMNS`` today, swept, not carried over
-    from the HOOK/GATE-era assertions this test used to make.
+    renders at ``SURF_FULL_LAYOUT_COLUMNS`` today, swept after Task 12 wired
+    the ``launchpad_*`` keys through -- it is NOT carried over from the
+    POOL/LP-era assertions this test used to make, which were measured
+    against a row whose first two boxes still read ``no read yet``.
     """
     hero = await _hero_text(SURF_FULL_LAYOUT_COLUMNS)
 
     for whole in (
-        "POOL", "LP", "BURN", "IMD SUPPLY",                         # the titles
-        "2,376,732 IMD", "388.4K IMD", "142.71 WETH", "$548.7K",    # the numbers
-        "v3", "READY", "owner ✓",
-        # Since the hero took the full row this width reaches the *widest*
-        # tier, so the fields the narrow tiers shed are all present too --
-        # whole, and with the words that scope them ("observed", "of 38",
-        # "stg") intact.
-        "1% · 1 of 38", "acc 1.2K · stg 45.0",
-        "burned 15,745 observed", "owner ✓ frenpet.eth",
+        # The titles. LAUNCHPAD and FLOW carry the launchpad tier's own
+        # slower clock; BURN and SUPPLY read the fast tier and carry none,
+        # which is the distinction the clock exists to make visible.
+        "LAUNCHPAD · 01:14", "FLOW · 01:14", "BURN", "IMD SUPPLY",
+        # The numbers, whole and comma-grouped.
+        "146 coins", "73 creators", "4,683 swaps", "673 traders",
+        "2.4187 ETH", "2,376,732 IMD", "READY",
+        # This width reaches the *widest* tier, so the fields the narrow
+        # tiers compress are all here in full, with the words that scope
+        # them ("24h", "acc"/"stg", "observed") intact.
+        "36 new · 24h", "acc 1.2K · stg 45.0", "burned 15,745 observed",
     ):
         assert whole in hero, f"{whole!r} did not survive the hero row whole"
 
-    # The raw v3 ``L`` is gone from the box at every width, including this
-    # one, where the widest tier renders. Dropped on request: rendered
-    # ``2.16e+18`` it named no unit and said nothing ``142.71 WETH`` does not.
-    assert "· L " not in hero
+    # The retired POOL and LP boxes are gone from the row at every width,
+    # this one included. Their fields were dropped, not moved into a narrower
+    # tier of the surviving boxes, so none of them may reappear here: the pool
+    # figure lives in the IMD MARKET panel, the decoy count on the signals
+    # rail, and the owner check on the title bar.
+    for retired in ("owner ✓", "of 38", "WETH", "$548.7K", "· L "):
+        assert retired not in hero, (
+            f"{retired!r} is back in the hero -- POOL/LP were retired, and "
+            "their information belongs to the market panel, the signals rail "
+            "and the title bar now"
+        )
 
     # The general statement the list above is a sample of: at the pinned
     # width the hero truncates nothing at all.
@@ -2820,41 +3081,61 @@ async def test_the_hero_cuts_neither_a_number_nor_a_title_at_the_pinned_width():
 
 
 async def test_the_hero_spends_new_columns_in_the_documented_order():
-    """Widening restores the shed fields at the tier boundary: burn/owner detail.
+    """Widening restores the compressed fields at each tier boundary.
 
-    Re-measured against POOL/LP/BURN/SUPPLY (Task 8's carried-forward note):
-    swept width by width (78-121, see task-12-report.md), the short<->long
-    boundary the old test pinned at 91/99 vs. 119/127 **did not move** -- 118
-    is still the last short-form width and 119 the first long one, so those
-    four widths are kept rather than re-chosen. What changed is *why* 91 and
-    99 no longer need separate names: none of POOL/LP/BURN/SUPPLY's bodies
-    branch on ``tight`` vs. ``minimal`` beyond the shared ``_short()`` check
-    (unlike the retired GATE box, which used to shed ``written`` at
-    ``minimal`` and keep it at ``tight``), so the two tiers render *the same
-    text* for this payload -- asserted below rather than assumed, so a body
-    that starts differentiating them again would turn this from a tautology
-    back into a real two-tier check.
+    Re-measured against LAUNCHPAD/FLOW/BURN/SUPPLY once Task 12 wired the
+    ``launchpad_*`` keys through: swept width by width (76-100 and 91-127,
+    see task-12-report.md), the short<->long boundary the old test pinned at
+    91/99 vs. 119/127 **did not move** -- 118 is still the last short-form
+    width and 119 the first long one, so those four widths are kept rather
+    than re-chosen.
 
-    A fourth tier used to sit above these three, holding ``· L <liquidity>``.
-    The field was dropped on request, and the tier went with it rather than
-    becoming a tier that renders exactly what ``compact`` renders. ``wide``
-    below is therefore no longer a distinct tier -- it is kept in the sweep
-    precisely to assert that extra columns now buy *nothing*, which is the
-    claim that would quietly go untested if the width were simply deleted.
+    What *did* move is the relationship between ``minimal`` and ``tight``.
+    They rendered identical text while the row was POOL/LP/BURN/SUPPLY, and
+    the old version of this test asserted exactly that. They no longer do:
+    LAUNCHPAD and FLOW carry the launchpad tier's own clock, and the
+    2026-08-24 fix round narrowed it with the tier instead of dropping it
+    (``LAUNCHPAD · 01:14`` -> ``LAUNCHPAD 01:14`` -> ``LAUNCHPAD slow``), so
+    the two narrow tiers now differ by precisely one field -- and that field
+    is the one that stops a ten-minute-old number from sitting under a
+    this-second clock. It is asserted here rather than left to the widget's
+    own tests because this is where the *screen* proves the marker survives
+    down to the narrowest row anybody can render.
+
+    A fourth tier used to sit above these three, holding the retired LP box's
+    raw ``· L <liquidity>``. It went with the box. ``wide`` below is therefore
+    not a distinct tier -- it is kept in the sweep precisely to assert that
+    extra columns now buy *nothing*, which is the claim that would quietly go
+    untested if the width were simply deleted.
     """
     narrow = await _hero_text(91)     # minimal tier
     tight = await _hero_text(99)      # tight tier
     mid = await _hero_text(119)       # compact tier
     wide = await _hero_text(127)      # still compact: there is nothing wider
 
-    # The dropped liquidity field is absent at every width, including the
-    # widest -- there is no tier that brings it back.
+    # The retired boxes' fields are absent at every width, the widest
+    # included -- there is no tier that brings either box back.
     for text in (narrow, tight, mid, wide):
         assert "· L " not in text
+        assert "owner ✓" not in text
         assert "e+" not in text, "a raw uint128 is rendering somewhere in the hero"
 
-    # minimal and tight are identical for this payload -- see the docstring.
-    assert _hero_fields(narrow) == _hero_fields(tight)
+    # The slow clock narrows with the tier and never disappears: it is what
+    # tells a ten-minute-old LAUNCHPAD/FLOW number from a this-second
+    # BURN/SUPPLY one, and dropping it at the narrow tiers was the bug the
+    # 2026-08-24 fix round closed.
+    assert "LAUNCHPAD slow" in narrow and "FLOW slow" in narrow
+    assert "01:14" not in narrow, "the narrowest tier has no room for a stamp"
+    assert "LAUNCHPAD 01:14" in tight and "FLOW 01:14" in tight
+    assert "· 01:14" not in tight, "tight drops the separator, not the stamp"
+    assert "LAUNCHPAD · 01:14" in mid and "FLOW · 01:14" in mid
+
+    # ...and that clock is the *only* thing separating the two narrow tiers
+    # for this payload: nothing else in the four boxes branches on `tight`
+    # vs `minimal` beyond the shared `_short()` check. Asserted rather than
+    # assumed, so a body that starts differentiating them turns this into a
+    # real two-tier check instead of a silently weakened one.
+    assert _hero_fields(narrow) - {"slow"} == _hero_fields(tight) - {"01:14"}
 
     # Past `compact`, extra columns buy nothing: the two widest renders agree
     # field for field. Without this the collapsed ladder would be untested.
@@ -2867,17 +3148,12 @@ async def test_the_hero_spends_new_columns_in_the_documented_order():
     for text in (narrow, tight, mid):
         assert "burned 15,74…" not in text
 
-    # The owner assertion: the tick is the claim, the ENS name is decoration.
-    assert "owner ✓" in narrow and "frenpet.eth" not in narrow
-    assert "owner ✓" in tight and "frenpet.eth" not in tight
-    assert "owner ✓ frenpet.eth" in mid
-
-    # POOL's decoy count and BURN's accrued/staged pair are the same shape:
-    # a compressed slash/dot form below `compact`, the full connective words
-    # (`of`, `·`, `stg`) at and above it.
-    assert "1% 1/38" in narrow and "of 38" not in narrow
-    assert "1% 1/38" in tight and "of 38" not in tight
-    assert "1% · 1 of 38" in mid
+    # LAUNCHPAD's 24h window and BURN's accrued/staged pair are the same
+    # shape: a compressed form below `compact`, the full connective words
+    # (`24h`, `acc`, `·`, `stg`) at and above it.
+    assert "36 new" in narrow and "24h" not in narrow
+    assert "36 new" in tight and "24h" not in tight
+    assert "36 new · 24h" in mid
     assert "1.2K/45.0" in narrow and "stg" not in narrow
     assert "acc 1.2K · stg 45.0" in mid
 
@@ -2894,23 +3170,30 @@ async def test_the_hero_marker_is_dark_on_every_terminal_anyone_owns():
     past the ~169 a laptop gets at the forced 17 pt. A marker that is on
     everywhere means nothing (the trap ``widgets/surf/signals.py``
     documents). Tying it to the narrowest tier keeps it dark, and the
-    full-width row lowers the floor much further: **80 columns**, re-swept
-    for POOL/LP/BURN/SUPPLY (a column narrower than the old HOOK/GATE-era
-    82 -- ``2,376,732 IMD``, the SUPPLY quantity, is one column longer than
-    the old GATE box's widest minimal-tier line, so the box needs one more
-    column to clear it) -- still narrower than any terminal this dashboard
-    is usable in at all.
+    full-width row lowers the floor a long way below any terminal this
+    dashboard is usable in at all.
+
+    **87 columns since 2026-08-24**, seven above the 80 measured for
+    POOL/LP/BURN/SUPPLY, and the move is Task 12's own doing rather than a
+    copy edit: until the screen dispatched the ``launchpad_*`` keys, the
+    LAUNCHPAD and FLOW boxes had nothing to render and sat at ``no read
+    yet`` under a bare title, so the width they were measured at was the
+    width of an unwired row. Wired, the binding line is LAUNCHPAD's own
+    ``minimal``-tier title ``LAUNCHPAD slow`` (14 columns, the narrow-tier
+    stand-in for its clock), which needs the box 14 wide and gets it at 87.
+    Swept 76-100 rather than probed at the boundary: 76-86 light exactly one
+    or two markers, 87-100 none.
     """
     assert HERO_WIDEN_HINT == "‹ widen"
 
-    for width in (80, 100, SURF_FULL_LAYOUT_COLUMNS, 143, 169, 200, 240):
+    for width in (87, 100, SURF_FULL_LAYOUT_COLUMNS, 143, 169, 200, 240):
         assert HERO_WIDEN_HINT not in await _hero_text(width), (
             f"the hero advertises a loss at {width} columns"
         )
 
-    # ...and it is not merely unreachable: one column narrower a box can no
-    # longer fit ``OWNER CHANGED``/``2,376,732 IMD`` at any tier, and says so.
-    assert HERO_WIDEN_HINT in await _hero_text(79)
+    # ...and it is not merely unreachable: one column narrower the LAUNCHPAD
+    # box can no longer fit its own title at any tier, and says so.
+    assert HERO_WIDEN_HINT in await _hero_text(86)
 
 
 # -- the activity panel's own width tiers (final-review I-1) -------------

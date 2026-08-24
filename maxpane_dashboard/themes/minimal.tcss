@@ -2107,10 +2107,21 @@ SurfDevActivity > RichLog {
  *
  * `1fr` on the container and on `SurfLaunchpadCoins` -- the one panel here
  * with a scrolling `DataTable` -- so the coin table gets the screen's spare
- * rows the same way `#middle-row` does in dashboard mode. `SurfCurveFlow`
- * and `SurfBurnPipeline` are `auto`: four/five content lines each, not
- * slack. `margin: 1 0 0 0` matches `#middle-row`'s own top margin, so
- * swapping bodies does not also move the hero's breathing room. */
+ * rows the same way `#middle-row` does in dashboard mode. `margin: 1 0 0 0`
+ * matches `#middle-row`'s own top margin, so swapping bodies does not also
+ * move the hero's breathing room.
+ *
+ * A ROW since 2026-08-24, on `#middle-row`'s own shape: table left, a rail
+ * of CURVE FLOW over BURN PIPELINE right. Stacked, those two panels took
+ * eleven rows off the table for ten lines of label/value text that never
+ * grow -- and the table's row count is the launchpad's own population, so
+ * it is the one panel here that had rows to lose. The `7fr:6fr` seam is
+ * provisional and unswept; see `screens/surf.py`, which restates this whole
+ * block and carries the reasoning.
+ *
+ * This copy is the one that RENDERS -- an app stylesheet outranks a screen's
+ * DEFAULT_CSS -- and `tests/test_surf_registration.py` pins the two together
+ * property by property. Edit both or neither. */
 SurfScreen #surf-launchpad-body {
     height: 1fr;
     width: 100%;
@@ -2119,20 +2130,46 @@ SurfScreen #surf-launchpad-body {
 }
 
 SurfLaunchpadCoins {
-    width: 100%;
+    width: 7fr;
     height: 1fr;
     padding: 0 1;
 }
 
-SurfCurveFlow {
-    width: 100%;
-    height: auto;
-    padding: 0 1;
+/* `scrollbar-gutter: stable` for curator `#curator-right-rail`'s own reason:
+ * without it the scrollbar takes its column out of the panel beside it only
+ * on terminals short enough for the rail to overflow, so this layout's WIDTH
+ * requirement would move with its HEIGHT -- a width pin true at 48 rows and
+ * one column short at 40. `scrollbar-size: 1 1` matches every other
+ * scrollable container in this file; the Textual default is two cells. */
+SurfScreen #surf-launchpad-rail {
+    width: 6fr;
+    height: 1fr;
+    padding: 0 0;
+    overflow-y: auto;
+    scrollbar-size: 1 1;
+    scrollbar-gutter: stable;
 }
 
-SurfBurnPipeline {
-    width: 100%;
+/* `margin: 0 0 1 0` is the blank row between the rail's two panels -- the
+ * same one `SurfSignals` carries in the other rail, and for the same reason:
+ * flush, the two read as one block. */
+SurfCurveFlow {
+    width: 1fr;
     height: auto;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+/* The rail's lower half, `1fr` with a floor, exactly as `SurfDevActivity` is
+ * in the other rail: a `1fr` child cannot overflow its scroll container, it
+ * shrinks, so without `min-height` this panel would shed one of its six
+ * lines per terminal row down to a bare title with no scrollbar and no trace
+ * on screen. 6 == the panel's own line count (title, status, accrued/staged,
+ * min bridge, burned, `as of`). */
+SurfBurnPipeline {
+    width: 1fr;
+    height: 1fr;
+    min-height: 6;
     padding: 0 1;
 }
 

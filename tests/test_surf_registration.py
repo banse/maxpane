@@ -1281,6 +1281,65 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
         "unavailable' whenever `coins` is None, which a full outage always "
         "is -- so a zero has no rendering here to probe; verified by rendering"
     ),
+    # Task 12 (2026-08-24) wired `screens/surf.py` to pass this through as
+    # `SurfLaunchpadCoins.update_data(launch_count=...)` -- the kwarg the
+    # widget had accepted since Task 11 and nothing ever sent, which is why
+    # the population-disagreement note could not fire in the running app at
+    # all. It lands HERE and not in `_NUMERIC_ZERO_PROBES` for exactly its
+    # sibling `launchpad_coin_count`'s reason, one entry up: `_set_note`
+    # renders it only inside `<count> coins · <read> read`, and only when
+    # `coins` is a list AND `coin_count` disagrees with it. Verified by
+    # rendering the real screen three ways at (143, 48): with
+    # `launch_count=0, coin_count=146, coins=[]` the note composites
+    # `146 coins · 0 read`; with `launch_count` left `None` and the same
+    # shape it composites `146 coins` and nothing more (so the needle really
+    # is the zero's, not the shape's); and with `coins=None` -- which every
+    # full outage is -- it composites `⚠ launchpad unavailable` whatever
+    # `launch_count` holds. A needle for a string the swept scenario cannot
+    # produce is the vacuity this dict exists to keep out.
+    "launchpad_launch_count": (
+        "SurfLaunchpadCoins._set_note renders it only as the `· N read` half "
+        "of a population disagreement, which needs `coins` to be a list -- a "
+        "full outage always has it None and composites 'launchpad "
+        "unavailable' instead; verified by rendering three ways"
+    ),
+    # Both orphaned by the hero's 2026-08-24 LAUNCHPAD/FLOW rebuild, which
+    # retired the POOL box `hero.py::_pool_lines` drew. They were in
+    # `_NUMERIC_ZERO_PROBES` with needles naming that function, and were
+    # vacuous from the day it was deleted -- the suite stayed green because
+    # these assertions test *absence*, which is the trap this dict's own
+    # `lp_liquidity` entry at the top already names. `screens/surf.py` no
+    # longer dispatches either key to any widget (see
+    # `tests/screens/test_surf_screen.py::_KEYS_WITHOUT_A_RENDERER` and
+    # `META_KEYS`). Verified by rendering the real SurfScreen at (143, 48)
+    # with each key `0` and every other `None`: no `% fee`, no `pools`, and
+    # no `WETH` reaches a pixel anywhere on either body.
+    #
+    # `decoy_pool_count` is not information-less on screen -- `_readings`
+    # feeds it to `_detect_decoy`, so it reaches the rail as the DECOY POOL
+    # row's *detail string* -- but that is `sig_decoy_detail`'s rendering,
+    # composed by the manager, exactly the `identities_written` case above.
+    "pool_fee_bps": (
+        "no widget consumes this key -- the hero POOL box that rendered it "
+        "(`_pool_lines`) was retired in the 2026-08-24 rebuild and "
+        "screens/surf.py dispatches it nowhere; verified by rendering"
+    ),
+    "decoy_pool_count": (
+        "no widget consumes this key directly -- the hero POOL box that "
+        "rendered it was retired; it reaches the screen only through "
+        "`sig_decoy_detail`, a string the manager composes, the same shape "
+        "as `identities_written` above; verified by rendering"
+    ),
+    "lp_imd": (
+        "no widget consumes this key -- the hero LP box that rendered it "
+        "(`_update_lp`) was retired in the 2026-08-24 rebuild and "
+        "screens/surf.py dispatches it nowhere; verified by rendering"
+    ),
+    "lp_weth": (
+        "no widget consumes this key -- the hero LP box that rendered it "
+        "(`_update_lp`) was retired in the 2026-08-24 rebuild and "
+        "screens/surf.py dispatches it nowhere; verified by rendering"
+    ),
     "sig_decoy_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_burnready_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_hot_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
@@ -1310,9 +1369,14 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     # baseline, which composites `ANNOUNCE FEED · unavailable`.
     "feed_nonce": "· #0 ·",                      # feed.py _set_title
     "feed_last_post_age_s": "last 0s ago",       # feed.py _set_title
-    "lp_imd": "0 IMD",                           # hero.py _update_lp
-    "lp_weth": "0.00 WETH",                      # hero.py _update_lp
-    "imd_supply": "0 IMD",                       # hero.py _update_supply
+    # `lp_imd` ("0 IMD") and `lp_weth` ("0.00 WETH") sat here until Task 12
+    # (2026-08-24) and were vacuous from the moment the hero's LP box was
+    # retired -- `hero.py::_update_lp`, the function both needles name, no
+    # longer exists. They moved to `_NUMERIC_KEYS_EXCLUDED` above, verified
+    # by rendering. Note that `lp_imd`'s needle was also a *duplicate* of
+    # `imd_supply`'s, one line below: it could only ever have gone red on
+    # the sibling's rendering, never its own.
+    "imd_supply": "0 IMD",                       # hero.py _supply_lines
     # The field's own honest zero rendering (distinct from `imd_burned_cum
     # is None` -> "burned --"): this is the exact shape the house rule
     # guards -- a fabricated 0 here would falsely claim "we watched and
@@ -1337,21 +1401,30 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     # `parity_pct` set renders `parity --` and proves nothing. Rendered with
     # `imd_price_usd` and `fp_price_usd` set alongside it.
     "parity_pct": "parity ● +0.00%",        # market.py _fmt_parity
-    # Task 8 (2026-08-23): SurfHero's POOL/BURN boxes. `screens/surf.py`
-    # doesn't route these keys through yet (Task 12), so these four were
-    # verified by mounting `SurfHero` directly rather than the real
-    # `SurfScreen` -- see the comment on the four keys' old home in
-    # `_NUMERIC_KEYS_EXCLUDED` above for exactly how.
-    # WAS `1% fee`, which is the rendering of **10000 bps** -- the live pool's
-    # real fee tier, not a zero. `_pool_lines` divides by 10000 and formats
-    # with `%g`, so a genuine 0 composites `0% fee`; the old needle asserted
-    # the absence of a string a zero cannot produce and probed nothing.
-    # Re-verified by rendering the real SurfScreen at (143, 48) with this key
-    # 0 (`0% fee`) and again with it 10000 (`1% fee`).
-    "pool_fee_bps": "0% fee",                    # hero.py _pool_lines
-    "decoy_pool_count": "1 of 1 pools",          # hero.py _pool_lines (0 decoys -> "1 of 1")
+    # Task 8 (2026-08-23): SurfHero's BURN box. `pool_fee_bps` ("0% fee") and
+    # `decoy_pool_count` ("1 of 1 pools") were beside these two until Task 12
+    # (2026-08-24) and were vacuous the moment the POOL box was retired --
+    # `hero.py::_pool_lines`, the function both needles name, no longer
+    # exists, and the screen no longer dispatches either key. Both moved to
+    # `_NUMERIC_KEYS_EXCLUDED` above, verified by rendering. The two below
+    # survive unchanged: `_burn_lines` is still on the row, and Task 12's
+    # dispatch rewire kept `burn_accrued`/`burn_staged` pointed at it, so
+    # these are now screen-verified rather than box-verified. Re-read off the
+    # real `SurfScreen` at (143, 48) with one key `0` and every other `None`:
+    # `acc 0 · stg --` and `acc -- · stg 0`.
     "burn_accrued": "acc 0",                     # hero.py _burn_lines
     "burn_staged": "stg 0",                      # hero.py _burn_lines
+    # Task 12 (2026-08-24): the hero's LAUNCHPAD box, wired through the real
+    # screen at last. Both needles were READ off composited output at the
+    # pinned (143, 48) -- one key `0`, every other key `None` -- not invented:
+    # the box's second line renders `0 new · 24h` and its third `0 creators`,
+    # while the all-`None` baseline collapses both into a single `no read yet`
+    # (the three-state contract `_launchpad_lines` documents), so neither
+    # needle exists in the outage render. `· 24h` is part of the first needle
+    # deliberately: the box drops that suffix at its narrow tiers, so the long
+    # form is what pins the width this test actually renders at.
+    "launchpad_new_24h": "0 new · 24h",          # hero.py _launchpad_lines
+    "launchpad_creator_count": "0 creators",     # hero.py _launchpad_lines
     "nft_holders": "0 holders",                  # nft.py _fmt_count
     "nft_transfers_24h": "0 transfers/24h",      # nft.py _fmt_count
     "nft_dev_holdings": "dev holds 0 identities",  # nft.py _dev_row
@@ -1387,17 +1460,26 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     # side-by-side check found no such needle for it.
 }
 
-#: Keys whose rendering consumer lands in a LATER task of this plan. They are
-#: numeric and they WILL need real zero-catch probes -- but a probe string
-#: invented before the widget exists passes by absence and proves nothing,
-#: which is how four of ten needles went vacuous on the predecessor branch.
-#: Task 12 empties this set and moves every entry into `_NUMERIC_ZERO_PROBES`
-#: with a needle read off composited output.
-_KEYS_PENDING_CONSUMERS = frozenset({
-    "launchpad_launch_count",
-    "launchpad_new_24h",
-    "launchpad_creator_count",
-})
+#: **Emptied by Task 12** (2026-08-24), which wired the last three consumers.
+#: It held keys whose rendering consumer landed in a later task of this plan:
+#: numeric keys that WILL need real zero-catch probes, kept out of
+#: `_NUMERIC_ZERO_PROBES` in the meantime because a probe string invented
+#: before the widget exists passes by absence and proves nothing -- which is
+#: how four of ten needles went vacuous on the predecessor branch.
+#:
+#: Where the three went, each read off composited output rather than guessed:
+#: `launchpad_new_24h` and `launchpad_creator_count` to `_NUMERIC_ZERO_PROBES`
+#: (the hero's LAUNCHPAD box renders both), and `launchpad_launch_count` to
+#: `_NUMERIC_KEYS_EXCLUDED` -- its one render path is pre-empted under the
+#: outage this test sweeps, exactly like its sibling `launchpad_coin_count`.
+#: The brief expected all three in the probes dict; rendering them is what
+#: said otherwise, and a vacuous probe is worse than an honest exclusion.
+#:
+#: Kept as an empty frozenset rather than deleted: it is the bucket the next
+#: freeze-before-the-consumer-exists key goes into, and
+#: `test_every_surf_key_is_triaged_for_the_zero_catch` still partitions
+#: against it.
+_KEYS_PENDING_CONSUMERS = frozenset()
 
 
 def test_every_surf_key_is_triaged_for_the_zero_catch() -> None:
@@ -1442,13 +1524,15 @@ def test_every_surf_key_is_triaged_for_the_zero_catch() -> None:
     assert not extra, f"triaged a key SURF_KEYS no longer has: {extra}"
 
 
-@pytest.mark.xfail(strict=False, reason="emptied by Task 12")
 def test_the_pending_consumer_bucket_is_empty_by_the_end_of_this_plan():
     """`_KEYS_PENDING_CONSUMERS` is scaffolding with an expiry date.
 
-    Task 12 wires the last consumer and moves every entry into
-    `_NUMERIC_ZERO_PROBES` with a needle verified against composited output.
-    This test is what stops the scaffolding from becoming permanent.
+    Task 12 wired the last consumer and re-triaged every entry with a needle
+    (or an exclusion) verified against composited output. This test is what
+    stops the scaffolding from becoming permanent, and it lost its `xfail`
+    marker in the same change that emptied the set -- a self-deleting marker
+    left behind outlives the thing it was waiting for and turns a real
+    regression back into an expected failure.
     """
     assert _KEYS_PENDING_CONSUMERS == frozenset()
 
