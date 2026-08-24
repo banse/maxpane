@@ -3335,6 +3335,120 @@ async def test_the_cursor_round_trips_through_the_launchpad_slot(tmp_path) -> No
     assert client.last_launchpad_resume == cursor     # read back and handed to the client
 
 
+def _blank_launchpad_state(**overrides) -> LaunchpadState:
+    """The state ``SurfClient.fetch_launchpad`` returns when nothing read.
+
+    Built field-for-field off the dataclass rather than typed out, so a field
+    added to ``LaunchpadState`` is blank here the day it is added -- a
+    hand-typed version would keep one field non-``None`` after such a change
+    and quietly stop being the total-failure shape it claims to be.
+
+    ``coins`` is the one field that is not ``None``: the real failure path
+    (``_failed_launchpad_sweep`` -> ``rank_coins`` over an empty launch list)
+    produces an empty tuple there, and an empty tuple is exactly what makes
+    this shape dangerous -- it looks like a launchpad with no coins.
+    """
+    import dataclasses
+
+    blank = {field.name: None for field in dataclasses.fields(LaunchpadState)}
+    blank["coins"] = ()
+    blank.update(overrides)
+    return LaunchpadState(**blank)
+
+
+async def test_a_blank_sweep_never_overwrites_a_good_launchpad_slot(tmp_path) -> None:
+    """A failed launchpad sweep must go stale, not dark.
+
+    ``SurfClient.fetch_launchpad`` promises it always returns a state and
+    keeps that promise on a total failure by returning one whose every field
+    is ``None`` -- the honest thing for a *client* to do. But the manager
+    read that as a success (``launchpad_state is not None``) and stored it,
+    so one failed sweep replaced a good last-good with all-``None``.
+
+    Pre-existing, and this branch changed its blast radius: the hero's
+    LAUNCHPAD and FLOW boxes ride these keys now, so it stopped being "a
+    panel says it could not read" and became "a quarter of the dashboard
+    goes dark". The house rule is to serve last-good behind an ``as of
+    HH:MM`` marker, and this tier was given its own slower clock (Task 9)
+    for exactly that.
+
+    Both halves are asserted, because storing the old payload under a *new*
+    timestamp would be worse than the bug: the values must survive **and**
+    the marker must not move, so the reader is told the numbers are old.
+    """
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client)
+
+    await m._pool_launchpad({TIER_LAUNCHPAD}, now=1000.0)
+    good = m.cache.get_last_good(SLOT_LAUNCHPAD)
+    assert good.payload["swap_count"] is not None
+    assert good.payload["trader_count"] is not None
+    assert good.payload["coin_count"] is not None
+    assert good.ts == 1000.0
+
+    client._returns["fetch_launchpad"] = _blank_launchpad_state(
+        cursor=good.payload["cursor"]
+    )
+    await m._pool_launchpad({TIER_LAUNCHPAD}, now=2000.0)
+
+    after = m.cache.get_last_good(SLOT_LAUNCHPAD)
+    assert after.payload["swap_count"] == good.payload["swap_count"]
+    assert after.payload["trader_count"] == good.payload["trader_count"]
+    assert after.payload["coin_count"] == good.payload["coin_count"]
+    assert after.payload["burned_total_wei"] == good.payload["burned_total_wei"]
+    assert after.ts == 1000.0, (
+        "the slot kept its values but adopted the failed sweep's clock -- "
+        "stale numbers behind a fresh marker are worse than dashes"
+    )
+
+
+async def test_a_launchpad_with_nothing_in_it_is_still_a_reading(tmp_path) -> None:
+    """The other side of the same rule: ``0`` is not ``None``.
+
+    A launchpad whose factory really does report no coins, no swaps and no
+    traders is a *fact*, and it has to be storable -- otherwise the guard
+    above would freeze the panel on the first honest empty state and never
+    let go of it. Only the total absence of every field is blank.
+    """
+    zeros = _launchpad_state(
+        coin_count=0, swap_count=0, trader_count=0, launch_count=0,
+        new_24h=0, creator_count=0, burned_total_wei=0, coins=(),
+        swaps_by_coin={}, coin_tickers={},
+    )
+    m = _manager(tmp_path, client=FakeSurfClient(fetch_launchpad=zeros))
+    await m._pool_launchpad({TIER_LAUNCHPAD}, now=1000.0)
+    entry = m.cache.get_last_good(SLOT_LAUNCHPAD)
+    assert entry is not None and entry.ts == 1000.0
+    assert entry.payload["coin_count"] == 0
+    assert entry.payload["swap_count"] == 0
+
+
+async def test_the_flat_payload_keeps_serving_a_stale_launchpad_after_a_failure(
+    tmp_path,
+) -> None:
+    """End to end, at the boundary the hero actually reads.
+
+    ``launchpad_swap_count``/``launchpad_trader_count``/
+    ``launchpad_coin_count`` are what the LAUNCHPAD and FLOW boxes render,
+    and ``launchpad_as_of_hhmm`` is the marker beside them. After a failed
+    sweep the numbers must still be there and the marker must still name the
+    *earlier* minute.
+    """
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client)
+    await m._pool_launchpad({TIER_LAUNCHPAD}, now=NOW)
+    before = await m.fetch_and_compute()
+
+    client._returns["fetch_launchpad"] = _blank_launchpad_state()
+    await m._pool_launchpad({TIER_LAUNCHPAD}, now=NOW + 3_600.0)
+    after = await m.fetch_and_compute()
+
+    for key in ("launchpad_swap_count", "launchpad_trader_count",
+                "launchpad_coin_count", "launchpad_as_of_hhmm"):
+        assert after[key] == before[key], key
+        assert after[key] is not None, key
+
+
 async def test_the_flat_payload_publishes_the_population_counts(tmp_path) -> None:
     """Task 1 froze ``launchpad_launch_count``/``launchpad_new_24h``/
     ``launchpad_creator_count`` on ``SURF_KEYS``; ``test_returns_exactly_surf_keys``

@@ -473,6 +473,46 @@ def _opt_int(value: Any) -> int | None:
         return None
 
 
+#: The launchpad fields a completed read is expected to produce -- the
+#: multicall's getters and the log sweep's aggregates together. All of them
+#: ``None`` at once is not a launchpad with nothing in it; it is a launchpad
+#: nobody could read.
+_LAUNCHPAD_READ_FIELDS = (
+    "coin_count",
+    "imd_to_burn_wei",
+    "executor_balance_wei",
+    "min_bridge_wei",
+    "creator_eth_owed_wei",
+    "burned_total_wei",
+    "swap_count",
+    "trader_count",
+    "launch_count",
+    "new_24h",
+    "creator_count",
+)
+
+
+def _launchpad_state_is_blank(state: Any) -> bool:
+    """True when a launchpad state carries no reading at all.
+
+    ``SurfClient.fetch_launchpad`` promises it always returns a state, and it
+    keeps that promise on a total failure by returning one whose every field
+    is ``None`` (``_failed_launchpad_sweep``). That is the honest shape for a
+    *client* to return -- "we could not look" is exactly ``None``, never
+    ``0`` -- but it must not be persisted over a slot that already holds real
+    numbers, because ``SLOT_LAUNCHPAD``'s payload is what the hero's
+    LAUNCHPAD and FLOW boxes and the whole ``l`` view render, behind this
+    tier's own ``as of HH:MM``.
+
+    A representable zero still counts as a reading: a launchpad with
+    ``coin_count == 0`` is a fact, and this returns ``False`` for it. Only
+    the total absence of every field is blank.
+    """
+    if state is None:
+        return True
+    return all(_field(state, name) is None for name in _LAUNCHPAD_READ_FIELDS)
+
+
 class SurfManager:
     """Fetches SURF data across seven source groups and returns a flat dict."""
 
@@ -1423,7 +1463,22 @@ class SurfManager:
                 # `SURF_KEYS` entry — no widget renders it yet — so it is
                 # cached here rather than surfaced through the flat payload.
                 decoy_newest_fee_bps = _opt_int(newest.get("fee"))
-        ok = pool_state is not None and launchpad_state is not None
+        # ``fetch_launchpad`` never returns ``None`` -- it promises a state
+        # and keeps that promise by returning an honestly all-``None`` one --
+        # so ``launchpad_state is not None`` was true for a *total* sweep
+        # failure too, and the all-``None`` payload then overwrote a good
+        # last-good. The tier's whole design is the opposite of that: it
+        # carries its own slower ``as of HH:MM`` clock (Task 9) precisely so
+        # stale launchpad values can be shown honestly rather than discarded.
+        #
+        # This branch stopped being a one-panel concern on 2026-08-24: the
+        # hero's LAUNCHPAD and FLOW boxes ride these keys now, so one failed
+        # sweep blanked half the hero row rather than degrading one panel.
+        # Nothing is stored on a blank read, so the slot keeps its previous
+        # payload *and its previous timestamp* -- the marker goes stale, which
+        # is the true statement, instead of a fresh marker over dashes.
+        blank = _launchpad_state_is_blank(launchpad_state)
+        ok = pool_state is not None and launchpad_state is not None and not blank
         if ok:
             self.cache.store_last_good(
                 SLOT_LAUNCHPAD,
