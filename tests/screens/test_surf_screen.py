@@ -909,41 +909,99 @@ async def test_the_launchpad_summary_panels_sit_beside_the_coins_table() -> None
         assert coins.region.height > flow.region.height
 
 
-async def test_the_launchpad_rail_reserves_its_scrollbar_gutter() -> None:
-    """Curator's ``#curator-right-rail`` bug, pre-empted.
+#: The two heights the gutter proof is measured at, and neither is arbitrary.
+#:
+#: The launchpad rail first overflows at **22** rows (measured: 23 shows no
+#: scrollbar, 22 does), so 46 is comfortably on the roomy side and 22 is the
+#: first row count where the scrollbar actually exists. A pair of heights that
+#: both sit above the crossover cannot fail -- fix round 1 shipped exactly
+#: that mistake with (46, 24), and the reviewer caught it by deleting the
+#: property and watching the "proof" stay green.
+_RAIL_ROOMY_ROWS = 46
+_RAIL_OVERFLOWING_ROWS = 22
 
-    Without ``scrollbar-gutter: stable`` the rail's scrollbar takes its
-    column out of the panel beside it *only* on terminals short enough for
-    the rail to overflow -- so this layout's WIDTH requirement would move
-    with its HEIGHT, and the width Task 13 pins at one terminal height would
-    be a column short at another. Curator shipped exactly that: one pin true
-    at 48 rows and one column short at 40.
+
+async def _launchpad_rail_widths(height: int, width: int = 150) -> dict:
+    """Rail geometry in the ``l`` body at *height* rows -- the widths the
+    gutter is actually about, plus whether the scrollbar is really there."""
+    async with _surf_app().run_test(size=(width, height)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        screen = pilot.app.screen
+        rail = screen.query_one(f"#{LAUNCHPAD_RAIL_ID}")
+        return {
+            "flow": screen.query_one(SurfCurveFlow).region.width,
+            "pipeline": screen.query_one(SurfBurnPipeline).region.width,
+            "coins": screen.query_one(SurfLaunchpadCoins).region.width,
+            "overflowing": rail.show_vertical_scrollbar,
+        }
+
+
+async def test_the_launchpad_rail_reserves_its_scrollbar_gutter() -> None:
+    """Curator's ``#curator-right-rail`` bug, pre-empted -- and *proved*.
+
+    Without ``scrollbar-gutter: stable`` the rail's scrollbar takes a column
+    away the moment the rail overflows, so the layout's WIDTH requirement
+    moves with its HEIGHT: the width Task 13 pins at one terminal height is a
+    column short at another. Curator shipped exactly that -- one pin true at
+    48 rows and one column short at 40.
+
+    **The column belongs to the rail's own children, not to the table beside
+    it.** That is the whole subject of this test and fix round 1 got it
+    wrong: it compared ``SurfLaunchpadCoins.region.width``, which a ``7fr``
+    seam fixes at 80 regardless of the rail's scrollbar, at two heights that
+    were *both* above the overflow crossover. Two independent reasons it
+    could never fail. Measured with the property deleted from both
+    stylesheets:
+
+    * ``coins`` -- 80 at 46 rows and 80 at 22. Unchanged by the mutation.
+      The wrong subject.
+    * ``flow``/``pipeline`` -- 70 at 46 rows, 69 at 22. **That** is the
+      column the gutter reserves, and reserving it is what makes the two
+      heights agree.
+
+    So the assertion is: the rail's children are the same width whether or
+    not the rail is tall enough to need a scrollbar. It is checked against
+    laid-out regions rather than ``styles.scrollbar_gutter`` because a style
+    read cannot see a one-copy CSS deletion (the app stylesheet and
+    ``DEFAULT_CSS`` cover for each other) -- that half is guarded by
+    ``test_the_launchpad_body_css_agrees_between_default_css_and_the_stylesheet``
+    instead, which compares the property between the two copies.
     """
-    async with _surf_app().run_test(size=(150, 46)) as pilot:
+    roomy = await _launchpad_rail_widths(_RAIL_ROOMY_ROWS)
+    cramped = await _launchpad_rail_widths(_RAIL_OVERFLOWING_ROWS)
+
+    # The premise: the two heights straddle the overflow crossover. Without
+    # this the comparison below is trivially true and tests nothing -- which
+    # is precisely how the first version of this test passed.
+    assert not roomy["overflowing"], (
+        f"the rail already overflows at {_RAIL_ROOMY_ROWS} rows -- both "
+        "sample heights are on the same side of the crossover"
+    )
+    assert cramped["overflowing"], (
+        f"the rail does not overflow at {_RAIL_OVERFLOWING_ROWS} rows -- the "
+        "condition this test exists to measure never occurs"
+    )
+
+    for panel in ("flow", "pipeline"):
+        assert roomy[panel] == cramped[panel], (
+            f"{panel} is {roomy[panel]} columns at {_RAIL_ROOMY_ROWS} rows "
+            f"and {cramped[panel]} at {_RAIL_OVERFLOWING_ROWS}: the "
+            "scrollbar took a column instead of using its reserved gutter, "
+            "so this layout's width requirement now moves with its height"
+        )
+
+    # The declaration itself, so a rail that happened to agree for some other
+    # reason still names the property it is relying on.
+    async with _surf_app().run_test(size=(150, _RAIL_ROOMY_ROWS)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
         await pilot.press("l")
         await pilot.pause()
         rail = pilot.app.screen.query_one(f"#{LAUNCHPAD_RAIL_ID}")
         assert "stable" in str(rail.styles.scrollbar_gutter)
-
-    # ...and the property is what it is *for*: the coin table beside the rail
-    # is the same width whether or not the rail is tall enough to overflow.
-    widths = {}
-    for height in (46, 24):
-        async with _surf_app().run_test(size=(150, height)) as pilot:
-            await pilot.app.screen._do_refresh()
-            await pilot.pause()
-            await pilot.press("l")
-            await pilot.pause()
-            screen = pilot.app.screen
-            widths[height] = (
-                screen.query_one(SurfLaunchpadCoins).region.width,
-                screen.query_one(f"#{LAUNCHPAD_RAIL_ID}").show_vertical_scrollbar,
-            )
-    assert widths[46][0] == widths[24][0], (
-        f"the coin table's width moved with the terminal's height: {widths}"
-    )
 
 
 async def test_the_hero_survives_the_launchpad_body_swap() -> None:
@@ -986,19 +1044,22 @@ async def test_the_hero_survives_the_launchpad_body_swap() -> None:
 # task adds, living in this task's own test file rather than depending on a
 # file this task does not own to keep catching drift in the code it owns.
 
-#: ``overflow-y`` and ``scrollbar-gutter`` joined the geometry in 2026-08-24,
-#: with the rail. They are not decoration here: the gutter is what stops the
+#: ``overflow-y``, ``scrollbar-gutter`` and ``scrollbar-size`` joined the
+#: geometry in 2026-08-24, with the rail. They are not decoration here: the gutter is what stops the
 #: rail's scrollbar from taking a column out of the coin table beside it on
 #: short terminals only, and a property declared in one copy and not the other
 #: is *invisible* rather than conflicting -- Textual falls back to DEFAULT_CSS
 #: for a property the app stylesheet never mentions, so the layout would be
 #: right under both stylesheets today and wrong under one of them the moment
 #: either copy's value changed. This is the only guard the pair has: the
-#: repo-wide comparator in ``tests/test_surf_registration.py`` compares
-#: ``_STRUCTURAL`` only, and neither property is in it.
+#: ``scrollbar-size`` is here for the identical reason and was left out of
+#: the first pass, one property over from the hole it was closing: the
+#: Textual default is two cells wide, so a copy that drops the ``1 1`` gives
+#: the rail's children a column *less* than the other copy does -- the same
+#: height-dependent width drift, arrived at from the other direction.
 _LAUNCHPAD_CSS_STRUCTURAL = (
     "width", "min-width", "max-width", "height", "min-height", "padding",
-    "margin", "overflow-y", "scrollbar-gutter",
+    "margin", "overflow-y", "scrollbar-gutter", "scrollbar-size",
 )
 #: Shorthand properties whose absence means "the CSS default" -- so one copy
 #: spelling ``padding: 0 0`` and the other omitting it is agreement, not

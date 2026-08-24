@@ -501,7 +501,18 @@ _SHORTHAND_DEFAULTS = {"padding": "0", "margin": "0"}
 #: short" into the overflow the title bar's ``‹ taller`` is built on. One copy
 #: carrying it and the other not would mean the marker fires under one
 #: stylesheet and never under the other.
-_STRUCTURAL = ("width", "height", "min-height", "padding", "margin")
+#: ``scrollbar-size`` joined 2026-08-24 (fix round 2). It is geometry, not
+#: decoration: the Textual default is two cells wide, so a copy that drops
+#: the ``1 1`` hands a scroll container's children one column less than the
+#: other copy does. Both rails on this screen (``#surf-right-rail`` and the
+#: launchpad's ``#surf-launchpad-rail``) declare it in both copies, and
+#: nothing else on the screen declares it at all -- absent from both sides is
+#: agreement, so adding it here costs the other selectors nothing. It was the
+#: last scroll property in either stylesheet that no test in the repo
+#: compared.
+_STRUCTURAL = (
+    "width", "height", "min-height", "padding", "margin", "scrollbar-size",
+)
 
 #: The two copies deliberately do **not** cover the same selector set, and
 #: both asymmetries are load-bearing:
