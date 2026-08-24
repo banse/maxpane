@@ -476,13 +476,14 @@ class SurfHero(Horizontal):
     ) -> None:
         """Refresh all four boxes from the manager's flat dict (PRD §5 hero).
 
-        ``**_kwargs`` swallows any keyword the caller still passes that this
-        signature no longer names -- e.g. ``screens/surf.py`` still sends
-        ``pool_venue``/``lp_state``/etc. until Task 12 rewires it to the
-        ``launchpad_*`` keys above. Those boxes are gone; the keys are
-        silently ignored rather than raising, so an un-rewired screen
-        degrades to LAUNCHPAD/FLOW showing ``no read yet`` instead of
-        crashing.
+        ``**_kwargs`` swallows any keyword the caller passes that this
+        signature no longer names. ``screens/surf.py`` was rewired to the
+        ``launchpad_*`` keys above on 2026-08-24 and no longer sends the
+        retired ``pool_venue``/``lp_state``/etc. -- but the swallow stays,
+        because an un-rewired caller must degrade to LAUNCHPAD/FLOW showing
+        ``no read yet`` rather than crash, and that is exactly the state the
+        screen was silently in for one commit: the boxes rendered
+        ``no read yet`` on a healthy payload while every test here passed.
         """
         self._payload = {
             "launchpad_coin_count": launchpad_coin_count,

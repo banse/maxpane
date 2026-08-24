@@ -1166,6 +1166,17 @@ class SurfScreen(RefreshGuard, Screen):
                 price_source_disagreement_pct=data.get(
                     "price_source_disagreement_pct"
                 ),
+                # Not a row: provenance for the two figures above it that
+                # come out of the v4 pool (`pool_liquidity_usd`, and the
+                # on-chain leg of `imd_price_usd`). `"fallback"` means
+                # `LaunchpadHook.imdEthPoolId()` did not answer and a
+                # vendored constant was used, i.e. we cannot be sure this is
+                # the real pool rather than one of the 37 decoys -- the panel
+                # says so on its own title. Restored 2026-08-24 (fix round 1):
+                # retiring the hero's POOL box left that claim with no home,
+                # and DECOY POOL on the signals rail carries the decoy *count*,
+                # which is a different fact.
+                pool_id_source=data.get("pool_id_source"),
             )
         except Exception as exc:
             logger.debug("Failed to update SurfMarket: %s", exc)

@@ -33,6 +33,11 @@ from maxpane_dashboard.screens.surf import (
     SurfScreen,
 )
 from maxpane_dashboard.widgets.status_bar import StatusBar
+from maxpane_dashboard.widgets.surf.market import (
+    PANEL_TITLE,
+    POOL_UNVERIFIED_HINT,
+    POOL_UNVERIFIED_SHORT,
+)
 from maxpane_dashboard.widgets.surf import (
     SurfBurnPipeline,
     SurfCurveFlow,
@@ -158,6 +163,15 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "supply_series": "supply_series",
         "price_series": "price_series",
         "price_source_disagreement_pct": "price_source_disagreement_pct",
+        # Restored 2026-08-24 (fix round 1). Not a market *row*: it is
+        # provenance for the two figures on this panel that come out of the
+        # v4 pool, and it renders on the panel title as `· pool id
+        # unverified`. It was briefly parked in `_KEYS_WITHOUT_A_RENDERER`
+        # below after the hero's POOL box was retired -- correctly, since
+        # nothing rendered it, but the parking was the bug rather than the
+        # record of one: "we could not verify which pool this is" is a
+        # security claim with no other home on the dashboard.
+        "pool_id_source": "pool_id_source",
     },
     "SurfNft": {
         "nft_holders": "nft_holders",
@@ -248,13 +262,26 @@ META_KEYS = frozenset({
 #: there would make that set's own docstring false, and "consumed somewhere"
 #: is precisely the claim nobody can check once the two are mixed.
 #:
-#: All six are the hero's retired POOL and LP boxes' fields, orphaned by the
+#: All five are the hero's retired POOL and LP boxes' fields, orphaned by the
 #: 2026-08-24 rebuild (``widgets/surf/hero.py`` argues each retirement). Their
 #: information either moved (``pool_liquidity_usd`` to SurfMarket,
 #: ``decoy_pool_count`` and ``lp_owner_ok`` to the two entries just added to
-#: ``META_KEYS``) or simply ran out: ``lp_state`` has read ``"gone"``
-#: permanently since the ops wallet burned the v3 position on 2026-08-17, and
-#: ``pool_venue`` has read ``"v4"`` with no path back ever since.
+#: ``META_KEYS``) or simply ran out: ``lp_state``, ``lp_imd`` and ``lp_weth``
+#: have read ``None`` since the ops wallet burned the v3 position on
+#: 2026-08-17 and ``ownerOf`` began reverting, ``pool_venue`` has read ``"v4"``
+#: with no path back ever since, and ``pool_fee_bps`` is a static 1%. Each of
+#: those is an accepted loss, reviewed and confirmed as such.
+#:
+#: **``pool_id_source`` was in this set for one commit and should not have
+#: been.** It is the flag saying the live-pool lookup fell back to a vendored
+#: constant -- i.e. that the liquidity and price on screen may belong to one
+#: of the 37 third-party decoy pools rather than to IMD's own. Nothing else
+#: on the dashboard carries that claim (DECOY POOL on the signals rail counts
+#: decoys, which is not the same fact), so parking it was a silent regression
+#: rather than a record of one. It now renders on the IMD MARKET panel's
+#: title and is a ``SurfMarket`` kwarg above. The lesson this set is annotated
+#: with: "no widget reads it" is a fact, but "and that is fine" is a
+#: *judgement*, and the two have to be made separately for every entry.
 #:
 #: **Parked, not blessed.** The real fix is to remove them from ``SURF_KEYS``,
 #: which lives in ``data/surf_models.py`` -- a file the task that orphaned
@@ -269,7 +296,7 @@ META_KEYS = frozenset({
 #: an entry rotting here after somebody re-wires it: re-add ``lp_imd=`` to a
 #: widget's ``update_data`` and this list is what goes red.
 _KEYS_WITHOUT_A_RENDERER = frozenset({
-    "pool_venue", "pool_fee_bps", "pool_id_source",
+    "pool_venue", "pool_fee_bps",
     "lp_state", "lp_imd", "lp_weth",
 })
 
@@ -2179,6 +2206,106 @@ async def test_the_market_panel_is_not_clipped_at_the_pinned_layout_width():
                 f"at {width} columns the market sheds a field it has room "
                 f"for:\n{panel}"
             )
+
+
+#: This module imports ``SURF_FULL_LAYOUT_COLUMNS`` further down, beside the
+#: width-sweep section it belongs to, so it is not a name this helper can
+#: take as a default argument -- defaults bind at ``def`` time. Resolved in
+#: the body instead, which runs long after the module has finished loading.
+async def _market_title(pool_id_source, width: int | None = None) -> str:
+    """The IMD MARKET panel's composited title row at *width*, region-scoped.
+
+    ``_region_text``, not ``_screen_text``: ``pool`` and ``unverified`` are
+    ordinary words and a whole-screen substring check would be satisfied by
+    another panel one day. The claim is about this panel's own title row.
+    """
+    payload = _frozen_payload(pool_id_source=pool_id_source)
+    async with _screen_at(
+        SURF_FULL_LAYOUT_COLUMNS if width is None else width, 48, payload
+    ) as (app, screen, _pilot):
+        return _region_text(app, screen.query_one(SurfMarket)).splitlines()[0]
+
+
+async def test_only_a_fallback_pool_id_warns_on_the_market_title():
+    """The pool-identity warning, restored 2026-08-24 (fix round 1).
+
+    38 ETH/IMD v4 pools exist on mainnet and 37 are third-party decoys, some
+    at fee tiers up to 98%. ``pool_id_source == "fallback"`` means
+    ``LaunchpadHook.imdEthPoolId()`` did not answer and a vendored constant
+    was used instead -- so the liquidity and the on-chain price leg on THIS
+    panel may belong to somebody else's pool. Retiring the hero's POOL box
+    left that claim with no home anywhere on the dashboard for one commit;
+    DECOY POOL on the signals rail carries the decoy *count*, which does not
+    answer "did we pick the right one out of the 38".
+
+    Three states, three different claims, asserted against composited output:
+
+    * ``"fallback"`` -- we looked and could not verify. Warn.
+    * ``"hook"``     -- we looked and it checks out. Silent.
+    * ``None``       -- the launchpad sweep has not run. Also silent: warning
+      here would collapse "unverified" into "unread", the same
+      two-claims-one-string bug ``burn_ready``'s tri-state exists to avoid,
+      and the panel's own rows already say they have no data.
+    """
+    warned = await _market_title("fallback")
+    assert POOL_UNVERIFIED_HINT in warned, warned
+    assert warned.strip().startswith(PANEL_TITLE), (
+        "the marker replaced the panel title instead of being appended to it"
+    )
+
+    for quiet_source in ("hook", None):
+        quiet = await _market_title(quiet_source)
+        assert PANEL_TITLE in quiet
+        for marker in (POOL_UNVERIFIED_HINT, POOL_UNVERIFIED_SHORT, "pool id"):
+            assert marker not in quiet, (
+                f"pool_id_source={quiet_source!r} warned: {quiet!r} -- only a "
+                "verified-and-failed lookup may claim the pool is unverified"
+            )
+
+
+async def test_the_pool_warning_outranks_the_widen_hint_and_never_wraps():
+    """Two markers share one title row, and the priority is not arbitrary.
+
+    A shed column is a nuisance the reader fixes by widening; a pool nobody
+    verified means the figures below may not be IMD's at all, which the
+    reader cannot fix and cannot learn any other way. So the warning takes
+    the columns first and the widen hint degrades around it -- at 55 columns
+    the panel carries ``· pool ?`` and no hint at all, where the same panel
+    with a verified pool carries ``‹ widen``.
+
+    **And neither may wrap.** ``#surf-mkt-title`` has no ``text-overflow``
+    and the row is ``auto``-height, so a title one column too long takes a
+    second row out of a panel whose eighth row is the bridge block. The
+    height is asserted identical across all three states at every width --
+    that is the property that would break silently, in a panel that still
+    looks fine, if the budget arithmetic were wrong.
+    """
+    # Priority: at this width the warning fits and the descriptive hint does
+    # not, so the hint is what gives way.
+    narrow = await _market_title("fallback", 55)
+    assert POOL_UNVERIFIED_SHORT in narrow, narrow
+    assert "‹ widen" not in narrow, narrow
+    assert "‹ widen" in await _market_title("hook", 55)
+
+    # Both fit together once there is room for both.
+    roomy = await _market_title("fallback", 90)
+    assert POOL_UNVERIFIED_HINT in roomy and "‹ widen" in roomy, roomy
+
+    # Too narrow for even the short form: silent rather than wrapped, the
+    # rule this panel's own `_set_title` already applies to its widen hint.
+    assert POOL_UNVERIFIED_SHORT not in await _market_title("fallback", 40)
+
+    # ...and the title never costs the panel a row, in any state, at any of
+    # the widths above.
+    for width in (40, 55, 62, 90, 120, 143):
+        heights = {}
+        for source in ("fallback", "hook", None):
+            payload = _frozen_payload(pool_id_source=source)
+            async with _screen_at(width, 48, payload) as (_app, screen, _pilot):
+                heights[source] = screen.query_one(SurfMarket).region.height
+        assert len(set(heights.values())) == 1, (
+            f"the pool marker changed the panel's height at {width}: {heights}"
+        )
 
 
 async def test_the_market_advertises_its_own_shedding_on_the_real_screen():

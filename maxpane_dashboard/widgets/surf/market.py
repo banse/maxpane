@@ -409,6 +409,43 @@ WIDEN_HINTS: dict[str, str] = {
 #: codebase allows.
 SHORT_HINT = "‹ widen"
 
+#: The pool-identity warning, and why it rides *this* panel's title.
+#:
+#: ``pool_id_source`` records how ``surf_client`` found the live ETH/IMD v4
+#: pool: ``"hook"`` means ``LaunchpadHook.imdEthPoolId()`` answered, and
+#: ``"fallback"`` means it did not and the vendored ``POOL_V4_ID_FALLBACK``
+#: constant was used instead.  **38 ETH/IMD v4 pools exist on mainnet and 37
+#: of them are third-party decoys**, some at fee tiers up to 98%, so
+#: ``"fallback"`` is not a provenance footnote -- it is "we could not verify
+#: that these numbers belong to the pool we think they do".
+#:
+#: It lives on the IMD MARKET title because this is the panel rendering the
+#: numbers that would be wrong: ``pool_liquidity_usd`` and the on-chain leg of
+#: ``imd_price_usd`` both come from the pool this flag is uncertain about.
+#: The claim had no home at all between the hero's POOL box being retired
+#: (2026-08-24) and this marker: DECOY POOL on the signals rail carries the
+#: *count* of decoys, which is a different fact -- knowing 37 lookalikes exist
+#: says nothing about whether we picked the right one out of the 38.
+#:
+#: ``None`` is deliberately NOT a warning.  It means the launchpad sweep has
+#: not completed yet, i.e. we have not looked -- the panel's own rows already
+#: render their unavailable states in that case, and warning here would
+#: collapse "unverified" into "unread", which is the same two-claims-one-string
+#: bug the ``burn_ready`` tri-state and the curator FARM row exist to avoid.
+POOL_UNVERIFIED_HINT = "· pool id unverified"
+
+#: The narrow-panel form.  Kept a *question*, not an abbreviation of the long
+#: wording: ``· pool unver`` reads like a truncation the reader is expected to
+#: complete, while ``· pool ?`` states the uncertainty in six columns.
+POOL_UNVERIFIED_SHORT = "· pool ?"
+
+#: Payload entries that belong to the panel *title* rather than to one of its
+#: rows, and so must never reach :func:`_parts`. Spelled as a constant rather
+#: than inlined at the call site: `_parts` is strict by design, and the next
+#: title-only field added to the payload has to land here or the panel stops
+#: rendering entirely -- a failure mode worth naming in one obvious place.
+_TITLE_ONLY_KEYS = frozenset({"pool_id_source"})
+
 #: The five data rows, in compose order.  ``#surf-mkt-gap`` is the blank
 #: seam between the token figures and the bridge block -- fix round 10a
 #: (2026-08-12) briefly wrote a dim ``legacy`` line naming the superseded
@@ -562,6 +599,15 @@ def _parts(
     price_source_disagreement_pct=None,
 ) -> dict:
     """Every rendered fragment the tiers choose between, formatted once.
+
+    **Deliberately has no ``**kwargs``.** ``update_data`` swallows unknown
+    keywords so a stale caller cannot crash the panel; this builder is the
+    layer that must NOT, because it is the only thing standing between a
+    removed field and a caller still sending it. ``test_the_market_panel_no_
+    longer_carries_the_superseded_v3_pool`` asserts exactly that by handing
+    it ``legacy_pool_liquidity_usd`` and requiring a ``TypeError``. Anything
+    the payload carries that is not a row belongs in
+    :data:`_TITLE_ONLY_KEYS`, not in a ``**kwargs`` escape hatch here.
 
     Tier selection renders the whole panel up to five times, so the numbers
     are formatted here rather than inside :func:`_rows_for` -- and, more to
@@ -762,9 +808,17 @@ class SurfMarket(Vertical):
         supply_series=None,
         price_series=None,
         price_source_disagreement_pct=None,
+        pool_id_source=None,
         **_kwargs,
     ) -> None:
-        """Refresh all rows.  Kwargs are exactly the PRD §5 market keys.
+        """Refresh all rows.  Kwargs are the PRD §5 market keys, plus one.
+
+        ``pool_id_source`` is the odd one out and does not render as a row:
+        it is provenance for the two figures that *do* -- the pool liquidity
+        and the on-chain price leg -- so it rides the panel title instead
+        (:data:`POOL_UNVERIFIED_HINT`).  It arrived 2026-08-24 with the hero's
+        POOL box being retired, which left the "we could not verify which pool
+        this is" claim with no home anywhere on the dashboard.
 
         ``price_source_disagreement_pct`` never changes which price renders
         -- ``imd_price_usd`` is already whichever the manager preferred (the
@@ -782,6 +836,7 @@ class SurfMarket(Vertical):
             "supply_series": supply_series,
             "price_series": price_series,
             "price_source_disagreement_pct": price_source_disagreement_pct,
+            "pool_id_source": pool_id_source,
         }
         self._render_view()
 
@@ -808,25 +863,50 @@ class SurfMarket(Vertical):
         """
         return max(self.content_size.width - 2, 0)
 
-    def _set_title(self, hint: str = "") -> None:
-        """``IMD MARKET  ‹ widen: $ spread``, width permitting.
+    def _set_title(self, hint: str = "", pool_id_source=None) -> None:
+        """``IMD MARKET · pool id unverified  ‹ widen: $ spread``, width permitting.
 
-        The hint is *appended*: the title itself never changes, so the screen
-        tests' ``"IMD MARKET" in text`` holds at every width.  It degrades to
-        :data:`SHORT_HINT` rather than to nothing when the descriptive wording
-        will not fit beside the title -- silence is what the tiers exist to
-        prevent -- and only a panel too narrow for even that goes unmarked,
-        because this ``Static`` has no ``text-overflow`` and an over-long
-        title wraps onto a second line, pushing the bridge block out of a row
-        whose height is ``auto``.
+        Two markers, in priority order, both *appended*: the title itself
+        never changes, so the screen tests' ``"IMD MARKET" in text`` holds at
+        every width.
+
+        **The pool warning goes first and gets first claim on the columns.**
+        A shed column is a nuisance the user can fix by widening; a pool
+        identity nobody verified means every figure below may belong to one
+        of the 37 decoy pools, which the user cannot fix at all and cannot
+        see any other way. Ordering them the other way round would let a
+        narrow panel spend its last columns saying "widen me" instead of
+        "these numbers may not be ours".
+
+        Each degrades to a shorter form rather than to nothing -- silence is
+        what the tiers exist to prevent -- and only a panel too narrow for
+        even the short form goes unmarked, because this ``Static`` has no
+        ``text-overflow`` and an over-long title wraps onto a second line,
+        pushing the bridge block out of a row whose height is ``auto``. A
+        wrapped warning would cost the panel a row of real data to say
+        something the same panel is about to render unavailable anyway.
         """
         title = self.query_one("#surf-mkt-title", Static)
         width = self._line_width()
         text = PANEL_TITLE
+        used = len(PANEL_TITLE)
+
+        # `== "fallback"` and not a truthiness test: `None` means the sweep
+        # has not run (we have not looked), which is a different claim from
+        # "we looked and could not verify" and must not warn. `"hook"` is the
+        # verified case and must not warn either.
+        if pool_id_source == "fallback":
+            for candidate in (POOL_UNVERIFIED_HINT, POOL_UNVERIFIED_SHORT):
+                if not width or used + 1 + len(candidate) <= width:
+                    text += f" [yellow]{candidate}[/]"
+                    used += 1 + len(candidate)
+                    break
+
         if hint:
             for candidate in (hint, SHORT_HINT):
-                if not width or len(PANEL_TITLE) + 2 + len(candidate) <= width:
+                if not width or used + 2 + len(candidate) <= width:
                     text += f"  [yellow]{candidate}[/]"
+                    used += 2 + len(candidate)
                     break
         title.update(text)
 
@@ -834,14 +914,27 @@ class SurfMarket(Vertical):
         payload = self._payload
         if payload is None:
             return
+        # `_parts` builds ROWS and is strict about its keyword list on
+        # purpose (see its docstring). `pool_id_source` rides the same
+        # payload because a resize has to re-render the title from one
+        # source of truth, but it is filtered out here rather than handed
+        # to a builder that has no row to put it in.
+        row_payload = {
+            key: value
+            for key, value in payload.items()
+            if key not in _TITLE_ONLY_KEYS
+        }
         try:
             rows = [self.query_one(row_id, Static) for row_id in _ROW_IDS]
         except Exception:  # not composed yet
             return
 
-        parts = _parts(**payload)
+        parts = _parts(**row_payload)
         width = self._line_width()
         tier = _tier_for(width, parts)
         for row, line in zip(rows, _lines_for(tier, parts)):
             row.update(line)
-        self._set_title(WIDEN_HINTS.get(tier, SHORT_HINT))
+        self._set_title(
+            WIDEN_HINTS.get(tier, SHORT_HINT),
+            pool_id_source=payload.get("pool_id_source"),
+        )
