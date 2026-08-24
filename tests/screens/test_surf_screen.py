@@ -78,7 +78,40 @@ _LAUNCHPAD_WIDGET_CLASSES = {
     "SurfBurnPipeline": SurfBurnPipeline,
 }
 
-_ALL_WIDGET_CLASSES = {**_WIDGET_CLASSES, **_LAUNCHPAD_WIDGET_CLASSES}
+#: Both halves together -- **derived from the package**, not from the two
+#: dicts above.  The two dicts have to stay hand-typed: they encode a *role*
+#: ("always mounted and visible" vs "composed hidden until ``l``") that no
+#: introspection can see.  Their union is a different claim, and deriving it
+#: is what makes a widget added to the package but to neither dict fail here
+#: instead of silently escaping every dispatch test below -- which is exactly
+#: how the three launchpad widgets escaped the whole of
+#: ``tests/widgets/test_surf_widget_contract.py`` for the length of their
+#: existence.
+def _exported_widget_classes() -> dict[str, type]:
+    import maxpane_dashboard.widgets.surf as surf_widgets
+
+    return {
+        name: getattr(surf_widgets, name)
+        for name in surf_widgets.__all__
+        if isinstance(getattr(surf_widgets, name), type)
+    }
+
+
+_ALL_WIDGET_CLASSES = _exported_widget_classes()
+
+
+def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
+    """Neither role dict may quietly stop naming a widget the package ships.
+
+    The derivation above is what keeps the dispatch sweeps total; this is
+    what keeps the *roles* total. A widget in the package and in neither dict
+    is either an unrendered panel or an untested visibility rule, and both
+    read as green today.
+    """
+    assert (_WIDGET_CLASSES.keys() | _LAUNCHPAD_WIDGET_CLASSES.keys()) == \
+        _ALL_WIDGET_CLASSES.keys()
+    assert not (_WIDGET_CLASSES.keys() & _LAUNCHPAD_WIDGET_CLASSES.keys())
+    assert len(_ALL_WIDGET_CLASSES) >= 9
 
 #: The WP3<->WP5 dispatch contract: exactly the PRD §5 key groups.  Local copy
 #: until WP0 exports SURF_WIDGET_SIGNATURES beside SURF_KEYS (open issue) --

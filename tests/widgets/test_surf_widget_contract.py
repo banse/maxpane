@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+from pathlib import Path
 
 import pytest
 from rich.errors import MarkupError
@@ -40,16 +41,77 @@ from maxpane_dashboard.data.surf_models import SURF_KEYS
 
 # Package root, not submodule paths: this is the surface ``screens/surf.py``
 # and its screen test import from (WP5), so the contract sweep exercises it.
+import maxpane_dashboard.widgets.surf as surf_widgets
 from maxpane_dashboard.widgets.surf import (
+    SurfBurnPipeline,
+    SurfCurveFlow,
     SurfDevActivity,
     SurfFeed,
     SurfHero,
+    SurfLaunchpadCoins,
     SurfMarket,
     SurfNft,
     SurfSignals,
 )
 
-_WIDGETS = (SurfHero, SurfSignals, SurfFeed, SurfDevActivity, SurfMarket, SurfNft)
+
+def _exported_widget_classes() -> tuple[type, ...]:
+    """Every widget class the package exports, in ``__all__`` order.
+
+    Derived rather than hand-typed, and that is the fix for a real hole: the
+    three launchpad widgets (2026-08-23) were added to the package and to no
+    list in this file, so ``widgets/surf/launchpad.py`` was covered by none of
+    the four guarantees this module exists to give. Adding
+    ``from maxpane_dashboard.data import surf_client`` to it left the whole
+    file 22/22 green, and restoring ``[$success]`` into ``_pct_cell`` -- the
+    exact crash the theme-token guard was written for -- left it green while
+    seven tests in other modules raised ``MarkupError``.
+
+    A derived list covers the next widget the day it is written; a typed one
+    covers it the day somebody remembers.
+    """
+    return tuple(
+        obj
+        for obj in (getattr(surf_widgets, name) for name in surf_widgets.__all__)
+        if isinstance(obj, type)
+    )
+
+
+_ALL_WIDGETS = _exported_widget_classes()
+
+#: The widgets that deliberately do **not** name their ``update_data`` kwargs
+#: after ``SURF_KEYS``. The ``l`` view's three panels are primitives-only and
+#: reusable, so they take short names (``coins``, ``as_of_hhmm``,
+#: ``burned_total``) and the screen maps the ``launchpad_``-prefixed contract
+#: keys onto them (``tests/screens/test_surf_screen.py``'s
+#: ``SURF_WIDGET_SIGNATURES`` is where that mapping is pinned).
+#:
+#: An *exception* list rather than an inclusion list, on purpose: a widget
+#: added tomorrow lands in the strict kwarg check by default and has to be
+#: named here to escape it, which is the opposite of how the launchpad trio
+#: escaped every check in this file by simply not being mentioned.
+_SHORT_KWARG_WIDGETS = frozenset(
+    {SurfLaunchpadCoins, SurfCurveFlow, SurfBurnPipeline}
+)
+
+_WIDGETS = tuple(w for w in _ALL_WIDGETS if w not in _SHORT_KWARG_WIDGETS)
+
+
+def test_the_derived_widget_lists_are_not_empty_and_agree():
+    """The derivation has to be able to fail.
+
+    A ``__all__`` that stopped exporting classes, or an exception list that
+    grew to swallow everything, would make every parametrised sweep below
+    run over nothing and pass. Both ends are pinned, and the six
+    contract-keyed widgets are named once here -- the only hand-typed list
+    left in this file -- so that a widget quietly moving into the short-kwarg
+    exception is visible rather than silent.
+    """
+    assert set(_ALL_WIDGETS) == set(_WIDGETS) | _SHORT_KWARG_WIDGETS
+    assert set(_WIDGETS) == {
+        SurfHero, SurfSignals, SurfFeed, SurfDevActivity, SurfMarket, SurfNft,
+    }
+    assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
 
 
 class _Harness(App):
@@ -188,6 +250,65 @@ def test_the_allowed_analytics_modules_are_themselves_pure():
     )
 
 
+def _surf_widget_modules() -> tuple:
+    """Every module under ``maxpane_dashboard/widgets/surf/``, imported.
+
+    Walked off disk rather than hand-typed. The typed version of this list
+    named seven modules and ``widgets/surf/launchpad.py`` was not one of
+    them, so the three ``l``-view widgets were exempt from the purity proof
+    for the whole of their existence: adding ``from maxpane_dashboard.data
+    import surf_client`` to that module left this file green, while the same
+    mutation in an already-listed module correctly reddened -- which is how
+    the transitive half of the guard was shown to work and the coverage half
+    shown not to.
+
+    ``__init__`` is included deliberately: it is the import surface the
+    screen uses, so a data-layer import placed there would reach every
+    consumer of the package.
+    """
+    import importlib
+
+    package = Path(surf_widgets.__file__).parent
+    names = sorted(
+        path.stem if path.stem != "__init__" else ""
+        for path in package.glob("*.py")
+    )
+    modules = tuple(
+        importlib.import_module(
+            f"{surf_widgets.__name__}.{stem}" if stem else surf_widgets.__name__
+        )
+        for stem in names
+    )
+    assert len(modules) >= 8, (
+        f"only {len(modules)} surf widget modules found -- the walk is not "
+        "seeing the package and would prove nothing"
+    )
+    return modules
+
+
+def test_the_module_walk_sees_every_file_in_the_package():
+    """The walk has to be able to fail.
+
+    A glob that matched nothing, or an import that silently dropped a
+    module, would leave every assertion in the purity scan running over an
+    empty (or partial) list. Compared against the directory listing rather
+    than against a count, so a module added tomorrow is covered without this
+    test being edited -- and against the *file names*, which is the thing the
+    old hand-typed import block got wrong.
+    """
+    package = Path(surf_widgets.__file__).parent
+    on_disk = {path.stem for path in package.glob("*.py")}
+    walked = {
+        module.__name__.rsplit(".", 1)[-1] if module is not surf_widgets
+        else "__init__"
+        for module in _surf_widget_modules()
+    }
+    assert walked == on_disk
+    assert "launchpad" in walked, (
+        "the l-view widgets are back outside the purity proof"
+    )
+
+
 def test_widget_modules_import_no_data_layer_and_no_analytics():
     """Primitives only -- also the structural no-network proof.
 
@@ -201,15 +322,7 @@ def test_widget_modules_import_no_data_layer_and_no_analytics():
     package, not a surf defect, and a ``sys.modules``-based check would
     misattribute it to these modules.
     """
-    import maxpane_dashboard.widgets.surf._fmt as fmt_mod
-    import maxpane_dashboard.widgets.surf.activity as act_mod
-    import maxpane_dashboard.widgets.surf.feed as feed_mod
-    import maxpane_dashboard.widgets.surf.hero as hero_mod
-    import maxpane_dashboard.widgets.surf.market as mkt_mod
-    import maxpane_dashboard.widgets.surf.nft as nft_mod
-    import maxpane_dashboard.widgets.surf.signals as sig_mod
-
-    for module in (fmt_mod, hero_mod, sig_mod, feed_mod, act_mod, mkt_mod, nft_mod):
+    for module in _surf_widget_modules():
         for name in _imported_names(module):
             assert "maxpane_dashboard.data" not in name, (module.__name__, name)
             if "analytics" in name:
@@ -224,7 +337,12 @@ def test_widget_modules_import_no_data_layer_and_no_analytics():
             assert "httpx" not in name and "aiohttp" not in name, (module.__name__, name)
 
 
-@pytest.mark.parametrize("cls", _WIDGETS, ids=lambda c: c.__name__)
+# ``_ALL_WIDGETS``, not ``_WIDGETS``: this sweep asks whether a widget
+# survives an empty payload, which has nothing to do with what its kwargs are
+# named, so the short-kwarg exception that keeps the launchpad trio out of the
+# two contract-key checks above has no bearing here. Those three rendered a
+# full outage untested until 2026-08-24.
+@pytest.mark.parametrize("cls", _ALL_WIDGETS, ids=lambda c: c.__name__)
 async def test_no_args_and_all_none_render_without_raising(cls):
     widget = cls()
     app = _Harness(widget)
@@ -266,6 +384,30 @@ _RICH_PARSED_MODULE_NAMES = (
     "maxpane_dashboard.widgets.surf.activity",
 )
 
+#: ``launchpad.py`` is Rich-parsed too, but only in part -- so it gets a
+#: *scope* rather than a whole-module scan.
+#:
+#: Its coin table is a ``DataTable``, and a ``str`` cell is parsed by Rich:
+#: ``[$success]`` in a cell raises ``MarkupError`` out of the message pump
+#: exactly as it does in the feed (demonstrated in
+#: ``test_rich_rejects_a_theme_token_in_a_data_table_cell`` below, not
+#: asserted from memory). ``_pct_cell`` originally read ``[$success]``/
+#: ``[$error]`` and crashed the very first render -- and restoring that after
+#: the fact left this whole file green, because the module was in no list here
+#: at all.
+#:
+#: The rest of the module is *not* Rich-parsed and legitimately uses tokens:
+#: the panel's own note goes to ``Static.update()`` as a string, which is
+#: Textual Content markup, where ``[$warning]`` is correct and shipping. A
+#: whole-module scan would forbid that, and would also trip over the
+#: docstrings that explain this very rule.
+#:
+#: So the scope is derived from the code rather than typed: start at
+#: ``_coin_row`` -- the one function whose return value becomes table cells --
+#: and follow its calls to a fixed point within the module. A cell helper
+#: renamed or a new one added is covered without editing this file.
+_RICH_PARSED_ROOTS = {"maxpane_dashboard.widgets.surf.launchpad": "_coin_row"}
+
 
 def _rich_parsed_modules():
     import maxpane_dashboard.widgets.surf.activity as act_mod
@@ -274,6 +416,74 @@ def _rich_parsed_modules():
     modules = (feed_mod, act_mod)
     assert tuple(m.__name__ for m in modules) == _RICH_PARSED_MODULE_NAMES
     return modules
+
+
+def _call_closure(module, root: str) -> list[ast.FunctionDef]:
+    """*root* and every function in *module* it reaches, transitively.
+
+    Purely syntactic: it matches call targets by bare name against the
+    module's own top-level ``def``s, which is all the cell helpers are. A
+    call it cannot resolve (a method, an import) is simply not a function of
+    this module and is out of scope by definition.
+    """
+    tree = ast.parse(inspect.getsource(module))
+    defs = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert root in defs, f"{module.__name__} has no {root}() any more"
+
+    reached: dict[str, ast.FunctionDef] = {}
+    queue = [root]
+    while queue:
+        name = queue.pop()
+        if name in reached:
+            continue
+        reached[name] = defs[name]
+        for node in ast.walk(defs[name]):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id in defs:
+                    queue.append(node.func.id)
+    return list(reached.values())
+
+
+def _string_literals(nodes) -> list[str]:
+    """Every string literal under *nodes*, **docstrings excluded**.
+
+    The prose explaining this rule has to quote the tokens it forbids -- and
+    ``launchpad._pct_cell``'s docstring does exactly that, recording the
+    ``[$success]`` crash it was written to prevent. A docstring never reaches
+    a renderer, so excluding it removes a false positive without weakening
+    anything: the guard is about what is *handed to a parser*.
+
+    Structural, not a heuristic on content: a docstring is the first
+    statement of a module, class or function body when that statement is a
+    bare string, and only those are dropped.
+    """
+    docstrings: set[int] = set()
+    literals: list[str] = []
+    for parent in nodes:
+        for node in ast.walk(parent):
+            body = getattr(node, "body", None)
+            if (
+                isinstance(node, (ast.Module, ast.ClassDef,
+                                  ast.FunctionDef, ast.AsyncFunctionDef))
+                and isinstance(body, list) and body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                docstrings.add(id(body[0].value))
+    for parent in nodes:
+        for node in ast.walk(parent):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in docstrings
+            ):
+                literals.append(node.value)
+    return literals
 
 
 def test_no_theme_token_reaches_a_rich_parsing_surface():
@@ -288,17 +498,34 @@ def test_no_theme_token_reaches_a_rich_parsing_surface():
     Rich markup and raises ``MarkupError`` at parse time instead of
     degrading.
 
-    Only string literals are inspected: the prose explaining this rule
-    necessarily quotes the tokens it forbids, so scanning raw source text
-    would self-trip on this docstring and comments.
+    Only string literals are inspected, docstrings excluded: the prose
+    explaining this rule necessarily quotes the tokens it forbids, so
+    scanning raw source text would self-trip on this docstring and comments,
+    and scanning docstrings would trip on ``launchpad._pct_cell``'s own
+    record of the crash it was written to prevent.
+
+    Two scopes, for two reasons (see :data:`_RICH_PARSED_ROOTS`): the feed
+    and activity modules are Rich-parsed end to end, while the launchpad
+    module is Rich-parsed only along the path that builds ``DataTable``
+    cells -- everything else in it renders through ``Static.update()``,
+    where a ``$``-token is correct and currently shipping.
     """
-    for module in _rich_parsed_modules():
-        tree = ast.parse(inspect.getsource(module))
-        literals = [
-            node.value
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Constant) and isinstance(node.value, str)
-        ]
+    import importlib
+
+    scopes = [(module, [ast.parse(inspect.getsource(module))])
+              for module in _rich_parsed_modules()]
+    for name, root in _RICH_PARSED_ROOTS.items():
+        module = importlib.import_module(name)
+        nodes = _call_closure(module, root)
+        assert len(nodes) >= 2, (
+            f"{name}: the call closure from {root}() collapsed to "
+            f"{len(nodes)} function(s) -- it would prove nothing"
+        )
+        scopes.append((module, nodes))
+
+    for module, nodes in scopes:
+        literals = _string_literals(nodes)
+        assert literals, f"{module.__name__}: nothing was scanned"
         # f-strings decompose into Constant parts, so `[$warning]` survives
         # as its own literal segment and is still caught.
         for text in literals:
@@ -324,3 +551,33 @@ def test_rich_rejects_theme_tokens_but_accepts_what_surf_feed_sends():
         rendered = Text.from_markup(f"[yellow]⚠ {unavailable}[/]")
         assert unavailable in rendered.plain
         assert "⚠" in rendered.plain
+
+
+@pytest.mark.asyncio
+async def test_rich_rejects_a_theme_token_in_a_data_table_cell():
+    """The launchpad half of the rule, demonstrated rather than assumed.
+
+    ``SurfLaunchpadCoins`` is the first surf widget whose text reaches a
+    ``DataTable`` rather than a ``Static`` or a ``RichLog``, and it is not
+    obvious from the call site which markup dialect that is. It is Rich's:
+    a ``[$name]`` token in a cell raises ``MarkupError`` out of the message
+    pump, which is why ``_coin_row``'s call closure is scanned above.
+    """
+    from maxpane_dashboard.widgets.surf import launchpad as lp
+
+    original = lp._pct_cell
+    lp._pct_cell = lambda value: "[$success]+34.0%[/]"
+    try:
+        widget = lp.SurfLaunchpadCoins()
+        app = _Harness(widget)
+        with pytest.raises(MarkupError):
+            async with app.run_test(size=(100, 24)) as pilot:
+                widget.update_data(coins=[{
+                    "ticker": "ICE", "name": "Ice", "creator": "0x8ca0",
+                    "creator_known": False, "age_s": 7_200.0,
+                    "price_eth": 0.0071, "change_24h_pct": 34.0,
+                    "swaps_24h": 41, "swaps_all": 97, "imd_burned": 250.0,
+                }], coin_count=1, as_of_hhmm="01:14")
+                await pilot.pause()
+    finally:
+        lp._pct_cell = original
