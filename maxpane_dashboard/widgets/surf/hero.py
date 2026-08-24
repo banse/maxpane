@@ -1,28 +1,65 @@
-"""Hero row for the surf dashboard: POOL · LP · BURN · SUPPLY.
+"""Hero row for the surf dashboard: LAUNCHPAD · FLOW · BURN · SUPPLY.
 
-Four boxes answering PRD §4's hero-left slot, rebuilt 2026-08-23 for the v4
-launchpad. The two boxes it replaces asked questions the world stopped
-answering: **HOOK** hunted a v4 hook on the IMD/WETH pool that will never
-exist -- the dev publicly retracted that plan on 2026-08-16 and the live
-pool is hookless -- and **GATE** read ``identityAllowed()``, which now has a
-seat of its own on the signals rail (``widgets/surf/signals.py``) alongside
-the other eight detectors, so it does not need a hero box too.
+Four boxes answering PRD §4's hero-left slot. This is the row's second
+rebuild. The 2026-08-23 v3->v4 migration already replaced **HOOK** (a v4
+hook launch the dev publicly retracted on 2026-08-16) and **GATE** (which
+moved to its own seat on the signals rail) with **POOL** and **LP** -- and
+this rewrite, still 2026-08-23 and still the same plan, retires those two in
+turn. Not because the migration reversed: because their information moved
+elsewhere or simply ran out.
 
-* **POOL**   -- which pool is currently live (``pool_venue``, derived by the
-  manager from ``lp_state``: ``"v3"`` while the old NFPM position still
-  answers, ``"v4"`` once it reverts), its fee tier and USD liquidity, and
-  how many other ETH/IMD v4 pools exist. 38 ETH/IMD v4 pools sit on mainnet
-  and 37 of them are third-party decoys at fee tiers up to 98% -- so when
-  ``pool_id_source == "fallback"`` (``LaunchpadHook.imdEthPoolId()`` did not
-  answer this cycle and the vendored constant was used instead) the box
-  says so instead of implying it knows which pool this is.
-* **LP**     -- the v3 position's IMD/WETH sides and the owner sanity flag,
-  *or* the fact that it migrated. ``lp_state == "gone"`` means
-  ``ownerOf(#1167726)`` (or the equivalent balance read) reverted
-  ``Invalid token ID`` this cycle -- the contract answered, and the answer
-  was "this position does not exist any more". That is a **completed
-  migration**, not an unknown, and it must never render the same as
-  ``lp_state is None`` (nobody answered at all, still the honest dash).
+* **POOL**'s three facts are all duplicated now. Its USD liquidity is
+  already ``pool $548.7K`` one row down in the IMD MARKET panel
+  (``widgets/surf/market.py``); its decoy count already has a seat of its
+  own on the signals rail as DECOY POOL (``widgets/surf/signals.py``); and
+  its ``v4`` venue, which used to be news, is now permanent -- the v3
+  position was burned 2026-08-17 and cannot come back. A box that only ever
+  repeats facts shown elsewhere is not earning a quarter of the hero row.
+* **LP** could only ever say one thing after that same burn:
+  ``ownerOf(#1167726)`` reverts ``Invalid token ID`` forever, so
+  ``lp_state`` is permanently ``"gone"`` and the box has read
+  ``MIGRATED / v3 position migrated`` since the migration landed, with no
+  path back to saying anything else. A box whose entire vocabulary is one
+  fixed sentence is the same dead weight as POOL's, just reached by a
+  different road.
+
+What replaces them reads the launchpad sweep that already runs for the ``l``
+LAUNCHPAD view (``SurfManager._launchpad_payload``, Task 8) -- **no new
+request** -- and asks the two questions POOL/LP no longer could:
+
+* **LAUNCHPAD** -- how big the coin population is (``launchpad_coin_count``),
+  how fast it is growing (``launchpad_new_24h``, which is genuinely ``0`` on
+  many days and must say so as a number rather than collapse into the same
+  dash a failed read uses), and how many distinct creators are behind it
+  (``launchpad_creator_count``).
+* **FLOW** -- how much that population is actually trading
+  (``launchpad_swap_count``, ``launchpad_trader_count``) and what the
+  pipeline owes its creators (``launchpad_creator_eth_owed`` -- the ETH side
+  of the same permissionless burn pipeline BURN displays the IMD side of).
+
+**Both boxes carry the launchpad tier's own clock on their title line**
+(``LAUNCHPAD · 20:20``, off ``launchpad_as_of_hhmm``) rather than the bare
+titles BURN and SUPPLY keep. The title bar above shows the *fast* tier's
+``as of``; the launchpad tier refreshes every 600s (its own slower slot, the
+curator ``f`` analysis precedent), so a bare title would let these two boxes
+sit under a clock claiming seconds while the numbers beneath it are up to
+ten minutes old -- exactly "a stale number presented as live" (CLAUDE.md
+Conventions). The clock shows only at ``compact``: at ``tight``/``minimal``
+there is no room for it without crowding the numbers it exists to keep
+honest about, and a terminal narrow enough to need those tiers (see Width
+behaviour below) has nowhere near enough columns to read the whole row
+anyway.
+
+When *every* one of a box's own inputs is ``None`` -- the sweep has simply
+never completed, not "completed and found nothing" -- that box's second
+line reads ``no read yet`` instead of rendering a dash-filled shape that
+would look like a partial, completed read. ``0`` is a different, real claim
+(zero launches in the last 24h *is* some days' actual state) and must never
+collapse into either the unread wording or the single-field dash a read
+that fails for just one input still uses -- the inverse of the curator rail
+bug where a dead group's ``-- unknown`` and a real ``none yet`` both read
+confident and green through an outage.
+
 * **BURN**   -- the permissionless bridge-and-burn pipeline's own state:
   how much IMD has accrued for burning, how much is already staged on the
   Base side, and whether ``bridgeToBaseBurnReceiver()`` would clear its own
@@ -48,11 +85,6 @@ Copied from ``fwa/fwa_hero_metrics.py`` and adapted to the surf data
 contract (PRD §5 ``hero`` keys). Primitives only: this module imports
 nothing from the data layer.
 
-``HOOK_NOT_LIVE``/``HOOK_LAUNCHED`` are kept as dead exports purely so
-``tests/screens/test_surf_screen.py``'s top-level ``from ...hero import
-HOOK_NOT_LIVE`` -- not yet updated, that file belongs to Tasks 12/13 --
-does not fail to *collect*. Nothing in this module still branches on them.
-
 Width behaviour
 ---------------
 
@@ -65,21 +97,27 @@ rather than the row's (see :meth:`SurfHeroBox.render_lines_at_tier`).
 
 The three tiers -- and their widths -- are unchanged by this rewrite:
 ``compact`` needs 22 columns and gives up nothing; ``tight`` needs 17 and
-drops trailing words (``burned N observed`` -> ``burn N``); ``minimal``
-needs 13 and drops units and connective words down to bare numbers and
-flags. ``MINIMAL_WIDTH`` is still 13 because two of the three anchors that
-originally set it are still on the row -- ``OWNER CHANGED`` (LP's alarm,
-unshortened at every tier) and today's ``2,376,732 IMD`` (SUPPLY's
-quantity) -- even though the third, ``IDENTITY GATE``, left with GATE.
+drops trailing words (``burned N observed`` -> ``burn N``, LAUNCHPAD's own
+``· 24h`` and its clock); ``minimal`` needs 13 and drops units and
+connective words down to bare numbers and flags.
+
+``MINIMAL_WIDTH`` is still 13, but its anchor changed hands. It used to be
+tied for widest by two strings: LP's alarm ``OWNER CHANGED`` and SUPPLY's
+own quantity (``2,376,732 IMD``, both 13 columns). LP is gone, and nothing
+LAUNCHPAD or FLOW renders comes close -- their longest minimal-tier line is
+11 columns (``73 creators`` / ``-- creators``, and ``4,724 swaps``, from the
+real 2026-08-23 launchpad state this row now reads). SUPPLY's quantity is
+therefore the sole anchor left, unaccompanied rather than tied, and the
+constant did not need to move to stay true: ``test_every_hero_tier_fits_
+the_width_it_advertises`` still measures every state at every tier rather
+than trusting this paragraph.
 
 Titles and quantities are never shortened by tier: they are rendered whole
-at every width. A quantity that outgrows its box lights the border
-``‹ widen`` marker instead of being cut -- a number cut mid-digit still
-reads as a number, which is worse than an announced omission. POOL's USD
-liquidity is the one number on this row that *is* abbreviated (``$805.9K``,
-via ``fmt_compact``) regardless of tier: it is a dollar estimate, not an
-exact on-chain integer, and ``pool_liquidity_usd`` is already rendered the
-same way in ``widgets/surf/market.py`` -- one convention, not two.
+at every width (LAUNCHPAD/FLOW's own ``as of`` clock is the one exception,
+and it is dropped rather than shortened -- see above). A quantity that
+outgrows its box lights the border ``‹ widen`` marker instead of being cut
+-- a number cut mid-digit still reads as a number, which is worse than an
+announced omission.
 """
 
 from __future__ import annotations
@@ -96,10 +134,6 @@ from maxpane_dashboard.widgets.surf._fmt import (
     fmt_compact,
 )
 
-#: Dead exports -- see the module docstring's note on why these are kept.
-HOOK_NOT_LIVE = "NOT LIVE"
-HOOK_LAUNCHED = "LAUNCHED"
-
 #: Marker raised in a box's bottom border when even ``minimal`` does not fit.
 #: The border, not a content line: the boxes carry five content lines inside a
 #: height-7 frame and have no sixth to spare (see the DEFAULT_CSS note below).
@@ -111,7 +145,7 @@ WIDEN_HINT = "‹ widen"
 #: outgrows its tier fails there rather than on a user's terminal.
 COMPACT_WIDTH = 22  # "burned 15,745 observed"
 TIGHT_WIDTH = 17    # "2000/2000 written" -- see below
-MINIMAL_WIDTH = 13  # "OWNER CHANGED" / "2,376,732 IMD"
+MINIMAL_WIDTH = 13  # "2,376,732 IMD" (SUPPLY's quantity -- see the docstring)
 
 TIER_WIDTHS = {
     "compact": COMPACT_WIDTH,
@@ -138,91 +172,101 @@ def _short(tier: str) -> bool:
     return tier in ("tight", "minimal")
 
 
+def _as_int(value):
+    """Coerce to ``int`` or return ``None`` -- never raise, never 0-coerce.
+
+    LAUNCHPAD's three fields are counts, not amounts: ``as_float`` would
+    accept them but formatting a coerced float with ``{:,}`` prints a
+    trailing ``.0`` (``"146.0"``, not ``"146"``). A dedicated int coercion
+    keeps the same never-raise, never-0-for-a-failure contract as
+    ``as_float`` without that cosmetic bug, and rejects ``bool`` for the
+    same reason ``as_float`` does -- ``True``/``False`` are ``int``
+    subclasses in Python and would otherwise silently coerce to 1/0.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 # -- box bodies (pure: a state and a tier in, markup lines out) --------
 
 
-def _pool_lines(
-    pool_venue,
-    pool_fee_bps,
-    pool_liquidity_usd,
-    pool_id_source,
-    decoy_pool_count,
-    tier: str,
-) -> list[str]:
-    """POOL box: which pool is currently live, and whether the id is trusted.
+def _launchpad_lines(coin_count, new_24h, creator_count, as_of_hhmm, tier: str) -> list[str]:
+    """LAUNCHPAD box: the population, its growth and who is building it.
 
-    ``pool_id_source == "fallback"`` means ``LaunchpadHook.imdEthPoolId()``
-    did not answer this cycle and the vendored fallback constant was used
-    instead. 38 ETH/IMD v4 pools exist on mainnet and 37 of them are
-    third-party decoys, some at fee tiers up to 98%, so an unverified id
-    must never be rendered as if the box knew which pool this is -- the
-    fallback state pre-empts the fee/decoy line entirely rather than
-    showing numbers that might belong to somebody else's pool.
+    Carries the launchpad tier's OWN clock on the title line. The title bar
+    above shows the fast tier's ``as of``, and these numbers are up to ten
+    minutes older than that -- rendering them under the fast clock would be
+    exactly the "stale number presented as live" the house rules forbid.
+    At ``tight``/``minimal`` the clock is dropped; those widths belong to
+    terminals with nowhere near enough columns to read the whole row anyway.
+
+    ``new_24h`` gets its own three-state handling within the box: a genuine
+    ``0`` (zero launches today, a real and common state) renders as ``0``,
+    a failed read for that one field alone renders a dash, and only when
+    *every* field here is unread does the line collapse to ``no read yet``
+    instead -- three distinct claims, not two.
     """
-    venue = str(pool_venue or "").strip()
-    big = f"[bold]{safe_markup(venue)}[/]" if venue else f"[dim]{EMDASH}[/]"
+    title = "LAUNCHPAD"
+    if as_of_hhmm and not _short(tier):
+        title = f"LAUNCHPAD · {safe_markup(str(as_of_hhmm))}"
 
-    liquidity = as_float(pool_liquidity_usd)
-    liq_str = f"${fmt_compact(liquidity)}" if liquidity is not None else f"${DASH}"
-    second = f"[dim]{liq_str}[/]"
+    count = _as_int(coin_count)
+    new = _as_int(new_24h)
+    creators = _as_int(creator_count)
 
-    fallback = str(pool_id_source or "").strip().lower() == "fallback"
-    if fallback:
-        third = "[bold $warning]id ?[/]" if _short(tier) else "[bold $warning]pool id unverified[/]"
+    big = f"[bold]{count:,} coins[/]" if count is not None else f"[dim]{EMDASH}[/]"
+
+    if count is None and new is None and creators is None:
+        # Nobody has ever answered -- distinct from a real "0 new" below.
+        second = "[dim]no read yet[/]"
+        third = "[dim] [/]"
     else:
-        try:
-            fee_pct = int(pool_fee_bps) / 10000
-            fee_str = f"{fee_pct:g}%"
-        except (TypeError, ValueError):
-            fee_str = None
-        try:
-            total = int(decoy_pool_count) + 1
-            decoy_str = f"1/{total}" if _short(tier) else f"1 of {total}"
-        except (TypeError, ValueError):
-            decoy_str = None
+        new_str = f"{new:,}" if new is not None else DASH
+        second_body = f"{new_str} new" if _short(tier) else f"{new_str} new · 24h"
+        second = f"[dim]{second_body}[/]"
 
-        if fee_str is not None and decoy_str is not None:
-            third = f"[dim]{fee_str} {decoy_str}[/]" if _short(tier) else f"[dim]{fee_str} · {decoy_str}[/]"
-        elif fee_str is not None:
-            third = f"[dim]{fee_str}[/]" if _short(tier) else f"[dim]{fee_str} fee[/]"
-        elif decoy_str is not None:
-            third = f"[dim]{decoy_str}[/]" if _short(tier) else f"[dim]{decoy_str} pools[/]"
-        else:
-            third = f"[dim]fee {DASH}[/]"
+        creators_str = f"{creators:,} creators" if creators is not None else f"{DASH} creators"
+        third = f"[dim]{creators_str}[/]"
 
-    return ["[dim]POOL[/]", "", big, second, third]
+    return [f"[dim]{title}[/]", "", big, second, third]
 
 
-def _lp_lines(lp_state, lp_imd, lp_weth, lp_owner_ok, tier: str) -> list[str]:
-    """LP box: the v3 position's composition, or the fact that it migrated.
+def _flow_lines(swap_count, trader_count, creator_eth_owed, as_of_hhmm, tier: str) -> list[str]:
+    """FLOW box: how much the launchpad population trades, and what it is owed.
 
-    ``lp_state == "gone"`` is a completed migration and renders as one --
-    never as ``unknown`` or a dash, which is what this box used to do when
-    the position stopped answering (the whole reason this box was rebuilt).
-    ``lp_state is None`` (nobody answered this cycle) still renders the
-    honest unknown below; the two must never look the same.
+    Same slower clock as LAUNCHPAD, off the identical ``as_of_hhmm`` -- both
+    boxes are fed by the same 600s sweep, so they carry the same freshness
+    marker rather than each guessing independently. ``creator_eth_owed`` is
+    the ETH side of the pipeline BURN's own box displays the IMD side of
+    (``burn_accrued``/``burn_staged``); the two never disagree because the
+    manager builds both from the same read, but this box is the only one on
+    the row that names the ETH the pipeline currently owes its creators.
     """
-    if lp_state == "gone":
-        big = "[bold $success]MIGRATED[/]"
-        sub = "v3 closed" if _short(tier) else "v3 position migrated"
-        return ["[dim]LP[/]", "", big, f"[dim]{sub}[/]", "[dim] [/]"]
+    title = "FLOW"
+    if as_of_hhmm and not _short(tier):
+        title = f"FLOW · {safe_markup(str(as_of_hhmm))}"
 
-    imd = as_float(lp_imd)
-    weth = as_float(lp_weth)
-    big = f"[bold]{fmt_compact(imd)} IMD[/]" if imd is not None else f"[dim]{EMDASH}[/]"
-    second = f"{weth:,.2f} WETH" if weth is not None else f"{DASH} WETH"
-    if lp_owner_ok is True:
-        # The tick *is* the assertion; the ENS name is decoration, and
-        # `fren…` would distinguish nothing.
-        third = "[dim]owner ✓[/]" if _short(tier) else "[dim]owner ✓ frenpet.eth[/]"
-    elif lp_owner_ok is False:
-        # The position NFT moved: the committed launch precondition.  Never
-        # shortened at any tier -- it is the alarm, and it is what sets
-        # MINIMAL_WIDTH at 13 along with the SUPPLY quantity.
-        third = "[bold $error]OWNER CHANGED[/]"
+    swaps = _as_int(swap_count)
+    traders = _as_int(trader_count)
+    eth = as_float(creator_eth_owed)
+
+    big = f"[bold]{swaps:,} swaps[/]" if swaps is not None else f"[dim]{EMDASH}[/]"
+
+    if swaps is None and traders is None and eth is None:
+        second = "[dim]no read yet[/]"
+        third = "[dim] [/]"
     else:
-        third = f"[dim]owner {DASH}[/]"
-    return ["[dim]LP[/]", "", big, f"[dim]{second}[/]", third]
+        traders_str = f"{traders:,} traders" if traders is not None else f"{DASH} traders"
+        second = f"[dim]{traders_str}[/]"
+
+        eth_str = f"{eth:.4f} ETH" if eth is not None else f"{DASH} ETH"
+        third = f"[dim]{eth_str}[/]"
+
+    return [f"[dim]{title}[/]", "", big, second, third]
 
 
 def _burn_lines(burn_accrued, burn_staged, burn_ready, imd_burned_cum, tier: str) -> list[str]:
@@ -241,8 +285,8 @@ def _burn_lines(burn_accrued, burn_staged, burn_ready, imd_burned_cum, tier: str
     turns ``None`` into ``"--"``, never ``"0"``) rather than coerced
     together. They share one line because the box has no third to spare,
     which is also why they are compact-formatted rather than full-precision
-    like LP's amounts: a combined line has no room for comma-grouped digits
-    at this box's width budget.
+    like a raw amount would be: a combined line has no room for
+    comma-grouped digits at this box's width budget.
     """
     accrued = as_float(burn_accrued)
     staged = as_float(burn_staged)
@@ -324,7 +368,7 @@ class SurfHeroBox(Static):
 
 
 class SurfHero(Horizontal):
-    """Row of four hero boxes: POOL · LP · BURN · SUPPLY."""
+    """Row of four hero boxes: LAUNCHPAD · FLOW · BURN · SUPPLY."""
 
     # Height 7 with zero vertical padding, like FWAHeroMetrics: the boxes
     # carry five content lines and `padding: 1 2` would clip the last one
@@ -354,20 +398,18 @@ class SurfHero(Horizontal):
         self._payload: dict = {}
 
     def compose(self) -> ComposeResult:
-        for box_id in ("surf-hero-pool", "surf-hero-lp", "surf-hero-burn", "surf-hero-supply"):
+        for box_id in ("surf-hero-launchpad", "surf-hero-flow", "surf-hero-burn", "surf-hero-supply"):
             yield SurfHeroBox("[dim]Loading...[/]", id=box_id, classes="surf-hero-box")
 
     def update_data(
         self,
-        pool_venue=None,
-        pool_fee_bps=None,
-        pool_liquidity_usd=None,
-        pool_id_source=None,
-        decoy_pool_count=None,
-        lp_state=None,
-        lp_imd=None,
-        lp_weth=None,
-        lp_owner_ok=None,
+        launchpad_coin_count=None,
+        launchpad_new_24h=None,
+        launchpad_creator_count=None,
+        launchpad_swap_count=None,
+        launchpad_trader_count=None,
+        launchpad_creator_eth_owed=None,
+        launchpad_as_of_hhmm=None,
         burn_accrued=None,
         burn_staged=None,
         burn_ready=None,
@@ -379,21 +421,20 @@ class SurfHero(Horizontal):
 
         ``**_kwargs`` swallows any keyword the caller still passes that this
         signature no longer names -- e.g. ``screens/surf.py`` still sends
-        ``hook_status``/``gate_open``/``identities_written`` until Task 12
-        rewires it. Those boxes are gone; the keys are silently ignored
-        rather than raising, so an un-rewired screen degrades to POOL/BURN
-        showing their unknown state instead of crashing.
+        ``pool_venue``/``lp_state``/etc. until Task 12 rewires it to the
+        ``launchpad_*`` keys above. Those boxes are gone; the keys are
+        silently ignored rather than raising, so an un-rewired screen
+        degrades to LAUNCHPAD/FLOW showing ``no read yet`` instead of
+        crashing.
         """
         self._payload = {
-            "pool_venue": pool_venue,
-            "pool_fee_bps": pool_fee_bps,
-            "pool_liquidity_usd": pool_liquidity_usd,
-            "pool_id_source": pool_id_source,
-            "decoy_pool_count": decoy_pool_count,
-            "lp_state": lp_state,
-            "lp_imd": lp_imd,
-            "lp_weth": lp_weth,
-            "lp_owner_ok": lp_owner_ok,
+            "launchpad_coin_count": launchpad_coin_count,
+            "launchpad_new_24h": launchpad_new_24h,
+            "launchpad_creator_count": launchpad_creator_count,
+            "launchpad_swap_count": launchpad_swap_count,
+            "launchpad_trader_count": launchpad_trader_count,
+            "launchpad_creator_eth_owed": launchpad_creator_eth_owed,
+            "launchpad_as_of_hhmm": launchpad_as_of_hhmm,
             "burn_accrued": burn_accrued,
             "burn_staged": burn_staged,
             "burn_ready": burn_ready,
@@ -415,27 +456,26 @@ class SurfHero(Horizontal):
         try:
             boxes = {
                 key: self.query_one(f"#surf-hero-{key}", SurfHeroBox)
-                for key in ("pool", "lp", "burn", "supply")
+                for key in ("launchpad", "flow", "burn", "supply")
             }
         except Exception:  # not composed yet
             return
 
-        boxes["pool"].render_lines_at_tier(
-            lambda tier: _pool_lines(
-                data.get("pool_venue"),
-                data.get("pool_fee_bps"),
-                data.get("pool_liquidity_usd"),
-                data.get("pool_id_source"),
-                data.get("decoy_pool_count"),
+        boxes["launchpad"].render_lines_at_tier(
+            lambda tier: _launchpad_lines(
+                data.get("launchpad_coin_count"),
+                data.get("launchpad_new_24h"),
+                data.get("launchpad_creator_count"),
+                data.get("launchpad_as_of_hhmm"),
                 tier,
             )
         )
-        boxes["lp"].render_lines_at_tier(
-            lambda tier: _lp_lines(
-                data.get("lp_state"),
-                data.get("lp_imd"),
-                data.get("lp_weth"),
-                data.get("lp_owner_ok"),
+        boxes["flow"].render_lines_at_tier(
+            lambda tier: _flow_lines(
+                data.get("launchpad_swap_count"),
+                data.get("launchpad_trader_count"),
+                data.get("launchpad_creator_eth_owed"),
+                data.get("launchpad_as_of_hhmm"),
                 tier,
             )
         )

@@ -136,16 +136,17 @@ def test_hhmm_mmdd_fallbacks():
 from maxpane_dashboard.widgets.surf.hero import (  # noqa: E402
     SurfHero,
     _burn_lines,
-    _lp_lines,
-    _pool_lines,
+    _flow_lines,
+    _launchpad_lines,
 )
 
-#: 2026-08-23 chain state, post-migration: the v3 LP position (#1167726) was
-#: burned 2026-08-17 (``lp_state == "gone"``), the live pool is the hookless
-#: v4 pool (``pool_venue == "v4"``), and 37 of the 38 ETH/IMD v4 pools on
-#: mainnet are third-party decoys at fee tiers up to 98% -- this pool's own
-#: fee is 1% (``pool_fee_bps == 10000``, Uniswap's fee unit is hundredths of
-#: a bip: ``fee / 1e6``).
+#: 2026-08-23 chain state: the launchpad tier's own snapshot (146 coins
+#: registered, 5 new in the last 24h, 73 distinct creators, 4,724 swaps,
+#: 673 traders, 0.0751 ETH currently owed to creators) as of 20:20 -- up to
+#: ten minutes behind the fast tier's own clock by design (the launchpad
+#: sweep runs on its own 600s tier, Task 8), which is why LAUNCHPAD/FLOW
+#: carry that clock on their own title line rather than borrowing the
+#: screen's.
 #:
 #: ``imd_burned_cum`` is 15,745 -- the single 2026-08-05 event -- and NOT the
 #: 58,848 all-time ledger (12039+31064+15745) of PRD §1.  WP4 accumulates this
@@ -154,15 +155,13 @@ from maxpane_dashboard.widgets.surf.hero import (  # noqa: E402
 #: produce, and would quietly certify all-time copy in the widget.  See the
 #: ``imd_burned_cum`` note in WP3.2 and WP4 open issue 4.
 _FULL_HERO = {
-    "pool_venue": "v4",
-    "pool_fee_bps": 10000,
-    "pool_liquidity_usd": 805_927.0,
-    "pool_id_source": "hook",
-    "decoy_pool_count": 37,
-    "lp_state": "gone",
-    "lp_imd": None,
-    "lp_weth": None,
-    "lp_owner_ok": None,
+    "launchpad_coin_count": 146,
+    "launchpad_new_24h": 5,
+    "launchpad_creator_count": 73,
+    "launchpad_swap_count": 4_724,
+    "launchpad_trader_count": 673,
+    "launchpad_creator_eth_owed": 0.0751,
+    "launchpad_as_of_hhmm": "20:20",
     "burn_accrued": 1_234.56,
     "burn_staged": 45.0,
     "burn_ready": False,
@@ -171,40 +170,77 @@ _FULL_HERO = {
 }
 
 
-# -- the four brief-mandated pure-function tests (Task 8 step 1) -------
+async def _render_hero(**kwargs):
+    """Mount ``SurfHero``, drive ``update_data(**kwargs)``, return ``(app, screen_text)``.
+
+    Every hero integration test below goes through this one path so the
+    assertions are always against what a user would actually see
+    (``_screen_text`` walks ``_compositor.render_strips()``), never a raw
+    markup string a box function happened to build (house rule). Keywords
+    left unnamed default to ``None`` exactly the way ``update_data`` itself
+    defaults them, so a caller that only names the fields it cares about
+    still exercises the honest "nobody answered" path for everything else.
+    """
+    widget = SurfHero()
+    app = _Harness(widget)
+    async with app.run_test(size=(160, 12)) as pilot:
+        widget.update_data(**kwargs)
+        await pilot.pause()
+        return app, _screen_text(app)
 
 
-def test_lp_card_says_migrated_not_unknown() -> None:
-    lines = _lp_lines(lp_state="gone", lp_imd=None, lp_weth=None, lp_owner_ok=None, tier="full")
+# -- pure-function tests: the box builders in isolation -------------------
+
+
+def test_launchpad_card_shows_population_growth_and_builders() -> None:
+    lines = _launchpad_lines(146, 5, 73, "20:20", tier="compact")
     text = " ".join(lines)
-    assert "migrated" in text
-    assert "unknown" not in text and "--" not in text
+    assert "146 coins" in text
+    assert "5 new" in text
+    assert "73 creators" in text
+    assert "LAUNCHPAD" in text and "20:20" in text
 
 
-def test_lp_card_still_says_unknown_on_a_failed_read() -> None:
-    lines = _lp_lines(lp_state=None, lp_imd=None, lp_weth=None, lp_owner_ok=None, tier="full")
-    assert "migrated" not in " ".join(lines)
-
-
-def test_pool_card_names_the_venue_and_the_decoys() -> None:
-    lines = _pool_lines(pool_venue="v4", pool_fee_bps=10000, pool_liquidity_usd=805927.0,
-                        decoy_pool_count=37, pool_id_source="hook", tier="full")
+def test_launchpad_card_zero_new_is_a_number_not_a_dash() -> None:
+    """Zero launches today is a real, common state -- it must print ``0``,
+    not collapse into the same dash a failed read for that field uses."""
+    lines = _launchpad_lines(146, 0, 73, "20:20", tier="compact")
     text = " ".join(lines)
-    assert "v4" in text and "1%" in text and "38" in text
+    assert "0 new" in text
+    assert "-- new" not in text
 
 
-def test_pool_card_flags_a_fallback_id() -> None:
-    """If the hook read failed the panel must not imply it knows the pool."""
-    lines = _pool_lines(pool_venue="v4", pool_fee_bps=None, pool_liquidity_usd=None,
-                        decoy_pool_count=None, pool_id_source="fallback", tier="full")
-    assert "?" in " ".join(lines) or "unverified" in " ".join(lines)
+def test_launchpad_card_collapses_to_no_read_yet_when_wholly_unread() -> None:
+    """Only when *every* field is unread does the box say so -- a single
+    missing field still renders its own dash, not this collapse (see the
+    test below)."""
+    lines = _launchpad_lines(None, None, None, None, tier="compact")
+    text = " ".join(lines)
+    assert "no read yet" in text
+    assert "0 coins" not in text
+
+
+def test_launchpad_card_one_missing_field_is_a_dash_not_a_collapse() -> None:
+    lines = _launchpad_lines(146, None, 73, "20:20", tier="compact")
+    text = " ".join(lines)
+    assert "no read yet" not in text
+    assert "-- new" in text
+
+
+def test_flow_card_shows_swaps_traders_and_eth_owed() -> None:
+    lines = _flow_lines(4_724, 673, 0.0751, "20:20", tier="compact")
+    text = " ".join(lines)
+    assert "4,724 swaps" in text
+    assert "673 traders" in text
+    assert "0.0751 ETH" in text
+    assert "FLOW" in text and "20:20" in text
 
 
 def test_burn_card_distinguishes_zero_from_unread() -> None:
     zero = _burn_lines(burn_accrued=0.0, burn_staged=0.0, burn_ready=False,
-                       imd_burned_cum=3299.0, tier="full")
+                       imd_burned_cum=3299.0, tier="compact")
     unread = _burn_lines(burn_accrued=None, burn_staged=None, burn_ready=None,
-                         imd_burned_cum=None, tier="full")
+                         imd_burned_cum=None, tier="compact")
     assert " ".join(zero) != " ".join(unread)
     assert "0" in " ".join(zero)
 
@@ -212,29 +248,60 @@ def test_burn_card_distinguishes_zero_from_unread() -> None:
 # -- SurfHero integration tests (composited output) ---------------------
 
 
+async def test_the_hero_leads_with_the_launchpad_and_its_flow():
+    _, out = await _render_hero(
+        launchpad_coin_count=146, launchpad_new_24h=0, launchpad_creator_count=73,
+        launchpad_swap_count=4_724, launchpad_trader_count=673,
+        launchpad_creator_eth_owed=0.0751, launchpad_as_of_hhmm="20:20",
+    )
+    assert "LAUNCHPAD" in out and "FLOW" in out
+    assert "POOL" not in out and "MIGRATED" not in out
+    assert "146 coins" in out and "4,724 swaps" in out
+
+
+async def test_zero_new_launches_is_a_number_not_a_dash():
+    """Today there genuinely were none. ``0 new`` and ``-- new`` are
+    different claims and the hero must not collapse them."""
+    _, out = await _render_hero(launchpad_coin_count=146, launchpad_new_24h=0,
+                                launchpad_creator_count=73)
+    assert "0 new" in out
+
+
+async def test_an_unread_launchpad_slot_shows_no_numbers_at_all():
+    _, out = await _render_hero(launchpad_coin_count=None, launchpad_new_24h=None,
+                                launchpad_creator_count=None)
+    assert "0 coins" not in out and "no read yet" in out
+
+
+async def test_the_launchpad_boxes_carry_their_own_slower_clock():
+    """The title bar's ``as of`` is the FAST tier's. The launchpad tier is
+    600s, so these two boxes would otherwise show ten-minute-old numbers
+    under a clock claiming seconds -- "a stale number presented as live".
+    """
+    _, out = await _render_hero(launchpad_coin_count=146, launchpad_as_of_hhmm="20:20")
+    assert "20:20" in out
+
+
 async def test_hero_full_payload_renders_all_four_boxes_on_screen():
-    widget = SurfHero()
-    app = _Harness(widget)
-    async with app.run_test(size=(160, 12)) as pilot:
-        widget.update_data(**_FULL_HERO)
-        await pilot.pause()
-        screen = _screen_text(app)
-        # POOL: venue, fee tier and the decoy-inclusive pool count.
-        assert "v4" in screen
-        assert "1%" in screen
-        assert "38" in screen
-        assert "$805.9K" in screen
-        # LP: a completed migration is a fact in words, not a dash.
-        assert "MIGRATED" in screen
-        assert "v3 position migrated" in screen
-        # BURN: the tri-state headline plus the pipeline's own numbers.
-        assert "NOT READY" in screen
-        # SUPPLY: full-precision supply + the burn this install has observed.
-        # The word "observed" is load-bearing: the widget cannot know the
-        # all-time total, so it must not imply one (WP4 open issue 4).
-        assert "2,376,732 IMD" in screen
-        assert "burned 15,745 observed" in screen
-        assert "cum" not in screen
+    _, screen = await _render_hero(**_FULL_HERO)
+    # LAUNCHPAD: population, growth, builders and its own slower clock.
+    assert "146 coins" in screen
+    assert "5 new" in screen
+    assert "73 creators" in screen
+    assert "LAUNCHPAD · 20:20" in screen
+    # FLOW: activity plus what the pipeline owes creators, same clock.
+    assert "4,724 swaps" in screen
+    assert "673 traders" in screen
+    assert "0.0751 ETH" in screen
+    assert "FLOW · 20:20" in screen
+    # BURN: the tri-state headline plus the pipeline's own numbers.
+    assert "NOT READY" in screen
+    # SUPPLY: full-precision supply + the burn this install has observed.
+    # The word "observed" is load-bearing: the widget cannot know the
+    # all-time total, so it must not imply one (WP4 open issue 4).
+    assert "2,376,732 IMD" in screen
+    assert "burned 15,745 observed" in screen
+    assert "cum" not in screen
 
 
 async def test_hero_zero_observed_burn_never_claims_none_was_ever_burned():
@@ -294,105 +361,6 @@ async def test_hero_burn_ready_flips_between_true_false_and_unknown():
                 assert forbid not in screen, (ready, screen)
 
 
-async def test_hero_pool_venue_both_values_render_distinctly():
-    """Both real values the manager emits (v3 pre-migration, v4 post) must
-    reach the box, not just the one ``_FULL_HERO`` happens to use.
-
-    ``lp_state`` must NOT be left at ``_FULL_HERO``'s own ``"gone"`` here:
-    that renders ``"v3 position migrated"`` in the LP box (see
-    ``test_hero_lp_gone_renders_migrated_not_unknown_on_screen``), and that
-    string contains the literal substring ``"v3"`` -- so the ``venue ==
-    "v3"`` case would pass on the LP box's own leakage even if the POOL box
-    rendered nothing resembling ``v3`` at all (a Task 13 review finding).
-    ``lp_state="live"`` -- the sibling ``test_hero_owner_changed_is_loud_
-    words_not_colour`` fixture, which renders IMD/WETH amounts instead --
-    keeps the LP box's text free of both venue words, so this assertion is
-    genuinely checking the POOL box alone.
-    """
-    for venue in ("v3", "v4"):
-        widget = SurfHero()
-        app = _Harness(widget)
-        async with app.run_test(size=(160, 12)) as pilot:
-            widget.update_data(**{
-                **_FULL_HERO,
-                "pool_venue": venue,
-                "lp_state": "live",
-                "lp_imd": 388_421.0,
-                "lp_weth": 142.7067,
-            })
-            await pilot.pause()
-            assert venue in _screen_text(app), venue
-
-
-async def test_hero_pool_id_source_fallback_warns_on_screen():
-    """A fallback pool id must not carry fee/decoy numbers that might be
-    somebody else's pool (CLAUDE.md rule 3)."""
-    widget = SurfHero()
-    app = _Harness(widget)
-    async with app.run_test(size=(160, 12)) as pilot:
-        widget.update_data(**{
-            **_FULL_HERO,
-            "pool_fee_bps": None,
-            "pool_liquidity_usd": None,
-            "decoy_pool_count": None,
-            "pool_id_source": "fallback",
-        })
-        await pilot.pause()
-        screen = _screen_text(app)
-        assert "pool id unverified" in screen
-        assert "1%" not in screen
-
-
-async def test_hero_owner_changed_is_loud_words_not_colour():
-    """lp_owner_ok=False means the LP NFT moved -- the launch precondition."""
-    live_lp = {**_FULL_HERO, "lp_state": "live", "lp_imd": 388421.0, "lp_weth": 142.7067}
-
-    widget = SurfHero()
-    app = _Harness(widget)
-    async with app.run_test(size=(160, 12)) as pilot:
-        widget.update_data(**{**live_lp, "lp_owner_ok": False})
-        await pilot.pause()
-        screen = _screen_text(app)
-        assert "OWNER CHANGED" in screen
-        assert "owner ✓" not in screen
-        assert "MIGRATED" not in screen
-
-        # And None is unknown -- neither the checkmark nor the alarm.
-        widget.update_data(**{**live_lp, "lp_owner_ok": None})
-        await pilot.pause()
-        screen = _screen_text(app)
-        assert "OWNER CHANGED" not in screen
-        assert "owner ✓" not in screen
-        assert "owner --" in screen
-
-
-async def test_hero_lp_gone_renders_migrated_not_unknown_on_screen():
-    """``lp_state == "gone"`` is a completed migration, read live off-chain --
-    it must never render as ``unknown`` (the bug this rebuild fixes)."""
-    widget = SurfHero()
-    app = _Harness(widget)
-    async with app.run_test(size=(160, 12)) as pilot:
-        widget.update_data(**{**_FULL_HERO, "lp_state": "gone",
-                              "lp_imd": None, "lp_weth": None, "lp_owner_ok": None})
-        await pilot.pause()
-        screen = _screen_text(app)
-        assert "MIGRATED" in screen
-        assert "OWNER CHANGED" not in screen
-
-
-async def test_hero_lp_unread_state_stays_unknown_on_screen():
-    """``lp_state is None`` -- nobody answered -- stays the honest dash."""
-    widget = SurfHero()
-    app = _Harness(widget)
-    async with app.run_test(size=(160, 12)) as pilot:
-        widget.update_data(**{**_FULL_HERO, "lp_state": None,
-                              "lp_imd": None, "lp_weth": None, "lp_owner_ok": None})
-        await pilot.pause()
-        screen = _screen_text(app)
-        assert "MIGRATED" not in screen
-        assert "—" in screen
-
-
 async def test_hero_no_args_and_all_none_render_dashes_never_zero():
     widget = SurfHero()
     app = _Harness(widget)
@@ -403,28 +371,32 @@ async def test_hero_no_args_and_all_none_render_dashes_never_zero():
         screen = _screen_text(app)
         assert "Loading" not in screen
         assert "—" in screen
+        # LAUNCHPAD/FLOW: wholly unread, both collapse to the honest phrase
+        # rather than a dash-filled shape that would look like a completed,
+        # empty read.
+        assert "no read yet" in screen
+        assert "0 coins" not in screen
+        assert "0 swaps" not in screen
         # A dead RPC must not render as a zero supply or a zero burn
         # (the false-BURN hazard, game_mechanics §Hazards 5).
         assert "0 IMD" not in screen
         assert "burned 0" not in screen
         assert "acc 0" not in screen
         assert "stg 0" not in screen
-        assert "MIGRATED" not in screen
         # burn_ready is None here, not False -- must not read as "not ready".
         assert "READY" not in screen
 
 
-async def test_hero_garbage_pool_venue_is_escaped_not_parsed():
-    """``pool_venue`` is manager-controlled today, but the render path
-    escapes defensively anyway -- the crash would happen inside the message
-    pump, well outside any try/except around the refresh call."""
-    widget = SurfHero()
-    app = _Harness(widget)
-    async with app.run_test(size=(160, 12)) as pilot:
-        widget.update_data(**{**_FULL_HERO, "pool_venue": "[/x] v5"})
-        await pilot.pause()  # the crash would happen inside the message pump
-        screen = _screen_text(app)
-        assert "v5" in screen
+async def test_hero_garbage_as_of_hhmm_is_escaped_not_parsed():
+    """``launchpad_as_of_hhmm`` reaches markup on both boxes' title lines.
+
+    The manager formats this value today, but the render path escapes
+    defensively anyway -- the same posture ``pool_venue`` used to need
+    before POOL was retired: a crash here would happen inside the message
+    pump, well outside any try/except around the refresh call.
+    """
+    _, screen = await _render_hero(**{**_FULL_HERO, "launchpad_as_of_hhmm": "[/x] 20:21"})
+    assert "20:21" in screen
 
 
 def test_hero_tier_table_is_measured_not_rounded():
@@ -470,20 +442,27 @@ def test_every_hero_tier_fits_the_width_it_advertises():
 
     for tier, need in TIER_WIDTHS.items():
         renderings = []
-        for venue in ("v3", "v4", None, ""):
-            for source in ("hook", "fallback", None):
-                for decoy in (0, 37, None):
-                    renderings.append(
-                        _pool_lines(venue, 10000, 805_927.0, source, decoy, tier)
-                    )
-        for state in ("live", "gone", None):
-            for owner in (True, False, None):
-                renderings.append(_lp_lines(state, 388421.0, 142.7067, owner, tier))
+        # LAUNCHPAD/FLOW share the same real 2026-08-23 magnitudes as
+        # ``_FULL_HERO`` above, swept against ``None``/``0`` for each field
+        # and against every ``as_of_hhmm`` shape (a real clock, unread, and
+        # an empty string -- both of the latter are falsy so the title stays
+        # bare). ``count/new/creators`` all ``None`` together is already one
+        # of these combinations, so the "no read yet" collapse is swept here
+        # too without a separate branch.
+        for as_of in ("20:20", None, ""):
+            for count in (146, 0, None):
+                for new in (0, 5, None):
+                    for creators in (73, 0, None):
+                        renderings.append(_launchpad_lines(count, new, creators, as_of, tier))
+            for swaps in (4_724, 0, None):
+                for traders in (673, 0, None):
+                    for eth in (0.0751, 0.0, None):
+                        renderings.append(_flow_lines(swaps, traders, eth, as_of, tier))
         for ready in (True, False, None):
             # 15,745 is the real observed single-event burn (PRD §1); the
             # combined accrued/staged line is the one this box compacts
-            # (fmt_compact), unlike LP/SUPPLY's full-precision quantities --
-            # see the "why compact" note in ``_burn_lines``'s own docstring.
+            # (fmt_compact), unlike SUPPLY's full-precision quantity -- see
+            # the "why compact" note in ``_burn_lines``'s own docstring.
             for accrued in (0.0, 1_234.56, 15_745.0, None):
                 renderings.append(_burn_lines(accrued, 45.0, ready, 15_745.0, tier))
         for burned in (15745.0, 0.0, None):
