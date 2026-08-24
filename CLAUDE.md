@@ -439,8 +439,8 @@ were a live silent clip: Task 11 took the table from eight columns to nine,
 which buys another cell gutter even though the width constants still sum to
 79, so at content widths 91 and 92 the header rendered `BURN`/`BURNE` with the
 marker dark. The other two launchpad panels never mark at all. The hero row,
-which stays mounted in both modes so nothing it tracks (POOL/LP/BURN/SUPPLY)
-ever goes dark, clears on its own at **87** — re-measured, not inherited: the
+which stays mounted in both modes so nothing it tracks
+(LAUNCHPAD/FLOW/BURN/SUPPLY) ever goes dark, clears on its own at **87** — re-measured, not inherited: the
 long-quoted "by 80" was true when `hero.MINIMAL_WIDTH` was 13 and it is 15
 since 2026-08-24. 87 is still 48 columns below the pin, so the conclusion that
 sentence was quoted for holds and the hero never competes for the binder role.
@@ -461,8 +461,8 @@ Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Per-dashboard: `c` swaps the shared bottom-right slot (FWA, TTT, Talismans,
 curator); **`l` on surf** swaps the whole dashboard body for the v4
 launchpad's own three panels (LAUNCHPAD COINS / CURVE FLOW / BURN PIPELINE,
-curator's `y`/`f` precedent), with the hero (POOL/LP/BURN/SUPPLY) left in
-place so nothing it tracks ever goes dark (`esc` backs out, one-way); surf's
+curator's `y`/`f` precedent), with the hero (LAUNCHPAD/FLOW/BURN/SUPPLY)
+left in place so nothing it tracks ever goes dark (`esc` backs out, one-way); surf's
 status hint reads `l launchpad`. Surf's own `l` and curator's own `l` (the
 record view, described below) are unrelated bindings on two different
 screens, not one shared key. **`y` on curator** swaps the whole body for the reader's own
@@ -504,7 +504,7 @@ memory when a bug report cites one.
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest                    # 5,336 tests, must be green
+.venv/bin/python -m pytest                    # 5,352 tests, must be green
 .venv/bin/python -m pytest tests/analytics/   # pure math
 .venv/bin/python -m pytest -x                 # stop on first failure
 .venv/bin/python -m pytest sybilkit            # the second distribution, 422 tests + 1 xfail

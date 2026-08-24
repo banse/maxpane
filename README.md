@@ -54,10 +54,19 @@ burn readiness · hot coin. Each renders `state · age · one-line detail`, and 
 re-fires on a *new* event: baselines advance on the successful read that detected the last one,
 and never on a failed read — an outage cannot fire a burn or un-fire a migration.
 
-The hero (POOL · LP · BURN · SUPPLY) tracks the 2026-08-17 v3→v4 migration: the old LP position
-is gone — burned, not stolen, read live off-chain rather than assumed — and the live IMD/ETH pool
-is hookless. An earlier v4 hook launch was announced and then publicly retracted by the dev on
-2026-08-16; nothing on this dashboard watches for it any more.
+The hero (LAUNCHPAD · FLOW · BURN · SUPPLY) reads the launchpad: how big the coin population is
+and how fast it is growing, how many distinct creators are behind it, how much of it is actually
+trading, and what the burn pipeline owes — the IMD side under BURN, the ETH side under FLOW.
+LAUNCHPAD and FLOW carry the launchpad tier's own `as of HH:MM` on their titles, because that
+tier refreshes on a slower clock than the title bar's and a failed sweep leaves the last good
+numbers standing behind an older marker rather than blanking them.
+
+The POOL and LP boxes this row used to carry are gone, and not because the 2026-08-17 v3→v4
+migration reversed: POOL's three facts are each shown elsewhere now (pool liquidity in IMD
+MARKET, the decoy count on the signals rail), and LP could only ever say `MIGRATED` once the old
+position was burned — read live off-chain rather than assumed. An earlier v4 hook launch was
+announced and then publicly retracted by the dev on 2026-08-16; nothing on this dashboard watches
+for it any more.
 
 The announce feed **threads replies**. A post that drew answers shows one `▸ 3 replies` line
 instead of three more rows; click it — or focus it and press `enter` or `space` — and the
@@ -70,9 +79,9 @@ screen moves.
 Press **`l`** to swap the whole dashboard body for the v4 launchpad's own view: LAUNCHPAD COINS
 takes the left column and CURVE FLOW over BURN PIPELINE share a rail on the right — the same
 two-column shape the main dashboard uses, split wider because the coin table has nine fixed
-columns and cannot give any of them back. The hero (POOL · LP · BURN · SUPPLY) stays on screen
-the whole time; `esc` backs out, one-way. The launchpad view is whole from **135 columns**,
-inside the 143 the widest dashboard already asks for.
+columns and cannot give any of them back. The hero (LAUNCHPAD · FLOW · BURN · SUPPLY) stays on
+screen the whole time; `esc` backs out, one-way. The launchpad view is whole from
+**135 columns**, inside the 143 the widest dashboard already asks for.
 
 The NFT floor is shown as `n/a — no keyless source`, not estimated. There is no keyless floor
 feed for this collection, and a made-up number on a dashboard people trade against is worse than
@@ -300,9 +309,9 @@ the other, so a single manager owns the command.
 Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap panels; in THE
 LIST's `l` view it switches the full-width raw and cleaned tables. **Surfboard binds `l`** to swap
 the whole dashboard body for the v4 launchpad's own view — LAUNCHPAD COINS on the left, CURVE
-FLOW over BURN PIPELINE in a right-hand rail — with the hero (POOL · LP · BURN · SUPPLY) left on
-screen the whole time; `esc` backs out, one-way, and its status hint reads `l launchpad`. In
-Surfboard's announce feed, `enter` or `space` on a `▸ n replies` line (or a click) opens and
+FLOW over BURN PIPELINE in a right-hand rail — with the hero (LAUNCHPAD · FLOW · BURN · SUPPLY)
+left on screen the whole time; `esc` backs out, one-way, and its status hint reads
+`l launchpad`. In Surfboard's announce feed, `enter` or `space` on a `▸ n replies` line (or a click) opens and
 closes that thread. (THE LIST's `l` and Surfboard's `l` are two
 different dashboards' own bindings, not one shared key — see each dashboard's own row above for
 what it does there.) **THE LIST binds `y`** for your own standing — every send you
