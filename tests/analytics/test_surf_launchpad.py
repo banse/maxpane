@@ -3,6 +3,7 @@
 import pytest
 
 from maxpane_dashboard.analytics import surf_launchpad as L
+from maxpane_dashboard.analytics.surf_launchpad import mcap_eth
 
 
 def _swaps(**by_coin):
@@ -131,3 +132,39 @@ def test_ranking_never_reads_the_clock_itself() -> None:
     """now_ts is injected; a module that calls time.time() cannot be tested."""
     import inspect
     assert "time.time()" not in inspect.getsource(L)
+
+
+# ---------------------------------------------------------------------------
+# Task 5 -- the coin supply, carried through to a market cap
+# ---------------------------------------------------------------------------
+
+
+def test_mcap_is_price_times_supply() -> None:
+    """Measured 2026-08-25: every launchpad coin's supply is 1e9 and IMD's
+    own curve coin spots at 5.861606568e-09 ETH, i.e. an FDV of 5.8616 ETH.
+    """
+    assert mcap_eth(5.861606568e-09, 10**9 * 10**18) == pytest.approx(5.861606568)
+
+
+@pytest.mark.parametrize("price, supply", [
+    (None, 10**9 * 10**18),   # price round failed
+    (5.86e-09, None),         # supply absent from a legacy cursor entry
+    (5.86e-09, 0),            # a supply of zero is not a market cap of zero
+    (None, None),
+])
+def test_an_unknown_input_makes_an_unknown_mcap(price, supply) -> None:
+    """`None`, never 0.0: a zero market cap is a claim, and this function is
+    never in a position to make it."""
+    assert mcap_eth(price, supply) is None
+
+
+def test_rank_coins_passes_the_supply_through() -> None:
+    from maxpane_dashboard.analytics.surf_launchpad import rank_coins
+    rows = rank_coins(
+        [{"pool_id": "0xa", "ticker": "ICE", "name": "Ice", "creator": "0x1",
+          "creator_known": False, "ts": 100.0, "price_eth": None,
+          "change_24h_pct": None, "imd_burned": 0.0,
+          "coin_supply_wei": 10**9 * 10**18}],
+        [], {}, now_ts=200.0, limit=10,
+    )
+    assert rows[0]["coin_supply_wei"] == 10**9 * 10**18

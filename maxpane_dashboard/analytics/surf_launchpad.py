@@ -61,6 +61,29 @@ def hot_coin_threshold(swaps_by_coin: Mapping[str, int]) -> int | None:
     return max(HOT_FLOOR, int(statistics.median(active)) * HOT_MULTIPLE)
 
 
+def mcap_eth(price_eth: float | None, coin_supply_wei: int | None) -> float | None:
+    """Fully-diluted market cap in ETH, or ``None``.
+
+    Both inputs can genuinely be unknown -- the price round is a separate
+    ``aggregate3`` that can fail on its own, and a cursor written before the
+    supply was persisted has no supply -- and an unknown input makes an
+    unknown market cap, never ``0.0``. A supply of exactly zero is treated
+    the same way: it is not a market cap of zero, it is a coin whose supply
+    we cannot believe.
+
+    Measured 2026-08-25: all 146 launchpad coins report ``coinSupply`` ==
+    1e9 and their token's live ``totalSupply()`` agrees. The supply is still
+    read per coin from that coin's own ``Launched`` event rather than
+    assumed -- a uniform value found by sampling is not a contract guarantee.
+    """
+    if price_eth is None or not coin_supply_wei:
+        return None
+    try:
+        return float(price_eth) * (int(coin_supply_wei) / 1e18)
+    except (TypeError, ValueError):
+        return None
+
+
 def rank_coins(
     launches: Sequence[Mapping[str, Any]],
     day_swaps: Sequence[Mapping[str, Any]],
@@ -125,6 +148,9 @@ def rank_coins(
                 # traded, which is a fact worth ranking on, not a failed read.
                 "swaps_all": swaps_all.get(pool_id, 0),
                 "imd_burned": launch.get("imd_burned"),
+                # Carried, not used: `mcap_eth` needs it and the price it
+                # multiplies is not read until the client's price round.
+                "coin_supply_wei": launch.get("coin_supply_wei"),
             }
         )
     rows.sort(

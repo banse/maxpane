@@ -61,10 +61,12 @@ from maxpane_dashboard.data.rpc_common import (
     pace,
 )
 from maxpane_dashboard.data.surf_models import (
+    Burnkeeper,
     ChainState,
     ChannelTx,
     DevTx,
     LaunchpadCoin,
+    LaunchpadEvent,
     LaunchpadState,
     LogWindow,
     MarketSnapshot,
@@ -171,6 +173,10 @@ MAX_ACTIVITY_PAGES = 2  # per wallet
 MAX_NFT_TRANSFER_PAGES = 4
 #: Identity writes are 1 of 2000 today; the same bound-means-unknown rule.
 MAX_REGISTRY_LOG_PAGES = 4
+#: Page bound for the executor's internal-transaction listing. One page
+#: covers the whole history today (39 entries, six of them value-bearing);
+#: the bound is what stops an unbounded follow of ``next_page_params``.
+_MAX_BURN_FEE_PAGES = 4
 
 _DAY_SECONDS = 86400.0
 
@@ -443,6 +449,188 @@ def _decode_imd_burned_amount(row: dict) -> int | None:
     return decode_uint(raw, 0)
 
 
+def _decode_bridged_for_burn_log(row: dict) -> dict | None:
+    """One ``TokensBridgedForBurn`` row -> ``{tx, block, amount_wei}``.
+
+    ``TokensBridgedForBurn(address indexed oft, uint32 indexed dstEid,
+    bytes32 indexed to, uint256 amount, uint256 minAmount, bytes32 guid)`` --
+    three indexed fields, so ``amount`` opens the data payload, the same
+    layout ``_burn_amount_of`` already reads for this event.
+
+    **The caller is not in this event.** Nothing here names who fired the
+    bridge; the signature on the enclosing transaction is the only
+    unforgeable answer, and it is read separately (``fetch_tx_senders``).
+    """
+    raw = strip0x(row.get("data") or "0x")
+    if len(raw) < 64:
+        return None
+    tx = str(row.get("transactionHash") or "").lower()
+    if not tx.startswith("0x"):
+        return None
+    try:
+        block = int(row.get("blockNumber"), 16)
+    except (TypeError, ValueError):
+        return None
+    try:
+        amount_wei = decode_uint(raw, 0)
+    except ValueError:
+        return None
+    return {"tx": tx, "block": block, "amount_wei": amount_wei}
+
+
+#: Cap on the burn rows the cursor PERSISTS. ``bridgeToBaseBurnReceiver()``
+#: is permissionless, so this map grows with strangers' transactions, not
+#: with anything we control -- and it is rewritten into
+#: ``~/.maxpane/surf_cache.json`` every tick. Five rows exist today; the cap
+#: is here because a bound added after it is needed is not a bound.
+_MAX_PERSISTED_BURNS = 500
+
+
+def _cap_burns(burns: dict[str, dict]) -> dict[str, dict]:
+    """The newest :data:`_MAX_PERSISTED_BURNS` rows, by block."""
+    if len(burns) <= _MAX_PERSISTED_BURNS:
+        return burns
+    newest = sorted(
+        burns.items(), key=lambda kv: (kv[1].get("block", 0), kv[0]),
+        reverse=True,
+    )[:_MAX_PERSISTED_BURNS]
+    return dict(newest)
+
+
+def _merge_burns(
+    decoded: list[dict], senders: dict[str, str], prior: dict[str, dict],
+) -> dict[str, dict]:
+    """Merge newly-decoded burns into the cursor's own rows.
+
+    Named ``_merge_burns`` and **not** ``_burnkeeper_rows``: the manager has
+    a ``SurfManager._burnkeeper_rows`` that does something different (models
+    -> payload dicts), and one name over two behaviours in two layers is how
+    a reader ends up debugging the wrong function.
+
+    Keyed by tx hash, so a re-seen event (a reorg replay, a boundary block
+    swept twice) **overwrites** its row rather than double-counting it --
+    the same identity discipline ``merged`` keeps for launches, and the
+    reason this is a map and not a running total.
+
+    A burn whose sender could not be read is **dropped**, not stored with a
+    placeholder: ``fetch_tx_senders`` leaves an unreadable hash absent
+    precisely so its callers cannot confuse "we do not know who sent it"
+    with "a stranger sent it", and inventing ``0x0`` here would put an
+    invented wallet on a leaderboard.
+
+    A ``fee_wei`` already known in *prior* survives; a new row starts
+    ``None`` and the fee round fills it in.
+    """
+    out = dict(prior)
+    for row in decoded:
+        tx = row["tx"]
+        sender = senders.get(tx)
+        if not sender:
+            continue
+        existing = out.get(tx) or {}
+        out[tx] = {
+            "block": row["block"],
+            "amount_wei": row["amount_wei"],
+            "sender": sender.lower(),
+            "fee_wei": existing.get("fee_wei"),
+        }
+    return _cap_burns(out)
+
+
+#: Rows the activity feed carries. The panel draws far fewer; this bounds
+#: what a busy day can put in one payload.
+_MAX_ACTIVITY_ROWS = 40
+
+
+def _activity_rows(
+    swaps: list[dict], merged: dict[str, dict], head: int, now_ts: float,
+) -> list[dict]:
+    """Recent launchpad events, newest first.
+
+    Costs **no extra request**: every field comes from rows
+    ``_launchpad_logs`` already decodes for the day window and used to
+    discard -- ``_decode_curve_swap_log`` yields ``eth_amount_wei`` and
+    ``block`` alongside the ``pool_id``/``trader``/``is_buy`` the ranking
+    keeps.
+
+    A swap on a pool this sweep does not know is **dropped**: it has no
+    ticker, and the launchpad's feed is about the launchpad's own coins.
+
+    ``ticker`` is carried **raw** -- ``launch(string,string)`` is
+    permissionless, and escaping belongs to the render layer, never to this
+    one.
+
+    Age is blocks-behind-head at :data:`_LAUNCHPAD_BLOCK_SECONDS`, the same
+    derivation ``launches`` uses for ``ts``: ``eth_getLogs`` rows carry no
+    timestamp of their own on every endpoint.
+    """
+    rows: list[dict] = []
+    for swap in swaps:
+        rec = merged.get(swap.get("pool_id"))
+        if rec is None:
+            continue
+        rows.append({
+            "kind": "buy" if swap.get("is_buy") else "sell",
+            "ticker": rec["ticker"],
+            "wallet": swap.get("trader") or "",
+            "eth": (swap.get("eth_amount_wei") or 0) / 1e18,
+            "block": swap.get("block") or 0,
+        })
+    for rec in merged.values():
+        rows.append({
+            "kind": "launch",
+            "ticker": rec["ticker"],
+            "wallet": rec.get("creator") or "",
+            # A launch has no swap size. `None`, never 0.0 -- a zero would
+            # read, and sort, as a free trade.
+            "eth": None,
+            "block": rec.get("block") or 0,
+        })
+    rows.sort(key=lambda r: -r["block"])
+    out = []
+    for row in rows[:_MAX_ACTIVITY_ROWS]:
+        block = row.pop("block")
+        row["age_s"] = max(0.0, (head - block) * _LAUNCHPAD_BLOCK_SECONDS)
+        out.append(row)
+    return out
+
+
+def _rank_burnkeepers(burns: dict[str, dict]) -> tuple[Burnkeeper, ...]:
+    """Per-tx burn rows -> one row per wallet, most IMD burned first.
+
+    ``eth_paid`` sums only the fees that were **read**: a wallet with one
+    priced burn and one unpriced one reports the priced total, and a wallet
+    with none reports ``None``. Summing an unread fee as zero would quietly
+    understate it, which is the same false-zero this whole pipeline avoids
+    one layer down.
+
+    The sort is **total** -- ``(-imd, -burns, wallet)`` -- so two wallets
+    that burned the same amount do not swap places between refreshes.
+    """
+    totals: dict[str, dict] = {}
+    for rec in burns.values():
+        wallet = rec["sender"]
+        acc = totals.setdefault(
+            wallet, {"imd_wei": 0, "fee_wei": None, "burns": 0}
+        )
+        acc["imd_wei"] += rec["amount_wei"]
+        acc["burns"] += 1
+        fee = rec.get("fee_wei")
+        if fee is not None:
+            acc["fee_wei"] = (acc["fee_wei"] or 0) + fee
+    rows = [
+        Burnkeeper(
+            wallet=wallet,
+            imd_burned=acc["imd_wei"] / 1e18,
+            eth_paid=None if acc["fee_wei"] is None else acc["fee_wei"] / 1e18,
+            burns=acc["burns"],
+        )
+        for wallet, acc in totals.items()
+    ]
+    rows.sort(key=lambda r: (-r.imd_burned, -r.burns, r.wallet))
+    return tuple(rows)
+
+
 class _LaunchpadSweep(NamedTuple):
     """Everything ``fetch_launchpad`` needs out of one pass over the logs.
 
@@ -476,6 +664,17 @@ class _LaunchpadSweep(NamedTuple):
     new_24h: int | None
     creator_count: int | None
     cursor: dict | None
+    #: ``{tx_hash: {block, amount_wei, sender, fee_wei}}`` for every
+    #: ``TokensBridgedForBurn`` this sweep could attribute, merged over the
+    #: cursor's own rows. ``None`` on a failed sweep, ``{}`` for "swept, and
+    #: nobody has burned" -- the same split every dict-shaped field here keeps.
+    #: Deliberately without a default: both construction sites are in this
+    #: module, and a forgotten field should be a TypeError, not a silent None.
+    burns: dict[str, dict] | None
+    #: The merged newest-first feed of buys, sells and launches, capped at
+    #: :data:`_MAX_ACTIVITY_ROWS`. ``None`` on a failed sweep; ``[]`` for
+    #: "swept, and the day was quiet".
+    activity: list[dict] | None
 
 
 #: Length cap for the two attacker-chosen strings the launchpad cursor
@@ -529,6 +728,8 @@ def _failed_launchpad_sweep(resume: dict | None) -> _LaunchpadSweep:
         coin_tickers=None, launch_count=None, new_24h=None,
         creator_count=None,
         cursor=resume if isinstance(resume, dict) else None,
+        burns=None,
+        activity=None,
     )
 
 
@@ -614,11 +815,49 @@ def _coerce_launchpad_resume(resume: Any) -> dict | None:
             block = rec.get("block")
             if isinstance(block, bool) or not isinstance(block, int):
                 continue
+            # Lenient, deliberately: a cursor written before 2026-08-25 has no
+            # `coin_supply_wei` at all, and unlike the accumulators a missing
+            # supply cannot corrupt a lifetime total -- it costs one dash in
+            # the MCAP cell until that coin's `Launched` is seen again.
+            # Rejecting the cursor whole over it would buy a cold sweep for a
+            # display input.
+            supply = rec.get("coin_supply_wei")
+            if isinstance(supply, bool) or not isinstance(supply, int) or supply < 0:
+                supply = None
             launches[pool_id.lower()] = {
                 "ticker": _launchpad_text(rec.get("ticker")),
                 "name": _launchpad_text(rec.get("name")),
                 "creator": _launchpad_text(rec.get("creator")),
                 "block": block,
+                "coin_supply_wei": supply,
+            }
+
+    # Burn rows are revisable records, not accumulators. A dropped row costs
+    # a re-read of blocks this sweep can still reach, so a bad one does not
+    # earn the cold sweep a bad `swaps_all` does -- see this function's own
+    # docstring on why the accumulators are strict.
+    burns: dict[str, dict] = {}
+    raw_burns = resume.get("burns")
+    if isinstance(raw_burns, dict):
+        for tx, rec in raw_burns.items():
+            if not isinstance(tx, str) or not isinstance(rec, dict):
+                continue
+            block, amount = rec.get("block"), rec.get("amount_wei")
+            if isinstance(block, bool) or not isinstance(block, int):
+                continue
+            if isinstance(amount, bool) or not isinstance(amount, int):
+                continue
+            if block < 0 or amount < 0:
+                continue
+            sender = rec.get("sender")
+            if not isinstance(sender, str) or not sender.startswith("0x"):
+                continue
+            fee = rec.get("fee_wei")
+            if isinstance(fee, bool) or not isinstance(fee, int) or fee < 0:
+                fee = None      # unread and retryable, never a zero fee
+            burns[tx.lower()] = {
+                "block": block, "amount_wei": amount,
+                "sender": sender.lower(), "fee_wei": fee,
             }
 
     def counter(key: str) -> dict[str, int]:
@@ -658,6 +897,7 @@ def _coerce_launchpad_resume(resume: Any) -> dict | None:
         "burn_by_coin": counter("burn_by_coin"),
         "burned_total_wei": burned_total,
         "traders": traders,
+        "burns": burns,
     }
 
 
@@ -831,6 +1071,12 @@ class SurfClient(OwnedHttpClient):
         #: bridged nothing. Mined amounts never change, so this is a plain
         #: process-lifetime memo with no TTL; see ``fetch_burn_amounts``.
         self._burn_amounts: dict[str, int | None] = {}
+        #: ``tx_hash -> LayerZero nativeFee in wei``, for burns that priced.
+        #: Mined fees never change, so this is a plain process-lifetime memo
+        #: with no TTL. Unlike ``_burn_amounts`` it never records a MISS: a
+        #: hash absent here means "we could not read it", not "it was free",
+        #: and it is retried until it reads. See ``fetch_burn_fees``.
+        self._burn_fees: dict[str, int] = {}
         self._backoff_seconds = backoff_seconds
         self._now_fn = now_fn
         self._log_window_blocks = log_window_blocks
@@ -1314,7 +1560,7 @@ class SurfClient(OwnedHttpClient):
     # ------------------------------------------------------------------
 
     async def fetch_launchpad(self, resume: dict | None = None) -> LaunchpadState:
-        """The launchpad tier: one getter multicall, three log sweeps, then
+        """The launchpad tier: one getter multicall, four log sweeps, then
         ``rank_coins`` off the swap logs alone.
 
         *resume* is the previous sweep's persisted cursor (``LaunchpadState.
@@ -1412,13 +1658,22 @@ class SurfClient(OwnedHttpClient):
                 swaps_24h=row["swaps_24h"],
                 swaps_all=row["swaps_all"],
                 imd_burned=row["imd_burned"],
-                # Not computed yet -- a later work package derives this from
-                # price_eth and the live IMD supply. Task 1 only freezes the
-                # field; an honest None here is not a fake mcap.
-                mcap_eth=None,
+                mcap_eth=row.get("mcap_eth"),
             )
             for row in rows
         )
+
+        # `None` when the sweep failed, so the panel can say "unavailable"
+        # rather than draw an empty feed over a dead read; `()` is the
+        # representable "swept, and nothing happened".
+        activity = None if sweep.activity is None else tuple(
+            LaunchpadEvent(
+                kind=row["kind"], ticker=row["ticker"], wallet=row["wallet"],
+                eth=row["eth"], age_s=row["age_s"],
+            )
+            for row in sweep.activity
+        )
+        keepers = None if sweep.burns is None else _rank_burnkeepers(sweep.burns)
 
         # The two population reads, compared -- deliberately here and not
         # reconciled into one number. `coinCount()` is what the factory says
@@ -1464,6 +1719,8 @@ class SurfClient(OwnedHttpClient):
             new_24h=sweep.new_24h,
             creator_count=sweep.creator_count,
             cursor=sweep.cursor,
+            activity=activity,
+            burnkeepers=keepers,
         )
 
     async def _launchpad_getters(
@@ -1499,8 +1756,17 @@ class SurfClient(OwnedHttpClient):
         )
 
     async def _launchpad_logs(self, resume: dict | None) -> _LaunchpadSweep:
-        """Sweep ``Launched`` / ``CurveSwap`` / ``ImdBurned`` on the LOGS pool
-        from the launchpad's first block, resuming through *resume*.
+        """Sweep ``Launched`` / ``CurveSwap`` / ``ImdBurned`` /
+        ``TokensBridgedForBurn`` on the LOGS pool from the launchpad's first
+        block, resuming through *resume*.
+
+        The fourth sweep is the odd one out and starts later on purpose:
+        ``BURN_EXECUTOR_V2`` is ~7k blocks younger than the launchpad, so its
+        floor is its own creation block. Its rows are *revisable records*
+        keyed by tx hash, not accumulators, and the caller they name is not
+        in the event at all -- the signature on the enclosing transaction is
+        read separately, and a burn whose signer could not be read is dropped
+        rather than credited to a placeholder.
 
         **Why a cursor and not a window.** The launch history only ever grows
         and its start never moves, so any window measured back from the chain
@@ -1535,7 +1801,7 @@ class SurfClient(OwnedHttpClient):
         invisibly, because no later sweep can tell an inflated total from a
         real one.
 
-        **A partial sweep is an outage.** If any of the three sweeps returns
+        **A partial sweep is an outage.** If any of the four sweeps returns
         ``None``, nothing merges, nothing advances and nothing zeroes: the
         untouched *resume* goes back out as the cursor and every aggregate
         reads ``None``. There is no honest way to advance ``last_block`` past
@@ -1616,7 +1882,20 @@ class SurfClient(OwnedHttpClient):
             {"address": A.LAUNCHPAD_HOOK, "topics": [A.TOPIC_IMD_BURNED]},
             min(from_block, head), head, group="launchpad_imd_burned",
         )
-        if launched_rows is None or swap_rows is None or burned_rows is None:
+        # The executor is younger than the launchpad by ~7k blocks, so its
+        # own creation block is the floor here rather than `from_block`: a
+        # cold sweep starting at `A.LAUNCHPAD_FIRST_BLOCK` would read 7,000
+        # blocks of a contract that did not exist yet.
+        burn_from = max(from_block, A.BURN_EXECUTOR_V2_FIRST_BLOCK)
+        keeper_rows = await self._get_logs_paged(
+            {"address": A.BURN_EXECUTOR_V2,
+             "topics": [A.TOPIC_TOKENS_BRIDGED_FOR_BURN]},
+            min(burn_from, head), head, group="launchpad_burnkeepers",
+        )
+        if (
+            launched_rows is None or swap_rows is None or burned_rows is None
+            or keeper_rows is None
+        ):
             return _failed_launchpad_sweep(resume)
 
         # ---- merge: the cursor's history, then this pass on top -----------
@@ -1633,6 +1912,11 @@ class SurfClient(OwnedHttpClient):
                 "name": _launchpad_text(parsed["name"]),
                 "creator": _launchpad_text(parsed["creator"]),
                 "block": parsed["block"],
+                # Decoded by `_decode_launched_log` since it was written and
+                # thrown away here until 2026-08-25. Persisted, because the
+                # sweep resumes strictly above `last_block` and this event is
+                # never read again.
+                "coin_supply_wei": parsed["coin_supply_wei"],
             }
 
         swaps_all: dict[str, int] = dict(prior["swaps_all"]) if prior else {}
@@ -1665,6 +1949,9 @@ class SurfClient(OwnedHttpClient):
                     "pool_id": pool_id,
                     "trader": parsed["trader"],
                     "is_buy": parsed["is_buy"],
+                    # Kept for `_activity_rows`; the ranking ignores both.
+                    "eth_amount_wei": parsed["eth_amount_wei"],
+                    "block": block,
                 })
                 if pool_id in merged:
                     swaps_by_coin[pool_id] = swaps_by_coin.get(pool_id, 0) + 1
@@ -1680,6 +1967,29 @@ class SurfClient(OwnedHttpClient):
             amount = _decode_imd_burned_amount(row)
             if amount is not None:
                 burned_total_wei += amount
+
+        # ---- who fired each bridge-and-burn -------------------------------
+        # The event names the OFT, the destination and the amount and says
+        # nothing at all about the caller, so the signer of the enclosing
+        # transaction is read separately -- and a hash that read fails on
+        # stays ABSENT rather than becoming a placeholder wallet.
+        decoded_burns = [
+            d for d in (_decode_bridged_for_burn_log(r) for r in keeper_rows)
+            if d is not None and d["block"] >= burn_from
+        ]
+        senders = await self.fetch_tx_senders([d["tx"] for d in decoded_burns])
+        burns = _merge_burns(
+            decoded_burns, senders, dict(prior["burns"]) if prior else {},
+        )
+
+        # Only the rows still missing a fee: a mined tx's fee cannot change,
+        # and a row that failed to price last time is exactly the row worth
+        # asking about again.
+        unpriced = [tx for tx, rec in burns.items() if rec.get("fee_wei") is None]
+        if unpriced:
+            for tx, fee in (await self.fetch_burn_fees(unpriced)).items():
+                if tx in burns:
+                    burns[tx] = {**burns[tx], "fee_wei": fee}
 
         # ---- derive the payload -------------------------------------------
         now_ts = self._now_fn()
@@ -1714,6 +2024,9 @@ class SurfClient(OwnedHttpClient):
                 # A representable zero: a coin that has launched and never
                 # traded really has burned nothing.
                 "imd_burned": burn_by_coin.get(pool_id, 0) / 1e18,
+                # Carried for `surf_launchpad.mcap_eth`, which cannot run
+                # until the price round below has a price to multiply.
+                "coin_supply_wei": rec.get("coin_supply_wei"),
             }
             for pool_id, rec in sorted(
                 merged.items(), key=lambda kv: (kv[1]["block"], kv[0])
@@ -1738,7 +2051,13 @@ class SurfClient(OwnedHttpClient):
             # aggregate with no additive shortcut -- a count cannot be
             # deduplicated after the fact.
             "traders": sorted(traders),
+            # Revisable rows, not an accumulator: keyed by tx hash so a
+            # re-seen event overwrites, and capped because
+            # `bridgeToBaseBurnReceiver()` is permissionless.
+            "burns": burns,
         }
+
+        activity = _activity_rows(day_swaps, merged, head, now_ts)
 
         return _LaunchpadSweep(
             launches=launches,
@@ -1755,6 +2074,8 @@ class SurfClient(OwnedHttpClient):
             new_24h=sum(1 for rec in merged.values() if rec["block"] >= day_from),
             creator_count=len({rec["creator"] for rec in merged.values()}),
             cursor=cursor,
+            burns=burns,
+            activity=activity,
         )
 
     async def _price_rendered_rows(self, rows: list[dict]) -> list[dict]:
@@ -1800,7 +2121,17 @@ class SurfClient(OwnedHttpClient):
         priced = list(rows)
         for idx, (success, ret) in zip(order, results):
             if success and strip0x(ret):
-                priced[idx] = {**priced[idx], "price_eth": decode_uint(ret, 0) / 1e18}
+                price = decode_uint(ret, 0) / 1e18
+                priced[idx] = {
+                    **priced[idx],
+                    "price_eth": price,
+                    # The market cap lands where the price does: a leg that
+                    # reverted leaves both unknown rather than one of them
+                    # multiplied by a supply nobody quoted a price for.
+                    "mcap_eth": surf_launchpad.mcap_eth(
+                        price, priced[idx].get("coin_supply_wei")
+                    ),
+                }
         return priced
 
     async def fetch_decoy_pool_count(
@@ -2142,6 +2473,81 @@ class SurfClient(OwnedHttpClient):
             tx: amount
             for tx in dict.fromkeys(str(h) for h in tx_hashes or ())
             if (amount := self._burn_amounts.get(tx)) is not None
+        }
+
+    async def fetch_burn_fees(self, tx_hashes: Sequence[str]) -> dict[str, int]:
+        """``{tx_hash: LayerZero nativeFee in wei}`` for the burns we could price.
+
+        **Why this is not the transaction's ``value``.** ``BurnExecutor``
+        refunds the surplus in-call (``surplus = msg.value - fee.nativeFee``;
+        ``forceSafeTransferETH(refundTo, surplus)``), so ``value`` is what the
+        caller was *willing* to spend. On live data the gap is 36x. What was
+        actually paid is the value the executor forwarded to the OFT, which
+        appears as one internal transaction ``executor -> IMD_TOKEN`` in the
+        burn's own trace.
+
+        **Why an indexer at all.** That forwarded value is an internal call,
+        not a log, and the keyless state pool exposes no trace method. This
+        is the one figure on these two panels that does not come from chain
+        logs, and it is scoped accordingly: a hash absent from this result
+        leaves ``fee_wei`` ``None``, the ETH cell renders a dash, and the
+        amounts, senders and counts -- all from logs -- are untouched. It
+        **never** falls back to ``value``.
+
+        Memoised: a mined transaction's fee does not change, so each hash is
+        priced at most once per process. A *miss* is not cached -- unlike
+        ``fetch_burn_amounts``' misses, which mean "this tx burned nothing",
+        a missing fee here always means "we could not read it", and it is
+        retried until it is read.
+        """
+        wanted = [
+            tx for tx in dict.fromkeys(str(h).lower() for h in tx_hashes or ())
+            if tx and tx not in self._burn_fees
+        ]
+        if not wanted:
+            return {tx: self._burn_fees[tx]
+                    for tx in dict.fromkeys(str(h).lower() for h in tx_hashes or ())
+                    if tx in self._burn_fees}
+        url = (f"{self._blockscout}/addresses/"
+               f"{A.BURN_EXECUTOR_V2}/internal-transactions")
+        params: dict | None = None
+        oft = A.IMD_TOKEN.lower()
+        for _page in range(_MAX_BURN_FEE_PAGES):
+            body = await self._get_json(url, params=params)
+            if not isinstance(body, dict) or "items" not in body:
+                break                       # unread: retryable, never a zero
+            for item in body["items"]:
+                if not isinstance(item, dict):
+                    continue
+                to_addr = ((item.get("to") or {}).get("hash") or "").lower()
+                if to_addr != oft:
+                    continue                # a refund leg, or an unrelated call
+                tx = str(item.get("transaction_hash") or "").lower()
+                value = _lenient_int(item.get("value"))
+                # Only a leg that actually FORWARDED value is the fee, and
+                # the first one wins. Measured 2026-08-25: each burn makes
+                # SEVEN internal calls to the OFT and six of them carry
+                # ``"value": "0"`` -- four staticcalls plus two more calls,
+                # and on the captured page the zero-value ones come after the
+                # real one. Taking the last match therefore wrote a **zero
+                # fee** for every burn on file, which is the false zero this
+                # whole column exists to avoid: a zero here is not a free
+                # bridge, it is a different call in the same trace.
+                if tx and value:
+                    self._burn_fees.setdefault(tx, value)
+            nxt = body.get("next_page_params")
+            if not nxt:
+                break
+            params = nxt
+        else:
+            logger.warning(
+                "fetch_burn_fees: hit the %d-page bound; some fees stay "
+                "unknown and will be retried", _MAX_BURN_FEE_PAGES,
+            )
+        return {
+            tx: fee
+            for tx in dict.fromkeys(str(h).lower() for h in tx_hashes or ())
+            if (fee := self._burn_fees.get(tx)) is not None
         }
 
     async def fetch_dev_activity(self) -> list[DevTx] | None:

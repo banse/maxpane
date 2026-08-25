@@ -288,3 +288,12 @@ def test_pinned_launchpad_selectors() -> None:
     assert A.SEL_EXTSLOAD == keccak256_hex(b"extsload(bytes32)")[:10]
     assert A.SEL_IMD_ETH_POOL_ID == keccak256_hex(b"imdEthPoolId()")[:10]
     assert A.SEL_COIN_COUNT == keccak256_hex(b"coinCount()")[:10]
+
+
+def test_the_burn_executor_first_block_is_its_creation_block() -> None:
+    """Vendored on the same footing as `LAUNCHPAD_FIRST_BLOCK`: a mined
+    block cannot drift, so rediscovering it live every tick would cost a
+    full-history scan to find a constant. Creation tx 0x85b1cdf9...a9303."""
+    from maxpane_dashboard.data import surf_addresses as A
+    assert A.BURN_EXECUTOR_V2_FIRST_BLOCK == 25_793_167
+    assert A.BURN_EXECUTOR_V2_FIRST_BLOCK > A.LAUNCHPAD_FIRST_BLOCK

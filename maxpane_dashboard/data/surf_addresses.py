@@ -99,6 +99,23 @@ V4_POOLS_MAPPING_SLOT = 6
 #: were among the 80 it could not see at any sort order.
 LAUNCHPAD_FIRST_BLOCK = 25_786_048
 
+#: Creation block of :data:`BURN_EXECUTOR_V2` (tx
+#: ``0x85b1cdf9a33be65dd912d1d8ddb72643250aff95a01752c78e3f70327e7a9303``,
+#: deployed by :data:`DEV_WALLET` on 2026-08-20). The floor every burnkeeper
+#: log sweep starts from.
+#:
+#: Vendored for exactly the reason :data:`LAUNCHPAD_FIRST_BLOCK` is: a mined
+#: block cannot drift, so reading it live every tick would cost a
+#: full-history scan to rediscover a constant. It postdates
+#: ``LAUNCHPAD_FIRST_BLOCK`` by ~7k blocks, and stating that dependency is
+#: the point -- a cold sweep that started at the launchpad's floor would
+#: read 7,000 blocks of a contract that did not exist yet.
+#:
+#: Re-verified against chain 2026-08-25: ``eth_getCode`` at 25,793,166 is
+#: empty and at 25,793,167 is 7,405 bytes, and the creation receipt's
+#: ``contractAddress`` is ``BURN_EXECUTOR_V2``.
+BURN_EXECUTOR_V2_FIRST_BLOCK = 25_793_167
+
 # --- Base chain (read-only bridge counterpart) ------------------------------
 #: The original Fren Pet ERC-20 on Base.  IMD mints 1:1 against FP locked here.
 FP_TOKEN_BASE = "0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105"

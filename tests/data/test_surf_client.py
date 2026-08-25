@@ -2840,6 +2840,11 @@ def _public_fetchers() -> list[str]:
             # ABSENT" -- an empty mapping, never a hash mapped to zero. Pinned
             # by `test_fetch_burn_amounts_total_outage_reports_nothing`.
             "fetch_burn_amounts",
+            # The sixth, and `fetch_burn_amounts`' own twin: a required
+            # sequence of hashes in, a per-hash map out, and a hash it could
+            # not price is ABSENT rather than mapped to a zero fee. Pinned by
+            # `test_a_dead_indexer_leaves_the_fee_unknown_and_nothing_else`.
+            "fetch_burn_fees",
         )
     )
 
@@ -4691,3 +4696,618 @@ async def test_fetch_burn_amounts_reads_the_hooks_own_burn_too():
 
     async with _client_on(RecordingTransport(handler)) as client:
         assert await client.fetch_burn_amounts([tx]) == {tx: 42 * 10**18}
+
+
+# ---------------------------------------------------------------------------
+# Task 5 -- the coin supply carried through the cursor, and MCAP
+# ---------------------------------------------------------------------------
+
+
+def test_the_cursor_round_trips_the_coin_supply() -> None:
+    """A supply dropped on persist is a supply that never comes back: the
+    sweep resumes strictly above `last_block`, so the `Launched` event that
+    carried it is never read again."""
+    from maxpane_dashboard.data.surf_client import _coerce_launchpad_resume
+    prior = _coerce_launchpad_resume({
+        "last_block": 25_800_000,
+        "launches": {"0xa": {"ticker": "ICE", "name": "Ice", "creator": "0x1",
+                             "block": 25_793_317,
+                             "coin_supply_wei": 10**9 * 10**18}},
+        "swaps_all": {}, "burn_by_coin": {}, "burned_total_wei": 0,
+        "traders": [],
+    })
+    assert prior["launches"]["0xa"]["coin_supply_wei"] == 10**9 * 10**18
+
+
+def test_a_legacy_cursor_without_a_supply_still_resumes() -> None:
+    """Cursors written before this task have no `coin_supply_wei`. Rejecting
+    them whole would cost a cold sweep for a field that is merely a display
+    input -- unlike the accumulators, a missing supply cannot corrupt a
+    lifetime total. It coerces to `None` and the MCAP cell renders a dash
+    until that coin is seen again."""
+    from maxpane_dashboard.data.surf_client import _coerce_launchpad_resume
+    prior = _coerce_launchpad_resume({
+        "last_block": 25_800_000,
+        "launches": {"0xa": {"ticker": "ICE", "name": "Ice", "creator": "0x1",
+                             "block": 25_793_317}},
+        "swaps_all": {}, "burn_by_coin": {}, "burned_total_wei": 0,
+        "traders": [],
+    })
+    assert prior is not None
+    assert prior["launches"]["0xa"]["coin_supply_wei"] is None
+
+
+# ---------------------------------------------------------------------------
+# Task 8 -- the burn executor's own sweep, and who fired each burn
+#
+# `burnkeeper_logs.json` / `burnkeeper_senders.json` are the five real
+# `TokensBridgedForBurn` events on BURN_EXECUTOR_V2 and their enclosing
+# transactions, captured 2026-08-25 from tenderly at head 25,835,019.
+# ---------------------------------------------------------------------------
+
+
+def test_the_five_real_burns_decode_to_four_burnkeepers() -> None:
+    """Measured 2026-08-25: 3230 + 12440.787926 IMD from the dev wallet, and
+    one burn each from three others."""
+    from maxpane_dashboard.data.surf_client import _decode_bridged_for_burn_log
+    rows = _load_launchpad("burnkeeper_logs.json")
+    decoded = [_decode_bridged_for_burn_log(r) for r in rows]
+    assert all(d is not None for d in decoded)
+    assert len(decoded) == 5
+    amounts = sorted(d["amount_wei"] / 1e18 for d in decoded)
+    assert amounts[0] == pytest.approx(23.280267)
+    assert amounts[-1] == pytest.approx(12440.787926)
+
+    # Four distinct signers over five burns -- the dev wallet fired two of
+    # them. The caller is nowhere in the event: it comes off the enclosing
+    # transaction's signature, which is the one part a stranger cannot forge.
+    senders = _load_launchpad("burnkeeper_senders.json")
+    signers = {v["from"].lower() for v in senders.values()}
+    assert len(signers) == 4
+    assert A.DEV_WALLET.lower() in signers
+
+
+def test_a_malformed_burn_log_is_dropped_not_fatal() -> None:
+    from maxpane_dashboard.data.surf_client import _decode_bridged_for_burn_log
+    assert _decode_bridged_for_burn_log({"data": "0x", "topics": []}) is None
+    assert _decode_bridged_for_burn_log({"blockNumber": "nope"}) is None
+
+
+def test_an_unattributable_burn_is_dropped_not_credited_to_a_placeholder() -> None:
+    """`fetch_tx_senders` leaves an unreadable hash ABSENT from its result,
+    never mapped to "" or the zero address. A burn we cannot attribute is a
+    burn nobody gets credit for -- crediting `0x0` would invent a wallet and
+    rank it."""
+    from maxpane_dashboard.data.surf_client import _merge_burns
+    burns = _merge_burns(
+        [{"tx": "0xaaa", "block": 1, "amount_wei": 10**18},
+         {"tx": "0xbbb", "block": 2, "amount_wei": 2 * 10**18}],
+        senders={"0xaaa": "0xdead"},        # 0xbbb unreadable
+        prior={},
+    )
+    assert set(burns) == {"0xaaa"}
+
+
+def test_the_burns_map_is_capped_at_five_hundred_rows() -> None:
+    """`bridgeToBaseBurnReceiver()` is permissionless, so this map's growth
+    is not ours to bound by hoping. Newest kept."""
+    from maxpane_dashboard.data.surf_client import (
+        _MAX_PERSISTED_BURNS, _cap_burns,
+    )
+    burns = {f"0x{i:064x}": {"block": i, "amount_wei": 1, "sender": "0xa",
+                             "fee_wei": None} for i in range(600)}
+    capped = _cap_burns(burns)
+    assert len(capped) == _MAX_PERSISTED_BURNS == 500
+    assert min(r["block"] for r in capped.values()) == 100   # oldest 100 shed
+
+
+def test_a_malformed_burns_entry_is_dropped_without_rejecting_the_cursor() -> None:
+    """Unlike the accumulators, a burn row is a REVISABLE record, not a
+    running total: dropping one costs a re-read of blocks the sweep can still
+    reach, so it does not warrant the cold sweep a bad `swaps_all` does."""
+    from maxpane_dashboard.data.surf_client import _coerce_launchpad_resume
+    prior = _coerce_launchpad_resume({
+        "last_block": 25_800_000, "launches": {}, "swaps_all": {},
+        "burn_by_coin": {}, "burned_total_wei": 0, "traders": [],
+        "burns": {"0xaaa": {"block": 1, "amount_wei": 10**18,
+                            "sender": "0xdead", "fee_wei": None},
+                  "0xbbb": "not a dict",
+                  "0xccc": {"block": "nope", "amount_wei": 1}},
+    })
+    assert prior is not None
+    assert set(prior["burns"]) == {"0xaaa"}
+
+
+def test_a_re_seen_burn_overwrites_its_row_instead_of_double_counting() -> None:
+    """Keyed by tx hash for the same reason `merged` is keyed by pool_id: a
+    reorg replay or a boundary block swept twice must land on the same row."""
+    from maxpane_dashboard.data.surf_client import _merge_burns
+    prior = {"0xaaa": {"block": 1, "amount_wei": 10**18, "sender": "0xdead",
+                       "fee_wei": 500}}
+    burns = _merge_burns(
+        [{"tx": "0xaaa", "block": 1, "amount_wei": 10**18}],
+        senders={"0xaaa": "0xDEAD"}, prior=prior,
+    )
+    assert set(burns) == {"0xaaa"}
+    assert burns["0xaaa"]["amount_wei"] == 10**18
+    # A fee already read survives the re-merge: it is the one field on this
+    # row that costs a separate request to recover.
+    assert burns["0xaaa"]["fee_wei"] == 500
+
+
+# ---------------------------------------------------------------------------
+# Task 9 -- the LayerZero fee, isolated to its own column
+#
+# `burnkeeper_internal_txs.json` is the executor's whole internal-transaction
+# history as Blockscout serves it (39 entries, one page, `next_page_params`
+# null), captured 2026-08-25. Six of the 39 carry value: for each burn, one
+# leg forwards the fee to the OFT (IMD_TOKEN) and -- when there was a
+# surplus -- one refunds the rest to the caller.
+# ---------------------------------------------------------------------------
+
+#: The five real burn transactions, in the order they were mined.
+_BURN_TXS = (
+    "0x09de6df981de71f76ef334661c227f240c8d00fb480b59a03b5903b35a4774aa",
+    "0xd3c906026d2407b34f0d6245497d65e35e6171a84262ebef3a4c001888ed14e6",
+    "0x66e21691b2ba0ebed25c3c89e0dae4f4d6c7a8ded992607a996491241bb03481",
+    "0xb408c6d9d58bd2fb3cb7dbc42d6ce74119175d2e0ff7a795472f09fd75f1e90e",
+    "0xe4a999369d036a9164b643e9b4e99ea9f299d79f84d3a49f38aae951685b4a36",
+)
+
+
+def _burn_fee_client(
+    body: Any, *, status: int = 200,
+) -> tuple[SurfClient, Counter]:
+    """A client whose Blockscout internal-transactions page answers *body*.
+
+    Same construction as its two siblings above (`_client_with_canned_calls`,
+    `_client_with_canned_logs`): one `httpx.MockTransport` handler through
+    `_client_on`. Every other request is a hard failure, because this is the
+    one figure on these panels that does not come from chain logs and the
+    read must be provably scoped to that one GET.
+    """
+    calls: Counter = Counter()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET", request.method
+        assert "internal-transactions" in str(request.url), str(request.url)
+        assert A.BURN_EXECUTOR_V2.lower() in str(request.url).lower()
+        calls["internal_txs"] += 1
+        if status != 200:
+            return httpx.Response(status, json={})
+        return httpx.Response(200, json=body)
+
+    return _client_on(httpx.MockTransport(handler)), calls
+
+
+async def _fees_from_fixture() -> dict[str, int]:
+    """`fetch_burn_fees` over the five real burns, off the committed page."""
+    client, _calls = _burn_fee_client(_load_launchpad("burnkeeper_internal_txs.json"))
+    async with client:
+        return await client.fetch_burn_fees(list(_BURN_TXS))
+
+
+def _client_with_failing_blockscout() -> SurfClient:
+    """The indexer is dead; nothing else is."""
+    client, _calls = _burn_fee_client(None, status=503)
+    return client
+
+
+def _counting_client() -> tuple[SurfClient, Counter]:
+    """The fixture page, plus a count of how many times it was requested."""
+    return _burn_fee_client(_load_launchpad("burnkeeper_internal_txs.json"))
+
+
+@pytest.mark.asyncio
+async def test_the_fee_is_what_was_forwarded_not_what_was_sent() -> None:
+    """The executor refunds the surplus:
+
+        `surplus = msg.value - fee.nativeFee;`
+        `if (surplus != 0) SafeTransferLib.forceSafeTransferETH(refundTo, surplus);`
+
+    Measured 2026-08-25, tx 0xb408c6d9...5f1e90e: 0.001 ETH sent,
+    0.000972353668142444 refunded, 0.000027646331857556 actually paid. Using
+    the transaction's `value` overstates this row by 36x.
+    """
+    fees = await _fees_from_fixture()
+    tx = "0xb408c6d9d58bd2fb3cb7dbc42d6ce74119175d2e0ff7a795472f09fd75f1e90e"
+    assert fees[tx] == 27_646_331_857_556
+
+
+@pytest.mark.asyncio
+async def test_a_call_with_no_surplus_still_reports_its_fee() -> None:
+    """0xd3c90602...ed14e6 sent exactly the fee -- 27,274,720,356,026 wei in,
+    27,274,720,356,026 wei forwarded -- so there is no refund line to
+    subtract. The forwarded-value line is read directly, which is why this
+    reads the fee rather than deriving it as value-minus-refund.
+
+    The brief named 0x66e216...b03481 for this case and its expected fee is
+    right (the two calls priced identically), but that transaction *does*
+    carry a refund leg -- 13,637,360,178,013 wei against a 40,912,080,534,039
+    wei value -- so it is a second value-minus-refund case, not the
+    no-refund one. Both are asserted here so the distinction is on the
+    record rather than in a docstring that does not match its fixture.
+    """
+    fees = await _fees_from_fixture()
+    no_refund = "0xd3c906026d2407b34f0d6245497d65e35e6171a84262ebef3a4c001888ed14e6"
+    with_refund = "0x66e21691b2ba0ebed25c3c89e0dae4f4d6c7a8ded992607a996491241bb03481"
+    assert fees[no_refund] == 27_274_720_356_026
+    assert fees[with_refund] == 27_274_720_356_026
+
+    # The no-refund call really has no refund leg on the captured page, and
+    # the other really does -- otherwise the paragraph above is decoration.
+    items = _load_launchpad("burnkeeper_internal_txs.json")["items"]
+    legs = {
+        tx: [it for it in items
+             if it.get("transaction_hash") == tx and int(it.get("value") or 0)]
+        for tx in (no_refund, with_refund)
+    }
+    assert len(legs[no_refund]) == 1
+    assert len(legs[with_refund]) == 2
+
+
+@pytest.mark.asyncio
+async def test_every_real_burn_prices_below_the_value_its_caller_sent() -> None:
+    """The whole point of this column, over all five real burns at once: the
+    fee is never the value, and it is never above it either."""
+    fees = await _fees_from_fixture()
+    senders = _load_launchpad("burnkeeper_senders.json")
+    sent = {tx.lower(): int(v["value"], 16) for tx, v in senders.items()}
+    assert set(fees) == set(_BURN_TXS)
+    for tx, fee in fees.items():
+        assert 0 < fee <= sent[tx], tx
+    # And on at least one of them the gap is the 36x this test exists for.
+    assert max(sent[tx] / fees[tx] for tx in fees) > 30
+
+
+@pytest.mark.asyncio
+async def test_a_dead_indexer_leaves_the_fee_unknown_and_nothing_else() -> None:
+    """Column-scoped failure: amounts, senders and counts come from logs and
+    are unaffected; the fee stays None and is retried next sweep."""
+    client = _client_with_failing_blockscout()
+    async with client:
+        assert await client.fetch_burn_fees(["0xaaa"]) == {}
+
+
+@pytest.mark.asyncio
+async def test_a_known_fee_is_never_refetched() -> None:
+    """Only rows whose `fee_wei` is still None are re-requested -- a mined
+    transaction's fee does not change."""
+    client, calls = _counting_client()
+    tx = "0xb408c6d9d58bd2fb3cb7dbc42d6ce74119175d2e0ff7a795472f09fd75f1e90e"
+    async with client:
+        assert await client.fetch_burn_fees([tx]) == {tx: 27_646_331_857_556}
+        assert await client.fetch_burn_fees([tx]) == {tx: 27_646_331_857_556}
+    assert calls["internal_txs"] == 1
+
+
+@pytest.mark.asyncio
+async def test_an_unread_fee_is_retried_rather_than_memoised_as_a_miss() -> None:
+    """The other half of the memo's contract, and the half `fetch_burn_amounts`
+    deliberately keeps the opposite way round.
+
+    A miss there means "this tx burned nothing" and is worth caching; a miss
+    HERE always means "we could not read it", so caching it would freeze the
+    ETH cell on a dash for the life of the process. It is retried until it
+    reads.
+    """
+    client, calls = _counting_client()
+    async with client:
+        assert await client.fetch_burn_fees(["0xaaa"]) == {}
+        assert await client.fetch_burn_fees(["0xaaa"]) == {}
+    assert calls["internal_txs"] == 2
+
+
+@pytest.mark.asyncio
+async def test_pricing_no_hashes_costs_no_request() -> None:
+    """The everyday case once every burn on file has a fee."""
+    client, calls = _counting_client()
+    async with client:
+        assert await client.fetch_burn_fees([]) == {}
+    assert calls["internal_txs"] == 0
+
+
+@pytest.mark.asyncio
+async def test_the_zero_value_legs_in_the_same_trace_do_not_price_the_burn() -> None:
+    """Every burn makes SEVEN internal calls to the OFT and six carry
+    `"value": "0"` -- four staticcalls (`quoteSend` and friends) plus two more
+    calls -- and on the captured page the zero-value ones come after the real
+    one.
+
+    Recording every match therefore left the LAST one standing, which is a
+    zero, so all five burns priced at `0 ETH` -- a false zero rendered as a
+    free bridge. Only a leg that forwarded value is the fee.
+    """
+    items = _load_launchpad("burnkeeper_internal_txs.json")["items"]
+    oft = A.IMD_TOKEN.lower()
+    tx = "0xb408c6d9d58bd2fb3cb7dbc42d6ce74119175d2e0ff7a795472f09fd75f1e90e"
+    legs = [
+        it for it in items
+        if it.get("transaction_hash") == tx
+        and ((it.get("to") or {}).get("hash") or "").lower() == oft
+    ]
+    assert len(legs) == 7, "the fixture no longer has the trap in it"
+    assert sum(1 for it in legs if int(it["value"]) == 0) == 6
+    # And the trap is ordered the wrong way round for a last-one-wins reader.
+    assert int(legs[-1]["value"]) == 0
+
+    fees = await _fees_from_fixture()
+    assert fees[tx] == 27_646_331_857_556
+
+
+# ---------------------------------------------------------------------------
+# Task 10 -- the activity feed and the burnkeeper ranking
+#
+# No new fixture: `_activity_rows` is a pure fold over rows the sweep has
+# ALREADY decoded, so its inputs are dicts, not an external payload. The
+# committed `launchpad_logs.json` carries the real `CurveSwap` rows for the
+# end-to-end path.
+# ---------------------------------------------------------------------------
+
+
+def test_activity_merges_swaps_and_launches_newest_first() -> None:
+    from maxpane_dashboard.data.surf_client import _activity_rows
+    rows = _activity_rows(
+        swaps=[{"pool_id": "0xa", "trader": "0xT", "is_buy": True,
+                "eth_amount_wei": 12 * 10**15, "block": 100}],
+        merged={"0xa": {"ticker": "ICE", "creator": "0xC", "block": 90}},
+        head=110, now_ts=1000.0,
+    )
+    kinds = [r["kind"] for r in rows]
+    assert kinds == ["buy", "launch"]           # block 100 before block 90
+    assert rows[0]["ticker"] == "ICE"
+    assert rows[0]["wallet"] == "0xT"
+    assert rows[0]["eth"] == pytest.approx(0.012)
+
+
+def test_a_launch_row_has_no_eth_and_not_a_zero() -> None:
+    """A launch has no swap size. 0.0 would read -- and sort -- as a free
+    trade."""
+    from maxpane_dashboard.data.surf_client import _activity_rows
+    rows = _activity_rows(
+        swaps=[], merged={"0xa": {"ticker": "ICE", "creator": "0xC", "block": 90}},
+        head=110, now_ts=1000.0,
+    )
+    assert rows[0]["kind"] == "launch"
+    assert rows[0]["eth"] is None
+
+
+def test_a_sell_is_a_sell() -> None:
+    from maxpane_dashboard.data.surf_client import _activity_rows
+    rows = _activity_rows(
+        swaps=[{"pool_id": "0xa", "trader": "0xT", "is_buy": False,
+                "eth_amount_wei": 3 * 10**15, "block": 100}],
+        merged={"0xa": {"ticker": "ICE", "creator": "0xC", "block": 90}},
+        head=110, now_ts=1000.0,
+    )
+    assert rows[0]["kind"] == "sell"
+
+
+def test_a_swap_on_an_unknown_pool_is_dropped() -> None:
+    """Only the launchpad's own coins belong on the launchpad's feed, and a
+    row with no ticker has nothing to say."""
+    from maxpane_dashboard.data.surf_client import _activity_rows
+    assert _activity_rows(
+        swaps=[{"pool_id": "0xZ", "trader": "0xT", "is_buy": True,
+                "eth_amount_wei": 1, "block": 100}],
+        merged={}, head=110, now_ts=1000.0,
+    ) == []
+
+
+def test_activity_is_capped() -> None:
+    from maxpane_dashboard.data.surf_client import _MAX_ACTIVITY_ROWS, _activity_rows
+    swaps = [{"pool_id": "0xa", "trader": "0xT", "is_buy": True,
+              "eth_amount_wei": 1, "block": 100 + i} for i in range(200)]
+    rows = _activity_rows(
+        swaps=swaps,
+        merged={"0xa": {"ticker": "ICE", "creator": "0xC", "block": 90}},
+        head=400, now_ts=1000.0,
+    )
+    assert len(rows) == _MAX_ACTIVITY_ROWS == 40
+
+
+def test_an_activity_row_ages_off_the_head_not_the_clock() -> None:
+    """`eth_getLogs` rows carry no timestamp on every endpoint, so age is
+    blocks-behind-head at the module's own block time -- the same derivation
+    `launches` already uses for `ts`."""
+    from maxpane_dashboard.data.surf_client import (
+        _LAUNCHPAD_BLOCK_SECONDS, _activity_rows,
+    )
+    rows = _activity_rows(
+        swaps=[], merged={"0xa": {"ticker": "ICE", "creator": "0xC", "block": 90}},
+        head=110, now_ts=1000.0,
+    )
+    assert rows[0]["age_s"] == 20 * _LAUNCHPAD_BLOCK_SECONDS
+    assert "block" not in rows[0]
+
+
+def test_the_dev_wallet_leads_with_both_of_its_burns() -> None:
+    """Measured 2026-08-25: 3230 + 12440.787926 IMD, two calls.
+
+    The three ``amount_wei`` values are the ones actually carried by
+    ``burnkeeper_logs.json`` (the brief's second entry was written
+    ``12440787926 * 10**9``, which is 12.44 IMD, not 12,440.79 -- and would
+    have made the 15,670.787926 total below unreachable).
+    """
+    from maxpane_dashboard.data.surf_client import _rank_burnkeepers
+    rows = _rank_burnkeepers({
+        "0x1": {"block": 1, "amount_wei": 3230 * 10**18,
+                "sender": "0x047f", "fee_wei": 27_646_331_857_556},
+        "0x2": {"block": 2, "amount_wei": 12440787926 * 10**12,
+                "sender": "0x047f", "fee_wei": 27_274_720_356_026},
+        "0x3": {"block": 3, "amount_wei": 23280267 * 10**12,
+                "sender": "0x887b", "fee_wei": 27_646_331_857_556},
+    })
+    # "Measured" means measured: the three amounts above are three of the
+    # five the committed capture actually carries, not numbers typed from a
+    # brief.
+    on_chain = {
+        surf_client._decode_bridged_for_burn_log(r)["amount_wei"]
+        for r in _load_launchpad("burnkeeper_logs.json")
+    }
+    assert {3230 * 10**18, 12440787926 * 10**12,
+            23280267 * 10**12} <= on_chain
+    assert [r.wallet for r in rows] == ["0x047f", "0x887b"]
+    assert rows[0].burns == 2
+    assert rows[0].imd_burned == pytest.approx(15670.787926)
+    assert rows[0].eth_paid == pytest.approx(5.4921052213582e-05)
+
+
+def test_an_unread_fee_never_sums_as_zero() -> None:
+    from maxpane_dashboard.data.surf_client import _rank_burnkeepers
+    rows = _rank_burnkeepers({
+        "0x1": {"block": 1, "amount_wei": 10**18, "sender": "0xa", "fee_wei": None},
+    })
+    assert rows[0].eth_paid is None
+    assert rows[0].imd_burned == 1.0        # the log half is unaffected
+
+
+def test_a_partly_priced_wallet_reports_what_was_read() -> None:
+    from maxpane_dashboard.data.surf_client import _rank_burnkeepers
+    rows = _rank_burnkeepers({
+        "0x1": {"block": 1, "amount_wei": 10**18, "sender": "0xa", "fee_wei": 100},
+        "0x2": {"block": 2, "amount_wei": 10**18, "sender": "0xa", "fee_wei": None},
+    })
+    assert rows[0].eth_paid == pytest.approx(100 / 1e18)
+
+
+def test_the_burnkeeper_sort_is_total_so_a_tie_cannot_flap() -> None:
+    """`(-imd, -burns, wallet)`. Two wallets that burned the same amount must
+    not swap places between refreshes -- a leaderboard that reorders on its
+    own reads as activity that did not happen."""
+    from maxpane_dashboard.data.surf_client import _rank_burnkeepers
+    burns = {
+        "0x1": {"block": 1, "amount_wei": 10**18, "sender": "0xb", "fee_wei": None},
+        "0x2": {"block": 2, "amount_wei": 10**18, "sender": "0xa", "fee_wei": None},
+    }
+    first = [r.wallet for r in _rank_burnkeepers(burns)]
+    second = [r.wallet for r in _rank_burnkeepers(dict(reversed(list(burns.items()))))]
+    assert first == second == ["0xa", "0xb"]
+
+
+def _client_serving_the_real_burns(
+    *, price: bool = True, head_block: int = 25_835_019,
+) -> SurfClient:
+    """The whole burnkeeper path end to end, off the three committed captures.
+
+    The executor's `TokensBridgedForBurn` logs, the enclosing transactions
+    that name each signer, and Blockscout's internal-transaction page that
+    prices each one -- three sources on three different transports, which is
+    the point: the amounts and senders come from chain, the fee does not, and
+    only the fee is allowed to go missing when *price* is False.
+    """
+    logs = _load_launchpad("burnkeeper_logs.json")
+    senders = {
+        k.lower(): v for k, v in _load_launchpad("burnkeeper_senders.json").items()
+    }
+    fees = _load_launchpad("burnkeeper_internal_txs.json")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            assert "internal-transactions" in str(request.url)
+            if not price:
+                return httpx.Response(503, json={})
+            return httpx.Response(200, json=fees)
+        body = json.loads(request.content)
+        if isinstance(body, list):                 # the batched sender read
+            out = []
+            for call in body:
+                assert call["method"] == "eth_getTransactionByHash"
+                tx = call["params"][0].lower()
+                out.append({"jsonrpc": "2.0", "id": call["id"],
+                            "result": senders.get(tx)})
+            return httpx.Response(200, json=out)
+        if body["method"] == "eth_blockNumber":
+            return httpx.Response(200, json=_rpc_ok(body, hex(head_block)))
+        if body["method"] == "eth_getLogs":
+            flt = body["params"][0]
+            if flt["topics"][0] != A.TOPIC_TOKENS_BRIDGED_FOR_BURN:
+                return httpx.Response(200, json=_rpc_ok(body, []))
+            lo, hi = int(flt["fromBlock"], 16), int(flt["toBlock"], 16)
+            return httpx.Response(200, json=_rpc_ok(body, [
+                r for r in logs if lo <= int(r["blockNumber"], 16) <= hi
+            ]))
+        assert body["method"] == "eth_call", body["method"]
+        return _launchpad_getters_all_revert(body)
+
+    return _client_on(RecordingTransport(handler), now_fn=lambda: 2_000_000_000.0)
+
+
+@pytest.mark.asyncio
+async def test_the_real_burns_reach_the_state_as_a_priced_leaderboard() -> None:
+    """The Task 8 sweep, the Task 9 fee and the Task 10 fold, wired.
+
+    Every number here is off the committed captures: five burns, four
+    signers, the dev wallet twice for 15,670.787926 IMD, and its two fees
+    (26,041,778,956,026 + 27,274,720,356,026 wei) summed.
+    """
+    async with _client_serving_the_real_burns() as client:
+        state = await client.fetch_launchpad(resume=None)
+
+    keepers = state.burnkeepers
+    assert keepers is not None and len(keepers) == 4
+    assert sum(k.burns for k in keepers) == 5
+    top = keepers[0]
+    assert top.wallet == A.DEV_WALLET.lower()
+    assert top.burns == 2
+    assert top.imd_burned == pytest.approx(15670.787926)
+    assert top.eth_paid == pytest.approx(
+        (26_041_778_956_026 + 27_274_720_356_026) / 1e18
+    )
+    # Every one of them priced below what its caller was willing to spend.
+    assert all(k.eth_paid is not None and 0 < k.eth_paid < 0.001 for k in keepers)
+
+    # And the rows are persisted for the next sweep, keyed by tx hash.
+    assert set(state.cursor["burns"]) == {
+        r["transactionHash"].lower() for r in _load_launchpad("burnkeeper_logs.json")
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_dead_indexer_costs_the_eth_column_and_nothing_else() -> None:
+    """Column-scoped, proven at the state level rather than at the fetcher:
+    the leaderboard is still complete and still correctly ordered, and only
+    `eth_paid` is unknown."""
+    async with _client_serving_the_real_burns(price=False) as client:
+        state = await client.fetch_launchpad(resume=None)
+
+    keepers = state.burnkeepers
+    assert keepers is not None and len(keepers) == 4
+    assert keepers[0].wallet == A.DEV_WALLET.lower()
+    assert keepers[0].imd_burned == pytest.approx(15670.787926)
+    assert all(k.eth_paid is None for k in keepers)
+    # Never a zero written into the persisted row, so the next sweep retries.
+    assert all(r["fee_wei"] is None for r in state.cursor["burns"].values())
+
+
+@pytest.mark.asyncio
+async def test_a_failed_sweep_leaves_the_feed_and_the_leaderboard_unknown() -> None:
+    """`None`, not `()`: an empty tuple is "swept, and nothing happened",
+    which is a claim this pass is in no position to make."""
+    async with _client_whose_getlogs_fails() as client:
+        state = await client.fetch_launchpad(resume=None)
+    assert state.activity is None
+    assert state.burnkeepers is None
+
+
+@pytest.mark.asyncio
+async def test_the_activity_feed_reaches_the_state_off_the_real_swap_capture() -> None:
+    """`_activity_rows` is pure, so this is the half its unit tests cannot
+    cover: that the day slice really carries `eth_amount_wei` and `block`
+    through to it, and that the rows become `LaunchpadEvent`s on the state.
+    """
+    async with _client_serving("full_history.json") as client:
+        state = await client.fetch_launchpad(resume=None)
+
+    assert state.activity is not None and state.activity
+    assert len(state.activity) <= surf_client._MAX_ACTIVITY_ROWS
+    assert {e.kind for e in state.activity} <= {"buy", "sell", "launch"}
+    # Newest first, and the age really is derived (every row has one).
+    ages = [e.age_s for e in state.activity]
+    assert all(a is not None for a in ages)
+    assert ages == sorted(ages)
+    # A trade carries its size; a launch carries None, never 0.0.
+    assert all(e.eth is None for e in state.activity if e.kind == "launch")
+    trades = [e for e in state.activity if e.kind != "launch"]
+    if trades:
+        assert all(e.eth is not None for e in trades)
