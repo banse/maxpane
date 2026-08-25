@@ -36,7 +36,14 @@ surface the screen and its tests use, exactly as ``widgets/ttt`` and
 ``DETECTOR_LABELS``, ``FEED_TITLE`` and ``FLOOR_UNAVAILABLE`` ride along:
 they are *rendered interface strings* asserted against composited output by
 the screen WP and by the app-level acceptance tests, so consumers import
-them instead of retyping the literals.
+them instead of retyping the literals. ``TITLE``, ``UNAVAILABLE_LINE``,
+``EMPTY_LINE`` and ``KIND_WORDS`` (``SurfLaunchpadActivity``'s own module
+constants) ride along for the same reason -- unlike ``FEED_TITLE``/
+``FLOOR_UNAVAILABLE``, these four keep their bare, module-local names on the
+way out, so a future re-export of another widget's identically-named
+constants (``activity.py`` also has its own ``TITLE``/``UNAVAILABLE_LINE``,
+unexported here) would collide and has to be aliased when that day comes --
+it is not a collision yet.
 
 These widgets take primitives only and import nothing from ``data/`` or
 ``analytics/``, so this package is safe to import with no manager, no cache
@@ -48,15 +55,23 @@ from .burnkeepers import SurfBurnkeepers
 from .feed import FEED_TITLE, SurfFeed
 from .hero import SurfHero
 from .launchpad import SurfBurnPipeline, SurfCurveFlow, SurfLaunchpadCoins
-from .launchpad_activity import SurfLaunchpadActivity
+from .launchpad_activity import (
+    EMPTY_LINE,
+    KIND_WORDS,
+    SurfLaunchpadActivity,
+    TITLE,
+    UNAVAILABLE_LINE,
+)
 from .market import SurfMarket
 from .nft import FLOOR_UNAVAILABLE, SurfNft
 from .signals import DETECTOR_LABELS, SurfSignals
 
 __all__ = [
     "DETECTOR_LABELS",
+    "EMPTY_LINE",
     "FEED_TITLE",
     "FLOOR_UNAVAILABLE",
+    "KIND_WORDS",
     "SurfBurnPipeline",
     "SurfBurnkeepers",
     "SurfCurveFlow",
@@ -68,4 +83,6 @@ __all__ = [
     "SurfMarket",
     "SurfNft",
     "SurfSignals",
+    "TITLE",
+    "UNAVAILABLE_LINE",
 ]

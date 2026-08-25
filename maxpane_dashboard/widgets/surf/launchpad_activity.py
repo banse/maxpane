@@ -12,7 +12,7 @@ the wallet cell ends rather than at a fixed column.)
 
 Row shape: ``SURF_ROW_KEYS["launchpad_activity"]`` (Task 1, frozen) --
 ``kind``, ``ticker``, ``wallet``, ``wallet_known``, ``eth``, ``age_s``.
-``data/surf_client._activity_rows`` (Task 10) is the producer; this module
+``data/surf_client._launchpad_activity_rows`` (Task 10) is the producer; this module
 never imports it, but a **test** may (widgets take primitives only; tests
 may see both layers) -- see
 ``test_the_kind_cell_fits_the_whole_display_vocabulary`` in this module's own
@@ -122,7 +122,7 @@ EMPTY_LINE = "no launchpad activity"
 TITLE = "LAUNCHPAD ACTIVITY"
 
 #: Display vocabulary, and it is CLOSED -- the producer emits exactly
-#: ``{"buy", "sell", "launch"}`` (``surf_client._activity_rows``) and this
+#: ``{"buy", "sell", "launch"}`` (``surf_client._launchpad_activity_rows``) and this
 #: maps each to the word the panel shows. ``NEW`` rather than ``LAUNCH``
 #: because the cell is sized to the widest member and ``SELL`` is already
 #: four: a fifth column here would come out of the ticker beside it.

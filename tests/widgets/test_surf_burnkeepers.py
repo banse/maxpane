@@ -87,6 +87,16 @@ async def test_a_narrow_panel_marks_before_it_clips() -> None:
 
 @pytest.mark.asyncio
 async def test_a_hostile_wallet_string_never_reaches_markup() -> None:
-    row = dict(_ROWS[0], wallet="[/x]", wallet_known=False)
-    _widget, text = await _render([row])
+    """`"[/x]" not in text` alone cannot fail for the right reason:
+    `_render_view` falls back to the identical `EMPTY_LINE` whenever every
+    row is dropped by `_row_text`'s own `except Exception: return None`, so
+    a regression where the hostile row silently crashes and gets eaten
+    renders the exact same passing text as correct sanitisation would.
+    Rendering the hostile row alongside a well-formed one and asserting the
+    well-formed one's own values still appear is what actually proves the
+    panel survived the hostile input rather than quietly dropping it."""
+    hostile = dict(_ROWS[0], wallet="[/x]", wallet_known=False)
+    _widget, text = await _render([hostile, _ROWS[1]])
     assert "[/x]" not in text
+    assert "31.24" in text          # 0x84CB's own imd_burned, unaffected
+    assert "0.000027" in text       # 0x84CB's own eth_paid, unaffected

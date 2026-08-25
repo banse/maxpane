@@ -28,6 +28,33 @@ async def _render(rows, size=(60, 24), **kwargs):
         return widget, "\n".join(seg.text for strip in strips for seg in strip)
 
 
+async def _render_strips(rows, size=(60, 24), **kwargs):
+    """Same render as :func:`_render`, but returns the compositor's own
+    strips rather than flattening them to text -- for assertions that need
+    a segment's ``style`` (colour), not just its characters.
+    """
+    class _A(App):
+        def compose(self):
+            yield SurfLaunchpadActivity()
+
+    async with _A().run_test(size=size) as pilot:
+        widget = pilot.app.query_one(SurfLaunchpadActivity)
+        widget.update_data(launchpad_activity=rows, **kwargs)
+        await pilot.pause()
+        return widget, pilot.app.screen._compositor.render_strips()
+
+
+def _segment_color(strips, needle: str):
+    """The resolved truecolor of the first segment whose text contains
+    ``needle``, or ``None`` if no segment does.
+    """
+    for strip in strips:
+        for seg in strip:
+            if needle in seg.text and seg.style is not None and seg.style.color:
+                return seg.style.color.get_truecolor()
+    return None
+
+
 @pytest.mark.asyncio
 async def test_the_feed_renders_buys_sells_and_launches() -> None:
     _widget, text = await _render(_ROWS)
@@ -89,9 +116,33 @@ async def test_a_narrow_panel_names_the_columns_it_sheds() -> None:
 @pytest.mark.asyncio
 async def test_the_known_wallet_is_labelled_from_the_allowlist() -> None:
     """`0x047F…54B7` is DEV_WALLET. The allowlist is what makes a label
-    trustworthy; a poisoner's lookalike renders dimmed and truncated."""
-    _widget, text = await _render([_ROWS[0]])
-    assert "0x047F" in text
+    trustworthy; a poisoner's lookalike renders dimmed and truncated.
+
+    `"0x047F" in text` alone cannot tell a known wallet from an unknown one
+    apart -- both render the identical address text and differ only by
+    style (cyan vs dim), so a regression that ignored `wallet_known`
+    entirely would still pass a text-only check. This renders the same
+    address both ways and asserts on the composited segment's own colour:
+    cyan is a hued colour (green and blue channels well above red); dim
+    resolves to a neutral grey (red, green and blue near-equal) -- the
+    property the docstring actually claims to verify.
+    """
+    known_row = _ROWS[0]
+    unknown_row = dict(_ROWS[0], wallet_known=False)
+
+    _widget, known_strips = await _render_strips([known_row])
+    _widget2, unknown_strips = await _render_strips([unknown_row])
+
+    known_color = _segment_color(known_strips, "0x047F")
+    unknown_color = _segment_color(unknown_strips, "0x047F")
+
+    assert known_color is not None and unknown_color is not None
+    assert known_color != unknown_color
+    # cyan: a real hue, red suppressed relative to green/blue.
+    assert known_color.red < known_color.green and known_color.red < known_color.blue
+    # dim: a desaturated grey, all three channels close together.
+    assert abs(unknown_color.red - unknown_color.green) <= 4
+    assert abs(unknown_color.green - unknown_color.blue) <= 4
 
 
 def test_the_kind_cell_fits_the_whole_display_vocabulary() -> None:
@@ -103,21 +154,30 @@ def test_the_kind_cell_fits_the_whole_display_vocabulary() -> None:
 
     Calls the producer rather than comparing one literal against another:
     a `set(KIND_WORDS) == {"buy", "sell", "launch"}` check next to a
-    `_activity_rows` import that is never called cannot detect drift in
-    either direction -- it would stay green if the producer grew a fourth
-    kind, or renamed one, as long as nobody also remembered to edit this
-    file's own literal. Feeding the producer inputs shaped to yield one of
-    each kind and reading its own output back is what keeps the literal
+    `_launchpad_activity_rows` import that is never called cannot detect
+    drift in either direction -- it would stay green if the producer grew a
+    fourth kind, or renamed one, as long as nobody also remembered to edit
+    this file's own literal. Feeding the producer inputs shaped to yield one
+    of each kind and reading its own output back is what keeps the literal
     honest.
+
+    ``_launchpad_activity_rows``, not ``_activity_rows``: the producer was
+    renamed after this test was first written, because ``surf_manager`` has
+    its own, differently-shaped ``_activity_rows`` in a different layer --
+    see that function's own docstring in ``data/surf_client.py``. Importing
+    the current name is what keeps this test calling the real producer
+    rather than silently failing to import at all.
     """
     from rich.cells import cell_len
 
-    from maxpane_dashboard.data.surf_client import _activity_rows  # test-only import
+    from maxpane_dashboard.data.surf_client import (
+        _launchpad_activity_rows,  # test-only import
+    )
     from maxpane_dashboard.widgets.surf.launchpad_activity import (
         KIND_WORDS, _KIND_COLS,
     )
 
-    rows = _activity_rows(
+    rows = _launchpad_activity_rows(
         swaps=[
             {"pool_id": "0xa", "trader": "0xT1", "is_buy": True,
              "eth_amount_wei": 12 * 10**15, "block": 100},
