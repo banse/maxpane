@@ -398,7 +398,7 @@ class SurfLaunchpadCoins(Vertical):
         text-style: bold;
         color: $text-muted;
     }
-    SurfLaunchpadCoins > .surf-lpc-note {
+    SurfLaunchpadCoins > .surf-lpc-gap {
         width: 100%;
         height: 1;
         padding: 0 1;
@@ -418,7 +418,12 @@ class SurfLaunchpadCoins(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static(COINS_TITLE, classes="surf-lpc-title", id="surf-lpc-title")
-        yield Static("", classes="surf-lpc-note", id="surf-lpc-note")
+        # A permanently empty row between the title and the table. It was
+        # `#surf-lpc-note` and carried the population/staleness line; that
+        # line now shares the title's row, so this widget's whole job is the
+        # blank. The id follows the responsibility -- a `note` that can never
+        # carry a note is a lie left for the next reader.
+        yield Static("", classes="surf-lpc-gap", id="surf-lpc-gap")
         yield DataTable(id="surf-lpc-table", classes="surf-lpc-table")
 
     def on_mount(self) -> None:
@@ -478,7 +483,7 @@ class SurfLaunchpadCoins(Vertical):
         ``launch_count`` (Task 8's ``launchpad_launch_count``, Task 6's
         cursor-resumed full-history sweep) is the population the sweep
         actually *read*, kept separate from ``coin_count`` (the factory's
-        own ``coinCount()`` claim) so :meth:`_set_note` can compare the two
+        own ``coinCount()`` claim) so :meth:`_note_text` can compare the two
         rather than silently rendering whichever subset the sweep produced
         as though it were the whole population -- see the module-level note
         on Task 6's review finding for why that comparison exists at all.
@@ -492,43 +497,21 @@ class SurfLaunchpadCoins(Vertical):
         }
         self._render_view()
 
-    def _set_title(self) -> None:
-        """``LAUNCHPAD COINS  ‹ widen``, width permitting.
+    def _note_text(self) -> str:
+        """The population/staleness phrase, or the degraded warning.
 
-        Appended, not swapped in -- the title itself never changes, so
-        ``"LAUNCHPAD COINS" in text`` holds at every width, the same
-        contract ``SurfMarket._set_title`` keeps for its own panel title.
+        Unchanged logic, moved: ``146 coins`` when the sweep read the whole
+        population and ``146 coins · 66 read`` when it did not -- the
+        detector that would have caught a truncating sweep returning 2 of
+        146 launches as a success. ``launch_count is None`` means the sweep
+        failed outright, so this stays silent about the population rather
+        than asserting either agreement or disagreement.
         """
-        try:
-            title = self.query_one("#surf-lpc-title", Static)
-        except Exception:  # not composed yet
-            return
-        width = self.size.width
-        text = COINS_TITLE
-        if width and width < _TABLE_FULL_WIDTH:
-            text += f"  [yellow]{COINS_WIDEN_HINT}[/]"
-        title.update(text)
-
-    def _set_note(self) -> None:
-        """``146 coins`` when the sweep read the whole population,
-        ``146 coins · 66 read`` when it did not -- the detector that would
-        have caught this branch's worst bug (Task 6's review found a
-        truncating sweep returning 2 of 146 launches as a *success*; the
-        missing comparison to the factory's own ``coinCount()`` is what let
-        it look healthy).  ``launch_count is None`` means the sweep failed
-        outright, not merely "read fewer than claimed" -- there is nothing
-        to compare against, so this stays silent about the population
-        rather than asserting either agreement or disagreement, same as
-        today's behaviour before this comparison existed.
-        """
-        try:
-            note = self.query_one("#surf-lpc-note", Static)
-        except Exception:  # not composed yet
-            return
+        if not self._payload:
+            return ""
         coins = self._payload.get("coins")
         if coins is None:
-            note.update(f"[$warning]⚠ {COINS_UNAVAILABLE}[/]")
-            return
+            return f"[$warning]⚠ {COINS_UNAVAILABLE}[/]"
         coin_count = self._payload.get("coin_count")
         launch_count = self._payload.get("launch_count")
         try:
@@ -551,21 +534,41 @@ class SurfLaunchpadCoins(Vertical):
         as_of = self._payload.get("as_of_hhmm")
         if as_of:
             parts.append(f"as of {safe_markup(str(as_of))}")
-        note.update(f"[dim]{' · '.join(parts)}[/]")
+        return f"[dim]{' · '.join(parts)}[/]"
+
+    def _set_title(self) -> None:
+        """``LAUNCHPAD COINS · 146 coins · as of 01:14   ‹ widen``.
+
+        Note first, marker last, title never changed: ``"LAUNCHPAD COINS" in
+        text`` holds at every width, the contract ``SurfMarket._set_title``
+        keeps for its own panel.
+        """
+        try:
+            title = self.query_one("#surf-lpc-title", Static)
+        except Exception:  # not composed yet
+            return
+        text = COINS_TITLE
+        note = self._note_text()
+        if note:
+            text += f"  [dim]·[/] {note}"
+        width = self.size.width
+        if width and width < _TABLE_FULL_WIDTH:
+            text += f"  [yellow]{COINS_WIDEN_HINT}[/]"
+        title.update(text)
 
     def _render_view(self) -> None:
         try:
             table = self.query_one("#surf-lpc-table", DataTable)
         except Exception:  # not composed yet
             return
-        # Geometry-only, so it is correct whether or not there is a
-        # payload yet -- a refresh must never blank a marker a resize
-        # already lit, nor light one a resize has not earned.
+        # Geometry-plus-note, correct whether or not there is a payload yet
+        # -- a refresh must never blank a marker a resize already lit, nor
+        # light one a resize has not earned, and an empty payload's note is
+        # simply the empty string (see ``_note_text``).
         self._set_title()
         if not self._payload:
             return
 
-        self._set_note()
         table.clear()
 
         coins = self._payload.get("coins")
@@ -626,6 +629,12 @@ def _flow_lines(swap_count, trader_count, creator_eth_owed, as_of_hhmm) -> list[
 
     lines = [
         f"[dim]{FLOW_TITLE}[/]",
+        # A blank line under the title. The rail's panels sat flush against
+        # their own headings and read as one block of text; this is the same
+        # breathing room `SurfDevActivity`'s `.surf-activity-spacer` Static
+        # gives its own log, spent as a row rather than a widget because
+        # these panels are one `Static` each.
+        "",
         f"{swap_str} swaps · {trader_str} traders",
         f"[dim]{avg_str}[/]",
         f"[dim]owed {owed} ETH to creators[/]",
@@ -740,6 +749,12 @@ def _pipeline_lines(
 
     lines = [
         f"[dim]{BURN_TITLE}[/]",
+        # A blank line under the title. The rail's panels sat flush against
+        # their own headings and read as one block of text; this is the same
+        # breathing room `SurfDevActivity`'s `.surf-activity-spacer` Static
+        # gives its own log, spent as a row rather than a widget because
+        # these panels are one `Static` each.
+        "",
         f"status: {status}",
         f"[dim]accrued {acc} IMD · staged {stg} IMD[/]",
         f"[dim]min bridge {min_b} IMD[/]",

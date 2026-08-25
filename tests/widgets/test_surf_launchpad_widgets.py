@@ -46,6 +46,16 @@ async def _render_coins(coins, **kwargs):
     module already use (CLAUDE.md: assert against composited output --
     ``_compositor.render_strips()`` -- never the content string, which
     would pass a naive test while the value never reaches a pixel).
+
+    Task 3 fix: a strip is one screen *row*, made of one segment per
+    distinct markup style; the previous join here (``"\\n".join(seg.text
+    for strip in strips for seg in strip)``) put a newline between every
+    *segment*, not every row, so a row with more than one style span (this
+    module's own title, once the note and the widen marker share it) split
+    across several joined "lines" even though it painted as one. It stayed
+    invisible while every panel's rows carried at most one span; a
+    multi-span title row is what exposes it. Segments now join within a
+    row first, and only rows join on ``\\n``.
     """
     class _A(App):
         def compose(self):
@@ -56,7 +66,7 @@ async def _render_coins(coins, **kwargs):
         widget.update_data(coins=coins, **kwargs)
         await pilot.pause()
         strips = pilot.app.screen._compositor.render_strips()
-        text = "\n".join(seg.text for strip in strips for seg in strip)
+        text = "\n".join("".join(seg.text for seg in strip) for strip in strips)
         return widget, text
 
 
@@ -238,3 +248,153 @@ async def test_the_creator_cell_truncates_to_the_narrower_eleven_column_window()
     _, out = await _render_coins([_ROW])
     assert "0x8ca0…e5e8" in out
     assert "0x8ca00000…00e5e8" not in out
+
+
+# ---------------------------------------------------------------------------
+# Task 2 -- a blank line under CURVE FLOW and BURN PIPELINE
+# ---------------------------------------------------------------------------
+
+
+def test_curve_flow_puts_a_blank_line_under_its_title() -> None:
+    from maxpane_dashboard.widgets.surf.launchpad import FLOW_TITLE, _flow_lines
+    lines = _flow_lines(4683, 673, 1.25, "01:14")
+    assert FLOW_TITLE in lines[0]
+    assert lines[1] == "", lines
+
+
+def test_burn_pipeline_puts_a_blank_line_under_its_title() -> None:
+    from maxpane_dashboard.widgets.surf.launchpad import (
+        BURN_TITLE, _pipeline_lines,
+    )
+    lines = _pipeline_lines(0.5, 30.0, 25.0, True, 15745.0, "01:14", 30.0)
+    assert BURN_TITLE in lines[0]
+    assert lines[1] == "", lines
+
+
+@pytest.mark.asyncio
+async def test_the_blank_line_reaches_the_screen_in_both_rail_panels() -> None:
+    """A blank line the compositor collapses is not a blank line.
+
+    Asserted on composited rows, not on the list: `Static` joins on "\\n" and
+    an empty entry is only a rendered row if the panel is `height: auto` and
+    the line is actually painted.
+    """
+    from textual.app import App
+    from maxpane_dashboard.widgets.surf.launchpad import (
+        BURN_TITLE, FLOW_TITLE, SurfBurnPipeline, SurfCurveFlow,
+    )
+
+    class _A(App):
+        def compose(self):
+            yield SurfCurveFlow()
+            yield SurfBurnPipeline()
+
+    async with _A().run_test(size=(60, 24)) as pilot:
+        pilot.app.query_one(SurfCurveFlow).update_data(
+            swap_count=4683, trader_count=673, creator_eth_owed=1.25,
+            as_of_hhmm="01:14",
+        )
+        pilot.app.query_one(SurfBurnPipeline).update_data(
+            burn_accrued=0.5, burn_staged=30.0, burn_ready=True,
+            burn_min_bridge=25.0, burn_bridgeable=30.0,
+            burned_total=15745.0, as_of_hhmm="01:14",
+        )
+        await pilot.pause()
+        strips = pilot.app.screen._compositor.render_strips()
+        rows = ["".join(seg.text for seg in strip) for strip in strips]
+
+    for title in (FLOW_TITLE, BURN_TITLE):
+        i = next(n for n, row in enumerate(rows) if title in row)
+        assert rows[i + 1].strip() == "", (title, rows[i + 1])
+
+
+# ---------------------------------------------------------------------------
+# Task 3 -- the coin table's note moves up beside its title
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_note_shares_the_title_line_and_the_next_row_is_blank() -> None:
+    widget, text = await _render_coins(
+        _ROWS, coin_count=146, launch_count=146, as_of_hhmm="01:14",
+    )
+    rows = text.splitlines()
+    i = next(n for n, row in enumerate(rows) if "LAUNCHPAD COINS" in row)
+    assert "146 coins" in rows[i], rows[i]
+    assert "as of 01:14" in rows[i], rows[i]
+    assert rows[i + 1].strip() == "", rows[i + 1]
+
+
+@pytest.mark.asyncio
+async def test_the_unavailable_note_moves_up_with_the_rest_of_the_note() -> None:
+    """A dead sweep must still say so, from the title line, composited."""
+    from maxpane_dashboard.widgets.surf.launchpad import COINS_UNAVAILABLE
+    _widget, text = await _render_coins(None, coin_count=None)
+    rows = text.splitlines()
+    i = next(n for n, row in enumerate(rows) if "LAUNCHPAD COINS" in row)
+    assert COINS_UNAVAILABLE in rows[i], rows[i]
+
+
+@pytest.mark.asyncio
+async def test_the_gap_widget_replaced_the_note_widget() -> None:
+    """The id follows the responsibility: a widget called `note` that can
+    never carry a note is a lie left for the next reader.
+
+    Three corrections from the brief, all needed to make this test actually
+    exercise what it claims to:
+
+    1. ``run_test()``'s ``Pilot`` unmounts the whole widget tree on exit
+       (``list(widget.children) == []`` afterwards, verified empirically),
+       so ``_render_coins``'s ``widget`` return value can no longer be
+       queried once the ``await`` that produced it has returned -- any
+       selector against it then finds nothing, including
+       ``#surf-lpc-note``, which would make the *first* assertion pass
+       whether or not the note widget was actually gone. The query has to
+       run while the app is still mounted, inside its own ``async with``.
+    2. ``DOMQuery`` has no ``__eq__`` against a plain list (it compares
+       unequal either way), so the presence check has to force the query
+       into a concrete list first -- the same pattern already used
+       elsewhere in this repo (``test_surf_widgets_b.py``'s
+       ``not list(widget.query(...))``).
+    3. This Textual version's ``Static`` exposes its content as
+       ``.content``, not ``.renderable`` -- the brief's attribute name
+       predates this repo's pinned Textual (8.1.1), where ``Static`` has no
+       ``renderable`` at all.
+    """
+    from textual.widgets import Static
+
+    class _A(App):
+        def compose(self):
+            yield SurfLaunchpadCoins()
+
+    async with _A().run_test(size=_RENDER_SIZE) as pilot:
+        widget = pilot.app.query_one(SurfLaunchpadCoins)
+        widget.update_data(coins=_ROWS, coin_count=146)
+        await pilot.pause()
+        assert list(widget.query("#surf-lpc-note")) == []
+        gap = widget.query_one("#surf-lpc-gap", Static)
+        assert str(gap.content).strip() == ""
+
+
+@pytest.mark.asyncio
+async def test_the_widen_marker_still_follows_the_note_on_the_title_line() -> None:
+    from maxpane_dashboard.widgets.surf.launchpad import (
+        COINS_WIDEN_HINT, _TABLE_FULL_WIDTH,
+    )
+
+    class _A(App):
+        def compose(self):
+            yield SurfLaunchpadCoins()
+
+    async with _A().run_test(size=(_TABLE_FULL_WIDTH - 20, 24)) as pilot:
+        widget = pilot.app.query_one(SurfLaunchpadCoins)
+        widget.update_data(coins=_ROWS, coin_count=146, as_of_hhmm="01:14")
+        await pilot.pause()
+        strips = pilot.app.screen._compositor.render_strips()
+        # Segments join within a row first, rows join on "\n" -- see the
+        # note on the same fix in `_render_coins`. A flat per-segment join
+        # would split "LAUNCHPAD COINS" from its own widen marker onto two
+        # "lines" even though both paint on one screen row.
+        text = "\n".join("".join(seg.text for seg in strip) for strip in strips)
+    row = next(r for r in text.splitlines() if "LAUNCHPAD COINS" in r)
+    assert COINS_WIDEN_HINT in row, row
