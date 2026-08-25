@@ -27,7 +27,7 @@ async def _render(rows, size=(40, 24), **kwargs):
 
     async with _A().run_test(size=size) as pilot:
         widget = pilot.app.query_one(SurfBurnkeepers)
-        widget.update_data(burnkeepers=rows, **kwargs)
+        widget.update_data(launchpad_burnkeepers=rows, **kwargs)
         await pilot.pause()
         strips = pilot.app.screen._compositor.render_strips()
         text = "\n".join(seg.text for strip in strips for seg in strip)
