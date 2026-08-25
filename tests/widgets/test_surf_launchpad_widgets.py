@@ -500,6 +500,75 @@ async def test_the_widen_marker_survives_the_whole_wrap_prone_width_band() -> No
 
 
 # ---------------------------------------------------------------------------
+# Fix round 1 (2026-08-26) -- `_TABLE_FULL_WIDTH` had no regression test.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_table_full_width_marker_and_burned_header_agree() -> None:
+    """The gap review found: nothing pinned ``_TABLE_FULL_WIDTH`` (89) to a
+    real, independently-observable property, so the sweep above
+    (``test_the_widen_marker_survives_the_whole_wrap_prone_width_band``)
+    could not have caught a stale value -- it renders 40-80, entirely below
+    89, and cannot tell 89 apart from 87 or 93. That is exactly the shape of
+    gap that let 91 -> 93 (Task 13) ship stale in the first place: this
+    constant's own docstring already records one silent clip, and until
+    this test existed, a second one would have gone through unguarded too.
+
+    Sweeps 84..96 (straddling the pinned 89 on both sides, starting well
+    away from it so the sweep cannot agree with the pin by construction --
+    the standing rule this file already applies to the other width sweeps)
+    and checks two things at every width that are computed from two
+    genuinely different sources:
+
+    1. the panel's own ``‹ widen`` marker, which the widget computes *from*
+       ``_TABLE_FULL_WIDTH`` (``width < _TABLE_FULL_WIDTH`` in
+       :meth:`SurfLaunchpadCoins._set_title`) -- this half alone proves
+       nothing about whether the constant is *correct*, only that the
+       widget is internally consistent with itself;
+    2. whether the ``DataTable``'s own ``BURNED`` header actually reaches
+       the compositor **whole** -- a fact about the real rendered table
+       that has nothing to do with the marker and does not read
+       ``_TABLE_FULL_WIDTH`` at all.
+
+    Both expectations in this test are still *derived* from the imported
+    constant (never a hardcoded ``89``), which is what makes it a
+    regression test rather than a duplicate of the sweep above: whenever
+    the constant disagrees with the table's real rendered width, the two
+    derived expectations stop agreeing with each other's *evidence*, and
+    the assertion on fact 2 is what catches it -- fact 1 alone cannot,
+    because the code that produces it and the code that predicts it are
+    the same formula.
+    """
+    from maxpane_dashboard.widgets.surf.launchpad import (
+        COINS_WIDEN_HINT, _TABLE_FULL_WIDTH,
+    )
+
+    for width in range(84, 97):
+        class _A(App):
+            def compose(self):
+                yield SurfLaunchpadCoins()
+
+        async with _A().run_test(size=(width, 24)) as pilot:
+            widget = pilot.app.query_one(SurfLaunchpadCoins)
+            widget.update_data(coins=_ROWS, coin_count=146)
+            await pilot.pause()
+            strips = pilot.app.screen._compositor.render_strips()
+            text = "\n".join("".join(seg.text for seg in strip) for strip in strips)
+
+        title_row = next(r for r in text.splitlines() if "LAUNCHPAD COINS" in r)
+        marker_expected = width < _TABLE_FULL_WIDTH
+        burned_expected = width >= _TABLE_FULL_WIDTH
+
+        assert (COINS_WIDEN_HINT in title_row) == marker_expected, (
+            width, _TABLE_FULL_WIDTH, title_row,
+        )
+        assert ("BURNED" in text) == burned_expected, (
+            width, _TABLE_FULL_WIDTH, text,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Task 4 -- ten rows
 # ---------------------------------------------------------------------------
 
@@ -544,6 +613,14 @@ async def test_the_table_draws_at_most_ten_coins() -> None:
     (1_250_000.0, "$1.3M"),
     (0.0, "$0"),          # a real, measured zero -- distinct from the dash
     (None, "--"),         # unread: price round failed, or eth_usd is None
+    # A negative market cap cannot be real (`mcap_eth * eth_usd`, both
+    # non-negative) -- upstream corruption, not a number worth rendering,
+    # and (fix round 1) the one way this cell could overrun `_MCAP_COLS`:
+    # a signed six-digit form is seven columns, e.g. the un-fixed formatter
+    # rendered `_mcap_cell(-999_999_999.9)` as `"$-1000M"`.
+    (-999_999_999.9, "--"),
+    (-999_999.9, "--"),
+    (-0.01, "--"),
 ])
 def test_mcap_cell_formats(usd, expected) -> None:
     from maxpane_dashboard.widgets.surf.launchpad import _MCAP_COLS, _mcap_cell
@@ -614,12 +691,22 @@ def test_mcap_cell_never_exceeds_its_own_column_budget() -> None:
     round-trips-past-the-next-power-of-ten surprise), up to just under $1
     trillion -- several orders of magnitude past any real token's market
     cap, let alone a single internal launchpad coin's.
+
+    Fix round 1: also sweeps the negative mirror of every one of those
+    values. A negative ``mcap_usd`` cannot be real (``mcap_eth * eth_usd``,
+    both non-negative) and is upstream corruption rather than a number
+    worth rendering, but before this fix round it was also the one input
+    that *could* overrun the budget -- a signed six-digit form is seven
+    columns (``_mcap_cell(-999_999_999.9)`` rendered ``"$-1000M"``). The
+    fix is a dash for any negative input, so this also asserts that
+    directly rather than only re-checking the width bound on an answer
+    that happens to already be a dash.
     """
     import random
 
     from rich.cells import cell_len
 
-    from maxpane_dashboard.widgets.surf.launchpad import _MCAP_COLS, _mcap_cell
+    from maxpane_dashboard.widgets.surf.launchpad import DASH, _MCAP_COLS, _mcap_cell
 
     rng = random.Random(0)
     values = [rng.uniform(0, 999_999_999_999) for _ in range(20_000)]
@@ -628,9 +715,13 @@ def test_mcap_cell_never_exceeds_its_own_column_budget() -> None:
         for frac in (0.49999, 0.5, 0.50001, 0.94999, 0.95, 0.95001, 0.99999):
             values.append(base * (1 + frac) if base >= 1_000 else base + frac * base)
 
+    values += [-v for v in values if v > 0]
+
     for v in values:
         rendered = _mcap_cell(v)
         assert cell_len(rendered) <= _MCAP_COLS, (v, rendered)
+        if v < 0:
+            assert rendered == DASH, (v, rendered)
 
 
 def test_the_table_still_needs_exactly_seventy_five_columns():

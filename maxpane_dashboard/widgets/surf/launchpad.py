@@ -223,6 +223,17 @@ COINS_WIDEN_HINT = "‹ widen"
 #: and has not been re-swept against this change; that screen-level
 #: constant is outside this task's file ownership and is flagged rather
 #: than fixed here.
+#:
+#: **Guarded, not just documented**
+#: (``test_the_table_full_width_marker_and_burned_header_agree``, widget
+#: tests): the widget's own sweep (``test_the_widen_marker_survives_the_
+#: whole_wrap_prone_width_band``) only ever renders 40-80, entirely below
+#: this constant, so it cannot tell 89 apart from 87 or 93 -- exactly the
+#: gap that let the 91 -> 93 staleness above ship unnoticed the first time.
+#: The guarding test sweeps 84..96 and checks this constant against a
+#: property it does not control: whether the DataTable's own ``BURNED``
+#: header actually reaches the compositor whole, which is what ties the
+#: number to the real rendered table instead of to itself.
 #: Re-sweep -- never re-derive -- if a column is ever added or removed again.
 _TABLE_FULL_WIDTH = 89
 
@@ -349,6 +360,15 @@ def _mcap_cell(value: object) -> str:
     reads. A genuine ``0.0`` still renders ``$0``, honestly distinct from the
     dash.
 
+    **Negative -> dash too, never a signed cell.** ``mcap_usd`` is
+    ``mcap_eth * eth_usd``, both non-negative by construction, so a negative
+    value cannot be a real market cap -- it is upstream corruption, not a
+    number worth rendering. Same answer this repo already gives any value it
+    cannot believe (CLAUDE.md, "a failed read is None, never 0"): a dash, not
+    a best-effort rendering of garbage (a signed cell was also the one way
+    this formatter could overrun :data:`_MCAP_COLS` -- ``"$-1000M"`` is
+    seven columns against a budget swept for non-negative input only).
+
     **Width is a hard contract** (:data:`_MCAP_COLS`, 6), not a rough guide,
     so this is not the naive ``f"{v/1000:.1f}K"`` one decimal place always --
     that form silently overruns the budget right where each tier hands off
@@ -357,24 +377,23 @@ def _mcap_cell(value: object) -> str:
     whole digits (``>= 100``), the decimal point is dropped instead of
     widening the cell -- ``"$1000K"`` stays at six -- which is this
     module's own "shorten the value, not the constant" rule applied to a
-    formatter instead of a truncation window. Verified by sweeping two
-    million random values plus every exact tier boundary up to just under
-    $1 trillion (``test_mcap_cell_never_exceeds_its_own_column_budget``):
-    six columns is genuinely the worst case for any non-negative market cap
-    in that range, not merely for the fixture's own numbers. (No coin's
-    market cap has ever been a trillion dollars, let alone the quadrillion
-    an untested version of this claim once said -- this cell's contract
-    does not need to survive a magnitude nothing on chain will ever reach.)
+    formatter instead of a truncation window. Verified by sweeping a dense
+    pseudo-random sample (positive and negative) plus every exact tier
+    boundary up to just under $1 trillion
+    (``test_mcap_cell_never_exceeds_its_own_column_budget``): six columns is
+    genuinely the worst case in that range, not merely for the fixture's own
+    numbers. (No coin's market cap has ever been a trillion dollars, let
+    alone the quadrillion an untested version of this claim once said --
+    this cell's contract does not need to survive a magnitude nothing on
+    chain will ever reach.)
 
     Plain text, no markup: this is a ``DataTable`` value, and ``DataTable``'s
     ``default_cell_formatter`` calls plain ``rich.text.Text.from_markup``
     rather than Textual's CSS-variable-aware renderer -- see ``_pct_cell``'s
     own note on why a ``$``-prefixed theme token raises ``MarkupError`` here.
-    (The ``$`` below is a dollar sign in ordinary text, not a token: it is
-    never the first character of a ``[...]`` run.)
     """
     v = as_float(value)
-    if v is None:
+    if v is None or v < 0:
         return DASH
     a = abs(v)
     if a >= 1_000_000_000:
