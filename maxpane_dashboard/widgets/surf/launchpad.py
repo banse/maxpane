@@ -5,7 +5,7 @@ coins by 73 distinct creators, 4,683 curve swaps by 673 traders, 3,299 IMD
 burned, all in four days):
 
 * :class:`SurfLaunchpadCoins` -- one row per launched coin, already ranked
-  and capped upstream (``LAUNCHPAD_RENDER_LIMIT`` = 20, ``data/surf_client.py``).
+  and capped upstream (``LAUNCHPAD_RENDER_LIMIT`` = 10, ``data/surf_client.py``).
 * :class:`SurfCurveFlow` -- the aggregate swap/trader/creator-revenue numbers
   for the whole launchpad, read from the same slow tier as the coin table.
 * :class:`SurfBurnPipeline` -- the permissionless bridge-and-burn executor's
@@ -86,6 +86,7 @@ Primitives only -- this module imports nothing from ``data/`` or
 from __future__ import annotations
 
 import re
+from decimal import ROUND_HALF_UP, Decimal
 
 from rich.cells import cell_len
 
@@ -190,39 +191,50 @@ COINS_WIDEN_HINT = "‹ widen"
 #:
 #: **Cannot be read off ``DataTable.show_horizontal_scrollbar``.** That flag
 #: reads ``True`` several columns before any character is actually lost --
-#: at ``self.size.width == 95`` (two above this constant) the whole header
-#: still reaches the compositor, ``BURNED`` and all, yet the scrollbar flag
-#: is already lit. A marker keyed off it would fire early and disagree with
-#: what the screen actually shows, so this is a literal measured threshold
-#: instead: the nine fixed columns (``_TICKER_COLS`` .. ``_BURNED_COLS``, now
-#: including ``_SWAPS_ALL_COLS`` -- still 79) plus the DataTable's own
-#: internal cell gutter, swept column by column until the compositor
-#: stopped truncating ``BURNED``'s last character.
+#: at ``self.size.width == 92`` (three below where the flag actually clears)
+#: the whole header still reaches the compositor, ``BURNED`` and all, yet
+#: the scrollbar flag is still lit (it does not clear until 93, re-swept
+#: alongside this constant -- see the note below). A marker keyed off it
+#: would fire early and disagree with what the screen actually shows, so
+#: this is a literal measured threshold instead: the nine fixed columns
+#: (``_TICKER_COLS`` .. ``_BURNED_COLS``) plus the DataTable's own internal
+#: cell gutter, swept column by column until the compositor stopped
+#: truncating ``BURNED``'s last character.
 #:
-#: **91 -> 93, re-measured by Task 13 (2026-08-24), and the two columns were
-#: a live silent clip.** The column *count* went 8 -> 9 in Task 11 (SWAPS
-#: ALL), which buys one more ``DataTable`` cell gutter even though the
-#: width-constant sum held at 79 -- 91 was swept for eight columns and had
-#: been stale for nine ever since. Task 11 left it alone deliberately rather
-#: than guessing, and the guess would have been wrong in the dangerous
-#: direction: swept again with the panel rendered full width, the header
-#: reads ``BURNE`` at a content width of 92 and ``BURN`` at 91, so at both
-#: of those widths the table was losing a character with the marker dark --
-#: exactly the silent clipping CLAUDE.md forbids, and the reason this is a
-#: measured literal rather than arithmetic over the column constants.
-#: 93 is the first content width at which the whole header, ``BURNED``
-#: included, reaches the compositor.
+#: **93 -> 89, re-swept by Task 7 (MCAP replaces PRICE, 2026-08-25) -- never
+#: re-derived from the column-width constants, on the same standing rule
+#: this constant's own history (91 -> 93, Task 13) already paid for once:
+#: the last time a column changed, guessing the new number from arithmetic
+#: alone left it stale by two and the table clipped ``BURNED`` to ``BURNE``
+#: with the marker dark, exactly the silent clipping CLAUDE.md forbids.**
+#: ``_MCAP_COLS`` (6) is four columns narrower than the ``_PRICE_COLS`` (10)
+#: it replaced, and the column-width sum moved with it, 79 -> 75; swept
+#: again with the panel rendered full width (``sweep_table.py``, one row
+#: per content width 70..99), the header still reads truncated through
+#: content width 88 and reaches the compositor whole, ``BURNED`` included,
+#: from 89 -- exactly four less than the old 93, which is what the four
+#: fewer content columns predicted, but predicting it is not why this
+#: number is 89: it is 89 because the sweep says so, the same standard
+#: applied when the prediction and the measurement would have disagreed.
 #:
-#: In screen terms that is 95 (this panel's own ``padding: 0 1``), which is
-#: what ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``'s seam arithmetic is built on.
+#: In screen terms that is 91 (this panel's own ``padding: 0 1``), four
+#: below the 95 the old 93 needed -- ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``
+#: in ``screens/surf.py`` still quotes seam arithmetic built on the old 95
+#: and has not been re-swept against this change; that screen-level
+#: constant is outside this task's file ownership and is flagged rather
+#: than fixed here.
 #: Re-sweep -- never re-derive -- if a column is ever added or removed again.
-_TABLE_FULL_WIDTH = 93
+_TABLE_FULL_WIDTH = 89
 
 #: Defensive re-cap.  The manager already caps ``launchpad_coins`` at
-#: ``LAUNCHPAD_RENDER_LIMIT`` (20, ``data/surf_client.py``); this widget
+#: ``LAUNCHPAD_RENDER_LIMIT`` (10, ``data/surf_client.py``); this widget
 #: cannot import that constant (primitives only) so it re-states the same
 #: number rather than trusting the payload never to grow.
-MAX_COIN_ROWS = 20
+#:
+#: 20 -> 10 (2026-08-25): the panel gave half its column to LAUNCHPAD
+#: ACTIVITY, and ten rows is what is left. The client's limit moved with it
+#: -- see ``test_the_render_limit_matches_the_widget_cap``.
+MAX_COIN_ROWS = 10
 
 #: Column budget, in rendered columns.  Ticker/name width is no longer a
 #: security control (:func:`_sanitize` strips hostile bracket content before
@@ -245,7 +257,11 @@ _NAME_COLS = 18
 #: honest short form of the same anti-poisoning idea at half the window.
 _ADDR_COLS = 11
 _AGE_COLS = 4
-_PRICE_COLS = 10
+#: ``MCAP`` on screen: ``$23.4K``. Six columns is the widest this formatter
+#: produces below a quadrillion dollars, and it is FOUR narrower than the
+#: ``PRICE`` cell it replaced (Task 7) -- a launchpad price is 5.86e-09 ETH
+#: and needed ten columns to say so; a compact USD market cap does not.
+_MCAP_COLS = 6
 _PCT_COLS = 7
 #: ``SW 24H`` on screen -- the day-long ranking window (Task 7).  The header
 #: is the short form because 6 columns is all there is; see ``on_mount``.
@@ -255,7 +271,7 @@ _SWAPS_COLS = 6
 #: for this column is CREATOR's 17 -> 11 shrink above, not a widened total.
 _SWAPS_ALL_COLS = 6
 _BURNED_COLS = 9
-# 8+18+11+4+10+7+6+6+9 = 79
+# 8+18+11+4+6+7+6+6+9 = 75
 
 
 def _ticker_cell(ticker: object) -> str:
@@ -308,19 +324,72 @@ def _creator_cell(creator: object, known: bool) -> str:
     return f"[{colour}]{escaped}[/]"
 
 
-def _price_cell(value: object) -> str:
-    """Curve price in ETH, no unit suffix (the column header carries it)."""
+def _round_half_up(value: float, digits: int) -> float:
+    """Round-half-*up* (away from zero on a positive value), never Python's
+    ``format``, which rounds half-to-*even*.
+
+    Discovered empirically while implementing :func:`_mcap_cell`: ``1_250_000
+    / 1_000_000 == 1.25`` exactly (no floating-point noise --
+    ``Decimal(1.25)`` confirms it), and ``f"{1.25:.1f}"`` rounds that tie to
+    the *even* neighbour, ``1.2`` -- not the conventional "round the tie up"
+    a reader expects from a compact dollar figure, and not what the worked
+    example this cell was specified against (``$1,250,000`` -> ``"$1.3M"``)
+    actually needs. ``Decimal.quantize`` with ``ROUND_HALF_UP`` is exact
+    where a float-only approach is not.
+    """
+    q = Decimal(str(value)).quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP)
+    return float(q)
+
+
+def _mcap_cell(value: object) -> str:
+    """Fully-diluted market cap in USD, compact.
+
+    ``None`` -> dash, never ``$0``: the value is unknown when the price round
+    failed OR when CoinGecko did not answer (`eth_usd`), and both are failed
+    reads. A genuine ``0.0`` still renders ``$0``, honestly distinct from the
+    dash.
+
+    **Width is a hard contract** (:data:`_MCAP_COLS`, 6), not a rough guide,
+    so this is not the naive ``f"{v/1000:.1f}K"`` one decimal place always --
+    that form silently overruns the budget right where each tier hands off
+    to the next: ``999,949`` is ``999.9`` at one decimal, and ``"$999.9K"``
+    is seven columns, one over. Once rounding to one decimal reaches three
+    whole digits (``>= 100``), the decimal point is dropped instead of
+    widening the cell -- ``"$1000K"`` stays at six -- which is this
+    module's own "shorten the value, not the constant" rule applied to a
+    formatter instead of a truncation window. Verified by sweeping two
+    million random values plus every exact tier boundary up to just under
+    $1 trillion (``test_mcap_cell_never_exceeds_its_own_column_budget``):
+    six columns is genuinely the worst case for any non-negative market cap
+    in that range, not merely for the fixture's own numbers. (No coin's
+    market cap has ever been a trillion dollars, let alone the quadrillion
+    an untested version of this claim once said -- this cell's contract
+    does not need to survive a magnitude nothing on chain will ever reach.)
+
+    Plain text, no markup: this is a ``DataTable`` value, and ``DataTable``'s
+    ``default_cell_formatter`` calls plain ``rich.text.Text.from_markup``
+    rather than Textual's CSS-variable-aware renderer -- see ``_pct_cell``'s
+    own note on why a ``$``-prefixed theme token raises ``MarkupError`` here.
+    (The ``$`` below is a dollar sign in ordinary text, not a token: it is
+    never the first character of a ``[...]`` run.)
+    """
     v = as_float(value)
     if v is None:
         return DASH
-    if v == 0:
-        return "0"
     a = abs(v)
-    if a >= 1:
-        return f"{v:,.3f}"
-    if a >= 0.0001:
-        return f"{v:.5f}"
-    return f"{v:.2e}"
+    if a >= 1_000_000_000:
+        scaled, suffix = v / 1_000_000_000, "B"
+    elif a >= 1_000_000:
+        scaled, suffix = v / 1_000_000, "M"
+    elif a >= 1_000:
+        scaled, suffix = v / 1_000, "K"
+    else:
+        return f"${v:.0f}"
+    one_dp = _round_half_up(scaled, 1)
+    if abs(one_dp) < 100:
+        return f"${one_dp:.1f}{suffix}"
+    whole = _round_half_up(scaled, 0)
+    return f"${whole:.0f}{suffix}"
 
 
 def _pct_cell(value: object) -> str:
@@ -377,7 +446,7 @@ def _coin_row(coin: object) -> tuple[str, ...] | None:
             _name_cell(coin.get("name")),
             _creator_cell(coin.get("creator"), bool(coin.get("creator_known"))),
             fmt_age(coin.get("age_s")),
-            _price_cell(coin.get("price_eth")),
+            _mcap_cell(coin.get("mcap_usd")),
             _pct_cell(coin.get("change_24h_pct")),
             _swaps_cell(coin.get("swaps_24h")),
             _swaps_cell(coin.get("swaps_all")),
@@ -388,9 +457,10 @@ def _coin_row(coin: object) -> tuple[str, ...] | None:
 
 
 class SurfLaunchpadCoins(Vertical):
-    """One row per launched coin: ticker, name, creator, age, price, 24h
-    change, swaps in the last 24h, all-time swaps, IMD burned -- ranked on
-    the 24h window with an all-time tiebreak (Task 7) and capped upstream.
+    """One row per launched coin: ticker, name, creator, age, market cap
+    (USD), 24h change, swaps in the last 24h, all-time swaps, IMD burned --
+    ranked on the 24h window with an all-time tiebreak (Task 7) and capped
+    upstream.
     """
 
     DEFAULT_CSS = """
@@ -436,7 +506,7 @@ class SurfLaunchpadCoins(Vertical):
         table.add_column("NAME", width=_NAME_COLS)
         table.add_column("CREATOR", width=_ADDR_COLS)
         table.add_column("AGE", width=_AGE_COLS)
-        table.add_column("PRICE", width=_PRICE_COLS)
+        table.add_column("MCAP", width=_MCAP_COLS)
         table.add_column("24H%", width=_PCT_COLS)
         # ``SW 24H``/``SW ALL``, not ``SWAPS 24H``/``SWAPS ALL``: these two
         # columns are 6 wide, and ``DataTable`` truncates a header to its

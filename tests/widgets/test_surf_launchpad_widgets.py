@@ -25,14 +25,15 @@ _ROWS = [_ROW]
 
 #: Render size for every mount in this module.  **Not** Textual's default
 #: 80x24, and that is the whole point: ``SurfLaunchpadCoins``' nine fixed
-#: columns need ``launchpad._TABLE_FULL_WIDTH`` (93) before the last of them
-#: reaches a pixel, so at 80 the ``SW ALL`` header and every ``swaps_all``
-#: value are clipped by the compositor and *no* assertion in this file could
-#: see them. That is not hypothetical: this module rendered at 80 until
-#: 2026-08-24, so Task 11's whole ``SW ALL`` column could have been deleted
-#: with these tests green. 100 clears 93 with room to spare and keeps the
-#: panel's own ``‹ widen`` marker unlit, which is the state the column
-#: assertions want to measure.
+#: columns need ``launchpad._TABLE_FULL_WIDTH`` (89, re-swept 2026-08-25 when
+#: MCAP replaced PRICE -- was 93) before the last of them reaches a pixel, so
+#: at 80 the ``SW ALL`` header and every ``swaps_all`` value are clipped by
+#: the compositor and *no* assertion in this file could see them. That is
+#: not hypothetical: this module rendered at 80 until 2026-08-24, so Task
+#: 11's whole ``SW ALL`` column could have been deleted with these tests
+#: green. 100 clears 89 with room to spare and keeps the panel's own
+#: ``‹ widen`` marker unlit, which is the state the column assertions want
+#: to measure.
 _RENDER_SIZE = (100, 24)
 
 
@@ -146,16 +147,13 @@ async def test_burn_pipeline_unknown_is_not_ready() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_table_still_needs_exactly_seventy_nine_columns():
-    """The new column is paid for by shortening CREATOR, not by widening the
-    panel. Raising a width constant is reserved for when no honest short
-    form exists, and a truncated address is an honest short form.
-    """
-    from maxpane_dashboard.widgets.surf import launchpad as lp
-
-    assert (lp._TICKER_COLS + lp._NAME_COLS + lp._ADDR_COLS + lp._AGE_COLS
-            + lp._PRICE_COLS + lp._PCT_COLS + lp._SWAPS_COLS
-            + lp._SWAPS_ALL_COLS + lp._BURNED_COLS) == 79
+# Task 11's own version of this test asserted the column sum with
+# ``_PRICE_COLS`` in it (79). Task 7 replaced that column with ``_MCAP_COLS``
+# (six columns narrower), which retired the constant this test named -- see
+# ``test_the_table_still_needs_exactly_seventy_five_columns`` near the bottom
+# of this file for the superseding version, kept beside the MCAP tests it
+# now travels with rather than left here referencing a constant that no
+# longer exists.
 
 
 @pytest.mark.asyncio
@@ -499,3 +497,197 @@ async def test_the_widen_marker_survives_the_whole_wrap_prone_width_band() -> No
             assert rows[i + 1].strip() == "", (kwargs, width, rows[i + 1])
             if width < _TABLE_FULL_WIDTH:
                 assert COINS_WIDEN_HINT in rows[i], (kwargs, width, rows[i])
+
+
+# ---------------------------------------------------------------------------
+# Task 4 -- ten rows
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_table_draws_at_most_ten_coins() -> None:
+    """The manager already re-caps ``launchpad_coins`` upstream
+    (``LAUNCHPAD_RENDER_LIMIT``, ``data/surf_client.py``), but this widget
+    re-caps defensively (``MAX_COIN_ROWS``) rather than trusting the payload
+    never to grow past it -- 25 rows in, at most 10 rows out.
+
+    Correction from the brief: its version queried
+    ``widget.query_one(...)`` *after* ``_render_coins`` had returned, but
+    ``run_test()``'s ``Pilot`` unmounts the whole widget tree on exit (the
+    same trap ``test_the_gap_widget_replaced_the_note_widget`` above
+    documents and corrects for), so any selector against the returned
+    ``widget`` at that point finds nothing -- the query has to run while the
+    app is still mounted, inside its own ``async with``.
+    """
+    from textual.widgets import DataTable
+
+    class _A(App):
+        def compose(self):
+            yield SurfLaunchpadCoins()
+
+    rows = [dict(_ROW, ticker=f"C{i}", swaps_24h=100 - i) for i in range(25)]
+    async with _A().run_test(size=_RENDER_SIZE) as pilot:
+        widget = pilot.app.query_one(SurfLaunchpadCoins)
+        widget.update_data(coins=rows, coin_count=146)
+        await pilot.pause()
+        assert widget.query_one("#surf-lpc-table", DataTable).row_count == 10
+
+
+# ---------------------------------------------------------------------------
+# Task 7 -- MCAP replaces PRICE in the coin table
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("usd, expected", [
+    (23446.43, "$23.4K"),
+    (999.0, "$999"),
+    (1_250_000.0, "$1.3M"),
+    (0.0, "$0"),          # a real, measured zero -- distinct from the dash
+    (None, "--"),         # unread: price round failed, or eth_usd is None
+])
+def test_mcap_cell_formats(usd, expected) -> None:
+    from maxpane_dashboard.widgets.surf.launchpad import _MCAP_COLS, _mcap_cell
+    from rich.cells import cell_len
+    rendered = _mcap_cell(usd)
+    assert rendered == expected
+    # A sized cell is not a fitted one: `len()` counts characters where the
+    # terminal counts cells.
+    assert cell_len(rendered) <= _MCAP_COLS
+
+
+@pytest.mark.asyncio
+async def test_the_table_shows_mcap_and_not_price() -> None:
+    """Correction from the brief: its version queries
+    ``widget.query_one(...)`` *after* ``_render_coins`` has returned, the
+    same post-unmount trap ``test_the_gap_widget_replaced_the_note_widget``
+    and ``test_the_table_draws_at_most_ten_coins`` above already correct for
+    -- the query has to run while the app is still mounted.
+    """
+    from textual.widgets import DataTable
+
+    class _A(App):
+        def compose(self):
+            yield SurfLaunchpadCoins()
+
+    row = dict(_ROW, mcap_usd=23446.43, mcap_eth=5.8616, price_eth=5.86e-09)
+    async with _A().run_test(size=_RENDER_SIZE) as pilot:
+        widget = pilot.app.query_one(SurfLaunchpadCoins)
+        widget.update_data(coins=[row], coin_count=146)
+        await pilot.pause()
+        headers = [str(c.label) for c in
+                   widget.query_one("#surf-lpc-table", DataTable).columns.values()]
+        strips = pilot.app.screen._compositor.render_strips()
+        text = "\n".join("".join(seg.text for seg in strip) for strip in strips)
+
+    assert "MCAP" in headers
+    assert "PRICE" not in headers
+    assert "$23.4K" in text
+
+
+@pytest.mark.asyncio
+async def test_an_unpriced_coin_renders_a_dash_not_a_zero_mcap() -> None:
+    row = dict(_ROW, mcap_usd=None, mcap_eth=None, price_eth=None)
+    _widget, text = await _render_coins([row], coin_count=146)
+    assert "$0" not in text
+
+
+def test_mcap_cell_never_exceeds_its_own_column_budget() -> None:
+    """``_mcap_cell``'s own docstring claims six columns is the genuine
+    worst case, not merely the widest of the five hand-picked values in
+    ``test_mcap_cell_formats`` -- this is the sweep that actually proves it,
+    the same "measure, don't assume" standard ``_TABLE_FULL_WIDTH`` is held
+    to elsewhere in this module.
+
+    Caught two real defects in the brief's own naive one-decimal-always
+    formatter while writing this: ``f"{v:.1f}"`` rounds half-to-*even*, so
+    ``1_250_000.0`` (an exact tie at one decimal) came out ``"$1.2M"``, not
+    the brief's own worked example ``"$1.3M"``; and the one-decimal form
+    genuinely overruns six columns right at a tier boundary --
+    ``999_949.0`` renders ``"$999.9K"``, seven columns, with no truncation
+    marker of any kind (a ``DataTable`` cell has none), which is exactly the
+    silent-clipping failure this repo forbids. Both are fixed in
+    :func:`_round_half_up` and the digit-collapse in :func:`_mcap_cell`
+    itself, not worked around here.
+
+    Swept over a dense pseudo-random sample plus every exact tier boundary
+    (using fractions most prone to a half-up/half-even disagreement or a
+    round-trips-past-the-next-power-of-ten surprise), up to just under $1
+    trillion -- several orders of magnitude past any real token's market
+    cap, let alone a single internal launchpad coin's.
+    """
+    import random
+
+    from rich.cells import cell_len
+
+    from maxpane_dashboard.widgets.surf.launchpad import _MCAP_COLS, _mcap_cell
+
+    rng = random.Random(0)
+    values = [rng.uniform(0, 999_999_999_999) for _ in range(20_000)]
+    for exp in range(0, 12):
+        base = 10 ** exp
+        for frac in (0.49999, 0.5, 0.50001, 0.94999, 0.95, 0.95001, 0.99999):
+            values.append(base * (1 + frac) if base >= 1_000 else base + frac * base)
+
+    for v in values:
+        rendered = _mcap_cell(v)
+        assert cell_len(rendered) <= _MCAP_COLS, (v, rendered)
+
+
+def test_the_table_still_needs_exactly_seventy_five_columns():
+    """MCAP replaces PRICE; the column-width sum is paid down 79 -> 75 by
+    the four columns MCAP does not need (``_MCAP_COLS`` is 6, ``_PRICE_COLS``
+    was 10) -- nothing else moved.  Supersedes
+    ``test_the_table_still_needs_exactly_seventy_nine_columns`` (Task 11),
+    which asserted the pre-MCAP sum and would now be asserting a stale
+    number.
+    """
+    from maxpane_dashboard.widgets.surf import launchpad as lp
+
+    assert (lp._TICKER_COLS + lp._NAME_COLS + lp._ADDR_COLS + lp._AGE_COLS
+            + lp._MCAP_COLS + lp._PCT_COLS + lp._SWAPS_COLS
+            + lp._SWAPS_ALL_COLS + lp._BURNED_COLS) == 75
+
+
+# ---------------------------------------------------------------------------
+# Carried-forward review finding -- the degraded-title tier inversion has no
+# mirror test at a narrow width. ``_set_title``'s tier 2 normally sheds the
+# note first (title > marker > note), but when ``coins is None`` the note
+# *is* the ``⚠ launchpad unavailable`` warning and outranks the marker
+# instead -- a flip of that priority in either direction would go undetected
+# by the existing sweep, which only ever exercises well-formed payloads.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_unavailable_warning_outranks_the_widen_marker_when_both_dont_fit() -> None:
+    """Mirror of ``test_the_widen_marker_survives_the_whole_wrap_prone_width_
+    band`` for the degraded case: at a narrow width, with ``coins=None``, the
+    ``COINS_UNAVAILABLE`` warning must survive and the ``‹ widen`` marker
+    must be what gets shed -- the opposite tier-2 choice from every other
+    payload this module renders, and the one the existing sweep (well-formed
+    payloads only) cannot see flip.
+
+    44-52 is comfortably inside the band the reviewer measured for this
+    title's overflow (round 2's own 45-52/58-62 bands, for the plain/
+    disagreement notes respectively) -- narrow enough that title + warning +
+    marker cannot all fit, so tier 2 is what actually renders.
+    """
+    from maxpane_dashboard.widgets.surf.launchpad import (
+        COINS_UNAVAILABLE, COINS_WIDEN_HINT,
+    )
+
+    for width in range(44, 53):
+        class _A(App):
+            def compose(self):
+                yield SurfLaunchpadCoins()
+
+        async with _A().run_test(size=(width, 24)) as pilot:
+            widget = pilot.app.query_one(SurfLaunchpadCoins)
+            widget.update_data(coins=None, coin_count=None, as_of_hhmm="01:14")
+            await pilot.pause()
+            strips = pilot.app.screen._compositor.render_strips()
+            rows = ["".join(seg.text for seg in strip) for strip in strips]
+
+        i = next(n for n, row in enumerate(rows) if "LAUNCHPAD COINS" in row)
+        assert COINS_UNAVAILABLE in rows[i], (width, rows[i])
+        assert COINS_WIDEN_HINT not in rows[i], (width, rows[i])
