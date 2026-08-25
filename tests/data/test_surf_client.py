@@ -5181,7 +5181,7 @@ async def test_the_zero_value_legs_in_the_same_trace_do_not_price_the_burn() -> 
 # ---------------------------------------------------------------------------
 # Task 10 -- the activity feed and the burnkeeper ranking
 #
-# No new fixture: `_launchpad_activity_rows` is a pure fold over rows the sweep has
+# No new fixture: `_launchpad_feed_from_logs` is a pure fold over rows the sweep has
 # ALREADY decoded, so its inputs are dicts, not an external payload. The
 # committed `launchpad_logs.json` carries the real `CurveSwap` rows for the
 # end-to-end path.
@@ -5189,8 +5189,8 @@ async def test_the_zero_value_legs_in_the_same_trace_do_not_price_the_burn() -> 
 
 
 def test_activity_merges_swaps_and_launches_newest_first() -> None:
-    from maxpane_dashboard.data.surf_client import _launchpad_activity_rows
-    rows = _launchpad_activity_rows(
+    from maxpane_dashboard.data.surf_client import _launchpad_feed_from_logs
+    rows = _launchpad_feed_from_logs(
         swaps=[{"pool_id": "0xa", "trader": "0xT", "is_buy": True,
                 "eth_amount_wei": 12 * 10**15, "block": 100}],
         merged={"0xa": {"ticker": "ICE", "creator": "0xC", "block": 90}},
@@ -5206,8 +5206,8 @@ def test_activity_merges_swaps_and_launches_newest_first() -> None:
 def test_a_launch_row_has_no_eth_and_not_a_zero() -> None:
     """A launch has no swap size. 0.0 would read -- and sort -- as a free
     trade."""
-    from maxpane_dashboard.data.surf_client import _launchpad_activity_rows
-    rows = _launchpad_activity_rows(
+    from maxpane_dashboard.data.surf_client import _launchpad_feed_from_logs
+    rows = _launchpad_feed_from_logs(
         swaps=[], merged={"0xa": {"ticker": "ICE", "creator": "0xC", "block": 90}},
         head=110, now_ts=1000.0,
     )
@@ -5216,8 +5216,8 @@ def test_a_launch_row_has_no_eth_and_not_a_zero() -> None:
 
 
 def test_a_sell_is_a_sell() -> None:
-    from maxpane_dashboard.data.surf_client import _launchpad_activity_rows
-    rows = _launchpad_activity_rows(
+    from maxpane_dashboard.data.surf_client import _launchpad_feed_from_logs
+    rows = _launchpad_feed_from_logs(
         swaps=[{"pool_id": "0xa", "trader": "0xT", "is_buy": False,
                 "eth_amount_wei": 3 * 10**15, "block": 100}],
         merged={"0xa": {"ticker": "ICE", "creator": "0xC", "block": 90}},
@@ -5229,8 +5229,8 @@ def test_a_sell_is_a_sell() -> None:
 def test_a_swap_on_an_unknown_pool_is_dropped() -> None:
     """Only the launchpad's own coins belong on the launchpad's feed, and a
     row with no ticker has nothing to say."""
-    from maxpane_dashboard.data.surf_client import _launchpad_activity_rows
-    assert _launchpad_activity_rows(
+    from maxpane_dashboard.data.surf_client import _launchpad_feed_from_logs
+    assert _launchpad_feed_from_logs(
         swaps=[{"pool_id": "0xZ", "trader": "0xT", "is_buy": True,
                 "eth_amount_wei": 1, "block": 100}],
         merged={}, head=110, now_ts=1000.0,
@@ -5238,10 +5238,10 @@ def test_a_swap_on_an_unknown_pool_is_dropped() -> None:
 
 
 def test_activity_is_capped() -> None:
-    from maxpane_dashboard.data.surf_client import _MAX_ACTIVITY_ROWS, _launchpad_activity_rows
+    from maxpane_dashboard.data.surf_client import _MAX_ACTIVITY_ROWS, _launchpad_feed_from_logs
     swaps = [{"pool_id": "0xa", "trader": "0xT", "is_buy": True,
               "eth_amount_wei": 1, "block": 100 + i} for i in range(200)]
-    rows = _launchpad_activity_rows(
+    rows = _launchpad_feed_from_logs(
         swaps=swaps,
         merged={"0xa": {"ticker": "ICE", "creator": "0xC", "block": 90}},
         head=400, now_ts=1000.0,
@@ -5254,9 +5254,9 @@ def test_an_activity_row_ages_off_the_head_not_the_clock() -> None:
     blocks-behind-head at the module's own block time -- the same derivation
     `launches` already uses for `ts`."""
     from maxpane_dashboard.data.surf_client import (
-        _LAUNCHPAD_BLOCK_SECONDS, _launchpad_activity_rows,
+        _LAUNCHPAD_BLOCK_SECONDS, _launchpad_feed_from_logs,
     )
-    rows = _launchpad_activity_rows(
+    rows = _launchpad_feed_from_logs(
         swaps=[], merged={"0xa": {"ticker": "ICE", "creator": "0xC", "block": 90}},
         head=110, now_ts=1000.0,
     )
@@ -5440,7 +5440,7 @@ async def test_a_failed_sweep_leaves_the_feed_and_the_leaderboard_unknown() -> N
 
 @pytest.mark.asyncio
 async def test_the_activity_feed_reaches_the_state_off_the_real_swap_capture() -> None:
-    """`_launchpad_activity_rows` is pure, so this is the half its unit tests cannot
+    """`_launchpad_feed_from_logs` is pure, so this is the half its unit tests cannot
     cover: that the day slice really carries `eth_amount_wei` and `block`
     through to it, and that the rows become `LaunchpadEvent`s on the state.
     """
@@ -5507,7 +5507,7 @@ def test_the_activity_sort_is_total_so_one_block_cannot_reshuffle() -> None:
     a feed that reshuffles on its own reads as activity that did not happen.
     Same fix, and same reason, as `_rank_burnkeepers`' `(-imd, -burns, wallet)`.
     """
-    from maxpane_dashboard.data.surf_client import _launchpad_activity_rows
+    from maxpane_dashboard.data.surf_client import _launchpad_feed_from_logs
     swaps = [
         {"pool_id": "0xa", "trader": "0xT2", "is_buy": True,
          "eth_amount_wei": 1, "block": 100},
@@ -5522,9 +5522,9 @@ def test_the_activity_sort_is_total_so_one_block_cannot_reshuffle() -> None:
     def order(rows):
         return [(r["kind"], r["ticker"], r["wallet"]) for r in rows]
 
-    first = order(_launchpad_activity_rows(swaps, merged, 110, 1000.0))
+    first = order(_launchpad_feed_from_logs(swaps, merged, 110, 1000.0))
     shuffled = order(
-        _launchpad_activity_rows(list(reversed(swaps)), merged, 110, 1000.0)
+        _launchpad_feed_from_logs(list(reversed(swaps)), merged, 110, 1000.0)
     )
     assert first == shuffled
     # All three really are on one block, or this proves nothing about ties.

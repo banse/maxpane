@@ -574,17 +574,22 @@ def _merge_burns(
 _MAX_ACTIVITY_ROWS = 40
 
 
-def _launchpad_activity_rows(
+def _launchpad_feed_from_logs(
     swaps: list[dict], merged: dict[str, dict], head: int, now_ts: float,
 ) -> list[dict]:
     """Recent launchpad events, newest first.
 
-    Named ``_launchpad_activity_rows`` and **not** ``_activity_rows``, for
-    the reason ``_merge_burns`` states one function up: ``surf_manager`` has
-    its own ``_activity_rows`` in a different layer, with a different
-    signature and a different job (models -> payload dicts). The rule was
-    applied to one of these two names and not its sibling; one name over two
-    behaviours is how a reader ends up debugging the wrong function.
+    Named for what it does -- build the feed out of log rows -- because
+    ``surf_manager`` owns **both** of the obvious names already:
+    ``SurfManager._activity_rows`` (the dev-activity feed, a different feed
+    entirely) and ``SurfManager._launchpad_activity_rows``, which is the very
+    next stage of *this* pipeline: it takes the ``LaunchpadEvent`` models
+    built from these rows and converts them to payload dicts. Two adjacent
+    stages of one pipeline sharing a name is the worst version of the hazard
+    ``_merge_burns`` states one function up -- a reader chasing a wrong row
+    lands in the converter instead of the producer, and both look right. This
+    function produces; the manager's converts; they deliberately do not share
+    a name.
 
     Costs **no extra request**: every field comes from rows
     ``_launchpad_logs`` already decodes for the day window and used to
@@ -2035,7 +2040,7 @@ class SurfClient(OwnedHttpClient):
                     "pool_id": pool_id,
                     "trader": parsed["trader"],
                     "is_buy": parsed["is_buy"],
-                    # Kept for `_launchpad_activity_rows`; the ranking ignores both.
+                    # Kept for `_launchpad_feed_from_logs`; the ranking ignores both.
                     "eth_amount_wei": parsed["eth_amount_wei"],
                     "block": block,
                 })
@@ -2155,7 +2160,7 @@ class SurfClient(OwnedHttpClient):
             "burns": burns,
         }
 
-        activity = _launchpad_activity_rows(day_swaps, merged, head, now_ts)
+        activity = _launchpad_feed_from_logs(day_swaps, merged, head, now_ts)
 
         return _LaunchpadSweep(
             launches=launches,
