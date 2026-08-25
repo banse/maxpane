@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from textual.app import App
 
@@ -85,16 +87,38 @@ async def test_a_hostile_ticker_never_reaches_markup() -> None:
     """`launch(string,string)` is permissionless: anyone can name a coin
     `[/x]` for the price of gas.
 
-    Rendered alongside a well-formed row rather than alone: a naive version
-    of this test only proved the hostile string never survives *markup* --
-    it would pass identically if the panel had crashed and rendered nothing
-    at all. Asserting the well-formed row still appears is what proves the
-    panel actually survived the hostile input rather than dying quietly.
+    Rendered alongside a well-formed row rather than alone -- but "the
+    neighbour still renders" is not, on its own, enough either:
+    `_row_markup`'s own `except Exception: return None` drops exactly the
+    hostile row and leaves the well-formed neighbour untouched, which
+    renders identical text to correct sanitisation. A regression that
+    quietly *ate* the hostile row would still pass a check that only looks
+    at the neighbour, which is exactly the hole a naive version of this
+    fix left open.
+
+    Two things prove the hostile row itself was rendered and cleaned,
+    rather than silently dropped:
+
+    1. **Row count.** Two input rows must produce two rendered data rows.
+       Counted via the ETH amount cell's own shape (four decimal digits
+       followed by ``" ETH"``) -- one per row, since both rows here are a
+       buy/sell with a swap size, not a launch.
+    2. **The hostile row's own surviving content.** Its `eth` is given a
+       value that cannot be confused with `_ROWS[1]`'s, so its presence
+       proves *that* row specifically survived, not merely that *some* row
+       with different numbers did.
     """
-    hostile = dict(_ROWS[0], ticker="[/x]", wallet="0xdead", wallet_known=False)
+    hostile = dict(
+        _ROWS[0], ticker="[/x]", wallet="0xdead", wallet_known=False,
+        eth=0.0777, age_s=999.0,
+    )
     widget, text = await _render([hostile, _ROWS[1]])
-    assert "[/x]" not in text            # the markup never survives...
-    assert "K-256" in text               # ...and the row beside it still renders
+
+    assert "[/x]" not in text                            # the markup never survives...
+    assert len(re.findall(r"\d\.\d{4} ETH", text)) == 2  # ...both rows rendered...
+    assert "0.0777" in text              # the hostile row's own eth
+    assert "0.0031" in text              # 0x84CB's own eth, unaffected
+    assert "K-256" in text                # ...and the row beside it still renders
 
 
 @pytest.mark.asyncio
@@ -154,30 +178,36 @@ def test_the_kind_cell_fits_the_whole_display_vocabulary() -> None:
 
     Calls the producer rather than comparing one literal against another:
     a `set(KIND_WORDS) == {"buy", "sell", "launch"}` check next to a
-    `_launchpad_activity_rows` import that is never called cannot detect
-    drift in either direction -- it would stay green if the producer grew a
-    fourth kind, or renamed one, as long as nobody also remembered to edit
-    this file's own literal. Feeding the producer inputs shaped to yield one
-    of each kind and reading its own output back is what keeps the literal
-    honest.
+    producer import that is never called cannot detect drift in either
+    direction -- it would stay green if the producer grew a fourth kind, or
+    renamed one, as long as nobody also remembered to edit this file's own
+    literal. Feeding the producer inputs shaped to yield one of each kind
+    and reading its own output back is what keeps the literal honest.
 
-    ``_launchpad_activity_rows``, not ``_activity_rows``: the producer was
-    renamed after this test was first written, because ``surf_manager`` has
-    its own, differently-shaped ``_activity_rows`` in a different layer --
-    see that function's own docstring in ``data/surf_client.py``. Importing
-    the current name is what keeps this test calling the real producer
-    rather than silently failing to import at all.
+    ``_launchpad_feed_from_logs``, not ``_activity_rows`` and not
+    ``_launchpad_activity_rows`` either: the producer has been renamed
+    twice since this test was first written, both times to avoid a name
+    ``surf_manager`` already owns for a *different* stage of the same
+    pipeline (``surf_manager._activity_rows`` is the unrelated dev-activity
+    feed, and ``surf_manager._launchpad_activity_rows`` is the very next
+    stage -- the converter from ``LaunchpadEvent`` models to payload dicts,
+    not this function's own log-row producer). See this function's own
+    docstring in ``data/surf_client.py``. Importing the current name is
+    what keeps this test calling the real producer rather than silently
+    failing to import at all -- and a third rename would break it the same
+    way, which is why it is called out explicitly here rather than assumed
+    stable.
     """
     from rich.cells import cell_len
 
     from maxpane_dashboard.data.surf_client import (
-        _launchpad_activity_rows,  # test-only import
+        _launchpad_feed_from_logs,  # test-only import
     )
     from maxpane_dashboard.widgets.surf.launchpad_activity import (
         KIND_WORDS, _KIND_COLS,
     )
 
-    rows = _launchpad_activity_rows(
+    rows = _launchpad_feed_from_logs(
         swaps=[
             {"pool_id": "0xa", "trader": "0xT1", "is_buy": True,
              "eth_amount_wei": 12 * 10**15, "block": 100},

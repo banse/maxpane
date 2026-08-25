@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from rich.cells import cell_len
 from textual.app import App
@@ -87,16 +89,35 @@ async def test_a_narrow_panel_marks_before_it_clips() -> None:
 
 @pytest.mark.asyncio
 async def test_a_hostile_wallet_string_never_reaches_markup() -> None:
-    """`"[/x]" not in text` alone cannot fail for the right reason:
-    `_render_view` falls back to the identical `EMPTY_LINE` whenever every
-    row is dropped by `_row_text`'s own `except Exception: return None`, so
-    a regression where the hostile row silently crashes and gets eaten
-    renders the exact same passing text as correct sanitisation would.
-    Rendering the hostile row alongside a well-formed one and asserting the
-    well-formed one's own values still appear is what actually proves the
-    panel survived the hostile input rather than quietly dropping it."""
-    hostile = dict(_ROWS[0], wallet="[/x]", wallet_known=False)
+    """`"[/x]" not in text` alone cannot fail for the right reason, and
+    neither can "the neighbour still renders" alone: `_row_markup`'s own
+    `except Exception: return None` drops exactly the hostile row and
+    leaves the well-formed neighbour untouched, which renders identical
+    text to correct sanitisation -- a regression that quietly *ate* the
+    hostile row would still pass a check that only looks at the neighbour.
+
+    Two things prove the hostile row itself was rendered and cleaned,
+    rather than silently dropped:
+
+    1. **Row count.** Two input rows must produce two rendered data rows.
+       Counted here via the ETH cell's own shape (``0.`` + exactly six
+       digits) -- one per row at this magnitude -- rather than by physical
+       line, because a single logical row can compose from more than one
+       styled `Segment` in the compositor's own strips.
+    2. **The hostile row's own surviving content.** Its `imd_burned` /
+       `eth_paid` are given values that cannot be confused with
+       `_ROWS[1]`'s, so their presence proves *that* row specifically
+       survived, not merely that *some* row with different numbers did.
+    """
+    hostile = dict(
+        _ROWS[0], wallet="[/x]", wallet_known=False,
+        imd_burned=777.111222, eth_paid=8.8e-05, burns=3,
+    )
     _widget, text = await _render([hostile, _ROWS[1]])
-    assert "[/x]" not in text
+
+    assert "[/x]" not in text                       # the markup never survives...
+    assert len(re.findall(r"0\.\d{6}", text)) == 2  # ...both rows rendered...
+    assert "777.11" in text         # the hostile row's own imd_burned
+    assert "0.000088" in text       # the hostile row's own eth_paid
     assert "31.24" in text          # 0x84CB's own imd_burned, unaffected
     assert "0.000027" in text       # 0x84CB's own eth_paid, unaffected
