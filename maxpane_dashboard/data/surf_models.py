@@ -538,7 +538,12 @@ SURF_KEYS: tuple[str, ...] = (
     "burn_accrued",           # float | None — IMD accrued for burn, whole tokens
     "burn_staged",            # float | None — IMD balance sitting at BURN_EXECUTOR_V2
     "burn_ready",             # bool | None — None unless both accrued & min_bridge read
-    "burn_min_bridge",        # float | None — BurnExecutor.minBridgeAmount(), whole IMD
+    "burn_min_bridge",
+    # What ``previewBridge()`` says a burn would send right now: the
+    # quantity behind ``burn_ready``, and the one the BURN box headlines.
+    # ``burn_accrued`` is a different contract's balance and moves the
+    # opposite way -- a sweep empties the hook and fills the executor.
+    "burn_bridgeable",        # float | None — BurnExecutor.minBridgeAmount(), whole IMD
     # ---- market -------------------------------------------------------------
     "imd_price_usd",           # float | None — on-chain (extsload) when available,
                                 # else DexScreener/Gecko; see surf_manager._cycle
@@ -612,6 +617,10 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "counterparty_known",
         "value_eth",
         "tx_hash",
+        # IMD sent by a bridge-and-burn, from the tx's own logs. ``None`` on
+        # every other kind, and on a burn whose receipt we could not read --
+        # the row's ETH value is the LayerZero fee, never the burn.
+        "imd_burned",
     ),
     "launchpad_coins": (
         "ticker",

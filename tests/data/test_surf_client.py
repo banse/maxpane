@@ -2833,6 +2833,13 @@ def _public_fetchers() -> list[str]:
         and name not in (
             "fetch_tx_senders", "fetch_pool_v4",
             "fetch_launchpad", "fetch_decoy_pool_count",
+            # The fifth, and it is `fetch_tx_senders`' twin: it takes a
+            # required iterable of hashes, so the zero-args call these two
+            # sweeps make would `TypeError` before reaching the transport, and
+            # its outage encoding is the same "a hash it could not read is
+            # ABSENT" -- an empty mapping, never a hash mapped to zero. Pinned
+            # by `test_fetch_burn_amounts_total_outage_reports_nothing`.
+            "fetch_burn_amounts",
         )
     )
 
@@ -4567,3 +4574,120 @@ async def test_a_reverted_burn_executor_call_is_not_a_burn():
     # Every other row on these two pages succeeded, so nothing else moved.
     assert all(r.success is True for r in rows if r is not reverted[0])
     assert not [r for r in rows if r.kind == "failed" and r is not reverted[0]]
+
+
+@pytest.mark.asyncio
+async def test_fetch_burn_amounts_total_outage_reports_nothing():
+    """An unread receipt is an ABSENT key, never a zero burn.
+
+    The distinction is the whole reason this returns a mapping rather than a
+    list: a hash whose receipt did not come back must not be recorded as "this
+    tx burned nothing", because the row would then render ``0.00 IMD`` -- the
+    same false zero the ETH fee was rendering before it.
+
+    And it must stay retryable. The memo caches misses so a burn-kind row with
+    genuinely no amount is not re-requested every refresh, but an outage is
+    not a miss: the second call reaches the transport again.
+    """
+    tx = "0x" + "ab" * 32
+    async with _offline_client() as client:
+        first = await client.fetch_burn_amounts([tx])
+        assert first == {}
+        assert tx not in client._burn_amounts, "an outage was cached as a miss"
+        assert await client.fetch_burn_amounts([tx]) == {}
+
+
+@pytest.mark.asyncio
+async def test_fetch_burn_amounts_reads_the_event_and_asks_once():
+    """The amount comes off the tx's own logs, and only the first time.
+
+    ``0xcfb8f6e2…`` is the captured V1 burn: 15,745 IMD, against an ETH value
+    of 3.05e-5 that the activity row was rendering instead.
+    """
+    tx = "0xcfb8f6e2c733742615519cfc5596a6524daabb1efe0e628ee10da5b00f24964c"
+    posts: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        posts.append(body)
+        calls = body if isinstance(body, list) else [body]
+        return httpx.Response(200, json=[
+            {
+                "jsonrpc": "2.0", "id": call["id"],
+                "result": {"logs": [{
+                    "address": A.BURN_EXECUTOR_V1.lower(),
+                    "topics": [A.TOPIC_TOKENS_BRIDGED_FOR_BURN,
+                               "0x" + "0" * 64, "0x" + "0" * 64, "0x" + "0" * 64],
+                    "data": "0x" + f"{15_745 * 10**18:064x}" + "0" * 128,
+                }]},
+            }
+            for call in calls
+        ])
+
+    async with _client_on(RecordingTransport(handler)) as client:
+        assert await client.fetch_burn_amounts([tx]) == {tx: 15_745 * 10**18}
+        # Memoised: a mined amount never changes, so no second round trip.
+        assert await client.fetch_burn_amounts([tx]) == {tx: 15_745 * 10**18}
+
+    assert len(posts) == 1, "the amount was re-requested"
+
+
+@pytest.mark.asyncio
+async def test_fetch_burn_amounts_ignores_an_impostor_emitter():
+    """A topic is not an authorisation.
+
+    Any contract may emit any event signature, so the emitter is checked
+    against the two executors. Without that, a token that logged the same
+    signature would put an arbitrary number in the burn column.
+    """
+    tx = "0x" + "cd" * 32
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls = body if isinstance(body, list) else [body]
+        return httpx.Response(200, json=[
+            {
+                "jsonrpc": "2.0", "id": call["id"],
+                "result": {"logs": [{
+                    "address": "0x" + "ee" * 20,          # not an executor
+                    "topics": [A.TOPIC_TOKENS_BRIDGED_FOR_BURN],
+                    "data": "0x" + f"{99_999 * 10**18:064x}",
+                }]},
+            }
+            for call in calls
+        ])
+
+    async with _client_on(RecordingTransport(handler)) as client:
+        assert await client.fetch_burn_amounts([tx]) == {}
+
+
+@pytest.mark.asyncio
+async def test_fetch_burn_amounts_reads_the_hooks_own_burn_too():
+    """Two burn events, and the hook's is the common one.
+
+    ``burnAccruedImd()`` on the hook emits ``ImdBurned(uint256)``;
+    ``bridgeToBaseBurnReceiver()`` on the executor emits
+    ``TokensBridgedForBurn``. Both classify ``burn`` on the activity feed, and
+    a live refresh on 2026-08-25 showed thirteen hook rows against four
+    executor rows -- so reading only the executor's event would have left most
+    of the column rendering its LayerZero fee.
+    """
+    tx = "0x" + "aa" * 32
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls = body if isinstance(body, list) else [body]
+        return httpx.Response(200, json=[
+            {
+                "jsonrpc": "2.0", "id": call["id"],
+                "result": {"logs": [{
+                    "address": A.LAUNCHPAD_HOOK.lower(),
+                    "topics": [A.TOPIC_IMD_BURNED],      # no indexed args
+                    "data": "0x" + f"{42 * 10**18:064x}",
+                }]},
+            }
+            for call in calls
+        ])
+
+    async with _client_on(RecordingTransport(handler)) as client:
+        assert await client.fetch_burn_amounts([tx]) == {tx: 42 * 10**18}

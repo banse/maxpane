@@ -2064,3 +2064,29 @@ async def test_market_worst_case_combined_width_matches_the_documented_ceiling()
         visible_len(line) for line in _market._lines_for("full", parts)
     )
     assert width <= 73, f"the disagreement marker widened the panel's full tier to {width}"
+
+
+async def test_hero_burn_shows_a_small_accrual_instead_of_a_false_zero():
+    """``acc 0`` beside ``READY`` is what a dead read looks like.
+
+    The hook accrues continuously and is emptied by each sweep, so the moment
+    the box goes READY is the moment its accrual is smallest -- and
+    ``fmt_compact`` renders everything below 1.0 with zero decimals, so a
+    live 0.049 IMD and an unread hook were the same three characters. The two
+    numbers here are the live pipeline on 2026-08-25, minutes after a sweep:
+    0.049 accruing in the hook, 1.251 staged in the executor and callable.
+    """
+    widget = SurfHero()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 12)) as pilot:
+        widget.update_data(
+            burn_accrued=0.049360159,
+            burn_staged=1.251215567,
+            burn_ready=True,
+            imd_burned_cum=3328.95,
+        )
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "READY" in screen
+        assert "0.05" in screen, "the accrual rendered as a false zero"
+        assert "1.25" in screen

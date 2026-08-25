@@ -1469,7 +1469,14 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     "launchpad_swap_count": "0 swaps",           # launchpad.py _flow_lines
     "launchpad_trader_count": "0 traders",       # launchpad.py _flow_lines
     "launchpad_creator_eth_owed": "owed 0.0000 ETH",  # launchpad.py _flow_lines / _fmt_eth_owed
-    "burn_min_bridge": "min bridge 0 IMD",       # launchpad.py _pipeline_lines (fmt_compact)
+    # `fmt_imd` since 2026-08-25, not `fmt_compact`: the house helper renders
+    # everything below 1.0 with zero decimals, which is most of this pipeline
+    # for the minutes after each sweep.
+    "burn_min_bridge": "min bridge 0.00 IMD",    # launchpad.py _pipeline_lines
+    # `previewBridge().amountToSend` -- what a burn would send right now. A
+    # real on-chain zero here is "nothing is bridgeable", which is exactly
+    # what the status word beside it then says.
+    "burn_bridgeable": "0.00 IMD",               # launchpad.py _pipeline_lines
     "launchpad_burned_total": "burned 0 IMD (all-time)",  # launchpad.py _pipeline_lines / _fmt_total
     # Fix round 10a / Task 13 (2026-08-23): `screens/surf.py` now routes
     # this through `SurfMarket.update_data()` (`market.py`'s `legacy_line`

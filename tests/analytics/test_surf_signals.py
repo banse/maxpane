@@ -602,6 +602,9 @@ def _readings(**overrides) -> dict:
         "decoy_newest_fee_bps": None,
         "burn_ready": False,
         "burn_accrued": 0.0,
+        # Nothing staged on a quiet refresh, and a real zero rather than an
+        # unread one: `previewBridge()` answered, and its answer was "nothing".
+        "burn_bridgeable": 0.0,
         "launchpad_swaps_by_coin": {},
         # Final fix wave (I1): the {pool_id: ticker} LABEL map. The
         # distribution above is keyed by pool id -- a ticker is an
@@ -1164,9 +1167,12 @@ def test_burn_ready_seeds_on_an_unset_baseline_and_does_not_fire():
     """The coordinator's own corrected table: an empty baseline is WATCH,
     not FIRED -- the false-first-sweep guard every other detector in this
     file already has for its own edge (GATE OPEN, NEW POST, ...)."""
-    ready, detail, _ = _sig("burnready", {}, {"burn_ready": True, "burn_accrued": 15.06})
+    ready, detail, _ = _sig(
+        "burnready", {},
+        {"burn_ready": True, "burn_accrued": 15.06, "burn_bridgeable": 3.0},
+    )
     assert ready == "watch"
-    assert detail == "ready to burn · 15.06 IMD accrued"
+    assert detail == "ready to burn · 3.00 IMD · 15.06 IMD accruing"
 
     unknown, _, _ = _sig("burnready", {}, {"burn_ready": None})
     assert unknown is None
@@ -1194,10 +1200,14 @@ def test_burn_ready_transition_fires_exactly_once():
     it -- exactly like every other edge detector in this file)."""
     base = _baseline(burn_ready=False)
     out1, advanced = sig.build_signals(
-        base, _readings(burn_ready=True, burn_accrued=15.06), NOW
+        base,
+        _readings(burn_ready=True, burn_accrued=15.06, burn_bridgeable=3.0),
+        NOW,
     )
     assert out1["sig_burnready_state"] == "fired"
-    assert out1["sig_burnready_detail"] == "ready to burn · 15.06 IMD accrued"
+    assert out1["sig_burnready_detail"] == (
+        "ready to burn · 3.00 IMD · 15.06 IMD accruing"
+    )
     assert out1["sig_burnready_age_s"] == 0.0
     assert advanced["burn_ready"] is True
     fired_ts = advanced["fired"]["burnready"]["ts"]
@@ -1850,10 +1860,12 @@ MATRIX: tuple[tuple[str, str, dict, dict, str], ...] = (
     # already reported) needs a baseline that already says True -- reachable
     # only with a baseline override, unlike its siblings' reading-only rows.
     ("burnready", "ok", {}, {}, "not ready"),
-    ("burnready", "watch", {"burn_ready": True}, {"burn_ready": True, "burn_accrued": 15.06},
-     "ready to burn · 15.06 IMD accrued"),
-    ("burnready", "fired", {"burn_ready": False}, {"burn_ready": True, "burn_accrued": 15.06},
-     "ready to burn · 15.06 IMD accrued"),
+    ("burnready", "watch", {"burn_ready": True},
+     {"burn_ready": True, "burn_accrued": 15.06, "burn_bridgeable": 3.0},
+     "ready to burn · 3.00 IMD · 15.06 IMD accruing"),
+    ("burnready", "fired", {"burn_ready": False},
+     {"burn_ready": True, "burn_accrued": 15.06, "burn_bridgeable": 3.0},
+     "ready to burn · 3.00 IMD · 15.06 IMD accruing"),
     ("burnready", None, {}, {"burn_ready": None}, "burn readiness unavailable"),
 
     # Final fix wave (C1): HOT COIN is an edge too, so FIRED needs a baseline
@@ -2350,3 +2362,31 @@ def test_a_reverted_channel_tx_is_never_read_as_the_thing_it_tried_to_be():
 def test_failed_is_in_the_kind_vocabulary_the_widgets_render():
     """A kind no widget has a badge for renders ``?``; this pins the pair."""
     assert "failed" in sig.CHANNEL_KINDS
+
+
+def test_burn_ready_names_the_amount_that_would_burn_not_the_one_accruing():
+    """``ready to burn · 0.05 IMD accrued`` was two facts glued together.
+
+    The accrual is the hook's, and the hook is not what the bridge spends --
+    so the row announced readiness and then quoted a number that had nothing
+    to do with it. Worse, the two move in opposite directions: a sweep empties
+    the hook and fills the executor, so the moment the row becomes READY is
+    the moment its quoted amount is smallest.
+
+    The accrual is still worth showing -- it is what is building toward the
+    next burn -- so it stays, behind the amount that answers the headline.
+    """
+    read = _readings(burn_ready=True, burn_accrued=0.049360159,
+                     burn_bridgeable=1.251215)
+    state, detail, _ = _sig("burnready", _baseline(burn_ready=False), read)
+    assert state == "fired"
+    assert "1.25 IMD" in detail, detail
+    assert detail.index("1.25") < detail.index("0.05"), detail
+
+
+def test_burn_ready_still_speaks_when_the_amount_is_unread():
+    """A quantity we could not read must not blank the row that watches it."""
+    read = _readings(burn_ready=True, burn_accrued=None, burn_bridgeable=None)
+    state, detail, _ = _sig("burnready", _baseline(burn_ready=False), read)
+    assert state == "fired"
+    assert "ready to burn" in detail

@@ -97,6 +97,7 @@ from maxpane_dashboard.widgets.surf._fmt import (
     as_float,
     fmt_age,
     fmt_compact,
+    fmt_imd,
 )
 
 __all__ = ["SurfBurnPipeline", "SurfCurveFlow", "SurfLaunchpadCoins"]
@@ -717,16 +718,29 @@ def _fmt_total(value: object) -> str:
 
 def _pipeline_lines(
     burn_accrued, burn_staged, burn_min_bridge, burn_ready, burned_total,
-    as_of_hhmm,
+    as_of_hhmm, burn_bridgeable=None,
 ) -> list[str]:
-    acc = fmt_compact(burn_accrued)
-    stg = fmt_compact(burn_staged)
-    min_b = fmt_compact(burn_min_bridge)
+    # `fmt_imd`, not `fmt_compact`: this pipeline sits below 1 IMD for the
+    # minutes after every sweep and the house helper renders all of that as
+    # `0`. See `_fmt.fmt_imd`.
+    acc = fmt_imd(burn_accrued)
+    stg = fmt_imd(burn_staged)
+    min_b = fmt_imd(burn_min_bridge)
     burned = _fmt_total(burned_total)
+
+    # The quantity behind the status word, on the same line as the word:
+    # `previewBridge()` already clamped it to the executor's balance, the
+    # OFT's limits and its dust, so it is what a call would move right now.
+    # `accrued` below is the *hook's* and moves the other way -- a sweep
+    # empties one and fills the other.
+    sendable = as_float(burn_bridgeable)
+    status = _ready_word(burn_ready)
+    if sendable is not None:
+        status = f"{status} · {fmt_imd(sendable)} IMD"
 
     lines = [
         f"[dim]{BURN_TITLE}[/]",
-        f"status: {_ready_word(burn_ready)}",
+        f"status: {status}",
         f"[dim]accrued {acc} IMD · staged {stg} IMD[/]",
         f"[dim]min bridge {min_b} IMD[/]",
         f"[dim]burned {burned} IMD (all-time)[/]",
@@ -768,6 +782,7 @@ class SurfBurnPipeline(Vertical):
         burn_staged=None,
         burn_ready=None,
         burn_min_bridge=None,
+        burn_bridgeable=None,
         burned_total=None,
         as_of_hhmm=None,
         **_kwargs,
@@ -784,7 +799,7 @@ class SurfBurnPipeline(Vertical):
         """
         lines = _pipeline_lines(
             burn_accrued, burn_staged, burn_min_bridge, burn_ready,
-            burned_total, as_of_hhmm,
+            burned_total, as_of_hhmm, burn_bridgeable,
         )
         try:
             self.query_one("#surf-burn-body", Static).update("\n".join(lines))

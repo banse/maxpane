@@ -30,6 +30,7 @@ __all__ = [
     "fmt_age",
     "fmt_price",
     "fmt_compact",
+    "fmt_imd",
     "fmt_liquidity",
     "long_addr",
     "hhmm",
@@ -38,6 +39,44 @@ __all__ = [
 
 DASH = "--"
 EMDASH = "—"
+
+
+def fmt_imd(value) -> str:
+    """An IMD quantity at any magnitude this pipeline produces.
+
+    ``sparkline_common.fmt_compact`` is the house compact formatter and is
+    delegated to above 1000, but it renders **everything below 1.0 with zero
+    decimal places**, so 0.049 IMD accrued and a genuinely empty hook both
+    come out as ``0``. That is the false zero this dashboard exists to avoid,
+    and it is not hypothetical: the BURN box read ``acc 0`` while the hook was
+    accruing, which is exactly what a dead read looks like.
+
+    Curator hit the identical trap on ``minDeposit`` and answered it the same
+    way -- ``widgets/curator/_fmt.fmt_eth_compact``, whose shape this follows
+    rather than reinvents. The shared helper is deliberately left alone: its
+    own suite pins the sub-1 behaviour, and six widget modules across two
+    dashboards read it.
+
+    ==================  ========
+    Input               Renders
+    ==================  ========
+    ``0``               ``0.00``
+    ``0.049``           ``0.05``
+    ``1.2512``          ``1.25``
+    ``29.979``          ``29.98``
+    ``12440.8``         ``12.4K``
+    ==================  ========
+
+    Widest form is ``999.99`` at six columns; ``12.4K`` is five. Both fit the
+    cells that call this, and the burn amounts on chain (31,064 IMD is the
+    largest) compact well inside them.
+    """
+    v = as_float(value)
+    if v is None:
+        return DASH
+    if abs(v) < 999.995:            # guards 999.999 -> "1,000.00", eight columns
+        return f"{v:,.2f}"
+    return fmt_compact(v)
 
 
 def as_float(value):

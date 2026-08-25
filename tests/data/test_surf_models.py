@@ -335,6 +335,7 @@ EXPECTED_KEYS = {
     "burn_staged",
     "burn_ready",
     "burn_min_bridge",
+    "burn_bridgeable",
     # launchpad (detached sweep)
     "launchpad_coin_count",
     "launchpad_launch_count",
@@ -363,7 +364,7 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 79
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 80
 
 
 def test_every_signal_has_all_three_facets() -> None:
@@ -415,6 +416,10 @@ def test_row_key_sets_match_the_prd() -> None:
         "counterparty_known",
         "value_eth",
         "tx_hash",
+        # The IMD a bridge-and-burn sent. The tx page carries only the
+        # LayerZero message fee, so this comes from the tx's own logs and
+        # is ``None`` on every other kind.
+        "imd_burned",
     )
     assert set(SURF_ROW_KEYS) <= set(
         __import__(

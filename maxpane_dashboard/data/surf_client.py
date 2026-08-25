@@ -827,6 +827,10 @@ class SurfClient(OwnedHttpClient):
         )
         self._owns_client = http_client is None
         self._inter_call_delay = inter_call_delay
+        #: ``tx_hash -> IMD sent``, or ``None`` for a burn-kind tx that
+        #: bridged nothing. Mined amounts never change, so this is a plain
+        #: process-lifetime memo with no TTL; see ``fetch_burn_amounts``.
+        self._burn_amounts: dict[str, int | None] = {}
         self._backoff_seconds = backoff_seconds
         self._now_fn = now_fn
         self._log_window_blocks = log_window_blocks
@@ -2055,6 +2059,86 @@ class SurfClient(OwnedHttpClient):
             created_contract=created,
             success=_receipt_success(row),
         )
+
+    def _burn_amount_of(self, receipt: Any) -> int | None:
+        """IMD sent by one bridge-and-burn tx, from its own receipt logs.
+
+        **Two events, because this pipeline burns in two places.** The hook
+        emits ``ImdBurned(uint256)`` when ``burnAccruedImd()`` sweeps its
+        accrual; the executor emits ``TokensBridgedForBurn(...)`` when
+        ``bridgeToBaseBurnReceiver()`` sends that IMD to Base. Both put the
+        amount in data word 0, and both classify ``burn`` on the activity
+        feed -- so reading only the executor's left the hook's rows, which
+        are the majority, still rendering their LayerZero fee.
+
+        ``None`` when the receipt carries neither: a row can be
+        ``kind == "burn"`` for a call to one of these addresses that burned
+        nothing (an owner-only setter, a sweep with nothing accrued), and
+        inventing an amount for it would be worse than an empty cell.
+
+        Each emitter is checked against the contract that owns its event
+        rather than trusted from the topic alone: a topic is not an
+        authorisation, and any contract may emit any signature it likes.
+        """
+        if not isinstance(receipt, dict):
+            return None
+        owners = {
+            A.TOPIC_TOKENS_BRIDGED_FOR_BURN: {
+                A.BURN_EXECUTOR_V1.lower(), A.BURN_EXECUTOR_V2.lower(),
+            },
+            A.TOPIC_IMD_BURNED: {A.LAUNCHPAD_HOOK.lower()},
+        }
+        for log in receipt.get("logs") or ():
+            if not isinstance(log, dict):
+                continue
+            topics = list(log.get("topics") or ())
+            emitters = owners.get(str(topics[0]).lower()) if topics else None
+            if emitters is None:
+                continue
+            if str(log.get("address") or "").lower() not in emitters:
+                continue
+            # ``amount`` is the first data word: three of the six args are
+            # indexed, so it opens the payload.
+            return decode_uint(str(log.get("data") or ""), 0)
+        return None
+
+    async def fetch_burn_amounts(self, tx_hashes: Any) -> dict[str, int]:
+        """``{tx_hash: IMD sent}`` for the bridge-and-burn txs among *tx_hashes*.
+
+        The amount exists only in the tx's own logs. A burn tx's ETH ``value``
+        is the LayerZero message fee -- 2.7e-5 ETH on the newest one -- which
+        is why the activity row rendered ``0.000 ETH`` beside a 15,745 IMD
+        burn: an accurate number answering a question nobody asked.
+
+        **One batched POST, and memoised.** The receipts are requested through
+        ``_rpc_state_batch`` so a refresh costs one round trip however many
+        burn rows are on screen, and a mined tx's amount never changes, so
+        each hash is fetched at most once per process. A *miss* is cached too
+        -- otherwise every refresh would re-request the receipts of the burn
+        rows that legitimately have no amount -- but only when the receipt
+        itself came back: an RPC failure leaves the hash unknown and
+        retryable, never recorded as "this tx burned nothing".
+
+        Bounded by its caller, which passes only rows already classified
+        ``burn``: on the captured pages that is three of sixty-three.
+        """
+        wanted = [
+            tx for tx in dict.fromkeys(str(h) for h in tx_hashes or ())
+            if tx and tx not in self._burn_amounts
+        ]
+        if wanted:
+            results = await self._rpc_state_batch(
+                [("eth_getTransactionReceipt", [tx]) for tx in wanted]
+            )
+            for tx, receipt in zip(wanted, results or []):
+                if receipt is None:
+                    continue                # unread, not "nothing" -- retry later
+                self._burn_amounts[tx] = self._burn_amount_of(receipt)
+        return {
+            tx: amount
+            for tx in dict.fromkeys(str(h) for h in tx_hashes or ())
+            if (amount := self._burn_amounts.get(tx)) is not None
+        }
 
     async def fetch_dev_activity(self) -> list[DevTx] | None:
         """Recent txs of both dev wallets, merged newest-first, filtered and

@@ -125,6 +125,7 @@ READING_KEYS: tuple[str, ...] = (
     "decoy_newest_fee_bps",     # fee tier of the newest decoy pool, if read
     "burn_ready",               # tri-state: previewBridge() would send > 0
     "burn_accrued",             # imdToBurn in whole IMD, awaiting the burn bridge
+    "burn_bridgeable",          # previewBridge().amountToSend in whole IMD
     "launchpad_swaps_by_coin",  # {pool_id: swap_count} -- the FULL in-window population
     "launchpad_coin_tickers",   # {pool_id: ticker} -- the LABEL map, joins on nothing
     # Final fix wave (C1). When the sweep that produced the distribution above
@@ -1147,7 +1148,20 @@ def _detect_burn_ready(base: dict, read: dict, now: float) -> _Det:
     ready = read.get("burn_ready")
     ready = ready if isinstance(ready, bool) else None
     accrued = _as_float(read.get("burn_accrued"))
-    amount = f"{_fmt_amount(accrued)} IMD accrued" if accrued is not None else "amount unread"
+    # The headline quantity is what the bridge would SEND, not what the hook
+    # has accrued: those are two contracts' balances and a sweep moves them in
+    # opposite directions, so the instant this row goes READY is the instant
+    # the accrual is smallest. Reporting the accrual here read as
+    # "ready to burn 0.05 IMD" while 1.25 sat staged and callable. The accrual
+    # still follows it -- it is what is building toward the next burn -- and
+    # either half may be unreadable without silencing the row.
+    sendable = _as_float(read.get("burn_bridgeable"))
+    parts = []
+    if sendable is not None:
+        parts.append(f"{_fmt_amount(sendable)} IMD")
+    if accrued is not None:
+        parts.append(f"{_fmt_amount(accrued)} IMD accruing")
+    amount = " · ".join(parts) if parts else "amount unread"
 
     if ready is None:
         return _dead("burn readiness unavailable")

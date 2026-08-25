@@ -155,6 +155,7 @@ from maxpane_dashboard.widgets.surf._fmt import (
     EMDASH,
     as_float,
     fmt_compact,
+    fmt_imd,
 )
 
 #: Marker raised in a box's bottom border when even ``minimal`` does not fit.
@@ -356,8 +357,14 @@ def _burn_lines(burn_accrued, burn_staged, burn_ready, imd_burned_cum, tier: str
     else:
         big = f"[dim]{EMDASH}[/]"
 
-    acc_str = fmt_compact(accrued) if accrued is not None else DASH
-    stg_str = fmt_compact(staged) if staged is not None else DASH
+    # `fmt_imd`, not the house `fmt_compact`: this pipeline lives below 1 IMD
+    # for the minutes after every sweep, and `fmt_compact` renders everything
+    # under 1.0 with zero decimals -- so a live accrual and an unread hook
+    # were the same three characters, right when the box says READY. See
+    # `_fmt.fmt_imd`, and curator's `fmt_eth_compact` for the same trap on
+    # `minDeposit`.
+    acc_str = fmt_imd(accrued) if accrued is not None else DASH
+    stg_str = fmt_imd(staged) if staged is not None else DASH
     pipeline = f"{acc_str}/{stg_str}" if _short(tier) else f"acc {acc_str} · stg {stg_str}"
 
     # Same three-state shape as SUPPLY's own burn line (None -> dash,

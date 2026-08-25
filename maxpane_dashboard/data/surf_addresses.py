@@ -194,6 +194,14 @@ TOPIC_MODIFY_LIQUIDITY = (
 TOPIC_LAUNCHED = (
     "0xedc96a45101454b126fdf99206bee0947b2cc3ce06933cb22a2b9434bb4eaa9e"
 )
+#: BurnExecutor (both versions) -- one per bridge-and-burn. Three indexed
+#: args, so ``data`` opens with ``amount``: the IMD actually sent, after the
+#: OFT stripped its shared-decimal dust. It is the only place that number
+#: exists -- a burn tx's own ETH ``value`` is the LayerZero message fee, which
+#: is why the activity row used to read ``0.000 ETH`` for a 15,745 IMD burn.
+TOPIC_TOKENS_BRIDGED_FOR_BURN = (
+    "0xf7f6980d344862edf57320b659126becc0852f64b8347f913547cdb980fe3f25"
+)
 #: LaunchpadHook -- one per bonding-curve trade against a launched coin.
 TOPIC_CURVE_SWAP = (
     "0x4e041a3c3c349dd253ff446bef131680ef40e9d33b823aedaa99e0893bee4dcf"
@@ -221,6 +229,9 @@ TOPIC_PREIMAGES: dict[str, str] = {
     ),
     "TOPIC_MODIFY_LIQUIDITY": (
         "ModifyLiquidity(bytes32,address,int24,int24,int256,bytes32)"
+    ),
+    "TOPIC_TOKENS_BRIDGED_FOR_BURN": (
+        "TokensBridgedForBurn(address,uint32,bytes32,uint256,uint256,bytes32)"
     ),
     "TOPIC_LAUNCHED": (
         "Launched(bytes32,address,address,string,string,uint256,uint256)"

@@ -246,18 +246,46 @@ def _seaport_log(
     ``recipient``. ``amounts`` are the **native** consideration legs — seller
     proceeds and marketplace fee — which is what a realized price is made of.
     """
-    offer = [_word(2), _addr_word(offer_token), _word(token_id), _word(1)]
-    consideration: list[str] = []
-    for amount in amounts:
-        consideration += [
-            _word(0),                          # itemType NATIVE
-            _addr_word("0x" + "00" * 20),
-            _word(0),
-            _word(amount),
-            _addr_word(DEV_WALLET),
+    return _seaport_raw(
+        [(2, offer_token, token_id, 1)],
+        [(0, "0x" + "00" * 20, 0, amount, DEV_WALLET) for amount in amounts],
+        ts=ts, tx=tx,
+    )
+
+
+def _weth_legs(*amounts: int) -> list[tuple]:
+    """ERC-20 legs denominated in WETH -- what IDMD sales actually use.
+
+    Measured 2026-08-25: seven IDMD fills in 200k blocks, **none** of them
+    native. A decoder that counts only ``itemType == 0`` prices every one of
+    them at zero.
+    """
+    return [(1, WETH, 0, amount, DEV_WALLET) for amount in amounts]
+
+
+def _seaport_raw(offer_items, consideration_items, *, ts: float, tx: str) -> dict:
+    """A raw ``OrderFulfilled`` from item tuples, both arrays arbitrary.
+
+    ``offer_items`` are ``(itemType, token, identifier, amount)`` and
+    ``consideration_items`` add a ``recipient``. Seaport describes a matched
+    trade from **both** sides and this builder can express either, which the
+    older ``amounts``-only helper could not: a listing fill puts the NFT in
+    the *offer*, an accepted bid puts it in the *consideration* and the
+    buyer's payment in the offer.
+    """
+    offer_words: list[str] = []
+    for item_type, token, identifier, amount in offer_items:
+        offer_words += [
+            _word(item_type), _addr_word(token), _word(identifier), _word(amount),
+        ]
+    consideration_words: list[str] = []
+    for item_type, token, identifier, amount, recipient in consideration_items:
+        consideration_words += [
+            _word(item_type), _addr_word(token), _word(identifier),
+            _word(amount), _addr_word(recipient),
         ]
     offer_at = 4 * 32                          # after the four head words
-    consideration_at = offer_at + 32 + len(offer) * 32
+    consideration_at = offer_at + 32 + len(offer_words) * 32
     return {
         "address": SEAPORT.lower(),
         "topics": [
@@ -271,10 +299,10 @@ def _seaport_log(
                 _addr_word(DEV_WALLET),        # recipient
                 _word(offer_at),
                 _word(consideration_at),
-                _word(1),                      # len(offer)
-                *offer,
-                _word(len(amounts)),           # len(consideration)
-                *consideration,
+                _word(len(offer_items)),
+                *offer_words,
+                _word(len(consideration_items)),
+                *consideration_words,
             ]
         ),
         "blockNumber": hex(25_707_884),
@@ -778,6 +806,11 @@ class FakeSurfClient:
             "fetch_decoy_pool_count": (4, None),
         }
         self._returns.update(overrides)
+        #: ``tx_hash -> wei`` the double will answer with, and a log of what
+        #: the manager asked about. Empty by default: a burn row whose receipt
+        #: nobody stubbed has no amount, which is the honest default.
+        self._burn_amounts: dict[str, int] = {}
+        self.burn_amount_calls: list[list[str]] = []
 
     async def _answer(self, name: str):
         self.calls.append(name)
@@ -785,6 +818,18 @@ class FakeSurfClient:
         if isinstance(value, BaseException):
             raise value
         return value
+
+    async def fetch_burn_amounts(self, tx_hashes):
+        """The real client's contract: only hashes it knows about are keys.
+
+        ``_burn_amounts`` is set directly by the tests that care, and
+        ``burn_amount_calls`` records what the manager asked for -- the bound
+        matters as much as the answer, because this read is per-row and only
+        ``burn`` rows may reach it.
+        """
+        asked = [str(h) for h in tx_hashes or ()]
+        self.burn_amount_calls.append(asked)
+        return {tx: self._burn_amounts[tx] for tx in asked if tx in self._burn_amounts}
 
     async def fetch_tx_senders(self, tx_hashes):
         """The real client's contract: a hash it could not read is ABSENT."""
@@ -1867,6 +1912,8 @@ async def test_dev_activity_is_newest_first_and_capped(tmp_path):
         "counterparty": KNOWN_LABELS[FWA_SPLITTER.lower()],
         "counterparty_known": True,
         "value_eth": pytest.approx(0.01), "tx_hash": "0x" + "0" * 64,
+        # An LP row, not a burn: no receipt is read and the cell stays empty.
+        "imd_burned": None,
     }
 
 
@@ -3814,3 +3861,234 @@ async def test_a_reverted_burn_executor_call_raises_no_burn_precursor(tmp_path):
     assert data["dev_activity"][0]["kind"] == "failed"
     assert data["sig_burn_state"] != "watch", data["sig_burn_detail"]
     assert "BurnExecutor" not in (data["sig_burn_detail"] or "")
+
+
+# ---------------------------------------------------------------------------
+# Seaport: the sales that were priced at zero, and the ones never shown at all
+# ---------------------------------------------------------------------------
+#
+# Measured on mainnet 2026-08-25: seven IDMD ``OrderFulfilled`` logs in the
+# last 200,000 blocks, and **not one of them is a native-ETH fill**. The
+# decoder summed only ``itemType == 0``, so the panel could not price a single
+# real sale -- every one rendered ``0.000 ETH``. The values below are those
+# logs, transcribed.
+
+#: tx 0xa3b58d42… -- one matched trade, both sides emitted. The buyer paid
+#: 0.243 WETH; 0.24057 reached the seller and 0.00243 was the fee.
+WETH_MATCH_TX = "0x" + "a3" * 32
+#: tx 0xb0538d32… -- five accepted bids in one transaction, each emitting the
+#: offer side ONLY. Nothing in these logs puts IDMD in the offer array, so the
+#: old ``token_id is None -> continue`` dropped all five.
+WETH_BIDS_TX = "0x" + "b0" * 32
+
+
+def _weth_listing_log(token_id: int, proceeds: int, *, ts: float, tx: str) -> dict:
+    """A listing fill: the NFT is offered, WETH comes back."""
+    return _seaport_raw(
+        [(2, IDMD_NFT, token_id, 1)],
+        _weth_legs(proceeds),
+        ts=ts, tx=tx,
+    )
+
+
+def _weth_bid_log(token_id: int, paid: int, fee: int, *, ts: float, tx: str) -> dict:
+    """An accepted bid: WETH is offered, the NFT comes back."""
+    return _seaport_raw(
+        [(1, WETH, 0, paid)],
+        [(2, IDMD_NFT, token_id, 1, DEV_WALLET), *_weth_legs(fee)],
+        ts=ts, tx=tx,
+    )
+
+
+async def test_a_weth_sale_is_priced_in_weth_not_at_zero(tmp_path):
+    """WETH is wrapped ether at 1:1, so a WETH fill has an honest ETH price.
+
+    This is the whole of the user-visible bug: IDENTITY.MD showed
+    ``0.000 ETH`` beside every recent sale, which reads as a free transfer
+    rather than as a quarter-ETH trade.
+    """
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(), identity_updates=(), v4_initializes=(),
+            seaport_sales=(
+                _weth_listing_log(450, 240_570_000_000_000_000,
+                                  ts=SEAPORT_TS, tx=WETH_MATCH_TX),
+            ),
+        )
+    )
+    m = _manager(tmp_path, client=client)
+    data = await m.fetch_and_compute()
+
+    sales = data["nft_last_sales"]
+    assert [row["token_id"] for row in sales] == [450]
+    assert sales[0]["eth"] == pytest.approx(0.24057)
+
+
+async def test_an_accepted_bid_is_a_sale_even_though_the_nft_is_not_offered(
+    tmp_path,
+):
+    """Five real sales the panel could not see.
+
+    Seaport describes a trade from whichever side was fulfilled. An accepted
+    bid puts the buyer's WETH in the *offer* array and the NFT in the
+    *consideration*, so the old "IDMD must be in the offer or this is not a
+    sale of an identity" rule dropped it. That rule was written to exclude an
+    order **paid in** IDMD, which is a different thing entirely -- and the
+    exclusion it actually performed hid every bid anyone ever accepted.
+
+    tx ``0xb0538d32…`` is five of them in one transaction.
+    """
+    bids = [
+        (1966, 242_000_000_000_000_000, 2_420_000_000_000_000),
+        (1275, 235_000_000_000_000_000, 2_350_000_000_000_000),
+        (1078, 235_000_000_000_000_000, 2_350_000_000_000_000),
+        (1723, 235_000_000_000_000_000, 2_350_000_000_000_000),
+        (1375, 225_000_000_000_000_000, 2_250_000_000_000_000),
+    ]
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(), identity_updates=(), v4_initializes=(),
+            seaport_sales=tuple(
+                _weth_bid_log(token_id, paid, fee, ts=SEAPORT_TS, tx=WETH_BIDS_TX)
+                for token_id, paid, fee in bids
+            ),
+        )
+    )
+    m = _manager(tmp_path, client=client)
+    data = await m.fetch_and_compute()
+
+    sales = data["nft_last_sales"]
+    assert {row["token_id"] for row in sales} == {1966, 1275, 1078, 1723, 1375}
+    by_id = {row["token_id"]: row["eth"] for row in sales}
+    assert by_id[1966] == pytest.approx(0.242)
+    assert by_id[1375] == pytest.approx(0.225)
+
+
+async def test_one_matched_trade_is_one_sale_not_two(tmp_path):
+    """Both sides of ``0xa3b58d42…`` describe the same transfer of token 450.
+
+    Now that the offer side counts, the two logs of a matched trade would
+    otherwise land as two sales of one NFT at two different prices -- which
+    would be worse than the zero it replaced, because it is plausible.
+
+    The surviving row is the **bid** side, 0.243: that is what the buyer
+    actually paid, fee included. The listing side sees only the 0.24057 that
+    reached the seller, because the fee leg lives in the other log.
+    """
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(), identity_updates=(), v4_initializes=(),
+            seaport_sales=(
+                _weth_bid_log(450, 243_000_000_000_000_000, 2_430_000_000_000_000,
+                              ts=SEAPORT_TS, tx=WETH_MATCH_TX),
+                _weth_listing_log(450, 240_570_000_000_000_000,
+                                  ts=SEAPORT_TS, tx=WETH_MATCH_TX),
+            ),
+        )
+    )
+    m = _manager(tmp_path, client=client)
+    data = await m.fetch_and_compute()
+
+    sales = data["nft_last_sales"]
+    assert len(sales) == 1, sales
+    assert sales[0]["token_id"] == 450
+    assert sales[0]["eth"] == pytest.approx(0.243)
+
+
+async def test_a_sale_in_some_other_currency_is_dropped_not_priced_at_zero(
+    tmp_path,
+):
+    """The rule that made this bug: an unpriceable sale is not a free one.
+
+    A fill denominated in a token that is neither ether nor WETH cannot be
+    expressed in ETH without a rate this dashboard has no keyless source for.
+    Rendering ``0.000 ETH`` for it is the same lie the WETH sales were told
+    with, so the row is dropped instead -- the manager's existing contract
+    with the widget for "a sale with no usable ``eth``".
+    """
+    usdc = "0x" + "cc" * 20
+    client = FakeSurfClient(
+        fetch_recent_logs=LogWindow(
+            from_block=BLOCK - LOG_WINDOW, to_block=BLOCK,
+            bridge_mints=(), identity_updates=(), v4_initializes=(),
+            seaport_sales=(
+                _seaport_raw(
+                    [(2, IDMD_NFT, 999, 1)],
+                    [(1, usdc, 0, 500_000_000, DEV_WALLET)],
+                    ts=SEAPORT_TS, tx="0x" + "cd" * 32,
+                ),
+            ),
+        )
+    )
+    m = _manager(tmp_path, client=client)
+    data = await m.fetch_and_compute()
+
+    assert data["nft_last_sales"] == []
+
+
+async def test_the_payload_carries_what_a_burn_would_actually_send(tmp_path):
+    """READY needs a quantity, and it is not the one beside it.
+
+    The BURN box read ``READY`` over ``acc 0`` because the two numbers answer
+    different questions: ``imdToBurn`` is what the *hook* has accrued toward
+    the next sweep, while READY is about what the *executor* can bridge now.
+    Right after a sweep the first is near zero and the second is the whole
+    balance -- which is precisely when the box looked broken.
+
+    ``previewBridge()``'s ``amountToSend`` was already fetched for the
+    boolean; this is the same read, kept.
+    """
+    slot_payload = {
+        "imd_to_burn_wei": 49_360_159_355_919_103,       # 0.0494 in the hook
+        "executor_balance_wei": 1_251_215_567_373_197_469,
+        "min_bridge_wei": 0,
+        "bridge_amount_wei": 1_251_215_000_000_000_000,  # dust already stripped
+    }
+    manager = _manager_with_last_good(SLOT_LAUNCHPAD, slot_payload, at=NOW)
+    payload = await manager.fetch_and_compute()
+
+    assert payload["burn_ready"] is True
+    assert payload["burn_accrued"] == pytest.approx(0.049360159)
+    assert payload["burn_bridgeable"] == pytest.approx(1.251215)
+    # Never 0.0 for an unread leg -- the rule the accrual comparison broke.
+    unread = _manager_with_last_good(
+        SLOT_LAUNCHPAD, {"imd_to_burn_wei": 0}, at=NOW
+    )
+    assert (await unread.fetch_and_compute())["burn_bridgeable"] is None
+
+
+async def test_a_burn_row_carries_the_imd_it_actually_sent(tmp_path):
+    """``0.000 ETH`` was accurate and useless.
+
+    A ``bridgeToBaseBurnReceiver`` tx's ETH value is the LayerZero message
+    fee -- 0.0000276 ETH on the newest one -- so the activity row rendered
+    three zeros beside a burn of 15,745 IMD. The IMD figure exists only in the
+    tx's own logs, as ``TokensBridgedForBurn``'s first data word.
+
+    The amounts here are the real ones: ``0xcfb8f6e2…`` is the captured V1
+    burn this suite already uses as BURN's precursor, and its 15,745 IMD is
+    quoted in that test's own docstring while the row showed nothing.
+    """
+    burn_tx = "0xcfb8f6e2c733742615519cfc5596a6524daabb1efe0e628ee10da5b00f24964c"
+    client = FakeSurfClient(fetch_dev_activity=[
+        _dev_tx(tx_hash=burn_tx, ts=NOW - 60.0, wallet_label="dev",
+                from_addr=DEV_WALLET, to_addr=BURN_EXECUTOR_V1,
+                counterparty=BURN_EXECUTOR_V1,
+                counterparty_label=KNOWN_LABELS[BURN_EXECUTOR_V1.lower()],
+                method="bridgeToBaseBurnReceiver", kind="burn",
+                value_wei=30_466_501_051_555),
+        _dev_tx(tx_hash="0x" + "ab" * 32, ts=NOW - 120.0, kind="lp"),
+    ])
+    client._burn_amounts = {burn_tx: 15_745 * 10**18}
+    m = _manager(tmp_path, client=client)
+    data = await m.fetch_and_compute()
+
+    by_hash = {row["tx_hash"]: row for row in data["dev_activity"]}
+    assert by_hash[burn_tx]["imd_burned"] == pytest.approx(15_745.0)
+    assert by_hash[burn_tx]["value_eth"] == pytest.approx(3.0466501051555e-05)
+    # Only burn rows are asked about, and only burn rows carry the figure.
+    assert by_hash["0x" + "ab" * 32]["imd_burned"] is None
+    assert client.burn_amount_calls == [[burn_tx]]

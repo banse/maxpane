@@ -95,6 +95,7 @@ from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
     as_float,
+    fmt_imd,
     hhmm,
     long_addr,
     mmdd,
@@ -383,7 +384,16 @@ def _row_fields(row, tier: str) -> tuple[str, str, str, str, bool, str] | None:
             if known
             else long_addr(row.get("counterparty"))
         )
-        amount = f"  {value:,.3f} ETH" if (value and tier == "full") else ""
+        # A burn row reads in IMD, not in the fee it paid to send it: the ETH
+        # on `bridgeToBaseBurnReceiver` is the LayerZero message cost, three
+        # zeros beside a five-figure burn. Where the IMD is known it replaces
+        # the ETH rather than joining it -- the cell has room for one amount
+        # -- and where it is not, the row keeps exactly the cell it always had.
+        burned = as_float(row.get("imd_burned"))
+        if burned is not None and tier == "full":
+            amount = f"  {fmt_imd(burned)} IMD"
+        else:
+            amount = f"  {value:,.3f} ETH" if (value and tier == "full") else ""
         return (
             stamp,
             str(row.get("wallet_label") or DASH),

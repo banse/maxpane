@@ -247,6 +247,7 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "burn_staged": "burn_staged",
         "burn_ready": "burn_ready",
         "burn_min_bridge": "burn_min_bridge",
+        "burn_bridgeable": "burn_bridgeable",
         "launchpad_burned_total": "burned_total",
         "launchpad_as_of_hhmm": "as_of_hhmm",
     },
@@ -527,6 +528,8 @@ def _sample_data() -> dict:
         "burn_staged": 45.0,
         "burn_ready": True,
         "burn_min_bridge": 500.0,
+        # previewBridge(): what a burn would actually send right now.
+        "burn_bridgeable": 620.0,
         "imd_supply": 2_376_731.868679,
         # The observed 2026-08-05 event, NOT the 58,848 all-time ledger of
         # PRD §1: ``imd_burned_cum`` is observation-scoped (WP4.5 --
@@ -601,6 +604,7 @@ def _sample_data() -> dict:
                 "counterparty_known": False,
                 "value_eth": 0.31,
                 "tx_hash": "0x" + "2b" * 32,
+                "imd_burned": None,
             },
             {
                 # The live poisoning shape, end to end: a zero-value transfer
@@ -615,6 +619,7 @@ def _sample_data() -> dict:
                 "counterparty_known": False,
                 "value_eth": 0.0,
                 "tx_hash": "0x" + "3c" * 32,
+                "imd_burned": None,
             },
             {
                 "ts": _TS_POST_13 - 300,
@@ -625,6 +630,7 @@ def _sample_data() -> dict:
                 "value_eth": 33.25,
                 "tx_hash": "0x90a0f8e2b039e8d86d1b10e33e61e12d13728444e0a9"
                            "e5ac258051cccb64d669",
+                "imd_burned": None,
             },
             {
                 "ts": _TS_POST_13 - 900,
@@ -634,6 +640,7 @@ def _sample_data() -> dict:
                 "counterparty_known": True,
                 "value_eth": 0.0,
                 "tx_hash": "0x" + "1a" * 32,
+                "imd_burned": None,
             },
         ],
         # -- launchpad (detached sweep, its own slower "as of") -------------

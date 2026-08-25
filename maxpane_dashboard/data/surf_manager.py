@@ -138,6 +138,7 @@ from maxpane_dashboard.data.surf_addresses import (
     RELAY_DEPOSITORY,
     SEAPORT,
     UNIVERSAL_ROUTER,
+    WETH,
 )
 from maxpane_dashboard.data.surf_cache import (
     DEFAULT_CACHE_PATH,
@@ -955,12 +956,42 @@ class SurfManager:
             self.cache.store_last_good(
                 SLOT_ACTIVITY,
                 {
-                    "rows": self._activity_rows(rows),
+                    "rows": await self._with_burn_amounts(self._activity_rows(rows)),
                     "dev_nonce": dev_nonce,
                     "ops_nonce": ops_nonce,
                 },
                 ts=now,
             )
+        return rows
+
+    async def _with_burn_amounts(
+        self, rows: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Attach the IMD each bridge-and-burn row actually sent.
+
+        Only ``burn`` rows are asked about, so the read is bounded by how many
+        of them are on screen -- three of sixty-three on the captured pages --
+        and the client batches those into one POST and memoises the answers.
+
+        A failure here costs the amount, never the row: the panel still has
+        every field it had before, and the cell renders the ETH value as it
+        always did. That is why this is not behind ``_guard``/``_note`` -- the
+        activity group did not fail, and marking it degraded for a missing
+        secondary figure would put a staleness marker on a panel that is
+        entirely fresh.
+        """
+        wanted = [row["tx_hash"] for row in rows if row.get("kind") == "burn"]
+        if not wanted:
+            return rows
+        try:
+            amounts = await self.client.fetch_burn_amounts(wanted)
+        except Exception as exc:            # noqa: BLE001 — secondary figure
+            logger.warning("SURF burn amounts unread: %s", exc)
+            return rows
+        for row in rows:
+            amount = amounts.get(row["tx_hash"])
+            if amount is not None:
+                row["imd_burned"] = _tokens(amount)
         return rows
 
     @staticmethod
@@ -1058,6 +1089,9 @@ class SurfManager:
                     "counterparty_known": counterparty_label is not None,
                     "value_eth": _tokens(_field(row, "value_wei")),
                     "tx_hash": str(_field(row, "tx_hash") or ""),
+                    # Filled in by `_with_burn_amounts` once the receipts are
+                    # read; the tx page it comes from carries no IMD figure.
+                    "imd_burned": None,
                 }
             )
         out.sort(key=lambda r: (r["ts"] is not None, r["ts"] or 0.0), reverse=True)
@@ -1206,6 +1240,37 @@ class SurfManager:
         return rows
 
     @staticmethod
+    def _eth_equivalent(items: list[list[str]]) -> float | None:
+        """What the payment legs of one Seaport array are worth in ETH.
+
+        ``None`` -- never ``0.0`` -- when any payment leg is in a token this
+        dashboard cannot express in ether. That distinction is the whole bug
+        this function was extracted for: summing only ``itemType == 0`` and
+        calling the result a price rendered every WETH sale as ``0.000 ETH``,
+        which reads as a free transfer rather than as an unpriceable one.
+
+        WETH counts at 1:1 because it *is* ether, wrapped -- not a conversion
+        and not a rate this would have to fetch. Anything else would need one,
+        and there is no keyless source for it, so the row is refused rather
+        than guessed. A mixed-currency order is refused for the same reason:
+        a partial sum is a wrong price, not a rounded one.
+
+        ``itemType`` 2 and 3 are the NFT legs. They are not payment and do not
+        make an order unpriceable -- an accepted bid always carries one.
+        """
+        wei = 0
+        for item in items:
+            item_type = _hex_int("0x" + item[0])
+            amount = _hex_int("0x" + item[3]) or 0
+            if item_type == 0:                              # NATIVE
+                wei += amount
+            elif item_type == 1:                            # ERC20
+                if _word_addr(item[1], 0).lower() != WETH.lower():
+                    return None
+                wei += amount
+        return wei / WEI
+
+    @staticmethod
     def _seaport_sale_rows(window: Any, now: float) -> list[dict[str, Any]]:
         """Realized IDMD sales as ``{ts, token_id, eth}`` — PRD §4's NFT panel.
 
@@ -1216,44 +1281,76 @@ class SurfManager:
         ``SpentItem`` is 4 words ``(itemType, token, identifier, amount)`` and
         ``ReceivedItem`` is those plus a ``recipient``.
 
-        A row survives only when the **offer** side is the IDMD contract. WP1's
-        pre-filter only checks that the payload mentions IDMD *anywhere*, which
-        also matches an order paid **in** IDMD — that is a purchase of something
-        else and must not appear as a sale of an identity.
+        **Seaport describes a matched trade from whichever side was
+        fulfilled, and both sides are sales.** A *listing fill* puts the NFT
+        in the ``offer`` and the payment in the ``consideration``. An
+        *accepted bid* is the mirror image: the buyer's payment is the offer
+        and the NFT comes back in the consideration. This used to require
+        IDMD in the offer array and drop everything else, on the reasoning
+        that the remainder was an order paid **in** IDMD — a purchase of
+        something else. That reasoning describes a real shape, but the filter
+        did not select it: what it actually dropped was every bid anyone had
+        ever accepted. Measured 2026-08-25, one transaction alone
+        (``0xb0538d32…``) carried five of them, invisible.
 
-        The realized price is the sum of the **native** consideration legs:
-        seller proceeds plus the marketplace fee, because both were paid. On the
-        pinned fill ``0x5b4d1b44…eadad2`` the two orders come to 0.18 and
-        0.1838989 ETH and those sum to the transaction's own ``value`` of
-        363898900000000000 wei. That identity is the cheapest available proof
-        this walk is right: get an offset wrong and the sum stops matching.
+        So the NFT is looked for on both sides, and the price is read off
+        whichever side it is *not* on. That price is an ETH-equivalent, not a
+        native sum — see :meth:`_eth_equivalent`, and the ``0.000 ETH`` those
+        seven sales rendered before it existed.
+
+        **One trade can emit both logs, and then it is still one sale.** They
+        are deduplicated on ``(tx_hash, token_id)`` and the *bid* side wins,
+        because it carries what the buyer actually paid: on ``0xa3b58d42…``
+        the bid says 0.243 and the listing says 0.24057, the difference being
+        a marketplace fee whose leg lives only in the bid's own log. Keeping
+        both would be worse than the zero this replaced — two prices for one
+        NFT, each plausible.
+
+        On the pinned native fill ``0x5b4d1b44…eadad2`` the two orders come to
+        0.18 and 0.1838989 ETH and those sum to the transaction's own
+        ``value`` of 363898900000000000 wei. That identity is the cheapest
+        available proof this walk is right: get an offset wrong and the sum
+        stops matching. It survives all of the above unchanged — two listing
+        fills, two token ids, nothing to deduplicate.
         """
-        rows: list[dict[str, Any]] = []
+        # (tx_hash, token_id) -> (row, from_the_bid_side)
+        best: dict[tuple[str, int], tuple[dict[str, Any], bool]] = {}
         for log in _field(window, "seaport_sales") or ():
             words = _data_words((log or {}).get("data"))
             offer = _abi_array(words, 2, 4)
             consideration = _abi_array(words, 3, 5)
-            token_id = next(
-                (
-                    _hex_int("0x" + item[2])
-                    for item in offer
-                    if _word_addr(item[1], 0).lower() == IDMD_NFT.lower()
-                ),
-                None,
-            )
+
+            def _identity(items: list[list[str]]) -> int | None:
+                return next(
+                    (
+                        _hex_int("0x" + item[2])
+                        for item in items
+                        if _word_addr(item[1], 0).lower() == IDMD_NFT.lower()
+                    ),
+                    None,
+                )
+
+            token_id = _identity(offer)
+            from_bid = False
+            paid_with = consideration
             if token_id is None:
-                continue                    # paid in IDMD, not a sale of one
-            wei = 0
-            for item in consideration:
-                if _hex_int("0x" + item[0]) == 0:        # itemType NATIVE
-                    wei += _hex_int("0x" + item[3]) or 0
-            rows.append(
-                {
-                    "ts": _log_ts(log, now),
-                    "token_id": token_id,
-                    "eth": wei / WEI,
-                }
-            )
+                token_id = _identity(consideration)
+                from_bid = True
+                paid_with = offer
+            if token_id is None:
+                continue                # this order does not move an identity
+
+            eth = SurfManager._eth_equivalent(paid_with)
+            if eth is None:
+                continue                # priced in something we cannot express
+
+            key = (str((log or {}).get("transactionHash") or ""), token_id)
+            row = {"ts": _log_ts(log, now), "token_id": token_id, "eth": eth}
+            previous = best.get(key)
+            if previous is None or (from_bid and not previous[1]):
+                best[key] = (row, from_bid)
+
+        rows = [row for row, _ in best.values()]
         rows.sort(key=lambda r: (r["ts"] is not None, r["ts"] or 0.0), reverse=True)
         return rows[:NFT_SALES_LIMIT]
 
@@ -1881,6 +1978,7 @@ class SurfManager:
         read["decoy_newest_fee_bps"] = slot.get("decoy_newest_fee_bps")
         read["burn_ready"] = data.get("burn_ready")
         read["burn_accrued"] = data.get("burn_accrued")
+        read["burn_bridgeable"] = data.get("burn_bridgeable")
         read["launchpad_swaps_by_coin"] = self._swaps_by_coin(
             slot.get("swaps_by_coin")
         )
@@ -2352,6 +2450,7 @@ class SurfManager:
             "burn_staged": _tokens(launchpad_slot.get("executor_balance_wei")),
             "burn_ready": burn_ready,
             "burn_min_bridge": burn_min_bridge,
+            "burn_bridgeable": bridge_amount,
             "launchpad_coin_count": launchpad_slot.get("coin_count"),
             # Task 8: the sweep's own population reads, deliberately published
             # alongside `launchpad_coin_count` (the factory's claim) rather

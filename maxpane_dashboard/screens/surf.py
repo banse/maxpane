@@ -1316,6 +1316,7 @@ class SurfScreen(RefreshGuard, Screen):
                 burn_staged=data.get("burn_staged"),
                 burn_ready=data.get("burn_ready"),
                 burn_min_bridge=data.get("burn_min_bridge"),
+                burn_bridgeable=data.get("burn_bridgeable"),
                 burned_total=data.get("launchpad_burned_total"),
                 as_of_hhmm=data.get("launchpad_as_of_hhmm"),
             )

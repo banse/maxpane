@@ -2680,3 +2680,60 @@ async def test_feed_a_reverted_tx_is_badged_failed_not_shown_as_what_it_tried():
         assert "this one never landed" in screen
         assert ANSWER_BADGE not in screen
         assert "ACTION" not in screen
+
+
+async def test_activity_a_burn_row_reads_in_imd_not_in_the_bridge_fee():
+    """``0.000 ETH`` beside a 15,745 IMD burn.
+
+    The ETH on a ``bridgeToBaseBurnReceiver`` row is the LayerZero message
+    fee, so the amount cell was accurate and answered a question nobody
+    asked. Where the IMD figure is known it replaces the fee outright -- two
+    amounts in one cell would not fit, and of the two only one is what the
+    row is about.
+
+    ``15.7K IMD`` is eleven columns against the twelve ``_AMOUNT_COLS``
+    reserves for ``"  33.250 ETH"``, so nothing widens: the panel's width sets
+    surf's dev-activity rail and is not moved for a label.
+    """
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(110, 20)) as pilot:
+        widget.update_data(dev_activity=[{
+            "ts": 1786076831.0,
+            "wallet_label": "dev",
+            "kind": "burn",
+            "counterparty": "BurnExecutor v1",
+            "counterparty_known": True,
+            "value_eth": 3.0466501051555e-05,
+            "tx_hash": "0x" + "cf" * 32,
+            "imd_burned": 15_745.0,
+        }])
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "15.7K IMD" in screen
+        assert "0.000 ETH" not in screen
+
+
+async def test_activity_a_burn_row_with_no_amount_keeps_its_eth(): 
+    """The receipt may be unread, and the row must not lose a field for it.
+
+    ``imd_burned`` is ``None`` for a burn whose receipt did not come back --
+    and for every non-burn row, which is most of them. Falling back to the
+    ETH value keeps the cell populated exactly as it was before the IMD
+    figure existed, rather than blanking a column on a secondary read.
+    """
+    widget = SurfDevActivity()
+    app = _Harness(widget)
+    async with app.run_test(size=(110, 20)) as pilot:
+        widget.update_data(dev_activity=[{
+            "ts": 1786076831.0,
+            "wallet_label": "dev",
+            "kind": "burn",
+            "counterparty": "BurnExecutor v1",
+            "counterparty_known": True,
+            "value_eth": 0.25,
+            "tx_hash": "0x" + "cf" * 32,
+            "imd_burned": None,
+        }])
+        await pilot.pause()
+        assert "0.250 ETH" in _screen_text(app)
