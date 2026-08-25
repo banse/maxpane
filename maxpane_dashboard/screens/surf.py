@@ -12,12 +12,13 @@ Layout: three content rows, every widget on screen at once::
     StatusBar
 
 ``l`` swaps ``#middle-row``/``#separator``/``#bottom-row`` for a fourth body
-holding the v4 launchpad's own three panels, laid out on ``#middle-row``'s
-own shape::
+holding the v4 launchpad's own panels -- five of them since 2026-08-25 --
+laid out on ``#middle-row``'s own shape::
 
-    #surf-launchpad-body   SurfLaunchpadCoins (12fr) | #surf-launchpad-rail (5fr)
-                                                     |   SurfCurveFlow    (auto, +1 margin)
-                                                     |   SurfBurnPipeline (1fr)
+    #surf-launchpad-body   #surf-launchpad-left (12fr)      | #surf-launchpad-rail (5fr)
+                             SurfLaunchpadCoins    (auto)   |   SurfCurveFlow      (auto, +1 margin)
+                             SurfLaunchpadActivity (1fr)    |   SurfBurnPipeline   (auto, +1 margin)
+                                                            |   SurfBurnkeepers    (1fr)
 
 ``#hero-row`` is never touched by that swap and stays on screen in both
 modes. See "The 2026-08-23 ``l`` view" below.
@@ -85,9 +86,9 @@ panel already had room for the market's seven.
 **The 2026-08-23 ``l`` view is a different shape of "hidden," not a return
 of this one.** It does not put two panels back in one slot the way ``c``
 did; it swaps the *whole* three-row dashboard body for the v4 launchpad's
-own three panels (``SurfLaunchpadCoins``, ``SurfCurveFlow``,
-``SurfBurnPipeline``), on curator's ``y``/``f`` precedent, and ``escape``
-backs out one-way. The hero row is untouched by the swap and stays mounted
+own panels (``SurfLaunchpadCoins``, ``SurfLaunchpadActivity``,
+``SurfCurveFlow``, ``SurfBurnPipeline``, ``SurfBurnkeepers``), on curator's
+``y``/``f`` precedent, and ``escape`` backs out one-way. The hero row is untouched by the swap and stays mounted
 and visible in both modes, so nothing it tracks (LAUNCHPAD/FLOW/BURN/SUPPLY
 since the 2026-08-24 rebuild) ever goes dark. The five dashboard-body panels above still never share a slot
 with each other -- only the *body as a whole* now has a second view.
@@ -158,11 +159,13 @@ from textual.widgets import Static
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surf import (
+    SurfBurnkeepers,
     SurfBurnPipeline,
     SurfCurveFlow,
     SurfDevActivity,
     SurfFeed,
     SurfHero,
+    SurfLaunchpadActivity,
     SurfLaunchpadCoins,
     SurfMarket,
     SurfNft,
@@ -443,11 +446,21 @@ MODE_LAUNCHPAD = "launchpad"
 #: future consumer can query it without retyping the literal.
 LAUNCHPAD_BODY_ID = "surf-launchpad-body"
 
+#: The launchpad body's LEFT column (2026-08-25), holding LAUNCHPAD COINS
+#: over LAUNCHPAD ACTIVITY. It became a column when the coin table was capped
+#: at ten rows: a capped table has no use for the body's spare rows, and a
+#: feed does -- so the rows the table can no longer spend go to the panel
+#: whose content is unbounded, which is the same "rows are the scarce
+#: currency in this body" trade the 2026-08-24 rail made in the other
+#: direction. Exported for the same reason as :data:`LAUNCHPAD_BODY_ID`.
+LAUNCHPAD_LEFT_ID = "surf-launchpad-left"
+
 #: The launchpad body's right rail (2026-08-24), holding CURVE FLOW over BURN
-#: PIPELINE beside the coin table -- ``#surf-right-rail``'s opposite number in
-#: the other body, and named for it. Exported for the same reason as
-#: :data:`LAUNCHPAD_BODY_ID`: the id is queried from the test module and
-#: retyping a literal in two files is how one of them goes stale.
+#: PIPELINE (and BURNKEEPERS since 2026-08-25) beside the coin table --
+#: ``#surf-right-rail``'s opposite number in the other body, and named for
+#: it. Exported for the same reason as :data:`LAUNCHPAD_BODY_ID`: the id is
+#: queried from the test module and retyping a literal in two files is how
+#: one of them goes stale.
 LAUNCHPAD_RAIL_ID = "surf-launchpad-rail"
 
 
@@ -849,22 +862,56 @@ class SurfScreen(RefreshGuard, Screen):
      * out of the panel beside it only on terminals short enough to overflow,
      * so the layout's WIDTH requirement would move with its HEIGHT and a
      * width pin measured at 48 rows would be one column short at 40.
-     * SurfCurveFlow is `auto` (five lines) with the one-row bottom margin
-     * `SurfSignals` uses in the other rail -- the two panels sat flush and
-     * read as one block. SurfBurnPipeline takes the remainder at `1fr`,
-     * floored at its own six lines: a `1fr` child cannot overflow a scroll
-     * container, it shrinks, so without the floor it would shed a line per
-     * terminal row down to a bare title with no scrollbar and no trace --
-     * exactly what `min-height` under `SurfDevActivity` exists to stop.
+     *
+     * FIVE PANELS IN TWO COLUMNS since 2026-08-25. The left half is a
+     * `#surf-launchpad-left` column rather than the bare table it was,
+     * because the coin table is now capped at ten rows: a capped table has
+     * no use for the body's spare rows, so LAUNCHPAD ACTIVITY -- a feed,
+     * whose content is unbounded -- takes them instead. That is why
+     * `SurfLaunchpadCoins` is `auto` here and its own `DataTable` is
+     * overridden to `auto` one rule down: leaving the table at the `1fr`
+     * its widget DEFAULT_CSS declares would have it claim the column's
+     * spare rows from inside an auto-sized parent, which is the whole of
+     * what this change is undoing. (The override lives here rather than in
+     * `widgets/surf/launchpad.py` only because that module belongs to
+     * another work package this wave; it should move inward.)
+     *
+     * WHICH PANEL IN EACH COLUMN CARRIES THE `1fr`, AND ITS FLOOR, IS THE
+     * LOAD-BEARING PART. Exactly one child per column may be `1fr`, and it
+     * must be the one with content to spend rows on: LAUNCHPAD ACTIVITY on
+     * the left, BURNKEEPERS in the rail. Every other panel is `auto` --
+     * SurfCurveFlow (five lines) and SurfBurnPipeline (six) never grow, and
+     * both carry the one-row bottom margin `SurfSignals` uses in the other
+     * rail, since flush they read as one block. Each `1fr` child is floored
+     * (`min-height`), and that floor is not decoration: a `1fr` child cannot
+     * overflow a scroll container -- it SHRINKS -- so without one it sheds a
+     * line per terminal row down to a bare title with no scrollbar and no
+     * trace, exactly what `min-height` under `SurfDevActivity` exists to
+     * stop. 6 is LAUNCHPAD ACTIVITY's title + blank + four rows; 5 is
+     * BURNKEEPERS' title + blank + the three burnkeeper rows the sweep has
+     * ever returned.
      */
     SurfScreen #surf-launchpad-body {
         height: 1fr;
         width: 100%;
         margin: 1 0 0 0;
     }
-    SurfScreen SurfLaunchpadCoins {
+    SurfScreen #surf-launchpad-left {
         width: 12fr;
         height: 1fr;
+    }
+    SurfScreen SurfLaunchpadCoins {
+        width: 1fr;
+        height: auto;
+        padding: 0 1;
+    }
+    SurfScreen SurfLaunchpadCoins > DataTable {
+        height: auto;
+    }
+    SurfScreen SurfLaunchpadActivity {
+        width: 1fr;
+        height: 1fr;
+        min-height: 6;
         padding: 0 1;
     }
     SurfScreen #surf-launchpad-rail {
@@ -882,8 +929,15 @@ class SurfScreen(RefreshGuard, Screen):
     }
     SurfScreen SurfBurnPipeline {
         width: 1fr;
-        height: 1fr;
+        height: auto;
         min-height: 6;
+        padding: 0 1;
+        margin: 0 0 1 0;
+    }
+    SurfScreen SurfBurnkeepers {
+        width: 1fr;
+        height: 1fr;
+        min-height: 5;
         padding: 0 1;
     }
     """
@@ -949,10 +1003,18 @@ class SurfScreen(RefreshGuard, Screen):
         # the table columns instead, which is the cheaper currency for a
         # panel whose height is its content and whose width is fixed.
         with Horizontal(id=LAUNCHPAD_BODY_ID):
-            yield SurfLaunchpadCoins()
+            # A COLUMN since 2026-08-25, not the bare table it was: the coin
+            # table is capped at ten rows, so it no longer has spare rows to
+            # hold -- LAUNCHPAD ACTIVITY takes them, which is the currency a
+            # feed actually spends. Same trade as the rail's, made the other
+            # way round.
+            with Vertical(id=LAUNCHPAD_LEFT_ID):
+                yield SurfLaunchpadCoins()
+                yield SurfLaunchpadActivity()
             with Vertical(id=LAUNCHPAD_RAIL_ID):
                 yield SurfCurveFlow()
                 yield SurfBurnPipeline()
+                yield SurfBurnkeepers()
 
         yield StatusBar()
 
@@ -1322,6 +1384,35 @@ class SurfScreen(RefreshGuard, Screen):
             )
         except Exception as exc:
             logger.debug("Failed to update SurfBurnPipeline: %s", exc)
+
+        # The two panels the `l` body grew on 2026-08-25. Same contract as
+        # the three above and for the same reason -- dispatched on EVERY
+        # refresh, whether or not `l` is showing them, so the first keypress
+        # paints a complete frame rather than a blank one. Each in its own
+        # `try` so one bad panel cannot blank the others.
+        #
+        # Both take their PRD §5 key under its own name (`launchpad_activity`,
+        # `launchpad_burnkeepers`) rather than the short names the first three
+        # panels use, so both land in
+        # `tests/widgets/test_surf_widget_contract.py`'s strict kwarg check by
+        # default instead of in its `_SHORT_KWARG_WIDGETS` escape list. The
+        # one elision they keep is `as_of_hhmm`, which every launchpad panel
+        # spells short.
+        try:
+            self.query_one(SurfLaunchpadActivity).update_data(
+                launchpad_activity=data.get("launchpad_activity"),
+                as_of_hhmm=data.get("launchpad_as_of_hhmm"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfLaunchpadActivity: %s", exc)
+
+        try:
+            self.query_one(SurfBurnkeepers).update_data(
+                launchpad_burnkeepers=data.get("launchpad_burnkeepers"),
+                as_of_hhmm=data.get("launchpad_as_of_hhmm"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfBurnkeepers: %s", exc)
 
         # Status bar. A refresh that reaches this line just fetched, so the
         # staleness is honestly 0 without consulting any clock; ``as_of`` is

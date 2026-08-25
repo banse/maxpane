@@ -12,8 +12,8 @@ Four structural guarantees, one place:
    that widgets cannot touch the network. The allowance is not a hole in
    that proof: every allowed module is itself scanned, so a widget can only
    reach analytics code that reaches nothing.
-3. No-args and all-``None`` ``update_data`` calls never raise, for all six
-   widgets in one sweep, asserted against composited output.
+3. No-args and all-``None`` ``update_data`` calls never raise, for every
+   exported widget in one sweep, asserted against composited output.
 4. No Textual theme token (``[$name]``, e.g. ``[$warning]``) reaches a
    Rich-parsed surface (``RichLog.write`` in the activity panel,
    ``Text.from_markup`` in the feed) -- Rich's own markup parser does not
@@ -43,11 +43,13 @@ from maxpane_dashboard.data.surf_models import SURF_KEYS
 # and its screen test import from (WP5), so the contract sweep exercises it.
 import maxpane_dashboard.widgets.surf as surf_widgets
 from maxpane_dashboard.widgets.surf import (
+    SurfBurnkeepers,
     SurfBurnPipeline,
     SurfCurveFlow,
     SurfDevActivity,
     SurfFeed,
     SurfHero,
+    SurfLaunchpadActivity,
     SurfLaunchpadCoins,
     SurfMarket,
     SurfNft,
@@ -96,13 +98,54 @@ _SHORT_KWARG_WIDGETS = frozenset(
 
 _WIDGETS = tuple(w for w in _ALL_WIDGETS if w not in _SHORT_KWARG_WIDGETS)
 
+#: The one kwarg name that is a contract key with its ``launchpad_`` prefix
+#: elided, and the key it stands for.
+#:
+#: A **kwarg**-level carve-out, deliberately not a widget-level one. The
+#: launchpad tier's own slower clock is dispatched to every panel in the
+#: ``l`` body, and all five spell it ``as_of_hhmm``; the two panels wired on
+#: 2026-08-25 (``SurfLaunchpadActivity``, ``SurfBurnkeepers``) name every
+#: *other* kwarg after its ``SURF_KEYS`` key exactly, so putting them in
+#: :data:`_SHORT_KWARG_WIDGETS` to excuse this one name would have exempted
+#: their whole signature -- the broad waiver that let the first three
+#: launchpad panels escape every check in this file. One name is the narrow
+#: one.
+#:
+#: It is not a hole either, because the *mapping* is pinned elsewhere and
+#: against the real signature: ``tests/screens/test_surf_screen.py``'s
+#: ``SURF_WIDGET_SIGNATURES`` records ``launchpad_as_of_hhmm -> as_of_hhmm``
+#: per widget and ``test_screen_dispatches_every_data_key`` compares the
+#: recorded dispatch call's kwargs against it, so a panel that takes
+#: ``as_of_hhmm`` and is never handed ``launchpad_as_of_hhmm`` still fails
+#: there.
+_PREFIXED_KWARG_ALIASES = {"as_of_hhmm": "launchpad_as_of_hhmm"}
+
+
+def test_the_kwarg_alias_stands_for_a_real_contract_key():
+    """The carve-out has to keep being a carve-out *from* something.
+
+    An alias whose target left ``SURF_KEYS`` would go on excusing a kwarg
+    that answers for nothing, and an alias that was *itself* a contract key
+    would be dead weight hiding the next real one. Both are checked here so
+    the strict sweep below cannot be widened by accident.
+    """
+    for alias, key in _PREFIXED_KWARG_ALIASES.items():
+        assert key in SURF_KEYS, (
+            f"{alias!r} is excused as an elision of {key!r}, which SURF_KEYS "
+            "no longer carries"
+        )
+        assert alias not in SURF_KEYS, (
+            f"{alias!r} is a contract key in its own right -- it needs no "
+            "alias, and listing it here would absorb the next real offender"
+        )
+
 
 def test_the_derived_widget_lists_are_not_empty_and_agree():
     """The derivation has to be able to fail.
 
     A ``__all__`` that stopped exporting classes, or an exception list that
     grew to swallow everything, would make every parametrised sweep below
-    run over nothing and pass. Both ends are pinned, and the six
+    run over nothing and pass. Both ends are pinned, and the
     contract-keyed widgets are named once here -- the only hand-typed list
     left in this file -- so that a widget quietly moving into the short-kwarg
     exception is visible rather than silent.
@@ -110,6 +153,11 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
     assert set(_ALL_WIDGETS) == set(_WIDGETS) | _SHORT_KWARG_WIDGETS
     assert set(_WIDGETS) == {
         SurfHero, SurfSignals, SurfFeed, SurfDevActivity, SurfMarket, SurfNft,
+        # Wired into the `l` body 2026-08-25. They land here, in the strict
+        # check, rather than in `_SHORT_KWARG_WIDGETS` -- which is what that
+        # list's own docstring asks of a new widget. `SurfBurnkeepers` was
+        # renamed `burnkeepers=` -> `launchpad_burnkeepers=` to earn it.
+        SurfLaunchpadActivity, SurfBurnkeepers,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
 
@@ -138,8 +186,18 @@ def _kwargs_of(cls) -> tuple[str, ...]:
 
 @pytest.mark.parametrize("cls", _WIDGETS, ids=lambda c: c.__name__)
 def test_update_data_kwargs_are_frozen_contract_keys(cls):
-    """Every kwarg is a PRD §5 key -- the screen can splat the flat dict."""
-    unknown = [k for k in _kwargs_of(cls) if k not in SURF_KEYS]
+    """Every kwarg is a PRD §5 key -- the screen can splat the flat dict.
+
+    ...or the single documented prefix elision in
+    :data:`_PREFIXED_KWARG_ALIASES`, whose target key is re-checked by
+    ``test_the_kwarg_alias_stands_for_a_real_contract_key`` above.
+    """
+    unknown = [
+        k
+        for k in _kwargs_of(cls)
+        if k not in SURF_KEYS
+        and _PREFIXED_KWARG_ALIASES.get(k) not in SURF_KEYS
+    ]
     assert not unknown, f"{cls.__name__} takes non-contract kwargs: {unknown}"
 
 

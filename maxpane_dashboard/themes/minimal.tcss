@@ -2105,9 +2105,9 @@ SurfDevActivity > RichLog {
  * swaps this container in for `#middle-row`/`#separator`/`#bottom-row`; the
  * hero row is outside it and is never touched by the swap.
  *
- * `1fr` on the container and on `SurfLaunchpadCoins` -- the one panel here
- * with a scrolling `DataTable` -- so the coin table gets the screen's spare
- * rows the same way `#middle-row` does in dashboard mode. `margin: 1 0 0 0`
+ * `1fr` on the container so this body gets the screen's spare rows the same
+ * way `#middle-row` does in dashboard mode; which panel inside each column
+ * carries that `1fr` onward is settled per column below. `margin: 1 0 0 0`
  * matches `#middle-row`'s own top margin, so swapping bodies does not also
  * move the hero's breathing room.
  *
@@ -2135,9 +2135,39 @@ SurfScreen #surf-launchpad-body {
     margin: 1 0 0 0;
 }
 
-SurfLaunchpadCoins {
+/* FIVE PANELS IN TWO COLUMNS since 2026-08-25. The left half is a column,
+ * not the bare table it was: the coin table is capped at ten rows, so it has
+ * no use for the body's spare rows and LAUNCHPAD ACTIVITY -- a feed, whose
+ * content is unbounded -- takes them instead. */
+SurfScreen #surf-launchpad-left {
     width: 12fr;
     height: 1fr;
+}
+
+SurfLaunchpadCoins {
+    width: 1fr;
+    height: auto;
+    padding: 0 1;
+}
+
+/* The `1fr` this panel used to carry really lives on its `DataTable`
+ * (`widgets/surf/launchpad.py`'s own DEFAULT_CSS). Left there, the table
+ * claims the column's spare rows from inside an auto-sized parent and the
+ * cap buys the feed beneath it nothing. Overridden here rather than in the
+ * widget only because that module belongs to another work package this
+ * wave; it should move inward. */
+SurfLaunchpadCoins > DataTable {
+    height: auto;
+}
+
+/* The left column's `1fr`, floored: a `1fr` child cannot overflow a scroll
+ * container, it shrinks, so without `min-height` this feed sheds a line per
+ * terminal row down to a bare title with no scrollbar and no trace. 6 ==
+ * title, blank, four rows. */
+SurfLaunchpadActivity {
+    width: 1fr;
+    height: 1fr;
+    min-height: 6;
     padding: 0 1;
 }
 
@@ -2166,16 +2196,28 @@ SurfCurveFlow {
     margin: 0 0 1 0;
 }
 
-/* The rail's lower half, `1fr` with a floor, exactly as `SurfDevActivity` is
- * in the other rail: a `1fr` child cannot overflow its scroll container, it
- * shrinks, so without `min-height` this panel would shed one of its six
- * lines per terminal row down to a bare title with no scrollbar and no trace
- * on screen. 6 == the panel's own line count (title, status, accrued/staged,
- * min bridge, burned, `as of`). */
+/* `auto` with a floor since 2026-08-25: six lines that never grow, so the
+ * rail's `1fr` went to BURNKEEPERS below, which does. The floor stays --
+ * `min-height` is what stops a shrinking child thinning out with no
+ * scrollbar and no trace, and it is the panel's own line count (title,
+ * status, accrued/staged, min bridge, burned, `as of`). `margin: 0 0 1 0` is
+ * the blank row before BURNKEEPERS, the same one `SurfCurveFlow` carries. */
 SurfBurnPipeline {
     width: 1fr;
-    height: 1fr;
+    height: auto;
     min-height: 6;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+/* The rail's `1fr` since 2026-08-25 -- exactly one child per column may
+ * carry it, and it must be the one with content to spend rows on. Floored
+ * for `SurfBurnPipeline`'s own reason one rule up: 5 == title, blank, and
+ * the three burnkeepers the sweep has ever returned. */
+SurfBurnkeepers {
+    width: 1fr;
+    height: 1fr;
+    min-height: 5;
     padding: 0 1;
 }
 

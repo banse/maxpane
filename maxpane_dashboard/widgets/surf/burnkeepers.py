@@ -260,15 +260,28 @@ class SurfBurnkeepers(Vertical):
         if self._payload:
             self._render_view()
 
-    def update_data(self, burnkeepers=None, as_of_hhmm=None, **_kwargs) -> None:
-        """Refresh the panel. ``burnkeepers`` is the PRD §5 key;
-        ``as_of_hhmm`` is accepted (the launchpad's own slower-tier clock)
-        but this panel has no note line to put it in yet, so it is
-        currently unused -- accepted rather than raising, the same contract
-        ``SurfBurnPipeline.update_data`` documents for its own un-rewired
-        callers.
+    def update_data(
+        self, launchpad_burnkeepers=None, as_of_hhmm=None, **_kwargs
+    ) -> None:
+        """Refresh the panel.
+
+        ``launchpad_burnkeepers`` is spelled exactly as the PRD §5 contract
+        key it carries, so this panel lands in
+        ``tests/widgets/test_surf_widget_contract.py``'s strict kwarg check
+        by default rather than in its ``_SHORT_KWARG_WIDGETS`` escape list
+        -- which is what that list's own docstring asks of a new widget, and
+        the opposite of how the ``l`` view's first three panels (``coins``,
+        ``burned_total``, ...) escaped every check in that file. It was
+        ``burnkeepers`` for one wave; the screen never called it under that
+        name.
+
+        ``as_of_hhmm`` is accepted (the launchpad's own slower-tier clock,
+        ``launchpad_as_of_hhmm`` in the contract) but this panel has no note
+        line to put it in yet, so it is currently unused -- accepted rather
+        than raising, the same contract ``SurfBurnPipeline.update_data``
+        documents for its own un-rewired callers.
         """
-        self._payload = {"rows": burnkeepers, "seen": True}
+        self._payload = {"rows": launchpad_burnkeepers, "seen": True}
         self._render_view()
 
     def _title_text(self) -> str:

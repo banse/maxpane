@@ -25,6 +25,7 @@ from maxpane_dashboard.data.surf_models import SURF_KEYS
 from maxpane_dashboard.screens.surf import (
     INITIAL_TITLE,
     LAUNCHPAD_BODY_ID,
+    LAUNCHPAD_LEFT_ID,
     LAUNCHPAD_RAIL_ID,
     MODE_DASHBOARD,
     MODE_LAUNCHPAD,
@@ -39,11 +40,13 @@ from maxpane_dashboard.widgets.surf.market import (
     POOL_UNVERIFIED_SHORT,
 )
 from maxpane_dashboard.widgets.surf import (
+    SurfBurnkeepers,
     SurfBurnPipeline,
     SurfCurveFlow,
     SurfDevActivity,
     SurfFeed,
     SurfHero,
+    SurfLaunchpadActivity,
     SurfLaunchpadCoins,
     SurfMarket,
     SurfNft,
@@ -74,8 +77,10 @@ _WIDGET_CLASSES = {
 #: care whether ``update_data`` was called, not whether the widget is shown.
 _LAUNCHPAD_WIDGET_CLASSES = {
     "SurfLaunchpadCoins": SurfLaunchpadCoins,
+    "SurfLaunchpadActivity": SurfLaunchpadActivity,
     "SurfCurveFlow": SurfCurveFlow,
     "SurfBurnPipeline": SurfBurnPipeline,
+    "SurfBurnkeepers": SurfBurnkeepers,
 }
 
 #: Both halves together -- **derived from the package**, not from the two
@@ -251,6 +256,22 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "launchpad_burned_total": "burned_total",
         "launchpad_as_of_hhmm": "as_of_hhmm",
     },
+    # -- the two panels the l body grew on 2026-08-25 ---------------------
+    #
+    # Note where the coincidence this map's own comment describes comes
+    # BACK: both name their payload kwarg after the contract key exactly,
+    # which is what puts them in the strict kwarg sweep in
+    # ``tests/widgets/test_surf_widget_contract.py`` rather than in its
+    # ``_SHORT_KWARG_WIDGETS`` escape list. Only the shared launchpad clock
+    # is still spelled short, on all five panels.
+    "SurfLaunchpadActivity": {
+        "launchpad_activity": "launchpad_activity",
+        "launchpad_as_of_hhmm": "as_of_hhmm",
+    },
+    "SurfBurnkeepers": {
+        "launchpad_burnkeepers": "launchpad_burnkeepers",
+        "launchpad_as_of_hhmm": "as_of_hhmm",
+    },
 }
 
 #: Keys the screen itself consumes without a 1:1 widget kwarg.
@@ -337,20 +358,22 @@ _KEYS_WITHOUT_A_RENDERER = frozenset({
     "lp_state", "lp_imd", "lp_weth",
 })
 
-#: Was emptied by Task 12 of the v3->v4/launchpad plan (27 keys Task 1 of
-#: that plan froze before their consumers existed), on the same precedent
-#: this now reuses: ``launchpad_activity``/``launchpad_burnkeepers`` are the
-#: surf-launchpad-panels plan's own Task 1 freezing the activity feed and
-#: burnkeeper contracts ahead of the widgets a later task in that plan wires
-#: up. Every key SURF_KEYS carries now reaches either a widget kwarg
+#: **Empty, for the second time.** Task 12 of the v3->v4/launchpad plan
+#: emptied it once (27 keys that plan's Task 1 froze before their consumers
+#: existed); the surf-launchpad-panels plan's Task 1 then reused the same
+#: precedent to freeze ``launchpad_activity``/``launchpad_burnkeepers`` ahead
+#: of the widgets, and this task -- that plan's own wiring task -- is where
+#: those two consumers arrive, so the carve-out expires here rather than
+#: rotting into a claim that nothing renders them.
+#:
+#: Every key ``SURF_KEYS`` carries now reaches either a widget kwarg
 #: (:data:`SURF_WIDGET_SIGNATURES`), :data:`META_KEYS`, or the
-#: explicitly-parked :data:`_KEYS_WITHOUT_A_RENDERER`; an entry regressing
-#: into this set again -- or staying here past that plan's own wiring task --
-#: is a bug, not a waiver -- see the docstrings above for the keys' worth of
-#: genuine, reported exceptions.
-_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset({
-    "launchpad_activity", "launchpad_burnkeepers",
-})
+#: explicitly-parked :data:`_KEYS_WITHOUT_A_RENDERER`. Empty is not the same
+#: as absent: the subtraction stays in both tests below so the *next* plan
+#: can name its own pre-frozen keys here, and so an entry regressing into it
+#: is visible as a diff rather than as a new mechanism. A key sitting here
+#: past its plan's wiring task is a bug, not a waiver.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
 
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
 _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z
@@ -991,12 +1014,16 @@ async def test_the_launchpad_widgets_are_dispatched_hidden_before_l_is_pressed()
         # everything inside it -- so this checks the container, not the
         # child.
         assert pilot.app.screen.query_one(f"#{LAUNCHPAD_BODY_ID}").display is False
-        # Dispatched: the note line has moved off its "Loading" placeholder
-        # even though nothing has displayed it yet. ``_plain`` reads the
-        # widget's own visual directly, unlike ``_screen_text`` -- a hidden
-        # widget reaches no compositor row at all.
-        note = coins.query_one("#surf-lpc-note")
-        assert "146 coins" in _plain(note)
+        # Dispatched: the population note has moved off its "Loading"
+        # placeholder even though nothing has displayed it yet. It rides on
+        # the panel's own title row since Task 11 -- `#surf-lpc-note` is
+        # gone, and a widget whose whole job was a blank line was renamed
+        # `#surf-lpc-gap` rather than left carrying a name it had stopped
+        # earning. ``_plain`` reads the widget's own visual directly, unlike
+        # ``_screen_text`` -- a hidden widget reaches no compositor row at
+        # all.
+        title = coins.query_one("#surf-lpc-title")
+        assert "146 coins" in _plain(title)
 
 
 # -- the launchpad body's right rail (2026-08-24) -------------------------
@@ -1030,7 +1057,7 @@ async def test_the_launchpad_summary_panels_sit_beside_the_coins_table() -> None
         pipeline = screen.query_one(SurfBurnPipeline)
 
         assert [type(c).__name__ for c in rail.children] == [
-            "SurfCurveFlow", "SurfBurnPipeline",
+            "SurfCurveFlow", "SurfBurnPipeline", "SurfBurnkeepers",
         ]
         # To the RIGHT of the table, and beside it rather than below.
         assert coins.region.right <= rail.region.x
@@ -1043,7 +1070,149 @@ async def test_the_launchpad_summary_panels_sit_beside_the_coins_table() -> None
         # the table is on screen, and the table keeps the screen's spare rows.
         rail_text = _region_text(pilot.app, rail)
         assert "CURVE FLOW" in rail_text and "BURN PIPELINE" in rail_text
-        assert coins.region.height > flow.region.height
+        # The spare rows CHANGED HANDS on 2026-08-25 and this is where that
+        # is visible. It used to read ``coins.region.height >
+        # flow.region.height``, on the grounds that the table was the one
+        # panel here whose row count was real data. The table is capped at
+        # ten rows now, so it sizes to its content like the summary panels
+        # do, and the two panels that grow are the ones with unbounded
+        # content: LAUNCHPAD ACTIVITY in the left column, BURNKEEPERS in the
+        # rail. Left as it was, this line would assert the old regime and
+        # go red for the right reason -- so it is restated, not deleted.
+        activity = screen.query_one(SurfLaunchpadActivity)
+        keepers = screen.query_one(SurfBurnkeepers)
+        assert activity.region.height > flow.region.height
+        assert keepers.region.height > flow.region.height
+
+
+# -- the l body's two columns and five panels (2026-08-25) ----------------
+
+
+async def test_the_launchpad_body_holds_five_panels_in_two_columns() -> None:
+    """Two columns, five panels, and the order within each is the layout.
+
+    ``#surf-launchpad-left`` is new: the coin table is capped at ten rows, so
+    it has no use for the body's spare rows and LAUNCHPAD ACTIVITY -- a feed,
+    whose content is unbounded -- takes them. Asserted on the *children* of
+    each container rather than on a screen-wide query, because a panel
+    mounted into the wrong column still answers ``query_one`` from the
+    screen and would leave this green.
+    """
+    async with _surf_app().run_test(size=(150, 50)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        screen = pilot.app.screen
+        left = screen.query_one(f"#{LAUNCHPAD_LEFT_ID}")
+        rail = screen.query_one(f"#{LAUNCHPAD_RAIL_ID}")
+        assert [type(w) for w in left.children] == [
+            SurfLaunchpadCoins, SurfLaunchpadActivity,
+        ]
+        assert [type(w) for w in rail.children] == [
+            SurfCurveFlow, SurfBurnPipeline, SurfBurnkeepers,
+        ]
+        # ...and the two columns really are side by side, not stacked: the
+        # child lists above are identical either way.
+        assert left.region.right <= rail.region.x
+        assert left.region.y == rail.region.y
+
+
+async def test_both_new_panels_are_dispatched_on_every_refresh() -> None:
+    """Dispatched whether or not ``l`` is showing, so the first keypress
+    paints a complete frame instead of a blank one -- the contract the other
+    three launchpad panels already keep.
+    """
+    async with _surf_app().run_test(size=(150, 50)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        # Still in MODE_DASHBOARD: neither panel has been displayed once.
+        assert pilot.app.screen.query_one(f"#{LAUNCHPAD_BODY_ID}").display is False
+        assert pilot.app.screen.query_one(SurfLaunchpadActivity)._payload
+        assert pilot.app.screen.query_one(SurfBurnkeepers)._payload
+        await pilot.press("l")
+        await pilot.pause()
+        text = _screen_text(pilot.app)
+    assert "LAUNCHPAD ACTIVITY" in text and "BURNKEEPERS" in text
+    # The payload, not just the titles -- a dispatched panel that rendered
+    # its empty state would satisfy the two title checks above.
+    assert "PANE" in text and "0xbbbb…bbbb" in text
+
+
+async def test_a_dead_launchpad_sweep_leaves_both_new_panels_explicit() -> None:
+    """No blank panel, no stale number presented as live."""
+    from maxpane_dashboard.widgets.surf.burnkeepers import UNAVAILABLE_LINE as BK
+    from maxpane_dashboard.widgets.surf.launchpad_activity import (
+        UNAVAILABLE_LINE as ACT,
+    )
+    payload = _frozen_payload(
+        launchpad_activity=None, launchpad_burnkeepers=None
+    )
+    async with _surf_app(payload).run_test(size=(150, 50)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        text = _screen_text(pilot.app)
+    assert ACT in text and BK in text
+
+
+async def test_the_rows_the_capped_coin_table_gave_up_go_to_the_feed() -> None:
+    """The whole reason the left half became a column.
+
+    ``SurfLaunchpadCoins`` is ``height: auto`` and so is the ``DataTable``
+    inside it -- and the second half is the one that actually does the work.
+    The ``1fr`` this body used to hand the panel lives on that table
+    (``widgets/surf/launchpad.py``'s own ``DEFAULT_CSS``); take it off the
+    panel alone and the table goes on claiming the column's spare rows from
+    inside an auto-sized parent, the cap buys the feed nothing, and every
+    structural test above still passes.
+
+    Measured at two terminal heights, because "the table is short" is not
+    the claim -- "the table does not grow, and the feed does" is, and one
+    height cannot tell them apart.
+    """
+    heights: dict[int, tuple[int, int]] = {}
+    for rows in (30, 50):
+        async with _surf_app().run_test(size=(150, rows)) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.press("l")
+            await pilot.pause()
+            screen = pilot.app.screen
+            heights[rows] = (
+                screen.query_one(SurfLaunchpadCoins).region.height,
+                screen.query_one(SurfLaunchpadActivity).region.height,
+            )
+
+    (coins_30, feed_30), (coins_50, feed_50) = heights[30], heights[50]
+    assert coins_30 == coins_50, (
+        f"the coin table grew {coins_30} -> {coins_50} rows with the "
+        "terminal: it is still claiming the column's spare rows"
+    )
+    assert feed_50 > feed_30, (
+        f"the feed did not take the 20 rows the terminal grew by "
+        f"({feed_30} -> {feed_50})"
+    )
+    assert feed_50 - feed_30 == 20, (heights, "the spare rows went elsewhere")
+
+
+async def test_the_floored_panels_never_thin_out_below_their_floor() -> None:
+    """``min-height`` on a ``1fr`` child is load-bearing, not decoration.
+
+    A ``1fr`` child cannot overflow its container -- it SHRINKS -- so without
+    a floor each of these two panels sheds one line per terminal row down to
+    a bare title, with no scrollbar, no ``‹ widen`` and no other trace
+    anywhere on screen. The floor is what turns that into an overflow the
+    rail's ``overflow-y: auto`` can show. Measured on a terminal short
+    enough that the body genuinely cannot fit them.
+    """
+    async with _surf_app().run_test(size=(150, 20)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        screen = pilot.app.screen
+        activity = screen.query_one(SurfLaunchpadActivity)
+        keepers = screen.query_one(SurfBurnkeepers)
+        assert activity.region.height >= 6, activity.region.height
+        assert keepers.region.height >= 5, keepers.region.height
 
 
 #: The two heights the gutter proof is measured at, and neither is arbitrary.
@@ -1204,8 +1373,17 @@ _LAUNCHPAD_CSS_STRUCTURAL = (
 _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS = {"padding": "0", "margin": "0"}
 
 _LAUNCHPAD_CSS_SELECTORS = (
-    f"#{LAUNCHPAD_BODY_ID}", f"#{LAUNCHPAD_RAIL_ID}", "SurfLaunchpadCoins",
-    "SurfCurveFlow", "SurfBurnPipeline",
+    f"#{LAUNCHPAD_BODY_ID}", f"#{LAUNCHPAD_LEFT_ID}", f"#{LAUNCHPAD_RAIL_ID}",
+    "SurfLaunchpadCoins",
+    # The `1fr` the coin table used to carry really lives on its DataTable
+    # (`widgets/surf/launchpad.py`'s own DEFAULT_CSS), so the override that
+    # takes it to `auto` is geometry like any other and has to agree across
+    # both copies -- this is the selector that would silently disagree
+    # otherwise, and the panel above it would look identical in both files
+    # while rendering differently.
+    "SurfLaunchpadCoins > DataTable",
+    "SurfLaunchpadActivity",
+    "SurfCurveFlow", "SurfBurnPipeline", "SurfBurnkeepers",
 )
 
 
@@ -1361,6 +1539,17 @@ async def test_the_launchpad_body_is_whole_from_its_pinned_width(width) -> None:
     clean from 133 while the rail still needs 134, so 133 renders a clipped
     rail line with nothing on screen asking to be widened. The rail check
     below is what makes that a failure instead of a green sweep.
+
+    **That check asks whether a line ENDS in ``…``, not whether one contains
+    one**, and the difference is not a loosening. ``text-overflow: ellipsis``
+    puts its ellipsis at the truncation point, which is the end of the
+    rendered line -- so ``rstrip().endswith("…")`` catches every clip the
+    bare ``in`` did. What it stops catching is a false positive that arrived
+    with BURNKEEPERS (2026-08-25): its wallet cell is a deliberate
+    anti-poisoning *window*, ``0xbbbb…bbbb``, whose ellipsis is a glyph in
+    the middle of a line that fits perfectly well. Left as ``in``, this
+    sweep failed at every width from 135 up while nothing was clipped
+    anywhere -- a red test that would have been "fixed" by moving a pin.
     """
     async with _surf_app().run_test(size=(width, 46)) as pilot:
         await pilot.app.screen._do_refresh()
@@ -1373,7 +1562,10 @@ async def test_the_launchpad_body_is_whole_from_its_pinned_width(width) -> None:
         )
         if width >= SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS:
             assert "‹ widen" not in title, width
-            assert "…" not in rail, (
+            clipped = [
+                line for line in rail.split("\n") if line.rstrip().endswith("…")
+            ]
+            assert not clipped, (
                 f"at {width} the rail is clipping a line and nothing on "
                 f"screen says so:\n{rail}"
             )
