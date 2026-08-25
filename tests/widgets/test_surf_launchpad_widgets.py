@@ -438,3 +438,64 @@ async def test_the_title_never_wraps_so_the_row_beneath_it_stays_blank() -> None
 
     i = next(n for n, row in enumerate(rows) if "LAUNCHPAD COINS" in row)
     assert rows[i + 1].strip() == "", rows[i + 1]
+
+
+# ---------------------------------------------------------------------------
+# Fix round 2 -- text-overflow: ellipsis silently ate the widen marker
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_widen_marker_survives_the_whole_wrap_prone_width_band() -> None:
+    """Round 1's fix traded a layout bug for an information-loss bug in the
+    same width band.
+
+    ``text-overflow: ellipsis`` alone stops the title from *wrapping*, but
+    it does not know the ``‹ widen`` marker is more important than the note
+    beside it -- so at exactly the widths where round 1's title (title +
+    full note + marker, always) overran the row, the ellipsis clipped
+    whatever came last, which was the marker itself. That is the silent-
+    clipping failure this repo forbids outright, on the one panel whose
+    entire job is to say a column got clipped.
+
+    Neither of round 1's own tests could have caught it:
+    ``test_the_title_never_wraps_so_the_row_beneath_it_stays_blank`` render
+    at a single width (58) and only ever checked the row beneath was blank;
+    ``test_the_widen_marker_still_follows_the_note_on_the_title_line``
+    renders at 73, comfortably clear of the band the reviewer measured
+    (45-52 for the plain note, 58-62 for the disagreement note, against
+    round 1's title logic).
+
+    This sweeps both payloads across the whole band (40-80) and asserts
+    *two* things at every width: the row beneath the title is still blank
+    (round 1's property, unbroken), and -- new this round -- whenever the
+    panel is narrower than ``_TABLE_FULL_WIDTH`` the complete
+    ``COINS_WIDEN_HINT`` string is present in the composited title row,
+    never partially eaten.
+    """
+    from maxpane_dashboard.widgets.surf.launchpad import (
+        COINS_WIDEN_HINT, _TABLE_FULL_WIDTH,
+    )
+
+    payloads = [
+        {"coin_count": 146, "as_of_hhmm": "01:14"},  # plain note
+        {"coin_count": 146, "launch_count": 66, "as_of_hhmm": "01:14"},  # disagreement note
+    ]
+
+    for kwargs in payloads:
+        for width in range(40, 81):
+            class _A(App):
+                def compose(self):
+                    yield SurfLaunchpadCoins()
+
+            async with _A().run_test(size=(width, 24)) as pilot:
+                widget = pilot.app.query_one(SurfLaunchpadCoins)
+                widget.update_data(coins=_ROWS, **kwargs)
+                await pilot.pause()
+                strips = pilot.app.screen._compositor.render_strips()
+                rows = ["".join(seg.text for seg in strip) for strip in strips]
+
+            i = next(n for n, row in enumerate(rows) if "LAUNCHPAD COINS" in row)
+            assert rows[i + 1].strip() == "", (kwargs, width, rows[i + 1])
+            if width < _TABLE_FULL_WIDTH:
+                assert COINS_WIDEN_HINT in rows[i], (kwargs, width, rows[i])

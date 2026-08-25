@@ -87,6 +87,8 @@ from __future__ import annotations
 
 import re
 
+from rich.cells import cell_len
+
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
@@ -483,7 +485,7 @@ class SurfLaunchpadCoins(Vertical):
         ``launch_count`` (Task 8's ``launchpad_launch_count``, Task 6's
         cursor-resumed full-history sweep) is the population the sweep
         actually *read*, kept separate from ``coin_count`` (the factory's
-        own ``coinCount()`` claim) so :meth:`_note_text` can compare the two
+        own ``coinCount()`` claim) so :meth:`_note_parts` can compare the two
         rather than silently rendering whichever subset the sweep produced
         as though it were the whole population -- see the module-level note
         on Task 6's review finding for why that comparison exists at all.
@@ -497,21 +499,31 @@ class SurfLaunchpadCoins(Vertical):
         }
         self._render_view()
 
-    def _note_text(self) -> str:
-        """The population/staleness phrase, or the degraded warning.
+    def _note_parts(self) -> tuple[str, bool]:
+        """The population/staleness phrase, or the degraded warning --
+        plain, unmarked, unescaped, and paired with whether it *is* the
+        degraded warning.
 
-        Unchanged logic, moved: ``146 coins`` when the sweep read the whole
-        population and ``146 coins · 66 read`` when it did not -- the
-        detector that would have caught a truncating sweep returning 2 of
-        146 launches as a success. ``launch_count is None`` means the sweep
-        failed outright, so this stays silent about the population rather
-        than asserting either agreement or disagreement.
+        This is the plain form :meth:`_set_title` measures with
+        ``rich.cells.cell_len`` to decide what fits (fix round 2: measuring
+        a markup-wrapped string with ``len()`` either counts tag characters
+        that never reach a pixel, or -- the defect this repo has shipped
+        before -- undercounts a wide cell if it ever measured rendered
+        codepoints with plain ``len()`` instead), and it is also the source
+        both the title and the old note row used to render from.
+
+        Unchanged logic, moved twice now: ``146 coins`` when the sweep read
+        the whole population and ``146 coins · 66 read`` when it did not --
+        the detector that would have caught a truncating sweep returning 2
+        of 146 launches as a success. ``launch_count is None`` means the
+        sweep failed outright, so this stays silent about the population
+        rather than asserting either agreement or disagreement.
         """
         if not self._payload:
-            return ""
+            return "", False
         coins = self._payload.get("coins")
         if coins is None:
-            return f"[$warning]⚠ {COINS_UNAVAILABLE}[/]"
+            return f"⚠ {COINS_UNAVAILABLE}", True
         coin_count = self._payload.get("coin_count")
         launch_count = self._payload.get("launch_count")
         try:
@@ -533,28 +545,127 @@ class SurfLaunchpadCoins(Vertical):
         parts = [population]
         as_of = self._payload.get("as_of_hhmm")
         if as_of:
-            parts.append(f"as of {safe_markup(str(as_of))}")
-        return f"[dim]{' · '.join(parts)}[/]"
+            parts.append(f"as of {str(as_of)}")
+        return " · ".join(parts), False
+
+    #: Visible width of the fixed separator this title inserts before a
+    #: shown note (``"  "`` + a dim ``"·"`` + ``" "``) / before a shown
+    #: marker (``"  "``) -- both are literal, styling-only strings with no
+    #: user content in them, so their cell width is a constant rather than
+    #: something to measure per render.
+    _NOTE_SEP_COLS = 4
+    _MARKER_SEP_COLS = 2
+
+    #: ``.surf-lpc-title``'s own ``padding: 0 1`` (DEFAULT_CSS above) eats
+    #: one column on each side of the Static's content box, so the text
+    #: budget available to :meth:`_set_title` is ``self.size.width`` (the
+    #: *container's* width) minus these two columns, never
+    #: ``self.size.width`` itself. Getting this wrong is exactly how round
+    #: 1's fix regressed: the fit check compared a candidate's plain width
+    #: against the unpadded container width, so it could accept a tier
+    #: that was two columns too wide, hand it to the CSS ellipsis, and
+    #: have the ellipsis eat the last two columns of the marker -- the
+    #: same silent-clipping shape as the wrap it was fixing.
+    _TITLE_PADDING_COLS = 2
+
+    def _title_markup(self, show_note: bool, show_marker: bool,
+                       note_plain: str, is_warning: bool) -> str:
+        """Build the title's markup for one tier. Pure -- no DOM access,
+        no width decision -- so :meth:`_set_title` can call it once it has
+        already decided which tier fits."""
+        text = COINS_TITLE
+        if show_note and note_plain:
+            note_markup = (
+                f"[$warning]{note_plain}[/]" if is_warning
+                else f"[dim]{safe_markup(note_plain)}[/]"
+            )
+            text += f"  [dim]·[/] {note_markup}"
+        if show_marker:
+            text += f"  [yellow]{COINS_WIDEN_HINT}[/]"
+        return text
+
+    def _title_plain_width(self, show_note: bool, show_marker: bool,
+                            note_plain: str) -> int:
+        """Rendered width of the same tier :meth:`_title_markup` would
+        build, measured on plain text with ``rich.cells.cell_len`` --
+        never on the markup string, and never with ``len()``."""
+        n = cell_len(COINS_TITLE)
+        if show_note and note_plain:
+            n += self._NOTE_SEP_COLS + cell_len(note_plain)
+        if show_marker:
+            n += self._MARKER_SEP_COLS + cell_len(COINS_WIDEN_HINT)
+        return n
 
     def _set_title(self) -> None:
-        """``LAUNCHPAD COINS · 146 coins · as of 01:14   ‹ widen``.
+        """``LAUNCHPAD COINS · 146 coins · as of 01:14   ‹ widen``, fitted
+        to the panel's own width rather than left to CSS to clip.
 
-        Note first, marker last, title never changed: ``"LAUNCHPAD COINS" in
-        text`` holds at every width, the contract ``SurfMarket._set_title``
-        keeps for its own panel.
+        Fix round 2: ``text-overflow: ellipsis`` alone (round 1's fix for
+        the title *wrapping*) silently ate the ``‹ widen`` marker itself in
+        exactly the width band the marker exists to warn about -- the
+        silent-clipping failure this repo forbids outright, on the one
+        panel whose whole job this task series is. The CSS stays as the
+        last-resort net (a truly cramped width still needs something to
+        stop a wrap), but this method now fits the row itself first, so
+        the ellipsis never has anything meaningful left to eat.
+
+        Order of sacrifice, most to least important (the ``_budget``
+        pattern in ``activity.py``, applied to a title instead of a row):
+        the title text is never dropped; the ``‹ widen`` marker is a
+        correctness signal (the table itself is clipping columns) and
+        outranks the note, which is only context (population, staleness),
+        so the note is what gets shed first when the two don't both fit.
+
+        One deliberate exception: when the sweep failed outright
+        (``coins is None``), the note *is* the warning -- the most
+        important thing on the row, because there is nothing else to say
+        -- so it outranks the marker instead, and the marker is what gets
+        shed in that case. Both tiers are still measured, never assumed:
+        this only changes which piece is sacrificed, not whether fitting
+        is attempted.
         """
         try:
             title = self.query_one("#surf-lpc-title", Static)
         except Exception:  # not composed yet
             return
-        text = COINS_TITLE
-        note = self._note_text()
-        if note:
-            text += f"  [dim]·[/] {note}"
+
         width = self.size.width
-        if width and width < _TABLE_FULL_WIDTH:
-            text += f"  [yellow]{COINS_WIDEN_HINT}[/]"
-        title.update(text)
+        note_plain, is_warning = self._note_parts()
+        note_wanted = bool(note_plain)
+        marker_wanted = bool(width) and width < _TABLE_FULL_WIDTH
+
+        if width <= 0:
+            # Not measured yet -- render everything, the same optimistic
+            # reading `SurfMarket._tier_for` gives `width <= 0`.
+            title.update(self._title_markup(note_wanted, False, note_plain,
+                                             is_warning))
+            return
+
+        # The title's own left+right padding is not text budget -- see
+        # `_TITLE_PADDING_COLS`.
+        budget = width - self._TITLE_PADDING_COLS
+
+        # Tier 1: title + note + marker, if everything wanted actually fits.
+        if self._title_plain_width(note_wanted, marker_wanted,
+                                    note_plain) <= budget:
+            title.update(self._title_markup(note_wanted, marker_wanted,
+                                             note_plain, is_warning))
+            return
+
+        # Tier 2: shed the lower-priority one of {note, marker}. Normally
+        # that is the note (see the docstring); in the degraded case the
+        # note IS the warning and outranks the marker, so the marker is
+        # shed instead -- the asymmetry is deliberate, not a special case
+        # left over from a bug.
+        if is_warning:
+            title.update(self._title_markup(True, False, note_plain,
+                                             is_warning))
+        else:
+            title.update(self._title_markup(False, marker_wanted, note_plain,
+                                             is_warning))
+        # Below this tier, `text-wrap: nowrap` / `text-overflow: ellipsis`
+        # (the CSS) is the last-resort net, and at that width the panel has
+        # bigger problems than this title.
 
     def _render_view(self) -> None:
         try:
@@ -564,7 +675,7 @@ class SurfLaunchpadCoins(Vertical):
         # Geometry-plus-note, correct whether or not there is a payload yet
         # -- a refresh must never blank a marker a resize already lit, nor
         # light one a resize has not earned, and an empty payload's note is
-        # simply the empty string (see ``_note_text``).
+        # simply the empty string (see ``_note_parts``).
         self._set_title()
         if not self._payload:
             return
