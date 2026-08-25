@@ -97,7 +97,7 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
     ),
     LaunchpadCoin: (
         "ticker", "name", "creator", "age_s", "price_eth", "change_24h_pct",
-        "swaps_24h", "swaps_all", "imd_burned",
+        "swaps_24h", "swaps_all", "imd_burned", "mcap_eth",
     ),
     LaunchpadState: (
         "coin_count", "imd_to_burn_wei", "total_real_imd_wei", "burn_fee_bps",
@@ -105,7 +105,7 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
         "min_bridge_wei", "bridge_amount_wei", "coins", "swap_count",
         "trader_count",
         "burned_total_wei", "swaps_by_coin", "coin_tickers", "launch_count",
-        "new_24h", "creator_count", "cursor",
+        "new_24h", "creator_count", "cursor", "activity", "burnkeepers",
     ),
 }
 
@@ -346,6 +346,8 @@ EXPECTED_KEYS = {
     "launchpad_burned_total",
     "launchpad_creator_eth_owed",
     "launchpad_coins",
+    "launchpad_activity",
+    "launchpad_burnkeepers",
     "launchpad_as_of_hhmm",
     # signals — three new detectors x (state, detail, age)
     "sig_decoy_state",
@@ -364,7 +366,7 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 80
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 82
 
 
 def test_every_signal_has_all_three_facets() -> None:
@@ -489,8 +491,8 @@ def test_lp_migration_signal_keys_are_renamed_not_dropped() -> None:
 def test_launchpad_coin_row_keys() -> None:
     assert SURF_ROW_KEYS["launchpad_coins"] == (
         "ticker", "name", "creator", "creator_known",
-        "age_s", "price_eth", "change_24h_pct", "swaps_24h", "swaps_all",
-        "imd_burned",
+        "age_s", "price_eth", "mcap_eth", "mcap_usd", "change_24h_pct",
+        "swaps_24h", "swaps_all", "imd_burned",
     )
 
 
@@ -543,3 +545,49 @@ def test_the_launchpad_population_keys_exist():
     for key in ("launchpad_launch_count", "launchpad_new_24h",
                 "launchpad_creator_count"):
         assert key in SURF_KEYS
+
+
+# ---------------------------------------------------------------------------
+# launchpad activity feed + burnkeepers — the frozen contract addition
+# (surf-launchpad-panels plan, Task 1)
+# ---------------------------------------------------------------------------
+
+
+def test_launchpad_coin_carries_mcap_eth() -> None:
+    """MCAP is derived on the launchpad tier from two values that tier holds.
+
+    ``price_eth`` stays: it is what the mcap is derived from, and dropping a
+    field from a frozen contract is a bigger change than adding one.
+    """
+    from maxpane_dashboard.data.surf_models import LaunchpadCoin
+    coin = LaunchpadCoin(
+        ticker="ICE", name="Ice Coin", creator="0xabc", age_s=60.0,
+        price_eth=5.861606568e-09, change_24h_pct=None, swaps_24h=0,
+        swaps_all=0, imd_burned=0.0, mcap_eth=5.861606568,
+    )
+    assert coin.mcap_eth == 5.861606568
+    assert coin.price_eth == 5.861606568e-09
+
+
+def test_the_two_new_row_contracts_are_frozen() -> None:
+    from maxpane_dashboard.data.surf_models import SURF_KEYS, SURF_ROW_KEYS
+    assert SURF_ROW_KEYS["launchpad_activity"] == (
+        "kind", "ticker", "wallet", "wallet_known", "eth", "age_s",
+    )
+    assert SURF_ROW_KEYS["launchpad_burnkeepers"] == (
+        "wallet", "wallet_known", "imd_burned", "eth_paid", "burns",
+    )
+    assert "launchpad_activity" in SURF_KEYS
+    assert "launchpad_burnkeepers" in SURF_KEYS
+
+
+def test_launchpad_coin_row_keys_gain_both_mcap_fields() -> None:
+    """The contract describes the row the PAYLOAD hands the widget.
+
+    ``mcap_usd`` is filled by the manager at assembly from the market tier;
+    the cache file only ever carries ``mcap_eth`` (spec 2.5/2.6).
+    """
+    from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS
+    keys = SURF_ROW_KEYS["launchpad_coins"]
+    assert "mcap_eth" in keys and "mcap_usd" in keys
+    assert "price_eth" in keys

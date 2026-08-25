@@ -679,6 +679,7 @@ def _launchpad_coin(**overrides) -> LaunchpadCoin:
         "swaps_24h": 5,
         "swaps_all": 9,
         "imd_burned": 0.42,
+        "mcap_eth": None,
     }
     fields.update(overrides)
     return LaunchpadCoin(**fields)
@@ -3106,7 +3107,12 @@ async def test_a_healthy_launchpad_sweep_populates_every_payload_key() -> None:
             {
                 "ticker": coin.ticker, "name": coin.name, "creator": coin.creator,
                 "creator_known": True, "age_s": coin.age_s,
-                "price_eth": coin.price_eth, "change_24h_pct": coin.change_24h_pct,
+                "price_eth": coin.price_eth,
+                # Not computed yet -- a later work package derives mcap_eth
+                # from price_eth and mcap_usd from the market tier at
+                # assembly (spec 2.5/2.6). This fixture predates both.
+                "mcap_eth": coin.mcap_eth, "mcap_usd": None,
+                "change_24h_pct": coin.change_24h_pct,
                 "swaps_24h": coin.swaps_24h, "swaps_all": coin.swaps_all,
                 "imd_burned": coin.imd_burned,
             }

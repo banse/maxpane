@@ -1161,6 +1161,10 @@ _NON_NUMERIC_KEYS = frozenset(
         "sig_decoy_state", "sig_decoy_detail",
         "sig_burnready_state", "sig_burnready_detail",
         "sig_hot_state", "sig_hot_detail",
+        # surf-launchpad-panels plan, Task 1: two more list[dict] payloads,
+        # same reasoning as launchpad_coins/dev_activity above -- a list has
+        # no numeric zero to confuse with a failed read.
+        "launchpad_activity", "launchpad_burnkeepers",
     }
 )
 

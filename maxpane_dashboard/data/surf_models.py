@@ -351,6 +351,46 @@ class LaunchpadCoin:
     swaps_24h: int
     swaps_all: int
     imd_burned: float | None
+    mcap_eth: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class LaunchpadEvent:
+    """One row of the launchpad activity feed.
+
+    ``kind`` is a closed vocabulary the producer owns: ``"buy"``, ``"sell"``,
+    ``"launch"``.  ``ticker`` is **attacker-chosen** (``launch(string,string)``
+    is permissionless) and is carried raw here, escaped at render.
+
+    ``eth`` is ``None`` on a launch and never ``0.0``: a launch has no swap
+    size, and a zero would read and rank as a free trade.
+    """
+
+    kind: str
+    ticker: str
+    wallet: str
+    eth: float | None
+    age_s: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class Burnkeeper:
+    """One wallet that called ``bridgeToBaseBurnReceiver()`` on the live
+    executor, with what it burned and what the bridge cost it.
+
+    ``imd_burned`` has a **representable zero** and comes from
+    ``TokensBridgedForBurn`` logs.  ``eth_paid`` is ``float | None`` because
+    it comes from a *different* source (the executor's internal transactions)
+    that can fail on its own: ``None`` means "we could not read the fee",
+    never "the bridge was free", and it must never fall back to the
+    transaction's ``value`` -- the contract refunds the surplus, and on live
+    data that fallback overstates by up to 36x.
+    """
+
+    wallet: str
+    imd_burned: float
+    eth_paid: float | None
+    burns: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -462,6 +502,8 @@ class LaunchpadState:
     new_24h: int | None = None
     creator_count: int | None = None
     cursor: dict | None = None
+    activity: tuple[LaunchpadEvent, ...] | None = None
+    burnkeepers: tuple[Burnkeeper, ...] | None = None
 
 
 #: Every key ``SurfManager.fetch_and_compute()`` returns — the parallel-agent
@@ -574,6 +616,8 @@ SURF_KEYS: tuple[str, ...] = (
     "launchpad_burned_total",       # float | None — cumulative from ImdBurned logs
     "launchpad_creator_eth_owed",   # float | None — LaunchpadHook.totalCreatorEthOwed()
     "launchpad_coins",              # list[dict] — SURF_ROW_KEYS["launchpad_coins"]
+    "launchpad_activity",     # list[dict] | None — None means the sweep failed
+    "launchpad_burnkeepers",  # list[dict] | None
     "launchpad_as_of_hhmm",         # str | None — slower tier's own staleness marker
     # ---- signals: three new detectors, state/detail/age each ----------------
     "sig_decoy_state",
@@ -629,9 +673,26 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "creator_known",
         "age_s",
         "price_eth",
+        "mcap_eth",
+        "mcap_usd",
         "change_24h_pct",
         "swaps_24h",
         "swaps_all",
         "imd_burned",
+    ),
+    "launchpad_activity": (
+        "kind",          # "buy" | "sell" | "launch" -- closed, producer-owned
+        "ticker",        # str  -- attacker-chosen, raw here, escaped at render
+        "wallet",        # str  -- trader on a swap, creator on a launch
+        "wallet_known",  # bool -- KNOWN_LABELS allowlist, never a blocklist
+        "eth",           # float | None -- swap size; None on a launch
+        "age_s",         # float | None
+    ),
+    "launchpad_burnkeepers": (
+        "wallet",
+        "wallet_known",
+        "imd_burned",    # float -- representable zero, from logs
+        "eth_paid",      # float | None -- LayerZero nativeFee; None if unread
+        "burns",         # int   -- call count
     ),
 }

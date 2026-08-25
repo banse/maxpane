@@ -337,13 +337,20 @@ _KEYS_WITHOUT_A_RENDERER = frozenset({
     "lp_state", "lp_imd", "lp_weth",
 })
 
-#: Emptied by Task 12 (was: the 27 v4/launchpad keys Task 1 froze before their
-#: consumers existed).  Every key SURF_KEYS carries now reaches either a
-#: widget kwarg (:data:`SURF_WIDGET_SIGNATURES`), :data:`META_KEYS`, or the
+#: Was emptied by Task 12 of the v3->v4/launchpad plan (27 keys Task 1 of
+#: that plan froze before their consumers existed), on the same precedent
+#: this now reuses: ``launchpad_activity``/``launchpad_burnkeepers`` are the
+#: surf-launchpad-panels plan's own Task 1 freezing the activity feed and
+#: burnkeeper contracts ahead of the widgets a later task in that plan wires
+#: up. Every key SURF_KEYS carries now reaches either a widget kwarg
+#: (:data:`SURF_WIDGET_SIGNATURES`), :data:`META_KEYS`, or the
 #: explicitly-parked :data:`_KEYS_WITHOUT_A_RENDERER`; an entry regressing
-#: into this set again is a bug, not a waiver -- see the docstrings above for
-#: the keys' worth of genuine, reported exceptions.
-_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
+#: into this set again -- or staying here past that plan's own wiring task --
+#: is a bug, not a waiver -- see the docstrings above for the keys' worth of
+#: genuine, reported exceptions.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset({
+    "launchpad_activity", "launchpad_burnkeepers",
+})
 
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
 _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z
@@ -696,7 +703,13 @@ def _sample_data() -> dict:
                 "ticker": "PANE", "name": "MaxPane Coin",
                 "creator": "0x9D2C9B1F5C3f8b6f7D9C1a5E4b3A2F1D0c9B8A7E",
                 "creator_known": False, "age_s": 3_600.0,
-                "price_eth": 0.0071, "change_24h_pct": 34.0,
+                "price_eth": 0.0071,
+                # Not computed yet -- Task 1 only freezes the two mcap
+                # fields; a later work package derives mcap_eth from
+                # price_eth and mcap_usd from the market tier at assembly
+                # (spec 2.5/2.6). An honest None here is not a fake mcap.
+                "mcap_eth": None, "mcap_usd": None,
+                "change_24h_pct": 34.0,
                 "swaps_24h": 12, "swaps_all": 31, "imd_burned": 88.4,
             },
             {
@@ -710,8 +723,35 @@ def _sample_data() -> dict:
                 "ticker": "SURF", "name": "Surf Launch",
                 "creator": "0x4E1c3A0Ad54418Fe843953C71dF23637DE732Cee",
                 "creator_known": False, "age_s": 7_200.0,
-                "price_eth": 0.00021, "change_24h_pct": None,
+                "price_eth": 0.00021, "mcap_eth": None, "mcap_usd": None,
+                "change_24h_pct": None,
                 "swaps_24h": 0, "swaps_all": 3, "imd_burned": 0.0,
+            },
+        ],
+        # Frozen by Task 1 of the surf-launchpad-panels plan, parked in
+        # ``_KEYS_PENDING_CONSUMERS`` below until a later task in that plan
+        # wires up the widgets that will render them -- exercised here only
+        # so ``test_every_list_row_in_the_fixture_matches_the_frozen_row_shape``
+        # measures every row shape ``SURF_ROW_KEYS`` declares, this one
+        # included.
+        "launchpad_activity": [
+            {
+                "kind": "buy", "ticker": "PANE",
+                "wallet": "0x9D2C9B1F5C3f8b6f7D9C1a5E4b3A2F1D0c9B8A7E",
+                "wallet_known": False, "eth": 0.012, "age_s": 45.0,
+            },
+            {
+                # A launch has no swap size: eth is None, never 0.0 -- a zero
+                # would read and rank as a free trade.
+                "kind": "launch", "ticker": "SURF",
+                "wallet": "0x4E1c3A0Ad54418Fe843953C71dF23637DE732Cee",
+                "wallet_known": False, "eth": None, "age_s": 7_200.0,
+            },
+        ],
+        "launchpad_burnkeepers": [
+            {
+                "wallet": "0x" + "bb" * 20, "wallet_known": False,
+                "imd_burned": 42.0, "eth_paid": 0.0031, "burns": 3,
             },
         ],
         "launchpad_as_of_hhmm": "01:14",

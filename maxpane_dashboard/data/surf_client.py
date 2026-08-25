@@ -1412,6 +1412,10 @@ class SurfClient(OwnedHttpClient):
                 swaps_24h=row["swaps_24h"],
                 swaps_all=row["swaps_all"],
                 imd_burned=row["imd_burned"],
+                # Not computed yet -- a later work package derives this from
+                # price_eth and the live IMD supply. Task 1 only freezes the
+                # field; an honest None here is not a fake mcap.
+                mcap_eth=None,
             )
             for row in rows
         )
