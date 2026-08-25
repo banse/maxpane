@@ -3073,6 +3073,24 @@ async def test_a_failed_sweep_with_nothing_to_serve_degrades() -> None:
     assert SOURCE_LAUNCHPAD in payload["degraded"]
 
 
+async def test_a_cold_launchpad_slot_publishes_coins_as_none_not_empty() -> None:
+    """Fix round 1's Critical. `_with_mcap_usd` used to loop `for row in rows
+    or ()`, which folded "the sweep has never landed" (`None`) into "it ran
+    and found nothing" (`[]`) -- exactly the distinction
+    `widgets/surf/launchpad.py` renders differently (`None` -> the
+    unavailable banner, `[]` -> a correctly-marked empty table). No other
+    test in this file exercises this path: the one that looks relevant
+    (`test_a_healthy_launchpad_sweep_populates_every_payload_key`) manufactures
+    `"coins": [...]` directly in the slot, and the tripwire above this one
+    checks `degraded`, not `launchpad_coins`. A cold cache -- no last-good
+    ever stored for this slot -- must publish `launchpad_coins is None`, not
+    `[]`.
+    """
+    manager = _manager_with_last_good(SLOT_LAUNCHPAD, None)
+    payload = await manager.fetch_and_compute()
+    assert payload["launchpad_coins"] is None
+
+
 async def test_a_healthy_launchpad_sweep_populates_every_payload_key() -> None:
     """One populated slot -> every Task 1 key reads off it, correctly mapped
     and correctly scaled — the wei->token division happens exactly once, in
@@ -3196,10 +3214,17 @@ def test_mcap_usd_is_attached_at_assembly() -> None:
     assert rows[0]["mcap_eth"] == 5.861606568
 
 
-@pytest.mark.parametrize("eth_usd, mcap", [(None, 5.86), (4000.0, None)])
+@pytest.mark.parametrize(
+    "eth_usd, mcap", [(None, 5.86), (4000.0, None), (0.0, 5.86)]
+)
 def test_an_unknown_input_leaves_mcap_usd_none(eth_usd, mcap) -> None:
     """CoinGecko down must not render an ETH figure under a `$` header, and
-    must never render 0."""
+    must never render 0. The `eth_usd=0.0` case is fix round 1's Important
+    finding 1: a zero ETH price is not a plausible reading, so it must be
+    treated exactly like a missing one -- not trusted to a caller two layers
+    away (`SurfClient` already rewrites a non-positive read to `None`) to
+    keep this function's own docstring promise for it.
+    """
     rows = SurfManager._with_mcap_usd([{"mcap_eth": mcap}], eth_usd)
     assert rows[0]["mcap_usd"] is None
 
@@ -3221,7 +3246,14 @@ def test_the_cache_slot_never_carries_mcap_usd() -> None:
 def test_both_new_keys_reach_the_payload_with_known_flags_derived() -> None:
     """`wallet_known` is derived here from KNOWN_LABELS -- the same one
     allowlist `creator_known` and `dev_activity` already use, never a second
-    notion of "known"."""
+    notion of "known".
+
+    The `Burnkeeper` fixture carries both a known and an unknown wallet (fix
+    round 1's Important finding 2): the original fixture used only
+    `DEV_WALLET`, so a hardcoded `wallet_known = True` in `_burnkeeper_rows`
+    would have passed unnoticed -- exactly the gap `_launchpad_activity_rows`
+    above did not have, because its fixture already mixed known and unknown.
+    """
     activity = SurfManager._launchpad_activity_rows([
         LaunchpadEvent(kind="buy", ticker="ICE", wallet=DEV_WALLET,
                        eth=0.012, age_s=120.0),
@@ -3233,9 +3265,12 @@ def test_both_new_keys_reach_the_payload_with_known_flags_derived() -> None:
     keepers = SurfManager._burnkeeper_rows([
         Burnkeeper(wallet=DEV_WALLET, imd_burned=15670.79,
                    eth_paid=5.49e-05, burns=2),
+        Burnkeeper(wallet="0xstranger", imd_burned=42.0,
+                   eth_paid=1.2e-05, burns=1),
     ])
     assert keepers[0]["wallet_known"] is True
     assert keepers[0]["burns"] == 2
+    assert keepers[1]["wallet_known"] is False
 
 
 def test_a_failed_sweep_publishes_none_not_an_empty_list() -> None:

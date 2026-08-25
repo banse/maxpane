@@ -1819,8 +1819,17 @@ class SurfManager:
         return rows
 
     @staticmethod
-    def _with_mcap_usd(rows: Any, eth_usd: Any) -> list[dict[str, Any]]:
+    def _with_mcap_usd(rows: Any, eth_usd: Any) -> list[dict[str, Any]] | None:
         """Attach `mcap_usd` to cached coin rows, at payload assembly.
+
+        **`None` in, `None` out** -- fix round 1's Critical. `rows is None`
+        means the launchpad tier has never completed a sweep (a cold cache),
+        which is a different fact from "swept and found zero coins"
+        (`rows == []`). `widgets/surf/launchpad.py` renders the two
+        differently (`None` -> `⚠ launchpad unavailable`, `[]` -> an empty,
+        correctly-marked table), and this function sits between the cache
+        slot and that widget, so it must preserve the distinction rather than
+        flatten both into `[]` via `rows or ()`.
 
         **This is the one cross-tier value on this panel.** `mcap_eth` is the
         launchpad tier's own (a slow-tier price times a supply from a slow-
@@ -1832,12 +1841,20 @@ class SurfManager:
 
         `eth_usd is None` (CoinGecko down) leaves `mcap_usd` `None` and the
         cell renders a dash. It never falls back to the ETH figure -- an ETH
-        number under a `$` header is worse than no number -- and it never
-        renders 0.
+        number under a `$` header is worse than no number. And it never
+        renders 0: `eth_usd <= 0` is not a plausible reading (a live ETH
+        price cannot be zero or negative) and is treated exactly like a
+        missing one, rather than trusting a caller two layers away
+        (`SurfClient`, which already rewrites a non-positive read to `None`)
+        to keep this function's own promise for it.
         """
+        if rows is None:
+            return None
         usd = _opt_float(eth_usd)
+        if usd is not None and usd <= 0:
+            usd = None
         out: list[dict[str, Any]] = []
-        for row in rows or ():
+        for row in rows:
             if not isinstance(row, dict):
                 continue
             mcap = _opt_float(row.get("mcap_eth"))
