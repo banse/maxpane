@@ -465,7 +465,7 @@ def _decode_bridged_for_burn_log(row: dict) -> dict | None:
     if len(raw) < 64:
         return None
     tx = str(row.get("transactionHash") or "").lower()
-    if not tx.startswith("0x"):
+    if not tx.startswith("0x") or len(tx) != _TX_HASH_CHARS:
         return None
     try:
         block = int(row.get("blockNumber"), 16)
@@ -476,6 +476,15 @@ def _decode_bridged_for_burn_log(row: dict) -> dict | None:
     except ValueError:
         return None
     return {"tx": tx, "block": block, "amount_wei": amount_wei}
+
+
+#: ``0x`` + 32 bytes, and ``0x`` + 20 bytes. Structural lengths, not display
+#: caps: they bound what a hand-edited ``burns`` entry can carry back into the
+#: process, on both sides of the cache file, the way :func:`_launchpad_text`
+#: bounds a launch's name. A wrong length is REJECTED rather than truncated --
+#: both fields are identities, and a truncated one would merge two rows.
+_TX_HASH_CHARS = 66
+_ADDRESS_CHARS = 42
 
 
 #: Cap on the burn rows the cursor PERSISTS. ``bridgeToBaseBurnReceiver()``
@@ -510,28 +519,51 @@ def _merge_burns(
     Keyed by tx hash, so a re-seen event (a reorg replay, a boundary block
     swept twice) **overwrites** its row rather than double-counting it --
     the same identity discipline ``merged`` keeps for launches, and the
-    reason this is a map and not a running total.
+    reason this is a map and not a running total. The cost of that key is
+    stated here rather than discovered later: **two ``TokensBridgedForBurn``
+    events in one transaction would collapse to one row** and under-report
+    that wallet. Nothing on the executor batches today (one event per
+    ``bridgeToBaseBurnReceiver()`` call, five calls on file), and a log index
+    could be folded into the key the day one does -- but a tx hash alone is
+    an identity only while that holds.
 
-    A burn whose sender could not be read is **dropped**, not stored with a
-    placeholder: ``fetch_tx_senders`` leaves an unreadable hash absent
-    precisely so its callers cannot confuse "we do not know who sent it"
-    with "a stranger sent it", and inventing ``0x0`` here would put an
-    invented wallet on a leaderboard.
+    **A burn whose sender could not be read is KEPT, unattributed** --
+    ``sender: None`` -- and never stored with a placeholder.
+    ``fetch_tx_senders`` leaves an unreadable hash absent precisely so its
+    callers cannot confuse "we do not know who sent it" with "a stranger
+    sent it", and inventing ``0x0`` here would put an invented wallet on a
+    leaderboard. ``_rank_burnkeepers`` skips these rows, so they are
+    *recorded, not credited*.
 
-    A ``fee_wei`` already known in *prior* survives; a new row starts
-    ``None`` and the fee round fills it in.
+    Dropping them was the original design and it was wrong in a way that
+    could not be recovered from: ``fetch_tx_senders`` runs on the **state**
+    pool while the four log sweeps run on the **logs** pool, so "logs up,
+    state down" is an ordinary failure here, not a hypothetical -- and the
+    cursor still advances to the head, so ``burn_from = last_block + 1``
+    means that ``TokensBridgedForBurn`` is never read again. One state-pool
+    blip understated a wallet's lifetime IMD forever, with no marker. Keeping
+    the row makes it retryable, which is the same shape ``fee_wei`` has three
+    lines below.
+
+    Both retryable fields survive a re-merge: a ``fee_wei`` already known in
+    *prior* is carried over, and a *prior* row that was unattributed is
+    attributed here as soon as *senders* can answer for it.
     """
-    out = dict(prior)
+    out: dict[str, dict] = {}
+    for tx, rec in prior.items():
+        sender = senders.get(tx)
+        if rec.get("sender") is None and sender:
+            rec = {**rec, "sender": sender.lower()}
+        out[tx] = rec
     for row in decoded:
         tx = row["tx"]
         sender = senders.get(tx)
-        if not sender:
-            continue
         existing = out.get(tx) or {}
         out[tx] = {
             "block": row["block"],
             "amount_wei": row["amount_wei"],
-            "sender": sender.lower(),
+            # `None`, never a placeholder: unattributed and retryable.
+            "sender": sender.lower() if sender else existing.get("sender"),
             "fee_wei": existing.get("fee_wei"),
         }
     return _cap_burns(out)
@@ -542,10 +574,17 @@ def _merge_burns(
 _MAX_ACTIVITY_ROWS = 40
 
 
-def _activity_rows(
+def _launchpad_activity_rows(
     swaps: list[dict], merged: dict[str, dict], head: int, now_ts: float,
 ) -> list[dict]:
     """Recent launchpad events, newest first.
+
+    Named ``_launchpad_activity_rows`` and **not** ``_activity_rows``, for
+    the reason ``_merge_burns`` states one function up: ``surf_manager`` has
+    its own ``_activity_rows`` in a different layer, with a different
+    signature and a different job (models -> payload dicts). The rule was
+    applied to one of these two names and not its sibling; one name over two
+    behaviours is how a reader ends up debugging the wrong function.
 
     Costs **no extra request**: every field comes from rows
     ``_launchpad_logs`` already decodes for the day window and used to
@@ -586,7 +625,11 @@ def _activity_rows(
             "eth": None,
             "block": rec.get("block") or 0,
         })
-    rows.sort(key=lambda r: -r["block"])
+    # A **total** key, like `_rank_burnkeepers`': `-block` alone leaves
+    # same-block rows free to reorder between refreshes, and a feed that
+    # reshuffles on its own reads as activity that did not happen. One block
+    # routinely holds several `CurveSwap`s.
+    rows.sort(key=lambda r: (-r["block"], r["kind"], r["ticker"], r["wallet"]))
     out = []
     for row in rows[:_MAX_ACTIVITY_ROWS]:
         block = row.pop("block")
@@ -606,10 +649,26 @@ def _rank_burnkeepers(burns: dict[str, dict]) -> tuple[Burnkeeper, ...]:
 
     The sort is **total** -- ``(-imd, -burns, wallet)`` -- so two wallets
     that burned the same amount do not swap places between refreshes.
+
+    **A row whose ``sender`` is ``None`` is skipped**: the sender read
+    (``fetch_tx_senders``, on the state pool) can fail on its own, and such a
+    row is *recorded, not credited* -- it stays in the cursor and is
+    re-attributed by a later sweep. Crediting it to a placeholder would put
+    an invented wallet on this leaderboard, which is the one thing this whole
+    path refuses to do.
+
+    **It folds the :data:`_MAX_PERSISTED_BURNS`-capped map**, so past 500
+    burns these "lifetime" totals silently exclude whatever ``_cap_burns``
+    shed. Five burns exist today and the cap is a file bound, not a display
+    decision -- but if this path ever has to report a true lifetime total
+    past that point, the per-wallet fold has to move into the cursor as its
+    own accumulator, the way ``burn_by_coin`` already is.
     """
     totals: dict[str, dict] = {}
     for rec in burns.values():
-        wallet = rec["sender"]
+        wallet = rec.get("sender")
+        if wallet is None:
+            continue        # recorded, not credited -- retried next sweep
         acc = totals.setdefault(
             wallet, {"imd_wei": 0, "fee_wei": None, "burns": 0}
         )
@@ -832,15 +891,30 @@ def _coerce_launchpad_resume(resume: Any) -> dict | None:
                 "coin_supply_wei": supply,
             }
 
-    # Burn rows are revisable records, not accumulators. A dropped row costs
-    # a re-read of blocks this sweep can still reach, so a bad one does not
-    # earn the cold sweep a bad `swaps_all` does -- see this function's own
-    # docstring on why the accumulators are strict.
+    # Burn rows are revisable records, not accumulators, so a bad one does
+    # not earn the cold sweep a bad `swaps_all` does -- see this function's
+    # own docstring on why the accumulators are strict. What a dropped row
+    # DOES cost is stated honestly here: the sweep resumes strictly above
+    # `last_block`, so a dropped row is a burn that will never be read again.
+    # That is why only the two fields with no separate read behind them
+    # (`block`, `amount_wei` -- and the `tx` that identifies them) drop a
+    # row, while the two that come from their own request (`sender`,
+    # `fee_wei`) degrade to None and are re-asked for next sweep.
+    #
+    # Both strings are bounded on THIS side of the file as well as the write
+    # side, for the reason `_launchpad_text` exists: a hand-edited cache is
+    # third-party input and `_cap_burns` bounds the row COUNT, not the string
+    # length -- so an unbounded `sender` would be rewritten every tick and
+    # land on the leaderboard as a wallet, in a sized cell. They are rejected
+    # at the wrong length rather than truncated to it: these are identities,
+    # and truncating one would silently merge two distinct rows.
     burns: dict[str, dict] = {}
     raw_burns = resume.get("burns")
     if isinstance(raw_burns, dict):
         for tx, rec in raw_burns.items():
             if not isinstance(tx, str) or not isinstance(rec, dict):
+                continue
+            if len(tx) != _TX_HASH_CHARS or not tx.lower().startswith("0x"):
                 continue
             block, amount = rec.get("block"), rec.get("amount_wei")
             if isinstance(block, bool) or not isinstance(block, int):
@@ -849,15 +923,23 @@ def _coerce_launchpad_resume(resume: Any) -> dict | None:
                 continue
             if block < 0 or amount < 0:
                 continue
+            # Mirrors `fetch_tx_senders`' own write-side check exactly. A
+            # malformed sender is not a dropped row -- it is an unattributed
+            # one, retried, because dropping it would lose the burn for good.
             sender = rec.get("sender")
-            if not isinstance(sender, str) or not sender.startswith("0x"):
-                continue
+            if not (
+                isinstance(sender, str)
+                and len(sender) == _ADDRESS_CHARS
+                and sender.lower().startswith("0x")
+            ):
+                sender = None
             fee = rec.get("fee_wei")
             if isinstance(fee, bool) or not isinstance(fee, int) or fee < 0:
                 fee = None      # unread and retryable, never a zero fee
             burns[tx.lower()] = {
                 "block": block, "amount_wei": amount,
-                "sender": sender.lower(), "fee_wei": fee,
+                "sender": None if sender is None else sender.lower(),
+                "fee_wei": fee,
             }
 
     def counter(key: str) -> dict[str, int]:
@@ -1765,8 +1847,12 @@ class SurfClient(OwnedHttpClient):
         floor is its own creation block. Its rows are *revisable records*
         keyed by tx hash, not accumulators, and the caller they name is not
         in the event at all -- the signature on the enclosing transaction is
-        read separately, and a burn whose signer could not be read is dropped
-        rather than credited to a placeholder.
+        read separately -- on the STATE pool, while these four sweeps are on
+        the LOGS pool, so it can fail on its own. A burn whose signer could
+        not be read is **kept unattributed and re-asked for next sweep**,
+        never credited to a placeholder and never dropped: this cursor
+        advances to the head regardless, so a dropped row would be a burn
+        nothing could ever read again.
 
         **Why a cursor and not a window.** The launch history only ever grows
         and its start never moves, so any window measured back from the chain
@@ -1949,7 +2035,7 @@ class SurfClient(OwnedHttpClient):
                     "pool_id": pool_id,
                     "trader": parsed["trader"],
                     "is_buy": parsed["is_buy"],
-                    # Kept for `_activity_rows`; the ranking ignores both.
+                    # Kept for `_launchpad_activity_rows`; the ranking ignores both.
                     "eth_amount_wei": parsed["eth_amount_wei"],
                     "block": block,
                 })
@@ -1972,15 +2058,27 @@ class SurfClient(OwnedHttpClient):
         # The event names the OFT, the destination and the amount and says
         # nothing at all about the caller, so the signer of the enclosing
         # transaction is read separately -- and a hash that read fails on
-        # stays ABSENT rather than becoming a placeholder wallet.
+        # stays ABSENT from `fetch_tx_senders`' result rather than becoming a
+        # placeholder wallet.
+        #
+        # **That read is on the STATE pool while the four sweeps above are on
+        # the LOGS pool**, so "logs up, state down" is an ordinary failure
+        # here. One ask per sweep covers the newly decoded rows AND every row
+        # an earlier sweep could not attribute -- because the cursor advances
+        # to the head either way, so an unattributed row that was dropped
+        # instead of retried would be a burn nobody could ever read again.
         decoded_burns = [
             d for d in (_decode_bridged_for_burn_log(r) for r in keeper_rows)
             if d is not None and d["block"] >= burn_from
         ]
-        senders = await self.fetch_tx_senders([d["tx"] for d in decoded_burns])
-        burns = _merge_burns(
-            decoded_burns, senders, dict(prior["burns"]) if prior else {},
-        )
+        prior_burns = dict(prior["burns"]) if prior else {}
+        needs_sender = list(dict.fromkeys(
+            [d["tx"] for d in decoded_burns]
+            + [tx for tx, rec in prior_burns.items()
+               if rec.get("sender") is None]
+        ))
+        senders = await self.fetch_tx_senders(needs_sender)
+        burns = _merge_burns(decoded_burns, senders, prior_burns)
 
         # Only the rows still missing a fee: a mined tx's fee cannot change,
         # and a row that failed to price last time is exactly the row worth
@@ -2057,7 +2155,7 @@ class SurfClient(OwnedHttpClient):
             "burns": burns,
         }
 
-        activity = _activity_rows(day_swaps, merged, head, now_ts)
+        activity = _launchpad_activity_rows(day_swaps, merged, head, now_ts)
 
         return _LaunchpadSweep(
             launches=launches,
