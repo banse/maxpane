@@ -170,7 +170,8 @@ def _cut_detail(text: str, budget: int) -> str:
     kept = kept.rstrip()
     return f"{kept}…" if kept else ""
 
-#: The nine detector labels, PRD §3 spelling (v4-grown), PRD §3 order.
+#: The ten detector labels, PRD §3 spelling (v4-grown, plus NEW REPLY),
+#: in PRD §3 order.
 #: **Interface**: the screen tests and the app-level acceptance tests assert
 #: these exact strings reach the compositor -- import this tuple, never
 #: retype it, and never shorten a label to save columns (see the module
@@ -179,6 +180,7 @@ def _cut_detail(text: str, budget: int) -> str:
 #: and this dashboard's layout constants do not move for it.
 DETECTOR_LABELS = (
     "NEW POST",
+    "NEW REPLY",
     "LP MOVE",
     "GATE OPEN",
     "NEW DEPLOY",
@@ -192,6 +194,7 @@ DETECTOR_LABELS = (
 #: payload prefix + child id per detector, aligned 1:1 with DETECTOR_LABELS.
 _ROW_KEYS = (
     ("post", "#surf-sig-post"),
+    ("thread", "#surf-sig-thread"),
     ("lp", "#surf-sig-lp"),
     ("gate", "#surf-sig-gate"),
     ("deploy", "#surf-sig-deploy"),
@@ -202,7 +205,7 @@ _ROW_KEYS = (
     ("hot", "#surf-sig-hot"),
 )
 
-#: (payload prefix, row label, child id) for the nine detectors, in PRD order.
+#: (payload prefix, row label, child id) for the ten detectors, in PRD order.
 _ROWS = tuple(
     (prefix, label, selector)
     for (prefix, selector), label in zip(_ROW_KEYS, DETECTOR_LABELS)
@@ -357,6 +360,9 @@ class SurfSignals(Vertical):
         sig_post_state=None,
         sig_post_detail=None,
         sig_post_age_s=None,
+        sig_thread_state=None,
+        sig_thread_detail=None,
+        sig_thread_age_s=None,
         sig_lp_state=None,
         sig_lp_detail=None,
         sig_lp_age_s=None,
@@ -383,11 +389,21 @@ class SurfSignals(Vertical):
         sig_hot_age_s=None,
         **_kwargs,
     ) -> None:
-        """Refresh the nine rows.  Kwargs are exactly the PRD §5 signal keys."""
+        """Refresh the ten rows.  Kwargs are exactly the PRD §5 signal keys.
+
+        The keyword list is explicit rather than ``**kwargs``-only, which is
+        what makes a missing row a *silent* row: an unnamed key falls into
+        ``_kwargs`` and the panel renders ``NEW REPLY --``, an unknown state,
+        with nothing anywhere saying the payload actually carried a value.
+        Growing this signature is the second half of adding a detector.
+        """
         self._payload = {
             "sig_post_state": sig_post_state,
             "sig_post_detail": sig_post_detail,
             "sig_post_age_s": sig_post_age_s,
+            "sig_thread_state": sig_thread_state,
+            "sig_thread_detail": sig_thread_detail,
+            "sig_thread_age_s": sig_thread_age_s,
             "sig_lp_state": sig_lp_state,
             "sig_lp_detail": sig_lp_detail,
             "sig_lp_age_s": sig_lp_age_s,

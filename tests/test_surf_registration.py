@@ -687,13 +687,19 @@ def test_all_six_detectors_survive_the_real_stylesheet() -> None:
     passes with DEFAULT_CSS alone today.  It is what turns red if a future
     theme edit -- or a "tidy" of the block above -- costs the screen a row.
 
-    The panel now carries nine detectors, not six, and ``_FakeManager()``'s
-    default fixture (``lp``/``gate``/``deploy``/``burn`` all ``ok``) exercises
-    quiet-collapse: those four fold into one ``· 4 quiet`` line rather than
-    keeping their own -- see ``widgets/surf/signals.py``'s Quiet-collapse
-    section. ``decoy``/``burnready``/``hot`` are absent from that fixture, so
-    they read as unknown and -- unlike ``ok`` -- never fold, which is what
-    keeps them each individually visible below.
+    The panel now carries ten detectors, not six, and ``_FakeManager()``'s
+    default fixture (``lp``/``gate``/``deploy``/``burn``/``thread`` all
+    ``ok``) exercises quiet-collapse: those five fold into one ``· 5 quiet``
+    line rather than keeping their own -- see ``widgets/surf/signals.py``'s
+    Quiet-collapse section. ``decoy``/``burnready``/``hot`` are absent from
+    that fixture, so they read as unknown and -- unlike ``ok`` -- never fold,
+    which is what keeps them each individually visible below.
+
+    NEW REPLY (2026-08-24) is the fifth quiet row and never appears by name
+    here, which is the correct outcome and worth saying out loud: a detector
+    that is ``ok`` is supposed to disappear into the count. It has its own
+    named assertion in ``tests/widgets/test_surf_widgets_a.py``, under the
+    FIRED state where the reader is meant to see it.
     """
     from maxpane_dashboard.screens.surf import SURF_FULL_LAYOUT_COLUMNS
 
@@ -717,9 +723,9 @@ def test_all_six_detectors_survive_the_real_stylesheet() -> None:
                 "HOT COIN",
             ):
                 assert label in text, f"{label} never reached the compositor"
-            assert "4 quiet" in text, (
-                "lp/gate/deploy/burn are all ok in this fixture and should "
-                "fold into one quiet line"
+            assert "5 quiet" in text, (
+                "lp/gate/deploy/burn/thread are all ok in this fixture and "
+                "should fold into one quiet line"
             )
 
     asyncio.run(_run())
@@ -1141,6 +1147,10 @@ _NON_NUMERIC_KEYS = frozenset(
         "sig_deploy_state", "sig_bridge_state", "sig_burn_state",
         "sig_post_detail", "sig_lp_detail", "sig_gate_detail",
         "sig_deploy_detail", "sig_bridge_detail", "sig_burn_detail",
+        # NEW REPLY (2026-08-24), same two shapes as every row above it: a
+        # state word and a detail string, neither of which has a numeric
+        # zero to confuse with a failed read.
+        "sig_thread_state", "sig_thread_detail",
         "lp_owner_ok", "gate_open",
         "supply_series", "price_series", "nft_last_sales", "dev_activity",
         # v4 migration + IMD launchpad (Task 1, 2026-08-23): strings, a
@@ -1193,6 +1203,7 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     "sig_deploy_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_bridge_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_burn_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
+    "sig_thread_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     # v4 migration + IMD launchpad (Task 1, 2026-08-23). Every key below
     # HAS a representable zero at the model/manager layer -- "0" means "we
     # looked and nothing has accrued/happened", distinguishable from a

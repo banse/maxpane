@@ -48,7 +48,9 @@ from dataclasses import dataclass
 #: is what detached the dev's answers from the questions they answer -- a
 #: reader could see a question in the feed and never see it get answered,
 #: because the answer rendered identically to an unrelated contract call.
-CHANNEL_KINDS: tuple[str, ...] = ("self", "reply", "answer", "action", "fund")
+CHANNEL_KINDS: tuple[str, ...] = (
+    "self", "reply", "answer", "action", "fund", "failed",
+)
 
 #: Signal states rendered by ``SurfSignals``.  ``None`` means "not evaluated".
 SIGNAL_STATES: tuple[str, ...] = ("ok", "watch", "fired")
@@ -137,6 +139,14 @@ class ChannelTx:
 
     ``method`` is Blockscout's decoded method name when it has one, else
     ``None`` — a hint for the feed, never the classification.
+
+    ``success`` is the receipt's own verdict, and it is **tri-state**:
+    ``True``/``False`` when the page said so, ``None`` when it did not.
+    ``None`` is not ``False`` — an unstated status must never turn a real
+    message into a failure — which is the same rule every numeric reading in
+    this file follows, applied to a boolean. It is carried rather than acted
+    on here: ``classify_channel_tx`` is where a reverted tx stops being the
+    thing it tried to be.
     """
 
     tx_hash: str
@@ -147,6 +157,7 @@ class ChannelTx:
     value_wei: int
     input_hex: str
     method: str | None = None
+    success: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +190,13 @@ class DevTx:
     method: str | None
     kind: str
     created_contract: str | None = None
+    #: The receipt's own verdict, tri-state exactly as ``ChannelTx.success``
+    #: is: ``None`` means the page did not say and must never be read as a
+    #: failure. Unlike ``ChannelTx``, ``kind`` here is assigned by the client
+    #: (``_classify_dev_kind``), so the receipt is both carried and acted on
+    #: in the same layer -- a reverted tx is ``failed`` whatever address it
+    #: was sent to, and the destination only names a tx that happened.
+    success: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -425,6 +443,15 @@ class LaunchpadState:
     creator_eth_owed_wei: int | None
     executor_balance_wei: int | None
     min_bridge_wei: int | None
+    #: ``BurnExecutor.previewBridge()``'s first word, ``amountToSend``: what a
+    #: bridge-and-burn call would move **right now**, already clamped to the
+    #: executor's balance, the OFT's limits and its shared-decimal dust, and
+    #: to ``minBridgeAmount``. Zero is a real answer -- "nothing is
+    #: bridgeable" -- and ``None`` is a failed read, the usual split. This is
+    #: what ``burn_ready`` is derived from; the accrual in the *hook*
+    #: (``imd_to_burn_wei``) is a different contract's number and the bridge
+    #: does not spend it.
+    bridge_amount_wei: int | None
     coins: tuple[LaunchpadCoin, ...]
     swap_count: int | None
     trader_count: int | None
@@ -449,10 +476,16 @@ SURF_KEYS: tuple[str, ...] = (
     "feed_nonce",            # int | None — eth_getTransactionCount(ANNOUNCE)
     "feed_last_post_age_s",  # float | None
     "feed_items",            # list[dict] — SURF_ROW_KEYS["feed_items"]
-    # ---- signals: six detectors, state/detail/age each ----------------------
+    # ---- signals: ten detectors, state/detail/age each ----------------------
     "sig_post_state",        # "ok" | "watch" | "fired" | None
     "sig_post_detail",       # str
     "sig_post_age_s",        # float | None
+    # NEW REPLY (2026-08-24): a reply or an answer landed on the channel.
+    # The feed collapses a post's replies behind a toggle, so without this
+    # row a thread can grow with nothing on screen to say so.
+    "sig_thread_state",
+    "sig_thread_detail",
+    "sig_thread_age_s",
     "sig_lp_state",
     "sig_lp_detail",
     "sig_lp_age_s",

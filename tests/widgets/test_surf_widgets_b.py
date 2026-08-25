@@ -1923,17 +1923,24 @@ async def test_activity_an_unknown_launchpad_lookalike_still_renders_dimmed_and_
     assert long_addr(lookalike) in text
 
 
-def test_the_kind_vocabulary_did_not_grow():
-    """``burnAccruedImd`` maps onto the existing ``burn`` kind, so the kind
-    cell's width is unchanged and surf's 142/143 columns are safe. A
-    standing guard, not a regression test: shorten a label if a future kind
+def test_the_kind_vocabulary_never_widened_the_cell():
+    """Two additions to this vocabulary, neither of which moved a column.
+
+    ``burnAccruedImd`` mapped onto the existing ``burn`` kind, adding no
+    member at all. ``failed`` (2026-08-25) *is* a new member -- a reverted tx
+    is not the thing its destination names -- and at six characters it sits
+    well inside the cell ``fwa claim`` already sets. So surf's 142/143
+    columns are safe through both.
+
+    A standing guard, not a regression test: shorten a label if a future kind
     ever needs one, and never widen the layout for it.
     """
     from maxpane_dashboard.data.surf_client import DEV_TX_KINDS
     from maxpane_dashboard.widgets.surf.activity import _KIND_COLS
 
     assert DEV_TX_KINDS == frozenset(
-        {"deploy", "lp", "burn", "bridge", "fwa claim", "transfer", "other"}
+        {"deploy", "lp", "burn", "bridge", "fwa claim", "transfer", "other",
+         "failed"}
     )
     assert max(len(k) for k in DEV_TX_KINDS) == len("fwa claim")
     assert _KIND_COLS == 9
@@ -2533,3 +2540,143 @@ def test_package_root_reexports_the_six_widget_classes():
     assert DETECTOR_LABELS[0] == "NEW POST"
     assert FEED_TITLE == "ANNOUNCE FEED"
     assert FLOOR_UNAVAILABLE.startswith("n/a")
+
+
+# ---------------------------------------------------------------------------
+# Where the toggle sits, and what separates the rows (2026-08-24)
+# ---------------------------------------------------------------------------
+
+#: A rendered row always opens with its own ``MM-DD HH:MM`` stamp and badge.
+#: Continuation lines of a wrapped message never match, which is what lets a
+#: test tell "the next row" from "more of this row".
+_ROW_START = re.compile(r"^\s*\d\d-\d\d \d\d:\d\d\s+(POST|REPLY|ANSWER|ACTION|FUND)\b")
+
+
+async def test_feed_the_toggle_renders_beside_the_post_it_opens():
+    """``▸ 2 replies`` belongs to a post, so it renders on that post's line.
+
+    Stranded at column zero on a line of its own it reads as a row in its own
+    right -- one more thing in the list rather than a control attached to the
+    thing above it. The ordering half of the assertion is the load-bearing
+    half: ``"replies" in screen`` would pass just as well with the toggle
+    back on its own line, which is the arrangement this replaced.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+
+        carrying = [line for line in _screen_lines(app) if "replies" in line]
+        assert len(carrying) == 1, carrying
+        line = carrying[0]
+        assert "need an NFT" in line, line          # the post's own last words
+        assert line.index("need an NFT") < line.index(TOGGLE_COLLAPSED), line
+
+
+async def test_feed_every_row_is_followed_by_a_blank_line():
+    """Post, reply and answer alike -- no two rows ever touch.
+
+    These are multi-line messages with no other separator: packed together, a
+    post's final wrapped line runs straight into the next row's date and the
+    two read as one message. The rule used to be one blank per *thread*,
+    which separated conversations but left the rows inside one conversation
+    -- question, answer, next question -- with nothing between them at all.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 40)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+        await _expand_every_thread(widget, pilot)
+
+        lines = _screen_lines(app)
+        starts = [i for i, line in enumerate(lines) if _ROW_START.match(line)]
+        # the post, two strangers' questions, and an answer to each
+        assert len(starts) == 5, lines
+        for index in starts[1:]:
+            assert lines[index - 1].strip() == "", (index, lines)
+
+
+async def test_feed_the_toggle_takes_its_own_line_when_the_post_leaves_no_room():
+    """The fallback, and it is not decoration.
+
+    Below ``FULL_TEXT_WIDTH`` a long message is truncated to fill the row
+    exactly, so there is no room beside it. A ``Horizontal`` whose children
+    overrun it clips them with no ``…`` and no ``‹ widen`` -- the silent cut
+    this panel exists not to make -- so the toggle drops to its own line
+    instead, still readable and still clickable.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(58, 30)) as pilot:
+        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        await pilot.pause()
+
+        carrying = [line for line in _screen_lines(app) if "replies" in line]
+        assert len(carrying) == 1, carrying
+        assert carrying[0].strip().startswith(TOGGLE_COLLAPSED), carrying
+        # and the toggle is whole -- a cut glyph or a cut count is the
+        # failure this branch exists to avoid.
+        assert "2 replies" in carrying[0], carrying
+
+
+# ---------------------------------------------------------------------------
+# A reverted tx is badged, not disguised (2026-08-25)
+# ---------------------------------------------------------------------------
+
+
+def test_every_channel_kind_has_a_badge_this_panel_can_render():
+    """A kind with no badge renders ``?`` and says nothing about why.
+
+    ``_KIND_STYLES.get(kind, ("?", "dim"))`` is a deliberate fallback for
+    input this panel has never heard of -- the channel is permissionless and
+    a future classifier could always add a kind -- but it must never be
+    reached by a kind *this repo* defines. Nothing paired the two lists until
+    ``failed`` was added, so the fallback was one forgotten dict entry away
+    from being the whole feature.
+
+    Derived from ``CHANNEL_KINDS`` rather than restated, so defining a kind
+    is what makes this demand its badge.
+    """
+    from maxpane_dashboard.data.surf_models import CHANNEL_KINDS
+    from maxpane_dashboard.widgets.surf.feed import _KIND_STYLES
+
+    missing = [kind for kind in CHANNEL_KINDS if kind not in _KIND_STYLES]
+    assert not missing, f"would render as '?': {missing}"
+
+    # And every badge fits the six-column cell the row prefix reserves, so
+    # adding a kind cannot silently widen the panel that sets this screen's
+    # layout number.
+    too_wide = {k: b for k, (b, _) in _KIND_STYLES.items() if len(b) > 6}
+    assert not too_wide, too_wide
+
+
+async def test_feed_a_reverted_tx_is_badged_failed_not_shown_as_what_it_tried():
+    """Composited proof, on the shape 0xTXT drops outright.
+
+    The calldata decodes perfectly well as an answer -- that is the trap. Had
+    the receipt not been consulted this row would have rendered ``ANSWER``
+    over a body nobody successfully published, and its twin with contract
+    calldata would have fed NEW DEPLOY a deployment that never happened. The
+    text still renders, because hiding what was attempted helps nobody; the
+    badge is what stops it being read as an event.
+    """
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 24)) as pilot:
+        widget.update_data(feed_nonce=25, feed_items=[{
+            "ts": 1786076831,
+            "kind": "failed",
+            "from_addr": _CHANNEL,
+            "to_addr": "0x" + "11" * 20,
+            "from_label": "channel",
+            "text": "this one never landed",
+            "tx_hash": "0xreverted",
+        }])
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "FAILED" in screen
+        assert "this one never landed" in screen
+        assert ANSWER_BADGE not in screen
+        assert "ACTION" not in screen

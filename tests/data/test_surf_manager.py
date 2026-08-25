@@ -701,6 +701,8 @@ def _launchpad_state(**overrides) -> LaunchpadState:
         "creator_eth_owed_wei": round(0.25 * 10**18),
         "executor_balance_wei": round(3.0 * 10**18),
         "min_bridge_wei": round(10.0 * 10**18),
+        # previewBridge(): the executor is funded and the OFT would take it.
+        "bridge_amount_wei": round(12.0 * 10**18),
         "coins": (_launchpad_coin(),),
         "swap_count": 25,
         "trader_count": 12,
@@ -1061,7 +1063,18 @@ async def test_last_post_age_counts_self_posts_only(manager):
     assert data["feed_last_post_age_s"] == pytest.approx(NOW - SOON_TS)
 
 
-async def test_channel_bodies_are_fetched_only_when_the_nonce_moves(tmp_path):
+async def test_channel_bodies_skip_a_tier_that_is_not_due_but_never_a_new_post(
+    tmp_path,
+):
+    """The two rules that gate the channel page: the tier, and the override.
+
+    This test used to pin a third — *an unchanged nonce skips the page even
+    when the medium tier is due* — and that rule is gone. It could only ever
+    see the dev's own posts, so it hid every inbound reply until the next one,
+    and a page that lagged the nonce it was stored beside froze the slot for
+    good. The two regressions at the end of this file are that failure from
+    both directions.
+    """
     clock = FakeClock()
     client = FakeSurfClient()
     m = _manager(tmp_path, client=client, clock=clock)
@@ -1069,14 +1082,15 @@ async def test_channel_bodies_are_fetched_only_when_the_nonce_moves(tmp_path):
     await m.fetch_and_compute()
     assert client.calls.count("fetch_channel_txs") == 1
 
-    clock.advance(600.0)                      # medium tier is due again
+    clock.advance(30.0)                       # inside the 90 s medium TTL
     await m.fetch_and_compute()
-    assert client.calls.count("fetch_channel_txs") == 1   # nonce unchanged: skipped
+    assert client.calls.count("fetch_channel_txs") == 1   # tier not due: skipped
 
+    # Still inside the TTL, but the announce wallet posted: rule 1 overrides.
     client._returns["fetch_nonces"] = NonceSet(
         announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE
     )
-    clock.advance(600.0)
+    clock.advance(30.0)
     await m.fetch_and_compute()
     assert client.calls.count("fetch_channel_txs") == 2   # a new post: fetched
 
@@ -2425,9 +2439,15 @@ async def test_a_stale_page_never_quotes_an_old_body_under_a_new_nonce(tmp_path)
     assert readings["announce_last_text"] is None     # not the previous body
     assert readings["announce_last_ts"] is None
     assert SOURCE_CHANNEL in data["degraded"]
-    # The nonce alone still fires it, and dates it to now rather than to May.
-    assert data["sig_post_state"] == "fired"
-    assert data["sig_post_age_s"] == pytest.approx(0.0, abs=1.0)
+    # WATCH, not FIRED. The nonce moving says the announce wallet *sent*
+    # something; it does not say the something was a post, because an answer
+    # and a contract call consume a nonce too. With the page down there is no
+    # way to tell, and claiming FIRED here is the claim that shipped: it
+    # reported a post nobody could confirm, on a row whose whole job is to
+    # quote one.
+    assert data["sig_post_state"] == "watch"
+    assert "not on the page yet" in (data["sig_post_detail"] or "")
+    assert data["sig_post_age_s"] is None
 
 
 async def test_a_contract_creation_reaches_the_deploy_detector(tmp_path):
@@ -2615,20 +2635,26 @@ async def test_the_post_body_lands_in_the_same_cycle_the_signal_fires(tmp_path):
     showed the previous post.
     """
     clock = FakeClock()
-    client = FakeSurfClient(fetch_channel_txs=[])
+    client = FakeSurfClient()                # a channel that already has posts
     m = _manager(tmp_path, client=client, clock=clock)
     first = await m.fetch_and_compute()
-    assert first["feed_items"] == []
+    assert len(first["feed_items"]) == 4
+    assert first["sig_post_state"] == "ok"   # seeded; history is never news
 
+    # A real new post, which means a page that *has* it: bumping the nonce
+    # while handing back the previous page is a stale page, not a post, and
+    # ``_posted_channel_txs``' own docstring says so. NEW POST reads the
+    # newest self-post's timestamp now, so the two scenarios no longer look
+    # alike to it -- which is the point of the split.
     client._returns["fetch_nonces"] = NonceSet(
         announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE, block_number=BLOCK
     )
-    client._returns["fetch_channel_txs"] = _channel_txs()
+    client._returns["fetch_channel_txs"] = _posted_channel_txs(SOON_TS + 300.0)
     clock.advance(30.0)                      # ONE poll interval; medium not due
     second = await m.fetch_and_compute()
 
     assert second["sig_post_state"] == "fired"
-    assert len(second["feed_items"]) == 4
+    assert len(second["feed_items"]) == 5
     assert '"soon"' in (second["sig_post_detail"] or "")
 
 
@@ -3021,6 +3047,7 @@ async def test_a_healthy_launchpad_sweep_populates_every_payload_key() -> None:
         "imd_to_burn_wei": round(15.06 * 10**18),
         "executor_balance_wei": round(3.0 * 10**18),
         "min_bridge_wei": round(10.0 * 10**18),
+        "bridge_amount_wei": round(3.0 * 10**18),
         "creator_eth_owed_wei": round(0.25 * 10**18),
         "burned_total_wei": round(90.0 * 10**18),
         "swap_count": 25,
@@ -3053,7 +3080,11 @@ async def test_a_healthy_launchpad_sweep_populates_every_payload_key() -> None:
     assert payload["burn_accrued"] == pytest.approx(15.06)
     assert payload["burn_staged"] == pytest.approx(3.0)
     assert payload["burn_min_bridge"] == pytest.approx(10.0)
-    assert payload["burn_ready"] is True                 # 15.06 >= max(10.0, 1)
+    # previewBridge() reports 3.0 IMD sendable, so a burn is callable now.
+    # Note it is the *staged* 3.0 that is sendable, not the 15.06 accrued in
+    # the hook: those are two different contracts' balances and only the
+    # first is what the bridge spends.
+    assert payload["burn_ready"] is True
     assert payload["launchpad_creator_eth_owed"] == pytest.approx(0.25)
     assert payload["launchpad_burned_total"] == pytest.approx(90.0)
     assert payload["launchpad_as_of_hhmm"] is not None
@@ -3083,18 +3114,33 @@ async def test_burn_ready_is_none_not_false_when_either_leg_is_unread() -> None:
     assert payload2["burn_ready"] is None
 
 
-async def test_burn_ready_is_false_when_accrued_is_below_the_floor() -> None:
-    """``max(min_bridge, 1)``: a zero ``min_bridge`` still needs at least one
-    whole IMD accrued before bridging is "ready", not "any accrual at all"."""
-    slot_payload = {
-        "imd_to_burn_wei": round(0.5 * 10**18),
-        "min_bridge_wei": 0,
-    }
-    manager = _manager_with_last_good(SLOT_LAUNCHPAD, slot_payload, at=NOW)
-    payload = await manager.fetch_and_compute()
-    assert payload["burn_accrued"] == pytest.approx(0.5)
-    assert payload["burn_min_bridge"] == 0.0
-    assert payload["burn_ready"] is False
+async def test_the_hook_accrual_has_no_say_in_whether_a_burn_is_ready() -> None:
+    """The property the old ``max(min_bridge, 1)`` floor violated.
+
+    That floor made readiness a function of ``imdToBurn`` -- the *hook's*
+    accrual -- so the row flipped to READY the moment LP fees pushed it past
+    one whole IMD, whatever the executor held. Here the accrual spans four
+    orders of magnitude, from a tenth of the old floor to five thousand times
+    it, and the answer never moves: the bridge says nothing is sendable, so
+    nothing is sendable.
+
+    Asserted as a sweep rather than as one value because a single case would
+    pass just as well against a floor set anywhere outside it -- it is the
+    *invariance* that says the accrual was disconnected, not any one row.
+    """
+    for accrued_imd in (0.1, 0.5, 1.0, 1.2253, 42.0, 5_000.0):
+        manager = _manager_with_last_good(
+            SLOT_LAUNCHPAD,
+            {
+                "imd_to_burn_wei": round(accrued_imd * 10**18),
+                "min_bridge_wei": 0,
+                "bridge_amount_wei": 0,      # previewBridge(): nothing to send
+            },
+            at=NOW,
+        )
+        payload = await manager.fetch_and_compute()
+        assert payload["burn_accrued"] == pytest.approx(accrued_imd)
+        assert payload["burn_ready"] is False, accrued_imd
 
 
 async def test_representable_zeros_survive_as_zero_not_none() -> None:
@@ -3493,3 +3539,278 @@ def test_hot_coin_reads_the_day_distribution_not_the_rendered_rows(tmp_path) -> 
     assert readings["launchpad_swaps_by_coin"] is not None
     assert len(readings["launchpad_swaps_by_coin"]) > LAUNCHPAD_RENDER_LIMIT
     assert readings["launchpad_swaps_by_coin"] == swaps_by_coin
+
+
+# ---------------------------------------------------------------------------
+# The channel slot must not freeze (2026-08-24)
+# ---------------------------------------------------------------------------
+#
+# Both of these are the same live incident, from two directions.  The feed had
+# been serving a 46-hour-old last-good while every other tier refreshed on
+# schedule: an answer from the announce wallet and the reply that followed it
+# never appeared at all, and the answer that *was* on screen still carried the
+# `action` kind a previous release classified it with.  The channel bodies were
+# gated on `eth_getTransactionCount(ANNOUNCE)` changing, and that number is
+# blind to both halves of the failure below.
+
+
+async def test_an_inbound_reply_reaches_the_feed_without_the_announce_nonce_moving(
+    tmp_path,
+):
+    """A stranger's reply never touches the announce wallet's own nonce.
+
+    `eth_getTransactionCount` counts the txs an account *sent*.  Every inbound
+    message on this channel — every question the feed exists to thread under
+    the post it answers — leaves it untouched, so a fetch gated on it can only
+    ever notice the dev's own posts.  Replies then appear on screen not when
+    they are written but whenever the dev next posts, which on this channel has
+    been as long as 52 days.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+
+    first = await m.fetch_and_compute()
+    assert len(first["feed_items"]) == 4
+    assert client.calls.count("fetch_channel_txs") == 1
+
+    client._returns["fetch_channel_txs"] = [
+        *_channel_txs(),
+        ChannelTx(tx_hash="0x" + "b7" * 32, ts=SOON_TS + 120.0, nonce=91,
+                  from_addr=REPLIER, to_addr=ANNOUNCE, value_wei=0,
+                  input_hex="0x686f77"),                          # "how"
+    ]
+    clock.advance(600.0)                       # medium tier due; nonce unmoved
+    second = await m.fetch_and_compute()
+
+    assert client.calls.count("fetch_channel_txs") == 2
+    assert len(second["feed_items"]) == 5
+
+
+async def test_a_page_that_lagged_a_new_nonce_is_refetched_rather_than_frozen(
+    tmp_path,
+):
+    """The indexer publishes a tx *after* the nonce that produced it reads.
+
+    Live incident: the fast tier read announce nonce 24 on the same cycle
+    Blockscout's page still ended one tx short.  The payload stored "nonce 24"
+    beside rows that did not contain it, so on every later cycle the cached
+    nonce equalled the live nonce, the fetch was skipped, and the slot could
+    never recover — the one number that would have unstuck it was the one
+    already recorded as seen.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient()
+    m = _manager(tmp_path, client=client, clock=clock)
+    await m.fetch_and_compute()
+
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE
+    )
+    clock.advance(30.0)
+    lagged = await m.fetch_and_compute()
+    assert len(lagged["feed_items"]) == 4       # the new post is not on the page
+
+    # The indexer catches up.  The nonce will never move again on its own, so
+    # this cycle is the only chance the feed gets.
+    client._returns["fetch_channel_txs"] = _posted_channel_txs(SOON_TS + 300.0)
+    clock.advance(600.0)
+    caught_up = await m.fetch_and_compute()
+
+    assert len(caught_up["feed_items"]) == 5
+
+
+# ---------------------------------------------------------------------------
+# BURN READY is the bridge's own answer, not an accrual comparison (2026-08-25)
+# ---------------------------------------------------------------------------
+
+
+async def test_burn_is_not_ready_when_the_bridge_says_nothing_is_bridgeable() -> None:
+    """The live state minutes after a burn, and it read READY.
+
+    Three separate mistakes stacked into one comparison, and the chain
+    contradicts all three (values read from mainnet 2026-08-25):
+
+    * ``imdToBurn`` is the **hook's** accrual -- 1.2253 IMD here -- and the
+      bridge does not spend it. ``bridgeToBaseBurnReceiver`` clamps to
+      ``BurnExecutor.tokenBalance()``, which holds 0.000000198 IMD: dust.
+      Comparing one contract's balance against another's threshold cannot be
+      right whatever the numbers are.
+    * ``minBridgeAmount()`` really is ``0`` on chain, so the comparison it
+      anchored was vacuous, and the ``max(..., 1)`` floor standing in for it
+      is a whole IMD that appears nowhere on chain. LP fees re-accrue past
+      one IMD within minutes of a burn, which is exactly when the row claimed
+      READY.
+    * Even a funded executor can fail: the OFT strips shared-decimal dust and
+      enforces its own ``minAmountLD``, so ``amountSentLD`` can round to zero
+      and the call reverts.
+
+    ``previewBridge()`` is the contract's own non-reverting answer to all of
+    it -- "all three are zero when nothing is bridgeable" -- so the row asks
+    that instead of re-deriving it from parts.
+    """
+    slot_payload = {
+        "imd_to_burn_wei": 1_225_278_075_887_759_091,   # 1.2253 IMD, in the HOOK
+        "executor_balance_wei": 198_146_853_024,        # dust, in the EXECUTOR
+        "min_bridge_wei": 0,                            # genuinely 0 on chain
+        "bridge_amount_wei": 0,                         # previewBridge(): nothing
+    }
+    manager = _manager_with_last_good(SLOT_LAUNCHPAD, slot_payload, at=NOW)
+    payload = await manager.fetch_and_compute()
+
+    assert payload["burn_accrued"] == pytest.approx(1.2252780, abs=1e-6)
+    assert payload["burn_staged"] == pytest.approx(1.98e-7, rel=1e-3)
+    assert payload["burn_ready"] is False
+
+
+async def test_burn_is_ready_when_the_bridge_reports_a_sendable_amount() -> None:
+    """The other direction: a funded executor the OFT will actually accept.
+
+    The accrual in the hook is *smaller* than the floor the old comparison
+    used, and the row is still READY -- because the executor is funded and
+    the bridge says so. That inversion is the point: the two quantities are
+    independent, and only one of them is what the call spends.
+    """
+    slot_payload = {
+        "imd_to_burn_wei": round(0.5 * 10**18),         # below the old 1-IMD floor
+        "executor_balance_wei": round(42.0 * 10**18),
+        "min_bridge_wei": 0,
+        "bridge_amount_wei": round(42.0 * 10**18),      # previewBridge(): all of it
+    }
+    manager = _manager_with_last_good(SLOT_LAUNCHPAD, slot_payload, at=NOW)
+    payload = await manager.fetch_and_compute()
+
+    assert payload["burn_accrued"] == pytest.approx(0.5)
+    assert payload["burn_ready"] is True
+
+
+async def test_burn_ready_is_none_when_the_bridge_preview_is_unread() -> None:
+    """Tri-state survives the repointing: "cannot tell" is still not "not ready".
+
+    ``previewBridge()`` cannot report failure through its return value -- it
+    catches and answers zero -- so a *failed* read has to arrive as ``None``
+    from the getter batch, and that is what this pins. A zero is an answer; a
+    ``None`` is the absence of one, and the row must not render NOT READY for
+    the second.
+    """
+    manager = _manager_with_last_good(
+        SLOT_LAUNCHPAD,
+        {"imd_to_burn_wei": round(5.0 * 10**18), "min_bridge_wei": 0},
+        at=NOW,
+    )
+    payload = await manager.fetch_and_compute()
+    assert payload["burn_accrued"] == pytest.approx(5.0)
+    assert payload["burn_ready"] is None
+
+
+async def test_a_reverted_channel_call_never_reaches_new_deploy(tmp_path):
+    """The ``receiptSuccess`` gap, end to end (2026-08-25).
+
+    Byte-for-byte the registration shape the test above fires on, with one
+    field changed: the receipt says it reverted. Nothing was deployed and
+    nothing was registered, so NEW DEPLOY must stay quiet -- and it does,
+    without the detector changing, because its ``kind == "action"`` filter
+    simply stops matching once the row classifies ``failed``. That is the
+    same mechanism the ``answer`` split used, and it is why the rule lives in
+    the classifier rather than in each consumer.
+
+    The row is still *on the feed*, labelled ``failed``. 0xTXT drops it; this
+    keeps it, because a dev whose call reverted is worth seeing and silently
+    dropping a real chain row is the failure this repo keeps writing down.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient(fetch_channel_txs=[], fetch_dev_activity=[])
+    m = _manager(tmp_path, client=client, clock=clock)
+    await m.fetch_and_compute()
+
+    client._returns["fetch_channel_txs"] = [
+        ChannelTx(tx_hash="0x" + "a2" * 32, ts=NOW + 60.0, nonce=4,
+                  from_addr=ANNOUNCE, to_addr=ERC8004, value_wei=0,
+                  input_hex=REGISTER_HEX, method="register", success=False),
+    ]
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE, block_number=BLOCK
+    )
+    clock.advance(30.0)
+    data = await m.fetch_and_compute()
+
+    assert data["sig_deploy_state"] != "fired", data["sig_deploy_detail"]
+    assert [i["kind"] for i in data["feed_items"]] == ["failed"]
+
+
+async def test_a_channel_page_that_states_no_status_still_classifies_normally(
+    tmp_path,
+):
+    """``None`` is not ``False``, on the path that actually carries it.
+
+    The tri-state is only worth having if it survives the trip from the page
+    to the classifier, and the failure it prevents is total: read an absent
+    status as a failure and *every* row on the channel becomes ``failed`` --
+    the whole feed replaced by six red badges, on a channel that is working
+    perfectly. The same registration row, status unstated, must still be the
+    ``action`` it is, and must still fire NEW DEPLOY.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient(fetch_channel_txs=[], fetch_dev_activity=[])
+    m = _manager(tmp_path, client=client, clock=clock)
+    await m.fetch_and_compute()
+
+    client._returns["fetch_channel_txs"] = [
+        ChannelTx(tx_hash="0x" + "a2" * 32, ts=NOW + 60.0, nonce=4,
+                  from_addr=ANNOUNCE, to_addr=ERC8004, value_wei=0,
+                  input_hex=REGISTER_HEX, method="register"),   # success unset
+    ]
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE + 1, dev=DEV_NONCE, ops=OPS_NONCE, block_number=BLOCK
+    )
+    clock.advance(30.0)
+    data = await m.fetch_and_compute()
+
+    assert [i["kind"] for i in data["feed_items"]] == ["action"]
+    assert data["sig_deploy_state"] == "fired"
+
+
+async def test_a_reverted_burn_executor_call_raises_no_burn_precursor(tmp_path):
+    """The other half of the captured ``0x0f3ce503…`` row, from the manager.
+
+    ``test_a_burn_executor_call_is_the_burn_precursor`` above is the same
+    scenario with a successful receipt, and the pair is the point: the *only*
+    difference between the two is whether the chain accepted the tx, and the
+    rail must say two different things about them. A reverted
+    ``bridgeToBaseBurnReceiver`` bridged nothing and burned nothing, so BURN
+    stays quiet.
+
+    The row still reaches the activity panel -- as ``failed``, which is the
+    same choice the announce feed makes: a dev whose burn attempt reverted is
+    worth seeing, and the label is what stops it counting as an event.
+
+    What this test does **not** prove: that a reverted row actually classifies
+    ``failed``. ``_dev_tx`` takes its ``kind`` as an argument, so this drives
+    the manager's ``kind == "burn"`` filter and nothing upstream of it. The
+    classification half is
+    ``test_surf_client.py::test_a_reverted_burn_executor_call_is_not_a_burn``,
+    which runs the real parser over the captured page. Neither half is the
+    chain on its own and both are needed.
+    """
+    clock = FakeClock()
+    client = FakeSurfClient(fetch_dev_activity=[], fetch_channel_txs=[])
+    m = _manager(tmp_path, client=client, clock=clock)
+    await m.fetch_and_compute()
+
+    client._returns["fetch_dev_activity"] = [
+        _dev_tx(tx_hash="0x0f3ce503623dc3d4a617a113514aa6913057d7ed46d23736dcbf885304c83e59",
+                ts=NOW + 60.0, wallet_label="dev", from_addr=DEV_WALLET,
+                to_addr=BURN_EXECUTOR_V1, method="bridgeToBaseBurnReceiver",
+                counterparty=BURN_EXECUTOR_V1,
+                counterparty_label=KNOWN_LABELS[BURN_EXECUTOR_V1.lower()],
+                kind="failed", success=False, value_wei=40_000_000_000_000),
+    ]
+    client._returns["fetch_nonces"] = NonceSet(
+        announce=ANNOUNCE_NONCE, dev=DEV_NONCE + 1, ops=OPS_NONCE, block_number=BLOCK
+    )
+    clock.advance(30.0)
+    data = await m.fetch_and_compute()
+
+    assert data["dev_activity"][0]["kind"] == "failed"
+    assert data["sig_burn_state"] != "watch", data["sig_burn_detail"]
+    assert "BurnExecutor" not in (data["sig_burn_detail"] or "")

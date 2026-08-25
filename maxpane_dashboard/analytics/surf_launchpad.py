@@ -25,8 +25,8 @@ HOT_MIN_ACTIVE = 5
 #:
 #: The distribution is a **windowed** statistic -- "how many swaps each coin
 #: took in the last 24h" -- so it decays in a way its siblings on this rail do
-#: not.  ``burn_ready`` ("imdToBurn >= minBridgeAmount") is a standing fact that
-#: is still true a day after it was read; "40 swaps this day", read a week
+#: not.  ``burn_ready`` ("``previewBridge()`` would send something") is a
+#: reading of the pipeline's state right now, not a window over a period; "40 swaps this day", read a week
 #: later, describes a day that has entirely passed and says nothing at all
 #: about now.  Serving it from the launchpad tier's never-expiring last-good
 #: slot is what let HOT COIN report ``ICE · 40 swaps`` off a day-old cache

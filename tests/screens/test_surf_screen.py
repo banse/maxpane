@@ -155,6 +155,9 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "sig_post_state": "sig_post_state",
         "sig_post_detail": "sig_post_detail",
         "sig_post_age_s": "sig_post_age_s",
+        "sig_thread_state": "sig_thread_state",
+        "sig_thread_detail": "sig_thread_detail",
+        "sig_thread_age_s": "sig_thread_age_s",
         "sig_lp_state": "sig_lp_state",
         "sig_lp_detail": "sig_lp_detail",
         "sig_lp_age_s": "sig_lp_age_s",
@@ -466,6 +469,11 @@ def _sample_data() -> dict:
         # 48-char body ellipsis, not a "nonce 13 -> 14" gloss.
         "sig_post_detail": '#14 "I moved 33 eth to the LP on mainnet https://eth…"',
         "sig_post_age_s": _AS_OF - _TS_POST_13,
+        # NEW REPLY quiet: this fixture's channel has no unreported reply on
+        # it, which is the ordinary state and keeps the row in the quiet fold.
+        "sig_thread_state": "ok",
+        "sig_thread_detail": "no new replies",
+        "sig_thread_age_s": None,
         "sig_lp_state": "ok",
         "sig_lp_detail": "liquidity holds",
         "sig_lp_age_s": None,
@@ -1785,9 +1793,9 @@ async def test_refresh_renders_title_and_all_panels():
         assert "burned 15,74…" not in text
         assert "58,848" not in text
         # The clipping trap: every detector row that keeps its own line
-        # reaches the compositor. SurfSignals now carries nine detectors
+        # reaches the compositor. SurfSignals now carries ten detectors
         # with quiet-collapse (Task 9): this fixture's lp/gate/deploy/burn
-        # are all `ok` and fold into one dim "4 quiet" line (the labels
+        # and thread are all `ok` and fold into one dim "5 quiet" line (the labels
         # themselves are therefore *not* on screen for those four -- folding
         # is what quiet-collapse means), so the quiet line is what a CSS
         # regression would eat first, the role BURN's own row used to play
@@ -1795,7 +1803,7 @@ async def test_refresh_renders_title_and_all_panels():
         for label in ("NEW POST", "BRIDGE STAGE", "DECOY POOL",
                       "BURN READY", "HOT COIN"):
             assert label in text, f"detector row {label!r} clipped or missing"
-        assert "4 quiet" in text
+        assert "5 quiet" in text
         # The floor is explicitly unavailable, never faked (PRD §4).
         assert "no keyless source" in text
 
@@ -2173,9 +2181,9 @@ async def test_a_terminal_too_short_for_nine_detectors_says_so():
     2026-08-23 hero rebuild put a card titled ``BURN`` on the hero row too,
     and the hero row never scrolls -- so ``"BURN" not in text`` could never
     go true again regardless of what the rail lost. ``HOT COIN`` is the
-    rail-only replacement: it is the last of the nine detector labels
-    (PRD §3 order) and, with this fixture's lp/gate/deploy/burn all quiet-
-    collapsed into "4 quiet" already, the last row the rail draws before
+    rail-only replacement: it is the last of the ten detector labels
+    (PRD §3 order) and, with this fixture's lp/gate/deploy/burn/thread all
+    quiet-collapsed into "5 quiet" already, the last row the rail draws before
     that summary line -- swept at the same two heights the old test used
     (46, 28), it is present at 46 and gone at 28, same as ``BURN`` used to
     be. Neither detector label was renamed: CLAUDE.md holds them as an
@@ -2188,9 +2196,9 @@ async def test_a_terminal_too_short_for_nine_detectors_says_so():
         for label in ("NEW POST", "BRIDGE STAGE", "DECOY POOL",
                       "BURN READY", "HOT COIN"):
             assert label in text, f"{label} is missing at a normal height"
-        assert "4 quiet" in text, (
-            "lp/gate/deploy/burn are all `ok` in this fixture and should "
-            "fold into one summary line"
+        assert "5 quiet" in text, (
+            "lp/gate/deploy/burn/thread are all `ok` in this fixture and "
+            "should fold into one summary line"
         )
         assert screen.query_one(_RAIL).show_vertical_scrollbar is False, (
             "the rail scrolls even when everything fits -- a marker that is "
@@ -2215,12 +2223,12 @@ _MARKET_FIELDS = ("$0.7074", "vol 24h", "parity", "price ", "supply")
 #: The panel now carries nine detectors, but this fixture's fixed *rendered*
 #: row count is still six: post/bridge are `fired` and decoy/burnready/hot
 #: are unknown (this fixture never sets them), so all five keep their own
-#: line, while lp/gate/deploy/burn are all `ok` and fold into one dim
-#: "N quiet" line (widgets/surf/signals.py's Quiet-collapse section). The
+#: line, while lp/gate/deploy/burn and thread are all `ok` and fold into one
+#: dim "N quiet" line (widgets/surf/signals.py's Quiet-collapse section). The
 #: quiet line renders last, after every detector slot, and so is always the
 #: first thing scrolled off -- the role BURN's own row used to play.
 _DETECTORS = ("NEW POST", "BRIDGE STAGE", "DECOY POOL", "BURN READY",
-              "HOT COIN", "4 quiet")
+              "HOT COIN", "5 quiet")
 
 #: The activity rows the sweep payload produces, once the dust row is dropped.
 #: Composited fragments, unique to that panel.
@@ -2247,6 +2255,26 @@ _ACTIVITY_ROWS = ("0x61CC704c…73f14E", "NFPM", "OFT endpoint")
 #: as tall as its taller child, so a row added to the shorter panel would
 #: have cost nothing -- it was the market's, and the market was the taller
 #: one. Re-measured, not adjusted: the marker is dark from 38 and lit at 37.
+#:
+#: **Unmoved on 2026-08-24**, through two changes that each looked like they
+#: should move it, and the reasons are worth more than the number.
+#:
+#: NEW REPLY is a *tenth* detector, and it cost the rail nothing: it is ``ok``
+#: on a quiet channel, and an ``ok`` row folds into the ``· N quiet`` line
+#: rather than taking one -- which is the whole point of quiet-collapse. Only
+#: the count changed, 4 -> 5. Measured first against a fixture that left the
+#: new keys *unset*, this read 39, because an unset key is the ``None``
+#: state, unknown rows never fold, and the row took a line it will never take
+#: in production. That is CLAUDE.md's "measure a data-dependent number against
+#: the state the data is normally in", on rows instead of columns: set the
+#: fixture to the state the channel is actually in and the row costs nothing.
+#:
+#: ``IMD MARKET`` lost a blank row in the same change and the screen did not
+#: notice either -- which inverts the paragraph above. Measured here,
+#: ``SurfMarket`` is **7** rows and ``SurfNft`` is **9**: IDENTITY.MD is the
+#: taller child of the bottom row now, and has been since it grew back past
+#: the market. A row taken off the market buys this screen nothing until the
+#: two are level again.
 FIRST_WHOLE_HEIGHT = 38
 
 
@@ -2378,11 +2406,13 @@ async def test_the_market_keeps_its_figures_far_below_the_rail():
     the height the rail stops fitting, and the panel is still its full height
     rather than a title over nothing.
 
-    Eight rows, not the seven this pinned until 2026-08-11: a second blank
-    row went in under the title. The number is asserted rather than derived
-    from the widget so that a row appearing or vanishing has to be a
-    deliberate edit here -- counting ``compose``'s yields would agree with
-    itself through any change at all.
+    Seven rows: eight from 2026-08-11, when a second blank row went in under
+    the title, and seven again from 2026-08-24, when it came back out -- on
+    screen the pair read as a gap rather than as the title standing off its
+    figures. The number is asserted rather than derived from the widget so
+    that a row appearing or vanishing has to be a deliberate edit here --
+    counting ``compose``'s yields would agree with itself through any change
+    at all.
     """
     async with _screen_at(SURF_FULL_LAYOUT_COLUMNS, 30) as (app, screen, _p):
         panel = _visible_panel(
@@ -2391,7 +2421,7 @@ async def test_the_market_keeps_its_figures_far_below_the_rail():
         assert all(field in panel for field in _MARKET_FIELDS), (
             f"the market lost {[f for f in _MARKET_FIELDS if f not in panel]}"
         )
-        assert screen.query_one(SurfMarket).region.height == 8
+        assert screen.query_one(SurfMarket).region.height == 7
         # ...and the rail's own loss is still advertised, in words.
         assert TALLER_HINT in _screen_text(app).split("\n")[0]
         assert screen.query_one(_RAIL).show_vertical_scrollbar is True

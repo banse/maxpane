@@ -593,6 +593,9 @@ _FULL_SIGNALS = {
     "sig_post_state": "fired",
     "sig_post_detail": "#14 · I moved 33 eth to the LP on mainnet",
     "sig_post_age_s": 7200.0,
+    "sig_thread_state": "ok",
+    "sig_thread_detail": "no new replies",
+    "sig_thread_age_s": None,
     "sig_lp_state": "ok",
     "sig_lp_detail": "pos #1167726 liquidity unchanged",
     "sig_lp_age_s": None,
@@ -620,10 +623,31 @@ _FULL_SIGNALS = {
 }
 
 #: How many of ``_FULL_SIGNALS``' nine detectors fold: lp, gate, burn, hot.
-_FULL_SIGNALS_QUIET_COUNT = 4
+_FULL_SIGNALS_QUIET_COUNT = 5
 
 
-async def test_detector_labels_are_the_nine():
+def test_every_signal_key_is_a_named_parameter_of_update_data():
+    """A key this panel does not name is a row that goes dark in silence.
+
+    ``update_data`` ends in ``**_kwargs``, so a payload key with no matching
+    parameter is swallowed: the row renders ``NEW REPLY --`` -- Textual's
+    unknown state -- while the manager is producing a perfectly good state,
+    detail and age for it. Nothing raises, nothing logs, and the panel looks
+    like a detector that could not be read rather than one that was never
+    wired. That is exactly how NEW REPLY first reached the screen.
+
+    Derived from ``SIGNAL_OUTPUT_KEYS``, which is itself derived from
+    ``_DETECTORS``, so registering a detector is what makes this test demand
+    its parameters -- there is no third list to forget.
+    """
+    from maxpane_dashboard.analytics.surf_signals import SIGNAL_OUTPUT_KEYS
+
+    named = set(inspect.signature(SurfSignals.update_data).parameters)
+    missing = [key for key in SIGNAL_OUTPUT_KEYS if key not in named]
+    assert not missing, f"swallowed by **_kwargs, rendered as unknown: {missing}"
+
+
+async def test_detector_labels_are_the_ten():
     """The label vocabulary is a cross-task interface, pinned in one place.
 
     The screen tests and the app-level acceptance tests assert these exact
@@ -632,8 +656,8 @@ async def test_detector_labels_are_the_nine():
     string -- instead of in the tasks that only consume it.
     """
     assert DETECTOR_LABELS == (
-        "NEW POST", "LP MOVE", "GATE OPEN", "NEW DEPLOY", "BRIDGE STAGE",
-        "BURN", "DECOY POOL", "BURN READY", "HOT COIN",
+        "NEW POST", "NEW REPLY", "LP MOVE", "GATE OPEN", "NEW DEPLOY",
+        "BRIDGE STAGE", "BURN", "DECOY POOL", "BURN READY", "HOT COIN",
     )
 
 
@@ -672,6 +696,31 @@ def test_all_quiet_still_renders_the_panel():
     assert "9 quiet" in rows
 
 
+async def test_signals_a_new_reply_reaches_the_screen_with_the_message():
+    """The row exists so a *collapsed* thread still announces itself.
+
+    The feed hides a post's replies behind a toggle by default, so the rail is
+    the only thing on screen that can say a thread moved. Asserted against
+    composited output, and asserted with the kind word in it: "reply" and
+    "answer" are the two halves this row folds together, and a row that said
+    only "new message" would leave the reader unable to tell a stranger's
+    question from the dev's answer to one.
+    """
+    widget = SurfSignals()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 16)) as pilot:
+        widget.update_data(**{
+            **_FULL_SIGNALS,
+            "sig_thread_state": "fired",
+            "sig_thread_detail": 'reply "will my IMD NFT generate me $IMD rewards?"',
+            "sig_thread_age_s": 240.0,
+        })
+        await pilot.pause()
+        screen = _screen_text(app)
+        assert "NEW REPLY FIRED 4m ago" in screen
+        assert "will my IMD NFT generate me $IMD rewards?" in screen
+
+
 async def test_signals_fired_rows_carry_state_and_age_in_words():
     """FIRED and WATCH must survive greyscale: the word, the age, the glyph --
     in text -- and stay on their own line rather than folding.
@@ -699,8 +748,8 @@ async def test_signals_fired_rows_carry_state_and_age_in_words():
         assert f"{_FULL_SIGNALS_QUIET_COUNT} quiet" in screen
 
 
-async def test_signals_all_nine_rows_always_render_when_nothing_is_ok():
-    """None-state rows are unknown, not OK -- nine rows on screen, no fold."""
+async def test_signals_all_ten_rows_always_render_when_nothing_is_ok():
+    """None-state rows are unknown, not OK -- ten rows on screen, no fold."""
     widget = SurfSignals()
     app = _Harness(widget)
     async with app.run_test(size=(120, 16)) as pilot:

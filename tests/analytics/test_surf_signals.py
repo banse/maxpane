@@ -468,6 +468,27 @@ REGISTER_ACTION = {
 FRESH_ACTION = {**REGISTER_ACTION, "ts": NOW - 240.0}
 # announce_eth_txs.json nonce 13.
 LP_POST_TS = 1_786_076_831.0
+#: The self-post already on record the day before -- NEW POST compares the
+#: newest self-post's timestamp against this, not the announce nonce, because
+#: an answer and a contract call move the nonce too.
+PRIOR_POST_TS = 1_785_900_000.0
+#: One reply already on the channel, so the ``thread`` baseline is seeded and
+#: a quiet refresh is genuinely quiet.
+SEEN_REPLY_TX = "0x" + "c0" * 32
+#: A reply that has not been reported yet -- NEW REPLY's FIRED row.
+FRESH_REPLY = {
+    "ts": LP_POST_TS + 600.0,
+    "tx_hash": "0x" + "c1" * 32,
+    "kind": "reply",
+    "text": "will my IMD NFT generate me $IMD rewards?",
+}
+#: The same, from the announce wallet: an answer, which the detail names.
+FRESH_ANSWER = {
+    "ts": LP_POST_TS + 900.0,
+    "tx_hash": "0x" + "c2" * 32,
+    "kind": "answer",
+    "text": "Yes the goal is for the protocol to pay users compute",
+}
 LP_POST_TEXT = (
     "I moved 33 eth to the LP on mainnet https://etherscan.io/tx/"
     "0x90a0f8e2b039e8d86d1b10e33e61e12d13728444e0a9e5ac258051cccb64d669. "
@@ -519,6 +540,9 @@ def _baseline(**overrides) -> dict:
     base = {
         "announce_nonce": 13,
         "channel_tx_count": 20,
+        "announce_last_ts": PRIOR_POST_TS,
+        "thread_tx": SEEN_REPLY_TX,
+        "thread_ts": PRIOR_POST_TS,
         "lp_liquidity": LP_LIQUIDITY_BEFORE,
         # Final fix wave (C2): LP MOVE's real subject. One v4 position, held
         # by frenpet.eth -- the quiet, day-after-the-migration default.
@@ -553,7 +577,15 @@ def _readings(**overrides) -> dict:
         "announce_nonce": 13,
         "channel_tx_count": 20,
         "announce_last_text": None,
-        "announce_last_ts": None,
+        "announce_last_ts": PRIOR_POST_TS,
+        # Read and held one reply, the one the baseline already knows about:
+        # `[]` would also be quiet, but it would be quiet the way an empty
+        # window is, and the row this stream feeds must be exercised against
+        # a page that actually has rows on it.
+        "channel_threads": [
+            {"ts": PRIOR_POST_TS, "tx_hash": SEEN_REPLY_TX,
+             "kind": "reply", "text": "gm"},
+        ],
         "lp_liquidity": LP_LIQUIDITY_BEFORE,
         "lp_position_count": 1,
         "ops_nonce": 36,
@@ -605,17 +637,20 @@ def test_output_keys_are_exactly_the_prd_contract():
     # migration finished -- is re-aimed rather than replaced, so ``lp`` stays
     # the payload prefix.
     assert sig.SIGNAL_NAMES == (
-        "post", "lp", "gate", "deploy", "bridge", "burn", "decoy", "burnready", "hot",
+        "post", "thread", "lp", "gate", "deploy", "bridge", "burn", "decoy",
+        "burnready", "hot",
     )
-    assert len(sig.SIGNAL_OUTPUT_KEYS) == 27
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 30
 
 
-def test_signal_output_keys_grew_to_twenty_seven():
-    """SIGNAL_OUTPUT_KEYS is DERIVED from _DETECTORS, so registering the three
-    new detectors is what publishes their keys -- there is no second list to
-    keep in step inside this module."""
-    assert len(sig.SIGNAL_NAMES) == 9
-    assert len(sig.SIGNAL_OUTPUT_KEYS) == 27
+def test_signal_output_keys_grew_to_thirty():
+    """SIGNAL_OUTPUT_KEYS is DERIVED from _DETECTORS, so registering a new
+    detector is what publishes its keys -- there is no second list to keep in
+    step inside this module. ``SURF_KEYS`` in ``data/surf_models.py`` is a
+    different matter and does have to be grown by hand; the manager logs and
+    drops any key that is not in it, which is what caught NEW REPLY."""
+    assert len(sig.SIGNAL_NAMES) == 10
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 30
 
 
 def test_quiet_refresh_leaves_post_ok():
@@ -641,15 +676,49 @@ def test_new_post_fires_with_the_decoded_body():
     assert age == pytest.approx(NOW - LP_POST_TS)
 
 
-def test_a_reply_is_a_watch_not_a_post():
+def test_a_reply_is_never_a_post():
     """Replies raise the Blockscout tx count without moving the nonce.
 
     Anyone can write to the channel; a reply is worth surfacing but it is not
-    the dev speaking (PRD §6.4).
+    the dev speaking (PRD §6.4). It used to raise a WATCH on NEW POST -- the
+    only place it could -- which is a row about the dev's broadcasts saying
+    something about a stranger's question. NEW REPLY owns it now, and NEW POST
+    stays quiet through it.
     """
-    assert _sig("post", _baseline(), _readings(channel_tx_count=21)) == (
-        "watch", "reply on channel · 21 txs", None
+    quiet_post = _sig("post", _baseline(), _readings(channel_tx_count=21))
+    assert quiet_post == ("ok", "nonce 13 · no new post", None)
+    assert _sig("thread", _baseline(), _readings(channel_tx_count=21)) == (
+        "watch", "21 txs on channel · reply not on the page yet", None
     )
+
+
+def test_an_answer_does_not_fire_new_post():
+    """The regression this row was split out of (channel nonce 23).
+
+    An answer is a tx the announce wallet sent, so it moves the nonce exactly
+    as a post does -- and NEW POST, firing on the nonce, quoted
+    ``announce_last_text``: the newest *self-post*, which is a different
+    message, written days earlier. It then dated the FIRED row to that older
+    post. Both halves are asserted, because a row that fires with the right
+    body but the wrong age is still wrong on screen.
+    """
+    reading = _readings(
+        announce_nonce=14,                       # the answer consumed a nonce
+        channel_tx_count=21,                     # and landed on the page
+        announce_last_text=LP_POST_TEXT,         # still the newest SELF-post
+        announce_last_ts=PRIOR_POST_TS,          # ...and it did not move
+        channel_threads=[
+            {"ts": PRIOR_POST_TS, "tx_hash": SEEN_REPLY_TX,
+             "kind": "reply", "text": "gm"},
+            FRESH_ANSWER,
+        ],
+    )
+    assert _sig("post", _baseline(), reading) == ("ok", "nonce 14 · no new post", None)
+
+    state, detail, age = _sig("thread", _baseline(), reading)
+    assert state == "fired"
+    assert detail.startswith("answer "), detail
+    assert age == pytest.approx(NOW - FRESH_ANSWER["ts"])
 
 
 def test_first_ever_read_seeds_the_baseline_and_never_fires():
@@ -1729,11 +1798,19 @@ def test_a_bool_announce_nonce_reading_does_not_swallow_the_next_genuine_post():
 MATRIX: tuple[tuple[str, str, dict, dict, str], ...] = (
     # (signal, expected state, baseline overrides, reading overrides, expected detail)
     ("post", "ok", {}, {}, "nonce 13 · no new post"),
-    ("post", "watch", {}, {"channel_tx_count": 21}, "reply on channel · 21 txs"),
+    ("post", "watch", {}, {"announce_nonce": 14},
+     "nonce 14 · post not on the page yet"),
     ("post", "fired", {},
      {"announce_nonce": 14, "announce_last_text": LP_POST_TEXT, "announce_last_ts": LP_POST_TS},
      LP_POST_DETAIL),
     ("post", None, {}, {"announce_nonce": None, "channel_tx_count": None}, "channel unavailable"),
+
+    ("thread", "ok", {}, {}, "no new replies"),
+    ("thread", "watch", {}, {"channel_tx_count": 21},
+     "21 txs on channel · reply not on the page yet"),
+    ("thread", "fired", {}, {"channel_threads": [FRESH_REPLY]},
+     'reply "will my IMD NFT generate me $IMD rewards?"'),
+    ("thread", None, {}, {"channel_threads": None}, "channel unavailable"),
 
     ("lp", "ok", {}, {}, "1 v4 position held"),
     ("lp", "watch", {}, {"ops_nonce": 37}, "frenpet.eth active · nonce 37"),
@@ -2186,12 +2263,13 @@ def test_public_surface_is_the_frozen_one():
 
 
 def test_signal_output_keys_match_the_prd_naming():
-    """PRD §5: ``sig_{name}_{state,detail,age_s}`` for all nine detectors."""
-    assert len(sig.SIGNAL_OUTPUT_KEYS) == 27
+    """PRD §5: ``sig_{name}_{state,detail,age_s}`` for all ten detectors."""
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 30
     assert sig.SIGNAL_OUTPUT_KEYS[:3] == ("sig_post_state", "sig_post_detail", "sig_post_age_s")
     assert set(sig.SIGNAL_OUTPUT_KEYS) == {
         f"sig_{name}_{field}"
-        for name in ("post", "lp", "gate", "deploy", "bridge", "burn", "decoy", "burnready", "hot")
+        for name in ("post", "thread", "lp", "gate", "deploy", "bridge", "burn",
+                     "decoy", "burnready", "hot")
         for field in ("state", "detail", "age_s")
     }
 
@@ -2219,3 +2297,56 @@ def test_details_fit_the_signals_panel():
         for key, value in out.items():
             if key.endswith("_detail"):
                 assert len(value) <= 55, (key, len(value), value)
+
+
+# ---------------------------------------------------------------------------
+# A reverted tx is not a channel event (2026-08-25)
+# ---------------------------------------------------------------------------
+
+
+def test_a_reverted_channel_tx_is_never_read_as_the_thing_it_tried_to_be():
+    """0xTXT's ``classifySurfTransaction`` gates on ``receiptSuccess``; this
+    did not, and that is the whole gap.
+
+    A tx that reverted changed nothing on chain, so reading it as a message
+    the dev sent or a call the dev made is reading an intention as an event.
+    Both shapes are pinned because they fail differently on screen: the
+    ``answer`` would print a body nobody successfully published, and the
+    ``action`` is NEW DEPLOY's own fuel -- the detector selects ``kind ==
+    "action"``, so a reverted call would fire "new contract" for a
+    deployment that did not happen.
+
+    Only ``success is False`` reclassifies. ``None`` means the page did not
+    say, and an unknown status must not silently turn every row into a
+    failure -- the same None-is-not-zero rule this module is built on,
+    applied to a boolean.
+    """
+    from maxpane_dashboard.data.surf_addresses import ANNOUNCE
+
+    stranger = "0x" + "11" * 20
+    answer_hex = "0x" + "yes it is".encode().hex()
+
+    # The same two rows, once as the chain accepted them...
+    assert sig.classify_channel_tx(ANNOUNCE, stranger, 0, answer_hex) == "answer"
+    assert sig.classify_channel_tx(ANNOUNCE, stranger, 0, "0xffffffff") == "action"
+
+    # ...and once as the chain rejected them.
+    assert sig.classify_channel_tx(
+        ANNOUNCE, stranger, 0, answer_hex, success=False
+    ) == "failed"
+    assert sig.classify_channel_tx(
+        ANNOUNCE, stranger, 0, "0xffffffff", success=False
+    ) == "failed"
+
+    # An unstated status is not a failure.
+    assert sig.classify_channel_tx(
+        ANNOUNCE, stranger, 0, answer_hex, success=None
+    ) == "answer"
+    assert sig.classify_channel_tx(
+        ANNOUNCE, stranger, 0, answer_hex, success=True
+    ) == "answer"
+
+
+def test_failed_is_in_the_kind_vocabulary_the_widgets_render():
+    """A kind no widget has a badge for renders ``?``; this pins the pair."""
+    assert "failed" in sig.CHANNEL_KINDS

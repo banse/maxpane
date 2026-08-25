@@ -702,9 +702,32 @@ def _lenient_int(value: Any) -> int | None:
 
 
 #: The closed label vocabulary for the activity column (PRD §4).
+#:
+#: ``failed`` (2026-08-25) is the receipt, not a destination: it wins over
+#: every address-keyed member below it, because a reverted tx did not do the
+#: thing its destination names. Six characters, so it fits the ``_KIND_COLS``
+#: cell already sized for ``fwa claim`` and this panel's width does not move.
 DEV_TX_KINDS = frozenset(
-    {"deploy", "lp", "burn", "bridge", "fwa claim", "transfer", "other"}
+    {"deploy", "lp", "burn", "bridge", "fwa claim", "transfer", "other",
+     "failed"}
 )
+
+
+def _receipt_success(row: dict) -> bool | None:
+    """Blockscout's ``status`` as a tri-state; ``None`` when it did not say.
+
+    Shared by both tx-page parsers so the announce channel and the dev
+    wallets cannot drift on what counts as a failure. Only the literal
+    ``"error"`` is a failure: absent, ``null`` or a spelling this code has
+    not seen answers ``None``, because reading an unstated status as ``False``
+    would turn a healthy page into a wall of ``failed`` rows.
+    """
+    status = row.get("status")
+    if status == "ok":
+        return True
+    if status == "error":
+        return False
+    return None
 
 _DEV_WALLET_LABELS: dict[str, str] = {
     A.DEV_WALLET.lower(): "dev",
@@ -1345,10 +1368,25 @@ class SurfClient(OwnedHttpClient):
             (A.LAUNCHPAD_FACTORY, A.SEL_COIN_COUNT),
             (A.BURN_EXECUTOR_V2, A.SEL_TOKEN_BALANCE),
             (A.BURN_EXECUTOR_V2, A.SEL_MIN_BRIDGE_AMOUNT),
+            # `previewBridge()` -- the executor's own non-reverting answer to
+            # "would a bridge call work right now, and for how much". It
+            # returns three words and this batch decodes the first,
+            # `amountToSend`, which is zero whenever nothing is bridgeable.
+            #
+            # It is read rather than re-derived because the condition has
+            # four parts and only two of them are visible from the getters
+            # beside it: the executor's balance, the OFT's `maxAmountLD` cap,
+            # the shared-decimal dust the OFT strips (which can round a real
+            # balance to zero), and `minBridgeAmount`. `resolveSendParam`
+            # applies all four in order and `previewBridge` catches its
+            # revert; anything we computed here from `tokenBalance` and
+            # `minBridgeAmount` alone would be a guess at the other two.
+            (A.BURN_EXECUTOR_V2, A.SEL_PREVIEW_BRIDGE),
         ]
         (
             imd_to_burn_wei, total_real_imd_wei, burn_fee_bps, creator_fee_bps,
             creator_eth_owed_wei, coin_count, executor_balance_wei, min_bridge_wei,
+            bridge_amount_wei,
         ) = await self._launchpad_getters(getters)
 
         sweep = await self._launchpad_logs(resume)
@@ -1407,6 +1445,7 @@ class SurfClient(OwnedHttpClient):
             creator_eth_owed_wei=creator_eth_owed_wei,
             executor_balance_wei=executor_balance_wei,
             min_bridge_wei=min_bridge_wei,
+            bridge_amount_wei=bridge_amount_wei,
             coins=coins,
             swap_count=sweep.swap_count,
             trader_count=sweep.trader_count,
@@ -1886,6 +1925,7 @@ class SurfClient(OwnedHttpClient):
             input_hex=row.get("raw_input") or "0x",
             tx_hash=tx_hash,
             method=row.get("method"),
+            success=_receipt_success(row),
         )
 
     async def fetch_channel_txs(self) -> list[ChannelTx] | None:
@@ -1924,6 +1964,17 @@ class SurfClient(OwnedHttpClient):
         never the name).  `method` only ever narrows a decision the address
         has already made.
 
+        **The receipt comes first** (2026-08-25). A destination names what a
+        tx *did*, and a reverted tx did nothing, so ``status: "error"`` is
+        ``failed`` before any address is consulted. This is not hypothetical
+        here the way it was on the announce channel: the captured dev page
+        holds ``0x0f3ce503…``, a ``bridgeToBaseBurnReceiver`` to the
+        BurnExecutor that **reverted**, and it classified ``burn`` --
+        ``surf_manager._readings`` builds BURN's precursor WATCH from
+        ``kind == "burn"`` rows, so the rail reported "BurnExecutor tx seen"
+        for a burn that never happened. As on the channel, no consumer needed
+        changing: the row simply stops matching the filter.
+
         **The burn pipeline moved and this map did not** (final fix wave, I2).
         Measured on chain today: `burnAccruedImd()` goes to the LAUNCHPAD HOOK
         and `bridgeToBaseBurnReceiver()` now goes to `BURN_EXECUTOR_V2`, so
@@ -1935,6 +1986,8 @@ class SurfClient(OwnedHttpClient):
         for history -- its transactions are still on the pages we read -- so
         this is three burn destinations, not a replacement.
         """
+        if _receipt_success(row) is False:
+            return "failed"
         if created:
             return "deploy"
         if to_addr == A.NFPM.lower():
@@ -2000,6 +2053,7 @@ class SurfClient(OwnedHttpClient):
             method=row.get("method"),
             kind=cls._classify_dev_kind(row, to_addr, created),
             created_contract=created,
+            success=_receipt_success(row),
         )
 
     async def fetch_dev_activity(self) -> list[DevTx] | None:

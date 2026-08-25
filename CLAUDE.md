@@ -111,7 +111,7 @@ imports it — `data/curator_clusters.py` — and that import is guarded (see th
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
-| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel (replies threaded behind an expand/collapse toggle), nine launch detectors, v3→v4 migration + launchpad (`l`) view |
+| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel (replies threaded behind an expand/collapse toggle, and NEW REPLY on the rail so a collapsed thread still announces itself), ten detectors, v3→v4 migration + launchpad (`l`) view |
 | 2 | `curator` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock, linked-wallet analysis |
 | 3 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
 | 4 | `base` | Base | trending tokens, volume, signals |

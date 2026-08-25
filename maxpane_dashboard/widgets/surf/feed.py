@@ -8,8 +8,14 @@ retype or shorten the string.
 
 One logical row per channel tx, newest thread first::
 
-    08-07 04:27  POST    I moved 33 eth to the LP on mainnet https://…
-     ▸ 2 replies
+    08-07 04:27  POST    I moved 33 eth to the LP on mainnet https://…  ▾ 2 replies
+
+     08-07 09:14  REPLY   nice
+
+      08-07 09:31  ANSWER thanks
+
+The toggle sits on the post's own last line, and every row -- post, reply
+and answer alike -- is followed by one blank line.
 
 Kinds and their styling (classification happens upstream in
 ``analytics/surf_signals.classify_channel_tx``; this widget renders the
@@ -29,6 +35,11 @@ Kinds and their styling (classification happens upstream in
   ``$warning`` -- see the ``_KIND_STYLES`` note): an outbound contract call
   (the ERC-8004 register() was exactly this shape -- NEW DEPLOY fuel).
 * ``fund``   -- ``FUND`` magenta: dev-wallet funding of the channel.
+* ``failed`` -- ``FAILED`` red: the receipt says the tx reverted, so it is
+  not the post/answer/call its calldata describes -- it is an attempt. Shown
+  rather than dropped (0xTXT drops it): a dev whose call reverted is worth
+  seeing, and the badge is what stops it being read as the thing it tried
+  to be.
 
 Threading
 ---------
@@ -103,7 +114,7 @@ from rich.cells import cell_len, set_cell_size
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Static
 
 from maxpane_dashboard.analytics.surf_feed import build_threads
@@ -206,6 +217,9 @@ _KIND_STYLES = {
     "answer": (ANSWER_BADGE, "cyan"),
     "action": ("ACTION", "yellow"),
     "fund": ("FUND", "magenta"),
+    # A tx the chain rejected. Six characters like ANSWER and ACTION, so it
+    # rides the existing badge cell and this panel's width does not move.
+    "failed": ("FAILED", "red"),
 }
 
 #: Characters Textual accepts in a widget ``id``.  A ``tx_hash`` is
@@ -456,6 +470,31 @@ def _item_lines(item, width: int, depth: int = 0) -> tuple[list[str], bool] | No
         return None
 
 
+def _row_line_texts(item, width: int, depth: int = 0) -> tuple[list[Text], bool] | None:
+    """One parsed ``Text`` per *rendered line*, or ``None`` if it will not render.
+
+    The same work :func:`_row_text` does, stopping one step earlier. A root
+    that carries a toggle needs its final line as a widget of its own — the
+    toggle sits beside it, on that line — while the lines above it stay one
+    row, so this returns the pieces and lets the caller decide how many
+    widgets to make of them.
+
+    Splitting here rather than at the markup level is deliberate: a line's
+    colour tags are opened and closed inside that line, so parsing per line
+    and parsing the joined block give the same spans, and doing it per line
+    keeps every parse inside this function's own ``try`` (see
+    :func:`_row_text` for why that ``try`` is load-bearing).
+    """
+    try:
+        rendered = _item_lines(item, width, depth)
+        if rendered is None:
+            return None
+        lines, clipped = rendered
+        return [Text.from_markup(line) for line in lines], clipped
+    except Exception:
+        return None
+
+
 def _row_text(item, width: int, depth: int = 0) -> tuple[Text, bool] | None:
     """``(Text, clipped)`` for one item, or ``None`` if it will not render.
 
@@ -474,14 +513,11 @@ def _row_text(item, width: int, depth: int = 0) -> tuple[Text, bool] | None:
     on :class:`SurfFeedRow`, plus ``_cell_fit`` having already measured
     every line in terminal cells so there is nothing left to wrap.
     """
-    try:
-        rendered = _item_lines(item, width, depth)
-        if rendered is None:
-            return None
-        lines, clipped = rendered
-        return Text.from_markup("\n".join(lines)), clipped
-    except Exception:
+    rendered = _row_line_texts(item, width, depth)
+    if rendered is None:
         return None
+    lines, clipped = rendered
+    return Text("\n").join(lines), clipped
 
 
 class SurfFeedRow(Static):
@@ -517,6 +553,9 @@ class SurfFeedRow(Static):
     SurfFeedRow.surf-feed-gap {
         height: 1;
     }
+    SurfFeedRow.surf-feed-inline {
+        width: auto;
+    }
     """
 
 
@@ -543,6 +582,9 @@ class SurfFeedToggle(Static):
         height: 1;
         text-wrap: nowrap;
         text-overflow: clip;
+    }
+    SurfFeedToggle.surf-feed-toggle-inline {
+        width: auto;
     }
     SurfFeedToggle:focus {
         text-style: reverse;
@@ -587,6 +629,10 @@ class SurfFeed(Vertical):
         scrollbar-size: 1 1;
     }
     SurfFeed .surf-feed-rows {
+        width: 100%;
+        height: auto;
+    }
+    SurfFeed .surf-feed-headline {
         width: 100%;
         height: auto;
     }
@@ -715,14 +761,24 @@ class SurfFeed(Vertical):
         word = "reply" if count == 1 else "replies"
         return Text(f" {glyph} {count} {word}", style="dim")
 
-    def _build_rows(self, items, width: int) -> tuple[list, bool]:
-        """Widgets for every visible row, plus whether any of them clipped.
+    def _build_rows(self, items, width: int) -> tuple[list, bool, list]:
+        """Widgets for every visible row, whether any clipped, and the toggles.
 
         Only visible rows can set the clipped flag: a truncation inside a
         collapsed thread is not on screen, and ``‹ widen`` promises the
         reader that widening the terminal will show them something more.
+
+        The toggles come back as their own list because most of them are no
+        longer *in* ``rows``: one that renders beside its post's last line is
+        a child of a ``Horizontal``, and a caller scanning ``rows`` for
+        ``SurfFeedToggle`` would silently miss exactly those. Reaching into
+        the container instead would mean reading Textual's
+        ``_pending_children`` -- an unmounted container's ``children`` is
+        empty -- and a private attribute is not something focus restoration
+        should be resting on.
         """
         rows: list = []
+        toggles: list = []
         clipped_any = False
         used_ids: set[str] = set()
 
@@ -730,12 +786,6 @@ class SurfFeed(Vertical):
         undated = [item for item in items if not _has_readable_ts(item)]
 
         for root in build_threads(datable):
-            rendered = _row_text(root["item"], width, 0)
-            if rendered is not None:
-                text, clipped = rendered
-                clipped_any = clipped_any or clipped
-                rows.append(SurfFeedRow(text))
-
             replies = root.get("replies") or []
             # The count is *direct* replies, not every hidden row: an answer
             # nested under a question is part of that question, so offering
@@ -751,14 +801,63 @@ class SurfFeed(Vertical):
             # Losing them would be silent data loss; the channel is
             # permissionless and this row shape is reachable.
             expanded = self._expanded.get(tx_hash, False) if tx_hash else True
+
+            toggle = None
+            toggle_text = None
             if replies and tx_hash:
-                rows.append(
-                    SurfFeedToggle(
-                        self._toggle_line(direct, expanded),
-                        tx_hash=tx_hash,
-                        id=self._toggle_id(tx_hash, used_ids),
-                    )
+                toggle_text = self._toggle_line(direct, expanded)
+                toggle = SurfFeedToggle(
+                    toggle_text,
+                    tx_hash=tx_hash,
+                    id=self._toggle_id(tx_hash, used_ids),
+                    classes="surf-feed-toggle-inline",
                 )
+                toggles.append(toggle)
+
+            rendered = _row_line_texts(root["item"], width, 0)
+            lines = None
+            if rendered is not None:
+                lines, clipped = rendered
+                clipped_any = clipped_any or clipped
+
+            if lines is not None:
+                # The toggle belongs *beside the message it opens*, on the
+                # post's own final line, not stranded at column zero under
+                # it. Two widgets on one row, so the focus ring and the click
+                # target still cover the toggle alone and not the post.
+                #
+                # It goes back to its own line when it will not fit, and that
+                # branch is not decoration: a `Horizontal` whose children
+                # overrun it clips them with no `…` and no `‹ widen`, which
+                # is the silent cut this panel exists not to make. Measured
+                # in terminal cells rather than characters -- a post ending
+                # in CJK or emoji fits half as much as `len()` claims.
+                inline = (
+                    toggle is not None
+                    and lines[-1].cell_len + toggle_text.cell_len <= width
+                )
+                if inline:
+                    if len(lines) > 1:
+                        rows.append(SurfFeedRow(Text("\n").join(lines[:-1])))
+                    rows.append(
+                        Horizontal(
+                            SurfFeedRow(lines[-1], classes="surf-feed-inline"),
+                            toggle,
+                            classes="surf-feed-headline",
+                        )
+                    )
+                else:
+                    rows.append(SurfFeedRow(Text("\n").join(lines)))
+                    if toggle is not None:
+                        rows.append(toggle)
+                rows.append(self._gap())
+            elif toggle is not None:
+                # The root itself would not render -- a malformed item is
+                # dropped, never raised on. Its replies are still real and
+                # still reachable, so the toggle stays.
+                rows.append(toggle)
+                rows.append(self._gap())
+
             if expanded:
                 for reply in replies:
                     rendered = _row_text(
@@ -769,14 +868,7 @@ class SurfFeed(Vertical):
                     text, clipped = rendered
                     clipped_any = clipped_any or clipped
                     rows.append(SurfFeedRow(text))
-
-            # A blank line after every thread. These are multi-line messages
-            # with no other separator, so without one a long post runs
-            # straight into the next post's date and the two read as a
-            # single message. After the last one too: the panel scrolls, so a
-            # trailing blank costs nothing, and omitting it would drop the
-            # separator exactly when the final post is what got scrolled to.
-            rows.append(SurfFeedRow(Text(" "), classes="surf-feed-gap"))
+                    rows.append(self._gap())
 
         # Undated rows last, which is where the producer already puts them:
         # ``_feed_items`` sorts on ``(ts is not None, ts)`` descending, so a
@@ -790,9 +882,25 @@ class SurfFeed(Vertical):
             text, clipped = rendered
             clipped_any = clipped_any or clipped
             rows.append(SurfFeedRow(text))
-            rows.append(SurfFeedRow(Text(" "), classes="surf-feed-gap"))
+            rows.append(self._gap())
 
-        return rows, clipped_any
+        return rows, clipped_any, toggles
+
+    @staticmethod
+    def _gap():
+        """One blank line, after every rendered row without exception.
+
+        Posts, replies and answers are all multi-line and none of them has
+        any other separator, so without this a post's last wrapped line runs
+        straight into the next row's date and the two read as one message.
+        It used to be one blank per *thread*, which separated conversations
+        from each other but left the rows inside a conversation packed --
+        exactly where the reader most needs to tell an answer from the next
+        question. Trailing blanks cost nothing here: the panel scrolls, and
+        omitting the last one would drop the separator precisely when the
+        final row is what got scrolled to.
+        """
+        return SurfFeedRow(Text(" "), classes="surf-feed-gap")
 
     @staticmethod
     def _toggle_id(tx_hash: str, used: set[str]) -> str:
@@ -842,7 +950,7 @@ class SurfFeed(Vertical):
         except TypeError:
             item_list = []
 
-        rows, clipped_any = self._build_rows(item_list, width)
+        rows, clipped_any, toggles = self._build_rows(item_list, width)
         self._set_title(nonce, age_s, clipped=clipped_any, unavailable=False)
         if not rows:
             self._mount_rows(
@@ -859,9 +967,9 @@ class SurfFeed(Vertical):
             # widget one tick from deletion, and Textual then handed focus to
             # the scroll container instead -- so the keyboard route opened a
             # thread once and did nothing on the second press.
-            for row in rows:
-                if isinstance(row, SurfFeedToggle) and row.tx_hash == focus_tx:
-                    self._take_focus(row)
+            for toggle in toggles:
+                if toggle.tx_hash == focus_tx:
+                    self._take_focus(toggle)
                     break
         if keep_position:
             body.scroll_to(y=offset.y, animate=False)

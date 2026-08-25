@@ -11,7 +11,8 @@ Three public pieces:
   2, 2026-05-21) says "decode the transaction input/data field as UTF-8 text
   when possible".  *When possible* is the hard half: one of the 21 channel txs
   is an ABI-encoded ``register(string)`` call and must decode to ``None``.
-* :func:`classify_channel_tx` — ``self`` / ``reply`` / ``action`` / ``fund``.
+* :func:`classify_channel_tx` — ``self`` / ``reply`` / ``answer`` / ``action``
+  / ``fund``.
   The channel is permissionless: anyone can post, and a scam reply and a
   begging tx are already in it (PRD §6.4).
 * :func:`build_signals` — the nine detectors of PRD §3 as one state machine
@@ -97,6 +98,11 @@ READING_KEYS: tuple[str, ...] = (
     "channel_tx_count",     # Blockscout tx count for ANNOUNCE (posts AND replies)
     "announce_last_text",   # decoded body of the newest self-post
     "announce_last_ts",     # unix ts of the newest self-post
+    # NEW REPLY's stream: the channel rows that are somebody answering or
+    # being answered -- ``kind in {reply, answer}`` -- newest last. An event
+    # stream rather than a counter because the row has to quote the message,
+    # and because a count read off a capped page saturates in silence.
+    "channel_threads",      # [{ts, tx_hash, kind, text}] replies and answers
     "lp_liquidity",         # NFPM.positions(LP_POSITION_ID).liquidity, raw uint128
     # Final fix wave (C2). PositionManager.balanceOf(OPS_WALLET) on the v4
     # side -- how many v4 LP positions frenpet.eth holds. This is LP MOVE's
@@ -117,7 +123,7 @@ READING_KEYS: tuple[str, ...] = (
     # own six original sources above.
     "decoy_pool_count",         # count of third-party ETH/IMD-look-alike pools
     "decoy_newest_fee_bps",     # fee tier of the newest decoy pool, if read
-    "burn_ready",               # tri-state: imdToBurn >= minBridgeAmount
+    "burn_ready",               # tri-state: previewBridge() would send > 0
     "burn_accrued",             # imdToBurn in whole IMD, awaiting the burn bridge
     "launchpad_swaps_by_coin",  # {pool_id: swap_count} -- the FULL in-window population
     "launchpad_coin_tickers",   # {pool_id: ticker} -- the LABEL map, joins on nothing
@@ -134,6 +140,11 @@ READING_KEYS: tuple[str, ...] = (
 BASELINE_SCALARS: tuple[str, ...] = (
     "announce_nonce",
     "channel_tx_count",
+    # What NEW POST actually compares against. The nonce alone cannot tell a
+    # post from an answer or a contract call -- all three are txs the announce
+    # wallet sent -- so firing on the nonce quoted ``announce_last_text``,
+    # which is the newest *self-post*, for events that were not one.
+    "announce_last_ts",
     "lp_liquidity",
     # Final fix wave (C2): LP MOVE compares against this, not against the
     # burned v3 position's liquidity.
@@ -209,6 +220,7 @@ BASELINE_SCALARS: tuple[str, ...] = (
 _SCALAR_COERCERS: dict[str, Any] = {
     "announce_nonce": lambda value: _as_int(value),
     "channel_tx_count": lambda value: _as_int(value),
+    "announce_last_ts": lambda value: _as_float(value),
     "lp_liquidity": lambda value: _as_int(value),
     "lp_position_count": lambda value: _as_int(value),
     "ops_nonce": lambda value: _as_int(value),
@@ -256,6 +268,7 @@ BASELINE_EVENT_KEYS: dict[str, tuple[str, str, str]] = {
     "deploy_events": ("deploy_tx", "deploy_ts", "deploy_seq"),
     "v4_hook_pools": ("v4_tx", "v4_ts", "v4_seq"),
     "burn_transfers": ("burn_tx", "burn_ts", "burn_seq"),
+    "channel_threads": ("thread_tx", "thread_ts", "thread_seq"),
 }
 
 #: Counters that can only go up.  A lagging RPC replica that answers with an
@@ -265,6 +278,10 @@ BASELINE_EVENT_KEYS: dict[str, tuple[str, str, str]] = {
 MONOTONIC_BASELINES: tuple[str, ...] = (
     "announce_nonce",
     "channel_tx_count",
+    # A post does not become older. A page that comes back one post short
+    # while the nonce still matches would otherwise drag this down, and the
+    # next correct read would then re-fire a post already reported.
+    "announce_last_ts",
     "dev_nonce",
     "ops_nonce",
     "identities_written",
@@ -365,11 +382,32 @@ def classify_channel_tx(
     to_addr: str,
     value_wei: int,
     input_hex: str,
+    success: bool | None = None,
 ) -> str:
     """One of :data:`CHANNEL_KINDS` for a tx involving the announce channel.
 
     Order matters, and it is the dev's own filter order (channel nonce 2):
 
+    0. ``success is False`` -> ``failed``, before anything else is asked.
+       A reverted tx changed nothing on chain, so every question below it —
+       was this a post, an answer, a call — is a question about an intention
+       rather than an event. 0xTXT gates on ``receiptSuccess`` in exactly
+       this position (`0x/packages/protocol/src/surf.ts`) and drops the row;
+       this keeps it and labels it, because a dev whose call reverted is
+       worth seeing and a silently vanished row is the failure mode this
+       repo keeps recording. It costs no width: ``FAILED`` is six characters
+       like ``ANSWER`` and ``ACTION``, and the badge cell is already six.
+
+       The two shapes it protects fail differently. A reverted ``answer``
+       would print a body nobody successfully published. A reverted
+       ``action`` is worse: NEW DEPLOY selects ``kind == "action"``, so it
+       would fire "new contract" for a deployment that did not happen — the
+       same defect the ``answer`` split fixed, by the same mechanism, since
+       the filter needs no change once the kind stops matching.
+
+       ``None`` is not ``False``. An unstated status leaves the tx classified
+       on its own shape, because "the page did not say" and "the chain
+       rejected it" are different facts and only the second is a failure.
     1. ``from == to == channel`` -> ``self``.  A post.
     2. ``from == channel``, ``value == 0`` and the calldata decodes as text
        -> ``answer``.  0xTXT (`0x/packages/protocol/src/surf.ts`,
@@ -400,6 +438,8 @@ def classify_channel_tx(
     is still a reply.  Nothing here raises — a missing address is ``""``, a
     missing value is ``0`` — because this runs inside the feed builder.
     """
+    if success is False:
+        return "failed"
     src = _addr(from_addr)
     dst = _addr(to_addr)
     if src == _CHANNEL:
@@ -704,13 +744,39 @@ def _fresh_event(
 
 
 def _detect_post(base: dict, read: dict, now: float) -> _Det:
-    """Channel nonce moved -> the dev posted (PRD §3 #1).
+    """A new **self-post** from the announce wallet (PRD §3 #1).
 
-    The cheapest and earliest of the nine: these txs emit **no logs**, so every
-    event-driven watcher is structurally blind to them and a nonce poll sees a
-    post within one refresh interval.  ``channel_tx_count`` moving without the
-    nonce means somebody *else* wrote to the channel — worth a WATCH, never a
-    post.
+    These txs emit **no logs**, so every event-driven watcher is structurally
+    blind to them; this row is what sees them.
+
+    It used to fire on ``announce_nonce`` alone, and that was wrong in a way
+    that got worse as the channel got busier. The nonce counts what the
+    announce wallet *sent*, and it sends three different things: a self-post,
+    an **answer** addressed to a reader who asked something, and the odd
+    contract call. All three move it. So an answer fired NEW POST — quoting
+    ``announce_last_text``, which is the newest *self-post*, and dating the
+    FIRED row to that post's timestamp. Brand-new news, rendered as a
+    message nobody had just written. Real instance: channel nonce 23,
+    2026-08-22, the dev answering "will my IMD NFT generate me $IMD
+    rewards?".
+
+    The subject is therefore the newest self-post's own timestamp. An answer
+    does not move it, and NEW REPLY owns answers now; a contract call does
+    not move it either, and NEW DEPLOY owns those.
+
+    The nonce is **not** also required. It is monotonic and advances on every
+    successful read, including the cycle where the nonce had moved but
+    Blockscout had not yet published the body — so an "and the nonce moved"
+    clause would have gone false by the time the body arrived, and the post
+    would never fire at all.
+
+    The old ``channel_tx_count`` WATCH — "somebody else wrote to the channel"
+    — moved to :func:`_detect_thread`, which can say who and quote what. What
+    is left here is a WATCH this row can actually mean: the nonce moved and
+    the page has **not**, so we know the wallet sent something and cannot yet
+    tell whether it was a post. Once the page does move without a newer
+    self-post, the answer is known — it was an answer or a call — and this row
+    goes quiet rather than warning about a post that never existed.
     """
     nonce = _as_int(read.get("announce_nonce"))
     if nonce is None:
@@ -720,20 +786,72 @@ def _detect_post(base: dict, read: dict, now: float) -> _Det:
     if base_nonce is None:
         return _ok(f"nonce {nonce} · baseline set")
 
-    if nonce > base_nonce:
+    last_ts = _as_float(read.get("announce_last_ts"))
+    base_last_ts = _as_float(base.get("announce_last_ts"))
+    if last_ts is not None and base_last_ts is not None and last_ts > base_last_ts:
         text = read.get("announce_last_text")
         body = f' "{_truncate(text)}"' if isinstance(text, str) and text.strip() else ""
-        return _fired(f"#{nonce}{body}", _as_float(read.get("announce_last_ts")))
+        return _fired(f"#{nonce}{body}", last_ts)
 
     tx_count = _as_int(read.get("channel_tx_count"))
     base_txs = _as_int(base.get("channel_tx_count"))
-    if tx_count is not None and base_txs is not None and tx_count > base_txs:
-        return _watch(f"reply on channel · {tx_count} txs")
+    page_moved = tx_count is not None and base_txs is not None and tx_count > base_txs
+    if nonce > base_nonce and not page_moved:
+        return _watch(f"nonce {nonce} · post not on the page yet")
 
     return _ok(f"nonce {nonce} · no new post")
 
 
-# --- 2. LP MOVE --------------------------------------------------------------
+# --- 2. NEW REPLY ----------------------------------------------------------
+
+
+def _detect_thread(base: dict, read: dict, now: float) -> _Det:
+    """A reply or an answer landed on the channel (2026-08-24).
+
+    The feed collapses a post's replies behind a toggle, which is the right
+    default — a dev post with a tail of strangers' questions is one
+    conversation, not six rows — but it also means the reader cannot tell a
+    thread that grew from one that did not without opening it. This row is
+    what tells them, and it is why the two halves of the channel finally have
+    a detector each: NEW POST for what the dev broadcast, NEW REPLY for what
+    the thread did.
+
+    Both kinds share the row because both are the same news to a reader
+    watching for movement, and the detail says which landed. An **answer**
+    (the announce wallet writing back to somebody who asked) is deliberately
+    not split off into its own row: the rail sits above the dev-activity
+    table and must not eat it, and two rows firing on one exchange would cost
+    two lines to say one thing.
+
+    The WATCH is the page lagging its own counter. ``channel_tx_count`` is
+    ``len(rows)`` off the channel page and moves the moment a stranger writes;
+    the rows themselves are what carry the text. When the count has moved but
+    no new thread row is on the page yet, that is real news we cannot quote —
+    so it is a WATCH, not silence, and not a fabricated body. NEW POST holds
+    the mirror-image WATCH, keyed on the nonce rather than the count, and the
+    two cannot both be right about one event: a reply moves the count without
+    the nonce, a post moves the nonce and only then the count.
+    """
+    rows = _event_rows("channel_threads", read.get("channel_threads"))
+    if rows is None:
+        return _dead("channel unavailable")
+
+    fresh = _fresh_event(base, *BASELINE_EVENT_KEYS["channel_threads"], rows)
+    if fresh is not None:
+        kind = "answer" if str(fresh.get("kind") or "") == "answer" else "reply"
+        text = fresh.get("text")
+        body = f' "{_truncate(text)}"' if isinstance(text, str) and text.strip() else ""
+        return _fired(f"{kind}{body}", _as_float(fresh.get("ts")))
+
+    tx_count = _as_int(read.get("channel_tx_count"))
+    base_txs = _as_int(base.get("channel_tx_count"))
+    if tx_count is not None and base_txs is not None and tx_count > base_txs:
+        return _watch(f"{tx_count} txs on channel · reply not on the page yet")
+
+    return _ok("no new replies")
+
+
+# --- 3. LP MOVE --------------------------------------------------------------
 
 
 def _detect_lp(base: dict, read: dict, now: float) -> _Det:
@@ -797,7 +915,7 @@ def _detect_lp(base: dict, read: dict, now: float) -> _Det:
     return _ok(f"{count} v4 position{'' if count == 1 else 's'} held")
 
 
-# --- 3. GATE OPEN ------------------------------------------------------------
+# --- 4. GATE OPEN ------------------------------------------------------------
 
 
 def _detect_gate(base: dict, read: dict, now: float) -> _Det:
@@ -838,7 +956,7 @@ def _detect_gate(base: dict, read: dict, now: float) -> _Det:
     return _ok(f"{word}{suffix}")
 
 
-# --- 4. NEW DEPLOY -----------------------------------------------------------
+# --- 5. NEW DEPLOY -----------------------------------------------------------
 
 
 def _detect_deploy(base: dict, read: dict, now: float) -> _Det:
@@ -875,7 +993,7 @@ def _detect_deploy(base: dict, read: dict, now: float) -> _Det:
     return _ok("no new contract")
 
 
-# --- 5. BRIDGE STAGE -------------------------------------------------------
+# --- 6. BRIDGE STAGE -------------------------------------------------------
 
 
 def _detect_bridge(base: dict, read: dict, now: float) -> _Det:
@@ -907,7 +1025,7 @@ def _detect_bridge(base: dict, read: dict, now: float) -> _Det:
     return _ok("no mints in window")
 
 
-# --- 6. BURN ---------------------------------------------------------------
+# --- 7. BURN ---------------------------------------------------------------
 
 
 def _detect_burn(base: dict, read: dict, now: float) -> _Det:
@@ -941,7 +1059,7 @@ def _detect_burn(base: dict, read: dict, now: float) -> _Det:
     return _ok("supply flat")
 
 
-# --- 7. DECOY POOL -----------------------------------------------------------
+# --- 8. DECOY POOL -----------------------------------------------------------
 
 
 def _detect_decoy(base: dict, read: dict, now: float) -> _Det:
@@ -979,12 +1097,20 @@ def _detect_decoy(base: dict, read: dict, now: float) -> _Det:
     return _ok(f"{count} decoy pools")
 
 
-# --- 8. BURN READY ------------------------------------------------------------
+# --- 9. BURN READY ------------------------------------------------------------
 
 
 def _detect_burn_ready(base: dict, read: dict, now: float) -> _Det:
-    """The launchpad's own burn gate: ``imdToBurn >= minBridgeAmount``
-    (the v4-launchpad addition, Task 7).
+    """The burn pipeline's own gate: ``previewBridge()`` would send something
+    (the v4-launchpad addition, Task 7; repointed 2026-08-25).
+
+    The reading behind this row used to be ``imdToBurn >= max(minBridgeAmount,
+    1)`` and it reported READY minutes after a burn -- ``imdToBurn`` is the
+    *hook's* accrual and the bridge spends the *executor's* balance,
+    ``minBridgeAmount`` is genuinely ``0`` on chain, and the ``1`` standing in
+    for it was invented. ``surf_manager.py``'s own comment on ``burn_ready``
+    carries the full autopsy. Nothing in this detector changed: it reads the
+    tri-state it is handed, which is the point of the split.
 
     **An EDGE detector with a baseline, not a level check** (fix round 1).
     The first cut of this row fired on every cycle ``burn_ready`` read
@@ -1042,7 +1168,7 @@ def _detect_burn_ready(base: dict, read: dict, now: float) -> _Det:
     return _fired(f"ready to burn · {amount}", now)
 
 
-# --- 9. HOT COIN ---------------------------------------------------------------
+# --- 10. HOT COIN ---------------------------------------------------------------
 
 
 def _hot_state(readings: dict, now: float) -> tuple[str, str, int, int] | None:
@@ -1185,6 +1311,7 @@ def _detect_hot_coin(base: dict, read: dict, now: float) -> _Det:
 #: advertise a key it does not emit.
 _DETECTORS: tuple[tuple[str, Any], ...] = (
     ("post", _detect_post),
+    ("thread", _detect_thread),
     ("lp", _detect_lp),
     ("gate", _detect_gate),
     ("deploy", _detect_deploy),
@@ -1255,8 +1382,13 @@ def _advance(baselines: dict, readings: dict) -> dict:
         if value is None:
             continue
         if key in MONOTONIC_BASELINES:
-            previous = _as_int(out.get(key))
-            current = _as_int(value)
+            # ``_as_float``, not ``_as_int``: every counter here compares
+            # identically either way, but ``announce_last_ts`` is a timestamp,
+            # and ``_as_int`` answers ``None`` for anything with a fractional
+            # part -- which would skip the guard silently, i.e. leave the one
+            # baseline that needed it unprotected.
+            previous = _as_float(out.get(key))
+            current = _as_float(value)
             if previous is not None and current is not None and current < previous:
                 continue
         out[key] = value

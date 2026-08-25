@@ -1066,7 +1066,7 @@ class SurfManager:
     async def _pool_channel(
         self, tiers: set[str], now: float, nonce: int | None
     ) -> Any:
-        """Fetch the channel bodies when the announce nonce moved — *whenever* it moved.
+        """Fetch the channel bodies on the medium tier, and *immediately* on a new post.
 
         The nonce is the cheap detector and it is read on the **fast** tier, every
         refresh; the bodies are a Blockscout page. Two rules, in this order:
@@ -1077,12 +1077,37 @@ class SurfManager:
            a post detected on a 30 s fast-tier cycle waited for the 90 s tier
            before its body was pulled — the signal quoting text the payload did
            not have yet, up to three refreshes running.
-        2. **An unchanged nonce skips the page**, even when the medium tier is
-           due: nothing was posted for 52 days over the real May-to-July gap.
-        3. **A tier that is not due skips the page** — including on a cold
-           cache, where this method used to fetch unconditionally and so
-           bypassed the failure backoff (see :meth:`_pool_market`). Rule 1
-           still overrides: a nonce change forces the fetch either way.
+        2. **Otherwise the page is fetched whenever the medium tier is due** —
+           including on a cold cache, where this method used to fetch
+           unconditionally and so bypassed the failure backoff (see
+           :meth:`_pool_market`).
+
+        There used to be a rule between those two: *an unchanged nonce skips
+        the page*, on the reasoning that nothing was posted for 52 days over
+        the real May-to-July gap. It is gone, because the announce nonce is
+        blind to the half of this channel the feed exists to thread.
+
+        ``eth_getTransactionCount`` counts the txs an account **sent**. Every
+        inbound message — every question a reader writes to the channel, which
+        is precisely what :func:`~maxpane_dashboard.analytics.surf_feed.build_threads`
+        nests under the post it answers — leaves it untouched. Gated on the
+        nonce, a reply reached the screen not when it was written but whenever
+        the dev next posted.
+
+        Worse, the gate could poison itself permanently. ``nonce`` here is this
+        cycle's **fast-tier** read while ``rows`` is Blockscout's page, and the
+        indexer publishes a tx some seconds after the nonce that produced it is
+        readable. Store the two together on the wrong cycle and the payload
+        claims to have seen a nonce whose tx is not on it — after which the
+        cached nonce equals the live nonce on every later cycle, the fetch is
+        skipped, and the one number that could have unstuck the slot is already
+        recorded as seen. Measured live on 2026-08-24: the channel last-good
+        was 46 hours old while every other tier had refreshed inside the last
+        seven minutes, and two messages were missing from the feed entirely.
+
+        The cost of dropping it is one Blockscout page per medium tier, which
+        is what ``_pool_activity`` already spends on each of two other
+        addresses.
 
         Every ``return None`` here is a *skip*, not a failure: it must not call
         :meth:`_note`, because a skipped group is not degraded and the feed keeps
@@ -1092,11 +1117,8 @@ class SurfManager:
         seen = (cached.payload or {}).get("nonce") if cached is not None else None
         moved = nonce is not None and seen is not None and int(seen) != int(nonce)
 
-        if not moved:
-            if cached is not None and seen is not None and nonce is not None:
-                return None                 # skip: nothing new was posted
-            if TIER_MEDIUM not in tiers:
-                return None                 # skip: tier not due (fresh, or backed off)
+        if not moved and TIER_MEDIUM not in tiers:
+            return None                     # skip: tier not due (fresh, or backed off)
 
         rows = await self._guard(self.client.fetch_channel_txs, "fetch_channel_txs")
         self._note(SOURCE_CHANNEL, rows is not None)
@@ -1305,6 +1327,10 @@ class SurfManager:
                 to_addr or "",
                 _opt_int(_field(row, "value_wei")) or 0,
                 input_hex,
+                # Tri-state, straight through: the classifier reclassifies on
+                # `False` alone, so a page that did not state a status leaves
+                # every row on its own shape.
+                _field(row, "success"),
                 default=None,
             )
             items.append(
@@ -1567,6 +1593,9 @@ class SurfManager:
                 _field(launchpad_state, "executor_balance_wei")
             ),
             "min_bridge_wei": _opt_int(_field(launchpad_state, "min_bridge_wei")),
+            "bridge_amount_wei": _opt_int(
+                _field(launchpad_state, "bridge_amount_wei")
+            ),
             "creator_eth_owed_wei": _opt_int(
                 _field(launchpad_state, "creator_eth_owed_wei")
             ),
@@ -1774,6 +1803,29 @@ class SurfManager:
             # Raw third-party text: escaped at the widget, never here.
             read["announce_last_text"] = channel.get("last_text")
             read["announce_last_ts"] = _opt_float(channel.get("last_ts"))
+
+        # NEW REPLY's stream. Deliberately *not* behind the nonce guard above:
+        # that guard exists because ``last_text`` and the live nonce come from
+        # two different sources and can disagree about which post is newest.
+        # These rows carry their own ``ts``, ``tx_hash`` and body from the one
+        # page, so there is no pair to mismatch -- an older page just yields an
+        # older newest row, which the baseline already knows about.
+        #
+        # ``None`` when the channel has never answered, ``[]`` when it answered
+        # and held no replies: only the second may seed a baseline, and the
+        # difference is what stops a cold cache reporting the whole history as
+        # breaking news.
+        read["channel_threads"] = (
+            None
+            if feed_items is None
+            else [
+                item
+                for item in feed_items
+                if isinstance(item, dict)
+                and item.get("kind") in ("reply", "answer")
+                and item.get("ts") is not None
+            ]
+        )
 
         # -- the log window (medium tier, served from last-good) --------------
         read["bridge_mints"] = logs.get("bridge_mints")
@@ -2217,14 +2269,26 @@ class SurfManager:
 
         burn_accrued = _tokens(launchpad_slot.get("imd_to_burn_wei"))
         burn_min_bridge = _tokens(launchpad_slot.get("min_bridge_wei"))
-        # Tri-state on purpose (Task 6 brief): "we cannot tell" is not "not
-        # ready". `None` unless *both* legs were actually read this-or-a-prior
-        # sweep; only then does it become a real `True`/`False`.
-        burn_ready = (
-            None
-            if burn_accrued is None or burn_min_bridge is None
-            else burn_accrued >= max(burn_min_bridge, 1)
-        )
+        # BURN READY is the executor's own answer, not a comparison we make.
+        #
+        # This used to be `burn_accrued >= max(burn_min_bridge, 1)`, and it
+        # reported READY minutes after a burn. Every part of it was wrong.
+        # `imdToBurn` is the *hook's* accrual and the bridge does not spend
+        # it -- `bridgeToBaseBurnReceiver` clamps to the *executor's*
+        # `tokenBalance()`. `minBridgeAmount()` is genuinely `0` on chain, so
+        # the comparison was vacuous and the `max(..., 1)` floor standing in
+        # for it was a whole IMD with no on-chain basis at all -- which LP
+        # fees re-accrue past within minutes of a burn (CLAUDE.md: read
+        # values live, never hardcode a documented one). And even a funded
+        # executor can fail, because the OFT strips shared-decimal dust and
+        # enforces its own minimum, so `amountSentLD` can round to zero.
+        #
+        # `previewBridge()` applies all of that in the contract and answers
+        # zero rather than reverting, so `> 0` is exactly "a burn is callable
+        # right now". Still tri-state: `None` is a failed read, and the row
+        # must render "cannot tell" for it rather than NOT READY.
+        bridge_amount = _tokens(launchpad_slot.get("bridge_amount_wei"))
+        burn_ready = None if bridge_amount is None else bridge_amount > 0
 
         data: dict[str, Any] = {
             "as_of": self.cache.newest_as_of(),

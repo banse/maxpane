@@ -11,7 +11,7 @@ kind, no wallet, no signing, no transactions.
 
 | Game | Chain | What you see |
 |------|-------|-------------|
-| **Surfboard** | Ethereum | surfsurf.eth announce feed (threaded replies), nine launch detectors, IMD market, v4 launchpad, IDMD NFT |
+| **Surfboard** | Ethereum | surfsurf.eth announce feed (threaded replies), ten detectors, IMD market, v4 launchpad, IDMD NFT |
 | **THE LIST** | Ethereum | Zero-custody allowlist game: hourly doomsday clock, survival signals, fan-out patterns, linked-wallet analysis |
 | **FWA** | Ethereum | NFT gacha pool, inverse-weighted VRF draws, pull EV |
 | **Base Trading** | Base | Trending tokens, volume, ETH price, signals |

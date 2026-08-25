@@ -70,11 +70,12 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
     ),
     ChannelTx: (
         "tx_hash", "ts", "nonce", "from_addr", "to_addr", "value_wei",
-        "input_hex", "method",
+        "input_hex", "method", "success",
     ),
     DevTx: (
         "tx_hash", "ts", "wallet_label", "from_addr", "to_addr", "counterparty",
         "counterparty_label", "value_wei", "method", "kind", "created_contract",
+        "success",
     ),
     MarketSnapshot: (
         "imd_price_usd", "imd_price_usd_gecko", "imd_change_24h_pct",
@@ -101,7 +102,8 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
     LaunchpadState: (
         "coin_count", "imd_to_burn_wei", "total_real_imd_wei", "burn_fee_bps",
         "creator_fee_bps", "creator_eth_owed_wei", "executor_balance_wei",
-        "min_bridge_wei", "coins", "swap_count", "trader_count",
+        "min_bridge_wei", "bridge_amount_wei", "coins", "swap_count",
+        "trader_count",
         "burned_total_wei", "swaps_by_coin", "coin_tickers", "launch_count",
         "new_24h", "creator_count", "cursor",
     ),
@@ -228,18 +230,23 @@ def test_log_window_groups_default_to_empty_not_missing() -> None:
     assert window.seaport_sales == ()
 
 
-def test_channel_tx_kinds_are_the_five_frozen_strings() -> None:
+def test_channel_tx_kinds_are_the_six_frozen_strings() -> None:
     """CHANNEL_KINDS is the vocabulary ``classify_channel_tx`` returns — it is
     deliberately *not* a ChannelTx field: the client returns raw rows and the
     pure layer classifies them (PRD §6 rule 4).
 
     Five, not four, since Task 1 (2026-08-23 plan) split ``answer`` out of
     ``action`` — see ``test_channel_kinds_carries_the_authenticated_answer``
-    for why.
+    for why. Six since 2026-08-25, when ``failed`` split the *receipt* out of
+    all five: a reverted tx is not the thing its calldata describes.
+
+    ``success`` is a ChannelTx field where ``kind`` is not, and the two are
+    not in tension: the receipt is something the page *states* about the row,
+    like its value or its nonce, while the kind is a conclusion drawn from it.
     """
     from maxpane_dashboard.data.surf_models import CHANNEL_KINDS
 
-    assert CHANNEL_KINDS == ("self", "reply", "answer", "action", "fund")
+    assert CHANNEL_KINDS == ("self", "reply", "answer", "action", "fund", "failed")
     assert "kind" not in {f.name for f in dataclasses.fields(ChannelTx)}
     assert "text" not in {f.name for f in dataclasses.fields(ChannelTx)}
 
@@ -271,6 +278,9 @@ EXPECTED_KEYS = {
     "sig_post_state",
     "sig_post_detail",
     "sig_post_age_s",
+    "sig_thread_state",
+    "sig_thread_detail",
+    "sig_thread_age_s",
     "sig_lp_state",
     "sig_lp_detail",
     "sig_lp_age_s",
@@ -353,7 +363,7 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 76
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 79
 
 
 def test_every_signal_has_all_three_facets() -> None:
@@ -494,7 +504,7 @@ def test_channel_kinds_carries_the_authenticated_answer():
     """
     from maxpane_dashboard.data.surf_models import CHANNEL_KINDS
 
-    assert CHANNEL_KINDS == ("self", "reply", "answer", "action", "fund")
+    assert CHANNEL_KINDS[:5] == ("self", "reply", "answer", "action", "fund")
 
 
 def test_feed_rows_carry_the_recipient_threading_needs():

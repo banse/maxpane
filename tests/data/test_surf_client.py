@@ -355,12 +355,12 @@ def test_this_wp_constructs_against_wp0s_frozen_field_names():
         },
         m.ChannelTx: {
             "tx_hash", "ts", "nonce", "from_addr", "to_addr", "value_wei",
-            "input_hex", "method",
+            "input_hex", "method", "success",
         },
         m.DevTx: {
             "tx_hash", "ts", "wallet_label", "from_addr", "to_addr",
             "counterparty", "counterparty_label", "value_wei", "method", "kind",
-            "created_contract",
+            "created_contract", "success",
         },
         m.MarketSnapshot: {
             "imd_price_usd", "imd_price_usd_gecko", "imd_change_24h_pct",
@@ -1343,6 +1343,37 @@ async def test_fetch_channel_txs_parses_the_full_page():
     assert pasta.from_addr == "0x1c3a0ad54418fe843953c71df23637de732ce159"
     assert pasta.to_addr == A.ANNOUNCE.lower()
 
+    # Every row on this page succeeded, and the receipt says so rather than
+    # the parser assuming it: `success` is what stops a reverted call being
+    # read as the post/answer/deploy its calldata describes.
+    assert all(t.success is True for t in txs)
+
+
+@pytest.mark.asyncio
+async def test_fetch_channel_txs_carries_the_receipt_verdict_three_ways():
+    """``ok`` / ``error`` / unstated, and the third is not the second.
+
+    Blockscout's ``status`` is the only thing that can tell a message from an
+    attempt, and reading an *absent* status as a failure would turn a healthy
+    page into a wall of ``FAILED`` badges. So the parser answers ``None`` for
+    anything it does not recognise -- absent, null, or a spelling it has not
+    seen -- and only the literal ``"error"`` becomes ``False``.
+    """
+    fixture = load_fixture("announce_txs_page1.json")
+    items = [dict(row) for row in fixture["items"][:4]]
+    items[0]["status"] = "ok"
+    items[1]["status"] = "error"
+    items[2].pop("status", None)
+    items[3]["status"] = "pending-and-unheard-of"
+    page = {**fixture, "items": items, "next_page_params": None}
+
+    handler = _blockscout_handler({A.ANNOUNCE: [page]})
+    async with _client_on(RecordingTransport(handler)) as client:
+        txs = await client.fetch_channel_txs()
+
+    assert txs is not None and len(txs) == 4
+    assert [t.success for t in txs] == [True, False, None, None]
+
 
 @pytest.mark.asyncio
 async def test_fetch_channel_txs_follows_next_page_params_once_per_page():
@@ -1551,8 +1582,14 @@ async def test_the_kind_vocabulary_matches_the_captured_pages():
     counts = Counter(r.kind for r in rows)
     assert counts == Counter({
         "other": 33, "fwa claim": 12, "transfer": 8,
-        "lp": 5, "burn": 3, "bridge": 2,
+        "lp": 5, "burn": 2, "bridge": 2, "failed": 1,
     })
+    # ``burn`` was **3** until 2026-08-25, and the row that left is the whole
+    # argument for the receipt gate: one of the three captured
+    # ``bridgeToBaseBurnReceiver`` calls (``0x0f3ce503…``) reverted. A third
+    # of the burn history on these pages was an attempt, counted as an event
+    # -- and BURN's precursor WATCH is built from exactly this ``kind ==
+    # "burn"`` set.
     # Every kind is from the closed vocabulary — a Blockscout `method` string
     # never reaches the widget's label column.  It is attacker-influenced
     # (anyone can deploy a contract with a chosen function name) and unbounded
@@ -1641,16 +1678,26 @@ async def test_every_live_burn_destination_classifies_as_burn(to_addr, label):
 
 
 @pytest.mark.asyncio
-async def test_the_kind_vocabulary_did_not_grow_for_the_burn_repoint():
-    """Three burn destinations, still one word: no column got wider.
+async def test_the_kind_vocabulary_grew_only_by_the_receipt():
+    """Two changes, one column: neither made this cell wider.
 
     `widgets/surf/activity.py` sizes its kind cell against `DEV_TX_KINDS`, so
-    a NEW kind would be a width change; `burn` was already a member.
+    a new member is a potential width change and this is where it surfaces.
+
+    The burn repoint (three burn destinations) added no member at all --
+    `burn` was already one. `failed` (2026-08-25) *is* a new member, and it
+    is six characters against a cell already sized to `fwa claim`'s nine, so
+    the panel that sets this rail's width does not move either. The pairing
+    is asserted by `test_activity_cells_are_sized_from_the_producers_own_
+    vocabularies`, which derives the cell from this set rather than trusting
+    the sentence above.
     """
     assert "burn" in surf_client.DEV_TX_KINDS
     assert surf_client.DEV_TX_KINDS == frozenset(
-        {"deploy", "lp", "burn", "bridge", "fwa claim", "transfer", "other"}
+        {"deploy", "lp", "burn", "bridge", "fwa claim", "transfer", "other",
+         "failed"}
     )
+    assert max(len(kind) for kind in surf_client.DEV_TX_KINDS) == len("fwa claim")
 
 
 @pytest.mark.asyncio
@@ -4485,3 +4532,38 @@ async def test_an_attacker_chosen_name_cannot_grow_the_persisted_cursor() -> Non
         ))
     rec2 = second.cursor["launches"][pool]
     assert len(rec2["name"]) == len(rec2["ticker"]) == len(rec2["creator"]) == cap
+
+
+@pytest.mark.asyncio
+async def test_a_reverted_burn_executor_call_is_not_a_burn():
+    """A captured row, not a synthetic one: this really is on the dev page.
+
+    ``0x0f3ce503…`` is ``bridgeToBaseBurnReceiver`` to the BurnExecutor from
+    the dev wallet, and Blockscout says ``status: "error"``, ``result:
+    "Reverted"``. Classified on its destination alone it is ``burn`` -- and
+    ``surf_manager._readings`` builds BURN's precursor WATCH from
+    ``kind == "burn"`` rows, so the rail reported "BurnExecutor tx seen" for
+    a burn that reverted. Nothing was bridged and nothing was burned.
+
+    The destination is still what names a *successful* tx (CLAUDE.md: trust
+    the address, never the name); the receipt is what decides there is
+    anything to name.
+    """
+    handler = _blockscout_handler({
+        A.DEV_WALLET: [load_fixture("dev_txs_page1.json")],
+        A.OPS_WALLET: [load_fixture("ops_txs_page1.json")],
+    })
+    async with _client_on(RecordingTransport(handler)) as client:
+        rows = await client.fetch_dev_activity()
+
+    assert rows is not None
+    reverted = [r for r in rows if r.tx_hash.startswith("0x0f3ce503")]
+    assert len(reverted) == 1, "the captured reverted row went missing"
+    assert reverted[0].to_addr == A.BURN_EXECUTOR_V1.lower()
+    assert reverted[0].method == "bridgeToBaseBurnReceiver"
+    assert reverted[0].success is False
+    assert reverted[0].kind == "failed"
+
+    # Every other row on these two pages succeeded, so nothing else moved.
+    assert all(r.success is True for r in rows if r is not reverted[0])
+    assert not [r for r in rows if r.kind == "failed" and r is not reverted[0]]

@@ -1,6 +1,6 @@
 """IMD market panel: price, volume, liquidity, FP parity, the bridge spread.
 
-Seven rows in **two columns** (title, spacer, two paired rows, a seam, and
+Six rows in **two columns** (title, spacer, two paired rows, a seam, and
 the two-row bridge block)::
 
     IMD MARKET
@@ -786,11 +786,11 @@ class SurfMarket(Vertical):
         yield Static(
             PANEL_TITLE, classes="surf-market-title", id="surf-mkt-title"
         )
+        # One blank row under the title, matching the seam between the two
+        # figure blocks below.  There were two here until 2026-08-24, on the
+        # reasoning that the title should sit further off its figures than
+        # the figures sit off each other; on screen it just read as a gap.
         yield Static("", classes="surf-market-line", id="surf-mkt-spacer")
-        # A second blank row, so the title sits further off its figures than
-        # the figures sit off each other.  Rows are ``auto``-height, so this
-        # costs one terminal row and nothing horizontal.
-        yield Static("", classes="surf-market-line", id="surf-mkt-spacer-2")
         yield Static(_WAITING, classes="surf-market-line", id="surf-mkt-price")
         yield Static("", classes="surf-market-line", id="surf-mkt-vol")
         yield Static("", classes="surf-market-line", id="surf-mkt-gap")
