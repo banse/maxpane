@@ -44,10 +44,12 @@ from maxpane_dashboard.data.surf_manager import (
 from maxpane_dashboard.data.surf_models import (
     SURF_KEYS,
     SURF_ROW_KEYS,
+    Burnkeeper,
     ChainState,
     ChannelTx,
     DevTx,
     LaunchpadCoin,
+    LaunchpadEvent,
     LaunchpadState,
     LogWindow,
     MarketSnapshot,
@@ -3165,6 +3167,84 @@ async def test_burn_ready_is_none_not_false_when_either_leg_is_unread() -> None:
     payload2 = await manager2.fetch_and_compute()
     assert payload2["burn_accrued"] is None
     assert payload2["burn_ready"] is None
+
+
+def test_launchpad_coin_rows_emits_exactly_the_frozen_row_contract() -> None:
+    """Task 1 froze ``mcap_eth``/``mcap_usd`` into
+    ``SURF_ROW_KEYS["launchpad_coins"]``, but the production row-builder for
+    a **fresh** (non-cached) sweep kept emitting only the original ten
+    keys -- so a live sweep handed the widget rows that violated the very
+    contract Task 1 pinned, and no existing test caught it: the shape
+    assertions elsewhere either read a pre-shaped last-good cache dict that
+    bypasses this method, or use hand-built fixtures. This drives the
+    production row-builder directly, with a real ``LaunchpadCoin``, and
+    checks the emitted keys match the contract exactly -- not merely
+    "contains mcap_eth".
+    """
+    coin = LaunchpadCoin(
+        ticker="ICE", name="Ice", creator="0x1", age_s=1.0,
+        price_eth=5.86e-09, change_24h_pct=None, swaps_24h=0, swaps_all=0,
+        imd_burned=0.0, mcap_eth=5.86,
+    )
+    rows = SurfManager._launchpad_coin_rows([coin])
+    assert set(rows[0]) == set(SURF_ROW_KEYS["launchpad_coins"])
+
+
+def test_mcap_usd_is_attached_at_assembly() -> None:
+    rows = SurfManager._with_mcap_usd([{"mcap_eth": 5.861606568}], 4000.0)
+    assert rows[0]["mcap_usd"] == pytest.approx(23446.426272)
+    assert rows[0]["mcap_eth"] == 5.861606568
+
+
+@pytest.mark.parametrize("eth_usd, mcap", [(None, 5.86), (4000.0, None)])
+def test_an_unknown_input_leaves_mcap_usd_none(eth_usd, mcap) -> None:
+    """CoinGecko down must not render an ETH figure under a `$` header, and
+    must never render 0."""
+    rows = SurfManager._with_mcap_usd([{"mcap_eth": mcap}], eth_usd)
+    assert rows[0]["mcap_usd"] is None
+
+
+def test_the_cache_slot_never_carries_mcap_usd() -> None:
+    """Tier purity: a USD figure cached against the slow tier's timestamp
+    would be stale in a way that tier's own `as of` marker does not describe.
+    """
+    coin = LaunchpadCoin(
+        ticker="ICE", name="Ice", creator="0x1", age_s=1.0,
+        price_eth=5.86e-09, change_24h_pct=None, swaps_24h=0, swaps_all=0,
+        imd_burned=0.0, mcap_eth=5.86,
+    )
+    rows = SurfManager._launchpad_coin_rows([coin])
+    assert rows[0]["mcap_eth"] == 5.86
+    assert rows[0]["mcap_usd"] is None
+
+
+def test_both_new_keys_reach_the_payload_with_known_flags_derived() -> None:
+    """`wallet_known` is derived here from KNOWN_LABELS -- the same one
+    allowlist `creator_known` and `dev_activity` already use, never a second
+    notion of "known"."""
+    activity = SurfManager._launchpad_activity_rows([
+        LaunchpadEvent(kind="buy", ticker="ICE", wallet=DEV_WALLET,
+                       eth=0.012, age_s=120.0),
+        LaunchpadEvent(kind="buy", ticker="ICE", wallet="0xstranger",
+                       eth=0.5, age_s=300.0),
+    ])
+    assert activity[0]["wallet_known"] is True
+    assert activity[1]["wallet_known"] is False
+    keepers = SurfManager._burnkeeper_rows([
+        Burnkeeper(wallet=DEV_WALLET, imd_burned=15670.79,
+                   eth_paid=5.49e-05, burns=2),
+    ])
+    assert keepers[0]["wallet_known"] is True
+    assert keepers[0]["burns"] == 2
+
+
+def test_a_failed_sweep_publishes_none_not_an_empty_list() -> None:
+    """`None` means the sweep failed; `[]` means it ran and found nothing.
+    The panels render them differently and the distinction starts here."""
+    assert SurfManager._launchpad_activity_rows(None) is None
+    assert SurfManager._burnkeeper_rows(None) is None
+    assert SurfManager._launchpad_activity_rows([]) == []
+    assert SurfManager._burnkeeper_rows([]) == []
 
 
 async def test_the_hook_accrual_has_no_say_in_whether_a_burn_is_ready() -> None:

@@ -1710,6 +1710,12 @@ class SurfManager:
             "new_24h": _opt_int(_field(launchpad_state, "new_24h")),
             "creator_count": _opt_int(_field(launchpad_state, "creator_count")),
             "cursor": _field(launchpad_state, "cursor"),
+            "activity": SurfManager._launchpad_activity_rows(
+                _field(launchpad_state, "activity")
+            ),
+            "burnkeepers": SurfManager._burnkeeper_rows(
+                _field(launchpad_state, "burnkeepers")
+            ),
         }
 
     @staticmethod
@@ -1752,6 +1758,11 @@ class SurfManager:
                     "creator_known": KNOWN_LABELS.get(creator.lower()) is not None,
                     "age_s": _opt_float(_field(coin, "age_s")),
                     "price_eth": _opt_float(_field(coin, "price_eth")),
+                    "mcap_eth": _opt_float(_field(coin, "mcap_eth")),
+                    # Filled at assembly from the MARKET tier, never here:
+                    # this row is what gets cached, and the cache slot is the
+                    # launchpad tier's. See `_with_mcap_usd`.
+                    "mcap_usd": None,
                     "change_24h_pct": _opt_float(_field(coin, "change_24h_pct")),
                     "swaps_24h": _opt_int(_field(coin, "swaps_24h")),
                     "swaps_all": _opt_int(_field(coin, "swaps_all")),
@@ -1759,6 +1770,82 @@ class SurfManager:
                 }
             )
         return rows
+
+    @staticmethod
+    def _launchpad_activity_rows(events: Any) -> list[dict[str, Any]] | None:
+        """`LaunchpadEvent`s -> `SURF_ROW_KEYS["launchpad_activity"]` dicts.
+
+        `None` in, `None` out: a failed sweep is not an empty feed, and the
+        panel says two different things about them.
+
+        `ticker` rides through **raw** -- attacker-chosen, escaped at the
+        widget, never here (`feed_items`' own rule). `wallet_known` is the
+        one `KNOWN_LABELS` lookup this module already uses everywhere else.
+        """
+        if events is None:
+            return None
+        rows: list[dict[str, Any]] = []
+        for event in events:
+            wallet = str(_field(event, "wallet") or "")
+            rows.append({
+                "kind": str(_field(event, "kind") or ""),
+                "ticker": _field(event, "ticker"),
+                "wallet": wallet,
+                "wallet_known": KNOWN_LABELS.get(wallet.lower()) is not None,
+                "eth": _opt_float(_field(event, "eth")),
+                "age_s": _opt_float(_field(event, "age_s")),
+            })
+        return rows
+
+    @staticmethod
+    def _burnkeeper_rows(keepers: Any) -> list[dict[str, Any]] | None:
+        """`Burnkeeper`s -> `SURF_ROW_KEYS["launchpad_burnkeepers"]` dicts.
+
+        `eth_paid` stays `float | None` through the coercion: `_opt_float`
+        must not be allowed to turn an unread fee into a zero one.
+        """
+        if keepers is None:
+            return None
+        rows: list[dict[str, Any]] = []
+        for keeper in keepers:
+            wallet = str(_field(keeper, "wallet") or "")
+            rows.append({
+                "wallet": wallet,
+                "wallet_known": KNOWN_LABELS.get(wallet.lower()) is not None,
+                "imd_burned": _opt_float(_field(keeper, "imd_burned")),
+                "eth_paid": _opt_float(_field(keeper, "eth_paid")),
+                "burns": _opt_int(_field(keeper, "burns")),
+            })
+        return rows
+
+    @staticmethod
+    def _with_mcap_usd(rows: Any, eth_usd: Any) -> list[dict[str, Any]]:
+        """Attach `mcap_usd` to cached coin rows, at payload assembly.
+
+        **This is the one cross-tier value on this panel.** `mcap_eth` is the
+        launchpad tier's own (a slow-tier price times a supply from a slow-
+        tier log); `eth_usd` is the market tier's, and it is fresher. The
+        multiplication happens here because this is the only place both are
+        in hand, and it happens at *assembly* rather than in the cache so
+        that no USD figure is ever persisted against the slow tier's
+        timestamp.
+
+        `eth_usd is None` (CoinGecko down) leaves `mcap_usd` `None` and the
+        cell renders a dash. It never falls back to the ETH figure -- an ETH
+        number under a `$` header is worse than no number -- and it never
+        renders 0.
+        """
+        usd = _opt_float(eth_usd)
+        out: list[dict[str, Any]] = []
+        for row in rows or ():
+            if not isinstance(row, dict):
+                continue
+            mcap = _opt_float(row.get("mcap_eth"))
+            out.append({
+                **row,
+                "mcap_usd": None if (usd is None or mcap is None) else mcap * usd,
+            })
+        return out
 
     @staticmethod
     def _pool_venue(lp_state: Any) -> str | None:
@@ -2467,7 +2554,11 @@ class SurfManager:
             "launchpad_creator_eth_owed": _tokens(
                 launchpad_slot.get("creator_eth_owed_wei")
             ),
-            "launchpad_coins": launchpad_slot.get("coins"),
+            "launchpad_coins": self._with_mcap_usd(
+                launchpad_slot.get("coins"), eth_usd
+            ),
+            "launchpad_activity": launchpad_slot.get("activity"),
+            "launchpad_burnkeepers": launchpad_slot.get("burnkeepers"),
             "launchpad_as_of_hhmm": (
                 launchpad_entry.as_of_hhmm() if launchpad_entry is not None else None
             ),

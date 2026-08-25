@@ -11,10 +11,12 @@ import dataclasses
 import pytest
 
 from maxpane_dashboard.data.surf_models import (
+    Burnkeeper,
     ChainState,
     ChannelTx,
     DevTx,
     LaunchpadCoin,
+    LaunchpadEvent,
     LaunchpadState,
     LogWindow,
     MarketSnapshot,
@@ -34,6 +36,8 @@ ALL_MODELS = (
     PoolV4State,
     LaunchpadCoin,
     LaunchpadState,
+    LaunchpadEvent,
+    Burnkeeper,
 )
 
 
@@ -107,6 +111,8 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
         "burned_total_wei", "swaps_by_coin", "coin_tickers", "launch_count",
         "new_24h", "creator_count", "cursor", "activity", "burnkeepers",
     ),
+    LaunchpadEvent: ("kind", "ticker", "wallet", "eth", "age_s"),
+    Burnkeeper: ("wallet", "imd_burned", "eth_paid", "burns"),
 }
 
 
