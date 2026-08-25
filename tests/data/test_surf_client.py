@@ -3364,9 +3364,28 @@ async def test_fetch_launchpad_ranks_and_decodes_the_real_fixture() -> None:
 
     # The hostile ticker exists in the fixture and survives completely raw:
     # no escaping happens at this layer (Task 11 owns that, at render time).
-    assert "[/x]" in tickers
-    hostile = next(c for c in state.coins if c.ticker == "[/x]")
-    assert hostile.name == "[bold red]hostile[/]"
+    #
+    # It is asserted on the two UNCAPPED carriers, not on `state.coins`, and
+    # that is not a weakening -- it is where the claim now lives. `[/x]` has
+    # 0 swaps in this capture and ranks 11th of 13, so once
+    # `LAUNCHPAD_RENDER_LIMIT` came down 20 -> 10 (Task 4) it stopped being
+    # drawn. `coin_tickers` is the full `{pool_id: ticker}` label map, whose
+    # own docstring says it carries the ticker raw for exactly this reason,
+    # and the cursor is the *persisted* payload -- the string that is read
+    # back out of `~/.maxpane/surf_cache.json` and re-rendered every tick,
+    # which is the harder half of the guarantee.
+    hostile_pool = next(
+        pool_id for pool_id, t in state.coin_tickers.items() if t == "[/x]"
+    )
+    assert state.cursor["launches"][hostile_pool]["ticker"] == "[/x]"
+    assert state.cursor["launches"][hostile_pool]["name"] == "[bold red]hostile[/]"
+
+    # And it is absent from the rendered slice because it RANKED out, never
+    # because something here sanitised or dropped it -- opposite conclusions
+    # for Task 11, which has to assume every ticker reaching it is hostile.
+    assert "[/x]" not in tickers
+    assert len(state.coins) == surf_client.LAUNCHPAD_RENDER_LIMIT < 13
+    assert all(c.swaps_24h >= 0 for c in state.coins)
 
 
 @pytest.mark.asyncio
@@ -3555,7 +3574,7 @@ async def test_a_curve_swap_is_attributed_by_pool_id_and_an_unknown_pool_id_is_s
 # ---------------------------------------------------------------------------
 # Fix round 2 (2026-08-24) -- swaps_by_coin must be the FULL population, not
 # the LAUNCHPAD_RENDER_LIMIT-capped slice `coins` carries. hot_coin_threshold
-# takes a median, and a median of only the busiest 20 coins runs several
+# takes a median, and a median of only the busiest few coins runs several
 # times too high -- this is the test that would catch feeding it the wrong
 # distribution, which every test above (built from small, sub-cap fixtures)
 # cannot.
@@ -3564,11 +3583,15 @@ async def test_a_curve_swap_is_attributed_by_pool_id_and_an_unknown_pool_id_is_s
 
 @pytest.mark.asyncio
 async def test_swaps_by_coin_is_the_full_population_not_the_rendered_cap() -> None:
-    """20 coins get 8 in-window swaps each (more than the render cap of 20
-    coins can hold once the 25 quiet ones are added); 25 more get exactly 1
-    each. 45 active coins total -- comfortably over ``LAUNCHPAD_RENDER_LIMIT``
-    (20), so the render cap genuinely bites and only the 20 hot coins survive
-    into ``state.coins``.
+    """20 coins get 8 in-window swaps each; 25 more get exactly 1 each.
+    45 active coins total -- comfortably over ``LAUNCHPAD_RENDER_LIMIT``, so
+    the render cap genuinely bites and only hot coins survive into
+    ``state.coins``.
+
+    The cap is referenced, never retyped. It has already moved once (20 -> 10,
+    Task 4, when the coin table gave half its column to an activity feed) and
+    the hardcoded literal that used to be here is exactly what turned that
+    into a manual fix.
 
     The true population median is 1 (25 of 45 coins have exactly one swap),
     giving a threshold at the floor (5). The median of just the rendered
@@ -3630,8 +3653,9 @@ async def test_swaps_by_coin_is_the_full_population_not_the_rendered_cap() -> No
     async with _client_on(RecordingTransport(handler)) as client:
         state = await client.fetch_launchpad()
 
-    # The render cap genuinely bites: 45 active coins, only 20 rendered.
-    assert len(state.coins) == 20
+    # The render cap genuinely bites: 45 active coins, far fewer rendered.
+    assert len(state.coins) == surf_client.LAUNCHPAD_RENDER_LIMIT
+    assert len(state.coins) < 45
     assert {c.swaps_24h for c in state.coins} == {8}
     assert all(c.ticker.startswith("HOT") for c in state.coins)
 
@@ -5529,3 +5553,15 @@ def test_the_activity_sort_is_total_so_one_block_cannot_reshuffle() -> None:
     assert first == shuffled
     # All three really are on one block, or this proves nothing about ties.
     assert len({s["block"] for s in swaps}) == 1
+
+
+def test_the_render_limit_matches_the_widget_cap() -> None:
+    """Deliberately redundant constants, pinned to agree.
+
+    The widget cannot import the client's constant (primitives only), so the
+    two are hand-typed in two layers; an unmoved client limit would keep
+    paying for `spotPriceEthPerCoin` legs per tick whose rows nobody draws.
+    """
+    from maxpane_dashboard.data.surf_client import LAUNCHPAD_RENDER_LIMIT
+    from maxpane_dashboard.widgets.surf.launchpad import MAX_COIN_ROWS
+    assert LAUNCHPAD_RENDER_LIMIT == MAX_COIN_ROWS == 10
