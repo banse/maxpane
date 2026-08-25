@@ -86,7 +86,7 @@ async def test_hostile_ticker_and_name_never_reach_markup() -> None:
         widget.update_data(coins=[HOSTILE], coin_count=146, as_of_hhmm="01:14")
         await pilot.pause()
         strips = pilot.app.screen._compositor.render_strips()
-        text = "\n".join(seg.text for strip in strips for seg in strip)
+        text = "\n".join("".join(seg.text for seg in strip) for strip in strips)
         assert "pwn" in text          # the value is shown...
         assert "[bold red]" not in text   # ...but never as markup
         assert "[/x]" not in text
@@ -106,7 +106,7 @@ async def test_a_quiet_coin_renders_a_dash_not_zero_percent() -> None:
         widget.update_data(coins=[quiet], coin_count=1, as_of_hhmm="01:14")
         await pilot.pause()
         strips = pilot.app.screen._compositor.render_strips()
-        text = "\n".join(seg.text for strip in strips for seg in strip)
+        text = "\n".join("".join(seg.text for seg in strip) for strip in strips)
         assert "0%" not in text
 
 
@@ -398,3 +398,43 @@ async def test_the_widen_marker_still_follows_the_note_on_the_title_line() -> No
         text = "\n".join("".join(seg.text for seg in strip) for strip in strips)
     row = next(r for r in text.splitlines() if "LAUNCHPAD COINS" in r)
     assert COINS_WIDEN_HINT in row, row
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 -- .surf-lpc-title needs nowrap/ellipsis too
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_title_never_wraps_so_the_row_beneath_it_stays_blank() -> None:
+    """Every other test in this file renders at 100 or 73 columns, both
+    comfortably above the width where the unwrapped title's own text
+    overruns the row -- so none of them could have caught this.
+
+    ``.surf-lpc-title`` carried no ``text-wrap``/``text-overflow`` at all
+    (unlike ``.surf-lpc-gap`` and the rail panels' own ``Static``s, which
+    already had it): harmless while the title was always the short
+    ``"LAUNCHPAD COINS  ‹ widen"``, but Task 3 put a variable-length note on
+    that same row, and a long enough note wraps the title onto a second
+    line -- which is the row the gap widget is supposed to own. Measured
+    empirically against the real widget (not assumed): the disagreement
+    note (``coin_count=146, launch_count=66``) is the widest of the three
+    notes this panel renders, and without the CSS fix it wraps at width 62
+    and clears at 63. 58 is comfortably inside the wrapping range with
+    margin either side of that boundary.
+    """
+    class _A(App):
+        def compose(self):
+            yield SurfLaunchpadCoins()
+
+    async with _A().run_test(size=(58, 24)) as pilot:
+        widget = pilot.app.query_one(SurfLaunchpadCoins)
+        widget.update_data(
+            coins=_ROWS, coin_count=146, launch_count=66, as_of_hhmm="01:14",
+        )
+        await pilot.pause()
+        strips = pilot.app.screen._compositor.render_strips()
+        rows = ["".join(seg.text for seg in strip) for strip in strips]
+
+    i = next(n for n, row in enumerate(rows) if "LAUNCHPAD COINS" in row)
+    assert rows[i + 1].strip() == "", rows[i + 1]

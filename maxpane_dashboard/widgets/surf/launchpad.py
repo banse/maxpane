@@ -397,13 +397,13 @@ class SurfLaunchpadCoins(Vertical):
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
     }
     SurfLaunchpadCoins > .surf-lpc-gap {
         width: 100%;
         height: 1;
         padding: 0 1;
-        text-wrap: nowrap;
-        text-overflow: ellipsis;
     }
     SurfLaunchpadCoins > DataTable {
         height: 1fr;
