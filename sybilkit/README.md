@@ -218,6 +218,43 @@ because either alone is gameable: a precision floor is met perfectly by a detect
 convicts nobody, and a gap ceiling by one that convicts everybody. It reads the fixture its
 caller hands it and never the network.
 
+**What this gate does not establish, measured.** It scores the labeled subset *in isolation*, so a
+control can never be pulled into a cluster by the rest of a population — which is the only way a
+false positive actually happens in the field. Scored inside a full 19,522-wallet run, 30 of the
+same 60 controls are flagged. Those controls were also sampled as *non-audited* rather than
+*verified honest*, and several are farm members. **A precision of 1.0 from this harness is an
+artefact of the scoring shape, not evidence of precision.** Rebuilt against 308 wallets selected
+by a standard fixed before it was applied and scored in situ, the 0.1.1 rules remove 84 of them
+(27.3%). See [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) §3 and the audit linked below.
+
+## How to check any of this yourself
+
+Claims about a detector are worth what their reproduction is worth. The full run of 0.1.1 over the
+settled THE LIST population — and an audit of it — is public and reproduces from a clone with **no
+private inputs, no API key and no network**:
+
+```bash
+git clone https://github.com/banse/clustermap
+cd clustermap/audit/harness
+export SYBIL_CACHE=../../data/curator_snapshot.json.gz
+python3 sk_v2.py --only "baseline(shipped)"     # -> 263 clusters, 11,573 flagged, 57.6% of points
+python3 bench_insitu.py                          # -> in-situ scoring against verified controls
+```
+
+That repository vendors this library pinned by commit, carries the frozen population snapshot, the
+complete on-chain enrichment (a first funder for every one of the 19,522 contributors) and the
+audit's harness. Reproduction covers **cluster membership, not merely totals**: the sorted
+membership of all clusters hashes identically across machines and processes, so a third party can
+reconstruct which wallet sits in which cluster and check an individual verdict rather than trusting
+an aggregate.
+
+The population itself is being made reconstructible directly from the contract's event log — the
+`Deposited`, `FirstDeposit`, `HourSaved` and `Settled` events carry every field the analysis
+consumes — which will remove the snapshot file from the trust surface entirely. The one input that
+can never come from the contract is each wallet's *first funder*, because that is a fact about the
+wallet's own history rather than about the game; it ships as a file in which every row is
+independently checkable with a single lookup.
+
 ## Tests
 
 ```bash
