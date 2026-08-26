@@ -76,12 +76,19 @@ conversation back up under you. The indent is taken out of the reply's own text 
 than added to the row, so opening a thread costs rows and never columns — nothing else on the
 screen moves.
 
-Press **`l`** to swap the whole dashboard body for the v4 launchpad's own view: LAUNCHPAD COINS
-takes the left column and CURVE FLOW over BURN PIPELINE share a rail on the right — the same
-two-column shape the main dashboard uses, split wider because the coin table has nine fixed
-columns and cannot give any of them back. The hero (LAUNCHPAD · FLOW · BURN · SUPPLY) stays on
-screen the whole time; `esc` backs out, one-way. The launchpad view is whole from
-**135 columns**, inside the 143 the widest dashboard already asks for.
+Press **`l`** to swap the whole dashboard body for the v4 launchpad's own view — five panels in
+two columns. LAUNCHPAD COINS and LAUNCHPAD ACTIVITY take the left column: the ten most-traded
+coins of the last day with their market caps in dollars, and under them a live feed of the
+launchpad's own buys, sells and launches. CURVE FLOW, BURN PIPELINE and BURNKEEPERS share the
+rail on the right — where the ETH is going, what the burn pipeline has accrued and staged, and
+who has actually pushed the button. BURNKEEPERS is the new one: `bridgeToBaseBurnReceiver()` is
+callable by anyone, so this ranks the wallets that have called it by IMD burned and shows the
+LayerZero fee each really paid — the fee, not the transaction's value, whose surplus the executor
+refunds. maxpane never calls it, and never offers to: it only reports that it is callable and
+what it has cost the people who did. The hero (LAUNCHPAD · FLOW · BURN · SUPPLY) stays on screen
+the whole time; `esc` backs out, one-way. The launchpad view is whole from **138 columns**,
+inside the 143 the widest dashboard already asks for, and from **31 rows** — below that it
+scrolls and says `‹ taller`.
 
 The NFT floor is shown as `n/a — no keyless source`, not estimated. There is no keyless floor
 feed for this collection, and a made-up number on a dashboard people trade against is worse than
@@ -308,11 +315,11 @@ the other, so a single manager owns the command.
 
 Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap panels; in THE
 LIST's `l` view it switches the full-width raw and cleaned tables. **Surfboard binds `l`** to swap
-the whole dashboard body for the v4 launchpad's own view — LAUNCHPAD COINS on the left, CURVE
-FLOW over BURN PIPELINE in a right-hand rail — with the hero (LAUNCHPAD · FLOW · BURN · SUPPLY)
-left on screen the whole time; `esc` backs out, one-way, and its status hint reads
-`l launchpad`. In Surfboard's announce feed, `enter` or `space` on a `▸ n replies` line (or a click) opens and
-closes that thread. (THE LIST's `l` and Surfboard's `l` are two
+the whole dashboard body for the v4 launchpad's own five panels — LAUNCHPAD COINS over LAUNCHPAD
+ACTIVITY on the left, CURVE FLOW, BURN PIPELINE and BURNKEEPERS in a right-hand rail — with the
+hero (LAUNCHPAD · FLOW · BURN · SUPPLY) left on screen the whole time; `esc` backs out, one-way,
+and its status hint reads `l launchpad`. In Surfboard's announce feed, `enter` or `space` on a
+`▸ n replies` line (or a click) opens and closes that thread. (THE LIST's `l` and Surfboard's `l` are two
 different dashboards' own bindings, not one shared key — see each dashboard's own row above for
 what it does there.) **THE LIST binds `y`** for your own standing — every send you
 made with the multiplier it got, what each one actually credited, your share of all weight, the
@@ -364,11 +371,19 @@ columns are real and deliberately unspent: the app-wide number is FWA's 143, so 
 clearing at 139 would not change a single width a user sees — and that seam is no longer what binds
 surf anyway, since the market panel in the row below it asks for 143.
 
-Surfboard's `l` launchpad view is a second layout with its own number: **135 columns**, on a
-12:5 split rather than the dashboard's 7:6. It gets its own seam because it balances different
-things — a nine-column coin table that cannot shrink at all against a rail of short label/value
-lines — and on the dashboard's 7:6 the table would not have got its columns until a 177-column
-terminal, wider than any laptop reaches. 135 is inside 143, so the app-wide number is unchanged.
+Surfboard's `l` launchpad view is a second layout with its own number: **138 columns**, on a 2:1
+split rather than the dashboard's 7:6. It gets its own seam because it balances different things
+— a nine-column coin table that cannot shrink at all against a rail of short label/value lines —
+and on the dashboard's 7:6 the table would not have got its columns until a 171-column terminal,
+wider than any laptop reaches. 138 is inside 143, so the app-wide number is unchanged. It was 135
+while this view had three panels; the two it grew on 2026-08-25 cost it three columns, and the
+split moved off 12:5 for a reason worth knowing. CURVE FLOW and BURN PIPELINE — the two rail
+panels whose lines are the longest — have no `‹ widen` of their own, so a seam that lets the
+*rail* run out of room first clips a line in silence, which 12:5 did, in a four-column-wide
+window of terminal widths. 2:1 hands the rail more columns than its widest line can ever need, so
+the coin table — which does say `‹ widen` when it runs short — is what decides the width at every
+width. It also has a **height** requirement of its own — 31 rows — as THE LIST's two swapped
+bodies do.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why
