@@ -3663,6 +3663,121 @@ async def test_the_flat_payload_keeps_serving_a_stale_launchpad_after_a_failure(
         assert after[key] is not None, key
 
 
+async def test_a_failed_log_sweep_leaves_all_three_launchpad_panels_saying_it(
+    tmp_path,
+) -> None:
+    """One outage, three panels, **one** story.
+
+    "Logs down, state up" is an ordinary failure on this tier and not a
+    hypothetical one: the launchpad *getters* ride the STATE pool while all
+    four log sweeps ride the LOGS pool, and either pool can be out on its
+    own. When it happens, ``_failed_launchpad_sweep`` answers ``activity``
+    and ``burnkeepers`` with ``None`` -- but ``coins`` with an empty tuple,
+    because it is derived by running ``rank_coins`` over the failed sweep's
+    empty launch list rather than read from it. ``coin_count`` meanwhile
+    survives on the STATE pool, so ``_launchpad_state_is_blank`` is ``False``
+    and the slot is written with a **fresh** timestamp.
+
+    Composited, that put three panels of one dashboard body on three
+    different stories at once::
+
+        LAUNCHPAD COINS  · 146 coins · as of 01:14
+        no coins  --  ...
+        LAUNCHPAD ACTIVITY      ! activity unavailable
+        BURNKEEPERS             ! burnkeepers unavailable
+
+    -- a good coin list replaced by an empty one, under a title asserting
+    146 coins, behind an ``as of`` marker refreshed to *now*. Both halves are
+    forbidden here: a blank panel, and a fresh marker over a dead read.
+
+    Driven through ``_pool_launchpad`` and ``fetch_and_compute`` rather than
+    by handing ``None`` straight to ``_launchpad_coin_rows``, because the
+    row-builder was never the whole path: the empty tuple is manufactured
+    upstream of it, and a unit test at that seam passes while the screen
+    still lies.
+    """
+    healthy = _launchpad_state(
+        coin_count=146,
+        launch_count=146,
+        coins=(_launchpad_coin(), _launchpad_coin(ticker="PYCR")),
+        activity=(
+            LaunchpadEvent(kind="buy", ticker="ICE", wallet=DEV_WALLET,
+                           eth=0.012, age_s=120.0),
+        ),
+        burnkeepers=(
+            Burnkeeper(wallet=DEV_WALLET, imd_burned=15670.79,
+                       eth_paid=5.49e-05, burns=2),
+        ),
+    )
+    client = FakeSurfClient(fetch_launchpad=healthy)
+    m = _manager(tmp_path, client=client)
+
+    await m._pool_launchpad({TIER_LAUNCHPAD}, now=NOW)
+    before = await m.fetch_and_compute()
+    assert len(before["launchpad_coins"]) == 2
+    assert len(before["launchpad_activity"]) == 1
+    assert len(before["launchpad_burnkeepers"]) == 1
+
+    # The getters answered; every one of the four log sweeps did not. This is
+    # exactly what the client returns in that case -- `coins` an empty tuple,
+    # everything the sweep produces `None`.
+    good = m.cache.get_last_good(SLOT_LAUNCHPAD)
+    client._returns["fetch_launchpad"] = _blank_launchpad_state(
+        coin_count=146,
+        imd_to_burn_wei=round(15.06 * 10**18),
+        executor_balance_wei=round(3.0 * 10**18),
+        min_bridge_wei=round(10.0 * 10**18),
+        creator_eth_owed_wei=round(0.25 * 10**18),
+        cursor=good.payload["cursor"],
+    )
+    await m._pool_launchpad({TIER_LAUNCHPAD}, now=NOW + 3_600.0)
+    after = await m.fetch_and_compute()
+
+    # The two panels that already got this right, kept as the control: they
+    # are what "the same story" is being compared against.
+    assert after["launchpad_activity"] is None
+    assert after["launchpad_burnkeepers"] is None
+    # ...and the third one must not answer "swept, and this launchpad has no
+    # coins" to the very same outage.
+    assert after["launchpad_coins"] is None, (
+        "a failed log sweep published an empty coin list -- a blank table "
+        "under a title asserting 146 coins, beside two panels correctly "
+        "reporting the same outage as unavailable"
+    )
+    # The count read on the *other* pool is a real reading and stays.
+    assert after["launchpad_coin_count"] == 146
+
+
+async def test_the_none_coin_list_round_trips_through_the_cache_file(tmp_path) -> None:
+    """`coins: None` has to survive the slot, the JSON file and the reload.
+
+    A `None` that came back as `[]` on the next launch would restore exactly
+    the defect above one process later, and this slot is written to disk on
+    every quit -- the widget renders whatever the *reloaded* payload holds,
+    not whatever the sweep computed.
+    """
+    client = FakeSurfClient(
+        fetch_launchpad=_blank_launchpad_state(coin_count=146)
+    )
+    m = _manager(tmp_path, client=client)
+    await m._pool_launchpad({TIER_LAUNCHPAD}, now=NOW)
+    assert m.cache.get_last_good(SLOT_LAUNCHPAD).payload["coins"] is None
+
+    m.cache.save()
+    reloaded = SurfCache(path=str(tmp_path / "surf_cache.json"), clock=FakeClock())
+    reloaded.load(now=NOW)
+    assert reloaded.get_last_good(SLOT_LAUNCHPAD).payload["coins"] is None
+
+    m2 = SurfManager(
+        poll_interval=30,
+        clock=FakeClock(),
+        cache_path=str(tmp_path / "surf_cache.json"),
+        client=FakeSurfClient(),
+        cache=reloaded,
+    )
+    assert (await m2.fetch_and_compute())["launchpad_coins"] is None
+
+
 async def test_the_flat_payload_publishes_the_population_counts(tmp_path) -> None:
     """Task 1 froze ``launchpad_launch_count``/``launchpad_new_24h``/
     ``launchpad_creator_count`` on ``SURF_KEYS``; ``test_returns_exactly_surf_keys``

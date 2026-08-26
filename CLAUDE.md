@@ -298,10 +298,13 @@ And the convention these all serve — *shorten the value, do not raise the
 constant* — is in "Conventions" below, with its worked examples.
 
 143 clears every *layout*, not every possible string: surf's announce feed
-still lights `‹ widen` there when a post glues a URL to a 66-char tx hash into
-one unbreakable token. That marker is correct — the next such post brings its
-own length — and must not be silenced by raising the constant
-(`test_a_linked_post_advertises_widen_at_the_full_layout_width`).
+still lights `‹ widen` there whenever a post links a transaction, because the
+post's own punctuation glues the URL to a 66-char hash into one unbreakable
+token. That marker is correct — the next such post brings its own length — and
+must not be silenced by raising the constant
+(`test_a_linked_post_advertises_widen_at_the_full_layout_width`, and
+`test_the_documented_width_is_not_promised_to_clear_every_post`, which pins
+this very paragraph).
 
 `c` swaps a shared slot on FWA, TTT, Talismans and curator so three panels
 that cannot share a row do not have to. Surf does not: its 2026-08-10

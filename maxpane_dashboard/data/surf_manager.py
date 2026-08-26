@@ -1704,7 +1704,9 @@ class SurfManager:
             # reason -- no `SURF_KEYS` home, one detector consumer -- and it
             # is a *label* map only: nothing joins on a ticker any more.
             "coin_tickers": _field(launchpad_state, "coin_tickers"),
-            "coins": SurfManager._launchpad_coin_rows(_field(launchpad_state, "coins")),
+            "coins": SurfManager._launchpad_coin_rows(
+                SurfManager._coins_if_swept(launchpad_state)
+            ),
             "swaps_by_coin": _field(launchpad_state, "swaps_by_coin"),
             "launch_count": _opt_int(_field(launchpad_state, "launch_count")),
             "new_24h": _opt_int(_field(launchpad_state, "new_24h")),
@@ -1719,8 +1721,60 @@ class SurfManager:
         }
 
     @staticmethod
-    def _launchpad_coin_rows(coins: Any) -> list[dict[str, Any]]:
+    def _coins_if_swept(launchpad_state: Any) -> Any:
+        """``LaunchpadState.coins`` when the sweep behind it ran; else ``None``.
+
+        **``coins`` is the one log-derived launchpad field with no failure
+        shape of its own**, and that is why this exists. ``activity`` and
+        ``burnkeepers`` are handed to the manager as ``None`` when the sweep
+        failed, so their row-builders can answer ``None`` and their panels
+        can say *unavailable*. ``coins`` cannot: the client does not read it
+        off the sweep at all, it *derives* it by running
+        ``analytics/surf_launchpad.rank_coins`` over the sweep's launch list
+        — and ``_failed_launchpad_sweep``'s launch list is ``[]``, so a total
+        log-pool outage arrives here as an empty tuple that is
+        indistinguishable, by inspection of that field alone, from a
+        launchpad nobody has launched a coin on.
+
+        It matters because the two pools fail independently. The launchpad
+        *getters* ride the STATE pool and all four log sweeps ride the LOGS
+        pool ("state and logs need different endpoint pools" —
+        ``surf_client``), so "logs down, state up" is an ordinary failure
+        here, not a corner. ``coin_count`` survives it, so
+        :func:`_launchpad_state_is_blank` is ``False``, the slot is written
+        and its ``as of HH:MM`` marker is refreshed — and before this check
+        existed, a good coin list was replaced by an empty one under a title
+        asserting 146 coins, behind a marker that read live, while the two
+        panels beside it correctly said *unavailable*. One outage, three
+        panels, two different stories.
+
+        ``launch_count`` is the signal because it is the *same sweep's* count
+        of the *same* ``Launched`` events ``coins`` is ranked from
+        (``len(merged)`` in ``SurfClient._launchpad_logs``), so it answers
+        exactly the question being asked: was that population read at all?
+        A genuinely empty launchpad answers ``0`` and its ``coins`` stay the
+        representable ``()`` — 0 is a reading, per this module's own rule.
+        Deliberately not ``swap_count`` or ``burned_total_wei``: those count
+        a different event and a launch with no swap yet is a real thing.
+        """
+        if _field(launchpad_state, "launch_count") is None:
+            return None
+        return _field(launchpad_state, "coins")
+
+    @staticmethod
+    def _launchpad_coin_rows(coins: Any) -> list[dict[str, Any]] | None:
         """``LaunchpadCoin`` rows -> ``SURF_ROW_KEYS["launchpad_coins"]`` dicts.
+
+        **``None`` in, ``None`` out**, exactly like its two siblings
+        :meth:`_launchpad_activity_rows` / :meth:`_burnkeeper_rows` and like
+        :meth:`_with_mcap_usd` downstream of it: ``for coin in coins or ()``
+        turned "nobody could read the launchpad" into "the launchpad has no
+        coins", and ``widgets/surf/launchpad.py`` renders those two
+        differently on purpose (``None`` -> ``⚠ launchpad unavailable``,
+        ``[]`` -> an empty, correctly-marked table). The caller that decides
+        which of the two a sweep produced is :meth:`_coins_if_swept`; a
+        ``None`` can also arrive from a replayed or hand-edited payload,
+        which this method already treats as third-party input below.
 
         ``creator_known`` is **derived here**, not carried on ``LaunchpadCoin``
         (WP0's dataclass has no such field): the client's own ``rank_coins``
@@ -1747,8 +1801,10 @@ class SurfManager:
         on some future call site is exactly the kind of third-party input
         this module never trusts without coercing first.
         """
+        if coins is None:
+            return None
         rows: list[dict[str, Any]] = []
-        for coin in coins or ():
+        for coin in coins:
             creator = str(_field(coin, "creator") or "")
             rows.append(
                 {

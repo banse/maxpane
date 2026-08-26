@@ -46,6 +46,31 @@ async def _render_strips(rows, size=(60, 24), **kwargs):
         return widget, pilot.app.screen._compositor.render_strips()
 
 
+async def _render_lines(rows, size, **kwargs):
+    """Same render as :func:`_render`, but joins each compositor *strip*
+    (one physical terminal row) into one line of its own, rather than
+    joining every `Segment` with a stray ``"\\n"`` between them.
+
+    ``_render``'s own join inserts a break at every *style change*, not at
+    every physical row -- harmless for a substring check, but it makes one
+    logical row that carries several styled segments (this panel's kind cell
+    is dim, its ticker bold, its wallet cyan) look like it wrapped onto four
+    lines when it did not. A test that needs to know which *physical line* a
+    value landed on has to join per strip instead.
+    """
+    class _A(App):
+        def compose(self):
+            yield SurfLaunchpadActivity()
+
+    async with _A().run_test(size=size) as pilot:
+        widget = pilot.app.query_one(SurfLaunchpadActivity)
+        widget.update_data(launchpad_activity=rows, **kwargs)
+        await pilot.pause()
+        strips = pilot.app.screen._compositor.render_strips()
+        lines = ["".join(seg.text for seg in strip) for strip in strips]
+        return widget, lines
+
+
 def _segment_color(strips, needle: str):
     """The resolved truecolor of the first segment whose text contains
     ``needle``, or ``None`` if no segment does.
@@ -167,6 +192,125 @@ async def test_the_known_wallet_is_labelled_from_the_allowlist() -> None:
     # dim: a desaturated grey, all three channels close together.
     assert abs(unknown_color.red - unknown_color.green) <= 4
     assert abs(unknown_color.green - unknown_color.blue) <= 4
+
+
+def test_the_amount_cell_is_sized_from_this_panels_own_format() -> None:
+    """`_AMOUNT_COLS` is measured off the format string this panel actually
+    prints, and it is *not* a bound.
+
+    It arrived here as a copy of `activity.py:157`, whose format is
+    `{value:,.3f}`. This panel prints `{eth:.4f}` -- one more decimal into
+    the same twelve columns -- so `  0.0120 ETH` was exactly 12 and every
+    swap at or above ten ETH was 13 or more, in a row `_row_markup` then
+    declared already fitted.
+
+    Both halves are asserted, and the second is the one that matters: the
+    documented amount is exactly `_AMOUNT_COLS`, and a four-figure swap is
+    wider than `FULL_WIDTH` allows for -- which is why the layout measures
+    the amount rather than trusting the constant. Read off `_row_fields`,
+    the code that builds the cell, rather than by retyping the format here:
+    a literal compared against a literal cannot detect the drift that put
+    this defect in.
+    """
+    from rich.cells import cell_len
+
+    from maxpane_dashboard.widgets.surf.launchpad_activity import (
+        FULL_WIDTH, _AMOUNT_COLS, _row_cols, _row_fields,
+    )
+
+    small = _row_fields(dict(_ROWS[0], eth=0.012))
+    assert cell_len(small[5]) == _AMOUNT_COLS
+
+    big = _row_fields(dict(_ROWS[0], eth=1234.5678))
+    assert cell_len(big[5]) > _AMOUNT_COLS
+    assert _row_cols("full", cell_len(big[5])) > FULL_WIDTH
+
+
+@pytest.mark.asyncio
+async def test_the_marker_lights_exactly_when_a_row_would_clip() -> None:
+    """Property, not a constant: across a range of widths straddling the
+    true fit threshold, a value is shown **whole** or not at all, and
+    "not at all" always comes with a lit `‹ widen`.
+
+    This panel had no test of this shape at all, and its absence is exactly
+    why two silent clips shipped green. `RichLog(wrap=False)` narrows an
+    over-long line at write time with **no** `…` and **no** marker, so the
+    failure mode is not a missing value but a *wrong* one: at 48 terminal
+    columns the reader saw `1234.5678` where the value is `1234.5678 ETH`,
+    and beside a wide-glyph ticker, `0.` where the value is `0.0120 ETH`.
+    A cut number reads as a real number.
+
+    Two fixtures, one for each half of the defect:
+
+    1. **A four-figure swap.** `_AMOUNT_COLS` was inherited from a panel
+       whose format has one decimal fewer, so anything at or above ten ETH
+       overflowed a row the arithmetic said fitted.
+    2. **A wide-glyph ticker.** `launch(string,string)` is permissionless,
+       so `海豚海豚海豚海豚` is a ticker anyone can mint for the price of
+       gas: eight characters, sixteen columns. The ticker cell was *sized*
+       on `len()` and so ran eight columns past its own budget.
+
+    The assertion is deliberately about the *values* rather than about the
+    presence of a `…`. Both fixtures legitimately produce one -- the ticker
+    window cuts a CJK ticker to eight cells, and the wallet window is an
+    anti-poisoning ellipsis on every row -- so "a `…` appeared" cannot
+    distinguish an honest in-cell cut from a compositor clip here, the way
+    it can on the burnkeepers panel next door. What cannot be argued with
+    is that a rendered amount is the whole amount.
+
+    The sweep starts eight columns below `FULL_WIDTH` and runs fifteen
+    above it -- away from every threshold it exercises (the standing rule
+    for width sweeps in this repo: a range that began at the pin could not
+    fail by construction), and wide enough to cover the real `full`
+    boundary for a four-figure amount, which is three columns past
+    `FULL_WIDTH` and is precisely the band that used to clip.
+    """
+    from maxpane_dashboard.widgets.surf.launchpad_activity import (
+        FULL_WIDTH, SHORT_HINT,
+    )
+
+    rows = [
+        dict(_ROWS[0], eth=1234.5678),
+        dict(_ROWS[1], ticker="海豚海豚海豚海豚", eth=0.012),
+    ]
+    amounts = ("1234.5678", "0.0120")
+    windows = ("0x047F…54B7", "0x84CB…f8e7")
+
+    saw_marked = saw_clean = False
+    for width in range(FULL_WIDTH - 8, FULL_WIDTH + 16):
+        _widget, lines = await _render_lines(rows, size=(width, 24))
+        text = "\n".join(lines)
+        marker_lit = SHORT_HINT in text
+
+        for amount in amounts:
+            if amount in text:
+                assert f"{amount} ETH" in text, (
+                    f"width={width}: an amount reached the screen with its "
+                    f"unit cut off -- {text!r}"
+                )
+        for window in windows:
+            if window[:6] in text:
+                assert window in text, (
+                    f"width={width}: the anti-poisoning window was cut -- "
+                    f"{text!r}"
+                )
+
+        whole = all(f"{amount} ETH" in text for amount in amounts)
+        if not whole:
+            assert marker_lit, (
+                f"width={width}: an amount was withheld or lost with the "
+                f"marker dark -- {text!r}"
+            )
+            saw_marked = True
+        else:
+            saw_clean = True
+            assert not marker_lit, (
+                f"width={width}: every value is whole, yet the panel is "
+                f"still advertising dropped columns -- {text!r}"
+            )
+
+    assert saw_marked, "the sweep never got narrow enough to shed anything"
+    assert saw_clean, "the sweep never got wide enough to show everything"
 
 
 def test_the_kind_cell_fits_the_whole_display_vocabulary() -> None:

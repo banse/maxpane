@@ -72,6 +72,15 @@ Tier        Needs  Row
 ``minimal`` 20     ``age  kind  ticker``
 ==========  =====  ========================================
 
+The ``full`` row's 45 is quoted **for the amount in that example** and no
+other: a swap has no upper bound, so ``  1234.5678 ETH`` needs 48. The
+amount is measured with :func:`rich.cells.cell_len` and the tier chosen
+against the widest one in the batch (:func:`_tier_for`), so a row that will
+not fit sheds the amount whole and lights ``‹ widen for amounts`` rather
+than losing its tail to ``RichLog``. Every other cell is *fitted* on cells
+too, never sized on ``len()`` -- ``ticker`` is attacker-chosen and eight
+CJK characters are sixteen columns.
+
 :data:`WIDEN_HINTS` names what each tier shed, appended to the title;
 :data:`SHORT_HINT` is the fallback for a panel too narrow to carry the
 descriptive wording beside its own title.
@@ -84,6 +93,7 @@ from __future__ import annotations
 
 import re
 
+from rich.cells import cell_len
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
@@ -135,9 +145,34 @@ _AGE_COLS = 4        # `fmt_age`: "2m", "14m", "3h", "2d"
 _KIND_COLS = 4        # max(len(w) for w in KIND_WORDS.values()) == len("SELL")
 _TICKER_COLS = 8      # the coin table's own `_TICKER_COLS`
 _ADDR_COLS = 11       # the coin table's own `_short_addr` window
-_AMOUNT_COLS = 12     # "  0.0120 ETH", two leading spaces like activity.py
+
+#: The amount cell's **nominal** reserve: exactly ``cell_len("  0.0120 ETH")``
+#: for this panel's own ``f"  {eth:.4f} ETH"``, two leading spaces like
+#: ``activity.py``. It is what :data:`FULL_WIDTH` advertises, and it is *not*
+#: a promise that every row fits it: a swap has no upper bound, so ten ETH is
+#: 13 columns and four figures is 15. The amount is therefore the one cell on
+#: this row whose real width is **measured** (:func:`_row_cols`,
+#: :func:`_tier_for`) rather than assumed -- ``activity.py``'s own
+#: ``_AMOUNT_COLS``/``_budget`` split, which this module had copied only half
+#: of.
+#:
+#: Copying only half of it was a live defect and not a theoretical one: this
+#: constant arrived from ``activity.py:157``, where the format is
+#: ``{value:,.3f}``. One more decimal, the same budget -- so ``  0.0120 ETH``
+#: was exactly 12 and anything at or above ten ETH was 13, overflowing a row
+#: that :func:`_row_markup` then declared already fitted. ``RichLog(wrap=
+#: False)`` narrows such a line at write time with no ``…`` and no marker, so
+#: ``1234.5678 ETH`` reached the reader as ``1234.5678`` -- and one cell to
+#: the left, as ``0.`` where the value was ``0.0120 ETH``. A cut *number* is
+#: a wrong number, not a missing one.
+_AMOUNT_COLS = 12
 _GAP = 2
 
+#: The widest row layout's requirement **for an amount of :data:`_AMOUNT_COLS`**
+#: -- what the panel advertises and what a screen sweep pins, exactly as
+#: ``activity.py``'s own ``FULL_WIDTH`` is quoted for ``"  33.250 ETH"``. A
+#: batch carrying a larger swap needs ``_row_cols("full", cell_len(amount))``
+#: and the panel drops to ``compact`` (marker lit) rather than overflow.
 FULL_WIDTH = (
     _AGE_COLS + _GAP + _KIND_COLS + _GAP + _TICKER_COLS + _GAP
     + _ADDR_COLS + _AMOUNT_COLS
@@ -182,50 +217,102 @@ def _strip_tags(value: object) -> str:
 
 def _clip(value: str, width: int) -> str:
     """Truncate already-flattened, already-stripped text to ``width``
-    columns, marked with ``…`` when it was cut. Must run before
+    **terminal cells**, marked with ``…`` when it was cut. Must run before
     :func:`~widgets.markup_safety.safe_markup` -- escaping first and
     truncating after can cut a ``\\[`` escape pair in half.
+
+    Measured on :func:`rich.cells.cell_len`, never ``len()``. CLAUDE.md's own
+    wording: *a sized cell is not a fitted one -- ``len()`` counts characters
+    where the terminal counts cells*. ``ticker`` here is attacker-chosen
+    (``LaunchpadFactory.launch(string,string)`` is permissionless and costs
+    only gas), so ``海豚海豚海豚海豚`` is eight characters and sixteen
+    columns: a ``len()``-sized ticker cell was eight columns wider than the
+    budget it was checked against, and pushed the *amount* off the end of the
+    row -- ``0.`` where the value was ``0.0120 ETH``.
+
+    A wide glyph that straddles the cut is dropped rather than half-drawn, so
+    the result can come back one cell *under* ``width``; the caller pads
+    (:func:`_pad`).
     """
-    if width <= 0 or len(value) <= width:
+    if width <= 0:
+        return ""
+    if cell_len(value) <= width:
         return value
     if width == 1:
         return "…"
-    return value[: width - 1] + "…"
+    out: list[str] = []
+    used = 0
+    for char in value:
+        size = cell_len(char)
+        if used + size > width - 1:
+            break
+        out.append(char)
+        used += size
+    return "".join(out) + "…"
 
 
-def _tier_for(width: int) -> str:
-    """Widest row layout that fits ``width`` rendered columns.
+def _pad(value: str, width: int) -> str:
+    """Left-align ``value`` in ``width`` **cells**.
+
+    ``f"{value:<{width}}"`` pads to a *character* count, so it under-pads a
+    wide-glyph cell and over-pads nothing -- the mirror image of
+    :func:`_clip`'s bug and the reason both live here rather than in a format
+    string. Pad raw, escape after: padding an escaped string misaligns it.
+    """
+    return value + " " * max(width - cell_len(value), 0)
+
+
+def _row_cols(tier: str, amount_cols: int) -> int:
+    """Rendered width of a row at ``tier`` carrying an ``amount_cols``-wide
+    amount -- ``activity.py``'s own ``_row_cols``, one variable cell instead
+    of four.
+
+    An absent cell takes its :data:`_GAP` with it; the amount carries its own
+    two leading spaces (:func:`_row_fields`) and is added rather than joined.
+    """
+    present = [_AGE_COLS, _KIND_COLS, _TICKER_COLS]
+    if tier != "minimal":
+        present.append(_ADDR_COLS)
+    return sum(present) + _GAP * (len(present) - 1) + amount_cols
+
+
+def _tier_for(width: int, amount_cols: int = _AMOUNT_COLS) -> str:
+    """Widest row layout that fits ``width`` rendered columns, given a batch
+    whose widest amount is ``amount_cols`` cells.
+
+    ``amount_cols`` is why this takes a second argument at all: a swap has no
+    upper bound, so ``full`` is not a fixed 45 columns -- it is 45 for the
+    documented ``0.0120 ETH`` and 48 for ``1234.5678 ETH``. Comparing against
+    :data:`FULL_WIDTH` alone selected ``full`` for a row that did not fit it,
+    and ``RichLog(wrap=False)`` then took the difference off the end of the
+    line with no ``…`` and no marker. Shedding the amount **whole** (which is
+    what ``compact`` is) and lighting ``‹ widen for amounts`` is the honest
+    answer to the same width.
 
     ``width <= 0`` means "not laid out yet" and optimistically picks
     ``full``; :meth:`SurfLaunchpadActivity.on_resize` re-lays it out once it
     has a size.
     """
-    if width <= 0 or width >= FULL_WIDTH:
+    if width <= 0 or width >= _row_cols("full", amount_cols):
         return "full"
     if width >= COMPACT_WIDTH:
         return "compact"
     return "minimal"
 
 
-def _tier_cols(tier: str) -> int:
-    """Columns the given tier's row layout needs, whole."""
-    if tier == "full":
-        return FULL_WIDTH
-    if tier == "compact":
-        return COMPACT_WIDTH
-    return MINIMAL_WIDTH
+def _tier_cols(tier: str, amount_cols: int = _AMOUNT_COLS) -> int:
+    """Columns the given tier's row layout needs, whole. Only ``full``
+    carries an amount, so the other two ignore ``amount_cols``.
+    """
+    return _row_cols(tier, amount_cols if tier == "full" else 0)
 
 
 def _ticker_cell(value: object) -> str:
-    """Ticker cell, padded to :data:`_TICKER_COLS` then escaped.
-
-    Pad raw, escape after -- padding an escaped string misaligns it.
-    """
+    """Ticker cell, padded to :data:`_TICKER_COLS` cells then escaped."""
     cleaned = _clip(_strip_tags(value), _TICKER_COLS)
     if not cleaned:
-        return f"[dim]{safe_markup(f'{DASH:<{_TICKER_COLS}}')}[/]"
-    padded = f"{cleaned:<{_TICKER_COLS}}"
-    return f"[bold]{safe_markup(padded)}[/]"
+        return f"[dim]{safe_markup(_pad(DASH, _TICKER_COLS))}[/]"
+    return f"[bold]{safe_markup(_pad(cleaned, _TICKER_COLS))}[/]"
 
 
 def _short_addr(value: object) -> str:
@@ -237,38 +324,49 @@ def _short_addr(value: object) -> str:
     never contains one, so this only ever fires on a malformed payload, but
     a stripped-to-empty value still degrades to :data:`DASH` rather than an
     empty cell.
+
+    The window is measured in cells and re-fitted through :func:`_clip`. For
+    a real address that is a no-op -- hex is one cell per character, so the
+    window is exactly eleven -- but this field is only *conventionally* an
+    address: it comes off the same payload the ticker does, and a value with
+    wide glyphs in it would otherwise hand back an eleven-character,
+    twenty-two-column "window" that no caller measures again.
     """
     s = _strip_tags(value)
     if not s:
         return DASH
-    if len(s) <= _ADDR_COLS:
-        return s
-    return f"{s[:6]}…{s[-4:]}"
+    window = s if cell_len(s) <= _ADDR_COLS else f"{s[:6]}…{s[-4:]}"
+    return _clip(window, _ADDR_COLS)
 
 
 def _wallet_cell(value: object, known: bool) -> str:
-    """The wallet window, padded to :data:`_ADDR_COLS`, styled cyan when
+    """The wallet window, padded to :data:`_ADDR_COLS` cells, styled cyan when
     ``known`` and dim otherwise -- never a friendly label (this row shape
     carries no label field, unlike ``dev_activity``'s ``wallet_label``).
     """
     window = _short_addr(value)
-    padded = f"{window:<{_ADDR_COLS}}"
     colour = "cyan" if known else "dim"
-    return f"[{colour}]{safe_markup(padded)}[/]"
+    return f"[{colour}]{safe_markup(_pad(window, _ADDR_COLS))}[/]"
 
 
 def _row_fields(
-    row: object, tier: str,
+    row: object,
 ) -> tuple[str, str, object, object, bool, str] | None:
     """Decompose one row into its cells; ``None`` drops it.
 
     ``None`` means the row is malformed (not a dict, or ``kind`` outside the
-    closed vocabulary) and must never reach a pixel.
+    closed vocabulary) and must never reach a pixel -- a decision about
+    *content*, taken before any decision about width, so the panel can tell
+    "nothing to show" from "no room to show it".
 
     Returns ``(age, kind_word, ticker_raw, wallet_raw, known, amount)``,
     ``ticker_raw``/``wallet_raw`` raw and unescaped; ``amount`` carries its
-    own two leading spaces and is empty outside the ``full`` tier or when
-    ``eth`` is ``None``.
+    own two leading spaces and is empty only when ``eth`` is ``None``.
+
+    It no longer takes a ``tier``: the amount is what *decides* the tier now
+    (:func:`_tier_for`), so it has to be measurable before one has been
+    picked. :func:`_row_markup` drops it for the layouts that do not carry
+    one.
     """
     if not isinstance(row, dict):
         return None
@@ -287,7 +385,7 @@ def _row_fields(
         # A launch has no swap size: `None`, never a `0.0000 ETH` beside it
         # -- the same defect that put a LayerZero fee beside a five-figure
         # burn on the dev feed (see `activity.py`'s own note on `imd_burned`).
-        amount = f"  {eth:.4f} ETH" if (eth is not None and tier == "full") else ""
+        amount = "" if eth is None else f"  {eth:.4f} ETH"
         return age, kind_word, ticker_raw, wallet_raw, known, amount
     except Exception:
         # A single malformed row must never take down the panel.
@@ -297,20 +395,34 @@ def _row_fields(
 def _row_markup(row: object, tier: str = "full", width: int = 0) -> str | None:
     """Format one activity row at ``tier``; ``None`` drops it.
 
-    ``width`` is accepted for symmetry with ``activity.py``'s own
-    ``_row_markup`` but is not consulted here: every cell in this row is
-    already fixed-width (the kind/ticker/wallet vocabularies are closed or
-    windowed), so there is no per-row negotiation left to do once the tier
-    has picked which whole fields appear.
+    ``width`` **is** consulted, and the docstring that said it was not was
+    the defect: it claimed "every cell in this row is already fixed-width",
+    which was false at both ends. The amount is unbounded (a swap can be any
+    size, and ``{eth:.4f}`` at ten ETH is already one column past
+    :data:`_AMOUNT_COLS`), and the ticker was *sized* on ``len()`` rather
+    than *fitted* on ``cell_len`` -- so a two-cell-per-character ticker made
+    the row eight columns wider than the arithmetic said. Either one pushed
+    the last cell off a ``RichLog(wrap=False)`` line with no ``…`` and no
+    marker.
+
+    A markup string that is returned is therefore **guaranteed to fit**
+    ``width`` (``activity.py``'s own contract), so ``RichLog.write()`` never
+    has to narrow it. ``None`` on a row that cannot be fitted even after the
+    tier has shed what it can: the caller withholds the batch and says
+    :data:`SHORT_HINT` rather than render a cut number.
     """
-    fields = _row_fields(row, tier)
+    fields = _row_fields(row)
     if fields is None:
         return None
     try:
         age, kind_word, ticker_raw, wallet_raw, known, amount = fields
+        if tier != "full":
+            amount = ""
+        if 0 < width < _row_cols(tier, cell_len(amount)):
+            return None
         cells = [
-            f"{age:<{_AGE_COLS}}",
-            f"[dim]{kind_word:<{_KIND_COLS}}[/]",
+            _pad(_clip(age, _AGE_COLS), _AGE_COLS),
+            f"[dim]{_pad(kind_word, _KIND_COLS)}[/]",
             _ticker_cell(ticker_raw),
         ]
         if tier != "minimal":
@@ -427,23 +539,44 @@ class SurfLaunchpadActivity(Vertical):
             rows = []
 
         width = self._log_width(log)
-        tier = _tier_for(width)
 
         # Which rows may be shown at all -- a content question, decided
         # before any width question, so "nothing to show" stays distinct
         # from "no room to show it".
-        showable = [
-            f for f in (_row_fields(row, tier) for row in rows) if f is not None
-        ]
+        showable = [f for f in (_row_fields(row) for row in rows) if f is not None]
         if not showable:
             self._set_title("")
             log.write(f"[dim]  {EMPTY_LINE}[/]")
             return
 
-        if 0 < width < _tier_cols(tier):
+        # One layout for the whole batch (`activity.py`'s own rule, for the
+        # same reason: `RichLog` is composed `wrap=False` so the cells line
+        # up down the panel, which only holds if every row was fitted to the
+        # same plan). The amount is the one unbounded cell here, so the
+        # **widest** amount in the batch is what the tier is chosen against
+        # -- picking `full` off `FULL_WIDTH` alone selected it for a batch
+        # holding a four-figure swap that did not fit, and the difference
+        # came off the end of every such line unannounced.
+        amount_cols = max(cell_len(fields[5]) for fields in showable)
+        tier = _tier_for(width, amount_cols)
+
+        if 0 < width < _tier_cols(tier, amount_cols):
             # Even the narrowest tier does not fit: withhold the rows
             # rather than let `RichLog(wrap=False)` shrink them with no
             # marker (`activity.py`'s `FLOOR_WIDTH` precedent).
+            self._set_title(WIDEN_HINTS.get(tier, "") or SHORT_HINT)
+            log.write(f"[yellow]{SHORT_HINT}[/]")
+            return
+
+        lines = [
+            line
+            for line in (_row_markup(row, tier, width) for row in rows)
+            if line is not None
+        ]
+        if len(lines) < len(showable):
+            # A row the tier could not fit after all. Rendering the rest
+            # would leave the panel looking complete while an event went
+            # missing, so they all wait for width and the panel says so.
             self._set_title(WIDEN_HINTS.get(tier, "") or SHORT_HINT)
             log.write(f"[yellow]{SHORT_HINT}[/]")
             return
@@ -453,8 +586,6 @@ class SurfLaunchpadActivity(Vertical):
             # The title bar is too narrow to carry the marker. Say it in
             # the log rather than not at all.
             log.write(f"[yellow]{SHORT_HINT}[/]")
-        for row in rows:
-            line = _row_markup(row, tier, width)
-            if line is not None:
-                log.write(line)
+        for line in lines:
+            log.write(line)
         self.call_after_refresh(log.scroll_home, animate=False)

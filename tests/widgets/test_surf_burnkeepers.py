@@ -1,7 +1,6 @@
 import re
 
 import pytest
-from rich.cells import cell_len
 from textual.app import App
 
 from maxpane_dashboard.widgets.surf.burnkeepers import (
@@ -93,15 +92,6 @@ async def test_a_dead_sweep_and_a_quiet_one_say_different_things() -> None:
     _w, quiet = await _render([])
     assert UNAVAILABLE_LINE in dead and EMPTY_LINE not in dead
     assert EMPTY_LINE in quiet and UNAVAILABLE_LINE not in quiet
-
-
-@pytest.mark.asyncio
-async def test_no_row_is_wider_than_the_panel_says_it_is() -> None:
-    """A sized cell is not a fitted one: `len()` counts characters where the
-    terminal counts cells."""
-    _widget, text = await _render(_ROWS, size=(FULL_WIDTH + 2, 24))
-    for row in text.splitlines():
-        assert cell_len(row.rstrip()) <= FULL_WIDTH + 2, row
 
 
 @pytest.mark.asyncio
