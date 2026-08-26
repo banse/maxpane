@@ -388,13 +388,21 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #:     and not in a bare harness -- its widest line pays the panel's
 #:     ``padding: 0 1``, the inner ``Static``'s own, and the reserved gutter
 #:     cell on top. ``SurfBurnkeepers`` clears at **37** in situ -- measured,
-#:     not derived from its ``FULL_WIDTH`` of 32, and the gap between the two
-#:     is a defect in ``widgets/surf/burnkeepers.py`` (its own ``‹ widen``
-#:     goes dark at 35 while its rows are still clipped at 35 and 36), being
-#:     fixed separately. 37 is comfortably under 40 either way, so the rail's
-#:     own binder is ``SurfBurnPipeline``'s
-#:     ``accrued … IMD · staged … IMD`` line and nothing here moves when that
-#:     widget is fixed.
+#:     not derived from its ``FULL_WIDTH`` of 32, which is a pure-content
+#:     constant while the panel's ``padding: 0 1`` sits on its child. 37 is
+#:     comfortably under 40 either way, so the rail's own binder is
+#:     ``SurfBurnPipeline``'s ``accrued … IMD · staged … IMD`` line.
+#:
+#:     **Re-measured 2026-08-26 against the fixed widget, and 37 held.**
+#:     It was reached twice by different routes: before ``9284305`` the
+#:     panel clipped from 36 down while its own ``‹ widen`` went dark at
+#:     35, so 37 was where the rows stopped clipping and 35 was where the
+#:     marker stopped speaking -- a two-column window inside the panel.
+#:     The marker now goes dark at 37 as well, so the two agree. The number
+#:     recorded here never depended on the marker (it is the width at which
+#:     the *rows* clear), which is why this half of the measurement did not
+#:     move; what moved is the ``3:1`` row of the table below, whose window
+#:     was bounded by that marker.
 #:
 #: **That last fact is what chose the seam, and it is not the arithmetic.**
 #: The rail's *binding* panel is one of ``SurfCurveFlow`` /
@@ -453,7 +461,7 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: ``5:2``     137       129..136     148       129..147
 #: ``2:1``     **138**   --           **138**   --
 #: ``3:2``     154       --           154       --
-#: ``3:1``     157       137..156     169       137..168
+#: ``3:1``     157       145..156     169       145..168
 #: ``9:7``     164       --           164       --
 #: ``11:9``    168       --           168       --
 #: ``7:6``     171       --           171       --
@@ -461,13 +469,27 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #:
 #: ``3:1``'s window is the one row worth reading twice, because two
 #: different numbers are both true of it. The **coin table** is clean from
-#: **123** -- that is where the left column reaches 92 -- but 123..136 is
+#: **123** -- that is where the left column reaches 92 -- but 123..144 is
 #: not silent: ``SurfBurnkeepers``' own marker is lit there, the rail being
-#: 31..34. The window opens at **137**, which is exactly where that marker
-#: goes dark (rail 35) while the panel is still clipping. So the genuinely
-#: unadvertised stretch is 137..156, and the reason it is not 123..156 is a
-#: marker that is itself buggy. Quote 123 for "where the table stops
-#: asking" and 137 for "where the screen stops saying anything".
+#: 31..36. The window opens at **145**, which is exactly where that marker
+#: goes dark (rail 37) while ``SurfBurnPipeline`` is still clipping. So the
+#: genuinely unadvertised stretch is 145..156. Quote 123 for "where the
+#: table stops asking" and 145 for "where the screen stops saying
+#: anything".
+#:
+#: **This row is the whole table's canary, and it has already fired once.**
+#: It was 137..156 until 2026-08-26, and it moved without any seam, panel
+#: width or pin changing: ``9284305`` fixed ``SurfBurnkeepers`` to compare
+#: its ``‹ widen`` against the real text budget instead of the raw panel
+#: width, which took the marker's own threshold 35 -> 37 and handed this
+#: window back its first eight columns. Re-swept, all nineteen seams and
+#: both payloads: **this is the only row that moved, and no pin did.**
+#: That is the shape to expect -- a marker fix can only ever shrink a
+#: silent window, never a pin, because a pin is where the *pixels* stop
+#: being lost and a marker is only who says so. It is also why the row is
+#: worth keeping in a table of rejected seams: it is the one entry whose
+#: number is a fact about a *marker* rather than about a width, so it is the
+#: one that goes stale when a sibling widget is repaired.
 #:
 #: ``23:10`` and ``7:3`` collect the arithmetic floor (92 + 40 = 132)
 #: against the committed capture and are the cheapest seams there -- and
