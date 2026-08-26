@@ -521,5 +521,18 @@ Parallel agents are the norm here. What makes it work:
   `themes/minimal.tcss` belong to exactly one work package, late in the sequence.
 - **Report defects in other agents' files; do not fix them.** This is what makes findings
   trustworthy, and it is how most of the good bugs in this repo were found.
+- **A review never fixes what it finds.** A reviewer that repairs something is reviewing its
+  own work by the end of the pass, its fix skips review entirely, and the diff under review
+  is no longer the diff that was submitted. New findings go on the follow-up list — named,
+  with their evidence — and are scheduled like any other work. This holds for a finding that
+  looks trivial, and for one in the reviewer's own earlier work; "it was one line" is how a
+  review turns into an unreviewed commit. A **scoped re-review** is stricter still: anything
+  outside the findings it was sent to verdict gets filed, never fixed, or the fix loop never
+  terminates.
+- **Verifying is not fixing.** A reviewer *should* mutate the tree to test a claim — flip a
+  constant, monkeypatch a cell, render at a width — and every serious defect found here was
+  caught that way rather than by reading. Restore it afterwards and confirm the tree is
+  clean. The line is intent: a change made to learn something is verification, a change made
+  to improve something is a fix, and only the first belongs in a review.
 - **The working tree may contain uncommitted user work.** Never `git checkout --` a file to undo
   your own edit — you will discard someone else's uncommitted changes with it.
