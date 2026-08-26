@@ -249,196 +249,64 @@ python -m maxpane_dashboard --version            # version + interpreter path
 python -m maxpane_dashboard --font-size 0        # do not resize my terminal
 ```
 
-**Layout is a function of terminal columns.** Widgets pick a tier by width and
-advertise dropped columns as `‹ widen` in their title. The full layout needs
-**143 columns** (`__main__.FULL_LAYOUT_COLUMNS`, pinned by tests that render
-the real screens at that width). The 143 is **FWA**'s: surf held this number at
-176 and then 152, and now measures **142**, one column under FWA. Launch forces
-17 pt — about 169 columns on a laptop — so the top tier was unreachable until
-`--font-size` / `MAXPANE_FONT_SIZE` existed; at 143 it is reachable without one.
+**Layout is a function of terminal columns.** Widgets pick a width tier and
+advertise what they dropped as `‹ widen` in their own title; a body that runs
+out of rows says `‹ taller` on the screen-wide title bar. The app-wide pin is
+**`__main__.FULL_LAYOUT_COLUMNS = 143`**, which is FWA's, and launch forces
+17 pt — about 169 columns on a laptop — so the full layout is reachable
+without `--font-size` / `MAXPANE_FONT_SIZE`.
 
-The record, appended never rewritten: **198 → 172 → 143 → 176 → 152 → 143**.
-The first three are FWA's own (see the `c` paragraph below); 176 and 152 are
-surf's; and the last is FWA's again, reached without FWA moving at all — surf
-came down under it when the dev-activity row's cells were sized to the
-vocabularies its producer actually emits (`{dev, ops}`, `DEV_TX_KINDS`), taking
-that panel 66 → 58 columns and the surf screen 152 → 142. Surf then went back
-to **143** on 2026-08-12 — level with FWA, not under it — when its market panel
-was re-measured against a *tight* IMD/FP peg: the dollar gap prints six
-decimals below $0.01, so the healthier the peg the wider the row, and 142 had
-been measured against a capture whose 2.75% spread prints the narrow case. The
-app-wide number is the max of the two and did not move. Which dashboard binds
-is itself a measurement; do not assume it from an older paragraph, and measure
-a data-dependent width against the state the data is normally in.
+The app-wide record, appended never rewritten: **198 → 172 → 143 → 176 → 152
+→ 143**. FWA set the first three and the last; surf the two in between. It
+tracks *that* number only — a dashboard measuring under 143 does not append to
+it, which is why nothing has been added since 2026-08-12 despite three new
+bodies since.
 
-**Curator measures 138** and moves nothing. Dashboard eight arrived on
-2026-08-17 five columns under FWA's 143, so `FULL_LAYOUT_COLUMNS` is
-untouched and the record above is **not** appended to — that record tracks
-changes to the app-wide number, not every dashboard's own. The binding panel
-is `CuratorSignals`, the rail's seven-row detector list ending in YOU;
-`CuratorLeaderboard` clears at 134, `CuratorActivity` at 127 and
-`CuratorClusters` at 123. The number is **height-independent**, and only
-because `#curator-right-rail` reserves its scrollbar gutter
-(`scrollbar-gutter: stable`): without that, the scrollbar took its column out
-of `CuratorSignals` only on terminals under 42 rows, so this layout's *width*
-requirement moved with its *height* and one pin was true at 48 rows and one
-column short at 40. The sweep lives in `tests/screens/test_curator_screen.py`
-and starts deliberately away from the pin, since a sweep that began at the
-constant would agree with it by construction.
+**Every pin lives on its own constant, and the constant's docstring is where
+the reasoning is** — what was swept, which panel binds, which seams were
+rejected and what each cost. This file records the rules; it deliberately does
+not keep a second copy of the numbers, because a copy drifts from the code and
+the docstring cannot.
 
-**The `f` view (2026-08-18) measures 137 and moved nothing either.** The
-analysis body clears one column *inside* `CURATOR_FULL_LAYOUT_COLUMNS` and six
-inside FWA's 143, so neither constant changes and the record above is again
-**not** appended to — it tracks the app-wide number, which has not moved since
-2026-08-12. Its binding panel is `CuratorOperators` (the 82-column evidence
-cell), pinned by `test_the_analysis_binding_panel_is_the_operators_table`
-rather than by this sentence. The two swapped bodies bind on *rows* instead:
-the `f` body is whole from **48** rows and the `y` body from **40**, and below
-each the body scrolls and the title bar says `‹ taller`.
+| view | pin | constant |
+|---|---|---|
+| app-wide | 143 | `__main__.FULL_LAYOUT_COLUMNS` |
+| surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
+| surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
+| coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
 
-143 clears every *layout*, not every possible string. Surf's announce feed
-still lights `‹ widen` there whenever a post links a transaction: the post's
-own punctuation glues the URL to the 66-char hash into one unbreakable token
-(the captured one is 91 columns and clears at 216). That marker is correct and
-must not be silenced by raising the constant — the next such post brings its
-own length. The width sweep therefore measures against a fixture with that
-post removed, pinned by `test_a_linked_post_advertises_widen_at_the_full_layout_width`.
+The rules those numbers were all produced under:
 
-FWA binds `c` to swap the odds board and the activity feed in one slot, so the
-bottom row is the chase board and the settlement table alone. That took the
-requirement from 198 to 172 (three widgets needing 79/54/55 columns cannot
-share one row until it is very wide); shortening the buy-gate signal took it to
-143, because by then the *signals panel* was the binding constraint, not a
-table. TTT and Talismans use the same `c` pattern.
+* **Measure, never derive.** Arithmetic over the column constants has been
+  wrong twice — a `DataTable` buys a cell gutter per column, so a sum that
+  looks right ships a clipped header with the marker dark.
+* **Measure in situ**, inside the real container. A panel's widest line pays
+  its own padding, its inner widget's padding *and* any reserved
+  `scrollbar-gutter: stable` cell. A number from a bare harness is short.
+* **A sweep never starts at the pin**, or it agrees with the constant by
+  construction. Re-centre the range whenever the pin moves.
+* **A panel that can bind must be able to mark.** A seam whose binding panel
+  clips in silence is disqualified — this has rejected real seams more than
+  once, and is why some layouts deliberately buy a few columns of margin.
+* **Reserve the scrollbar gutter**, or a layout's *width* requirement becomes
+  a function of its *height* and the pin is true at one terminal size only.
+* **Measure a data-dependent width against the state the data is normally
+  in**, not against whichever capture happens to be committed.
 
-**Surf does not** — it used to, and the binding is gone. Its 2026-08-10
-restructure put all six panels on screen at once (hero full width; announce
-feed beside a rail of signals over dev activity; market beside IDENTITY.MD),
-so there is nothing left to swap. The cost is that `SurfDevActivity` now sizes
-against a `2fr` rail instead of a `3fr` slot, and at a **3:2** seam it needed
-176 for its widest row layout — which moved the app-wide number 143 → 176, the
-first time it had gone **up** and the first time a dashboard other than FWA
-set it. Widths in between are not clipping: the panel names the columns it shed.
+And the convention these all serve — *shorten the value, do not raise the
+constant* — is in "Conventions" below, with its worked examples.
 
-Later the same day the seam itself moved, **3:2 → 7:6**, and the number came
-back **down: 176 → 152** — the first time it has fallen without a panel being
-hidden or a field re-cut; only the split between the two columns changed. The
-two binding panels are the announce feed (81 columns) and the dev-activity
-rail (71), so 81 + 71 = 152 is the arithmetic floor, and 3:2 had been handing
-the feed 0.60 W against the 0.538 it needed — the rail only reached 71 at 176.
+143 clears every *layout*, not every possible string: surf's announce feed
+still lights `‹ widen` there when a post glues a URL to a 66-char tx hash into
+one unbreakable token. That marker is correct — the next such post brings its
+own length — and must not be silenced by raising the constant
+(`test_a_linked_post_advertises_widen_at_the_full_layout_width`).
 
-**The move cost the feed its wrapping tier below 152, and the fix was not the
-obvious one.** The feed's share fell with the seam, so it reached the 81
-columns it then needed at 151 where 3:2 reached them at 135 — one truncated
-line per post in between. The instinct is to widen the feed's column back;
-**measure before you do.** Measured *in that era*, a 9:7 seam wrapped from 144
-and cost 9 columns of full-layout width (152 → 161), because the panel binding
-at 152 was the *dev-activity rail*, not the feed. The feed's own
-`FULL_TEXT_WIDTH` was the cheap lever instead: 76 → 71 wraps from **142** and
-left the full layout at 152 exactly. It buys the wrapping with *rows* instead
-of columns, and the feed is the panel this layout hands its spare rows to.
-
-**Then the number came down again, 152 → 142, and the binding panel changed
-hands.** `SurfDevActivity` was reserving a 12-column wallet cell for the
-two-word vocabulary its producer emits (`dev`/`ops`) and giving the kind cell
-one column less than `"fwa claim"` needs, so it was simultaneously padded and
-cutting a value mid-word. Sizing both cells to the producer's own vocabularies
-took the panel 66 → 58 columns; it now clears from a **135**-column terminal
-and the last marker standing on the surf screen is the **announce feed's**, at
-142. Anything above that reads "the dev-activity rail is what binds" — this
-file included, one paragraph up — is the old regime. Consequently
-`FULL_LAYOUT_COLUMNS` went **152 → 143**: FWA is the widest dashboard again,
-with surf one column under it. The full record:
-**198 → 172 → 143 → 176 → 152 → 143**, FWA setting the first three and the
-last, surf the two in between. 143 is inside the ~169 a laptop gets at the
-forced 17 pt, so the full layout still needs no `--font-size`.
-
-**The seam is now three columns off optimum, on purpose.** 7:6 was measured
-when the feed needed 81 columns and the rail 71; they need 76 and 63 today, so
-the two sum to 139 while 7:6 collects 142 (re-swept seam by seam in
-`tests/screens/test_surf_screen.py` — 11:9 and 23:19 reach 139, 9:7 now also
-costs 142, and 3:2 costs 156). Those three columns are not worth re-cutting a
-settled layout for: the app-wide number is FWA's 143, so surf clearing at 139
-would move nothing a user sees. Re-sweep before re-seaming, and only when one
-of the two panels' needs moves again.
-
-**Re-swept 2026-08-24 after the announce feed was rewritten, and surf's own
-143 did not move.** `SurfFeed` stopped being a `RichLog` and became per-row
-widgets with replies threaded behind a toggle, which indents a nested row one
-column per depth — so the obvious suspicion is that an open thread costs the
-screen up to two columns. It costs **none**, and the sweep says so in both
-states: 128..152 with threads collapsed and again with them expanded
-reproduces the 2026-08-12 table exactly (three markers 128–134, two 135–141,
-one at 142, none from 143), so `SurfMarket` is still the binder and
-`feed.FULL_TEXT_WIDTH` stays 71. `_item_lines` subtracts `depth` from the
-row's own *text budget* instead of adding it to the line, so a nested row is
-one column narrower than its parent rather than one column wider than the
-panel — **threading is paid in rows**, which is the currency this panel has to
-spare. Two traps here, both hit: the committed capture cannot exercise
-threading at all (its one `reply` is *older* than the post it follows, so
-`build_threads` makes it a root of its own and nothing is ever indented), and
-the composited screen **cannot see the failure** if the accounting is wrong —
-pay the indent out of the line and the row overflows by `depth` columns, but
-`_cell_fit` measured the chunk against the budget it was given, reports no
-truncation, and `text-wrap: nowrap` has the compositor clip it with no marker
-and no `…`. The invariant is therefore asserted in cells on `_item_lines`
-itself (`test_a_nested_row_is_never_wider_than_the_panel`), with the
-whole-screen marker comparison as the second half.
-
-**Surf's `l` LAUNCHPAD view is five panels in two columns, measures 138 on a
-`2fr:1fr` seam, and moves nothing.** LAUNCHPAD COINS over LAUNCHPAD ACTIVITY
-in the left column; CURVE FLOW, BURN PIPELINE and BURNKEEPERS in the rail.
-The coin table draws 10 rows and prices coins as **MCAP in USD**
-(`_TABLE_FULL_WIDTH` 93 → 89); the rows it gave up went to the activity feed,
-whose content is unbounded. Two new payload keys ride along,
-`launchpad_activity` and `launchpad_burnkeepers`.
-
-**BURNKEEPERS shows the LayerZero fee each caller actually paid, never the
-transaction's value** — the executor refunds the surplus, so a wallet that
-sent 0.001 ETH alongside a burn really paid a few millionths of it. An unread
-fee is `None` and renders a dash, never `0.000000`.
-
-**The seam exists to stop the rail binding, and that is the whole of it.**
-`SurfCurveFlow` and `SurfBurnPipeline` are plain label/value `Static`s: they
-ellipsise and go quiet with no marker. A seam whose *rail* binds therefore
-clips in silence, which this repo disqualifies — the rule that rejected `5:2`
-in the 2026-08-24 sweep, and which `12:5` then broke anyway (a window at
-129..132 where the accrued/staged line was cut with nothing saying so). **No
-value of the constant cleared that seam**, which is why the pin could not
-simply be re-typed. `2:1` hands the rail 46 columns against a need of 40–43,
-so the rail can never bind and `SurfLaunchpadCoins` is the binder by
-construction. It is pinned over `13:6`/`15:7` at 135 for margin, not for the
-number: those leave the rail exactly its 43, and the rail's need moved 39 → 40
-during the task series that built this body. Take the three columns back if
-CURVE FLOW or BURN PIPELINE ever grows a marker.
-
-**Measure the rail against ordinary data, not against the capture.** `fmt_imd`
-compacts above 1000, so the accrued/staged line is 35 cells against the
-capture's `1.2K`/`45.00` and 38 — its widest form — against the `620.00`/
-`500.00` an ordinary launchpad prints. Seams pinned to the small case stop
-qualifying the moment the data is ordinary, so every sweep here runs both
-magnitudes. The complete 19-seam table, the ≤2.16:1 qualifying rule and what
-each rejected seam costs live in `SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`' own
-docstring; the binder is pinned by
-`test_the_launchpad_binding_panel_is_the_coins_table`, not by this paragraph.
-
-**This body also has a height pin, `SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 31`** —
-no earlier version could run out of rows. Below it the body scrolls and the
-title bar says `‹ taller` (curator's `f`/`y` precedent; `‹ widen` lives on the
-binding panel's own title, `‹ taller` on the screen-wide bar). The rail binds
-it at 20 rows against the left column's 19. **Both columns scroll and both
-had to**: `#surf-launchpad-left` inherited a `Vertical`'s `overflow: hidden`
-and clipped the feed out of the column with no scrollbar. Both reserve
-`scrollbar-gutter: stable`, for `#curator-right-rail`'s reason — without it
-this layout's *width* pin becomes a function of its *height*.
-
-**138 is five under FWA's 143**, so neither `SURF_FULL_LAYOUT_COLUMNS` nor the
-app-wide `FULL_LAYOUT_COLUMNS` moved and the record above is **not** appended
-to — it tracks the app-wide number only. The hero row, which stays mounted in
-both modes so nothing it tracks (LAUNCHPAD/FLOW/BURN/SUPPLY) ever goes dark,
-clears on its own at **87** and never competes for the binder role —
-re-measured, not inherited: the long-quoted "by 80" was true when
-`hero.MINIMAL_WIDTH` was 13 and it is 15 since 2026-08-24.
+`c` swaps a shared slot on FWA, TTT, Talismans and curator so three panels
+that cannot share a row do not have to. Surf does not: its 2026-08-10
+restructure put all six panels on screen at once, which is why its `l` and
+curator's `y`/`f` swap whole *bodies* instead.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Per-dashboard: `c` swaps the shared bottom-right slot (FWA, TTT, Talismans,
@@ -549,7 +417,7 @@ only where there is room for it.
 for when no honest short name exists. Curator's `NAME_COLS` cap just above is
 one instance of the rule; FWA's buy-gate signal was shortened rather than let
 the app-wide number grow past 143 once the signals panel became the binding
-constraint (see the `c` paragraph in "Build & run"). A cell earns a shorter
+constraint (`__main__.FULL_LAYOUT_COLUMNS`' own docstring has that sweep). A cell earns a shorter
 form only once a width sweep shows it is the one actually asking for the
 extra columns — never on a guess, and never by raising the constant instead.
 
