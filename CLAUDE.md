@@ -458,6 +458,30 @@ Cache loaders take `now=`; signal builders take `now_ts`.
 **Screens inherit `screens/refresh_guard.RefreshGuard`.** It gives skip-not-queue refresh and
 joins the startup prefetch. Do not hand-roll `run_worker(..., exclusive=True)`.
 
+**Reuse before you build.** Almost nothing here is the first of its kind, and a
+new panel written from scratch is a panel that has not learned what the existing
+ones were taught. Check, in this order:
+
+1. **a shared widget module** — `widgets/*.py` (`sparkline_common`,
+   `markup_safety`, `status_bar`, `signals_panel`, `activity_feed`,
+   `hero_metrics`, `leaderboard`, …). Import it; never copy out of it.
+2. **the dashboard's own `_fmt.py`** (`widgets/surf/`, `widgets/curator/`) for
+   formatters, and the sibling panel that already does the same *shape* of job.
+   `widgets/surf/launchpad_activity.py` was built on `widgets/surf/activity.py`
+   — same `RichLog` body, same width-tier ladder, same "the panel names the
+   columns it shed" contract — and inherited all of that for free.
+3. **`templates/`** — eight copy-sources (screen, hero metrics, signals,
+   leaderboard, activity feed, two-column table, sparkline, status bar) for
+   when there is no sibling to follow. Copying is the point here, so read the
+   hazard note in "Known hazards" before you do.
+
+The failure this prevents is not wasted typing, it is **divergence**: three
+copies of one helper means a fix reaches one of them. This branch shipped
+exactly that — the strip-then-escape sanitiser now exists in three surf widget
+modules, and the `len()`-vs-`cell_len()` bug they share has to be fixed three
+times instead of once. If you find yourself writing something a sibling already
+does, stop and hoist it instead.
+
 **Sparklines import `widgets/sparkline_common`.** Do not copy the helpers.
 
 **Assert against composited output** (`_compositor.render_strips()`), not the content string. A
