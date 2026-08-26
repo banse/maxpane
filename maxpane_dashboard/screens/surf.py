@@ -15,7 +15,7 @@ Layout: three content rows, every widget on screen at once::
 holding the v4 launchpad's own panels -- five of them since 2026-08-25 --
 laid out on ``#middle-row``'s own shape::
 
-    #surf-launchpad-body   #surf-launchpad-left (12fr)      | #surf-launchpad-rail (5fr)
+    #surf-launchpad-body   #surf-launchpad-left (2fr)       | #surf-launchpad-rail (1fr)
                              SurfLaunchpadCoins    (auto)   |   SurfCurveFlow      (auto, +1 margin)
                              SurfLaunchpadActivity (1fr)    |   SurfBurnPipeline   (auto, +1 margin)
                                                             |   SurfBurnkeepers    (1fr)
@@ -34,12 +34,17 @@ currency in this body and columns are not: the coin table's
 constant, and what it can *show* vertically is not.
 
 **That constant is also why this body's seam is not the other two rows'.**
-``12fr:5fr``, swept (Task 13) -- the table needs 95 columns and cannot give
-one back, the rail needs 39, and 95:39 is a 71/29 split. The provisional
-``7fr:6fr`` it was built with handed the table 95 only on a 177-column
-terminal, so the ``l`` view lit ``‹ widen`` on every terminal anybody owns;
-12:5 collects it at 135. ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`` carries the
-per-seam costs.
+``2fr:1fr``, re-swept 2026-08-25 for the five-panel body -- the left column
+needs 92 columns and cannot give one back, the rail needs 40 against the
+committed capture and 43 against an ordinary one. The seam is deliberately
+*not* the cheapest: ``23:10`` collects the arithmetic floor at 132 and is
+disqualified, because at every width in between the panel that binds is
+``SurfBurnPipeline``, a plain ``Static`` that ellipsises in silence. 2:1
+hands the rail 46 columns at the pin -- more than the 43 its widest possible
+line can ever need -- so the binder is always the coin table, which marks,
+and the pin is 138 against every payload rather than moving with the data
+the way the old ``12fr:5fr`` number did.
+``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`` carries the full per-seam table.
 
 The two rows below the hero *in dashboard mode* are both split 7:6 on the
 same seam, so they read as one grid rather than two unrelated bands. The
@@ -219,6 +224,14 @@ INITIAL_TITLE = "SURFBOARD · Ethereum Mainnet"
 #: ellipsised. ``_title_line`` therefore puts this marker ahead of both
 #: warnings -- see its docstring for why it, of the three, is the one that
 #: has to survive.
+#:
+#: **It serves both bodies since 2026-08-25, and served only one before
+#: that.** The ``l`` LAUNCHPAD body has its own, higher threshold --
+#: :data:`SURF_LAUNCHPAD_FULL_LAYOUT_ROWS`, 31 rows against this body's 36
+#: -- and until that date the marker was dark on the whole of the ``l``
+#: view at every height, because ``_rail_is_cut`` read ``#surf-right-rail``
+#: unconditionally and that container is inside a hidden ``#middle-row``
+#: while the launchpad is showing. See ``SurfScreen._rail_is_cut``.
 TALLER_HINT = "‹ taller"
 
 #: Sentinel staleness pushed to the StatusBar when the manager itself failed.
@@ -340,101 +353,171 @@ ACTIVITY_MIN_HEIGHT = 7
 #: marker is correct, and 216 is a "full layout" nobody could reach.
 SURF_FULL_LAYOUT_COLUMNS = 143
 
-#: The ``l`` LAUNCHPAD body's own measured width (Task 13, re-measured
-#: 2026-08-24) -- a **separate, independently-named** constant, never a
-#: rewrite of :data:`SURF_FULL_LAYOUT_COLUMNS` above or
+#: The ``l`` LAUNCHPAD body's own measured width (Task 13, re-swept
+#: 2026-08-25 for the five-panel body) -- a **separate, independently-named**
+#: constant, never a rewrite of :data:`SURF_FULL_LAYOUT_COLUMNS` above or
 #: ``__main__.FULL_LAYOUT_COLUMNS``. Swept column by column over the real
 #: screen (``tests/screens/test_surf_screen.py``'s
 #: ``test_the_launchpad_body_is_whole_from_its_pinned_width``, which runs
-#: 120..145 -- comfortably below and above this number and never starting at
+#: 128..150 -- comfortably below and above this number and never starting at
 #: it, so the sweep cannot agree with the pin by construction).
 #:
 #: **The binding panel is ``SurfLaunchpadCoins``**, pinned by
 #: ``test_the_launchpad_binding_panel_is_the_coins_table`` rather than by
 #: this sentence (curator's own
 #: ``test_the_analysis_binding_panel_is_the_operators_table`` precedent).
-#: Its ``DataTable`` has nine fixed columns (``_TICKER_COLS`` ..
-#: ``_BURNED_COLS``, 79 content columns plus the table's own cell gutters =
-#: ``launchpad._TABLE_FULL_WIDTH``, 93) that do not shrink with the terminal
-#: -- unlike every other surf widget, this panel had **no width tiering at
-#: all** before this task series (Task 11's own finding): below its
-#: structural width a column was clipped with no on-screen trace, which is
-#: exactly the silent clipping CLAUDE.md forbids.  ``DataTable``'s own
-#: ``show_horizontal_scrollbar`` cannot be read as that signal either -- it
-#: is already ``True`` several columns before anything is actually lost, so
-#: a marker keyed off it would fire early and disagree with the compositor.
-#: ``SurfLaunchpadCoins`` (``widgets/surf/launchpad.py``) advertises the
-#: loss on its own title, the same idiom ``SurfMarket``/curator's
-#: ``CuratorOperators`` already use for their own column tiers -- one tier
-#: here, not a ladder, because a fixed-column ``DataTable`` has nothing
-#: shorter to fall back to.
+#: Its ``DataTable`` has nine fixed columns (``launchpad._TABLE_FULL_WIDTH``,
+#: 89 since MCAP replaced PRICE) that do not shrink with the terminal, and it
+#: advertises the loss on its own title -- the same idiom ``SurfMarket`` and
+#: curator's ``CuratorOperators`` use, one tier rather than a ladder, because
+#: a fixed-column ``DataTable`` has nothing shorter to fall back to.
 #:
-#: **93 -> 135, and the old number described a body that no longer exists.**
-#: 93 was measured with all three launchpad panels full width and stacked.
-#: The 2026-08-24 rail put the table on a share of a two-column body, so
-#: this number is now a function of the seam, and the seam had never been
-#: swept. Both halves were therefore re-measured first, each *in situ*:
+#: **93 -> 135 -> 138, and each number described a body the next one no
+#: longer is.** 93 was three full-width panels stacked; 135 was the
+#: 2026-08-24 rail on a ``12fr:5fr`` seam. This is the five-panel body:
+#: LAUNCHPAD COINS over LAUNCHPAD ACTIVITY in a left *column*, CURVE FLOW /
+#: BURN PIPELINE / BURNKEEPERS in the rail. Both halves were re-measured
+#: *in situ*, each inside its own real container:
 #:
-#:   * the table needs **95** screen columns (93 content +
-#:     ``padding: 0 1``); at 94 the compositor eats ``BURNED``'s D.
-#:   * the rail needs **39**, measured inside ``#surf-launchpad-rail``
-#:     rather than in a bare harness -- its widest line
-#:     (``accrued 1.2K IMD · staged 45.0 IMD``, 34 cells) pays the panel's
-#:     ``padding: 0 1``, the inner ``Static``'s own ``padding: 0 1``, and
-#:     the reserved ``scrollbar-gutter: stable`` column on top. Measured
-#:     without the gutter the answer is 38, and a body pinned to that is
-#:     one column short on the real screen.
+#:   * the **left column needs 92** screen columns -- 89 content, plus
+#:     ``SurfLaunchpadCoins``' ``padding: 0 1``, plus the column's own
+#:     reserved ``scrollbar-gutter: stable`` cell. ``SurfLaunchpadActivity``
+#:     never competes: its ``FULL_WIDTH`` is 45, so it clears at 48.
+#:   * the **rail needs 40** against the committed capture and **43**
+#:     against any ordinary one, measured inside ``#surf-launchpad-rail``
+#:     and not in a bare harness -- its widest line pays the panel's
+#:     ``padding: 0 1``, the inner ``Static``'s own, and the reserved gutter
+#:     cell on top. ``SurfBurnkeepers`` clears at 35 (``FULL_WIDTH`` 32), so
+#:     the rail's own binder is ``SurfBurnPipeline``'s
+#:     ``accrued … IMD · staged … IMD`` line.
 #:
-#: So 95 + 39 = **134** is the arithmetic floor, and the sweep is what each
-#: candidate seam actually collects it at (real screen, whole ``l`` body):
+#: **That last fact is what chose the seam, and it is not the arithmetic.**
+#: ``SurfCurveFlow`` and ``SurfBurnPipeline`` are plain label/value
+#: ``Static``s: they ellipsise and go quiet. So a seam whose *rail* is the
+#: binder renders a clipped line with no ``‹ widen`` anywhere on screen, and
+#: this repo disqualifies that (the same test that rejected ``5:2`` in the
+#: 2026-08-24 sweep). The window 129..132 as this body shipped -- 131..132
+#: once the left column reserved its own scrollbar gutter -- where the old
+#: ``12fr:5fr`` seam clipped ``accrued 1.2K IMD · staged 45.00 I…`` in
+#: silence, is exactly that failure, and it is why the pin could not simply
+#: be re-typed: **no value of this constant cleared the sweep on the old
+#: seam.** Below 129 the coin table was clipped too and marked, so the pin
+#: could not be dropped under the window either.
 #:
-#:   ``3:2`` 159 · ``7:6`` **177** · ``9:7`` 169 · ``11:9`` 173 · ``2:1``
-#:   143 · ``12:5`` **135** · ``3:1`` 153
+#: **And the rail's need is data-dependent while the table's is not.**
+#: ``fmt_imd`` renders 100.00..999.99 at six columns and compacts above
+#: 1000, so the accrued/staged line is 35 cells against the committed
+#: capture's ``1.2K``/``45.00`` and 38 -- its widest possible form -- against
+#: the ``620.00``/``500.00`` an ordinary launchpad prints: 40 and 43 screen
+#: columns. A seam pinned to the small case can therefore *stop qualifying*
+#: the moment the data is ordinary. Swept over the real screen at both
+#: magnitudes: the first width at which both halves are clean, and the
+#: widths below it at which something clips with nothing on screen saying so.
 #:
-#: 7:6 -- what this body was built with -- is the *worst* of the seven: it
-#: hands a 71/29 split 54/46, so the table reached 95 only at 177, which is
-#: 34 past FWA's 143 and past the ~169 columns a laptop gets at the 17 pt
-#: ``__main__`` forces on launch. The ``l`` view would have advertised
-#: ``‹ widen`` on every terminal anybody owns.
+#: ==========  ========  ===========  ========  ===========
+#: seam        capture   silent       ordinary  silent
+#: ==========  ========  ===========  ========  ===========
+#: ``23:10``   132       --           139       132..138
+#: ``7:3``     132       --           141       132..140
+#: ``16:7``    133       --           139       133..138
+#: ``9:4``     133       --           137       133..136
+#: ``12:5``    133       131..132     143       131..142
+#: ``11:5``    134       --           135       134
+#: ``17:7``    134       130..133     145       130..144
+#: ``13:6``    135       --           135       --
+#: ``15:7``    135       --           135       --
+#: ``22:9``    135       130..134     145       130..144
+#: ``19:9``    136       --           136       --
+#: ``21:10``   136       --           136       --
+#: ``5:2``     137       129..136     148       129..147
+#: ``2:1``     **138**   --           **138**   --
+#: ``3:2``     154       --           154       --
+#: ``3:1``     157       137..156     169       137..168
+#: ``9:7``     164       --           164       --
+#: ``7:6``     171       --           171       --
+#: ==========  ========  ===========  ========  ===========
 #:
-#: **12:5 is pinned, and it is not quite the cheapest.** Three seams sit at
-#: or below it -- ``5:2`` and ``22:9`` both collect 134, the floor itself --
-#: and both are **disqualified for the same structural reason**, which is
-#: worth more than the column: below the pin the only panel that *marks* has
-#: to be the one that binds. At 5:2 the table is clean from 133 while the
-#: rail still needs 134, so at exactly 133 the body clips a rail line with
-#: no ``‹ widen`` anywhere on screen -- the rail panels are plain
-#: label/value ``Static``s and have no marker of their own. ``3:1`` fails
-#: the same test far more loudly (table clean from 127, rail not until 153).
-#: 22:9 survives it but is a seam nobody can read for one column that no
-#: user can see, both numbers being eight or nine under the 143 the app
-#: documents. Of the seams that keep the marked panel the binder, ``12:5``
-#: and ``17:7`` both collect 135 and 12:5 is the simpler -- the same
-#: tie-break that chose 7:6 for ``#middle-row`` out of four seams that all
-#: reached 152.
+#: ``23:10`` and ``7:3`` collect the arithmetic floor (92 + 40 = 132)
+#: against the committed capture and are the cheapest seams there -- and
+#: both are **disqualified** the moment the burn line is an ordinary length,
+#: because the rail then binds and the rail cannot mark. ``16:7``, ``9:4``
+#: and ``11:5`` fail the same way, one column at a time. The old ``12:5``
+#: fails it under *both* payloads, which is why this pin could not simply be
+#: re-typed: **no value of this constant cleared the sweep on the old
+#: seam**, and every seam above it in the ordinary column fails worse.
 #:
-#: The rail's 39 is **data-dependent and the fixture is the small case**.
-#: ``accrued``/``staged`` render through ``fmt_compact``, so a launchpad
-#: that has run a while prints ``accrued 12.3K IMD · staged 500.0 IMD`` --
-#: 36 cells, +2, taking the rail to 41. Re-swept against that payload 12:5
-#: collects 137 (still under 143); 5:2 would have needed 141. That headroom
-#: is a second reason the marginally-cheaper seam was not worth taking, and
-#: it is the standing CLAUDE.md rule about measuring a data-dependent width
-#: against the state the data is normally in, applied to a rail instead of
-#: to ``SurfMarket``'s dollar gap.
+#: **The qualifying set is the seams at or below about 2.16:1**, and the
+#: reason is arithmetic rather than luck: the left column binds at every
+#: width iff its share reaches 92 no earlier than the rail's reaches 43.
+#: ``13:6`` and ``15:7`` are the cheapest of them at 135, ``19:9`` and
+#: ``21:10`` next at 136, and ``2fr:1fr`` is the simplest at 138.
 #:
-#: **135, eight columns under FWA's 143** -- so this task moves neither
+#: **2:1 is pinned, and the three columns are bought deliberately.** What
+#: separates it from ``13:6`` is not the pin but the *margin*: at 135 the
+#: rail gets exactly the 43 it needs and the left exactly its 92, so both
+#: halves sit on the edge, while 2:1 hands the rail **46**. Zero margin on
+#: the left column is harmless -- it is the binder, it marks, and a change
+#: there simply moves the pin and lights ``‹ widen`` on the way. Zero margin
+#: on the *rail* is not, because nothing in the rail can mark: the next
+#: format change that costs a rail line one cell reopens a silent-clip
+#: window, and this is not hypothetical -- the rail's own need moved 39 ->
+#: 40 during this very task series, when ``staged`` gained a decimal place
+#: in a sibling widget. 43 is the ceiling ``fmt_imd`` imposes today; 46 is
+#: what survives the next such edit without a re-sweep nobody will run.
+#: 135, 136 and 138 are all below FWA's 143 and far below the ~169 columns a
+#: laptop gets at the forced 17 pt, so the three columns cost a user
+#: nothing. Take them back if the rail ever grows a marker of its own.
+#:
+#: The tie-break within the qualifying set is the one that chose ``7:6`` for
+#: ``#middle-row`` and ``12:5`` for this body before it: prefer the seam a
+#: reader can hold in their head. 2:1 is the simplest seam in the family and
+#: also the one with the margin, so here the two criteria agree.
+#:
+#: **138, five columns under FWA's 143** -- so this task moves neither
 #: :data:`SURF_FULL_LAYOUT_COLUMNS` nor ``__main__.FULL_LAYOUT_COLUMNS``,
 #: and the ``198 -> 172 -> 143 -> 176 -> 152 -> 143`` record in CLAUDE.md is
 #: correctly **not** appended to: that record tracks changes to the
 #: app-wide number only (CLAUDE.md says so twice already, about curator's
 #: own screen pin and its ``f`` view). The hero row, which stays mounted in
-#: both modes, clears on its own at **87** -- re-measured here, not
-#: inherited: the long-quoted "by 80" was true when ``hero.MINIMAL_WIDTH``
-#: was 13 and this branch re-derived it to 15. 87 is still 48 columns below
-#: this pin, so the conclusion the old number was quoted for still holds and
-#: the hero never competes for the binder role.
-SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 135
+#: both modes, clears on its own at **87** and never competes for the binder
+#: role.
+SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 138
+
+#: The ``l`` LAUNCHPAD body's own measured **height** (2026-08-25) -- new
+#: with the five-panel body, which is the first version of this view that
+#: could run out of rows. Curator's ``f``/``y`` precedent: the body is whole
+#: from this many terminal rows, and below it the body scrolls and the title
+#: bar says :data:`TALLER_HINT`.
+#:
+#: The binder is the **rail**, at 20 rows of content:
+#:
+#:   ``SurfCurveFlow`` 6 (title, blank, two flow lines, owed, ``as of``)
+#:   + its 1-row bottom margin
+#:   + ``SurfBurnPipeline`` 7 (title, blank, status, accrued/staged, min
+#:   bridge, burned, ``as of``) + its 1-row bottom margin
+#:   + ``SurfBurnkeepers`` 5 (``min-height``: title, blank, three rows)
+#:   = **20**.
+#:
+#: The left column asks for less: ``SurfLaunchpadCoins`` is 13 rows with a
+#: full ten-coin table (title, blank, header, ten rows) and
+#: ``SurfLaunchpadActivity``'s floor is 6, so 19. The body itself is the
+#: screen minus the title bar (1), the hero row and its top margin (8), this
+#: body's own top margin (1) and the StatusBar (1) -- eleven rows -- so a
+#: 20-row body wants a **31**-row terminal, and the 19-row column would have
+#: wanted 30.
+#:
+#: **Both columns scroll, and both had to.** ``#surf-launchpad-rail`` has
+#: carried ``overflow-y: auto`` since it was born; ``#surf-launchpad-left``
+#: did not, and a ``Vertical`` defaults to ``overflow: hidden hidden``, so
+#: below 22 rows the activity feed was clipped out of the column with no
+#: scrollbar and nothing on screen to say so. Both carry
+#: ``scrollbar-gutter: stable`` with it, for ``#curator-right-rail``'s own
+#: reason: without the gutter the scrollbar takes its column out of the
+#: panel beside it only on terminals short enough to overflow, so this
+#: layout's WIDTH pin would become a function of its HEIGHT.
+#: :data:`SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS` above is measured with that
+#: gutter reserved, which is the 92nd of its 92 columns.
+SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 31
 
 #: The two bodies ``l``/``escape`` swap between. Named on curator's
 #: MODE_DASHBOARD/MODE_ANALYSIS precedent -- this screen only ever needs two,
@@ -844,24 +927,41 @@ class SurfScreen(RefreshGuard, Screen):
      * to lose -- their ten lines are label/value text that never grows,
      * while the table's row count is the launchpad's own population.
      *
-     * The seam is `12fr:5fr`, SWEPT (Task 13, 2026-08-24) and deliberately
-     * NOT the `7fr:6fr` this body was built with or the 7:6 the other two
-     * rows use. Do not "tidy" it into agreement with them: this body
-     * balances a fixed-width `DataTable` (95 columns, immovable) against a
-     * rail of short label/value lines (39) -- a 71/29 split -- where
-     * #middle-row balances a wrapping feed against a rail that both give
-     * ground. At 7:6 the table reaches its 95 columns only on a 177-column
-     * terminal, 34 past FWA's 143 and past the ~169 a laptop gets at the
-     * 17 pt `__main__` forces on launch, so the `l` view would have lit
-     * `< widen` on every terminal anybody owns. 12:5 collects it at 135.
-     * The losing candidates and what each costs are recorded in
+     * The seam is `2fr:1fr`, RE-SWEPT for the five-panel body (2026-08-25)
+     * and deliberately NOT the `12fr:5fr` it replaces, the `7fr:6fr` this
+     * body was built with, or the 7:6 the other two rows use. Do not "tidy"
+     * it into agreement with them: this body balances a fixed-width
+     * `DataTable` (92 screen columns, immovable) against a rail of short
+     * label/value lines (40 against the committed capture, 43 against an
+     * ordinary one), where #middle-row balances a wrapping feed against a
+     * rail that both give ground.
+     *
+     * IT IS NOT THE CHEAPEST SEAM, ON PURPOSE. `23:10` and `7:3` collect
+     * the arithmetic floor at 132; both are DISQUALIFIED, because between
+     * the floor and the width the rail actually needs the binding panel is
+     * `SurfBurnPipeline` -- a plain label/value `Static` with no `< widen`
+     * of its own, so it clips in silence. That is the same test that
+     * rejected `5:2` in the 2026-08-24 sweep, and the old `12fr:5fr` seam
+     * fails it too: 131..132 clipped the accrued/staged line with nothing
+     * on screen saying so. `13:6` and `15:7` survive it at 135, and are
+     * still not this seam: they hand the rail exactly the 43 it needs,
+     * where 2:1 hands it 46. Zero margin on a rail that cannot mark is one
+     * format change away from reopening the window -- that need moved 39 ->
+     * 40 in this same task series. 2:1 keeps the marked coin table the
+     * binder under every payload and pins at 138. The full per-seam table,
+     * both payload magnitudes, is in
      * `SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`'s own docstring.
      *
-     * The rail carries `scrollbar-gutter: stable` for curator's own reason
-     * (`#curator-right-rail`): without it the scrollbar takes its column
-     * out of the panel beside it only on terminals short enough to overflow,
-     * so the layout's WIDTH requirement would move with its HEIGHT and a
-     * width pin measured at 48 rows would be one column short at 40.
+     * BOTH columns scroll and BOTH carry `scrollbar-gutter: stable`, for
+     * curator's reason (`#curator-right-rail`): without the gutter the
+     * scrollbar takes its column out of the panel beside it only on
+     * terminals short enough to overflow, so the layout's WIDTH requirement
+     * would move with its HEIGHT and a width pin measured at 48 rows would
+     * be one column short at 40. `#surf-launchpad-left` had neither until
+     * 2026-08-25 -- a `Vertical` defaults to `overflow: hidden hidden`, so
+     * below 22 rows the activity feed was clipped out of the column with no
+     * scrollbar, no marker and no other trace. `SURF_LAUNCHPAD_FULL_LAYOUT_
+     * ROWS` is the height at which neither column needs to scroll.
      *
      * FIVE PANELS IN TWO COLUMNS since 2026-08-25. The left half is a
      * `#surf-launchpad-left` column rather than the bare table it was,
@@ -897,8 +997,11 @@ class SurfScreen(RefreshGuard, Screen):
         margin: 1 0 0 0;
     }
     SurfScreen #surf-launchpad-left {
-        width: 12fr;
+        width: 2fr;
         height: 1fr;
+        overflow-y: auto;
+        scrollbar-size: 1 1;
+        scrollbar-gutter: stable;
     }
     SurfScreen SurfLaunchpadCoins {
         width: 1fr;
@@ -915,7 +1018,7 @@ class SurfScreen(RefreshGuard, Screen):
         padding: 0 1;
     }
     SurfScreen #surf-launchpad-rail {
-        width: 5fr;
+        width: 1fr;
         height: 1fr;
         overflow-y: auto;
         scrollbar-size: 1 1;
@@ -1101,18 +1204,36 @@ class SurfScreen(RefreshGuard, Screen):
         self._mode = MODE_DASHBOARD
         self._show_mode()
 
-    def _rail_is_cut(self) -> bool:
-        """Does the right rail hold more than this height can show?
+    #: The scrolling columns of each body, in the order they are asked.
+    #: ``show_vertical_scrollbar`` is each column's own answer to "do I hold
+    #: more than this height can show", and is what the layout already turns
+    #: the loss into; asking it rather than re-deriving the arithmetic keeps
+    #: the marker and the scrollbars from ever disagreeing.
+    _SCROLL_COLUMNS = {
+        MODE_DASHBOARD: ("#surf-right-rail",),
+        MODE_LAUNCHPAD: (f"#{LAUNCHPAD_LEFT_ID}", f"#{LAUNCHPAD_RAIL_ID}"),
+    }
 
-        ``show_vertical_scrollbar`` is the rail's own answer to that question
-        and is what the layout already turns the loss into; asking it rather
-        than re-deriving the arithmetic keeps the marker and the scrollbar
-        from ever disagreeing.
+    def _rail_is_cut(self) -> bool:
+        """Does the body now showing hold more than this height can show?
+
+        **Asked of the body that is showing, not of one fixed id.** This read
+        ``#surf-right-rail`` unconditionally until 2026-08-25, which is the
+        dashboard body's rail: in ``MODE_LAUNCHPAD`` that container is inside
+        a ``display: none`` ``#middle-row``, is never laid out, and answers
+        ``False`` at every terminal height -- so the one advertisement this
+        screen has for a lost row was dark on the whole of the ``l`` view
+        while the launchpad rail was visibly scrolling. Both of the launchpad
+        body's columns scroll and either can be the one that overflows, so
+        both are asked.
         """
-        try:
-            return bool(self.query_one("#surf-right-rail").show_vertical_scrollbar)
-        except Exception:  # noqa: BLE001 -- not composed yet, or torn down
-            return False
+        for selector in self._SCROLL_COLUMNS.get(self._mode, ()):
+            try:
+                if self.query_one(selector).show_vertical_scrollbar:
+                    return True
+            except Exception:  # noqa: BLE001 -- not composed yet, or torn down
+                continue
+        return False
 
     def _render_title(self) -> None:
         """(Re)compose the title bar from the last payload plus the marker."""

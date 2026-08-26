@@ -128,8 +128,19 @@ def test_the_kwarg_alias_stands_for_a_real_contract_key():
     that answers for nothing, and an alias that was *itself* a contract key
     would be dead weight hiding the next real one. Both are checked here so
     the strict sweep below cannot be widened by accident.
+
+    **And the pair has to actually be the elision this list is named for.**
+    Checking only "the target is a key and the alias is not" would have let
+    ``{"coins": "launchpad_burned_total"}`` through -- an arbitrary rename
+    excused under a docstring that promises a dropped ``launchpad_`` prefix
+    and nothing else. The relationship is the carve-out; the third assertion
+    is what makes it one.
     """
     for alias, key in _PREFIXED_KWARG_ALIASES.items():
+        assert key == f"launchpad_{alias}", (
+            f"{alias!r} -> {key!r} is not a dropped ``launchpad_`` prefix -- "
+            "this list excuses that elision and nothing else"
+        )
         assert key in SURF_KEYS, (
             f"{alias!r} is excused as an elision of {key!r}, which SURF_KEYS "
             "no longer carries"

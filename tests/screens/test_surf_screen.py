@@ -30,6 +30,7 @@ from maxpane_dashboard.screens.surf import (
     MODE_DASHBOARD,
     MODE_LAUNCHPAD,
     SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS,
+    SURF_LAUNCHPAD_FULL_LAYOUT_ROWS,
     TALLER_HINT,
     SurfScreen,
 )
@@ -1201,8 +1202,19 @@ async def test_the_floored_panels_never_thin_out_below_their_floor() -> None:
     a floor each of these two panels sheds one line per terminal row down to
     a bare title, with no scrollbar, no ``‹ widen`` and no other trace
     anywhere on screen. The floor is what turns that into an overflow the
-    rail's ``overflow-y: auto`` can show. Measured on a terminal short
-    enough that the body genuinely cannot fit them.
+    containing column's ``overflow-y: auto`` can show, and the title bar's
+    ``‹ taller`` is what advertises it.
+
+    **Asserted on the laid-out height AND on the marker, not on composited
+    cells, and the difference matters both ways.** A floored panel that the
+    column has scrolled past composites *zero* rows -- correctly: it is
+    below the fold, reachable by scrolling, and ``‹ taller`` says so. So a
+    composited-cell assertion here would fail on a layout that is behaving
+    exactly as designed. What the earlier version of this test was missing
+    is the other half: it proved the panels keep their rows without proving
+    anything on screen tells the reader those rows are off the fold. Both
+    are asserted now, at a height short enough that the body genuinely
+    cannot fit them.
     """
     async with _surf_app().run_test(size=(150, 20)) as pilot:
         await pilot.app.screen._do_refresh()
@@ -1213,6 +1225,16 @@ async def test_the_floored_panels_never_thin_out_below_their_floor() -> None:
         keepers = screen.query_one(SurfBurnkeepers)
         assert activity.region.height >= 6, activity.region.height
         assert keepers.region.height >= 5, keepers.region.height
+        # The floors are only honest if the overflow they create is visible
+        # somewhere. It is not the panels' own job -- they have no marker --
+        # so it has to be the title bar's, on the row that cannot be pushed
+        # off. Without this the assertions above are green in a state where
+        # BURNKEEPERS reaches the screen as nothing at all.
+        assert TALLER_HINT in _screen_text(pilot.app).split("\n")[0]
+        assert (
+            screen.query_one(f"#{LAUNCHPAD_LEFT_ID}").show_vertical_scrollbar
+            or screen.query_one(f"#{LAUNCHPAD_RAIL_ID}").show_vertical_scrollbar
+        ), "neither column is scrolling, so the floors are not being tested"
 
 
 #: The two heights the gutter proof is measured at, and neither is arbitrary.
@@ -1486,25 +1508,23 @@ def test_the_launchpad_body_css_agrees_between_default_css_and_the_stylesheet() 
                 )
 
 
-# -- Task 13: the l body's own measured width (2026-08-23) ---------------
+# -- the l body's own measured width (Task 13; re-swept 2026-08-25) -------
 #
 # ``SURF_FULL_LAYOUT_COLUMNS`` (this screen) and ``__main__.FULL_LAYOUT_
 # COLUMNS`` (the app) are FWA's 143 and this task moves neither -- the
-# measurement, the binding panel, and why the CLAUDE.md width record is not
-# appended to are all in ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``'s own
-# docstring in ``screens/surf.py``.
+# measurement, the binding panel, the per-seam table and why the CLAUDE.md
+# width record is not appended to are all in
+# ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``'s own docstring in
+# ``screens/surf.py``.
 #
-# The sweep below runs 120..145: comfortably below *and* above the measured
-# 135, and never starting at it, so it could not agree with the pin by
+# The sweep below runs 128..150: comfortably below *and* above the measured
+# 138, and never starting at it, so it could not agree with the pin by
 # construction.
 #
-# It ran 80..105 until 2026-08-24, which was right for the body it was
-# written against -- three full-width panels stacked, binding at 93. The rail
-# made this number a function of the seam, the seam was swept, and 12:5 put
-# the crossover 42 columns higher; a range left at 80..105 would now sit
-# entirely *below* it and exercise only the "narrower than the pin" branch,
-# the exact mirror of the failure the original comment here describes.
-# Re-centre the range whenever the pin moves.
+# It ran 80..105 until 2026-08-24 and 120..145 until 2026-08-25. Each range
+# was right for the body it was written against -- three stacked full-width
+# panels binding at 93, then a 12:5 rail binding at 135 -- and each had to
+# move when the pin did. Re-centre the range whenever the pin moves.
 
 
 def _title_text(pilot) -> str:
@@ -1519,7 +1539,36 @@ def _title_text(pilot) -> str:
     return _screen_text(pilot.app)
 
 
-@pytest.mark.parametrize("width", range(120, 146))
+def _clipped_launchpad_lines(app, screen) -> list[str]:
+    """Every composited line in the ``l`` body that ends in a truncation.
+
+    **Asked of the five panels, never of their two containers**, and that is
+    a correctness fix rather than a tidy-up. ``_region_text`` slices the
+    compositor to a widget's rectangle, and a *container*'s rectangle
+    includes the column reserved by ``scrollbar-gutter: stable`` -- so on any
+    row where the scrollbar glyph is painted, a genuinely clipped line no
+    longer *ends* in ``…`` and the check goes quiet exactly when the layout
+    is under most pressure. Each panel's own rectangle excludes that gutter.
+
+    It asks whether a line ENDS in ``…``, not whether one contains one.
+    ``text-overflow: ellipsis`` puts its ellipsis at the truncation point,
+    which is the end of the rendered line, so this catches every clip a bare
+    ``in`` would. What it stops catching is a false positive that arrived
+    with BURNKEEPERS (2026-08-25): its wallet cell is a deliberate
+    anti-poisoning *window*, ``0xbbbb…bbbb``, whose ellipsis is a glyph in
+    the middle of a line that fits perfectly well. Left as ``in``, the sweep
+    below failed at every width from the pin up while nothing was clipped
+    anywhere -- a red test that would have been "fixed" by moving a pin.
+    """
+    out = []
+    for cls in _LAUNCHPAD_WIDGET_CLASSES.values():
+        for line in _region_text(app, screen.query_one(cls)).split("\n"):
+            if line.rstrip().endswith("…"):
+                out.append(line)
+    return out
+
+
+@pytest.mark.parametrize("width", range(128, 151))
 async def test_the_launchpad_body_is_whole_from_its_pinned_width(width) -> None:
     """Start the sweep away from the pin: a sweep that began at the constant
     would agree with it by construction.
@@ -1530,26 +1579,18 @@ async def test_the_launchpad_body_is_whole_from_its_pinned_width(width) -> None:
     is hidden in ``MODE_LAUNCHPAD``, so nothing it composites reaches the
     screen while ``l`` is showing.
 
-    **Whole means the whole body, not merely the panel that can say so.**
-    Since the 2026-08-24 rail, ``SurfLaunchpadCoins`` shares the body with
-    two plain label/value panels that carry no ``‹ widen`` of their own --
-    they ellipsise and go quiet. Asserting only on the marker would
-    therefore have accepted a seam whose *rail* binds, which is exactly how
-    the two seams cheaper than 12:5 were disqualified: at 5:2 the table is
-    clean from 133 while the rail still needs 134, so 133 renders a clipped
-    rail line with nothing on screen asking to be widened. The rail check
-    below is what makes that a failure instead of a green sweep.
-
-    **That check asks whether a line ENDS in ``…``, not whether one contains
-    one**, and the difference is not a loosening. ``text-overflow: ellipsis``
-    puts its ellipsis at the truncation point, which is the end of the
-    rendered line -- so ``rstrip().endswith("…")`` catches every clip the
-    bare ``in`` did. What it stops catching is a false positive that arrived
-    with BURNKEEPERS (2026-08-25): its wallet cell is a deliberate
-    anti-poisoning *window*, ``0xbbbb…bbbb``, whose ellipsis is a glyph in
-    the middle of a line that fits perfectly well. Left as ``in``, this
-    sweep failed at every width from 135 up while nothing was clipped
-    anywhere -- a red test that would have been "fixed" by moving a pin.
+    **Whole means the whole body, not merely the panels that can say so.**
+    Three of the five panels here advertise ``‹ widen`` and two --
+    ``SurfCurveFlow`` and ``SurfBurnPipeline`` -- are plain label/value
+    ``Static``s that ellipsise and go quiet. Asserting only on the marker
+    would therefore accept a seam whose *rail* binds, and that is not a
+    hypothetical: it is what the ``12fr:5fr`` seam this body shipped with
+    actually did: as shipped it clipped ``accrued 1.2K IMD · staged 45.00
+    I…`` at 129..132 (131..132 once the left column reserved its own
+    scrollbar gutter) with no ``‹ widen`` anywhere on screen, which is why
+    **no value of the constant could make this sweep green** and the fix
+    was a re-seam rather than a re-typed number. The clip check below is what makes that a
+    failure instead of a green sweep.
     """
     async with _surf_app().run_test(size=(width, 46)) as pilot:
         await pilot.app.screen._do_refresh()
@@ -1557,33 +1598,116 @@ async def test_the_launchpad_body_is_whole_from_its_pinned_width(width) -> None:
         await pilot.press("l")
         await pilot.pause()
         title = _title_text(pilot)
-        rail = _region_text(
-            pilot.app, pilot.app.screen.query_one(f"#{LAUNCHPAD_RAIL_ID}")
-        )
+        clipped = _clipped_launchpad_lines(pilot.app, pilot.app.screen)
         if width >= SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS:
             assert "‹ widen" not in title, width
-            clipped = [
-                line for line in rail.split("\n") if line.rstrip().endswith("…")
-            ]
             assert not clipped, (
-                f"at {width} the rail is clipping a line and nothing on "
-                f"screen says so:\n{rail}"
+                f"at {width} the l body is clipping a line and nothing on "
+                f"screen says so: {clipped}"
             )
         else:
             assert "‹ widen" in title, width
+
+
+#: The burn pipeline in the state the data is normally in.
+#:
+#: The committed capture is the **small** case for this rail:
+#: ``accrued 1.2K IMD · staged 45.00 IMD`` is 35 cells, and the rail needs
+#: 40 screen columns for it. ``_fmt.fmt_imd`` renders 100.00..999.99 at six
+#: columns and compacts only above 1000, so an ordinary launchpad -- one
+#: whose 500 IMD minimum bridge has been met and whose hook is refilling --
+#: prints ``accrued 620.00 IMD · staged 500.00 IMD``, 38 cells and 43
+#: columns, which is also the widest that line can ever be.
+#:
+#: That three-column difference is the whole subject of the seam sweep in
+#: ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``: four of the seams that look
+#: cheapest against the capture stop qualifying against this payload,
+#: because the rail becomes the binding panel and the rail is two plain
+#: ``Static``s with no ``‹ widen`` between them. CLAUDE.md's standing rule
+#: is to measure a data-dependent width against the state the data is
+#: normally in; this is that state.
+def _ordinary_burn_payload() -> dict:
+    return _frozen_payload(burn_accrued=620.0, burn_staged=500.0)
+
+
+@pytest.mark.parametrize(
+    "payload", [None, "ordinary"], ids=["committed-capture", "ordinary-burn-line"]
+)
+@pytest.mark.parametrize("width", range(128, SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS))
+async def test_nothing_below_the_pin_clips_without_saying_so(width, payload) -> None:
+    """The seam's *disqualifying* property, asserted rather than asserted-in-
+    prose.
+
+    CLAUDE.md's rule is that below the pin the only panel allowed to clip is
+    one that advertises the loss. Two of this body's five cannot: the rail's
+    ``SurfCurveFlow`` and ``SurfBurnPipeline`` are plain ``Static``s. So a
+    seam that hands the rail less than it needs while the marked coin table
+    is already clean renders a truncated line with nothing on screen asking
+    to be widened -- exactly what ``5:2`` was rejected for in the 2026-08-24
+    sweep, and exactly what ``12fr:5fr`` did once MCAP took four columns off
+    the table.
+
+    The sibling sweep above only checks the marker below the pin, which is
+    green in that state. This is the half that bites, and it needs **both**
+    payloads to bite at every seam worth rejecting: mutate the seam in both
+    stylesheets to ``12fr:5fr`` and the committed-capture half reddens at
+    131..132; mutate it to ``23fr:10fr`` or ``16fr:7fr`` -- the seams that
+    look cheapest by arithmetic -- and only the ordinary-burn-line half
+    does. A single-payload version of this test greens one of those two
+    mistakes.
+    """
+    pl = _ordinary_burn_payload() if payload == "ordinary" else None
+    async with _surf_app(pl).run_test(size=(width, 46)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        clipped = _clipped_launchpad_lines(pilot.app, pilot.app.screen)
+        if clipped:
+            assert "‹ widen" in _title_text(pilot), (
+                f"at {width} the l body clips {clipped} and no panel on "
+                "screen advertises the loss"
+            )
+
+
+@pytest.mark.parametrize("width", [SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, 150])
+async def test_the_pin_is_the_pin_for_an_ordinary_burn_line_too(width) -> None:
+    """The 2026-08-24 pin moved with the data; this one does not, and that
+    is the property the seam was chosen for.
+
+    ``12fr:5fr`` collected 135 against the committed capture and 137 against
+    a busier one -- documented at the time, and a pin that moves with the
+    payload is a pin that is wrong for whichever payload it was not measured
+    against. ``2fr:1fr`` hands the rail 46 columns at the pin against the 43
+    its widest possible line can ever need, so 138 is 138 either way.
+    """
+    async with _surf_app(_ordinary_burn_payload()).run_test(
+        size=(width, 46)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        assert "‹ widen" not in _title_text(pilot), width
+        assert not _clipped_launchpad_lines(pilot.app, pilot.app.screen), width
 
 
 async def test_the_launchpad_binding_panel_is_the_coins_table() -> None:
     """Pinned by a test, not by a sentence in CLAUDE.md (curator's own
     ``test_the_analysis_binding_panel_is_the_operators_table`` precedent):
     ``SurfLaunchpadCoins`` -- its ``DataTable``'s nine fixed columns -- is
-    the ``l`` body's binder, and the other two panels never mark at all.
+    the ``l`` body's binder, and it is the binder **by construction of the
+    seam** rather than by luck.
 
-    Re-checked against the 12:5 seam (2026-08-24) rather than assumed:
-    the rail's own need is 39 columns and 12:5 hands it 39 at 134, so
-    one column below the pin the table is the only panel with anything
-    to say -- which is the property that chose this seam over the two
-    that collect the floor. See ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``."""
+    Re-checked against the ``2fr:1fr`` seam (2026-08-25) rather than
+    assumed. The left column needs 92 screen columns and cannot give one
+    back; the rail needs 40 against the committed capture and 43 against any
+    ordinary one, and 2:1 hands it **46** at the pin. So one column below
+    the pin the coin table is the only panel with anything to say, and it
+    stays the only one under every payload this pipeline can produce --
+    which is the property that chose this seam over ``13:6``, which collects
+    135 with *zero* margin on a rail that cannot mark. See
+    ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``."""
     async with _surf_app().run_test(
         size=(SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS - 1, 46)
     ) as pilot:
@@ -1598,6 +1722,164 @@ async def test_the_launchpad_binding_panel_is_the_coins_table() -> None:
             if "‹ widen" in _region_text(pilot.app, screen.query_one(cls))
         }
     assert marked == {"SurfLaunchpadCoins"}, marked
+
+
+# -- the l body's own measured height (2026-08-25) ------------------------
+#
+# New with the five-panel body: three panels never came close to running out
+# of rows, five do. Curator's ``f``/``y`` precedent -- the body is whole from
+# ``SURF_LAUNCHPAD_FULL_LAYOUT_ROWS``, and below it the body scrolls and the
+# title bar says ``‹ taller``. Note where each marker lives: ``‹ taller`` is
+# screen-wide and rides row 0, the one row a short terminal can never push
+# off; ``‹ widen`` rides the binding panel's own title.
+#
+# The sweep runs 24..45 -- seven rows below the measured 31 and fourteen
+# above, never starting at it.
+
+
+@pytest.mark.parametrize("rows", range(24, 46))
+async def test_the_launchpad_body_is_whole_from_its_pinned_height(rows) -> None:
+    """Curator's ``f``/``y`` precedent, applied to surf's own second body.
+
+    Started away from the pin, like every other sweep in this module. 150
+    columns is comfortably past ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``, so
+    nothing here is measuring a width.
+    """
+    async with _surf_app().run_test(size=(150, rows)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        text = _screen_text(pilot.app)
+        if rows >= SURF_LAUNCHPAD_FULL_LAYOUT_ROWS:
+            assert TALLER_HINT not in text, rows
+        else:
+            assert TALLER_HINT in text, rows
+
+
+async def test_the_row_marker_answers_for_the_body_that_is_showing() -> None:
+    """``_rail_is_cut`` used to ask one fixed container and got it wrong.
+
+    It read ``#surf-right-rail`` unconditionally. In ``MODE_LAUNCHPAD`` that
+    container sits inside a ``display: none`` ``#middle-row``, is never laid
+    out, and reports ``show_vertical_scrollbar is False`` at *every* terminal
+    height -- so the one advertisement this screen has for a row gone off the
+    bottom was dark across the whole of the ``l`` view while the launchpad
+    rail was visibly scrolling.
+
+    The two bodies have different thresholds (36 rows and 31), which is what
+    makes this assertable: **28 rows is short for the dashboard body and
+    short for the launchpad body, and 33 is short for the dashboard body and
+    whole for the launchpad one.** A marker still wired to the dashboard rail
+    passes the first pair and fails the second.
+    """
+    async with _surf_app().run_test(size=(150, 33)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        screen = pilot.app.screen
+        assert TALLER_HINT in _screen_text(pilot.app), (
+            "33 rows is meant to be short for the dashboard body -- if it is "
+            "not, this test's premise is gone and it can no longer fail"
+        )
+        await pilot.press("l")
+        await pilot.pause()
+        assert TALLER_HINT not in _screen_text(pilot.app), (
+            "the launchpad body is whole at 33 rows, but the marker is still "
+            "answering for the hidden dashboard rail"
+        )
+        assert screen.query_one("#surf-right-rail").display is True, (
+            "the premise of the bug: the dashboard rail's own `display` "
+            "stays True inside the hidden #middle-row"
+        )
+
+
+async def test_the_launchpad_left_column_scrolls_rather_than_clipping() -> None:
+    """The regression test for the column's own arrival defect.
+
+    ``#surf-launchpad-left`` shipped (2026-08-25) with ``height: 1fr`` and no
+    ``overflow-y``. A ``Vertical`` defaults to ``overflow: hidden hidden``,
+    so on a short terminal LAUNCHPAD ACTIVITY's rows were clipped straight
+    out of the column -- no scrollbar, no ``‹ widen`` (the panel is not the
+    one binding on width), and no ``‹ taller`` either, because
+    ``_rail_is_cut`` was still asking the *dashboard* body's rail. Every row
+    below the fold was unreachable and nothing on screen said a row existed.
+
+    Both halves of the fix are asserted, because either alone is a different
+    bug: the column must **scroll** (the affordance -- nothing is dropped,
+    it is all still reachable) and the title bar must **say so** (the
+    advertisement, on row 0, which no short terminal can push off).
+    ``min-height`` on the ``1fr`` child is what turns "the column is short"
+    into an overflow at all, so this is also that floor's proof.
+    """
+    async with _surf_app().run_test(size=(150, 20)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        screen = pilot.app.screen
+        column = screen.query_one(f"#{LAUNCHPAD_LEFT_ID}")
+        assert column.virtual_size.height > column.size.height, (
+            "the left column holds no more than it shows at 20 rows -- this "
+            "test's premise is gone and it can no longer fail"
+        )
+        assert column.show_vertical_scrollbar, (
+            "the left column holds more than it shows and is not scrolling: "
+            "those rows are clipped, not merely off the fold"
+        )
+        assert TALLER_HINT in _screen_text(pilot.app).split("\n")[0]
+
+
+async def test_the_launchpad_left_column_reserves_its_scrollbar_gutter() -> None:
+    """``#surf-launchpad-rail``'s own gutter test, for the column that did
+    not have one.
+
+    ``#surf-launchpad-left`` arrived (2026-08-25) with ``height: 1fr`` and no
+    ``overflow-y`` at all, and a ``Vertical`` defaults to ``overflow: hidden
+    hidden`` -- so the activity feed was clipped straight out of the column
+    below 22 rows with no scrollbar and no other trace. Giving it
+    ``overflow-y: auto`` without ``scrollbar-gutter: stable`` would have
+    traded that for the bug curator shipped instead: the scrollbar taking a
+    column out of the coin table on short terminals only, so this layout's
+    WIDTH pin becomes a function of its HEIGHT.
+
+    Measured across the column's own overflow crossover, which is **21**
+    rows with the committed capture (22 shows no scrollbar, 21 does). A pair
+    of heights on the same side of it could not fail.
+    """
+    async def widths(height: int) -> dict:
+        async with _surf_app().run_test(size=(150, height)) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.pause()
+            await pilot.press("l")
+            await pilot.pause()
+            screen = pilot.app.screen
+            column = screen.query_one(f"#{LAUNCHPAD_LEFT_ID}")
+            return {
+                "coins": screen.query_one(SurfLaunchpadCoins).region.width,
+                "activity": screen.query_one(SurfLaunchpadActivity).region.width,
+                "overflowing": column.show_vertical_scrollbar,
+                "gutter": str(column.styles.scrollbar_gutter),
+            }
+
+    roomy = await widths(46)
+    cramped = await widths(20)
+
+    assert not roomy["overflowing"], (
+        "the left column already overflows at 46 rows -- both sample "
+        "heights are on the same side of the crossover"
+    )
+    assert cramped["overflowing"], (
+        "the left column does not overflow at 20 rows -- the condition this "
+        "test exists to measure never occurs"
+    )
+    for panel in ("coins", "activity"):
+        assert roomy[panel] == cramped[panel], (
+            f"{panel} is {roomy[panel]} columns at 46 rows and "
+            f"{cramped[panel]} at 20: the scrollbar took a column instead of "
+            "using its reserved gutter, so this layout's width requirement "
+            "now moves with its height"
+        )
+    assert "stable" in roomy["gutter"]
 
 
 async def test_every_coin_column_header_reaches_the_screen_whole_and_distinct() -> None:
