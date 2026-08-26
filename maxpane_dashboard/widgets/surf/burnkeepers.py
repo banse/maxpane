@@ -247,6 +247,21 @@ class SurfBurnkeepers(Vertical):
     }
     """
 
+    #: ``SurfBurnkeepers > Static``'s own ``padding: 0 1`` (``DEFAULT_CSS``
+    #: above) eats one column on each side of the *child* ``Static``'s
+    #: content box, so the text budget a fit decision must compare against
+    #: is ``self.size.width`` (this container's own width) minus these two
+    #: columns, never ``self.size.width`` itself. This is the identical
+    #: mistake ``SurfLaunchpadCoins`` (``widgets/surf/launchpad.py``) made
+    #: and was fixed for earlier this session, as its own
+    #: ``_TITLE_PADDING_COLS`` records: comparing a fit candidate against
+    #: the unpadded container width can accept a tier that is too wide for
+    #: the padded box and hand the overflow to CSS ``text-overflow:
+    #: ellipsis``, which eats real content in silence -- the exact
+    #: silent-clipping shape this repo's layout rules forbid, reproduced
+    #: here with a leaderboard row instead of a coin-table title.
+    _TITLE_PADDING_COLS = 2
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         # The raw rows, not formatted lines, so a resize re-lays them out.
@@ -284,15 +299,40 @@ class SurfBurnkeepers(Vertical):
         self._payload = {"rows": launchpad_burnkeepers, "seen": True}
         self._render_view()
 
+    def _text_budget(self) -> int:
+        """Real rendered columns available inside the child ``Static``'s
+        own padded content box.
+
+        ``self.size.width`` is this *container*'s width; the ``padding: 0
+        1`` that actually eats columns lives on the child ``Static``
+        (``DEFAULT_CSS`` above), not on this ``Vertical`` itself, so a fit
+        decision that compares against ``self.size.width`` directly is
+        comparing against two columns more room than a row really has.
+        ``_title_text`` (the marker) and ``_render_view`` (the row's own
+        tier) both fit against this single number, so the marker can never
+        promise a room the row underneath does not actually get, and vice
+        versa -- the two disagreeing is exactly how a row ended up
+        silently ellipsised by CSS while the title stayed unmarked.
+        """
+        return max(self.size.width - self._TITLE_PADDING_COLS, 0)
+
     def _title_text(self) -> str:
         """``BURNKEEPERS  ‹ widen``, width permitting -- appended, never
         substituted, so ``TITLE in text`` holds at every width
-        (``SurfLaunchpadCoins._set_title``'s pattern: ``self.size.width``,
-        not ``content_size``, since this panel's own ``padding: 0 1`` is
-        already inside ``self.size``).
+        (``SurfLaunchpadCoins._set_title``'s pattern: fit against the real
+        text budget, never the raw container width).
+
+        Compares :meth:`_text_budget`, not ``self.size.width`` itself --
+        this container's own ``padding: 0 1`` claim used to say the
+        padding was "already inside ``self.size``", which was false: the
+        padding lives on the child ``Static``, not on this widget, so
+        comparing the raw width let the marker stay dark for two columns'
+        worth of widths where a row was already being silently truncated
+        by CSS ``text-overflow: ellipsis`` -- the exact silent-clipping
+        failure this repo's layout rules exist to prevent.
         """
         width = self.size.width
-        if width and width < FULL_WIDTH:
+        if width and self._text_budget() < FULL_WIDTH:
             return f"{TITLE}  {WIDEN_HINT}"
         return TITLE
 
@@ -327,7 +367,13 @@ class SurfBurnkeepers(Vertical):
             body.update(Text("\n").join(lines))
             return
 
-        tier = _tier_for(self.size.width)
+        # The real text budget, not `self.size.width` -- see `_text_budget`.
+        # Deciding the tier against the unpadded container width is the
+        # other half of the same bug `_title_text` fixes: even with the
+        # marker now lit correctly, a tier decision still made against the
+        # wrong number would keep asking for a row two columns too wide for
+        # the padded box and hand the overflow to CSS to clip in silence.
+        tier = _tier_for(self._text_budget())
         rendered = [
             t for t in (_row_text(row, tier) for row in rows) if t is not None
         ]

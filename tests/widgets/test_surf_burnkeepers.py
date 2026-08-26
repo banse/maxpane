@@ -5,7 +5,7 @@ from rich.cells import cell_len
 from textual.app import App
 
 from maxpane_dashboard.widgets.surf.burnkeepers import (
-    EMPTY_LINE, FULL_WIDTH, SurfBurnkeepers, TITLE, UNAVAILABLE_LINE,
+    EMPTY_LINE, FULL_WIDTH, SurfBurnkeepers, TITLE, UNAVAILABLE_LINE, WIDEN_HINT,
 )
 
 _ROWS = [
@@ -32,6 +32,33 @@ async def _render(rows, size=(40, 24), **kwargs):
         strips = pilot.app.screen._compositor.render_strips()
         text = "\n".join(seg.text for strip in strips for seg in strip)
         return widget, text
+
+
+async def _render_lines(rows, size, **kwargs):
+    """Same render as :func:`_render`, but joins each compositor *strip*
+    (one physical terminal row) into one line of its own, rather than
+    joining every `Segment` with a stray ``"\\n"`` between them.
+
+    ``_render``'s own join (``"\\n".join(seg.text for strip in strips for
+    seg in strip)``) inserts a break at *every style change*, not only at
+    every physical row -- harmless for a plain substring check, but it
+    makes a logical row that carries more than one styled segment (this
+    panel's wallet cell is coloured; the numeric cells are not) look like
+    it wrapped onto two lines when it did not. A test that needs to know
+    which *physical line* a value landed on -- this one does, to tell the
+    title line from the row line -- has to join per strip instead.
+    """
+    class _A(App):
+        def compose(self):
+            yield SurfBurnkeepers()
+
+    async with _A().run_test(size=size) as pilot:
+        widget = pilot.app.query_one(SurfBurnkeepers)
+        widget.update_data(launchpad_burnkeepers=rows, **kwargs)
+        await pilot.pause()
+        strips = pilot.app.screen._compositor.render_strips()
+        lines = ["".join(seg.text for seg in strip) for strip in strips]
+        return widget, lines
 
 
 @pytest.mark.asyncio
@@ -121,3 +148,64 @@ async def test_a_hostile_wallet_string_never_reaches_markup() -> None:
     assert "0.000088" in text       # the hostile row's own eth_paid
     assert "31.24" in text          # 0x84CB's own imd_burned, unaffected
     assert "0.000027" in text       # 0x84CB's own eth_paid, unaffected
+
+
+@pytest.mark.asyncio
+async def test_the_marker_lights_exactly_when_a_row_would_clip() -> None:
+    """Property, not a constant: sweeping a range of widths straddling the
+    true fit threshold, the composited row is ellipsised *only* when the
+    ``‹ widen`` marker is also lit, and never ellipsised once the marker
+    goes dark. A hardcoded width would go stale the moment either
+    ``FULL_WIDTH`` or the panel's own padding changed; this cannot, because
+    it checks the *relationship* between the marker and the clip rather
+    than asserting either one at a number copied from a measurement.
+
+    This is exactly the property `_set_title`'s bug violated: it compared
+    ``self.size.width`` against ``FULL_WIDTH`` directly, but the
+    ``padding: 0 1`` that actually eats columns lives on the *child*
+    ``Static`` (`DEFAULT_CSS`), not on this container -- so at
+    ``self.size.width`` in ``{FULL_WIDTH, FULL_WIDTH + 1}`` (32 and 33) the
+    row attempted the full tier, overflowed the padded box by exactly the
+    two columns the padding claimed were already accounted for, and CSS
+    ``text-overflow: ellipsis`` cut it silently -- with the marker dark,
+    because both widths already cleared the (wrong) ``width < FULL_WIDTH``
+    check. That silent gap is exactly what this sweep would have caught
+    before it ever reached a real screen.
+
+    A short, unambiguous wallet (``"0xdead"``, well under the panel's own
+    11-column window) is used so the wallet cell never contributes its
+    own legitimate windowing ellipsis -- any ``"…"`` in the composited row
+    line is therefore always a CSS clip, never the anti-poisoning window.
+    """
+    row = {
+        "wallet": "0xdead", "wallet_known": False,
+        "imd_burned": 42.00, "eth_paid": 0.0031, "burns": 3,
+    }
+
+    # Straddles both COMPACT_WIDTH and FULL_WIDTH with margin on each side,
+    # not centred on either -- the standing rule elsewhere in this repo's
+    # width sweeps (a range that started at the pin could not fail by
+    # construction).
+    checked_any = False
+    for width in range(FULL_WIDTH - 8, FULL_WIDTH + 8):
+        _widget, lines = await _render_lines([row], size=(width, 24))
+        content = [line for line in lines if line.strip()]
+        assert len(content) >= 2, (width, lines)
+        title_line, row_line = content[0], content[1]
+
+        marker_lit = WIDEN_HINT in title_line
+        row_ellipsised = "…" in row_line
+        checked_any = True
+
+        if row_ellipsised:
+            assert marker_lit, (
+                f"width={width}: the row was silently ellipsised with the "
+                f"marker dark -- {row_line!r}"
+            )
+        if not marker_lit:
+            assert not row_ellipsised, (
+                f"width={width}: no marker, yet the row was ellipsised -- "
+                f"{row_line!r}"
+            )
+
+    assert checked_any, "the sweep range was empty and proved nothing"
