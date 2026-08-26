@@ -2127,7 +2127,10 @@ SurfDevActivity > RichLog {
  * which the old `12fr:5fr` seam also fails (131..132 clipped the
  * accrued/staged line with nothing on screen saying so). `13:6` survives
  * at 135 and is still not this seam: it hands the rail exactly the 43 it
- * needs, where 2:1 hands it 46, and nothing in the rail can mark. 2:1
+ * needs, where 2:1 hands it 46, and the panel that SETS the rail's width
+ * cannot mark (BURNKEEPERS and LAUNCHPAD ACTIVITY do carry markers, but
+ * clear at 37 and 48 -- under the rail's own 40..43 -- so the binder is
+ * always one of the two plain `Static`s). 2:1
  * keeps the marked coin table the binder under every payload, pins at 138,
  * and is the simplest seam in the qualifying family. See
  * `screens/surf.py`, which restates this whole block and carries the

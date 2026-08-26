@@ -387,13 +387,22 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #:     against any ordinary one, measured inside ``#surf-launchpad-rail``
 #:     and not in a bare harness -- its widest line pays the panel's
 #:     ``padding: 0 1``, the inner ``Static``'s own, and the reserved gutter
-#:     cell on top. ``SurfBurnkeepers`` clears at 35 (``FULL_WIDTH`` 32), so
-#:     the rail's own binder is ``SurfBurnPipeline``'s
-#:     ``accrued … IMD · staged … IMD`` line.
+#:     cell on top. ``SurfBurnkeepers`` clears at **37** in situ -- measured,
+#:     not derived from its ``FULL_WIDTH`` of 32, and the gap between the two
+#:     is a defect in ``widgets/surf/burnkeepers.py`` (its own ``‹ widen``
+#:     goes dark at 35 while its rows are still clipped at 35 and 36), being
+#:     fixed separately. 37 is comfortably under 40 either way, so the rail's
+#:     own binder is ``SurfBurnPipeline``'s
+#:     ``accrued … IMD · staged … IMD`` line and nothing here moves when that
+#:     widget is fixed.
 #:
 #: **That last fact is what chose the seam, and it is not the arithmetic.**
-#: ``SurfCurveFlow`` and ``SurfBurnPipeline`` are plain label/value
-#: ``Static``s: they ellipsise and go quiet. So a seam whose *rail* is the
+#: The rail's *binding* panel is one of ``SurfCurveFlow`` /
+#: ``SurfBurnPipeline``, and those two are plain label/value ``Static``s:
+#: they ellipsise and go quiet. (The other two rail-adjacent panels do have
+#: markers -- ``SurfBurnkeepers`` clears at 37, ``SurfLaunchpadActivity`` at
+#: 48 -- but neither is ever the one asking for the rail's columns, so
+#: neither can advertise the loss that matters here.) So a seam whose *rail* is the
 #: binder renders a clipped line with no ``‹ widen`` anywhere on screen, and
 #: this repo disqualifies that (the same test that rejected ``5:2`` in the
 #: 2026-08-24 sweep). The window 129..132 as this body shipped -- 131..132
@@ -410,9 +419,21 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: capture's ``1.2K``/``45.00`` and 38 -- its widest possible form -- against
 #: the ``620.00``/``500.00`` an ordinary launchpad prints: 40 and 43 screen
 #: columns. A seam pinned to the small case can therefore *stop qualifying*
-#: the moment the data is ordinary. Swept over the real screen at both
-#: magnitudes: the first width at which both halves are clean, and the
-#: widths below it at which something clips with nothing on screen saying so.
+#: the moment the data is ordinary.
+#:
+#: **That six-column ceiling bounds the accrued/staged line, not the rail.**
+#: The ``burned … IMD (all-time)`` line beneath it goes through
+#: ``_fmt_total`` -- exact and comma-grouped, deliberately *not* compacted,
+#: because it is the headline cumulative figure. It is 28 cells at the
+#: capture's 3,299 IMD and 35 at a billion, so it stays under the
+#: accrued/staged line's 38 across every magnitude this pipeline can reach
+#: and the rail's 43 survives. It is the line to re-measure if that
+#: formatter ever changes; the ceiling argument below is about the widest
+#: line, whichever line that is, and today it is the accrued/staged one.
+#:
+#: Swept over the real screen at both magnitudes: the first width at which
+#: both halves are clean, and the widths below it at which something clips
+#: with nothing on screen saying so.
 #:
 #: ==========  ========  ===========  ========  ===========
 #: seam        capture   silent       ordinary  silent
@@ -434,13 +455,24 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: ``3:2``     154       --           154       --
 #: ``3:1``     157       137..156     169       137..168
 #: ``9:7``     164       --           164       --
+#: ``11:9``    168       --           168       --
 #: ``7:6``     171       --           171       --
 #: ==========  ========  ===========  ========  ===========
+#:
+#: ``3:1``'s window is the one row worth reading twice, because two
+#: different numbers are both true of it. The **coin table** is clean from
+#: **123** -- that is where the left column reaches 92 -- but 123..136 is
+#: not silent: ``SurfBurnkeepers``' own marker is lit there, the rail being
+#: 31..34. The window opens at **137**, which is exactly where that marker
+#: goes dark (rail 35) while the panel is still clipping. So the genuinely
+#: unadvertised stretch is 137..156, and the reason it is not 123..156 is a
+#: marker that is itself buggy. Quote 123 for "where the table stops
+#: asking" and 137 for "where the screen stops saying anything".
 #:
 #: ``23:10`` and ``7:3`` collect the arithmetic floor (92 + 40 = 132)
 #: against the committed capture and are the cheapest seams there -- and
 #: both are **disqualified** the moment the burn line is an ordinary length,
-#: because the rail then binds and the rail cannot mark. ``16:7``, ``9:4``
+#: because the rail then binds and its binding panel cannot mark. ``16:7``, ``9:4``
 #: and ``11:5`` fail the same way, one column at a time. The old ``12:5``
 #: fails it under *both* payloads, which is why this pin could not simply be
 #: re-typed: **no value of this constant cleared the sweep on the old
@@ -450,7 +482,10 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: reason is arithmetic rather than luck: the left column binds at every
 #: width iff its share reaches 92 no earlier than the rail's reaches 43.
 #: ``13:6`` and ``15:7`` are the cheapest of them at 135, ``19:9`` and
-#: ``21:10`` next at 136, and ``2fr:1fr`` is the simplest at 138.
+#: ``21:10`` next at 136, and ``2fr:1fr`` is the simplest at 138. Everything
+#: gentler than 2:1 qualifies too and costs more, monotonically: ``3:2`` 154,
+#: ``9:7`` 164, ``11:9`` 168, ``7:6`` 171. The last of those is what this
+#: body was provisionally built with.
 #:
 #: **2:1 is pinned, and the three columns are bought deliberately.** What
 #: separates it from ``13:6`` is not the pin but the *margin*: at 135 the
@@ -458,12 +493,25 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: halves sit on the edge, while 2:1 hands the rail **46**. Zero margin on
 #: the left column is harmless -- it is the binder, it marks, and a change
 #: there simply moves the pin and lights ``‹ widen`` on the way. Zero margin
-#: on the *rail* is not, because nothing in the rail can mark: the next
-#: format change that costs a rail line one cell reopens a silent-clip
-#: window, and this is not hypothetical -- the rail's own need moved 39 ->
-#: 40 during this very task series, when ``staged`` gained a decimal place
-#: in a sibling widget. 43 is the ceiling ``fmt_imd`` imposes today; 46 is
-#: what survives the next such edit without a re-sweep nobody will run.
+#: on the *rail* is not, because **the panel that sets the rail's width
+#: cannot mark**: the next format change that costs a rail line one cell
+#: reopens a silent-clip window, and this is not hypothetical -- the rail's
+#: own need moved 39 -> 40 during this very task series, when ``staged``
+#: gained a decimal place in a sibling widget. 43 is the ceiling
+#: ``fmt_imd`` imposes on that line today; 46 is what survives the next
+#: such edit without a re-sweep nobody will run.
+#:
+#: **Say that precisely, because the loose form invites a wrong "fix".**
+#: It is not that the rail has no markers -- ``SurfBurnkeepers`` exports a
+#: ``WIDEN_HINT`` and ``SurfLaunchpadActivity`` a whole ``WIDEN_HINTS``
+#: ladder. It is that neither of those is ever the panel *asking for
+#: columns*: BURNKEEPERS clears at 37 and ACTIVITY at 48, both under the
+#: rail's own 40..43, so the width the rail needs is always
+#: ``SurfBurnPipeline``'s (or ``SurfCurveFlow``'s), and those two are the
+#: plain label/value ``Static``s with no marker at all. A reader who
+#: notices BURNKEEPERS has a marker and concludes the seam argument is
+#: wrong has checked the wrong panel; the argument is about the binder,
+#: not about the population.
 #: 135, 136 and 138 are all below FWA's 143 and far below the ~169 columns a
 #: laptop gets at the forced 17 pt, so the three columns cost a user
 #: nothing. Take them back if the rail ever grows a marker of its own.
@@ -504,7 +552,20 @@ SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 138
 #: screen minus the title bar (1), the hero row and its top margin (8), this
 #: body's own top margin (1) and the StatusBar (1) -- eleven rows -- so a
 #: 20-row body wants a **31**-row terminal, and the 19-row column would have
-#: wanted 30.
+#: wanted 30. One row of margin, and it is the rail's.
+#:
+#: **That derivation is measured, and the committed capture cannot measure
+#: it.** ``_sample_data``'s ``launchpad_coins`` has two rows, so in the
+#: fixture the table is 5 rows tall and the left column 11 -- eight rows
+#: short of the 19 this paragraph is about, and never scrolling at any
+#: height the sweep visits. The numbers above are pinned against a ten-coin
+#: payload by ``test_the_height_pin_is_measured_against_the_column_it_
+#: describes``, and the sweep itself runs at both magnitudes, for the same
+#: reason :data:`SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS` is swept at two burn
+#: magnitudes: the committed capture is the small case on both axes. The
+#: derivation has to be read below the pin, too -- both ``1fr`` children
+#: grow on a roomy terminal, so at 31 rows each column reports 20 and the 19
+#: is invisible; at 28 they sit on their floors and it is not.
 #:
 #: **Both columns scroll, and both had to.** ``#surf-launchpad-rail`` has
 #: carried ``overflow-y: auto`` since it was born; ``#surf-launchpad-left``
@@ -945,9 +1006,13 @@ class SurfScreen(RefreshGuard, Screen):
      * fails it too: 131..132 clipped the accrued/staged line with nothing
      * on screen saying so. `13:6` and `15:7` survive it at 135, and are
      * still not this seam: they hand the rail exactly the 43 it needs,
-     * where 2:1 hands it 46. Zero margin on a rail that cannot mark is one
-     * format change away from reopening the window -- that need moved 39 ->
-     * 40 in this same task series. 2:1 keeps the marked coin table the
+     * where 2:1 hands it 46. Zero margin is safe only where the binder can
+     * mark, and the rail's binder cannot: BURNKEEPERS and LAUNCHPAD
+     * ACTIVITY do carry markers but clear at 37 and 48, well under the
+     * rail's 40..43, so what asks for the columns is always
+     * `SurfBurnPipeline` or `SurfCurveFlow` -- the two plain `Static`s.
+     * One format change reopens the window; that need moved 39 -> 40 in
+     * this same task series. 2:1 keeps the marked coin table the
      * binder under every payload and pins at 138. The full per-seam table,
      * both payload magnitudes, is in
      * `SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`'s own docstring.
