@@ -18,7 +18,10 @@ maxpane/target/
 # Internal planning & tooling
 .planning/
 .superpowers/
-.claude/
+# Personal Claude Code state stays local; shared project skills do not --
+# a skill is project knowledge like CLAUDE.md, settings.local.json is not.
+.claude/*
+!.claude/skills/
 .playwright-mcp/
 
 # Media (screenshots, videos)

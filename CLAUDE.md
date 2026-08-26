@@ -249,67 +249,19 @@ python -m maxpane_dashboard --version            # version + interpreter path
 python -m maxpane_dashboard --font-size 0        # do not resize my terminal
 ```
 
-**Layout is a function of terminal columns.** Widgets pick a width tier and
-advertise what they dropped as `‹ widen` in their own title; a body that runs
-out of rows says `‹ taller` on the screen-wide title bar. The app-wide pin is
-**`__main__.FULL_LAYOUT_COLUMNS = 143`**, which is FWA's, and launch forces
-17 pt — about 169 columns on a laptop — so the full layout is reachable
-without `--font-size` / `MAXPANE_FONT_SIZE`.
+**Layout is a function of terminal columns**, and the rules for it are in a
+skill, not here: **`.claude/skills/terminal-layout/SKILL.md`**. Read it before
+changing anything that affects how a dashboard is sized — a panel width, a
+column budget, a cell formatter, an `fr` seam, a scrollbar gutter, a
+`min-height`, a `‹ widen` / `‹ taller` marker, or any width or height pin. It
+carries the measurement method, the fitting rules (`cell_len`, not `len()`),
+what `DataTable` and `RichLog` do silently, and how to test a layout so the test
+can fail.
 
-The app-wide record, appended never rewritten: **198 → 172 → 143 → 176 → 152
-→ 143**. FWA set the first three and the last; surf the two in between. It
-tracks *that* number only — a dashboard measuring under 143 does not append to
-it, which is why nothing has been added since 2026-08-12 despite three new
-bodies since.
-
-**Every pin lives on its own constant, and the constant's docstring is where
-the reasoning is** — what was swept, which panel binds, which seams were
-rejected and what each cost. This file records the rules; it deliberately does
-not keep a second copy of the numbers, because a copy drifts from the code and
-the docstring cannot.
-
-| view | pin | constant |
-|---|---|---|
-| app-wide | 143 | `__main__.FULL_LAYOUT_COLUMNS` |
-| surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
-| surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
-| coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
-
-The rules those numbers were all produced under:
-
-* **Measure, never derive.** Arithmetic over the column constants has been
-  wrong twice — a `DataTable` buys a cell gutter per column, so a sum that
-  looks right ships a clipped header with the marker dark.
-* **Measure in situ**, inside the real container. A panel's widest line pays
-  its own padding, its inner widget's padding *and* any reserved
-  `scrollbar-gutter: stable` cell. A number from a bare harness is short.
-* **A sweep never starts at the pin**, or it agrees with the constant by
-  construction. Re-centre the range whenever the pin moves.
-* **A panel that can bind must be able to mark.** A seam whose binding panel
-  clips in silence is disqualified — this has rejected real seams more than
-  once, and is why some layouts deliberately buy a few columns of margin.
-* **Reserve the scrollbar gutter**, or a layout's *width* requirement becomes
-  a function of its *height* and the pin is true at one terminal size only.
-* **Measure a data-dependent width against the state the data is normally
-  in**, not against whichever capture happens to be committed.
-
-And the convention these all serve — *shorten the value, do not raise the
-constant* — is in "Conventions" below, with its worked examples.
-
-143 clears every *layout*, not every possible string: surf's announce feed
-still lights `‹ widen` there whenever a post links a transaction, because the
-post's own punctuation glues the URL to a 66-char hash into one unbreakable
-token. That marker is correct — the next such post brings its own length — and
-must not be silenced by raising the constant
-(`test_a_linked_post_advertises_widen_at_the_full_layout_width`, and
-`test_the_documented_width_is_not_promised_to_clear_every_post`, which pins
-this very paragraph).
-
-`c` swaps a shared slot on FWA, TTT, Talismans and curator so three panels
-that cannot share a row do not have to. Surf does not: its 2026-08-10
-restructure put all six panels on screen at once, which is why its `l` and
-curator's `y`/`f` swap whole *bodies* instead.
+The app-wide pin is `__main__.FULL_LAYOUT_COLUMNS = 143` (FWA's). Every other
+pin lives on its own constant with its reasoning in a `#:` block beside it; this
+file deliberately keeps no second copy of the numbers, because a copy drifts
+from the code and a docstring cannot.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Per-dashboard: `c` swaps the shared bottom-right slot (FWA, TTT, Talismans,
@@ -410,19 +362,7 @@ check** is not optional (a reverse record needs nobody's permission, so an
 unverified lookup lets any address claim `vitalik.eth`), and a **miss is not an
 empty name** — most wallets have no record, and without recording the misses
 every one of them is re-resolved on every tick forever. `ens.NameStore` holds
-both TTLs. Rendering one costs columns: curator caps a name at 12 (`NAME_COLS`,
-exactly `surfsurf.eth`) because 15 moved its full layout 138 → 144, past the
-app-wide 143 — measure before widening an identity cell, and show the whole name
-only where there is room for it.
-
-**When a new value would widen a sized cell, shorten the value.** Moving
-`FULL_LAYOUT_COLUMNS` — or any dashboard's own full-layout pin — is reserved
-for when no honest short name exists. Curator's `NAME_COLS` cap just above is
-one instance of the rule; FWA's buy-gate signal was shortened rather than let
-the app-wide number grow past 143 once the signals panel became the binding
-constraint (`__main__.FULL_LAYOUT_COLUMNS`' own docstring has that sweep). A cell earns a shorter
-form only once a width sweep shows it is the one actually asking for the
-extra columns — never on a guess, and never by raising the constant instead.
+both TTLs. Rendering one also costs columns — see the terminal-layout skill.
 
 For record lists, the **complete raw list is the sole ENS network-hydration boundary**. Cleaned
 and filtered lists reuse the raw-list ENS cache; changing filters must never start hydration
@@ -444,13 +384,9 @@ attacker-controlled: anyone can deploy an ERC-20 named `[/x]`.
 (`Text.from_markup(...)`) and a malformed row degrades to a skipped row instead. `SurfFeed`'s
 `_row_text` is the worked example.
 
-Two things do **not** help and must not be mistaken for the guarantee. `Text.no_wrap` and
-`Text.overflow` are **inert** through Textual 8: `visualize()` funnels a Rich `Text` through
-`Content.from_rich_text`, which carries the spans and drops both attributes — setting them reads
-as a promise and is a no-op. Clipping has to come from CSS (`text-wrap: nowrap` on the row
-widget) or from having already fitted every line on `rich.cells.cell_len`. And a *sized cell* is
-not a fitted one: `len()` counts characters where the terminal counts cells, so CJK and emoji
-overflow a budget that arithmetic says they fit.
+Two things do **not** help and must not be mistaken for the guarantee: `Text.no_wrap` and
+`Text.overflow` are inert through Textual 8, and a *sized* cell is not a *fitted* one. Both are
+in the terminal-layout skill, with what to use instead.
 
 **Validate persisted series per point.** Use `data/series_points.coerce_points`. A single `null`
 in a cache file used to abort startup for *every* dashboard.

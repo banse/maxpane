@@ -769,6 +769,20 @@ def _surf_screen_harness():
     return harness
 
 
+#: Every document that tells a reader ``FULL_LAYOUT_COLUMNS`` clears the
+#: markers, and must therefore carry the linked-post caveat that makes that
+#: true.  **This list follows the documentation, not the other way round.**
+#: ``CLAUDE.md`` was on it until 2026-08-26, when the layout rules moved out of
+#: that file into the ``terminal-layout`` skill; it now only names the constant
+#: and points at the skill, so it makes no claim that needs the caveat, and the
+#: skill inherited both.  If a fourth document starts documenting the width, add
+#: it here -- an unlisted document is one this test cannot keep honest.
+_DOCS_THAT_DOCUMENT_THE_WIDTH = (
+    "README.md",
+    ".claude/skills/terminal-layout/SKILL.md",
+)
+
+
 def test_the_documented_width_is_not_promised_to_clear_every_post() -> None:
     """The width table says "nothing" of the *layout*, and must not overpromise.
 
@@ -798,7 +812,7 @@ def test_the_documented_width_is_not_promised_to_clear_every_post() -> None:
         "instead of leaving them warning about nothing"
     )
 
-    for name in ("README.md", "CLAUDE.md"):
+    for name in _DOCS_THAT_DOCUMENT_THE_WIDTH:
         text = (REPO / name).read_text(encoding="utf-8")
         assert "links a transaction" in text, (
             f"{name} documents {FULL_LAYOUT_COLUMNS} columns as clearing every "
