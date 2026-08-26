@@ -388,167 +388,57 @@ whole-screen marker comparison as the second half.
 **Surf's `l` LAUNCHPAD view is five panels in two columns, measures 138 on a
 `2fr:1fr` seam, and moves nothing.** LAUNCHPAD COINS over LAUNCHPAD ACTIVITY
 in the left column; CURVE FLOW, BURN PIPELINE and BURNKEEPERS in the rail.
-**93 → 135 → 138, and each number described a body the next one no longer
-is**: 93 was the three panels full width and stacked (2026-08-23), 135 was
-the 2026-08-24 rail on a `12fr:5fr` seam, and this is the five-panel body
-(2026-08-25). The older numbers are kept below for what they taught, not
-because they still describe the screen — read them as lineage.
+The coin table draws 10 rows and prices coins as **MCAP in USD**
+(`_TABLE_FULL_WIDTH` 93 → 89); the rows it gave up went to the activity feed,
+whose content is unbounded. Two new payload keys ride along,
+`launchpad_activity` and `launchpad_burnkeepers`.
 
-The two new panels bring two payload keys with them, `launchpad_activity` and
-`launchpad_burnkeepers`. **BURNKEEPERS ranks the wallets that have called the
-permissionless `bridgeToBaseBurnReceiver()` by IMD burned, and shows the
-LayerZero fee each actually paid — not the transaction's value**, whose
-surplus the executor refunds: a wallet that sent 0.001 ETH alongside a burn
-of a few thousand IMD really paid a few millionths of that, so printing the
-value would answer a different question than the column asks. An unread fee
-is `None` and renders a dash, never a confident `0.000000` ("a failed read is
-`None`, never `0`" applies to a *summed* fee exactly as it does to a single
-one). It is read-only like everything else here: the panel says the function
-is callable by anyone and what it has cost each caller, and never offers to
-call it. The coin table now draws **10 rows** (was 20) and its **PRICE column
-is MCAP in USD**; the rows it gave up went to LAUNCHPAD ACTIVITY, the panel
-below it whose content is unbounded — the same "rows are the scarce currency
-in this body" trade the 2026-08-24 rail made in the other direction.
+**BURNKEEPERS shows the LayerZero fee each caller actually paid, never the
+transaction's value** — the executor refunds the surplus, so a wallet that
+sent 0.001 ETH alongside a burn really paid a few millionths of it. An unread
+fee is `None` and renders a dash, never `0.000000`.
 
-Both halves of the seam were re-measured *in situ*, each inside its own real
-container and never in a bare harness. The **left column needs 92** screen
-columns — 89 content (`launchpad._TABLE_FULL_WIDTH`), plus
-`SurfLaunchpadCoins`' `padding: 0 1`, plus the column's own reserved
-`scrollbar-gutter: stable` cell; `SurfLaunchpadActivity` never competes
-(`FULL_WIDTH` 45, clear at 48). The **rail needs 40** against the committed
-capture and **43** against an ordinary payload, measured inside
-`#surf-launchpad-rail` because its widest line pays the panel's `padding: 0
-1`, the inner `Static`'s own, *and* the reserved gutter cell on top;
-`SurfBurnkeepers` clears at 35, so the rail's own binder is
-`SurfBurnPipeline`'s `accrued … IMD · staged … IMD` line.
+**The seam exists to stop the rail binding, and that is the whole of it.**
+`SurfCurveFlow` and `SurfBurnPipeline` are plain label/value `Static`s: they
+ellipsise and go quiet with no marker. A seam whose *rail* binds therefore
+clips in silence, which this repo disqualifies — the rule that rejected `5:2`
+in the 2026-08-24 sweep, and which `12:5` then broke anyway (a window at
+129..132 where the accrued/staged line was cut with nothing saying so). **No
+value of the constant cleared that seam**, which is why the pin could not
+simply be re-typed. `2:1` hands the rail 46 columns against a need of 40–43,
+so the rail can never bind and `SurfLaunchpadCoins` is the binder by
+construction. It is pinned over `13:6`/`15:7` at 135 for margin, not for the
+number: those leave the rail exactly its 43, and the rail's need moved 39 → 40
+during the task series that built this body. Take the three columns back if
+CURVE FLOW or BURN PIPELINE ever grows a marker.
 
-**The binding panel is `SurfLaunchpadCoins` again, and now by construction.**
-`2:1` hands the rail 46 columns against a need of 40–43, so the rail can
-never bind at any width. That is what the seam is for, and it is not the
-arithmetic: `SurfCurveFlow` and `SurfBurnPipeline` are plain label/value
-`Static`s — they ellipsise and go quiet, with no marker of their own. A seam
-whose *rail* binds therefore clips a line in silence, which this repo
-disqualifies (the rule that rejected `5:2` in the 2026-08-24 sweep). The old
-`12fr:5fr` had exactly that failure and had shipped with it: a window at
-129..132 — 131..132 once the left column reserved its own scrollbar gutter —
-where `accrued 1.2K IMD · staged 45.00 I…` was cut with nothing on screen
-saying so, with the table clipped *and* marked below 129, so the pin
-could not be dropped under the window either. **No value of this constant
-cleared the sweep on the old seam** — this is why the pin could not simply be
-re-typed and the seam had to move.
+**Measure the rail against ordinary data, not against the capture.** `fmt_imd`
+compacts above 1000, so the accrued/staged line is 35 cells against the
+capture's `1.2K`/`45.00` and 38 — its widest form — against the `620.00`/
+`500.00` an ordinary launchpad prints. Seams pinned to the small case stop
+qualifying the moment the data is ordinary, so every sweep here runs both
+magnitudes. The complete 19-seam table, the ≤2.16:1 qualifying rule and what
+each rejected seam costs live in `SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`' own
+docstring; the binder is pinned by
+`test_the_launchpad_binding_panel_is_the_coins_table`, not by this paragraph.
 
-**And the rail's need is data-dependent while the table's is not.** `fmt_imd`
-renders 100.00..999.99 at six columns and compacts above 1000, so the
-accrued/staged line is 35 cells against the capture's `1.2K`/`45.00` and 38 —
-its widest possible form — against the `620.00`/`500.00` an ordinary
-launchpad prints. A seam pinned to the small case can therefore *stop
-qualifying* the moment the data is ordinary, so the sweep runs every seam at
-both magnitudes and records, per seam, the first width at which both halves
-are clean **and** the widths below it that clip with nothing marking. The
-complete 18-seam table lives in `SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`' own
-docstring; what it shows is that `23:10` and `7:3` collect the arithmetic
-floor (92 + 40 = 132) against the committed capture and are the cheapest
-seams there — and both are disqualified the moment the burn line is an
-ordinary length. `16:7`, `9:4` and `11:5` fail the same way one column at a
-time; `12:5`, `17:7`, `22:9`, `5:2` and `3:1` fail under both payloads. The
-qualifying set is the seams at or below about **2.16:1**, and the reason is
-arithmetic rather than luck: the left column binds at every width iff its
-share reaches 92 no earlier than the rail's reaches 43.
+**This body also has a height pin, `SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 31`** —
+no earlier version could run out of rows. Below it the body scrolls and the
+title bar says `‹ taller` (curator's `f`/`y` precedent; `‹ widen` lives on the
+binding panel's own title, `‹ taller` on the screen-wide bar). The rail binds
+it at 20 rows against the left column's 19. **Both columns scroll and both
+had to**: `#surf-launchpad-left` inherited a `Vertical`'s `overflow: hidden`
+and clipped the feed out of the column with no scrollbar. Both reserve
+`scrollbar-gutter: stable`, for `#curator-right-rail`'s reason — without it
+this layout's *width* pin becomes a function of its *height*.
 
-**2:1 is pinned over two seams that collect 135, and the three columns are
-bought deliberately.** `13:6` and `15:7` are the cheapest of the qualifying
-set at 135, `19:9` and `21:10` next at 136. What separates 2:1 is not the pin
-but the **margin**: at 135 the rail gets exactly the 43 it needs and the left
-column exactly its 92, so both halves sit on the edge, while 2:1 hands the
-rail **46**. Zero margin on the *left* column is harmless — it is the binder,
-it marks, and a change there simply moves the pin and lights `‹ widen` on the
-way. Zero margin on the *rail* is not, because the panel that sets the rail's
-width cannot mark — `SurfBurnkeepers` has a marker but clears at 35, so it is
-never the one asking — and that is not hypothetical: **the rail's own need moved 39 → 40 during this
-very task series**, when `staged` gained a decimal place in a sibling widget.
-43 is the ceiling `fmt_imd` imposes today; 46 is what survives the next such
-edit without a re-sweep nobody will run. Take the three columns back if the
-rail ever grows a marker of its own. The tie-break within the qualifying set
-is the one that chose `7:6` for `#middle-row` and `12:5` for this body before
-it — prefer the seam a reader can hold in their head — and here it agrees
-with the margin rather than competing with it.
-
-For the record, the superseded **2026-08-24 sweep** of the three-panel rail
-body (a 95-column table against a 39-column rail, both since re-cut): `3:2`
-159 · `7:6` **177** · `9:7` 169 · `11:9` 173 · `2:1` 143 · `12:5` **135** ·
-`3:1` 153. It is retained because it is what `12:5` was chosen on, and
-because the seam it picked is the one the 2026-08-25 sweep disqualified —
-the same numbers read twice, once as a choice and once as a defect.
-
-**This body also has a height pin now, `SURF_LAUNCHPAD_FULL_LAYOUT_ROWS =
-31`**, which no earlier version of the view had, because no earlier version
-could run out of rows. Curator's `f`/`y` precedent: the body is whole from 31
-terminal rows, and below that it scrolls and the title bar says `‹ taller`.
-The binder here is the **rail**, at 20 rows of content (CURVE FLOW 6 + its
-1-row margin, BURN PIPELINE 7 + its margin, BURNKEEPERS 5); the left column
-asks for 19 (a full ten-coin table is 13, the activity feed's floor is 6),
-and the body is the screen minus eleven rows of title bar, hero row and
-margin, this body's own top margin and the StatusBar — so a 20-row body wants
-a 31-row terminal. **Both columns scroll, and both had to.**
-`#surf-launchpad-rail` has carried `overflow-y: auto` since it was born;
-`#surf-launchpad-left` did not, and a `Vertical` defaults to `overflow:
-hidden hidden`, so below 22 rows the activity feed was clipped straight out
-of the column with no scrollbar and nothing else to say so. Both now reserve
-`scrollbar-gutter: stable` with it, for `#curator-right-rail`'s own reason:
-without the gutter this layout's *width* pin would become a function of its
-*height*. That reserved cell is the 92nd of the left column's 92 columns.
-
-The binder is pinned by `test_the_launchpad_binding_panel_is_the_coins_table`
-rather than by the sentence above (curator's
-`test_the_analysis_binding_panel_is_the_operators_table` precedent), and the
-width sweep — `test_the_launchpad_body_is_whole_from_its_pinned_width` in
-`tests/screens/test_surf_screen.py` — runs **128..150**, comfortably below
-and above the pin and never starting at it, so it cannot agree with the
-number by construction; it asserts the rail is un-ellipsised as well as the
-marker being dark, which is what makes a seam's disqualification a red test
-rather than an opinion. **Re-centre that range whenever the pin moves**: it
-was 80..105 for the stacked body and 120..145 for the `12:5` rail, and the
-first of those would now sit entirely below the crossover and exercise only
-one branch. The height pin has its own sweep on the same rule.
-
-The coin table's marker lives on its own title (the `SurfMarket`/curator
-idiom, one tier rather than a ladder, because a fixed-column `DataTable` has
-nothing shorter to fall back to), and it **could not be read off
-`DataTable`'s own `show_horizontal_scrollbar`**: that flag reads `True`
-several columns before any character is actually lost: there is a panel width
-at which the whole header including `BURNED` still reaches the compositor and
-the flag is nonetheless lit, so a marker keyed off it would fire early and
-disagree with what the screen shows. `launchpad._TABLE_FULL_WIDTH` has now
-gone **91 → 93 → 89**, and every step was **swept, never re-derived**. 91 →
-93 was a live silent clip: taking the table from eight columns to nine buys
-another cell gutter even though the column-width constants still summed to
-79, so at content widths 91 and 92 the header rendered `BURN`/`BURNE` with
-the marker dark. 93 → 89 is `_MCAP_COLS` (6) replacing `_PRICE_COLS` (10),
-sum 79 → 75 — the arithmetic predicts four fewer columns and the sweep agrees,
-but the number is 89 because the sweep says so, which is the standard that
-matters on the day the two disagree. It is guarded by
-`test_the_table_full_width_marker_and_burned_header_agree` (widget tests,
-sweeping 84..96) against a property the constant does not control: whether
-the `BURNED` header actually reaches the compositor whole. The widget's own
-older sweep only ever renders 40..80, entirely below the constant, so it
-could not tell 89 from 87 or 93 — exactly the gap that let the 91 → 93
-staleness ship unnoticed the first time. Of the other four panels, LAUNCHPAD
-ACTIVITY and BURNKEEPERS have markers of their own; **CURVE FLOW and BURN
-PIPELINE never mark at all**, and that is the fact the whole seam is built
-around.
-
-**138, five columns under FWA's 143** — so neither `SURF_FULL_LAYOUT_COLUMNS`
-nor the app-wide `FULL_LAYOUT_COLUMNS` moved, and the
-`198 → 172 → 143 → 176 → 152 → 143` record above is again **not** appended
-to: that record tracks changes to the app-wide number only, the same point
-this file already makes about curator's own screen pin and its `f` view. 138,
-135 and 136 are all far below the ~169 columns a laptop gets at the forced
-17 pt, so the three columns 2:1 spends cost a user nothing. The hero row,
-which stays mounted in both modes so nothing it tracks
-(LAUNCHPAD/FLOW/BURN/SUPPLY) ever goes dark, clears on its own at **87** and
-never competes for the binder role — re-measured, not inherited: the
-long-quoted "by 80" was true when `hero.MINIMAL_WIDTH` was 13 and it is 15
-since 2026-08-24.
+**138 is five under FWA's 143**, so neither `SURF_FULL_LAYOUT_COLUMNS` nor the
+app-wide `FULL_LAYOUT_COLUMNS` moved and the record above is **not** appended
+to — it tracks the app-wide number only. The hero row, which stays mounted in
+both modes so nothing it tracks (LAUNCHPAD/FLOW/BURN/SUPPLY) ever goes dark,
+clears on its own at **87** and never competes for the binder role —
+re-measured, not inherited: the long-quoted "by 80" was true when
+`hero.MINIMAL_WIDTH` was 13 and it is 15 since 2026-08-24.
 
 Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
 Per-dashboard: `c` swaps the shared bottom-right slot (FWA, TTT, Talismans,
