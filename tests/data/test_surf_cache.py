@@ -35,6 +35,7 @@ from maxpane_dashboard.data import surf_client
 from tests.data.test_surf_client import (
     RecordingTransport,
     _client_on,
+    _client_serving_the_real_burns,
     _launchpad_fixture_handler,
     _load_launchpad,
 )
@@ -730,8 +731,8 @@ async def test_the_launchpad_cursors_real_shape_round_trips_through_the_cache_fi
 ) -> None:
     """The test above proves the SLOT round-trips at all, with a one-key toy
     payload. It does not prove the **cursor** survives, because the cursor is
-    the one field in that slot with real internal structure -- six keys, three
-    of them nested dicts, one a list -- and nothing about
+    the one field in that slot with real internal structure -- seven keys,
+    four of them nested dicts, one a list -- and nothing about
     ``test_launchpad_slot_round_trips_through_the_cache_file``'s
     ``{"coin_count": 146}`` exercises any of that.
 
@@ -761,6 +762,17 @@ async def test_the_launchpad_cursors_real_shape_round_trips_through_the_cache_fi
     it round-trips into, so a dropped ``sorted()`` still fails this test,
     just via a value mismatch after ``save()``/``load()`` rather than a
     crash during either.
+
+    ``burns`` is real here too but comes back **empty** off these fixtures --
+    ``_launchpad_fixture_handler`` answers the burnkeeper log sweep empty on
+    purpose (see its own docstring), so an empty ``{}`` would round-trip
+    trivially and prove nothing about the one field in this cursor whose
+    leaves are themselves ``None``-valued (``sender``, ``fee_wei``). A second
+    real sweep supplies it: ``_client_serving_the_real_burns`` against the
+    committed burnkeeper captures, run with both the sender read and the fee
+    read switched off, so every row it returns comes back
+    ``sender: None, fee_wei: None`` -- still a real client's real output,
+    just the real output of the one sweep that actually exercises this key.
     """
     reads = _load_launchpad("launchpad_reads.json")
     logs_data = _load_launchpad("launchpad_logs.json")
@@ -775,13 +787,20 @@ async def test_the_launchpad_cursors_real_shape_round_trips_through_the_cache_fi
 
     cursor = state.cursor
     assert cursor is not None
-    # Ruling R13: all six keys, never the three-key shape an earlier draft of
-    # this plan described -- and this assertion is itself read off the real
-    # sweep's own output, not typed here, so it moves with the client rather
-    # than silently going stale against it.
+    # Ruling R13: all seven keys, never the three-key shape an earlier draft
+    # of this plan described. This set is hand-typed, deliberately -- not
+    # "read off the real sweep's own output" (an earlier version of this
+    # comment claimed exactly that, which was never true of the two lines
+    # below it and went stale the moment the cursor grew `burns`). Deriving
+    # the expected set from `cursor` itself (`set(cursor) == set(cursor)`)
+    # would be tautological and could never go red, which is the one thing a
+    # key-set pin exists to be able to do. A hand-typed literal is the right
+    # design here for that reason: it is exactly what made this assertion
+    # fail the day `burns` joined the cursor as a seventh key, and it is
+    # expected to fail again the next time the shape moves.
     assert set(cursor) == {
         "last_block", "launches", "swaps_all", "traders",
-        "burn_by_coin", "burned_total_wei",
+        "burn_by_coin", "burned_total_wei", "burns",
     }
     # A rich shape, not a degenerate all-empty default -- the two fields the
     # `traders` mutation below does not touch, so they stay a meaningful
@@ -789,6 +808,22 @@ async def test_the_launchpad_cursors_real_shape_round_trips_through_the_cache_fi
     assert isinstance(cursor["launches"], dict) and cursor["launches"]
     assert all(isinstance(rec, dict) for rec in cursor["launches"].values())
     assert isinstance(cursor["swaps_all"], dict) and cursor["swaps_all"]
+
+    # `burns` off THIS fixture is `{}` (see the docstring above), so splice
+    # in the real, non-empty, `None`-bearing shape a second real sweep
+    # produces before the round trip -- otherwise the newest and most
+    # structured key in this cursor would be pinned by its key alone, with
+    # nothing checking that its values, or their `None`s, survive at all.
+    async with _client_serving_the_real_burns(
+        price=False, attribute=False,
+    ) as burn_client:
+        burn_state = await burn_client.fetch_launchpad(resume=None)
+    real_burns = burn_state.cursor["burns"]
+    assert real_burns and all(
+        rec["sender"] is None and rec["fee_wei"] is None
+        for rec in real_burns.values()
+    )
+    cursor["burns"] = real_burns
 
     clock = FakeClock()
     path = str(tmp_path / "surf_cache.json")
@@ -798,7 +833,17 @@ async def test_the_launchpad_cursors_real_shape_round_trips_through_the_cache_fi
 
     restored = SurfCache(path=path, clock=clock)
     restored.load()
-    assert restored.get_last_good(SLOT_LAUNCHPAD).payload["cursor"] == cursor
+    restored_cursor = restored.get_last_good(SLOT_LAUNCHPAD).payload["cursor"]
+    assert restored_cursor == cursor
+    # The blanket equality above already recurses into every nested dict,
+    # `burns` included -- but state the coverage explicitly for the field
+    # this test exists to prove, rather than trusting an unexamined `==` to
+    # have reached five rows deep on its own.
+    assert restored_cursor["burns"] == real_burns
+    assert all(
+        rec["sender"] is None and rec["fee_wei"] is None
+        for rec in restored_cursor["burns"].values()
+    )
 
 
 def test_a_null_poisoned_series_costs_only_that_point(tmp_path, caplog):
