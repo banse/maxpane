@@ -676,23 +676,6 @@ class AnalysisRoutes:
         return httpx.MockTransport(self)
 
 
-def test_candidates_are_the_component_members_plus_a_bounded_margin():
-    """R3: the funding sweep is candidates-only, never full-population — the
-    members of every tier-A component >= min_size, in chain order, plus a
-    small deterministic control margin."""
-    preset = curator_clusters.build_preset(RATE, MINIMUM)
-    addrs, hashes = curator_clusters.candidate_targets(
-        farm_events(), farm_first_deposits(), preset
-    )
-    assert addrs[: len(FARM_MEMBERS)] == list(FARM_MEMBERS)   # chain order
-    assert set(addrs[len(FARM_MEMBERS):]) <= set(CONTROLS)    # the margin
-    assert len(addrs) <= len(FARM_MEMBERS) + curator_clusters.CONTROL_MARGIN
-    member_first_txs = {
-        e.tx_hash for e in farm_events() if e.contributor in FARM_MEMBERS
-    }
-    assert set(hashes) == member_first_txs
-
-
 def test_fetch_enrichment_without_a_session_never_touches_the_sources(monkeypatch):
     """No transport and no client means NO fetch — structurally, via a bomb.
     This is what keeps every FakeClient-driven manager test socket-free."""

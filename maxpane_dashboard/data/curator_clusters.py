@@ -54,7 +54,6 @@ try:
     from sybilkit.curator import clean_list as _clean_list
     from sybilkit.curator import segments as _segments
     from sybilkit.model import Funding, Tx
-    from sybilkit.signals import first_rows, tier_a_components
     from sybilkit.sources import blockscout as _blockscout
     from sybilkit.sources import txs as _tx_sources
     from sybilkit.sources import DEFAULT_CONFIG as _SOURCE_DEFAULTS
@@ -1178,11 +1177,6 @@ TX_BUDGET = 400
 #: R3: candidates only, never the 15.5k population (~90 min).
 FUNDING_BUDGET = 200
 
-#: Non-candidate contributors resolved alongside the candidates, in chain
-#: order — a small fixed control margin so the funding evidence is measured
-#: against a baseline rather than only against suspects.
-CONTROL_MARGIN = 24
-
 #: The funding page bound's ceiling.  The bound starts at the sources default
 #: (20 pages = 1 000 transactions) and doubles only when a sweep reports
 #: ``"pages"`` pendings — the one truncation raising it can fix.  80 pages is
@@ -1308,42 +1302,6 @@ class EnrichmentSweep:
                 addr: dict(entry) for addr, entry in self.funding_cursors.items()
             },
         }
-
-
-def candidate_targets(
-    events: Iterable[Any],
-    first_deposits: Iterable[Any],
-    preset: CuratorPreset,
-    *,
-    margin: int = CONTROL_MARGIN,
-) -> tuple[list[str], list[str]]:
-    """Who the enrichment is about: ``(funding_addresses, first_tx_hashes)``.
-
-    R3 — candidates only, never the population: the members of every tier-A
-    component of at least ``min_size``, in chain order, plus a deterministic
-    control margin of the first *margin* non-candidate contributors.  The tx
-    hashes are the candidates' **first-deposit** transactions, which is what
-    the gas family and the freshness discount actually read.
-    """
-    _require_sybilkit()
-    ds = Dataset.from_events(events, first_deposits)
-    cfg = preset.detect_config()
-    components = [
-        comp for comp in tier_a_components(ds, cfg) if len(comp) >= cfg.min_size
-    ]
-    firsts = first_rows(ds)
-
-    def chain_order(addr: str) -> tuple[int, int]:
-        dep = firsts.get(addr)
-        return (dep.block_number, dep.log_index) if dep is not None else (2**63, 0)
-
-    members = sorted({m for comp in components for m in comp}, key=chain_order)
-    member_set = set(members)
-    controls = sorted(
-        (a for a in firsts if a not in member_set), key=chain_order
-    )[: max(0, margin)]
-    tx_hashes = [firsts[m].tx_hash for m in members if m in firsts]
-    return members + controls, tx_hashes
 
 
 async def fetch_enrichment(
@@ -1516,7 +1474,6 @@ async def fetch_enrichment(
 __all__ = [
     "AnalysisResult",
     "CLEAN_LIST_LIMIT",
-    "CONTROL_MARGIN",
     "EnrichmentSweep",
     "FORBIDDEN_WORDS",
     "FUNDING_BUDGET",
@@ -1526,7 +1483,6 @@ __all__ = [
     "analysis_keys",
     "build_analysis",
     "build_preset",
-    "candidate_targets",
     "fetch_enrichment",
     "grade_of",
     "merge_leaderboard_grade",
