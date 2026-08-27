@@ -43,11 +43,13 @@ Verdict discipline
 
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
 
 try:
-    from sybilkit import Dataset, DetectResult, detect
+    from sybilkit import Cluster, Dataset, DetectResult, Reason, detect
     from sybilkit.curator import CleanList, CuratorPreset, Segments
     from sybilkit.curator import clean_list as _clean_list
     from sybilkit.curator import segments as _segments
@@ -236,6 +238,160 @@ def _reason_strings(reasons: Iterable[Any]) -> list[str]:
         text = getattr(reason, "human_string", reason)
         out.append(pattern_language(text, family))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Reconstructing sybilkit objects from published cluster membership
+# ---------------------------------------------------------------------------
+#
+# THE LIST's linked-wallet analysis reads a published, immutable dataset
+# instead of computing its own sweep.  The functions below turn that
+# dataset's cluster metadata and per-wallet membership into real
+# ``sybilkit.Cluster`` / ``sybilkit.DetectResult`` objects so the library's
+# own pure ``segments()`` and ``clean_list()`` run over them unchanged.  Every
+# input here is third-party (an HTTP service, or a hand-edited export file
+# read back), so a malformed row costs the ROW, never the sweep.
+
+
+def _opt_int(value: Any) -> int | None:
+    """An ``int`` or ``None``.  ``bool`` is not an int here: ``True`` in a JSON
+    payload is a type error, not the number one."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _opt_float(value: Any) -> float | None:
+    """A finite ``float`` or ``None``.  ``nan``/``inf`` survive ``json.loads``
+    and would poison every share and confidence they touch."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return value if math.isfinite(value) else None
+
+
+def _valid_address(value: Any) -> str | None:
+    """Lowercased ``0x``-prefixed 40-hex address, or ``None``.
+
+    The endpoint is third-party input.  A row whose address will not parse
+    costs the ROW, never the sweep -- the same rule the list source already
+    applies to a hand-edited export file.
+    """
+    if not isinstance(value, str) or len(value) != 42 or not value.startswith("0x"):
+        return None
+    try:
+        int(value[2:], 16)
+    except ValueError:
+        return None
+    return value.lower()
+
+
+def published_band(cluster: Mapping) -> str:
+    """The group's band word: the publisher's, or ours derived from families.
+
+    Measured 2026-08-27: over all 160 published clusters the publisher's
+    ``band`` and :func:`_grade_families` agree exactly, so this is not a
+    reconciliation -- it is a guard.  ``band`` is a string from an HTTP
+    service and the vocabulary beside it (``risk``: ``critical``/``elevated``)
+    is one this dashboard does not speak; only ``high`` and ``low`` are
+    passed through, and anything else falls back to the grading we can
+    defend from the families we also read.
+    """
+    band = cluster.get("band")
+    if band in ("high", "low"):
+        return band
+    families = cluster.get("families")
+    return _grade_families(set(families) if isinstance(families, list) else set())
+
+
+def review_members_of(rows: Iterable[Any]) -> dict[int, dict[str, list[str]]]:
+    """Cluster id -> ``{address: families}`` for every ``status == "review"`` row."""
+    out: dict[int, dict[str, list[str]]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping) or row.get("status") != "review":
+            continue
+        address = _valid_address(row.get("address"))
+        cluster_id = row.get("cluster_id")
+        if address is None or not isinstance(cluster_id, int) or isinstance(cluster_id, bool):
+            continue
+        families = row.get("member_families")
+        out.setdefault(cluster_id, {})[address] = (
+            [f for f in families if isinstance(f, str)] if isinstance(families, list) else []
+        )
+    return out
+
+
+def clusters_from_published(clusters: Iterable[Any], rows: Iterable[Any]) -> list[Any]:
+    """``sybilkit.Cluster`` objects carrying the published membership.
+
+    The published data supplies membership and reasons; every number
+    downstream of here is still computed by the library's own pure code over
+    the LOCAL dataset, so a cluster that the endpoint describes but our fold
+    has never seen simply contributes no members and no points.
+    """
+    _require_sybilkit()
+    members: dict[int, list[str]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        cluster_id = row.get("cluster_id")
+        address = _valid_address(row.get("address"))
+        if address is None or not isinstance(cluster_id, int) or isinstance(cluster_id, bool):
+            continue
+        members.setdefault(cluster_id, []).append(address)
+
+    out: list[Any] = []
+    for cluster in clusters:
+        if not isinstance(cluster, Mapping):
+            continue
+        cluster_id = cluster.get("id")
+        if not isinstance(cluster_id, int) or isinstance(cluster_id, bool):
+            continue
+        reasons = tuple(
+            Reason(
+                family=r.get("family") if isinstance(r.get("family"), str) else "",
+                human_string=pattern_language(r.get("text"), r.get("family")),
+                strength=_opt_float(r.get("strength")) or 0.0,
+            )
+            for r in (cluster.get("reasons") or ())
+            if isinstance(r, Mapping)
+        )
+        seats = tuple(sorted(members.get(cluster_id, ())))
+        out.append(
+            Cluster(
+                cluster_id=cluster_id,
+                members=seats,
+                reasons=reasons,
+                confidence=_opt_float(cluster.get("confidence")) or 0.0,
+                points=_opt_int(cluster.get("points")) or 0,
+                points_share=_opt_float(cluster.get("points_share")) or 0.0,
+                span_blocks=_opt_int(cluster.get("span_blocks")),
+                size=len(seats),
+            )
+        )
+    return out
+
+
+def detect_result_from_published(
+    clusters: Iterable[Any], rows: Iterable[Any], totals: Mapping
+) -> Any:
+    """A hand-built :class:`DetectResult` over published membership.
+
+    ``sybilkit`` documents the hand-built result as first-class (ruling D1-B)
+    and ``DetectResult.__init__`` sorts by ``points_share`` and lowercases its
+    member index, so this object answers ``wallet()`` and feeds ``segments()``
+    / ``clean_list()`` identically to one ``detect()`` produced.
+
+    ``analyzed`` is left at its ``frozenset()`` default here and is set by the
+    caller from the LOCAL dataset -- the population this build actually
+    folded, not the one the publisher folded.  A wallet in neither reads "not
+    analyzed", which is the safe default the library chose on purpose.
+    """
+    _require_sybilkit()
+    built = clusters_from_published(clusters, rows)
+    total = _opt_int(totals.get("points")) or 0
+    linked = _opt_int(totals.get("linked_points")) or 0
+    return DetectResult(built, total, linked, max(total - linked, 0))
 
 
 def build_analysis(
