@@ -5,9 +5,9 @@ Run from the repo root with the venv interpreter:
     .venv/bin/python scripts/capture_published_analysis.py
 
 The live export is 8.3 MB over 19,522 wallets, which is not a fixture.  This keeps
-every cluster that carries a distinguishing property and rewrites the trimmed
-clusters' sizes so the trimmed overview and the trimmed export reconcile exactly as
-the live pair does -- a fixture whose halves disagree tests the disagreement, not the code.
+every cluster that carries a distinguishing property and rewrites the kept clusters'
+sizes so the trimmed overview and the trimmed export reconcile exactly as the live
+pair does -- a fixture whose halves disagree tests the disagreement, not the code.
 """
 from __future__ import annotations
 
