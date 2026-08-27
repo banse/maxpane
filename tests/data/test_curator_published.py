@@ -2,7 +2,6 @@ import json
 import pathlib
 
 import httpx
-import pytest
 
 from maxpane_dashboard.data import curator_published as pub
 
@@ -31,6 +30,21 @@ class _ExplodingTransport(httpx.AsyncBaseTransport):
         raise AssertionError(f"a test opened the network: {request.url}")
 
 
+class _CountingExplodingTransport(httpx.AsyncBaseTransport):
+    """Raises like a dead network, and records that it was asked to.
+
+    The count is the load-bearing half.  Asserting only `is None` passes on a
+    machine with no network even if the module ignored this transport entirely
+    and tried the real endpoint -- the failure would be swallowed the same way.
+    """
+    def __init__(self):
+        self.calls = 0
+
+    async def handle_async_request(self, request):
+        self.calls += 1
+        raise httpx.ConnectError("no network in tests")
+
+
 async def test_with_no_client_and_no_transport_nothing_is_fetched():
     assert await pub.fetch_published_version() is None
 
@@ -46,6 +60,36 @@ async def test_the_version_is_the_one_the_service_calls_published():
 async def test_a_versions_body_with_no_matching_entry_is_none():
     body = dict(_load("versions.json"))
     body["published_version"] = "no-such-version"
+    assert await pub.fetch_published_version(transport=_ok({"/versions": body})) is None
+
+
+async def test_a_top_level_json_array_is_not_mistaken_for_a_versions_body():
+    """A top-level JSON array is valid JSON, arrives with the right content
+    type, and sits under every size cap -- nothing already in place stops it.
+    Without a container-type guard, `body.get("published_version")` crashes
+    with `AttributeError: 'list' object has no attribute 'get'` instead of
+    degrading to None."""
+    assert await pub.fetch_published_version(transport=_ok({"/versions": []})) is None
+
+
+async def test_a_top_level_json_string_is_not_mistaken_for_a_versions_body():
+    """Same failure mode as the array case, a different top-level JSON type."""
+    assert await pub.fetch_published_version(transport=_ok({"/versions": "a string"})) is None
+
+
+async def test_a_non_dict_element_in_versions_does_not_crash_the_walk():
+    """A non-dict element inside `versions[]` must not crash the match search.
+
+    `next()` stops at the first element satisfying the condition, so a bad
+    element placed AFTER a real match would never be evaluated by the walk and
+    this test would prove nothing.  Placing it first, with a
+    `published_version` that matches no real entry, guarantees the walk visits
+    it and keeps going -- degrading to None (no match found), never an
+    `AttributeError: 'str' object has no attribute 'get'`.
+    """
+    body = dict(_load("versions.json"))
+    body["published_version"] = "no-such-version"
+    body["versions"] = ["not-a-dict", *body["versions"]]
     assert await pub.fetch_published_version(transport=_ok({"/versions": body})) is None
 
 
@@ -138,3 +182,15 @@ async def test_the_version_travels_in_every_request_query():
 async def test_nothing_in_this_module_opens_a_socket():
     exploding = _ExplodingTransport()
     assert await pub.fetch_published_version(transport=exploding) is None
+
+
+async def test_every_request_goes_through_the_injected_transport():
+    """Stronger than `is None`: `_get_json` swallows every exception into
+    None, so a module that ignored `transport` entirely and (on a network-less
+    test machine) failed to reach the real endpoint would ALSO return None --
+    passing this test for the wrong reason on exactly the machines it runs on.
+    Asserting the injected transport was actually invoked is the only way to
+    make this environment-independent."""
+    transport = _CountingExplodingTransport()
+    assert await pub.fetch_published_version(transport=transport) is None
+    assert transport.calls == 1, "the module did not use the injected transport"

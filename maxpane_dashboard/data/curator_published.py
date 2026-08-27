@@ -125,10 +125,19 @@ async def _get_json(
         return None
 
     try:
-        return json.loads(body)
+        parsed = json.loads(body)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         logger.warning("published analysis: %s body was not valid JSON: %s", url, exc)
         return None
+
+    if not isinstance(parsed, dict):
+        logger.warning(
+            "published analysis: %s body parsed to %s, not a JSON object",
+            url, type(parsed).__name__,
+        )
+        return None
+
+    return parsed
 
 
 async def fetch_published_version(
@@ -151,7 +160,9 @@ async def fetch_published_version(
             logger.warning("published analysis: /versions body missing published_version/versions")
             return None
 
-        entry = next((e for e in entries if e.get("id") == published_id), None)
+        entry = next(
+            (e for e in entries if isinstance(e, dict) and e.get("id") == published_id), None
+        )
         if entry is None:
             logger.warning(
                 "published analysis: no entry in /versions matches published_version %r",
