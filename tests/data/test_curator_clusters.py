@@ -1,9 +1,9 @@
 """WP3 — ``data/curator_clusters.py``: the one seam between maxpane and sybilkit.
 
-The adapter is pure (WP3.1), drives ``sybilkit.sources`` only through injected
-transports (WP3.3), and is the **translation boundary**: library vocabulary in,
-on-screen pattern language out.  Nothing in this file opens a socket and
-nothing sleeps.
+The adapter is pure (WP3.1) and is the **translation boundary**: library
+vocabulary in, on-screen pattern language out.  Nothing in this file opens a
+socket and nothing sleeps (T11 removed the detached tier-B/C sweep --
+``fetch_enrichment`` -- that was once this file's one exception).
 
 The farm doubles below are shared with ``test_curator_manager``'s analysis
 tests (imported, never re-typed — the ``test_curator_degradation`` precedent):
