@@ -1,5 +1,12 @@
 # Known limitations — sybilkit 0.1.1
 
+> **Still accurate in 0.2.0, and still the reason it exists.** Everything below is a measured
+> defect of the **0.1.1 rules**, which 0.2.0 keeps shipping unchanged as `sybilkit.cluster.detect`.
+> The v2 rule set in `sybilkit.rules_v2` was built to answer these findings and is measured against
+> the same population: false linking 45.6% -> 0.1%, the 419-wallet ring 81 -> 397, verifiably honest
+> wallets removed 84/308 -> 1/308. Choosing between them is the caller's, and neither is a default
+> that silently replaces the other.
+
 Dated 2026-08-25. These are measured defects in the released rules, published here because 0.1.1 is
 installable from PyPI and its output has been used to publish verdicts about named wallets.
 
@@ -9,7 +16,7 @@ Full audit, evidence and reproduction: <https://github.com/banse/clustermap/tree
 
 On a synthetic population built to contain **no operators at all** — observed join pace, an amount
 prior drawn from ENS-named wallets, the measured funder mix and gas diversity — the 0.1.1 rules flag
-**45.8%** of it (mean of 5 seeds, 5,578–5,802 of 12,349). Every wallet linked there is a false positive
+**45.6%** of it (mean of 5 seeds, 5,431–5,804 of 12,349). Every wallet linked there is a false positive
 by construction.
 
 The dominant causes, all measurable in `signals/`:

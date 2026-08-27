@@ -227,6 +227,55 @@ artefact of the scoring shape, not evidence of precision.** Rebuilt against 308 
 by a standard fixed before it was applied and scored in situ, the 0.1.1 rules remove 84 of them
 (27.3%). See [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) §3 and the audit linked below.
 
+## The v2 rule set (0.2.0)
+
+`sybilkit.rules_v2` ships the rule set the audit built to answer
+[`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md), measured on the same settled population:
+
+| | 0.1.1 rules | v2 rules |
+|---|---|---|
+| flagged | 11,573 / 19,522 (57.6% of points) | 12,416 + 324 shown for review (76.7%) |
+| operator-free synthetic population linked | **45.6%** | **0.1%** |
+| the 419-wallet, 15.6%-of-points peel ring | 81 caught | **397** caught |
+| verifiably honest wallets removed | **84 / 308** | **1 / 308** |
+
+```python
+from dataclasses import replace
+from sybilkit.rules_v2 import VARIANTS, run
+
+rules = replace(VARIANTS["v2h (v2g + aged-weak periphery)"], infra_extra=my_exchange_funders)
+clusters, edges, firsts, counts = run(dataset, config, rules)
+# each cluster is {"members", "core", "periphery", "families"}
+```
+
+Two differences from `detect()` are the whole point, and both are deliberate:
+
+**Funding structure can build a group.** `detect()` unions only over tier-A edges and folds funding
+on afterwards, so a peel chain nothing else linked stays invisible however complete the data — that
+is why resolving a first funder for all 19,522 contributors changes the 0.1.1 output by *zero*
+wallets. v2 lets a tight peel chain build a component, which is what takes the ring from 81 to 397.
+
+**A member is judged on its own evidence.** A wallet held by fewer than two families is *periphery*:
+shown, never removed. `detect()` has no such tier, so everything it flags is removed.
+
+Both rule sets ship. `detect()` is unchanged in 0.2.0 and neither is a default that quietly replaces
+the other — a result can always be attributed to the rules that produced it.
+
+**Scope.** Every constant in v2 was calibrated on **one** population: block windows assume 12-second
+blocks, the near-minimum band is 1.25x *that* game's 0.05 ETH floor, and it has not been evaluated
+against a second dataset. `sk_v2.py` is shipped **byte-identical** to the file that produced the
+published analysis and is pinned by content, not by this tag:
+
+```sh
+shasum -a 256 "$(python3 -c 'import sybilkit.rules_v2 as m, os; print(os.path.join(os.path.dirname(m.__file__), "sk_v2.py"))')"
+# 457fac65506d3ce9693f35c154f2f1d635d3cef5673138e43c3d6332bf71b2b3
+```
+
+That digest is published as `rules_sha256` on the analysis at
+<https://github.com/banse/clustermap> (`2026-08-25-sybilkit-0.2.0`), so this release can be checked
+to contain the detector that produced it. Editing the file breaks that link: a rule change is a new
+release **and** a new analysis version, never an edit in place.
+
 ## How to check any of this yourself
 
 Claims about a detector are worth what their reproduction is worth. The full run of 0.1.1 over the

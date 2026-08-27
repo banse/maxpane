@@ -1,6 +1,6 @@
 [project]
 name = "sybilkit"
-version = "0.1.1"
+version = "0.2.0"
 description = "Keyless EVM sybil / fan-out cluster analysis. Pure-Python core, optional keyless fetchers, CLI."
 requires-python = ">=3.11"
 license = "MIT"

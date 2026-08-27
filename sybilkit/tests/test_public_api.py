@@ -316,6 +316,15 @@ def test_the_package_imports_only_the_standard_library() -> None:
                 continue
             if exempt and root in IO_ALLOWED_ROOTS:
                 continue
+            # A module shipped *beside* this one in the same package directory is
+            # first-party by construction — it is in the distribution, so a pure
+            # install has it.  This is checked against the tree rather than an
+            # exemption list, so it can only ever admit files we actually ship.
+            # It exists for ``rules_v2``: that rule set is shipped byte-identical
+            # to the file the published audit ran, pinned by sha256, so it cannot
+            # be rewritten to use a relative import without breaking the pin.
+            if (path.parent / f"{root}.py").exists():
+                continue
             offenders.append(f"{path.relative_to(SRC)}: {root}")
     assert not offenders, offenders
 
