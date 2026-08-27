@@ -2367,7 +2367,30 @@ def _analysis_manager(tmp_path, clock, *, routes=None, published=None, wallet=No
     )
     manager.cache.store_events(farm_events(), now=NOW)
     manager.cache.store_first_deposits(farm_first_deposits())
+    _seed_fold(manager, farm_events(), farm_first_deposits())
     return manager
+
+
+def _seed_fold(manager, events, firsts, *, rows: int | None = None) -> None:
+    """Store the folded table a production manager ALWAYS has beside its events.
+
+    Seeded because the sweep's cannot-run gate now consults
+    ``_history_complete()``: a fold still backfilling is not a population, and
+    the published analysis is folded against the local one exactly once per
+    published version.  These doubles stored events and first deposits and no
+    fold at all — a state ``_pool_logs`` cannot produce, because every
+    successful sweep ends in ``store_fold``.
+
+    Folded with the manager's own ``fold_deposits`` rather than hand-built, so
+    the seed cannot drift from what a real sweep would have stored.  ``rows``
+    truncates it, which is how a partial backfill is expressed.
+    """
+    folded = curator_manager.fold_deposits(
+        events, firsts, points_per_eth=CONFIG["points_per_eth"]
+    )
+    if rows is not None:
+        folded = folded[:rows]
+    manager.cache.store_fold(folded, last_block=25_770_500, now=NOW)
 
 
 def test_the_config_slot_carries_the_minimum_and_the_readings_do_not(tmp_path, clock):
@@ -2508,6 +2531,7 @@ def test_the_sweep_borrows_the_real_clients_own_session_in_production(tmp_path, 
 
     manager.cache.store_events(farm_events(), now=NOW)
     manager.cache.store_first_deposits(farm_first_deposits())
+    _seed_fold(manager, farm_events(), farm_first_deposits())
 
     async def _run():
         try:
@@ -2578,6 +2602,7 @@ def test_close_cancels_both_detached_tasks_and_saves(tmp_path, clock):
     )
     manager.cache.store_events(farm_events(), now=NOW)
     manager.cache.store_first_deposits(farm_first_deposits())
+    _seed_fold(manager, farm_events(), farm_first_deposits())
 
     async def _run():
         await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
@@ -2618,6 +2643,66 @@ def test_a_sweep_with_nothing_to_analyze_backs_off_instead_of_spinning(tmp_path,
     assert TIER_ANALYSIS in manager.cache.tiers_due(
         NOW + TIER_FAILURE_BACKOFF_SECONDS[TIER_ANALYSIS] + 1
     )
+
+
+def test_a_partial_fold_cannot_run_the_analysis_and_leaves_no_slot(tmp_path, clock):
+    """Non-empty is not complete, and this is the ONE finding a user could not
+    clear.
+
+    The pre-published sweep called ``build_analysis`` on every analysis tick,
+    so a fold still backfilling self-corrected within one ``TIER_ANALYSIS``
+    period.  This one short-circuits on ``(version_id, content_hash)`` and
+    never re-enters the build, so the first tick to fire over a partial fold —
+    a fresh install, a ``dropped_events > 0`` cache mid-repair, a partly-failed
+    log group — froze ``clean_points``, ``clean_contributors``,
+    ``clean_ranks``, every ``operator_rows`` point total, every
+    ``segment_rows`` share, ``sqrt_subsidy_x`` and ``you_clean_rank`` at
+    partial values until the PUBLISHER shipped a new version.  The game settled
+    2026-08-19, so that may be never; the only other cure was deleting
+    ``curator_cache.json`` by hand.
+
+    The transport is live and would answer, which is what makes this the
+    cannot-run branch rather than a missing source: a version request that
+    reached the wire would show up in ``routes.calls``.
+    """
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+    _seed_fold(manager, farm_events(), farm_first_deposits(), rows=4)
+    assert manager._history_complete() is False, "guard: the fold is short"
+
+    _run_analysis(manager)
+
+    assert manager.cache.analysis_last_good() is None   # nothing frozen
+    assert routes.calls == []                           # not even a version check
+    assert manager._analysis_failed is False            # cannot run, not failed
+    from maxpane_dashboard.data.curator_cache import TIER_FAILURE_BACKOFF_SECONDS
+
+    assert TIER_ANALYSIS not in manager.cache.tiers_due(NOW + 1)
+    assert TIER_ANALYSIS in manager.cache.tiers_due(
+        NOW + TIER_FAILURE_BACKOFF_SECONDS[TIER_ANALYSIS] + 1
+    )
+
+
+def test_a_repaired_fold_runs_the_analysis_the_partial_one_refused(tmp_path, clock):
+    """The other half: the refusal above must self-repair, not latch.
+
+    ``_sweep_from_block`` returns ``CREATION_BLOCK`` while ``dropped_events >
+    0``, so the fold is re-swept and completes; the very next analysis tick
+    then builds.  Without this the fix would have swapped a permanently frozen
+    analysis for a permanently absent one.
+    """
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+    _seed_fold(manager, farm_events(), farm_first_deposits(), rows=4)
+    _run_analysis(manager)
+    assert manager.cache.analysis_last_good() is None
+
+    _seed_fold(manager, farm_events(), farm_first_deposits())
+    clock.advance(3_600)
+    _run_analysis(manager, now=clock.now)
+
+    assert routes.calls == ["versions", "overview", "export"]
+    assert _slot_copy(manager)["published"]["version_id"] == PUBLISHED_ID
 
 
 def test_a_cannot_run_tick_still_does_not_clear_the_failed_flag(tmp_path, clock):
@@ -3239,6 +3324,7 @@ def _published_fold_manager(tmp_path, clock, routes):
     )
     manager.cache.store_events(_fixture_events(), now=NOW)
     manager.cache.store_first_deposits(_fixture_firsts())
+    _seed_fold(manager, _fixture_events(), _fixture_firsts())
     return manager
 
 
@@ -4022,6 +4108,7 @@ def test_a_sweep_whose_source_is_unreachable_retries_on_the_backoff(tmp_path, cl
     )
     manager.cache.store_events(farm_events(), now=NOW)
     manager.cache.store_first_deposits(farm_first_deposits())
+    _seed_fold(manager, farm_events(), farm_first_deposits())
 
     async def _run():
         task = manager._spawn_analysis({TIER_ANALYSIS}, NOW, ANALYSIS_CONFIG)

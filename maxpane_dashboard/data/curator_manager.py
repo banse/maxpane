@@ -1832,12 +1832,35 @@ class CuratorManager:
         events = self.cache.events()
         rate = _opt_int(cfg.get("points_per_eth"))
         minimum = _opt_int(cfg.get("min_deposit_wei"))
-        if not events or rate is None or rate <= 0 or minimum is None:
+        if (
+            not events
+            or rate is None
+            or rate <= 0
+            or minimum is None
+            or not self._history_complete()
+        ):
             # Completion-time stamp (M4): the retry clock must not have the
             # sweep's own duration deducted from it.  Freshness stamps stay
             # spawn-time — only failures are stamped at completion.
             # Deliberately does NOT clear `_analysis_failed`: a failed sweep
             # followed by a cannot-run one keeps its banner state.
+            #
+            # `_history_complete` is the condition the pre-published sweep did
+            # not need and this one cannot do without.  That sweep rebuilt the
+            # whole analysis on EVERY analysis tick, so a fold that was still
+            # backfilling self-corrected within one TIER_ANALYSIS period.  This
+            # one short-circuits on `(version_id, content_hash)` and never
+            # re-enters the build, so the first tick to fire over a partial
+            # fold — a fresh install, a `dropped_events > 0` cache mid-repair,
+            # a partly-failed log group — would freeze `clean_points`,
+            # `clean_contributors`, `clean_ranks`, every `operator_rows` point
+            # total, every `segment_rows` share, `sqrt_subsidy_x` and
+            # `you_clean_rank` at partial values until the PUBLISHER ships a
+            # new version.  The game settled 2026-08-19, so that may be never,
+            # and the only other cure is deleting the cache file by hand.
+            # Non-empty is not completeness; `full_list_rows` has consulted
+            # this same predicate all along.  It self-repairs: `_sweep_from_
+            # block` returns CREATION_BLOCK while `dropped_events > 0`.
             self.cache.mark_failed(TIER_ANALYSIS, float(self._clock()))
             return {"ok": None, "swept": False}
 
