@@ -4,7 +4,7 @@
 **Target:** Extend the existing MAXPANE FWA screen
 **Chain:** Ethereum mainnet (`chainId = 1`)
 **Date:** 2026-08-28
-**Status:** Proposed; implementation starts only after direction approval
+**Status:** Approved 2026-08-28; interface freeze and implementation authorized
 
 Source research: [`fwa_ecosystem_research.md`](fwa_ecosystem_research.md)
 
@@ -475,13 +475,14 @@ All tests are offline with recorded fixtures.
 | Three modes: Protocol / Tokenomics / Ecosystem | explicit categories | tokenomics and ecosystem are causally linked; more state/navigation | defer |
 | Existing PULLS + one NETWORK body | focused, reusable, minimal navigation | less per-project detail on first screen | **recommend** |
 
-## 12. Approval checkpoint
+## 12. Approved product choices
 
-Before implementation planning, approve or revise these three product choices:
+Approved on 2026-08-28:
 
 1. retain PULLS as the unchanged default;
 2. add one `NETWORK` body rather than multiple dashboards;
 3. show current family rows plus only legacy versions with outstanding liabilities or
    integrity warnings;
-4. treat the project list as `verified integrations`, beginning with PullPool/MegaRip and
+4. use the value-flow rail as the visual anchor;
+5. treat the project list as `verified integrations`, beginning with PullPool/MegaRip and
    FWAP, rather than claiming exhaustive ecosystem discovery.
