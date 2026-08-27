@@ -25,6 +25,29 @@ def _ok(payloads):
     return _transport(handler)
 
 
+#: The version the committed ``versions.json`` names as published, and a
+#: :class:`PublishedVersion` that agrees with the two bulk fixtures.  Read from
+#: the fixture rather than re-typed: a hand-typed hash beside a refreshed
+#: capture would make every cross-check test pass for the wrong reason.
+PUBLISHED_ID = _load("versions.json")["published_version"]
+
+
+def _fixture_version():
+    entry = next(
+        e for e in _load("versions.json")["versions"] if e["id"] == PUBLISHED_ID
+    )
+    return pub.PublishedVersion(
+        version_id=PUBLISHED_ID,
+        content_hash=entry["content_hash"],
+        detector_version=entry.get("detector_version"),
+        rule_set=entry.get("rule_set"),
+        rules_sha256=entry.get("rules_sha256"),
+        snapshot_block=entry.get("snapshot_block"),
+        cluster_count=entry.get("cluster_count"),
+        status_counts=entry.get("status_counts") or {},
+    )
+
+
 class _ExplodingTransport(httpx.AsyncBaseTransport):
     async def handle_async_request(self, request):
         raise AssertionError(f"a test opened the network: {request.url}")
@@ -193,21 +216,59 @@ async def test_the_analysis_carries_every_cluster_and_row():
 
 
 async def test_the_version_travels_in_every_request_query():
+    """...and the export names the population it wants rather than taking four
+    server-side defaults.
+
+    PRD §3.3 specifies `/list/export?q=&link=all&evidence=all&preset=none`, and
+    `scripts/capture_published_analysis.py` -- which produced these fixtures --
+    sends exactly that.  Production sent `version` alone until 2026-08-27 and
+    depended on defaults it never asked for and never read back.  The live
+    default happens to be `link=all`; the site's own CLEAN view is
+    `link=unlinked`, and that subset renders as a CONFIDENT clean list, not a
+    degraded one.  `MockTransport` ignores the query string, so nothing but
+    reading the URL can see this.
+    """
     seen = []
 
     def handler(request):
-        seen.append(str(request.url))
+        seen.append(request.url)
         if "/overview" in str(request.url):
             return httpx.Response(200, json=_load("overview_trimmed.json"))
         return httpx.Response(200, json=_load("export_trimmed.json"))
 
-    version = pub.PublishedVersion(
-        version_id="2026-08-25-sybilkit-0.2.0", content_hash="h",
-        detector_version="0.2.0", rule_set="v2h", rules_sha256="d",
-        snapshot_block=1, cluster_count=1, status_counts={},
-    )
-    await pub.fetch_published_analysis(version, transport=_transport(handler))
-    assert seen and all("2026-08-25-sybilkit-0.2.0" in url for url in seen)
+    await pub.fetch_published_analysis(_fixture_version(), transport=_transport(handler))
+    assert seen and all(PUBLISHED_ID in str(url) for url in seen)
+    export_url = next(url for url in seen if "/list/export" in str(url))
+    assert dict(export_url.params) == {
+        "q": "", "link": "all", "evidence": "all", "preset": "none",
+        "version": PUBLISHED_ID,
+    }
+
+
+async def test_an_export_filtered_to_something_else_is_refused():
+    """The four parameters are only half the fix: the answer says what it
+    actually applied, and that echo is the only way to tell a full population
+    from a subset.  `link: "unlinked"` over these same fixture rows renders 82
+    of 82 wallets with an empty flag cell -- the confident clean -- beside a
+    panel reporting 7 linked groups.  Nothing degrades and nothing marks stale,
+    so refusing the payload is the only representable answer.
+    """
+    export = _load("export_trimmed.json")
+    export["filters"] = {**export["filters"], "link": "unlinked"}
+    transport = _ok({"/overview": _load("overview_trimmed.json"), "/list/export": export})
+    assert await pub.fetch_published_analysis(_fixture_version(), transport=transport) is None
+
+
+async def test_an_export_echoing_the_asked_for_filters_is_accepted():
+    """Guard on the test above: the refusal must key off the ECHO, not off the
+    presence of a `filters` block.  The unmodified fixture carries the very
+    echo the request asks for, so it has to survive."""
+    transport = _ok({
+        "/overview": _load("overview_trimmed.json"),
+        "/list/export": _load("export_trimmed.json"),
+    })
+    got = await pub.fetch_published_analysis(_fixture_version(), transport=transport)
+    assert got is not None and got.rows
 
 
 async def test_a_transport_failure_degrades_to_none():

@@ -38,6 +38,24 @@ MAX_EXPORT_BYTES = 64 << 20
 _TIMEOUT = 60.0
 _HEADERS = {"Accept": "application/json", "User-Agent": "maxpane"}
 
+#: The export query PRD §3.3 names, sent in full rather than left to four
+#: server-side defaults we never asked for and never read back.
+#:
+#: ``/list/export`` applies ``q``/``link``/``evidence``/``preset`` whether or
+#: not the request names them.  The current default is ``link=all`` (measured
+#: 2026-08-27, all 19,522 rows), so omitting them was latent rather than live —
+#: but the site's own CLEAN view is ``link=unlinked``, and a default that moved
+#: there would hand this module a *subset* of the population that still parses,
+#: still reconciles, and renders as a confident clean list: 82 of 82 wallets
+#: with an empty flag cell beside a panel reporting "7 linked groups · 77.5% of
+#: all points".  Nothing would degrade and nothing would mark stale.
+EXPORT_PARAMS: dict[str, str] = {
+    "q": "",
+    "link": "all",
+    "evidence": "all",
+    "preset": "none",
+}
+
 
 @dataclass(frozen=True)
 class PublishedVersion:
@@ -197,6 +215,30 @@ async def fetch_published_version(
         )
 
 
+def _filters_disagreement(applied: Any) -> str | None:
+    """Name the first export filter the service applied that we did not ask for.
+
+    ``/list/export`` echoes what it ran under (``{"query": "", "link": "all",
+    "evidence": "all", "preset": "none"}`` on the live service and in the
+    committed fixture), and that echo is the only way to tell a full population
+    from a filtered one: a subset still parses, still reconciles against the
+    overview, and renders as a *confident* clean list.  So the request names all
+    four and the answer is read back.
+
+    A key the echo does not carry is not a disagreement -- there is nothing to
+    compare, and going dark over a diagnostic field the service stopped
+    emitting would trade a real analysis for no analysis.  ``query`` is the
+    echo's spelling of the request's ``q``.
+    """
+    if not isinstance(applied, dict):
+        return None
+    for key, asked in EXPORT_PARAMS.items():
+        echoed = "query" if key == "q" else key
+        if echoed in applied and applied[echoed] != asked:
+            return f"{echoed}={applied[echoed]!r}, asked {key}={asked!r}"
+    return None
+
+
 async def fetch_published_analysis(
     version: PublishedVersion,
     *,
@@ -213,13 +255,29 @@ async def fetch_published_analysis(
         if session is None:
             return None
 
-        params = {"version": version.version_id}
-        overview = await _get_json(session, f"{base_url}/overview", params, MAX_OVERVIEW_BYTES)
+        version_param = {"version": version.version_id}
+        overview = await _get_json(
+            session, f"{base_url}/overview", version_param, MAX_OVERVIEW_BYTES
+        )
         if overview is None:
             return None
 
-        export = await _get_json(session, f"{base_url}/list/export", params, MAX_EXPORT_BYTES)
+        export = await _get_json(
+            session,
+            f"{base_url}/list/export",
+            {**EXPORT_PARAMS, **version_param},
+            MAX_EXPORT_BYTES,
+        )
         if export is None:
+            return None
+
+        applied = _filters_disagreement(export.get("filters"))
+        if applied is not None:
+            logger.warning(
+                "published analysis: /list/export applied %s -- refusing a "
+                "population this dashboard did not ask for",
+                applied,
+            )
             return None
 
         clusters = overview.get("clusters")
