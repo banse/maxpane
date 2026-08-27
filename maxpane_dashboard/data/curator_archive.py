@@ -290,8 +290,8 @@ def _archive_dir(root: Path, version_id: str) -> Path:
     return root / ARCHIVE_DIRNAME / version_id
 
 
-def _pair_blocked(directory: Path) -> str | None:
-    """Is either half of the published pair already archived?  Then refuse both.
+def _pair_blocked(root: Path, directory: Path) -> str | None:
+    """Would archiving split the published pair?  Then refuse both halves.
 
     ``_claim`` is per-NAME, and that is not enough on its own: the raw and the
     cleaned list are **one dataset**, written from one payload and read as a
@@ -307,11 +307,21 @@ def _pair_blocked(directory: Path) -> str | None:
     version of this that cannot leave a half-state: a partial move cannot be
     unwound afterwards without this module learning to remove files.  ``root``
     keeps its previous coherent pair and the next sweep retries.
+
+    **Both halves of the condition are load-bearing.**  A taken destination is
+    only a hazard while ``root`` still holds that name: if it does not, there
+    is nothing left to move, the write lands unopposed, and no split is
+    possible.  Asking only about the destination refuses every crashed
+    mid-archive run *forever* -- and since ``_ARCHIVED`` moves the cleaned list
+    first, every natural interruption lands in that set.  The sharpest of them
+    leaves a stale raw list in ``root`` presented as current with no marker and
+    its counterpart missing, which is the exact harm this gate exists to
+    prevent, made permanent.  Only a new ``version_id`` would ever clear it.
     """
     taken = [
         name
         for name in (RAW_LIST_NAME, CLEANED_LIST_NAME)
-        if (directory / name).exists()
+        if (directory / name).exists() and (root / name).exists()
     ]
     if not taken:
         return None
@@ -595,9 +605,7 @@ def archive_and_write(
     raw_rows = _raw_rows(valid, bands, names)
     clean_rows = _clean_rows(valid, names)
 
-    unusable = _unusable(raw_rows, clean_rows) or _pair_blocked(
-        _archive_dir(root, version_id)
-    )
+    unusable = _unusable(raw_rows, clean_rows)
     if unusable is not None:
         # Built BEFORE anything moves, and checked before it too: moving the
         # user's usable lists aside to replace them with lists no consumer
@@ -607,6 +615,19 @@ def archive_and_write(
             "(%s); nothing archived, nothing written",
             version_id,
             unusable,
+        )
+        return ArchiveResult(failed=(RAW_LIST_NAME, CLEANED_LIST_NAME))
+
+    blocked = _pair_blocked(root, _archive_dir(root, version_id))
+    if blocked is not None:
+        # An archive-directory condition, not a payload one.  Diagnosed
+        # separately because the two send a reader of ~/.maxpane/maxpane.log
+        # to different places.
+        logger.warning(
+            "curator archive: archiving %s would split the published pair "
+            "(%s); nothing archived, nothing written",
+            version_id,
+            blocked,
         )
         return ArchiveResult(failed=(RAW_LIST_NAME, CLEANED_LIST_NAME))
 

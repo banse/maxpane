@@ -591,6 +591,64 @@ def test_the_refused_pair_leaves_root_readable_as_one_coherent_dataset(tmp_path)
     assert {row["address"] for row in cleaned} <= {row["address"] for row in raw}
 
 
+def _assert_recovered_pair(tmp_path: Path, result) -> None:
+    """The run proceeded and root serves a coherent NEW pair."""
+    assert result.written == REWRITTEN, result.failed
+    raw = _read(tmp_path / RAW_LIST_NAME)
+    cleaned = _read(tmp_path / CLEANED_LIST_NAME)
+    assert len(raw) == 10 and len(cleaned) == 5, "not the published pair"
+    for is_clean, count in ((False, len(raw)), (True, len(cleaned))):
+        loaded = load_export_list(
+            tmp_path,
+            cleaned=is_clean,
+            expected_count=count,
+            live_rows=[],
+            you_row=None,
+        )
+        assert loaded.complete is True, f"cleaned={is_clean}: {loaded.reason}"
+
+
+def test_a_run_interrupted_after_the_cleaned_move_recovers_a_coherent_pair(tmp_path):
+    """A taken destination is only a hazard while root still holds that name.
+
+    ``_ARCHIVED`` moves the cleaned list FIRST, so this is where every natural
+    interruption lands.  Root no longer holds the cleaned list, so nothing is
+    left to move and no split is possible -- refusing here would strand the
+    retry forever and leave a stale raw list presented as current with its
+    counterpart missing, which is the very harm the gate exists to prevent.
+    """
+    before = _seed_exports(tmp_path)
+    archive = tmp_path / "archive" / VERSION
+    archive.mkdir(parents=True)
+    (tmp_path / CLEANED_LIST_NAME).rename(archive / CLEANED_LIST_NAME)
+
+    result = _run(tmp_path)
+
+    _assert_recovered_pair(tmp_path, result)
+    assert result.failed == ()
+    # The half the interrupted run had already saved is untouched, and the
+    # half it had not is archived now.
+    assert (archive / CLEANED_LIST_NAME).read_bytes() == before[CLEANED_LIST_NAME]
+    assert (archive / RAW_LIST_NAME).read_bytes() == before[RAW_LIST_NAME]
+    assert RAW_LIST_NAME in result.archived
+
+
+def test_a_run_interrupted_after_the_whole_archive_step_recovers_both_lists(tmp_path):
+    """Both destinations taken, root holding neither: still nothing to split."""
+    before = _seed_exports(tmp_path)
+    archive = tmp_path / "archive" / VERSION
+    archive.mkdir(parents=True)
+    for name in _ARCHIVED:
+        if (tmp_path / name).exists():
+            (tmp_path / name).rename(archive / name)
+
+    result = _run(tmp_path)
+
+    _assert_recovered_pair(tmp_path, result)
+    for name, payload in before.items():
+        assert (archive / name).read_bytes() == payload, f"{name} was overwritten"
+
+
 def test_an_already_archived_file_outside_the_pair_is_never_overwritten(tmp_path):
     """Reaches the move loop's own guard, which the pair gate otherwise shadows.
 
