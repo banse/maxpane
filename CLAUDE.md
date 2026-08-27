@@ -183,7 +183,8 @@ and may say so in its own strings, but `pattern_language()` re-checks every reas
 detail — including strings read back from a **persisted** payload, because a hand-edited cache
 file is third-party input too — and swaps a forbidden word for the evidence family's own phrase.
 On screen the dashboard's evidence labels therefore speak only patterns: *linked*, *fan-out*,
-`⚑`/`◌`/`?`, and every evidence panel has its own composited forbidden-word test.
+`⚑`/`◌`/`~`/`?` (high/low/review/unknown), and every evidence panel has its own composited
+forbidden-word test.
 `analytics/curator_signals.py` still never mentions or imports the library
 (`test_curator_signals_never_imports_sybilkit`); its only post-release change is the decided
 `LEADERBOARD_LIMIT = 100` payload cap for the `l` record view. The Tier-A `find_clusters` it
@@ -198,15 +199,23 @@ back, and it is why the guarded import **stays**: an older install, a partial en
 future name change still renders `analysis unavailable` and leaves everything else working
 exactly as before, rather than crashing on import.
 
-**The sweep is detached, on the `_spawn_crosscheck` precedent.** Tier-B/C analysis (tx
-fingerprints via publicnode/tenderly batches, first funders via Blockscout — all keyless, all
-budgeted to *candidate* members, never the full population, resumable through a cursor in the
-slot) is spawned, never awaited, so it cannot block first paint;
+**The analysis is read, not swept, on the `_spawn_crosscheck` precedent (2026-08-27).** THE LIST's
+published, immutable linked-wallet analysis — keyless, from `clustermap.vibingco.de`, the one new
+host, with no key/token/secret anywhere near it — replaced the locally computed tx-fingerprint/
+funder sweep: one version check per tick, and the two bulk reads (~8.3 MB) run only
+when `content_hash` has moved, because a published version never changes under its own id. The
+read is spawned, never awaited, so it cannot block first paint;
 `test_the_first_payload_is_not_behind_the_analysis_read` is the tripwire and it fails by timing
 out. It lives on its own long tier — `TIER_ANALYSIS` (1800 s, 300 s after a failure) with the
 `SLOT_CLUSTERS` last-good — so the analysis panels carry an `as of HH:MM` on a slower clock than
-the title bar's, deliberately. A failed sweep folds into the **`logs`** degraded group only when
-there is nothing to serve; otherwise a stale `analysis_as_of_hhmm` is the signal.
+the title bar's, deliberately: the marker advances only when a genuinely new version lands, never
+on a tick that found nothing new, because printing a fresh time beside days-old data would be a
+stale number presented as live. `analysis_version` names *which* analysis sits behind that marker.
+`content_hash` is publisher-asserted and never reverified against the fetched bytes — a trust
+boundary, not a defect. Superseded exports are archived into
+`~/.maxpane/archive/<version-id>-<hash12>/`, never deleted; nothing prunes that directory and
+nobody owns doing so. A failed read folds into the **`logs`** degraded group only when there is
+nothing to serve; otherwise a stale `analysis_as_of_hhmm` is the signal.
 
 **Nothing is persisted as a verdict.** The slot holds revisable rows; groups carry a band *word*
 and their families, never a boolean, and a test scans the cache file for one. A later sweep may

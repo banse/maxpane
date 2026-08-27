@@ -126,9 +126,11 @@ graded the same way.
 **It is read-only analysis, in pattern language, and it is never an accusation.** The chain can
 show that twelve wallets sent an identical amount four seconds apart from one funder; it cannot
 show why, and this dashboard does not guess. So it describes shapes — *linked*, *fan-out*, a flag
-glyph — and never labels a wallet or a person. Groups are scored, never wallets on their own; two
-independent kinds of evidence are required before anything is called linked at all; and no verdict
-is ever written to disk, so a later sweep can and does put wallets back on the clean list.
+glyph — and never labels a wallet or a person. Groups are scored as groups: two independent kinds
+of evidence are required before one is called linked at all. A single member with only thin,
+one-family evidence gets its own mark instead of either verdict — `review` (`~` on the leaderboard
+flag column) — shown rather than hidden. No verdict is ever written to disk, so a later sweep can
+and does put wallets back on the clean list.
 
 The analysis runs *behind* the dashboard, so the clock and the signals paint first and the three
 panels read `analysis unavailable` for the first minute or so of a cold start. They fill in on
@@ -419,11 +421,14 @@ Ten themes. `talismans` and `fwa` are game-specific palettes that pair with thei
 
 ## sybilkit — the analysis library, on its own
 
-The clustering behind THE LIST's `f` view is not part of the dashboard. It lives in
+THE LIST's `f` view reads a published, immutable linked-wallet analysis — keyless, from
+`clustermap.vibingco.de` — rather than clustering wallets itself; it folds maxpane's own on-chain
+history over the membership that analysis names, so every point and rank still comes from
+maxpane's own data. The math behind that fold lives in
 [`sybilkit`](sybilkit/README.md), a **separate Python distribution** in this repository that knows
 nothing about maxpane, Textual, or any particular allowlist — THE LIST is one preset it ships, not
-its subject. maxpane reaches it through exactly one adapter module, and you can use it without
-maxpane at all.
+its subject, and its own CLI (below) still does the clustering, standalone. maxpane reaches
+sybilkit through exactly one adapter module, and you can use the library without maxpane at all.
 
 ```bash
 pip install sybilkit              # the pure core — zero third-party packages
@@ -442,7 +447,9 @@ signal families and five members before a group exists at all, and emits `reason
 graduated confidence instead of a verdict. See [`sybilkit/README.md`](sybilkit/README.md) for the
 API, the endpoint table and the benchmark gate.
 
-`sybilkit` is built and released on its own — a maxpane release does not publish it, and
-`pip install maxpane` does not pull it in yet. Until it is on PyPI, maxpane's import of it is
-guarded: with the library absent the dashboard runs exactly as before and the `f` view reports
-`analysis unavailable` instead of failing.
+`sybilkit` is built and released on its own — a maxpane release does not publish it. It published
+`0.1.0` to PyPI on 2026-08-19 (`0.1.1` is the latest release as of this writing), and since
+**v0.8.0** `pip install maxpane` pulls it in too (`pyproject.toml` pins `sybilkit>=0.1.0`). The
+import stays guarded regardless: with the library absent — an older install, a partial
+environment, or a future name change — the dashboard runs exactly as before and the `f` view
+reports `analysis unavailable` instead of failing.
