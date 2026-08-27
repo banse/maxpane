@@ -3361,6 +3361,28 @@ async def test_a_linked_wallet_shows_pattern_language_reasons():
         assert word not in text.lower(), word
 
 
+async def test_a_review_wallet_renders_its_own_line_not_linked_or_unknown():
+    """T4's third state gets its own rendering (Task 12 fix): ``review`` was
+    previously outside ``LINKED_STATES``, so it fell to the same
+    :data:`UNKNOWN_VALUE` as "the sweep has not run" -- exactly the outage
+    the honesty rules in this module's own docstring forbid.  It must also
+    not read as ``"linked"``: the evidence is thinner (the wallet's own single
+    family, not the group's two-plus), and pretending otherwise overstates
+    it."""
+    from maxpane_dashboard.widgets.curator.wallet import UNDER_REVIEW
+
+    text = await _rendered(
+        CuratorWalletStanding, you_linked_state="review",
+        you_linked_group_size=6,
+        you_linked_reasons=["matching send amounts"],
+        **_standing_full())
+    line = _facts_line(text, "linked")
+    assert UNDER_REVIEW in line
+    assert "6" in line
+    assert "matching send amounts" in line
+    assert "unknown" not in line
+
+
 async def test_the_standing_panel_uses_pattern_language_in_every_state():
     """The panel's own forbidden-word test, over every state it can reach and
     over the widest reasons the analysis fixtures actually hold.
@@ -3402,6 +3424,51 @@ async def test_an_unreadable_linked_state_is_unknown_rather_than_clean():
     assert "unknown" in text
     assert "not linked" not in text
     assert "linkedish" not in text
+
+
+def test_the_wallet_panel_knows_exactly_the_frozen_linked_state_vocabulary():
+    """The ``CURATOR_SIGNAL_STATES`` pattern, extended to ``you_linked_state``
+    (Task 12): two independently hand-typed tuples that must agree, never one
+    derived from the other -- CLAUDE.md's redundancy rule, and the reason
+    this is a second test rather than making ``wallet.LINKED_STATES`` import
+    ``CURATOR_LINKED_STATES`` and comparing a constant to itself."""
+    from maxpane_dashboard.data.curator_models import CURATOR_LINKED_STATES
+    from maxpane_dashboard.widgets.curator import wallet
+
+    assert wallet.LINKED_STATES == CURATOR_LINKED_STATES
+
+
+async def test_curator_linked_states_is_exactly_what_you_linkage_can_emit():
+    """The durable half of the Task 12 fix.  Before this task ``LINKED_STATES``
+    was hand-typed with no contract module to freeze it against -- exactly
+    why ``"review"`` went missing here, in the ``LINK BAND`` filter dropdown,
+    and in ``CURATOR_KEYS``' own comment on ``you_linked_state``: the data
+    layer grew a value and nothing pinned a widget's vocabulary against it.
+
+    This is the test that closes the loop all the way to the producer: it
+    calls :func:`curator_clusters.you_linkage` over one fixture per reachable
+    state and asserts the set it can *actually* produce equals
+    ``CURATOR_LINKED_STATES``, in both directions -- a state added to
+    ``you_linkage`` and not to the contract (or vice versa) reddens here,
+    and the sibling test above carries that all the way to the widget."""
+    from tests.data.test_curator_clusters import CONTROLS, FARM_MEMBERS, farm_analysis
+
+    from maxpane_dashboard.data import curator_clusters
+    from maxpane_dashboard.data.curator_models import CURATOR_LINKED_STATES
+
+    clean = curator_clusters.you_linkage(CONTROLS[0], farm_analysis())
+    linked = curator_clusters.you_linkage(FARM_MEMBERS[1], farm_analysis())
+    reviewed_result = farm_analysis()
+    reviewed_result.groups[0]["review_members"] = {FARM_MEMBERS[0]: ["amount"]}
+    reviewed = curator_clusters.you_linkage(FARM_MEMBERS[0], reviewed_result)
+
+    emitted = {
+        clean["you_linked_state"],
+        linked["you_linked_state"],
+        reviewed["you_linked_state"],
+    }
+    assert emitted == {"clean", "linked", "review"}, "guard: the fixtures still reach all three"
+    assert set(CURATOR_LINKED_STATES) == emitted
 
 
 async def test_a_hostile_linkage_reason_cannot_reach_markup():
@@ -3512,6 +3579,28 @@ async def test_a_linked_reader_is_removed_rather_than_unknown():
     # "removed" -- this reader was not removed from anything.
     assert UNKNOWN_VALUE in cleared
     assert CLEAN_RANK_REMOVED not in cleared
+
+
+async def test_a_review_wallet_is_outside_the_clean_list_not_unknown():
+    """Task 12 fix: ``you_linkage`` never sets ``you_clean_rank`` on the
+    ``"review"`` branch either (the publisher's ``clean_list()`` counts
+    neither a linked nor a review member), so this line hit the same
+    unknown-fallback bug as the ``linked`` line above -- and for the same
+    reason: ``"review"`` was not a spelling either function recognised."""
+    from maxpane_dashboard.widgets.curator.wallet import (
+        CLEAN_RANK_UNDER_REVIEW,
+        UNKNOWN_VALUE,
+    )
+
+    line = _facts_line(
+        await _rendered(
+            CuratorWalletStanding, you_clean_rank=None,
+            you_linked_state="review", you_linked_group_size=6,
+            you_linked_reasons=["matching send amounts"], **_standing_full()),
+        "clean",
+    )
+    assert CLEAN_RANK_UNDER_REVIEW in line
+    assert UNKNOWN_VALUE not in line
 
 
 async def test_the_clean_rank_line_says_what_the_number_is_a_rank_in():

@@ -84,8 +84,10 @@ __all__ = [
     "UNKNOWN_VALUE",
     "NOT_LINKED",
     "LINKED_UNSIZED",
+    "UNDER_REVIEW",
     "CLEAN_RANK_SUFFIX",
     "CLEAN_RANK_REMOVED",
+    "CLEAN_RANK_UNDER_REVIEW",
     "STANDING_WIDTH_PROBE",
     "STANDING_FULL_WIDTH",
     "measure_standing_width",
@@ -136,6 +138,11 @@ NOT_LINKED = "not linked to any group"
 #: Linked, with a group size that would not read.  Neither "not linked" nor a
 #: number invented to stand in for one.
 LINKED_UNSIZED = "in a group of unknown size"
+#: T4's third ``you_linked_state``: thin, single-family evidence on the
+#: wallet's OWN families (never the group's), shown rather than folded into
+#: either "linked" or "not linked" -- the on-screen phrase the leaderboard's
+#: ``~`` glyph and the SEGMENTS "under review" band both already speak.
+UNDER_REVIEW = "under review"
 #: What the clean rank is a rank *in* — PRD §6's "#412 raw, #47 with clear
 #: farms removed", minus the word "clear", which the panel has no evidence for
 #: on any particular wallet.  Pattern language: a farm is a shape in the
@@ -145,6 +152,11 @@ CLEAN_RANK_SUFFIX = "with farms removed"
 #: to print — and a dash here would read as a failed computation rather than
 #: as the answer it is.
 CLEAN_RANK_REMOVED = "removed as a linked wallet"
+#: The review wallet's own clean-rank sibling: also outside the clean list
+#: (the publisher's own rule -- ``clean_list()`` never counts a review
+#: member), but not for the same reason "linked" is, so it gets its own
+#: wording rather than borrowing the confident one above.
+CLEAN_RANK_UNDER_REVIEW = "outside the clean list · under review"
 #: The minimum legal send buys points but not the place above.
 HOLDS_RANK = "not enough to move up"
 TAKES_RANK = "enough to move up"
@@ -492,15 +504,27 @@ class CuratorWalletAddress(_FactsPanel):
         return lines
 
 
-#: The two verdicts ``you_linked_state`` may hold; ``None`` — the sweep has
-#: not run — is the third state and is deliberately **not** in here.  A
-#: **third spelling is a silent fallback arm**, and the arm this one would
-#: fall into is the reassuring one, so anything not in this tuple renders
-#: :data:`UNKNOWN_VALUE`, exactly as the hero treats a phase word it does not
-#: know.  Unlike ``CURATOR_SIGNAL_STATES`` the contract freezes no tuple for
-#: this vocabulary, so there is nothing for the suite to agree against: the
-#: two spellings are ``CURATOR_KEYS``' own comment on ``you_linked_state``.
-LINKED_STATES: tuple[str, ...] = ("clean", "linked")
+#: The three verdicts ``you_linked_state`` may hold; ``None`` — the sweep has
+#: not run — is a fourth state and is deliberately **not** in here.  An
+#: **unrecognised spelling is a silent fallback arm**, and the arm this one
+#: would fall into is the reassuring one, so anything not in this tuple
+#: renders :data:`UNKNOWN_VALUE`, exactly as the hero treats a phase word it
+#: does not know.
+#:
+#: This is the third time one family of bug has shipped on this branch: the
+#: data layer grows a value (T4's ``"review"``), and a widget's hand-typed
+#: vocabulary does not learn about it — the ``LINK BAND`` filter dropdown and
+#: ``CURATOR_KEYS``' own comment on ``you_linked_state`` (in
+#: ``curator_models.py``) both went through the same miss before this one did.
+#: Unlike ``CURATOR_SIGNAL_STATES`` this tuple is not itself a shared,
+#: importable contract module both sides freeze against — it is still
+#: hand-typed here — so
+#: ``test_linked_states_agrees_with_every_state_you_linkage_can_emit``
+#: (``tests/widgets/test_curator_widgets.py``) is the durable half of the fix:
+#: it calls :func:`curator_clusters.you_linkage` over one fixture per state
+#: and asserts the set it can actually produce equals this tuple, in both
+#: directions.
+LINKED_STATES: tuple[str, ...] = ("clean", "linked", "review")
 
 
 def _reason_parts(reasons) -> list[str]:
@@ -528,11 +552,19 @@ def _reason_parts(reasons) -> list[str]:
 def _linked_parts(state, group_size, reasons) -> list[str]:
     """The ``linked`` line's value: the group, then why it is a group.
 
-    Three states, three sentences, and the ``None`` one is the whole reason
+    Four states, four sentences, and the ``None`` one is the whole reason
     this line exists in this shape.  A wallet the sweep has not looked at must
     not read as a wallet the sweep cleared: the reassuring rendering is the
     dangerous one here, and it is the one a "default to clean" would produce
     on every dashboard that has never finished an analysis.
+
+    ``"review"`` gets its own rendering, not ``"linked"``'s: the evidence is
+    real (the wallet's OWN families, already filtered to
+    ``you_linked_reasons`` by :func:`curator_clusters.you_linkage`), but it is
+    thin — one family, not the two-plus a group needs to be called linked —
+    so the value leads with :data:`UNDER_REVIEW` rather than the group size,
+    and that word is the one part of the line the shedding contract below
+    never drops.
     """
     if state not in LINKED_STATES:
         # `None`, and every spelling this widget does not know.
@@ -545,10 +577,18 @@ def _linked_parts(state, group_size, reasons) -> list[str]:
     size = group_size if isinstance(group_size, int) and not isinstance(
         group_size, bool
     ) and group_size > 0 else None
-    head = f"{size:,}-wallet group" if size is not None else LINKED_UNSIZED
+    group = f"{size:,}-wallet group" if size is not None else LINKED_UNSIZED
+    if state == "review":
+        # One part, not two: bundling `UNDER_REVIEW` onto the group text
+        # keeps both facts in the part `_FactsPanel` never sheds, rather than
+        # risking the review word surviving alone with no group context.
+        head = f"{UNDER_REVIEW} · {group}"
+    else:
+        head = group
     # Parts, not one joined string: `_FactsPanel` sheds from the end, so a
-    # narrow rail keeps the group and drops the evidence rather than cutting
-    # a phrase mid-word.  The group size is the part a reader acts on.
+    # narrow rail keeps the head and drops the evidence rather than cutting
+    # a phrase mid-word.  The group size (and, for review, the review word
+    # riding with it) is the part a reader acts on.
     return [head, *_reason_parts(reasons)]
 
 
@@ -580,11 +620,15 @@ def _standing_state(payload: dict) -> dict:
 def _clean_rank_parts(clean_rank, state) -> list[str]:
     """The ``clean`` line's value — the rank with the linked groups removed.
 
-    ``None`` carries **two** facts and the widget can only tell them apart by
-    the state beside it: WP3's contract makes a removed wallet's clean rank
-    ``None``, and so is the clean rank of every wallet before the sweep has
-    ever run.  "removed" is an answer; "-- unknown" is the absence of one, and
-    collapsing them is the FARM-row defect repeated on the reader's own line.
+    ``None`` carries **three** facts now and the widget can only tell them
+    apart by the state beside it: WP3's contract makes a removed wallet's
+    clean rank ``None``; so does the clean rank of a wallet still ``"review"``
+    (:func:`curator_clusters.you_linkage` never sets it on that branch either
+    — the publisher's ``clean_list()`` counts neither); and so is the clean
+    rank of every wallet before the sweep has ever run.  "removed" and
+    "outside the clean list" are both answers; "-- unknown" is the absence of
+    one, and collapsing any of them together is the FARM-row defect repeated
+    on the reader's own line.
 
     What it must never do is echo the raw rank.  Two identical numbers under
     each other read as "the farms cost you nothing" — a finding, drawn from a
@@ -596,6 +640,8 @@ def _clean_rank_parts(clean_rank, state) -> list[str]:
         return [f"#{clean_rank:,} {CLEAN_RANK_SUFFIX}"]
     if state == "linked":
         return [CLEAN_RANK_REMOVED]
+    if state == "review":
+        return [CLEAN_RANK_UNDER_REVIEW]
     return [UNKNOWN_VALUE]
 
 

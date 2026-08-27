@@ -768,7 +768,8 @@ CURATOR_KEYS: tuple[str, ...] = (
                                 #   panels render as the marker alone -- NEVER
                                 #   the word "None".
     # ---- YOU, linkage (all None when no wallet is configured) ---------------
-    "you_linked_state",         # str | None — "clean" | "linked".  None is
+    "you_linked_state",         # str | None — "clean" | "linked" | "review"
+                                #   (T4's thin-evidence third state).  None is
                                 #   "the sweep has not run", and must render
                                 #   `-- unknown`, NEVER a confident "clean".
     "you_linked_reasons",       # list[str] — pattern-language phrases;
@@ -945,6 +946,26 @@ CURATOR_ACTIVITY_KINDS: tuple[str, ...] = ("deposit", "joined", "saved")
 #: above: a fourth spelling from the analytics layer is a silent fallback arm.
 CURATOR_SIGNAL_STATES: tuple[str, ...] = ("ok", "watch", "fired")
 
+#: The three non-``None`` values ``you_linked_state`` may hold; ``None`` (the
+#: sweep has not run) is a fourth, deliberately excluded here for the same
+#: reason ``CURATOR_SIGNAL_STATES`` never lists a not-yet value -- a widget's
+#: fallback arm must fire for anything this tuple does not name, and folding
+#: "not run" into it would let that arm go silent for the one state that
+#: needs it to fire loudest.
+#:
+#: Frozen here, not derived from ``curator_clusters.you_linkage``, for the
+#: same reason ``CURATOR_SIGNAL_STATES`` is frozen rather than imported from
+#: ``analytics/curator_signals.py``: this is the contract module both the
+#: producer and the consuming widget import, so
+#: ``widgets/curator/wallet.py``'s own ``LINKED_STATES`` can be compared
+#: against it (``test_linked_states_agrees_with_curator_models`` in
+#: ``tests/widgets/test_curator_widgets.py``) without either side importing
+#: the other.  T4 added ``"review"`` to what the data layer emits and this
+#: tuple went two tasks without learning about it -- the same miss the
+#: ``LINK BAND`` filter dropdown and the widget's own vocabulary already
+#: made, which is why it is pinned here now rather than left implicit.
+CURATOR_LINKED_STATES: tuple[str, ...] = ("clean", "linked", "review")
+
 #: The only group names that may appear in ``degraded``.  The title bar renders
 #: them verbatim ("⚠ logs, state, wallet"), so an unlisted spelling reaches the
 #: user as-is.
@@ -968,6 +989,7 @@ __all__ = [
     "CURATOR_SERIES_KEYS",
     "CURATOR_ACTIVITY_KINDS",
     "CURATOR_SIGNAL_STATES",
+    "CURATOR_LINKED_STATES",
     "CURATOR_DEGRADED_GROUPS",
     "CuratorState",
     "CuratorConfig",
