@@ -1682,17 +1682,51 @@ def test_a_clean_address_still_grades_clean_and_a_stranger_still_grades_none():
     assert curator_clusters.grade_of(STRANGER, payload) is None
 
 
-def test_bands_by_address_agrees_with_grade_of_on_every_address():
-    """The two must never diverge: one is the bulk form of the other."""
+# ---------------------------------------------------------------------------
+# Fix round 2 (review finding, Critical) — `_group_of` was half-normalised
+# ---------------------------------------------------------------------------
+#
+# `bands_by_address` lowercases every stored member before keying its map;
+# `_group_of` lowercased only the caller's query and compared it raw against
+# the stored `members` list — a mixed-case stored member (a hand-edited
+# cache, exactly this module's threat model) made the two functions
+# disagree, which the agreement test below exists to catch.  Fixed by
+# lowercasing both sides in `_group_of`, per `sybilkit/report.py`'s own
+# documented convention ("every membership test here is lowercased on both
+# sides"), not by un-lowercasing `bands_by_address`.
+
+
+def test_a_mixed_case_stored_member_still_agrees_and_still_grades_the_groups_band():
+    """Both halves matter: agreeing on `None` would also be "agreement", so
+    this asserts the SAME non-None band from both functions, not just that
+    they match each other."""
     payload = curator_clusters.slot_payload(farm_analysis())
-    payload["groups"][0]["review_members"] = {FARM_MEMBERS[0]: ["amount"]}
-    bands = curator_clusters.bands_by_address(payload)
-    for address in (*FARM_MEMBERS, *CONTROLS, STRANGER):
-        assert bands.get(address) == curator_clusters.grade_of(address, payload), address
-    assert bands[FARM_MEMBERS[0]] == "review"
-    assert bands[FARM_MEMBERS[1]] == "high"
-    assert bands[CONTROLS[0]] == "clean"
-    assert STRANGER not in bands
+    payload["groups"][0]["members"][0] = FARM_MEMBERS[0].upper()
+    assert curator_clusters.grade_of(FARM_MEMBERS[0], payload) == "high"
+    assert curator_clusters.bands_by_address(payload).get(FARM_MEMBERS[0]) == "high"
+
+
+def test_bands_by_address_agrees_with_grade_of_on_every_address():
+    """The two must never diverge: one is the bulk form of the other.
+    Covers both bands `_grade_families`/`published_band` can produce — the
+    default fixture's second family ("funding") always yields "high", so a
+    "gas" second-family build is added to reach "low" too (review finding,
+    Important: a mutation that dropped "low" from the bulk path ONLY left
+    the whole suite green until this widened)."""
+    for second_family, band in (("funding", "high"), ("gas", "low")):
+        payload = curator_clusters.slot_payload(
+            farm_analysis(second_family=second_family)
+        )
+        payload["groups"][0]["review_members"] = {FARM_MEMBERS[0]: ["amount"]}
+        bands = curator_clusters.bands_by_address(payload)
+        for address in (*FARM_MEMBERS, *CONTROLS, STRANGER):
+            assert bands.get(address) == curator_clusters.grade_of(
+                address, payload
+            ), (second_family, address)
+        assert bands[FARM_MEMBERS[0]] == "review"
+        assert bands[FARM_MEMBERS[1]] == band
+        assert bands[CONTROLS[0]] == "clean"
+        assert STRANGER not in bands
 
 
 def test_you_linked_state_is_review_with_the_wallets_own_families_as_reasons():
@@ -1761,3 +1795,30 @@ def test_merge_leaderboard_grade_reports_a_review_wallet_too():
     rows = [{"rank": 1, "address": reviewer, "flagged": True, "name": None}]
     curator_clusters.merge_leaderboard_grade(rows, payload)
     assert rows[0]["link_conf"] == "review"
+
+
+def test_merge_leaderboard_grade_reports_the_low_band_too():
+    """Review finding, Important: the default fixture's second family
+    ("funding") always yields "high", so the merge path also needs a "gas"
+    second-family build to prove `bands_by_address` carries "low" through
+    `merge_leaderboard_grade`, not just "high"/"review"/"clean"."""
+    payload = curator_clusters.slot_payload(farm_analysis(second_family="gas"))
+    rows = [{"rank": 1, "address": FARM_MEMBERS[1], "flagged": True, "name": None}]
+    curator_clusters.merge_leaderboard_grade(rows, payload)
+    assert rows[0]["link_conf"] == "low"
+
+
+def test_a_non_list_review_family_value_degrades_to_empty_reasons():
+    """Review finding, Minor: `review_members`'s outer mapping can be
+    well-formed while one wallet's OWN value is not a list (`None`, a bare
+    string) — a narrower corruption than the whole mapping being unreadable.
+    The code already guards this with `isinstance(families, list)`; this
+    pins that it degrades to an empty reasons list rather than raising or
+    (for the string case) iterating characters as if they were families."""
+    for bad_families in (None, "amount"):
+        payload = curator_clusters.slot_payload(farm_analysis())
+        reviewer = FARM_MEMBERS[0]
+        payload["groups"][0]["review_members"] = {reviewer: bad_families}
+        keys = curator_clusters.you_linkage(reviewer, payload)
+        assert keys["you_linked_state"] == "review", bad_families
+        assert keys["you_linked_reasons"] == [], bad_families

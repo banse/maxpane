@@ -881,10 +881,24 @@ def clean_list_rows_from_fold(
 
 
 def _group_of(address: str, analysis: Any) -> Mapping | None:
+    """The first group whose ``members`` contains *address*, or ``None``.
+
+    Both sides lowercased, not just the query: ``sybilkit/report.py``
+    documents the convention this module lives under — "every membership
+    test here is lowercased on both sides" — and a stored ``members`` entry
+    of any other case (a hand-edited cache, exactly this module's threat
+    model) used to make this raw comparison miss a real member.  Measured
+    2026-08-27: `bands_by_address` already lowercased its own copy of each
+    member before keying its map, so it disagreed with this half-normalised
+    comparison on exactly that input; this fix is what makes the two agree
+    by construction rather than by coincidence of fixture casing.
+    """
     key = address.lower()
     for group in _groups_of(analysis):
         members = group.get("members")
-        if isinstance(members, (list, tuple)) and key in members:
+        if not isinstance(members, (list, tuple)):
+            continue
+        if key in {m.lower() for m in members if isinstance(m, str)}:
             return group
     return None
 
@@ -897,7 +911,9 @@ def grade_of(address: Any, analysis: Any) -> str | None:
     empty cell that means *clean*.  ``"review"`` is T4's third wallet state:
     thin evidence, shown rather than removed — a per-WALLET mark, checked
     before the group's own band, never the group's own ``review_flag``
-    (group review and member review are disjoint on the live service).
+    (measured 2026-08-27: over all 26 clusters holding review members, the 5
+    ``review_flag`` clusters hold zero of them — group review and member
+    review are disjoint on the live service).
     """
     if not isinstance(address, str) or analysis is None:
         return None
