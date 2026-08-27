@@ -20,8 +20,9 @@ anywhere below.  That alone is not enough, because ``os.replace`` *overwrites*
 its destination without a word: a rename is a way to destroy a file as surely
 as removing one.  So the rule is stated as a destination rule and enforced on
 both sides -- **no file this module writes ever lands on top of one that is
-already there**, in ``root`` or in the archive directory.  Three consequences
-follow deliberately:
+already there**, in ``root`` or in the archive directory, with the single
+named exception of its own ``.tmp`` scratch file.  Three consequences follow
+deliberately:
 
 * nothing already inside ``<root>/archive/<version-id>/`` is replaced.  A
   second run for a version whose ``archived_version`` never reached the slot
@@ -284,6 +285,39 @@ def _clean_rows(
 # ---------------------------------------------------------------------------
 
 
+def _archive_dir(root: Path, version_id: str) -> Path:
+    """``<root>/archive/<version-id>/``.  Only ever called with a checked id."""
+    return root / ARCHIVE_DIRNAME / version_id
+
+
+def _pair_blocked(directory: Path) -> str | None:
+    """Is either half of the published pair already archived?  Then refuse both.
+
+    ``_claim`` is per-NAME, and that is not enough on its own: the raw and the
+    cleaned list are **one dataset**, written from one payload and read as a
+    pair.  If one destination is taken and the other is free, the per-name
+    guard refuses one move and allows the other -- so the old raw list stays in
+    ``root`` beside a newly written cleaned list, and ``load_export_list``
+    answers ``complete=True, reason=None`` for **both**.  That is a stale list
+    presented as current, with no marker, and it is worse than a stale number
+    on its own because the two halves disagree with each other and neither
+    says so.
+
+    Checked here, before anything moves, because refusing up front is the only
+    version of this that cannot leave a half-state: a partial move cannot be
+    unwound afterwards without this module learning to remove files.  ``root``
+    keeps its previous coherent pair and the next sweep retries.
+    """
+    taken = [
+        name
+        for name in (RAW_LIST_NAME, CLEANED_LIST_NAME)
+        if (directory / name).exists()
+    ]
+    if not taken:
+        return None
+    return f"{' and '.join(taken)} already archived under {directory.name}"
+
+
 def _unusable(raw_rows: list[dict], clean_rows: list[dict]) -> str | None:
     """Why these lists must not replace the ones on disk -- or ``None``.
 
@@ -466,7 +500,7 @@ def _archive(
     entries: list[dict] = []
 
     present = [name for name in _ARCHIVED if (root / name).exists()]
-    directory = root / ARCHIVE_DIRNAME / version_id
+    directory = _archive_dir(root, version_id)
     try:
         directory.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -561,7 +595,9 @@ def archive_and_write(
     raw_rows = _raw_rows(valid, bands, names)
     clean_rows = _clean_rows(valid, names)
 
-    unusable = _unusable(raw_rows, clean_rows)
+    unusable = _unusable(raw_rows, clean_rows) or _pair_blocked(
+        _archive_dir(root, version_id)
+    )
     if unusable is not None:
         # Built BEFORE anything moves, and checked before it too: moving the
         # user's usable lists aside to replace them with lists no consumer

@@ -16,7 +16,9 @@ from pathlib import Path
 from maxpane_dashboard.data.curator_archive import (
     _ARCHIVED,
     ArchiveResult,
+    CLEANED_LIST_NAME,
     MANIFEST_NAME,
+    RAW_LIST_NAME,
     SLOT_NAME,
     archive_and_write,
 )
@@ -97,8 +99,17 @@ def _slot(*, archived_version: str | None = None) -> dict:
     return {"groups": [], "clean_ranks": {}, "published": published}
 
 
-def _seed_exports(root: Path, *, names: dict[str, str] | None = None) -> dict[str, bytes]:
-    """Write the seven superseded export files.  Returns their exact bytes."""
+def _seed_exports(
+    root: Path,
+    *,
+    names: dict[str, str] | None = None,
+    skip: tuple[str, ...] = (),
+) -> dict[str, bytes]:
+    """Write the seven superseded export files.  Returns their exact bytes.
+
+    *skip* leaves a name unwritten, which is how a test reaches the archive
+    steps that sit BEHIND the published pair's own gate.
+    """
     names = names or {}
     old_raw = [
         {
@@ -147,6 +158,8 @@ def _seed_exports(root: Path, *, names: dict[str, str] | None = None) -> dict[st
     }
     written: dict[str, bytes] = {}
     for name, text in contents.items():
+        if name in skip:
+            continue
         path = root / name
         path.write_text(text, encoding="utf-8")
         written[name] = path.read_bytes()
@@ -474,7 +487,14 @@ def test_a_second_run_without_the_slot_flag_never_touches_the_archived_originals
 
 
 def test_a_second_run_leaves_the_manifest_of_the_first_intact(tmp_path):
-    _seed_exports(tmp_path)
+    """Reaches the manifest's own guard, which sits behind the pair gate.
+
+    Seeded WITHOUT the published pair, so run 1 archives no
+    ``curator_raw_list.json`` / ``curator_cleaned_list.json`` and run 2's pair
+    gate stays open -- which is the only way the manifest's ``_claim`` is
+    exercised rather than shadowed.
+    """
+    _seed_exports(tmp_path, skip=REWRITTEN)
     manifest_path = tmp_path / "archive" / VERSION / MANIFEST_NAME
 
     _run(tmp_path)
@@ -497,6 +517,103 @@ def test_a_second_run_leaves_the_superseded_slot_of_the_first_intact(tmp_path):
     _run(tmp_path, previous_slot={"published": {"version_id": VERSION}, "groups": []})
 
     assert slot_path.read_bytes() == first
+
+
+def _pre_claim(tmp_path: Path, name: str) -> bytes:
+    """Put an earlier archive of *name* in the way, and return its bytes."""
+    archive = tmp_path / "archive" / VERSION
+    archive.mkdir(parents=True, exist_ok=True)
+    path = archive / name
+    path.write_text(f"an earlier archive of {name}", encoding="utf-8")
+    return path.read_bytes()
+
+
+def _assert_pair_refused(tmp_path: Path, before: dict[str, bytes], result) -> None:
+    assert result.archived == (), "something moved"
+    assert result.written == (), "something was written"
+    assert set(result.failed) == set(REWRITTEN)
+    for name, payload in before.items():
+        assert (tmp_path / name).read_bytes() == payload, f"{name} changed"
+
+
+def test_a_claimed_raw_destination_refuses_the_whole_pair(tmp_path):
+    """The two lists are one dataset: neither moves if either cannot.
+
+    With only the raw destination taken, a per-name guard refuses the raw move
+    and allows the cleaned one -- leaving the OLD raw list in root beside a
+    NEWLY written cleaned list, both of which ``load_export_list`` reports as
+    complete.  Two halves that disagree and neither says so.
+    """
+    before = _seed_exports(tmp_path)
+    guard = _pre_claim(tmp_path, RAW_LIST_NAME)
+
+    result = _run(tmp_path)
+
+    _assert_pair_refused(tmp_path, before, result)
+    archive = tmp_path / "archive" / VERSION
+    assert (archive / RAW_LIST_NAME).read_bytes() == guard
+    assert not (archive / CLEANED_LIST_NAME).exists()
+
+
+def test_a_claimed_cleaned_destination_refuses_the_whole_pair(tmp_path):
+    before = _seed_exports(tmp_path)
+    guard = _pre_claim(tmp_path, CLEANED_LIST_NAME)
+
+    result = _run(tmp_path)
+
+    _assert_pair_refused(tmp_path, before, result)
+    archive = tmp_path / "archive" / VERSION
+    assert (archive / CLEANED_LIST_NAME).read_bytes() == guard
+    assert not (archive / RAW_LIST_NAME).exists()
+
+
+def test_the_refused_pair_leaves_root_readable_as_one_coherent_dataset(tmp_path):
+    """The point of refusing: what root still serves is the OLD pair, together."""
+    _seed_exports(tmp_path)
+    _pre_claim(tmp_path, RAW_LIST_NAME)
+
+    _run(tmp_path)
+
+    raw = _read(tmp_path / RAW_LIST_NAME)
+    cleaned = _read(tmp_path / CLEANED_LIST_NAME)
+    # The seeded pair is the old sweep's: 10 raw rows and 4 cleaned.
+    assert len(raw) == 10 and len(cleaned) == 4
+    for is_clean, count in ((False, len(raw)), (True, len(cleaned))):
+        result = load_export_list(
+            tmp_path,
+            cleaned=is_clean,
+            expected_count=count,
+            live_rows=[],
+            you_row=None,
+        )
+        assert result.complete is True, f"cleaned={is_clean}: {result.reason}"
+    # Both halves come from the same sweep: every cleaned address is a raw one.
+    assert {row["address"] for row in cleaned} <= {row["address"] for row in raw}
+
+
+def test_an_already_archived_file_outside_the_pair_is_never_overwritten(tmp_path):
+    """Reaches the move loop's own guard, which the pair gate otherwise shadows.
+
+    Seeded without the published pair, so the pair gate stays open on run 2 and
+    the per-name ``_claim`` is what has to stop the enriched file -- regenerated
+    in ``root`` by ``load_export_list`` between the two runs -- from landing on
+    top of the copy run 1 archived.
+    """
+    _seed_exports(tmp_path, skip=REWRITTEN)
+    archive = tmp_path / "archive" / VERSION
+    name = "curator_raw_list.enriched.json"
+
+    _run(tmp_path)
+    archived_original = (archive / name).read_bytes()
+
+    (tmp_path / name).write_text("a newer enrichment pass", encoding="utf-8")
+    result = _run(tmp_path, previous_slot=_slot())
+
+    assert (archive / name).read_bytes() == archived_original, "the archived copy moved"
+    assert name in result.failed
+    assert name not in result.archived
+    # Refused, not lost: the newer file is still in root for the next attempt.
+    assert (tmp_path / name).read_text(encoding="utf-8") == "a newer enrichment pass"
 
 
 def test_a_mid_list_dropped_row_refuses_rather_than_voiding_the_raw_list(tmp_path):
