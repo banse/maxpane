@@ -2,6 +2,7 @@ import json
 import pathlib
 
 import httpx
+import pytest
 
 from maxpane_dashboard.data import curator_published as pub
 
@@ -269,6 +270,28 @@ async def test_an_export_echoing_the_asked_for_filters_is_accepted():
     })
     got = await pub.fetch_published_analysis(_fixture_version(), transport=transport)
     assert got is not None and got.rows
+
+
+@pytest.mark.parametrize("route,field", [
+    ("/overview", "version"), ("/list/export", "analysis_version"),
+])
+async def test_a_bulk_body_naming_another_content_hash_is_refused(route, field):
+    """Both bulk responses self-identify, and until 2026-08-27 neither was
+    compared against the `/versions` entry that named them.
+
+    A republish landing between the version check and either bulk read -- or a
+    CDN serving one stale half -- stores version V's provenance over another
+    analysis's rows, in an archive directory named for V.  Recomputing the
+    publisher's digest is out of reach; agreement across three independently
+    served responses is not.
+    """
+    bodies = {
+        "/overview": _load("overview_trimmed.json"),
+        "/list/export": _load("export_trimmed.json"),
+    }
+    bodies[route][field] = {**bodies[route][field], "content_hash": "0" * 64}
+    got = await pub.fetch_published_analysis(_fixture_version(), transport=_ok(bodies))
+    assert got is None
 
 
 async def test_a_transport_failure_degrades_to_none():

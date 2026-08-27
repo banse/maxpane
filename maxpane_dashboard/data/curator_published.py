@@ -61,12 +61,18 @@ EXPORT_PARAMS: dict[str, str] = {
 class PublishedVersion:
     """One entry off ``/versions`` -- the version the service names as published.
 
-    ``content_hash`` is **publisher-asserted, never independently verified**:
-    nothing in this module (or in ``curator_manager``/``curator_archive``,
-    the two callers that key off it) recomputes it from the ``/overview`` or
-    ``/list/export`` bytes and compares. It is a trust boundary, not a defect
-    to fix -- the manager's freshness check and the archive's directory name
-    both rest on the service telling the truth about what it shipped.
+    ``content_hash`` is **publisher-asserted**: nothing here recomputes the
+    digest from the ``/overview`` or ``/list/export`` bytes, because the
+    publisher's recipe for it is not ours to reproduce.  That much is a trust
+    boundary, not a defect to fix.
+
+    It is not, however, unchecked.  :func:`fetch_published_analysis` compares
+    this id and hash against the ones **both** bulk responses carry for
+    themselves (``overview["version"]`` and ``export["analysis_version"]``) and
+    refuses the pair on a disagreement.  Recomputation is out of reach;
+    agreement across three independently-served responses is not, and it is
+    what the manager's freshness check and the archive's directory name
+    actually rest on.
     """
 
     version_id: str
@@ -239,6 +245,32 @@ def _filters_disagreement(applied: Any) -> str | None:
     return None
 
 
+def _identity_disagreement(held: Any, version: PublishedVersion) -> str | None:
+    """Name the first way a bulk body's self-identity is not the version asked for.
+
+    Both bulk responses self-identify -- ``/overview`` under ``version`` and
+    ``/list/export`` under ``analysis_version``, each carrying the same ``id``
+    and ``content_hash`` ``/versions`` published (verified against the live
+    service on 2026-08-27).  Three requests, three independently-served
+    answers: comparing them is what turns "we believe one field" into "we
+    believe one field two other responses corroborate", and it is the only
+    thing standing between a republish mid-read (or a CDN serving one stale
+    half) and a slot stored with version V's provenance over V2's rows -- in an
+    archive directory named for V.
+
+    As above, a field the body omits is not a disagreement.
+    """
+    if not isinstance(held, dict):
+        return None
+    for field, asked in (
+        ("id", version.version_id),
+        ("content_hash", version.content_hash),
+    ):
+        if field in held and held[field] != asked:
+            return f"{held[field]!r}, asked {asked!r}"
+    return None
+
+
 async def fetch_published_analysis(
     version: PublishedVersion,
     *,
@@ -286,6 +318,19 @@ async def fetch_published_analysis(
         if not isinstance(clusters, list) or not isinstance(totals, dict) or not isinstance(rows, list):
             logger.warning("published analysis: overview/export shape unexpected for %s", version.version_id)
             return None
+
+        for label, body, field in (
+            ("/overview", overview, "version"),
+            ("/list/export", export, "analysis_version"),
+        ):
+            mismatch = _identity_disagreement(body.get(field), version)
+            if mismatch is not None:
+                logger.warning(
+                    "published analysis: %s's %s says %s -- refusing rows whose "
+                    "provenance disagrees with /versions",
+                    label, field, mismatch,
+                )
+                return None
 
         return PublishedAnalysis(
             version=version,

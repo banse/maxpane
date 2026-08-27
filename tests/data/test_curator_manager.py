@@ -2261,6 +2261,44 @@ class PublishedRoutes:
             **self.bodies["versions"], "published_version": version_id
         }
 
+    def _self_identified(self, route: str, request: httpx.Request):
+        """Serve a bulk body that names the version it was asked for.
+
+        The live service does this — `/overview` carries `version` and
+        `/list/export` carries `analysis_version`, each with the `id` and
+        `content_hash` `/versions` published — and since 2026-08-27
+        `fetch_published_analysis` refuses a pair whose self-identity disagrees
+        with the version it asked for.  A mock that served one frozen identity
+        would make every republish test below assert a refusal instead of the
+        re-fetch it is written about, which is a fixture accusing itself.
+        Bodies a test passes in explicitly are stamped the same way; one with
+        no identity field is left exactly as the test wrote it.
+        """
+        body = self.bodies[route]
+        field = {"overview": "version", "export": "analysis_version"}.get(route)
+        if field is None or not isinstance(body, dict):
+            return body
+        held = body.get(field)
+        asked = request.url.params.get("version")
+        entry = next(
+            (
+                e
+                for e in self.bodies["versions"].get("versions", [])
+                if isinstance(e, dict) and e.get("id") == asked
+            ),
+            None,
+        )
+        if not isinstance(held, dict) or entry is None:
+            return body
+        return {
+            **body,
+            field: {
+                **held,
+                "id": entry["id"],
+                "content_hash": entry["content_hash"],
+            },
+        }
+
     async def __call__(self, request: httpx.Request) -> httpx.Response:
         route = self._route(request)
         self.calls.append(route)
@@ -2269,7 +2307,7 @@ class PublishedRoutes:
             await self.release.wait()
         if route in self.dead:
             return httpx.Response(503, text="down")
-        return httpx.Response(200, json=self.bodies[route])
+        return httpx.Response(200, json=self._self_identified(route, request))
 
 
 #: The published version id the committed ``versions.json`` names, and the
