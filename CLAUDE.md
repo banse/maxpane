@@ -244,8 +244,16 @@ between entries.
 The three record-list hero cards have a five-line contract. Keep the order stable:
 
 1. The summary card shows `THE LIST`, wallet count, the view's primary total, its context, then
-   `list FROZEN`, `list CLEANED`, or `list FILTERED`. The raw primary total is routed ETH, cleaned
-   uses points, and filtered uses points followed by routed ETH without a `deposited` suffix.
+   `list FROZEN`, `list CLEANED`, or `list FILTERED`. The raw primary total is routed ETH; cleaned
+   and filtered both use points followed by the routed ETH those wallets deposited, without a
+   `deposited` suffix. The cleaned card's third line was the static note `after linked removal`
+   until 2026-08-27 — a restatement of the `list CLEANED` label one line below it, and the reason
+   the cleaned card was the only one whose total a reader could not compare against the other two.
+   Its ETH comes from `CuratorManager.clean_routed_eth()`, which totals the analysis slot's
+   **`clean_ranks`** (every clean wallet) and never `clean_list_rows` (capped for display, so it
+   would report the first thousand as all of them); it is `None` — the dash, never a zero — with no
+   analysis or an incomplete fold, the same guard the filtered total uses. It is a screen-supplied
+   hero kwarg, not a payload key, so `CURATOR_ANALYSIS_KEYS` stays at fourteen.
 2. The wallet card shows the verified ENS name or `YOUR WALLET`; `#rank of total · raw|clean|filtered`;
    join/hour detail or the active filter summary; `points · credited ETH`; and the full wallet
    address. The address stays visible even when ENS exists. The title, standing, points/ETH, and

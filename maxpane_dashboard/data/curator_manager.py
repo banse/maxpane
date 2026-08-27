@@ -59,8 +59,9 @@ Where the division happens
 
 Most manager models remain wei-native. ``build_signals`` divides its own
 presentation values once, the cache's series writer divides its buckets once
-on the way to disk, and ``_filtered_routed_eth`` performs this module's one
-intended presentation conversion for the filtered hero. Two divisions is how
+on the way to disk, and ``_routed_eth`` performs this module's one intended
+presentation conversion -- for the filtered hero and the cleaned one, which
+share it precisely so there is still only one. Two divisions is how
 a number silently becomes 1e-18 of itself, so
 ``test_the_manager_divides_to_eth_exactly_once`` pins this module's count at
 one.
@@ -713,6 +714,11 @@ class CuratorManager:
         self._analysis_failed = False
         #: Once-per-process marker for the missing-library log line.
         self._sybilkit_missing_logged = False
+        #: ``(ts, event_count) -> ETH`` for :meth:`clean_routed_eth`.  The
+        #: list hero is re-dispatched every tick while the ``l`` view is open
+        #: and the sum walks every event; the slot's own timestamp is what
+        #: makes a new analysis recompute it.
+        self._clean_routed_eth_memo: tuple[tuple[Any, int], float | None] | None = None
         #: The session the analysis sweep's published-analysis fetch may use.
         #: A test injects an ``httpx`` transport here; production leaves it
         #: ``None`` and the sweep borrows the client's own HTTP session.  With
@@ -1010,9 +1016,9 @@ class CuratorManager:
     def _filtered_routed_eth(
         self, rows: list[dict] | None
     ) -> float | None:
-        if rows is None or not self._history_complete():
+        if rows is None:
             return None
-        addresses = {
+        return self._routed_eth({
             address.casefold()
             for row in rows
             if isinstance(row, dict)
@@ -1020,7 +1026,59 @@ class CuratorManager:
             and len(address) == 42
             and address.startswith(("0x", "0X"))
             and all(char in "0123456789abcdefABCDEF" for char in address[2:])
-        }
+        })
+
+    def clean_routed_eth(self) -> float | None:
+        """What the CLEANED list's wallets routed, for its own hero card.
+
+        The same number the filtered card shows, over the clean population
+        instead of a filter's: gross deposited (all of it refunded), summed
+        from the raw ``Deposited`` events rather than from any row's
+        ``credit_eth``, which is the credited high-water mark and a different
+        quantity.
+
+        The address set is the slot's ``clean_ranks`` — **every** clean wallet,
+        not ``clean_list_rows``, which is capped for display at
+        ``CLEAN_LIST_LIMIT`` and would silently total the first thousand.
+
+        ``None`` whenever it cannot be trusted: no analysis yet, or a fold that
+        is still backfilling (:meth:`_history_complete`, the same guard the
+        filtered total uses). The card renders the unavailable dash rather than
+        a total that is missing whatever the fold has not reached.
+
+        Memoised on the slot's timestamp and the event count, because the list
+        hero is re-dispatched on every tick while the ``l`` view is open and
+        this walks all 28,353 events.
+        """
+        entry = self.cache.analysis_last_good()
+        slot = (
+            entry.payload
+            if entry is not None and isinstance(entry.payload, Mapping)
+            else None
+        )
+        ranks = slot.get("clean_ranks") if slot is not None else None
+        if not isinstance(ranks, Mapping):
+            return None
+        stamp = (entry.ts, len(self.cache.events()))
+        if self._clean_routed_eth_memo is not None:
+            held_stamp, held_value = self._clean_routed_eth_memo
+            if held_stamp == stamp:
+                return held_value
+        value = self._routed_eth({
+            address.casefold() for address in ranks if isinstance(address, str)
+        })
+        self._clean_routed_eth_memo = (stamp, value)
+        return value
+
+    def _routed_eth(self, addresses: set[str]) -> float | None:
+        """Gross wei routed by ``addresses``, in ETH -- the module's ONE divide.
+
+        Both hero totals come through here so the conversion has a single site;
+        see this module's docstring on why two divisions is how a number
+        silently becomes 1e-18 of itself.
+        """
+        if not self._history_complete():
+            return None
         total_wei = sum(
             event.amount_wei
             for event in self.cache.events()

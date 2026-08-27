@@ -928,10 +928,14 @@ async def test_the_list_hero_names_an_unconfigured_wallet_at_narrow_width():
             (),
         ),
         (
+            # The cleaned card carries the ETH its wallets routed, the way the
+            # filtered card does — and, like it, without a `deposited` suffix.
+            # It replaced the static note "after linked removal", which the
+            # `list CLEANED` label one line down already said.
             "cleaned",
-            ("8,750 wallets", "12,345,678 pts", "list CLEANED",
+            ("8,750 wallets", "12,345,678 pts", "64.9K ETH", "list CLEANED",
              "#7,042 of 8,750 · clean"),
-            (),
+            ("deposited", "after linked removal"),
         ),
         (
             "filtered",
@@ -952,6 +956,7 @@ async def test_list_hero_follows_the_visible_list(view, expected, absent):
         volume_routed_eth=128_130.76,
         clean_contributors=8_750,
         clean_points=12_345_678,
+        clean_routed_eth=64_903.2,
         filtered_contributors=568,
         filtered_points=1_234_567,
         filtered_routed_eth=321.5,
@@ -2754,6 +2759,10 @@ CURATOR_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
 _SCREEN_SUPPLIED = {
     "you_address",
     "list_view",
+    # The CLEANED card's routed-ETH total.  Asked of the manager at dispatch
+    # (`CuratorManager.clean_routed_eth`) rather than carried in the payload,
+    # so `CURATOR_ANALYSIS_KEYS` stays the fourteen the analysis adapter fills.
+    "clean_routed_eth",
     "filtered_contributors",
     "filtered_points",
     "filtered_routed_eth",
@@ -2921,6 +2930,7 @@ def _full_payload() -> dict:
         filtered_contributors=3,
         filtered_points=30_000,
         filtered_routed_eth=12.5,
+        clean_routed_eth=64_903.2,
         filtered_source_reason=None,
         you_filtered_index=1,
         you_first_index=12,

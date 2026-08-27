@@ -172,13 +172,21 @@ def _wallet_lines(data: dict, tier: str, width: int = 0) -> list[str]:
     )
 
 
-def _cleaned_summary_lines(data: dict, tier: str, _width: int = 0) -> list[str]:
-    note = "after linked removal" if tier != "minimal" else "after removal"
+def _cleaned_summary_lines(data: dict, _tier: str, _width: int = 0) -> list[str]:
+    """Points, then the ETH those wallets routed -- the filtered card's shape.
+
+    The third line used to be the static note "after linked removal", which
+    the ``list CLEANED`` label on the line below already says.  Spending a row
+    on a restatement while the raw and filtered cards both showed a real total
+    made the cleaned card the only one a reader could not compare against the
+    other two, so it shows the same number they do: gross routed, all of it
+    refunded, over the clean population.
+    """
     return _lines(
         "THE LIST",
         f"[bold]{_count(data.get('clean_contributors'), 'wallets')}[/]",
         f"{fmt_points(data.get('clean_points'))} pts",
-        f"[dim]{note}[/]",
+        f"{fmt_eth_compact(data.get('clean_routed_eth'))} ETH",
         _list_label("cleaned"),
     )
 
@@ -302,6 +310,7 @@ class CuratorListHero(Vertical):
         you_credit_eth=None,
         clean_contributors=None,
         clean_points=None,
+        clean_routed_eth=None,
         filtered_contributors=None,
         filtered_points=None,
         filtered_routed_eth=None,
@@ -326,6 +335,7 @@ class CuratorListHero(Vertical):
             "you_credit_eth": you_credit_eth,
             "clean_contributors": clean_contributors,
             "clean_points": clean_points,
+            "clean_routed_eth": clean_routed_eth,
             "filtered_contributors": filtered_contributors,
             "filtered_points": filtered_points,
             "filtered_routed_eth": filtered_routed_eth,

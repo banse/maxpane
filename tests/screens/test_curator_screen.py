@@ -767,6 +767,10 @@ def test_list_hero_screen_primitives_are_explicitly_named():
     assert SCREEN_SUPPLIED == {
         "you_address",
         "list_view",
+        # Asked of the manager at dispatch rather than carried in the payload:
+        # it is a hero total, not a contract key, so `CURATOR_ANALYSIS_KEYS`
+        # stays the fourteen the analysis adapter fills.
+        "clean_routed_eth",
         "filtered_contributors",
         "filtered_points",
         "filtered_routed_eth",

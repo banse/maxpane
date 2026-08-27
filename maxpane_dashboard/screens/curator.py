@@ -375,7 +375,8 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "volume_routed_eth", "you_address", "you_ens", "you_rank",
         "you_clean_rank", "you_filtered_index", "you_first_index",
         "you_first_hour", "you_points", "you_credit_eth",
-        "clean_contributors", "clean_points", "filtered_contributors",
+        "clean_contributors", "clean_points", "clean_routed_eth",
+        "filtered_contributors",
         "filtered_points", "filtered_routed_eth", "filter_summary",
         "filter_editor_open",
     ),
@@ -472,7 +473,8 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
 #: The kwargs above that the screen owns rather than the manager.
 #: The filtered values are populated by Task 6's list-view controller.
 SCREEN_SUPPLIED: frozenset[str] = frozenset({
-    "you_address", "list_view", "filtered_contributors", "filtered_points",
+    "you_address", "list_view", "clean_routed_eth",
+    "filtered_contributors", "filtered_points",
     "filtered_routed_eth",
     "you_filtered_index", "you_first_index", "you_first_hour", "filter_summary",
     "filtered_rows", "filtered_complete", "filtered_source_reason",
@@ -1971,6 +1973,21 @@ class CuratorScreen(RefreshGuard, Screen):
             },
         )
 
+    def _clean_routed_eth(self) -> float | None:
+        """The cleaned card's ETH total, or ``None`` if it cannot be trusted.
+
+        Asked of the manager rather than summed here: the complete clean
+        population lives in the analysis slot, and ``clean_list_rows`` is
+        capped for display -- totalling what the screen holds would quietly
+        report the first thousand wallets as all of them.  The manager
+        memoises, so re-dispatching the hero every tick is free.
+        """
+        try:
+            return self._data_manager.clean_routed_eth()
+        except Exception as exc:  # noqa: BLE001 -- a hero total never fails a repaint
+            logger.debug("Curator cleaned routed ETH unavailable: %s", exc)
+            return None
+
     def _dispatch_list_hero(self, data: dict) -> None:
         rows = self._filtered_rows
         you_row = data.get("you_list_row") or {}
@@ -1992,6 +2009,7 @@ class CuratorScreen(RefreshGuard, Screen):
                     else None
                 ),
                 "filtered_routed_eth": self._filtered_routed_eth,
+                "clean_routed_eth": self._clean_routed_eth(),
                 "you_filtered_index": self._you_filtered_index,
                 "you_first_index": you_row.get("first_index"),
                 "you_first_hour": you_row.get("first_hour"),

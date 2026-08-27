@@ -1661,8 +1661,11 @@ def test_the_manager_divides_to_eth_exactly_once(tmp_path, clock):
     divisions is how a number becomes 1e-18 of itself, silently.
 
     ``build_signals`` owns that division and the cache's series writer owns the
-    only other one.  Filtered-list routed ETH is a second presentation boundary,
-    so this module owns exactly one conversion for that result.
+    only other one.  The list heroes' routed ETH is a second presentation
+    boundary, so this module owns exactly one conversion for it -- and the
+    filtered card and the cleaned card SHARE that one site (`_routed_eth`)
+    rather than each growing their own, which is the whole reason the count
+    below is still 1 after the cleaned card grew an ETH line.
     """
     _EXPECTED_DIVISION_SITES = 1
     src = inspect.getsource(curator_manager)
@@ -1675,7 +1678,7 @@ def test_the_manager_divides_to_eth_exactly_once(tmp_path, clock):
         and (node.func.id if isinstance(node.func, ast.Name) else node.func.attr)
         .endswith("_eth")
     }
-    assert eth_calls <= {"_filtered_routed_eth"}
+    assert eth_calls <= {"_filtered_routed_eth", "_routed_eth"}
 
 
 def test_an_analytics_failure_is_never_published_as_a_healthy_picture(tmp_path, clock):
@@ -2703,6 +2706,128 @@ def test_a_repaired_fold_runs_the_analysis_the_partial_one_refused(tmp_path, clo
 
     assert routes.calls == ["versions", "overview", "export"]
     assert _slot_copy(manager)["published"]["version_id"] == PUBLISHED_ID
+
+
+# ---------------------------------------------------------------------------
+# The CLEANED hero card's routed-ETH total
+# ---------------------------------------------------------------------------
+
+
+def _clean_addresses(manager) -> set[str]:
+    return {
+        address.casefold()
+        for address in manager.cache.analysis_last_good().payload["clean_ranks"]
+    }
+
+
+def test_the_cleaned_total_is_what_the_clean_wallets_routed(tmp_path, clock):
+    """The cleaned card's third line, over the whole clean population.
+
+    Derived by COMPLEMENT rather than by re-running the implementation's own
+    sum: everything routed, minus what the wallets the analysis did not clear
+    routed.  A test that re-summed the clean set the way the method does would
+    pass against any address set it happened to pick, including the wrong one.
+    """
+    from tests.data.test_curator_published_analysis import _fixture_events
+
+    routes = PublishedRoutes()
+    manager = _published_fold_manager(tmp_path, clock, routes)
+    _run_analysis(manager)
+
+    clean = _clean_addresses(manager)
+    events = _fixture_events()
+    assert 0 < len(clean) < len({e.contributor.casefold() for e in events}), (
+        "guard: the clean set must be a strict, non-empty subset or the "
+        "complement below proves nothing"
+    )
+    everything = sum(e.amount_wei for e in events)
+    not_clean = sum(
+        e.amount_wei for e in events if e.contributor.casefold() not in clean
+    )
+    assert manager.clean_routed_eth() == (everything - not_clean) / 10**18
+    assert manager.clean_routed_eth() != everything / 10**18
+
+
+def test_the_cleaned_total_ignores_the_rendered_slice_and_totals_the_population(
+    tmp_path, clock
+):
+    """`clean_list_rows` is capped at CLEAN_LIST_LIMIT for display; the clean
+    POPULATION is `clean_ranks`.  Totalling the rendered rows would report the
+    first thousand wallets as all of them — silently, and low, which is the
+    direction a reader cannot spot.
+
+    The 82-wallet fixture is under the cap, so asserting "rendered is smaller"
+    would pass vacuously here.  Emptying the rendered rows and requiring the
+    total to be UNCHANGED is the same property with a bite: an implementation
+    reading them would return 0.0 or None.
+    """
+    routes = PublishedRoutes()
+    manager = _published_fold_manager(tmp_path, clock, routes)
+    _run_analysis(manager)
+    entry = manager.cache.analysis_last_good()
+    before = manager.clean_routed_eth()
+    assert before
+
+    slot = dict(entry.payload)
+    assert slot["clean_list_rows"], "guard: there were rows to remove"
+    slot["clean_list_rows"] = []
+    clock.advance(60)
+    manager.cache.store_analysis(slot, ts=clock.now)
+
+    assert manager.clean_routed_eth() == before
+
+
+def test_the_cleaned_total_is_none_while_the_fold_is_still_backfilling(
+    tmp_path, clock
+):
+    """The same guard the filtered total uses.  A sum over a partial event set
+    is a real number that is simply too small, and nothing on the card could
+    tell a reader that — so the card gets the dash instead."""
+    from tests.data.test_curator_published_analysis import (
+        _fixture_events,
+        _fixture_firsts,
+    )
+
+    routes = PublishedRoutes()
+    manager = _published_fold_manager(tmp_path, clock, routes)
+    _run_analysis(manager)
+    assert manager.clean_routed_eth() is not None      # guard: it had one
+
+    _seed_fold(manager, _fixture_events(), _fixture_firsts(), rows=4)
+    manager._clean_routed_eth_memo = None
+    assert manager.clean_routed_eth() is None
+
+
+def test_with_no_analysis_the_cleaned_total_is_none_never_zero(tmp_path, clock):
+    """A zero here is "these wallets routed nothing", which is a claim.  The
+    honest answer before the first analysis lands is that there is no clean
+    population to total."""
+    manager = _analysis_manager(tmp_path, clock)
+    assert manager.cache.analysis_last_good() is None
+    assert manager.clean_routed_eth() is None
+
+
+def test_the_cleaned_total_memo_does_not_outlive_the_analysis_it_totalled(
+    tmp_path, clock
+):
+    """The hero is re-dispatched every tick while the `l` view is open, so the
+    walk over every event is memoised — and a memo that outlived its slot
+    would be the exact defect this dashboard forbids: a stale number rendered
+    beside a live one, with no marker."""
+    routes = PublishedRoutes()
+    manager = _published_fold_manager(tmp_path, clock, routes)
+    _run_analysis(manager)
+    first = manager.clean_routed_eth()
+    assert first is not None
+    assert manager.clean_routed_eth() == first          # served from the memo
+
+    slot = dict(manager.cache.analysis_last_good().payload)
+    kept = sorted(slot["clean_ranks"])[:5]
+    slot["clean_ranks"] = {a: slot["clean_ranks"][a] for a in kept}
+    clock.advance(60)
+    manager.cache.store_analysis(slot, ts=clock.now)
+
+    assert manager.clean_routed_eth() != first
 
 
 def test_a_cannot_run_tick_still_does_not_clear_the_failed_flag(tmp_path, clock):
