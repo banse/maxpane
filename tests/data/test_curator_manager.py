@@ -2284,6 +2284,26 @@ SUPERSEDED_ID = next(
 )
 
 
+def _fixture_hash(version_id: str) -> str:
+    return next(
+        entry["content_hash"]
+        for entry in _published("versions.json")["versions"]
+        if entry["id"] == version_id
+    )
+
+
+#: What the caller records as ``archived_version``.  It is the version id AND
+#: the content hash, because that is the identity a published analysis has --
+#: see `curator_archive.archive_key`.  Derived, never re-typed: an archive key
+#: hand-copied here would stop tracking the one the module computes.
+PUBLISHED_KEY = curator_archive.archive_key(
+    PUBLISHED_ID, _fixture_hash(PUBLISHED_ID)
+)
+SUPERSEDED_KEY = curator_archive.archive_key(
+    SUPERSEDED_ID, _fixture_hash(SUPERSEDED_ID)
+)
+
+
 def _analysis_manager(tmp_path, clock, *, routes=None, published=None, wallet=None):
     """A manager whose fold is the farm: cache pre-seeded, empty log sweeps.
 
@@ -2922,7 +2942,7 @@ def test_the_archive_is_called_once_per_new_version(tmp_path, clock, monkeypatch
     _run_analysis(manager)
     assert seen == [PUBLISHED_ID]
     assert (
-        _slot_copy(manager)["published"]["archived_version"] == PUBLISHED_ID
+        _slot_copy(manager)["published"]["archived_version"] == PUBLISHED_KEY
     ), "the caller records what it archived, or T9's idempotence is inert"
     assert (tmp_path / curator_archive.RAW_LIST_NAME).exists()
     assert (tmp_path / curator_archive.CLEANED_LIST_NAME).exists()
@@ -2937,7 +2957,7 @@ def test_the_archive_is_called_once_per_new_version(tmp_path, clock, monkeypatch
     clock.advance(3_600)
     _run_analysis(manager, now=clock.now)
     assert seen == [PUBLISHED_ID, SUPERSEDED_ID]
-    assert _slot_copy(manager)["published"]["archived_version"] == SUPERSEDED_ID
+    assert _slot_copy(manager)["published"]["archived_version"] == SUPERSEDED_KEY
 
 
 def test_the_archive_root_is_the_cache_directory_and_nothing_else(
@@ -3046,7 +3066,7 @@ def test_a_failure_that_names_no_published_list_is_still_a_successful_archive(
 
     _run_analysis(manager)
 
-    assert _slot_copy(manager)["published"]["archived_version"] == PUBLISHED_ID
+    assert _slot_copy(manager)["published"]["archived_version"] == PUBLISHED_KEY
 
 
 def test_no_boolean_from_the_versions_payload_reaches_the_slot(tmp_path, clock):
@@ -3103,6 +3123,38 @@ def test_no_boolean_from_the_versions_payload_reaches_the_slot(tmp_path, clock):
     assert stored["published"]["status_counts"] == {"flagged": 12_416}
 
 
+def test_the_persisted_status_counts_are_bounded_by_the_known_words(tmp_path, clock):
+    """``status_counts`` is the only third-party MAPPING in a block whose every
+    other field is a scalar, and the block is persisted.
+
+    A service answering ten thousand keys would put all of them in a cache
+    that already measures 26 MB on the live install, forever.  The bound is
+    the three words the export's own ``status`` field uses; everything else is
+    dropped from the provenance, which nothing computes from.
+    """
+    body = _published("versions.json")
+    body["versions"] = [
+        {
+            **entry,
+            "status_counts": {
+                "clean": 1, "flagged": 2, "review": 3,
+                **{f"junk{n}": n for n in range(2_000)},
+            },
+        }
+        if entry["id"] == PUBLISHED_ID
+        else entry
+        for entry in body["versions"]
+    ]
+    manager = _analysis_manager(
+        tmp_path, clock, published=PublishedRoutes(versions=body)
+    )
+
+    _run_analysis(manager)
+
+    stored = _slot_copy(manager)["published"]["status_counts"]
+    assert stored == {"clean": 1, "flagged": 2, "review": 3}
+
+
 def test_a_non_mapping_totals_never_reaches_the_build(tmp_path, clock, monkeypatch):
     """``detect_result_from_published`` calls ``totals.get`` and raises on a
     list.  The fetch layer's own shape guard is what stops it, and this is the
@@ -3126,24 +3178,20 @@ def test_a_non_mapping_totals_never_reaches_the_build(tmp_path, clock, monkeypat
     assert manager._analysis_failed is True
 
 
-def test_the_expected_counts_agree_with_the_rows_the_archive_wrote(tmp_path, clock):
-    """The count check ``load_export_list`` runs FIRST, end to end.
+def _published_fold_manager(tmp_path, clock, routes):
+    """A manager whose LOCAL fold is the published fixture's own 82 wallets.
 
-    ``expected_count`` is the payload's own ``contributors_total`` for the raw
-    list and ``clean_contributors`` for the cleaned one; a file whose length
-    disagrees is rejected as ``count_mismatch`` and the view falls back to the
-    capped live rows **silently**.  So the rows the archive writes and the
-    counts the payload publishes have to be the same two numbers, and this runs
-    the real screen-side reader over the real files to prove it.
+    Reuses T4's ``_fixture_events`` / ``_fixture_firsts``, which reproduce each
+    published row's own measurements, so the local half of the seam genuinely
+    agrees with the published half and the record-view numbers below mean
+    something.
     """
     from tests.data.test_curator_published_analysis import (
         _fixture_events,
         _fixture_firsts,
     )
-    from maxpane_dashboard.data.curator_list_source import load_export_list
 
     rows = _published("export_trimmed.json")["rows"]
-    routes = PublishedRoutes()
     client = _scenario_client({"state": True, "logs": True, "wallet": False})
     client.answers["fetch_state"] = _state(
         tx_count=len(rows), contributors=len(rows)
@@ -3158,6 +3206,61 @@ def test_the_expected_counts_agree_with_the_rows_the_archive_wrote(tmp_path, clo
     )
     manager.cache.store_events(_fixture_events(), now=NOW)
     manager.cache.store_first_deposits(_fixture_firsts())
+    return manager
+
+
+def _record_view(manager, payload, *, cleaned: bool, live_cap: int | None = None):
+    """What the ``l`` record view would actually serve, through its own reader.
+
+    ``live_cap`` truncates the live slice the way production already does and
+    an 82-row fixture cannot.  ``load_export_list`` **overlays the live rows
+    onto the file** for every address they cover, so with 82 wallets and a
+    1,000-row leaderboard cap the whole file is overlaid and the file's own
+    values are invisible.  Live is 19,522 wallets against that same cap, so
+    the complete list is what supplies all but the first thousand rows — which
+    is the behaviour a test about the FILE has to reach.
+    """
+    from maxpane_dashboard.data.curator_list_source import load_export_list
+
+    live = payload["clean_list_rows" if cleaned else "leaderboard_rows"]
+    return load_export_list(
+        pathlib.Path(manager.cache.path).parent,
+        cleaned=cleaned,
+        expected_count=(
+            payload["clean_contributors"] if cleaned
+            else payload["contributors_total"]
+        ),
+        live_rows=live if live_cap is None else live[:live_cap],
+        you_row=payload["you_list_row"],
+    )
+
+
+def test_the_expected_counts_agree_with_the_rows_the_archive_wrote(tmp_path, clock):
+    """The count check ``load_export_list`` runs FIRST, end to end.
+
+    ``expected_count`` is the payload's own ``contributors_total`` for the raw
+    list and ``clean_contributors`` for the cleaned one; a file whose length
+    disagrees is rejected as ``count_mismatch`` and the view falls back to the
+    capped live rows **silently**.  So the rows the archive writes and the
+    counts the payload publishes have to be the same two numbers, and this runs
+    the real screen-side reader over the real files to prove it.
+
+    **The two halves are not equally strong, and a reader should know which is
+    which.**  The CLEANED half is a real cross-check: ``clean_contributors``
+    is folded by the library over the LOCAL dataset while the file is written
+    from the publisher's ``status == "clean"`` rows, so the two are independent
+    computations and this fails if they ever diverge.  The RAW half is weaker
+    *here* than in production: the state double is rigged to
+    ``contributors=len(rows)``, whereas live those numbers come from the
+    contract's own counter and from the published snapshot after
+    ``_valid_rows`` has silently dropped anything unparseable.  It still pins
+    that the archive writes one row per published row and that nothing is lost
+    between the write and the read — it does not pin the two live sources
+    against each other, and nothing at this layer could.
+    """
+    rows = _published("export_trimmed.json")["rows"]
+    routes = PublishedRoutes()
+    manager = _published_fold_manager(tmp_path, clock, routes)
 
     _run_analysis(manager)
     out = asyncio.run(manager.fetch_and_compute())
@@ -3171,21 +3274,93 @@ def test_the_expected_counts_agree_with_the_rows_the_archive_wrote(tmp_path, clo
     assert len(written_raw) == out["contributors_total"] == len(rows)
     assert len(written_clean) == out["clean_contributors"]
 
-    for cleaned, live in (
-        (False, out["leaderboard_rows"]),
-        (True, out["clean_list_rows"]),
-    ):
-        result = load_export_list(
-            tmp_path,
-            cleaned=cleaned,
-            expected_count=(
-                out["clean_contributors"] if cleaned else out["contributors_total"]
-            ),
-            live_rows=live,
-            you_row=out["you_list_row"],
-        )
+    for cleaned in (False, True):
+        result = _record_view(manager, out, cleaned=cleaned)
         assert result.complete is True, (cleaned, result.reason)
         assert result.reason is None
+
+
+def test_a_republish_under_one_id_rewrites_what_the_record_view_serves(
+    tmp_path, clock
+):
+    """**The keystone, from the manager's side.**
+
+    The freshness check keys on ``(version_id, content_hash)`` and correctly
+    re-fetches a rebuild published under the same id.  While the archive keyed
+    on the id alone, it then said "already archived", wrote nothing and
+    reported no failure — so the ``f`` analysis panels showed the new build and
+    the ``l`` record view kept serving the previous one, at
+    ``complete=True, reason=None``.  That is a stale list presented as current,
+    reaching the user through the one door ``_pair_blocked`` cannot watch.
+
+    Asserted on a value that DIFFERS BETWEEN BUILDS and read back through the
+    record view's own loader, not by counting calls: one wallet's ``points``.
+
+    That wallet is deliberately **outside the live slice**.  Measured while
+    writing this test: ``load_export_list`` overlays the live rows onto the
+    file for every address they cover, so a row inside the slice renders the
+    LOCAL fold's number whatever the file says (3841 in the file, 2841
+    served).  The complete list is what supplies every row past the cap — 100
+    of 19,522 are inside it live — so that is where a stale file is actually
+    seen, and that is where this asserts.
+    """
+    export = _published("export_trimmed.json")
+    # Row 40 of 82: past the live slice this test hands the reader, the way
+    # all but the first thousand of 19,522 wallets are past it in production.
+    moved = 40
+    live_cap = 10
+    before_points = export["rows"][moved]["points"]
+    after_points = before_points + 1_000
+
+    routes = PublishedRoutes()
+    manager = _published_fold_manager(tmp_path, clock, routes)
+
+    _run_analysis(manager)
+    first = asyncio.run(manager.fetch_and_compute())
+    served_first = _record_view(manager, first, cleaned=False, live_cap=live_cap)
+    assert served_first.rows[moved]["points"] == before_points
+    first_key = _slot_copy(manager)["published"]["archived_version"]
+    assert first_key == PUBLISHED_KEY
+
+    # The publisher rebuilds under the SAME id: new bytes, new hash, one row
+    # visibly different.
+    rebuilt = dict(export)
+    rebuilt["rows"] = [
+        dict(row, points=after_points) if index == moved else row
+        for index, row in enumerate(export["rows"])
+    ]
+    routes.bodies["export"] = rebuilt
+    versions = _published("versions.json")
+    versions["versions"] = [
+        {**entry, "content_hash": "b" * 64} if entry["id"] == PUBLISHED_ID else entry
+        for entry in versions["versions"]
+    ]
+    routes.bodies["versions"] = versions
+
+    clock.advance(3_600)
+    _run_analysis(manager, now=clock.now)
+    second = asyncio.run(manager.fetch_and_compute())
+
+    on_disk = json.loads(
+        (tmp_path / curator_archive.RAW_LIST_NAME).read_text(encoding="utf-8")
+    )
+    assert on_disk[moved]["points"] == after_points, "the file was never rewritten"
+
+    served = _record_view(manager, second, cleaned=False, live_cap=live_cap)
+    assert served.complete is True, served.reason
+    assert served.rows[moved]["points"] == after_points, (
+        "the record view is still serving the superseded build"
+    )
+    # ...and the superseded list was preserved, under its own archive key.
+    second_key = _slot_copy(manager)["published"]["archived_version"]
+    assert second_key != first_key
+    archived = json.loads(
+        (
+            tmp_path / curator_archive.ARCHIVE_DIRNAME / second_key
+            / curator_archive.RAW_LIST_NAME
+        ).read_text(encoding="utf-8")
+    )
+    assert archived[moved]["points"] == before_points
 
 
 # ---------------------------------------------------------------------------

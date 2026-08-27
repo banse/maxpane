@@ -150,6 +150,19 @@ def _str_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+#: The status words ``/versions`` folds its counts by.  ``status_counts`` was
+#: the one place an unbounded third-party mapping entered a payload this
+#: dashboard PERSISTS -- every other field in the provenance block is a
+#: scalar, and the curator cache is already 26 MB on the live install, so a
+#: service answering ten thousand keys would have written all of them into it
+#: forever.  An allowlist rather than a size cap: the vocabulary is the three
+#: words the export's own ``status`` field uses, the block is provenance that
+#: nothing computes from, and a fixed key set is a stronger bound than a
+#: number somebody has to pick.  A fourth word the publisher invents is
+#: dropped from the provenance, not from the analysis.
+_PUBLISHED_STATUS_WORDS = ("clean", "flagged", "review")
+
+
 def _published_block(
     version: PublishedVersion,
     *,
@@ -181,9 +194,9 @@ def _published_block(
         "rules_sha256": _str_or_none(version.rules_sha256),
         "snapshot_block": _opt_int(version.snapshot_block),
         "status_counts": {
-            str(name): count
-            for name, count in counts.items()
-            if _opt_int(count) is not None
+            name: counts[name]
+            for name in _PUBLISHED_STATUS_WORDS
+            if _opt_int(counts.get(name)) is not None
         },
         "fetched_at": float(fetched_at),
         "archived_version": _str_or_none(archived_version),
@@ -1788,12 +1801,14 @@ class CuratorManager:
 
         Step 9 runs BEFORE step 10 rather than after it, which inverts the
         plan's sketch, and the reason is step 10's own rule.  The slot has to
-        record ``published.archived_version`` — that flag is the only thing
-        that stops :func:`curator_archive.archive_and_write` re-archiving the
-        same version, and on a second run the files it would move are the ones
-        run 1 just wrote.  The flag is not knowable until the archive has
-        answered, so recording it after a store means a *second* store, and
-        "the slot is written once, from a complete pair" is the stronger rule.
+        record ``published.archived_version`` — the
+        :func:`curator_archive.archive_key` that stops the module re-archiving
+        an analysis it has already archived, on a run where the files it would
+        move are the ones the previous run just wrote.  The key is not knowable
+        until the archive has answered, so recording it after a store means a
+        *second* store, and "the slot is written once, from a complete pair" is
+        the stronger rule.
+
         What the sketched ordering was protecting — a failed archive must not
         cost the analysis — is kept by the ``try``: whatever the archive does,
         the store below runs.
@@ -1848,9 +1863,10 @@ class CuratorManager:
         ):
             # An id or a hash that is not a string is a FAILED read, not a
             # version.  It could never match the held block, so every tick
-            # would re-download the whole export; and the id names a directory
-            # under `<root>/archive/`, which `archive_and_write` would refuse
-            # anyway.  Refused here, once, rather than degrading twice.
+            # would re-download the whole export; and the two together name a
+            # directory under `<root>/archive/`, which `archive_key` would
+            # refuse anyway.  Refused here, once, rather than degrading twice.
+
             self._analysis_failed = True
             self.cache.mark_failed(TIER_ANALYSIS, float(self._clock()))
             return {"ok": False, "swept": True}
@@ -1918,9 +1934,17 @@ class CuratorManager:
         result: Any,
         previous_slot: Any,
     ) -> str | None:
-        """Move the superseded exports aside; return the version to record.
+        """Move the superseded exports aside; return the key to record.
 
-        ``None`` means "do not record this version as archived", and it is
+        The key is :func:`curator_archive.archive_key` — the version id **and**
+        the content hash — and it is deliberately the same compound identity
+        :func:`_is_same_published` uses here.  This method is the only place
+        the two meet, so it is the only place they could disagree: while the
+        archive keyed on the id alone, a republish under one id re-fetched and
+        re-stored the analysis while the archive said "already done", leaving
+        the record view serving the previous build's rows at ``complete=True``.
+
+        ``None`` means "do not record this analysis as archived", and it is
         returned for **every** outcome that is not a clean pair on disk:
 
         * the module raised (it says it never does; a caller that trusts that
@@ -1933,7 +1957,22 @@ class CuratorManager:
           cannot unwind that safely, so it reports and the caller decides.
 
         ``failed`` naming anything else — a manifest, an already-archived old
-        export — is not a split pair and does not cost the version its flag.
+        export — is not a split pair and does not cost the analysis its flag.
+
+        **The flag records a fact; it does not schedule a retry**, and no
+        retry is attempted.  Once the store below records this version and its
+        hash, every later tick short-circuits on them and never reaches this
+        method again for this analysis.  That is deliberate: the only way to
+        come back would be to make the cheap path depend on the flag, which
+        would re-download the whole export every 1,800 s for as long as the
+        condition lasted — and after a mid-archive failure the retry is futile
+        anyway, because ``root`` then holds one new list whose counterpart is
+        already in the archive directory, which is exactly the state
+        ``_pair_blocked`` refuses.  What actually happens is the repo's
+        designed unavailable state: with an export missing or unreadable,
+        ``load_export_list`` falls back to the capped live rows at
+        ``complete=False`` behind its own marker, until a new published
+        version arrives and archives cleanly.
 
         The whole call runs in a worker thread: on the live install it moves
         7.3 MB and writes ~8 MB of JSON, and the TUI's event loop is not the
@@ -1943,11 +1982,13 @@ class CuratorManager:
         """
         root = Path(self.cache.path).parent
         archived_at = float(self._clock())
+        key = curator_archive.archive_key(version.version_id, version.content_hash)
         try:
             outcome = await asyncio.to_thread(
                 lambda: curator_archive.archive_and_write(
                     root,
                     version_id=version.version_id,
+                    content_hash=version.content_hash,
                     rows=rows,
                     # Folded in here rather than passed in: it is one pass over
                     # every analysed address (19,522 on the live population) and
@@ -1960,7 +2001,7 @@ class CuratorManager:
         except Exception as exc:  # noqa: BLE001 — housekeeping never fails a load
             logger.warning(
                 "Curator archive raised for %s; the analysis still published: %s",
-                version.version_id,
+                key,
                 exc,
             )
             return None
@@ -1973,14 +2014,21 @@ class CuratorManager:
             if name in outcome.failed
         ]
         if split:
+            # NOT a retry marker: nothing here or below re-attempts the
+            # archive for this analysis (see the docstring).  What declining
+            # the flag buys is that no slot ever CLAIMS a split pair was
+            # archived — so a later fetch of this same analysis, from a fresh
+            # cache or a re-publish, archives instead of skipping, and the
+            # record view degrades honestly to capped live rows meanwhile.
             logger.warning(
-                "Curator archive left %s unwritten for %s; not recording the "
-                "version as archived so the next fetch of it tries again",
+                "Curator archive left %s unwritten for %s; recording no "
+                "archived version, and the record view falls back to the "
+                "capped live rows until a new analysis is published",
                 ", ".join(split),
-                version.version_id,
+                key,
             )
             return None
-        return version.version_id
+        return key
 
 
     # -- the WP3 seam --------------------------------------------------------

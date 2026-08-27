@@ -21,6 +21,7 @@ from maxpane_dashboard.data.curator_archive import (
     RAW_LIST_NAME,
     SLOT_NAME,
     archive_and_write,
+    archive_key,
 )
 from maxpane_dashboard.data.curator_list_source import load_export_list
 from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS
@@ -29,6 +30,13 @@ from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS
 NOW = 1787900000.0
 VERSION = "2026-08-25-sybilkit-0.2.0"
 OLD_VERSION = "2026-08-19-sybilkit-0.1.1"
+#: The other half of a published analysis's identity.  The archive directory
+#: is named for BOTH, so a republish under one id cannot be mistaken for the
+#: analysis it replaces -- see `archive_key`.
+CONTENT_HASH = "486c7787fded341765b11c178916b237b46dc7c09e486931758c179af3bf2f9f"
+REPUBLISHED_HASH = "9c5a1ef4882e84328bfc13da235b4d7d08f7c9fa3eebd4cf8eaab92ecc4ac616"
+KEY = archive_key(VERSION, CONTENT_HASH)
+REPUBLISHED_KEY = archive_key(VERSION, REPUBLISHED_HASH)
 
 
 def _address(number: int) -> str:
@@ -169,6 +177,7 @@ def _seed_exports(
 def _run(root: Path, **over):
     kwargs = {
         "version_id": VERSION,
+        "content_hash": CONTENT_HASH,
         "rows": _rows(),
         "bands": _bands(),
         "previous_slot": _slot(),
@@ -196,7 +205,7 @@ def test_the_old_exports_are_moved_and_still_exist_afterwards(tmp_path):
 
     result = _run(tmp_path)
 
-    archive = tmp_path / "archive" / VERSION
+    archive = tmp_path / "archive" / KEY
     for name, payload in before.items():
         if name not in REWRITTEN:
             assert not (tmp_path / name).exists(), f"{name} was left behind in the root"
@@ -223,7 +232,7 @@ def test_the_archived_copy_is_the_same_file_not_a_copy(tmp_path):
 
     _run(tmp_path)
 
-    archive = tmp_path / "archive" / VERSION
+    archive = tmp_path / "archive" / KEY
     for name, inode in inodes.items():
         assert (archive / name).stat().st_ino == inode, f"{name} was copied, not moved"
 
@@ -235,13 +244,13 @@ def test_a_missing_file_is_not_an_error(tmp_path):
 
     assert result.failed == ()
     assert result.archived == ("curator_lists.json", "clusters_slot.json")
-    assert (tmp_path / "archive" / VERSION / "curator_lists.json").exists()
+    assert (tmp_path / "archive" / KEY / "curator_lists.json").exists()
 
 
 def test_the_superseded_slot_is_written_into_the_archive(tmp_path):
     result = _run(tmp_path, previous_slot=_slot())
 
-    stored = _read(tmp_path / "archive" / VERSION / "clusters_slot.json")
+    stored = _read(tmp_path / "archive" / KEY / "clusters_slot.json")
     assert stored == _slot()
     assert "clusters_slot.json" in result.archived
 
@@ -249,7 +258,7 @@ def test_the_superseded_slot_is_written_into_the_archive(tmp_path):
 def test_no_slot_is_written_when_there_is_nothing_to_supersede(tmp_path):
     result = _run(tmp_path, previous_slot=None)
 
-    assert not (tmp_path / "archive" / VERSION / "clusters_slot.json").exists()
+    assert not (tmp_path / "archive" / KEY / "clusters_slot.json").exists()
     assert "clusters_slot.json" not in result.archived
 
 
@@ -263,7 +272,7 @@ def test_the_manifest_records_what_moved_and_what_it_superseded(tmp_path):
 
     _run(tmp_path)
 
-    manifest = _read(tmp_path / "archive" / VERSION / "manifest.json")
+    manifest = _read(tmp_path / "archive" / KEY / "manifest.json")
     assert manifest["archived_at"] == NOW
     assert manifest["new_version"] == VERSION
     assert manifest["superseded_version"] == OLD_VERSION
@@ -279,7 +288,7 @@ def test_the_manifest_records_what_moved_and_what_it_superseded(tmp_path):
 def test_the_manifest_supersedes_nothing_when_the_slot_names_no_version(tmp_path):
     _run(tmp_path, previous_slot=None)
 
-    manifest = _read(tmp_path / "archive" / VERSION / "manifest.json")
+    manifest = _read(tmp_path / "archive" / KEY / "manifest.json")
     assert manifest["superseded_version"] is None
 
 
@@ -429,7 +438,7 @@ def test_running_twice_for_one_version_archives_and_writes_nothing_the_second_ti
         if path.is_file()
     }
 
-    second = _run(tmp_path, previous_slot=_slot(archived_version=VERSION))
+    second = _run(tmp_path, previous_slot=_slot(archived_version=KEY))
 
     assert second == ArchiveResult((), (), ())
     assert {
@@ -456,6 +465,106 @@ def test_a_version_id_that_would_escape_the_archive_is_refused(tmp_path):
     assert not (tmp_path.parent / "escaped").exists()
 
 
+def test_a_content_hash_that_would_escape_the_archive_is_refused(tmp_path):
+    """The hash is joined onto the same path the id is, so it is checked the
+    same way.
+
+    Without this half, a service answering ``content_hash: "../../escaped"``
+    would name the directory ``2026-08-25-sybilkit-0.2.0-../../escape``. The
+    id guard cannot see it: the id is perfectly valid.
+    """
+    before = _seed_exports(tmp_path)
+
+    for hostile in ("../../escaped", "..", "a/b", "", None, "short", "x" * 200):
+        result = _run(tmp_path, content_hash=hostile)
+
+        assert result.archived == ()
+        assert result.written == ()
+        assert "curator_raw_list.json" in result.failed
+        for name, payload in before.items():
+            assert (tmp_path / name).read_bytes() == payload
+
+    assert not (tmp_path / "archive").exists()
+    assert not (tmp_path.parent / "escaped").exists()
+
+
+def test_one_version_id_republished_is_two_analyses_and_two_archives(tmp_path):
+    """**The keystone.**  A rebuild under the same id is a different analysis.
+
+    Keyed on the id alone, run 2 saw ``archived_version == version_id``,
+    returned three empty tuples, and left ``root`` holding run 1's exports
+    while the dashboard's analysis panels showed run 2's rows -- a stale list
+    answering ``complete=True`` with no marker.  Keyed on the id AND the hash,
+    run 2 gets its own directory, archives run 1's output into it and rewrites
+    both lists.
+
+    The `points` column is the discriminator: the two runs publish different
+    numbers for the same wallet, so this asserts the ROWS moved, not merely
+    that a function was called.
+    """
+    _seed_exports(tmp_path)
+
+    first = _run(tmp_path)
+    assert first.written == REWRITTEN
+    assert _read(tmp_path / RAW_LIST_NAME)[0]["points"] == 99_999
+
+    rebuilt = [dict(row, points=row["points"] + 1) for row in _rows()]
+    second = _run(
+        tmp_path,
+        content_hash=REPUBLISHED_HASH,
+        rows=rebuilt,
+        previous_slot=_slot(archived_version=KEY),
+    )
+
+    assert second.written == REWRITTEN, "a republish is archived and rewritten"
+    assert _read(tmp_path / RAW_LIST_NAME)[0]["points"] == 100_000
+    # Two directories, and run 1's output is preserved inside the second.
+    assert (tmp_path / "archive" / KEY).is_dir()
+    assert (tmp_path / "archive" / REPUBLISHED_KEY).is_dir()
+    assert (
+        _read(tmp_path / "archive" / REPUBLISHED_KEY / RAW_LIST_NAME)[0]["points"]
+        == 99_999
+    )
+
+
+def test_the_same_analysis_twice_is_still_archived_only_once(tmp_path):
+    """The idempotence the compound key must not cost.
+
+    Same id AND same hash is the SAME analysis, so the second call moves
+    nothing and writes nothing -- exactly as it did when the key was the id
+    alone.  This is the guard the republish fix could have disarmed, kept
+    separate from the republish test so each can fail on its own.
+    """
+    _seed_exports(tmp_path)
+    _run(tmp_path)
+    fingerprints = {
+        path: path.read_bytes()
+        for path in sorted(tmp_path.rglob("*"))
+        if path.is_file()
+    }
+
+    again = _run(tmp_path, previous_slot=_slot(archived_version=KEY))
+
+    assert again == ArchiveResult((), (), ())
+    assert {
+        path: path.read_bytes()
+        for path in sorted(tmp_path.rglob("*"))
+        if path.is_file()
+    } == fingerprints
+
+
+def test_the_manifest_names_the_whole_content_hash(tmp_path):
+    """The directory name carries twelve characters; the record carries all
+    of them, so the archive identifies the exact bytes it holds."""
+    _seed_exports(tmp_path)
+    _run(tmp_path)
+
+    manifest = _read(tmp_path / "archive" / KEY / MANIFEST_NAME)
+    assert manifest["new_version"] == VERSION
+    assert manifest["new_content_hash"] == CONTENT_HASH
+    assert KEY.endswith(CONTENT_HASH[:12])
+
+
 def test_a_second_run_without_the_slot_flag_never_touches_the_archived_originals(tmp_path):
     """The crash-between-archive-and-slot-save case.
 
@@ -465,7 +574,7 @@ def test_a_second_run_without_the_slot_flag_never_touches_the_archived_originals
     written published lists on top of the originals run 1 archived.
     """
     before = _seed_exports(tmp_path)
-    archive = tmp_path / "archive" / VERSION
+    archive = tmp_path / "archive" / KEY
 
     first = _run(tmp_path)
     assert first.written == REWRITTEN
@@ -495,7 +604,7 @@ def test_a_second_run_leaves_the_manifest_of_the_first_intact(tmp_path):
     exercised rather than shadowed.
     """
     _seed_exports(tmp_path, skip=REWRITTEN)
-    manifest_path = tmp_path / "archive" / VERSION / MANIFEST_NAME
+    manifest_path = tmp_path / "archive" / KEY / MANIFEST_NAME
 
     _run(tmp_path)
     first = manifest_path.read_bytes()
@@ -507,7 +616,7 @@ def test_a_second_run_leaves_the_manifest_of_the_first_intact(tmp_path):
 
 
 def test_a_second_run_leaves_the_superseded_slot_of_the_first_intact(tmp_path):
-    slot_path = tmp_path / "archive" / VERSION / SLOT_NAME
+    slot_path = tmp_path / "archive" / KEY / SLOT_NAME
 
     _run(tmp_path, previous_slot=_slot())
     first = slot_path.read_bytes()
@@ -521,7 +630,7 @@ def test_a_second_run_leaves_the_superseded_slot_of_the_first_intact(tmp_path):
 
 def _pre_claim(tmp_path: Path, name: str) -> bytes:
     """Put an earlier archive of *name* in the way, and return its bytes."""
-    archive = tmp_path / "archive" / VERSION
+    archive = tmp_path / "archive" / KEY
     archive.mkdir(parents=True, exist_ok=True)
     path = archive / name
     path.write_text(f"an earlier archive of {name}", encoding="utf-8")
@@ -550,7 +659,7 @@ def test_a_claimed_raw_destination_refuses_the_whole_pair(tmp_path):
     result = _run(tmp_path)
 
     _assert_pair_refused(tmp_path, before, result)
-    archive = tmp_path / "archive" / VERSION
+    archive = tmp_path / "archive" / KEY
     assert (archive / RAW_LIST_NAME).read_bytes() == guard
     assert not (archive / CLEANED_LIST_NAME).exists()
 
@@ -562,7 +671,7 @@ def test_a_claimed_cleaned_destination_refuses_the_whole_pair(tmp_path):
     result = _run(tmp_path)
 
     _assert_pair_refused(tmp_path, before, result)
-    archive = tmp_path / "archive" / VERSION
+    archive = tmp_path / "archive" / KEY
     assert (archive / CLEANED_LIST_NAME).read_bytes() == guard
     assert not (archive / RAW_LIST_NAME).exists()
 
@@ -618,7 +727,7 @@ def test_a_run_interrupted_after_the_cleaned_move_recovers_a_coherent_pair(tmp_p
     counterpart missing, which is the very harm the gate exists to prevent.
     """
     before = _seed_exports(tmp_path)
-    archive = tmp_path / "archive" / VERSION
+    archive = tmp_path / "archive" / KEY
     archive.mkdir(parents=True)
     (tmp_path / CLEANED_LIST_NAME).rename(archive / CLEANED_LIST_NAME)
 
@@ -636,7 +745,7 @@ def test_a_run_interrupted_after_the_cleaned_move_recovers_a_coherent_pair(tmp_p
 def test_a_run_interrupted_after_the_whole_archive_step_recovers_both_lists(tmp_path):
     """Both destinations taken, root holding neither: still nothing to split."""
     before = _seed_exports(tmp_path)
-    archive = tmp_path / "archive" / VERSION
+    archive = tmp_path / "archive" / KEY
     archive.mkdir(parents=True)
     for name in _ARCHIVED:
         if (tmp_path / name).exists():
@@ -658,7 +767,7 @@ def test_an_already_archived_file_outside_the_pair_is_never_overwritten(tmp_path
     top of the copy run 1 archived.
     """
     _seed_exports(tmp_path, skip=REWRITTEN)
-    archive = tmp_path / "archive" / VERSION
+    archive = tmp_path / "archive" / KEY
     name = "curator_raw_list.enriched.json"
 
     _run(tmp_path)

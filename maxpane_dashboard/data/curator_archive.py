@@ -3,7 +3,8 @@
 The old ``curator_*_list`` files on disk were produced by the locally computed
 sweep.  The published, immutable analysis disagrees with them -- it re-judges
 thousands of wallets -- so the moment a new published version lands, the old
-files are relocated into ``<root>/archive/<version-id>/`` and the complete
+files are relocated into ``<root>/archive/<version-id>-<hash12>/`` -- see
+:func:`archive_key` for why the hash is in that name -- and the complete
 lists are rewritten from the published rows.  The record view is then complete
 the moment it opens, and ``e`` re-exports the new data.
 
@@ -24,11 +25,11 @@ already there**, in ``root`` or in the archive directory, with the single
 named exception of its own ``.tmp`` scratch file.  Three consequences follow
 deliberately:
 
-* nothing already inside ``<root>/archive/<version-id>/`` is replaced.  A
-  second run for a version whose ``archived_version`` never reached the slot
-  -- a crash between the archive step and the slot save -- would otherwise
-  move the freshly written published lists straight on top of the originals
-  it archived a moment earlier.  See :func:`_claim`.
+* nothing already inside ``<root>/archive/<version-id>-<hash12>/`` is
+  replaced.  A second run for an analysis whose ``archived_version`` never
+  reached the slot -- a crash between the archive step and the slot save --
+  would otherwise move the freshly written published lists straight on top of
+  the originals it archived a moment earlier.  See :func:`_claim`.
 * an old export that could **not** be moved is never overwritten by its
   replacement.  The archive step and the write step share one filename, so a
   failed move would otherwise turn housekeeping into data loss; the write is
@@ -103,6 +104,17 @@ _ENRICHED_SOURCES = (
 #: because the only thing worse than not archiving is moving somebody's
 #: exports to a directory a payload chose.
 _SAFE_VERSION = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+
+#: The content hash is the OTHER half of a published analysis's identity, and
+#: it is joined onto the same path, so it is checked the same way: hex-ish,
+#: bounded, no separators of any kind.
+_SAFE_HASH = re.compile(r"\A[A-Za-z0-9]{8,128}\Z")
+
+#: How much of the content hash names the archive directory.  Twelve hex
+#: characters is 48 bits -- far past collision range for the handful of
+#: analyses one population ever has -- and it keeps the directory name
+#: readable next to the version id it follows.
+HASH_PREFIX = 12
 
 #: The only band words a row may carry off this module.  ``bands_by_address``
 #: emits exactly these; anything else is bad data and renders ``?`` (``None``)
@@ -285,9 +297,13 @@ def _clean_rows(
 # ---------------------------------------------------------------------------
 
 
-def _archive_dir(root: Path, version_id: str) -> Path:
-    """``<root>/archive/<version-id>/``.  Only ever called with a checked id."""
-    return root / ARCHIVE_DIRNAME / version_id
+def _archive_dir(root: Path, key: str) -> Path:
+    """``<root>/archive/<version-id>-<hash12>/``.
+
+    Only ever called with an :func:`archive_key`, which is what checked both
+    halves before either was joined onto a path.
+    """
+    return root / ARCHIVE_DIRNAME / key
 
 
 def _pair_blocked(root: Path, directory: Path) -> str | None:
@@ -404,8 +420,49 @@ def _safe_version(version_id: Any) -> bool:
     return isinstance(version_id, str) and bool(_SAFE_VERSION.match(version_id))
 
 
+def archive_key(version_id: Any, content_hash: Any) -> str | None:
+    """``"<version-id>-<hash12>"`` -- one identity, or ``None`` if unusable.
+
+    **A published analysis is identified by its version id AND its content
+    hash, and this module now says so in the one place it matters: the
+    directory name.**  The id alone is not an identity.  A publisher may
+    rebuild under one id -- a corrected run of the same day's analysis -- and
+    the manager already treats that as a new analysis: it re-fetches and
+    re-stores, because the rows underneath have moved.  While the archive's
+    idempotence keyed on the id alone, that re-fetch found ``archived_version
+    == version_id``, wrote nothing, reported no failure, and left ``root``
+    holding the PREVIOUS build's exports while the analysis panels showed the
+    new one.  ``load_export_list`` answered ``complete=True, reason=None`` for
+    them: a stale list presented as current, arriving through the one door
+    :func:`_pair_blocked` does not watch.
+
+    Putting the hash in the directory name is what makes the fix structural
+    rather than a second comparison bolted on.  A genuine republish gets its
+    own directory, so ``_pair_blocked`` finds nothing taken and permits the
+    move instead of refusing it; a re-run of the *same* analysis gets the same
+    directory and the same key, so every existing guard -- the idempotence
+    skip, :func:`_claim`, the pair gate -- keeps behaving exactly as it did.
+
+    ``None`` when either half is unusable, and the caller refuses the whole
+    archive: both halves are joined onto a path and both arrive from an HTTP
+    service.
+    """
+    if not _safe_version(version_id):
+        return None
+    if not isinstance(content_hash, str) or not _SAFE_HASH.match(content_hash):
+        return None
+    return f"{version_id}-{content_hash[:HASH_PREFIX]}"
+
+
 def _archived_version(previous_slot: Any) -> str | None:
-    """``published.archived_version`` from the held slot, or ``None``."""
+    """``published.archived_version`` from the held slot, or ``None``.
+
+    The value is an :func:`archive_key`, not a bare version id -- the caller
+    records what this module returns.  A slot written before the compound key
+    existed holds a bare id, which simply never matches a key and costs one
+    extra archive of a version already archived; :func:`_claim` and
+    :func:`_pair_blocked` are what make that safe rather than destructive.
+    """
     if not isinstance(previous_slot, Mapping):
         return None
     published = previous_slot.get("published")
@@ -500,7 +557,9 @@ def _claim(destination: Path, failed: list[str]) -> bool:
 
 def _archive(
     root: Path,
+    key: str,
     version_id: str,
+    content_hash: str,
     previous_slot: Any,
     now: float,
 ) -> tuple[list[str], list[str]]:
@@ -510,7 +569,7 @@ def _archive(
     entries: list[dict] = []
 
     present = [name for name in _ARCHIVED if (root / name).exists()]
-    directory = _archive_dir(root, version_id)
+    directory = _archive_dir(root, key)
     try:
         directory.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -551,6 +610,9 @@ def _archive(
         "archived_at": now,
         "superseded_version": _superseded_version(previous_slot),
         "new_version": version_id,
+        # The directory name carries a truncated hash; the manifest carries
+        # the whole one, so the record identifies the exact bytes it holds.
+        "new_content_hash": content_hash,
         "files": entries,
     }
     if _claim(directory / MANIFEST_NAME, failed):
@@ -572,6 +634,7 @@ def archive_and_write(
     root: Path,
     *,
     version_id: str,
+    content_hash: str,
     rows: Any,
     bands: Any,
     previous_slot: Any,
@@ -582,22 +645,29 @@ def archive_and_write(
     *root* is the cache directory the caller owns -- there is no default, and
     nothing in this module computes one.  *now* is the caller's clock.
 
-    Idempotent by version id: the caller records ``archived_version`` in the
-    slot's ``published`` block, so a second call for a version already archived
-    moves nothing and writes nothing and returns three empty tuples.
+    **Idempotent by :func:`archive_key`, which is the version id AND the
+    content hash** -- the same compound identity the manager's own freshness
+    check uses, so the two cannot disagree about what "the same analysis"
+    means.  The caller records the returned key as ``archived_version`` in the
+    slot's ``published`` block, and a second call for an analysis already
+    archived moves nothing, writes nothing and returns three empty tuples.  A
+    republish under the same id is a *different* analysis: it gets its own
+    directory and is archived and rewritten, which is the whole point.
 
     Never raises.  A failed archive is logged, named in ``failed``, and the
     caller's sweep still succeeded.
     """
-    if not _safe_version(version_id):
+    key = archive_key(version_id, content_hash)
+    if key is None:
         logger.warning(
-            "curator archive: %r is not a usable version id; nothing archived, "
-            "nothing written",
+            "curator archive: %r/%r is not a usable version identity; nothing "
+            "archived, nothing written",
             version_id,
+            content_hash,
         )
         return ArchiveResult(failed=(RAW_LIST_NAME, CLEANED_LIST_NAME))
 
-    if _archived_version(previous_slot) == version_id:
+    if _archived_version(previous_slot) == key:
         return ArchiveResult()
 
     names = _carried_names(root)
@@ -613,12 +683,12 @@ def archive_and_write(
         logger.warning(
             "curator archive: the published rows for %s are not a usable list "
             "(%s); nothing archived, nothing written",
-            version_id,
+            key,
             unusable,
         )
         return ArchiveResult(failed=(RAW_LIST_NAME, CLEANED_LIST_NAME))
 
-    blocked = _pair_blocked(root, _archive_dir(root, version_id))
+    blocked = _pair_blocked(root, _archive_dir(root, key))
     if blocked is not None:
         # An archive-directory condition, not a payload one.  Diagnosed
         # separately because the two send a reader of ~/.maxpane/maxpane.log
@@ -626,12 +696,14 @@ def archive_and_write(
         logger.warning(
             "curator archive: archiving %s would split the published pair "
             "(%s); nothing archived, nothing written",
-            version_id,
+            key,
             blocked,
         )
         return ArchiveResult(failed=(RAW_LIST_NAME, CLEANED_LIST_NAME))
 
-    archived, failed = _archive(root, version_id, previous_slot, now)
+    archived, failed = _archive(
+        root, key, version_id, content_hash, previous_slot, now
+    )
 
     written: list[str] = []
     for name, payload in ((RAW_LIST_NAME, raw_rows), (CLEANED_LIST_NAME, clean_rows)):
@@ -663,6 +735,7 @@ def archive_and_write(
 __all__ = [
     "ARCHIVE_DIRNAME",
     "ArchiveResult",
+    "archive_key",
     "CLEANED_LIST_NAME",
     "MANIFEST_NAME",
     "RAW_LIST_NAME",
