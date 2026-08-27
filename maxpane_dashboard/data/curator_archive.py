@@ -15,9 +15,19 @@ variable, and never assembles a cache path of its own.  A default here is how
 a test written six months from now silently rewrites a real export.
 
 *Relocate, never destroy.*  Files are moved -- ``os.replace`` within a
-filesystem, ``shutil.move`` across one -- and nothing in this module ever
-takes a file away.  Two consequences follow deliberately:
+filesystem, ``shutil.move`` across one -- and no deletion primitive appears
+anywhere below.  That alone is not enough, because ``os.replace`` *overwrites*
+its destination without a word: a rename is a way to destroy a file as surely
+as removing one.  So the rule is stated as a destination rule and enforced on
+both sides -- **no file this module writes ever lands on top of one that is
+already there**, in ``root`` or in the archive directory.  Three consequences
+follow deliberately:
 
+* nothing already inside ``<root>/archive/<version-id>/`` is replaced.  A
+  second run for a version whose ``archived_version`` never reached the slot
+  -- a crash between the archive step and the slot save -- would otherwise
+  move the freshly written published lists straight on top of the originals
+  it archived a moment earlier.  See :func:`_claim`.
 * an old export that could **not** be moved is never overwritten by its
   replacement.  The archive step and the write step share one filename, so a
   failed move would otherwise turn housekeeping into data loss; the write is
@@ -274,6 +284,39 @@ def _clean_rows(
 # ---------------------------------------------------------------------------
 
 
+def _unusable(raw_rows: list[dict], clean_rows: list[dict]) -> str | None:
+    """Why these lists must not replace the ones on disk -- or ``None``.
+
+    Checked BEFORE anything moves, because the alternative is that the
+    superseded exports are already in the archive by the time anyone notices.
+
+    ``curator_list_source._normalise_rows`` enforces ``rank == enumerate(...,
+    start=1)`` on the **raw** list too, not only ``clean_rank`` on the cleaned
+    one.  So a single dropped row anywhere but the tail voids the entire
+    complete raw list: the file is written, ``written`` names it a success, and
+    ``load_export_list`` then rejects the whole thing as ``invalid_rows`` and
+    falls back to the capped live rows -- with the previous complete list
+    already moved away.  The gap is free to see from here, so it is seen here.
+
+    The same assertion catches a duplicated rank, which would otherwise pass a
+    length check and fail the same way.
+
+    An empty cleaned list gets the raw list's own "no rows is a failure"
+    treatment rather than being written: with a five-figure raw population,
+    zero survivors is what a renamed ``status`` field looks like, not a
+    result.  The two lists are one dataset, so half of it being unreadable
+    means the pair on disk stays as it is.
+    """
+    if not raw_rows:
+        return "the export yielded no rows at all"
+    ranks = [row["rank"] for row in raw_rows]
+    if ranks != list(range(1, len(ranks) + 1)):
+        return "the ranks are not contiguous from 1 (a row was dropped or duplicated)"
+    if not clean_rows:
+        return "no row carries status 'clean'"
+    return None
+
+
 def _carried_names(root: Path) -> dict[str, str]:
     """Lowercase address -> verified ENS name, read off the enriched exports.
 
@@ -377,6 +420,40 @@ def _write_json(path: Path, payload: Any) -> None:
     os.replace(temporary, path)
 
 
+def _claim(destination: Path, failed: list[str]) -> bool:
+    """Is *destination* free to be written?  Records the refusal when it is not.
+
+    **Nothing already inside the archive directory is ever overwritten.**
+    ``os.replace`` clobbers an existing destination silently, and
+    ``mkdir(exist_ok=True)`` lets this module refill a directory it already
+    filled -- so without this guard a second run for a version whose
+    ``archived_version`` never reached the slot (a crash between the archive
+    and the slot save) would move the NEWLY WRITTEN published lists on top of
+    the superseded originals, rewrite the manifest that recorded the other
+    five, and report ``failed == ()``.
+
+    On the live install those two originals are 5,284,457 and 2,043,639 bytes
+    with no other copy: the ``.enriched.json`` siblings differ by SHA-256 and
+    are not a backup.
+
+    Applied uniformly to the moves, the slot and the manifest rather than as a
+    ``mkdir(exist_ok=False)`` short-circuit, because a directory that exists is
+    not proof that it is *complete* -- a run that crashed mid-archive leaves
+    one behind with files still to move, and this guard lets that run finish
+    without ever putting a byte on top of what the first one saved.
+    """
+    if not destination.exists():
+        return True
+    logger.warning(
+        "curator archive: %s is already archived under %s; refusing to overwrite it",
+        destination.name,
+        destination.parent,
+    )
+    if destination.name not in failed:
+        failed.append(destination.name)
+    return False
+
+
 def _archive(
     root: Path,
     version_id: str,
@@ -402,6 +479,8 @@ def _archive(
 
     for name in present:
         destination = directory / name
+        if not _claim(destination, failed):
+            continue
         try:
             _relocate(root / name, destination)
         except Exception as exc:  # noqa: BLE001 -- housekeeping never escapes
@@ -412,7 +491,7 @@ def _archive(
         size, sha256 = _digest(destination)
         entries.append({"name": name, "bytes": size, "sha256": sha256})
 
-    if previous_slot is not None:
+    if previous_slot is not None and _claim(directory / SLOT_NAME, failed):
         destination = directory / SLOT_NAME
         try:
             _write_json(destination, previous_slot)
@@ -430,11 +509,12 @@ def _archive(
         "new_version": version_id,
         "files": entries,
     }
-    try:
-        _write_json(directory / MANIFEST_NAME, manifest)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("curator archive: cannot write the manifest: %s", exc)
-        failed.append(MANIFEST_NAME)
+    if _claim(directory / MANIFEST_NAME, failed):
+        try:
+            _write_json(directory / MANIFEST_NAME, manifest)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("curator archive: cannot write the manifest: %s", exc)
+            failed.append(MANIFEST_NAME)
 
     return archived, failed
 
@@ -481,15 +561,16 @@ def archive_and_write(
     raw_rows = _raw_rows(valid, bands, names)
     clean_rows = _clean_rows(valid, names)
 
-    if not raw_rows:
-        # Built BEFORE anything moves, and checked before it too: an export
-        # that yields no rows at all is a failure, not a result, and moving
-        # the user's usable lists aside to replace them with empty ones would
-        # be the one irreversible thing this module could do.
+    unusable = _unusable(raw_rows, clean_rows)
+    if unusable is not None:
+        # Built BEFORE anything moves, and checked before it too: moving the
+        # user's usable lists aside to replace them with lists no consumer
+        # will accept is the one irreversible thing this module could do.
         logger.warning(
-            "curator archive: the published rows for %s yielded no list; "
-            "nothing archived, nothing written",
+            "curator archive: the published rows for %s are not a usable list "
+            "(%s); nothing archived, nothing written",
             version_id,
+            unusable,
         )
         return ArchiveResult(failed=(RAW_LIST_NAME, CLEANED_LIST_NAME))
 

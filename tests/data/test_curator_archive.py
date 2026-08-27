@@ -16,6 +16,8 @@ from pathlib import Path
 from maxpane_dashboard.data.curator_archive import (
     _ARCHIVED,
     ArchiveResult,
+    MANIFEST_NAME,
+    SLOT_NAME,
     archive_and_write,
 )
 from maxpane_dashboard.data.curator_list_source import load_export_list
@@ -349,16 +351,6 @@ def test_row_fields_are_exactly_the_frozen_column_tuples(tmp_path):
         assert tuple(row) == CURATOR_ROW_KEYS["clean_list_rows"]
 
 
-def test_a_row_whose_address_will_not_parse_costs_the_row(tmp_path):
-    rows = _rows()
-    rows.append(_published_row(11, address="0xNOTHEX" + "0" * 35))
-
-    _run(tmp_path, rows=rows)
-
-    written = _read(tmp_path / "curator_raw_list.json")
-    assert [row["rank"] for row in written] == list(range(1, 11))
-
-
 def test_nothing_is_archived_when_the_published_rows_yield_no_list(tmp_path):
     before = _seed_exports(tmp_path)
 
@@ -451,6 +443,113 @@ def test_a_version_id_that_would_escape_the_archive_is_refused(tmp_path):
     assert not (tmp_path.parent / "escaped").exists()
 
 
+def test_a_second_run_without_the_slot_flag_never_touches_the_archived_originals(tmp_path):
+    """The crash-between-archive-and-slot-save case.
+
+    Nothing in this module writes ``archived_version``; a caller does, one
+    task later.  A crash in between means run 2 sees the same version with the
+    flag still absent -- and ``os.replace`` would silently move the NEWLY
+    written published lists on top of the originals run 1 archived.
+    """
+    before = _seed_exports(tmp_path)
+    archive = tmp_path / "archive" / VERSION
+
+    first = _run(tmp_path)
+    assert first.written == REWRITTEN
+    assert (archive / "curator_raw_list.json").read_bytes() == before["curator_raw_list.json"]
+    archived_after_first = {
+        path.name: path.read_bytes() for path in archive.iterdir() if path.is_file()
+    }
+
+    # No `archived_version` in the slot: the caller never got to record it.
+    second = _run(tmp_path, previous_slot=_slot())
+
+    assert {
+        path.name: path.read_bytes() for path in archive.iterdir() if path.is_file()
+    } == archived_after_first, "run 2 overwrote what run 1 archived"
+    assert second.archived == ()
+    assert second.written == ()
+    for name in REWRITTEN:
+        assert name in second.failed
+
+
+def test_a_second_run_leaves_the_manifest_of_the_first_intact(tmp_path):
+    _seed_exports(tmp_path)
+    manifest_path = tmp_path / "archive" / VERSION / MANIFEST_NAME
+
+    _run(tmp_path)
+    first = manifest_path.read_bytes()
+
+    result = _run(tmp_path, previous_slot=_slot())
+
+    assert manifest_path.read_bytes() == first
+    assert MANIFEST_NAME in result.failed
+
+
+def test_a_second_run_leaves_the_superseded_slot_of_the_first_intact(tmp_path):
+    slot_path = tmp_path / "archive" / VERSION / SLOT_NAME
+
+    _run(tmp_path, previous_slot=_slot())
+    first = slot_path.read_bytes()
+
+    # The slot the caller would hand over on run 2 is the NEW one -- writing it
+    # would replace the superseded payload the archive exists to preserve.
+    _run(tmp_path, previous_slot={"published": {"version_id": VERSION}, "groups": []})
+
+    assert slot_path.read_bytes() == first
+
+
+def test_a_mid_list_dropped_row_refuses_rather_than_voiding_the_raw_list(tmp_path):
+    """A gap anywhere but the tail voids the whole complete raw list."""
+    before = _seed_exports(tmp_path)
+    rows = _rows()
+    rows[4]["address"] = "0xNOTHEX" + "0" * 35  # rank 5, mid-list
+
+    result = _run(tmp_path, rows=rows)
+
+    assert result.archived == ()
+    assert result.written == ()
+    assert set(result.failed) == set(REWRITTEN)
+    for name, payload in before.items():
+        assert (tmp_path / name).read_bytes() == payload
+    assert not (tmp_path / "archive").exists()
+
+
+def test_two_rows_sharing_a_rank_are_refused(tmp_path):
+    rows = _rows()
+    rows[4]["rank"] = 4
+
+    result = _run(tmp_path, rows=rows)
+
+    assert result.written == ()
+    assert set(result.failed) == set(REWRITTEN)
+
+
+def test_a_payload_with_no_clean_status_never_writes_an_empty_cleaned_list(tmp_path):
+    """What a renamed ``status`` field looks like from here."""
+    before = _seed_exports(tmp_path)
+    rows = [{k: v for k, v in row.items() if k != "status"} for row in _rows()]
+
+    result = _run(tmp_path, rows=rows)
+
+    assert result.written == ()
+    assert "curator_cleaned_list.json" in result.failed
+    for name, payload in before.items():
+        assert (tmp_path / name).read_bytes() == payload
+
+
+def test_a_dropped_tail_row_costs_the_row_and_still_leaves_a_usable_list(tmp_path):
+    """The counterpart to the mid-list drop: a gap-free drop still publishes."""
+    rows = _rows()
+    rows.append(_published_row(11, address="0xNOTHEX" + "0" * 35))
+
+    result = _run(tmp_path, rows=rows)
+
+    assert result.written == REWRITTEN
+    written = _read(tmp_path / "curator_raw_list.json")
+    assert [row["rank"] for row in written] == list(range(1, 11))
+
+
 def test_an_unwritable_archive_directory_does_not_raise(tmp_path):
     before = _seed_exports(tmp_path)
     (tmp_path / "archive").write_text("not a directory", encoding="utf-8")
@@ -480,39 +579,168 @@ def test_an_old_export_that_could_not_be_moved_is_never_overwritten(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# The real published fixture, across the T5 -> T9 seam
+# ---------------------------------------------------------------------------
+
+FIXTURES = Path(__file__).parent.parent / "fixtures" / "curator" / "published"
+
+
+def _fixture(name: str):
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def _analysis_payload() -> dict:
+    """The slot-shaped analysis the manager hands to ``bands_by_address``.
+
+    Assembled from the published fixture pair the way the real pipeline does:
+    one group per cluster, its band from the publisher's own word, its review
+    members indexed into it, and every ``status == "clean"`` address in
+    ``clean_ranks``.
+    """
+    from maxpane_dashboard.data import curator_clusters as cc
+
+    overview, export = _fixture("overview_trimmed.json"), _fixture("export_trimmed.json")
+    rows = export["rows"]
+
+    members: dict[int, list[str]] = {}
+    reviews: dict[int, dict[str, list[str]]] = {}
+    for row in rows:
+        cluster_id = row.get("cluster_id")
+        if not isinstance(cluster_id, int):
+            continue
+        members.setdefault(cluster_id, []).append(row["address"].lower())
+        if row.get("status") == "review":
+            reviews.setdefault(cluster_id, {})[row["address"].lower()] = []
+
+    groups = [
+        {
+            "members": members.get(cluster["id"], []),
+            "conf": cc.published_band(cluster),
+            "review_members": reviews.get(cluster["id"], {}),
+        }
+        for cluster in overview["clusters"]
+    ]
+    clean_ranks = {
+        row["address"].lower(): row["rank"] for row in rows if row.get("status") == "clean"
+    }
+    return {"groups": groups, "clean_ranks": clean_ranks}
+
+
+def test_the_real_published_fixture_never_paints_the_legacy_standing_onto_the_clean_list(
+    tmp_path,
+):
+    """The assertion this whole module exists for.
+
+    The published rows carry a ``link_conf`` that is the 0.1.1 legacy standing.
+    On the live dataset it calls 1,727 ``status: clean`` wallets ``high``; the
+    trimmed fixture keeps 20 of exactly that contradiction.  Copying it would
+    paint marks across a quarter of the new clean list.
+    """
+    from maxpane_dashboard.data import curator_clusters as cc
+
+    rows = _fixture("export_trimmed.json")["rows"]
+    bands = cc.bands_by_address(_analysis_payload())
+
+    contradicting = [
+        row for row in rows
+        if row["status"] == "clean" and row["link_conf"] in ("high", "low")
+    ]
+    assert len(contradicting) == 20, "the fixture lost its contradiction trap"
+
+    result = _run(tmp_path, rows=rows, bands=bands)
+    assert result.written == REWRITTEN, result.failed
+
+    written = {row["address"]: row for row in _read(tmp_path / "curator_raw_list.json")}
+    for row in contradicting:
+        assert written[row["address"]]["link_conf"] == "clean", (
+            f"{row['address']} took the payload's {row['link_conf']!r}"
+        )
+
+    cleaned = {row["address"] for row in _read(tmp_path / "curator_cleaned_list.json")}
+    assert {row["address"] for row in contradicting} <= cleaned
+
+
+def test_the_real_published_fixture_round_trips_through_load_export_list(tmp_path):
+    from maxpane_dashboard.data import curator_clusters as cc
+
+    rows = _fixture("export_trimmed.json")["rows"]
+    _run(tmp_path, rows=rows, bands=cc.bands_by_address(_analysis_payload()))
+
+    raw = _read(tmp_path / "curator_raw_list.json")
+    cleaned = _read(tmp_path / "curator_cleaned_list.json")
+    assert len(raw) == len(rows)
+    assert 0 < len(cleaned) < len(raw)
+
+    for is_clean, count in ((False, len(raw)), (True, len(cleaned))):
+        result = load_export_list(
+            tmp_path,
+            cleaned=is_clean,
+            expected_count=count,
+            live_rows=[],
+            you_row=None,
+        )
+        assert result.complete is True, f"cleaned={is_clean} rejected: {result.reason}"
+
+    assert [row["clean_rank"] for row in cleaned] == list(range(1, len(cleaned) + 1))
+    assert [row["rank"] for row in raw] == [row["rank"] for row in rows]
+
+
+# ---------------------------------------------------------------------------
 # The two hard rules, asserted structurally
 # ---------------------------------------------------------------------------
 
 
-def _module_attributes() -> set[str]:
-    """Every attribute NAME the module's code touches.
+def _module_tree():
+    import ast
+    import inspect
+
+    from maxpane_dashboard.data import curator_archive
+
+    return ast.parse(inspect.getsource(curator_archive))
+
+
+def _module_symbols() -> set[str]:
+    """Every attribute name AND every bare name the module's code touches.
 
     Walked from the AST rather than grepped from the text so the module may
     write down the rules it obeys in its own docstrings -- a prose ban that
     reddens when the prose explains itself is a ban nobody can document.
+
+    Bare ``ast.Name`` ids are in the set because attribute names alone are
+    defeated by an import alias: ``from os import unlink; unlink(p)`` never
+    produces an ``ast.Attribute`` at all.  ``getattr`` is itself banned below,
+    which is what closes the ``getattr(os, "unlink")(p)`` spelling -- a string
+    constant no name-based guard can see.
     """
     import ast
-    import inspect
 
-    from maxpane_dashboard.data import curator_archive
-
-    tree = ast.parse(inspect.getsource(curator_archive))
-    return {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+    symbols: set[str] = set()
+    for node in ast.walk(_module_tree()):
+        if isinstance(node, ast.Attribute):
+            symbols.add(node.attr)
+        elif isinstance(node, ast.Name):
+            symbols.add(node.id)
+    return symbols
 
 
 def _module_imports() -> set[str]:
+    """Every module imported AND every symbol imported out of one.
+
+    ``from os.path import expanduser`` names no module the old version of this
+    helper would have recorded, and ``from os import environ`` names none
+    either -- both were invisible to it.
+    """
     import ast
-    import inspect
 
-    from maxpane_dashboard.data import curator_archive
-
-    tree = ast.parse(inspect.getsource(curator_archive))
     names: set[str] = set()
-    for node in ast.walk(tree):
+    for node in ast.walk(_module_tree()):
         if isinstance(node, ast.Import):
             names.update(alias.name for alias in node.names)
+            names.update(alias.asname for alias in node.names if alias.asname)
         elif isinstance(node, ast.ImportFrom):
             names.add(node.module or "")
+            names.update(alias.name for alias in node.names)
+            names.update(alias.asname for alias in node.names if alias.asname)
     return names
 
 
@@ -521,9 +749,9 @@ def test_the_module_can_never_reach_a_real_home_directory():
 
     from maxpane_dashboard.data import curator_archive
 
-    touched = _module_attributes()
-    for forbidden in ("home", "expanduser", "environ", "getenv"):
-        assert forbidden not in touched, f"curator_archive reaches for .{forbidden}"
+    reachable = _module_symbols() | _module_imports()
+    for forbidden in ("home", "expanduser", "environ", "getenv", "getattr"):
+        assert forbidden not in reachable, f"curator_archive reaches for {forbidden}"
 
     signature = inspect.signature(curator_archive.archive_and_write)
     assert (
@@ -532,7 +760,8 @@ def test_the_module_can_never_reach_a_real_home_directory():
 
 
 def test_the_module_never_deletes_and_never_reads_the_clock():
-    touched = _module_attributes()
-    for forbidden in ("unlink", "rmtree", "remove", "rmdir", "truncate"):
-        assert forbidden not in touched, f"curator_archive calls .{forbidden}"
-    assert "time" not in _module_imports(), "the clock is injected, never read"
+    reachable = _module_symbols() | _module_imports()
+    for forbidden in ("unlink", "rmtree", "remove", "rmdir", "truncate", "getattr"):
+        assert forbidden not in reachable, f"curator_archive calls {forbidden}"
+    for clock in ("time", "datetime"):
+        assert clock not in reachable, "the clock is injected, never read"
