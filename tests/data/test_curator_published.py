@@ -107,6 +107,37 @@ async def test_a_failed_overview_returns_none_rather_than_half_an_analysis():
     assert got is None
 
 
+async def test_a_non_dict_overview_body_is_not_mistaken_for_an_analysis():
+    """The guard lives in the shared helper, so this asserts at the CALL SITE.
+
+    Both fetchers funnel through `_get_json` today; a later inline parse or a
+    shape check reordered ahead of that delegation would bypass it, and only a
+    test that enters through this function would notice.
+    """
+    version = pub.PublishedVersion(
+        version_id="v", content_hash="h", detector_version="0.2.0",
+        rule_set="v2h", rules_sha256="deadbeef", snapshot_block=1,
+        cluster_count=1, status_counts={"clean": 1},
+    )
+    transport = _ok({"/overview": [], "/list/export": _load("export_trimmed.json")})
+    got = await pub.fetch_published_analysis(version, transport=transport)
+    assert got is None
+
+
+async def test_a_non_dict_export_body_is_not_mistaken_for_an_analysis():
+    """Same call-site guard, the other bulk read.  A non-dict `/list/export`
+    body must not reach `export.get("rows")` -- the overview here is a real,
+    valid body, so only the export side can be at fault."""
+    version = pub.PublishedVersion(
+        version_id="v", content_hash="h", detector_version="0.2.0",
+        rule_set="v2h", rules_sha256="deadbeef", snapshot_block=1,
+        cluster_count=1, status_counts={"clean": 1},
+    )
+    transport = _ok({"/overview": _load("overview_trimmed.json"), "/list/export": []})
+    got = await pub.fetch_published_analysis(version, transport=transport)
+    assert got is None
+
+
 async def test_the_real_payload_served_as_html_is_still_refused():
     """The one body that isolates the content-type check.
 
@@ -179,7 +210,11 @@ async def test_the_version_travels_in_every_request_query():
     assert seen and all("2026-08-25-sybilkit-0.2.0" in url for url in seen)
 
 
-async def test_nothing_in_this_module_opens_a_socket():
+async def test_a_transport_failure_degrades_to_none():
+    """An arbitrary exception raised inside a transport (here a bare
+    AssertionError, not an httpx error) is still caught by `_get_json`'s broad
+    except-and-degrade -- NOT a socket-avoidance guarantee: that one is
+    `test_every_request_goes_through_the_injected_transport`, below."""
     exploding = _ExplodingTransport()
     assert await pub.fetch_published_version(transport=exploding) is None
 
