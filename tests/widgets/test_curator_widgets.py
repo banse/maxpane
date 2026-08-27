@@ -1363,6 +1363,21 @@ def test_every_declared_tier_cost_is_the_measured_one():
             assert cost == tier_cost(columns), (module.__name__, name)
 
 
+def test_with_optional_suffix_sheds_the_suffix_when_it_does_not_fit():
+    """The primitive THE LIST's four analysis panels use to append the
+    published dataset's version beside their own freshness marker: the
+    marker (`base`) is load-bearing and never abbreviated; the suffix sheds
+    whole, cleanly, the moment the combined text would not fit."""
+    from maxpane_dashboard.widgets.curator._table import with_optional_suffix
+
+    base = "as of 22:41"
+    suffix = " · v1"
+    assert with_optional_suffix(base, suffix, 20) == base + suffix
+    assert with_optional_suffix(base, suffix, 10) == base
+    assert with_optional_suffix(base, "", 20) == base
+    assert with_optional_suffix(base, suffix, 0) == base + suffix
+
+
 def _analysis_tier_modules():
     """The `f` view's three tiered-table modules — the analysis panels."""
     from maxpane_dashboard.widgets.curator import cleaned_list as clean_mod
@@ -1383,6 +1398,45 @@ def test_tier_costs_descend_so_a_narrow_panel_can_reach_the_narrow_layout():
         assert module._TIERS[0][3] == "", "the widest tier sheds nothing"
         for _n, _c, _cols, hint in module._TIERS[1:]:
             assert hint, "every narrower tier names what it dropped"
+
+
+async def test_the_label_never_widens_a_panel_past_its_pin():
+    """SEGMENTS and OPERATORS both append THE LIST's analysis version beside
+    their own freshness marker.  Measured at each panel's own width: sized
+    wide enough, both the marker and the version render; sized so the two
+    together would not fit, the marker survives whole and the version
+    disappears cleanly -- the label sheds before the marker does, never the
+    other way, and never a marker cut mid-word by the note line's own CSS
+    ellipsis."""
+    from maxpane_dashboard.widgets.curator.operators import CuratorOperators
+    from maxpane_dashboard.widgets.curator.segments import CuratorSegments
+
+    version = "sybilkit 0.2.0 · a-very-long-detector-name-indeed-2026-08-25"
+    segment_row = {
+        "label": "linked groups", "contributors": 1,
+        "points_share_pct": 1.0, "detail": "x",
+    }
+    for cls, kwargs in (
+        (
+            CuratorOperators,
+            {"operator_rows": [_operator_row()], "operators_count": 1},
+        ),
+        (CuratorSegments, {"segment_rows": [segment_row]}),
+    ):
+        wide = await _rendered(
+            cls, size=(200, 20), analysis_as_of_hhmm="22:41",
+            analysis_version=version, **kwargs,
+        )
+        assert "as of 22:41" in wide, cls.__name__
+        assert version in wide, cls.__name__
+
+        narrow = await _rendered(
+            cls, size=(60, 20), analysis_as_of_hhmm="22:41",
+            analysis_version=version, **kwargs,
+        )
+        assert "as of 22:41" in narrow, cls.__name__       # whole, never cut
+        assert version not in narrow, cls.__name__          # sheds cleanly
+        assert "sybilkit" not in narrow, cls.__name__        # not even a piece
 
 
 # ===========================================================================
@@ -2911,6 +2965,7 @@ def _full_payload() -> dict:
         # a payload that made them equal would hide a panel wired to the
         # wrong one (PRD §5 -- each panel shows its own freshness).
         analysis_as_of_hhmm="22:41",
+        analysis_version="sybilkit 0.2.0 · 2026-08-25",
         # A linked reader, which is the state that exercises the widest
         # rendering: the group size, four reasons, and -- by WP3's contract --
         # NO clean rank, because a linked wallet is removed from that list.
@@ -4238,6 +4293,40 @@ async def test_reasons_wider_than_the_cell_shed_whole_phrases_visibly():
     assert widest["reasons"][0] in text    # the strongest phrase stays whole
 
 
+async def test_the_version_label_renders_beside_the_freshness_marker():
+    """`analysis_version` -- the published dataset's own label -- rides
+    beside `analysis_as_of_hhmm` rather than replacing it."""
+    from maxpane_dashboard.widgets.curator.operators import CuratorOperators
+
+    text = await _rendered(
+        CuratorOperators,
+        operator_rows=[_operator_row()],
+        operators_count=1,
+        analysis_as_of_hhmm="22:41",
+        analysis_version="sybilkit 0.2.0 · 2026-08-25",
+    )
+    assert "as of 22:41" in text
+    assert "sybilkit 0.2.0 · 2026-08-25" in text
+
+
+async def test_a_missing_version_renders_the_marker_alone_and_not_the_word_none():
+    """`analysis_version is None` is the state before a version has ever
+    published (or the permanent state absent a later fetch wiring): the
+    freshness marker still renders whole, and the word "None" never
+    reaches the screen."""
+    from maxpane_dashboard.widgets.curator.operators import CuratorOperators
+
+    text = await _rendered(
+        CuratorOperators,
+        operator_rows=[_operator_row()],
+        operators_count=1,
+        analysis_as_of_hhmm="22:41",
+        analysis_version=None,
+    )
+    assert "as of 22:41" in text
+    assert "None" not in text
+
+
 # -- WP4.2: CuratorSegments -------------------------------------------------
 
 
@@ -4367,6 +4456,42 @@ async def test_a_narrow_segments_table_sheds_the_detail_first():
     assert "linked groups" in text
     assert "43.2%" in text
     assert "send shapes" not in text        # the detail column is gone
+
+
+async def test_the_segments_panel_renders_its_analysis_version_beside_the_marker():
+    """The same rendering contract as OPERATORS: the version rides beside the
+    marker rather than replacing it."""
+    from maxpane_dashboard.widgets.curator.segments import CuratorSegments
+
+    row = {
+        "label": "linked groups", "contributors": 3,
+        "points_share_pct": 1.0, "detail": "x",
+    }
+    text = await _rendered(
+        CuratorSegments,
+        segment_rows=[row],
+        analysis_as_of_hhmm="22:41",
+        analysis_version="sybilkit 0.2.0 · 2026-08-25",
+    )
+    assert "as of 22:41" in text
+    assert "sybilkit 0.2.0 · 2026-08-25" in text
+
+
+async def test_a_missing_segments_version_renders_the_marker_alone():
+    from maxpane_dashboard.widgets.curator.segments import CuratorSegments
+
+    row = {
+        "label": "linked groups", "contributors": 3,
+        "points_share_pct": 1.0, "detail": "x",
+    }
+    text = await _rendered(
+        CuratorSegments,
+        segment_rows=[row],
+        analysis_as_of_hhmm="22:41",
+        analysis_version=None,
+    )
+    assert "as of 22:41" in text
+    assert "None" not in text
 
 
 # -- WP4.3: CuratorCleanList ------------------------------------------------
@@ -4635,6 +4760,36 @@ async def test_the_worst_case_clean_row_renders_rank_identity_and_score():
     assert "36,924" in text                 # the top survivor's score
     assert "surfsurf.eth" in text           # the probe row's verified name
     assert "#9,273" in text                 # ...under its own clean rank
+
+
+async def test_the_clean_list_renders_its_analysis_version_beside_the_marker():
+    from maxpane_dashboard.widgets.curator.cleaned_list import CuratorCleanList
+
+    rows = [{"clean_rank": 1, "address": "0x" + "ab" * 20, "points": 100,
+             "credit_eth": 1.0, "name": None}]
+    text = await _rendered(
+        CuratorCleanList,
+        clean_list_rows=rows,
+        analysis_as_of_hhmm="22:41",
+        analysis_version="sybilkit 0.2.0 · 2026-08-25",
+    )
+    assert "as of 22:41" in text
+    assert "sybilkit 0.2.0 · 2026-08-25" in text
+
+
+async def test_a_missing_clean_list_version_renders_the_marker_alone():
+    from maxpane_dashboard.widgets.curator.cleaned_list import CuratorCleanList
+
+    rows = [{"clean_rank": 1, "address": "0x" + "ab" * 20, "points": 100,
+             "credit_eth": 1.0, "name": None}]
+    text = await _rendered(
+        CuratorCleanList,
+        clean_list_rows=rows,
+        analysis_as_of_hhmm="22:41",
+        analysis_version=None,
+    )
+    assert "as of 22:41" in text
+    assert "None" not in text
 
 
 # -- the `l` view: full-width raw and cleaned record tables -----------------
@@ -5473,6 +5628,35 @@ async def test_the_list_tables_distinguish_unavailable_from_honest_empty():
     assert CLEANED_LIST_EMPTY in clean_empty
     assert CLEANED_LIST_UNAVAILABLE not in clean_empty
     assert "as of 13:58" in clean_empty
+
+
+async def test_the_cleaned_list_renders_its_analysis_version_beside_the_marker():
+    """The fourth widget the brief names: the `l` record view's own CLEANED
+    table gets the same version-beside-marker contract as the `f` analysis
+    view's three panels."""
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList
+
+    text = await _rendered(
+        CuratorCleanedList,
+        clean_list_rows=[],
+        analysis_as_of_hhmm="13:58",
+        analysis_version="sybilkit 0.2.0 · 2026-08-25",
+    )
+    assert "as of 13:58" in text
+    assert "sybilkit 0.2.0 · 2026-08-25" in text
+
+
+async def test_a_missing_cleaned_list_version_renders_the_marker_alone():
+    from maxpane_dashboard.widgets.curator import CuratorCleanedList
+
+    text = await _rendered(
+        CuratorCleanedList,
+        clean_list_rows=[],
+        analysis_as_of_hhmm="13:58",
+        analysis_version=None,
+    )
+    assert "as of 13:58" in text
+    assert "None" not in text
 
 
 @pytest.mark.parametrize("kind", ("raw", "clean"))

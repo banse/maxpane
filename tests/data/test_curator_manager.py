@@ -2694,6 +2694,7 @@ def test_with_no_analysis_last_good_every_analysis_key_is_none_never_empty(
         "clean_contributors",
         "points_total",
         "analysis_as_of_hhmm",
+        "analysis_version",
         "you_linked_state",
         "you_linked_reasons",
         "you_linked_group_size",
@@ -2749,6 +2750,56 @@ def test_with_an_analysis_last_good_every_one_of_the_twelve_keys_is_filled(
     assert out2["you_linked_reasons"] == []       # analyzed, not linked
     assert out2["you_linked_group_size"] is None
     assert isinstance(out2["you_clean_rank"], int)
+
+
+def test_the_merge_stamps_the_analysis_version_beside_its_freshness_marker(
+    tmp_path, clock
+):
+    """`analysis_version` rides beside `analysis_as_of_hhmm`, off the slot's
+    own `published` provenance block (curator_clusters.slot_payload) -- never
+    computed here, and never a crash on a malformed block."""
+    manager = _analysis_manager(tmp_path, clock, wallet=FARM_MEMBERS[0])
+    _store_farm_slot(
+        manager,
+        published={
+            "version_id": "2026-08-25-sybilkit-0.2.0",
+            "content_hash": "deadbeef",
+            "detector_version": "0.2.0",
+            "rule_set": "v2h",
+            "rules_sha256": "d" * 64,
+            "snapshot_block": 12345,
+            "status_counts": {"clean": 1},
+        },
+    )
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["analysis_version"] == "sybilkit 0.2.0 · 2026-08-25"
+
+
+def test_a_slot_with_no_published_block_stamps_no_version(tmp_path, clock):
+    """T10 has not landed the live fetch yet, so every slot on this branch
+    carries no `published` block at all -- `analysis_version` degrades to
+    None rather than crashing on the missing key."""
+    manager = _analysis_manager(tmp_path, clock, wallet=FARM_MEMBERS[0])
+    _store_farm_slot(manager)
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["analysis_version"] is None
+
+
+def test_a_malformed_published_block_degrades_to_no_version_not_a_crash(
+    tmp_path, clock
+):
+    """A hand-edited cache file is third-party input too (module docstring):
+    a `published` block that is not a mapping, or one missing `version_id`,
+    must never raise."""
+    manager = _analysis_manager(tmp_path, clock, wallet=FARM_MEMBERS[0])
+    _store_farm_slot(manager, published="not-a-mapping")
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["analysis_version"] is None
+
+    manager2 = _analysis_manager(tmp_path / "no-id", clock, wallet=FARM_MEMBERS[0])
+    _store_farm_slot(manager2, published={"detector_version": "0.2.0"})
+    out2 = asyncio.run(manager2.fetch_and_compute())
+    assert out2["analysis_version"] is None
 
 
 def test_the_farm_share_prefers_the_analysis_value_when_it_has_run(

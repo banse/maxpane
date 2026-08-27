@@ -187,7 +187,7 @@ from dataclasses import dataclass
 #   always describes one snapshot; until then the manager's `_blank_payload`
 #   emits it as None like every other analysis key.
 #   new rows ... operator_rows / segment_rows / clean_list_rows
-#   new sub-key  leaderboard_rows["link_conf"]  ("high"|"low"|"clean"|None)
+#   new sub-key  leaderboard_rows["link_conf"]  ("high"|"low"|"review"|"clean"|None)
 #
 # Four things about it that a later agent will otherwise re-litigate:
 #
@@ -756,6 +756,17 @@ CURATOR_KEYS: tuple[str, ...] = (
                                 #   because the sweep is detached and long-TTL:
                                 #   one marker for both tiers would present an
                                 #   hours-old analysis as live.
+    "analysis_version",         # str | None — the published dataset's own
+                                #   version_label ("sybilkit 0.2.0 ·
+                                #   2026-08-25"), rendered beside
+                                #   `analysis_as_of_hhmm` on every panel that
+                                #   carries it.  Stamped by the manager from
+                                #   the slot's own `published` provenance
+                                #   block (curator_clusters.slot_payload),
+                                #   never computed here; None until a
+                                #   published sweep has landed, which the
+                                #   panels render as the marker alone -- NEVER
+                                #   the word "None".
     # ---- YOU, linkage (all None when no wallet is configured) ---------------
     "you_linked_state",         # str | None — "clean" | "linked".  None is
                                 #   "the sweep has not run", and must render
@@ -799,7 +810,7 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
         # Record traits already present in the contributor fold. ETH values
         # are projected here; raw wei never crosses the flat-dict boundary.
         "weight_eth", "first_hour", "first_index",
-        # "high" | "low" | "clean" | None  ->  ⚑ / ◌ / (empty) / ?
+        # "high" | "low" | "review" | "clean" | None  ->  ⚑ / ◌ / ~ / (empty) / ?
         #
         # ADDITIVE, and appended rather than folded into `flagged`.  PRD §6
         # calls this "the flag upgrades to confidence-graded", which reads like
@@ -874,11 +885,13 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-#: The thirteen keys the **manager's analysis adapter** produces, and the only
+#: The fourteen keys the **manager's analysis adapter** produces, and the only
 #: keys in ``CURATOR_KEYS`` that ``build_signals`` does not emit besides
 #: ``curator_signals.MANAGER_OWNED_KEYS`` (``degraded``, ``as_of_hhmm``,
 #: ``as_of``).  Eleven at the freeze; ``points_total`` added the population
-#: comparison and ``you_list_row`` added the uncapped fixed wallet record.
+#: comparison, ``you_list_row`` added the uncapped fixed wallet record, and
+#: ``analysis_version`` (2026-08-27) added the published dataset's own label,
+#: rendered beside ``analysis_as_of_hhmm`` rather than replacing it.
 #:
 #: It exists so the analytics suite's output-surface guard can stay an exact
 #: equality —
@@ -891,7 +904,7 @@ CURATOR_ROW_KEYS: dict[str, tuple[str, ...]] = {
 #: drift while the analytics module is never opened.
 #:
 #: Hand-typed rather than filtered out of ``CURATOR_KEYS``: a derivation would
-#: make ``test_the_analysis_keys_are_exactly_the_thirteen_the_adapter_fills``
+#: make ``test_the_analysis_keys_are_exactly_the_fourteen_the_adapter_fills``
 #: compare a constant against itself, and the same redundancy rule already
 #: applies to ``SIGNAL_OUTPUT_KEYS`` one module over.
 CURATOR_ANALYSIS_KEYS: tuple[str, ...] = (
@@ -903,6 +916,7 @@ CURATOR_ANALYSIS_KEYS: tuple[str, ...] = (
     "clean_contributors",
     "points_total",
     "analysis_as_of_hhmm",
+    "analysis_version",
     "you_linked_state",
     "you_linked_reasons",
     "you_linked_group_size",

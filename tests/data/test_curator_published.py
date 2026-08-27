@@ -229,3 +229,58 @@ async def test_every_request_goes_through_the_injected_transport():
     transport = _CountingExplodingTransport()
     assert await pub.fetch_published_version(transport=transport) is None
     assert transport.calls == 1, "the module did not use the injected transport"
+
+
+# ---------------------------------------------------------------------------
+# version_label -- zero coverage at ship time (T2 fix round 2, deferred to
+# T8, which is the task that actually renders the label).  Pure formatting,
+# no transport needed.
+# ---------------------------------------------------------------------------
+
+
+def _version(**over) -> pub.PublishedVersion:
+    fields = {
+        "version_id": "2026-08-25-sybilkit-0.2.0",
+        "content_hash": "h",
+        "detector_version": "0.2.0",
+        "rule_set": "v2h",
+        "rules_sha256": "d",
+        "snapshot_block": 1,
+        "cluster_count": 1,
+        "status_counts": {},
+    }
+    fields.update(over)
+    return pub.PublishedVersion(**fields)
+
+
+def test_version_label_is_none_for_a_missing_version():
+    """The caller with no version yet (T8's own manager stamp) hands this
+    `None` directly rather than special-casing it first."""
+    assert pub.version_label(None) is None
+
+
+def test_version_label_is_the_detector_and_the_date_stamp():
+    """The shape every panel renders: ``"sybilkit 0.2.0 · 2026-08-25"`` --
+    the date is the version id's own prefix, split off `-sybilkit-`."""
+    assert pub.version_label(_version()) == "sybilkit 0.2.0 · 2026-08-25"
+
+
+def test_version_label_drops_the_sybilkit_half_with_no_detector_version():
+    """`detector_version` missing (an older or partial payload) costs only
+    its own half of the label -- the date stamp still renders alone."""
+    version = _version(detector_version=None)
+    assert pub.version_label(version) == "2026-08-25"
+
+
+def test_version_label_uses_the_whole_id_with_no_sybilkit_marker():
+    """A `version_id` that never contains `-sybilkit-` splits to itself
+    whole, rather than silently losing the date half."""
+    version = _version(version_id="v1", detector_version="0.2.0")
+    assert pub.version_label(version) == "sybilkit 0.2.0 · v1"
+
+
+def test_version_label_is_none_when_both_halves_are_missing():
+    """Neither half is fabricated: a version with no id and no detector
+    string renders nothing rather than a lone middle dot."""
+    version = _version(version_id="", detector_version=None)
+    assert pub.version_label(version) is None

@@ -61,6 +61,7 @@ Primitives only — this module imports nothing from ``data/`` or
 
 from __future__ import annotations
 
+from rich.cells import cell_len
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
@@ -72,6 +73,7 @@ from maxpane_dashboard.widgets.curator._table import (
     install_columns,
     pick_tier,
     title_with_hint,
+    with_optional_suffix,
 )
 from maxpane_dashboard.widgets.curator.leaderboard import (
     LINK_HIGH,
@@ -321,6 +323,7 @@ class CuratorOperators(Vertical):
         operators_count=None,
         flagged_points_share_pct=None,
         analysis_as_of_hhmm=None,
+        analysis_version=None,
         **_kwargs,
     ) -> None:
         """Refresh the table and its one-line summary."""
@@ -329,15 +332,30 @@ class CuratorOperators(Vertical):
             "count": operators_count,
             "share": flagged_points_share_pct,
             "as_of": analysis_as_of_hhmm,
+            "version": analysis_version,
             "seen": True,
         }
         self._render_view()
 
-    def _as_of(self) -> str:
+    def _as_of(self, prefix: str = "") -> str:
+        """The freshness marker, plus THE LIST's analysis version when it fits.
+
+        ``prefix`` is the plain text already set to render before this
+        marker on the same note line -- passed in only so the fit check sees
+        the whole line.  The marker is load-bearing and always renders whole
+        once ``as_of`` is set; the version is decorative and is what sheds on
+        a panel too narrow for both.
+        """
         stamp = self._payload.get("as_of")
-        if isinstance(stamp, str) and stamp.strip():
-            return f" · as of {safe_markup(stamp.strip())}"
-        return ""
+        if not (isinstance(stamp, str) and stamp.strip()):
+            return ""
+        marker = f" · as of {safe_markup(stamp.strip())}"
+        version = self._payload.get("version")
+        if isinstance(version, str) and version.strip():
+            width = max(self.content_size.width - 2 - cell_len(prefix), 0)
+            suffix = f" · {safe_markup(version.strip())}"
+            return with_optional_suffix(marker, suffix, width)
+        return marker
 
     def _summary(self) -> str:
         count = self._payload.get("count")
@@ -346,7 +364,7 @@ class CuratorOperators(Vertical):
         text = f"{count:,} linked group{plural}"
         if share is not None:
             text += f" · {fmt_pct(share)} of all points"
-        return f"[dim]{text}{self._as_of()}[/]"
+        return f"[dim]{text}{self._as_of(text)}[/]"
 
     def _render_view(self) -> None:
         try:
@@ -365,12 +383,17 @@ class CuratorOperators(Vertical):
         count = self._payload.get("count")
         if not isinstance(count, int) or isinstance(count, bool):
             # The sweep has not published, or could not.  Never a zero.
-            self._set_note(f"[$warning]⚠ {OPERATORS_UNAVAILABLE}[/]{self._as_of()}")
+            self._set_note(
+                f"[$warning]⚠ {OPERATORS_UNAVAILABLE}[/]"
+                f"{self._as_of(f'⚠ {OPERATORS_UNAVAILABLE}')}"
+            )
             table.add_row(*cells({}, columns, default=DASH))
             return
         if count == 0:
             # A real negative: the sweep ran and found no linked groups.
-            self._set_note(f"[dim]{OPERATORS_EMPTY}{self._as_of()}[/]")
+            self._set_note(
+                f"[dim]{OPERATORS_EMPTY}{self._as_of(OPERATORS_EMPTY)}[/]"
+            )
             return
 
         try:
@@ -380,7 +403,10 @@ class CuratorOperators(Vertical):
         if not usable:
             # A count with no rows is a torn payload: say unavailable rather
             # than render a healthy-looking empty table under a real count.
-            self._set_note(f"[$warning]⚠ {OPERATORS_UNAVAILABLE}[/]{self._as_of()}")
+            self._set_note(
+                f"[$warning]⚠ {OPERATORS_UNAVAILABLE}[/]"
+                f"{self._as_of(f'⚠ {OPERATORS_UNAVAILABLE}')}"
+            )
             table.add_row(*cells({}, columns, default=DASH))
             return
 

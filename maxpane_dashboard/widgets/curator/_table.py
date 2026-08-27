@@ -24,6 +24,8 @@ no data-layer imports.
 
 from __future__ import annotations
 
+from rich.cells import cell_len
+
 from maxpane_dashboard.widgets.markup_safety import visible_len
 
 __all__ = [
@@ -33,6 +35,7 @@ __all__ = [
     "install_columns",
     "tier_cost",
     "title_with_hint",
+    "with_optional_suffix",
 ]
 
 #: The bare marker, for a title bar too narrow to carry the descriptive one.
@@ -100,3 +103,28 @@ def title_with_hint(title: str, hint: str, width: int) -> tuple[str, bool]:
         if width <= 0 or visible_len(text) <= width:
             return text, True
     return title, False
+
+
+def with_optional_suffix(base: str, suffix: str, width: int) -> str:
+    """``base + suffix`` when the whole thing fits ``width`` rendered
+    columns; ``base`` alone otherwise.
+
+    THE LIST's four analysis panels use this to append the published
+    analysis's own version beside the ``as of HH:MM`` freshness marker they
+    already carry: ``base`` (which already includes the marker) is the
+    load-bearing half and is never abbreviated here; ``suffix`` — the
+    version — is decorative, and is the one that sheds, cleanly, on a panel
+    too narrow for both, rather than being cut mid-word by the note line's
+    own CSS ``text-overflow: ellipsis``.
+
+    Measured on the raw (pre-``safe_markup``) text with ``cell_len``, per
+    the terminal-layout skill — an escaped bracket adding a backslash is not
+    a real risk this budget needs to chase, the same convention
+    ``operators._join_reasons`` already uses.  ``width <= 0`` optimistically
+    keeps the suffix, the same "not sized yet" rule :func:`pick_tier` uses.
+    """
+    if not suffix:
+        return base
+    if width <= 0 or cell_len(base + suffix) <= width:
+        return base + suffix
+    return base

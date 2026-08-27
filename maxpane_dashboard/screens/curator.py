@@ -437,16 +437,23 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     # `clean_list_export_path` is deliberately NOT here (ruling R4): the
     # export receipt is screen-supplied through `mark_exported`, like
     # `mark_pending`, because it is a keypress's result and not manager data.
+    # `analysis_version` (2026-08-27) rides beside `analysis_as_of_hhmm` on
+    # every panel that already carries it, PLUS the `l` record view's own
+    # CLEANED table below -- the published dataset's own label, rendered
+    # beside the freshness marker rather than in place of it.
     "CuratorOperators": (
         "operator_rows", "operators_count", "flagged_points_share_pct",
-        "analysis_as_of_hhmm",
+        "analysis_as_of_hhmm", "analysis_version",
     ),
-    "CuratorSegments": ("segment_rows", "analysis_as_of_hhmm"),
+    "CuratorSegments": (
+        "segment_rows", "analysis_as_of_hhmm", "analysis_version",
+    ),
     # `points_total` is the R14 amendment: the population total at the same
     # analysis snapshot, so the panel can render PRD §5.3's "total vs clean".
     "CuratorCleanList": (
         "clean_list_rows", "clean_points", "clean_contributors",
         "points_total", "you_clean_rank", "analysis_as_of_hhmm",
+        "analysis_version",
     ),
     # -- the `l` raw/clean record view ---------------------------------------
     "CuratorRawList": (
@@ -454,7 +461,7 @@ WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     ),
     "CuratorCleanedList": (
         "clean_list_rows", "you_list_row", "clean_contributors",
-        "analysis_as_of_hhmm",
+        "analysis_as_of_hhmm", "analysis_version",
     ),
     "CuratorFilteredList": (
         "filtered_rows", "you_list_row", "filtered_complete",

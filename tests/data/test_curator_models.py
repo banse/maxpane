@@ -537,11 +537,12 @@ EXPECTED_KEYS = {
     "volume_series",
     "contributors_series",
     # The linked-wallet analysis view (`f`), added by the sybil expansion
-    # (docs/curator_sybil_PRD.md §7).  All thirteen are manager-adapter-produced
+    # (docs/curator_sybil_PRD.md §7).  All fourteen are manager-adapter-produced
     # from the detached B+C sweep's last-good, never emitted by build_signals.
     # `points_total` is the R14 amendment (2026-08-18): the freeze missed the
     # population total, and without it the CLEANED LIST panel cannot render
-    # PRD §5.3's "total points vs clean points".
+    # PRD §5.3's "total points vs clean points".  `analysis_version` (2026-08-27)
+    # is the published dataset's own label, rendered beside `analysis_as_of_hhmm`.
     "operator_rows",
     "segment_rows",
     "clean_list_rows",
@@ -550,6 +551,7 @@ EXPECTED_KEYS = {
     "clean_contributors",
     "points_total",
     "analysis_as_of_hhmm",
+    "analysis_version",
     "you_linked_state",
     "you_linked_reasons",
     "you_linked_group_size",
@@ -856,19 +858,21 @@ def test_curator_keys_gained_exactly_the_analysis_surface() -> None:
     assert "linked_points_share_pct" not in CURATOR_KEYS
 
 
-def test_the_analysis_keys_are_exactly_the_thirteen_the_adapter_fills() -> None:
+def test_the_analysis_keys_are_exactly_the_fourteen_the_adapter_fills() -> None:
     """``CURATOR_ANALYSIS_KEYS`` — the third producer of the flat dict.
 
     ``build_signals`` emits ``SIGNAL_OUTPUT_KEYS``; the manager emits
     ``MANAGER_OWNED_KEYS`` (the three health markers); and the manager's
-    **analysis adapter** emits exactly these thirteen.  Naming them lets the
+    **analysis adapter** emits exactly these fourteen.  Naming them lets the
     analytics suite's output-surface guard stay an exact equality on all three
     without ``analytics/curator_signals.py`` being opened — that module stays
     byte-identical to what shipped (PRD §2).
 
     Eleven at the freeze; ``points_total`` is the R14 amendment (2026-08-18),
     because PRD §5.3's "total points vs clean points" needs the population
-    total and no frozen key carried it.
+    total and no frozen key carried it.  ``analysis_version`` (2026-08-27) is
+    the fourteenth: the published dataset's own label, rendered beside
+    ``analysis_as_of_hhmm`` rather than in place of it.
 
     Restated literally here rather than filtered out of ``CURATOR_KEYS``: a
     derivation would compare the tuple against itself and could never fail.
@@ -876,15 +880,15 @@ def test_the_analysis_keys_are_exactly_the_thirteen_the_adapter_fills() -> None:
     assert set(CURATOR_ANALYSIS_KEYS) == {
         "operator_rows", "segment_rows", "clean_list_rows", "operators_count",
         "clean_points", "clean_contributors", "points_total",
-        "analysis_as_of_hhmm",
+        "analysis_as_of_hhmm", "analysis_version",
         "you_linked_state", "you_linked_reasons", "you_linked_group_size",
         "you_clean_rank", "you_list_row",
     }
-    assert len(CURATOR_ANALYSIS_KEYS) == len(set(CURATOR_ANALYSIS_KEYS)) == 13
+    assert len(CURATOR_ANALYSIS_KEYS) == len(set(CURATOR_ANALYSIS_KEYS)) == 14
     assert set(CURATOR_ANALYSIS_KEYS) <= set(CURATOR_KEYS)
     assert isinstance(CURATOR_ANALYSIS_KEYS, tuple)
     # `flagged_points_share_pct` is REUSED, so it is a signal-surface key that
-    # the adapter may later override -- not one of the thirteen it creates.  The
+    # the adapter may later override -- not one of the fourteen it creates.  The
     # override decision is WP3's (plan §6.2); the split of ownership is not.
     assert "flagged_points_share_pct" not in CURATOR_ANALYSIS_KEYS
 
@@ -1044,6 +1048,11 @@ ANALYSIS_KEY_ROUTING: dict[str, tuple[str, ...]] = {
     "points_total": ("CuratorCleanList",),
     # ---- two keys, more than one home ------------------------------------
     "analysis_as_of_hhmm": WP4_ANALYSIS_WIDGETS,
+    # analysis_version (2026-08-27) reaches every panel that already carries
+    # `analysis_as_of_hhmm` PLUS the `l` record view's own CLEANED table --
+    # unlike the freeze's three, this key is new, so its route names all four
+    # real destinations rather than only the historical set.
+    "analysis_version": (*WP4_ANALYSIS_WIDGETS, "CuratorCleanedList"),
     "you_clean_rank": ("CuratorCleanList", "CuratorWalletStanding"),
     # ---- the `y` view's linked line (WP5 renders, WP4 wires) -------------
     "you_linked_state": ("CuratorWalletStanding",),
@@ -1122,3 +1131,12 @@ def test_each_analysis_panel_gets_its_own_freshness_marker() -> None:
     make one panel's outage invisible behind another panel's success."""
     assert ANALYSIS_KEY_ROUTING["analysis_as_of_hhmm"] == WP4_ANALYSIS_WIDGETS
     assert len(WP4_ANALYSIS_WIDGETS) == 3
+
+
+def test_the_analysis_version_reaches_every_freshness_marker() -> None:
+    """`analysis_version` (2026-08-27) rides beside `analysis_as_of_hhmm`
+    everywhere that key already reaches, plus the `l` record view's own
+    CLEANED table -- the fourth widget the brief names."""
+    assert set(ANALYSIS_KEY_ROUTING["analysis_version"]) == set(
+        WP4_ANALYSIS_WIDGETS
+    ) | {"CuratorCleanedList"}

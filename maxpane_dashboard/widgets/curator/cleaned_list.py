@@ -50,6 +50,7 @@ Primitives only — this module imports nothing from ``data/`` or
 
 from __future__ import annotations
 
+from rich.cells import cell_len
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
@@ -68,6 +69,7 @@ from maxpane_dashboard.widgets.curator._table import (
     install_columns,
     pick_tier,
     title_with_hint,
+    with_optional_suffix,
 )
 from maxpane_dashboard.widgets.curator.signals import MAX_CURVE_POINTS
 from maxpane_dashboard.widgets.markup_safety import safe_markup
@@ -326,6 +328,7 @@ class CuratorCleanList(Vertical):
         points_total=None,
         you_clean_rank=None,
         analysis_as_of_hhmm=None,
+        analysis_version=None,
         **_kwargs,
     ) -> None:
         """Refresh the table and its one-line summary.
@@ -343,15 +346,30 @@ class CuratorCleanList(Vertical):
             "total": points_total,
             "you": you_clean_rank,
             "as_of": analysis_as_of_hhmm,
+            "version": analysis_version,
             "seen": True,
         }
         self._render_view()
 
-    def _as_of(self) -> str:
+    def _as_of(self, prefix: str = "") -> str:
+        """The freshness marker, plus THE LIST's analysis version when it fits.
+
+        ``prefix`` is the plain text already set to render before this
+        marker on the same note line -- passed in only so the fit check sees
+        the whole line.  The marker is load-bearing and always renders whole
+        once ``as_of`` is set; the version is decorative and is what sheds on
+        a panel too narrow for both.
+        """
         stamp = self._payload.get("as_of")
-        if isinstance(stamp, str) and stamp.strip():
-            return f" · as of {safe_markup(stamp.strip())}"
-        return ""
+        if not (isinstance(stamp, str) and stamp.strip()):
+            return ""
+        marker = f" · as of {safe_markup(stamp.strip())}"
+        version = self._payload.get("version")
+        if isinstance(version, str) and version.strip():
+            width = max(self.content_size.width - 2 - cell_len(prefix), 0)
+            suffix = f" · {safe_markup(version.strip())}"
+            return with_optional_suffix(marker, suffix, width)
+        return marker
 
     def _summary(self) -> str:
         parts: list[str] = []
@@ -375,7 +393,8 @@ class CuratorCleanList(Vertical):
             parts.append(f"you #{you:,}")
         else:
             parts.append(YOU_CLEAN_UNSET)
-        return f"[dim]{' · '.join(parts)}{self._as_of()}[/]"
+        prefix = " · ".join(parts)
+        return f"[dim]{prefix}{self._as_of(prefix)}[/]"
 
     def _render_view(self) -> None:
         try:
@@ -392,7 +411,8 @@ class CuratorCleanList(Vertical):
         rows = self._payload["rows"]
         if rows is None:
             self._set_note(
-                f"[$warning]⚠ {CLEAN_LIST_UNAVAILABLE}[/]{self._as_of()}"
+                f"[$warning]⚠ {CLEAN_LIST_UNAVAILABLE}[/]"
+                f"{self._as_of(f'⚠ {CLEAN_LIST_UNAVAILABLE}')}"
             )
             table.add_row(*cells({}, columns, default=DASH))
             return
@@ -410,14 +430,17 @@ class CuratorCleanList(Vertical):
             # finding: rendered as the empty state it would be a confident
             # "nobody survives" drawn from bytes nobody could read (M2).
             self._set_note(
-                f"[$warning]⚠ {CLEAN_LIST_UNAVAILABLE}[/]{self._as_of()}"
+                f"[$warning]⚠ {CLEAN_LIST_UNAVAILABLE}[/]"
+                f"{self._as_of(f'⚠ {CLEAN_LIST_UNAVAILABLE}')}"
             )
             table.add_row(*cells({}, columns, default=DASH))
             return
 
         if not usable:
             # A real negative: the sweep ran and no wallet survives it.
-            self._set_note(f"[dim]{CLEAN_LIST_EMPTY}{self._as_of()}[/]")
+            self._set_note(
+                f"[dim]{CLEAN_LIST_EMPTY}{self._as_of(CLEAN_LIST_EMPTY)}[/]"
+            )
             return
 
         self._set_note(self._summary())

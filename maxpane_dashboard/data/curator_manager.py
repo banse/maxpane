@@ -91,6 +91,7 @@ from maxpane_dashboard.analytics.curator_signals import (
 from maxpane_dashboard.data import curator_addresses as A
 from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import curator_clusters
+from maxpane_dashboard.data.curator_published import PublishedVersion, version_label
 from maxpane_dashboard.data.curator_cache import (
     DEFAULT_CACHE_PATH,
     NFT_HOLDER_TTL_SECONDS,
@@ -140,6 +141,40 @@ def _opt_int(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         return None
     return value
+
+
+def _analysis_version(published: Any) -> str | None:
+    """``version_label`` off the slot's own persisted ``published`` block.
+
+    ``published`` is :func:`curator_clusters.slot_payload`'s own
+    ``{version_id, content_hash, detector_version, rule_set, rules_sha256,
+    snapshot_block, status_counts, fetched_at, archived_version}``, copied
+    whole by the manager and never computed here (that module's own
+    docstring).  Absent on every slot until a later wiring lands the live
+    fetch, and on any malformed slot -- a hand-edited cache file is
+    third-party input too -- this degrades to ``None`` rather than raising;
+    the caller only ever interpolates the result when it is a real string, so
+    a missing version renders the freshness marker alone, never the word
+    "None".
+    """
+    if not isinstance(published, Mapping):
+        return None
+    version_id = published.get("version_id")
+    if not isinstance(version_id, str) or not version_id:
+        return None
+    status_counts = published.get("status_counts")
+    return version_label(
+        PublishedVersion(
+            version_id=version_id,
+            content_hash=published.get("content_hash") or "",
+            detector_version=published.get("detector_version"),
+            rule_set=published.get("rule_set"),
+            rules_sha256=published.get("rules_sha256"),
+            snapshot_block=published.get("snapshot_block"),
+            cluster_count=published.get("cluster_count"),
+            status_counts=status_counts if isinstance(status_counts, dict) else {},
+        )
+    )
 
 
 def _looks_like_address(value: Any) -> bool:
@@ -2151,6 +2186,7 @@ class CuratorManager:
             if isinstance(share, (int, float)) and not isinstance(share, bool):
                 payload["flagged_points_share_pct"] = float(share)
             payload["analysis_as_of_hhmm"] = entry.as_of_hhmm()
+            payload["analysis_version"] = _analysis_version(slot.get("published"))
             if self.wallet:
                 payload.update(curator_clusters.you_linkage(self.wallet, slot))
         payload["you_list_row"] = self._you_list_row(payload, slot)

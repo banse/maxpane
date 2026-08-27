@@ -41,6 +41,7 @@ Primitives only — this module imports nothing from ``data/`` or
 
 from __future__ import annotations
 
+from rich.cells import cell_len
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
@@ -52,6 +53,7 @@ from maxpane_dashboard.widgets.curator._table import (
     install_columns,
     pick_tier,
     title_with_hint,
+    with_optional_suffix,
 )
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
@@ -215,21 +217,37 @@ class CuratorSegments(Vertical):
     # -- rendering ---------------------------------------------------------
 
     def update_data(
-        self, segment_rows=None, analysis_as_of_hhmm=None, **_kwargs
+        self, segment_rows=None, analysis_as_of_hhmm=None,
+        analysis_version=None, **_kwargs
     ) -> None:
         """Refresh the table and its one-line summary."""
         self._payload = {
             "rows": segment_rows,
             "as_of": analysis_as_of_hhmm,
+            "version": analysis_version,
             "seen": True,
         }
         self._render_view()
 
-    def _as_of(self) -> str:
+    def _as_of(self, prefix: str = "") -> str:
+        """The freshness marker, plus THE LIST's analysis version when it fits.
+
+        ``prefix`` is the plain text that will render before this marker in
+        the same note line -- passed in only so the fit check sees the whole
+        line, never duplicated into the output.  The marker is load-bearing
+        and always renders whole once ``as_of`` is set; the version is
+        decorative and is what sheds on a panel too narrow for both.
+        """
         stamp = self._payload.get("as_of")
-        if isinstance(stamp, str) and stamp.strip():
-            return f" · as of {safe_markup(stamp.strip())}"
-        return ""
+        if not (isinstance(stamp, str) and stamp.strip()):
+            return ""
+        marker = f" · as of {safe_markup(stamp.strip())}"
+        version = self._payload.get("version")
+        if isinstance(version, str) and version.strip():
+            width = max(self.content_size.width - 2 - cell_len(prefix), 0)
+            suffix = f" · {safe_markup(version.strip())}"
+            return with_optional_suffix(marker, suffix, width)
+        return marker
 
     def _render_view(self) -> None:
         try:
@@ -244,7 +262,10 @@ class CuratorSegments(Vertical):
 
         rows = self._payload["rows"]
         if rows is None:
-            self._set_note(f"[$warning]⚠ {SEGMENTS_UNAVAILABLE}[/]{self._as_of()}")
+            self._set_note(
+                f"[$warning]⚠ {SEGMENTS_UNAVAILABLE}[/]"
+                f"{self._as_of(f'⚠ {SEGMENTS_UNAVAILABLE}')}"
+            )
             table.add_row(*cells({}, columns, default=DASH))
             return
 
@@ -260,17 +281,23 @@ class CuratorSegments(Vertical):
             # A torn payload (uniterable, or rows that are not rows) is not a
             # finding: rendered as the empty state it would be a confident
             # "no segments yet" drawn from bytes nobody could read (M2).
-            self._set_note(f"[$warning]⚠ {SEGMENTS_UNAVAILABLE}[/]{self._as_of()}")
+            self._set_note(
+                f"[$warning]⚠ {SEGMENTS_UNAVAILABLE}[/]"
+                f"{self._as_of(f'⚠ {SEGMENTS_UNAVAILABLE}')}"
+            )
             table.add_row(*cells({}, columns, default=DASH))
             return
 
         if not usable:
             # A real negative: the sweep ran and derived no bands.
-            self._set_note(f"[dim]{SEGMENTS_EMPTY}{self._as_of()}[/]")
+            self._set_note(
+                f"[dim]{SEGMENTS_EMPTY}{self._as_of(SEGMENTS_EMPTY)}[/]"
+            )
             return
 
         plural = "" if len(usable) == 1 else "s"
-        self._set_note(f"[dim]{len(usable)} band{plural}{self._as_of()}[/]")
+        prefix = f"{len(usable)} band{plural}"
+        self._set_note(f"[dim]{prefix}{self._as_of(prefix)}[/]")
         for row in usable[:MAX_ROWS]:
             try:
                 values = _row_values(row)

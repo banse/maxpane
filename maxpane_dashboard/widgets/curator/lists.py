@@ -23,6 +23,7 @@ from maxpane_dashboard.widgets.curator._table import (
     pick_tier,
     tier_cost,
     title_with_hint,
+    with_optional_suffix,
 )
 from maxpane_dashboard.widgets.curator.cleaned_list import EXPORT_FAILED
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
@@ -566,7 +567,7 @@ class _ListTable(Vertical):
     def _row_values(self, row: dict) -> dict:
         raise NotImplementedError
 
-    def _healthy_note(self) -> str:
+    def _healthy_note(self, prefix: str = "") -> str:
         return ""
 
     def _unavailable_note(self) -> str:
@@ -631,7 +632,7 @@ class _ListTable(Vertical):
             self._set_heading(self._healthy_note())
             return
         note = f"[dim]{self.EMPTY}[/]"
-        freshness = self._healthy_note()
+        freshness = self._healthy_note(f"{self.EMPTY} · ")
         if freshness:
             note = f"{note} · {freshness}"
         self._set_heading(note)
@@ -675,7 +676,7 @@ class _ListTable(Vertical):
             return
         if not usable:
             note = f"[dim]{self.EMPTY}[/]"
-            freshness = self._healthy_note()
+            freshness = self._healthy_note(f"{self.EMPTY} · ")
             if freshness:
                 note = f"{note} · {freshness}"
             self._set_heading(note)
@@ -749,7 +750,8 @@ class CuratorCleanedList(_ListTable):
 
     def update_data(
         self, clean_list_rows=None, you_list_row=None,
-        clean_contributors=None, analysis_as_of_hhmm=None, **_kwargs
+        clean_contributors=None, analysis_as_of_hhmm=None,
+        analysis_version=None, **_kwargs
     ) -> None:
         self._live_wallet_count = clean_contributors
         rows, complete, unchanged = self._select_rows(
@@ -760,6 +762,7 @@ class CuratorCleanedList(_ListTable):
             "you_list_row": you_list_row,
             "wallet_count": len(rows) if complete else clean_contributors,
             "analysis_as_of_hhmm": analysis_as_of_hhmm,
+            "analysis_version": analysis_version,
             "complete": complete,
             "seen": True,
         }
@@ -774,11 +777,23 @@ class CuratorCleanedList(_ListTable):
     def _row_values(self, row: dict) -> dict:
         return _cleaned_values(row)
 
-    def _healthy_note(self) -> str:
+    def _healthy_note(self, prefix: str = "") -> str:
+        """The freshness marker, plus THE LIST's analysis version when it
+        fits.  ``prefix`` is the plain text already set to render before
+        this note on the heading line (the `EMPTY` word and its glue, when
+        the list is empty) -- passed in only so the fit check sees the whole
+        line.  The marker is load-bearing; the version is decorative and is
+        what sheds on a panel too narrow for both."""
         stamp = self._payload.get("analysis_as_of_hhmm")
         if not isinstance(stamp, str) or not stamp.strip():
             return ""
-        return f"[dim]as of {safe_markup(stamp.strip())}[/]"
+        marker = f"as of {stamp.strip()}"
+        version = self._payload.get("analysis_version")
+        if isinstance(version, str) and version.strip():
+            width = max(self.content_size.width - 2 - cell_len(prefix), 0)
+            suffix = f" · {version.strip()}"
+            marker = with_optional_suffix(marker, suffix, width)
+        return f"[dim]{safe_markup(marker)}[/]"
 
 
 class CuratorFilteredList(_ListTable):
