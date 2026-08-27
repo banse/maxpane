@@ -3671,6 +3671,30 @@ def test_a_slot_with_no_published_block_stamps_no_version(tmp_path, clock):
     assert out["analysis_version"] is None
 
 
+def test_a_pre_t11_slot_still_reads_through_the_whole_manager_path(tmp_path, clock):
+    """T11 removed `fetch_enrichment` and `slot_payload`'s `enrichment=`
+    keyword, but a cache file written by an OLDER build still carries an
+    `enrichment` block and no `published` one -- and it must still load:
+    ignored, not rejected.  This repo already paid for the opposite defect
+    once, for persisted series (`data/series_points.coerce_points`);
+    `test_a_payload_with_no_published_block_still_loads` in
+    test_curator_clusters.py proves the same thing at the adapter's own
+    `slot_payload`/`you_linkage`/`grade_of` -- this is the full manager path
+    a real `~/.maxpane/curator_cache.json` actually goes through.
+    """
+    manager = _analysis_manager(tmp_path, clock, wallet=FARM_MEMBERS[0])
+    _store_farm_slot(
+        manager,
+        enrichment={
+            "txs": {}, "funding": {}, "pending": [], "reasons": {}, "page_bound": 20,
+        },
+    )
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["analysis_version"] is None            # no `published` to read
+    assert out["you_linked_state"] == "linked"         # the population still reads
+    assert out["clean_list_rows"]
+
+
 def test_a_malformed_published_block_degrades_to_no_version_not_a_crash(
     tmp_path, clock
 ):
