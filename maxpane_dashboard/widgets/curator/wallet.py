@@ -138,10 +138,17 @@ NOT_LINKED = "not linked to any group"
 #: Linked, with a group size that would not read.  Neither "not linked" nor a
 #: number invented to stand in for one.
 LINKED_UNSIZED = "in a group of unknown size"
-#: T4's third ``you_linked_state``: thin, single-family evidence on the
-#: wallet's OWN families (never the group's), shown rather than folded into
-#: either "linked" or "not linked" -- the on-screen phrase the leaderboard's
-#: ``~`` glyph and the SEGMENTS "under review" band both already speak.
+#: T4's third ``you_linked_state``: thin evidence on the wallet's OWN families
+#: (never the group's), shown rather than folded into either "linked" or "not
+#: linked" -- the on-screen phrase the leaderboard's ``~`` glyph and the
+#: SEGMENTS "under review" band both already speak.
+#:
+#: "Thin" is the PUBLISHER's judgement, not a family count of ours: the rule
+#: set is ``v2h (v2g + aged-weak periphery)``, and on the live analysis 202 of
+#: the 324 review wallets carry ``amount`` alone, 65 ``sequence``, 42
+#: ``cadence`` -- and 15 carry two families.  This module places no cap either:
+#: a two-family review wallet renders two reason phrases, so any comment
+#: promising "one family" would describe neither the gate nor the rendering.
 UNDER_REVIEW = "under review"
 #: What the clean rank is a rank *in* — PRD §6's "#412 raw, #47 with clear
 #: farms removed", minus the word "clear", which the panel has no evidence for
@@ -560,11 +567,12 @@ def _linked_parts(state, group_size, reasons) -> list[str]:
 
     ``"review"`` gets its own rendering, not ``"linked"``'s: the evidence is
     real (the wallet's OWN families, already filtered to
-    ``you_linked_reasons`` by :func:`curator_clusters.you_linkage`), but it is
-    thin — one family, not the two-plus a group needs to be called linked —
-    so the value leads with :data:`UNDER_REVIEW` rather than the group size,
-    and that word is the one part of the line the shedding contract below
-    never drops.
+    ``you_linked_reasons`` by :func:`curator_clusters.you_linkage`), and the
+    publisher held this wallet at the EDGE of its group rather than inside it
+    — thin, on the publisher's own rule and not on a family count of ours;
+    see :data:`UNDER_REVIEW` — so the value leads with :data:`UNDER_REVIEW`
+    rather than the group size, and that word is the one part of the line the
+    shedding contract below never drops.
     """
     if state not in LINKED_STATES:
         # `None`, and every spelling this widget does not know.

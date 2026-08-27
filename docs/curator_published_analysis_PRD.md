@@ -344,8 +344,10 @@ Unchanged in shape, so this section is a promise rather than a design:
 - Last-good is served behind `analysis_as_of_hhmm`, on `TIER_ANALYSIS`'s slower clock.
 - The `logs` degraded group lights **only when there is nothing to serve**.
 - A payload built before the load lands is the already-supported "analysis has not run
-  yet" state: twelve keys in their honest `None`, `?` in the flag column, never an
-  empty cell.
+  yet" state: **thirteen** keys in their honest `None`, `?` in the flag column, never an
+  empty cell. Thirteen, not twelve — all of `CURATOR_ANALYSIS_KEYS` except
+  `you_list_row`, which is built independently of the analysis tier. Pinned by
+  `test_with_no_analysis_last_good_every_analysis_key_is_none_never_empty`.
 - A published version whose `overview` or `export` fetch fails **does not** half-apply:
   the slot is written once, from a complete pair, or not at all.
 

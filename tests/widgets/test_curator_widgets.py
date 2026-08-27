@@ -3366,9 +3366,12 @@ async def test_a_review_wallet_renders_its_own_line_not_linked_or_unknown():
     previously outside ``LINKED_STATES``, so it fell to the same
     :data:`UNKNOWN_VALUE` as "the sweep has not run" -- exactly the outage
     the honesty rules in this module's own docstring forbid.  It must also
-    not read as ``"linked"``: the evidence is thinner (the wallet's own single
-    family, not the group's two-plus), and pretending otherwise overstates
-    it."""
+    not read as ``"linked"``: the publisher held this wallet at the EDGE of
+    its group rather than inside it, and pretending otherwise overstates the
+    evidence.  How thin is the publisher's rule (``v2h``, "aged-weak
+    periphery"), not a family count -- 15 of the live analysis's 324 review
+    wallets carry two families and ``you_linkage`` caps nothing, so the one
+    reason in the fixture below is an example, not the gate."""
     from maxpane_dashboard.widgets.curator.wallet import UNDER_REVIEW
 
     text = await _rendered(

@@ -202,8 +202,13 @@ exactly as before, rather than crashing on import.
 **The analysis is read, not swept, on the `_spawn_crosscheck` precedent (2026-08-27).** THE LIST's
 published, immutable linked-wallet analysis — keyless, from `clustermap.vibingco.de`, the one new
 host, with no key/token/secret anywhere near it — replaced the locally computed tx-fingerprint/
-funder sweep: one version check per tick, and the two bulk reads (~8.3 MB) run only
-when `content_hash` has moved, because a published version never changes under its own id. The
+funder sweep: one version check per tick, and the two bulk reads (~8.3 MB) run only when the
+compound `(version_id, content_hash)` has moved. **Both halves, and the hash is the half that
+earns its keep**: the publisher *does* rebuild under one id, so an id-only check would keep
+serving superseded rows until the id itself changed, which may be never — that is the whole
+reason `archive_key` is compound too, and `_is_same_published`'s docstring is the authority. The
+export names the population it wants (`q=&link=all&evidence=all&preset=none`) instead of taking
+four server-side defaults, and the `filters` echo in the answer is read back. The
 read is spawned, never awaited, so it cannot block first paint;
 `test_the_first_payload_is_not_behind_the_analysis_read` is the tripwire and it fails by timing
 out. It lives on its own long tier — `TIER_ANALYSIS` (1800 s, 300 s after a failure) with the
@@ -211,8 +216,11 @@ out. It lives on its own long tier — `TIER_ANALYSIS` (1800 s, 300 s after a fa
 the title bar's, deliberately: the marker advances only when a genuinely new version lands, never
 on a tick that found nothing new, because printing a fresh time beside days-old data would be a
 stale number presented as live. `analysis_version` names *which* analysis sits behind that marker.
-`content_hash` is publisher-asserted and never reverified against the fetched bytes — a trust
-boundary, not a defect. Superseded exports are archived into
+`content_hash` is publisher-asserted: nothing recomputes the publisher's digest from the fetched
+bytes, and that much is a trust boundary rather than a defect. It is not unchecked, though — both
+bulk responses self-identify (`overview["version"]`, `export["analysis_version"]`) and a pair
+whose id or hash disagrees with `/versions` is refused. Recomputation is out of reach; agreement
+across three independently-served responses is not. Superseded exports are archived into
 `~/.maxpane/archive/<version-id>-<hash12>/`, never deleted; nothing prunes that directory and
 nobody owns doing so. A failed read folds into the **`logs`** degraded group only when there is
 nothing to serve; otherwise a stale `analysis_as_of_hhmm` is the signal.

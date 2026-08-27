@@ -127,10 +127,12 @@ graded the same way.
 show that twelve wallets sent an identical amount four seconds apart from one funder; it cannot
 show why, and this dashboard does not guess. So it describes shapes — *linked*, *fan-out*, a flag
 glyph — and never labels a wallet or a person. Groups are scored as groups: two independent kinds
-of evidence are required before one is called linked at all. A single member with only thin,
-one-family evidence gets its own mark instead of either verdict — `review` (`~` on the leaderboard
-flag column) — shown rather than hidden. No verdict is ever written to disk, so a later sweep can
-and does put wallets back on the clean list.
+of evidence are required before one is called linked at all. A member the publisher holds at the
+edge of a group — thin evidence, not enough to call it linked — gets its own mark instead of
+either verdict: `review` (`~` on the leaderboard flag column), shown rather than hidden. What
+counts as thin is the publisher's rule (`v2h`, "aged-weak periphery"), not a family count of ours:
+most review wallets carry one kind of evidence and some carry two. No verdict is ever written to
+disk, so a later sweep can and does put wallets back on the clean list.
 
 The analysis runs *behind* the dashboard, so the clock and the signals paint first and the three
 panels read `analysis unavailable` for the first minute or so of a cold start. They fill in on
