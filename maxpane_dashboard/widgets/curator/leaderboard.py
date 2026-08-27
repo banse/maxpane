@@ -15,14 +15,15 @@ Three rendering rules this dashboard makes load-bearing:
   high-water mark; the gross it routed is larger for anyone who escalated,
   and every wei of both was refunded in-transaction.  The column is headed
   ``CREDIT`` and never ``ETH``, ``VALUE`` or anything that reads as held.
-* **The flag has four states and four glyphs.**  ``link_conf`` grades it —
-  ``"high"`` is ``⚑``, ``"low"`` is ``◌``, ``"clean"`` is an empty cell (a
-  real negative) — and where there is no grade the shipped Tier-A bool still
-  answers: ``True`` is ``⚑``, ``False`` empty, ``None`` is ``?``, the fold
-  did not run, which is not the same as "clean".  ``?`` therefore means
-  *neither* fold could judge the row, never "the new one has not run yet";
-  see :func:`_link_glyph` for why that fallback is the ruled behaviour and
-  not an oversight.
+* **The flag has five states and five glyphs.**  ``link_conf`` grades it —
+  ``"high"`` is ``⚑``, ``"low"`` is ``◌``, ``"review"`` is ``~`` (thin
+  evidence, shown rather than removed — a per-wallet mark, never a group
+  verdict), ``"clean"`` is an empty cell (a real negative) — and where there
+  is no grade the shipped Tier-A bool still answers: ``True`` is ``⚑``,
+  ``False`` empty, ``None`` is ``?``, the fold did not run, which is not the
+  same as "clean".  ``?`` therefore means *neither* fold could judge the
+  row, never "the new one has not run yet"; see :func:`_link_glyph` for why
+  that fallback is the ruled behaviour and not an oversight.
 
 The wallet's own row is emphasised when ``you_address`` matches, compared
 **case-insensitively**: addresses reach this dashboard checksummed from
@@ -149,11 +150,13 @@ _TIERS = (
 #: picks can never disagree.
 #:
 #: The confidence-graded flag (WP5.3) did **not** move it.  ``link_conf``
-#: replaced the cell's *contents*, not its width: all four glyphs are one
+#: replaced the cell's *contents*, not its width: all five glyphs are one
 #: column (``rich.cells.cell_len``), the column was already two wide, and it
 #: is in every tier because it never sheds.  Re-measured rather than assumed —
 #: ``◌`` is East-Asian-ambiguous and a two-column rendering of it would have
-#: pushed every tier out by one.
+#: pushed every tier out by one.  The fifth glyph (``~``, Task 6) was
+#: re-measured the same way rather than assumed: still one column, so
+#: ``_FLAG_COLS`` did not move for it either.
 LEADERBOARD_FULL_WIDTH = _TIERS[0][1]
 
 #: The narrowest column set this board will ever pick — what it costs to keep
@@ -169,10 +172,11 @@ def _same_wallet(address, you_address) -> bool:
     return str(address).strip().lower() == str(you_address).strip().lower()
 
 
-#: The four glyphs the flag column can show, as plain text.  Four, and
+#: The five glyphs the flag column can show, as plain text.  Five, and
 #: **distinct in greyscale**: colour is never the sole carrier on this
 #: dashboard, and a reader who cannot tell "linked, high confidence" from
-#: "not analyzed" is reading the column backwards half the time.
+#: "not analyzed" — or from "thin evidence, shown rather than removed" — is
+#: reading the column backwards half the time.
 #:
 #: They are constants rather than literals in a dict so the suite can name
 #: them, and so the empty cell is a *decision* with a name rather than a
@@ -182,13 +186,19 @@ LINK_HIGH = "⚑"
 LINK_LOW = "◌"
 LINK_CLEAN = ""
 LINK_UNKNOWN = "?"
+#: THE LIST's third wallet state (Task 6): thin evidence, shown rather than
+#: removed.  A per-wallet mark only — a cluster's own ``review_flag`` is a
+#: disjoint concept (measured 2026-08-27: zero overlap on the live service)
+#: and never reaches this glyph; see ``data/curator_clusters.grade_of``.
+LINK_REVIEW = "~"
 
-#: ``link_conf`` -> markup.  Only the three spellings the contract freezes;
+#: ``link_conf`` -> markup.  Only the four spellings the contract freezes;
 #: everything else (``None`` included) goes to the Tier-A fallback below.
 _LINK_GLYPH = {
     "high": f"[yellow]{LINK_HIGH}[/]",
     "low": f"[dim]{LINK_LOW}[/]",
     "clean": LINK_CLEAN,
+    "review": f"[dim]{LINK_REVIEW}[/]",
 }
 
 
@@ -215,7 +225,10 @@ def _link_glyph(link_conf, flagged) -> str:
     * a grade the widget can read **wins**, including ``"low"`` over a
       Tier-A ``True`` — the stronger fold's ``◌`` is a more precise
       statement than the weaker fold's ``⚑``, and showing both would put two
-      marks on one wallet;
+      marks on one wallet.  ``"review"`` (Task 6) wins the same way, over
+      every Tier-A reading — it is a *different* claim from ``"low"``
+      ("thin evidence, shown rather than removed" rather than "a weaker
+      grade"), so it gets its own glyph rather than folding into ``◌``;
     * ``None`` — which is *every* row until the sweep first runs — falls
       back to :func:`_flag_cell`.  Rendering ``?`` there instead would take
       a flag off the board that the ``c`` view's cluster table is still

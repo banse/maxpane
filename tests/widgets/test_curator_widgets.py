@@ -3489,6 +3489,9 @@ def test_the_graded_cell_falls_back_to_the_shipped_tier_a_cell():
         ("low", None): lb.LINK_LOW,
         ("clean", False): lb.LINK_CLEAN,
         ("clean", True): lb.LINK_CLEAN,
+        ("review", True): lb.LINK_REVIEW,    # the grade outranks the bool
+        ("review", False): lb.LINK_REVIEW,
+        ("review", None): lb.LINK_REVIEW,
         (None, True): lb.LINK_HIGH,          # the shipped flag never blanks
         (None, False): lb.LINK_CLEAN,
         (None, None): lb.LINK_UNKNOWN,       # fold-not-run, not clean
@@ -3780,6 +3783,83 @@ async def test_the_board_renders_its_published_full_tier_and_says_so_below_it(
         text = _screen_text(app)
     assert ("widen" in text) is bool(hint), (width, text)
     assert "⚑" in text                    # the flag column is in both tiers
+
+
+# ===========================================================================
+# Task 6 (2026-08-27) — the review glyph: THE LIST's third wallet state
+#
+# ``link_conf`` can now carry ``"review"`` (data/curator_clusters.py:
+# ``grade_of`` / ``bands_by_address``) — thin evidence, shown rather than
+# removed.  It is a per-WALLET mark and disjoint from a cluster's own
+# ``review_flag`` (measured 2026-08-27: the 5 ``review_flag`` clusters hold
+# zero review members), so it never reaches ``operators.py``'s group rows —
+# that module is untouched by this task.
+# ===========================================================================
+
+
+def test_review_renders_its_own_glyph_and_not_the_flag():
+    """Thin evidence gets its own mark, distinct from the ``⚑`` high-
+    confidence flag: a reader who cannot tell "shown, not removed" from
+    "linked, high confidence" is reading the column backwards.  Exercised
+    across every Tier-A bool, the same way ``high``/``low``/``clean``
+    already are, so the grade's win over the bool is proven, not assumed."""
+    from maxpane_dashboard.widgets.curator import leaderboard as lb
+
+    for flagged in (True, False, None):
+        assert _plain(lb._link_glyph("review", flagged)) == lb.LINK_REVIEW, flagged
+    assert lb.LINK_REVIEW not in (
+        lb.LINK_HIGH, lb.LINK_LOW, lb.LINK_CLEAN, lb.LINK_UNKNOWN,
+    )
+
+
+def test_the_review_glyph_is_one_column_like_every_other_flag():
+    from rich.cells import cell_len
+
+    from maxpane_dashboard.widgets.curator import leaderboard as lb
+
+    assert all(
+        cell_len(g) == 1
+        for g in (lb.LINK_HIGH, lb.LINK_LOW, lb.LINK_UNKNOWN, lb.LINK_REVIEW)
+    )
+
+
+def test_the_five_glyphs_are_distinct_in_greyscale():
+    from maxpane_dashboard.widgets.curator import leaderboard as lb
+
+    assert len({
+        lb.LINK_HIGH, lb.LINK_LOW, lb.LINK_CLEAN, lb.LINK_UNKNOWN, lb.LINK_REVIEW,
+    }) == 5
+
+
+def test_the_flag_column_width_did_not_move():
+    """The fifth glyph must not have bought a wider column: re-measured,
+    not assumed, the same discipline ``LEADERBOARD_FULL_WIDTH``'s own
+    comment records for the fourth."""
+    from maxpane_dashboard.widgets.curator import leaderboard as lb
+
+    assert lb._FLAG_COLS == 2 and lb.LEADERBOARD_FULL_WIDTH == 49
+
+
+async def test_a_review_row_composites_at_the_minimal_tier():
+    """Structural presence in the tier is not a glyph on a pixel: the
+    review mark has to survive the compositor at the narrowest tier the
+    board ever renders — the same proof
+    ``test_the_graded_flag_reaches_the_screen_at_every_declared_tier`` runs
+    for HIGH."""
+    from maxpane_dashboard.widgets.curator import leaderboard as lb
+
+    widget = CuratorLeaderboard()
+    app = _Harness(widget)
+    async with app.run_test(size=(lb.LEADERBOARD_MIN_WIDTH, 20)) as pilot:
+        widget.update_data(
+            leaderboard_rows=[
+                {**_lb_rows(1)[0], "link_conf": "review", "flagged": None}
+            ]
+        )
+        await pilot.pause()
+        text = _screen_text(app)
+    assert lb.LINK_REVIEW in text
+    assert text.count("⚑") == 1          # header only, never the review row
 
 
 def test_the_standing_panel_is_the_same_height_in_every_linkage_state():

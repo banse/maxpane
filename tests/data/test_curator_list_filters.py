@@ -101,6 +101,29 @@ def test_each_custom_field_is_inclusive(values, expected):
     assert [row["rank"] for row in result] == expected
 
 
+def test_the_band_filter_selects_review_rows():
+    """``review`` is THE LIST's third wallet state (thin evidence, shown
+    rather than removed) and must be its own selectable bucket, distinct
+    from both a real grade and ``unknown``."""
+    rows = [*ROWS, _row(4, first_index=4, first_hour=5, band="review")]
+    values = empty_filter_values()
+    values.update(band="review")
+    result = filter_rows(rows, parse_filter_values(values), _context())
+    assert [row["rank"] for row in result] == [4]
+
+
+def test_an_unknown_band_word_still_filters_as_unknown():
+    """A spelling this filter does not recognise -- future producer drift,
+    or a hand-edited cache -- must still fall into the ``unknown`` bucket
+    rather than quietly becoming a selectable band of its own; ``None``
+    (row 3 in ``ROWS``) is the other citizen of that same bucket."""
+    rows = [*ROWS, _row(5, first_index=5, first_hour=6, band="bogus")]
+    values = empty_filter_values()
+    values.update(band="unknown")
+    result = filter_rows(rows, parse_filter_values(values), _context())
+    assert [row["rank"] for row in result] == [3, 5]
+
+
 def test_categories_are_and_but_selected_families_are_or():
     values = empty_filter_values()
     values.update(

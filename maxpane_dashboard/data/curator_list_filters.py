@@ -8,7 +8,7 @@ from typing import Any, Mapping
 FILTER_FAMILIES = frozenset({"amount", "sequence", "cadence", "gas", "funding"})
 ENS_VALUES = frozenset({"any", "set", "unset"})
 WINDOW_VALUES = frozenset({"any", "grace", "judged"})
-BAND_VALUES = frozenset({"any", "clean", "low", "high", "unknown"})
+BAND_VALUES = frozenset({"any", "clean", "low", "high", "review", "unknown"})
 
 _INTEGER_FIELDS = (
     "join_min", "join_max", "hour_min", "hour_max", "rank_min",
@@ -321,7 +321,7 @@ def filter_rows(rows: Any, spec: FilterSpec, context: FilterContext) -> list[dic
         if spec.window != "any" and window != spec.window:
             continue
         raw_band = row.get("link_conf")
-        band = raw_band if isinstance(raw_band, str) and raw_band in {"clean", "low", "high"} else "unknown"
+        band = raw_band if isinstance(raw_band, str) and raw_band in {"clean", "low", "high", "review"} else "unknown"
         if spec.band != "any" and band != spec.band:
             continue
         address = row.get("address")
