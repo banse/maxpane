@@ -63,17 +63,24 @@ async def test_a_failed_overview_returns_none_rather_than_half_an_analysis():
     assert got is None
 
 
-async def test_a_json_body_served_as_html_is_not_mistaken_for_a_payload():
-    """This host answers unknown API paths with the SPA's index at HTTP 200,
-    so a 200 is not evidence of a payload.  The body here PARSES -- only the
-    content type says it is not ours -- which is what makes the check the only
-    thing standing between us and a page of HTML read as an analysis."""
+async def test_the_real_payload_served_as_html_is_still_refused():
+    """The one body that isolates the content-type check.
+
+    Every earlier guard passes by construction -- this IS the live `/versions`
+    payload -- so nothing but the content type can reject it.  A spoof that is
+    merely malformed proves only that the shape guard works, which is a
+    different check that already has its own test.
+
+    The host this reads answers unknown API paths with the SPA's index at HTTP
+    200, so "200 and it parses" is not evidence of a payload.
+    """
+    body = json.dumps(_load("versions.json")).encode()
+
     def handler(request):
         return httpx.Response(
-            200,
-            content=json.dumps({"published_version": "spoofed"}).encode(),
-            headers={"content-type": "text/html; charset=utf-8"},
+            200, content=body, headers={"content-type": "text/html; charset=utf-8"}
         )
+
     assert await pub.fetch_published_version(transport=_transport(handler)) is None
 
 
