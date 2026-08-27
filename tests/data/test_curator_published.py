@@ -63,16 +63,38 @@ async def test_a_failed_overview_returns_none_rather_than_half_an_analysis():
     assert got is None
 
 
-async def test_an_html_body_is_not_mistaken_for_json():
-    # Unknown API paths on this host return the SPA's index with HTTP 200.
+async def test_a_json_body_served_as_html_is_not_mistaken_for_a_payload():
+    """This host answers unknown API paths with the SPA's index at HTTP 200,
+    so a 200 is not evidence of a payload.  The body here PARSES -- only the
+    content type says it is not ours -- which is what makes the check the only
+    thing standing between us and a page of HTML read as an analysis."""
     def handler(request):
-        return httpx.Response(200, text="<!doctype html>", headers={"content-type": "text/html"})
+        return httpx.Response(
+            200,
+            content=json.dumps({"published_version": "spoofed"}).encode(),
+            headers={"content-type": "text/html; charset=utf-8"},
+        )
     assert await pub.fetch_published_version(transport=_transport(handler)) is None
 
 
-async def test_an_oversized_body_is_refused_before_it_is_parsed(monkeypatch):
+async def test_an_oversized_body_is_never_handed_to_the_parser(monkeypatch):
+    """The cap exists to keep a hostile body OUT of the parser, and the return
+    value cannot tell you whether it got there -- None either way.  So make the
+    parse itself fatal: correct code never reaches it.
+
+    The fixture is loaded (through json.loads) before the patch is applied --
+    ``pub.json`` is the real, process-wide ``json`` module, so patching its
+    ``loads`` after this point would also blow up this test's own fixture
+    loading, not just the code under test.
+    """
+    versions_body = _load("versions.json")
     monkeypatch.setattr(pub, "MAX_VERSIONS_BYTES", 8)
-    transport = _ok({"/versions": _load("versions.json")})
+
+    def explode(*args, **kwargs):
+        raise AssertionError("an oversized body reached the parser")
+
+    monkeypatch.setattr(pub.json, "loads", explode)
+    transport = _ok({"/versions": versions_body})
     assert await pub.fetch_published_version(transport=transport) is None
 
 
