@@ -227,9 +227,10 @@ def test_the_output_surface_is_the_flat_contract_minus_the_managers_own_keys() -
     ``build_signals`` emits ``SIGNAL_OUTPUT_KEYS``.  The manager adds
     ``MANAGER_OWNED_KEYS`` — the three health markers it is the only module
     that can know.  Since the sybil expansion (2026-08-17) the manager's
-    **analysis adapter** adds ``CURATOR_ANALYSIS_KEYS``, the eleven keys of the
-    linked-wallet view, filled from a detached long-TTL sweep after
-    ``build_signals`` has already run — exactly the way ENS names are merged in.
+    **analysis adapter** adds ``CURATOR_ANALYSIS_KEYS``, the fourteen keys of
+    the linked-wallet view, filled from a detached long-TTL read of THE
+    LIST's published analysis after ``build_signals`` has already run —
+    exactly the way ENS names are merged in.
 
     The equality is still exact, and still bites in both directions: a key
     added to ``CURATOR_KEYS`` with no producer fails here, and so does a key

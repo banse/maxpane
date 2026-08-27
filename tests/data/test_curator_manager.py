@@ -3593,13 +3593,16 @@ def test_with_no_analysis_last_good_every_analysis_key_is_none_never_empty(
         assert "link_conf" in row and row["link_conf"] is None
 
 
-def test_with_an_analysis_last_good_every_one_of_the_twelve_keys_is_filled(
+def test_with_an_analysis_last_good_every_analysis_key_is_filled(
     tmp_path, clock
 ):
     """The missing-red hazard, closed head-on (controller ruling 3): the
-    totality test stayed green while all twelve keys were None, so this one
+    totality test stayed green while every analysis key was None, so this one
     asserts the FILLING — rows populated, counts real ints, the marker a real
-    HH:MM — for both reader states."""
+    HH:MM — for both reader states. (``analysis_version`` gets its own
+    dedicated test below; ``you_list_row`` is not gated by the analysis tier
+    at all — it is built off the raw list regardless — so it is not part of
+    this set.)"""
     import re
 
     # --- a linked reader ---------------------------------------------------
@@ -3905,10 +3908,10 @@ def test_an_analyzed_none_slot_reaches_the_flat_dict_as_real_zeros(tmp_path, clo
 def test_a_missing_sybilkit_is_analysis_unavailable_never_a_crash(
     tmp_path, clock, monkeypatch
 ):
-    """The ruled guarded import: with the library absent the twelve keys stay
-    in their not-yet-run state, the merge and the R9 seeding keep working,
-    no banner lights for mere absence, and the tier is spaced rather than
-    re-offered every cycle."""
+    """The ruled guarded import: with the library absent the analysis keys
+    stay in their not-yet-run state, the merge and the R9 seeding keep
+    working, no banner lights for mere absence, and the tier is spaced rather
+    than re-offered every cycle."""
     manager = _analysis_manager(tmp_path, clock, wallet=WALLET)
     monkeypatch.setattr(curator_clusters, "SYBILKIT_AVAILABLE", False)
 

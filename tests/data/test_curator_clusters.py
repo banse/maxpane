@@ -350,7 +350,7 @@ def test_link_conf_bands_come_from_evidence_structure_not_the_raw_number():
     assert curator_clusters.grade_of(STRANGER, high) is None
 
 
-def test_analysis_keys_is_exactly_the_frozen_twelve():
+def test_analysis_keys_is_exactly_the_frozen_fourteen():
     keys = curator_clusters.analysis_keys(farm_analysis(wallet=FARM_MEMBERS[0]))
     assert set(keys) == set(CURATOR_ANALYSIS_KEYS)
     # The sweep's own freshness marker is the CACHE's to stamp, never the pure
@@ -812,6 +812,36 @@ def test_only_curator_clusters_imports_sybilkit():
                 importers.append(str(path.relative_to(_REPO)))
                 break
     assert importers == ["maxpane_dashboard/data/curator_clusters.py"]
+
+
+def test_the_published_base_url_is_the_only_new_host():
+    """T2's fetch layer (``curator_published.py``) and T9's archive
+    (``curator_archive.py``) are the two modules the published-analysis build
+    added. ``clustermap.vibingco.de`` -- the published-analysis service -- is
+    the only new host between them, and neither module carries anything that
+    looks like a key, a token or a secret: the same substring scan
+    ``test_no_module_level_string_looks_like_a_key`` runs over
+    ``curator_client.py``."""
+    import re
+
+    published_path = _REPO / "maxpane_dashboard" / "data" / "curator_published.py"
+    archive_path = _REPO / "maxpane_dashboard" / "data" / "curator_archive.py"
+    published_src = published_path.read_text(encoding="utf-8")
+    archive_src = archive_path.read_text(encoding="utf-8")
+
+    hosts = set(re.findall(r"https://([A-Za-z0-9.-]+)", published_src))
+    hosts |= set(re.findall(r"https://([A-Za-z0-9.-]+)", archive_src))
+    assert hosts == {"clustermap.vibingco.de"}
+
+    published_lower = published_src.lower()
+    archive_lower = archive_src.lower()
+    for banned in (
+        "api_key", "apikey", "x-api-key", "authorization",
+        "private_key", "keystore", "bearer", "secret", "password",
+        "eth_sendrawtransaction", "eth_sendtransaction", "eth_sign",
+    ):
+        assert banned not in published_lower, banned
+        assert banned not in archive_lower, banned
 
 
 # ---------------------------------------------------------------------------
