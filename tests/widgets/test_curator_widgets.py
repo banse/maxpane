@@ -427,6 +427,47 @@ async def test_editor_composites_direct_group_controls_at_required_sizes(size):
             assert control_text in text
 
 
+# ===========================================================================
+# Task 6 (2026-08-27), scope extension — the LINK BAND dropdown must offer
+# "Review" or the value curator_list_filters.py now accepts is unreachable
+# from THE LIST's own editor.  Ruled order: ascending evidence -- clean
+# (none), review (thin evidence, shown rather than removed), low (two
+# families), high (three families or funding), unknown (could not judge).
+# ===========================================================================
+
+
+def test_the_band_options_are_pinned_in_ascending_evidence_order():
+    """The dropdown's contents are otherwise unpinned -- nothing catches the
+    next band going missing the same way `review` did.  Order matters: a
+    reader scanning the list reads it as ascending evidence, and appending a
+    new band at the end (after `high`) would break that reading."""
+    from maxpane_dashboard.widgets.curator.list_filter import _SELECT_OPTIONS
+
+    assert _SELECT_OPTIONS["band"] == (
+        ("Any", "any"),
+        ("Clean", "clean"),
+        ("Review", "review"),
+        ("Low", "low"),
+        ("High", "high"),
+        ("Unknown", "unknown"),
+    )
+
+
+async def test_the_review_band_option_composites_when_selected():
+    """Structural presence in `_SELECT_OPTIONS` is not a glyph on a pixel:
+    selecting ``band="review"`` must actually reach the compositor, the same
+    proof `test_editor_composites_direct_group_controls_at_required_sizes`
+    runs for `window`/`band` today."""
+    editor = CuratorListFilterEditor(nft_choices=NFT_CHOICES)
+    app = _Harness(editor)
+    async with app.run_test(size=(143, 42)) as pilot:
+        editor.set_values({"band": "review"})
+        await pilot.pause()
+        text = _screen_text(app)
+        assert editor.values()["band"] == "review"
+    assert "Review" in text
+
+
 async def test_filter_editor_round_trips_values_and_names_an_error():
     editor = CuratorListFilterEditor()
     app = _Harness(editor)

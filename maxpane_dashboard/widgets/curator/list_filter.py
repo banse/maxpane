@@ -52,6 +52,7 @@ _SELECT_OPTIONS = {
     "band": (
         ("Any", "any"),
         ("Clean", "clean"),
+        ("Review", "review"),
         ("Low", "low"),
         ("High", "high"),
         ("Unknown", "unknown"),
