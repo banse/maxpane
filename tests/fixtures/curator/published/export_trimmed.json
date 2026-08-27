@@ -37,7 +37,7 @@
   "name": "sybilkit",
   "version": "0.2.0",
   "rule_set": "v2h (v2g + aged-weak periphery)",
-  "generated_at": "2026-08-27T09:49:37.237686Z"
+  "generated_at": "2026-08-27T11:06:15.963414Z"
  },
  "caveats": [
   "A group is an analysis signal, not proof of common ownership.",
