@@ -280,7 +280,10 @@ and `clean_list()` reproduces exactly that set from the reconstructed membership
 On the first successful load of a version id the slot has not seen, `curator_archive`:
 
 **1. Moves** — never copies-then-deletes, never deletes — into
-`~/.maxpane/archive/<version-id>/`:
+`~/.maxpane/archive/<version-id>-<hash12>/` (the version id **and** the first 12 hex
+characters of the content hash, so a republish under the same id — a corrected run of
+the same day's analysis — gets its own directory instead of colliding with the one it
+supersedes):
 
 ```
 curator_cleaned_list.json         curator_cleaned_list.enriched.json
@@ -318,7 +321,7 @@ archived. A second load of the same version archives nothing and rewrites nothin
 ## 7. What is removed
 
 From `curator_clusters.py`: `fetch_enrichment`, `candidate_targets`, the
-`EnrichmentState` cursor, `TX_BUDGET`/`FUNDING_BUDGET`, and the `sybilkit.sources`
+`EnrichmentSweep` cursor, `TX_BUDGET`/`FUNDING_BUDGET`, and the `sybilkit.sources`
 imports (`txs`, `blockscout`, `PENDING_PAGES`, `DEFAULT_CONFIG`).
 
 From `curator_manager.py`: the Tier-B/C half of `_pool_analysis`, `_analysis_session`'s

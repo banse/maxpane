@@ -1230,7 +1230,7 @@ assert the rendered output, not the call.
 **Interfaces:**
 - Consumes: T5's `bands_by_address`, the published rows, the superseded slot payload.
 - Produces:
-  `def archive_and_write(root: Path, *, version_id: str, rows, bands, previous_slot, now: float) -> ArchiveResult`
+  `def archive_and_write(root: Path, *, version_id: str, content_hash: str, rows, bands, previous_slot, now: float) -> ArchiveResult`
   with `ArchiveResult(archived: tuple[str, ...], written: tuple[str, ...], failed: tuple[str, ...])`.
 
 **Every path is injected.** No `Path.home()` inside the module; the manager passes the
