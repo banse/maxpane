@@ -523,6 +523,246 @@ def build_analysis(
 
 
 # ---------------------------------------------------------------------------
+# The same pipeline, over PUBLISHED membership
+# ---------------------------------------------------------------------------
+
+
+def _review_suffix(reasons: list[str], cluster: Mapping) -> list[str]:
+    """Append ``under review`` to a group the publisher has flagged as such.
+
+    Group review and MEMBER review are disjoint on the live service (measured
+    2026-08-27: the 5 ``review_flag`` groups hold zero review members, and all
+    26 groups that hold them are unflagged).  So this is a sentence in the
+    group's reasons, never a band word -- a group row reading ``~`` while every
+    one of its members reads ``⚑`` would be a contradiction the publisher never
+    made.
+    """
+    if not cluster.get("review_flag"):
+        return reasons
+    return [*reasons, pattern_language("under review", None, fallback="under review")]
+
+
+def _review_segment_row(
+    reviews: Mapping[int, Mapping[str, Any]],
+    rows: Iterable[Any],
+    total_points: int,
+) -> dict | None:
+    """The ``under review`` band, folded from the payload — or ``None``.
+
+    ``None`` when the payload reviews nobody: an empty band would claim a
+    population that does not exist.  Both numbers on the row are folds over
+    the rows that were actually read — the count the live service happens to
+    publish today, and its share of the points, are written down nowhere in
+    this file, so a later snapshot moves them without an edit.
+
+    Per-wallet points come from the published rows, which agreed with our own
+    fold to the digit on every shared address.  :func:`build_analysis` has no
+    per-address points map in scope — ``segments()`` builds one privately —
+    and reaching for one would mean a second fold of the population for one
+    number.
+    """
+    review_total = sum(len(m) for m in reviews.values())
+    if not review_total:
+        return None
+    review_addresses = {addr for m in reviews.values() for addr in m}
+    review_points = sum(
+        _opt_int(row.get("points")) or 0
+        for row in rows
+        if isinstance(row, Mapping)
+        and (_valid_address(row.get("address")) or "") in review_addresses
+    )
+    return {
+        "label": "under review",
+        "contributors": review_total,
+        "points_share_pct": (
+            review_points / total_points * 100 if total_points else None
+        ),
+        # NOT "fewer than two evidence families".  The publisher names the
+        # gate ``v2h (v2g + aged-weak periphery)``; most review wallets carry
+        # one family (``amount``, then ``sequence``, then ``cadence``) but a
+        # measured handful carry **two**, so a family count is a rule we
+        # would have invented.  What a reader can act on is that the evidence
+        # is thin and the wallet is still on the list.
+        "detail": pattern_language(
+            "thin evidence · shown, never removed",
+            None,
+            fallback="thin evidence · shown, never removed",
+        ),
+    }
+
+
+def build_analysis_from_published(
+    events: Iterable[Any],
+    first_deposits: Iterable[Any],
+    *,
+    clusters: Iterable[Any],
+    rows: Iterable[Any],
+    totals: Mapping,
+    wallet: str | None = None,
+    config: CuratorPreset,
+) -> AnalysisResult:
+    """:func:`build_analysis`, with the clusters read instead of detected.
+
+    Everything downstream of ``detect`` is the same code over the same local
+    dataset: the published payload supplies **membership and its metadata**,
+    and the library's own pure ``segments()`` and ``clean_list()`` still fold
+    *our* events for every number a reader sees.  A wallet the publisher
+    describes but our fold has never seen therefore contributes no points and
+    no clean rank, which is the honest answer rather than a borrowed one.
+
+    Three things this build has that :func:`build_analysis` does not:
+
+    * ``groups[].review_members`` — the publisher's per-wallet review rows,
+      indexed to the group they sit in;
+    * one appended ``under review`` segment band, folded from those rows;
+    * ``conf`` taken from :func:`published_band` rather than
+      :func:`_grade_families` — the publisher's word when it is one we speak,
+      and our own grading when it is not.
+
+    *config* is required: there is no live-read fallback here, because a
+    preset that remembered ``1000`` would move every point in the analysis on
+    the day the chain stopped agreeing with it.
+    """
+    _require_sybilkit()
+    # Materialised once: both are iterated three times below (the
+    # reconstruction, the review index and the review fold), and a caller
+    # handing over a generator would otherwise silently analyse an empty
+    # population on the second pass.
+    published = list(clusters)
+    member_rows = list(rows)
+    preset = config
+
+    ds = Dataset.from_events(events, first_deposits)
+    res = detect_result_from_published(published, member_rows, totals)
+    # `detect_result_from_published` leaves `analyzed` at DetectResult's
+    # frozenset() default ON PURPOSE, and setting it is this caller's job:
+    # the analysed population is the one THIS build folded, never the one the
+    # publisher folded.  Dropping this line does not raise — `clean_list`
+    # takes its survivors from `analyzed` and nothing else, so every
+    # non-member would read "not analyzed" instead of "analyzed and clean"
+    # and the clean list would come back empty with every other counter
+    # still looking plausible.
+    res.analyzed = frozenset(d.contributor for d in ds.deposits)
+    seg = _segments(ds, res, preset)
+    clean = _clean_list(ds, res, preset)
+    reviews = review_members_of(member_rows)
+
+    published_by_id: dict[int, Mapping] = {}
+    for cluster in published:
+        if not isinstance(cluster, Mapping):
+            continue
+        cluster_id = cluster.get("id")
+        if isinstance(cluster_id, int) and not isinstance(cluster_id, bool):
+            published_by_id.setdefault(cluster_id, cluster)
+
+    # --- operator rows: widest share first, the panel's own lead order ------
+    seg_by_id = {op.cluster_id: op for op in seg.operators}
+    operator_rows: list[dict] = []
+    groups: list[dict] = []
+    for cluster in res.clusters:                       # already share-desc
+        op = seg_by_id.get(cluster.cluster_id)
+        source = published_by_id.get(cluster.cluster_id, {})
+        families = _families_of(cluster)
+        conf = published_band(source)
+        reasons = _review_suffix(_reason_strings(cluster.reasons), source)
+        operator_rows.append(
+            {
+                "size": cluster.size,
+                "reasons": reasons,
+                "points": cluster.points,
+                "points_share_pct": cluster.points_share * 100,
+                "sqrt_subsidy_x": op.subsidy_x if op is not None else None,
+                "conf": conf,
+            }
+        )
+        groups.append(
+            {
+                "size": cluster.size,
+                "conf": conf,
+                "families": sorted(families),
+                "reasons": reasons,
+                "members": list(cluster.members),
+                # ``{}``, never ``None``: "we looked and there were none" is a
+                # representable answer and must not render as "unknown".
+                "review_members": reviews.get(cluster.cluster_id, {}),
+            }
+        )
+
+    # --- segment rows: operators, cohorts, multiplier bands, then the hours.
+    # The widget renders the first MAX_ROWS only, so the twenty-odd hour bands
+    # go last rather than burying the aggregate (WP4's ordering hand-off).
+    ordered = [b for b in seg.bands if b.kind == "operators"]
+    ordered += [b for b in seg.bands if b.kind == "cohort"]
+    ordered += [b for b in seg.bands if b.kind == "multiplier"]
+    ordered += [b for b in seg.bands if b.kind == "hour"]
+    segment_rows = [
+        {
+            "label": pattern_language(b.label, fallback="population band"),
+            "contributors": b.contributors,
+            "points_share_pct": (
+                b.points_share * 100 if b.points_share is not None else None
+            ),
+            "detail": pattern_language(b.detail, fallback=""),
+        }
+        for b in ordered
+    ]
+    review_row = _review_segment_row(reviews, member_rows, res.total_points)
+    if review_row is not None:
+        # After the LAST operators-kind band, not at a remembered index 1:
+        # when `seg.operators` is empty `ordered` starts with a cohort band
+        # and a hardcoded 1 would drop this row into the middle of the
+        # cohorts, where it means nothing.
+        segment_rows.insert(
+            sum(1 for b in ordered if b.kind == "operators"), review_row
+        )
+
+    first_hours: dict[str, int] = {}
+    tx_counts: dict[str, int] = {}
+    for deposit in sorted(
+        ds.deposits, key=lambda row: (row.block_number, row.log_index)
+    ):
+        first_hours.setdefault(deposit.contributor, deposit.hour)
+        tx_counts[deposit.contributor] = deposit.tx_count
+
+    clean_list_rows = [
+        {
+            "clean_rank": entry.clean_rank,
+            "address": entry.address,
+            "points": entry.points,
+            "credit_eth": _eth(entry.credit_wei),
+            # The manager's ENS merge fills this, exactly like the leaderboard.
+            "name": None,
+            "weight_eth": _eth(entry.weight_wei),
+            "tx_count": tx_counts.get(entry.address),
+            "first_hour": first_hours.get(entry.address),
+            "first_index": ds.first_index.get(entry.address),
+        }
+        for entry in clean.entries[:CLEAN_LIST_LIMIT]
+    ]
+
+    share = (
+        res.flagged_points / res.total_points * 100 if res.total_points else None
+    )
+    return AnalysisResult(
+        result=res,
+        segments=seg,
+        clean=clean,
+        preset=preset,
+        wallet=wallet.lower() if isinstance(wallet, str) else None,
+        operator_rows=operator_rows,
+        segment_rows=segment_rows,
+        clean_list_rows=clean_list_rows,
+        operators_count=len(res.clusters),
+        clean_points=res.clean_points,
+        clean_contributors=clean.clean_contributors,
+        points_total=res.total_points,
+        flagged_points_share_pct=share,
+        groups=groups,
+        clean_ranks={e.address: e.clean_rank for e in clean.entries},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Lookups that work identically off the live result and the persisted payload
 # ---------------------------------------------------------------------------
 
