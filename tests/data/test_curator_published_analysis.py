@@ -22,6 +22,7 @@ import pathlib
 import pytest
 
 from maxpane_dashboard.data import curator_clusters as cc
+from maxpane_dashboard.data.curator_list_filters import FILTER_FAMILIES
 from maxpane_dashboard.data.curator_models import DepositEvent
 
 FIXTURES = pathlib.Path(__file__).parent.parent / "fixtures/curator/published"
@@ -303,6 +304,18 @@ def _build(ov=None, ex=None, **kwargs):
     )
 
 
+def _local_points_total(ex):
+    """The base ``_segments`` folds over the LOCAL dataset, derived here.
+
+    ``segments()`` sums ``preset.points(final_weight)`` across every
+    contributor, and ``_fixture_events`` reproduces each row's published
+    ``points`` integer exactly (the fixture guard proves it), so the export's
+    own column sums to the same base without this test re-implementing the
+    curve.
+    """
+    return sum(row["points"] for row in ex["rows"])
+
+
 def _cluster_id_of(group, ex):
     """The published cluster id a rebuilt group's members all belong to.
 
@@ -420,8 +433,65 @@ def test_the_review_segment_row_counts_the_review_wallets_and_their_share():
     assert reviewed
     assert row["contributors"] == len(reviewed)
     assert row["points_share_pct"] == pytest.approx(
+        sum(r["points"] for r in reviewed) / _local_points_total(ex) * 100
+    )
+
+
+def test_the_review_rows_share_sits_on_the_same_base_as_its_siblings():
+    """Pins the denominator, which the fold test above cannot.
+
+    ``res.total_points`` is the PUBLISHER's base and ``seg.total_points`` is
+    the local fold's; they agree only when this build folded the same
+    population the publisher did, which the trimmed fixture deliberately does
+    not (619,162 against 29,675,956, a 48x gap).  Every other row in the
+    column takes its share from ``_segments``, so the review row has to as
+    well -- a reader compares adjacent rows.
+
+    The local base is derived here from the export's own ``points``, which the
+    fixture reproduces exactly (see the fixture guard), and it is proven to be
+    the siblings' base by re-deriving the ``linked groups`` row from it.
+    """
+    ov, ex = _load("overview_trimmed.json"), _load("export_trimmed.json")
+    local_total = _local_points_total(ex)
+    assert local_total != ov["totals"]["points"], "the two bases must differ"
+    result = _build(ov, ex)
+
+    sibling = next(r for r in result.segment_rows if r["label"] == "linked groups")
+    assert sibling["points_share_pct"] == pytest.approx(
+        sum(r["points"] for r in ex["rows"] if r["cluster_id"] is not None)
+        / local_total
+        * 100
+    )
+
+    reviewed = [r for r in ex["rows"] if r["status"] == "review"]
+    row = next(r for r in result.segment_rows if r["label"] == "under review")
+    assert row["points_share_pct"] == pytest.approx(
+        sum(r["points"] for r in reviewed) / local_total * 100
+    )
+    assert row["points_share_pct"] != pytest.approx(
         sum(r["points"] for r in reviewed) / ov["totals"]["points"] * 100
     )
+
+
+def test_a_zero_points_fold_gives_the_review_share_None_not_zero():
+    """"A failed read is ``None``, never ``0``" — a share of nothing is not 0 %.
+
+    Reached through the real denominator: an empty local fold, not a doctored
+    ``totals``, because after the base moved to ``seg.total_points`` a zeroed
+    ``totals["points"]`` no longer touches this branch at all.
+    """
+    ov, ex = _load("overview_trimmed.json"), _load("export_trimmed.json")
+    result = cc.build_analysis_from_published(
+        [],
+        [],
+        clusters=ov["clusters"],
+        rows=ex["rows"],
+        totals=ov["totals"],
+        config=_preset(),
+    )
+    row = next(r for r in result.segment_rows if r["label"] == "under review")
+    assert row["contributors"] > 0
+    assert row["points_share_pct"] is None
 
 
 def test_the_review_row_follows_the_operators_band():
@@ -506,6 +576,14 @@ def test_a_forbidden_word_in_a_published_reason_never_reaches_the_row():
     rendered += [s for group in result.groups for s in group["reasons"]]
     rendered += [row["label"] for row in result.segment_rows]
     rendered += [row["detail"] for row in result.segment_rows]
+    # `review_members` is a payload-sourced string channel too, and it lands
+    # on a widget like the rest of them.
+    rendered += [
+        family
+        for group in result.groups
+        for families in group["review_members"].values()
+        for family in families
+    ]
     assert rendered
     assert not any(
         word in text.lower() for text in rendered for word in cc.FORBIDDEN_WORDS
@@ -562,3 +640,100 @@ def test_the_analysis_keys_still_fill_from_a_published_build():
     result = _build()
     keys = cc.analysis_keys(result)
     assert set(keys) == set(cc.CURATOR_ANALYSIS_KEYS)
+
+
+def test_a_hostile_member_family_never_reaches_a_groups_review_members():
+    """The evidence-family channel is filtered against the allowlist.
+
+    ``review_members_of`` keeps ``member_families`` entries on an
+    ``isinstance(str)`` check alone, so a hand-edited cache -- named in this
+    module's threat model -- can write any word at all into a channel that
+    ends up on a widget.  The words that survive are exactly the five the
+    filter vocabulary knows.
+    """
+    ov, ex = _load("overview_trimmed.json"), _load("export_trimmed.json")
+    rows = json.loads(json.dumps(ex["rows"]))
+    victim = next(r for r in rows if r["status"] == "review")
+    victim["member_families"] = ["amount", "confirmed sybil farmer", "wash"]
+    result = _build(ov, ex, rows=rows)
+    families = {
+        family
+        for group in result.groups
+        for names in group["review_members"].values()
+        for family in names
+    }
+    assert families
+    assert families <= FILTER_FAMILIES
+    assert not any(
+        word in family.lower()
+        for family in families
+        for word in cc.FORBIDDEN_WORDS
+    )
+    # Filtered, not dropped: the wallet keeps its legitimate family and stays
+    # a review member -- an evidence channel that empties itself on one bad
+    # word would lose the wallet, which is the opposite of "shown, never
+    # removed".
+    mine = next(
+        names
+        for group in result.groups
+        for address, names in group["review_members"].items()
+        if address == victim["address"].lower()
+    )
+    assert mine == ["amount"]
+
+
+def test_a_published_wallet_our_fold_has_never_seen_gets_no_points_and_no_rank():
+    """The docstring's claim, pinned — and it is the real production case.
+
+    ``_fixture_events`` builds one deposit per exported row, so the local
+    fold and the published population are identical by construction and
+    nothing else in this file can distinguish them.  A log scrape lagging the
+    publisher by one wallet is what actually happens, and the honest answer
+    for that wallet is "unknown", never a borrowed clean rank.
+    """
+    ov, ex = _load("overview_trimmed.json"), _load("export_trimmed.json")
+    absent = next(r for r in ex["rows"] if r["status"] == "clean")
+    local = [r for r in ex["rows"] if r is not absent]
+    result = cc.build_analysis_from_published(
+        _fixture_events(local),
+        _fixture_firsts(local),
+        clusters=ov["clusters"],
+        rows=ex["rows"],
+        totals=ov["totals"],
+        config=_preset(),
+    )
+    address = absent["address"].lower()
+    assert address not in result.result.analyzed
+    assert address not in result.clean_ranks
+    assert address not in {row["address"] for row in result.clean_list_rows}
+    assert result.clean.standing(address) == "unknown"
+    # Everybody else is unaffected: this is one missing wallet, not a broken
+    # clean list.
+    published_clean = {
+        r["address"].lower() for r in ex["rows"] if r["status"] == "clean"
+    }
+    assert set(result.clean_ranks) == published_clean - {address}
+
+
+def test_one_address_filed_under_two_clusters_is_one_contributor():
+    """``contributors`` and the points fold agree about duplicates.
+
+    Impossible from the live publisher, reachable from a hand-edited cache:
+    the count is over the union of addresses, exactly as the points are, so a
+    wallet listed twice cannot be two contributors holding one wallet's
+    points.
+    """
+    ov, ex = _load("overview_trimmed.json"), _load("export_trimmed.json")
+    rows = json.loads(json.dumps(ex["rows"]))
+    duplicated = next(r for r in rows if r["status"] == "review")
+    other = next(
+        c["id"] for c in ov["clusters"] if c["id"] != duplicated["cluster_id"]
+    )
+    rows.append(dict(duplicated, cluster_id=other))
+    result = _build(ov, ex, rows=rows)
+    row = next(r for r in result.segment_rows if r["label"] == "under review")
+    baseline = next(
+        r for r in _build(ov, ex).segment_rows if r["label"] == "under review"
+    )
+    assert row["contributors"] == baseline["contributors"]
+    assert row["points_share_pct"] == pytest.approx(baseline["points_share_pct"])

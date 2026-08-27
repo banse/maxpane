@@ -71,6 +71,13 @@ except ImportError:  # pragma: no cover — exercised through the flag in tests
 else:
     SYBILKIT_AVAILABLE = True
 
+#: The evidence-family allowlist for strings read back out of a payload.
+#: Taken from ``curator_list_filters`` (stdlib-only) and **not** from
+#: ``sybilkit.cluster.FAMILIES``: the persisted-read paths in this module run
+#: when the library is absent, and an allowlist that vanishes with it is not
+#: an allowlist.  The two hold the same five words; the filter module's copy
+#: is the one that is always importable.
+from maxpane_dashboard.data.curator_list_filters import FILTER_FAMILIES
 from maxpane_dashboard.data.curator_models import CURATOR_ANALYSIS_KEYS
 
 
@@ -238,6 +245,79 @@ def _reason_strings(reasons: Iterable[Any]) -> list[str]:
         text = getattr(reason, "human_string", reason)
         out.append(pattern_language(text, family))
     return out
+
+
+def _finish(
+    ds: Any,
+    res: Any,
+    seg: Any,
+    clean: Any,
+    preset: CuratorPreset,
+    wallet: str | None,
+    operator_rows: list[dict],
+    segment_rows: list[dict],
+    groups: list[dict],
+) -> AnalysisResult:
+    """The tail both builders share: the clean rows and the result object.
+
+    :func:`build_analysis` and :func:`build_analysis_from_published` fork at
+    ``detect``, and their *heads* genuinely differ — the band word, the
+    reasons, the extra group key.  Their **tails** did not differ by a
+    character, and 45 duplicated lines is how a fix reaches one of two
+    dashboards: T7 and T10 render ``clean_list_rows``, so a field added
+    there, a change to the :data:`CLEAN_LIST_LIMIT` slice, or a different
+    ENS hand-off than ``"name": None`` would have had to be made twice —
+    and the published path would silently ship different rows than the
+    local one the day it was not.  CLAUDE.md's "reuse before you build"
+    names this exact failure and this branch has already paid it once.
+
+    Pure, like both its callers: it reads ``ds``/``res``/``seg``/``clean``
+    and holds no clock.
+    """
+    first_hours: dict[str, int] = {}
+    tx_counts: dict[str, int] = {}
+    for deposit in sorted(
+        ds.deposits, key=lambda row: (row.block_number, row.log_index)
+    ):
+        first_hours.setdefault(deposit.contributor, deposit.hour)
+        tx_counts[deposit.contributor] = deposit.tx_count
+
+    clean_list_rows = [
+        {
+            "clean_rank": entry.clean_rank,
+            "address": entry.address,
+            "points": entry.points,
+            "credit_eth": _eth(entry.credit_wei),
+            # The manager's ENS merge fills this, exactly like the leaderboard.
+            "name": None,
+            "weight_eth": _eth(entry.weight_wei),
+            "tx_count": tx_counts.get(entry.address),
+            "first_hour": first_hours.get(entry.address),
+            "first_index": ds.first_index.get(entry.address),
+        }
+        for entry in clean.entries[:CLEAN_LIST_LIMIT]
+    ]
+
+    share = (
+        res.flagged_points / res.total_points * 100 if res.total_points else None
+    )
+    return AnalysisResult(
+        result=res,
+        segments=seg,
+        clean=clean,
+        preset=preset,
+        wallet=wallet.lower() if isinstance(wallet, str) else None,
+        operator_rows=operator_rows,
+        segment_rows=segment_rows,
+        clean_list_rows=clean_list_rows,
+        operators_count=len(res.clusters),
+        clean_points=res.clean_points,
+        clean_contributors=clean.clean_contributors,
+        points_total=res.total_points,
+        flagged_points_share_pct=share,
+        groups=groups,
+        clean_ranks={e.address: e.clean_rank for e in clean.entries},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -476,49 +556,8 @@ def build_analysis(
         for b in ordered
     ]
 
-    first_hours: dict[str, int] = {}
-    tx_counts: dict[str, int] = {}
-    for deposit in sorted(
-        ds.deposits, key=lambda row: (row.block_number, row.log_index)
-    ):
-        first_hours.setdefault(deposit.contributor, deposit.hour)
-        tx_counts[deposit.contributor] = deposit.tx_count
-
-    clean_list_rows = [
-        {
-            "clean_rank": entry.clean_rank,
-            "address": entry.address,
-            "points": entry.points,
-            "credit_eth": _eth(entry.credit_wei),
-            # The manager's ENS merge fills this, exactly like the leaderboard.
-            "name": None,
-            "weight_eth": _eth(entry.weight_wei),
-            "tx_count": tx_counts.get(entry.address),
-            "first_hour": first_hours.get(entry.address),
-            "first_index": ds.first_index.get(entry.address),
-        }
-        for entry in clean.entries[:CLEAN_LIST_LIMIT]
-    ]
-
-    share = (
-        res.flagged_points / res.total_points * 100 if res.total_points else None
-    )
-    return AnalysisResult(
-        result=res,
-        segments=seg,
-        clean=clean,
-        preset=preset,
-        wallet=wallet.lower() if isinstance(wallet, str) else None,
-        operator_rows=operator_rows,
-        segment_rows=segment_rows,
-        clean_list_rows=clean_list_rows,
-        operators_count=len(res.clusters),
-        clean_points=res.clean_points,
-        clean_contributors=clean.clean_contributors,
-        points_total=res.total_points,
-        flagged_points_share_pct=share,
-        groups=groups,
-        clean_ranks={e.address: e.clean_rank for e in clean.entries},
+    return _finish(
+        ds, res, seg, clean, preset, wallet, operator_rows, segment_rows, groups
     )
 
 
@@ -539,7 +578,14 @@ def _review_suffix(reasons: list[str], cluster: Mapping) -> list[str]:
     """
     if not cluster.get("review_flag"):
         return reasons
-    return [*reasons, pattern_language("under review", None, fallback="under review")]
+    # OUR sentence, not the payload's, so it does not go through
+    # `pattern_language`: `pattern_language(expr, None, fallback=expr)` is an
+    # idiom that turns the boundary off silently the moment `expr` becomes a
+    # payload value (both sides move together, so no test can see it), and it
+    # makes `grep "pattern_language("` useless as a boundary audit.  The
+    # payload's own strings -- the reasons this is appended to -- pass the
+    # boundary twice, in `clusters_from_published` and in `_reason_strings`.
+    return [*reasons, "under review"]
 
 
 def _review_segment_row(
@@ -561,19 +607,30 @@ def _review_segment_row(
     and reaching for one would mean a second fold of the population for one
     number.
     """
-    review_total = sum(len(m) for m in reviews.values())
-    if not review_total:
-        return None
+    # `len(review_addresses)`, not `sum(len(m) for m in reviews.values())`:
+    # the points below are folded over the union, so counting the per-cluster
+    # lists would let one address filed under two cluster ids -- impossible
+    # live, reachable from a hand-edited cache -- be two contributors holding
+    # one wallet's points.
     review_addresses = {addr for m in reviews.values() for addr in m}
-    review_points = sum(
-        _opt_int(row.get("points")) or 0
-        for row in rows
-        if isinstance(row, Mapping)
-        and (_valid_address(row.get("address")) or "") in review_addresses
-    )
+    if not review_addresses:
+        return None
+    # Folded per ADDRESS, not per row, for the same reason `contributors` is:
+    # summing the rows makes a wallet listed twice worth twice its points,
+    # which puts the two folds back in disagreement from the other side.
+    # First row wins, so the answer does not depend on payload order.
+    points_by_address: dict[str, int] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        address = _valid_address(row.get("address"))
+        if address is None or address not in review_addresses:
+            continue
+        points_by_address.setdefault(address, _opt_int(row.get("points")) or 0)
+    review_points = sum(points_by_address.values())
     return {
         "label": "under review",
-        "contributors": review_total,
+        "contributors": len(review_addresses),
         "points_share_pct": (
             review_points / total_points * 100 if total_points else None
         ),
@@ -583,11 +640,9 @@ def _review_segment_row(
         # measured handful carry **two**, so a family count is a rule we
         # would have invented.  What a reader can act on is that the evidence
         # is thin and the wallet is still on the list.
-        "detail": pattern_language(
-            "thin evidence · shown, never removed",
-            None,
-            fallback="thin evidence · shown, never removed",
-        ),
+        # Ours, not the payload's -- see `_review_suffix` for why that means
+        # a plain literal rather than a `pattern_language` round trip.
+        "detail": "thin evidence · shown, never removed",
     }
 
 
@@ -645,7 +700,20 @@ def build_analysis_from_published(
     res.analyzed = frozenset(d.contributor for d in ds.deposits)
     seg = _segments(ds, res, preset)
     clean = _clean_list(ds, res, preset)
-    reviews = review_members_of(member_rows)
+    # `member_families` is a payload-sourced STRING channel that ends up on a
+    # widget, and `review_members_of` keeps entries on an `isinstance(str)`
+    # check alone -- so a hand-edited cache, explicitly in this module's
+    # threat model, can put any word at all in there.  Filtered once, here,
+    # at the only site that stores them.  (This protects the WRITE path;
+    # anything reading `review_members` back out of a persisted payload needs
+    # its own filter, and that surface is not this function's.)
+    reviews = {
+        cluster_id: {
+            address: [f for f in families if f in FILTER_FAMILIES]
+            for address, families in members.items()
+        }
+        for cluster_id, members in review_members_of(member_rows).items()
+    }
 
     published_by_id: dict[int, Mapping] = {}
     for cluster in published:
@@ -706,7 +774,21 @@ def build_analysis_from_published(
         }
         for b in ordered
     ]
-    review_row = _review_segment_row(reviews, member_rows, res.total_points)
+    # `seg.total_points`, NOT `res.total_points`.  The two are the publisher's
+    # base and the local fold's base, and they agree only when this build
+    # folded the same population the publisher did.  Every other row in
+    # `segment_rows` gets its share from `_segments`, i.e. from the LOCAL
+    # fold, so the publisher's base would put one row in the column on a
+    # different denominator than its neighbours -- on the trimmed fixture, a
+    # 48x gap rendering 0.132 % beside siblings that say 6.346 % for the same
+    # wallets.  The argument does cut both ways: when the local fold is
+    # INCOMPLETE the publisher's base is the truthful one and the siblings are
+    # the overstated ones.  Internal consistency inside a single column wins,
+    # because that is the comparison a reader actually makes -- but it was
+    # weighed, not defaulted.  (The numerator stays the published per-wallet
+    # points, which agreed with our own fold to the digit on every shared
+    # address, so the two halves of the ratio remain commensurable.)
+    review_row = _review_segment_row(reviews, member_rows, seg.total_points)
     if review_row is not None:
         # After the LAST operators-kind band, not at a remembered index 1:
         # when `seg.operators` is empty `ordered` starts with a cohort band
@@ -716,49 +798,8 @@ def build_analysis_from_published(
             sum(1 for b in ordered if b.kind == "operators"), review_row
         )
 
-    first_hours: dict[str, int] = {}
-    tx_counts: dict[str, int] = {}
-    for deposit in sorted(
-        ds.deposits, key=lambda row: (row.block_number, row.log_index)
-    ):
-        first_hours.setdefault(deposit.contributor, deposit.hour)
-        tx_counts[deposit.contributor] = deposit.tx_count
-
-    clean_list_rows = [
-        {
-            "clean_rank": entry.clean_rank,
-            "address": entry.address,
-            "points": entry.points,
-            "credit_eth": _eth(entry.credit_wei),
-            # The manager's ENS merge fills this, exactly like the leaderboard.
-            "name": None,
-            "weight_eth": _eth(entry.weight_wei),
-            "tx_count": tx_counts.get(entry.address),
-            "first_hour": first_hours.get(entry.address),
-            "first_index": ds.first_index.get(entry.address),
-        }
-        for entry in clean.entries[:CLEAN_LIST_LIMIT]
-    ]
-
-    share = (
-        res.flagged_points / res.total_points * 100 if res.total_points else None
-    )
-    return AnalysisResult(
-        result=res,
-        segments=seg,
-        clean=clean,
-        preset=preset,
-        wallet=wallet.lower() if isinstance(wallet, str) else None,
-        operator_rows=operator_rows,
-        segment_rows=segment_rows,
-        clean_list_rows=clean_list_rows,
-        operators_count=len(res.clusters),
-        clean_points=res.clean_points,
-        clean_contributors=clean.clean_contributors,
-        points_total=res.total_points,
-        flagged_points_share_pct=share,
-        groups=groups,
-        clean_ranks={e.address: e.clean_rank for e in clean.entries},
+    return _finish(
+        ds, res, seg, clean, preset, wallet, operator_rows, segment_rows, groups
     )
 
 
