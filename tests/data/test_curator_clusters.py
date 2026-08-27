@@ -457,9 +457,9 @@ PUBLISHED_BLOCK = {
 
 
 def test_the_published_block_carries_the_version_and_its_hash():
-    """``published=`` rides beside ``enrichment=`` -- an id, a hash, counts.
-    Not something ``AnalysisResult`` computes: the caller (the manager)
-    assembles it and hands it in whole, exactly like ``enrichment``."""
+    """``published=`` is an id, a hash, counts -- not something
+    ``AnalysisResult`` computes: the caller (the manager) assembles it and
+    hands it in whole."""
     payload = curator_clusters.slot_payload(
         farm_analysis(), published=PUBLISHED_BLOCK
     )
@@ -473,18 +473,20 @@ def test_the_published_block_carries_the_version_and_its_hash():
 
 
 def test_a_payload_with_no_published_block_still_loads():
-    """A payload written by an older build carries ``enrichment`` and no
-    ``published`` key at all -- an absence, never a null -- and it must still
-    load: ignored, not rejected.  ``you_linkage``/``grade_of`` are the
-    existing readers of a persisted (rather than live) payload, and neither
-    of them may need ``published`` to answer."""
+    """A payload written by a pre-T11 build carries ``enrichment`` and no
+    ``published`` key at all -- ``slot_payload`` no longer writes that key
+    (T11 removed the sweep that produced it), but a reader must still load
+    one that has it: ignored, not rejected.  ``you_linkage``/``grade_of`` are
+    the existing readers of a persisted (rather than live) payload, and
+    neither of them may need ``published`` -- or ``enrichment`` -- to
+    answer."""
     result = farm_analysis(wallet=FARM_MEMBERS[0])
     old_style_enrichment = {
         "txs": {}, "funding": {}, "pending": [], "reasons": {}, "page_bound": 20,
     }
-    payload = json.loads(json.dumps(
-        curator_clusters.slot_payload(result, enrichment=old_style_enrichment)
-    ))
+    payload = curator_clusters.slot_payload(result)
+    payload["enrichment"] = old_style_enrichment
+    payload = json.loads(json.dumps(payload))
     assert "published" not in payload
     assert payload["enrichment"] == old_style_enrichment
 
