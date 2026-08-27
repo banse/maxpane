@@ -2192,7 +2192,6 @@ from tests.data.test_curator_clusters import (  # noqa: E402
     farm_analysis,
     farm_events,
     farm_first_deposits,
-    no_sleep,
 )
 
 #: The once-tier payload the sweep reads, as `_pool_config` now stores it:
@@ -2327,7 +2326,6 @@ def _analysis_manager(tmp_path, clock, *, routes=None, published=None, wallet=No
         client=client,
         wallet=wallet,
         analysis_transport=session.transport if session is not None else None,
-        analysis_sleep=no_sleep,
     )
     manager.cache.store_events(farm_events(), now=NOW)
     manager.cache.store_first_deposits(farm_first_deposits())
@@ -2467,7 +2465,6 @@ def test_the_sweep_borrows_the_real_clients_own_session_in_production(tmp_path, 
         clock,
         client=client,
         analysis_transport=None,           # force the production branch
-        analysis_sleep=no_sleep,
     )
     assert manager._analysis_session() == (http, None)
 
@@ -2540,7 +2537,6 @@ def test_close_cancels_both_detached_tasks_and_saves(tmp_path, clock):
         clock,
         client=client,
         analysis_transport=routes.transport,
-        analysis_sleep=no_sleep,
     )
     manager.cache.store_events(farm_events(), now=NOW)
     manager.cache.store_first_deposits(farm_first_deposits())
@@ -3202,7 +3198,6 @@ def _published_fold_manager(tmp_path, clock, routes):
         clock,
         client=client,
         analysis_transport=routes.transport,
-        analysis_sleep=no_sleep,
     )
     manager.cache.store_events(_fixture_events(), now=NOW)
     manager.cache.store_first_deposits(_fixture_firsts())
@@ -3959,7 +3954,6 @@ def test_a_sweep_whose_source_is_unreachable_retries_on_the_backoff(tmp_path, cl
         clock,
         client=client,
         analysis_transport=httpx.MockTransport(dead),
-        analysis_sleep=no_sleep,
     )
     manager.cache.store_events(farm_events(), now=NOW)
     manager.cache.store_first_deposits(farm_first_deposits())

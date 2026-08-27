@@ -657,7 +657,6 @@ class CuratorManager:
         clock: Any = time.time,
         cache_path: str = DEFAULT_CACHE_PATH,
         analysis_transport: Any = None,
-        analysis_sleep: Any = None,
         nft_client_factory: Callable[[], Any] = NftHolderClient,
     ) -> None:
         self._nft_client_factory = nft_client_factory
@@ -714,13 +713,12 @@ class CuratorManager:
         self._analysis_failed = False
         #: Once-per-process marker for the missing-library log line.
         self._sybilkit_missing_logged = False
-        #: The enrichment session for the detached sweep.  A test injects an
-        #: ``httpx`` transport (and a no-op ``sleep``) here; production leaves
-        #: both ``None`` and the sweep borrows the client's own HTTP session.
-        #: With neither available the sweep runs tier A only and opens
-        #: **nothing** — which is what keeps a bare test double socket-free.
+        #: The session the analysis sweep's published-analysis fetch may use.
+        #: A test injects an ``httpx`` transport here; production leaves it
+        #: ``None`` and the sweep borrows the client's own HTTP session.  With
+        #: neither available the sweep cannot run and opens **nothing** —
+        #: which is what keeps a bare test double socket-free.
         self._analysis_transport = analysis_transport
-        self._analysis_sleep = analysis_sleep
 
         try:
             self.cache.load()
