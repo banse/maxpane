@@ -110,7 +110,7 @@ import math
 import re
 import textwrap
 
-from rich.cells import cell_len, set_cell_size
+from rich.cells import cell_len
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -118,6 +118,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Static
 
 from maxpane_dashboard.analytics.surf_feed import build_threads
+from maxpane_dashboard.widgets.cell_fitting import fit_cell
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import DASH, fmt_age, hhmm, mmdd
 
@@ -346,28 +347,8 @@ def _char_budget(raw: str, budget: int) -> int:
     return max(int(budget / mean_cells), _MIN_TEXT_BUDGET)
 
 
-def _cell_fit(value: str, budget: int) -> tuple[str, bool]:
-    """Cut *value* to at most ``budget`` **terminal cells**, ``…``-marked.
-
-    ``len()`` is the wrong ruler here and the difference is visible, not
-    academic: one CJK ideograph or one emoji is one ``str`` element and two
-    columns, so a 71-character budget measured with ``len`` admits a
-    142-column line.  Nothing downstream catches that -- see
-    :class:`SurfFeedRow`'s CSS note -- so this panel measures the way the
-    terminal paints.
-
-    Returns ``(fitted, was_cut)`` so the caller can light ``‹ widen``:
-    a cut this module makes is always announced, a cut the compositor makes
-    is not, which is the whole reason the fitting happens here.
-    """
-    if budget <= 0:
-        return "", bool(value)
-    if cell_len(value) <= budget:
-        return value, False
-    # `set_cell_size` cuts on cell boundaries and pads a half-taken wide
-    # character back out with a space; the strip drops that filler so the
-    # ellipsis lands flush against the last whole glyph.
-    return set_cell_size(value, max(budget - 1, 0)).rstrip() + "…", True
+# Compatibility name: tests and older Surf callers import this private helper.
+_cell_fit = fit_cell
 
 
 def _wrap_no_widow(raw: str, budget: int) -> list[str]:

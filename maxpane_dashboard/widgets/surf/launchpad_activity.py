@@ -98,6 +98,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
+from maxpane_dashboard.widgets.cell_fitting import fit_cell, pad_cell
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_age
 
@@ -234,32 +235,12 @@ def _clip(value: str, width: int) -> str:
     the result can come back one cell *under* ``width``; the caller pads
     (:func:`_pad`).
     """
-    if width <= 0:
-        return ""
-    if cell_len(value) <= width:
-        return value
-    if width == 1:
-        return "…"
-    out: list[str] = []
-    used = 0
-    for char in value:
-        size = cell_len(char)
-        if used + size > width - 1:
-            break
-        out.append(char)
-        used += size
-    return "".join(out) + "…"
+    return fit_cell(value, width)[0]
 
 
-def _pad(value: str, width: int) -> str:
-    """Left-align ``value`` in ``width`` **cells**.
-
-    ``f"{value:<{width}}"`` pads to a *character* count, so it under-pads a
-    wide-glyph cell and over-pads nothing -- the mirror image of
-    :func:`_clip`'s bug and the reason both live here rather than in a format
-    string. Pad raw, escape after: padding an escaped string misaligns it.
-    """
-    return value + " " * max(width - cell_len(value), 0)
+# Compatibility name: callers still importing Surf's private helper get the
+# shared implementation without changing rendered bytes.
+_pad = pad_cell
 
 
 def _row_cols(tier: str, amount_cols: int) -> int:
@@ -511,7 +492,7 @@ class SurfLaunchpadActivity(Vertical):
         placed = not hint
         if hint:
             for candidate in (hint, SHORT_HINT):
-                if not width or len(TITLE) + 2 + len(candidate) <= width:
+                if not width or cell_len(TITLE) + 2 + cell_len(candidate) <= width:
                     text += f"  [yellow]{candidate}[/]"
                     placed = True
                     break

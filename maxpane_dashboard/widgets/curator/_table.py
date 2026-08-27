@@ -1,32 +1,19 @@
-"""Width-tier plumbing shared by the three curator ``DataTable`` panels.
+"""Compatibility exports for the shared terminal table-tier helpers.
 
-The leaderboard, the closest-calls board and the cluster table all do the
-same four things: pick the widest column set that fits, install it only when
-it changed, project a row dict onto it, and append a ``‹ widen`` marker to
-the title naming what was shed.  Written three times they drift — that is
-how ``coerce_points`` ended up with six copies and three of them unhardened
-(MEDI-36) — so they are written once here.
-
-A **tier** is ``(name, cost, columns, hint)``:
-
-* ``columns`` is a tuple of ``(key, header, width)``;
-* ``cost`` is the rendered width the tier needs.  ``DataTable`` pads every
-  cell by one column on each side, so a tier's cost is
-  ``sum(width) + 2 * len(columns)`` — :func:`tier_cost` computes it and
-  ``test_every_declared_tier_cost_is_the_measured_one`` asserts each
-  declaration against it, because a hand-typed cost that drifts low makes a
-  panel choose a layout it cannot render and clip in silence;
-* ``hint`` names the columns this tier gave up, and is empty for the widest.
-
-Pure functions and one ``DataTable`` mutation; no Textual layout knowledge,
-no data-layer imports.
+Curator established these helpers and its widgets intentionally keep their
+existing import path.  The implementation is now screen-neutral so FWA and
+other dashboards can reuse it without depending on the curator package.
 """
 
-from __future__ import annotations
-
-from rich.cells import cell_len
-
-from maxpane_dashboard.widgets.markup_safety import visible_len
+from maxpane_dashboard.widgets.table_tiers import (
+    WIDEN_HINT,
+    cells,
+    install_columns,
+    pick_tier,
+    tier_cost,
+    title_with_hint,
+    with_optional_suffix,
+)
 
 __all__ = [
     "WIDEN_HINT",
@@ -37,94 +24,3 @@ __all__ = [
     "title_with_hint",
     "with_optional_suffix",
 ]
-
-#: The bare marker, for a title bar too narrow to carry the descriptive one.
-#: Never nothing: "columns were dropped here" is the contract.
-WIDEN_HINT = "‹ widen"
-
-
-def tier_cost(columns) -> int:
-    """Rendered columns a column set needs, ``DataTable`` cell padding included."""
-    return sum(width for _key, _header, width in columns) + 2 * len(columns)
-
-
-def pick_tier(tiers, width: int):
-    """``(name, columns, hint)`` — the widest tier that fits ``width``.
-
-    ``width <= 0`` means "not laid out yet" and optimistically picks the
-    widest; every panel here re-renders from ``on_resize`` once it has a size.
-    """
-    for name, cost, columns, hint in tiers:
-        if width <= 0 or width >= cost:
-            return name, columns, hint
-    name, _cost, columns, hint = tiers[-1]
-    return name, columns, hint
-
-
-def install_columns(table, columns, current) -> bool:
-    """Give ``table`` this column set; return whether it had to be rebuilt.
-
-    ``DataTable.clear(columns=True)`` is only paid when the set actually
-    changed — rebuilding the columns on every refresh resets the cursor and
-    the scroll position under the reader's hands.
-    """
-    if columns != current:
-        table.clear(columns=True)
-        for _key, header, width in columns:
-            table.add_column(header, width=width)
-        return True
-    table.clear()
-    return False
-
-
-def cells(values: dict, columns, default: str = "") -> list:
-    """Project ``values`` onto the active columns, in their order."""
-    return [values.get(key, default) for key, _header, _width in columns]
-
-
-def title_with_hint(title: str, hint: str, width: int) -> tuple[str, bool]:
-    """``(markup, placed)`` — the title with as much of the hint as fits.
-
-    The title itself is never abbreviated (the screen tests look for it, and
-    so does a reader scanning the row); the *hint* degrades to the bare
-    :data:`WIDEN_HINT`.
-
-    ``placed`` is False when even that did not fit, and the caller **must**
-    put the marker somewhere else — the note line.  Going silent is not an
-    option this codebase allows: a shed column that is not announced is
-    indistinguishable from data that is not there, which is the whole reason
-    the tiers exist.  A 26-column cluster panel reaches this case, so it is
-    not theoretical.
-    """
-    if not hint:
-        return title, True
-    for candidate in (hint, WIDEN_HINT):
-        text = f"{title}  [yellow]{candidate}[/]"
-        if width <= 0 or visible_len(text) <= width:
-            return text, True
-    return title, False
-
-
-def with_optional_suffix(base: str, suffix: str, width: int) -> str:
-    """``base + suffix`` when the whole thing fits ``width`` rendered
-    columns; ``base`` alone otherwise.
-
-    THE LIST's four analysis panels use this to append the published
-    analysis's own version beside the ``as of HH:MM`` freshness marker they
-    already carry: ``base`` (which already includes the marker) is the
-    load-bearing half and is never abbreviated here; ``suffix`` — the
-    version — is decorative, and is the one that sheds, cleanly, on a panel
-    too narrow for both, rather than being cut mid-word by the note line's
-    own CSS ``text-overflow: ellipsis``.
-
-    Measured on the raw (pre-``safe_markup``) text with ``cell_len``, per
-    the terminal-layout skill — an escaped bracket adding a backslash is not
-    a real risk this budget needs to chase, the same convention
-    ``operators._join_reasons`` already uses.  ``width <= 0`` optimistically
-    keeps the suffix, the same "not sized yet" rule :func:`pick_tier` uses.
-    """
-    if not suffix:
-        return base
-    if width <= 0 or cell_len(base + suffix) <= width:
-        return base + suffix
-    return base
