@@ -9,6 +9,13 @@ FILTER_FAMILIES = frozenset({"amount", "sequence", "cadence", "gas", "funding"})
 ENS_VALUES = frozenset({"any", "set", "unset"})
 WINDOW_VALUES = frozenset({"any", "grace", "judged"})
 BAND_VALUES = frozenset({"any", "clean", "low", "high", "review", "unknown"})
+#: The subset a ROW may actually carry in ``link_conf``: ``any`` is the filter's
+#: unset arm and ``unknown`` its fallback for a row with no band, and neither is
+#: ever written onto a row.  Derived rather than re-typed -- this was the fifth
+#: hand-typed copy of the band vocabulary and the only one no test could reach.
+#: ``BAND_VALUES`` itself is pinned against ``CURATOR_BAND_WORDS`` by
+#: ``test_the_filters_band_values_are_the_frozen_words_plus_any_and_unknown``.
+ROW_BAND_VALUES = BAND_VALUES - {"any", "unknown"}
 
 _INTEGER_FIELDS = (
     "join_min", "join_max", "hour_min", "hour_max", "rank_min",
@@ -321,7 +328,7 @@ def filter_rows(rows: Any, spec: FilterSpec, context: FilterContext) -> list[dic
         if spec.window != "any" and window != spec.window:
             continue
         raw_band = row.get("link_conf")
-        band = raw_band if isinstance(raw_band, str) and raw_band in {"clean", "low", "high", "review"} else "unknown"
+        band = raw_band if isinstance(raw_band, str) and raw_band in ROW_BAND_VALUES else "unknown"
         if spec.band != "any" and band != spec.band:
             continue
         address = row.get("address")

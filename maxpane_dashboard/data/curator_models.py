@@ -966,6 +966,26 @@ CURATOR_SIGNAL_STATES: tuple[str, ...] = ("ok", "watch", "fired")
 #: made, which is why it is pinned here now rather than left implicit.
 CURATOR_LINKED_STATES: tuple[str, ...] = ("clean", "linked", "review")
 
+#: The band words a per-wallet ``link_conf`` may carry, in descending evidence
+#: order.  ``None`` (nothing analysed this wallet) is deliberately not one of
+#: them, for the same reason ``CURATOR_LINKED_STATES`` excludes it: the glyph
+#: map's fallback arm must fire for it.
+#:
+#: This is the SIBLING of the tuple above and it is here for the same reason,
+#: found the same way.  The band vocabulary was hand-typed in five places with
+#: nothing pinning any two together -- ``_LINK_GLYPH``
+#: (``widgets/curator/leaderboard.py``), the ``LINK BAND`` dropdown's
+#: ``_SELECT_OPTIONS["band"]`` (``widgets/curator/list_filter.py``),
+#: ``BAND_VALUES`` and one inline set literal
+#: (``data/curator_list_filters.py``), and ``_BAND_WORDS``
+#: (``data/curator_archive.py``).  The dropdown was pinned against a literal
+#: **in its own test**, which reddens if the dropdown changes and stays green
+#: if the data layer grows a sixth word -- which is the exact shape of the
+#: miss that let ``review`` ship in the data layer and not in the widgets.
+#: ``BAND_VALUES`` is this tuple plus the two words only a FILTER has: ``any``
+#: (the unset arm) and ``unknown`` (the fallback for a row with no band).
+CURATOR_BAND_WORDS: tuple[str, ...] = ("high", "low", "review", "clean")
+
 #: The only group names that may appear in ``degraded``.  The title bar renders
 #: them verbatim ("⚠ logs, state, wallet"), so an unlisted spelling reaches the
 #: user as-is.
@@ -990,6 +1010,7 @@ __all__ = [
     "CURATOR_ACTIVITY_KINDS",
     "CURATOR_SIGNAL_STATES",
     "CURATOR_LINKED_STATES",
+    "CURATOR_BAND_WORDS",
     "CURATOR_DEGRADED_GROUPS",
     "CuratorState",
     "CuratorConfig",

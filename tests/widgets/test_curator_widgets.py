@@ -3438,6 +3438,59 @@ def test_the_wallet_panel_knows_exactly_the_frozen_linked_state_vocabulary():
     assert wallet.LINKED_STATES == CURATOR_LINKED_STATES
 
 
+# ---------------------------------------------------------------------------
+# The band vocabulary — the SIBLING of the linked-state one above
+# ---------------------------------------------------------------------------
+#
+# Fourth instance of one family on this branch: the data layer grows a value,
+# a hand-typed vocabulary somewhere else does not learn about it, and nothing
+# pins the two together.  `review` shipped that way.  The band words were
+# hand-typed in five places with no agreement test at all — the dropdown's own
+# test pins it against a literal IN THE TEST, so it reddens when the dropdown
+# changes and stays green when the data layer grows a sixth word, which is the
+# miss itself rather than a guard against it.
+#
+# Four one-line agreements, one per copy, each its own test so each fails on
+# its own account.  `CURATOR_BAND_WORDS` stays hand-typed in `curator_models`
+# for the reason CLAUDE.md gives for `_GAME_CYCLE`: deriving a copy makes the
+# test compare a constant against itself.
+
+
+def test_the_leaderboard_glyph_map_knows_exactly_the_frozen_band_words():
+    from maxpane_dashboard.data.curator_models import CURATOR_BAND_WORDS
+    from maxpane_dashboard.widgets.curator.leaderboard import _LINK_GLYPH
+
+    assert set(_LINK_GLYPH) == set(CURATOR_BAND_WORDS)
+
+
+def test_the_archives_band_words_are_exactly_the_frozen_band_words():
+    """`bands_by_address` emits these and a widget's glyph map consumes them,
+    so a word this module could write and `_LINK_GLYPH` does not know renders
+    as "the sweep never looked" — the reassuring arm, over real evidence."""
+    from maxpane_dashboard.data.curator_archive import _BAND_WORDS
+    from maxpane_dashboard.data.curator_models import CURATOR_BAND_WORDS
+
+    assert set(_BAND_WORDS) == set(CURATOR_BAND_WORDS)
+
+
+def test_the_band_dropdown_offers_exactly_the_bands_the_filter_accepts():
+    """The dropdown is the only way to reach `spec.band`, so an option the
+    filter does not accept is a control that quietly matches nothing."""
+    from maxpane_dashboard.data.curator_list_filters import BAND_VALUES
+    from maxpane_dashboard.widgets.curator.list_filter import _SELECT_OPTIONS
+
+    assert {value for _label, value in _SELECT_OPTIONS["band"]} == BAND_VALUES
+
+
+def test_the_filters_band_values_are_the_frozen_words_plus_any_and_unknown():
+    """`any` is the unset arm and `unknown` the fallback for a row carrying no
+    band; everything else in `BAND_VALUES` must be a real band word."""
+    from maxpane_dashboard.data.curator_list_filters import BAND_VALUES
+    from maxpane_dashboard.data.curator_models import CURATOR_BAND_WORDS
+
+    assert BAND_VALUES == set(CURATOR_BAND_WORDS) | {"any", "unknown"}
+
+
 async def test_curator_linked_states_is_exactly_what_you_linkage_can_emit():
     """The durable half of the Task 12 fix.  Before this task ``LINKED_STATES``
     was hand-typed with no contract module to freeze it against -- exactly
