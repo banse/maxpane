@@ -1,24 +1,19 @@
 """The sybilkit adapter for THE LIST — the only maxpane import of ``sybilkit``.
 
-One seam, three jobs:
+One seam, two jobs:
 
-* **Pure analysis** (:func:`build_analysis`): the cache's decoded
-  ``DepositEvent`` history — plus whatever tier-B/C enrichment the detached
-  sweep has accumulated — in, an :class:`AnalysisResult` out, already shaped
-  into the flat-dict rows ``CURATOR_ROW_KEYS`` freezes.  No I/O, no clock: two
-  calls over one input return equal results.
+* **Pure analysis** (:func:`build_analysis`, :func:`build_analysis_from_published`):
+  the cache's decoded ``DepositEvent`` history — plus, for the local build,
+  whatever ``txs``/``funding`` the caller already holds — in, an
+  :class:`AnalysisResult` out, already shaped into the flat-dict rows
+  ``CURATOR_ROW_KEYS`` freezes.  No I/O, no clock: two calls over one input
+  return equal results.
 * **The translation boundary** (:func:`pattern_language`): the library is a
   general sybil-analysis toolkit and may use its own vocabulary in its own
   docstrings; nothing it says reaches a rendered string unfiltered.  Every
   reason, label and detail passes this boundary — including strings read back
   from a **persisted** payload, because a hand-edited cache file is third-party
   input too.
-* **The bounded enrichment fetch** (:func:`fetch_enrichment`, WP3.3): drives
-  ``sybilkit.sources`` for tx fingerprints and first funders, candidates-only
-  and budgeted, resumable across sweeps via the cursor the slot payload
-  carries.  It never opens a socket of its own accord: with neither a
-  ``client`` nor a ``transport`` it returns the carried state untouched, which
-  is what keeps every manager test socket-free by construction.
 
 Import discipline
     ``data/curator_clusters.py`` is the **only** maxpane module that may import
@@ -53,11 +48,6 @@ try:
     from sybilkit.curator import CleanList, CuratorPreset, Segments
     from sybilkit.curator import clean_list as _clean_list
     from sybilkit.curator import segments as _segments
-    from sybilkit.model import Funding, Tx
-    from sybilkit.sources import blockscout as _blockscout
-    from sybilkit.sources import txs as _tx_sources
-    from sybilkit.sources import DEFAULT_CONFIG as _SOURCE_DEFAULTS
-    from sybilkit.sources.blockscout import PENDING_PAGES
 except ImportError:  # pragma: no cover — exercised through the flag in tests
     #: ``sybilkit`` is not on PyPI yet, so until maxpane's own dependency list
     #: can name it (WP6/packaging: the pyproject gains ``sybilkit`` at the
@@ -1162,328 +1152,14 @@ def slot_payload(
     return payload
 
 
-# ---------------------------------------------------------------------------
-# The bounded, resumable enrichment fetch (the detached sweep's network half)
-# ---------------------------------------------------------------------------
-
-#: First-deposit fingerprints fetched per sweep: ten 40-call batches.  The gas
-#: family needs >= 90 % coverage of a component before it may corroborate, so
-#: a big component reaches judgeability over several sweeps rather than in one
-#: unbounded burst against a keyless pool.
-TX_BUDGET = 400
-
-#: Funder lookups per sweep: ~200 addresses at Blockscout's measured ~3 req/s
-#: is ~70 s of paced work, comfortably inside the analysis tier's 1800 s TTL.
-#: R3: candidates only, never the 15.5k population (~90 min).
-FUNDING_BUDGET = 200
-
-#: The funding page bound's ceiling.  The bound starts at the sources default
-#: (20 pages = 1 000 transactions) and doubles only when a sweep reports
-#: ``"pages"`` pendings — the one truncation raising it can fix.  80 pages is
-#: 4 000 transactions, far beyond any 1–5-tx farm wallet; a history longer
-#: than that stays honestly pending rather than eating the whole budget.
-MAX_FUNDING_PAGES = 80
-
-
-def _tx_dict(tx: Any) -> dict[str, Any]:
-    if isinstance(tx, Tx):
-        return {
-            "tx_hash": tx.tx_hash,
-            "nonce": tx.nonce,
-            "max_priority_fee_wei": tx.max_priority_fee_wei,
-            "max_fee_wei": tx.max_fee_wei,
-            "gas_limit": tx.gas_limit,
-            "tx_type": tx.tx_type,
-        }
-    return dict(tx)
-
-
-def _funding_dict(row: Any) -> dict[str, Any]:
-    if isinstance(row, Funding):
-        return {"address": row.address, "funder": row.funder, "hops": row.hops}
-    return dict(row)
-
-
-def _persisted_map(value: Any) -> Mapping:
-    """One sub-map of a carried sweep state, or ``{}`` if it is not a map.
-
-    The four maps :func:`fetch_enrichment` carries forward arrive out of
-    ``~/.maxpane/curator_cache.json``, and this module treats a hand-edited
-    cache file as third-party input like any other.  ``(x or {}).items()``
-    does not: a key edited into a JSON list is a list, a list has no
-    ``.items()``, and the ``AttributeError`` aborts the whole read — every
-    map, not just the torn one — inside the *detached* sweep, where it
-    surfaces as an analysis tier that fails and backs off forever, because a
-    backoff cannot repair a file.  ``{}`` is the honest reading of "these
-    bytes are not a map": that map is re-derived by the next sweep, the
-    other three survive, and the panels keep rendering.
-
-    Deliberately not ``or {}``-shaped: an *empty* map and an unreadable one
-    both yield ``{}`` here because both mean the same thing to the caller —
-    nothing accumulated to carry — and neither is a measurement.
-    """
-    return value if isinstance(value, Mapping) else {}
-
-
-def _persisted_addresses(value: Any) -> tuple[str, ...]:
-    """One carried address list, or ``()`` if it is not a list.
-
-    The sequence half of :func:`_persisted_map`, and it needs the *type* check
-    rather than a plain iteration for a second reason: ``for addr in value``
-    over a bare string yields one single-character "address" per character,
-    and those would be silently accepted as pendings — which **head the
-    funding budget** — so a one-character edit would crowd real wallets out
-    of every sweep and nothing would say so.  A crash at least announces
-    itself; this does not.
-    """
-    if not isinstance(value, (list, tuple)):
-        return ()
-    return tuple(addr for addr in value if isinstance(addr, str))
-
-
-def _funding_object(address: str, row: Any) -> Funding:
-    if isinstance(row, Funding):
-        return row
-    funder = row.get("funder") if isinstance(row, Mapping) else None
-    hops = row.get("hops") if isinstance(row, Mapping) else None
-    return Funding(
-        address=address,
-        funder=funder if isinstance(funder, str) else None,
-        hops=hops if isinstance(hops, int) and not isinstance(hops, bool) else None,
-    )
-
-
-@dataclass(slots=True)
-class EnrichmentSweep:
-    """One bounded pass's accumulated enrichment, plus its cursor and health.
-
-    ``txs``/``funding`` are the **accumulated** maps (prior state carried
-    forward, this pass's answers merged in), already serialized to the plain
-    dicts the slot payload persists.  ``fetched`` is False when no session was
-    available and nothing was attempted — which is a different fact from
-    ``tx_ok``/``funding_ok`` being ``False`` (attempted and the source did not
-    answer) or ``None`` (nothing to ask, or skipped).
-
-    ``funding_cursors`` is ``sybilkit``'s per-address
-    :attr:`~sybilkit.sources.blockscout.FundingSweep.page_cursors`, carried
-    through so a **page-bounded** address resumes where it stopped instead of
-    re-walking its first pages every sweep forever.  ``pending`` alone said
-    "come back to this one" without saying where, and pendings head the
-    budget, so one long history crowded out addresses nobody had looked at
-    yet.  It is defaulted and last, so a persisted payload written before it
-    existed still constructs — that consumer simply restarts each walk at
-    page 1, which is what it did anyway.
-    """
-
-    txs: dict[str, dict]
-    funding: dict[str, dict]
-    funding_pending: tuple[str, ...]
-    funding_reasons: dict[str, str]
-    page_bound: int
-    fetched: bool
-    tx_ok: bool | None
-    funding_ok: bool | None
-    funding_cursors: dict[str, dict] = field(default_factory=dict)
-
-    def state(self) -> dict[str, Any]:
-        """The cursor the slot payload persists and the next sweep resumes.
-
-        ``"cursors"`` rides **inside** this dict, which is itself the
-        ``enrichment`` entry of :func:`slot_payload` — so ``SLOT_CLUSTERS``'s
-        own shape does not change and ``curator_cache`` needs no version bump.
-        """
-        return {
-            "txs": dict(self.txs),
-            "funding": dict(self.funding),
-            "pending": list(self.funding_pending),
-            "reasons": dict(self.funding_reasons),
-            "page_bound": self.page_bound,
-            "cursors": {
-                addr: dict(entry) for addr, entry in self.funding_cursors.items()
-            },
-        }
-
-
-async def fetch_enrichment(
-    *,
-    tx_wanted: Iterable[str],
-    funding_wanted: Iterable[str],
-    state: Mapping[str, Any] | None = None,
-    client: Any = None,
-    transport: Any = None,
-    sleep: Any = None,
-    tx_budget: int = TX_BUDGET,
-    funding_budget: int = FUNDING_BUDGET,
-) -> EnrichmentSweep:
-    """Extend the accumulated tier-B/C coverage by one bounded pass.
-
-    *state* is the previous :meth:`EnrichmentSweep.state` (or ``None`` on the
-    first sweep).  Known fingerprints and resolved funders are **never**
-    re-read; the funding cursor's pendings go first, so a deferred address is
-    picked up before a new one.  A ``"pages"`` pending raises the page bound
-    for the next pass (doubled, capped at :data:`MAX_FUNDING_PAGES`); an
-    ``"unreadable"`` one is retried as-is — spending more pages on a failing
-    endpoint is the one action that cannot help.
-
-    ``state["cursors"]`` is the **per-address** half of that resume, handed
-    to ``fetch_funding(cursors=…)``: a page-bounded address continues where
-    it stopped rather than re-reading its first pages every sweep.  It is
-    read with ``.get``, exactly like the four keys above it, so a payload
-    persisted before the cursor existed loads and resumes from page 1.
-
-    **No session, no fetch.**  With neither *client* nor *transport* the
-    carried state comes back untouched (``fetched=False``): production hands
-    the manager's own HTTP session in, tests hand a MockTransport in, and a
-    bare double hands nothing in — which is what keeps every FakeClient-driven
-    test socket-free structurally.  ``fetch_funding`` is **never** called with
-    a zero budget (it would still open a session; WP2's warning): the skip
-    switch is not calling it.
-    """
-    _require_sybilkit()
-    prior = state if isinstance(state, Mapping) else {}
-    known_txs: dict[str, dict] = {
-        str(key).lower(): dict(value)
-        for key, value in _persisted_map(prior.get("txs")).items()
-        if isinstance(value, Mapping)
-    }
-    known_funding: dict[str, dict] = {
-        str(key).lower(): dict(value)
-        for key, value in _persisted_map(prior.get("funding")).items()
-        if isinstance(value, Mapping)
-    }
-    pending: tuple[str, ...] = _persisted_addresses(prior.get("pending"))
-    reasons: dict[str, str] = {
-        str(key): str(value)
-        for key, value in _persisted_map(prior.get("reasons")).items()
-    }
-    # The per-address page cursor, read with the SAME tolerant shape as the
-    # four above: a payload written before it existed has no such key, and
-    # `.get` is the whole compatibility story — that cache file must load and
-    # simply resume each walk from page 1.  The library reads each *entry*
-    # tolerantly too, so a hand-edited one costs a restart, not a crash — and
-    # the `isinstance(value, Mapping)` below is what keeps that true here:
-    # `dict(entry)` raises on an entry hand-edited into a JSON list.
-    cursors: dict[str, dict] = {
-        str(key).lower(): dict(value)
-        for key, value in _persisted_map(prior.get("cursors")).items()
-        if isinstance(value, Mapping)
-    }
-
-    bound = prior.get("page_bound")
-    if not isinstance(bound, int) or isinstance(bound, bool) or bound < 1:
-        bound = _SOURCE_DEFAULTS.blockscout_max_pages
-    if any(reason == PENDING_PAGES for reason in reasons.values()):
-        bound = min(bound * 2, MAX_FUNDING_PAGES)
-
-    fetched = client is not None or transport is not None
-    tx_ok: bool | None = None
-    funding_ok: bool | None = None
-    if not fetched:
-        return EnrichmentSweep(
-            txs=known_txs,
-            funding=known_funding,
-            funding_pending=pending,
-            funding_reasons=reasons,
-            page_bound=bound,
-            fetched=False,
-            tx_ok=None,
-            funding_ok=None,
-            funding_cursors=cursors,
-        )
-
-    wanted_hashes: list[str] = []
-    seen: set[str] = set()
-    for raw in tx_wanted:
-        if not isinstance(raw, str):
-            continue
-        key = raw.lower()
-        if key in seen or key in known_txs:
-            continue
-        seen.add(key)
-        wanted_hashes.append(key)
-    wanted_hashes = wanted_hashes[: max(0, tx_budget)]
-    if wanted_hashes:
-        sweep = await _tx_sources.fetch_tx_fingerprints(
-            wanted_hashes, client=client, transport=transport, sleep=sleep
-        )
-        if sweep is None:                      # is None == outage; keep last-good
-            tx_ok = False
-        else:
-            tx_ok = True
-            for tx_hash, tx in sweep.fingerprints.items():
-                known_txs[tx_hash] = _tx_dict(tx)
-            # `sweep.pending` needs no bookkeeping: an unresolved hash is
-            # simply still absent from `known_txs`, so it is re-wanted next
-            # sweep by construction.
-
-    todo: list[str] = []
-    seen = set()
-    for raw in (*pending, *funding_wanted):
-        if not isinstance(raw, str):
-            continue
-        key = raw.lower()
-        if key in seen or key in known_funding:
-            continue
-        seen.add(key)
-        todo.append(key)
-    if todo and funding_budget and funding_budget > 0:
-        fsweep = await _blockscout.fetch_funding(
-            todo,
-            known={
-                addr: _funding_object(addr, row)
-                for addr, row in known_funding.items()
-            },
-            budget=funding_budget,
-            max_pages=bound,
-            cursors=cursors,
-            client=client,
-            transport=transport,
-            sleep=sleep,
-        )
-        if fsweep is None:                     # is None == outage; keep last-good
-            funding_ok = False
-        else:
-            funding_ok = True
-            known_funding = {
-                addr: _funding_dict(row) for addr, row in fsweep.funding.items()
-            }
-            pending = fsweep.pending
-            reasons = dict(fsweep.pending_reasons)
-            # Replaced, not merged: the sweep returns the cursors of exactly
-            # the addresses that still need one, so an address it finished
-            # drops its resume point rather than carrying a dead walk
-            # position in the cache file forever.
-            cursors = {
-                addr: dict(entry)
-                for addr, entry in fsweep.page_cursors.items()
-            }
-
-    return EnrichmentSweep(
-        txs=known_txs,
-        funding=known_funding,
-        funding_pending=pending,
-        funding_reasons=reasons,
-        page_bound=bound,
-        fetched=True,
-        tx_ok=tx_ok,
-        funding_ok=funding_ok,
-        funding_cursors=cursors,
-    )
-
-
 __all__ = [
     "AnalysisResult",
     "CLEAN_LIST_LIMIT",
-    "EnrichmentSweep",
     "FORBIDDEN_WORDS",
-    "FUNDING_BUDGET",
     "HIGH_MIN_FAMILIES",
-    "MAX_FUNDING_PAGES",
-    "TX_BUDGET",
     "analysis_keys",
     "build_analysis",
     "build_preset",
-    "fetch_enrichment",
     "grade_of",
     "merge_leaderboard_grade",
     "pattern_language",
