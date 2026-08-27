@@ -1104,7 +1104,7 @@ reasons describe evidence this wallet does not carry.
 **Files:**
 - Modify: `maxpane_dashboard/widgets/curator/leaderboard.py`
 - Modify: `maxpane_dashboard/data/curator_list_filters.py`
-- Test: `tests/widgets/test_curator_leaderboard.py`, `tests/data/test_curator_list_filters.py`
+- Test: `tests/widgets/test_curator_widgets.py`, `tests/data/test_curator_list_filters.py`
 
 **Interfaces:**
 - Consumes: `link_conf == "review"` from T5.
@@ -1187,6 +1187,19 @@ def test_a_payload_with_no_published_block_still_loads():   # backwards compatib
   rendered beside `as of HH:MM`.
 
 - [ ] **Step 1: Failing tests**
+
+**Pre-flight finding (controller, verified 2026-08-27).** `analysis_version` must be
+added to **`CURATOR_KEYS` as well as** `CURATOR_ANALYSIS_KEYS`, or two existing
+assertions break:
+
+- `tests/data/test_curator_models.py:884` — `set(CURATOR_ANALYSIS_KEYS) <= set(CURATOR_KEYS)`
+- the analytics output-surface equality —
+  `CURATOR_KEYS − SIGNAL_OUTPUT_KEYS == MANAGER_OWNED_KEYS | CURATOR_ANALYSIS_KEYS`
+
+Adding it to both keeps the equality exact without opening
+`analytics/curator_signals.py`. Four more places in the existing test say
+"thirteen" and assert `== 13`: lines 540 (comment), 859 (test name), 864
+(docstring) and 883 (the length assertion). Grow every one.
 
 ```python
 def test_the_analysis_keys_are_exactly_the_fourteen_the_adapter_fills():
@@ -1292,8 +1305,8 @@ Then write, using `CURATOR_ROW_KEYS["leaderboard_rows"]` and
 
 **Files:**
 - Modify: `maxpane_dashboard/data/curator_manager.py`
-- Test: `tests/data/test_curator_manager_analysis.py` (existing file; find it with
-  `rg -l "_pool_analysis" tests/`)
+- Test: `tests/data/test_curator_manager.py` (verified pre-flight: this is where
+  `_pool_analysis` is exercised)
 
 **Interfaces:**
 - Consumes: T2, T4, T7, T9.
@@ -1408,7 +1421,8 @@ persisted series.
 ```python
 def test_only_curator_clusters_imports_sybilkit():          # existing - must still pass
 def test_curator_signals_never_imports_sybilkit():          # existing - must still pass
-def test_no_verdict_is_persisted_in_the_cache_file():       # extended to review_members
+def test_the_analysis_slot_persists_no_boolean_verdict():   # EXISTING (test_curator_clusters.py:1406)
+    # extended to walk review_members
 def test_every_evidence_panel_still_refuses_the_forbidden_words():
     # composited, with a published payload whose reasons carry one
 def test_the_published_base_url_is_the_only_new_host():
