@@ -1,0 +1,331 @@
+{
+ "version": {
+  "at": "2026-08-25T00:00:00Z",
+  "commit": "f7154a6",
+  "content_hash": "486c7787fded341765b11c178916b237b46dc7c09e486931758c179af3bf2f9f",
+  "detector": "sybilkit",
+  "detector_commit": "d835b3f063b5eecb9bed8d959bd6958aa4a48915",
+  "detector_tag": "sybilkit-v0.2.0",
+  "detector_version": "0.2.0",
+  "enrichment": {
+   "funding_rows": 19522,
+   "tx_fingerprints": 28353
+  },
+  "id": "2026-08-25-sybilkit-0.2.0",
+  "label": "SybilKit 0.2.0",
+  "reproduce_command": "uv run python scripts/build_versions.py",
+  "rule_set": "v2h (v2g + aged-weak periphery)",
+  "rules_file": "audit/harness/sk_v2.py",
+  "rules_sha256": "457fac65506d3ce9693f35c154f2f1d635d3cef5673138e43c3d6332bf71b2b3",
+  "snapshot_block": 25807057,
+  "stage": "published",
+  "summary": "The v2h rule set: funding structure builds a group, and a per-member gate leaves thin evidence visible as a review periphery instead of removing it. Ships as sybilkit 0.2.0's main utility.",
+  "tag": "v0.4.0",
+  "vendored_commit": "712c4390fe3228a02f335e3f42833653ad7a90f3",
+  "published": true,
+  "status_counts": {
+   "clean": 6782,
+   "flagged": 12416,
+   "review": 324
+  },
+  "cluster_count": 160
+ },
+ "provenance": {
+  "chain_id": 1,
+  "chain_name": "Ethereum",
+  "contract": "0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91",
+  "deployment_block": 25769870,
+  "snapshot_block": 25807057,
+  "snapshot_at": "2026-08-22T00:20:31.339952Z",
+  "sybilkit_version": "0.1.1",
+  "sybilkit_revision": "61696545dd93f52daedd87e37a648e10fdfc8da5"
+ },
+ "totals": {
+  "population": 19522,
+  "deposits": 28353,
+  "groups": 160,
+  "linked_wallets": 12740,
+  "unlinked_wallets": 6782,
+  "status_counts": {
+   "clean": 6782,
+   "flagged": 12416,
+   "review": 324
+  },
+  "points": 29675956,
+  "linked_points": 23010337,
+  "tx_fingerprints": 28353,
+  "funding_rows": 19522
+ },
+ "analysis": {
+  "min_size": 5,
+  "min_families": 2,
+  "points_per_eth": 1000,
+  "min_deposit_wei": 50000000000000000,
+  "eth_usd": null,
+  "disclaimer": "Evidence links indicate shared onchain patterns. Only funding links represent transfers; no link proves common ownership.",
+  "dispute": {
+   "text": "Every group here is reproducible from published data, and the rules have a measured error rate. If this analysis is wrong about a wallet, contest it and the evidence can be checked.",
+   "audit_url": "https://github.com/banse/clustermap/tree/main/audit",
+   "contest_url": "https://github.com/banse/clustermap/issues/new?labels=dispute"
+  }
+ },
+ "clusters": [
+  {
+   "id": 3,
+   "size": 6,
+   "confidence": 0.847875,
+   "band": "high",
+   "points": 2066175,
+   "points_share": 0.06962454722604387,
+   "span_blocks": 660,
+   "families": [
+    "amount",
+    "cadence",
+    "funding"
+   ],
+   "reasons": [
+    {
+     "family": "funding",
+     "strength": 0.95,
+     "text": "first funder is a member of the same cluster (peel chain) \u00b7 tight: fresh wallet, funded within 30 blocks, like amount"
+    },
+    {
+     "family": "cadence",
+     "strength": 0.8,
+     "text": "peel cadence: deposit lands \u226430 blocks after the funder's own deposit"
+    },
+    {
+     "family": "amount",
+     "strength": 0.75,
+     "text": "identical 98.8\u039e send \u00d72 in one wave"
+    }
+   ],
+   "edge_count": 402,
+   "risk": "elevated",
+   "review_flag": false,
+   "review_reasons": []
+  },
+  {
+   "id": 4,
+   "size": 6,
+   "confidence": 0.9915847069138277,
+   "band": "high",
+   "points": 1812227,
+   "points_share": 0.061067181795255394,
+   "span_blocks": 254,
+   "families": [
+    "amount",
+    "cadence",
+    "funding",
+    "sequence"
+   ],
+   "reasons": [
+    {
+     "family": "funding",
+     "strength": 0.95,
+     "text": "first funder is a member of the same cluster (peel chain) \u00b7 tight: fresh wallet, funded within 30 blocks, like amount"
+    },
+    {
+     "family": "sequence",
+     "strength": 0.9,
+     "text": "consecutive join indices 2,252\u20132,311 \u00b7 4-block span"
+    },
+    {
+     "family": "cadence",
+     "strength": 0.85,
+     "text": "burst \u00d720 of 0.45\u039e in one block, repeated over 90 blocks"
+    },
+    {
+     "family": "amount",
+     "strength": 0.8,
+     "text": "\u2248 W/k equal split: 898.2\u039e across \u00d71996 of 0.45\u039e"
+    }
+   ],
+   "edge_count": 9527,
+   "risk": "critical",
+   "review_flag": false,
+   "review_reasons": []
+  },
+  {
+   "id": 5,
+   "size": 6,
+   "confidence": 0.9150692137271937,
+   "band": "high",
+   "points": 1687505,
+   "points_share": 0.056864385430413764,
+   "span_blocks": 817,
+   "families": [
+    "amount",
+    "cadence",
+    "funding",
+    "sequence"
+   ],
+   "reasons": [
+    {
+     "family": "funding",
+     "strength": 0.95,
+     "text": "first funder is a member of the same cluster (peel chain) \u00b7 tight: fresh wallet, funded within 30 blocks, like amount"
+    },
+    {
+     "family": "amount",
+     "strength": 0.9,
+     "text": "identical odd 1.172257\u039e send \u00d72"
+    },
+    {
+     "family": "sequence",
+     "strength": 0.9,
+     "text": "consecutive join indices 4,738\u20134,747 \u00b7 0-block span"
+    },
+    {
+     "family": "cadence",
+     "strength": 0.8,
+     "text": "engine pocket: \u00d7272 jittered sends inside one hour (humans: 0.5% of ENS wallets use such amounts)"
+    }
+   ],
+   "edge_count": 5219,
+   "risk": "elevated",
+   "review_flag": false,
+   "review_reasons": []
+  },
+  {
+   "id": 6,
+   "size": 6,
+   "confidence": 0.997771998493976,
+   "band": "high",
+   "points": 580011,
+   "points_share": 0.019544812642261634,
+   "span_blocks": 1870,
+   "families": [
+    "amount",
+    "cadence",
+    "funding",
+    "sequence"
+   ],
+   "reasons": [
+    {
+     "family": "funding",
+     "strength": 0.95,
+     "text": "first funder is a member of the same cluster (peel chain) \u00b7 tight: fresh wallet, funded within 30 blocks, like amount"
+    },
+    {
+     "family": "sequence",
+     "strength": 0.9,
+     "text": "consecutive join indices 12,058\u201312,157 \u00b7 1-block span"
+    },
+    {
+     "family": "amount",
+     "strength": 0.85,
+     "text": "jitter band: \u00d779 unique \u22656-decimal amounts within 2% (0.115491868272099195\u20130.117794425931118573\u039e) in hour 19"
+    },
+    {
+     "family": "cadence",
+     "strength": 0.8,
+     "text": "peel cadence: deposit lands \u226430 blocks after the funder's own deposit"
+    }
+   ],
+   "edge_count": 7602,
+   "risk": "critical",
+   "review_flag": false,
+   "review_reasons": []
+  },
+  {
+   "id": 20,
+   "size": 6,
+   "confidence": 0.8449,
+   "band": "high",
+   "points": 139218,
+   "points_share": 0.004691272624881908,
+   "span_blocks": 39,
+   "families": [
+    "amount",
+    "cadence",
+    "gas"
+   ],
+   "reasons": [
+    {
+     "family": "gas",
+     "strength": 0.85,
+     "text": "one fee fingerprint across \u00d710 (controls spread over dozens)"
+    },
+    {
+     "family": "amount",
+     "strength": 0.8,
+     "text": "\u2248 W/k equal split: 1719.9\u039e across \u00d710 of 171.99\u039e"
+    },
+    {
+     "family": "cadence",
+     "strength": 0.8,
+     "text": "metronomic drip \u00d710 of 171.99\u039e every ~4 blocks"
+    }
+   ],
+   "edge_count": 27,
+   "risk": "elevated",
+   "review_flag": true,
+   "review_reasons": [
+    "Behavioural evidence only; no measured funding transfer"
+   ]
+  },
+  {
+   "id": 44,
+   "size": 6,
+   "confidence": 0.830875,
+   "band": "low",
+   "points": 16235,
+   "points_share": 0.00054707588864197,
+   "span_blocks": 301,
+   "families": [
+    "amount",
+    "gas"
+   ],
+   "reasons": [
+    {
+     "family": "amount",
+     "strength": 0.85,
+     "text": "identical 3-step ladder 1.5\u21926.0\u039e \u00d75 within 300 blocks"
+    },
+    {
+     "family": "gas",
+     "strength": 0.85,
+     "text": "one fee fingerprint across \u00d76 (controls spread over dozens)"
+    }
+   ],
+   "edge_count": 10,
+   "risk": "review",
+   "review_flag": true,
+   "review_reasons": [
+    "Behavioural evidence only; no measured funding transfer"
+   ]
+  },
+  {
+   "id": 141,
+   "size": 6,
+   "confidence": 0.81175,
+   "band": "low",
+   "points": 1827,
+   "points_share": 6.15649922112029e-05,
+   "span_blocks": 0,
+   "families": [
+    "cadence",
+    "gas"
+   ],
+   "reasons": [
+    {
+     "family": "cadence",
+     "strength": 0.85,
+     "text": "burst \u00d77 of 0.05\u039e in one block, repeated over 47 blocks"
+    },
+    {
+     "family": "gas",
+     "strength": 0.7,
+     "text": "one gas limit + \u22642 priority fees across \u00d77"
+    }
+   ],
+   "edge_count": 12,
+   "risk": "review",
+   "review_flag": true,
+   "review_reasons": [
+    "Behavioural evidence only; no measured funding transfer"
+   ]
+  }
+ ]
+}

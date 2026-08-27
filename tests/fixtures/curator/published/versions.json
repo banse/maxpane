@@ -1,0 +1,65 @@
+{
+ "published_version": "2026-08-25-sybilkit-0.2.0",
+ "versions": [
+  {
+   "at": "2026-08-22T00:00:00Z",
+   "commit": "88d595b",
+   "content_hash": "9c5a1ef4882e84328bfc13da235b4d7d08f7c9fa3eebd4cf8eaab92ecc4ac616",
+   "detector": "sybilkit",
+   "detector_commit": "200004fbfd05c3c49c1a083635e0dfec3a3090bf",
+   "detector_tag": "sybilkit-v0.1.1",
+   "detector_version": "0.1.1",
+   "enrichment": {
+    "funding_rows": 12498,
+    "tx_fingerprints": 12203
+   },
+   "id": "2026-08-22-shipped",
+   "label": "Original SybilKit 0.1.1",
+   "reproduce_command": "uv run python scripts/build_versions.py",
+   "rule_set": "baseline(shipped)",
+   "snapshot_block": 25807057,
+   "stage": "superseded",
+   "summary": "The original 263-group analysis, preserved exactly and still selectable. Superseded as the default by SybilKit 0.2.0.",
+   "tag": "v0.1.0",
+   "vendored_commit": "712c4390fe3228a02f335e3f42833653ad7a90f3",
+   "published": false,
+   "status_counts": {
+    "clean": 7949,
+    "flagged": 11573,
+    "review": 0
+   },
+   "cluster_count": 263
+  },
+  {
+   "at": "2026-08-25T00:00:00Z",
+   "commit": "f7154a6",
+   "content_hash": "486c7787fded341765b11c178916b237b46dc7c09e486931758c179af3bf2f9f",
+   "detector": "sybilkit",
+   "detector_commit": "d835b3f063b5eecb9bed8d959bd6958aa4a48915",
+   "detector_tag": "sybilkit-v0.2.0",
+   "detector_version": "0.2.0",
+   "enrichment": {
+    "funding_rows": 19522,
+    "tx_fingerprints": 28353
+   },
+   "id": "2026-08-25-sybilkit-0.2.0",
+   "label": "SybilKit 0.2.0",
+   "reproduce_command": "uv run python scripts/build_versions.py",
+   "rule_set": "v2h (v2g + aged-weak periphery)",
+   "rules_file": "audit/harness/sk_v2.py",
+   "rules_sha256": "457fac65506d3ce9693f35c154f2f1d635d3cef5673138e43c3d6332bf71b2b3",
+   "snapshot_block": 25807057,
+   "stage": "published",
+   "summary": "The v2h rule set: funding structure builds a group, and a per-member gate leaves thin evidence visible as a review periphery instead of removing it. Ships as sybilkit 0.2.0's main utility.",
+   "tag": "v0.4.0",
+   "vendored_commit": "712c4390fe3228a02f335e3f42833653ad7a90f3",
+   "published": true,
+   "status_counts": {
+    "clean": 6782,
+    "flagged": 12416,
+    "review": 324
+   },
+   "cluster_count": 160
+  }
+ ]
+}
