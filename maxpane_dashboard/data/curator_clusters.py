@@ -890,16 +890,27 @@ def _group_of(address: str, analysis: Any) -> Mapping | None:
 
 
 def grade_of(address: Any, analysis: Any) -> str | None:
-    """``"high"`` · ``"low"`` · ``"clean"`` · ``None`` for one address.
+    """``"high"`` · ``"low"`` · ``"review"`` · ``"clean"`` · ``None`` for one address.
 
     ``None`` covers both "no analysis has run" and "this wallet was not in the
     analyzed population" — either way the honest rendering is ``?``, never the
-    empty cell that means *clean*.
+    empty cell that means *clean*.  ``"review"`` is T4's third wallet state:
+    thin evidence, shown rather than removed — a per-WALLET mark, checked
+    before the group's own band, never the group's own ``review_flag``
+    (group review and member review are disjoint on the live service).
     """
     if not isinstance(address, str) or analysis is None:
         return None
     group = _group_of(address, analysis)
     if group is not None:
+        review = group.get("review_members")
+        # `isinstance` first: a malformed `review_members` (not even a
+        # mapping — a hand-edited cache is exactly this module's threat
+        # model) must not raise, and costs only the review distinction —
+        # the group's own `conf` still answers below, and the membership
+        # FACT (linked, size, reasons) is `you_linkage`'s and is untouched.
+        if isinstance(review, Mapping) and address.lower() in review:
+            return "review"
         conf = group.get("conf")
         # An unknown band in a persisted group is bad data, and a confidence
         # word derived from bad data is a claim: it renders `?` (None) — the
@@ -911,6 +922,59 @@ def grade_of(address: Any, analysis: Any) -> str | None:
     return None
 
 
+def bands_by_address(analysis: Any) -> dict[str, str]:
+    """Every analysed address -> ``"high"``/``"low"``/``"review"``/``"clean"``.
+
+    The bulk form of :func:`grade_of` — built in ONE pass over ``groups`` and
+    ``clean_ranks``, rather than :func:`grade_of`'s O(address × groups) (it
+    scans every group's member list per address).  ``merge_leaderboard_grade``
+    uses this instead of calling :func:`grade_of` per row, which is what lets
+    a several-thousand-row archive write finish in reasonable time.
+
+    An address absent from the returned mapping means ``None`` — "no analysis
+    has run" or "unreadable band" — exactly what :func:`grade_of` returns for
+    it; the two must never disagree (``.get(address)`` on this map and
+    ``grade_of(address, analysis)`` are the same question asked two ways).
+    A stranger is therefore never a *key* here, not a key mapped to ``None``:
+    the return type is ``dict[str, str]``, and the caller's ``.get()`` default
+    supplies the ``None``.
+    """
+    out: dict[str, str] = {}
+    grouped: set[str] = set()
+    for group in _groups_of(analysis):
+        members = group.get("members")
+        if not isinstance(members, (list, tuple)):
+            continue
+        review = group.get("review_members")
+        review_map = review if isinstance(review, Mapping) else {}
+        conf = group.get("conf")
+        band = conf if conf in ("high", "low") else None
+        for member in members:
+            if not isinstance(member, str):
+                continue
+            key = member.lower()
+            if key in grouped:
+                # `_group_of` returns the FIRST group containing an address;
+                # a later group listing the same address (duplicate/
+                # contradictory membership, unreachable live but not from a
+                # hand-edited cache) must not overrule that first answer.
+                continue
+            grouped.add(key)
+            if key in review_map:
+                out[key] = "review"
+            elif band is not None:
+                out[key] = band
+            # else: leave the key absent — `grade_of` returns None for a
+            # group member whose band is unreadable, and never falls back
+            # to `clean_ranks` once a group is found, so neither does this.
+    for address in _clean_ranks_of(analysis):
+        if isinstance(address, str):
+            key = address.lower()
+            if key not in grouped:
+                out.setdefault(key, "clean")
+    return out
+
+
 def you_linkage(wallet: Any, analysis: Any) -> dict[str, Any]:
     """The four ``you_linked_*``/``you_clean_rank`` keys for one wallet.
 
@@ -920,6 +984,12 @@ def you_linkage(wallet: Any, analysis: Any) -> dict[str, Any]:
     fresh B+C sweep (the sweep is about the population, not about one wallet).
     Reasons pass :func:`pattern_language` again on the way out: the payload may
     have been persisted by an older build or edited by hand.
+
+    ``you_linked_state`` gains a third value, ``"review"``, for a wallet T4
+    filed under a group's ``review_members``: thin evidence, shown rather than
+    removed.  Its reasons are the wallet's OWN families — never the group's,
+    which describe evidence a review wallet does not carry — and
+    ``you_linked_group_size`` stays the group's own size either way.
     """
     out: dict[str, Any] = {
         "you_linked_state": None,
@@ -933,16 +1003,46 @@ def you_linkage(wallet: Any, analysis: Any) -> dict[str, Any]:
     if group is not None:
         size = group.get("size")
         members = group.get("members")
+        group_size = (
+            size
+            if isinstance(size, int) and not isinstance(size, bool)
+            else (len(members) if isinstance(members, (list, tuple)) else None)
+        )
+        review = group.get("review_members")
+        # Same malformed-input guard as `grade_of`: a `review_members` that
+        # is not even a mapping must not raise, and falls through to the
+        # ordinary "linked" branch below rather than losing the row.
+        if isinstance(review, Mapping) and wallet.lower() in review:
+            families = review.get(wallet.lower())
+            # THE CARRY-FORWARD: T4's `FILTER_FAMILIES` allowlist guards the
+            # WRITE site only (`build_analysis_from_published`).  This reads
+            # the PERSISTED payload — a hand-edited cache file is
+            # third-party input too (see the module docstring) — so a
+            # forbidden word smuggled into a family list must be dropped
+            # here, on the way out, not merely softened by
+            # `pattern_language` into one generic phrase per bogus entry.
+            allowed = (
+                [f for f in families if isinstance(f, str) and f in FILTER_FAMILIES]
+                if isinstance(families, list)
+                else []
+            )
+            # A review wallet's reasons are its OWN families, not the
+            # group's: the group's reasons describe evidence this wallet
+            # does not carry (that is what "periphery" means).
+            # `pattern_language(None, family)` always takes the fallback
+            # branch, which resolves to the family's own phrase.
+            out["you_linked_state"] = "review"
+            out["you_linked_reasons"] = [
+                pattern_language(None, family) for family in allowed
+            ]
+            out["you_linked_group_size"] = group_size  # unchanged: the group's own size
+            return out
         reasons = group.get("reasons")
         out["you_linked_state"] = "linked"
         out["you_linked_reasons"] = [
             pattern_language(text, None) for text in (reasons or ())
         ]
-        out["you_linked_group_size"] = (
-            size
-            if isinstance(size, int) and not isinstance(size, bool)
-            else (len(members) if isinstance(members, (list, tuple)) else None)
-        )
+        out["you_linked_group_size"] = group_size
         return out
     rank = _clean_ranks_of(analysis).get(wallet.lower())
     if isinstance(rank, int) and not isinstance(rank, bool):
@@ -981,13 +1081,20 @@ def merge_leaderboard_grade(leaderboard_rows: Any, analysis: Any) -> None:
     is frozen and gets no placeholder), so every row is seeded here — ``None``
     when no analysis has run, which renders ``?`` rather than the empty cell
     that means *clean*.  ``flagged`` (Tier A's bool) is never touched.
+
+    Builds :func:`bands_by_address` ONCE and indexes it per row, rather than
+    calling :func:`grade_of` per row (O(address × groups) each) — the
+    difference between this finishing and not on a several-thousand-row
+    leaderboard.
     """
     if not isinstance(leaderboard_rows, list):
         return
+    bands = bands_by_address(analysis)
     for row in leaderboard_rows:
         if not isinstance(row, dict):
             continue
-        row["link_conf"] = grade_of(row.get("address"), analysis)
+        address = row.get("address")
+        row["link_conf"] = bands.get(address.lower()) if isinstance(address, str) else None
 
 
 # ---------------------------------------------------------------------------

@@ -1646,3 +1646,118 @@ def test_a_cursor_entry_that_is_not_a_mapping_is_dropped_not_cast():
     assert bad not in sweep.funding_cursors
     assert sweep.funding_cursors[good]["params"]["page"] == 21
     assert bad not in sweep.state()["cursors"]
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — the review band, data layer
+# ---------------------------------------------------------------------------
+#
+# T4 populates `groups[].review_members` (address -> its OWN evidence
+# families, for that group's `status == "review"` wallets).  These tests hang
+# it off a plain `build_analysis` group by mutation, exactly like the "Fix
+# round 1" section above mutates `conf` — review and non-review member are
+# both FARM_MEMBERS of the one linked group, so "grades review" and "still
+# grades the group's own band" are checked on siblings inside the SAME group.
+
+
+def test_a_review_member_grades_review_and_not_its_groups_band():
+    payload = curator_clusters.slot_payload(farm_analysis())
+    reviewer = FARM_MEMBERS[0]
+    payload["groups"][0]["review_members"] = {reviewer: ["amount"]}
+    assert payload["groups"][0]["conf"] == "high"
+    assert curator_clusters.grade_of(reviewer, payload) == "review"
+
+
+def test_a_flagged_member_of_the_same_group_still_grades_the_groups_band():
+    payload = curator_clusters.slot_payload(farm_analysis())
+    reviewer, sibling = FARM_MEMBERS[0], FARM_MEMBERS[1]
+    payload["groups"][0]["review_members"] = {reviewer: ["amount"]}
+    assert curator_clusters.grade_of(sibling, payload) == "high"
+
+
+def test_a_clean_address_still_grades_clean_and_a_stranger_still_grades_none():
+    payload = curator_clusters.slot_payload(farm_analysis())
+    payload["groups"][0]["review_members"] = {FARM_MEMBERS[0]: ["amount"]}
+    assert curator_clusters.grade_of(CONTROLS[0], payload) == "clean"
+    assert curator_clusters.grade_of(STRANGER, payload) is None
+
+
+def test_bands_by_address_agrees_with_grade_of_on_every_address():
+    """The two must never diverge: one is the bulk form of the other."""
+    payload = curator_clusters.slot_payload(farm_analysis())
+    payload["groups"][0]["review_members"] = {FARM_MEMBERS[0]: ["amount"]}
+    bands = curator_clusters.bands_by_address(payload)
+    for address in (*FARM_MEMBERS, *CONTROLS, STRANGER):
+        assert bands.get(address) == curator_clusters.grade_of(address, payload), address
+    assert bands[FARM_MEMBERS[0]] == "review"
+    assert bands[FARM_MEMBERS[1]] == "high"
+    assert bands[CONTROLS[0]] == "clean"
+    assert STRANGER not in bands
+
+
+def test_you_linked_state_is_review_with_the_wallets_own_families_as_reasons():
+    """The group's OWN reasons (its "funding"-second-family evidence) describe
+    evidence this reviewed wallet does not itself carry, so they must not
+    leak into `you_linked_reasons` — only the wallet's own families do."""
+    result = farm_analysis()
+    reviewer = FARM_MEMBERS[0]
+    result.groups[0]["review_members"] = {reviewer: ["amount"]}
+    keys = curator_clusters.you_linkage(reviewer, result)
+    assert keys["you_linked_state"] == "review"
+    assert keys["you_linked_reasons"] == [curator_clusters.pattern_language(None, "amount")]
+    assert curator_clusters.pattern_language(None, "funding") not in keys["you_linked_reasons"]
+
+
+def test_a_review_wallet_keeps_its_groups_size():
+    result = farm_analysis()
+    reviewer = FARM_MEMBERS[0]
+    result.groups[0]["review_members"] = {reviewer: ["amount"]}
+    keys = curator_clusters.you_linkage(reviewer, result)
+    assert keys["you_linked_group_size"] == len(FARM_MEMBERS)
+
+
+def test_an_unreadable_review_members_mapping_costs_the_band_not_the_row():
+    """A malformed `review_members` (not a mapping) must not raise, and must
+    not take the group's own band or the membership FACT down with it: the
+    band falls back to the group's `conf`, and `you_linkage`'s linked state,
+    size and reasons are untouched."""
+    payload = curator_clusters.slot_payload(farm_analysis())
+    payload["groups"][0]["review_members"] = ["not", "a", "mapping"]
+    member = FARM_MEMBERS[0]
+
+    assert curator_clusters.grade_of(member, payload) == "high"
+    assert curator_clusters.bands_by_address(payload)[member] == "high"
+
+    linkage = curator_clusters.you_linkage(member, payload)
+    assert linkage["you_linked_state"] == "linked"
+    assert linkage["you_linked_group_size"] == len(FARM_MEMBERS)
+    assert linkage["you_linked_reasons"]
+
+
+def test_review_families_are_refiltered_against_the_allowlist_on_the_persisted_read_path():
+    """THE CARRY-FORWARD: T4's `FILTER_FAMILIES` allowlist protects the WRITE
+    site only.  A hand-edited cache file is third-party input too (this
+    module's own docstring says so), so a forbidden word smuggled into a
+    persisted `review_members` family list must be dropped reading it back
+    out — not merely softened into a generic phrase by `pattern_language`,
+    which would still emit one reason per bogus entry.  Two entries in, one
+    real reason out proves the entry was DROPPED, not just re-worded."""
+    payload = curator_clusters.slot_payload(farm_analysis())
+    reviewer = FARM_MEMBERS[0]
+    payload["groups"][0]["review_members"] = {
+        reviewer: ["amount", "sybil-cluster"]
+    }
+    keys = curator_clusters.you_linkage(reviewer, payload)
+    assert keys["you_linked_reasons"] == [curator_clusters.pattern_language(None, "amount")]
+
+
+def test_merge_leaderboard_grade_reports_a_review_wallet_too():
+    """The leaderboard merge is the O(population) form of `grade_of`; the
+    review band must survive going through `bands_by_address` on that path,
+    not just the single-address one."""
+    payload = curator_clusters.slot_payload(farm_analysis())
+    reviewer = FARM_MEMBERS[0]
+    payload["groups"][0]["review_members"] = {reviewer: ["amount"]}
+    rows = [{"rank": 1, "address": reviewer, "flagged": True, "name": None}]
+    curator_clusters.merge_leaderboard_grade(rows, payload)
+    assert rows[0]["link_conf"] == "review"
