@@ -12,6 +12,7 @@ import ast
 import inspect
 import json
 import os
+import pathlib
 import time
 
 import pytest
@@ -2179,12 +2180,12 @@ def test_a_fresh_name_is_not_re_resolved(tmp_path, clock):
 
 
 from maxpane_dashboard.data import curator_clusters  # noqa: E402
+from maxpane_dashboard.data import curator_archive  # noqa: E402
 from maxpane_dashboard.data.curator_cache import (  # noqa: E402
     SLOT_CLUSTERS,
     TIER_ANALYSIS,
 )
 from tests.data.test_curator_clusters import (  # noqa: E402
-    AnalysisRoutes,
     FARM_MEMBERS,
     CONTROLS as FARM_CONTROLS,
     STRANGER as FARM_STRANGER,
@@ -2199,24 +2200,113 @@ from tests.data.test_curator_clusters import (  # noqa: E402
 ANALYSIS_CONFIG = {**CONFIG, "min_deposit_wei": 5 * 10**16}
 
 
-def _analysis_manager(tmp_path, clock, *, routes=None, wallet=None):
+#: THE LIST's published analysis, as committed by T1 and verified against the
+#: live service.  The same four files T2/T3/T4/T9 read; never re-typed here.
+PUBLISHED_FIXTURES = pathlib.Path(__file__).parent.parent / "fixtures/curator/published"
+
+
+def _published(name: str) -> dict:
+    return json.loads((PUBLISHED_FIXTURES / name).read_text())
+
+
+class PublishedRoutes:
+    """One ``MockTransport`` over the published analysis, counting every read.
+
+    The fetch policy IS the cost story — one ~1 KB version check per tick, and
+    the two bulk reads (8.3 MB on the live export) only when the publisher has
+    shipped a new ``content_hash`` — so a call *count* per endpoint is the only
+    assertion that can see it.  ``calls`` is that ledger, in order.
+
+    ``dead`` names endpoints that answer 503, which is how a source is killed
+    without a monkeypatch: the manager's degradation is then driven by the
+    transport, structurally, exactly as CLAUDE.md asks.
+    """
+
+    def __init__(
+        self,
+        *,
+        versions=None,
+        overview=None,
+        export=None,
+        blocking: bool = False,
+        dead: tuple[str, ...] = (),
+    ) -> None:
+        self.bodies = {
+            "versions": _published("versions.json") if versions is None else versions,
+            "overview": (
+                _published("overview_trimmed.json") if overview is None else overview
+            ),
+            "export": _published("export_trimmed.json") if export is None else export,
+        }
+        self.dead = set(dead)
+        self.blocking = blocking
+        self.release = asyncio.Event()
+        self.started = asyncio.Event()
+        self.calls: list[str] = []
+        self.transport = httpx.MockTransport(self)
+
+    @staticmethod
+    def _route(request: httpx.Request) -> str:
+        path = request.url.path
+        if path.endswith("/versions"):
+            return "versions"
+        if path.endswith("/overview"):
+            return "overview"
+        if path.endswith("/list/export"):
+            return "export"
+        raise AssertionError(f"the manager asked for an unknown endpoint: {path}")
+
+    def publish(self, version_id: str) -> None:
+        """Make ``version_id`` the published one, as the service would."""
+        self.bodies["versions"] = {
+            **self.bodies["versions"], "published_version": version_id
+        }
+
+    async def __call__(self, request: httpx.Request) -> httpx.Response:
+        route = self._route(request)
+        self.calls.append(route)
+        self.started.set()
+        if self.blocking:
+            await self.release.wait()
+        if route in self.dead:
+            return httpx.Response(503, text="down")
+        return httpx.Response(200, json=self.bodies[route])
+
+
+#: The published version id the committed ``versions.json`` names, and the
+#: superseded one beside it — read from the fixture rather than re-typed, so a
+#: refreshed capture cannot leave a stale literal asserting nothing.
+PUBLISHED_ID = _published("versions.json")["published_version"]
+SUPERSEDED_ID = next(
+    entry["id"]
+    for entry in _published("versions.json")["versions"]
+    if entry["id"] != PUBLISHED_ID
+)
+
+
+def _analysis_manager(tmp_path, clock, *, routes=None, published=None, wallet=None):
     """A manager whose fold is the farm: cache pre-seeded, empty log sweeps.
 
     The state double's counters agree with the nine seeded events — the
     cross-check compares the fold against ``stats()``, and a double whose
     counter says 222 over a nine-event fold is a fixture accusing itself.
+
+    ``published`` injects a :class:`PublishedRoutes` as the analysis session's
+    transport; with neither it and ``routes`` there is no session at all, which
+    is the sweep's cannot-run state and opens nothing.
     """
     client = _scenario_client(
         {"state": True, "logs": True, "wallet": bool(wallet)}
     )
     client.answers["fetch_state"] = _state(tx_count=9, contributors=9)
     client.answers["fetch_logs"] = lambda *_: _sweep([], to_block=25_770_500)
+    session = published if published is not None else routes
     manager = _manager(
         tmp_path,
         clock,
         client=client,
         wallet=wallet,
-        analysis_transport=routes.transport if routes is not None else None,
+        analysis_transport=session.transport if session is not None else None,
         analysis_sleep=no_sleep,
     )
     manager.cache.store_events(farm_events(), now=NOW)
@@ -2235,9 +2325,32 @@ def test_the_config_slot_carries_the_minimum_and_the_readings_do_not(tmp_path, c
     assert "min_deposit_wei" not in readings
 
 
+def _run_analysis(manager, *, now=NOW, config=None):
+    """One detached sweep, awaited.  The tests' scheduler, never the app's."""
+
+    async def _go():
+        task = manager._spawn_analysis(
+            {TIER_ANALYSIS}, now, ANALYSIS_CONFIG if config is None else config
+        )
+        assert task is not None
+        await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(_go())
+
+
+def _slot_copy(manager):
+    """A deep, JSON-round-tripped copy of the analysis slot's payload.
+
+    The cache hands out the live object, so `payload == payload` after a
+    mutation is a tautology; this is what lets "untouched" mean untouched.
+    """
+    entry = manager.cache.analysis_last_good()
+    return None if entry is None else json.loads(json.dumps(entry.payload))
+
+
 def test_spawn_analysis_starts_one_task_and_never_stacks_a_second(tmp_path, clock):
-    routes = AnalysisRoutes(blocking=True)
-    manager = _analysis_manager(tmp_path, clock, routes=routes)
+    routes = PublishedRoutes(blocking=True)
+    manager = _analysis_manager(tmp_path, clock, published=routes)
 
     async def _run():
         task = manager._spawn_analysis({TIER_ANALYSIS}, NOW, ANALYSIS_CONFIG)
@@ -2270,8 +2383,8 @@ def test_the_analysis_tier_gates_the_sweep(tmp_path, clock):
 def test_the_sweep_publishes_into_the_slot_with_the_spawn_time_stamp(tmp_path, clock):
     """The payload built before the sweep lands is the supported not-yet-run
     state; the slot's stamp is the SPAWN time, never the completion time."""
-    routes = AnalysisRoutes()
-    manager = _analysis_manager(tmp_path, clock, routes=routes)
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
 
     async def _run():
         out = await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
@@ -2284,14 +2397,18 @@ def test_the_sweep_publishes_into_the_slot_with_the_spawn_time_stamp(tmp_path, c
         assert entry is not None
         assert entry.ts == NOW                          # spawn-time stamp
         payload = entry.payload
-        assert payload["operators_count"] == 1          # funding linked the farm
-        assert payload["groups"][0]["size"] == len(FARM_MEMBERS)
-        # The cursor rides in the slot: coverage extends across sweeps.
-        assert set(payload["enrichment"]["funding"]) >= set(FARM_MEMBERS)
-        assert payload["enrichment"]["txs"]
-        assert routes.gets and routes.posts, (
-            "the sweep drives sybilkit.sources through the injected transport"
+        # The published membership, not a locally detected one: the fixture's
+        # seven clusters arrive whole.
+        assert payload["operators_count"] == len(
+            _published("overview_trimmed.json")["clusters"]
         )
+        assert payload["groups"]
+        # Provenance rides beside the rows, and it is the manager that put it
+        # there -- `slot_payload` computes nothing.
+        assert payload["published"]["version_id"] == PUBLISHED_ID
+        assert payload["published"]["content_hash"]
+        assert payload["published"]["fetched_at"] == NOW
+        assert routes.calls == ["versions", "overview", "export"]
 
     asyncio.run(_run())
 
@@ -2305,23 +2422,24 @@ def test_the_sweep_borrows_the_real_clients_own_session_in_production(tmp_path, 
     only by the live smoke.  Here ``analysis_transport`` is ``None`` (so the
     injected branch is *not* taken) and the manager's client is a **real**
     :class:`CuratorClient` whose own ``httpx`` session is MockTransport-backed:
-    the sweep must borrow that session, fetch through it, and publish into
-    ``SLOT_CLUSTERS`` — with no socket, because the transport is a mock.
+    the sweep must borrow that session, read the published analysis through it,
+    and publish into ``SLOT_CLUSTERS`` — with no socket, because the transport
+    is a mock.
 
     The borrowed attribute is asserted by name (``_client``): a future
     ``CuratorClient`` refactor that renames it would silently drop the sweep to
-    tier A, and this reddens instead.
+    its no-session cannot-run state, and this reddens instead.
     """
     import httpx
     from maxpane_dashboard.data.curator_client import CuratorClient
 
-    routes = AnalysisRoutes()
+    routes = PublishedRoutes()
     http = httpx.AsyncClient(transport=routes.transport)
     client = CuratorClient(http_client=http)
 
     # The seam this test exists to pin: production borrows the real client's
     # own `_client`.  If the attribute is renamed, this fails here rather than
-    # letting the sweep quietly run tier A only.
+    # letting the sweep quietly stop reading the published analysis.
     assert getattr(client, "_client", None) is http
 
     manager = _manager(
@@ -2348,26 +2466,21 @@ def test_the_sweep_borrows_the_real_clients_own_session_in_production(tmp_path, 
     out = asyncio.run(_run())
     assert out["swept"] is True
 
-    # Fetched through the borrowed session: the mock transport recorded both
-    # wire shapes, which only the production `_client` path could have driven.
-    assert routes.posts and routes.gets, (
-        "the sweep drove sybilkit.sources through the real client's own _client"
-    )
-    # ...and published into SLOT_CLUSTERS, funding-linked exactly as the
-    # injected-branch sibling asserts.
+    # Fetched through the borrowed session: only the production `_client` path
+    # could have driven these three reads.
+    assert routes.calls == ["versions", "overview", "export"]
     entry = manager.cache.get_last_good(SLOT_CLUSTERS)
     assert entry is not None
-    assert entry.payload["operators_count"] == 1
-    assert set(entry.payload["enrichment"]["funding"]) >= set(FARM_MEMBERS)
+    assert entry.payload["published"]["version_id"] == PUBLISHED_ID
 
 
 def test_the_first_payload_is_not_behind_the_analysis_read(tmp_path, clock):
-    """The mandated first-paint guard: a funding pass is minutes long, and
-    awaiting it in-cycle is exactly the 201-second blank SIGNALS rail the
-    cross-check already taught this manager about.  Awaiting the sweep inside
-    `_cycle` makes the five-second timeout here fire."""
-    routes = AnalysisRoutes(blocking=True)
-    manager = _analysis_manager(tmp_path, clock, routes=routes)
+    """The mandated first-paint guard: the bulk export is 8.3 MB on the live
+    service, and awaiting it in-cycle is exactly the 201-second blank SIGNALS
+    rail the cross-check already taught this manager about.  Awaiting the sweep
+    inside `_cycle` makes the five-second timeout here fire."""
+    routes = PublishedRoutes(blocking=True)
+    manager = _analysis_manager(tmp_path, clock, published=routes)
 
     async def _run():
         out = await asyncio.wait_for(manager.fetch_and_compute(), timeout=5)
@@ -2391,10 +2504,10 @@ def test_the_first_payload_is_not_behind_the_analysis_read(tmp_path, clock):
 
 
 def test_close_cancels_both_detached_tasks_and_saves(tmp_path, clock):
-    """Quitting mid-sweep is the common case when a sweep takes minutes: both
-    detached reads hold the client, so both are cancelled and awaited before
-    the sockets go, and the cache is still saved."""
-    routes = AnalysisRoutes(blocking=True)
+    """Quitting mid-sweep is the common case when a sweep is downloading
+    megabytes: both detached reads hold the client, so both are cancelled and
+    awaited before the sockets go, and the cache is still saved."""
+    routes = PublishedRoutes(blocking=True)
     scenario = _scenario_client({"state": True, "logs": True, "wallet": False})
     client = _BlockingCrossCheck(
         [],
@@ -2453,23 +2566,626 @@ def test_a_sweep_with_nothing_to_analyze_backs_off_instead_of_spinning(tmp_path,
     )
 
 
-def test_without_a_session_the_sweep_publishes_tier_a_only_and_fetches_nothing(
+def test_a_cannot_run_tick_still_does_not_clear_the_failed_flag(tmp_path, clock):
+    """A failed sweep followed by a cannot-run one keeps its banner state: the
+    cannot-run branch marks the tier and returns, and nothing on it touches
+    ``_analysis_failed``."""
+    client = _scenario_client({"state": True, "logs": True, "wallet": False})
+    client.answers["fetch_logs"] = lambda *_: _sweep([], to_block=25_770_500)
+    manager = _manager(tmp_path, clock, client=client)  # cache empty: no events
+    manager._analysis_failed = True
+
+    _run_analysis(manager)
+
+    assert manager._analysis_failed is True
+    assert manager.cache.analysis_last_good() is None
+
+
+def test_without_a_session_the_sweep_cannot_run_and_fetches_nothing(tmp_path, clock):
+    """A client double with no HTTP session and no injected transport means the
+    sweep may not fetch at all.  That is a cannot-run state, not a failure —
+    nothing was asked, so nothing is degraded — and it is what keeps a bare
+    test double socket-free."""
+    manager = _analysis_manager(tmp_path, clock)      # no transport at all
+
+    _run_analysis(manager)
+
+    assert manager.cache.analysis_last_good() is None
+    assert manager._analysis_failed is False
+    from maxpane_dashboard.data.curator_cache import TIER_FAILURE_BACKOFF_SECONDS
+
+    assert TIER_ANALYSIS not in manager.cache.tiers_due(NOW + 1)
+    assert TIER_ANALYSIS in manager.cache.tiers_due(
+        NOW + TIER_FAILURE_BACKOFF_SECONDS[TIER_ANALYSIS] + 1
+    )
+
+
+# ---------------------------------------------------------------------------
+# T10 — the published analysis replaces the local sweep
+# ---------------------------------------------------------------------------
+#
+# The producer changed and nothing else did: the tier, the slot, the detached
+# spawn, the freshness marker and every degradation rule are the ones above.
+# What is new is the fetch POLICY, and the policy is a cost story — one ~1 KB
+# version check per tick against 8.3 MB of export — so most of these tests
+# assert a call ledger rather than a value.
+
+
+def test_a_tick_that_finds_the_same_content_hash_makes_no_bulk_request(
     tmp_path, clock
 ):
-    """A client double with no HTTP session and no injected transport means the
-    sweep may not fetch — it still publishes the tier-A answer, whose losses
-    are honest (the two-family gate simply finds less)."""
-    manager = _analysis_manager(tmp_path, clock)      # no routes
+    """The whole fetch policy in one assertion.
 
-    async def _run():
-        task = manager._spawn_analysis({TIER_ANALYSIS}, NOW, ANALYSIS_CONFIG)
-        await asyncio.wait_for(task, timeout=5)
+    A published version is immutable and content-addressed, so a tick that
+    finds the same ``content_hash`` has nothing to download: it costs the
+    version check and stops.  Counted rather than inferred — the two bulk reads
+    are 8.3 MB on the live service and 1,800 s apart forever otherwise.
+    """
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
 
-    asyncio.run(_run())
-    payload = manager.cache.analysis_last_good().payload
-    assert payload["operators_count"] == 0            # amount alone never convicts
-    assert payload["enrichment"]["funding"] == {}
-    assert payload["enrichment"]["txs"] == {}
+    _run_analysis(manager)
+    assert routes.calls == ["versions", "overview", "export"]
+    held = _slot_copy(manager)
+    held_ts = manager.cache.analysis_last_good().ts
+
+    clock.advance(3_600)
+    _run_analysis(manager, now=clock.now)
+
+    assert routes.calls == ["versions", "overview", "export", "versions"]
+    assert _slot_copy(manager) == held
+    assert manager.cache.analysis_last_good().ts == held_ts
+    assert manager._analysis_failed is False
+    # ...and the tier is on its SUCCESS clock, not its failure backoff.
+    assert TIER_ANALYSIS not in manager.cache.tiers_due(clock.now + 1)
+
+
+def test_a_republished_version_id_with_a_new_content_hash_is_fetched_again(
+    tmp_path, clock
+):
+    """The content hash is half the comparison, and the half a version id
+    cannot do.
+
+    The publisher rebuilds under the same id — a re-run of the same day's
+    analysis — and the id alone says "unchanged" while every row underneath it
+    has moved.  Comparing only ``version_id`` leaves the dashboard serving the
+    superseded rows until the id itself changes, which may be never.
+    """
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+    _run_analysis(manager)
+    first_hash = _slot_copy(manager)["published"]["content_hash"]
+
+    body = _published("versions.json")
+    body["versions"] = [
+        {**entry, "content_hash": "f" * 64} if entry["id"] == PUBLISHED_ID else entry
+        for entry in body["versions"]
+    ]
+    routes.bodies["versions"] = body
+    clock.advance(3_600)
+    _run_analysis(manager, now=clock.now)
+
+    assert routes.calls == [
+        "versions", "overview", "export", "versions", "overview", "export",
+    ]
+    reread = _slot_copy(manager)["published"]
+    assert reread["version_id"] == PUBLISHED_ID
+    assert reread["content_hash"] == "f" * 64 != first_hash
+
+
+def test_a_new_version_id_carrying_the_same_content_hash_is_still_fetched_again(
+    tmp_path, clock
+):
+    """The version id is the other half of the comparison, and it does a job
+    the hash cannot.
+
+    A relabelled build — the same bytes promoted under a new id — leaves the
+    content hash untouched.  The rows would be identical, but the id names the
+    archive directory and the version label the panels render, so a
+    hash-only comparison would leave both pointing at a version that is no
+    longer the published one.
+    """
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+    _run_analysis(manager)
+    same_hash = _slot_copy(manager)["published"]["content_hash"]
+
+    body = _published("versions.json")
+    body["published_version"] = "2026-08-26-relabelled"
+    body["versions"] = [
+        {**entry, "id": "2026-08-26-relabelled"} if entry["id"] == PUBLISHED_ID
+        else entry
+        for entry in body["versions"]
+    ]
+    routes.bodies["versions"] = body
+    clock.advance(3_600)
+    _run_analysis(manager, now=clock.now)
+
+    assert routes.calls == [
+        "versions", "overview", "export", "versions", "overview", "export",
+    ]
+    reread = _slot_copy(manager)["published"]
+    assert reread["version_id"] == "2026-08-26-relabelled"
+    assert reread["content_hash"] == same_hash
+
+
+def test_the_rebuild_and_the_archive_never_run_on_the_event_loop_thread(
+    tmp_path, clock, monkeypatch
+):
+    """Both are measured in tenths of a second and the TUI's loop wears
+    neither: ``Dataset.from_events`` took 0.5 s over 28,353 events, and the
+    archive moves 7.3 MB and writes ~8 MB of JSON on the live install.
+
+    Asserted by recording the thread each runs on — a property no timing
+    assertion could hold, and one that vanishes the moment an ``await
+    asyncio.to_thread`` becomes a plain call.
+    """
+    import threading
+
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+    threads: dict[str, object] = {}
+    build = curator_clusters.build_analysis_from_published
+    archive = curator_archive.archive_and_write
+
+    def watched_build(*args, **kwargs):
+        threads["build"] = threading.current_thread()
+        return build(*args, **kwargs)
+
+    def watched_archive(*args, **kwargs):
+        threads["archive"] = threading.current_thread()
+        return archive(*args, **kwargs)
+
+    monkeypatch.setattr(
+        curator_clusters, "build_analysis_from_published", watched_build
+    )
+    monkeypatch.setattr(curator_archive, "archive_and_write", watched_archive)
+
+    loop_thread = threading.current_thread()
+    _run_analysis(manager)
+
+    assert set(threads) == {"build", "archive"}, threads
+    assert threads["build"] is not loop_thread
+    assert threads["archive"] is not loop_thread
+
+
+def test_a_new_version_id_triggers_the_two_bulk_reads_and_stores_once(
+    tmp_path, clock, monkeypatch
+):
+    """A new published version costs the two bulk reads exactly once, and the
+    slot is written exactly once from the pair they returned."""
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+    _run_analysis(manager)
+
+    stored: list[dict] = []
+    real = manager.cache.store_analysis
+
+    def spy(payload, *, ts):
+        stored.append(payload)
+        return real(payload, ts=ts)
+
+    monkeypatch.setattr(manager.cache, "store_analysis", spy)
+
+    routes.publish(SUPERSEDED_ID)
+    clock.advance(3_600)
+    _run_analysis(manager, now=clock.now)
+
+    assert routes.calls[3:] == ["versions", "overview", "export"]
+    assert len(stored) == 1, "the slot is written once, from a complete pair"
+    assert stored[0]["published"]["version_id"] == SUPERSEDED_ID
+    assert stored[0]["operator_rows"] is not None
+
+
+def test_a_failed_version_check_leaves_the_held_payload_untouched(tmp_path, clock):
+    """A failed read is None, never an empty analysis: the held rows stay,
+    behind their own unmoved marker, and the tier backs off."""
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+    _run_analysis(manager)
+    held, held_ts = _slot_copy(manager), manager.cache.analysis_last_good().ts
+
+    routes.dead.add("versions")
+    clock.advance(3_600)
+    _run_analysis(manager, now=clock.now)
+
+    assert routes.calls == ["versions", "overview", "export", "versions"]
+    assert _slot_copy(manager) == held
+    assert manager.cache.analysis_last_good().ts == held_ts
+    assert manager._analysis_failed is True
+    from maxpane_dashboard.data.curator_cache import TIER_FAILURE_BACKOFF_SECONDS
+
+    assert TIER_ANALYSIS not in manager.cache.tiers_due(clock.now + 1)
+    assert TIER_ANALYSIS in manager.cache.tiers_due(
+        clock.now + TIER_FAILURE_BACKOFF_SECONDS[TIER_ANALYSIS] + 1
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("id", 42), ("content_hash", ["not", "a", "string"])),
+)
+def test_a_version_whose_id_or_hash_is_not_a_string_is_a_failed_read(
+    tmp_path, clock, field, value
+):
+    """Both are truthy, so ``fetch_published_version`` hands them over — and
+    both would be worse than useless downstream.
+
+    The version id NAMES A DIRECTORY under ``<root>/archive/`` and the hash is
+    what the next tick compares against, so a non-string of either kind means
+    the block can never match and every tick re-downloads the whole export
+    forever.  Refused once, here, as the failed read it is.
+    """
+    body = _published("versions.json")
+    body["versions"] = [
+        {**entry, field: value} if entry["id"] == PUBLISHED_ID else entry
+        for entry in body["versions"]
+    ]
+    if field == "id":
+        body["published_version"] = value
+    routes = PublishedRoutes(versions=body)
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+
+    _run_analysis(manager)
+
+    assert routes.calls == ["versions"], "no bulk read was spent on it"
+    assert manager.cache.analysis_last_good() is None
+    assert manager._analysis_failed is True
+
+
+def test_a_failed_export_after_a_good_overview_stores_nothing(tmp_path, clock):
+    """Half a pair is not a payload.  The overview lands, the export does not,
+    and the slot stays empty rather than holding clusters with no membership."""
+    routes = PublishedRoutes(dead=("export",))
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+
+    _run_analysis(manager)
+
+    assert routes.calls == ["versions", "overview", "export"]
+    assert manager.cache.analysis_last_good() is None
+    assert manager._analysis_failed is True
+
+
+def test_the_slot_is_never_written_from_half_a_payload(tmp_path, clock, monkeypatch):
+    """Structural, over both outcomes: every payload that reaches the slot
+    carries the analysis AND its provenance, or nothing reaches the slot.
+
+    Recorded at ``CuratorCache.store_analysis`` — the one door — so a write
+    from anywhere in the body is seen, including one added later.
+    """
+    seen: list[dict] = []
+    real = CuratorCache.store_analysis
+
+    def spy(self, payload, *, ts):
+        seen.append(payload)
+        return real(self, payload, ts=ts)
+
+    monkeypatch.setattr(CuratorCache, "store_analysis", spy)
+
+    dead = _analysis_manager(
+        tmp_path / "dead", clock, published=PublishedRoutes(dead=("export",))
+    )
+    _run_analysis(dead)
+    assert seen == [], "a half-read payload never reached the slot"
+
+    alive = _analysis_manager(
+        tmp_path / "alive", clock, published=PublishedRoutes()
+    )
+    _run_analysis(alive)
+    assert len(seen) == 1
+    written = seen[0]
+    assert written["published"]["version_id"] == PUBLISHED_ID
+    assert written["operator_rows"] and written["groups"]
+    assert written["clean_ranks"]
+
+
+def test_a_missing_sybilkit_is_still_the_cannot_run_state_with_no_banner(
+    tmp_path, clock, monkeypatch
+):
+    """The reconstruction still needs the library even though the verdicts no
+    longer do: without it there is nothing to fold the published membership
+    into, so the tier is spaced, no banner lights, and — the sharpened half —
+    not one request is spent finding that out."""
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+    monkeypatch.setattr(curator_clusters, "SYBILKIT_AVAILABLE", False)
+
+    _run_analysis(manager)
+
+    assert routes.calls == []
+    assert manager.cache.analysis_last_good() is None
+    assert manager._analysis_failed is False
+    out = asyncio.run(manager.fetch_and_compute())
+    assert out["degraded"] == []
+    assert out["operator_rows"] is None
+
+
+def test_the_archive_is_called_once_per_new_version(tmp_path, clock, monkeypatch):
+    """T9's idempotence has two halves and only one of them lives in T9.
+
+    The module refuses a version whose ``archived_version`` is already in the
+    slot; **the caller has to put it there**.  Without this the archive re-runs
+    on every fetch of the same version and run 2 moves run 1's freshly written
+    lists on top of the originals it archived a moment earlier.
+    """
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+    seen: list[str] = []
+    real = curator_archive.archive_and_write
+
+    def spy(root, **kwargs):
+        seen.append(kwargs["version_id"])
+        return real(root, **kwargs)
+
+    monkeypatch.setattr(curator_archive, "archive_and_write", spy)
+
+    _run_analysis(manager)
+    assert seen == [PUBLISHED_ID]
+    assert (
+        _slot_copy(manager)["published"]["archived_version"] == PUBLISHED_ID
+    ), "the caller records what it archived, or T9's idempotence is inert"
+    assert (tmp_path / curator_archive.RAW_LIST_NAME).exists()
+    assert (tmp_path / curator_archive.CLEANED_LIST_NAME).exists()
+
+    # Same hash next tick: the archive is not even offered the question.
+    clock.advance(3_600)
+    _run_analysis(manager, now=clock.now)
+    assert seen == [PUBLISHED_ID]
+
+    # A new version supersedes it, and the module is told what run 1 archived.
+    routes.publish(SUPERSEDED_ID)
+    clock.advance(3_600)
+    _run_analysis(manager, now=clock.now)
+    assert seen == [PUBLISHED_ID, SUPERSEDED_ID]
+    assert _slot_copy(manager)["published"]["archived_version"] == SUPERSEDED_ID
+
+
+def test_the_archive_root_is_the_cache_directory_and_nothing_else(
+    tmp_path, clock, monkeypatch
+):
+    """T9 refuses to compute a path and the caller must not compute a wrong one.
+
+    ``root`` is the cache's own directory — which is the directory the record
+    view exports into and reads back — and never ``Path.home() / ".maxpane"``
+    assembled here.  A manager under a temporary cache must therefore never be
+    able to reach somebody's real exports, and this is the assertion that says
+    so rather than the convention that hopes it.
+    """
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+    roots: list[object] = []
+    real = curator_archive.archive_and_write
+
+    def spy(root, **kwargs):
+        roots.append(root)
+        return real(root, **kwargs)
+
+    monkeypatch.setattr(curator_archive, "archive_and_write", spy)
+
+    _run_analysis(manager)
+
+    assert roots == [pathlib.Path(manager.cache.path).parent]
+    assert roots[0] == tmp_path
+
+
+def test_an_archive_failure_does_not_fail_the_load(tmp_path, clock, monkeypatch):
+    """Archiving is housekeeping; the analysis is the deliverable.  A raise
+    inside the archive is logged and the sweep still succeeded."""
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+
+    def boom(*_args, **_kwargs):
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(curator_archive, "archive_and_write", boom)
+
+    _run_analysis(manager)
+
+    entry = manager.cache.analysis_last_good()
+    assert entry is not None and entry.ts == NOW
+    assert entry.payload["operator_rows"]
+    assert entry.payload["published"]["version_id"] == PUBLISHED_ID
+    assert entry.payload["published"]["archived_version"] is None
+    assert manager._analysis_failed is False
+    assert TIER_ANALYSIS not in manager.cache.tiers_due(NOW + 1)
+
+
+def test_a_split_published_pair_is_never_recorded_as_a_successful_archive(
+    tmp_path, clock, monkeypatch
+):
+    """The module reports; the caller decides.
+
+    A mid-archive ``OSError`` can leave ``root`` with the OLD cleaned list
+    beside the NEW raw list, both reading ``complete=True`` — a stale list
+    presented as current.  ``archive_and_write`` cannot unwind that safely, but
+    ``failed`` already names the file, so the caller must refuse to record the
+    version as archived.
+    """
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+
+    def split(_root, **_kwargs):
+        return curator_archive.ArchiveResult(
+            archived=(curator_archive.RAW_LIST_NAME,),
+            written=(curator_archive.RAW_LIST_NAME,),
+            failed=(curator_archive.CLEANED_LIST_NAME,),
+        )
+
+    monkeypatch.setattr(curator_archive, "archive_and_write", split)
+
+    _run_analysis(manager)
+
+    assert _slot_copy(manager)["published"]["archived_version"] is None
+    assert manager.cache.analysis_last_good().payload["operator_rows"]
+
+
+def test_a_failure_that_names_no_published_list_is_still_a_successful_archive(
+    tmp_path, clock, monkeypatch
+):
+    """The other side of the same guard, so it can tell the two apart.
+
+    ``failed`` also names housekeeping that is not a list — a manifest that
+    could not be written, an old export that was already archived.  Neither
+    leaves a split pair in ``root``, so neither may cost the version its
+    ``archived_version`` and send the archive round again.
+    """
+    routes = PublishedRoutes()
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+
+    def manifest_only(_root, **kwargs):
+        return curator_archive.ArchiveResult(
+            archived=(curator_archive.RAW_LIST_NAME,),
+            written=(
+                curator_archive.RAW_LIST_NAME,
+                curator_archive.CLEANED_LIST_NAME,
+            ),
+            failed=(curator_archive.MANIFEST_NAME,),
+        )
+
+    monkeypatch.setattr(curator_archive, "archive_and_write", manifest_only)
+
+    _run_analysis(manager)
+
+    assert _slot_copy(manager)["published"]["archived_version"] == PUBLISHED_ID
+
+
+def test_no_boolean_from_the_versions_payload_reaches_the_slot(tmp_path, clock):
+    """``/versions`` carries a ``"published": true`` stage flag, and every
+    string field beside it is third-party.
+
+    ``SLOT_CLUSTERS``'s no-verdict rule is "no boolean anywhere in the
+    payload", with a permanently empty allowlist, so one copied field would
+    trip it.  The block is therefore assembled field by field and coerced, and
+    this walks the persisted file to prove it.
+    """
+    body = _published("versions.json")
+    body["versions"] = [
+        {
+            **entry,
+            "detector_version": True,
+            "rule_set": True,
+            "rules_sha256": True,
+            "snapshot_block": True,
+            "status_counts": {"clean": True, "flagged": 12_416},
+        }
+        if entry["id"] == PUBLISHED_ID
+        else entry
+        for entry in body["versions"]
+    ]
+    routes = PublishedRoutes(versions=body)
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+
+    _run_analysis(manager)
+    manager.cache.save()
+
+    on_disk = json.loads(
+        pathlib.Path(manager.cache.path).read_text(encoding="utf-8")
+    )
+    stored = on_disk["last_good"]["clusters"]["payload"]
+    assert stored["published"]["version_id"] == PUBLISHED_ID, "guard: it landed"
+
+    offences: list[str] = []
+
+    def walk(node, path="$"):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if isinstance(value, bool):
+                    offences.append(f"{path}.{key}")
+                walk(value, f"{path}.{key}")
+        elif isinstance(node, list):
+            for index, item in enumerate(node):
+                walk(item, f"{path}[{index}]")
+
+    walk(stored)
+    assert offences == []
+    # ...and the hostile fields degraded to absence, never to a coerced lie.
+    assert stored["published"]["detector_version"] is None
+    assert stored["published"]["status_counts"] == {"flagged": 12_416}
+
+
+def test_a_non_mapping_totals_never_reaches_the_build(tmp_path, clock, monkeypatch):
+    """``detect_result_from_published`` calls ``totals.get`` and raises on a
+    list.  The fetch layer's own shape guard is what stops it, and this is the
+    test that says so rather than assuming it."""
+    routes = PublishedRoutes(
+        overview={**_published("overview_trimmed.json"), "totals": []}
+    )
+    manager = _analysis_manager(tmp_path, clock, published=routes)
+    built: list[object] = []
+    real = curator_clusters.build_analysis_from_published
+    monkeypatch.setattr(
+        curator_clusters,
+        "build_analysis_from_published",
+        lambda *a, **k: built.append(k) or real(*a, **k),
+    )
+
+    _run_analysis(manager)
+
+    assert built == [], "the build was never handed a non-mapping totals"
+    assert manager.cache.analysis_last_good() is None
+    assert manager._analysis_failed is True
+
+
+def test_the_expected_counts_agree_with_the_rows_the_archive_wrote(tmp_path, clock):
+    """The count check ``load_export_list`` runs FIRST, end to end.
+
+    ``expected_count`` is the payload's own ``contributors_total`` for the raw
+    list and ``clean_contributors`` for the cleaned one; a file whose length
+    disagrees is rejected as ``count_mismatch`` and the view falls back to the
+    capped live rows **silently**.  So the rows the archive writes and the
+    counts the payload publishes have to be the same two numbers, and this runs
+    the real screen-side reader over the real files to prove it.
+    """
+    from tests.data.test_curator_published_analysis import (
+        _fixture_events,
+        _fixture_firsts,
+    )
+    from maxpane_dashboard.data.curator_list_source import load_export_list
+
+    rows = _published("export_trimmed.json")["rows"]
+    routes = PublishedRoutes()
+    client = _scenario_client({"state": True, "logs": True, "wallet": False})
+    client.answers["fetch_state"] = _state(
+        tx_count=len(rows), contributors=len(rows)
+    )
+    client.answers["fetch_logs"] = lambda *_: _sweep([], to_block=25_770_500)
+    manager = _manager(
+        tmp_path,
+        clock,
+        client=client,
+        analysis_transport=routes.transport,
+        analysis_sleep=no_sleep,
+    )
+    manager.cache.store_events(_fixture_events(), now=NOW)
+    manager.cache.store_first_deposits(_fixture_firsts())
+
+    _run_analysis(manager)
+    out = asyncio.run(manager.fetch_and_compute())
+
+    written_raw = json.loads(
+        (tmp_path / curator_archive.RAW_LIST_NAME).read_text(encoding="utf-8")
+    )
+    written_clean = json.loads(
+        (tmp_path / curator_archive.CLEANED_LIST_NAME).read_text(encoding="utf-8")
+    )
+    assert len(written_raw) == out["contributors_total"] == len(rows)
+    assert len(written_clean) == out["clean_contributors"]
+
+    for cleaned, live in (
+        (False, out["leaderboard_rows"]),
+        (True, out["clean_list_rows"]),
+    ):
+        result = load_export_list(
+            tmp_path,
+            cleaned=cleaned,
+            expected_count=(
+                out["clean_contributors"] if cleaned else out["contributors_total"]
+            ),
+            live_rows=live,
+            you_row=out["you_list_row"],
+        )
+        assert result.complete is True, (cleaned, result.reason)
+        assert result.reason is None
 
 
 # ---------------------------------------------------------------------------
@@ -3048,10 +3764,14 @@ def test_a_held_analysis_still_serves_when_sybilkit_is_gone(
     assert out["degraded"] == []
 
 
-def test_a_sweep_whose_every_source_died_retries_on_the_backoff(tmp_path, clock):
-    """Fix round 1, M2 — tx AND funding both unreachable: the tier-A result
-    still publishes (data-wise honest), but the tier retries on the FAILURE
-    backoff instead of waiting out the full ~30-minute TTL."""
+def test_a_sweep_whose_source_is_unreachable_retries_on_the_backoff(tmp_path, clock):
+    """A transport that RAISES, rather than one that answers 503.
+
+    ``httpx`` raises for a dead host, a DNS failure and a timeout alike, and
+    that exception must not escape a detached task — it degrades to ``None``
+    inside the fetch layer, nothing is published, and the tier retries on the
+    FAILURE backoff instead of waiting out the full ~30-minute TTL.
+    """
 
     async def dead(_request):
         raise httpx.ConnectError("network unreachable")
@@ -3074,10 +3794,8 @@ def test_a_sweep_whose_every_source_died_retries_on_the_backoff(tmp_path, clock)
         await asyncio.wait_for(task, timeout=5)
 
     asyncio.run(_run())
-    entry = manager.cache.analysis_last_good()
-    assert entry is not None                            # the tier-A publish
-    assert entry.payload["operators_count"] == 0
-    assert manager._analysis_failed is False            # it published; no banner
+    assert manager.cache.analysis_last_good() is None    # nothing to publish
+    assert manager._analysis_failed is True              # a source WAS asked
     from maxpane_dashboard.data.curator_cache import TIER_FAILURE_BACKOFF_SECONDS
 
     assert TIER_ANALYSIS not in manager.cache.tiers_due(NOW + 1)
@@ -3093,12 +3811,12 @@ def test_a_failed_sweeps_backoff_counts_from_completion_not_spawn(
     200 s deducted from its retry spacing.  Freshness stamps stay spawn-time;
     only the retry clock moves."""
 
-    def slow_boom(*_args, **_kwargs):
+    async def slow_dead(_request):
         clock.advance(200)                              # the sweep's own duration
-        raise RuntimeError("died late")
+        raise httpx.ConnectError("died late")
 
     manager = _analysis_manager(tmp_path, clock)
-    monkeypatch.setattr(curator_clusters, "build_analysis", slow_boom)
+    manager._analysis_transport = httpx.MockTransport(slow_dead)
 
     async def _run():
         task = manager._spawn_analysis({TIER_ANALYSIS}, NOW, ANALYSIS_CONFIG)

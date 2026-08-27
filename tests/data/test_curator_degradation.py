@@ -336,13 +336,10 @@ from maxpane_dashboard.data.curator_cache import (
 )
 from tests.data.test_curator_manager import (
     ANALYSIS_CONFIG,
+    PublishedRoutes,
     _analysis_manager,
     _store_farm_slot,
 )
-
-
-def _boom(*_args, **_kwargs):
-    raise RuntimeError("the analysis fold is on fire")
 
 
 def _run_sweep(manager, now):
@@ -361,15 +358,19 @@ def test_a_not_yet_run_analysis_is_not_a_degradation(tmp_path):
     assert out["operator_rows"] is None            # not yet run, honestly
 
 
-def test_a_failed_sweep_with_no_last_good_lights_logs_and_blanks_nothing(
-    tmp_path, monkeypatch
-):
+def test_a_failed_sweep_with_no_last_good_lights_logs_and_blanks_nothing(tmp_path):
     """The keys' None must read as 'could not analyze', and the only frozen
     group name that story belongs to is `logs` — while the fold and the clock
-    keep working untouched."""
+    keep working untouched.
+
+    The failure is injected at the TRANSPORT (the published version check
+    answers 503), not by monkeypatching a function: a dead source is what this
+    rule is about, and asserting it structurally is what CLAUDE.md asks for.
+    """
     clock = Clock(DURING_GRACE)
-    manager = _analysis_manager(tmp_path, clock)
-    monkeypatch.setattr(curator_clusters, "build_analysis", _boom)
+    manager = _analysis_manager(
+        tmp_path, clock, published=PublishedRoutes(dead=("versions",))
+    )
 
     _run_sweep(manager, clock.now)
     assert manager._analysis_failed is True
@@ -390,15 +391,14 @@ def test_a_failed_sweep_with_no_last_good_lights_logs_and_blanks_nothing(
     assert out["hour_seconds_left"] is not None
 
 
-def test_a_failed_sweep_with_a_last_good_serves_it_and_lights_nothing(
-    tmp_path, monkeypatch
-):
+def test_a_failed_sweep_with_a_last_good_serves_it_and_lights_nothing(tmp_path):
     """An analysis-only failure while the log fold is fresh keeps the keys on
     last-good behind their own marker and does NOT falsely light `logs`."""
     clock = Clock(DURING_GRACE)
-    manager = _analysis_manager(tmp_path, clock)
+    manager = _analysis_manager(
+        tmp_path, clock, published=PublishedRoutes(dead=("versions",))
+    )
     stored = _store_farm_slot(manager, ts=clock.now - 1_800)
-    monkeypatch.setattr(curator_clusters, "build_analysis", _boom)
 
     _run_sweep(manager, clock.now)
     assert manager._analysis_failed is True
@@ -410,15 +410,14 @@ def test_a_failed_sweep_with_a_last_good_serves_it_and_lights_nothing(
     assert out["analysis_as_of_hhmm"] is not None  # the OLD sweep's marker
 
 
-def test_the_banner_clears_when_a_later_sweep_publishes(tmp_path, monkeypatch):
+def test_the_banner_clears_when_a_later_sweep_publishes(tmp_path):
     clock = Clock(DURING_GRACE)
-    manager = _analysis_manager(tmp_path, clock)
-    real = curator_clusters.build_analysis
-    monkeypatch.setattr(curator_clusters, "build_analysis", _boom)
+    routes = PublishedRoutes(dead=("versions",))
+    manager = _analysis_manager(tmp_path, clock, published=routes)
     _run_sweep(manager, clock.now)
     assert asyncio.run(manager.fetch_and_compute())["degraded"] == [SOURCE_LOGS]
 
-    monkeypatch.setattr(curator_clusters, "build_analysis", real)
+    routes.dead.clear()                       # the publisher answers again
     clock.advance(TIER_FAILURE_BACKOFF_SECONDS[TIER_ANALYSIS] + 1)
     _run_sweep(manager, clock.now)
     assert manager._analysis_failed is False

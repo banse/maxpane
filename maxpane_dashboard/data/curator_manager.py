@@ -90,7 +90,9 @@ from maxpane_dashboard.analytics.curator_signals import (
 )
 from maxpane_dashboard.data import curator_addresses as A
 from maxpane_dashboard.data import ens
+from maxpane_dashboard.data import curator_archive
 from maxpane_dashboard.data import curator_clusters
+from maxpane_dashboard.data import curator_published
 from maxpane_dashboard.data.curator_published import PublishedVersion, version_label
 from maxpane_dashboard.data.curator_cache import (
     DEFAULT_CACHE_PATH,
@@ -141,6 +143,72 @@ def _opt_int(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         return None
     return value
+
+
+def _str_or_none(value: Any) -> str | None:
+    """A non-empty ``str``, else ``None``.  Third-party fields only."""
+    return value if isinstance(value, str) and value else None
+
+
+def _published_block(
+    version: PublishedVersion,
+    *,
+    fetched_at: float,
+    archived_version: str | None,
+) -> dict[str, Any]:
+    """The slot's ``published`` provenance, assembled field by field.
+
+    Field by field, and coerced, for one reason: **no boolean may enter
+    ``SLOT_CLUSTERS``**.  The no-verdict rule there is "no boolean anywhere in
+    the payload" with a permanently empty allowlist, and ``/versions`` carries
+    a ``"published": true`` stage flag beside fields that are all third-party
+    strings — so copying an entry, or trusting one of its values, trips the
+    guard.  The service's own *word* for the stage (``"published"`` /
+    ``"superseded"``) is the only form of that fact this dashboard would ever
+    persist; the flag itself never travels.  Every value below is a string, a
+    number or ``None``, and a hostile one degrades to absence rather than to a
+    coerced lie.
+
+    The key set is the one :func:`curator_clusters.slot_payload` documents and
+    :func:`_analysis_version` reads back, unchanged.
+    """
+    counts = version.status_counts if isinstance(version.status_counts, Mapping) else {}
+    return {
+        "version_id": _str_or_none(version.version_id),
+        "content_hash": _str_or_none(version.content_hash),
+        "detector_version": _str_or_none(version.detector_version),
+        "rule_set": _str_or_none(version.rule_set),
+        "rules_sha256": _str_or_none(version.rules_sha256),
+        "snapshot_block": _opt_int(version.snapshot_block),
+        "status_counts": {
+            str(name): count
+            for name, count in counts.items()
+            if _opt_int(count) is not None
+        },
+        "fetched_at": float(fetched_at),
+        "archived_version": _str_or_none(archived_version),
+    }
+
+
+def _is_same_published(held: Any, version: PublishedVersion) -> bool:
+    """Is the held slot already this exact published analysis?
+
+    **Both** halves are compared.  The id alone is not enough: the publisher
+    rebuilds under one id, and an id-only check would keep serving superseded
+    rows until the id itself changed.  The hash alone is not enough either —
+    it is what names the bytes, but the id is what names the archive
+    directory, and the two must agree before a tick may decide there is
+    nothing to do.
+    """
+    if not isinstance(held, Mapping):
+        return False
+    published = held.get("published")
+    if not isinstance(published, Mapping):
+        return False
+    return (
+        published.get("version_id") == version.version_id
+        and published.get("content_hash") == version.content_hash
+    )
 
 
 def _analysis_version(published: Any) -> str | None:
@@ -1681,29 +1749,64 @@ class CuratorManager:
     async def _pool_analysis(
         self, tiers: set[str], now: float, config: dict[str, Any] | None
     ) -> dict[str, Any]:
-        """One bounded, resumable Tier-B+C sweep, published as a last-good.
+        """Read THE LIST's **published** analysis and publish it as a last-good.
 
-        The rule (PRD §4, ruling R3): candidates only, never the population.
-        The adapter picks the tier-A component members plus a small control
-        margin, extends the accumulated fingerprint/funding coverage by one
-        budgeted pass (the cursor rides in the slot payload), and re-runs the
-        pure analysis over everything held.  The pure folds run in a worker
-        thread: ~0.4 s of detect over a real history would otherwise stall
-        the TUI's event loop twice an hour.
+        The producer changed and nothing else did: the tier, the slot, the
+        detached spawn, the freshness marker and every degradation rule are the
+        ones :meth:`_spawn_analysis` and :meth:`_degraded` already describe.
+        What this method does now is check a version and, only if it moved,
+        fetch the analysis, rebuild it over the LOCAL fold, store it and
+        archive what it supersedes.
 
-        "Cannot run yet" — no events folded, or the ``once`` tier has not
-        produced the live rate and minimum — is **not** a failed sweep: the
-        tier is spaced (so the offer is not re-made every cycle) and no
-        degradation lights, because whichever source is actually missing
-        already tells its own story.
+        **The order is the design.**
+
+        1. the tier gates it, as before;
+        2. no ``sybilkit`` is the cannot-run state — the *reconstruction* still
+           needs the library even though the verdicts no longer do;
+        3. no events, or no live-read rate/minimum, is the same cannot-run
+           state, for the same reason it always was;
+        4. no session is cannot-run too (see :meth:`_analysis_session`): a
+           double with neither a client nor a transport was never able to open
+           anything, so nothing was asked and nothing is degraded;
+        5. the version check.  ``None`` is a **failed** read — a source was
+           asked and did not answer — so the tier backs off and the held
+           payload is left exactly as it is;
+        6. **the same ``version_id`` AND the same ``content_hash`` end the
+           tick.**  A published version is immutable and content-addressed, so
+           this is the whole cost story: ~1 KB per tick instead of the live
+           export's 8.3 MB.  Both halves are load-bearing — the publisher
+           rebuilds under one id, and an id-only comparison would serve
+           superseded rows until the id itself changed;
+        7. the two bulk reads, which land together or not at all;
+        8. the rebuild, in a worker thread: the pure folds measured 0.1 s but
+           ``Dataset.from_events`` took 0.5 s over 28,353 events, and the TUI's
+           event loop must wear neither;
+        9. the archive, in its own thread and its own ``try`` — housekeeping
+           that moves megabytes and must never fail the load;
+        10. **one** store, from a complete pair, carrying the analysis and its
+            provenance together.
+
+        Step 9 runs BEFORE step 10 rather than after it, which inverts the
+        plan's sketch, and the reason is step 10's own rule.  The slot has to
+        record ``published.archived_version`` — that flag is the only thing
+        that stops :func:`curator_archive.archive_and_write` re-archiving the
+        same version, and on a second run the files it would move are the ones
+        run 1 just wrote.  The flag is not knowable until the archive has
+        answered, so recording it after a store means a *second* store, and
+        "the slot is written once, from a complete pair" is the stronger rule.
+        What the sketched ordering was protecting — a failed archive must not
+        cost the analysis — is kept by the ``try``: whatever the archive does,
+        the store below runs.
         """
         if TIER_ANALYSIS not in tiers:
             return {"ok": None, "swept": False}
         if not curator_clusters.SYBILKIT_AVAILABLE:
-            # The guarded-import compatibility story (fix round 1): until
-            # maxpane's own dependency list can name sybilkit (it is not on
-            # PyPI yet), absence is the cannot-run state — spaced retry, no
-            # banner, the twelve keys in their honest not-yet-run None.
+            # The guarded-import compatibility story: an older install or a
+            # partial environment cannot rebuild the published membership into
+            # sybilkit objects, so absence is the cannot-run state — spaced
+            # retry, no banner, the analysis keys in their honest not-yet-run
+            # None.  Checked BEFORE the version request so a machine without
+            # the library never spends one.
             if not self._sybilkit_missing_logged:
                 self._sybilkit_missing_logged = True
                 logger.info(
@@ -1721,72 +1824,164 @@ class CuratorManager:
             # sweep's own duration deducted from it.  Freshness stamps stay
             # spawn-time — only failures are stamped at completion.
             # Deliberately does NOT clear `_analysis_failed`: a failed sweep
-            # followed by a cannot-run one keeps its banner state (ledgered
-            # fix-round-1 deferral; the sequence takes a config slot decaying
-            # mid-flight, which nothing produces today).
+            # followed by a cannot-run one keeps its banner state.
             self.cache.mark_failed(TIER_ANALYSIS, float(self._clock()))
             return {"ok": None, "swept": False}
 
-        firsts = self.cache.first_deposits()
+        client, transport = self._analysis_session()
+        if client is None and transport is None:
+            # Not a dead source: nothing was asked.  In production
+            # `_analysis_session` always borrows the real client's own
+            # session, so this is the bare-double state — and treating it as a
+            # failure would light `logs` for a test that simply never wired a
+            # transport, which is the opposite of what a degradation means.
+            self.cache.mark_failed(TIER_ANALYSIS, float(self._clock()))
+            return {"ok": None, "swept": False}
+
+        version = await curator_published.fetch_published_version(
+            client=client, transport=transport
+        )
+        if (
+            version is None
+            or _str_or_none(version.version_id) is None
+            or _str_or_none(version.content_hash) is None
+        ):
+            # An id or a hash that is not a string is a FAILED read, not a
+            # version.  It could never match the held block, so every tick
+            # would re-download the whole export; and the id names a directory
+            # under `<root>/archive/`, which `archive_and_write` would refuse
+            # anyway.  Refused here, once, rather than degrading twice.
+            self._analysis_failed = True
+            self.cache.mark_failed(TIER_ANALYSIS, float(self._clock()))
+            return {"ok": False, "swept": True}
+
         entry = self.cache.analysis_last_good()
-        prior = (
-            entry.payload.get("enrichment")
-            if entry is not None and isinstance(entry.payload, dict)
+        held = (
+            entry.payload
+            if entry is not None and isinstance(entry.payload, Mapping)
             else None
         )
+        if _is_same_published(held, version):
+            # Nothing to download.  The tier restarts on its SUCCESS clock and
+            # the held payload keeps its own stamp: it IS the current analysis,
+            # and re-storing it to move a marker would be the second write this
+            # method exists not to make.
+            self._analysis_failed = False
+            self.cache.mark_fetched(TIER_ANALYSIS, now)
+            return {"ok": True, "swept": False}
+
+        analysis = await curator_published.fetch_published_analysis(
+            version, client=client, transport=transport
+        )
+        if analysis is None:
+            # Either bulk read missing means no pair, and half a pair is not a
+            # payload: the held rows stay exactly where they are.
+            self._analysis_failed = True
+            self.cache.mark_failed(TIER_ANALYSIS, float(self._clock()))
+            return {"ok": False, "swept": True}
+
         preset = curator_clusters.build_preset(rate, minimum)
-        funding_wanted, tx_wanted = await asyncio.to_thread(
-            curator_clusters.candidate_targets, events, firsts, preset
-        )
-        client, transport = self._analysis_session()
-        enrich = await curator_clusters.fetch_enrichment(
-            tx_wanted=tx_wanted,
-            funding_wanted=funding_wanted,
-            state=prior,
-            client=client,
-            transport=transport,
-            sleep=self._analysis_sleep,
-        )
+        firsts = self.cache.first_deposits()
         result = await asyncio.to_thread(
-            lambda: curator_clusters.build_analysis(
+            lambda: curator_clusters.build_analysis_from_published(
                 events,
                 firsts,
-                txs=enrich.txs,
-                funding=enrich.funding,
+                clusters=analysis.clusters,
+                rows=analysis.rows,
+                totals=analysis.totals,
                 wallet=self.wallet,
                 config=preset,
             )
         )
-        payload = curator_clusters.slot_payload(
-            result, enrichment=enrich.state()
+
+        archived_version = await self._archive_published(
+            version, rows=analysis.rows, result=result, previous_slot=held
         )
-        self.cache.store_analysis(payload, ts=now)
-        # M2: the enrichment health decides the RETRY clock, never the
-        # publish.  The tier-A(+accumulated) result above is data-wise honest
-        # either way; but a pass in which every source that was asked a
-        # question was down should retry on the failure backoff, not wait out
-        # the full TTL — and a partial outage is logged so a one-sided
-        # coverage stall is discoverable.
-        attempted = [
-            ok for ok in (enrich.tx_ok, enrich.funding_ok) if ok is not None
-        ]
-        if attempted and not any(attempted):
-            logger.warning(
-                "Curator analysis sweep published on held data only: every "
-                "enrichment source that was asked a question was unreachable; "
-                "retrying on the failure backoff"
-            )
-            self.cache.mark_failed(TIER_ANALYSIS, float(self._clock()))
-        else:
-            if False in attempted:
-                dead = "fingerprints" if enrich.tx_ok is False else "funding"
-                logger.warning(
-                    "Curator analysis sweep published with the %s source "
-                    "unreachable; its coverage extends next sweep", dead
-                )
-            self.cache.mark_fetched(TIER_ANALYSIS, now)
+        self.cache.store_analysis(
+            curator_clusters.slot_payload(
+                result,
+                published=_published_block(
+                    version, fetched_at=now, archived_version=archived_version
+                ),
+            ),
+            ts=now,
+        )
+        self.cache.mark_fetched(TIER_ANALYSIS, now)
         self._analysis_failed = False
         return {"ok": True, "swept": True}
+
+    async def _archive_published(
+        self,
+        version: PublishedVersion,
+        *,
+        rows: Any,
+        result: Any,
+        previous_slot: Any,
+    ) -> str | None:
+        """Move the superseded exports aside; return the version to record.
+
+        ``None`` means "do not record this version as archived", and it is
+        returned for **every** outcome that is not a clean pair on disk:
+
+        * the module raised (it says it never does; a caller that trusts that
+          is one release away from being wrong);
+        * ``failed`` names either published list.  A mid-archive ``OSError``
+          can leave ``root`` holding the OLD cleaned list beside the NEW raw
+          one, both answering ``complete=True`` to ``load_export_list`` — a
+          stale list presented as current, which is the one thing this
+          dashboard may never do.  :func:`curator_archive.archive_and_write`
+          cannot unwind that safely, so it reports and the caller decides.
+
+        ``failed`` naming anything else — a manifest, an already-archived old
+        export — is not a split pair and does not cost the version its flag.
+
+        The whole call runs in a worker thread: on the live install it moves
+        7.3 MB and writes ~8 MB of JSON, and the TUI's event loop is not the
+        place for that.  ``root`` is the cache's own directory, which is the
+        directory the record view exports into and reads from; nothing here
+        computes a home directory of its own.
+        """
+        root = Path(self.cache.path).parent
+        archived_at = float(self._clock())
+        try:
+            outcome = await asyncio.to_thread(
+                lambda: curator_archive.archive_and_write(
+                    root,
+                    version_id=version.version_id,
+                    rows=rows,
+                    # Folded in here rather than passed in: it is one pass over
+                    # every analysed address (19,522 on the live population) and
+                    # it belongs on the same thread as the write it feeds.
+                    bands=curator_clusters.bands_by_address(result),
+                    previous_slot=previous_slot,
+                    now=archived_at,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — housekeeping never fails a load
+            logger.warning(
+                "Curator archive raised for %s; the analysis still published: %s",
+                version.version_id,
+                exc,
+            )
+            return None
+        split = [
+            name
+            for name in (
+                curator_archive.RAW_LIST_NAME,
+                curator_archive.CLEANED_LIST_NAME,
+            )
+            if name in outcome.failed
+        ]
+        if split:
+            logger.warning(
+                "Curator archive left %s unwritten for %s; not recording the "
+                "version as archived so the next fetch of it tries again",
+                ", ".join(split),
+                version.version_id,
+            )
+            return None
+        return version.version_id
+
 
     # -- the WP3 seam --------------------------------------------------------
 
