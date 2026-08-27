@@ -1744,7 +1744,7 @@ class CuratorManager:
             logger.debug("curator analysis sweep stopped on close: %s", exc)
 
     def _analysis_session(self) -> tuple[Any, Any]:
-        """``(client, transport)`` the enrichment fetch may use.
+        """``(client, transport)`` the published-analysis read may use.
 
         An injected transport wins (tests); otherwise the real client's own
         ``httpx`` session is borrowed (production — ``_client`` is the
@@ -2673,8 +2673,9 @@ class CuratorManager:
             if self.cache.get_last_good(slot) is None:
                 out.add(group)
         out |= self._client_degradation()
-        # The analysis sweep is enrichment folded over the log story (plan §6
-        # risk 7 — no new group name; the title bar's vocabulary is frozen).
+        # The analysis sweep folds the published linked-wallet analysis over
+        # the log story (plan §6 risk 7 — no new group name; the title bar's
+        # vocabulary is frozen).
         # A failed sweep lights ``logs`` ONLY while there is no analysis
         # last-good to serve: with one, the keys ride behind their own
         # ``analysis_as_of_hhmm`` marker and nothing lights; and a sweep that

@@ -49,13 +49,15 @@ try:
     from sybilkit.curator import clean_list as _clean_list
     from sybilkit.curator import segments as _segments
 except ImportError:  # pragma: no cover — exercised through the flag in tests
-    #: ``sybilkit`` is not on PyPI yet, so until maxpane's own dependency list
-    #: can name it (WP6/packaging: the pyproject gains ``sybilkit`` at the
-    #: first release AFTER the library publishes), the import is guarded and
-    #: this flag is the compatibility story: the manager treats absence as
-    #: the analysis's cannot-run state (spaced retry, no banner), while the
-    #: merge, the R9 ``link_conf`` seeding and a HELD last-good keep working —
-    #: they read persisted payloads, never the library.
+    #: ``sybilkit`` published to PyPI as 0.1.0 on 2026-08-19 and 0.1.1 is the
+    #: latest released version; the in-tree 0.2.0 has **not** been published,
+    #: which is why ``pyproject.toml`` still pins ``sybilkit>=0.1.0`` rather
+    #: than the newer floor. The import stays guarded regardless: this flag
+    #: is the compatibility story — an older install, a partial environment
+    #: or a future name change all treat absence as the analysis's cannot-run
+    #: state (spaced retry, no banner), while the merge, the R9 ``link_conf``
+    #: seeding and a HELD last-good keep working — they read persisted
+    #: payloads, never the library.
     SYBILKIT_AVAILABLE = False
 else:
     SYBILKIT_AVAILABLE = True
@@ -184,7 +186,7 @@ def build_preset(points_per_eth: Any, min_deposit_wei: Any) -> CuratorPreset:
 
 @dataclass(slots=True)
 class AnalysisResult:
-    """Everything the manager needs to fill the twelve analysis keys.
+    """Everything the manager needs to fill the fourteen analysis keys.
 
     Holds the library objects (for the agreement tests and the linkage
     lookups) *and* the already-shaped rows, so the manager never touches a
@@ -478,9 +480,10 @@ def build_analysis(
 
     *events* and *first_deposits* are whatever the cache holds (the decoded
     ``DepositEvent`` models, or mapping rows — ``Dataset.from_events`` reads
-    both).  *txs*/*funding* are the detached sweep's accumulated enrichment;
-    tier A alone is a legal run whose losses are honest (the ≥2-family gate
-    simply finds less).
+    both).  *txs*/*funding* are whatever tx-fingerprint and first-funder maps
+    the caller already holds — nothing in this module fetches them (T11
+    removed the detached enrichment sweep that once did); tier A alone is a
+    legal run whose losses are honest (the ≥2-family gate simply finds less).
 
     *config* is a ready :class:`CuratorPreset`; without one, both live reads
     are **required** and a missing one raises (see :func:`build_preset`).

@@ -41,6 +41,16 @@ _HEADERS = {"Accept": "application/json", "User-Agent": "maxpane"}
 
 @dataclass(frozen=True)
 class PublishedVersion:
+    """One entry off ``/versions`` -- the version the service names as published.
+
+    ``content_hash`` is **publisher-asserted, never independently verified**:
+    nothing in this module (or in ``curator_manager``/``curator_archive``,
+    the two callers that key off it) recomputes it from the ``/overview`` or
+    ``/list/export`` bytes and compares. It is a trust boundary, not a defect
+    to fix -- the manager's freshness check and the archive's directory name
+    both rest on the service telling the truth about what it shipped.
+    """
+
     version_id: str
     content_hash: str
     detector_version: str | None

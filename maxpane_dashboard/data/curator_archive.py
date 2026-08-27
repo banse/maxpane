@@ -40,6 +40,13 @@ deliberately:
   and a stray temporary is a smaller price than a module that has learned how
   to delete.
 
+**Nothing prunes ``<root>/archive/``.**  Each archived analysis is roughly 8 MB on the
+live install, this module has no deletion primitive by design (see above), and the
+compound key means a republish under the same ``version_id`` adds a new directory
+rather than reusing one.  Named here so it stays a known, accepted cost rather than a
+silent one -- nobody owns cleaning it up, and adding a deletion primitive to satisfy
+that is exactly the kind of "fix" this docstring exists to head off.
+
 Archiving is housekeeping; the analysis is the deliverable.  Nothing here
 raises: every failure is logged, named in ``ArchiveResult.failed``, and
 returned to a caller that carries on.
@@ -322,7 +329,10 @@ def _pair_blocked(root: Path, directory: Path) -> str | None:
     Checked here, before anything moves, because refusing up front is the only
     version of this that cannot leave a half-state: a partial move cannot be
     unwound afterwards without this module learning to remove files.  ``root``
-    keeps its previous coherent pair and the next sweep retries.
+    does not get any *worse* -- whatever pair it already held, intact or
+    already split by an earlier crash, is left exactly as it is -- and every
+    sweep against the same published pair repeats the identical refusal:
+    nothing here makes it self-heal.
 
     **Both halves of the condition are load-bearing.**  A taken destination is
     only a hazard while ``root`` still holds that name: if it does not, there
@@ -332,7 +342,10 @@ def _pair_blocked(root: Path, directory: Path) -> str | None:
     first, every natural interruption lands in that set.  The sharpest of them
     leaves a stale raw list in ``root`` presented as current with no marker and
     its counterpart missing, which is the exact harm this gate exists to
-    prevent, made permanent.  Only a new ``version_id`` would ever clear it.
+    prevent, made permanent.  Only a different :func:`archive_key` clears it --
+    a new ``version_id``, or the same id republished under a new
+    ``content_hash``: either one names a fresh directory, so a republish is
+    never blocked by an old crash's leftovers even when the id did not change.
     """
     taken = [
         name
