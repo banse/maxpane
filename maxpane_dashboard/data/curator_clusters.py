@@ -1119,7 +1119,10 @@ def merge_leaderboard_grade(leaderboard_rows: Any, analysis: Any) -> None:
 
 
 def slot_payload(
-    result: AnalysisResult, *, enrichment: Mapping[str, Any] | None = None
+    result: AnalysisResult,
+    *,
+    enrichment: Mapping[str, Any] | None = None,
+    published: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The JSON-safe shape ``SLOT_CLUSTERS`` persists.  Revisable rows only.
 
@@ -1130,6 +1133,16 @@ def slot_payload(
     the same payload so coverage extends incrementally across sweeps — and
     across restarts.  Everything new goes **inside** that dict, which is why
     this payload's own key set has not changed since it was frozen.
+
+    ``published`` is the analysis's provenance -- ``{version_id, content_hash,
+    detector_version, rule_set, rules_sha256, snapshot_block, status_counts,
+    fetched_at, archived_version}`` -- and it is the **manager**'s to
+    assemble, never this function's: nothing here computes it, stamps a
+    clock into it, or reaches into it.  It is copied in whole, exactly like
+    ``enrichment``, and left out of the payload entirely when absent so an
+    older reader (or a round trip taken before the first successful fetch)
+    sees no key at all rather than a ``null`` -- ``enrichment``'s own shape,
+    followed rather than reinvented.
     """
     payload: dict[str, Any] = {
         "operator_rows": [dict(row) for row in result.operator_rows],
@@ -1145,6 +1158,8 @@ def slot_payload(
     }
     if enrichment is not None:
         payload["enrichment"] = dict(enrichment)
+    if published is not None:
+        payload["published"] = dict(published)
     return payload
 
 

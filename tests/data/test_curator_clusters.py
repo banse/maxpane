@@ -438,6 +438,62 @@ def test_slot_payload_is_json_safe_revisable_rows_only():
     walk(payload["groups"])
 
 
+#: A JSON-safe provenance block exactly as the manager will assemble it: an
+#: opaque id/hash pair, the detector's own version, the rule set it ran and
+#: that rule set's hash, the block the snapshot was taken at, a status-count
+#: fold, a caller-stamped fetch time, and an archived-version marker.  No
+#: field here is a verdict -- it is what was read, not what was decided.
+PUBLISHED_BLOCK = {
+    "version_id": "v42",
+    "content_hash": "deadbeef" * 8,
+    "detector_version": "2026.08.1",
+    "rule_set": "curator-v3",
+    "rules_sha256": "abc123" * 10,
+    "snapshot_block": 21_000_000,
+    "status_counts": {"clean": 40, "review": 5, "flagged": 3},
+    "fetched_at": 1_786_968_000.0,
+    "archived_version": None,
+}
+
+
+def test_the_published_block_carries_the_version_and_its_hash():
+    """``published=`` rides beside ``enrichment=`` -- an id, a hash, counts.
+    Not something ``AnalysisResult`` computes: the caller (the manager)
+    assembles it and hands it in whole, exactly like ``enrichment``."""
+    payload = curator_clusters.slot_payload(
+        farm_analysis(), published=PUBLISHED_BLOCK
+    )
+    round_tripped = json.loads(json.dumps(payload))       # raises on a non-primitive
+    assert round_tripped["published"] == PUBLISHED_BLOCK
+    assert round_tripped["published"]["version_id"] == "v42"
+    assert round_tripped["published"]["content_hash"] == PUBLISHED_BLOCK["content_hash"]
+    assert round_tripped["published"]["status_counts"] == {
+        "clean": 40, "review": 5, "flagged": 3,
+    }
+
+
+def test_a_payload_with_no_published_block_still_loads():
+    """A payload written by an older build carries ``enrichment`` and no
+    ``published`` key at all -- an absence, never a null -- and it must still
+    load: ignored, not rejected.  ``you_linkage``/``grade_of`` are the
+    existing readers of a persisted (rather than live) payload, and neither
+    of them may need ``published`` to answer."""
+    result = farm_analysis(wallet=FARM_MEMBERS[0])
+    old_style_enrichment = {
+        "txs": {}, "funding": {}, "pending": [], "reasons": {}, "page_bound": 20,
+    }
+    payload = json.loads(json.dumps(
+        curator_clusters.slot_payload(result, enrichment=old_style_enrichment)
+    ))
+    assert "published" not in payload
+    assert payload["enrichment"] == old_style_enrichment
+
+    assert curator_clusters.you_linkage(
+        FARM_MEMBERS[0], payload
+    ) == curator_clusters.you_linkage(FARM_MEMBERS[0], result)
+    assert curator_clusters.grade_of(FARM_MEMBERS[0], payload) in ("high", "low")
+
+
 def test_the_curve_numbers_are_wei_exact_through_the_adapter():
     """Every point fold is the library's, at the caller's measured rate."""
     from sybilkit.curve import curve_points
@@ -1405,13 +1461,22 @@ def test_no_curator_module_opens_a_socket_for_analysis():
 
 def test_the_analysis_slot_persists_no_boolean_verdict(tmp_path):
     """PRD §2: revisable rows only.  No is_sybil/verdict key reaches the
-    file, and no boolean rides any 'flag'-shaped key — the grade is a word
-    the next sweep may revise, never a stored judgement.
+    file, and no boolean rides ANYWHERE in it — the grade is a word the next
+    sweep may revise, never a stored judgement.
+
+    The check used to gate the boolean half of that on a ``"flag" in key``
+    substring, which never looks at a ``review_members`` entry (its keys are
+    addresses).  Broadened to flag any boolean at all, anywhere in the tree
+    — verified by mutation: reverting to the old ``"flag" in key`` gate lets
+    a hand-planted boolean under ``review_members`` sail through green.
 
     The enrichment half is a **real** sweep's ``state()`` rather than a
     hand-typed stub, so the scan runs over the per-address funding cursor
     too: that is the newest thing in the file and the one whose entries carry
-    a ``funder`` and a walk position.
+    a ``funder`` and a walk position.  ``groups[0]`` is given a non-empty
+    ``review_members`` and the payload is given a ``published`` block, so
+    the walk actually visits both new channels rather than merely being
+    handed an input that happens not to contain them.
     """
     from maxpane_dashboard.data.curator_cache import CuratorCache
 
@@ -1427,13 +1492,25 @@ def test_the_analysis_slot_persists_no_boolean_verdict(tmp_path):
     ).state()
     assert enrichment["cursors"], "guard: the scan must see a cursor"
 
+    result = farm_analysis()
+    # `build_analysis` never fills `review_members` (only the published-fold
+    # builder does) -- planted directly so this walk has a real, non-empty
+    # instance of the channel to visit, not an absent key.
+    result.groups[0]["review_members"] = {FARM_MEMBERS[0]: ["amount", "funding"]}
+    assert result.groups[0]["review_members"], "guard: the scan must see a review entry"
+
     cache = CuratorCache(path=str(tmp_path / "c.json"), clock=lambda: 1_786_968_000.0)
     cache.store_analysis(
-        curator_clusters.slot_payload(farm_analysis(), enrichment=enrichment),
+        curator_clusters.slot_payload(
+            result, enrichment=enrichment, published=PUBLISHED_BLOCK
+        ),
         ts=1_786_968_000.0,
     )
     cache.save()
     on_disk = json.loads(pathlib.Path(cache.path).read_text(encoding="utf-8"))
+    stored = on_disk["last_good"]["clusters"]["payload"]
+    assert stored["groups"][0]["review_members"], "guard: it survived to disk"
+    assert stored["published"] == PUBLISHED_BLOCK, "guard: it survived to disk"
 
     offences: list[str] = []
 
@@ -1443,7 +1520,7 @@ def test_the_analysis_slot_persists_no_boolean_verdict(tmp_path):
                 where = f"{path}.{key}"
                 if key in ("is_sybil", "sybil", "verdict"):
                     offences.append(where)
-                if "flag" in key and isinstance(value, bool):
+                if isinstance(value, bool):
                     offences.append(f"{where} (boolean)")
                 walk(value, where)
         elif isinstance(node, list):

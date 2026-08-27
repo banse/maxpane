@@ -401,6 +401,23 @@ def test_every_group_carries_its_own_review_members_and_no_others():
         assert group["review_members"] == expected
 
 
+def test_groups_carry_review_members_through_a_round_trip():
+    """T7: ``slot_payload`` is a producer only -- the round trip through the
+    *file* (``json.dumps``/``loads``) is what actually proves the channel is
+    not lost on the way, and only over a group this fixture genuinely gives
+    a non-empty ``review_members`` -- a round trip that carries ``{}`` both
+    ways would prove nothing (this branch's own worked lesson)."""
+    result = _build()
+    with_reviews = [g for g in result.groups if g["review_members"]]
+    assert with_reviews, "fixture must produce at least one non-empty group"
+
+    payload = json.loads(json.dumps(cc.slot_payload(result)))
+    assert len(payload["groups"]) == len(result.groups)
+    for original, carried in zip(result.groups, payload["groups"]):
+        assert carried["review_members"] == original["review_members"]
+    assert any(g["review_members"] for g in payload["groups"])
+
+
 def test_a_group_with_no_review_member_carries_an_empty_mapping_not_none():
     """``{}`` reads "we looked and there were none"; ``None`` reads "unknown"."""
     ex = _load("export_trimmed.json")
