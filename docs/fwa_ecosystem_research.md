@@ -285,6 +285,13 @@ At block `25,849,714`:
 - token balance `155,442.979785911074829165 FWA`;
 - `$FWA.isDistributor(currentPullPool) = true`.
 
+Lifecycle decoding was independently rechecked against Ethereum at block
+`25,850,301`: `getRound(367)` on PullPool v2 returned raw enum value `5`, and
+`getRound(65)` on GroupPull returned `5`. The verified layouts define `0` as
+the empty/none sentinel and values `1..5` as the named lifecycle states, so
+those live rows are `Refunding` and `Expired`; a zero-based display lookup
+would be off by one and must not be used.
+
 Related production surfaces:
 
 | Surface | Address | Snapshot counter/context |
