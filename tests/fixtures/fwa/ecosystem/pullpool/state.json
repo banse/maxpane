@@ -1,0 +1,106 @@
+{
+  "_provenance": "Deterministic ABI fixture. The current PullPool and factory counters mirror the chain-validated research snapshot at block 25849714; GroupPull accounting values are test-only sentinels.",
+  "block_number": 25849714,
+  "observed_at": 1787925600.0,
+  "pullpools": {
+    "v1": {
+      "round_count": 3,
+      "accounted_eth_wei": 0,
+      "token_balance_wei": 0,
+      "distributor_enabled": true,
+      "paused": false,
+      "deprecated": true,
+      "default_round": {
+        "state": 4,
+        "ticketsSold": 100,
+        "maxTickets": 100,
+        "escrow": 0,
+        "feeOwed": 0,
+        "refundPool": 0,
+        "ethPot": 0,
+        "tokenPot": 0
+      }
+    },
+    "v2": {
+      "round_count": 367,
+      "accounted_eth_wei": 618943394256984616,
+      "token_balance_wei": 155442979785911074829165,
+      "distributor_enabled": true,
+      "can_pay_tokens": true,
+      "paused": false,
+      "deprecated": false,
+      "current_open_round": 0,
+      "pending_pull_count": 0,
+      "default_round": {
+        "state": 4,
+        "ticketsSold": 100,
+        "maxTickets": 100,
+        "escrow": 0,
+        "feeOwed": 0,
+        "refundPool": 0,
+        "ethPot": 100000000000000000,
+        "tokenPot": 100000000000000000000,
+        "referralPool": 0
+      },
+      "round_overrides": {
+        "364": {
+          "state": 5,
+          "refundPool": 150000000000000000,
+          "ethPot": 0,
+          "tokenPot": 0
+        },
+        "365": {
+          "state": 5,
+          "refundPool": 150000000000000000,
+          "ethPot": 0,
+          "tokenPot": 0
+        },
+        "366": {
+          "state": 5,
+          "refundPool": 150000000000000000,
+          "ethPot": 0,
+          "tokenPot": 0
+        },
+        "367": {
+          "state": 5,
+          "refundPool": 168943394256984616,
+          "ethPot": 0,
+          "tokenPot": 0
+        }
+      }
+    }
+  },
+  "group_pull": {
+    "round_count": 65,
+    "accounted_eth_wei": 1250000000000000000,
+    "accounted_fwa_wei": 250000000000000000000,
+    "token_balance_wei": 300000000000000000000,
+    "distributor_enabled": true,
+    "paused": false,
+    "deprecated": false,
+    "live_round": 65,
+    "buying_rounds": 0,
+    "default_round": {
+      "state": 5,
+      "ticketsSold": 40,
+      "escrow": 0,
+      "ethPool": 0,
+      "ethPaid": 0,
+      "fwaPot": 0,
+      "fwaPaid": 0,
+      "aborted": false
+    },
+    "round_overrides": {
+      "65": {
+        "state": 5,
+        "ethPool": 1250000000000000000,
+        "fwaPot": 250000000000000000000
+      }
+    }
+  },
+  "order_factories": {
+    "standing_orders:v1": 72,
+    "standing_orders:v2": 160,
+    "group_orders:v1": 3
+  }
+}

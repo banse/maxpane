@@ -1,0 +1,115 @@
+{
+  "_provenance": "Deterministic semantic events encoded through the committed project ABIs. The duplicate RoundSettled models overlap replay and must collapse by event identity.",
+  "events": [
+    {
+      "family": "pullpool",
+      "surface": "pullpool",
+      "version": "v1",
+      "event": "RoundSettled",
+      "block_number": 25625282,
+      "timestamp": 1787925000,
+      "log_index": 1,
+      "tx_hash": "0x0101010101010101010101010101010101010101010101010101010101010101",
+      "values": {"roundId": 3, "outcome": 0, "tokenPot": 0, "ethPot": 0}
+    },
+    {
+      "family": "pullpool",
+      "surface": "pullpool",
+      "version": "v2",
+      "event": "RoundOpened",
+      "block_number": 25639384,
+      "timestamp": 1787925010,
+      "log_index": 2,
+      "tx_hash": "0x0202020202020202020202020202020202020202020202020202020202020202",
+      "values": {"roundId": 4}
+    },
+    {
+      "family": "pullpool",
+      "surface": "pullpool",
+      "version": "v2",
+      "event": "RoundSettled",
+      "block_number": 25639385,
+      "timestamp": 1787925020,
+      "log_index": 3,
+      "tx_hash": "0x0303030303030303030303030303030303030303030303030303030303030303",
+      "values": {"roundId": 4, "outcome": 0, "tokenPot": 500000000000000000000, "ethPot": 200000000000000000}
+    },
+    {
+      "family": "pullpool",
+      "surface": "pullpool",
+      "version": "v2",
+      "event": "RoundSettled",
+      "block_number": 25639385,
+      "timestamp": 1787925020,
+      "log_index": 3,
+      "tx_hash": "0x0303030303030303030303030303030303030303030303030303030303030303",
+      "values": {"roundId": 4, "outcome": 0, "tokenPot": 500000000000000000000, "ethPot": 200000000000000000}
+    },
+    {
+      "family": "pullpool",
+      "surface": "pullpool",
+      "version": "v2",
+      "event": "RoundRewardCredited",
+      "block_number": 25639386,
+      "timestamp": 1787925030,
+      "log_index": 4,
+      "tx_hash": "0x0404040404040404040404040404040404040404040404040404040404040404",
+      "values": {"roundId": 4, "epoch": 7, "amount": 100000000000000000000}
+    },
+    {
+      "family": "pullpool",
+      "surface": "pullpool",
+      "version": "v2",
+      "event": "ShareClaimed",
+      "block_number": 25639387,
+      "timestamp": 1787925040,
+      "log_index": 5,
+      "tx_hash": "0x0505050505050505050505050505050505050505050505050505050505050505",
+      "values": {"roundId": 4, "buyer": "0x1111111111111111111111111111111111111111", "tokenAmount": 200000000000000000000, "ethAmount": 80000000000000000}
+    },
+    {
+      "family": "group_pull",
+      "surface": "group_pull",
+      "version": "v1",
+      "event": "RoundDistributing",
+      "block_number": 25671216,
+      "timestamp": 1787925050,
+      "log_index": 6,
+      "tx_hash": "0x0606060606060606060606060606060606060606060606060606060606060606",
+      "values": {"roundId": 65, "fwaPot": 250000000000000000000, "ethPool": 1250000000000000000}
+    },
+    {
+      "family": "standing_orders",
+      "surface": "standing_orders",
+      "version": "v1",
+      "event": "OrderCreated",
+      "block_number": 25631179,
+      "timestamp": 1787925060,
+      "log_index": 7,
+      "tx_hash": "0x0707070707070707070707070707070707070707070707070707070707070707",
+      "values": {"order": "0x2222222222222222222222222222222222222222", "owner": "0x3333333333333333333333333333333333333333", "ticketsPerRound": 2, "crankFee": 1000000000000000}
+    },
+    {
+      "family": "standing_orders",
+      "surface": "standing_orders",
+      "version": "v2",
+      "event": "OrderCreated",
+      "block_number": 25643540,
+      "timestamp": 1787925070,
+      "log_index": 8,
+      "tx_hash": "0x0808080808080808080808080808080808080808080808080808080808080808",
+      "values": {"order": "0x4444444444444444444444444444444444444444", "owner": "0x5555555555555555555555555555555555555555", "recipient": "0x6666666666666666666666666666666666666666", "referrer": "0x7777777777777777777777777777777777777777", "ticketsPerRound": 3, "crankFee": 2000000000000000, "minSecondsBetweenBuys": 3600}
+    },
+    {
+      "family": "group_pull",
+      "surface": "group_orders",
+      "version": "v1",
+      "event": "OrderCreated",
+      "block_number": 25683291,
+      "timestamp": 1787925080,
+      "log_index": 9,
+      "tx_hash": "0x0909090909090909090909090909090909090909090909090909090909090909",
+      "values": {"order": "0x8888888888888888888888888888888888888888", "owner": "0x9999999999999999999999999999999999999999", "recipient": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "ticketsPerRound": 4, "crankFee": 3000000000000000, "minSecondsBetweenBuys": 7200}
+    }
+  ]
+}
