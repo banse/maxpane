@@ -1,0 +1,63 @@
+{
+  "observed_at": 1787882400.0,
+  "block_number": 25849714,
+  "block_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+  "versions": {
+    "v1": {
+      "state": 3,
+      "totalDeposited": 31182369000000000000,
+      "depositorCount": 139,
+      "pullsDone": 379,
+      "pot": 28577237981895000000,
+      "totalPaid": 28577237981895000000,
+      "potRemaining": 0,
+      "accountedEth": 0,
+      "acquisitionSpend": 25000000000000000000,
+      "pullBudget": 0,
+      "bountyReserve": 0,
+      "auctionEscrow": 0,
+      "pendingRefundTotal": 0,
+      "activeCount": 0
+    },
+    "v2": {
+      "state": 3,
+      "totalDeposited": 16911000000000000000,
+      "depositorCount": 88,
+      "pullsDone": 209,
+      "pot": 17021800872000000000,
+      "totalPaid": 17011800872000000000,
+      "potRemaining": 10000000000000000,
+      "accountedEth": 10000000000000000,
+      "acquisitionSpend": 14500000000000000000,
+      "pullBudget": 0,
+      "bountyReserve": 0,
+      "auctionEscrow": 0,
+      "pendingRefundTotal": 0,
+      "activeCount": 0,
+      "fwaReceived": 100000000000000000000,
+      "fwaTotalPaid": 90000000000000000000,
+      "fwaOperatorClaimable": 0,
+      "isDistributor": true
+    },
+    "v3": {
+      "state": 3,
+      "totalDeposited": 13309000000000000000,
+      "depositorCount": 42,
+      "pullsDone": 126,
+      "pot": 8941490283500920765,
+      "totalPaid": 8659990213714544174,
+      "potRemaining": 281500069786376591,
+      "accountedEth": 281500069786376591,
+      "acquisitionSpend": 10764747870499079235,
+      "pullBudget": 0,
+      "bountyReserve": 0,
+      "auctionEscrow": 0,
+      "pendingRefundTotal": 0,
+      "activeCount": 0,
+      "fwaReceived": 0,
+      "fwaTotalPaid": 0,
+      "fwaOperatorClaimable": 0,
+      "isDistributor": false
+    }
+  }
+}
