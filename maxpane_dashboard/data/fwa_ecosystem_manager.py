@@ -633,6 +633,7 @@ class FWAEcosystemManager:
         self._last_chain_head = state_block
         self._state_block = state_block
         self._cycle_pin_valid = True
+        event_feed_changed = self._reconcile_event_integrity(state_block)
         calls = (
             (GROUP_CORE, self._fetch_core(state_block)),
             (GROUP_DROPS, self.drops_client.fetch_drops(block_number=state_block)),
@@ -669,6 +670,8 @@ class FWAEcosystemManager:
                     self._failed_groups.discard(group)
 
         now = _finite_now(self._clock)
+        if event_feed_changed:
+            await self._store_event_fragment(now, state_block=state_block)
         if any_success and all_success:
             self.cache.mark_fetched(TIER_FAST, now)
         else:
@@ -808,6 +811,8 @@ class FWAEcosystemManager:
         latest_age: float | None = None
         if latest is not None and latest.block_timestamp is not None:
             latest_age = max(0.0, source_now - float(latest.block_timestamp))
+        if token_status == "mismatch":
+            latest_age = None
         fragment = {
             "network_state_block": state.state_block,
             "network_chain_head": state.chain_head,
@@ -839,6 +844,31 @@ class FWAEcosystemManager:
             fragment,
             ts=source_now,
             block_number=state.state_block,
+        )
+        if token_status == "mismatch":
+            self._neutralize_cached_flow_fragment(fragment)
+
+    def _neutralize_cached_flow_fragment(
+        self, core_fragment: Mapping[str, Any]
+    ) -> None:
+        """Persist the same fail-closed flow rows shown in this process."""
+
+        previous = self.cache.get_last_good(GROUP_FLOW_LOGS)
+        if previous is None:
+            return
+        payload = deepcopy(previous.payload)
+        payload["network_flow_rows"] = [
+            deepcopy(row)
+            for row in core_fragment.get("network_flow_rows", ())
+            if isinstance(row, Mapping) and row.get("source_kind") == "chain_log"
+        ]
+        payload["network_flow_stale"] = True
+        payload["network_last_buyback_age_s"] = None
+        self.cache.store_last_good(
+            GROUP_FLOW_LOGS,
+            payload,
+            ts=previous.ts,
+            block_number=previous.block_number,
         )
 
     @staticmethod
@@ -1054,17 +1084,25 @@ class FWAEcosystemManager:
     def _store_drops_fragment(self, read: Any) -> None:
         rows = [_row_dict(row) for row in read.rows]
         partial = self._drops_read_partial(read)
+        row_blocks = [row.get("block_number") for row in rows]
+        as_of_block = read.state_block
+        if partial:
+            as_of_block = (
+                min(row_blocks)
+                if row_blocks and all(type(block) is int for block in row_blocks)
+                else None
+            )
         self.cache.store_last_good(
             GROUP_DROPS,
             {
                 "network_drop_rows": rows,
                 "network_drops_available": True,
-                "network_drops_as_of_block": read.state_block,
+                "network_drops_as_of_block": as_of_block,
                 "network_drops_stale": partial,
                 "network_drop_count": int(read.valid_count),
             },
             ts=float(read.observed_at),
-            block_number=read.state_block,
+            block_number=as_of_block,
         )
 
     def _store_project_fragment(
@@ -1177,9 +1215,8 @@ class FWAEcosystemManager:
                 else:
                     self._project_log_failed.add(label)
 
-        project_pages_ok = bool(
-            project_results and all(project_results.values())
-        )
+        project_pages_ok = bool(project_results and all(project_results.values()))
+        event_feed_changed = self._reconcile_event_integrity(block_number)
         coverage_incomplete = {
             source
             for source in _PROJECT_LOG_SOURCES
@@ -1187,7 +1224,8 @@ class FWAEcosystemManager:
         }
         for source in tuple(self._event_integrity_failed):
             if (
-                source not in coverage_incomplete
+                source in self._event_integrity_rebuild
+                and source not in coverage_incomplete
                 and not self._source_integrity_mismatched(source, block_number)
             ):
                 self._event_integrity_failed.discard(source)
@@ -1214,7 +1252,7 @@ class FWAEcosystemManager:
             self.cache.mark_fetched(TIER_MEDIUM, now)
         else:
             self.cache.mark_failed(TIER_MEDIUM, now)
-        if any(project_results.values()):
+        if event_feed_changed or any(project_results.values()):
             await self._store_event_fragment(
                 now,
                 state_block=block_number,
@@ -2397,6 +2435,36 @@ class FWAEcosystemManager:
                     WatermarkKey("fwap", manifest.version, manifest.role), None
                 )
 
+    def _begin_event_integrity_rebuild(self, source: str) -> bool:
+        if source in self._event_integrity_rebuild:
+            return False
+        self._invalidate_event_source(source)
+        self._event_integrity_rebuild.add(source)
+        self._project_log_failed.add(source)
+        self._failed_groups.add(GROUP_PROJECT_LOGS)
+        if source == "fwa":
+            self._failed_groups.add(GROUP_FLOW_LOGS)
+        return True
+
+    def _reconcile_event_integrity(self, state_block: int) -> bool:
+        changed = False
+        for source, label, stored in (
+            ("fwa", "core", self._core_integrity),
+            ("pullpool", "pullpool", self._pull_integrity),
+            ("fwap", "fwap", self._fwap_integrity),
+        ):
+            integrity = self._matching_integrity(stored, state_block)
+            if self._mismatched_event_addresses(label, integrity):
+                if self._sync_event_integrity(label, integrity, complete=False):
+                    changed = True
+            elif (
+                source in self._event_integrity_failed
+                and source not in self._event_integrity_rebuild
+                and self._begin_event_integrity_rebuild(source)
+            ):
+                changed = True
+        return changed
+
     def _sync_event_integrity(
         self, label: str, integrity: Any | None, *, complete: bool
     ) -> bool:
@@ -2416,15 +2484,7 @@ class FWAEcosystemManager:
             # Recovery does not make rows decoded under untrusted runtime code
             # fresh.  Rebuild raw history from deployment before clearing the
             # partial-feed marker.
-            first_recovery = source not in self._event_integrity_rebuild
-            if first_recovery:
-                self._invalidate_event_source(source)
-                self._event_integrity_rebuild.add(source)
-            self._project_log_failed.add(source)
-            self._failed_groups.add(GROUP_PROJECT_LOGS)
-            if source == "fwa":
-                self._failed_groups.add(GROUP_FLOW_LOGS)
-            return first_recovery
+            return self._begin_event_integrity_rebuild(source)
         return False
 
     def _source_integrity_mismatched(

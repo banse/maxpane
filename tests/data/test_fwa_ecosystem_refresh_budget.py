@@ -9,6 +9,7 @@ import pytest
 
 import maxpane_dashboard.data.fwa_ecosystem_manager as manager_module
 from maxpane_dashboard.data.fwa_ecosystem_cache import (
+    FWAEcosystemCache,
     GROUP_FLOW_LOGS,
     GROUP_INTEGRITY,
     GROUP_PROJECT_LOGS,
@@ -38,6 +39,7 @@ from tests.data.test_fwa_ecosystem_manager import (
     BLOCK,
     NOW,
     _Closable,
+    _fresh_background,
     _manager,
     _project_row,
 )
@@ -1876,7 +1878,7 @@ async def test_confirmed_partial_mismatch_latches_until_complete_recovery(
 async def test_integrity_mismatch_immediately_suppresses_cached_event_semantics(
     target, tmp_path, monkeypatch
 ) -> None:
-    manager, clock, core, _drops, pull, _mega, fwap, _logs = _manager(
+    manager, clock, core, drops, pull, mega, fwap, logs = _manager(
         tmp_path, monkeypatch
     )
     initial = await manager.fetch_and_compute()
@@ -1982,7 +1984,49 @@ async def test_integrity_mismatch_immediately_suppresses_cached_event_semantics(
         )
         assert buyback["value"] is None
         assert buyback["integrity"] == "mismatch"
+        assert payload["network_last_buyback_age_s"] is None
         assert GROUP_FLOW_LOGS in payload["network_degraded_sources"]
+        cached_flow = manager.cache.get_last_good(GROUP_FLOW_LOGS)
+        assert cached_flow is not None
+        cached_buyback = next(
+            row
+            for row in cached_flow.payload["network_flow_rows"]
+            if row["key"] == "buyback_swap_eth"
+        )
+        assert cached_buyback["value"] is None
+        assert cached_buyback["integrity"] == "mismatch"
+        assert cached_flow.payload["network_flow_stale"] is True
+        assert cached_flow.payload["network_last_buyback_age_s"] is None
+
+        assert manager.cache.save()
+        restored_cache = FWAEcosystemCache(
+            path=manager.cache.path, clock=clock
+        )
+        assert restored_cache.load()
+        _fresh_background(restored_cache, clock)
+        fresh = FWAEcosystemManager(
+            tokenomics_client=core,
+            tokenomics_log_client=logs,
+            drops_client=drops,
+            pullpool_adapter=pull,
+            megarip_adapter=mega,
+            fwap_adapter=fwap,
+            fwap_log_source=None,
+            cache=restored_cache,
+            clock=clock,
+            persist_cache=False,
+        )
+        for restarted in (fresh._visible_snapshot(), await fresh.fetch_and_compute()):
+            restarted_buyback = next(
+                row
+                for row in restarted["network_flow_rows"]
+                if row["key"] == "buyback_swap_eth"
+            )
+            assert restarted_buyback["value"] is None
+            assert restarted_buyback["integrity"] == "mismatch"
+            assert restarted_buyback["stale"] is True
+            assert restarted["network_last_buyback_age_s"] is None
+        await fresh.close()
 
     if target == "core":
         manager._flow_coverage_end = BLOCK
@@ -2062,6 +2106,125 @@ async def test_latched_mismatch_is_not_applied_before_its_evidence_block(
     assert manager._matching_integrity(result, BLOCK - 1) is None
     assert manager._matching_integrity(latched, BLOCK - 1) is None
     assert manager._matching_integrity(latched, BLOCK) is not None
+    await manager.close()
+
+
+async def test_rollback_before_mismatch_stays_partial_until_trusted_rescan(
+    tmp_path, monkeypatch
+) -> None:
+    manager, clock, core, _drops, pull, _mega, fwap, _logs = _manager(
+        tmp_path, monkeypatch
+    )
+    await manager.fetch_and_compute()
+    trusted = _event(
+        address=manager_module.FWA_TOKEN,
+        block_number=BLOCK - 1,
+        log_index=7,
+        family="fwa",
+    )
+    trusted.update(
+        eth_amount=3.0,
+        fwa_amount=9.0,
+        detail="canonical pre-mismatch event",
+    )
+    manager._merge_events((trusted,))
+    await manager._store_event_fragment(clock(), state_block=BLOCK)
+
+    async def read_core(_block_number):
+        return _core_integrity(
+            BLOCK, complete=True, mismatch=True, mismatch_role="token"
+        )
+
+    async def read_pull(_block_number):
+        return _project_integrity("pullpool", BLOCK, complete=True)
+
+    async def read_fwap(_block_number):
+        return _project_integrity("fwap", BLOCK, complete=True)
+
+    core.fetch_official_integrity = read_core
+    pull.fetch_integrity = read_pull
+    fwap.fetch_integrity = read_fwap
+    await manager._run_integrity_cycle()
+    assert manager._events[trusted["event_id"]]["eth_amount"] is None
+
+    manager._flow_coverage_end = BLOCK
+    core.head_block = BLOCK - 1
+    await manager._run_fast_cycle()
+    assert manager._flow_coverage_end is None
+
+    async def ready(_block):
+        return True
+
+    manager._refresh_flow_logs = ready
+    manager._refresh_fwair_logs = ready
+    manager._refresh_pullpool_logs = ready
+    manager._refresh_megarip_logs = ready
+    manager._refresh_fwap_logs = ready
+    history_caught_up = manager._source_history_caught_up
+    manager._source_history_caught_up = lambda source, state_block: (
+        history_caught_up(source, state_block) if source == "fwa" else True
+    )
+
+    await manager._run_medium_cycle()
+    rolled_back = manager.cache.latest_snapshot().payload
+    still_suppressed = next(
+        row
+        for row in rolled_back["network_events"]
+        if row["event_id"] == trusted["event_id"]
+    )
+    assert manager._flow_coverage_end is None
+    assert "fwa" in manager._event_integrity_failed
+    assert "fwa" in manager._event_integrity_rebuild
+    assert rolled_back["network_feed_unavailable_reason"] == "partial: fwa"
+    assert still_suppressed["eth_amount"] is None
+    assert still_suppressed["event_key"] == "integrity_mismatch"
+    assert still_suppressed["stale"] is True
+    assert GROUP_PROJECT_LOGS in rolled_back["network_degraded_sources"]
+
+    # Model the completed deployment-to-rollback rescan.  Only now may the
+    # canonical pre-evidence event regain its decoded semantics.
+    manager._replace_events(
+        (trusted,),
+        address=manager_module.FWA_TOKEN,
+        from_block=BLOCK - 1,
+        to_block=BLOCK - 1,
+        reorged=True,
+    )
+    manager._flow_coverage_end = BLOCK - 1
+    clock.advance(1.0)
+    await manager._run_medium_cycle()
+
+    rebuilt = manager.cache.latest_snapshot().payload
+    restored = next(
+        row
+        for row in rebuilt["network_events"]
+        if row["event_id"] == trusted["event_id"]
+    )
+    assert "fwa" not in manager._event_integrity_failed
+    assert "fwa" not in manager._event_integrity_rebuild
+    assert rebuilt["network_feed_unavailable_reason"] is None
+    assert restored["eth_amount"] == 3.0
+    assert restored["fwa_amount"] == 9.0
+    assert restored["event_key"] == "test"
+    assert restored["stale"] is False
+    assert GROUP_PROJECT_LOGS not in rebuilt["network_degraded_sources"]
+
+    # If the mismatched block becomes canonical again, the retained evidence
+    # must immediately re-suppress the event before the next integrity poll.
+    core.head_block = BLOCK
+    clock.advance(1.0)
+    await manager._run_fast_cycle()
+    bounced = manager.cache.latest_snapshot().payload
+    suppressed_again = next(
+        row
+        for row in bounced["network_events"]
+        if row["event_id"] == trusted["event_id"]
+    )
+    assert "fwa" in manager._event_integrity_failed
+    assert bounced["network_feed_unavailable_reason"] == "partial: fwa"
+    assert suppressed_again["eth_amount"] is None
+    assert suppressed_again["event_key"] == "integrity_mismatch"
+    assert GROUP_PROJECT_LOGS in bounced["network_degraded_sources"]
     await manager.close()
 
 

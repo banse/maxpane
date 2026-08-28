@@ -399,6 +399,16 @@ async def test_drop_hole_keeps_valid_rows_but_marks_snapshot_partial(
         verified_source=True,
         integrity="ok",
     )
+    older = row.model_copy(
+        update={
+            "launch_id": 3,
+            "launch_address": "0x" + "56" * 20,
+            "collection_name": "Earlier cached launch",
+            "block_number": BLOCK - 5,
+            "observed_at": clock() - 5.0,
+            "stale": True,
+        }
+    )
 
     async def partial_drops(*, block_number: int):
         return SimpleNamespace(
@@ -406,20 +416,22 @@ async def test_drop_hole_keeps_valid_rows_but_marks_snapshot_partial(
             state_block=block_number,
             available=True,
             integrity="ok",
-            rows=(row,),
+            rows=(row, older),
             holes=(2,),
             issues=("launch_2_address_unavailable",),
-            valid_count=1,
+            valid_count=2,
         )
 
     drops.fetch_drops = partial_drops
 
     payload = await manager.fetch_and_compute()
 
-    assert payload["network_drop_count"] == 1
+    assert payload["network_drop_count"] == 2
     assert payload["network_drops_available"] is True
     assert payload["network_drops_stale"] is True
-    assert payload["network_drop_rows"][0]["stale"] is True
+    assert payload["network_drops_as_of_block"] == BLOCK - 5
+    assert all(row["stale"] is True for row in payload["network_drop_rows"])
+    assert manager.cache.get_last_good(GROUP_DROPS).block_number == BLOCK - 5
     assert GROUP_DROPS in payload["network_degraded_sources"]
     await manager.close()
 

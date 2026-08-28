@@ -524,8 +524,8 @@ shutdown leak exists.
 .venv/bin/python -m pytest -q \
   tests/data/test_fwa_*.py tests/analytics/test_fwa_*.py \
   tests/screens/test_fwa_screen.py tests/screens/test_fwa_network_layout.py \
-  tests/widgets/ \
-  --ignore=tests/widgets/test_fwa_accessibility.py
+  tests/widgets/test_fwa_*.py \
+  --deselect=tests/widgets/test_fwa_accessibility.py
 ```
 
 **Done when:** PULLS first paint and controls remain intact, NETWORK is complete on first
@@ -562,9 +562,9 @@ toggle from cached/blank state, and the app-wide width pin is still 143.
 ```bash
 .venv/bin/python -m pytest -q \
   tests/data/test_fwa_*.py tests/analytics/test_fwa_*.py \
-  tests/screens/test_fwa*.py tests/widgets/ \
+  tests/screens/test_fwa*.py tests/widgets/test_fwa_*.py \
   tests/test_fwa_guardrails.py tests/test_fwa_theme.py \
-  --ignore=tests/widgets/test_fwa_accessibility.py
+  --deselect=tests/widgets/test_fwa_accessibility.py
 
 .venv/bin/python -m pytest -q tests/widgets/test_fwa_accessibility.py
 .venv/bin/python -m pytest
