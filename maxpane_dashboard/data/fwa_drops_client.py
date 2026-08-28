@@ -23,7 +23,7 @@ from collections.abc import Callable, Mapping, Sequence
 from types import MappingProxyType
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from maxpane_dashboard.data.evm_abi import (
     ZERO_ADDRESS,
@@ -340,12 +340,21 @@ class FWAIRDropsRead(BaseModel):
     chain_head: int | None
     block_timestamp: int | None
     next_launch_id: int | None
+    registry_fingerprint: str | None
+    enumeration_reset: bool
     available: bool
     integrity: Literal["ok", "warning", "mismatch", "unknown"]
     rows: tuple[DropRow, ...]
     holes: tuple[int, ...]
     integrity_mismatch_ids: tuple[int, ...]
     issues: tuple[str, ...]
+
+    @field_validator("registry_fingerprint")
+    @classmethod
+    def _valid_registry_fingerprint(cls, value: str | None) -> str | None:
+        if value is not None and not _BYTES32_RE.fullmatch(value):
+            raise ValueError("registry_fingerprint must be a canonical bytes32")
+        return value
 
     @property
     def valid_count(self) -> int:
@@ -783,6 +792,7 @@ class FWAIRDropsClient(FWAClient):
         self._known_next_launch_id: int | None = None
         self._known_launch_runtime_hash: str | None = None
         self._last_drop_state_block: int | None = None
+        self._enumeration_reset_pending = False
 
     def _event_client(self, address: str) -> FWALogClient:
         client = self._event_clients.get(address)
@@ -810,6 +820,12 @@ class FWAIRDropsClient(FWAClient):
         self._known_next_launch_id = None
         self._known_launch_runtime_hash = None
         self._last_drop_state_block = None
+
+    def _invalidate_launch_authority(self) -> None:
+        """Clear rows and latch a reset until a successful enumeration."""
+
+        self._clear_launch_cache()
+        self._enumeration_reset_pending = True
 
     def _prune_launch_cache(self, next_launch_id: int) -> None:
         """Discard accumulator entries outside the live manager id range."""
@@ -920,6 +936,7 @@ class FWAIRDropsClient(FWAClient):
         integrity: Literal["mismatch", "unknown"],
         issue: str,
         next_launch_id: int | None = None,
+        registry_fingerprint: str | None = None,
     ) -> FWAIRDropsRead:
         return FWAIRDropsRead(
             observed_at=observed_at,
@@ -927,6 +944,8 @@ class FWAIRDropsClient(FWAClient):
             chain_head=state_block,
             block_timestamp=None,
             next_launch_id=next_launch_id,
+            registry_fingerprint=registry_fingerprint,
+            enumeration_reset=False,
             available=False,
             integrity=integrity,
             rows=(),
@@ -978,7 +997,7 @@ class FWAIRDropsClient(FWAClient):
                 issue="manager_code_unavailable",
             )
         if manager_hash != OFFICIAL_BY_ROLE["fwair_manager"].runtime_codehash:
-            self._clear_launch_cache()
+            self._invalidate_launch_authority()
             return self._empty(
                 observed_at=observed_at,
                 state_block=state_block,
@@ -999,27 +1018,34 @@ class FWAIRDropsClient(FWAClient):
         values = [_successful(header[i] if i < len(header) else None) for i in range(4)]
         next_launch_id = _uint(values[0])
         expected_child_hash = _bytes32(values[1])
+        registry_fingerprint = (
+            expected_child_hash
+            if expected_child_hash is not None
+            and expected_child_hash != "0x" + "0" * 64
+            else None
+        )
         manager_fwa = _address(values[2])
         manager_authority = _address(values[3])
         if (
             next_launch_id is None
             or next_launch_id < 1
-            or expected_child_hash is None
-            or expected_child_hash == "0x" + "0" * 64
+            or registry_fingerprint is None
         ):
             return self._empty(
                 observed_at=observed_at,
                 state_block=state_block,
                 integrity="unknown",
                 issue="manager_state_unavailable",
+                registry_fingerprint=registry_fingerprint,
             )
         if manager_fwa != FWA_CORE or manager_authority != FWAIR_WHITELIST_AUTHORITY:
-            self._clear_launch_cache()
+            self._invalidate_launch_authority()
             return self._empty(
                 observed_at=observed_at,
                 state_block=state_block,
                 integrity="mismatch",
                 issue="manager_dependency_mismatch",
+                registry_fingerprint=registry_fingerprint,
             )
         issues: list[str] = []
         try:
@@ -1037,7 +1063,7 @@ class FWAIRDropsClient(FWAClient):
         launch_ids, next_scan_cursor, reset_cache = self._launch_page(
             next_launch_id=next_launch_id,
             state_block=state_block,
-            expected_child_hash=expected_child_hash,
+            expected_child_hash=registry_fingerprint,
         )
         launch_results = await self._multicall(
             [
@@ -1134,7 +1160,7 @@ class FWAIRDropsClient(FWAClient):
                 and child_token == FWA_TOKEN
                 and child_id == launch_id
             )
-            if actual_child_hash != expected_child_hash or not links_match:
+            if actual_child_hash != registry_fingerprint or not links_match:
                 record_issue(launch_id, "integrity_mismatch")
                 mismatch_rows.append(
                     _mismatch_row(launch_id, address, state_block, observed_at)
@@ -1226,13 +1252,13 @@ class FWAIRDropsClient(FWAClient):
         self._trim_launch_failure_metadata()
         self._launch_scan_cursor = next_scan_cursor
         self._known_next_launch_id = next_launch_id
-        self._known_launch_runtime_hash = expected_child_hash
+        self._known_launch_runtime_hash = registry_fingerprint
         self._last_drop_state_block = state_block
 
-        fresh_ids = set(refreshed_rows)
+        failed_ids = set(holes)
         rows = tuple(
             row
-            if launch_id in fresh_ids
+            if launch_id not in failed_ids and row.block_number == state_block
             else row.model_copy(update={"stale": True})
             for launch_id, row in sorted(self._launch_rows.items())
         )
@@ -1246,7 +1272,20 @@ class FWAIRDropsClient(FWAClient):
             for issue in self._launch_issues[launch_id]
         )
         global_issues = tuple(issues)
-        partial = len(launch_ids) < next_launch_id - 1
+        resolved_ids = set(self._launch_rows)
+        resolved_ids.update(self._launch_holes)
+        expected_count = next_launch_id - 1
+        coverage_complete = (
+            len(resolved_ids) == expected_count
+            and all(1 <= launch_id < next_launch_id for launch_id in resolved_ids)
+        )
+        partial = (
+            not coverage_complete
+            or any(row.stale for row in rows)
+            or bool(self._launch_holes)
+            or bool(self._launch_issues)
+            or bool(global_issues)
+        )
         aggregate_issues = (
             global_issues
             + cached_issues
@@ -1258,12 +1297,15 @@ class FWAIRDropsClient(FWAClient):
             integrity = "warning"
         else:
             integrity = "ok"
-        return FWAIRDropsRead(
+        enumeration_reset = reset_cache or self._enumeration_reset_pending
+        result = FWAIRDropsRead(
             observed_at=observed_at,
             state_block=state_block,
             chain_head=state_block,
             block_timestamp=block_timestamp,
             next_launch_id=next_launch_id,
+            registry_fingerprint=registry_fingerprint,
+            enumeration_reset=enumeration_reset,
             available=True,
             integrity=integrity,
             rows=rows,
@@ -1271,6 +1313,8 @@ class FWAIRDropsClient(FWAClient):
             integrity_mismatch_ids=mismatch_tuple,
             issues=aggregate_issues,
         )
+        self._enumeration_reset_pending = False
+        return result
 
     async def fetch_events(
         self,

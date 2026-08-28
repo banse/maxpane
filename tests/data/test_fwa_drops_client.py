@@ -17,6 +17,7 @@ from maxpane_dashboard.data.fwa_client import MULTICALL3
 from maxpane_dashboard.data.fwa_drops_client import (
     COLLECTION_NAME_SELECTOR,
     FWAIRDropsClient,
+    FWAIRDropsRead,
     FWAIR_LAUNCH_EVENT_SPECS,
     FWAIR_MANAGER_EVENT_SPECS,
     FWAIRLaunchState,
@@ -215,7 +216,9 @@ class SimulatedFWAIR:
         if signature == "nextLaunchId()":
             return True, _uint_word(self.fixture["next_launch_id"])
         if signature == "launchRuntimeCodeHash()":
-            return True, _CHILD_CODEHASH
+            return True, self.fixture.get(
+                "launch_runtime_codehash", _CHILD_CODEHASH
+            )
         if signature == "fwa()":
             return True, _address_word(self.fixture.get("manager_fwa", FWA_CORE))
         if signature == "whitelistAuthority()":
@@ -438,6 +441,8 @@ async def test_two_launches_decode_exact_rows_and_units(
     assert result.available is True
     assert result.integrity == "ok"
     assert result.next_launch_id == 3
+    assert result.registry_fingerprint == _CHILD_CODEHASH
+    assert result.enumeration_reset is False
     assert result.valid_count == 2
     assert result.holes == ()
     assert [row.launch_id for row in result.rows] == [1, 2]
@@ -455,6 +460,14 @@ async def test_two_launches_decode_exact_rows_and_units(
     assert second.supporter_reserve_fwa == pytest.approx(11555.862078983022)
     assert second.block_number == fixture["block_number"]
     assert second.observed_at == fixture["observed_at"]
+    with pytest.raises(ValidationError, match="registry_fingerprint"):
+        FWAIRDropsRead.model_validate(
+            {**result.model_dump(), "registry_fingerprint": "0x1234"}
+        )
+    with pytest.raises(ValidationError, match="enumeration_reset"):
+        FWAIRDropsRead.model_validate(
+            {**result.model_dump(), "enumeration_reset": 1}
+        )
 
 
 @pytest.mark.asyncio
@@ -602,11 +615,105 @@ async def test_manager_runtime_mismatch_stops_before_untrusted_manager_calls(
     result, simulator, _transport = await _run(fixture, monkeypatch)
     assert result.available is False
     assert result.integrity == "mismatch"
+    assert result.registry_fingerprint is None
+    assert result.enumeration_reset is False
     assert result.issues == ("manager_codehash_mismatch",)
     assert [method for method, _ in simulator.rpc_calls] == [
         "eth_blockNumber",
         "eth_getCode",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mismatch_kind", ["codehash", "dependency"])
+async def test_manager_mismatch_latches_reset_until_successful_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+    mismatch_kind: str,
+) -> None:
+    fixture = _fixture("two_launches")
+    simulator = SimulatedFWAIR(fixture)
+    transport = DenyNetworkTransport(simulator.handle)
+    _patch_runtime_hash(monkeypatch)
+
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = FWAIRDropsClient(
+            primary_rpc="https://rpc.test",
+            fallback_rpcs=["https://fallback.test"],
+            http_client=http_client,
+            inter_call_delay=0,
+            backoff_seconds=(),
+            clock=FixedClock(fixture["observed_at"]),
+        )
+        cold = await client.fetch_drops()
+        assert cold.enumeration_reset is False
+
+        if mismatch_kind == "codehash":
+            fixture["manager_runtime_mismatch"] = True
+        else:
+            fixture["manager_fwa"] = "0x" + "9" * 40
+        mismatch = await client.fetch_drops()
+        assert mismatch.available is False
+        assert mismatch.enumeration_reset is False
+        assert mismatch.registry_fingerprint == (
+            None if mismatch_kind == "codehash" else _CHILD_CODEHASH
+        )
+
+        fixture.pop(
+            "manager_runtime_mismatch"
+            if mismatch_kind == "codehash"
+            else "manager_fwa"
+        )
+        fixture["failed_manager_calls"] = ["nextLaunchId()"]
+        unavailable = await client.fetch_drops()
+        assert unavailable.available is False
+        assert unavailable.enumeration_reset is False
+        assert unavailable.registry_fingerprint == _CHILD_CODEHASH
+
+        fixture.pop("failed_manager_calls")
+        recovered = await client.fetch_drops()
+        steady = await client.fetch_drops()
+
+    assert recovered.available is True
+    assert recovered.registry_fingerprint == _CHILD_CODEHASH
+    assert recovered.enumeration_reset is True
+    assert steady.enumeration_reset is False
+
+
+@pytest.mark.asyncio
+async def test_runtime_fingerprint_change_resets_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture("two_launches")
+    simulator = SimulatedFWAIR(fixture)
+    transport = DenyNetworkTransport(simulator.handle)
+    _patch_runtime_hash(monkeypatch)
+    changed_fingerprint = _REAL_RUNTIME_CODEHASH(_MISMATCH_CHILD_CODE)
+    assert changed_fingerprint is not None
+
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = FWAIRDropsClient(
+            primary_rpc="https://rpc.test",
+            fallback_rpcs=["https://fallback.test"],
+            http_client=http_client,
+            inter_call_delay=0,
+            backoff_seconds=(),
+            clock=FixedClock(fixture["observed_at"]),
+        )
+        cold = await client.fetch_drops()
+        assert cold.enumeration_reset is False
+
+        fixture["launch_runtime_codehash"] = changed_fingerprint
+        for launch in fixture["launches"].values():
+            launch["runtime_mismatch"] = True
+        fixture["block_number"] += 1
+        changed = await client.fetch_drops()
+        steady = await client.fetch_drops()
+
+    assert changed.available is True
+    assert changed.integrity == "ok"
+    assert changed.registry_fingerprint == changed_fingerprint
+    assert changed.enumeration_reset is True
+    assert steady.enumeration_reset is False
 
 
 @pytest.mark.asyncio
@@ -759,6 +866,12 @@ async def test_cancelled_page_leaves_accumulator_and_cursor_unchanged(
             clock=FixedClock(fixture["observed_at"]),
         )
         await client.fetch_drops()
+        fixture["manager_runtime_mismatch"] = True
+        mismatch = await client.fetch_drops()
+        assert mismatch.available is False
+        assert mismatch.registry_fingerprint is None
+        assert mismatch.enumeration_reset is False
+        fixture.pop("manager_runtime_mismatch")
 
         def accumulator_state() -> tuple[Any, ...]:
             return (
@@ -769,6 +882,7 @@ async def test_cancelled_page_leaves_accumulator_and_cursor_unchanged(
                 client._known_next_launch_id,
                 client._known_launch_runtime_hash,
                 client._last_drop_state_block,
+                client._enumeration_reset_pending,
             )
 
         before = accumulator_state()
@@ -794,7 +908,7 @@ async def test_cancelled_page_leaves_accumulator_and_cursor_unchanged(
 
         monkeypatch.setattr(client, "_multicall", original_multicall)
         subcall_start = len(simulator.subcalls)
-        await client.fetch_drops()
+        resumed = await client.fetch_drops()
         resumed_getters = [
             decode_uint("0x" + strip0x(calldata)[8:])
             for target, calldata, _tag in simulator.subcalls[subcall_start:]
@@ -804,6 +918,53 @@ async def test_cancelled_page_leaves_accumulator_and_cursor_unchanged(
 
     assert resumed_getters == list(expected_page)
     assert client._launch_scan_cursor == expected_cursor
+    assert resumed.enumeration_reset is True
+    assert client._enumeration_reset_pending is False
+
+
+@pytest.mark.asyncio
+async def test_two_pages_at_same_block_converge_to_complete_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture("two_launches")
+    for launch_id in range(3, 18):
+        launch = deepcopy(fixture["launches"]["2"])
+        launch.update(
+            {
+                "address": "0x1" + f"{launch_id:039x}",
+                "collection": "0x2" + f"{launch_id:039x}",
+                "name": f"Drop {launch_id}",
+            }
+        )
+        fixture["launches"][str(launch_id)] = launch
+    fixture["next_launch_id"] = 18
+    simulator = SimulatedFWAIR(fixture)
+    transport = DenyNetworkTransport(simulator.handle)
+    _patch_runtime_hash(monkeypatch)
+
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = FWAIRDropsClient(
+            primary_rpc="https://rpc.test",
+            fallback_rpcs=["https://fallback.test"],
+            http_client=http_client,
+            inter_call_delay=0,
+            backoff_seconds=(),
+            clock=FixedClock(fixture["observed_at"]),
+        )
+        first = await client.fetch_drops(block_number=fixture["block_number"])
+        second = await client.fetch_drops(block_number=fixture["block_number"])
+
+    assert len(first.rows) == MAX_LAUNCHES_PER_REFRESH
+    assert "launch_enumeration_partial" in first.issues
+    assert first.integrity == "warning"
+    assert second.enumeration_reset is False
+    assert second.registry_fingerprint == _CHILD_CODEHASH
+    assert len(second.rows) == 17
+    assert second.holes == ()
+    assert second.integrity == "ok"
+    assert "launch_enumeration_partial" not in second.issues
+    assert all(row.block_number == fixture["block_number"] for row in second.rows)
+    assert all(row.stale is False for row in second.rows)
 
 
 @pytest.mark.asyncio
@@ -913,18 +1074,52 @@ async def test_launch_registry_shrink_discards_future_accumulator_rows(
         )
         initial = await client.fetch_drops()
         assert 33 in {row.launch_id for row in initial.rows}
+        assert initial.enumeration_reset is False
 
         fixture["next_launch_id"] = 3
         fixture["launches"].pop("33")
-        fixture["block_number"] -= 1
+        fixture["block_number"] += 1
         shrunk = await client.fetch_drops()
+        steady = await client.fetch_drops()
 
     assert [row.launch_id for row in shrunk.rows] == [1, 2]
+    assert shrunk.enumeration_reset is True
+    assert steady.enumeration_reset is False
     assert all(row.stale is False for row in shrunk.rows)
     assert shrunk.holes == ()
     assert shrunk.integrity_mismatch_ids == ()
     assert "launch_enumeration_partial" not in shrunk.issues
     assert all(not issue.startswith("launch_33_") for issue in shrunk.issues)
+
+
+@pytest.mark.asyncio
+async def test_block_rollback_resets_enumeration_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture("two_launches")
+    simulator = SimulatedFWAIR(fixture)
+    transport = DenyNetworkTransport(simulator.handle)
+    _patch_runtime_hash(monkeypatch)
+
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = FWAIRDropsClient(
+            primary_rpc="https://rpc.test",
+            fallback_rpcs=["https://fallback.test"],
+            http_client=http_client,
+            inter_call_delay=0,
+            backoff_seconds=(),
+            clock=FixedClock(fixture["observed_at"]),
+        )
+        cold = await client.fetch_drops()
+        assert cold.enumeration_reset is False
+
+        fixture["block_number"] -= 1
+        rollback = await client.fetch_drops()
+        steady = await client.fetch_drops()
+
+    assert rollback.enumeration_reset is True
+    assert rollback.state_block == fixture["block_number"]
+    assert steady.enumeration_reset is False
 
 
 @pytest.mark.asyncio
