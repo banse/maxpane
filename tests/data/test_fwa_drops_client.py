@@ -336,15 +336,7 @@ async def _run(
     simulator = SimulatedFWAIR(fixture)
     transport = DenyNetworkTransport(simulator.handle)
 
-    def manager_aware_hash(raw: Any) -> str | None:
-        if raw == _MANAGER_CODE:
-            return OFFICIAL_BY_ROLE["fwair_manager"].runtime_codehash
-        return _REAL_RUNTIME_CODEHASH(raw)
-
-    monkeypatch.setattr(
-        "maxpane_dashboard.data.fwa_drops_client.runtime_codehash",
-        manager_aware_hash,
-    )
+    _patch_runtime_hash(monkeypatch)
     async with httpx.AsyncClient(transport=transport) as http_client:
         client = FWAIRDropsClient(
             primary_rpc="https://rpc.test",
@@ -358,6 +350,18 @@ async def _run(
             block_number=fixture["block_number"] if explicit_block else None
         )
     return result, simulator, transport
+
+
+def _patch_runtime_hash(monkeypatch: pytest.MonkeyPatch) -> None:
+    def manager_aware_hash(raw: Any) -> str | None:
+        if raw == _MANAGER_CODE:
+            return OFFICIAL_BY_ROLE["fwair_manager"].runtime_codehash
+        return _REAL_RUNTIME_CODEHASH(raw)
+
+    monkeypatch.setattr(
+        "maxpane_dashboard.data.fwa_drops_client.runtime_codehash",
+        manager_aware_hash,
+    )
 
 
 def _fixture(name: str) -> dict[str, Any]:
@@ -605,25 +609,150 @@ async def test_manager_runtime_mismatch_stops_before_untrusted_manager_calls(
 
 
 @pytest.mark.asyncio
-async def test_oversized_launch_count_fails_before_proportional_allocation(
+async def test_hostile_launch_count_keeps_all_calls_bounded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fixture = _fixture("two_launches")
-    fixture["next_launch_id"] = MAX_LAUNCHES_PER_REFRESH + 2
+    fixture["next_launch_id"] = 2**255
 
-    result, simulator, transport = await _run(fixture, monkeypatch)
+    result, simulator, _transport = await _run(fixture, monkeypatch)
 
-    assert result.available is False
-    assert result.integrity == "unknown"
-    assert result.next_launch_id == MAX_LAUNCHES_PER_REFRESH + 2
+    assert result.available is True
+    assert result.integrity == "warning"
+    assert result.next_launch_id == 2**255
     assert result.rows == ()
-    assert result.issues == ("launch_enumeration_limit_exceeded",)
-    assert len(simulator.subcalls) == 4
-    assert all(
-        calldata[:10] != MANAGER_SELECTORS["launches(uint256)"]
-        for _target, calldata, _tag in simulator.subcalls
+    assert result.issues[-1] == "launch_enumeration_partial"
+    launch_getter_ids = [
+        decode_uint("0x" + strip0x(calldata)[8:])
+        for target, calldata, _tag in simulator.subcalls
+        if target == FWAIR_MANAGER
+        and calldata.startswith(MANAGER_SELECTORS["launches(uint256)"])
+    ]
+    assert len(launch_getter_ids) == MAX_LAUNCHES_PER_REFRESH
+    assert launch_getter_ids == list(
+        range(2**255 - MAX_LAUNCHES_PER_REFRESH, 2**255)
     )
-    assert len(transport.requests) == 3
+    assert len(simulator.subcalls) == 4 + MAX_LAUNCHES_PER_REFRESH
+
+
+@pytest.mark.asyncio
+async def test_new_launch_page_accumulates_rows_and_marks_old_rows_stale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture("two_launches")
+    simulator = SimulatedFWAIR(fixture)
+    transport = DenyNetworkTransport(simulator.handle)
+    clock = FixedClock(fixture["observed_at"])
+    _patch_runtime_hash(monkeypatch)
+
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = FWAIRDropsClient(
+            primary_rpc="https://rpc.test",
+            fallback_rpcs=["https://fallback.test"],
+            http_client=http_client,
+            inter_call_delay=0,
+            backoff_seconds=(),
+            clock=clock,
+        )
+        first = await client.fetch_drops()
+        assert [row.launch_id for row in first.rows] == [1, 2]
+
+        launch_33 = deepcopy(fixture["launches"]["2"])
+        launch_33.update(
+            {
+                "address": "0x1000000000000000000000000000000000000021",
+                "collection": "0x2000000000000000000000000000000000000021",
+                "name": "Thirty Third Drop",
+            }
+        )
+        fixture["launches"]["33"] = launch_33
+        fixture["next_launch_id"] = 34
+        fixture["block_number"] += 1
+        fixture["block_timestamp"] += 1
+        clock.advance(1)
+        call_start = len(simulator.subcalls)
+
+        second = await client.fetch_drops()
+        second_calls = simulator.subcalls[call_start:]
+        second_getter_ids = [
+            decode_uint("0x" + strip0x(calldata)[8:])
+            for target, calldata, _tag in second_calls
+            if target == FWAIR_MANAGER
+            and calldata.startswith(MANAGER_SELECTORS["launches(uint256)"])
+        ]
+
+        assert len(second_getter_ids) == MAX_LAUNCHES_PER_REFRESH
+        assert 33 in second_getter_ids
+        assert second.integrity == "warning"
+        assert "launch_enumeration_partial" in second.issues
+        assert [row.launch_id for row in second.rows] == [1, 2, 33]
+        row_by_id = {row.launch_id: row for row in second.rows}
+        assert row_by_id[1].stale is False
+        assert row_by_id[2].stale is True
+        assert row_by_id[2].observed_at == first.observed_at
+        assert row_by_id[33].stale is False
+        assert row_by_id[33].collection_name == "Thirty Third Drop"
+
+        fixture["block_number"] += 1
+        fixture["block_timestamp"] += 1
+        clock.advance(1)
+        call_start = len(simulator.subcalls)
+        third = await client.fetch_drops()
+        third_getters = [
+            calldata
+            for target, calldata, _tag in simulator.subcalls[call_start:]
+            if target == FWAIR_MANAGER
+            and calldata.startswith(MANAGER_SELECTORS["launches(uint256)"])
+        ]
+        assert len(third_getters) <= MAX_LAUNCHES_PER_REFRESH
+        assert [row.launch_id for row in third.rows] == [1, 2, 33]
+        third_by_id = {row.launch_id: row for row in third.rows}
+        assert third_by_id[1].stale is True
+        assert third_by_id[2].stale is False
+        assert third_by_id[33].stale is False
+
+
+@pytest.mark.asyncio
+async def test_launch_registry_shrink_discards_future_accumulator_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture("two_launches")
+    launch_33 = deepcopy(fixture["launches"]["2"])
+    launch_33.update(
+        {
+            "address": "0x1000000000000000000000000000000000000021",
+            "collection": "0x2000000000000000000000000000000000000021",
+            "name": "Thirty Third Drop",
+        }
+    )
+    fixture["launches"]["33"] = launch_33
+    fixture["next_launch_id"] = 34
+    simulator = SimulatedFWAIR(fixture)
+    transport = DenyNetworkTransport(simulator.handle)
+    _patch_runtime_hash(monkeypatch)
+
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = FWAIRDropsClient(
+            primary_rpc="https://rpc.test",
+            fallback_rpcs=["https://fallback.test"],
+            http_client=http_client,
+            inter_call_delay=0,
+            backoff_seconds=(),
+            clock=FixedClock(fixture["observed_at"]),
+        )
+        initial = await client.fetch_drops()
+        assert 33 in {row.launch_id for row in initial.rows}
+
+        fixture["next_launch_id"] = 3
+        fixture["launches"].pop("33")
+        fixture["block_number"] -= 1
+        shrunk = await client.fetch_drops()
+
+    assert [row.launch_id for row in shrunk.rows] == [1, 2]
+    assert all(row.stale is False for row in shrunk.rows)
+    assert shrunk.holes == ()
+    assert shrunk.integrity_mismatch_ids == ()
+    assert "launch_enumeration_partial" not in shrunk.issues
 
 
 @pytest.mark.asyncio

@@ -1,9 +1,11 @@
 """Block-pinned enumeration of FWAIR launches.
 
 The FWAIR manager is the only launch registry.  This client reads
-``nextLaunchId()`` and walks every id below it; no launch address, name, or row
-count is compiled into MAXPANE.  Manager and child state is read through the
-existing state-pool Multicall3 client at one explicit block tag.
+``nextLaunchId()`` and walks its ids in bounded pages; no launch address, name,
+or row count is compiled into MAXPANE.  Page results accumulate in memory so a
+stable registry is eventually covered without building a call list
+proportional to an untrusted manager count.  Manager and child state is read
+through the existing state-pool Multicall3 client at one explicit block tag.
 
 Child semantics are published only when the live runtime hash matches the
 manager's live ``launchRuntimeCodeHash()`` and the manager/core/token links all
@@ -59,8 +61,8 @@ _WEI_PER_TOKEN = 10**18
 _STRICT = ConfigDict(frozen=True, extra="forbid", strict=True)
 
 # One refresh reads roughly twenty child views plus one runtime hash per launch.
-# Refuse an implausible manager count before allocating proportional call lists;
-# never truncate silently because that would make later launches disappear.
+# Bound the page, not the registry: later launches stay discoverable and a
+# hostile ``nextLaunchId`` cannot cause proportional allocation or RPC calls.
 MAX_LAUNCHES_PER_REFRESH = 32
 
 
@@ -772,6 +774,13 @@ class FWAIRDropsClient(FWAClient):
         self._log_http_client = log_http_client
         self._log_min_call_interval = log_min_call_interval
         self._event_clients: dict[str, FWALogClient] = {}
+        self._launch_rows: dict[int, DropRow] = {}
+        self._launch_holes: set[int] = set()
+        self._launch_issues: dict[int, tuple[str, ...]] = {}
+        self._launch_scan_cursor = 1
+        self._known_next_launch_id: int | None = None
+        self._known_launch_runtime_hash: str | None = None
+        self._last_drop_state_block: int | None = None
 
     def _event_client(self, address: str) -> FWALogClient:
         client = self._event_clients.get(address)
@@ -790,6 +799,66 @@ class FWAIRDropsClient(FWAClient):
             await client.close()
         self._event_clients.clear()
         await super().close()
+
+    def _clear_launch_cache(self) -> None:
+        self._launch_rows.clear()
+        self._launch_holes.clear()
+        self._launch_issues.clear()
+        self._launch_scan_cursor = 1
+        self._known_next_launch_id = None
+        self._known_launch_runtime_hash = None
+        self._last_drop_state_block = None
+
+    def _launch_page(
+        self,
+        *,
+        next_launch_id: int,
+        state_block: int,
+        expected_child_hash: str,
+    ) -> tuple[tuple[int, ...], int, bool]:
+        """Choose at most one page, favoring newly appended launch ids."""
+
+        reset = (
+            (
+                self._last_drop_state_block is not None
+                and state_block < self._last_drop_state_block
+            )
+            or (
+                self._known_next_launch_id is not None
+                and next_launch_id < self._known_next_launch_id
+            )
+            or (
+                self._known_launch_runtime_hash is not None
+                and expected_child_hash != self._known_launch_runtime_hash
+            )
+        )
+        known_next = None if reset else self._known_next_launch_id
+        cursor = 1 if reset else self._launch_scan_cursor
+        total = next_launch_id - 1
+        if total <= MAX_LAUNCHES_PER_REFRESH:
+            return tuple(range(1, next_launch_id)), 1, reset
+
+        if known_next is None:
+            start = max(1, next_launch_id - MAX_LAUNCHES_PER_REFRESH)
+            return tuple(range(start, next_launch_id)), 1, reset
+
+        if next_launch_id > known_next:
+            new_start = max(known_next, next_launch_id - MAX_LAUNCHES_PER_REFRESH)
+            new_ids = tuple(range(new_start, next_launch_id))
+            remaining = MAX_LAUNCHES_PER_REFRESH - len(new_ids)
+            old_last = known_next - 1
+            if remaining <= 0 or old_last < 1:
+                return new_ids, cursor, reset
+            old_start = cursor if 1 <= cursor <= old_last else 1
+            old_end = min(old_last, old_start + remaining - 1)
+            old_ids = tuple(range(old_start, old_end + 1))
+            next_cursor = 1 if old_end >= old_last else old_end + 1
+            return new_ids + old_ids, next_cursor, reset
+
+        start = cursor if 1 <= cursor <= total else 1
+        end = min(total, start + MAX_LAUNCHES_PER_REFRESH - 1)
+        next_cursor = 1 if end >= total else end + 1
+        return tuple(range(start, end + 1)), next_cursor, reset
 
     def _observed_at(self) -> float:
         value = self._drops_clock()
@@ -866,6 +935,7 @@ class FWAIRDropsClient(FWAClient):
                 issue="manager_code_unavailable",
             )
         if manager_hash != OFFICIAL_BY_ROLE["fwair_manager"].runtime_codehash:
+            self._clear_launch_cache()
             return self._empty(
                 observed_at=observed_at,
                 state_block=state_block,
@@ -901,21 +971,13 @@ class FWAIRDropsClient(FWAClient):
                 issue="manager_state_unavailable",
             )
         if manager_fwa != FWA_CORE or manager_authority != FWAIR_WHITELIST_AUTHORITY:
+            self._clear_launch_cache()
             return self._empty(
                 observed_at=observed_at,
                 state_block=state_block,
                 integrity="mismatch",
                 issue="manager_dependency_mismatch",
             )
-        if next_launch_id - 1 > MAX_LAUNCHES_PER_REFRESH:
-            return self._empty(
-                observed_at=observed_at,
-                state_block=state_block,
-                integrity="unknown",
-                issue="launch_enumeration_limit_exceeded",
-                next_launch_id=next_launch_id,
-            )
-
         issues: list[str] = []
         try:
             block_raw = await self._rpc(
@@ -929,7 +991,11 @@ class FWAIRDropsClient(FWAClient):
         if block_timestamp is None:
             issues.append("block_timestamp_unavailable")
 
-        launch_ids = list(range(1, next_launch_id))
+        launch_ids, next_scan_cursor, reset_cache = self._launch_page(
+            next_launch_id=next_launch_id,
+            state_block=state_block,
+            expected_child_hash=expected_child_hash,
+        )
         launch_results = await self._multicall(
             [
                 (
@@ -942,6 +1008,12 @@ class FWAIRDropsClient(FWAClient):
         )
 
         holes: list[int] = []
+        launch_issues: dict[int, list[str]] = {}
+
+        def record_issue(launch_id: int, suffix: str) -> None:
+            issue = f"launch_{launch_id}_{suffix}"
+            launch_issues.setdefault(launch_id, []).append(issue)
+
         candidates: list[tuple[int, str]] = []
         for index, launch_id in enumerate(launch_ids):
             raw = _successful(
@@ -950,7 +1022,7 @@ class FWAIRDropsClient(FWAClient):
             address = _address(raw)
             if address is None or address == ZERO_ADDRESS:
                 holes.append(launch_id)
-                issues.append(f"launch_{launch_id}_address_unavailable")
+                record_issue(launch_id, "address_unavailable")
                 continue
             candidates.append((launch_id, address))
 
@@ -969,14 +1041,13 @@ class FWAIRDropsClient(FWAClient):
 
         states_without_names: list[tuple[FWAIRLaunchState, str]] = []
         mismatch_rows: list[DropRow] = []
-        mismatch_ids: list[int] = []
 
         for candidate_index, (launch_id, address) in enumerate(candidates):
             start = candidate_index * stride
             result_slice = child_results[start : start + stride]
             if len(result_slice) != stride:
                 holes.append(launch_id)
-                issues.append(f"launch_{launch_id}_child_read_failed")
+                record_issue(launch_id, "child_read_failed")
                 continue
             is_launch = _bool(_successful(result_slice[0]))
             raw_by_signature = {
@@ -1003,13 +1074,13 @@ class FWAIRDropsClient(FWAClient):
             )
             if any(value is None for value in critical):
                 holes.append(launch_id)
-                issues.append(f"launch_{launch_id}_child_read_failed")
+                record_issue(launch_id, "child_read_failed")
                 continue
 
             actual_child_hash = await self._codehash(address, block_tag)
             if actual_child_hash is None:
                 holes.append(launch_id)
-                issues.append(f"launch_{launch_id}_child_code_unavailable")
+                record_issue(launch_id, "child_code_unavailable")
                 continue
 
             links_match = (
@@ -1021,15 +1092,14 @@ class FWAIRDropsClient(FWAClient):
                 and child_id == launch_id
             )
             if actual_child_hash != expected_child_hash or not links_match:
-                mismatch_ids.append(launch_id)
-                issues.append(f"launch_{launch_id}_integrity_mismatch")
+                record_issue(launch_id, "integrity_mismatch")
                 mismatch_rows.append(
                     _mismatch_row(launch_id, address, state_block, observed_at)
                 )
                 continue
             if collection == ZERO_ADDRESS:
                 holes.append(launch_id)
-                issues.append(f"launch_{launch_id}_collection_unavailable")
+                record_issue(launch_id, "collection_unavailable")
                 continue
 
             # The name is filled after one collection-name Multicall below.
@@ -1078,7 +1148,7 @@ class FWAIRDropsClient(FWAClient):
             name = decode_string(raw_name or "")
             if name is None or not name.strip():
                 holes.append(pending.launch_id)
-                issues.append(f"launch_{pending.launch_id}_name_unavailable")
+                record_issue(pending.launch_id, "name_unavailable")
                 continue
             state = pending.model_copy(update={"collection_name": name})
             valid_rows.append(
@@ -1090,12 +1160,52 @@ class FWAIRDropsClient(FWAClient):
                 )
             )
 
-        rows = tuple(sorted((*valid_rows, *mismatch_rows), key=lambda row: row.launch_id))
-        holes_tuple = tuple(sorted(set(holes)))
-        mismatch_tuple = tuple(sorted(set(mismatch_ids)))
+        if reset_cache:
+            self._clear_launch_cache()
+        for launch_id in launch_ids:
+            self._launch_rows.pop(launch_id, None)
+            self._launch_holes.discard(launch_id)
+            self._launch_issues.pop(launch_id, None)
+        for row in (*valid_rows, *mismatch_rows):
+            self._launch_rows[row.launch_id] = row
+        self._launch_holes.update(holes)
+        self._launch_issues.update(
+            {
+                launch_id: tuple(values)
+                for launch_id, values in launch_issues.items()
+            }
+        )
+        self._launch_scan_cursor = next_scan_cursor
+        self._known_next_launch_id = next_launch_id
+        self._known_launch_runtime_hash = expected_child_hash
+        self._last_drop_state_block = state_block
+
+        current_ids = set(launch_ids)
+        rows = tuple(
+            row
+            if launch_id in current_ids
+            else row.model_copy(update={"stale": True})
+            for launch_id, row in sorted(self._launch_rows.items())
+        )
+        holes_tuple = tuple(sorted(self._launch_holes))
+        mismatch_tuple = tuple(
+            row.launch_id for row in rows if row.integrity == "mismatch"
+        )
+        cached_issues = tuple(
+            issue
+            for launch_id in sorted(self._launch_issues)
+            for issue in self._launch_issues[launch_id]
+        )
+        global_issues = tuple(issues)
+        partial = len(launch_ids) < next_launch_id - 1
+        aggregate_issues = (
+            global_issues
+            + cached_issues
+            + (("launch_enumeration_partial",) if partial else ())
+        )
         if mismatch_tuple:
             integrity: Literal["ok", "warning", "mismatch", "unknown"] = "mismatch"
-        elif issues:
+        elif aggregate_issues:
             integrity = "warning"
         else:
             integrity = "ok"
@@ -1110,7 +1220,7 @@ class FWAIRDropsClient(FWAClient):
             rows=rows,
             holes=holes_tuple,
             integrity_mismatch_ids=mismatch_tuple,
-            issues=tuple(issues),
+            issues=aggregate_issues,
         )
 
     async def fetch_events(
