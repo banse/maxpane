@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from types import MethodType, SimpleNamespace
 
 import pytest
@@ -11,8 +12,10 @@ import maxpane_dashboard.data.fwa_ecosystem_manager as manager_module
 from maxpane_dashboard.data.fwa_ecosystem_cache import (
     FWAEcosystemCache,
     GROUP_FLOW_LOGS,
+    GROUP_FWAP,
     GROUP_INTEGRITY,
     GROUP_PROJECT_LOGS,
+    GROUP_PULLPOOL,
     TIER_API,
     TIER_FAST,
     TIER_INTEGRITY,
@@ -2017,6 +2020,9 @@ async def test_integrity_mismatch_immediately_suppresses_cached_event_semantics(
             persist_cache=False,
         )
         for restarted in (fresh._visible_snapshot(), await fresh.fetch_and_compute()):
+            assert restarted["network_token_supply_fwa"] is None
+            assert restarted["network_burned_since_genesis_fwa"] is None
+            assert restarted["network_burned_since_genesis_pct"] is None
             restarted_buyback = next(
                 row
                 for row in restarted["network_flow_rows"]
@@ -2085,6 +2091,99 @@ async def test_integrity_mismatch_immediately_suppresses_cached_event_semantics(
         assert manager._pull_history.marker == "partial rebuild"
     else:
         assert manager._project_coverage_end[key] == BLOCK - 1
+    await manager.close()
+
+
+@pytest.mark.parametrize(
+    ("source", "group"),
+    (("pullpool", GROUP_PULLPOOL), ("fwap", GROUP_FWAP)),
+)
+async def test_restored_project_mismatch_blocks_fast_semantics_until_recovery(
+    source, group, tmp_path, monkeypatch
+) -> None:
+    manager, clock, core, drops, pull, mega, fwap, logs = _manager(
+        tmp_path, monkeypatch
+    )
+    await manager.fetch_and_compute()
+    entry = manager.cache.get_last_good(group)
+    assert entry is not None
+    fragment = deepcopy(entry.payload)
+    target = next(
+        row for row in fragment["network_project_rows"] if row["family"] == source
+    )
+    target.update(
+        primary_value=None,
+        eth_value=None,
+        fwa_value=None,
+        lifecycle="integrity mismatch",
+        detail="runtime/dependency integrity mismatch; metrics suppressed",
+        source_badge="INTEGRITY",
+        stale=True,
+        verified_source=False,
+        integrity="mismatch",
+    )
+    manager.cache.store_last_good(
+        group,
+        fragment,
+        ts=entry.ts,
+        block_number=entry.block_number,
+    )
+    await manager._commit_from_groups()
+    assert manager.cache.save()
+
+    restored_cache = FWAEcosystemCache(path=manager.cache.path, clock=clock)
+    assert restored_cache.load()
+    _fresh_background(restored_cache, clock)
+    fresh = FWAEcosystemManager(
+        tokenomics_client=core,
+        tokenomics_log_client=logs,
+        drops_client=drops,
+        pullpool_adapter=pull,
+        megarip_adapter=mega,
+        fwap_adapter=fwap,
+        fwap_log_source=None,
+        cache=restored_cache,
+        clock=clock,
+        persist_cache=False,
+    )
+    for payload in (fresh._visible_snapshot(), await fresh.fetch_and_compute()):
+        row = next(
+            item
+            for item in payload["network_project_rows"]
+            if item["family"] == source
+        )
+        assert row["primary_value"] is None
+        assert row["eth_value"] is None
+        assert row["fwa_value"] is None
+        assert row["integrity"] == "mismatch"
+        assert row["stale"] is True
+    assert source in fresh._state_integrity_latched
+
+    async def read_core(_block_number):
+        return _core_integrity(BLOCK, complete=True)
+
+    async def read_pull(_block_number):
+        return _project_integrity("pullpool", BLOCK, complete=True)
+
+    async def read_fwap(_block_number):
+        return _project_integrity("fwap", BLOCK, complete=True)
+
+    core.fetch_official_integrity = read_core
+    pull.fetch_integrity = read_pull
+    fwap.fetch_integrity = read_fwap
+    await fresh._run_integrity_cycle()
+    await fresh._run_fast_cycle()
+
+    recovered = fresh.cache.latest_snapshot().payload
+    recovered_row = next(
+        item
+        for item in recovered["network_project_rows"]
+        if item["family"] == source
+    )
+    assert source not in fresh._state_integrity_latched
+    assert recovered_row["primary_value"] == 1.0
+    assert recovered_row["integrity"] == "ok"
+    await fresh.close()
     await manager.close()
 
 

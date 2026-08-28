@@ -111,8 +111,30 @@ _PROJECT_LOG_SOURCES = frozenset(
     ("fwa", "drop", "pullpool", "megarip", "fwap")
 )
 _DIRECT_GROUPS = (GROUP_CORE, GROUP_DROPS, *_PROJECT_GROUPS)
+_STATE_INTEGRITY_GROUPS = {
+    "fwa": (GROUP_CORE, "network_flow_rows"),
+    "pullpool": (GROUP_PULLPOOL, "network_project_rows"),
+    "fwap": (GROUP_FWAP, "network_project_rows"),
+}
+_DROP_SEMANTIC_FIELDS = (
+    "support_open",
+    "token_count",
+    "supported_count",
+    "supporter_count",
+    "launched_count",
+    "terminal_count",
+    "backing_eth",
+    "total_backing_eth",
+    "artist_credit_eth",
+    "supporter_principal_eth",
+    "supporter_reserve_fwa",
+)
 _DEFAULT = object()
 _HASH_CHARS = frozenset("0123456789abcdef")
+
+
+class _IntegrityRecoveryPending(RuntimeError):
+    """A persisted mismatch still needs a complete current integrity read."""
 
 
 def _finite_now(clock: Callable[[], float]) -> float:
@@ -529,6 +551,27 @@ class FWAEcosystemManager:
         self._project_log_failed: set[str] = set()
         self._event_integrity_failed: set[str] = set()
         self._event_integrity_rebuild: set[str] = set()
+        self._state_integrity_latched = self._restored_state_integrity_latches()
+        self._event_integrity_failed.update(self._state_integrity_latched)
+        self._project_log_failed.update(self._state_integrity_latched)
+        restored_drops = self.cache.get_last_good(GROUP_DROPS)
+        if restored_drops is not None and any(
+            isinstance(row, Mapping) and row.get("integrity") == "mismatch"
+            for row in restored_drops.payload.get("network_drop_rows", ())
+        ):
+            self._event_integrity_failed.add("drop")
+            self._project_log_failed.add("drop")
+            self._failed_groups.add(GROUP_DROPS)
+        if self._state_integrity_latched:
+            self._failed_groups.add(GROUP_PROJECT_LOGS)
+        self._failed_groups.update(
+            _STATE_INTEGRITY_GROUPS[source][0]
+            for source in self._state_integrity_latched
+        )
+        if "fwa" in self._state_integrity_latched:
+            self._failed_groups.add(GROUP_FLOW_LOGS)
+        if self._event_integrity_failed:
+            self._failed_groups.add(GROUP_PROJECT_LOGS)
         if restored_events is not None:
             self._failed_groups.add(GROUP_PROJECT_LOGS)
         if restored_flow is not None:
@@ -658,6 +701,10 @@ class FWAEcosystemManager:
                 continue
             try:
                 self._accept_direct(group, result, state_block)
+            except _IntegrityRecoveryPending:
+                self._failed_groups.add(group)
+                all_success = False
+                continue
             except Exception as exc:  # noqa: BLE001 -- adapter boundary
                 self._record_failure(group, error=exc)
                 all_success = False
@@ -669,6 +716,9 @@ class FWAEcosystemManager:
                 else:
                     self._failed_groups.discard(group)
 
+        event_feed_changed = bool(
+            self._reconcile_event_integrity(state_block) or event_feed_changed
+        )
         now = _finite_now(self._clock)
         if event_feed_changed:
             await self._store_event_fragment(now, state_block=state_block)
@@ -705,6 +755,7 @@ class FWAEcosystemManager:
             _block(getattr(result, "state_block", None))
             if result.state_block != state_block:
                 raise ValueError("core returned a different state block")
+            self._require_state_integrity_recovery("fwa", state_block)
             self._token_state = result
             self._store_core_fragment()
             return
@@ -712,13 +763,18 @@ class FWAEcosystemManager:
             if getattr(result, "state_block", None) != state_block:
                 raise ValueError("drops returned a different state block")
             if getattr(result, "available", None) is not True:
-                raise RuntimeError("drops read unavailable")
+                if getattr(result, "integrity", None) != "mismatch":
+                    raise RuntimeError("drops read unavailable")
+                self._drops_state = result
+                self._store_drops_mismatch_fragment(result)
+                return
             self._drops_state = result
             self._store_drops_fragment(result)
             return
         if group == GROUP_PULLPOOL:
             if getattr(result, "block_number", None) != state_block:
                 raise ValueError("PullPool returned a different state block")
+            self._require_state_integrity_recovery("pullpool", state_block)
             integrity = self._matching_integrity(
                 self._pull_integrity, state_block
             )
@@ -741,6 +797,7 @@ class FWAEcosystemManager:
         if group == GROUP_FWAP:
             if getattr(result, "block_number", None) != state_block:
                 raise ValueError("FWAP returned a different state block")
+            self._require_state_integrity_recovery("fwap", state_block)
             rows = build_fwap_rows(
                 result,
                 integrity=self._matching_integrity(
@@ -752,6 +809,36 @@ class FWAEcosystemManager:
             self._store_project_fragment(group, rows, result.observed_at, state_block)
             return
         raise ValueError(f"unknown direct group {group!r}")
+
+    def _restored_state_integrity_latches(self) -> set[str]:
+        latched: set[str] = set()
+        for source, (group, row_key) in _STATE_INTEGRITY_GROUPS.items():
+            entry = self.cache.get_last_good(group)
+            if entry is None:
+                continue
+            rows = entry.payload.get(row_key, ())
+            if any(
+                isinstance(row, Mapping)
+                and row.get("integrity") == "mismatch"
+                for row in rows
+            ):
+                latched.add(source)
+        return latched
+
+    def _require_state_integrity_recovery(
+        self, source: str, state_block: int
+    ) -> None:
+        if source not in self._state_integrity_latched:
+            return
+        integrity = {
+            "fwa": self._core_integrity,
+            "pullpool": self._pull_integrity,
+            "fwap": self._fwap_integrity,
+        }[source]
+        if self._matching_integrity(integrity, state_block) is None:
+            raise _IntegrityRecoveryPending(source)
+        if not self._source_integrity_mismatched(source, state_block):
+            self._state_integrity_latched.discard(source)
 
     @staticmethod
     def _drops_read_partial(read: Any) -> bool:
@@ -1082,10 +1169,46 @@ class FWAEcosystemManager:
         return self._fwap_api
 
     def _store_drops_fragment(self, read: Any) -> None:
-        rows = [_row_dict(row) for row in read.rows]
         partial = self._drops_read_partial(read)
+        fingerprint = _block_hash(getattr(read, "registry_fingerprint", None))
+        reset = getattr(read, "enumeration_reset", False) is True
+        state_block = _block(getattr(read, "state_block", None))
+        raw_next_launch_id = getattr(read, "next_launch_id", None)
+        next_launch_id = (
+            raw_next_launch_id
+            if type(raw_next_launch_id) is int and raw_next_launch_id >= 1
+            else None
+        )
+        selected: dict[int, dict[str, Any]] = {}
+        previous = self.cache.get_last_good(GROUP_DROPS)
+        if (
+            partial
+            and not reset
+            and fingerprint is not None
+            and previous is not None
+            and previous.source_fingerprint == fingerprint
+        ):
+            for raw in previous.payload.get("network_drop_rows", ()):
+                row = _row_dict(raw)
+                launch_id = row.get("launch_id")
+                row_block = row.get("block_number")
+                if (
+                    type(launch_id) is int
+                    and launch_id >= 1
+                    and (next_launch_id is None or launch_id < next_launch_id)
+                    and type(row_block) is int
+                    and row_block <= state_block
+                ):
+                    row["stale"] = True
+                    selected[launch_id] = row
+        for raw in read.rows:
+            row = _row_dict(raw)
+            launch_id = row.get("launch_id")
+            if type(launch_id) is int and launch_id >= 1:
+                selected[launch_id] = row
+        rows = [selected[launch_id] for launch_id in sorted(selected)]
         row_blocks = [row.get("block_number") for row in rows]
-        as_of_block = read.state_block
+        as_of_block = state_block
         if partial:
             as_of_block = (
                 min(row_blocks)
@@ -1099,10 +1222,42 @@ class FWAEcosystemManager:
                 "network_drops_available": True,
                 "network_drops_as_of_block": as_of_block,
                 "network_drops_stale": partial,
-                "network_drop_count": int(read.valid_count),
+                "network_drop_count": sum(
+                    row.get("integrity") == "ok" for row in rows
+                ),
             },
             ts=float(read.observed_at),
             block_number=as_of_block,
+            source_fingerprint=fingerprint,
+        )
+
+    def _store_drops_mismatch_fragment(self, read: Any) -> None:
+        """Replace stale semantics with identity-only mismatch rows."""
+
+        previous = self.cache.get_last_good(GROUP_DROPS)
+        rows: list[dict[str, Any]] = []
+        if previous is not None:
+            for raw in previous.payload.get("network_drop_rows", ()):
+                row = _row_dict(raw)
+                row.update(
+                    phase="unknown",
+                    stale=True,
+                    verified_source=False,
+                    integrity="mismatch",
+                )
+                row.update({key: None for key in _DROP_SEMANTIC_FIELDS})
+                rows.append(row)
+        self.cache.store_last_good(
+            GROUP_DROPS,
+            {
+                "network_drop_rows": rows,
+                "network_drops_available": bool(rows),
+                "network_drops_as_of_block": None,
+                "network_drops_stale": True,
+                "network_drop_count": None,
+            },
+            ts=float(read.observed_at),
+            block_number=_block(getattr(read, "state_block", None)),
         )
 
     def _store_project_fragment(
@@ -2396,25 +2551,38 @@ class FWAEcosystemManager:
                     for address in addresses
                 ):
                     continue
-                row = dict(raw)
-                replacement = {
-                    "event_key": "integrity_mismatch",
-                    "event_label": "Untrusted contract log",
-                    "eth_amount": None,
-                    "fwa_amount": None,
-                    "detail": (
-                        "runtime/dependency integrity mismatch; "
-                        "semantics suppressed"
-                    ),
-                    "stale": True,
-                    "verified_source": False,
-                    "integrity": "mismatch",
-                }
-                if any(row.get(key) != value for key, value in replacement.items()):
-                    row.update(replacement)
-                    rows[event_id] = NetworkEventRow.model_validate(row).model_dump()
+                replacement = self._neutralized_event_row(raw)
+                if replacement != raw:
+                    rows[event_id] = replacement
                     changed = True
         return changed
+
+    def _suppress_event_source(self, source: str) -> bool:
+        changed = False
+        for rows in (self._events, self._restored_events):
+            for event_id, raw in tuple(rows.items()):
+                if self._event_adapter(raw) != source:
+                    continue
+                replacement = self._neutralized_event_row(raw)
+                if replacement != raw:
+                    rows[event_id] = replacement
+                    changed = True
+        return changed
+
+    @staticmethod
+    def _neutralized_event_row(raw: Mapping[str, Any]) -> dict[str, Any]:
+        row = dict(raw)
+        row.update(
+            event_key="integrity_mismatch",
+            event_label="Untrusted contract log",
+            eth_amount=None,
+            fwa_amount=None,
+            detail="runtime/dependency integrity mismatch; semantics suppressed",
+            stale=True,
+            verified_source=False,
+            integrity="mismatch",
+        )
+        return NetworkEventRow.model_validate(row).model_dump()
 
     def _invalidate_event_source(self, source: str) -> None:
         if source == "fwa":
@@ -2428,6 +2596,12 @@ class FWAEcosystemManager:
             return
         if source == "pullpool":
             self._pull_history = None
+            return
+        if source == "drop":
+            for key in tuple(self._project_coverage_end):
+                if key.adapter == "fwair":
+                    self._project_coverage_end.pop(key, None)
+            self._fwair_stream_cursor = 0
             return
         if source == "fwap":
             for manifest in FWAP_MANIFESTS:
@@ -2460,10 +2634,45 @@ class FWAEcosystemManager:
             elif (
                 source in self._event_integrity_failed
                 and source not in self._event_integrity_rebuild
+                and (
+                    source not in self._state_integrity_latched
+                    or stored is not None
+                )
                 and self._begin_event_integrity_rebuild(source)
             ):
                 changed = True
+        if self._sync_drop_event_integrity(state_block):
+            changed = True
         return changed
+
+    def _sync_drop_event_integrity(self, state_block: int) -> bool:
+        state = self._drops_state
+        if state is None or getattr(state, "state_block", None) != state_block:
+            return False
+        available = getattr(state, "available", None) is True
+        mismatch = getattr(state, "integrity", None) == "mismatch"
+        if mismatch:
+            first_failure = "drop" not in self._event_integrity_failed
+            self._event_integrity_failed.add("drop")
+            self._event_integrity_rebuild.discard("drop")
+            self._project_log_failed.add("drop")
+            self._failed_groups.update((GROUP_PROJECT_LOGS, GROUP_DROPS))
+            if available:
+                addresses: set[str] = set()
+                for raw in getattr(state, "rows", ()):
+                    row = _row_dict(raw)
+                    if row.get("integrity") != "mismatch":
+                        continue
+                    address = _address(row.get("launch_address"))
+                    if address is not None:
+                        addresses.add(address)
+                suppressed = self._suppress_event_addresses(addresses)
+            else:
+                suppressed = self._suppress_event_source("drop")
+            return bool(first_failure or suppressed)
+        if available and "drop" in self._event_integrity_failed:
+            return self._begin_event_integrity_rebuild("drop")
+        return False
 
     def _sync_event_integrity(
         self, label: str, integrity: Any | None, *, complete: bool
@@ -2471,6 +2680,7 @@ class FWAEcosystemManager:
         source = {"core": "fwa", "pullpool": "pullpool", "fwap": "fwap"}[label]
         addresses = self._mismatched_event_addresses(label, integrity)
         if addresses:
+            self._state_integrity_latched.add(source)
             first_failure = source not in self._event_integrity_failed
             self._event_integrity_failed.add(source)
             self._event_integrity_rebuild.discard(source)
@@ -2480,6 +2690,8 @@ class FWAEcosystemManager:
                 self._failed_groups.add(GROUP_FLOW_LOGS)
             suppressed = self._suppress_event_addresses(addresses)
             return bool(first_failure or suppressed)
+        if complete:
+            self._state_integrity_latched.discard(source)
         if complete and source in self._event_integrity_failed:
             # Recovery does not make rows decoded under untrusted runtime code
             # fresh.  Rebuild raw history from deployment before clearing the
@@ -2508,6 +2720,12 @@ class FWAEcosystemManager:
                     integrity.status_for(manifest) == "mismatch"
                     for manifest in PULLPOOL_MANIFESTS
                 )
+            )
+        if source == "drop":
+            return bool(
+                self._drops_state is not None
+                and getattr(self._drops_state, "state_block", None) == state_block
+                and getattr(self._drops_state, "integrity", None) == "mismatch"
             )
         if source == "fwap":
             integrity = self._matching_integrity(

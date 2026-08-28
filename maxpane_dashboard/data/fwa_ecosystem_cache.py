@@ -123,6 +123,7 @@ class LastGood:
     payload: dict[str, Any]
     ts: float
     block_number: int | None = None
+    source_fingerprint: str | None = None
 
     def age_seconds(self, now: float) -> float:
         return max(0.0, float(now) - self.ts)
@@ -132,6 +133,7 @@ class LastGood:
             "payload": copy.deepcopy(self.payload),
             "ts": self.ts,
             "block_number": self.block_number,
+            "source_fingerprint": self.source_fingerprint,
         }
 
 
@@ -476,6 +478,7 @@ class FWAEcosystemCache:
         *,
         ts: float | None = None,
         block_number: int | None = None,
+        source_fingerprint: str | None = None,
     ) -> LastGood:
         """Store a successful group fragment without losing its source time.
 
@@ -487,11 +490,18 @@ class FWAEcosystemCache:
         if payload is None:
             raise ValueError("an unavailable read cannot replace last-good data")
         block = _non_negative_int(block_number, "block_number")
+        if source_fingerprint is not None:
+            if not isinstance(source_fingerprint, str) or not _BLOCK_HASH.fullmatch(
+                source_fingerprint
+            ):
+                raise ValueError("source_fingerprint must be a 32-byte hex hash")
+            source_fingerprint = source_fingerprint.lower()
         canonical = _validate_fragment(payload, exact=False)
         entry = LastGood(
             payload=canonical,
             ts=self._now(ts),
             block_number=block,
+            source_fingerprint=source_fingerprint,
         )
         self._last_good[group] = entry
         return self._copy_last_good(entry)
@@ -749,8 +759,20 @@ class FWAEcosystemCache:
                     entry.get("ts"), now=now, label=f"{group} last-good ts"
                 )
                 block = _non_negative_int(entry.get("block_number"), "block_number")
+                fingerprint = entry.get("source_fingerprint")
+                if fingerprint is not None:
+                    if not isinstance(fingerprint, str) or not _BLOCK_HASH.fullmatch(
+                        fingerprint
+                    ):
+                        raise ValueError("invalid source fingerprint")
+                    fingerprint = fingerprint.lower()
                 payload = _validate_fragment(entry.get("payload"), exact=False)
-                loaded[group] = LastGood(payload=payload, ts=ts, block_number=block)
+                loaded[group] = LastGood(
+                    payload=payload,
+                    ts=ts,
+                    block_number=block,
+                    source_fingerprint=fingerprint,
+                )
             except (TypeError, ValueError):
                 continue
         return loaded

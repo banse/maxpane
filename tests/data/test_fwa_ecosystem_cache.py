@@ -340,6 +340,7 @@ def test_round_trip_restores_snapshot_groups_watermark_and_original_times(
         {"network_active_listings": 11},
         ts=NOW - 40.0,
         block_number=1_234,
+        source_fingerprint=HASH_A,
     )
     key = WatermarkKey("pullpool", "v2", "tickets")
     cache.set_watermark(
@@ -360,6 +361,7 @@ def test_round_trip_restores_snapshot_groups_watermark_and_original_times(
     entry = restored.get_last_good(GROUP_CORE)
     assert entry.ts == NOW - 40.0
     assert entry.block_number == 1_234
+    assert entry.source_fingerprint == HASH_A
     assert restored.get_watermark(key).updated_at == NOW - 30.0
     assert restored.scan_start(key, deployment_block=1_000) == 1_215
     # Refresh clocks are deliberately process-local: restart must offer work.
