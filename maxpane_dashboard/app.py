@@ -13,7 +13,7 @@ from maxpane_dashboard.data.cattown_manager import CatTownManager
 from maxpane_dashboard.data.curator_manager import CuratorManager
 from maxpane_dashboard.data.dota_manager import DOTAManager
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
-from maxpane_dashboard.data.fwa_manager import FWAManager
+from maxpane_dashboard.data.fwa_composite_manager import FWACompositeManager
 from maxpane_dashboard.data.manager import DataManager
 from maxpane_dashboard.data.ocm_manager import OCMManager
 from maxpane_dashboard.data.surf_manager import SurfManager
@@ -115,9 +115,10 @@ class MaxPaneApp(App):
             poll_interval=poll_interval,
             wallet=wallet_address,
         )
-        # FWAManager builds its own market client with coingecko_min_spacing=6.0
-        # (COINGECKO_MIN_SPACING); do not pass one in here.
-        self._fwa_manager = FWAManager(poll_interval=poll_interval)
+        # One composite owns both the unchanged PULLS manager and the detached
+        # NETWORK manager. Prefetch, screen refresh, and shutdown all use this
+        # same object so neither child can be leaked or refreshed twice.
+        self._fwa_manager = FWACompositeManager(poll_interval=poll_interval)
         # All four FrenPet managers persist to the same
         # ~/.maxpane/frenpet_cache.json and FrenPetCache.save_to_file is a
         # full overwrite invoked from close(), so on quit the three managers

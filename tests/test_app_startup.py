@@ -28,6 +28,7 @@ from typing import Any
 import pytest
 
 from maxpane_dashboard.app import MaxPaneApp
+from maxpane_dashboard.data.fwa_composite_manager import FWACompositeManager
 from maxpane_dashboard.screens.bakery import BakeryScreen
 from maxpane_dashboard.screens.game_select import GAMES, GameSelectScreen
 
@@ -183,6 +184,16 @@ def test_every_game_choice_has_a_prefetch_manager() -> None:
     # Every game offered on the select screen is covered too.
     for _key, game_id, *_ in GAMES:
         assert app._prefetch_manager(game_id) is not None, game_id
+
+
+def test_fwa_registration_owns_one_composite_manager() -> None:
+    """FWA prefetch and screen wiring share the PULLS/NETWORK umbrella."""
+
+    app = MaxPaneApp()
+    assert isinstance(app._fwa_manager, FWACompositeManager)
+    assert app._prefetch_manager("fwa") is app._fwa_manager
+    assert app._fwa_manager.pulls_manager is not None
+    assert app._fwa_manager.ecosystem_manager is not None
 
 
 def test_a_bare_app_prefetches_the_dashboard_the_menu_opens_on() -> None:
