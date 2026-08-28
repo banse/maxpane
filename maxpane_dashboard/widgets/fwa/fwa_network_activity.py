@@ -15,6 +15,7 @@ _MAX_EVENTS = 40
 _NA = "n/a"
 
 UNAVAILABLE_LINE = "network activity unavailable"
+PARTIAL_LINE = "network activity partial"
 QUIET_LINE = "no network activity in indexed window"
 LAST_GOOD_LINE = "showing labelled last-good activity"
 
@@ -119,6 +120,23 @@ def _short_hash(value) -> str:
     return tx_hash if len(tx_hash) <= 12 else f"{tx_hash[:6]}..{tx_hash[-4:]}"
 
 
+def _provenance(event: dict) -> str:
+    stale = event.get("stale")
+    freshness = "stale" if stale is True else "fresh" if stale is False else "fresh:?"
+    integrity = str(event.get("integrity") or "unknown").strip().lower()
+    if not integrity:
+        integrity = "unknown"
+    verified = event.get("verified_source")
+    verification = (
+        "verified"
+        if verified is True
+        else "unverified"
+        if verified is False
+        else "verify:?"
+    )
+    return f"[{freshness}|int:{integrity}|{verification}]"
+
+
 def _event_line(event: dict, reference, width: int) -> tuple[str, bool]:
     """Format and fit one event; optional fields are shed as whole fields."""
     if width <= 0 or width >= 88:
@@ -134,22 +152,41 @@ def _event_line(event: dict, reference, width: int) -> tuple[str, bool]:
         source_width = 13
         label_width = 17
 
+    target = width if width > 0 else 160
+    provenance = _provenance(event)
     age = pad_cell(_age_label(event.get("ts"), reference), 4)
     source = pad_cell(_source(event, source_width), source_width)
     label_raw = str(event.get("event_label") or event.get("event_key") or _NA)
     label = pad_cell(fit_cell(label_raw, label_width)[0], label_width)
     amount = _amounts(event)
 
-    line = f"{age}  {source}  {label}  {amount}"
-    shed = tier != "full"
     if tier == "full":
+        line = f"{provenance}  {age}  {source}  {label}  {amount}"
+        shed = False
         detail = str(event.get("detail") or "").strip()
         tx = _short_hash(event.get("tx_hash"))
         if detail:
             line += f"  · {detail}"
         line += f"  {tx}"
+    elif tier == "compact":
+        source_width = 12
+        remaining = max(target - cell_len(provenance) - source_width - 6, 1)
+        source = pad_cell(_source(event, source_width), source_width)
+        label = fit_cell(label_raw, remaining)[0]
+        line = f"{provenance}  {source}  {label}"
+        if cell_len(line) + cell_len(amount) + 2 <= target:
+            line += f"  {amount}"
+        shed = True
+    else:
+        remaining = max(target - cell_len(provenance) - 4, 2)
+        source_width = min(13, max(4, remaining - 8))
+        label_width = max(remaining - source_width, 1)
+        source = _source(event, source_width)
+        label = fit_cell(label_raw, label_width)[0]
+        line = f"{provenance}  {source}  {label}"
+        shed = True
 
-    fitted, clipped = fit_cell(line, width if width > 0 else 160)
+    fitted, clipped = fit_cell(line, target)
     return fitted, shed or clipped
 
 
@@ -256,12 +293,16 @@ class FWANetworkActivity(Vertical):
         if shed and not placed:
             log.write(Text(WIDEN_HINT))
 
-        if self._payload.get("available"):
+        available = self._payload.get("available")
+        reason = str(self._payload.get("reason") or "").strip()
+        if available:
+            if reason:
+                log.write(Text(fit_cell(PARTIAL_LINE, width or 120)[0]))
+                log.write(Text(fit_cell(f"reason: {reason}", width or 120)[0]))
             if not lines:
                 log.write(Text(fit_cell(QUIET_LINE, width or 120)[0]))
                 return
         else:
-            reason = str(self._payload.get("reason") or "").strip()
             log.write(Text(fit_cell(UNAVAILABLE_LINE, width or 120)[0]))
             if reason:
                 log.write(Text(fit_cell(f"reason: {reason}", width or 120)[0]))

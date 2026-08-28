@@ -110,6 +110,23 @@ def _text(value, width: int) -> Text:
     return Text(fit_cell(str(value), width)[0])
 
 
+def _observed_at(rows: list[dict]) -> str:
+    values: list[float] = []
+    for row in rows:
+        value = row.get("observed_at")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            values.append(float(value))
+    if not values:
+        return _NA
+    try:
+        seconds = int(min(values)) % 86_400
+        hours, seconds = divmod(seconds, 3_600)
+        minutes, seconds = divmod(seconds, 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d} UTC"
+    except (OverflowError, ValueError):
+        return _NA
+
+
 def _row_values(row: dict, columns: tuple) -> dict[str, Text]:
     widths = {key: width for key, _header, width in columns}
     name = str(row.get("collection_name") or "").strip()
@@ -251,7 +268,20 @@ class FWAIRDropBoard(Vertical):
             state = "unavailable · last good" if self._payload.get("rows") else "unavailable"
         if self._payload.get("stale") is True:
             state = f"{state} · stale"
-        note.update(Text(fit_cell(f"{state} · as of #{block}", width or 120)[0]))
+        observed = _observed_at(self._payload.get("rows") or [])
+        provenance = (
+            f"last good @ {observed}"
+            if self._payload.get("stale") is True
+            or not self._payload.get("available")
+            else f"observed @ {observed}"
+        )
+        note.update(
+            Text(
+                fit_cell(
+                    f"{state} · {provenance} · as of #{block}", width or 120
+                )[0]
+            )
+        )
 
         if hint and not placed:
             table.add_row(*cells({columns[0][0]: Text(WIDEN_HINT)}, columns, Text("")))

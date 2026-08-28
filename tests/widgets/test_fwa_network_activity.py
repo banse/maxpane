@@ -13,6 +13,7 @@ from maxpane_dashboard.data.fwa_ecosystem_models import FWA_NETWORK_WIDGET_SIGNA
 from maxpane_dashboard.widgets.fwa import fwa_network_activity as module
 from maxpane_dashboard.widgets.fwa.fwa_network_activity import (
     LAST_GOOD_LINE,
+    PARTIAL_LINE,
     QUIET_LINE,
     UNAVAILABLE_LINE,
     FWANetworkActivity,
@@ -106,7 +107,44 @@ async def test_network_activity_full_retains_source_version_amounts_and_dedupes(
         assert "0.1250 ETH" in text and "1,234.50 FWA" in text
         assert "duplicate must disappear" not in text
         assert text.count("Ticket bought") == 1
+        assert "[fresh|int:ok|verified]" in text
         assert _log(widget).wrap is False
+
+
+async def test_network_activity_shows_partial_reason_while_feed_is_available() -> None:
+    widget = FWANetworkActivity()
+    async with _Harness(widget).run_test(size=(100, 18)):
+        widget.update_data(
+            network_events=[_event()],
+            network_feed_available=True,
+            network_feed_unavailable_reason="partial: megarip logs timed out",
+            network_feed_as_of_ts=1_784_900_000,
+        )
+        text = _log_text(widget)
+        assert PARTIAL_LINE in text
+        assert "partial: megarip logs timed out" in text
+        assert "Ticket bought" in text
+
+
+async def test_network_activity_keeps_degraded_provenance_visible_when_narrow() -> None:
+    widget = FWANetworkActivity()
+    async with _Harness(widget).run_test(size=(52, 16)):
+        widget.update_data(
+            network_events=[
+                _event(
+                    stale=True,
+                    integrity="mismatch",
+                    verified_source=False,
+                    event_label="Suppressed semantic event",
+                )
+            ],
+            network_feed_available=True,
+            network_feed_unavailable_reason=None,
+            network_feed_as_of_ts=1_784_900_000,
+        )
+        text = _log_text(widget)
+        assert "[stale|int:mismatch|unverified]" in text
+        assert "Suppres" in text
 
 
 async def test_network_activity_distinguishes_quiet_unavailable_and_last_good() -> None:

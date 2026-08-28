@@ -148,6 +148,9 @@ async def test_drop_board_full_preserves_launch_dimensions_and_literal_names() -
         assert "1.250" in joined and "17.000" in joined and "9,876.5" in joined
         assert "120" in joined and "15" in joined
         assert "widen" not in _static_plain(widget, "#fwair-title")
+        assert "observed @ 13:33:20 UTC" in _static_plain(
+            widget, "#fwair-note"
+        )
 
 
 async def test_drop_board_narrow_keeps_required_dimensions_and_announces_shed() -> None:
@@ -166,7 +169,11 @@ async def test_drop_board_narrow_keeps_required_dimensions_and_announces_shed() 
         row = _rows(table)[0]
         assert "2" in row[0] and "supporting" in row[1]
         assert "22.500" in row[2] and "15/120" in row[3]
-        assert "stale" in _static_plain(widget, "#fwair-note")
+        note = _static_plain(widget, "#fwair-note")
+        assert "stale" in note
+        assert "last good @ 13:33:20 UTC" in note
+
+
 async def test_drop_board_blank_and_last_good_states_are_distinct() -> None:
     widget = FWAIRDropBoard()
     async with _Harness(widget).run_test(size=(90, 20)):
@@ -226,6 +233,9 @@ async def test_registry_preserves_labels_units_source_and_legacy_indentation() -
         assert "claim 12,345.000 FWA" in joined
         assert "VERIFIED" in joined and "INTEGRITY" in joined
         assert "[/x] hostile detail 海🙂" in joined
+        assert "observed @ 13:33:20 UTC" in _static_plain(
+            widget, "#fwa-registry-note"
+        )
 
 
 async def test_registry_narrow_keeps_all_metric_units_and_widen_marker() -> None:
