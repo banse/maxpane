@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "saved_at": 1799999990.0,
+  "snapshot": null,
+  "last_good": {
+    "core": {
+      "payload": {"network_active_listings": 0},
+      "ts": 1799999900.0,
+      "block_number": 1234
+    },
+    "drops": {
+      "payload": {"network_drop_rows": [null]},
+      "ts": 1799999900.0,
+      "block_number": 1234
+    },
+    "pullpool": {
+      "payload": {"network_project_rows": []},
+      "ts": 1799999800.0,
+      "block_number": 1234
+    }
+  },
+  "watermarks": [
+    {
+      "adapter": "pullpool",
+      "version": "v2",
+      "topic_group": "tickets",
+      "block_number": 1234,
+      "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "overlap": 20,
+      "updated_at": 1799999900.0
+    },
+    {
+      "adapter": "megarip",
+      "version": "v3",
+      "topic_group": "rounds",
+      "block_number": 1234,
+      "block_hash": null,
+      "overlap": 20,
+      "updated_at": 1799999900.0
+    }
+  ],
+  "reorg_starts": []
+}

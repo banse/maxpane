@@ -1,0 +1,14 @@
+{
+  "schema_version": 0,
+  "saved_at": 1799999990.0,
+  "snapshot": null,
+  "last_good": {
+    "core": {
+      "payload": {"network_active_listings": 99},
+      "ts": 1799999900.0,
+      "block_number": 1234
+    }
+  },
+  "watermarks": [],
+  "reorg_starts": []
+}
