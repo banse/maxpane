@@ -290,6 +290,19 @@ class _MismatchOnlyIntegrity:
                 return "mismatch"
         return "unknown"
 
+    def through(self, block_number: int) -> _MismatchOnlyIntegrity:
+        """Drop mismatch evidence observed after a rolled-back state block."""
+
+        return _MismatchOnlyIntegrity(
+            tuple(
+                item
+                for item in self.evidence
+                if isinstance(getattr(item, "block_number", None), int)
+                and not isinstance(getattr(item, "block_number", None), bool)
+                and getattr(item, "block_number") <= block_number
+            )
+        )
+
 
 class FWAPLogSource:
     """Minimal keyless Pool-B transport for FWAP's pure event decoder."""
@@ -514,6 +527,8 @@ class FWAEcosystemManager:
                 block_number=restored_events.block_number,
             )
         self._project_log_failed: set[str] = set()
+        self._event_integrity_failed: set[str] = set()
+        self._event_integrity_rebuild: set[str] = set()
         if restored_events is not None:
             self._failed_groups.add(GROUP_PROJECT_LOGS)
         if restored_flow is not None:
@@ -647,7 +662,11 @@ class FWAEcosystemManager:
                 all_success = False
             else:
                 any_success = True
-                self._failed_groups.discard(group)
+                if group == GROUP_DROPS and self._drops_read_partial(result):
+                    all_success = False
+                    self._failed_groups.add(group)
+                else:
+                    self._failed_groups.discard(group)
 
         now = _finite_now(self._clock)
         if any_success and all_success:
@@ -730,6 +749,14 @@ class FWAEcosystemManager:
             self._store_project_fragment(group, rows, result.observed_at, state_block)
             return
         raise ValueError(f"unknown direct group {group!r}")
+
+    @staticmethod
+    def _drops_read_partial(read: Any) -> bool:
+        return bool(
+            getattr(read, "integrity", "unknown") != "ok"
+            or getattr(read, "holes", ())
+            or getattr(read, "issues", ())
+        )
 
     def _store_core_fragment(self) -> None:
         state = self._token_state
@@ -818,12 +845,16 @@ class FWAEcosystemManager:
     def _matching_integrity(integrity: Any | None, block_number: int | None) -> Any | None:
         if integrity is None or block_number is None:
             return None
+        if isinstance(integrity, _MismatchOnlyIntegrity):
+            retained = integrity.through(block_number)
+            return retained if retained.evidence else None
         evidence_block = getattr(integrity, "block_number", None)
         if evidence_block == block_number:
             return integrity
         if (
             isinstance(evidence_block, int)
             and not isinstance(evidence_block, bool)
+            and evidence_block < block_number
             and FWAEcosystemManager._integrity_contains_false(integrity)
         ):
             return _MismatchOnlyIntegrity.merged(integrity)
@@ -1022,13 +1053,14 @@ class FWAEcosystemManager:
 
     def _store_drops_fragment(self, read: Any) -> None:
         rows = [_row_dict(row) for row in read.rows]
+        partial = self._drops_read_partial(read)
         self.cache.store_last_good(
             GROUP_DROPS,
             {
                 "network_drop_rows": rows,
                 "network_drops_available": True,
                 "network_drops_as_of_block": read.state_block,
-                "network_drops_stale": False,
+                "network_drops_stale": partial,
                 "network_drop_count": int(read.valid_count),
             },
             ts=float(read.observed_at),
@@ -1145,31 +1177,47 @@ class FWAEcosystemManager:
                 else:
                     self._project_log_failed.add(label)
 
-        if flow_ok:
-            self._failed_groups.discard(GROUP_FLOW_LOGS)
-        else:
-            self._failed_groups.add(GROUP_FLOW_LOGS)
         project_pages_ok = bool(
             project_results and all(project_results.values())
         )
-        if project_pages_ok:
+        coverage_incomplete = {
+            source
+            for source in _PROJECT_LOG_SOURCES
+            if not self._source_history_caught_up(source, block_number)
+        }
+        for source in tuple(self._event_integrity_failed):
+            if (
+                source not in coverage_incomplete
+                and not self._source_integrity_mismatched(source, block_number)
+            ):
+                self._event_integrity_failed.discard(source)
+                self._event_integrity_rebuild.discard(source)
+                self._project_log_failed.discard(source)
+        if flow_ok and "fwa" not in self._event_integrity_failed:
+            self._failed_groups.discard(GROUP_FLOW_LOGS)
+        else:
+            self._failed_groups.add(GROUP_FLOW_LOGS)
+        self._project_log_failed.update(coverage_incomplete)
+        self._project_log_failed.update(self._event_integrity_failed)
+        feed_ready = bool(
+            project_pages_ok
+            and not coverage_incomplete
+            and not self._event_integrity_failed
+        )
+        if feed_ready:
             self._failed_groups.discard(GROUP_PROJECT_LOGS)
         else:
             self._failed_groups.add(GROUP_PROJECT_LOGS)
 
         now = _finite_now(self._clock)
-        if flow_ok and project_pages_ok:
+        if flow_ok and feed_ready:
             self.cache.mark_fetched(TIER_MEDIUM, now)
         else:
             self.cache.mark_failed(TIER_MEDIUM, now)
-        successful_projects = {
-            source for source, ok in project_results.items() if ok
-        }
-        if successful_projects:
+        if any(project_results.values()):
             await self._store_event_fragment(
                 now,
                 state_block=block_number,
-                successful_sources=successful_projects,
             )
         await self._commit_from_groups()
 
@@ -1238,6 +1286,7 @@ class FWAEcosystemManager:
             await self._commit_from_groups()
             return
         successes = 0
+        event_feed_changed = False
         for (label, _coro), result in zip(calls, results, strict=True):
             if isinstance(result, BaseException):
                 self._error_count += 1
@@ -1261,6 +1310,10 @@ class FWAEcosystemManager:
                         self._core_integrity, result
                     )
                 )
+                if self._sync_event_integrity(
+                    label, self._core_integrity, complete=complete
+                ):
+                    event_feed_changed = True
                 if (
                     self._token_state is not None
                     and self._token_state.state_block == block_number
@@ -1274,6 +1327,10 @@ class FWAEcosystemManager:
                         self._pull_integrity, result
                     )
                 )
+                if self._sync_event_integrity(
+                    label, self._pull_integrity, complete=complete
+                ):
+                    event_feed_changed = True
                 if (
                     self._pull_state is not None
                     and self._pull_state.block_number == block_number
@@ -1297,6 +1354,10 @@ class FWAEcosystemManager:
                         self._fwap_integrity, result
                     )
                 )
+                if self._sync_event_integrity(
+                    label, self._fwap_integrity, complete=complete
+                ):
+                    event_feed_changed = True
                 if (
                     self._fwap_state is not None
                     and self._fwap_state.block_number == block_number
@@ -1325,6 +1386,11 @@ class FWAEcosystemManager:
                 {"network_integrity_warning_count": self._integrity_warning_count()},
                 ts=now,
                 block_number=block_number,
+            )
+        if event_feed_changed:
+            await self._store_event_fragment(
+                now,
+                state_block=block_number,
             )
         await self._commit_from_groups()
 
@@ -2181,19 +2247,15 @@ class FWAEcosystemManager:
         now: float,
         *,
         state_block: int,
-        successful_sources: set[str],
     ) -> None:
         # Fresh peers publish even while another adapter is down.  Restored
         # presentation rows stay visibly stale until full accumulated coverage
         # proves them again; they never seed the canonical event accumulator.
-        self._project_log_failed.difference_update(successful_sources)
         combined = deepcopy(self._restored_events)
         for event_id, raw in self._events.items():
             row = dict(raw)
             source = self._event_adapter(row)
-            row["stale"] = bool(
-                row.get("stale") or source in self._project_log_failed
-            )
+            row["stale"] = bool(row.get("stale") or self._event_source_failed(source))
             combined[event_id] = row
         if self._project_history_caught_up(state_block):
             restored_ids = set(self._restored_events)
@@ -2223,8 +2285,9 @@ class FWAEcosystemManager:
                 "network_feed_available": True,
                 "network_feed_unavailable_reason": (
                     None
-                    if not self._project_log_failed
-                    else "partial: " + ", ".join(sorted(self._project_log_failed))
+                    if not self._event_failed_sources()
+                    else "partial: "
+                    + ", ".join(sorted(self._event_failed_sources()))
                 ),
                 "network_feed_as_of_ts": now,
             },
@@ -2245,33 +2308,225 @@ class FWAEcosystemManager:
             return "fwap"
         return "pullpool"
 
-    def _project_history_caught_up(self, state_block: int) -> bool:
-        if self._flow_coverage_end is None or self._flow_coverage_end < state_block:
+    def _event_failed_sources(self) -> set[str]:
+        return set(self._project_log_failed) | set(self._event_integrity_failed)
+
+    def _event_source_failed(self, source: str) -> bool:
+        return source in self._event_failed_sources()
+
+    @staticmethod
+    def _mismatched_event_addresses(
+        label: str, integrity: Any | None
+    ) -> set[str]:
+        if integrity is None:
+            return set()
+        if label == "core":
+            status_for = getattr(integrity, "status_for", None)
+            return (
+                {FWA_TOKEN.lower()}
+                if callable(status_for) and status_for("token") == "mismatch"
+                else set()
+            )
+        if label == "pullpool":
+            status_for = getattr(integrity, "status_for", None)
+            if not callable(status_for):
+                return set()
+            return {
+                manifest.address.lower()
+                for manifest in PULLPOOL_MANIFESTS
+                if status_for(manifest) == "mismatch"
+            }
+        if label == "fwap":
+            status_for_version = getattr(integrity, "status_for_version", None)
+            if not callable(status_for_version):
+                return set()
+            return {
+                manifest.address.lower()
+                for manifest in FWAP_MANIFESTS
+                if status_for_version(manifest.version) == "mismatch"
+            }
+        return set()
+
+    def _suppress_event_addresses(self, addresses: set[str]) -> bool:
+        if not addresses:
             return False
-        for address, _integrity in self._fwair_event_streams(state_block):
-            key = WatermarkKey("fwair", address, "events")
-            if self._project_coverage_end.get(key, -1) < state_block:
-                return False
-        if self._pull_history is None:
-            return False
-        if any(
-            not self._pull_history.covers(stream.watermark_key, state_block)
-            for stream in PULLPOOL_LOG_STREAMS
-        ):
-            return False
-        for manifest in MEGARIP_MANIFESTS:
-            key = WatermarkKey("megarip", manifest.version, "lifecycle")
-            if self._project_coverage_end.get(key, -1) < state_block:
-                return False
-        for manifest in FWAP_MANIFESTS:
-            if not any(
-                spec.manifest.address == manifest.address for spec in FWAP_EVENT_SPECS
+        changed = False
+        for rows in (self._events, self._restored_events):
+            for event_id, raw in tuple(rows.items()):
+                if not any(
+                    event_id.lower().startswith(f"1:{address}:")
+                    for address in addresses
+                ):
+                    continue
+                row = dict(raw)
+                replacement = {
+                    "event_key": "integrity_mismatch",
+                    "event_label": "Untrusted contract log",
+                    "eth_amount": None,
+                    "fwa_amount": None,
+                    "detail": (
+                        "runtime/dependency integrity mismatch; "
+                        "semantics suppressed"
+                    ),
+                    "stale": True,
+                    "verified_source": False,
+                    "integrity": "mismatch",
+                }
+                if any(row.get(key) != value for key, value in replacement.items()):
+                    row.update(replacement)
+                    rows[event_id] = NetworkEventRow.model_validate(row).model_dump()
+                    changed = True
+        return changed
+
+    def _invalidate_event_source(self, source: str) -> None:
+        if source == "fwa":
+            self._flow_logs = None
+            self._flow_buybacks.clear()
+            self._flow_burns.clear()
+            self._flow_coverage_end = None
+            self._has_restored_flow_fragment = (
+                self.cache.get_last_good(GROUP_FLOW_LOGS) is not None
+            )
+            return
+        if source == "pullpool":
+            self._pull_history = None
+            return
+        if source == "fwap":
+            for manifest in FWAP_MANIFESTS:
+                self._project_coverage_end.pop(
+                    WatermarkKey("fwap", manifest.version, manifest.role), None
+                )
+
+    def _sync_event_integrity(
+        self, label: str, integrity: Any | None, *, complete: bool
+    ) -> bool:
+        source = {"core": "fwa", "pullpool": "pullpool", "fwap": "fwap"}[label]
+        addresses = self._mismatched_event_addresses(label, integrity)
+        if addresses:
+            first_failure = source not in self._event_integrity_failed
+            self._event_integrity_failed.add(source)
+            self._event_integrity_rebuild.discard(source)
+            self._project_log_failed.add(source)
+            self._failed_groups.add(GROUP_PROJECT_LOGS)
+            if source == "fwa":
+                self._failed_groups.add(GROUP_FLOW_LOGS)
+            suppressed = self._suppress_event_addresses(addresses)
+            return bool(first_failure or suppressed)
+        if complete and source in self._event_integrity_failed:
+            # Recovery does not make rows decoded under untrusted runtime code
+            # fresh.  Rebuild raw history from deployment before clearing the
+            # partial-feed marker.
+            first_recovery = source not in self._event_integrity_rebuild
+            if first_recovery:
+                self._invalidate_event_source(source)
+                self._event_integrity_rebuild.add(source)
+            self._project_log_failed.add(source)
+            self._failed_groups.add(GROUP_PROJECT_LOGS)
+            if source == "fwa":
+                self._failed_groups.add(GROUP_FLOW_LOGS)
+            return first_recovery
+        return False
+
+    def _source_integrity_mismatched(
+        self, source: str, state_block: int
+    ) -> bool:
+        if source == "fwa":
+            integrity = self._matching_integrity(
+                self._core_integrity, state_block
+            )
+            return bool(
+                integrity is not None
+                and integrity.status_for("token") == "mismatch"
+            )
+        if source == "pullpool":
+            integrity = self._matching_integrity(
+                self._pull_integrity, state_block
+            )
+            return bool(
+                integrity is not None
+                and any(
+                    integrity.status_for(manifest) == "mismatch"
+                    for manifest in PULLPOOL_MANIFESTS
+                )
+            )
+        if source == "fwap":
+            integrity = self._matching_integrity(
+                self._fwap_integrity, state_block
+            )
+            return bool(
+                integrity is not None
+                and any(
+                    integrity.status_for_version(manifest.version) == "mismatch"
+                    for manifest in FWAP_MANIFESTS
+                )
+            )
+        return False
+
+    def _source_history_caught_up(self, source: str, state_block: int) -> bool:
+        if source == "fwa":
+            return bool(
+                self._flow_coverage_end is not None
+                and self._flow_coverage_end >= state_block
+            )
+        if source == "drop":
+            if (
+                self._drops_state is None
+                or getattr(self._drops_state, "state_block", None) != state_block
+                or getattr(self._drops_state, "available", None) is not True
+                or self._drops_read_partial(self._drops_state)
             ):
-                continue
-            key = WatermarkKey("fwap", manifest.version, manifest.role)
-            if self._project_coverage_end.get(key, -1) < state_block:
                 return False
-        return True
+            return all(
+                self._project_coverage_end.get(
+                    WatermarkKey("fwair", address, "events"), -1
+                )
+                >= state_block
+                for address, _integrity in self._fwair_event_streams(state_block)
+            )
+        if source == "pullpool":
+            if not PULLPOOL_LOG_STREAMS:
+                return True
+            return bool(
+                self._pull_history is not None
+                and all(
+                    self._pull_history.covers(stream.watermark_key, state_block)
+                    for stream in PULLPOOL_LOG_STREAMS
+                )
+            )
+        if source == "megarip":
+            return all(
+                self._project_coverage_end.get(
+                    WatermarkKey("megarip", manifest.version, "lifecycle"), -1
+                )
+                >= state_block
+                for manifest in MEGARIP_MANIFESTS
+            )
+        if source == "fwap":
+            streams = tuple(
+                manifest
+                for manifest in FWAP_MANIFESTS
+                if any(
+                    spec.manifest.address == manifest.address
+                    for spec in FWAP_EVENT_SPECS
+                )
+            )
+            return all(
+                self._project_coverage_end.get(
+                    WatermarkKey("fwap", manifest.version, manifest.role), -1
+                )
+                >= state_block
+                for manifest in streams
+            )
+        return False
+
+    def _project_history_caught_up(self, state_block: int) -> bool:
+        return bool(
+            not self._event_integrity_failed
+            and all(
+                self._source_history_caught_up(source, state_block)
+                for source in _PROJECT_LOG_SOURCES
+            )
+        )
 
     async def _commit_from_groups(self) -> None:
         async with self._commit_lock:
@@ -2344,6 +2599,19 @@ class FWAEcosystemManager:
         if flow is not None:
             flow_payload = deepcopy(flow.payload)
             saved_flow_rows = flow_payload.pop("network_flow_rows", [])
+            core_integrity = self._matching_integrity(
+                self._core_integrity, self._state_block
+            )
+            if (
+                "fwa" in self._event_integrity_failed
+                or (
+                    core_integrity is not None
+                    and core_integrity.status_for("token") == "mismatch"
+                )
+            ):
+                # GROUP_FLOW_LOGS may predate the integrity read.  The freshly
+                # rebuilt core rows have already removed unsafe amounts.
+                saved_flow_rows = []
             state_rows = {
                 row.get("key"): row for row in payload["network_flow_rows"]
             }
@@ -2381,6 +2649,9 @@ class FWAEcosystemManager:
         drops_stale = self._entry_stale(GROUP_DROPS, drops, TIER_FAST, now)
         if drops is not None:
             payload.update(deepcopy(drops.payload))
+            drops_stale = bool(
+                drops_stale or payload.get("network_drops_stale") is True
+            )
             payload["network_drops_stale"] = drops_stale
             payload["network_drop_rows"] = self._set_rows_stale(
                 payload["network_drop_rows"], drops_stale
@@ -2422,14 +2693,14 @@ class FWAEcosystemManager:
             for raw in payload["network_events"]:
                 row = _row_dict(raw)
                 source_failed = (
-                    self._event_adapter(row) in self._project_log_failed
+                    self._event_source_failed(self._event_adapter(row))
                 )
                 row["stale"] = bool(
                     row.get("stale") or event_age_stale or source_failed
                 )
                 event_rows.append(row)
             payload["network_events"] = self._dedupe_events(event_rows)
-            if _PROJECT_LOG_SOURCES <= self._project_log_failed:
+            if _PROJECT_LOG_SOURCES <= self._event_failed_sources():
                 payload["network_feed_unavailable_reason"] = (
                     "partial: " + ", ".join(sorted(_PROJECT_LOG_SOURCES))
                 )

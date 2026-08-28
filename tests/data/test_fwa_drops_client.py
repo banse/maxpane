@@ -21,6 +21,7 @@ from maxpane_dashboard.data.fwa_drops_client import (
     FWAIRLaunchState,
     LAUNCH_SELECTORS,
     MANAGER_SELECTORS,
+    MAX_LAUNCHES_PER_REFRESH,
     normalize_fwair_events,
     phase_name,
     runtime_codehash,
@@ -601,6 +602,28 @@ async def test_manager_runtime_mismatch_stops_before_untrusted_manager_calls(
         "eth_blockNumber",
         "eth_getCode",
     ]
+
+
+@pytest.mark.asyncio
+async def test_oversized_launch_count_fails_before_proportional_allocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture("two_launches")
+    fixture["next_launch_id"] = MAX_LAUNCHES_PER_REFRESH + 2
+
+    result, simulator, transport = await _run(fixture, monkeypatch)
+
+    assert result.available is False
+    assert result.integrity == "unknown"
+    assert result.next_launch_id == MAX_LAUNCHES_PER_REFRESH + 2
+    assert result.rows == ()
+    assert result.issues == ("launch_enumeration_limit_exceeded",)
+    assert len(simulator.subcalls) == 4
+    assert all(
+        calldata[:10] != MANAGER_SELECTORS["launches(uint256)"]
+        for _target, calldata, _tag in simulator.subcalls
+    )
+    assert len(transport.requests) == 3
 
 
 @pytest.mark.asyncio

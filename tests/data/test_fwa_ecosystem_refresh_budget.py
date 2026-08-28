@@ -935,9 +935,13 @@ async def test_project_log_failure_stales_only_that_adapter_and_publishes_peers(
         return False
 
     manager._refresh_flow_logs = ready
+    manager._refresh_fwair_logs = ready
     manager._refresh_pullpool_logs = ready
     manager._refresh_megarip_logs = down
     manager._refresh_fwap_logs = ready
+    manager._source_history_caught_up = (
+        lambda source, _block: source != "megarip"
+    )
     clock.advance(5.0)
 
     await manager._run_medium_cycle()
@@ -952,6 +956,42 @@ async def test_project_log_failure_stales_only_that_adapter_and_publishes_peers(
     assert payload["network_feed_as_of_ts"] == clock()
     assert {row["observed_at"] for row in rows.values()} == {NOW}
     assert "project_logs" in payload["network_degraded_sources"]
+    await manager.close()
+
+
+async def test_successful_pages_stay_partial_until_every_stream_is_caught_up(
+    tmp_path, monkeypatch
+) -> None:
+    manager, clock, *_rest = _manager(tmp_path, monkeypatch)
+    await manager.fetch_and_compute()
+    event = _event(
+        address=manager_module.FWAP_MANIFESTS[0].address,
+        block_number=100,
+        log_index=1,
+        family="fwap",
+    )
+    manager._merge_events((event,))
+
+    async def ready(_block):
+        return True
+
+    manager._refresh_flow_logs = ready
+    manager._refresh_fwair_logs = ready
+    manager._refresh_pullpool_logs = ready
+    manager._refresh_megarip_logs = ready
+    manager._refresh_fwap_logs = ready
+    manager._source_history_caught_up = (
+        lambda source, _block: source != "fwap"
+    )
+    clock.advance(2.0)
+
+    await manager._run_medium_cycle()
+    payload = manager.cache.latest_snapshot().payload
+
+    assert payload["network_feed_unavailable_reason"] == "partial: fwap"
+    assert payload["network_events"][0]["stale"] is True
+    assert GROUP_PROJECT_LOGS in payload["network_degraded_sources"]
+    assert manager.cache.seconds_until_due(TIER_MEDIUM, clock()) > 0.0
     await manager.close()
 
 
@@ -984,7 +1024,6 @@ async def test_total_project_log_outage_keeps_last_good_but_marks_every_event_st
     await manager._store_event_fragment(
         clock(),
         state_block=BLOCK,
-        successful_sources={"pullpool", "megarip", "fwap"},
     )
     previous = manager.cache.get_last_good(GROUP_PROJECT_LOGS)
 
@@ -1095,9 +1134,7 @@ async def test_medium_cycle_pin_race_does_not_publish_old_results_as_fresh(
             ),
         )
     )
-    await manager._store_event_fragment(
-        clock(), state_block=BLOCK, successful_sources={"pullpool"}
-    )
+    await manager._store_event_fragment(clock(), state_block=BLOCK)
     previous = manager.cache.get_last_good(GROUP_PROJECT_LOGS)
     entered = asyncio.Event()
     release = asyncio.Event()
@@ -1832,6 +1869,199 @@ async def test_confirmed_partial_mismatch_latches_until_complete_recovery(
         )
         assert row["primary_value"] == 1.0
         assert row["integrity"] == "ok"
+    await manager.close()
+
+
+@pytest.mark.parametrize("target", ("core", "pullpool", "fwap"))
+async def test_integrity_mismatch_immediately_suppresses_cached_event_semantics(
+    target, tmp_path, monkeypatch
+) -> None:
+    manager, clock, core, _drops, pull, _mega, fwap, _logs = _manager(
+        tmp_path, monkeypatch
+    )
+    initial = await manager.fetch_and_compute()
+    if target == "core":
+        address = manager_module.FWA_TOKEN
+        family = "fwa"
+        source = "fwa"
+    elif target == "pullpool":
+        address = manager_module.PULLPOOL_MANIFESTS[0].address
+        family = "pullpool"
+        source = "pullpool"
+    else:
+        address = manager_module.FWAP_MANIFESTS[0].address
+        family = "fwap"
+        source = "fwap"
+    event = _event(
+        address=address,
+        block_number=BLOCK - 1,
+        log_index=4,
+        family=family,
+    )
+    event.update(
+        eth_amount=3.0,
+        fwa_amount=7.0,
+        detail="previously decoded semantic amount",
+    )
+    manager._merge_events((event,))
+    await manager._store_event_fragment(clock(), state_block=BLOCK)
+    if target == "core":
+        manager.cache.store_last_good(
+            GROUP_FLOW_LOGS,
+            _complete_flow_fragment(
+                initial, observed_at=clock(), block_number=BLOCK
+            ),
+            ts=clock(),
+            block_number=BLOCK,
+        )
+
+    reads = {
+        "core": _core_integrity(
+            BLOCK,
+            complete=True,
+            mismatch=target == "core",
+            mismatch_role="token",
+        ),
+        "pullpool": _project_integrity(
+            "pullpool",
+            BLOCK,
+            complete=True,
+            mismatch=target == "pullpool",
+        ),
+        "fwap": _project_integrity(
+            "fwap",
+            BLOCK,
+            complete=True,
+            mismatch=target == "fwap",
+        ),
+    }
+
+    async def read_core(_block_number):
+        return reads["core"]
+
+    async def read_pull(_block_number):
+        return reads["pullpool"]
+
+    async def read_fwap(_block_number):
+        return reads["fwap"]
+
+    core.fetch_official_integrity = read_core
+    pull.fetch_integrity = read_pull
+    fwap.fetch_integrity = read_fwap
+
+    await manager._run_integrity_cycle()
+
+    live = manager._events[event["event_id"]]
+    cached = manager.cache.get_last_good(GROUP_PROJECT_LOGS)
+    assert cached is not None
+    published = next(
+        row
+        for row in cached.payload["network_events"]
+        if row["event_id"] == event["event_id"]
+    )
+    for row in (live, published):
+        assert row["event_key"] == "integrity_mismatch"
+        assert row["event_label"] == "Untrusted contract log"
+        assert row["eth_amount"] is None
+        assert row["fwa_amount"] is None
+        assert row["verified_source"] is False
+        assert row["integrity"] == "mismatch"
+        assert row["stale"] is True
+        assert "semantics suppressed" in row["detail"]
+    assert cached.payload["network_feed_unavailable_reason"] == (
+        f"partial: {source}"
+    )
+    assert source in manager._event_integrity_failed
+    payload = manager.cache.latest_snapshot().payload
+    assert GROUP_PROJECT_LOGS in payload["network_degraded_sources"]
+    if target == "core":
+        buyback = next(
+            row
+            for row in payload["network_flow_rows"]
+            if row["key"] == "buyback_swap_eth"
+        )
+        assert buyback["value"] is None
+        assert buyback["integrity"] == "mismatch"
+        assert GROUP_FLOW_LOGS in payload["network_degraded_sources"]
+
+    if target == "core":
+        manager._flow_coverage_end = BLOCK
+        manager._flow_logs = SimpleNamespace(marker=True)
+    elif target == "pullpool":
+        manager._pull_history = SimpleNamespace(marker=True)
+    else:
+        key = WatermarkKey(
+            "fwap",
+            manager_module.FWAP_MANIFESTS[0].version,
+            manager_module.FWAP_MANIFESTS[0].role,
+        )
+        manager._project_coverage_end[key] = BLOCK
+
+    reads = {
+        "core": _core_integrity(BLOCK, complete=True),
+        "pullpool": _project_integrity("pullpool", BLOCK, complete=True),
+        "fwap": _project_integrity("fwap", BLOCK, complete=True),
+    }
+    clock.advance(1.0)
+    await manager._run_integrity_cycle()
+
+    recovered = manager.cache.latest_snapshot().payload
+    assert source in manager._event_integrity_failed
+    assert recovered["network_feed_unavailable_reason"] == f"partial: {source}"
+    recovered_event = next(
+        row
+        for row in recovered["network_events"]
+        if row["event_id"] == event["event_id"]
+    )
+    assert recovered_event["eth_amount"] is None
+    assert recovered_event["fwa_amount"] is None
+    assert recovered_event["stale"] is True
+    if target == "core":
+        assert manager._flow_coverage_end is None
+        assert manager._flow_logs is None
+        assert GROUP_FLOW_LOGS in recovered["network_degraded_sources"]
+    elif target == "pullpool":
+        assert manager._pull_history is None
+    else:
+        assert key not in manager._project_coverage_end
+
+    # A second successful integrity poll must not erase an in-progress
+    # deployment-to-head rebuild.
+    if target == "core":
+        manager._flow_coverage_end = BLOCK - 1
+    elif target == "pullpool":
+        manager._pull_history = SimpleNamespace(marker="partial rebuild")
+    else:
+        manager._project_coverage_end[key] = BLOCK - 1
+    clock.advance(1.0)
+    await manager._run_integrity_cycle()
+    if target == "core":
+        assert manager._flow_coverage_end == BLOCK - 1
+    elif target == "pullpool":
+        assert manager._pull_history.marker == "partial rebuild"
+    else:
+        assert manager._project_coverage_end[key] == BLOCK - 1
+    await manager.close()
+
+
+@pytest.mark.parametrize("target", ("core", "pullpool", "fwap"))
+async def test_latched_mismatch_is_not_applied_before_its_evidence_block(
+    target, tmp_path, monkeypatch
+) -> None:
+    manager, *_rest = _manager(tmp_path, monkeypatch)
+    if target == "core":
+        result = _core_integrity(
+            BLOCK, complete=True, mismatch=True, mismatch_role="token"
+        )
+    else:
+        result = _project_integrity(
+            target, BLOCK, complete=True, mismatch=True
+        )
+    latched = manager._merge_integrity_mismatch(None, result)
+
+    assert manager._matching_integrity(result, BLOCK - 1) is None
+    assert manager._matching_integrity(latched, BLOCK - 1) is None
+    assert manager._matching_integrity(latched, BLOCK) is not None
     await manager.close()
 
 

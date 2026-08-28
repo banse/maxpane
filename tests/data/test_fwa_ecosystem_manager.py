@@ -21,6 +21,7 @@ from maxpane_dashboard.data.fwa_ecosystem_cache import (
 )
 from maxpane_dashboard.data.fwa_ecosystem_manager import FWAEcosystemManager
 from maxpane_dashboard.data.fwa_ecosystem_models import (
+    DropRow,
     FWA_NETWORK_DATA_KEYS,
     ProjectRow,
     blank_network_payload,
@@ -129,7 +130,10 @@ class _Drops(_Closable):
             observed_at=self.clock(),
             state_block=block_number,
             available=True,
+            integrity="ok",
             rows=(),
+            holes=(),
+            issues=(),
             valid_count=0,
         )
 
@@ -361,6 +365,62 @@ async def test_core_only_first_snapshot_keeps_unavailable_project_counts_unknown
     assert payload["network_project_degraded_count"] is None
     assert payload["network_project_unverified_count"] is None
     assert payload["network_integrity_warning_count"] is None
+    await manager.close()
+
+
+async def test_drop_hole_keeps_valid_rows_but_marks_snapshot_partial(
+    tmp_path, monkeypatch
+) -> None:
+    manager, clock, _core, drops, _pull, _mega, _fwap, _logs = _manager(
+        tmp_path, monkeypatch
+    )
+    row = DropRow(
+        launch_id=1,
+        launch_address="0x" + "12" * 20,
+        collection_address="0x" + "34" * 20,
+        collection_name="Observed launch",
+        phase="supporting",
+        support_open=True,
+        token_count=10,
+        supported_count=4,
+        supporter_count=3,
+        launched_count=0,
+        terminal_count=0,
+        backing_eth=1.0,
+        total_backing_eth=1.0,
+        artist_credit_eth=0.0,
+        supporter_principal_eth=1.0,
+        supporter_reserve_fwa=2.0,
+        source_kind="chain_state",
+        measurement="measured",
+        block_number=BLOCK,
+        observed_at=clock(),
+        stale=False,
+        verified_source=True,
+        integrity="ok",
+    )
+
+    async def partial_drops(*, block_number: int):
+        return SimpleNamespace(
+            observed_at=clock(),
+            state_block=block_number,
+            available=True,
+            integrity="ok",
+            rows=(row,),
+            holes=(2,),
+            issues=("launch_2_address_unavailable",),
+            valid_count=1,
+        )
+
+    drops.fetch_drops = partial_drops
+
+    payload = await manager.fetch_and_compute()
+
+    assert payload["network_drop_count"] == 1
+    assert payload["network_drops_available"] is True
+    assert payload["network_drops_stale"] is True
+    assert payload["network_drop_rows"][0]["stale"] is True
+    assert GROUP_DROPS in payload["network_degraded_sources"]
     await manager.close()
 
 

@@ -58,6 +58,11 @@ _BYTES32_RE = re.compile(r"^0x[0-9a-f]{64}$")
 _WEI_PER_TOKEN = 10**18
 _STRICT = ConfigDict(frozen=True, extra="forbid", strict=True)
 
+# One refresh reads roughly twenty child views plus one runtime hash per launch.
+# Refuse an implausible manager count before allocating proportional call lists;
+# never truncate silently because that would make later launches disappear.
+MAX_LAUNCHES_PER_REFRESH = 32
+
 
 # ---------------------------------------------------------------------------
 # Vendored ABI -> immutable read selectors
@@ -802,13 +807,14 @@ class FWAIRDropsClient(FWAClient):
         state_block: int | None,
         integrity: Literal["mismatch", "unknown"],
         issue: str,
+        next_launch_id: int | None = None,
     ) -> FWAIRDropsRead:
         return FWAIRDropsRead(
             observed_at=observed_at,
             state_block=state_block,
             chain_head=state_block,
             block_timestamp=None,
-            next_launch_id=None,
+            next_launch_id=next_launch_id,
             available=False,
             integrity=integrity,
             rows=(),
@@ -900,6 +906,14 @@ class FWAIRDropsClient(FWAClient):
                 state_block=state_block,
                 integrity="mismatch",
                 issue="manager_dependency_mismatch",
+            )
+        if next_launch_id - 1 > MAX_LAUNCHES_PER_REFRESH:
+            return self._empty(
+                observed_at=observed_at,
+                state_block=state_block,
+                integrity="unknown",
+                issue="launch_enumeration_limit_exceeded",
+                next_launch_id=next_launch_id,
             )
 
         issues: list[str] = []
@@ -1185,6 +1199,7 @@ __all__ = [
     "FWAIR_MANAGER_EVENT_SPECS",
     "FWAIRLaunchState",
     "LAUNCH_SELECTORS",
+    "MAX_LAUNCHES_PER_REFRESH",
     "MANAGER_SELECTORS",
     "phase_name",
     "normalize_fwair_events",
