@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -620,7 +621,7 @@ async def test_hostile_launch_count_keeps_all_calls_bounded(
     assert result.available is True
     assert result.integrity == "warning"
     assert result.next_launch_id == 2**255
-    assert result.rows == ()
+    assert [row.launch_id for row in result.rows] == [1]
     assert result.issues[-1] == "launch_enumeration_partial"
     launch_getter_ids = [
         decode_uint("0x" + strip0x(calldata)[8:])
@@ -629,10 +630,179 @@ async def test_hostile_launch_count_keeps_all_calls_bounded(
         and calldata.startswith(MANAGER_SELECTORS["launches(uint256)"])
     ]
     assert len(launch_getter_ids) == MAX_LAUNCHES_PER_REFRESH
-    assert launch_getter_ids == list(
-        range(2**255 - MAX_LAUNCHES_PER_REFRESH, 2**255)
-    )
-    assert len(simulator.subcalls) == 4 + MAX_LAUNCHES_PER_REFRESH
+    assert launch_getter_ids == [
+        *range(2**255 - MAX_LAUNCHES_PER_REFRESH + 1, 2**255),
+        1,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_repeated_hostile_counts_bound_calls_and_failure_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture("two_launches")
+    fixture["next_launch_id"] = 2**255
+    simulator = SimulatedFWAIR(fixture)
+    transport = DenyNetworkTransport(simulator.handle)
+    _patch_runtime_hash(monkeypatch)
+
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = FWAIRDropsClient(
+            primary_rpc="https://rpc.test",
+            fallback_rpcs=["https://fallback.test"],
+            http_client=http_client,
+            inter_call_delay=0,
+            backoff_seconds=(),
+            clock=FixedClock(fixture["observed_at"]),
+        )
+        for _cycle in range(12):
+            subcall_start = len(simulator.subcalls)
+            rpc_start = len(simulator.rpc_calls)
+            result = await client.fetch_drops()
+            cycle_subcalls = simulator.subcalls[subcall_start:]
+            cycle_rpcs = simulator.rpc_calls[rpc_start:]
+            launch_getters = [
+                calldata
+                for target, calldata, _tag in cycle_subcalls
+                if target == FWAIR_MANAGER
+                and calldata.startswith(MANAGER_SELECTORS["launches(uint256)"])
+            ]
+            assert len(launch_getters) <= MAX_LAUNCHES_PER_REFRESH
+            assert len(cycle_rpcs) <= MAX_LAUNCHES_PER_REFRESH + 12
+            assert len(result.holes) <= MAX_LAUNCHES_PER_REFRESH
+            assert len(client._launch_holes) <= MAX_LAUNCHES_PER_REFRESH
+            assert len(client._launch_issues) <= MAX_LAUNCHES_PER_REFRESH
+            assert sum(
+                issue.startswith("launch_")
+                and issue != "launch_enumeration_partial"
+                for issue in result.issues
+            ) <= MAX_LAUNCHES_PER_REFRESH
+
+    assert {row.launch_id for row in result.rows} == {1, 2}
+
+
+@pytest.mark.asyncio
+async def test_failed_new_launch_is_retried_and_recovers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture("two_launches")
+    simulator = SimulatedFWAIR(fixture)
+    transport = DenyNetworkTransport(simulator.handle)
+    clock = FixedClock(fixture["observed_at"])
+    _patch_runtime_hash(monkeypatch)
+
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = FWAIRDropsClient(
+            primary_rpc="https://rpc.test",
+            fallback_rpcs=["https://fallback.test"],
+            http_client=http_client,
+            inter_call_delay=0,
+            backoff_seconds=(),
+            clock=clock,
+        )
+        await client.fetch_drops()
+        launch_17 = deepcopy(fixture["launches"]["2"])
+        launch_17.update(
+            {
+                "address": "0x1000000000000000000000000000000000000011",
+                "collection": "0x2000000000000000000000000000000000000011",
+                "name": "Seventeenth Drop",
+                "failed_calls": ["manager()"],
+            }
+        )
+        fixture["launches"]["17"] = launch_17
+        fixture["next_launch_id"] = 18
+        fixture["block_number"] += 1
+        fixture["block_timestamp"] += 1
+        clock.advance(1)
+        failed = await client.fetch_drops()
+        assert 17 in failed.holes
+        assert 17 not in {row.launch_id for row in failed.rows}
+
+        launch_17.pop("failed_calls")
+        recovered = None
+        for _attempt in range(4):
+            fixture["block_number"] += 1
+            fixture["block_timestamp"] += 1
+            clock.advance(1)
+            candidate = await client.fetch_drops()
+            if 17 in {row.launch_id for row in candidate.rows}:
+                recovered = candidate
+                break
+
+    assert recovered is not None
+    recovered_by_id = {row.launch_id: row for row in recovered.rows}
+    assert 17 not in recovered.holes
+    assert all(not issue.startswith("launch_17_") for issue in recovered.issues)
+    assert recovered_by_id[17].collection_name == "Seventeenth Drop"
+    assert recovered_by_id[17].stale is False
+
+
+@pytest.mark.asyncio
+async def test_cancelled_page_leaves_accumulator_and_cursor_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture("two_launches")
+    fixture["next_launch_id"] = 18
+    simulator = SimulatedFWAIR(fixture)
+    transport = DenyNetworkTransport(simulator.handle)
+    _patch_runtime_hash(monkeypatch)
+
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = FWAIRDropsClient(
+            primary_rpc="https://rpc.test",
+            fallback_rpcs=["https://fallback.test"],
+            http_client=http_client,
+            inter_call_delay=0,
+            backoff_seconds=(),
+            clock=FixedClock(fixture["observed_at"]),
+        )
+        await client.fetch_drops()
+
+        def accumulator_state() -> tuple[Any, ...]:
+            return (
+                dict(client._launch_rows),
+                dict(client._launch_holes),
+                dict(client._launch_issues),
+                client._launch_scan_cursor,
+                client._known_next_launch_id,
+                client._known_launch_runtime_hash,
+                client._last_drop_state_block,
+            )
+
+        before = accumulator_state()
+        expected_page, expected_cursor, _reset = client._launch_page(
+            next_launch_id=fixture["next_launch_id"],
+            state_block=fixture["block_number"],
+            expected_child_hash=_CHILD_CODEHASH,
+        )
+        original_multicall = client._multicall
+        multicall_count = 0
+
+        async def cancel_page(calls: Any, block: str = "latest") -> Any:
+            nonlocal multicall_count
+            multicall_count += 1
+            if multicall_count == 2:
+                raise asyncio.CancelledError
+            return await original_multicall(calls, block)
+
+        monkeypatch.setattr(client, "_multicall", cancel_page)
+        with pytest.raises(asyncio.CancelledError):
+            await client.fetch_drops()
+        assert accumulator_state() == before
+
+        monkeypatch.setattr(client, "_multicall", original_multicall)
+        subcall_start = len(simulator.subcalls)
+        await client.fetch_drops()
+        resumed_getters = [
+            decode_uint("0x" + strip0x(calldata)[8:])
+            for target, calldata, _tag in simulator.subcalls[subcall_start:]
+            if target == FWAIR_MANAGER
+            and calldata.startswith(MANAGER_SELECTORS["launches(uint256)"])
+        ]
+
+    assert resumed_getters == list(expected_page)
+    assert client._launch_scan_cursor == expected_cursor
 
 
 @pytest.mark.asyncio
@@ -709,7 +879,7 @@ async def test_new_launch_page_accumulates_rows_and_marks_old_rows_stale(
         third_by_id = {row.launch_id: row for row in third.rows}
         assert third_by_id[1].stale is True
         assert third_by_id[2].stale is False
-        assert third_by_id[33].stale is False
+        assert third_by_id[33].stale is True
 
 
 @pytest.mark.asyncio

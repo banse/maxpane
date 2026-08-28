@@ -63,7 +63,9 @@ _STRICT = ConfigDict(frozen=True, extra="forbid", strict=True)
 # One refresh reads roughly twenty child views plus one runtime hash per launch.
 # Bound the page, not the registry: later launches stay discoverable and a
 # hostile ``nextLaunchId`` cannot cause proportional allocation or RPC calls.
-MAX_LAUNCHES_PER_REFRESH = 32
+# Sixteen also leaves headroom under the manager's eight-second tier timeout.
+MAX_LAUNCHES_PER_REFRESH = 16
+_LAUNCH_RETRIES_PER_REFRESH = 4
 
 
 # ---------------------------------------------------------------------------
@@ -775,7 +777,7 @@ class FWAIRDropsClient(FWAClient):
         self._log_min_call_interval = log_min_call_interval
         self._event_clients: dict[str, FWALogClient] = {}
         self._launch_rows: dict[int, DropRow] = {}
-        self._launch_holes: set[int] = set()
+        self._launch_holes: dict[int, None] = {}
         self._launch_issues: dict[int, tuple[str, ...]] = {}
         self._launch_scan_cursor = 1
         self._known_next_launch_id: int | None = None
@@ -817,10 +819,21 @@ class FWAIRDropsClient(FWAClient):
                 self._launch_rows.pop(launch_id, None)
         for launch_id in tuple(self._launch_holes):
             if not 1 <= launch_id < next_launch_id:
-                self._launch_holes.discard(launch_id)
+                self._launch_holes.pop(launch_id, None)
         for launch_id in tuple(self._launch_issues):
             if not 1 <= launch_id < next_launch_id:
                 self._launch_issues.pop(launch_id, None)
+
+    def _trim_launch_failure_metadata(self) -> None:
+        """Keep hostile registries from growing retry metadata forever."""
+
+        while len(self._launch_holes) > MAX_LAUNCHES_PER_REFRESH:
+            launch_id = next(iter(self._launch_holes))
+            self._launch_holes.pop(launch_id, None)
+            self._launch_issues.pop(launch_id, None)
+        while len(self._launch_issues) > MAX_LAUNCHES_PER_REFRESH:
+            launch_id = next(iter(self._launch_issues))
+            self._launch_issues.pop(launch_id, None)
 
     def _launch_page(
         self,
@@ -851,27 +864,44 @@ class FWAIRDropsClient(FWAClient):
         if total <= MAX_LAUNCHES_PER_REFRESH:
             return tuple(range(1, next_launch_id)), 1, reset
 
+        retry_ids = (
+            ()
+            if reset
+            else tuple(
+                launch_id
+                for launch_id in self._launch_holes
+                if 1 <= launch_id < next_launch_id
+            )[:_LAUNCH_RETRIES_PER_REFRESH]
+        )
+        selected: list[int] = []
+        selected_ids: set[int] = set()
+
+        def add_ids(ids: Sequence[int]) -> None:
+            for launch_id in ids:
+                if len(selected) >= MAX_LAUNCHES_PER_REFRESH:
+                    return
+                if launch_id not in selected_ids:
+                    selected.append(launch_id)
+                    selected_ids.add(launch_id)
+
+        # Always reserve one slot for the ordinary cursor.  New ids receive the
+        # remaining priority capacity, while a small retry slice prevents a
+        # transient failure from waiting for a huge cursor wrap.
+        new_budget = MAX_LAUNCHES_PER_REFRESH - len(retry_ids) - 1
         if known_next is None:
-            start = max(1, next_launch_id - MAX_LAUNCHES_PER_REFRESH)
-            return tuple(range(start, next_launch_id)), 1, reset
+            new_start = max(1, next_launch_id - new_budget)
+            add_ids(range(new_start, next_launch_id))
+        elif next_launch_id > known_next:
+            new_start = max(known_next, next_launch_id - new_budget)
+            add_ids(range(new_start, next_launch_id))
+        add_ids(retry_ids)
 
-        if next_launch_id > known_next:
-            new_start = max(known_next, next_launch_id - MAX_LAUNCHES_PER_REFRESH)
-            new_ids = tuple(range(new_start, next_launch_id))
-            remaining = MAX_LAUNCHES_PER_REFRESH - len(new_ids)
-            old_last = known_next - 1
-            if remaining <= 0 or old_last < 1:
-                return new_ids, cursor, reset
-            old_start = cursor if 1 <= cursor <= old_last else 1
-            old_end = min(old_last, old_start + remaining - 1)
-            old_ids = tuple(range(old_start, old_end + 1))
-            next_cursor = 1 if old_end >= old_last else old_end + 1
-            return new_ids + old_ids, next_cursor, reset
-
+        cursor_budget = MAX_LAUNCHES_PER_REFRESH - len(selected)
         start = cursor if 1 <= cursor <= total else 1
-        end = min(total, start + MAX_LAUNCHES_PER_REFRESH - 1)
+        end = min(total, start + cursor_budget - 1)
+        add_ids(range(start, end + 1))
         next_cursor = 1 if end >= total else end + 1
-        return tuple(range(start, end + 1)), next_cursor, reset
+        return tuple(selected), next_cursor, reset
 
     def _observed_at(self) -> float:
         value = self._drops_clock()
@@ -1180,18 +1210,20 @@ class FWAIRDropsClient(FWAClient):
             row.launch_id: row for row in (*valid_rows, *mismatch_rows)
         }
         for launch_id in launch_ids:
-            self._launch_holes.discard(launch_id)
+            self._launch_holes.pop(launch_id, None)
             self._launch_issues.pop(launch_id, None)
             row = refreshed_rows.get(launch_id)
             if row is not None:
                 self._launch_rows[launch_id] = row
-        self._launch_holes.update(holes)
+        for launch_id in holes:
+            self._launch_holes[launch_id] = None
         self._launch_issues.update(
             {
                 launch_id: tuple(values)
                 for launch_id, values in launch_issues.items()
             }
         )
+        self._trim_launch_failure_metadata()
         self._launch_scan_cursor = next_scan_cursor
         self._known_next_launch_id = next_launch_id
         self._known_launch_runtime_hash = expected_child_hash
