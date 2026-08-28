@@ -710,6 +710,11 @@ class FWATokenomicsLogClient:
     async def close(self) -> None:
         await self._logs.close()
 
+    async def fetch_block_hash(self, block_number: int) -> str | None:
+        """Delegate canonical watermark checks to the archive log pool."""
+
+        return await self._logs.fetch_block_hash(block_number)
+
     async def __aenter__(self) -> FWATokenomicsLogClient:
         return self
 

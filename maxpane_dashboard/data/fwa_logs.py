@@ -1808,6 +1808,44 @@ class FWALogClient:
                 logger.debug("eth_blockNumber failed on %s: %s", url, err.message)
         return 0
 
+    async def fetch_block_hash(self, block_number: int) -> str | None:
+        """Canonical block hash via Pool B, or ``None`` without guessing.
+
+        Log watermarks are useful only when their saved block can be checked
+        against the same archive-capable pool used for the replacement page.
+        Keeping this public avoids orchestration code reaching into a client's
+        private JSON-RPC transport.
+        """
+
+        if (
+            isinstance(block_number, bool)
+            or not isinstance(block_number, int)
+            or block_number < 0
+        ):
+            return None
+        for url in self._endpoints:
+            try:
+                result = await self._post(
+                    url,
+                    self._payload(
+                        "eth_getBlockByNumber", [hex(block_number), False]
+                    ),
+                )
+            except LogEndpointError as err:
+                logger.debug("block hash failed on %s: %s", url, err.message)
+                continue
+            if not isinstance(result, Mapping):
+                continue
+            block_hash = result.get("hash")
+            if (
+                isinstance(block_hash, str)
+                and len(block_hash) == 66
+                and block_hash.startswith("0x")
+                and all(char in "0123456789abcdefABCDEF" for char in block_hash[2:])
+            ):
+                return block_hash.lower()
+        return None
+
     # ------------------------------------------------------------------
     # Backfill + tail
     # ------------------------------------------------------------------

@@ -1307,6 +1307,34 @@ async def test_both_endpoints_down_returns_unavailable_not_raise():
     await client.close()
 
 
+async def test_block_hash_uses_pool_b_and_fails_closed():
+    block_number = 25_850_301
+    expected = "0x" + "ab" * 32
+
+    def tenderly(payload: dict) -> httpx.Response:
+        assert payload["method"] == "eth_getBlockByNumber"
+        assert payload["params"] == [hex(block_number), False]
+        return ok({"number": hex(block_number), "hash": expected.upper().replace("0X", "0x")})
+
+    client, transport = scripted_client({TENDERLY_GATEWAY: tenderly})
+    assert await client.fetch_block_hash(block_number) == expected
+    assert len(transport.calls_to(TENDERLY_GATEWAY)) == 1
+    assert await client.fetch_block_hash(True) is None
+    await client.close()
+
+
+async def test_block_hash_failover_rejects_malformed_hashes():
+    expected = "0x" + "cd" * 32
+    client, _transport = scripted_client(
+        {
+            TENDERLY_GATEWAY: lambda payload: ok({"hash": "0x1234"}),
+            DRPC_GATEWAY: lambda payload: ok({"hash": expected}),
+        }
+    )
+    assert await client.fetch_block_hash(1) == expected
+    await client.close()
+
+
 async def test_degraded_after_a_good_scan_keeps_last_good_with_an_as_of_marker():
     """A stale number is fine. A stale number presented as live is not."""
     logs = raw_logs("logs_top_listing_set")

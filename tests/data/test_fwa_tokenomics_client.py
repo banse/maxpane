@@ -465,6 +465,23 @@ async def test_log_groups_degrade_independently() -> None:
     await client.close()
 
 
+async def test_tokenomics_log_client_exposes_pool_b_block_hash() -> None:
+    expected = "0x" + "ef" * 32
+
+    def handler(payload: dict[str, Any]) -> httpx.Response:
+        assert payload["method"] == "eth_getBlockByNumber"
+        return _ok(payload, {"hash": expected})
+
+    client = FWATokenomicsLogClient(
+        endpoints=[TENDERLY_GATEWAY],
+        http_client=httpx.AsyncClient(transport=RecordingTransport(handler)),
+        clock=FixedClock(LOGS["observed_at"]),
+        min_call_interval=0.0,
+    )
+    assert await client.fetch_block_hash(123) == expected
+    await client.close()
+
+
 def test_log_pool_rejects_the_state_batching_endpoint() -> None:
     with pytest.raises(ValueError, match="not a Pool B"):
         FWATokenomicsLogClient(
