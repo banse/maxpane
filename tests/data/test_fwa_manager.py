@@ -1282,6 +1282,30 @@ async def test_close_persists_cache_and_closes_clients(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_close_cancels_both_detached_sweeps(tmp_path):
+    manager = _manager(tmp_path)
+    floor_cancelled = asyncio.Event()
+    name_cancelled = asyncio.Event()
+
+    async def linger(marker: asyncio.Event) -> None:
+        try:
+            await asyncio.Event().wait()
+        finally:
+            marker.set()
+
+    manager._floor_task = asyncio.create_task(linger(floor_cancelled))
+    manager._name_task = asyncio.create_task(linger(name_cancelled))
+    await asyncio.sleep(0)
+
+    await manager.close()
+
+    assert floor_cancelled.is_set()
+    assert name_cancelled.is_set()
+    assert manager._floor_task is None
+    assert manager._name_task is None
+
+
+@pytest.mark.asyncio
 async def test_error_count_increments_and_is_reported(tmp_path):
     manager = _manager(tmp_path, state=FakeStateClient(fail=True))
     first = await manager.fetch_and_compute()

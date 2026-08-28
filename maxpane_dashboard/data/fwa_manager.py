@@ -907,14 +907,15 @@ class FWAManager:
 
     async def close(self) -> None:
         """Persist everything and close all three HTTP clients."""
-        task = self._floor_task
-        if task is not None and not task.done():
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
-        self._floor_task = None
+        for attr in ("_floor_task", "_name_task"):
+            task = getattr(self, attr)
+            if task is not None and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
+            setattr(self, attr, None)
 
         self.save_cache()
         self._save_log_state()
