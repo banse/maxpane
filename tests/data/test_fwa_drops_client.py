@@ -753,6 +753,61 @@ async def test_launch_registry_shrink_discards_future_accumulator_rows(
     assert shrunk.holes == ()
     assert shrunk.integrity_mismatch_ids == ()
     assert "launch_enumeration_partial" not in shrunk.issues
+    assert all(not issue.startswith("launch_33_") for issue in shrunk.issues)
+
+
+@pytest.mark.asyncio
+async def test_transient_child_failure_keeps_last_good_row_stale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture("two_launches")
+    simulator = SimulatedFWAIR(fixture)
+    transport = DenyNetworkTransport(simulator.handle)
+    clock = FixedClock(fixture["observed_at"])
+    _patch_runtime_hash(monkeypatch)
+
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = FWAIRDropsClient(
+            primary_rpc="https://rpc.test",
+            fallback_rpcs=["https://fallback.test"],
+            http_client=http_client,
+            inter_call_delay=0,
+            backoff_seconds=(),
+            clock=clock,
+        )
+        first = await client.fetch_drops()
+        first_by_id = {row.launch_id: row for row in first.rows}
+
+        fixture["launches"]["1"]["failed_calls"] = ["manager()"]
+        fixture["block_number"] += 1
+        fixture["block_timestamp"] += 1
+        clock.advance(1)
+        failed = await client.fetch_drops()
+        failed_by_id = {row.launch_id: row for row in failed.rows}
+
+        assert [row.launch_id for row in failed.rows] == [1, 2]
+        assert failed.holes == (1,)
+        assert "launch_1_child_read_failed" in failed.issues
+        assert failed.integrity == "warning"
+        assert failed_by_id[1].collection_name == "First Drop"
+        assert failed_by_id[1].block_number == first_by_id[1].block_number
+        assert failed_by_id[1].observed_at == first_by_id[1].observed_at
+        assert failed_by_id[1].stale is True
+        assert failed_by_id[2].block_number == fixture["block_number"]
+        assert failed_by_id[2].stale is False
+
+        fixture["launches"]["1"].pop("failed_calls")
+        fixture["block_number"] += 1
+        fixture["block_timestamp"] += 1
+        clock.advance(1)
+        recovered = await client.fetch_drops()
+
+    recovered_by_id = {row.launch_id: row for row in recovered.rows}
+    assert recovered.holes == ()
+    assert "launch_1_child_read_failed" not in recovered.issues
+    assert recovered_by_id[1].block_number == fixture["block_number"]
+    assert recovered_by_id[1].observed_at == clock.value
+    assert recovered_by_id[1].stale is False
 
 
 @pytest.mark.asyncio

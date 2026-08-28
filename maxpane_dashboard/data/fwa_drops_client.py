@@ -809,6 +809,19 @@ class FWAIRDropsClient(FWAClient):
         self._known_launch_runtime_hash = None
         self._last_drop_state_block = None
 
+    def _prune_launch_cache(self, next_launch_id: int) -> None:
+        """Discard accumulator entries outside the live manager id range."""
+
+        for launch_id in tuple(self._launch_rows):
+            if not 1 <= launch_id < next_launch_id:
+                self._launch_rows.pop(launch_id, None)
+        for launch_id in tuple(self._launch_holes):
+            if not 1 <= launch_id < next_launch_id:
+                self._launch_holes.discard(launch_id)
+        for launch_id in tuple(self._launch_issues):
+            if not 1 <= launch_id < next_launch_id:
+                self._launch_issues.pop(launch_id, None)
+
     def _launch_page(
         self,
         *,
@@ -1162,12 +1175,16 @@ class FWAIRDropsClient(FWAClient):
 
         if reset_cache:
             self._clear_launch_cache()
+        self._prune_launch_cache(next_launch_id)
+        refreshed_rows = {
+            row.launch_id: row for row in (*valid_rows, *mismatch_rows)
+        }
         for launch_id in launch_ids:
-            self._launch_rows.pop(launch_id, None)
             self._launch_holes.discard(launch_id)
             self._launch_issues.pop(launch_id, None)
-        for row in (*valid_rows, *mismatch_rows):
-            self._launch_rows[row.launch_id] = row
+            row = refreshed_rows.get(launch_id)
+            if row is not None:
+                self._launch_rows[launch_id] = row
         self._launch_holes.update(holes)
         self._launch_issues.update(
             {
@@ -1180,10 +1197,10 @@ class FWAIRDropsClient(FWAClient):
         self._known_launch_runtime_hash = expected_child_hash
         self._last_drop_state_block = state_block
 
-        current_ids = set(launch_ids)
+        fresh_ids = set(refreshed_rows)
         rows = tuple(
             row
-            if launch_id in current_ids
+            if launch_id in fresh_ids
             else row.model_copy(update={"stale": True})
             for launch_id, row in sorted(self._launch_rows.items())
         )
