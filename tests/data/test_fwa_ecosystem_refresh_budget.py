@@ -1859,6 +1859,7 @@ async def test_confirmed_partial_mismatch_latches_until_complete_recovery(
         "fwap": _project_integrity("fwap", BLOCK + 1, complete=True),
     }
     await manager._run_integrity_cycle()
+    await manager._run_fast_cycle()
 
     assert GROUP_INTEGRITY not in manager._failed_groups
     current = manager.cache.get_last_good(GROUP_INTEGRITY)
@@ -2184,6 +2185,68 @@ async def test_restored_project_mismatch_blocks_fast_semantics_until_recovery(
     assert recovered_row["primary_value"] == 1.0
     assert recovered_row["integrity"] == "ok"
     await fresh.close()
+    await manager.close()
+
+
+@pytest.mark.parametrize("source", ("fwa", "pullpool", "fwap"))
+def test_restart_latch_rejects_partial_current_integrity(source) -> None:
+    manager = object.__new__(FWAEcosystemManager)
+    manager._state_integrity_latched = {source}
+    manager._core_integrity = None
+    manager._pull_integrity = None
+    manager._fwap_integrity = None
+    if source == "fwa":
+        manager._core_integrity = _core_integrity(
+            BLOCK,
+            complete=False,
+            mismatch=True,
+            mismatch_role="core",
+        )
+    elif source == "pullpool":
+        manager._pull_integrity = _project_integrity(
+            "pullpool",
+            BLOCK,
+            complete=False,
+            mismatch=True,
+            mismatch_index=1,
+        )
+    else:
+        manager._fwap_integrity = _project_integrity(
+            "fwap",
+            BLOCK,
+            complete=False,
+            mismatch=True,
+            mismatch_index=1,
+        )
+
+    with pytest.raises(manager_module._IntegrityRecoveryPending):
+        manager._require_state_integrity_recovery(source, BLOCK)
+
+    assert manager._state_integrity_latched == {source}
+
+
+async def test_restored_core_latch_waits_for_complete_integrity_before_rebuild(
+    tmp_path, monkeypatch
+) -> None:
+    manager, *_rest = _manager(tmp_path, monkeypatch)
+    manager._state_integrity_latched = {"fwa"}
+    manager._event_integrity_failed = {"fwa"}
+    manager._event_integrity_rebuild.clear()
+    manager._project_log_failed = {"fwa"}
+    manager._core_integrity = _core_integrity(
+        BLOCK,
+        complete=False,
+        mismatch=True,
+        mismatch_role="core",
+    )
+    marker = SimpleNamespace(value="restored")
+    manager._flow_logs = marker
+    manager._flow_coverage_end = BLOCK
+
+    assert manager._reconcile_event_integrity(BLOCK) is False
+    assert manager._event_integrity_rebuild == set()
+    assert manager._flow_logs is marker
+    assert manager._flow_coverage_end == BLOCK
     await manager.close()
 
 

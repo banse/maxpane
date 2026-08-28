@@ -830,12 +830,13 @@ class FWAEcosystemManager:
     ) -> None:
         if source not in self._state_integrity_latched:
             return
-        integrity = {
-            "fwa": self._core_integrity,
-            "pullpool": self._pull_integrity,
-            "fwap": self._fwap_integrity,
+        label, stored = {
+            "fwa": ("core", self._core_integrity),
+            "pullpool": ("pullpool", self._pull_integrity),
+            "fwap": ("fwap", self._fwap_integrity),
         }[source]
-        if self._matching_integrity(integrity, state_block) is None:
+        integrity = self._matching_integrity(stored, state_block)
+        if not self._integrity_read_complete(label, integrity, state_block):
             raise _IntegrityRecoveryPending(source)
         if not self._source_integrity_mismatched(source, state_block):
             self._state_integrity_latched.discard(source)
@@ -2628,6 +2629,10 @@ class FWAEcosystemManager:
             ("fwap", "fwap", self._fwap_integrity),
         ):
             integrity = self._matching_integrity(stored, state_block)
+            evidence_block = getattr(stored, "block_number", None)
+            rolled_back_before_evidence = bool(
+                type(evidence_block) is int and evidence_block > state_block
+            )
             if self._mismatched_event_addresses(label, integrity):
                 if self._sync_event_integrity(label, integrity, complete=False):
                     changed = True
@@ -2636,7 +2641,10 @@ class FWAEcosystemManager:
                 and source not in self._event_integrity_rebuild
                 and (
                     source not in self._state_integrity_latched
-                    or stored is not None
+                    or self._integrity_read_complete(
+                        label, integrity, state_block
+                    )
+                    or rolled_back_before_evidence
                 )
                 and self._begin_event_integrity_rebuild(source)
             ):
