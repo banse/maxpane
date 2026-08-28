@@ -343,14 +343,13 @@ memory when a bug report cites one.
 cargo test                                    # the Rust intro crate, from maxpane/ (443)
 ```
 
-**The full suite takes ~11 minutes. Run it when it is actually necessary, not after every
-task.** Necessary means: before a merge or a push that follows real code changes, at the end of
-a multi-task branch, or when a change could plausibly reach code no targeted run covers. After a
-single task — and always after a docs-only, comment-only or constant-rename edit — ask what
-could have broken and run *that*: the widget's own test file, plus the screen test that
-composites it; a data module's file, plus the manager test that consumes it. A docs edit usually
-needs nothing, or the one test that pins the doc's content. Citing the last real green run is
-better than spending eleven minutes to re-learn it.
+**Run the full suite only immediately before a remote push.** A local commit, merge, completed
+branch, broad refactor, review, or handoff is not permission to run it. In every other case,
+test only the dashboard currently being changed, or narrow further to the affected view when
+that is sufficient: the widget's own test file plus the screen test that composites it; a data
+module's file plus the manager test that consumes it. A docs edit usually needs nothing, or the
+one test that pins the doc's content. If no remote push is about to happen, do not run the full
+suite. Citing the last real full-suite result is better than re-running it outside that gate.
 
 Parallel agents run **only their own test files, never the suite** — a neighbour mid-edit
 reddens it for a reason that is not yours, and eleven minutes per agent per task is the largest
