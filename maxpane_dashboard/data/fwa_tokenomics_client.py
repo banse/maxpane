@@ -18,7 +18,7 @@ import math
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict
@@ -40,6 +40,10 @@ from maxpane_dashboard.data.fwa_ecosystem_addresses import (
     FWA_VRF,
     OFFICIAL_DEPLOYMENTS,
 )
+from maxpane_dashboard.data.fwa_ecosystem_models import (
+    NETWORK_EVENT_ROW_KEYS,
+    NetworkEventRow,
+)
 from maxpane_dashboard.data.fwa_logs import (
     FWALogClient,
     LOG_ENDPOINTS,
@@ -59,6 +63,7 @@ __all__ = [
     "FWATokenomicsClient",
     "FWATokenomicsLogClient",
     "IntegrityRead",
+    "normalize_buyback_events",
     "STATE_CALLS",
     "TOKEN_TRANSFER_TOPIC",
     "TokenomicsLogRead",
@@ -224,6 +229,8 @@ class TokenomicsLogRead(BaseModel):
     unavailable_reason: str | None
     buybacks: tuple[BuybackEvent, ...]
     burns: tuple[BurnEvent, ...]
+    buyback_decode_complete: bool = True
+    burn_decode_complete: bool = True
 
 
 class IntegrityRead(BaseModel):
@@ -460,7 +467,7 @@ class FWATokenomicsClient(FWAClient):
         ):
             raise ValueError("gas_price_wei must be a non-negative int or None")
         quote_total: int | None = None
-        if price:
+        if price is not None:
             _fee, _vrf, total = await self.quote_acquisition_price(
                 price, block=block_tag
             )
@@ -684,6 +691,133 @@ def _pair_buybacks(
     )
 
 
+def _buyback_decode_complete(raw_logs: Sequence[Any]) -> bool:
+    """True only when every returned log matches and decodes as requested."""
+
+    for raw in raw_logs:
+        if not isinstance(raw, Mapping):
+            return False
+        topics = raw.get("topics")
+        topic0 = str(topics[0]).lower() if isinstance(topics, list) and topics else ""
+        if topic0 == BOUGHT_TOPIC:
+            decoded = _decode_bought(raw)
+        elif topic0 == BUYBACK_ROUTED_TOPIC:
+            decoded = _decode_routed(raw)
+        else:
+            decoded = None
+        if decoded is None:
+            return False
+    return True
+
+
+def normalize_buyback_events(
+    read: TokenomicsLogRead,
+    *,
+    integrity: Literal["ok", "warning", "mismatch", "unknown"] = "unknown",
+    stale: bool = False,
+) -> tuple[dict[str, Any], ...]:
+    """Convert paired token events into the shared NETWORK activity contract."""
+
+    if integrity not in {"ok", "warning", "mismatch", "unknown"}:
+        raise ValueError("invalid buyback integrity")
+    if not isinstance(stale, bool):
+        raise ValueError("stale must be bool")
+
+    semantic_ok = integrity != "mismatch"
+    rows: list[dict[str, Any]] = []
+
+    def whole(value: int | None) -> float | None:
+        return None if value is None else value / 10**18
+
+    for event in read.buybacks:
+        common = {
+            "ts": event.block_timestamp,
+            "tx_hash": event.tx_hash,
+            "origin": "FWA Token",
+            "family": "fwa",
+            "version": None,
+            "source_kind": "chain_log",
+            "measurement": "measured",
+            "block_number": event.block_number,
+            "observed_at": read.observed_at,
+            "stale": stale,
+            "verified_source": semantic_ok,
+            "integrity": integrity,
+        }
+        buyback = NetworkEventRow(
+            event_id=(
+                f"1:{FWA_TOKEN.lower()}:{event.tx_hash.lower()}:"
+                f"{event.bought_log_index}"
+            ),
+            log_index=event.bought_log_index,
+            event_key="buyback" if semantic_ok else "integrity_mismatch",
+            event_label="Buyback" if semantic_ok else "Untrusted contract log",
+            eth_amount=whole(event.eth_spent_wei) if semantic_ok else None,
+            fwa_amount=whole(event.amount_bought_wei) if semantic_ok else None,
+            detail=(
+                f"caller reward {whole(event.caller_reward_wei)} ETH"
+                if semantic_ok
+                else "runtime/dependency integrity mismatch; semantics suppressed"
+            ),
+            **common,
+        ).model_dump()
+        assert tuple(buyback) == NETWORK_EVENT_ROW_KEYS
+        rows.append(buyback)
+
+        if event.routed_log_index is None:
+            continue
+        routed_total = None
+        if all(
+            value is not None
+            for value in (
+                event.to_depositors_wei,
+                event.to_purchasers_wei,
+                event.burned_wei,
+            )
+        ):
+            routed_total = sum(
+                value
+                for value in (
+                    event.to_depositors_wei,
+                    event.to_purchasers_wei,
+                    event.burned_wei,
+                )
+                if value is not None
+            )
+        routing = NetworkEventRow(
+            event_id=(
+                f"1:{FWA_TOKEN.lower()}:{event.tx_hash.lower()}:"
+                f"{event.routed_log_index}"
+            ),
+            log_index=event.routed_log_index,
+            event_key="buyback_routed" if semantic_ok else "integrity_mismatch",
+            event_label=(
+                "Buyback routed" if semantic_ok else "Untrusted contract log"
+            ),
+            eth_amount=None,
+            fwa_amount=whole(routed_total) if semantic_ok else None,
+            detail=(
+                "depositors "
+                f"{whole(event.to_depositors_wei)} FWA · purchasers "
+                f"{whole(event.to_purchasers_wei)} FWA · burn "
+                f"{whole(event.burned_wei)} FWA"
+                if semantic_ok
+                else "runtime/dependency integrity mismatch; semantics suppressed"
+            ),
+            **common,
+        ).model_dump()
+        assert tuple(routing) == NETWORK_EVENT_ROW_KEYS
+        rows.append(routing)
+
+    return tuple(
+        sorted(
+            rows,
+            key=lambda row: (row["block_number"] or -1, row["log_index"]),
+            reverse=True,
+        )
+    )
+
+
 class FWATokenomicsLogClient:
     """Token-specific reads on the existing keyless archive log pool."""
 
@@ -770,10 +904,19 @@ class FWATokenomicsLogClient:
             reasons.append("burn logs unavailable")
 
         burns_by_id: dict[tuple[str, int], BurnEvent] = {}
+        burn_decode_complete = True
         for raw in burn_raw:
-            event = _decode_burn(raw, observed_at)
+            event = _decode_burn(raw, observed_at) if isinstance(raw, Mapping) else None
             if event is not None:
                 burns_by_id[(event.tx_hash, event.log_index)] = event
+            else:
+                burn_decode_complete = False
+
+        buyback_decode_complete = _buyback_decode_complete(buyback_raw)
+        if buybacks_available and not buyback_decode_complete:
+            reasons.append("buyback log decode incomplete")
+        if burns_available and not burn_decode_complete:
+            reasons.append("burn log decode incomplete")
 
         return TokenomicsLogRead(
             observed_at=observed_at,
@@ -790,6 +933,8 @@ class FWATokenomicsLogClient:
                     key=lambda item: (item.block_number, item.log_index),
                 )
             ),
+            buyback_decode_complete=buyback_decode_complete,
+            burn_decode_complete=burn_decode_complete,
         )
 
 

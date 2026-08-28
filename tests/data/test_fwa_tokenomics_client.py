@@ -29,6 +29,7 @@ from maxpane_dashboard.data.fwa_tokenomics_client import (
     FWATokenomicsClient,
     FWATokenomicsLogClient,
     TokenomicsState,
+    normalize_buyback_events,
     runtime_codehash,
 )
 from maxpane_dashboard.data.keccak import keccak256_hex
@@ -313,6 +314,28 @@ async def test_state_batch_and_quote_are_pinned_with_required_gas_context() -> N
     await client.close()
 
 
+async def test_measured_zero_gas_price_still_executes_the_pinned_quote() -> None:
+    transport, quote_calls = _state_handler()
+    client = _state_client(transport)
+
+    result = await client.fetch_state(
+        block_number=STATE["block_number"],
+        gas_price_wei=0,
+    )
+
+    assert result.gas_price_wei == 0
+    assert result.quote_total_wei == STATE["quote"]["total_wei"]
+    assert quote_calls == [
+        {
+            "to": module.FWA_CORE,
+            "data": module.SELECTORS["quoteAcquisitionPrice()"],
+            "gas": "0x200000",
+            "gasPrice": "0x0",
+        }
+    ]
+    await client.close()
+
+
 async def test_failed_subcalls_are_none_while_measured_zero_stays_zero() -> None:
     transport, _ = _state_handler(
         failed={"refund_credit_total_wei"},
@@ -417,6 +440,8 @@ async def test_log_client_decodes_pairs_burns_and_overlap_dedupes() -> None:
         LOGS["from_block"], LOGS["to_block"], history_complete=True
     )
     assert result.buybacks_available and result.burns_available
+    assert result.buyback_decode_complete is True
+    assert result.burn_decode_complete is True
     assert len(result.buybacks) == 1
     assert len(result.burns) == 3
     event = result.buybacks[0]
@@ -432,6 +457,76 @@ async def test_log_client_decodes_pairs_burns_and_overlap_dedupes() -> None:
         list(BURN_RECIPIENT_TOPICS),
     ]
     await client.close()
+
+
+async def test_malformed_relevant_log_marks_the_page_decode_incomplete() -> None:
+    buyback_logs, burn_logs = _raw_flow_logs()
+    malformed = dict(buyback_logs[0], data="0x01")
+
+    def handler(payload: dict[str, Any]) -> httpx.Response:
+        topics = payload["params"][0]["topics"]
+        return _ok(
+            payload,
+            [malformed, *buyback_logs[1:]]
+            if isinstance(topics[0], list)
+            else burn_logs,
+        )
+
+    client = FWATokenomicsLogClient(
+        endpoints=[TENDERLY_GATEWAY],
+        http_client=httpx.AsyncClient(transport=RecordingTransport(handler)),
+        clock=FixedClock(LOGS["observed_at"]),
+        min_call_interval=0.0,
+    )
+
+    result = await client.fetch_flow_logs(1, 2, history_complete=False)
+
+    assert result.buybacks_available is True
+    assert result.buyback_decode_complete is False
+    assert result.burn_decode_complete is True
+    assert result.unavailable_reason == "buyback log decode incomplete"
+    await client.close()
+
+
+def test_buyback_activity_normalization_and_mismatch_suppression() -> None:
+    buy = LOGS["buyback"]
+    event = BuybackEvent(
+        block_number=buy["block_number"],
+        block_timestamp=buy["block_timestamp"],
+        observed_at=LOGS["observed_at"],
+        tx_hash=buy["tx_hash"],
+        bought_log_index=10,
+        routed_log_index=11,
+        caller=buy["caller"],
+        eth_spent_wei=buy["eth_spent_wei"],
+        amount_bought_wei=buy["amount_bought_wei"],
+        caller_reward_wei=buy["caller_reward_wei"],
+        to_depositors_wei=buy["to_depositors_wei"],
+        to_purchasers_wei=buy["to_purchasers_wei"],
+        burned_wei=buy["burned_wei"],
+    )
+    read = module.TokenomicsLogRead(
+        observed_at=LOGS["observed_at"],
+        from_block=buy["block_number"],
+        to_block=buy["block_number"],
+        history_complete=False,
+        buybacks_available=True,
+        burns_available=True,
+        unavailable_reason=None,
+        buybacks=(event,),
+        burns=(),
+    )
+
+    rows = normalize_buyback_events(read, integrity="ok")
+    assert [row["event_key"] for row in rows] == ["buyback_routed", "buyback"]
+    assert rows[0]["fwa_amount"] is not None
+    assert rows[1]["eth_amount"] == buy["eth_spent_wei"] / 10**18
+
+    suppressed = normalize_buyback_events(read, integrity="mismatch")
+    assert all(row["event_key"] == "integrity_mismatch" for row in suppressed)
+    assert all(row["eth_amount"] is None for row in suppressed)
+    assert all(row["fwa_amount"] is None for row in suppressed)
+    assert all(row["verified_source"] is False for row in suppressed)
 
 
 async def test_log_groups_degrade_independently() -> None:

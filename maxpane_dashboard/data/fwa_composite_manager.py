@@ -18,6 +18,7 @@ from maxpane_dashboard.data.fwa_ecosystem_models import (
     blank_network_payload,
 )
 from maxpane_dashboard.data.fwa_models import FWA_DATA_KEYS
+from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 
 logger = logging.getLogger(__name__)
 

@@ -118,6 +118,7 @@ class _Drops(_Closable):
         super().__init__()
         self.clock = clock
         self.blocks: list[int] = []
+        self.event_calls: list[tuple[str, int, int, str]] = []
         self.fail = False
 
     async def fetch_drops(self, *, block_number: int):
@@ -130,6 +131,29 @@ class _Drops(_Closable):
             available=True,
             rows=(),
             valid_count=0,
+        )
+
+    async def fetch_events(
+        self,
+        address: str,
+        *,
+        from_block: int,
+        to_block: int,
+        history_complete: bool,
+        integrity: str,
+    ):
+        assert history_complete is False
+        self.event_calls.append((address, from_block, to_block, integrity))
+        return SimpleNamespace(
+            observed_at=self.clock(),
+            address=address,
+            from_block=from_block,
+            to_block=to_block,
+            available=True,
+            page_complete=True,
+            last_complete_block_hash="0x" + "ab" * 32,
+            events=(),
+            decode_failures=0,
         )
 
 

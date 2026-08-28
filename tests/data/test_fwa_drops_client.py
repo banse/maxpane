@@ -16,9 +16,12 @@ from maxpane_dashboard.data.fwa_client import MULTICALL3
 from maxpane_dashboard.data.fwa_drops_client import (
     COLLECTION_NAME_SELECTOR,
     FWAIRDropsClient,
+    FWAIR_LAUNCH_EVENT_SPECS,
+    FWAIR_MANAGER_EVENT_SPECS,
     FWAIRLaunchState,
     LAUNCH_SELECTORS,
     MANAGER_SELECTORS,
+    normalize_fwair_events,
     phase_name,
     runtime_codehash,
 )
@@ -58,6 +61,53 @@ def _string_result(value: str) -> str:
     raw = value.encode("utf-8").hex()
     padded = raw + "0" * ((64 - len(raw) % 64) % 64)
     return "0x" + f"{32:064x}{len(value.encode('utf-8')):064x}" + padded
+
+
+def _event_word(type_name: str, value: Any) -> str:
+    if type_name == "address":
+        return strip0x(str(value)).lower().rjust(64, "0")
+    if type_name == "bool":
+        return f"{int(bool(value)):064x}"
+    if type_name == "bytes32":
+        return strip0x(str(value)).lower().rjust(64, "0")
+    return f"{int(value):064x}"
+
+
+def _event_log(
+    *,
+    address: str,
+    event: str,
+    values: dict[str, Any],
+    block: int,
+    index: int,
+) -> dict[str, Any]:
+    specs = (
+        FWAIR_MANAGER_EVENT_SPECS
+        if address == FWAIR_MANAGER
+        else FWAIR_LAUNCH_EVENT_SPECS
+    )
+    topic0, entry = next(
+        (topic, candidate)
+        for topic, candidate in specs.items()
+        if candidate["name"] == event
+    )
+    topics = [topic0]
+    data: list[str] = []
+    for item in entry["inputs"]:
+        encoded = _event_word(item["type"], values[item["name"]])
+        (topics if item["indexed"] else data).append(
+            "0x" + encoded if item["indexed"] else encoded
+        )
+    return {
+        "address": address,
+        "topics": topics,
+        "data": "0x" + "".join(data),
+        "blockNumber": hex(block),
+        "blockTimestamp": hex(1_787_000_000 + block),
+        "transactionHash": "0x" + f"{block * 10 + index:064x}",
+        "logIndex": hex(index),
+        "removed": False,
+    }
 
 
 def _decode_aggregate3_calldata(data: str) -> list[tuple[str, bool, str]]:
@@ -617,6 +667,174 @@ def test_runtime_hash_rejects_malformed_data_and_hashes_bytecode() -> None:
     assert runtime_codehash("0x1") is None
     assert runtime_codehash("not-hex") is None
     assert runtime_codehash(None) is None
+
+
+def test_fwair_manager_and_child_events_normalize_to_network_rows() -> None:
+    launch = _fixture("two_launches")["launches"]["1"]
+    child = launch["address"]
+    manager_log = _event_log(
+        address=FWAIR_MANAGER,
+        event="LaunchRegistered",
+        values={
+            "launch": child,
+            "artist": "0x" + "3" * 40,
+            "collection": launch["collection"],
+            "launchId": 1,
+            "startTokenId": 100,
+            "tokenCount": 3,
+            "backingPrice": 1_500_000_000_000_000_000,
+            "maxSupportPerWallet": 2,
+            "supportStart": 1_000,
+            "supportDeadline": 2_000,
+        },
+        block=100,
+        index=1,
+    )
+    manager_rows, failures = normalize_fwair_events(
+        FWAIR_MANAGER,
+        [manager_log],
+        observed_at=1_787_000_200.0,
+        from_block=100,
+        to_block=102,
+        integrity="ok",
+    )
+    assert failures == 0
+    assert len(manager_rows) == 1
+    assert manager_rows[0].family == "drop"
+    assert manager_rows[0].event_key == "drop_created"
+    assert manager_rows[0].eth_amount == 1.5
+    assert manager_rows[0].integrity == "ok"
+
+    supported = _event_log(
+        address=child,
+        event="PositionSupported",
+        values={
+            "tokenId": 101,
+            "supporter": "0x" + "4" * 40,
+            "backing": 2_000_000_000_000_000_000,
+            "walletSupportCount": 1,
+            "totalSupported": 2,
+            "refundableBacking": 4_000_000_000_000_000_000,
+        },
+        block=101,
+        index=2,
+    )
+    claimed = _event_log(
+        address=child,
+        event="SupporterTokensClaimed",
+        values={
+            "supporter": "0x" + "4" * 40,
+            "recipient": "0x" + "5" * 40,
+            "token": FWA_TOKEN,
+            "amount": 42_000_000_000_000_000_000,
+            "remainingPoolReserve": 8_000_000_000_000_000_000,
+        },
+        block=102,
+        index=3,
+    )
+    other_reward = _event_log(
+        address=child,
+        event="SupporterTokensClaimed",
+        values={
+            "supporter": "0x" + "4" * 40,
+            "recipient": "0x" + "5" * 40,
+            "token": "0x" + "6" * 40,
+            "amount": 99_000_000_000_000_000_000,
+            "remainingPoolReserve": 7_000_000_000_000_000_000,
+        },
+        block=103,
+        index=4,
+    )
+    child_rows, failures = normalize_fwair_events(
+        child,
+        [supported, claimed, other_reward],
+        observed_at=1_787_000_200.0,
+        from_block=100,
+        to_block=103,
+        integrity="ok",
+    )
+    assert failures == 0
+    assert [row.event_key for row in child_rows] == [
+        "claimed",
+        "claimed",
+        "supported",
+    ]
+    assert child_rows[0].event_label == "Supporter reward claimed"
+    assert child_rows[0].fwa_amount is None
+    assert child_rows[1].event_label == "Supporter FWA claimed"
+    assert child_rows[1].fwa_amount == 42.0
+    assert child_rows[2].eth_amount == 2.0
+    assert all(row.verified_source for row in child_rows)
+
+
+def test_fwair_event_mismatch_suppresses_semantics_and_malformed_blocks_page() -> None:
+    launch = _fixture("two_launches")["launches"]["1"]
+    raw = _event_log(
+        address=launch["address"],
+        event="PositionSupported",
+        values={
+            "tokenId": 101,
+            "supporter": "0x" + "4" * 40,
+            "backing": 2_000_000_000_000_000_000,
+            "walletSupportCount": 1,
+            "totalSupported": 2,
+            "refundableBacking": 4_000_000_000_000_000_000,
+        },
+        block=101,
+        index=2,
+    )
+    rows, failures = normalize_fwair_events(
+        launch["address"],
+        [raw],
+        observed_at=1_787_000_200.0,
+        from_block=100,
+        to_block=102,
+        integrity="mismatch",
+    )
+    assert failures == 0
+    assert rows[0].event_key == "integrity_mismatch"
+    assert rows[0].event_label == "Untrusted contract log"
+    assert rows[0].eth_amount is None
+    assert rows[0].fwa_amount is None
+    assert rows[0].verified_source is False
+    assert rows[0].detail == (
+        "runtime/dependency integrity mismatch; semantics suppressed"
+    )
+
+    malformed = {**raw, "data": "0x" + "z" * 64}
+    rows, failures = normalize_fwair_events(
+        launch["address"],
+        [malformed],
+        observed_at=1_787_000_200.0,
+        from_block=100,
+        to_block=102,
+    )
+    assert rows == ()
+    assert failures == 1
+
+    extra_word = {**raw, "data": str(raw["data"]) + "0" * 64}
+    rows, failures = normalize_fwair_events(
+        launch["address"],
+        [extra_word],
+        observed_at=1_787_000_200.0,
+        from_block=100,
+        to_block=102,
+    )
+    assert rows == ()
+    assert failures == 1
+
+
+@pytest.mark.parametrize("integrity", ["trusted", "", None])
+def test_fwair_event_integrity_is_closed_vocabulary(integrity: Any) -> None:
+    with pytest.raises(ValueError, match="integrity"):
+        normalize_fwair_events(
+            FWAIR_MANAGER,
+            [],
+            observed_at=1.0,
+            from_block=1,
+            to_block=1,
+            integrity=integrity,
+        )
 
 
 @pytest.mark.asyncio

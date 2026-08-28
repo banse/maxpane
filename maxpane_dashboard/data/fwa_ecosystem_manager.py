@@ -26,7 +26,11 @@ from maxpane_dashboard.analytics.fwa_ecosystem import (
     wei_to_tokens,
 )
 from maxpane_dashboard.data.fwa_drops_client import FWAIRDropsClient
-from maxpane_dashboard.data.fwa_ecosystem_addresses import OFFICIAL_DEPLOYMENTS
+from maxpane_dashboard.data.fwa_ecosystem_addresses import (
+    FWA_TOKEN,
+    FWAIR_MANAGER,
+    OFFICIAL_DEPLOYMENTS,
+)
 from maxpane_dashboard.data.fwa_ecosystem_cache import (
     GROUP_CORE,
     GROUP_DROPS,
@@ -79,7 +83,9 @@ from maxpane_dashboard.data.fwa_tokenomics_client import (
     FWATokenomicsClient,
     FWATokenomicsLogClient,
     TokenomicsLogRead,
+    normalize_buyback_events,
 )
+from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +101,15 @@ _FLOW_WATERMARK = WatermarkKey("tokenomics", "v1", "flow")
 _TOKEN_DEPLOYMENT_BLOCK = next(
     item.deployment_block for item in OFFICIAL_DEPLOYMENTS if item.role == "token"
 )
+_FWAIR_DEPLOYMENT_BLOCK = next(
+    item.deployment_block
+    for item in OFFICIAL_DEPLOYMENTS
+    if item.role == "fwair_manager"
+)
 _PROJECT_GROUPS = (GROUP_PULLPOOL, GROUP_MEGARIP, GROUP_FWAP)
-_PROJECT_LOG_SOURCES = frozenset(("pullpool", "megarip", "fwap"))
+_PROJECT_LOG_SOURCES = frozenset(
+    ("fwa", "drop", "pullpool", "megarip", "fwap")
+)
 _DIRECT_GROUPS = (GROUP_CORE, GROUP_DROPS, *_PROJECT_GROUPS)
 _DEFAULT = object()
 _HASH_CHARS = frozenset("0123456789abcdef")
@@ -126,6 +139,19 @@ def _block_hash(value: Any) -> str | None:
     value = value.lower()
     if (
         len(value) != 66
+        or not value.startswith("0x")
+        or any(char not in _HASH_CHARS for char in value[2:])
+    ):
+        return None
+    return value
+
+
+def _address(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    value = value.lower()
+    if (
+        len(value) != 42
         or not value.startswith("0x")
         or any(char not in _HASH_CHARS for char in value[2:])
     ):
@@ -177,6 +203,92 @@ class FWAPLogPage:
     logs: tuple[Mapping[str, Any], ...]
     block_hash: str | None = None
     page_complete: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class _MismatchOnlyIntegrity:
+    """Carry confirmed bad evidence forward without carrying old good evidence.
+
+    Integrity is read less often than live state.  A mismatch remains safety
+    relevant at later blocks until a complete read proves recovery, while an
+    old ``ok`` must never be presented as proof for newer state.
+    """
+
+    evidence: tuple[Any, ...]
+
+    @classmethod
+    def merged(cls, *results: Any) -> _MismatchOnlyIntegrity:
+        evidence: list[Any] = []
+        for result in results:
+            if isinstance(result, cls):
+                evidence.extend(result.evidence)
+            elif result is not None:
+                evidence.append(result)
+        return cls(tuple(evidence))
+
+    @property
+    def observed_at(self) -> Any:
+        return (
+            None
+            if not self.evidence
+            else getattr(self.evidence[0], "observed_at", None)
+        )
+
+    @property
+    def block_number(self) -> Any:
+        blocks = [
+            getattr(item, "block_number", None) for item in self.evidence
+        ]
+        blocks = [
+            block
+            for block in blocks
+            if isinstance(block, int) and not isinstance(block, bool)
+        ]
+        return min(blocks, default=None)
+
+    @property
+    def codehash_matches(self) -> dict[str, bool | None]:
+        selected: dict[str, bool | None] = {}
+        for item in self.evidence:
+            values = getattr(item, "codehash_matches", None)
+            if not isinstance(values, Mapping):
+                continue
+            for key, value in values.items():
+                label = str(key)
+                if value is False:
+                    selected[label] = False
+                else:
+                    selected.setdefault(label, None)
+        return selected
+
+    @property
+    def dependency_matches(self) -> dict[str, bool | None]:
+        selected: dict[str, bool | None] = {}
+        for item in self.evidence:
+            values = getattr(item, "dependency_matches", None)
+            if not isinstance(values, Mapping):
+                continue
+            for key, value in values.items():
+                label = str(key)
+                if value is False:
+                    selected[label] = False
+                else:
+                    selected.setdefault(label, None)
+        return selected
+
+    def status_for(self, *args: Any) -> str:
+        for item in self.evidence:
+            method = getattr(item, "status_for", None)
+            if callable(method) and method(*args) == "mismatch":
+                return "mismatch"
+        return "unknown"
+
+    def status_for_version(self, version: str) -> str:
+        for item in self.evidence:
+            method = getattr(item, "status_for_version", None)
+            if callable(method) and method(version) == "mismatch":
+                return "mismatch"
+        return "unknown"
 
 
 class FWAPLogSource:
@@ -410,6 +522,7 @@ class FWAEcosystemManager:
         self._pull_stream_cursor = 0
         self._mega_stream_cursor = 0
         self._fwap_stream_cursor = 0
+        self._fwair_stream_cursor = 0
         self._fast_task: asyncio.Task[dict[str, Any]] | None = None
         self._background_tasks: dict[str, asyncio.Task[None]] = {}
         self._commit_lock = asyncio.Lock()
@@ -705,7 +818,126 @@ class FWAEcosystemManager:
     def _matching_integrity(integrity: Any | None, block_number: int | None) -> Any | None:
         if integrity is None or block_number is None:
             return None
-        return integrity if getattr(integrity, "block_number", None) == block_number else None
+        evidence_block = getattr(integrity, "block_number", None)
+        if evidence_block == block_number:
+            return integrity
+        if (
+            isinstance(evidence_block, int)
+            and not isinstance(evidence_block, bool)
+            and FWAEcosystemManager._integrity_contains_false(integrity)
+        ):
+            return _MismatchOnlyIntegrity.merged(integrity)
+        return None
+
+    @staticmethod
+    def _integrity_contains_false(result: Any) -> bool:
+        """Return whether a previously validated read contains bad evidence."""
+
+        if isinstance(result, _MismatchOnlyIntegrity):
+            return any(
+                FWAEcosystemManager._integrity_contains_false(item)
+                for item in result.evidence
+            )
+        for attribute in ("codehash_matches", "dependency_matches"):
+            values = getattr(result, attribute, None)
+            if isinstance(values, Mapping) and any(
+                value is False for value in values.values()
+            ):
+                return True
+        surfaces = getattr(result, "surfaces", None)
+        if not isinstance(surfaces, Sequence) or isinstance(
+            surfaces, (str, bytes)
+        ):
+            return False
+        for surface in surfaces:
+            if getattr(surface, "codehash_match", None) is False:
+                return True
+            pairs = getattr(surface, "dependency_matches", None)
+            if (
+                isinstance(pairs, Sequence)
+                and not isinstance(pairs, (str, bytes))
+                and any(
+                    isinstance(pair, Sequence)
+                    and not isinstance(pair, (str, bytes))
+                    and len(pair) == 2
+                    and pair[1] is False
+                    for pair in pairs
+                )
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _integrity_has_confirmed_mismatch(
+        label: str, result: Any, block_number: int
+    ) -> bool:
+        """Validate enough of a partial read to latch a known mismatch."""
+
+        if result is None or getattr(result, "block_number", None) != block_number:
+            return False
+        if label == "core":
+            codehashes = getattr(result, "codehash_matches", None)
+            dependencies = getattr(result, "dependency_matches", None)
+            if not isinstance(codehashes, Mapping) or not isinstance(
+                dependencies, Mapping
+            ):
+                return False
+            expected_codehashes = {
+                deployment.role for deployment in OFFICIAL_DEPLOYMENTS
+            }
+            expected_dependencies = {
+                dependency.key for dependency in TOKENOMICS_DEPENDENCIES
+            }
+            return any(
+                codehashes.get(key) is False for key in expected_codehashes
+            ) or any(
+                dependencies.get(key) is False for key in expected_dependencies
+            )
+
+        manifests = PULLPOOL_MANIFESTS if label == "pullpool" else FWAP_MANIFESTS
+        expected = {manifest.address.lower(): manifest for manifest in manifests}
+        surfaces = getattr(result, "surfaces", None)
+        if not isinstance(surfaces, Sequence) or isinstance(
+            surfaces, (str, bytes)
+        ):
+            return False
+        for surface in surfaces:
+            address = str(getattr(surface, "address", "")).lower()
+            manifest = expected.get(address)
+            if (
+                manifest is None
+                or getattr(surface, "block_number", None) != block_number
+            ):
+                continue
+            if getattr(surface, "codehash_match", None) is False:
+                return True
+            expected_dependencies = {
+                getter for getter, _expected in manifest.dependencies
+            }
+            pairs = getattr(surface, "dependency_matches", None)
+            if not isinstance(pairs, Sequence) or isinstance(
+                pairs, (str, bytes)
+            ):
+                continue
+            for pair in pairs:
+                if (
+                    isinstance(pair, Sequence)
+                    and not isinstance(pair, (str, bytes))
+                    and len(pair) == 2
+                    and pair[0] in expected_dependencies
+                    and pair[1] is False
+                ):
+                    return True
+        return False
+
+    @staticmethod
+    def _merge_integrity_mismatch(previous: Any | None, result: Any) -> Any:
+        retained = (
+            previous
+            if FWAEcosystemManager._integrity_contains_false(previous)
+            else None
+        )
+        return _MismatchOnlyIntegrity.merged(retained, result)
 
     @staticmethod
     def _integrity_read_complete(
@@ -871,6 +1103,7 @@ class FWAEcosystemManager:
             return
         operations = (
             (GROUP_FLOW_LOGS, self._refresh_flow_logs(block_number)),
+            ("drop", self._refresh_fwair_logs(block_number)),
             ("pullpool", self._refresh_pullpool_logs(block_number)),
             ("megarip", self._refresh_megarip_logs(block_number)),
             ("fwap", self._refresh_fwap_logs(block_number)),
@@ -900,6 +1133,11 @@ class FWAEcosystemManager:
                 logger.debug("%s refresh failed: %s", label, result)
             if label == GROUP_FLOW_LOGS:
                 flow_ok = ok
+                project_results["fwa"] = ok
+                if ok:
+                    self._project_log_failed.discard("fwa")
+                else:
+                    self._project_log_failed.add("fwa")
             else:
                 project_results[label] = ok
                 if ok:
@@ -1005,24 +1243,41 @@ class FWAEcosystemManager:
                 self._error_count += 1
                 logger.debug("%s integrity failed: %s", label, result)
                 continue
-            if not self._integrity_read_complete(label, result, block_number):
+            complete = self._integrity_read_complete(label, result, block_number)
+            confirmed_mismatch = self._integrity_has_confirmed_mismatch(
+                label, result, block_number
+            )
+            if not complete and not confirmed_mismatch:
                 self._error_count += 1
                 logger.debug("%s integrity read incomplete", label)
                 continue
-            successes += 1
+            if complete:
+                successes += 1
             if label == "core":
+                self._core_integrity = (
+                    result
+                    if complete
+                    else self._merge_integrity_mismatch(
+                        self._core_integrity, result
+                    )
+                )
                 if (
                     self._token_state is not None
                     and self._token_state.state_block == block_number
                 ):
-                    self._core_integrity = result
                     self._store_core_fragment()
             elif label == "pullpool":
+                self._pull_integrity = (
+                    result
+                    if complete
+                    else self._merge_integrity_mismatch(
+                        self._pull_integrity, result
+                    )
+                )
                 if (
                     self._pull_state is not None
                     and self._pull_state.block_number == block_number
                 ):
-                    self._pull_integrity = result
                     rows = build_pullpool_rows(
                         self._pull_state,
                         history=self._pull_history,
@@ -1035,11 +1290,17 @@ class FWAEcosystemManager:
                         self._pull_state.block_number,
                     )
             else:
+                self._fwap_integrity = (
+                    result
+                    if complete
+                    else self._merge_integrity_mismatch(
+                        self._fwap_integrity, result
+                    )
+                )
                 if (
                     self._fwap_state is not None
                     and self._fwap_state.block_number == block_number
                 ):
-                    self._fwap_integrity = result
                     rows = build_fwap_rows(
                         self._fwap_state,
                         integrity=self._fwap_integrity,
@@ -1112,6 +1373,18 @@ class FWAEcosystemManager:
         last_observed: float | None = None
         last_to: int | None = None
         completed_pages: list[tuple[int, str, float]] = []
+        completed_event_pages: list[
+            tuple[tuple[dict[str, Any], ...], int, int, bool]
+        ] = []
+        integrity = "unknown"
+        integrity_read = self._matching_integrity(
+            self._core_integrity, state_block
+        )
+        status_for = getattr(integrity_read, "status_for", None)
+        if callable(status_for):
+            candidate = status_for("token")
+            if candidate in {"ok", "warning", "mismatch", "unknown"}:
+                integrity = candidate
         for _ in range(self._pages_per_cycle):
             if start > state_block:
                 break
@@ -1125,11 +1398,20 @@ class FWAEcosystemManager:
             if not self._pin_matches(state_block):
                 return False
             complete = bool(
-                read.buybacks_available and read.burns_available and hash_value
+                read.from_block == start
+                and read.to_block == end
+                and read.buybacks_available
+                and read.burns_available
+                and read.buyback_decode_complete
+                and read.burn_decode_complete
+                and hash_value
             )
             if not complete:
                 page_failed = True
                 break
+            event_rows = normalize_buyback_events(
+                read, integrity=integrity, stale=False
+            )
             # An overlap is a canonical replacement, not an additive merge.
             drop_range(start, end)
             for event in read.buybacks:
@@ -1141,6 +1423,9 @@ class FWAEcosystemManager:
             last_to = end
             coverage_end = end
             completed_pages.append((end, hash_value, last_observed))
+            completed_event_pages.append(
+                (event_rows, start, end, bool(reorged and not completed_event_pages))
+            )
             start = end + 1
 
         if not page_success or not self._pin_matches(state_block):
@@ -1174,6 +1459,14 @@ class FWAEcosystemManager:
         self._flow_burns = burns
         self._flow_coverage_end = coverage_end
         self._flow_logs = next_logs
+        for rows, page_start, page_end, page_reorged in completed_event_pages:
+            self._replace_events(
+                rows,
+                address=FWA_TOKEN,
+                from_block=page_start,
+                to_block=page_end,
+                reorged=page_reorged,
+            )
         for page_end, page_hash, page_ts in completed_pages:
             self._advance_watermark(
                 _FLOW_WATERMARK,
@@ -1220,6 +1513,118 @@ class FWAEcosystemManager:
         )
         self._has_restored_flow_fragment = False
         return not page_failed
+
+    def _fwair_event_streams(
+        self, state_block: int
+    ) -> tuple[tuple[str, str], ...]:
+        """Return the manager plus chain-enumerated children and their trust."""
+
+        state = self._drops_state
+        state_matches = bool(
+            state is not None
+            and getattr(state, "state_block", None) == state_block
+        )
+        aggregate = getattr(state, "integrity", "unknown")
+        if not state_matches:
+            manager_integrity = "unknown"
+        elif getattr(state, "available", False) is True:
+            manager_integrity = "warning" if aggregate == "warning" else "ok"
+        else:
+            manager_integrity = (
+                "mismatch" if aggregate == "mismatch" else "unknown"
+            )
+
+        streams: list[tuple[str, str]] = [(FWAIR_MANAGER, manager_integrity)]
+        seen = {FWAIR_MANAGER}
+        if not state_matches:
+            return tuple(streams)
+        rows = getattr(state, "rows", ())
+        if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+            return tuple(streams)
+        for raw in rows:
+            try:
+                row = _row_dict(raw)
+            except TypeError:
+                continue
+            address = _address(row.get("launch_address"))
+            integrity = (
+                row.get("integrity")
+                if row.get("block_number") == state_block
+                else "unknown"
+            )
+            if address is None or address in seen:
+                continue
+            if integrity not in {"ok", "warning", "mismatch", "unknown"}:
+                integrity = "unknown"
+            streams.append((address, str(integrity)))
+            seen.add(address)
+        return tuple(streams)
+
+    async def _refresh_fwair_logs(self, state_block: int) -> bool:
+        if not self._pin_matches(state_block):
+            return False
+        streams = self._fwair_event_streams(state_block)
+        page_count = min(self._pages_per_cycle, len(streams))
+        all_ok = True
+        for offset in range(page_count):
+            address, integrity = streams[
+                (self._fwair_stream_cursor + offset) % len(streams)
+            ]
+            key = WatermarkKey("fwair", address, "events")
+            resumed = await self._resume_start(
+                key,
+                _FWAIR_DEPLOYMENT_BLOCK,
+                self._project_coverage_end.get(key),
+                expected_state_block=state_block,
+            )
+            if resumed is None or not self._pin_matches(state_block):
+                all_ok = False
+                continue
+            start, reorged = resumed
+            end = min(start + self._page_blocks - 1, state_block)
+            if start > state_block:
+                continue
+            read = await self.drops_client.fetch_events(
+                address,
+                from_block=start,
+                to_block=end,
+                history_complete=False,
+                integrity=integrity,
+            )
+            if not self._pin_matches(state_block):
+                return False
+            page_hash = _block_hash(read.last_complete_block_hash)
+            complete = bool(
+                read.address == address
+                and read.from_block == start
+                and read.to_block == end
+                and read.available
+                and read.page_complete
+                and read.decode_failures == 0
+                and page_hash
+            )
+            if not complete:
+                all_ok = False
+                continue
+            self._advance_watermark(
+                key,
+                block_number=end,
+                block_hash=page_hash,
+                ts=float(read.observed_at),
+                deployment_block=_FWAIR_DEPLOYMENT_BLOCK,
+            )
+            self._replace_events(
+                read.events,
+                address=address,
+                from_block=start,
+                to_block=end,
+                reorged=reorged,
+            )
+            self._project_coverage_end[key] = end
+        self._fwair_stream_cursor = (
+            self._fwair_stream_cursor + page_count
+        ) % len(streams)
+        return all_ok
 
     async def _refresh_pullpool_logs(self, state_block: int) -> bool:
         if not PULLPOOL_LOG_STREAMS:
@@ -1413,11 +1818,31 @@ class FWAEcosystemManager:
             end = min(start + self._page_blocks - 1, state_block)
             if start > state_block:
                 continue
+            integrity = "unknown"
+            if (
+                self._mega_state is not None
+                and getattr(self._mega_state, "state_block", None) == state_block
+            ):
+                for campaign in getattr(self._mega_state, "campaigns", ()):
+                    if (
+                        getattr(campaign, "version", None) == manifest.version
+                        and getattr(campaign, "block_number", None) == state_block
+                    ):
+                        candidate = getattr(campaign, "integrity", "unknown")
+                        if candidate in {
+                            "ok",
+                            "warning",
+                            "mismatch",
+                            "unknown",
+                        }:
+                            integrity = candidate
+                        break
             read = await self.megarip.fetch_events(
                 manifest.version,
                 from_block=start,
                 to_block=end,
                 history_complete=False,
+                integrity=integrity,
             )
             if not self._pin_matches(state_block):
                 return False
@@ -1810,6 +2235,10 @@ class FWAEcosystemManager:
     @staticmethod
     def _event_adapter(row: Mapping[str, Any]) -> str:
         family = str(row.get("family") or "")
+        if family == "fwa":
+            return "fwa"
+        if family == "drop":
+            return "drop"
         if family == "megarip":
             return "megarip"
         if family == "fwap":
@@ -1817,6 +2246,12 @@ class FWAEcosystemManager:
         return "pullpool"
 
     def _project_history_caught_up(self, state_block: int) -> bool:
+        if self._flow_coverage_end is None or self._flow_coverage_end < state_block:
+            return False
+        for address, _integrity in self._fwair_event_streams(state_block):
+            key = WatermarkKey("fwair", address, "events")
+            if self._project_coverage_end.get(key, -1) < state_block:
+                return False
         if self._pull_history is None:
             return False
         if any(

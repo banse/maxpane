@@ -40,7 +40,13 @@ from maxpane_dashboard.data.fwa_ecosystem_addresses import (
     FWAIR_WHITELIST_AUTHORITY,
     OFFICIAL_BY_ROLE,
 )
-from maxpane_dashboard.data.fwa_ecosystem_models import DROP_PHASES, DropRow
+from maxpane_dashboard.data.fwa_ecosystem_models import (
+    DROP_PHASES,
+    NETWORK_EVENT_ROW_KEYS,
+    DropRow,
+    NetworkEventRow,
+)
+from maxpane_dashboard.data.fwa_logs import FWALogClient
 from maxpane_dashboard.data.fwa_models import Wei
 from maxpane_dashboard.data.fwa_projects import load_abi_resource
 from maxpane_dashboard.data.keccak import keccak256_hex
@@ -142,6 +148,150 @@ LAUNCH_SELECTORS: Mapping[str, str] = MappingProxyType(
 COLLECTION_NAME_SELECTOR = keccak256_hex(b"name()")[:10]
 
 
+def _event_signature(entry: Mapping[str, Any]) -> str:
+    inputs = entry.get("inputs")
+    if not isinstance(inputs, list):
+        raise ValueError("ABI event inputs must be an array")
+    return f"{entry['name']}({','.join(str(item['type']) for item in inputs)})"
+
+
+_EVENT_PRESENTATION: Mapping[str, tuple[str, str, str | None, str | None]] = (
+    MappingProxyType(
+        {
+            "LaunchRegistered": (
+                "drop_created",
+                "Drop created",
+                "backingPrice",
+                None,
+            ),
+            "CollectionActivated": (
+                "launched",
+                "Collection activated",
+                "totalBacking",
+                None,
+            ),
+            "LaunchEmergencyFailed": (
+                "terminal",
+                "Drop emergency failed",
+                None,
+                None,
+            ),
+            "PositionSupported": ("supported", "Position supported", "backing", None),
+            "PositionLaunched": ("launched", "Position launched", "backing", None),
+            "LaunchFailed": ("terminal", "Drop failed", "refundableBacking", None),
+            "LaunchFullySupported": (
+                "supported",
+                "Drop fully supported",
+                "totalBacking",
+                None,
+            ),
+            "SupportReady": (
+                "support_ready",
+                "Support ready",
+                "totalRequiredBacking",
+                None,
+            ),
+            "FailedPositionFinalized": (
+                "terminal",
+                "Failed position finalized",
+                "refundCredited",
+                None,
+            ),
+            "UnlaunchedPositionFinalized": (
+                "terminal",
+                "Unlaunched position finalized",
+                "refundCredited",
+                None,
+            ),
+            "SupporterETHClaimed": (
+                "claimed",
+                "Supporter ETH claimed",
+                "amount",
+                None,
+            ),
+            "ArtistETHClaimed": (
+                "claimed",
+                "Artist ETH claimed",
+                "amount",
+                None,
+            ),
+            "ArtistETHAccrued": (
+                "reward_accrued",
+                "Artist ETH accrued",
+                "amount",
+                None,
+            ),
+            "PrincipalCredited": (
+                "reward_accrued",
+                "Supporter principal credited",
+                "amount",
+                None,
+            ),
+            "ListingFeeHarvested": (
+                "reward_harvested",
+                "Listing fee harvested",
+                "amount",
+                None,
+            ),
+            "FWAETHReceived": (
+                "settled",
+                "FWA ETH received",
+                "amount",
+                None,
+            ),
+            "SettlementPrincipalAssigned": (
+                "settled",
+                "Settlement principal assigned",
+                "principalAmount",
+                None,
+            ),
+            "SupporterTokensClaimed": (
+                "claimed",
+                "Supporter reward claimed",
+                None,
+                None,
+            ),
+            "SupporterTokensAccrued": (
+                "reward_accrued",
+                "Supporter reward accrued",
+                None,
+                None,
+            ),
+            "RewardTokensHarvested": (
+                "reward_harvested",
+                "Reward tokens harvested",
+                None,
+                None,
+            ),
+            "SupporterSharesInitialized": (
+                "reward_initialized",
+                "Supporter shares initialized",
+                None,
+                None,
+            ),
+            "NFTClaimed": ("claimed", "NFT claimed", None, None),
+            "PhaseChanged": ("phase_changed", "Phase changed", None, None),
+        }
+    )
+)
+
+
+def _event_specs(
+    abi: Sequence[Mapping[str, Any]],
+) -> Mapping[str, Mapping[str, Any]]:
+    selected: dict[str, Mapping[str, Any]] = {}
+    for entry in abi:
+        name = entry.get("name")
+        if entry.get("type") != "event" or name not in _EVENT_PRESENTATION:
+            continue
+        selected[keccak256_hex(_event_signature(entry).encode())] = entry
+    return MappingProxyType(selected)
+
+
+FWAIR_MANAGER_EVENT_SPECS = _event_specs(_MANAGER_ABI)
+FWAIR_LAUNCH_EVENT_SPECS = _event_specs(_LAUNCH_ABI)
+
+
 # ---------------------------------------------------------------------------
 # Strict chain-state boundary
 # ---------------------------------------------------------------------------
@@ -193,6 +343,232 @@ class FWAIRDropsRead(BaseModel):
         """Number of fully decoded rows (integrity warning rows excluded)."""
 
         return sum(row.integrity == "ok" for row in self.rows)
+
+
+class FWAIREventRead(BaseModel):
+    """One bounded FWAIR manager-or-child event page."""
+
+    model_config = _STRICT
+
+    observed_at: float
+    address: str
+    from_block: int
+    to_block: int
+    available: bool
+    history_complete: bool
+    page_complete: bool
+    last_complete_block_hash: str | None
+    events: tuple[NetworkEventRow, ...]
+    unavailable_reason: str | None
+    decode_failures: int = 0
+
+
+def _event_quantity(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = int(value, 16 if value.startswith(("0x", "0X")) else 10)
+    except ValueError:
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _event_value(type_name: str, word: str) -> int | bool | str | None:
+    if len(word) != 64:
+        return None
+    try:
+        if type_name == "address":
+            return decode_address("0x" + word)
+        if type_name == "bool":
+            value = int(word, 16)
+            return bool(value) if value in (0, 1) else None
+        if type_name.startswith("uint"):
+            return int(word, 16)
+    except ValueError:
+        return None
+    if type_name == "bytes32":
+        return "0x" + word.lower()
+    return None
+
+
+def normalize_fwair_events(
+    address: str,
+    raw_logs: Sequence[Any],
+    *,
+    observed_at: float,
+    from_block: int,
+    to_block: int,
+    integrity: Literal["ok", "warning", "mismatch", "unknown"] = "unknown",
+    stale: bool = False,
+) -> tuple[tuple[NetworkEventRow, ...], int]:
+    """Decode one FWAIR address without trusting mismatched semantics."""
+
+    if integrity not in {"ok", "warning", "mismatch", "unknown"}:
+        raise ValueError("integrity must be ok, warning, mismatch, or unknown")
+    if not isinstance(stale, bool):
+        raise ValueError("stale must be bool")
+    canonical_address = str(address).lower()
+    if not _ADDRESS_RE.fullmatch(canonical_address):
+        raise ValueError("FWAIR event address must be canonical")
+    specs = (
+        FWAIR_MANAGER_EVENT_SPECS
+        if canonical_address == FWAIR_MANAGER
+        else FWAIR_LAUNCH_EVENT_SPECS
+    )
+    semantic_ok = integrity != "mismatch"
+    rows: dict[str, NetworkEventRow] = {}
+    failures = 0
+    for raw in raw_logs:
+        if not isinstance(raw, Mapping) or raw.get("removed") is True:
+            failures += 1
+            continue
+        topics = raw.get("topics")
+        data = strip0x(str(raw.get("data") or ""))
+        raw_address = str(raw.get("address") or "").lower()
+        topic0 = (
+            str(topics[0]).lower()
+            if isinstance(topics, list) and topics
+            else ""
+        )
+        entry = specs.get(topic0)
+        inputs = () if entry is None else entry.get("inputs", ())
+        if not isinstance(inputs, list):
+            inputs = ()
+        expected_topics = 1 + sum(
+            item.get("indexed") is True
+            for item in inputs
+            if isinstance(item, Mapping)
+        )
+        expected_data_words = sum(
+            item.get("indexed") is not True
+            for item in inputs
+            if isinstance(item, Mapping)
+        )
+        if (
+            raw_address != canonical_address
+            or entry is None
+            or not isinstance(topics, list)
+            or len(topics) != expected_topics
+            or len(data) != expected_data_words * 64
+        ):
+            failures += 1
+            continue
+        values: dict[str, Any] = {}
+        topic_index = 1
+        data_index = 0
+        valid = True
+        for item in entry.get("inputs", ()):
+            if not isinstance(item, Mapping):
+                valid = False
+                break
+            if item.get("indexed") is True:
+                if not isinstance(topics, list) or topic_index >= len(topics):
+                    valid = False
+                    break
+                word = strip0x(str(topics[topic_index])).rjust(64, "0")
+                topic_index += 1
+            else:
+                word = data[data_index * 64 : (data_index + 1) * 64]
+                data_index += 1
+            value = _event_value(str(item.get("type")), word)
+            name = item.get("name")
+            if not isinstance(name, str) or value is None:
+                valid = False
+                break
+            values[name] = value
+        block_number = _event_quantity(raw.get("blockNumber"))
+        log_index = _event_quantity(raw.get("logIndex"))
+        tx_hash = str(raw.get("transactionHash") or "").lower()
+        if (
+            not valid
+            or block_number is None
+            or not from_block <= block_number <= to_block
+            or log_index is None
+            or not _BYTES32_RE.fullmatch(tx_hash)
+        ):
+            failures += 1
+            continue
+        name = str(entry["name"])
+        event_key, event_label, eth_field, fwa_field = _EVENT_PRESENTATION[name]
+        if name in {
+            "SupporterTokensClaimed",
+            "SupporterTokensAccrued",
+            "RewardTokensHarvested",
+        } and values.get("token") == FWA_TOKEN:
+            fwa_field = "amount"
+            event_label = {
+                "SupporterTokensClaimed": "Supporter FWA claimed",
+                "SupporterTokensAccrued": "Supporter FWA accrued",
+                "RewardTokensHarvested": "FWA rewards harvested",
+            }[name]
+        if name == "PhaseChanged" and semantic_ok:
+            phase = phase_name(values.get("newPhase"))
+            event_label = f"Phase {phase}"
+            if phase in {"complete", "failed", "unwinding"}:
+                event_key = "terminal"
+
+        def amount(field: str | None) -> float | None:
+            value = None if field is None else values.get(field)
+            return value / _WEI_PER_TOKEN if isinstance(value, int) else None
+
+        ignored = {field for field in (eth_field, fwa_field) if field is not None}
+        detail_parts: list[str] = []
+        for key, value in values.items():
+            if key in ignored:
+                continue
+            if isinstance(value, str) and _ADDRESS_RE.fullmatch(value):
+                detail_parts.append(f"{key} {value[:8]}…{value[-4:]}")
+            elif isinstance(value, bool):
+                detail_parts.append(f"{key} {'yes' if value else 'no'}")
+            elif isinstance(value, int):
+                detail_parts.append(f"{key} {value}")
+        row = NetworkEventRow(
+            event_id=f"1:{canonical_address}:{tx_hash}:{log_index}",
+            ts=_event_quantity(
+                raw.get("blockTimestamp", raw.get("timestamp"))
+            ),
+            tx_hash=tx_hash,
+            log_index=log_index,
+            origin=(
+                "FWAIR Manager"
+                if canonical_address == FWAIR_MANAGER
+                else "FWAIR Drop"
+            ),
+            family="drop",
+            version=None,
+            event_key=event_key if semantic_ok else "integrity_mismatch",
+            event_label=event_label if semantic_ok else "Untrusted contract log",
+            eth_amount=amount(eth_field) if semantic_ok else None,
+            fwa_amount=amount(fwa_field) if semantic_ok else None,
+            detail=(
+                " · ".join(detail_parts)
+                if semantic_ok
+                else "runtime/dependency integrity mismatch; semantics suppressed"
+            ),
+            source_kind="chain_log",
+            measurement="measured",
+            block_number=block_number,
+            observed_at=observed_at,
+            stale=stale,
+            verified_source=semantic_ok,
+            integrity=integrity,
+        )
+        assert tuple(row.model_dump()) == NETWORK_EVENT_ROW_KEYS
+        rows[row.event_id] = row
+    return (
+        tuple(
+            sorted(
+                rows.values(),
+                key=lambda row: (row.block_number or -1, row.log_index),
+                reverse=True,
+            )
+        ),
+        failures,
+    )
 
 
 _PHASE_BY_INDEX: Mapping[int, str] = MappingProxyType(
@@ -380,10 +756,35 @@ class FWAIRDropsClient(FWAClient):
         self,
         *args: Any,
         clock: Callable[[], float] = time.time,
+        log_endpoints: Sequence[str] | None = None,
+        log_http_client: Any = None,
+        log_min_call_interval: float = 0.05,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._drops_clock = clock
+        self._log_endpoints = log_endpoints
+        self._log_http_client = log_http_client
+        self._log_min_call_interval = log_min_call_interval
+        self._event_clients: dict[str, FWALogClient] = {}
+
+    def _event_client(self, address: str) -> FWALogClient:
+        client = self._event_clients.get(address)
+        if client is None:
+            client = FWALogClient(
+                endpoints=self._log_endpoints,
+                http_client=self._log_http_client,
+                core_address=address,
+                min_call_interval=self._log_min_call_interval,
+            )
+            self._event_clients[address] = client
+        return client
+
+    async def close(self) -> None:
+        for client in self._event_clients.values():
+            await client.close()
+        self._event_clients.clear()
+        await super().close()
 
     def _observed_at(self) -> float:
         value = self._drops_clock()
@@ -698,14 +1099,94 @@ class FWAIRDropsClient(FWAClient):
             issues=tuple(issues),
         )
 
+    async def fetch_events(
+        self,
+        address: str,
+        *,
+        from_block: int,
+        to_block: int,
+        history_complete: bool = False,
+        integrity: Literal["ok", "warning", "mismatch", "unknown"] = "unknown",
+    ) -> FWAIREventRead:
+        """Read one dynamic manager/child stream through Pool B."""
+
+        canonical_address = str(address).lower()
+        if not _ADDRESS_RE.fullmatch(canonical_address):
+            raise ValueError("FWAIR event address must be canonical")
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in (from_block, to_block)
+        ):
+            raise ValueError("FWAIR event bounds must be non-negative ints")
+        if from_block > to_block:
+            raise ValueError("FWAIR event from_block must not exceed to_block")
+        if not isinstance(history_complete, bool):
+            raise ValueError("history_complete must be bool")
+        if integrity not in {"ok", "warning", "mismatch", "unknown"}:
+            raise ValueError("integrity must be ok, warning, mismatch, or unknown")
+        observed_at = self._observed_at()
+        client = self._event_client(canonical_address)
+        specs = (
+            FWAIR_MANAGER_EVENT_SPECS
+            if canonical_address == FWAIR_MANAGER
+            else FWAIR_LAUNCH_EVENT_SPECS
+        )
+        try:
+            raw_logs = await client.get_logs(
+                [list(specs)], from_block, to_block
+            )
+        except Exception as exc:  # noqa: BLE001 -- independent Pool-B failure
+            logger.warning("FWAIR logs unavailable for %s: %s", canonical_address, exc)
+            return FWAIREventRead(
+                observed_at=observed_at,
+                address=canonical_address,
+                from_block=from_block,
+                to_block=to_block,
+                available=False,
+                history_complete=False,
+                page_complete=False,
+                last_complete_block_hash=None,
+                events=(),
+                unavailable_reason="FWAIR logs unavailable",
+            )
+        events, failures = normalize_fwair_events(
+            canonical_address,
+            raw_logs,
+            observed_at=observed_at,
+            from_block=from_block,
+            to_block=to_block,
+            integrity=integrity,
+        )
+        block_hash = await client.fetch_block_hash(to_block)
+        complete = failures == 0 and block_hash is not None
+        return FWAIREventRead(
+            observed_at=observed_at,
+            address=canonical_address,
+            from_block=from_block,
+            to_block=to_block,
+            available=True,
+            history_complete=history_complete and complete,
+            page_complete=complete,
+            last_complete_block_hash=block_hash if complete else None,
+            events=events,
+            unavailable_reason=(
+                None if complete else "FWAIR event page incomplete"
+            ),
+            decode_failures=failures,
+        )
+
 
 __all__ = [
     "COLLECTION_NAME_SELECTOR",
     "FWAIRDropsClient",
     "FWAIRDropsRead",
+    "FWAIREventRead",
+    "FWAIR_LAUNCH_EVENT_SPECS",
+    "FWAIR_MANAGER_EVENT_SPECS",
     "FWAIRLaunchState",
     "LAUNCH_SELECTORS",
     "MANAGER_SELECTORS",
     "phase_name",
+    "normalize_fwair_events",
     "runtime_codehash",
 ]

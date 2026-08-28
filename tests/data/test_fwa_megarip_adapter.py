@@ -566,6 +566,7 @@ async def test_events_are_versioned_deduped_newest_first_and_exact(
     assert newest.eth_amount == pytest.approx(0.2815000697863766)
     assert newest.fwa_amount is None
     assert newest.verified_source is False
+    assert newest.integrity == "unknown"
     assert newest.source_kind == "chain_log"
     assert newest.version == "v3"
     assert log_node.requests[0]["address"] == v3_manifest.address
@@ -582,6 +583,7 @@ async def test_v2_fwa_event_uses_token_amount_and_verified_provenance(
             "v2",
             from_block=_MANIFEST_BY_VERSION["v2"].deployment_block,
             to_block=fixture["block_number"],
+            integrity="ok",
         )
 
     assert len(result.events) == 1
@@ -590,6 +592,35 @@ async def test_v2_fwa_event_uses_token_amount_and_verified_provenance(
     assert event.eth_amount is None
     assert event.fwa_amount == 10.0
     assert event.verified_source is True
+    assert event.integrity == "ok"
+
+
+@pytest.mark.asyncio
+async def test_integrity_mismatch_suppresses_megarip_event_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture("finalized")
+    logs = _fixture("events")
+    manifest = _MANIFEST_BY_VERSION["v2"]
+    async with _adapter(fixture, monkeypatch, logs=logs) as (adapter, _state, _log):
+        result = await adapter.fetch_events(
+            "v2",
+            from_block=manifest.deployment_block,
+            to_block=fixture["block_number"],
+            integrity="mismatch",
+        )
+
+    assert len(result.events) == 1
+    event = result.events[0]
+    assert event.event_key == "integrity_mismatch"
+    assert event.event_label == "Untrusted contract log"
+    assert event.eth_amount is None
+    assert event.fwa_amount is None
+    assert event.detail == (
+        "runtime/dependency integrity mismatch; semantics suppressed"
+    )
+    assert event.verified_source is False
+    assert event.integrity == "mismatch"
 
 
 @pytest.mark.asyncio
@@ -746,6 +777,13 @@ async def test_adapter_rejects_bad_bounds_versions_and_wallclock(
         with pytest.raises(ValueError, match="history_complete"):
             await adapter.fetch_events(
                 "v3", from_block=1, to_block=2, history_complete=1
+            )
+        with pytest.raises(ValueError, match="integrity"):
+            await adapter.fetch_events(
+                "v3",
+                from_block=1,
+                to_block=2,
+                integrity="trusted",  # type: ignore[arg-type]
             )
 
     transport = DenyNetworkTransport()

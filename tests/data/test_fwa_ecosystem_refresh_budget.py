@@ -30,7 +30,10 @@ from maxpane_dashboard.data.fwa_projects.pullpool import (
     LogStreamRead,
     PullPoolLogRead,
 )
-from maxpane_dashboard.data.fwa_tokenomics_client import TokenomicsLogRead
+from maxpane_dashboard.data.fwa_tokenomics_client import (
+    BuybackEvent,
+    TokenomicsLogRead,
+)
 from tests.data.test_fwa_ecosystem_manager import (
     BLOCK,
     NOW,
@@ -41,6 +44,128 @@ from tests.data.test_fwa_ecosystem_manager import (
 
 
 HASH = "0x" + "ab" * 32
+
+
+class _CoreIntegrity(SimpleNamespace):
+    def status_for(self, *roles: str) -> str:
+        checks = [self.codehash_matches.get(role) for role in roles]
+        checks.extend(
+            value
+            for role in roles
+            for key, value in self.dependency_matches.items()
+            if key.startswith(role + ".")
+        )
+        if any(value is False for value in checks):
+            return "mismatch"
+        if not checks or any(value is None for value in checks):
+            return "unknown"
+        return "ok"
+
+
+class _PullIntegrity(SimpleNamespace):
+    def status_for(self, manifest) -> str:
+        for surface in self.surfaces:
+            if surface.address.lower() == manifest.address.lower():
+                return surface.status
+        return "unknown"
+
+
+class _FWAPIntegrity(SimpleNamespace):
+    def status_for_version(self, version: str) -> str:
+        statuses = [
+            surface.status
+            for surface in self.surfaces
+            if surface.version == version
+        ]
+        if "mismatch" in statuses:
+            return "mismatch"
+        if not statuses or "unknown" in statuses:
+            return "unknown"
+        if "warning" in statuses:
+            return "warning"
+        return "ok"
+
+
+def _core_integrity(
+    block_number: int,
+    *,
+    complete: bool,
+    mismatch: bool = False,
+    mismatch_role: str = "core",
+) -> _CoreIntegrity:
+    roles = [item.role for item in manager_module.OFFICIAL_DEPLOYMENTS]
+    dependency_keys = [
+        item.key for item in manager_module.TOKENOMICS_DEPENDENCIES
+    ]
+    codehashes = {role: True for role in roles}
+    dependencies = {key: True for key in dependency_keys}
+    if mismatch:
+        codehashes[mismatch_role] = False
+    if not complete:
+        codehashes = {
+            "core": codehashes["core"],
+            "token": codehashes["token"],
+        }
+        dependencies = {}
+    return _CoreIntegrity(
+        observed_at=NOW,
+        block_number=block_number,
+        codehash_matches=codehashes,
+        dependency_matches=dependencies,
+    )
+
+
+def _project_integrity(
+    label: str,
+    block_number: int,
+    *,
+    complete: bool,
+    mismatch: bool = False,
+    mismatch_index: int = 0,
+):
+    manifests = (
+        manager_module.PULLPOOL_MANIFESTS
+        if label == "pullpool"
+        else manager_module.FWAP_MANIFESTS
+    )
+    selected = manifests if complete else (manifests[0], manifests[-1])
+    surfaces = []
+    for index, manifest in enumerate(selected):
+        bad = mismatch and index == mismatch_index
+        surfaces.append(
+            SimpleNamespace(
+                version=manifest.version,
+                address=manifest.address,
+                block_number=block_number,
+                codehash_match=not bad,
+                dependency_matches=tuple(
+                    (getter, True) for getter, _expected in manifest.dependencies
+                ),
+                status="mismatch" if bad else "ok",
+            )
+        )
+    result_type = _PullIntegrity if label == "pullpool" else _FWAPIntegrity
+    return result_type(
+        observed_at=NOW,
+        block_number=block_number,
+        surfaces=tuple(surfaces),
+    )
+
+
+def _unknown_integrity(label: str, block_number: int):
+    if label == "core":
+        return _CoreIntegrity(
+            observed_at=NOW,
+            block_number=block_number,
+            codehash_matches={},
+            dependency_matches={},
+        )
+    result_type = _PullIntegrity if label == "pullpool" else _FWAPIntegrity
+    return result_type(
+        observed_at=NOW,
+        block_number=block_number,
+        surfaces=(),
+    )
 
 
 def _event(
@@ -178,9 +303,16 @@ async def test_medium_cycle_enforces_two_pages_and_5000_blocks_per_page(
         )
 
     async def fetch_mega(
-        _self, version, *, from_block, to_block, history_complete
+        _self,
+        version,
+        *,
+        from_block,
+        to_block,
+        history_complete,
+        integrity,
     ):
         assert history_complete is False
+        assert integrity == "unknown"
         mega_ranges.append((from_block, to_block))
         return SimpleNamespace(
             observed_at=clock(),
@@ -372,6 +504,254 @@ async def test_flow_partial_second_page_keeps_progress_but_reports_failure(
     assert watermark is not None
     assert watermark.block_number == first_end
     assert manager._flow_coverage_end == first_end
+    await manager.close()
+
+
+@pytest.mark.parametrize(
+    "incomplete_flag", ("buyback_decode_complete", "burn_decode_complete")
+)
+async def test_flow_decode_failure_holds_watermark_and_existing_activity(
+    incomplete_flag, tmp_path, monkeypatch
+) -> None:
+    manager, clock, _core, _drops, _pull, _mega, _fwap, logs = _manager(
+        tmp_path, monkeypatch
+    )
+    await manager.fetch_and_compute()
+    manager._pages_per_cycle = 1
+    manager.block_hash_reader = lambda _block: HASH
+    deployment = manager_module._TOKEN_DEPLOYMENT_BLOCK
+    old = _event(
+        address=manager_module.FWA_TOKEN,
+        block_number=deployment + 1,
+        log_index=7,
+        family="fwa",
+    )
+    manager._merge_events((old,))
+
+    async def malformed(_self, from_block, to_block, *, history_complete):
+        assert from_block == deployment
+        assert history_complete is False
+        flags = {
+            "buyback_decode_complete": True,
+            "burn_decode_complete": True,
+        }
+        flags[incomplete_flag] = False
+        return TokenomicsLogRead(
+            observed_at=clock(),
+            from_block=from_block,
+            to_block=to_block,
+            history_complete=False,
+            buybacks_available=True,
+            burns_available=True,
+            unavailable_reason="malformed log",
+            buybacks=(),
+            burns=(),
+            **flags,
+        )
+
+    logs.fetch_flow_logs = MethodType(malformed, logs)
+
+    assert await manager._refresh_flow_logs(BLOCK) is False
+    assert manager.cache.get_watermark(manager_module._FLOW_WATERMARK) is None
+    assert manager._flow_coverage_end is None
+    assert old["event_id"] in manager._events
+    await manager.close()
+
+
+async def test_complete_flow_page_emits_fwa_buyback_activity(
+    tmp_path, monkeypatch
+) -> None:
+    manager, clock, _core, _drops, _pull, _mega, _fwap, logs = _manager(
+        tmp_path, monkeypatch
+    )
+    await manager.fetch_and_compute()
+    manager._pages_per_cycle = 1
+    manager.block_hash_reader = lambda _block: HASH
+    deployment = manager_module._TOKEN_DEPLOYMENT_BLOCK
+    tx_hash = "0x" + "42" * 32
+    buyback = BuybackEvent(
+        block_number=deployment + 10,
+        block_timestamp=int(clock()),
+        observed_at=clock(),
+        tx_hash=tx_hash,
+        bought_log_index=3,
+        routed_log_index=None,
+        caller="0x" + "24" * 20,
+        eth_spent_wei=2 * 10**18,
+        amount_bought_wei=5 * 10**18,
+        caller_reward_wei=10**17,
+        to_depositors_wei=None,
+        to_purchasers_wei=None,
+        burned_wei=None,
+    )
+
+    async def complete(_self, from_block, to_block, *, history_complete):
+        assert from_block == deployment
+        assert history_complete is False
+        return TokenomicsLogRead(
+            observed_at=clock(),
+            from_block=from_block,
+            to_block=to_block,
+            history_complete=False,
+            buybacks_available=True,
+            burns_available=True,
+            unavailable_reason=None,
+            buybacks=(buyback,),
+            burns=(),
+            buyback_decode_complete=True,
+            burn_decode_complete=True,
+        )
+
+    logs.fetch_flow_logs = MethodType(complete, logs)
+
+    assert await manager._refresh_flow_logs(BLOCK) is True
+    rows = [row for row in manager._events.values() if row["family"] == "fwa"]
+    assert len(rows) == 1
+    assert rows[0]["event_key"] == "buyback"
+    assert rows[0]["tx_hash"] == tx_hash
+    assert rows[0]["eth_amount"] == 2.0
+    assert rows[0]["fwa_amount"] == 5.0
+    watermark = manager.cache.get_watermark(manager_module._FLOW_WATERMARK)
+    assert watermark is not None and watermark.block_hash == HASH
+    await manager.close()
+
+
+async def test_fwair_manager_and_dynamic_child_use_pinned_integrity_and_cursors(
+    tmp_path, monkeypatch
+) -> None:
+    manager, clock, _core, drops, _pull, _mega, _fwap, _logs = _manager(
+        tmp_path, monkeypatch
+    )
+    await manager.fetch_and_compute()
+    child = "0x" + "d7" * 20
+
+    def drops_state(row_block: int):
+        return SimpleNamespace(
+            state_block=BLOCK,
+            available=True,
+            integrity="ok",
+            rows=(
+                {
+                    "launch_address": child,
+                    "block_number": row_block,
+                    "integrity": "warning",
+                },
+            ),
+        )
+
+    manager._drops_state = drops_state(BLOCK)
+    streams = dict(manager._fwair_event_streams(BLOCK))
+    assert streams == {
+        manager_module.FWAIR_MANAGER: "ok",
+        child: "warning",
+    }
+
+    manager._drops_state = drops_state(BLOCK - 1)
+    assert dict(manager._fwair_event_streams(BLOCK))[child] == "unknown"
+    manager._drops_state = drops_state(BLOCK)
+    calls: list[tuple[str, str]] = []
+
+    async def fetch_events(
+        _self,
+        address,
+        *,
+        from_block,
+        to_block,
+        history_complete,
+        integrity,
+    ):
+        assert history_complete is False
+        calls.append((address, integrity))
+        row = _event(
+            address=address,
+            block_number=from_block + 1,
+            log_index=len(calls),
+            family="drop",
+        )
+        row.update(integrity=integrity, verified_source=integrity != "mismatch")
+        return SimpleNamespace(
+            observed_at=clock(),
+            address=address,
+            from_block=from_block,
+            to_block=to_block,
+            available=True,
+            page_complete=True,
+            decode_failures=0,
+            last_complete_block_hash=HASH,
+            events=(row,),
+        )
+
+    drops.fetch_events = MethodType(fetch_events, drops)
+
+    assert await manager._refresh_fwair_logs(BLOCK) is True
+    assert calls == [
+        (manager_module.FWAIR_MANAGER, "ok"),
+        (child, "warning"),
+    ]
+    manager_key = WatermarkKey(
+        "fwair", manager_module.FWAIR_MANAGER, "events"
+    )
+    child_key = WatermarkKey("fwair", child, "events")
+    manager_mark = manager.cache.get_watermark(manager_key)
+    child_mark = manager.cache.get_watermark(child_key)
+    assert manager_mark is not None and child_mark is not None
+    assert manager_mark == child_mark
+    assert manager_key != child_key
+    assert {
+        row["event_id"].split(":")[1] for row in manager._events.values()
+    } == {manager_module.FWAIR_MANAGER, child}
+    await manager.close()
+
+
+@pytest.mark.parametrize(
+    ("campaign_block", "expected_integrity"),
+    ((BLOCK, "warning"), (BLOCK - 1, "unknown")),
+)
+async def test_megarip_events_only_receive_same_block_campaign_integrity(
+    campaign_block, expected_integrity, tmp_path, monkeypatch
+) -> None:
+    manager, clock, _core, _drops, _pull, mega, _fwap, _logs = _manager(
+        tmp_path, monkeypatch
+    )
+    await manager.fetch_and_compute()
+    manager._pages_per_cycle = 1
+    manifest = manager_module.MEGARIP_MANIFESTS[0]
+    manager._mega_state = SimpleNamespace(
+        state_block=BLOCK,
+        campaigns=(
+            SimpleNamespace(
+                version=manifest.version,
+                block_number=campaign_block,
+                integrity="warning",
+            ),
+        ),
+    )
+    received: list[str] = []
+
+    async def fetch_events(
+        _self,
+        version,
+        *,
+        from_block,
+        to_block,
+        history_complete,
+        integrity,
+    ):
+        assert version == manifest.version
+        assert history_complete is False
+        received.append(integrity)
+        return SimpleNamespace(
+            observed_at=clock(),
+            available=True,
+            page_complete=True,
+            last_complete_block_hash=HASH,
+            events=(),
+        )
+
+    mega.fetch_events = MethodType(fetch_events, mega)
+
+    assert await manager._refresh_megarip_logs(BLOCK) is True
+    assert received == [expected_integrity]
     await manager.close()
 
 
@@ -608,13 +988,11 @@ async def test_total_project_log_outage_keeps_last_good_but_marks_every_event_st
     )
     previous = manager.cache.get_last_good(GROUP_PROJECT_LOGS)
 
-    async def flow_ready(_block):
-        return True
-
     async def project_down(_block):
         return False
 
-    manager._refresh_flow_logs = flow_ready
+    manager._refresh_flow_logs = project_down
+    manager._refresh_fwair_logs = project_down
     manager._refresh_pullpool_logs = project_down
     manager._refresh_megarip_logs = project_down
     manager._refresh_fwap_logs = project_down
@@ -626,7 +1004,7 @@ async def test_total_project_log_outage_keeps_last_good_but_marks_every_event_st
     assert manager.cache.get_last_good(GROUP_PROJECT_LOGS) == previous
     assert payload["network_feed_available"] is True
     assert payload["network_feed_unavailable_reason"] == (
-        "partial: fwap, megarip, pullpool"
+        "partial: drop, fwa, fwap, megarip, pullpool"
     )
     assert all(row["stale"] is True for row in payload["network_events"])
     assert "project_logs" in payload["network_degraded_sources"]
@@ -1234,6 +1612,226 @@ async def test_partial_integrity_cycle_does_not_replace_group_last_good(
     assert "integrity" in manager.cache.latest_snapshot().payload[
         "network_degraded_sources"
     ]
+    await manager.close()
+
+
+@pytest.mark.parametrize("target", ("core", "pullpool", "fwap"))
+async def test_confirmed_partial_mismatch_latches_until_complete_recovery(
+    target, tmp_path, monkeypatch
+) -> None:
+    manager, clock, core, _drops, pull, _mega, fwap, _logs = _manager(
+        tmp_path, monkeypatch
+    )
+    bad_pull = manager_module.PULLPOOL_MANIFESTS[0]
+    good_pull = manager_module.PULLPOOL_MANIFESTS[-1]
+    bad_fwap = manager_module.FWAP_MANIFESTS[0]
+    good_fwap = manager_module.FWAP_MANIFESTS[-1]
+
+    def pull_rows(state, *, integrity=None, **_kwargs):
+        status = (
+            "unknown" if integrity is None else integrity.status_for(bad_pull)
+        )
+        row = dict(state.rows[0])
+        row.update(
+            primary_value=None if status == "mismatch" else 1.0,
+            source_badge="INTEGRITY" if status == "mismatch" else "DEGRADED",
+            integrity=status,
+        )
+        return (row,)
+
+    def fwap_rows(state, *, integrity=None, **_kwargs):
+        status = (
+            "unknown"
+            if integrity is None
+            else integrity.status_for_version(bad_fwap.version)
+        )
+        row = dict(state.rows[0])
+        row.update(
+            primary_value=None if status == "mismatch" else 1.0,
+            source_badge="INTEGRITY" if status == "mismatch" else "DEGRADED",
+            integrity=status,
+        )
+        return (row,)
+
+    monkeypatch.setattr(manager_module, "build_pullpool_rows", pull_rows)
+    monkeypatch.setattr(manager_module, "build_fwap_rows", fwap_rows)
+    await manager.fetch_and_compute()
+    previous = manager.cache.store_last_good(
+        GROUP_INTEGRITY,
+        {"network_integrity_warning_count": 0},
+        ts=clock() - 1.0,
+        block_number=BLOCK,
+    )
+
+    reads = {
+        "core": (
+            _core_integrity(BLOCK, complete=False, mismatch=True)
+            if target == "core"
+            else _unknown_integrity("core", BLOCK)
+        ),
+        "pullpool": (
+            _project_integrity(
+                "pullpool", BLOCK, complete=False, mismatch=True
+            )
+            if target == "pullpool"
+            else _unknown_integrity("pullpool", BLOCK)
+        ),
+        "fwap": (
+            _project_integrity("fwap", BLOCK, complete=False, mismatch=True)
+            if target == "fwap"
+            else _unknown_integrity("fwap", BLOCK)
+        ),
+    }
+
+    async def read_core(_block_number):
+        return reads["core"]
+
+    async def read_pull(_block_number):
+        return reads["pullpool"]
+
+    async def read_fwap(_block_number):
+        return reads["fwap"]
+
+    core.fetch_official_integrity = read_core
+    pull.fetch_integrity = read_pull
+    fwap.fetch_integrity = read_fwap
+
+    await manager._run_integrity_cycle()
+
+    assert GROUP_INTEGRITY in manager._failed_groups
+    assert manager.cache.get_last_good(GROUP_INTEGRITY) == previous
+    payload = manager.cache.latest_snapshot().payload
+    if target == "core":
+        assert manager._core_integrity.status_for("core") == "mismatch"
+        assert payload["network_active_listings"] is None
+    else:
+        stored = (
+            manager._pull_integrity
+            if target == "pullpool"
+            else manager._fwap_integrity
+        )
+        if target == "pullpool":
+            assert stored.status_for(bad_pull) == "mismatch"
+        else:
+            assert stored.status_for_version(bad_fwap.version) == "mismatch"
+        row = next(
+            item
+            for item in payload["network_project_rows"]
+            if item["family"] == target
+        )
+        assert row["primary_value"] is None
+        assert row["integrity"] == "mismatch"
+
+    clock.advance(31.0)
+    core.head_block = BLOCK + 1
+    await manager._run_fast_cycle()
+
+    payload = manager.cache.latest_snapshot().payload
+    if target == "core":
+        matched = manager._matching_integrity(
+            manager._core_integrity, BLOCK + 1
+        )
+        assert matched.status_for("core") == "mismatch"
+        assert matched.status_for("token") == "unknown"
+        assert payload["network_active_listings"] is None
+    elif target == "pullpool":
+        matched = manager._matching_integrity(
+            manager._pull_integrity, BLOCK + 1
+        )
+        assert matched.status_for(bad_pull) == "mismatch"
+        assert matched.status_for(good_pull) == "unknown"
+    else:
+        matched = manager._matching_integrity(
+            manager._fwap_integrity, BLOCK + 1
+        )
+        assert matched.status_for_version(bad_fwap.version) == "mismatch"
+        assert matched.status_for_version(good_fwap.version) == "unknown"
+    if target != "core":
+        row = next(
+            item
+            for item in payload["network_project_rows"]
+            if item["family"] == target
+        )
+        assert row["primary_value"] is None
+        assert row["integrity"] == "mismatch"
+
+    reads = {
+        "core": (
+            _core_integrity(
+                BLOCK + 1,
+                complete=False,
+                mismatch=True,
+                mismatch_role="token",
+            )
+            if target == "core"
+            else _unknown_integrity("core", BLOCK + 1)
+        ),
+        "pullpool": (
+            _project_integrity(
+                "pullpool",
+                BLOCK + 1,
+                complete=False,
+                mismatch=True,
+                mismatch_index=1,
+            )
+            if target == "pullpool"
+            else _unknown_integrity("pullpool", BLOCK + 1)
+        ),
+        "fwap": (
+            _project_integrity(
+                "fwap",
+                BLOCK + 1,
+                complete=False,
+                mismatch=True,
+                mismatch_index=1,
+            )
+            if target == "fwap"
+            else _unknown_integrity("fwap", BLOCK + 1)
+        ),
+    }
+    await manager._run_integrity_cycle()
+
+    assert GROUP_INTEGRITY in manager._failed_groups
+    assert manager.cache.get_last_good(GROUP_INTEGRITY) == previous
+    if target == "core":
+        assert manager._core_integrity.status_for("core") == "mismatch"
+        assert manager._core_integrity.status_for("token") == "mismatch"
+    elif target == "pullpool":
+        assert manager._pull_integrity.status_for(bad_pull) == "mismatch"
+        assert manager._pull_integrity.status_for(good_pull) == "mismatch"
+    else:
+        assert (
+            manager._fwap_integrity.status_for_version(bad_fwap.version)
+            == "mismatch"
+        )
+        assert (
+            manager._fwap_integrity.status_for_version(good_fwap.version)
+            == "mismatch"
+        )
+
+    reads = {
+        "core": _core_integrity(BLOCK + 1, complete=True),
+        "pullpool": _project_integrity(
+            "pullpool", BLOCK + 1, complete=True
+        ),
+        "fwap": _project_integrity("fwap", BLOCK + 1, complete=True),
+    }
+    await manager._run_integrity_cycle()
+
+    assert GROUP_INTEGRITY not in manager._failed_groups
+    current = manager.cache.get_last_good(GROUP_INTEGRITY)
+    assert current is not None and current.block_number == BLOCK + 1
+    payload = manager.cache.latest_snapshot().payload
+    if target == "core":
+        assert payload["network_active_listings"] == 7
+    else:
+        row = next(
+            item
+            for item in payload["network_project_rows"]
+            if item["family"] == target
+        )
+        assert row["primary_value"] == 1.0
+        assert row["integrity"] == "ok"
     await manager.close()
 
 

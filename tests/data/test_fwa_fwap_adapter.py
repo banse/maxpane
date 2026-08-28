@@ -509,6 +509,9 @@ async def test_integrity_mismatch_dominates_an_unknown_dependency(
     assert row["primary_value"] is None
     assert row["eth_value"] is None
     assert row["fwa_value"] is None
+    assert row["detail"] == (
+        "runtime/dependency integrity mismatch; semantics suppressed"
+    )
 
 
 def _zero_legacy(fixture: dict[str, Any]) -> None:
@@ -798,6 +801,35 @@ def test_recorded_events_decode_and_normalize_to_exact_rows() -> None:
     assert by_key["nft_redeemed"]["eth_amount"] == -0.1
     assert by_key["fwa_reward_claimed"]["fwa_amount"] == 5.0
     assert "shares 1200000000000000000" in by_key["exit_requested"]["detail"]
+
+
+@pytest.mark.asyncio
+async def test_integrity_mismatch_suppresses_fwap_event_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_fixture = _fixture("state")
+    event_fixture = _fixture("events")
+    raw = [_encode_event(item) for item in event_fixture["events"]]
+    read = decode_events(raw, event_fixture["observed_at"])
+    house = _MANIFEST_BY_VERSION_ROLE[("v2", "house")]
+    async with _adapter(state_fixture, monkeypatch) as (adapter, chain, _api):
+        chain.runtime_mismatches.add(house.address)
+        integrity = await adapter.fetch_integrity(state_fixture["block_number"])
+
+    rows = normalize_events(read, integrity=integrity)
+    mismatched = [row for row in rows if row["version"] == "v2"]
+    assert len(mismatched) == 2
+    assert all(row["event_key"] == "integrity_mismatch" for row in mismatched)
+    assert all(row["event_label"] == "Untrusted contract log" for row in mismatched)
+    assert all(row["eth_amount"] is None for row in mismatched)
+    assert all(row["fwa_amount"] is None for row in mismatched)
+    assert all(
+        row["detail"]
+        == "runtime/dependency integrity mismatch; semantics suppressed"
+        for row in mismatched
+    )
+    assert all(row["verified_source"] is False for row in mismatched)
+    assert all(row["integrity"] == "mismatch" for row in mismatched)
 
 
 def test_event_decoder_deduplicates_and_rejects_malformed_logs() -> None:

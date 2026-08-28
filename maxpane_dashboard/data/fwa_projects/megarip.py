@@ -52,8 +52,12 @@ _ADDRESS_RE = re.compile(r"^0x[0-9a-f]{40}$")
 _BYTES32_RE = re.compile(r"^0x[0-9a-f]{64}$")
 _TX_HASH_RE = _BYTES32_RE
 _WEI_PER_TOKEN = 10**18
+_INTEGRITY_SUPPRESSION_DETAIL = (
+    "runtime/dependency integrity mismatch; semantics suppressed"
+)
 
 Integrity = Literal["ok", "warning", "mismatch", "unknown"]
+_INTEGRITY_VALUES = frozenset(("ok", "warning", "mismatch", "unknown"))
 
 
 # ---------------------------------------------------------------------------
@@ -478,6 +482,12 @@ def _aggregate_integrity(campaigns: Sequence[MegaRipCampaignState]) -> Integrity
     return "ok"
 
 
+def _validated_integrity(value: Any) -> Integrity:
+    if value not in _INTEGRITY_VALUES:
+        raise ValueError("integrity must be ok, warning, mismatch, or unknown")
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Static event normalization
 # ---------------------------------------------------------------------------
@@ -600,6 +610,7 @@ def _normalize_event(
     observed_at: float,
     from_block: int,
     to_block: int,
+    integrity: Integrity,
 ) -> NetworkEventRow | None:
     if raw.get("removed") is True:
         return None
@@ -687,6 +698,7 @@ def _normalize_event(
     eth_amount = _whole_tokens(amount) if amount_unit == "eth" else None
     fwa_amount = _whole_tokens(amount) if amount_unit == "fwa" else None
     event_id = f"1:{manifest.address}:{tx_hash}:{log_index}"
+    semantic_ok = integrity != "mismatch"
     return NetworkEventRow(
         event_id=event_id,
         ts=_event_timestamp(raw),
@@ -695,18 +707,24 @@ def _normalize_event(
         origin=manifest.address,
         family="megarip",
         version=manifest.version,
-        event_key=event_key,
-        event_label=event_label,
-        eth_amount=eth_amount,
-        fwa_amount=fwa_amount,
-        detail=_event_detail(values, amount_field),
+        event_key=event_key if semantic_ok else "integrity_mismatch",
+        event_label=event_label if semantic_ok else "Untrusted contract log",
+        eth_amount=eth_amount if semantic_ok else None,
+        fwa_amount=fwa_amount if semantic_ok else None,
+        detail=(
+            _event_detail(values, amount_field)
+            if semantic_ok
+            else _INTEGRITY_SUPPRESSION_DETAIL
+        ),
         source_kind="chain_log",
         measurement="measured",
         block_number=block_number,
         observed_at=observed_at,
         stale=False,
-        verified_source=manifest.source_status == "verified",
-        integrity="ok",
+        verified_source=(
+            manifest.source_status == "verified" if semantic_ok else False
+        ),
+        integrity=integrity,
     )
 
 
@@ -717,9 +735,11 @@ def normalize_events(
     observed_at: float,
     from_block: int,
     to_block: int,
+    integrity: Integrity = "unknown",
 ) -> tuple[tuple[NetworkEventRow, ...], int]:
     """Normalize/dedupe one page; count malformed rows for watermark safety."""
 
+    integrity = _validated_integrity(integrity)
     rows: dict[str, NetworkEventRow] = {}
     failures = 0
     for raw in raw_logs:
@@ -732,6 +752,7 @@ def normalize_events(
             observed_at=observed_at,
             from_block=from_block,
             to_block=to_block,
+            integrity=integrity,
         )
         if row is None:
             failures += 1
@@ -1135,6 +1156,7 @@ class MegaRipAdapter(FWAClient):
         from_block: int,
         to_block: int,
         history_complete: bool = False,
+        integrity: Integrity = "unknown",
     ) -> MegaRipEventRead:
         """Read one versioned log page and expose safe watermark inputs."""
 
@@ -1144,6 +1166,7 @@ class MegaRipAdapter(FWAClient):
         self._validate_required_block(to_block, label="to_block")
         if not isinstance(history_complete, bool):
             raise ValueError("history_complete must be bool")
+        integrity = _validated_integrity(integrity)
         observed_at = self._observed_at()
         manifest = _MANIFEST_BY_VERSION[version]
         effective_from = max(from_block, manifest.deployment_block)
@@ -1198,6 +1221,7 @@ class MegaRipAdapter(FWAClient):
             observed_at=observed_at,
             from_block=effective_from,
             to_block=to_block,
+            integrity=integrity,
         )
         issues: list[str] = []
         if decode_failures:

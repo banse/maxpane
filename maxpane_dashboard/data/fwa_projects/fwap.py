@@ -46,6 +46,9 @@ _WEI_PER_TOKEN = 10**18
 _MAX_POSITIONS = 20_000
 _API_STALE_AFTER_SECONDS = 120.0
 _API_TIMEOUT_SECONDS = 6.0
+_INTEGRITY_SUPPRESSION_DETAIL = (
+    "runtime/dependency integrity mismatch; semantics suppressed"
+)
 
 IntegrityStatus = Literal["ok", "warning", "mismatch", "unknown"]
 PositionLifecycle = Literal[
@@ -1124,18 +1127,21 @@ def build_project_rows(
         def shown(value: int | None) -> float | None:
             return _wei(value) if semantic_ok else None
 
-        detail = (
-            f"{surface.positions_created if surface.positions_created is not None else '?'} created"
-            f" · {surface.inventory_count if surface.inventory_count is not None else '?'} inventory"
-            f" · {surface.active_count if surface.active_count is not None else '?'} active"
-            f" · {surface.allocated_count if surface.allocated_count is not None else '?'} allocated"
-            f" · {surface.returned_count if surface.returned_count is not None else '?'} returned"
-            f" · {surface.terminal_count if surface.terminal_count is not None else '?'} terminal"
-            f" · queued {_wei(surface.queued_capital_wei) if semantic_ok else None} ETH"
-            f" · held {_wei(surface.total_fwa_balance_wei) if semantic_ok else None} FWA"
-        )
-        if surface.is_current:
-            detail += api_note
+        if semantic_ok:
+            detail = (
+                f"{surface.positions_created if surface.positions_created is not None else '?'} created"
+                f" · {surface.inventory_count if surface.inventory_count is not None else '?'} inventory"
+                f" · {surface.active_count if surface.active_count is not None else '?'} active"
+                f" · {surface.allocated_count if surface.allocated_count is not None else '?'} allocated"
+                f" · {surface.returned_count if surface.returned_count is not None else '?'} returned"
+                f" · {surface.terminal_count if surface.terminal_count is not None else '?'} terminal"
+                f" · queued {_wei(surface.queued_capital_wei)} ETH"
+                f" · held {_wei(surface.total_fwa_balance_wei)} FWA"
+            )
+            if surface.is_current:
+                detail += api_note
+        else:
+            detail = _INTEGRITY_SUPPRESSION_DETAIL
         row = ProjectRow(
             family="fwap",
             surface="house",
@@ -1394,6 +1400,7 @@ def normalize_events(
         status: IntegrityStatus = (
             "unknown" if integrity is None else integrity.status_for_version(event.version)
         )
+        semantic_ok = status != "mismatch"
         row = NetworkEventRow(
             event_id=event.event_id,
             ts=event.block_timestamp,
@@ -1402,17 +1409,19 @@ def normalize_events(
             origin=f"FWAP {event.role.title()}",
             family="fwap",
             version=event.version,
-            event_key=event.event_key,
-            event_label=event.event_label,
-            eth_amount=_wei(event.eth_amount_wei),
-            fwa_amount=_wei(event.fwa_amount_wei),
-            detail=event.detail,
+            event_key=event.event_key if semantic_ok else "integrity_mismatch",
+            event_label=(
+                event.event_label if semantic_ok else "Untrusted contract log"
+            ),
+            eth_amount=_wei(event.eth_amount_wei) if semantic_ok else None,
+            fwa_amount=_wei(event.fwa_amount_wei) if semantic_ok else None,
+            detail=event.detail if semantic_ok else _INTEGRITY_SUPPRESSION_DETAIL,
             source_kind="chain_log",
             measurement="measured",
             block_number=event.block_number,
             observed_at=read.observed_at,
             stale=bool(stale),
-            verified_source=True,
+            verified_source=True if semantic_ok else False,
             integrity=status,
         ).model_dump()
         assert tuple(row) == NETWORK_EVENT_ROW_KEYS
