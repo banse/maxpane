@@ -1,0 +1,124 @@
+{
+  "block_number": 25860000,
+  "observed_at": 1787932800.0,
+  "versions": {
+    "v1": {
+      "next_position_id": 4,
+      "book_nav_wei": 4207000000000000000,
+      "liquid_capital_wei": 2000000000000000000,
+      "queued_capital_wei": 500000000000000000,
+      "settlement_inbox_wei": 100000000000000000,
+      "house_eth_balance_wei": 3000000000000000000,
+      "house_share_supply_wei": 4207000000000000000,
+      "share_supply_wei": 4207000000000000000,
+      "house_fwa_balance_wei": 100000000000000000000,
+      "share_fwa_balance_wei": 500000000000000000000,
+      "fwa_liability_wei": 400000000000000000000,
+      "fee_reconciliation_required": false,
+      "positions": [
+        {
+          "position_id": 1,
+          "collection": "0x1111111111111111111111111111111111111111",
+          "token_id": 11,
+          "backing_wei": 1000000000000000000,
+          "listing_id": 0,
+          "state": 1,
+          "receipt_owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "position_id": 2,
+          "collection": "0x2222222222222222222222222222222222222222",
+          "token_id": 22,
+          "backing_wei": 1200000000000000000,
+          "listing_id": 101,
+          "state": 2,
+          "receipt_owner": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "position_id": 3,
+          "collection": "0x3333333333333333333333333333333333333333",
+          "token_id": 33,
+          "backing_wei": 2000000000000000000,
+          "listing_id": 102,
+          "state": 6,
+          "receipt_owner": "0x0000000000000000000000000000000000000000"
+        }
+      ],
+      "listings": {
+        "101": {
+          "status": 1
+        }
+      }
+    },
+    "v2": {
+      "next_position_id": 6,
+      "book_nav_wei": 93874000000000000000,
+      "liquid_capital_wei": 2434000000000000000,
+      "queued_capital_wei": 500000000000000000,
+      "settlement_inbox_wei": 200000000000000000,
+      "house_eth_balance_wei": 3500000000000000000,
+      "house_share_supply_wei": 93874000000000000000,
+      "share_supply_wei": 93874000000000000000,
+      "house_fwa_balance_wei": 1000000000000000000000,
+      "share_fwa_balance_wei": 129000000000000000000000,
+      "fwa_liability_wei": 120000000000000000000000,
+      "fee_reconciliation_required": false,
+      "epoch": [7, 259200, 0, 1788192000],
+      "positions": [
+        {
+          "position_id": 1,
+          "collection": "0x4444444444444444444444444444444444444444",
+          "token_id": 44,
+          "backing_wei": 800000000000000000,
+          "listing_id": 0,
+          "state": 1,
+          "receipt_owner": "0xcccccccccccccccccccccccccccccccccccccccc"
+        },
+        {
+          "position_id": 2,
+          "collection": "0x5555555555555555555555555555555555555555",
+          "token_id": 55,
+          "backing_wei": 900000000000000000,
+          "listing_id": 201,
+          "state": 2,
+          "receipt_owner": "0xdddddddddddddddddddddddddddddddddddddddd"
+        },
+        {
+          "position_id": 3,
+          "collection": "0x6666666666666666666666666666666666666666",
+          "token_id": 66,
+          "backing_wei": 1100000000000000000,
+          "listing_id": 202,
+          "state": 2,
+          "receipt_owner": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        {
+          "position_id": 4,
+          "collection": "0x7777777777777777777777777777777777777777",
+          "token_id": 77,
+          "backing_wei": 1200000000000000000,
+          "listing_id": 203,
+          "state": 3,
+          "receipt_owner": "0xffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "position_id": 5,
+          "collection": "0x8888888888888888888888888888888888888888",
+          "token_id": 88,
+          "backing_wei": 1300000000000000000,
+          "listing_id": 204,
+          "state": 4,
+          "receipt_owner": "0x9999999999999999999999999999999999999999"
+        }
+      ],
+      "listings": {
+        "201": {
+          "status": 1
+        },
+        "202": {
+          "status": 2
+        }
+      }
+    }
+  }
+}

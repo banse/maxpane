@@ -1,0 +1,13 @@
+{
+  "source_block": 25860000,
+  "source_timestamp": 1787932770.0,
+  "stale": false,
+  "projected_inventory_count": 8,
+  "inventory_counts": {
+    "eligible": 3,
+    "pending": 5
+  },
+  "book_nav_wei": 999999999999999999999999999999,
+  "liquid_capital_wei": 999999999999999999999999999999,
+  "fwa_liability_wei": 0
+}

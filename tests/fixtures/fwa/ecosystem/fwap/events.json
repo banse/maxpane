@@ -1,0 +1,60 @@
+{
+  "observed_at": 1787932800.0,
+  "events": [
+    {
+      "version": "v1",
+      "role": "house",
+      "event": "RewardsHarvested",
+      "block_number": 25859001,
+      "timestamp": 1787932001,
+      "tx_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "log_index": 1,
+      "values": {
+        "ethAmount": 200000000000000000,
+        "fwaAmount": 10000000000000000000
+      }
+    },
+    {
+      "version": "v2",
+      "role": "house",
+      "event": "NftRedeemed",
+      "block_number": 25859002,
+      "timestamp": 1787932002,
+      "tx_hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "log_index": 2,
+      "values": {
+        "positionId": 5,
+        "receiptOwner": "0x9999999999999999999999999999999999999999",
+        "receiver": "0x8888888888888888888888888888888888888888",
+        "ethPnl": -100000000000000000
+      }
+    },
+    {
+      "version": "v2",
+      "role": "share",
+      "event": "FwaRewardClaimed",
+      "block_number": 25859003,
+      "timestamp": 1787932003,
+      "tx_hash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "log_index": 3,
+      "values": {
+        "holder": "0x7777777777777777777777777777777777777777",
+        "amount": 5000000000000000000
+      }
+    },
+    {
+      "version": "v1",
+      "role": "share",
+      "event": "ExitRequested",
+      "block_number": 25859004,
+      "timestamp": 1787932004,
+      "tx_hash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "log_index": 4,
+      "values": {
+        "holder": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "shares": 1200000000000000000,
+        "executableAt": 1787935600
+      }
+    }
+  ]
+}
