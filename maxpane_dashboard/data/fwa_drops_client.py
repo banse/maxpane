@@ -827,13 +827,13 @@ class FWAIRDropsClient(FWAClient):
     def _trim_launch_failure_metadata(self) -> None:
         """Keep hostile registries from growing retry metadata forever."""
 
-        while len(self._launch_holes) > MAX_LAUNCHES_PER_REFRESH:
-            launch_id = next(iter(self._launch_holes))
-            self._launch_holes.pop(launch_id, None)
-            self._launch_issues.pop(launch_id, None)
         while len(self._launch_issues) > MAX_LAUNCHES_PER_REFRESH:
             launch_id = next(iter(self._launch_issues))
             self._launch_issues.pop(launch_id, None)
+            self._launch_holes.pop(launch_id, None)
+        for launch_id in tuple(self._launch_holes):
+            if launch_id not in self._launch_issues:
+                self._launch_holes.pop(launch_id, None)
 
     def _launch_page(
         self,
@@ -869,7 +869,7 @@ class FWAIRDropsClient(FWAClient):
             if reset
             else tuple(
                 launch_id
-                for launch_id in self._launch_holes
+                for launch_id in self._launch_issues
                 if 1 <= launch_id < next_launch_id
             )[:_LAUNCH_RETRIES_PER_REFRESH]
         )

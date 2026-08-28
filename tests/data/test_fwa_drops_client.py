@@ -672,6 +672,7 @@ async def test_repeated_hostile_counts_bound_calls_and_failure_metadata(
             assert len(result.holes) <= MAX_LAUNCHES_PER_REFRESH
             assert len(client._launch_holes) <= MAX_LAUNCHES_PER_REFRESH
             assert len(client._launch_issues) <= MAX_LAUNCHES_PER_REFRESH
+            assert set(client._launch_holes) <= set(client._launch_issues)
             assert sum(
                 issue.startswith("launch_")
                 and issue != "launch_enumeration_partial"
