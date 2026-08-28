@@ -1,0 +1,45 @@
+{
+  "observed_at": 1800000000.0,
+  "from_block": 25840000,
+  "to_block": 25849738,
+  "buyback": {
+    "block_number": 25849737,
+    "block_timestamp": 1799999940,
+    "tx_hash": "0x645e9d2f5e79a0cb2d4a67c87e9b8bfbe78776a5f7fe9def16474c99f52948a3",
+    "caller": "0x1111111111111111111111111111111111111111",
+    "bought_log_index": 10,
+    "routed_log_index": 11,
+    "eth_spent_wei": 5694220111179496,
+    "amount_bought_wei": 767705216499481163607,
+    "caller_reward_wei": 28614171412962,
+    "to_depositors_wei": 230311564949844349082,
+    "to_purchasers_wei": 307082086599792465442,
+    "burned_wei": 230311564949844349083
+  },
+  "burns": [
+    {
+      "block_number": 25849720,
+      "block_timestamp": 1799996400,
+      "tx_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "log_index": 1,
+      "recipient": "0x0000000000000000000000000000000000000000",
+      "amount_wei": 500000000000000000000000
+    },
+    {
+      "block_number": 25830000,
+      "block_timestamp": 1799827200,
+      "tx_hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "log_index": 2,
+      "recipient": "0x0000000000000000000000000000000000000000",
+      "amount_wei": 1000000000000000000000000
+    },
+    {
+      "block_number": 25700000,
+      "block_timestamp": 1799308800,
+      "tx_hash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "log_index": 3,
+      "recipient": "0x0000000000000000000000000000000000000000",
+      "amount_wei": 2000000000000000000000000
+    }
+  ]
+}

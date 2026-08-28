@@ -1,0 +1,41 @@
+{
+  "block_number": 25849738,
+  "observed_at": 1800000000.0,
+  "gas_price_wei": 1000000000,
+  "quote": {
+    "fee_wei": 70000000000000000,
+    "vrf_wei": 2306041013766740,
+    "total_wei": 72306041013766740
+  },
+  "state": {
+    "active_listings": 6185,
+    "pending_count": 3,
+    "unsettled_count": 3,
+    "acquisition_escrow_wei": 216903717156842025,
+    "refund_credit_total_wei": 646295071842734506,
+    "crown_pot_wei": 3621990707450918289,
+    "settlement_payout_bps": 9000,
+    "crown_share_bps": 50,
+    "owner_acquisition_fee_bps": 100,
+    "owner_settlement_fee_bps": 100,
+    "accrued_owner_fees_wei": 0,
+    "total_supply_wei": 986380736772711768316895088,
+    "route_depositor_bps": 3000,
+    "route_purchaser_bps": 4000,
+    "route_burn_bps": 3000,
+    "caller_reward_bps": 50,
+    "last_buyback_block": 25849737,
+    "rewards_balance_wei": 210036532000000000000000000,
+    "claim_balance_wei": 3643035670000000000000000,
+    "token_buy_allowance_wei": 565028989850830757,
+    "emission_start": 1784574083,
+    "emission_duration": 1296000,
+    "depositor_rate_per_sec_wei": 115740740740740740740,
+    "purchaser_daily_pot_wei": 10000000000000000000000000,
+    "current_epoch": 38
+  },
+  "mutation": {
+    "settlement_payout_bps": 8750,
+    "crown_share_bps": 75
+  }
+}
