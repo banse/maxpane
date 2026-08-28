@@ -24,10 +24,10 @@ from maxpane_dashboard.data.fwa_tokenomics_client import (
 
 WEI_PER_TOKEN = 10**18
 GENESIS_SUPPLY_WEI = 1_000_000_000 * WEI_PER_TOKEN
-BPS = 10_000
+BASIS_POINT_DENOMINATOR = 10_000
 
 __all__ = [
-    "BPS",
+    "BASIS_POINT_DENOMINATOR",
     "GENESIS_SUPPLY_WEI",
     "WEI_PER_TOKEN",
     "BurnSinceGenesis",
@@ -131,11 +131,11 @@ def route_bps_integrity(
         isinstance(value, bool)
         or not isinstance(value, int)
         or value < 0
-        or value > BPS
+        or value > BASIS_POINT_DENOMINATOR
         for value in values
     ):
         return False
-    return sum(values) == BPS
+    return sum(values) == BASIS_POINT_DENOMINATOR
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,11 +171,11 @@ def buyback_accounting(
     elif (
         isinstance(caller_reward_bps, bool)
         or not isinstance(caller_reward_bps, int)
-        or not 0 <= caller_reward_bps <= BPS
+        or not 0 <= caller_reward_bps <= BASIS_POINT_DENOMINATOR
     ):
         caller_ok = False
     else:
-        expected = gross * caller_reward_bps // BPS
+        expected = gross * caller_reward_bps // BASIS_POINT_DENOMINATOR
         caller_ok = abs(event.caller_reward_wei - expected) <= 1
 
     routes = (
@@ -200,7 +200,8 @@ def buyback_accounting(
             )
             assert all(value is not None for value in configured)
             expected_routes = tuple(
-                event.amount_bought_wei * int(bps) // BPS for bps in configured
+                event.amount_bought_wei * int(bps) // BASIS_POINT_DENOMINATOR
+                for bps in configured
             )
             # Integer division can leave at most two wei of remainder for one
             # of three destinations.  The event sum still has to be exact.

@@ -81,6 +81,10 @@ import pytest
 
 from maxpane_dashboard.analytics import fwa_ev, fwa_signals as sig
 from maxpane_dashboard.data import fwa_client, fwa_enums, fwa_logs, fwa_market
+from maxpane_dashboard.data.fwa_ecosystem_models import (
+    FWA_NETWORK_DATA_KEYS,
+    FWA_NETWORK_WIDGET_SIGNATURES,
+)
 from maxpane_dashboard.data.fwa_models import (
     FWA_DATA_KEYS,
     FWA_WIDGET_SIGNATURES,
@@ -120,6 +124,7 @@ def _code_only(source: str) -> str:
 def _fwa_module_paths() -> tuple[Path, ...]:
     """Every shipped FWA Python module."""
     paths = sorted(_PKG.glob("data/fwa_*.py"))
+    paths += sorted(_PKG.glob("data/fwa_projects/*.py"))
     paths += sorted(_PKG.glob("analytics/fwa_*.py"))
     paths += sorted(_PKG.glob("widgets/fwa/*.py"))
     paths += [_PKG / "screens" / "fwa.py"]
@@ -554,11 +559,17 @@ def test_rule_7_allowlist_is_derived_from_collection_whitelist_set_logs():
         "PRD §7 rule 7: a de-listing must show as allowed=False, not vanish"
     )
 
-    # No module carries a bare block of collection addresses. The seven FWA
-    # protocol contracts plus Multicall3 and the token are legitimately pinned;
-    # a *collection* list starts at 16 (the docs' stale count) and is 51 live,
-    # so the ceiling sits well clear of both.
+    # No ordinary module carries a bare block of collection addresses. The two
+    # closed-world deployment registries are intentionally address-heavy and
+    # have their exact members, runtime hashes and dependency graph pinned by
+    # dedicated tests; they are not collection allowlists.
+    deployment_registries = {
+        _PKG / "data" / "fwa_ecosystem_addresses.py",
+        _PKG / "data" / "fwa_projects" / "registry.py",
+    }
     for path in FWA_MODULES:
+        if path in deployment_registries:
+            continue
         code = _code_only(path.read_text(encoding="utf-8"))
         addresses = set(re.findall(r'"(0x[0-9a-fA-F]{40})"', code))
         assert len(addresses) <= 10, (
@@ -568,8 +579,20 @@ def test_rule_7_allowlist_is_derived_from_collection_whitelist_set_logs():
             f"not the docs' 16): {sorted(addresses)}"
         )
         # …and never as one sequence literal, which is what an allowlist is.
-        for block in re.findall(r"[\[\(\{](?:[^\[\]\(\)\{\}]|\n)*[\]\)\}]", code):
-            found = re.findall(r'"0x[0-9a-fA-F]{40}"', block)
+        # AST traversal is both more exact and linear-time; the old nested-
+        # bracket regex backtracked catastrophically once adapters grew beyond
+        # a few hundred lines.
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.List, ast.Tuple, ast.Set, ast.Dict)):
+                continue
+            found = {
+                child.value.lower()
+                for child in ast.walk(node)
+                if isinstance(child, ast.Constant)
+                and isinstance(child.value, str)
+                and re.fullmatch(r"0x[0-9a-fA-F]{40}", child.value)
+            }
             assert len(found) < 6, (
                 f"PRD §7 rule 7: {_rel(path)} contains a {len(found)}-address "
                 "sequence literal — that shape is an allowlist, and the "
@@ -1603,8 +1626,10 @@ def test_no_named_fixture_carries_a_field_the_product_cannot_emit():
     """
     from maxpane_dashboard.analytics.fwa_signals import INDICATOR, SIGNAL_COLORS
 
-    known_kwargs = set(FWA_DATA_KEYS)
+    known_kwargs = set(FWA_DATA_KEYS) | set(FWA_NETWORK_DATA_KEYS)
     for kwargs in FWA_WIDGET_SIGNATURES.values():
+        known_kwargs |= set(kwargs)
+    for kwargs in FWA_NETWORK_WIDGET_SIGNATURES.values():
         known_kwargs |= set(kwargs)
 
     def _const_dict(node: ast.Dict) -> dict:

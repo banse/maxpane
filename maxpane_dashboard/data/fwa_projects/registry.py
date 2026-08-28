@@ -332,7 +332,7 @@ VENDORED_ABI_PROVENANCE: Mapping[str, str] = MappingProxyType(
         resource: (
             "first-party-bundle+runtime-selectors+runtime-topics+observed-logs"
             if resource == "abis/fwa/megarip_v3.json"
-            else "etherscan-verified-source"
+            else "verified-source"
         )
         for resource in VENDORED_ABI_SHA256
     }
