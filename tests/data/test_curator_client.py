@@ -1144,9 +1144,9 @@ def test_the_balance_is_never_folded_into_a_volume() -> None:
     st = asyncio.run(client.fetch_state())
     assert st.forced_balance_wei is None
     assert st.volume_wei == 0x560119983627C22D4F  # stats(), untouched
-    body = inspect.getsource(curator_client.CuratorClient.fetch_balance).replace(
-        curator_client.CuratorClient.fetch_balance.__doc__ or "", ""
-    )
+    body = inspect.cleandoc(
+        inspect.getsource(curator_client.CuratorClient.fetch_balance)
+    ).replace(curator_client.CuratorClient.fetch_balance.__doc__ or "", "")
     assert "CuratorState" not in body, "the balance leaked into a state object"
 
 
