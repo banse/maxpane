@@ -50,8 +50,8 @@ independent view slices. Shared production surfaces exist only in WP-14.
 
 ### WP-01 — Presentation contract and offline test boundary
 
-**Owner:** model-contract worker  
-**Depends on:** none  
+**Owner:** model-contract worker<br>
+**Depends on:** none<br>
 **Creates:** the only new presentation vocabulary
 
 **Files (exclusive):**
@@ -82,8 +82,8 @@ produces all 40 NETWORK keys, and no existing FWA model file changed.
 
 ### WP-02 — Addresses, manifests, and vendored ABI/topic resources
 
-**Owner:** chain-contract worker  
-**Depends on:** WP-01  
+**Owner:** chain-contract worker<br>
+**Depends on:** WP-01<br>
 **Creates:** immutable discovery metadata; no live mutable values
 
 **Files (exclusive):**
@@ -137,7 +137,7 @@ network, and MegaRip v3 cannot be classified `VERIFIED`.
 
 ### WP-03 — Core, tokenomics, rewards, buyback flow
 
-**Owner:** EVM data worker  
+**Owner:** EVM data worker<br>
 **Depends on:** WP-01, WP-02
 
 **Files (exclusive):**
@@ -172,7 +172,7 @@ not copied; ended emissions render ended despite nonzero rate getters.
 
 ### WP-04 — FWAIR enumeration and launch state
 
-**Owner:** EVM data worker  
+**Owner:** EVM data worker<br>
 **Depends on:** WP-01, WP-02
 
 **Files (exclusive):**
@@ -201,7 +201,7 @@ later rows.
 
 ### WP-05 — PullPool, GroupPull, and order surfaces
 
-**Owner:** protocol-adapter worker  
+**Owner:** protocol-adapter worker<br>
 **Depends on:** WP-01, WP-02
 
 **Files (exclusive):**
@@ -231,7 +231,7 @@ creation counter is labelled active.
 
 ### WP-06 — MegaRip versions and outstanding claims
 
-**Owner:** protocol-adapter worker  
+**Owner:** protocol-adapter worker<br>
 **Depends on:** WP-01, WP-02
 
 **Files (exclusive):**
@@ -261,7 +261,7 @@ ever badged `VERIFIED`.
 
 ### WP-07 — FWAP chain state and optional API enrichment
 
-**Owner:** protocol-adapter worker  
+**Owner:** protocol-adapter worker<br>
 **Depends on:** WP-01, WP-02
 
 **Files (exclusive):**
@@ -290,7 +290,7 @@ site credential appears in source or fixtures.
 
 ### WP-08 — Namespaced cache, watermarks, and atomic snapshots
 
-**Owner:** persistence worker  
+**Owner:** persistence worker<br>
 **Depends on:** WP-01
 
 **Files (exclusive):**
@@ -319,7 +319,7 @@ persisted as zero.
 
 ### WP-10 — Shared terminal cell/table fitting primitives
 
-**Owner:** terminal-layout worker  
+**Owner:** terminal-layout worker<br>
 **Depends on:** none
 
 **Files (exclusive):**
@@ -355,7 +355,7 @@ not change.
 
 ### WP-11 — NETWORK hero and value-flow rail
 
-**Owner:** Textual widget worker  
+**Owner:** Textual widget worker<br>
 **Depends on:** WP-01, WP-10
 
 **Files (exclusive):**
@@ -386,7 +386,7 @@ the 8,750/75 fixture values—not production constants—reach pixels.
 
 ### WP-12 — Drop board, ecosystem registry, and network activity
 
-**Owner:** Textual widget worker  
+**Owner:** Textual widget worker<br>
 **Depends on:** WP-01, WP-10
 
 **Files (exclusive):**
@@ -421,7 +421,7 @@ clip silently or crash the message pump.
 
 ### WP-09 — Ecosystem manager and normalized flat payload
 
-**Owner:** controller/data worker  
+**Owner:** controller/data worker<br>
 **Depends on:** WP-01 through WP-08
 
 **Files (exclusive):**
@@ -452,7 +452,7 @@ healthy peer stale.
 
 ### WP-13 — Detached composite manager
 
-**Owner:** concurrency worker  
+**Owner:** concurrency worker<br>
 **Depends on:** WP-01, WP-09
 
 **Files (exclusive):**
@@ -482,7 +482,7 @@ shutdown leak exists.
 
 ### WP-14 — Screen, theme, package exports, and app wiring
 
-**Owner:** integration/layout worker  
+**Owner:** integration/layout worker<br>
 **Depends on:** WP-10, WP-11, WP-12, WP-13
 
 **Files (exclusive):**
@@ -535,8 +535,8 @@ toggle from cached/blank state, and the app-wide width pin is still 143.
 
 ### WP-15 — Goal-backward review and release gate
 
-**Owner:** fresh reviewer; never an implementation owner  
-**Depends on:** WP-14  
+**Owner:** fresh reviewer; never an implementation owner<br>
+**Depends on:** WP-14<br>
 **Production file ownership:** none
 
 **Review targets:**

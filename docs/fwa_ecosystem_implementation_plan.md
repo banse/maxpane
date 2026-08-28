@@ -1,9 +1,9 @@
 # FWA NETWORK — Implementation Plan
 
-**Branch:** `feature/fwa-ecosystem-dashboard`  
-**Input:** [`fwa_ecosystem_PRD.md`](fwa_ecosystem_PRD.md)  
-**Decision:** approved on 2026-08-28  
-**Scope:** one additional `NETWORK` body inside the existing FWA screen  
+**Branch:** `feature/fwa-ecosystem-dashboard`<br>
+**Input:** [`fwa_ecosystem_PRD.md`](fwa_ecosystem_PRD.md)<br>
+**Decision:** approved on 2026-08-28<br>
+**Scope:** one additional `NETWORK` body inside the existing FWA screen<br>
 **Non-negotiable:** PULLS stays the default, keeps its existing payload contract, and
 must not wait for NETWORK work on first paint.
 

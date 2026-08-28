@@ -454,4 +454,3 @@ def test_future_dated_snapshot_and_last_good_are_dropped_independently(
     assert cache.latest_snapshot() is None
     assert cache.get_last_good(GROUP_CORE) is None
     assert cache.get_last_good(GROUP_PULLPOOL) is not None
-
