@@ -1900,6 +1900,58 @@ FWASettlementTable DataTable {
     scrollbar-size: 1 1;
 }
 
+/* NETWORK is a sibling body, composed once and hidden while PULLS is active.
+ * These declarations mirror FWAScreen.DEFAULT_CSS property-for-property; the
+ * app stylesheet outranks screen defaults, so both copies are intentional. */
+FWAScreen FWANetworkHero {
+    height: 7;
+    margin: 1 0 0 0;
+}
+
+/* The global FWAHeroBox rule above carries PULLS' 0 2 padding. NETWORK cards
+ * have denser four-line summaries and reclaim one cell on each side. */
+FWAScreen FWANetworkHero > FWAHeroBox {
+    padding: 0 1;
+}
+
+FWAScreen #fwa-network-body {
+    width: 100%;
+    height: 1fr;
+    margin: 1 0 1 0;
+}
+
+FWAScreen #fwa-network-main {
+    width: 3fr;
+    height: 1fr;
+    min-height: 26;
+    padding: 0 1;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-size: 1 1;
+}
+
+FWAScreen #fwa-network-rail {
+    width: 2fr;
+    height: 1fr;
+    min-height: 23;
+    padding: 0 1;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-size: 1 1;
+}
+
+FWAScreen FWAFlowRail,
+FWAScreen FWAEcosystemRegistry,
+FWAScreen FWAIRDropBoard,
+FWAScreen FWANetworkActivity {
+    width: 100%;
+}
+
+FWAScreen FWAEcosystemRegistry,
+FWAScreen FWANetworkActivity {
+    margin: 1 0 0 0;
+}
+
 /* ── Surf screen ──────────────────────────────────────────────────────── */
 
 /* Structure only, restating SurfScreen.DEFAULT_CSS. An app stylesheet always

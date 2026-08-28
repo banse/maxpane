@@ -323,6 +323,23 @@ def _rule_body(css: str, selector: str) -> str:
     return match.group(1)
 
 
+def _rules(css: str) -> dict[str, dict[str, str]]:
+    """Parse the simple declaration blocks used by the screen/theme contract."""
+
+    without_comments = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    parsed: dict[str, dict[str, str]] = {}
+    for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", without_comments):
+        selector = " ".join(match.group(1).split())
+        declarations: dict[str, str] = {}
+        for raw in match.group(2).split(";"):
+            if ":" not in raw:
+                continue
+            name, value = raw.split(":", 1)
+            declarations[name.strip()] = " ".join(value.split())
+        parsed[selector] = declarations
+    return parsed
+
+
 def test_hero_box_padding_is_zero_two(fwa_css_block: str):
     """``padding: 0 2`` -- the single rule this whole block must not get wrong.
 
@@ -358,6 +375,43 @@ def test_fwa_css_block_restates_the_screen_structure(fwa_css_block: str):
     signals = _rule_body(fwa_css_block, "FWASignals")
     assert re.search(r"height:\s*1fr", signals)
     assert re.search(r"overflow-y:\s*auto", signals)
+
+
+def test_network_screen_and_theme_rules_are_property_identical(
+    tcss_text: str,
+) -> None:
+    """NETWORK geometry must not change when the real app stylesheet loads."""
+
+    from maxpane_dashboard.screens.fwa import FWAScreen
+
+    theme_network = tcss_text[
+        tcss_text.index("/* NETWORK is a sibling body") :
+        tcss_text.index("/* ── Surf screen")
+    ]
+    screen_rules = _rules(FWAScreen.DEFAULT_CSS)
+    theme_rules = _rules(theme_network)
+    selectors = {
+        "FWAScreen FWANetworkHero",
+        "FWAScreen FWANetworkHero > FWAHeroBox",
+        "FWAScreen #fwa-network-body",
+        "FWAScreen #fwa-network-main",
+        "FWAScreen #fwa-network-rail",
+        (
+            "FWAScreen FWAFlowRail, FWAScreen FWAEcosystemRegistry, "
+            "FWAScreen FWAIRDropBoard, FWAScreen FWANetworkActivity"
+        ),
+        "FWAScreen FWAEcosystemRegistry, FWAScreen FWANetworkActivity",
+    }
+    assert selectors <= set(screen_rules)
+    assert selectors <= set(theme_rules)
+    for selector in selectors:
+        assert theme_rules[selector] == screen_rules[selector], selector
+
+    for selector in ("FWAScreen #fwa-network-main", "FWAScreen #fwa-network-rail"):
+        declarations = theme_rules[selector]
+        assert declarations["overflow-y"] == "auto"
+        assert declarations["scrollbar-gutter"] == "stable"
+        assert declarations["scrollbar-size"] == "1 1"
 
 
 def test_fwa_css_block_uses_only_universal_variables(fwa_css_block: str):

@@ -1,4 +1,4 @@
-"""FWAScreen -- the Fake World Assets gacha terminal as a Textual Screen.
+"""FWAScreen -- PULLS and NETWORK views for Fake World Assets.
 
 Layout (the house pattern, identical in structure to ``screens/talismans.py``
 lines 58-80 and ``screens/ttt.py``)::
@@ -11,61 +11,25 @@ lines 58-80 and ``screens/ttt.py``)::
                              toggled with `c`
     #separator
     #bottom-row         FWAChaseBoard (2fr) | FWASettlementTable (2fr)
+    FWANetworkHero     PLATFORM · TOKENOMICS · ECOSYSTEM   (hidden initially)
+    #fwa-network-body VALUE FLOW / REGISTRY | DROPS / ACTIVITY
     StatusBar
 
-Three things about this screen are deliberate rather than incidental:
+Four contracts are deliberate:
 
-1. **``c`` toggles the odds board and the activity feed**, the same affordance
-   Talismans and TTT use for their two mutually exclusive tables. The feed
-   originally sat in the bottom row and took 3fr of 7, which left the chase
-   board and the settlement table roughly 55 rendered columns each at a
-   200-column terminal -- below what either needs for its full column set, so
-   both wore a permanent ``‹ widen`` marker. Giving the bottom row to those two
-   alone and letting the feed share the odds board's slot brought the width
-   needed for a marker-free layout down from 198 columns to 172.
-
-   Both widgets stay mounted and both are dispatched to on every refresh, so
-   toggling is a visibility flip with no refetch. Creating the feed on demand
-   would leave it blank for a beat after the first ``c``, which reads as a bug.
-
-2. **Every widget update is individually guarded.** One widget raising must
-   never cost the other six their refresh, so each dispatch is its own
-   ``try``/``except`` with a ``logger.debug``. A failure of the *manager* is
-   different in kind: nothing can be trusted, so only the ``StatusBar`` is
-   touched (``last_updated_seconds_ago=999``) and the previous frame is left on
-   screen rather than being half-overwritten.
-
-3. **Degradation reaches the title bar.** ``degraded_sources`` has no home in
-   the shared ``StatusBar`` API (:mod:`maxpane_dashboard.widgets.status_bar`
-   exposes only ``last_updated_seconds_ago`` / ``error_count`` /
-   ``poll_interval`` plus the game/theme/view labels), so it is appended to the
-   title bar instead. Leaving it to the widgets alone would mean the operator
-   has to notice *which* panels went quiet; PRD §9 wants the fact stated once,
-   somewhere permanent. If ``StatusBar`` ever grows a ``set_degraded()``, this
-   is the line to move.
-
-Minimum terminal width: 172 columns
------------------------------------
-
-Measured against composited output, not estimated: at **172 columns** the last
-``‹ widen`` marker (the signals panel's) goes away, in both views.
-``__main__.FULL_LAYOUT_COLUMNS`` carries the number and a test renders this
-screen at it.
-
-It used to be 198. The bottom row was 3fr/2fr/2fr with the activity feed taking
-the 3fr, so the chase board and settlement table got ~55 columns each -- the
-feed needs 79 for its full line and those two need 54 and 55, and the row could
-not satisfy all three until the terminal was very wide. Moving the feed into
-the odds board's slot leaves the bottom row split evenly between two widgets
-that each need ~55, which is why the requirement fell by 26 columns.
-
-Below the threshold, **no widget drops a column silently**: each announces the
-loss in its own title with a ``‹ widen`` marker naming what went
-(``‹ widen: TOKEN``, ``‹ widen: COUNT``, ``‹ widen for amounts``). The chase
-board's ``ODDS`` and ``JACKPOT`` and the settlement table's ``SHARE`` are the
-last columns dropped, because they carry those widgets' entire point. A narrow
-terminal therefore costs *fields*, never correctness — every number still on
-screen is the same number it would be at 200 columns.
+1. ``e`` flips already-mounted PULLS and NETWORK bodies without fetching.
+   ``c`` keeps its original odds/activity meaning in PULLS and does nothing in
+   NETWORK; ``escape`` returns to PULLS without forgetting that sub-view.
+2. Every widget update is independently guarded. One broken renderer cannot
+   suppress the other panels; a manager failure leaves the previous frame and
+   marks only the shared status bar.
+3. Source degradation and integrity reach the active title. The shared
+   :class:`StatusBar` remains unchanged and uses only its existing freshness,
+   error, and active-view surfaces.
+4. Geometry is measured in the real compositor. The app-wide PULLS pin remains
+   143 columns; NETWORK's smallest complete fallback seam is 122 columns and
+   its first non-scrolling height is 39 rows. Below those boundaries, whole
+   fields are shed with ``‹ widen`` or the title advertises ``‹ taller``.
 
 The screen is clock-free: every time-derived string (the emissions countdown,
 the feed's "as of HH:MM", staleness) arrives already rendered in the payload.
@@ -73,10 +37,10 @@ Nothing here consults the wall clock, which is why the 2026-08-04T19:01:23Z
 emissions stop can be tested in both its live and its ended state from fixed
 fixtures.
 
-The screen is written against the frozen ``FWA_DATA_KEYS`` /
-``FWA_WIDGET_SIGNATURES`` contract, not against ``FWAManager``'s internals --
-any object with an awaitable ``fetch_and_compute()`` returning that dict drives
-it.
+The screen is written against the frozen PULLS and NETWORK presentation
+contracts, not against manager internals.  Both bodies remain mounted and are
+updated on every refresh; ``e`` only flips visibility, while ``c`` retains its
+original odds/activity meaning inside PULLS and is a no-op inside NETWORK.
 """
 
 from __future__ import annotations
@@ -90,11 +54,19 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
+from maxpane_dashboard.data.fwa_ecosystem_models import (
+    FWA_NETWORK_WIDGET_SIGNATURES,
+)
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.fwa import (
     FWAActivityFeed,
     FWAChaseBoard,
+    FWAEcosystemRegistry,
+    FWAFlowRail,
     FWAHeroMetrics,
+    FWAIRDropBoard,
+    FWANetworkActivity,
+    FWANetworkHero,
     FWAOddsBoard,
     FWASettlementTable,
     FWASignals,
@@ -103,7 +75,7 @@ from maxpane_dashboard.widgets.fwa import (
 from maxpane_dashboard.widgets.status_bar import StatusBar
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, no runtime import
-    from maxpane_dashboard.data.fwa_manager import FWAManager
+    from maxpane_dashboard.data.fwa_composite_manager import FWACompositeManager
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +86,24 @@ INITIAL_TITLE = "FWA · Gacha Terminal · Ethereum Mainnet"
 
 #: Sentinel staleness pushed to the StatusBar when the manager itself failed.
 MANAGER_FAILURE_SECONDS = 999
+
+#: First width where both NETWORK tables' smallest complete column tier fits
+#: inside the real 3:2 columns, including padding and reserved scrollbar cells.
+#: The application-wide pin remains 143, comfortably above this boundary.
+FWA_NETWORK_FULL_LAYOUT_COLUMNS = 122
+
+#: First terminal height at which the NETWORK body's two columns can show all
+#: panels at their declared minimum heights.  Shorter terminals keep the same
+#: data and scroll the columns; the title advertises ``‹ taller``.
+FWA_NETWORK_FULL_LAYOUT_ROWS = 39
+
+_NETWORK_WIDGET_CLASSES = {
+    "FWANetworkHero": FWANetworkHero,
+    "FWAFlowRail": FWAFlowRail,
+    "FWAIRDropBoard": FWAIRDropBoard,
+    "FWAEcosystemRegistry": FWAEcosystemRegistry,
+    "FWANetworkActivity": FWANetworkActivity,
+}
 
 
 # -- format helpers ----------------------------------------------------
@@ -204,16 +194,58 @@ def _title_line(data: dict) -> str:
     return line
 
 
-class FWAScreen(RefreshGuard, Screen):
-    """Fake World Assets gacha-terminal dashboard.
+def _network_title_line(data: dict, *, short: bool = False) -> str:
+    """Compose the one-row NETWORK provenance title without inventing state."""
 
-    ``BINDINGS`` is ``r`` plus ``c`` -- the latter swaps the odds board and the
-    activity feed in the middle-left slot (see the module docstring).
-    """
+    block = _fmt_int(data.get("network_state_block"))
+    state = "n/a" if block == _EMDASH else f"#{block}"
+    if data.get("network_state_stale") is True:
+        chain = "CHAIN STALE"
+    elif data.get("network_state_block") is not None:
+        chain = "CHAIN LIVE"
+    else:
+        chain = "CHAIN N/A"
+
+    line = "FWA NETWORK"
+    if short:
+        line += " · [yellow]‹ taller[/]"
+    line += f" · state {state} · {chain}"
+    head = _fmt_int(data.get("network_chain_head"))
+    if head != _EMDASH and head != block:
+        line += f" · head #{head}"
+    degraded = data.get("network_degraded_sources")
+    try:
+        degraded_count = len([item for item in degraded or [] if str(item).strip()])
+    except TypeError:
+        degraded_count = 0
+    if degraded_count:
+        noun = "SOURCE" if degraded_count == 1 else "SOURCES"
+        line += f" · [yellow]{degraded_count} {noun} STALE[/]"
+
+    warnings = data.get("network_integrity_warning_count")
+    try:
+        warning_count = int(warnings) if warnings is not None else 0
+    except (TypeError, ValueError, OverflowError):
+        warning_count = 0
+    if warning_count:
+        line += f" · [yellow]{warning_count} INTEGRITY[/]"
+    return line
+
+
+class FWAScreen(RefreshGuard, Screen):
+    """Fake World Assets dashboard with independent PULLS/NETWORK state."""
 
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
         Binding("c", "toggle_view", "Odds/Activity", show=True),
+        Binding("e", "toggle_mode", "PULLS/Network", show=True),
+        Binding(
+            "escape",
+            "show_pulls",
+            "Back to PULLS",
+            show=False,
+            priority=True,
+        ),
     ]
 
     #: Worker name for the guarded refresh (see RefreshGuard).
@@ -283,11 +315,51 @@ class FWAScreen(RefreshGuard, Screen):
         width: 2fr;
         padding: 0 1;
     }
+    FWAScreen FWANetworkHero {
+        height: 7;
+        margin: 1 0 0 0;
+    }
+    FWAScreen FWANetworkHero > FWAHeroBox {
+        padding: 0 1;
+    }
+    FWAScreen #fwa-network-body {
+        width: 100%;
+        height: 1fr;
+        margin: 1 0 1 0;
+    }
+    FWAScreen #fwa-network-main {
+        width: 3fr;
+        height: 1fr;
+        min-height: 26;
+        padding: 0 1;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
+        scrollbar-size: 1 1;
+    }
+    FWAScreen #fwa-network-rail {
+        width: 2fr;
+        height: 1fr;
+        min-height: 23;
+        padding: 0 1;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
+        scrollbar-size: 1 1;
+    }
+    FWAScreen FWAFlowRail,
+    FWAScreen FWAEcosystemRegistry,
+    FWAScreen FWAIRDropBoard,
+    FWAScreen FWANetworkActivity {
+        width: 100%;
+    }
+    FWAScreen FWAEcosystemRegistry,
+    FWAScreen FWANetworkActivity {
+        margin: 1 0 0 0;
+    }
     """
 
     def __init__(
         self,
-        data_manager: "FWAManager",
+        data_manager: "FWACompositeManager",
         poll_interval: int = 30,
         name: str = "fwa",
         **kwargs,
@@ -296,8 +368,10 @@ class FWAScreen(RefreshGuard, Screen):
         self._data_manager = data_manager
         self._poll_interval = poll_interval
         self._refresh_timer = None
-        #: Which widget owns the wide middle-left slot: "odds" or "activity".
-        self._active_view: str = "odds"
+        self._mode: str = "pulls"
+        #: Which widget owns the PULLS middle-left slot: "odds" or "activity".
+        self._pulls_view: str = "odds"
+        self._last_data: dict = {}
 
     # ------------------------------------------------------------------
     # Layout
@@ -331,6 +405,20 @@ class FWAScreen(RefreshGuard, Screen):
             yield FWAChaseBoard()
             yield FWASettlementTable()
 
+        network_hero = FWANetworkHero()
+        network_hero.display = False
+        yield network_hero
+
+        network_body = Horizontal(id="fwa-network-body")
+        network_body.display = False
+        with network_body:
+            with Vertical(id="fwa-network-main"):
+                yield FWAFlowRail()
+                yield FWAEcosystemRegistry()
+            with Vertical(id="fwa-network-rail"):
+                yield FWAIRDropBoard()
+                yield FWANetworkActivity()
+
         yield StatusBar()
 
     # ------------------------------------------------------------------
@@ -344,17 +432,104 @@ class FWAScreen(RefreshGuard, Screen):
         refresh, so toggling is a pure visibility flip -- no refetch, no
         repopulate, no empty frame.
         """
-        self._active_view = "activity" if self._active_view == "odds" else "odds"
-        showing_odds = self._active_view == "odds"
+        if self._mode != "pulls":
+            return
+        self._pulls_view = "activity" if self._pulls_view == "odds" else "odds"
+        showing_odds = self._pulls_view == "odds"
         try:
             self.query_one(FWAOddsBoard).display = showing_odds
             self.query_one(FWAActivityFeed).display = not showing_odds
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("FWA view toggle failed: %s", exc)
         try:
-            self.query_one(StatusBar).set_active_view(self._active_view)
+            self.query_one(StatusBar).set_active_view(self._status_view())
         except Exception:
             pass
+        self._update_status_metrics()
+
+    def _update_status_metrics(self) -> None:
+        if not self._last_data:
+            return
+        data = self._last_data
+        if self._mode == "network":
+            age = data.get("network_last_updated_seconds_ago")
+            errors = data.get("network_error_count")
+            age_default = MANAGER_FAILURE_SECONDS
+        else:
+            age = data.get("last_updated_seconds_ago")
+            errors = data.get("error_count")
+            age_default = 0.0
+        try:
+            self.query_one(StatusBar).update_data(
+                last_updated_seconds_ago=_num(age, age_default),
+                error_count=int(_num(errors, 0)),
+                poll_interval=int(_num(data.get("poll_interval"), self._poll_interval)),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed to update FWA StatusBar: %s", exc)
+
+    def action_toggle_mode(self) -> None:
+        """Flip already-mounted PULLS and NETWORK bodies without fetching."""
+
+        self._mode = "network" if self._mode == "pulls" else "pulls"
+        self._apply_mode()
+
+    def action_show_pulls(self) -> None:
+        """Return from NETWORK; leave the remembered odds/activity slot intact."""
+
+        if self._mode == "pulls":
+            return
+        self._mode = "pulls"
+        self._apply_mode()
+
+    def _apply_mode(self) -> None:
+        showing_pulls = self._mode == "pulls"
+        for selector in (
+            "FWAHeroMetrics",
+            "#middle-row",
+            "#separator",
+            "#bottom-row",
+        ):
+            try:
+                self.query_one(selector).display = showing_pulls
+            except Exception as exc:  # noqa: BLE001 -- mode switches never crash
+                logger.debug("FWA mode toggle could not update %s: %s", selector, exc)
+        for selector in ("FWANetworkHero", "#fwa-network-body"):
+            try:
+                self.query_one(selector).display = not showing_pulls
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("FWA mode toggle could not update %s: %s", selector, exc)
+        self._update_chrome()
+
+    def _status_view(self) -> str:
+        if self._mode == "network":
+            return "network · e pulls"
+        return f"pulls/{self._pulls_view} · e network"
+
+    def _update_chrome(self) -> None:
+        try:
+            title = (
+                _network_title_line(
+                    self._last_data,
+                    short=0 < self.size.height < FWA_NETWORK_FULL_LAYOUT_ROWS,
+                )
+                if self._mode == "network"
+                else _title_line(self._last_data)
+                if self._last_data
+                else INITIAL_TITLE
+            )
+            self.query_one("#title-bar", Static).update(title)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed to update FWA title chrome: %s", exc)
+        try:
+            self.query_one(StatusBar).set_active_view(self._status_view())
+        except Exception:
+            pass
+        self._update_status_metrics()
+
+    def on_resize(self, _event=None) -> None:
+        if self._mode == "network":
+            self._update_chrome()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -368,7 +543,7 @@ class FWAScreen(RefreshGuard, Screen):
         try:
             self.query_one(StatusBar).set_theme_name(self.app.theme)
             self.query_one(StatusBar).set_game_name("fwa")
-            self.query_one(StatusBar).set_active_view(self._active_view)
+            self.query_one(StatusBar).set_active_view(self._status_view())
         except Exception:
             pass
 
@@ -400,11 +575,8 @@ class FWAScreen(RefreshGuard, Screen):
             logger.debug("FWA refresh returned %r, not a dict", type(data))
             return
 
-        # Title bar
-        try:
-            self.query_one("#title-bar", Static).update(_title_line(data))
-        except Exception as exc:
-            logger.debug("Failed to update title bar: %s", exc)
+        self._last_data = data
+        self._update_chrome()
 
         # Hero metrics -- PULL EV · PRICE · CROWN
         try:
@@ -511,15 +683,13 @@ class FWAScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.debug("Failed to update FWASettlementTable: %s", exc)
 
-        # Status bar. Values are coerced because an all-None payload is a
-        # supported state (PRD §9) and StatusBar does arithmetic on these.
-        try:
-            self.query_one(StatusBar).update_data(
-                last_updated_seconds_ago=_num(
-                    data.get("last_updated_seconds_ago"), 0.0
-                ),
-                error_count=int(_num(data.get("error_count"), 0)),
-                poll_interval=int(_num(data.get("poll_interval"), self._poll_interval)),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update StatusBar: %s", exc)
+        # NETWORK widgets are populated even while their body is hidden.  The
+        # first ``e`` press therefore paints immediately and never triggers I/O.
+        for name, widget_class in _NETWORK_WIDGET_CLASSES.items():
+            signature = FWA_NETWORK_WIDGET_SIGNATURES[name]
+            try:
+                self.query_one(widget_class).update_data(
+                    **{key: data.get(key) for key in signature}
+                )
+            except Exception as exc:  # noqa: BLE001 -- isolate every panel
+                logger.debug("Failed to update %s: %s", name, exc)

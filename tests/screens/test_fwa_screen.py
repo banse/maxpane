@@ -434,7 +434,7 @@ def test_widget_package_exports_all_seven():
         assert getattr(pkg, name) is _WIDGET_CLASSES[name]
 
 
-def test_bindings_are_refresh_and_the_view_toggle():
+def test_bindings_cover_refresh_pulls_view_and_network_mode():
     """``c`` swaps the odds board and the activity feed in one slot.
 
     The feed used to occupy 3fr of the bottom row, which left the chase board
@@ -443,7 +443,7 @@ def test_bindings_are_refresh_and_the_view_toggle():
     slot with the odds board instead gives the bottom row to those two alone.
     """
     keys = {binding.key for binding in FWAScreen.BINDINGS}
-    assert keys == {"r", "c"}
+    assert keys == {"r", "c", "e", "escape"}
 
 
 # -- mount / refresh ----------------------------------------------------
@@ -717,19 +717,19 @@ async def test_c_swaps_the_odds_board_and_the_activity_feed():
 
         text = _screen_text(app)
         assert "ODDS BOARD" in text and "ACTIVITY" not in text
-        assert screen._active_view == "odds"
+        assert screen._pulls_view == "odds"
 
         await pilot.press("c")
         await pilot.pause()
         text = _screen_text(app)
         assert "ACTIVITY" in text and "ODDS BOARD" not in text
-        assert screen._active_view == "activity"
+        assert screen._pulls_view == "activity"
 
         await pilot.press("c")
         await pilot.pause()
         text = _screen_text(app)
         assert "ODDS BOARD" in text and "ACTIVITY" not in text
-        assert screen._active_view == "odds"
+        assert screen._pulls_view == "odds"
 
 
 async def test_the_bottom_row_is_unaffected_by_the_toggle():
@@ -793,7 +793,7 @@ async def test_the_toggle_survives_a_missing_widget():
         screen.action_toggle_view()  # must not raise
         await pilot.pause()
 
-        assert screen._active_view == "activity"
+        assert screen._pulls_view == "activity"
 
 
 async def test_the_status_bar_names_the_active_view():
@@ -810,7 +810,7 @@ async def test_the_status_bar_names_the_active_view():
         screen.action_toggle_view()
         await pilot.pause()
 
-        assert seen == ["activity"]
+        assert seen == ["pulls/activity · e network"]
 
 
 async def test_both_views_get_the_identical_slot():

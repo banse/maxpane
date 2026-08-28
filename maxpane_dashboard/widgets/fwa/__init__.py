@@ -26,23 +26,34 @@ equivalent uses ``padding: 1 2`` and silently loses its fourth line today; for
 FWA that fourth line is the PULL EV *coverage badge*, and an EV number rendered
 without its coverage is the one thing PRD §3 forbids outright.
 
-These widgets take primitives only and import nothing from the data layer, so
-this package is safe to import without any manager or network being present.
+The five NETWORK widgets follow the same primitive-only rule.  They are mounted
+beside the original PULLS body and kept populated while hidden, so switching
+modes is a pure presentation action.
 """
 
 from .fwa_activity_feed import FWAActivityFeed
 from .fwa_chase_board import FWAChaseBoard
+from .fwa_ecosystem_registry import FWAEcosystemRegistry
+from .fwa_flow_rail import FWAFlowRail
 from .fwa_hero_metrics import FWAHeroBox, FWAHeroMetrics
+from .fwa_network_activity import FWANetworkActivity
+from .fwa_network_hero import FWANetworkHero
 from .fwa_odds_board import FWAOddsBoard
 from .fwa_settlement_table import FWASettlementTable
 from .fwa_signals import FWASignals
 from .fwa_sparkline import FWASparkline
+from .fwair_drop_board import FWAIRDropBoard
 
 __all__ = [
     "FWAActivityFeed",
     "FWAChaseBoard",
+    "FWAEcosystemRegistry",
+    "FWAFlowRail",
     "FWAHeroBox",
     "FWAHeroMetrics",
+    "FWAIRDropBoard",
+    "FWANetworkActivity",
+    "FWANetworkHero",
     "FWAOddsBoard",
     "FWASettlementTable",
     "FWASignals",
