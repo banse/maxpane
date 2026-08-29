@@ -116,6 +116,7 @@ import logging
 import time
 from typing import Any
 
+from maxpane_dashboard.analytics.surf_feed import select_feed_window
 from maxpane_dashboard.analytics.surf_signals import (
     READING_KEYS,
     SIGNAL_NAMES,
@@ -472,6 +473,69 @@ def _opt_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+_TX_HASH_HEX = frozenset("0123456789abcdefABCDEF")
+
+
+def _tx_hash(value: Any) -> str | None:
+    """A canonical full transaction hash suitable for exact feed matching."""
+    if not isinstance(value, str) or len(value) != 66 or not value.startswith("0x"):
+        return None
+    if any(ch not in _TX_HASH_HEX for ch in value[2:]):
+        return None
+    return value.lower()
+
+
+def _same_timestamp(left: Any, right: Any) -> bool:
+    """Whether two source timestamps identify the same on-chain second."""
+    a = _opt_float(left)
+    b = _opt_float(right)
+    return a is not None and b is not None and a == b
+
+
+def _legacy_signal_tx_hash(
+    name: str,
+    entry: Any,
+    readings: dict[str, Any],
+    baselines: dict[str, Any],
+) -> str | None:
+    """Recover an exact target for pre-tx-hash FIRED cache entries.
+
+    The upgrade may restore a still-active FIRED row written by an older
+    MaxPane.  Match only identities already present in the current readings,
+    and require the event timestamp to agree; display text is deliberately
+    never used as identity.
+    """
+    if not isinstance(entry, dict):
+        return None
+    event_ts = entry.get("ts")
+    if name == "post":
+        if not (
+            _same_timestamp(event_ts, baselines.get("announce_last_ts"))
+            and _same_timestamp(event_ts, readings.get("announce_last_ts"))
+        ):
+            return None
+        return _tx_hash(readings.get("announce_last_tx_hash"))
+    if name != "thread":
+        return None
+
+    baseline_hash = _tx_hash(baselines.get("thread_tx"))
+    if (
+        baseline_hash is None
+        or not _same_timestamp(event_ts, baselines.get("thread_ts"))
+    ):
+        return None
+    for row in readings.get("channel_threads") or ():
+        if not isinstance(row, dict):
+            continue
+        row_hash = _tx_hash(row.get("tx_hash"))
+        if (
+            row_hash == baseline_hash
+            and _same_timestamp(event_ts, row.get("ts"))
+        ):
+            return row_hash
+    return None
 
 
 #: The launchpad fields a completed read is expected to produce -- the
@@ -1165,20 +1229,38 @@ class SurfManager:
     def _channel_payload(self, rows: Any, nonce: int | None) -> dict[str, Any]:
         """The cached channel slot: what the feed renders *and* what POST reads.
 
-        ``tx_count`` is the **unclipped** row count — ``feed_items`` is capped at
-        :data:`FEED_ITEM_LIMIT`, so ``len(items)`` would saturate and silently
-        stop being a tx count. ``last_text`` / ``last_ts`` are the newest
-        *self*-post, which is what NEW POST quotes; a reply is not the dev posting.
+        ``items`` retains the client's bounded page history.  The public feed
+        is still capped at :data:`FEED_ITEM_LIMIT`, but it selects that window
+        only after signals are known so an active target and its root survive.
+        ``tx_count`` remains the raw row count. ``last_text`` / ``last_ts`` are
+        the newest *self*-post, which is what NEW POST quotes.
         """
-        items = self._feed_items(rows)
+        items = self._feed_items(rows, limit=None)
         selfs = [i for i in items if i.get("kind") == "self" and i.get("ts") is not None]
-        newest = max(selfs, key=lambda i: i["ts"]) if selfs else None
+        newest_ts = max((i["ts"] for i in selfs), default=None)
+        newest_rows = [i for i in selfs if i["ts"] == newest_ts]
+        newest = (
+            max(newest_rows, key=lambda i: str(i.get("tx_hash") or ""))
+            if newest_rows
+            else None
+        )
+        newest_hashes = {
+            str(item.get("tx_hash") or "") for item in newest_rows
+        }
+        last_tx_hash = (
+            _tx_hash(next(iter(newest_hashes)))
+            if len(newest_hashes) == 1
+            else None
+        )
         return {
             "nonce": nonce,
             "tx_count": len(list(rows or ())),
             "items": items,
             "last_text": (newest or {}).get("text"),
             "last_ts": (newest or {}).get("ts"),
+            # A timestamp is only second-granular. Two posts in one block are
+            # not safely distinguishable by a legacy FIRED timestamp alone.
+            "last_tx_hash": last_tx_hash,
         }
 
     def _bridge_rows(self, window: Any, now: float) -> list[dict[str, Any]]:
@@ -1386,7 +1468,9 @@ class SurfManager:
                 ids.add(str(topics[1]).lower())
         return len(ids)
 
-    def _feed_items(self, rows: Any) -> list[dict[str, Any]]:
+    def _feed_items(
+        self, rows: Any, limit: int | None = FEED_ITEM_LIMIT
+    ) -> list[dict[str, Any]]:
         """Classify and decode the channel rows into widget-ready primitives.
 
         ``kind`` and ``text`` both come from the pure layer, so the classification
@@ -1448,7 +1532,9 @@ class SurfManager:
                 }
             )
         items.sort(key=lambda i: (i["ts"] is not None, i["ts"] or 0.0), reverse=True)
-        return items[:FEED_ITEM_LIMIT]
+        if limit is None:
+            return items
+        return items[:max(int(limit), 0)]
 
     # -- the launchpad tier: v4 pool, decoy scan, hook/factory/executor -------
     #
@@ -2060,6 +2146,7 @@ class SurfManager:
             # Raw third-party text: escaped at the widget, never here.
             read["announce_last_text"] = channel.get("last_text")
             read["announce_last_ts"] = _opt_float(channel.get("last_ts"))
+            read["announce_last_tx_hash"] = channel.get("last_tx_hash")
 
         # NEW REPLY's stream. Deliberately *not* behind the nonce guard above:
         # that guard exists because ``last_text`` and the live nonce come from
@@ -2304,17 +2391,15 @@ class SurfManager:
         }
 
     def _signal_keys(self, readings: dict[str, Any], now: float) -> dict[str, Any]:
-        """Run ``build_signals`` and expand its result into the 18 ``sig_*`` keys."""
+        """Run the detectors and publish their rows plus exact feed targets."""
         baselines = self.cache.get_baselines()
         result = _safe_call(
             build_signals, baselines, readings, now, default=None
         )
         if not isinstance(result, tuple) or len(result) != 2:
             logger.warning("build_signals returned %r — leaving the baselines alone", result)
-            return {}
+            return {"feed_signal_tx_hashes": []}
         signals, advanced = result
-        if isinstance(advanced, dict):
-            self.cache.set_baselines(advanced, now=now)
         out: dict[str, Any] = {}
         for name in SIGNAL_NAMES:
             out[f"sig_{name}_state"] = (signals or {}).get(f"sig_{name}_state")
@@ -2322,6 +2407,24 @@ class SurfManager:
             out[f"sig_{name}_age_s"] = _opt_float(
                 (signals or {}).get(f"sig_{name}_age_s")
             )
+        targets: list[str] = []
+        fired = advanced.get("fired") if isinstance(advanced, dict) else None
+        for name in ("post", "thread"):
+            if out.get(f"sig_{name}_state") != "fired" or not isinstance(fired, dict):
+                continue
+            entry = fired.get(name)
+            tx_hash = _tx_hash(entry.get("tx_hash")) if isinstance(entry, dict) else None
+            if tx_hash is None:
+                tx_hash = _legacy_signal_tx_hash(name, entry, readings, baselines)
+                if tx_hash is not None and isinstance(entry, dict):
+                    # Self-heal the legacy cache so the next restart no longer
+                    # needs the recovery path.
+                    entry["tx_hash"] = tx_hash
+            if tx_hash is not None and tx_hash not in targets:
+                targets.append(tx_hash)
+        if isinstance(advanced, dict):
+            self.cache.set_baselines(advanced, now=now)
+        out["feed_signal_tx_hashes"] = targets
         return out
 
     # -- public API ----------------------------------------------------------
@@ -2467,7 +2570,12 @@ class SurfManager:
         # with the unavailable banner absent, so publishing `[]` for an outage
         # would have the screen state that the dev has not posted.
         raw_items = channel_payload.get("items")
-        feed_items = list(raw_items) if raw_items is not None else None
+        channel_items = list(raw_items) if raw_items is not None else None
+        feed_items = (
+            select_feed_window(channel_items, limit=FEED_ITEM_LIMIT)
+            if channel_items is not None
+            else None
+        )
 
         # This cycle's market view: fresh when we fetched, last-good otherwise —
         # the same resolution `channel_payload` gets above and `nft_payload` /
@@ -2578,7 +2686,7 @@ class SurfManager:
             # metric and it moves with every bridge tx (PRD §6.2).
             "parity_pct": parity_pct(imd_price, fp_price),
             "feed_items": feed_items,
-            "feed_last_post_age_s": self._last_post_age(feed_items or [], now),
+            "feed_last_post_age_s": self._last_post_age(channel_items or [], now),
             "nft_holders": nft_payload.get("nft_holders"),
             "nft_transfers_24h": nft_payload.get("nft_transfers_24h"),
             "nft_dev_holdings": nft_payload.get("nft_dev_holdings"),
@@ -2637,22 +2745,27 @@ class SurfManager:
             ),
         }
 
-        data.update(
-            self._signal_keys(
-                self._readings(
-                    data,
-                    nonces,
-                    channel_payload,
-                    activity_rows,
-                    launchpad_slot,
-                    launchpad_ts=(
-                        launchpad_entry.ts if launchpad_entry is not None else None
-                    ),
-                    state=state,
+        signal_data = self._signal_keys(
+            self._readings(
+                data,
+                nonces,
+                channel_payload,
+                activity_rows,
+                launchpad_slot,
+                launchpad_ts=(
+                    launchpad_entry.ts if launchpad_entry is not None else None
                 ),
-                now,
-            )
+                state=state,
+            ),
+            now,
         )
+        data.update(signal_data)
+        if channel_items is not None:
+            data["feed_items"] = select_feed_window(
+                channel_items,
+                signal_data.get("feed_signal_tx_hashes") or (),
+                FEED_ITEM_LIMIT,
+            )
 
         payload = self._finalise(data)
 
@@ -2796,6 +2909,7 @@ class SurfManager:
                 "degraded": [],
                 "supply_series": [],
                 "price_series": [],
+                "feed_signal_tx_hashes": [],
                 "nft_floor": None,     # PRD §4: always None in v1, explicitly
             }
         )

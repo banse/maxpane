@@ -2142,12 +2142,14 @@ async def test_a_new_post_fires_within_one_cycle(tmp_path):
     second = await m.fetch_and_compute()
     assert second["sig_post_state"] == "fired"
     assert second["sig_post_age_s"] == pytest.approx(0.0, abs=1.0)
+    assert second["feed_signal_tx_hashes"] == ["0x" + "a9" * 32]
 
     # Baselines advance immediately, so the *same* post never re-fires...
     clock.advance(30.0)
     third = await m.fetch_and_compute()
     assert third["sig_post_state"] == "fired"     # ...but the display persists 24 h
     assert third["sig_post_age_s"] == pytest.approx(30.0, abs=1.0)
+    assert third["feed_signal_tx_hashes"] == ["0x" + "a9" * 32]
 
 
 async def test_a_fired_display_relaxes_after_its_ttl(tmp_path):
@@ -2168,6 +2170,7 @@ async def test_a_fired_display_relaxes_after_its_ttl(tmp_path):
     relaxed = await m.fetch_and_compute()
     assert relaxed["sig_post_state"] == "ok"
     assert "last" in (relaxed["sig_post_detail"] or "")
+    assert relaxed["feed_signal_tx_hashes"] == []
 
 
 async def test_a_restart_neither_resurrects_nor_loses_a_fired_signal(tmp_path):
@@ -2194,9 +2197,9 @@ async def test_a_restart_neither_resurrects_nor_loses_a_fired_signal(tmp_path):
 
     assert data["sig_post_state"] == "fired"                     # not lost
     assert data["sig_post_age_s"] == pytest.approx(7_200.0, abs=2.0)   # real age
+    assert data["feed_signal_tx_hashes"] == ["0x" + "a9" * 32]
     # The nonce baseline came back too, so the same post did not fire again.
     assert restarted.cache.get_baselines()["announce_nonce"] == ANNOUNCE_NONCE + 1
-
     # The LITERAL "fired" key, never the imported `BASELINE_FIRED_KEY` constant.
     # A reviewer proved a real coverage gap here: `SurfCache._sanitise_baselines`
     # (write side) and `SurfCache.get_baselines` (read side) both key off that
@@ -2209,6 +2212,171 @@ async def test_a_restart_neither_resurrects_nor_loses_a_fired_signal(tmp_path):
     fired = restarted.cache.get_baselines()["fired"]
     assert fired["post"]["ts"] == pytest.approx(fire_ts)
     assert fired["post"]["detail"]
+
+
+@pytest.mark.parametrize("name, kind", (("post", "self"), ("thread", "answer")))
+def test_a_legacy_active_feed_signal_recovers_and_persists_its_exact_target(
+    tmp_path, name, kind
+):
+    """An upgrade must focus FIRED rows written before tx hashes were cached."""
+    event_ts = NOW - 3_600.0
+    tx_hash = "0x" + ("c1" if name == "post" else "c2") * 32
+    m = _manager(tmp_path)
+    proof = (
+        {"announce_last_ts": event_ts}
+        if name == "post"
+        else {"thread_tx": tx_hash, "thread_ts": event_ts}
+    )
+    m.cache.set_baselines(
+        {
+            **proof,
+            "fired": {name: {"ts": event_ts, "detail": f"legacy {name}"}},
+        },
+        now=NOW,
+    )
+    readings = dict.fromkeys(surf_signals.READING_KEYS)
+    if name == "post":
+        readings.update(
+            announce_last_ts=event_ts,
+            announce_last_tx_hash=tx_hash,
+        )
+    else:
+        readings["channel_threads"] = [
+            {
+                "ts": event_ts,
+                "kind": kind,
+                "tx_hash": tx_hash,
+                "text": "legacy active answer",
+            }
+        ]
+
+    out = m._signal_keys(readings, NOW)
+
+    assert out[f"sig_{name}_state"] == "fired"
+    assert out["feed_signal_tx_hashes"] == [tx_hash]
+    assert m.cache.get_baselines()["fired"][name]["tx_hash"] == tx_hash
+
+
+def test_a_legacy_signal_never_guesses_from_a_different_timestamp(tmp_path):
+    event_ts = NOW - 3_600.0
+    tx_hash = "0x" + "c3" * 32
+    m = _manager(tmp_path)
+    m.cache.set_baselines(
+        {
+            "thread_tx": tx_hash,
+            "thread_ts": event_ts,
+            "fired": {"thread": {"ts": event_ts, "detail": "legacy answer"}},
+        },
+        now=NOW,
+    )
+    readings = dict.fromkeys(surf_signals.READING_KEYS)
+    readings["channel_threads"] = [
+        {
+            "ts": event_ts + 1.0,
+            "kind": "answer",
+            "tx_hash": tx_hash,
+            "text": "a different answer",
+        }
+    ]
+
+    out = m._signal_keys(readings, NOW)
+
+    assert out["sig_thread_state"] == "fired"
+    assert out["feed_signal_tx_hashes"] == []
+    assert "tx_hash" not in m.cache.get_baselines()["fired"]["thread"]
+
+
+@pytest.mark.parametrize("name", ("post", "thread"))
+def test_a_legacy_current_row_without_its_old_baseline_is_not_enough(
+    tmp_path, name
+):
+    event_ts = NOW - 3_600.0
+    tx_hash = "0x" + "c4" * 32
+    m = _manager(tmp_path)
+    m.cache.set_baselines(
+        {"fired": {name: {"ts": event_ts, "detail": f"legacy {name}"}}},
+        now=NOW,
+    )
+    readings = dict.fromkeys(surf_signals.READING_KEYS)
+    if name == "post":
+        readings.update(
+            announce_last_ts=event_ts,
+            announce_last_tx_hash=tx_hash,
+        )
+    else:
+        readings["channel_threads"] = [
+            {
+                "ts": event_ts,
+                "kind": "answer",
+                "tx_hash": tx_hash,
+                "text": "same timestamp, no persisted identity proof",
+            }
+        ]
+
+    out = m._signal_keys(readings, NOW)
+
+    assert out[f"sig_{name}_state"] == "fired"
+    assert out["feed_signal_tx_hashes"] == []
+    assert "tx_hash" not in m.cache.get_baselines()["fired"][name]
+
+
+def test_a_legacy_thread_baseline_hash_must_match_the_current_row(tmp_path):
+    event_ts = NOW - 3_600.0
+    baseline_hash = "0x" + "c5" * 32
+    row_hash = "0x" + "c6" * 32
+    m = _manager(tmp_path)
+    m.cache.set_baselines(
+        {
+            "thread_tx": baseline_hash,
+            "thread_ts": event_ts,
+            "fired": {"thread": {"ts": event_ts, "detail": "legacy answer"}},
+        },
+        now=NOW,
+    )
+    readings = dict.fromkeys(surf_signals.READING_KEYS)
+    readings["channel_threads"] = [
+        {
+            "ts": event_ts,
+            "kind": "answer",
+            "tx_hash": row_hash,
+            "text": "not the persisted event",
+        }
+    ]
+
+    out = m._signal_keys(readings, NOW)
+
+    assert out["sig_thread_state"] == "fired"
+    assert out["feed_signal_tx_hashes"] == []
+    assert "tx_hash" not in m.cache.get_baselines()["fired"]["thread"]
+
+
+def test_an_expired_legacy_signal_is_not_targeted_or_self_healed(tmp_path):
+    event_ts = NOW - FIRED_TTL_S - 60.0
+    tx_hash = "0x" + "c7" * 32
+    m = _manager(tmp_path)
+    m.cache.set_baselines(
+        {
+            "thread_tx": tx_hash,
+            "thread_ts": event_ts,
+            "fired": {"thread": {"ts": event_ts, "detail": "old answer"}},
+        },
+        now=NOW,
+    )
+    readings = dict.fromkeys(surf_signals.READING_KEYS)
+    readings["channel_threads"] = [
+        {
+            "ts": event_ts,
+            "kind": "answer",
+            "tx_hash": tx_hash,
+            "text": "old answer",
+        }
+    ]
+
+    out = m._signal_keys(readings, NOW)
+
+    assert out["sig_thread_state"] != "fired"
+    assert out["feed_signal_tx_hashes"] == []
+    assert "tx_hash" not in m.cache.get_baselines()["fired"]["thread"]
 
 
 async def test_baselines_are_stored_back_every_cycle(tmp_path):
@@ -2261,6 +2429,7 @@ async def test_a_read_but_empty_window_is_data_not_an_outage(manager):
     assert readings["channel_tx_count"] == 4
     assert readings["announce_last_text"] == "soon"
     assert readings["announce_last_ts"] == pytest.approx(SOON_TS)
+    assert readings["announce_last_tx_hash"] == "0x" + "a1" * 32
 
 
 async def test_a_channel_action_never_claims_the_tx_pages_were_read(tmp_path):
@@ -2309,6 +2478,29 @@ def test_feed_rows_carry_the_recipient():
     items = bare._feed_items(rows)
     assert items[0]["to_addr"] == REPLIER
     assert items[0]["kind"] == "answer"
+
+
+def test_two_same_timestamp_posts_expose_no_ambiguous_legacy_target():
+    bare = SurfManager.__new__(SurfManager)
+    rows = [
+        ChannelTx(
+            tx_hash="0x" + byte * 32,
+            ts=SOON_TS,
+            nonce=index,
+            from_addr=ANNOUNCE,
+            to_addr=ANNOUNCE,
+            value_wei=0,
+            input_hex="0x" + text.encode().hex(),
+        )
+        for index, (byte, text) in enumerate(
+            (("d1", "first post"), ("d2", "second post"))
+        )
+    ]
+
+    payload = bare._channel_payload(rows, nonce=2)
+
+    assert payload["last_ts"] == SOON_TS
+    assert payload["last_tx_hash"] is None
 
 
 def test_feed_rows_carry_the_value_so_an_empty_row_still_says_something():
@@ -3868,6 +4060,66 @@ async def test_an_inbound_reply_reaches_the_feed_without_the_announce_nonce_movi
 
     assert client.calls.count("fetch_channel_txs") == 2
     assert len(second["feed_items"]) == 5
+    assert second["sig_thread_state"] == "fired"
+    assert second["feed_signal_tx_hashes"] == ["0x" + "b7" * 32]
+
+
+async def test_an_active_reply_keeps_its_older_root_inside_the_25_row_feed(tmp_path):
+    clock = FakeClock()
+    root_hash = "0x" + "11" * 32
+    reply_hash = "0x" + "ff" * 32
+    root = ChannelTx(
+        tx_hash=root_hash,
+        ts=SOON_TS,
+        nonce=0,
+        from_addr=ANNOUNCE,
+        to_addr=ANNOUNCE,
+        value_wei=0,
+        input_hex=SOON_HEX,
+    )
+    actions = [
+        ChannelTx(
+            tx_hash="0x" + f"{n + 100:064x}",
+            ts=SOON_TS + n + 1.0,
+            nonce=n + 1,
+            from_addr=ANNOUNCE,
+            to_addr=ERC8004,
+            value_wei=0,
+            input_hex=REGISTER_HEX,
+            method="register",
+        )
+        for n in range(24)
+    ]
+    client = FakeSurfClient(fetch_channel_txs=[root, *actions])
+    m = _manager(tmp_path, client=client, clock=clock)
+    await m.fetch_and_compute()  # seed the signal baselines
+
+    reply = ChannelTx(
+        tx_hash=reply_hash,
+        ts=SOON_TS + 120.0,
+        nonce=91,
+        from_addr=REPLIER,
+        to_addr=ANNOUNCE,
+        value_wei=0,
+        input_hex="0x686f77",
+    )
+    client._returns["fetch_channel_txs"] = [reply, root, *actions]
+    clock.advance(600.0)
+    payload = await m.fetch_and_compute()
+
+    hashes = {item["tx_hash"] for item in payload["feed_items"]}
+    assert len(payload["feed_items"]) == 25
+    assert {root_hash, reply_hash} <= hashes
+    assert len(m.cache.get_last_good(SLOT_CHANNEL).payload["items"]) == 26
+
+    from maxpane_dashboard.analytics.surf_feed import build_threads
+
+    thread = next(
+        row
+        for row in build_threads(payload["feed_items"])
+        if row["item"]["tx_hash"] == root_hash
+    )
+    assert any(row["item"]["tx_hash"] == reply_hash for row in thread["replies"])
 
 
 async def test_a_page_that_lagged_a_new_nonce_is_refetched_rather_than_frozen(
@@ -3893,6 +4145,8 @@ async def test_a_page_that_lagged_a_new_nonce_is_refetched_rather_than_frozen(
     clock.advance(30.0)
     lagged = await m.fetch_and_compute()
     assert len(lagged["feed_items"]) == 4       # the new post is not on the page
+    assert lagged["sig_post_state"] == "watch"
+    assert lagged["feed_signal_tx_hashes"] == []
 
     # The indexer catches up.  The nonce will never move again on its own, so
     # this cycle is the only chance the feed gets.

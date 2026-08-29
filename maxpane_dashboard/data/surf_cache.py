@@ -215,7 +215,8 @@ def _jsonable(value: Any, _depth: int = 0) -> Any:
 # ---------------------------------------------------------------------------
 
 #: Nested map inside the baselines dict: signal name -> ``{"ts": epoch seconds,
-#: "detail": the rendered line}`` of its last FIRED. Persisted so a restart
+#: "detail": the rendered line, "tx_hash": optional exact event id}`` of its
+#: last FIRED. Persisted so a restart
 #: neither resurrects nor loses a FIRED display; whether an entry still
 #: *renders* FIRED is ``build_signals``' call, not this module's.
 #:
@@ -234,6 +235,17 @@ BASELINE_LIST_CAP = 64
 #: bound exists to stop an unbounded third-party string reaching the cache
 #: file, not to reformat the line a restart re-renders.
 BASELINE_DETAIL_CAP = 200
+
+_TX_HASH_HEX = frozenset("0123456789abcdefABCDEF")
+
+
+def _tx_hash(value: Any) -> str | None:
+    """A canonical full transaction hash, or ``None`` for legacy/malformed data."""
+    if not isinstance(value, str) or len(value) != 66 or not value.startswith("0x"):
+        return None
+    if any(ch not in _TX_HASH_HEX for ch in value[2:]):
+        return None
+    return value.lower()
 
 
 class SurfCache:
@@ -543,7 +555,7 @@ class SurfCache:
 
     @staticmethod
     def _sanitise_fired(raw: Any, horizon: float) -> dict[str, dict[str, Any]]:
-        """The ``{signal: {"ts", "detail"}}`` store, defensively rebuilt.
+        """The ``{signal: {"ts", "detail", "tx_hash"?}}`` store, rebuilt.
 
         Shape kept deliberately narrow — this is the one nested value the cache
         understands, and it understands it because ``build_signals`` writes it
@@ -571,7 +583,11 @@ class SurfCache:
                 continue
             detail = entry.get("detail")
             text = "" if detail is None else str(detail)
-            fired[str(sig)] = {"ts": stamp, "detail": text[:BASELINE_DETAIL_CAP]}
+            clean = {"ts": stamp, "detail": text[:BASELINE_DETAIL_CAP]}
+            tx_hash = _tx_hash(entry.get("tx_hash"))
+            if tx_hash is not None:
+                clean["tx_hash"] = tx_hash
+            fired[str(sig)] = clean
         return fired
 
     def _sanitise_baselines(self, raw: Any, now: float) -> dict[str, Any]:

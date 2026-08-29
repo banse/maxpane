@@ -59,6 +59,11 @@ collapsing what the reader just opened, twice a minute, makes the feature
 unusable.  Keyed by hash rather than by row index so a new post arriving at
 the top does not shift which thread is open.
 
+An active NEW POST / NEW REPLY signal carries the exact transaction hash
+that fired it.  The matching row is highlighted here and its root is forced
+open for as long as that signal remains active.  The widget never guesses an
+event from truncated signal text or from whichever row happens to be newest.
+
 Width tiers: at ``FULL_TEXT_WIDTH`` columns and above the message renders
 *in full*, wrapped with a hanging indent -- the feed is the product here,
 and the dev's posts are the payload.  Below that, one truncated line per
@@ -117,7 +122,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Static
 
-from maxpane_dashboard.analytics.surf_feed import build_threads
+from maxpane_dashboard.analytics.surf_feed import build_threads, select_feed_window
 from maxpane_dashboard.widgets.cell_fitting import fit_cell
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import DASH, fmt_age, hhmm, mmdd
@@ -175,18 +180,11 @@ ANSWER_BADGE = "ANSWER"
 TOGGLE_COLLAPSED = "▸"
 TOGGLE_EXPANDED = "▾"
 
-#: Max feed items rendered per refresh.  Applied to the *items*, newest
-#: first, **before** threading -- which is what slices a conversation, not
-#: what keeps one whole: 25 replies newer than the post they answer push
-#: that post out of the window, and each of them then renders as its own
-#: top-level ``REPLY`` root with no post above it and no toggle (the
-#: "a reply that predates the first self-post" fallback in
-#: ``analytics/surf_feed``). That is the honest outcome of a cap measured in
-#: rows -- nothing is silently dropped and the replies stay readable -- but
-#: it is a cap on *rows*, not on threads, and this comment used to claim the
-#: opposite. A thread-aware cap would have to walk the threads first and
-#: count roots, which is a different budget than the one the panel's height
-#: is sized against.
+#: Max feed items rendered per refresh.  It remains a row budget, not a thread
+#: budget. ``select_feed_window`` normally takes the newest 25, but when a
+#: fired signal targets an older conversation it replaces the oldest ordinary
+#: rows with that exact message, its root, and its immediate parent.  The cap
+#: therefore stays fixed without breaking the signal's visibility promise.
 _MAX_ROWS = 25
 
 #: ``MM-DD HH:MM`` (11) + 2 spaces + badge column (6) + 1 space.
@@ -626,6 +624,8 @@ class SurfFeed(Vertical):
         #: -- see the module docstring; a 30-second repaint that re-collapses
         #: what the reader opened is what makes this feature unusable.
         self._expanded: dict[str, bool] = {}
+        self._signal_tx_hashes: set[str] = set()
+        self._forced_roots: set[str] = set()
         self._rendered_width: int | None = None
 
     def compose(self) -> ComposeResult:
@@ -638,9 +638,14 @@ class SurfFeed(Vertical):
         feed_nonce=None,
         feed_last_post_age_s=None,
         feed_items=None,
+        feed_signal_tx_hashes=None,
         **_kwargs,
     ) -> None:
         """Rewrite the feed.  Kwargs are exactly the PRD §5 feed keys."""
+        self._signal_tx_hashes = self._normalise_signal_hashes(
+            feed_signal_tx_hashes
+        )
+        self._forced_roots.clear()
         self._payload = {
             "nonce": feed_nonce,
             "age_s": feed_last_post_age_s,
@@ -690,6 +695,10 @@ class SurfFeed(Vertical):
         nothing focused -- and the keyboard route, which needs the toggle to
         still be focused to be pressed twice, would work exactly once.
         """
+        # A fired signal promises that its message remains visible.  Once it
+        # expires, this root returns to the reader's prior manual state.
+        if self._tx_key(tx_hash) in self._forced_roots:
+            return
         self._expanded[tx_hash] = not self._expanded.get(tx_hash, False)
         self._render_view(keep_position=True, focus_tx=tx_hash)
 
@@ -737,10 +746,57 @@ class SurfFeed(Vertical):
             text += f"  [yellow]{WIDEN_HINT}[/]"
         title.update(text)
 
-    def _toggle_line(self, count: int, expanded: bool) -> Text:
+    def _toggle_line(
+        self, count: int, expanded: bool, *, standalone: bool = False
+    ) -> Text:
         glyph = TOGGLE_EXPANDED if expanded else TOGGLE_COLLAPSED
         word = "reply" if count == 1 else "replies"
-        return Text(f" {glyph} {count} {word}", style="dim")
+        padding = _PREFIX_WIDTH if standalone else 1
+        return Text(f"{' ' * padding}{glyph} {count} {word}", style="dim")
+
+    @staticmethod
+    def _tx_key(value) -> str:
+        """Canonical comparison key for an untrusted transaction hash."""
+        return value.strip().lower() if isinstance(value, str) else ""
+
+    @classmethod
+    def _normalise_signal_hashes(cls, values) -> set[str]:
+        """Malformed presentation data means no targets, never a crash."""
+        if not isinstance(values, (list, tuple, set, frozenset)):
+            return set()
+        return {key for value in values if (key := cls._tx_key(value))}
+
+    def _is_signal_item(self, item) -> bool:
+        if not isinstance(item, dict):
+            return False
+        return self._tx_key(item.get("tx_hash")) in self._signal_tx_hashes
+
+    @staticmethod
+    def _highlight_message(renderable: Text, depth: int) -> None:
+        """Emphasise message text while preserving its timestamp and badge."""
+        offset = 0
+        for line in renderable.plain.split("\n"):
+            start = offset + min(_PREFIX_WIDTH + depth, len(line))
+            end = offset + len(line)
+            if start < end:
+                renderable.stylize("bold reverse", start, end)
+            offset = end + 1
+
+    def _feed_row(
+        self,
+        renderable,
+        item,
+        *,
+        depth: int = 0,
+        classes: str | None = None,
+    ):
+        """Build one row and highlight only the exact target's message text."""
+        names = [classes] if classes else []
+        if self._is_signal_item(item):
+            names.append("surf-feed-signal")
+            if isinstance(renderable, Text):
+                self._highlight_message(renderable, depth)
+        return SurfFeedRow(renderable, classes=" ".join(names) or None)
 
     def _build_rows(self, items, width: int) -> tuple[list, bool, list]:
         """Widgets for every visible row, whether any clipped, and the toggles.
@@ -762,6 +818,7 @@ class SurfFeed(Vertical):
         toggles: list = []
         clipped_any = False
         used_ids: set[str] = set()
+        self._forced_roots.clear()
 
         datable = [item for item in items if _has_readable_ts(item)]
         undated = [item for item in items if not _has_readable_ts(item)]
@@ -776,12 +833,21 @@ class SurfFeed(Vertical):
             # depth it really is a reply to the post.
             direct = sum(1 for r in replies if int(r.get("depth") or 1) <= 1)
             tx_hash = str(root["item"].get("tx_hash") or "")
+            forced = self._is_signal_item(root["item"]) or any(
+                self._is_signal_item(reply.get("item")) for reply in replies
+            )
+            if forced and tx_hash:
+                self._forced_roots.add(self._tx_key(tx_hash))
             # A root with no ``tx_hash`` has no key to remember an expansion
             # under and no id to hang a click target off, so its replies are
             # shown rather than locked behind a toggle nothing can open.
             # Losing them would be silent data loss; the channel is
             # permissionless and this row shape is reachable.
-            expanded = self._expanded.get(tx_hash, False) if tx_hash else True
+            expanded = (
+                forced or self._expanded.get(tx_hash, False)
+                if tx_hash
+                else True
+            )
 
             toggle = None
             toggle_text = None
@@ -819,23 +885,39 @@ class SurfFeed(Vertical):
                 )
                 if inline:
                     if len(lines) > 1:
-                        rows.append(SurfFeedRow(Text("\n").join(lines[:-1])))
+                        rows.append(
+                            self._feed_row(
+                                Text("\n").join(lines[:-1]), root["item"]
+                            )
+                        )
                     rows.append(
                         Horizontal(
-                            SurfFeedRow(lines[-1], classes="surf-feed-inline"),
+                            self._feed_row(
+                                lines[-1],
+                                root["item"],
+                                classes="surf-feed-inline",
+                            ),
                             toggle,
                             classes="surf-feed-headline",
                         )
                     )
                 else:
-                    rows.append(SurfFeedRow(Text("\n").join(lines)))
+                    rows.append(
+                        self._feed_row(Text("\n").join(lines), root["item"])
+                    )
                     if toggle is not None:
+                        toggle.update(
+                            self._toggle_line(direct, expanded, standalone=True)
+                        )
                         rows.append(toggle)
                 rows.append(self._gap())
             elif toggle is not None:
                 # The root itself would not render -- a malformed item is
                 # dropped, never raised on. Its replies are still real and
                 # still reachable, so the toggle stays.
+                toggle.update(
+                    self._toggle_line(direct, expanded, standalone=True)
+                )
                 rows.append(toggle)
                 rows.append(self._gap())
 
@@ -848,7 +930,13 @@ class SurfFeed(Vertical):
                         continue
                     text, clipped = rendered
                     clipped_any = clipped_any or clipped
-                    rows.append(SurfFeedRow(text))
+                    rows.append(
+                        self._feed_row(
+                            text,
+                            reply["item"],
+                            depth=int(reply.get("depth") or 1),
+                        )
+                    )
                     rows.append(self._gap())
 
         # Undated rows last, which is where the producer already puts them:
@@ -862,7 +950,7 @@ class SurfFeed(Vertical):
                 continue
             text, clipped = rendered
             clipped_any = clipped_any or clipped
-            rows.append(SurfFeedRow(text))
+            rows.append(self._feed_row(text, item))
             rows.append(self._gap())
 
         return rows, clipped_any, toggles
@@ -927,7 +1015,11 @@ class SurfFeed(Vertical):
             return
 
         try:
-            item_list = [i for i in list(items)[:_MAX_ROWS] if isinstance(i, dict)]
+            item_list = select_feed_window(
+                [i for i in list(items) if isinstance(i, dict)],
+                tuple(self._signal_tx_hashes),
+                _MAX_ROWS,
+            )
         except TypeError:
             item_list = []
 

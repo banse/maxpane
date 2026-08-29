@@ -452,6 +452,34 @@ def test_a_fired_detail_is_coerced_to_text_and_bounded(tmp_path):
     assert fired["gate"]["detail"] == "42"   # coerced, never a stray int on disk
 
 
+def test_fired_tx_hash_is_normalised_and_malformed_or_legacy_values_are_safe(tmp_path):
+    clock = FakeClock()
+    c = _cache(tmp_path, clock)
+    target = "0x" + "Ab" * 32
+    c.set_baselines(
+        {
+            BASELINE_FIRED_KEY: {
+                "post": {
+                    "ts": clock.t - 60.0,
+                    "detail": "new post",
+                    "tx_hash": target,
+                },
+                "thread": {
+                    "ts": clock.t - 60.0,
+                    "detail": "bad target",
+                    "tx_hash": "0xshort",
+                },
+                "burn": {"ts": clock.t - 60.0, "detail": "legacy"},
+            }
+        }
+    )
+
+    fired = c.get_baselines()[BASELINE_FIRED_KEY]
+    assert fired["post"]["tx_hash"] == target.lower()
+    assert "tx_hash" not in fired["thread"]
+    assert fired["burn"] == {"ts": clock.t - 60.0, "detail": "legacy"}
+
+
 def test_a_future_dated_fired_stamp_is_dropped(tmp_path):
     """Clock-skew corruption must not pin a detector at FIRED forever."""
     clock = FakeClock()

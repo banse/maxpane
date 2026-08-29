@@ -1156,7 +1156,7 @@ def test_offline_launch_of_surf_never_kills_the_app(factory) -> None:
 #: distinction ``surf_models.LogWindow``'s own docstring draws for ``()``.
 _NON_NUMERIC_KEYS = frozenset(
     {
-        "degraded", "feed_items",
+        "degraded", "feed_items", "feed_signal_tx_hashes",
         "sig_post_state", "sig_lp_state", "sig_gate_state",
         "sig_deploy_state", "sig_bridge_state", "sig_burn_state",
         "sig_post_detail", "sig_lp_detail", "sig_gate_detail",

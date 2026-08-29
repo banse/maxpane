@@ -122,6 +122,15 @@ def _weight(app, needle: str) -> bool | None:
     return None
 
 
+def _reversed(app, needle: str) -> bool | None:
+    """Whether the first composited segment containing *needle* is reversed."""
+    for strip in app.screen._compositor.render_strips():
+        for segment in strip:
+            if needle in segment.text and segment.style:
+                return bool(segment.style.reverse)
+    return None
+
+
 def _none_payload(widget) -> dict:
     return {
         name: None
@@ -554,6 +563,15 @@ def _toggle_for(widget, tx_hash: str) -> SurfFeedToggle:
     return next(t for t in widget.query(SurfFeedToggle) if t.tx_hash == tx_hash)
 
 
+def _message_row(widget, text: str) -> SurfFeedRow:
+    """The rendered message row containing *text*, excluding spacer rows."""
+    return next(
+        row
+        for row in widget.query(SurfFeedRow)
+        if text in getattr(row.content, "plain", str(row.content))
+    )
+
+
 async def test_feed_replies_are_collapsed_behind_a_count_by_default():
     """First paint is the roots and nothing else."""
     widget = SurfFeed()
@@ -565,6 +583,113 @@ async def test_feed_replies_are_collapsed_behind_a_count_by_default():
         assert f"{TOGGLE_COLLAPSED} 2 replies" in screen
         assert _NESTED_QUESTION not in screen
         assert "bootstrap the protocol" in screen   # the root still renders
+
+
+async def test_feed_an_active_reply_signal_opens_its_thread_and_highlights_only_it():
+    """The exact tx hash, not the newest text/kind, drives feed attention."""
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(
+            feed_nonce=14,
+            feed_items=_THREADED,
+            feed_signal_tx_hashes=["0xq2"],
+        )
+        await pilot.pause()
+
+        assert _NESTED_QUESTION in _screen_text(app)
+        assert TOGGLE_EXPANDED in _screen_text(app)
+        assert _message_row(widget, _NESTED_QUESTION).has_class(
+            "surf-feed-signal"
+        )
+        assert not _message_row(widget, "bootstrap the protocol").has_class(
+            "surf-feed-signal"
+        )
+        assert not _message_row(widget, "Yes the goal").has_class(
+            "surf-feed-signal"
+        )
+        # Highlight the new text, not the timestamp or semantic REPLY badge.
+        assert _reversed(app, "will my IMD") is True
+        assert _weight(app, "will my IMD") is True
+        assert _reversed(app, "REPLY") is False
+
+
+async def test_feed_active_post_and_answer_signals_can_coexist():
+    """NEW POST and the combined reply/answer detector may both be fired."""
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(
+            feed_nonce=14,
+            feed_items=_THREADED,
+            feed_signal_tx_hashes=["0xpost1", "0xa2"],
+        )
+        await pilot.pause()
+
+        assert _NESTED_QUESTION in _screen_text(app)
+        highlighted = [
+            row
+            for row in widget.query(SurfFeedRow)
+            if row.has_class("surf-feed-signal")
+        ]
+        assert len(highlighted) == 2
+        assert _message_row(widget, "bootstrap the protocol") in highlighted
+        assert _message_row(widget, "Yes the goal") in highlighted
+
+
+async def test_feed_cannot_collapse_a_forced_thread_until_the_signal_clears():
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 30)) as pilot:
+        widget.update_data(
+            feed_nonce=14,
+            feed_items=_THREADED,
+            feed_signal_tx_hashes=["0xq2"],
+        )
+        await pilot.pause()
+
+        widget.toggle_thread("0xpost1")
+        await pilot.pause()
+        assert _NESTED_QUESTION in _screen_text(app)
+
+        widget.update_data(
+            feed_nonce=14,
+            feed_items=_THREADED,
+            feed_signal_tx_hashes=[],
+        )
+        await pilot.pause()
+        assert _NESTED_QUESTION not in _screen_text(app)
+
+
+async def test_feed_pins_an_active_answer_and_its_root_across_the_25_row_cap():
+    actions = [
+        {
+            "ts": 1_788_000_000 + n,
+            "kind": "action",
+            "from_addr": _CHANNEL,
+            "to_addr": "0x" + "ab" * 20,
+            "from_label": "channel",
+            "text": f"ordinary action {n}",
+            "tx_hash": f"0xordinary{n}",
+        }
+        for n in range(25)
+    ]
+    items = sorted([*_THREADED, *actions], key=lambda item: item["ts"], reverse=True)
+    widget = SurfFeed()
+    app = _Harness(widget)
+    async with app.run_test(size=(120, 80)) as pilot:
+        widget.update_data(
+            feed_nonce=14,
+            feed_items=items,
+            feed_signal_tx_hashes=["0xa2"],
+        )
+        await pilot.pause()
+
+        assert _message_row(widget, "bootstrap the protocol")
+        assert _message_row(widget, _NESTED_QUESTION)
+        assert _message_row(widget, "Yes the goal").has_class(
+            "surf-feed-signal"
+        )
 
 
 async def test_feed_the_toggle_counts_direct_replies_not_every_hidden_row():
@@ -2598,7 +2723,13 @@ async def test_feed_every_row_is_followed_by_a_blank_line():
             assert lines[index - 1].strip() == "", (index, lines)
 
 
-async def test_feed_the_toggle_takes_its_own_line_when_the_post_leaves_no_room():
+@pytest.mark.parametrize(
+    ("signal_hashes", "glyph"),
+    (([], TOGGLE_COLLAPSED), (["0xq2"], TOGGLE_EXPANDED)),
+)
+async def test_feed_the_toggle_takes_its_own_line_when_the_post_leaves_no_room(
+    signal_hashes, glyph
+):
     """The fallback, and it is not decoration.
 
     Below ``FULL_TEXT_WIDTH`` a long message is truncated to fill the row
@@ -2610,15 +2741,22 @@ async def test_feed_the_toggle_takes_its_own_line_when_the_post_leaves_no_room()
     widget = SurfFeed()
     app = _Harness(widget)
     async with app.run_test(size=(58, 30)) as pilot:
-        widget.update_data(feed_nonce=14, feed_items=_THREADED)
+        widget.update_data(
+            feed_nonce=14,
+            feed_items=_THREADED,
+            feed_signal_tx_hashes=signal_hashes,
+        )
         await pilot.pause()
 
-        carrying = [line for line in _screen_lines(app) if "replies" in line]
+        lines = _screen_lines(app)
+        carrying = [line for line in lines if "replies" in line]
         assert len(carrying) == 1, carrying
-        assert carrying[0].strip().startswith(TOGGLE_COLLAPSED), carrying
+        assert carrying[0].strip().startswith(glyph), carrying
         # and the toggle is whole -- a cut glyph or a cut count is the
         # failure this branch exists to avoid.
         assert "2 replies" in carrying[0], carrying
+        post_line = next(line for line in lines if "POST" in line and "To help" in line)
+        assert carrying[0].index(glyph) == post_line.index("To help"), lines
 
 
 # ---------------------------------------------------------------------------

@@ -1493,6 +1493,7 @@ class SurfScreen(RefreshGuard, Screen):
                 feed_items=data.get("feed_items"),
                 feed_nonce=data.get("feed_nonce"),
                 feed_last_post_age_s=data.get("feed_last_post_age_s"),
+                feed_signal_tx_hashes=data.get("feed_signal_tx_hashes"),
             )
         except Exception as exc:
             logger.debug("Failed to update SurfFeed: %s", exc)

@@ -518,6 +518,7 @@ SURF_KEYS: tuple[str, ...] = (
     "feed_nonce",            # int | None — eth_getTransactionCount(ANNOUNCE)
     "feed_last_post_age_s",  # float | None
     "feed_items",            # list[dict] — SURF_ROW_KEYS["feed_items"]
+    "feed_signal_tx_hashes", # list[str] — exact FIRED post/reply/answer ids
     # ---- signals: ten detectors, state/detail/age each ----------------------
     "sig_post_state",        # "ok" | "watch" | "fired" | None
     "sig_post_detail",       # str
