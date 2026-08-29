@@ -468,6 +468,7 @@ REGISTER_ACTION = {
 FRESH_ACTION = {**REGISTER_ACTION, "ts": NOW - 240.0}
 # announce_eth_txs.json nonce 13.
 LP_POST_TS = 1_786_076_831.0
+LP_POST_TX = "0x" + "d1" * 32
 #: The self-post already on record the day before -- NEW POST compares the
 #: newest self-post's timestamp against this, not the announce nonce, because
 #: an answer and a contract call move the nonce too.
@@ -578,6 +579,7 @@ def _readings(**overrides) -> dict:
         "channel_tx_count": 20,
         "announce_last_text": None,
         "announce_last_ts": PRIOR_POST_TS,
+        "announce_last_tx_hash": None,
         # Read and held one reply, the one the baseline already knows about:
         # `[]` would also be quiet, but it would be quiet the way an empty
         # window is, and the row this stream feeds must be exercised against
@@ -677,6 +679,63 @@ def test_new_post_fires_with_the_decoded_body():
     assert state == "fired"
     assert detail == LP_POST_DETAIL
     assert age == pytest.approx(NOW - LP_POST_TS)
+
+
+def test_new_post_retains_its_exact_feed_target_without_growing_signal_outputs():
+    out, advanced = sig.build_signals(
+        _baseline(),
+        _readings(
+            announce_nonce=14,
+            channel_tx_count=21,
+            announce_last_text=LP_POST_TEXT,
+            announce_last_ts=LP_POST_TS,
+            announce_last_tx_hash=LP_POST_TX.upper().replace("0X", "0x"),
+        ),
+        NOW,
+    )
+
+    assert set(out) == set(sig.SIGNAL_OUTPUT_KEYS)
+    assert out["sig_post_state"] == "fired"
+    assert advanced["fired"]["post"]["tx_hash"] == LP_POST_TX
+
+
+@pytest.mark.parametrize("event", (FRESH_REPLY, FRESH_ANSWER), ids=("reply", "answer"))
+def test_new_thread_message_retains_its_exact_feed_target(event):
+    out, advanced = sig.build_signals(
+        _baseline(), _readings(channel_threads=[event]), NOW
+    )
+
+    assert out["sig_thread_state"] == "fired"
+    assert advanced["fired"]["thread"]["tx_hash"] == event["tx_hash"]
+
+
+def test_watch_and_malformed_or_legacy_fired_entries_never_invent_a_target():
+    out, advanced = sig.build_signals(
+        _baseline(),
+        _readings(announce_nonce=14, announce_last_tx_hash=LP_POST_TX),
+        NOW,
+    )
+    assert out["sig_post_state"] == "watch"
+    assert "post" not in advanced["fired"]
+
+    legacy = _baseline(
+        fired={"post": {"ts": NOW - 60.0, "detail": "legacy"}}
+    )
+    out, advanced = sig.build_signals(legacy, _readings(), NOW)
+    assert out["sig_post_state"] == "fired"
+    assert "tx_hash" not in advanced["fired"]["post"]
+
+    malformed = _baseline(
+        fired={
+            "post": {
+                "ts": NOW - 60.0,
+                "detail": "bad id",
+                "tx_hash": "0xnot-a-transaction-hash",
+            }
+        }
+    )
+    _, advanced = sig.build_signals(malformed, _readings(), NOW)
+    assert "tx_hash" not in advanced["fired"]["post"]
 
 
 def test_a_reply_is_never_a_post():
@@ -788,13 +847,23 @@ def test_fired_events_survive_a_restart_through_the_returned_baselines():
     """The advanced baselines carry the fired store back to the cache."""
     _, advanced = sig.build_signals(
         _baseline(),
-        _readings(announce_nonce=14, announce_last_text="soon", announce_last_ts=LP_POST_TS),
+        _readings(
+            announce_nonce=14,
+            announce_last_text="soon",
+            announce_last_ts=LP_POST_TS,
+            announce_last_tx_hash=LP_POST_TX,
+        ),
         NOW,
     )
     assert advanced["fired"]["post"]["ts"] == LP_POST_TS
     assert advanced["fired"]["post"]["detail"] == '#14 "soon"'
+    assert advanced["fired"]["post"]["tx_hash"] == LP_POST_TX
     # Replayed from the persisted state with no new event: still FIRED.
-    assert _sig("post", advanced, _readings(announce_nonce=14))[0] == "fired"
+    replayed, replayed_advanced = sig.build_signals(
+        advanced, _readings(announce_nonce=14), NOW + 30.0
+    )
+    assert replayed["sig_post_state"] == "fired"
+    assert replayed_advanced["fired"]["post"]["tx_hash"] == LP_POST_TX
     assert sig._short_addr(None) == ""
 
 

@@ -193,6 +193,7 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "feed_items": "feed_items",
         "feed_nonce": "feed_nonce",
         "feed_last_post_age_s": "feed_last_post_age_s",
+        "feed_signal_tx_hashes": "feed_signal_tx_hashes",
     },
     "SurfDevActivity": {"dev_activity": "dev_activity"},
     "SurfMarket": {
@@ -407,6 +408,7 @@ def _sample_data() -> dict:
         # -- feed ---------------------------------------------------------
         "feed_nonce": 14,           # eth_getTransactionCount(announce)
         "feed_last_post_age_s": _AS_OF - _TS_POST_13,   # 84769.0 -> "23h"
+        "feed_signal_tx_hashes": [],
         # Every row carries the whole frozen ``SURF_ROW_KEYS["feed_items"]``
         # shape, ``to_addr``/``label``/``value_eth`` included -- pinned by
         # ``test_every_list_row_in_the_fixture_matches_the_frozen_row_shape``.
@@ -3914,6 +3916,29 @@ def _threaded_sweep_payload() -> dict:
     reply = next(item for item in items if item["kind"] == "reply")
     reply["ts"] = post["ts"] + 600
     return _tight_peg(_frozen_payload(feed_items=[post, reply]))
+
+
+async def test_screen_dispatches_an_active_signal_into_the_announcement_thread():
+    """The controller passes exact event identity; the view opens the root."""
+    payload = _threaded_sweep_payload()
+    reply = next(item for item in payload["feed_items"] if item["kind"] == "reply")
+    payload["feed_signal_tx_hashes"] = [reply["tx_hash"]]
+
+    manager = _FakeManager(payload=payload)
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(150, 46)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        assert "Bro cooked this so hard" in _screen_text(app)
+        from maxpane_dashboard.widgets.surf.feed import SurfFeedRow
+
+        assert any(
+            row.has_class("surf-feed-signal")
+            for row in screen.query_one(SurfFeed).query(SurfFeedRow)
+        )
 
 
 async def _markers_with_threads_open(width: int, expand: bool) -> int:

@@ -7,7 +7,7 @@ malformed timestamp, two items in the same second.
 import json
 from pathlib import Path
 
-from maxpane_dashboard.analytics.surf_feed import build_threads
+from maxpane_dashboard.analytics.surf_feed import build_threads, select_feed_window
 
 _ANN = "0x200e710acaa6a93bbc77146026328c40f1d60fb1"
 _ASKER = "0x6eacf11c0000000000000000000000000000dead"
@@ -155,3 +155,33 @@ def test_an_inbound_reply_does_not_leak_across_a_new_root():
     assert answer_row["depth"] == 1
     assert answer_row["parent_tx_hash"] == "0xrootB"
     assert all(r["item"]["tx_hash"] != "0xa" for r in by_hash["0xrootA"]["replies"])
+
+
+def test_an_active_answer_pins_itself_its_question_and_root_into_the_row_cap():
+    conversation = [
+        _item(100, "self", "0xroot"),
+        _item(200, "reply", "0xquestion", frm=_ASKER, to=_ANN),
+        _item(300, "answer", "0xanswer", frm=_ANN, to=_ASKER),
+    ]
+    ordinary = [
+        _item(1_000 + n, "action", f"0xordinary{n}") for n in range(25)
+    ]
+    rows = sorted([*conversation, *ordinary], key=lambda item: item["ts"], reverse=True)
+
+    selected = select_feed_window(rows, ["0xanswer"], limit=25)
+    hashes = {item["tx_hash"] for item in selected}
+
+    assert len(selected) == 25
+    assert {"0xroot", "0xquestion", "0xanswer"} <= hashes
+    thread = next(
+        root for root in build_threads(selected) if root["item"]["tx_hash"] == "0xroot"
+    )
+    answer = next(
+        row for row in thread["replies"] if row["item"]["tx_hash"] == "0xanswer"
+    )
+    assert answer["parent_tx_hash"] == "0xquestion"
+
+
+def test_the_feed_window_is_the_ordinary_newest_slice_without_active_targets():
+    rows = [_item(n, "action", f"0x{n}") for n in range(30, 0, -1)]
+    assert select_feed_window(rows, [], limit=25) == rows[:25]

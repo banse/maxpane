@@ -280,6 +280,7 @@ EXPECTED_KEYS = {
     "feed_nonce",
     "feed_last_post_age_s",
     "feed_items",
+    "feed_signal_tx_hashes",
     # signals — six detectors x (state, detail, age)
     "sig_post_state",
     "sig_post_detail",
@@ -372,7 +373,7 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 82
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 83
 
 
 def test_every_signal_has_all_three_facets() -> None:
