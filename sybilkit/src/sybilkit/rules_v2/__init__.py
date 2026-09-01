@@ -34,6 +34,16 @@ ETH floor. It has not been evaluated against a second dataset. See
 
 from __future__ import annotations
 
+from .farm_windows import PREDICATES as FARM_WINDOW_PREDICATES
+from .farm_windows import derive as derive_farm_windows
 from .sk_v2 import VARIANTS, Rules, build_extra, metrics, run
 
-__all__ = ["VARIANTS", "Rules", "build_extra", "metrics", "run"]
+__all__ = [
+    "FARM_WINDOW_PREDICATES",
+    "VARIANTS",
+    "Rules",
+    "build_extra",
+    "derive_farm_windows",
+    "metrics",
+    "run",
+]
