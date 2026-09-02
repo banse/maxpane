@@ -1,0 +1,91 @@
+{
+ "captured_at": "2026-09-01T18:12:19.030793Z",
+ "chain": "sepolia",
+ "chain_id": 11155111,
+ "launch": "launch-3 (2026-09-01T02:03Z)",
+ "block_number": 11614276,
+ "block_hash": "0xb3cf665cd5ce07b8dbdbf8daa4b85bf87d8daf545b028d28eed7b781210f9ee1",
+ "block_tag": "0xb13844",
+ "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+ "contract": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+ "call_names": {
+  "1": "asset",
+  "2": "owner",
+  "3": "paused",
+  "4": "totalAssets",
+  "5": "totalSupply",
+  "6": "name",
+  "7": "symbol",
+  "8": "decimals",
+  "9": "convertToAssets",
+  "10": "convertToAssets_millionth_of_a_share"
+ },
+ "vault_decimals": 24,
+ "asset_decimals": 18,
+ "decimals_offset": 6,
+ "share_price_call": "convertToAssets",
+ "share_price_argument": 1000000000000000000000000,
+ "decimals_read_before_the_round": true,
+ "supersedes_block": 11614022,
+ "addresses": {
+  "vault": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+  "token": "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82",
+  "dripper": "0x4dBE172254033aAC3a3374Fb10b422605B0B449B",
+  "hook": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840"
+ },
+ "note": "StakedIMD (verified source) full getter round.  AMENDMENT A17 (2026-09-01): decimals() is READ FIRST, in its own call, and the share-price argument is built from it -- convertToAssets(10**decimals), which is 1e24 on this vault, NOT the 1e18 the first capture sent.  Solady's ERC4626 reports asset decimals + _decimalsOffset() and StakedIMD's offset is 6, so one whole sIMD is 1e24 units and 1e18 is a MILLIONTH of a share.  The first capture's answer was honest and the question was wrong: 1_302_985_528_554 renders as 0.0000013 IMD/share, a vault that looks dead while its share price is 1.302986.  The wrong-argument answer is KEPT here under convertToAssets_millionth_of_a_share because the pair is the evidence for the trap -- they differ by exactly 10**offset -- and it is unmistakable as a share price.  SELF-VALIDATING: totalAssets/1e18 divided by totalSupply/1e24 must equal convertToAssets(10**decimals)/1e18.",
+ "fixture": "vault_state",
+ "synthetic": false,
+ "response": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "result": "0x000000000000000000000000b37d54bc1f1d9271fc57d7e03192976baa39cc82"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "result": "0x000000000000000000000000047f606fd5b2baa5f5c6c4ab8958e45cb6b054b7"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "result": "0x0000000000000000000000000000000000000000000005cc1c32626ffd240001"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "result": "0x000000000000000000000000000000000000000043e3df9c402b83768469b1af"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000a5374616b656420494d4400000000000000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000473494d4400000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 8,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000018"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 9,
+   "result": "0x0000000000000000000000000000000000000000000000001215226f48f0a1c9"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 10,
+   "result": "0x0000000000000000000000000000000000000000000000000000012f5ffd54ea"
+  }
+ ]
+}

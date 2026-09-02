@@ -1,0 +1,56 @@
+{
+ "captured_at": "2026-09-02T10:56:17.577884Z",
+ "chain": "sepolia",
+ "chain_id": 11155111,
+ "block_number": 11619128,
+ "block_hash": "0x79b905dcc7e86c8ac1f8cbbd19184ac54abf8afcb1a2a13f730c38649f159cb4",
+ "block_tag": "0xb14b38",
+ "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+ "contract": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+ "call_names": {
+  "1": "capDecayTokensPerDay",
+  "2": "inventoryCap",
+  "3": "tokensInPool",
+  "4": "capFloor",
+  "5": "rewardShareBps",
+  "6": "vault_control"
+ },
+ "note": "BOTH CAP GETTERS ANSWER ON SEPOLIA TOO.  An earlier claim that capDecayTokensPerDay() and inventoryCap() were mainnet-only was an assumption that was never measured, and it is wrong: the difference between the chains is the VALUE, not the presence.  Sepolia returns 2**128-1 for the decay rate -- the no-decay sentinel -- against 1,000 IMD/day on mainnet.  This fixture exists so the absence case is driven by a getter that genuinely reverts (vault_control, included here for exactly that) instead of by pointing the test at the other chain, which would pass for the wrong reason.  ADDITIVE: this file re-captures nothing -- every pre-existing Sepolia fixture is untouched at its own block.",
+ "fixture": "sepolia_cap_getters",
+ "synthetic": false,
+ "response": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "result": "0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "result": "0x00000000000000000000000000000000000000000186e68985a3acb27358128e"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "result": "0x00000000000000000000000000000000000000000186e68985a3acb27358128e"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "result": "0x000000000000000000000000000000000000000000cecb8f27f4200f3a000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "result": "0x00000000000000000000000000000000000000000000000000000000000003e8"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "error": {
+    "code": 3,
+    "message": "execution reverted"
+   }
+  }
+ ]
+}

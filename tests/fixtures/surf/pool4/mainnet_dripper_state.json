@@ -1,0 +1,86 @@
+{
+ "captured_at": "2026-09-02T10:55:34.021313Z",
+ "chain": "mainnet",
+ "chain_id": 1,
+ "block_number": 25889144,
+ "block_hash": "0x9d1a496b8bdd9c3e7067aa81e03a0044e8844730117ce1fe971737100c0171de",
+ "block_tag": "0x18b0978",
+ "endpoint": "https://ethereum-rpc.publicnode.com",
+ "addresses": {
+  "hook": "0xc6c965bd164c483e87d0b550671798e9a3602840",
+  "vault": "0x9efa934d9fad4ae28c998a40195646b965a97247",
+  "distributor": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+  "dripper": "0xe6D3De6daEAf327fCA42745f1998FcD989e00884",
+  "burn_executor": "0xe29386719C155B6847aD5a4E97C6674f10ffc750",
+  "token": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+  "pool_manager": "0x000000000004444c5dc75cb358380d2e3de08a90"
+ },
+ "note": "The mainnet Reward Dripper, reached through the Distributor.",
+ "contract": "0xe6D3De6daEAf327fCA42745f1998FcD989e00884",
+ "call_names": {
+  "1": "imd",
+  "2": "vault",
+  "3": "owner",
+  "4": "dripRatePerSecond",
+  "5": "maxCatchupSeconds",
+  "6": "minDripAmount",
+  "7": "keeperReward",
+  "8": "lastDripAt",
+  "9": "drippable",
+  "10": "canDrip"
+ },
+ "fixture": "mainnet_dripper_state",
+ "synthetic": false,
+ "response": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "result": "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "result": "0x0000000000000000000000009efa934d9fad4ae28c998a40195646b965a97247"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "result": "0x000000000000000000000000047f606fd5b2baa5f5c6c4ab8958e45cb6b054b7"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "result": "0x00000000000000000000000000000000000000000000000000038d7ea4c68000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000e10"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "result": "0x0000000000000000000000000000000000000000000000000de0b6b3a7640000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "result": "0x000000000000000000000000000000000000000000000000002386f26fc10000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 8,
+   "result": "0x000000000000000000000000000000000000000000000000000000006a97e7f3"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 9,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 10,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+  }
+ ]
+}

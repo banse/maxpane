@@ -1,0 +1,40 @@
+{
+ "url": "https://ethereum-rpc.publicnode.com",
+ "method": "POST",
+ "headers": {
+  "Content-Type": "application/json",
+  "User-Agent": "maxpane-capture/1.0 (+https://pypi.org/project/maxpane)"
+ },
+ "body": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x000000000004444c5dc75cb358380d2e3de08a90",
+     "data": "0x1e2eaeaf044bad7a09122197f1010731a3c830fb77a21fd4e52a9ee1e0e8ecde1a34c722"
+    },
+    "0x18b0995"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x000000000004444c5dc75cb358380d2e3de08a90",
+     "data": "0x1e2eaeaf044bad7a09122197f1010731a3c830fb77a21fd4e52a9ee1e0e8ecde1a34c725"
+    },
+    "0x18b0995"
+   ]
+  }
+ ],
+ "call_names": {
+  "1": "slot0",
+  "2": "liquidity"
+ },
+ "fixture": "mainnet_pool_slot0",
+ "captured_at": "2026-09-02T11:01:25.860895Z"
+}

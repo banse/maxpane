@@ -1,0 +1,370 @@
+"""POOL4 rail: sIMD VAULT -- the staking vault and the dripper that feeds it.
+
+The thing this panel exists to make legible is that **the vault's yield is
+rate-limited, not flow-limited**. Fees do not reach stakers as they arrive:
+they pile up in the ``RewardDripper``'s own IMD balance (the *queue*) and are
+released at ``dripRatePerSecond()``, a fixed rate. A big week of fees does not
+raise today's yield; it lengthens the *runway*. Three renderings carry that,
+and none of them may be dropped for width alone:
+
+* ``drip`` always carries its unit as a **rate** -- ``IMD/day``, never a bare
+  balance;
+* ``queue`` always names ``pool4_backlog_days`` as **days of runway**, not as
+  a number beside a balance;
+* at the full tier a plain-language line says it outright
+  (:data:`RATE_LIMITED_NOTE`).
+
+A raw balance alone would be a review failure, so the compact tier splits the
+queue onto two lines rather than shedding the runway phrase.
+
+``pool4_implied_apr_pct`` is derived from the drip rate and TVL only -- never
+from fee flow -- and the contract makes it ``None`` when TVL is zero or
+unread. ``None`` renders :data:`APR_SUPPRESSED`, **never** ``∞`` and never
+``0%``: a zero would be a claim that stakers earn nothing, and an infinity
+would be a claim about a division nobody performed.
+
+``pool4_can_drip`` is a tri-state and renders three distinct words -- see
+:func:`_drip_word`.
+
+Primitives only -- this module imports nothing from ``data/`` or
+``analytics/``. Its shared title/escaping helpers come from
+``widgets/surf/_pool4.py`` (amendment A13), which also owns the network-word
+allowlist every pool4 panel title renders.
+"""
+
+from __future__ import annotations
+
+from rich.text import Text
+from textual.app import ComposeResult
+from textual.containers import Vertical
+from textual.widgets import Static
+
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.sparkline_common import fmt_compact
+from maxpane_dashboard.widgets.surf._fmt import DASH, as_float
+from maxpane_dashboard.widgets.surf._pool4 import (
+    GLYPH_HINT,
+    WIDEN_HINT,
+    join_lines,
+    parse_line,
+    strip_tags,
+    title_text,
+    widest_line,
+)
+
+__all__ = [
+    "APR_NOTE",
+    "APR_SUPPRESSED",
+    "COMPACT_WIDTH",
+    "FULL_WIDTH",
+    "GLYPH_HINT",
+    "NO_BASELINE",
+    "RATE_LIMITED_NOTE",
+    "RUNWAY_WORD",
+    "SurfPool4Vault",
+    "TITLE",
+    "UNAVAILABLE_LINE",
+    "WIDEN_HINT",
+]
+
+TITLE = "sIMD VAULT"
+UNAVAILABLE_LINE = "vault unavailable"
+
+#: The phrase ``pool4_backlog_days`` is rendered as, at **every** tier. The
+#: number alone is meaningless beside a balance; "days of runway" is the
+#: statement -- the queue divided by a fixed release rate.
+RUNWAY_WORD = "days of runway"
+
+#: The full-tier plain-language statement of the mechanism. Shed only at the
+#: compact tier, and only because ``IMD/day`` and :data:`RUNWAY_WORD` still
+#: carry it there.
+RATE_LIMITED_NOTE = "capped by the drip rate, not fee flow"
+
+#: What the APR line says when ``pool4_implied_apr_pct is None`` -- i.e. TVL
+#: is zero or unread. Not ``0%`` (a claim stakers earn nothing) and not ``∞``
+#: (a claim about a division nobody performed).
+APR_SUPPRESSED = "not computable"
+
+#: Where the APR comes from, said on the line itself so it is never mistaken
+#: for a realised or fee-derived yield.
+APR_NOTE = "drip rate ÷ TVL"
+
+#: ``pool4_share_price_delta_pct is None`` means *no second reading yet*, not
+#: *the read failed* and certainly not *zero change*. It gets its own words
+#: rather than :data:`~._fmt.DASH` for the same reason ``not-discovered`` and
+#: "discovery has not run" get different words in ``pool4_hatches``.
+NO_BASELINE = "no baseline"
+
+_LABEL_COLS = 5      # widest labels: "share", "queue"
+_GAP = 1
+
+#: Widest full-tier line: the queue and its runway.
+#: ``5 + 1 + len("250.0K IMD · 20.0 days of runway")``. Pinned against
+#: composited output by ``test_the_vault_full_width_pin_is_the_widest_full_
+#: tier_line``, which compares with ``==`` and reddens in both directions.
+#: Data-dependent (a nine-figure queue is wider than a six-figure one), which
+#: is why the runtime tier decision measures the lines it actually built --
+#: see :meth:`SurfPool4Vault._render_view`.
+FULL_WIDTH = _LABEL_COLS + _GAP + 32                                     # 38
+
+#: One tier below full: the sIMD share count, the APR's provenance note, the
+#: drippable amount and :data:`RATE_LIMITED_NOTE` all go, the share price
+#: loses its unit, and the queue splits onto two lines so
+#: :data:`RUNWAY_WORD` survives. ``5 + 1 + len("20.0 days of runway")``.
+COMPACT_WIDTH = _LABEL_COLS + _GAP + 19                                  # 25
+
+
+def _drip_word(can_drip: object) -> str:
+    """``ready`` / ``not yet`` / ``unknown`` for ``pool4_can_drip``.
+
+    ``SurfBurnPipeline._ready_word``'s vocabulary, reused verbatim because it
+    is the same question about the same kind of permissionless call, and
+    because it already satisfies the rule that matters: the ``None`` word
+    shares **no substring** with either confident answer. ``NOT READY``
+    contains ``READY`` and reads as the positive answer when a row is scanned
+    rather than read; ``not yet`` cannot.
+
+    ``None`` must never render as ready and never as a confident negative --
+    the tri-state sibling of "a failed read is None, never 0".
+    """
+    if can_drip is True:
+        return "[bold green]ready[/]"
+    if can_drip is False:
+        return "[bold]not yet[/]"
+    return "[dim]unknown[/]"
+
+
+def _fmt_amount(value: object) -> str:
+    """A vault-scale IMD/sIMD quantity: ``250.0K``, ``1.2M``, ``--``."""
+    v = as_float(value)
+    return DASH if v is None else fmt_compact(v)
+
+
+def _fmt_share_price(value: object) -> str:
+    """Six decimals: this number sits just above 1.0 and moves in the fifth
+    decimal between drips, so a two-decimal rendering would show a frozen
+    ``1.04`` through every reading of a live vault.
+    """
+    v = as_float(value)
+    return DASH if v is None else f"{v:,.6f}"
+
+
+def _fmt_signed_pct(value: object) -> str:
+    v = as_float(value)
+    return DASH if v is None else f"{v:+,.2f}%"
+
+
+def _fmt_days(value: object) -> str:
+    """Runway in days. ``--`` covers both "the drip rate is zero" and "we
+    could not look" -- the contract makes ``pool4_backlog_days`` ``None`` for
+    either, and this panel must never print an infinity for the first.
+    """
+    v = as_float(value)
+    if v is None:
+        return DASH
+    return f"{v:,.0f}" if abs(v) >= 100 else f"{v:,.1f}"
+
+
+def _row(label: str, value: str) -> str:
+    """One ``label value`` line; the label is a module literal, so only the
+    value can carry third-party bytes and only the value is escaped.
+    """
+    return f"[dim]{label:<{_LABEL_COLS}}[/]{' ' * _GAP}{value}"
+
+
+class SurfPool4Vault(Vertical):
+    """The staking vault, and the dripper that rate-limits what reaches it.
+
+    Read-only (CLAUDE.md hard constraint 1 -- no signer, no transactor, no
+    calldata construction anywhere in this repo): this panel *displays* that
+    ``drip()`` is callable; it never offers to call it and never builds
+    calldata.
+    """
+
+    DEFAULT_CSS = """
+    SurfPool4Vault {
+        height: auto;
+    }
+    SurfPool4Vault > Static {
+        width: 100%;
+        padding: 0 1;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+    }
+    """
+
+    #: See ``SurfPool4Hatches._TITLE_PADDING_COLS``.
+    _TITLE_PADDING_COLS = 2
+
+    _SCALAR_KEYS = (
+        "share_price", "share_price_delta_pct", "vault_assets", "vault_shares",
+        "drip_per_day", "drippable", "can_drip", "backlog_imd", "backlog_days",
+        "implied_apr_pct",
+    )
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._payload: dict = {}
+        self._widen = False
+
+    def compose(self) -> ComposeResult:
+        yield Static(TITLE, id="surf-pool4-vault-body")
+
+    def on_resize(self, _event=None) -> None:
+        if self._payload:
+            self._render_view()
+
+    def update_data(
+        self,
+        pool4_network=None,
+        pool4_share_price=None,
+        pool4_share_price_delta_pct=None,
+        pool4_vault_assets=None,
+        pool4_vault_shares=None,
+        pool4_drip_per_day=None,
+        pool4_drippable=None,
+        pool4_can_drip=None,
+        pool4_backlog_imd=None,
+        pool4_backlog_days=None,
+        pool4_implied_apr_pct=None,
+        pool4_as_of_hhmm=None,
+        **_kwargs,
+    ) -> None:
+        """Refresh the panel. Full ``pool4_`` prefixes on every keyword --
+        see ``SurfPool4Hatches.update_data`` for why the short alias is not
+        reused here.
+        """
+        self._payload = {
+            "network": pool4_network,
+            "share_price": pool4_share_price,
+            "share_price_delta_pct": pool4_share_price_delta_pct,
+            "vault_assets": pool4_vault_assets,
+            "vault_shares": pool4_vault_shares,
+            "drip_per_day": pool4_drip_per_day,
+            "drippable": pool4_drippable,
+            "can_drip": pool4_can_drip,
+            "backlog_imd": pool4_backlog_imd,
+            "backlog_days": pool4_backlog_days,
+            "implied_apr_pct": pool4_implied_apr_pct,
+            "as_of": pool4_as_of_hhmm,
+            "seen": True,
+        }
+        self._render_view()
+
+    def _text_budget(self) -> int:
+        return max(self.size.width - self._TITLE_PADDING_COLS, 0)
+
+    def _title_text(self) -> str:
+        """``sIMD VAULT · SEPOLIA``, with the widen marker appended when the
+        panel had to shed a column -- see ``_pool4.title_text``.
+        """
+        return title_text(
+            TITLE, self._payload.get("network"), self._widen, self._text_budget()
+        )
+
+    def _is_blank(self) -> bool:
+        """True only when every scalar this panel renders is unread -- a
+        single reverting getter is one dash inside a healthy panel.
+        """
+        return all(self._payload.get(k) is None for k in self._SCALAR_KEYS)
+
+    def _content_lines(self, tier: str) -> list[Text]:
+        p = self._payload
+        full = tier == "full"
+        markup: list[str] = []
+
+        delta = p.get("share_price_delta_pct")
+        delta_cell = (
+            _fmt_signed_pct(delta)
+            if as_float(delta) is not None
+            else f"[dim]{NO_BASELINE}[/]"
+        )
+        price = _fmt_share_price(p.get("share_price"))
+        if full:
+            price = f"{price} IMD/sIMD"
+        markup.append(_row("share", f"{price} [dim]·[/] {delta_cell}"))
+
+        tvl = f"{_fmt_amount(p.get('vault_assets'))} IMD"
+        if full:
+            tvl = f"{tvl} [dim]· {_fmt_amount(p.get('vault_shares'))} sIMD[/]"
+        markup.append(_row("TVL", tvl))
+
+        # Always a *rate*, never a bare balance: this is half of what makes
+        # the queue below legible as runway rather than as a pile of money.
+        markup.append(
+            _row("drip", f"{_fmt_amount(p.get('drip_per_day'))} IMD/day")
+        )
+
+        apr = as_float(p.get("implied_apr_pct"))
+        if apr is None:
+            markup.append(_row("apr", f"[dim]{APR_SUPPRESSED}[/]"))
+        elif full:
+            markup.append(_row("apr", f"{apr:,.2f}% [dim]· {APR_NOTE}[/]"))
+        else:
+            markup.append(_row("apr", f"{apr:,.2f}%"))
+
+        queue = f"{_fmt_amount(p.get('backlog_imd'))} IMD"
+        runway = f"{_fmt_days(p.get('backlog_days'))} {RUNWAY_WORD}"
+        if full:
+            markup.append(_row("queue", f"{queue} [dim]·[/] {runway}"))
+        else:
+            # Split rather than shed: the runway phrase is the point of the
+            # line and never goes for width alone.
+            markup.append(_row("queue", queue))
+            markup.append(f"{' ' * (_LABEL_COLS + _GAP)}{runway}")
+
+        drip_cell = _drip_word(p.get("can_drip"))
+        if full:
+            drip_cell = (
+                f"{drip_cell} [dim]· {_fmt_amount(p.get('drippable'))} "
+                f"IMD drippable[/]"
+            )
+        markup.append(_row("next", drip_cell))
+
+        if full:
+            markup.append(f"[dim]{RATE_LIMITED_NOTE}[/]")
+
+        as_of = p.get("as_of")
+        if as_of:
+            markup.append(f"[dim]as of {safe_markup(strip_tags(as_of))}[/]")
+
+        return [t for t in (parse_line(m) for m in markup) if t is not None]
+
+    def _render_view(self) -> None:
+        try:
+            body = self.query_one("#surf-pool4-vault-body", Static)
+        except Exception:  # not composed yet
+            return
+
+        if not self._payload:
+            self._widen = False
+            body.update(Text(self._title_text(), style="dim"))
+            return
+
+        if self._is_blank():
+            self._widen = False
+            body.update(
+                join_lines(
+                    [
+                        Text(self._title_text(), style="dim"),
+                        Text(""),
+                        Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"),
+                    ]
+                )
+            )
+            return
+
+        # Measure what was actually built -- see `SurfPool4Hatches.
+        # _render_view` for why a `budget < FULL_WIDTH` marker would go dark
+        # on exactly the payloads that need it.
+        budget = self._text_budget()
+        content = self._content_lines("full")
+        if budget and widest_line(content) > budget:
+            self._widen = True
+            content = self._content_lines("compact")
+        else:
+            self._widen = False
+
+        body.update(
+            join_lines([Text(self._title_text(), style="dim"), Text(""), *content])
+        )

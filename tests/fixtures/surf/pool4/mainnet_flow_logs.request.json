@@ -1,0 +1,22 @@
+{
+ "url": "https://gateway.tenderly.co/public/mainnet",
+ "method": "POST",
+ "headers": {
+  "Content-Type": "application/json",
+  "User-Agent": "maxpane-capture/1.0 (+https://pypi.org/project/maxpane)"
+ },
+ "body": {
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "eth_getLogs",
+  "params": [
+   {
+    "address": "0xc6c965bd164c483e87d0b550671798e9a3602840",
+    "fromBlock": "0x18abb75",
+    "toBlock": "0x18b0995"
+   }
+  ]
+ },
+ "fixture": "mainnet_flow_logs",
+ "captured_at": "2026-09-02T11:01:26.007515Z"
+}

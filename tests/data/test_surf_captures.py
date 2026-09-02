@@ -546,11 +546,80 @@ def test_the_capture_set_stays_small() -> None:
     assert total < 4_000_000, f"capture set has grown to {total} bytes"
 
 
+#: Substrings that would mean a shipped module is reaching into the test
+#: fixtures at runtime.
+_CAPTURE_PATH_MARKERS = ("fixtures/surf", "surf_fixtures")
+
+
 def test_nothing_shipped_reads_the_captures() -> None:
     """``tests/fixtures/`` is test-only material and is not in the wheel, so a
-    runtime read would be a ``FileNotFoundError`` on every installed copy."""
+    runtime read would be a ``FileNotFoundError`` on every installed copy.
+
+    **Asked of the module's runtime strings, not of its text** (2026-09-01).
+    This walked the raw source for the two markers, which is a different --
+    and wrong -- question: a shipped module that *documents where a vendored
+    constant was captured from* is not reading anything, and one that builds
+    the path as ``"fixtures" + "/surf"`` is, while a substring scan gets both
+    backwards.
+
+    It went red for exactly the first reason: ``data/surf_manager.py``'s
+    vendored Sepolia hook carries a ``#:`` block naming the WP1 corpus the
+    address was captured with -- provenance for a constant, which is the
+    thing this repo asks for everywhere else. Deleting that comment to keep a
+    text scan green would have traded a real record for a fake signal.
+
+    So the check parses the module and looks at **string constants only**.
+    Comments are not in the AST at all, so a provenance note passes without
+    an exemption list to maintain; a docstring is an AST constant and is
+    still inert, so it is skipped by position rather than by guesswork; and
+    an actual path -- in a ``Path(...)``, an ``open(...)``, a module-level
+    constant, anywhere a value can be used -- is caught exactly as before.
+    ``surf_fixtures`` is additionally checked as an *imported name*, which is
+    how a shipped module would really reach the helper and which the string
+    scan could not see at all.
+    """
+    import ast
+
     package = SURF_FIXTURES.parents[2] / "maxpane_dashboard"
+    scanned = 0
     for path in package.rglob("*.py"):
-        source = path.read_text(encoding="utf-8")
-        assert "fixtures/surf" not in source, path
-        assert "surf_fixtures" not in source, path
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        scanned += 1
+
+        # Docstrings are inert text; every other string constant is a value
+        # the module can act on.
+        docstrings = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                 ast.AsyncFunctionDef)):
+                first = node.body[0] if node.body else None
+                if (
+                    isinstance(first, ast.Expr)
+                    and isinstance(first.value, ast.Constant)
+                    and isinstance(first.value.value, str)
+                ):
+                    docstrings.add(id(first.value))
+
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in docstrings
+            ):
+                for marker in _CAPTURE_PATH_MARKERS:
+                    assert marker not in node.value, (
+                        f"{path} carries {marker!r} in a runtime string -- "
+                        "tests/fixtures/ is not in the wheel"
+                    )
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert "surf_fixtures" not in alias.name, path
+            elif isinstance(node, ast.ImportFrom):
+                assert "surf_fixtures" not in (node.module or ""), path
+                for alias in node.names:
+                    assert "surf_fixtures" not in alias.name, path
+
+    assert scanned > 50, (
+        f"only {scanned} modules were parsed -- the walk found nothing and "
+        "proved nothing"
+    )

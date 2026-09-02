@@ -112,7 +112,9 @@ because a silent truncation of the dev/ops tx pages is indistinguishable from
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
+import re
 import time
 from typing import Any
 
@@ -125,12 +127,14 @@ from maxpane_dashboard.analytics.surf_signals import (
     parity_pct,
 )
 from maxpane_dashboard.data.safe_call import safe_call as _safe_call
+from maxpane_dashboard.data import surf_pool4 as P
 from maxpane_dashboard.data.surf_addresses import (
     ANNOUNCE,
     BURN_EXECUTOR_V1,
     DEV_WALLET,
     FWA_SPLITTER,
     IDMD_NFT,
+    IMD_TOKEN,
     KNOWN_LABELS,
     NFPM,
     OPS_WALLET,
@@ -139,6 +143,7 @@ from maxpane_dashboard.data.surf_addresses import (
     SEAPORT,
     UNIVERSAL_ROUTER,
     WETH,
+    ZERO_ADDRESS,
 )
 from maxpane_dashboard.data.surf_cache import (
     DEFAULT_CACHE_PATH,
@@ -149,16 +154,29 @@ from maxpane_dashboard.data.surf_cache import (
     SLOT_LOGS,
     SLOT_MARKET,
     SLOT_NFT,
+    SLOT_POOL4,
     SERIES_IMD_PRICE_USD,
+    pool4_reserve_series_name,
     SERIES_IMD_SUPPLY,
     TIER_FAST,
     TIER_LAUNCHPAD,
     TIER_MEDIUM,
+    TIER_POOL4,
     TIER_SLOW,
     SurfCache,
 )
 from maxpane_dashboard.data.surf_client import SurfClient
-from maxpane_dashboard.data.surf_models import SURF_KEYS
+from maxpane_dashboard.data.surf_models import (
+    POOL4_COUNTER_STATES,
+    POOL4_DISCOVERY_SOURCES,
+    POOL4_DISCOVERY_STATES,
+    POOL4_FLOW_LIMIT,
+    POOL4_NETWORKS,
+    POOL4_REWARD_PATHS,
+    SURF_KEYS,
+    Pool4Discovery,
+)
+from maxpane_dashboard.data.surf_pool4_client import Pool4Client
 from maxpane_dashboard.data.surf_v4 import price_eth_per_imd
 
 logger = logging.getLogger(__name__)
@@ -192,6 +210,18 @@ SOURCE_ACTIVITY = "activity"
 #: "improve" this back to the long form without re-measuring
 #: ``WORST_CASE_TITLE_COLUMNS`` — that is the whole reason it is terse.
 SOURCE_LAUNCHPAD = "pad"
+#: The pool4 sweep (WP7), on ``SOURCE_LAUNCHPAD``'s terms exactly: never noted
+#: per attempt, only "nothing to serve at all" reaches :meth:`_degraded`, and
+#: otherwise a stale ``pool4_as_of_hhmm`` is the whole signal.
+#:
+#: **Two characters, deliberately, and for the reason spelled out above.** The
+#: title bar renders every ``degraded`` member verbatim on a ``height: 1``
+#: ``Static`` with no ellipsis; the plan's R5 measured that row's worst case at
+#: 139 columns against a 143 pin, so ``, p4`` costs exactly four columns and
+#: lands it *on* the pin with nothing to spare. ``"pool4"`` would overflow it
+#: silently, truncating the one row whose job is to say something is down.
+#: Do not lengthen this without re-measuring ``WORST_CASE_TITLE_COLUMNS``.
+SOURCE_POOL4 = "p4"
 
 SOURCES: tuple[str, ...] = (
     SOURCE_CHAIN,
@@ -201,6 +231,7 @@ SOURCES: tuple[str, ...] = (
     SOURCE_NFT,
     SOURCE_ACTIVITY,
     SOURCE_LAUNCHPAD,
+    SOURCE_POOL4,
 )
 
 #: group -> the cache slot holding its last-good payload.
@@ -212,7 +243,94 @@ GROUP_SLOT: dict[str, str] = {
     SOURCE_NFT: SLOT_NFT,
     SOURCE_ACTIVITY: SLOT_ACTIVITY,
     SOURCE_LAUNCHPAD: SLOT_LAUNCHPAD,
+    SOURCE_POOL4: SLOT_POOL4,
 }
+
+# ---------------------------------------------------------------------------
+# pool4 — the vocabularies, the vendored testnet addresses and the log window
+# ---------------------------------------------------------------------------
+
+#: Unpacked from the contract, never retyped (amendment A5). Five packages
+#: share one spelling of ``"not-discovered"``; a sixth hand-typed one is how a
+#: state word silently stops matching the widget that renders it.
+POOL4_NETWORK_SEPOLIA, POOL4_NETWORK_MAINNET = POOL4_NETWORKS
+POOL4_NOT_DISCOVERED, POOL4_ADOPTED, POOL4_REJECTED = POOL4_DISCOVERY_STATES
+#: Ranked strongest first. ``unattributed`` is never *set* by this module -- it
+#: is what ``discovery_source_word`` resolves an adoption with no recorded
+#: source to, so a producer bug shows up on screen instead of being promoted to
+#: the strong case.
+POOL4_SOURCE_SELF_POST, POOL4_SOURCE_DOCS, POOL4_SOURCE_UNATTRIBUTED = (
+    POOL4_DISCOVERY_SOURCES
+)
+#: What ``rewardsRecipient()`` points at, and therefore what the reward share
+#: means. ``None`` is *unknown* and must never be read as ``direct``.
+POOL4_PATH_DIRECT, POOL4_PATH_VIA_DISTRIBUTOR = POOL4_REWARD_PATHS
+
+#: The Sepolia launch-3 deployment, **vendored** — the hook, and its own test
+#: IMD. Not in ``surf_addresses``: that module is the mainnet vocabulary this
+#: dashboard's other seven groups read, and a testnet address in it would be
+#: one import away from being used as a mainnet one. They are parameters to
+#: every ``Pool4Client`` call for the same reason the client refuses to hold
+#: them as constants (its own docstring): the mainnet hook is *discovered*, and
+#: a module-level address is either a testnet address shipped to mainnet
+#: readers or a mainnet address nobody verified.
+#:
+#: Captured with the WP1 corpus (``tests/fixtures/surf/pool4/``,
+#: ``hook_state_healthy.json`` — chain 11155111, block 11614022). Read live on
+#: every sweep; nothing here is a documented number.
+POOL4_SEPOLIA_HOOK = "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840"
+POOL4_SEPOLIA_TOKEN = "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82"
+
+#: Blocks of hook logs one sweep asks for — ~24 h at 12 s, on both chains.
+#: The client pages this in its own ``LOG_WINDOW_BLOCKS`` chunks; this is the
+#: span, not the chunk. Wide enough that FLOW has rows on a quiet day and that
+#: an accrual and the swap that settles it are almost always in the same
+#: window; see ``_pool4_unsettled_legs`` for what happens when they are not.
+POOL4_LOG_WINDOW_BLOCKS = 7_200
+
+#: Unpacked from the contract, never retyped (A5).  Four words, none a
+#: substring of another, and ``None`` is **not** one of them: ``None`` means
+#: the control has never run, and every outcome of actually looking is a word.
+POOL4_RECONCILED, POOL4_MISMATCH, POOL4_WINDOW_LIMITED, POOL4_UNCHECKED = (
+    POOL4_COUNTER_STATES
+)
+
+#: The identities R1 control (c) publishes, named because **A9 excludes the
+#: other two** and the exclusion is the whole point of naming them.
+#:
+#: ``sum_FeeCollected_eth == sum_FeesWithdrawn_eth + retainedEth()`` is real and
+#: holds, but it is not published here: ``totalFeeToken`` is cumulative while
+#: ``retainedEth`` is a current *balance*, and the symmetric form a reader
+#: would expect cries wolf on every owner withdrawal.
+#: ``totalBurned() == token.balanceOf(0xdEaD)`` is excluded for a different
+#: reason -- nothing on this path reads that balance, so it is permanently
+#: unread and including it would make the control permanently ``unchecked``.
+#: See the report: reading it needs a leg on ``fetch_hook_state``'s batch,
+#: which is WP6's file.
+#:
+#: These are WP3's own dict keys, restated here with
+#: ``test_the_reconciliation_keys_this_module_reads_still_exist`` as the
+#: tripwire: a rename there would otherwise silently select nothing and this
+#: control would report ``unchecked`` forever while looking healthy.
+POOL4_COUNTER_IDENTITIES: tuple[str, ...] = (
+    "sum_FeeCollected_imd == totalFeeToken()",
+    "sum_ClaimsSettled_0 == totalBurned()",
+    "sum_ClaimsSettled_1 == totalRewarded()",
+)
+
+#: A transaction hash, and nothing else, may be cited as provenance.
+#: ``source_tx_hash`` reaches this module from a Blockscout row and, on a later
+#: read, from a cache file -- both third-party. The detail line it lands in is
+#: escaped at render; refusing to put arbitrary bytes into a sentence in the
+#: first place is the cheaper half of that defence.
+_TX_HASH_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
+
+#: Slot keys excluded from the "did anything actually change?" comparison that
+#: gates ``pool4_as_of_hhmm``. The head block moves every twelve seconds and
+#: reaches no widget, so leaving it in would make every sweep look like new
+#: data and the marker would advance on every tick — a guard that cannot fail,
+#: which is worse than no guard at all.
+POOL4_VOLATILE_SLOT_KEYS: frozenset[str] = frozenset({"block_number"})
 
 #: Rows handed to the widgets. The feed renders fewer at narrow tiers; the
 #: surplus costs nothing and lets a screen change its mind without a manager change.
@@ -291,6 +409,31 @@ _SIGNER_MEMO_CAP = 256
 #: Wei per whole token / per ETH. The models are wei-native and this module is
 #: the single place that divides (WP0.4).
 WEI = 10**18
+
+
+def _dget(state: Any, name: str) -> Any:
+    """One decoded getter off the Distributor's plain dict, or ``None``.
+
+    The Distributor has no WP0 model yet, so its client returns a dict keyed by
+    getter name. Deliberately **not** ``_field``: that one raises on an unknown
+    attribute so a model rename is loud, and a ``dict`` cannot give that
+    guarantee -- a missing key here is an ordinary "this deployment does not
+    have one", which is exactly the Sepolia case.
+    """
+    if not isinstance(state, dict):
+        return None
+    return state.get(name)
+
+
+async def _none() -> None:
+    """An already-finished "we had no address to ask" leg.
+
+    Used where a ``gather`` has a leg that cannot run — the dripper round with
+    no ``rewardsRecipient()`` behind it. Passing a coroutine that answers
+    ``None`` keeps the gather's shape fixed, which is what lets the caller
+    unpack its results positionally without a branch per leg.
+    """
+    return None
 
 
 def _field(obj: Any, name: str) -> Any:
@@ -525,11 +668,21 @@ class SurfManager:
         cache_path: str = DEFAULT_CACHE_PATH,
         client: Any = None,
         cache: Any = None,
+        pool4_client: Any = None,
     ) -> None:
         self.poll_interval = poll_interval
         self._clock = clock
         self._cache_path = str(cache_path)
         self.client = client if client is not None else SurfClient()
+        #: pool4's own client, injected like ``client`` and for the same
+        #: reason. It is a *second* client rather than an extension of
+        #: ``SurfClient`` because pool4 reads two chains from four endpoint
+        #: pools; see ``surf_pool4_client``'s docstring. A test that hands a
+        #: ``SurfClient`` double and nothing here would otherwise get the real
+        #: one and a live socket on the first sweep.
+        self.pool4_client = (
+            pool4_client if pool4_client is not None else Pool4Client()
+        )
         self.cache = cache if cache is not None else SurfCache(
             path=self._cache_path, clock=clock
         )
@@ -548,6 +701,20 @@ class SurfManager:
         #: task is never garbage-collected mid-flight and so :meth:`close` can
         #: cancel it before the client's sockets go. See :meth:`_spawn_launchpad`.
         self._launchpad_task: Any = None
+        #: The in-flight detached pool4 sweep, or ``None``. Same contract.
+        self._pool4_task: Any = None
+        #: ``(network, share price)`` this session's ``pool4_share_price_delta_pct``
+        #: is measured against, and the count of successful share-price reads
+        #: since it was seeded.
+        #:
+        #: In memory only, never persisted: it is a *session* baseline, and a
+        #: restored one would report a move that happened while the app was
+        #: not running as a move the reader just watched. It is re-seeded
+        #: whenever the network changes, because a Sepolia baseline under a
+        #: mainnet share price is a fabricated number — the two vaults are
+        #: different contracts holding different tokens.
+        self._pool4_baseline: tuple[str | None, float] | None = None
+        self._pool4_price_reads = 0
 
         try:
             self.cache.load()
@@ -563,20 +730,31 @@ class SurfManager:
             logger.warning("SURF cache save failed: %s", exc)
 
     async def close(self) -> None:
-        """Stop the detached launchpad sweep, persist the cache, close the client.
+        """Stop the detached sweeps, persist the cache, close both clients.
 
-        Never raises. The sweep holds the same client the rest of this
-        manager uses, so it is cancelled and awaited *first* — closing
-        sockets out from under a task still mid-request is how a clean quit
-        turns into a traceback on the way down (curator's ``close()``
-        precedent, ``_cancel_crosscheck``/``_cancel_analysis``).
+        Never raises. Each sweep holds the client it reads through, so both
+        are cancelled and awaited *first* — closing sockets out from under a
+        task still mid-request is how a clean quit turns into a traceback on
+        the way down (curator's ``close()`` precedent,
+        ``_cancel_crosscheck``/``_cancel_analysis``).
+
+        ``pool4_client.close()`` is guarded separately from ``client.close()``
+        on purpose: one raising must not leave the other's sockets open, which
+        a single ``try`` around both would do.
         """
         await self._cancel_launchpad()
+        await self._cancel_pool4()
         self.save_cache()
         try:
             await self.client.close()
         except Exception as exc:            # noqa: BLE001
             logger.debug("closing the SURF client failed: %s", exc)
+        try:
+            closer = getattr(self.pool4_client, "close", None)
+            if closer is not None:
+                await closer()
+        except Exception as exc:            # noqa: BLE001
+            logger.debug("closing the pool4 client failed: %s", exc)
 
     # -- the chain group (fast tier) -----------------------------------------
 
@@ -2303,6 +2481,1708 @@ class SurfManager:
             if isinstance(ticker, str)
         }
 
+    # -- the pool4 tier: discovery, hook/dripper/vault, flow logs ------------
+    #
+    # WP7 of docs/surf_pool4_implementation_plan.md, built on ``_spawn_launchpad``
+    # / ``_launchpad_detached`` / ``_pool_launchpad`` / ``_launchpad_payload``
+    # rather than beside them: same detached-sweep shape, same capture-then-spawn
+    # ordering, same "nothing is stored on a blank read" last-good rule, same
+    # wei-native slot with ``_cycle`` as the one place that divides.
+    #
+    # Three things are pool4's own and are the ones to read carefully:
+    #
+    # 1. **Discovery runs off the channel rows this cycle already produced.**
+    #    No new announce-channel request exists on this path, and a persisted
+    #    adopted address is re-verified against the chain on every read rather
+    #    than trusted — a cache file is third-party input exactly as the
+    #    announce post was.
+    # 2. **The network is a property of the numbers, not a setting.** Until a
+    #    mainnet hook is adopted the panels read the vendored Sepolia
+    #    deployment and every title says ``SEPOLIA``. Adoption switches the
+    #    word, the reserve series and the share-price baseline together, in
+    #    one payload.
+    # 3. **The marker moves only when the content does.** See
+    #    :meth:`_pool4_content`.
+
+    def _spawn_pool4(self, tiers: set[str], now: float, rows: Any) -> Any:
+        """Start the pool4 sweep **detached**; never wait for it.
+
+        Discovery plus three getter rounds plus a paged log window over a
+        24 h span is far more than first paint may sit behind, so this is
+        ``ensure_future`` and nothing awaits it — ``_pool_launchpad``'s rule,
+        and the tripwire for it fails by *timing out* rather than by
+        assertion.
+
+        ``rows`` is the channel feed this cycle already built, handed in
+        rather than re-fetched: the announce channel is one Blockscout page
+        and it has already been read (or served from last-good) by the time
+        this is offered. A second request for it would double the only
+        rate-limited endpoint on the fast path in order to learn nothing new.
+
+        One at a time: while a sweep is in flight ``TIER_POOL4`` stays due
+        (only a *completed* :meth:`_pool_pool4` marks it fetched or failed),
+        so every cycle offers again and this guard is what keeps a slow sweep
+        from stacking behind a 30 s poll.
+        """
+        if TIER_POOL4 not in tiers:
+            return None
+        running = self._pool4_task
+        if running is not None and not running.done():
+            logger.debug("SURF pool4 sweep still in flight; not starting another")
+            return running
+        self._pool4_task = asyncio.ensure_future(
+            self._pool4_detached(tiers, now, rows)
+        )
+        return self._pool4_task
+
+    async def _pool4_detached(self, tiers: set[str], now: float, rows: Any) -> None:
+        """``_pool_pool4`` with nobody to raise at.
+
+        A detached task's exception surfaces as an "exception was never
+        retrieved" line at garbage-collection time and never as a
+        degradation, so it is caught here. ``CancelledError`` is re-raised:
+        that one is :meth:`close` doing its job.
+        """
+        try:
+            await self._pool_pool4(tiers, now, rows)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:            # noqa: BLE001 — nobody awaits this task
+            self._error_count += 1
+            logger.warning("SURF pool4 sweep failed: %s", exc)
+
+    async def _cancel_pool4(self) -> None:
+        """Stop an in-flight pool4 sweep and wait for it to actually be gone."""
+        task = self._pool4_task
+        self._pool4_task = None
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception) as exc:  # noqa: BLE001
+            logger.debug("SURF pool4 sweep stopped on close: %s", exc)
+
+    async def _pool_pool4(self, tiers: set[str], now: float, rows: Any) -> Any:
+        """One pool4 sweep: adjudicate, read three contracts, sweep the logs.
+
+        The order is forced by the chain, not chosen: the vault address is two
+        hops out (``hook.rewardsRecipient()`` -> RewardDripper ->
+        ``dripper.vault()`` — amendment A3, there is no ``vault()`` on the
+        hook), so the dripper round cannot start before the hook round has
+        answered and the vault round cannot start before the dripper's has.
+        The log sweep needs only the head block, so it runs alongside the
+        dripper round rather than after it.
+
+        Every read degrades on its own. A dead vault costs the four VAULT keys
+        and nothing else; a dead log pool costs FLOW and the unsettled legs and
+        leaves every getter-derived number standing. That granularity is the
+        point of the sweep being one slot with per-field ``None``s rather than
+        four slots.
+        """
+        if TIER_POOL4 not in tiers:
+            return None
+        prior_entry = self.cache.get_last_good(SLOT_POOL4)
+        prior = getattr(prior_entry, "payload", None)
+        prior = prior if isinstance(prior, dict) else {}
+
+        discovery, discovery_source = await self._pool4_discovery(rows, prior)
+        adopted = (
+            _field(discovery, "state") == POOL4_ADOPTED
+            and _field(discovery, "hook_addr")
+        )
+        if adopted:
+            network = POOL4_NETWORK_MAINNET
+            hook_addr = _field(discovery, "hook_addr")
+            token_addr = IMD_TOKEN
+        else:
+            network = POOL4_NETWORK_SEPOLIA
+            hook_addr = POOL4_SEPOLIA_HOOK
+            token_addr = POOL4_SEPOLIA_TOKEN
+
+        client = self.pool4_client
+        hook = await self._guard(
+            lambda: client.fetch_hook_state(
+                hook_addr, network=network, token_addr=token_addr
+            ),
+            "pool4 fetch_hook_state",
+        )
+
+        # ---- the walk to the vault, whose LENGTH IS DISCOVERED --------------
+        #
+        # A3 forbade looking for ``vault()`` on the hook and that still stands:
+        # the vault is reached by following the chain, never scraped. What
+        # changed on 2026-09-02 is the number of links. Sepolia answers
+        # ``vault()`` at the first hop; mainnet inserted a Distributor, so it
+        # is hook -> Distributor -> Dripper -> vault. Both shapes are live
+        # **simultaneously**, so a hardcoded three would break Sepolia exactly
+        # as the hardcoded two broke mainnet -- vault and dripper reads failed
+        # outright there until this landed. Nothing here counts hops:
+        # ``resolve_vault_path`` asks each node what it is and follows the
+        # answer, and this method reads the addresses out of its result.
+        recipient = _field(hook, "rewards_recipient")
+        head_block = _field(hook, "block_number")
+        path, log_read = await asyncio.gather(
+            self._guard(
+                lambda: client.resolve_vault_path(recipient, network=network),
+                "pool4 resolve_vault_path",
+            ) if recipient else _none(),
+            self._pool4_logs(hook_addr, head_block, network),
+        )
+        logs, from_block, to_block = log_read
+
+        dripper_addr = (path or {}).get("dripper")
+        vault_addr = (path or {}).get("vault")
+        distributor_addr = self._pool4_distributor_addr(path)
+
+        # Three independent contracts, three independent reads: a dead
+        # Distributor costs the nine distributor keys and nothing else.
+        dripper, vault, distributor = await asyncio.gather(
+            self._guard(
+                lambda: client.fetch_dripper_state(
+                    dripper_addr, network=network, token_addr=token_addr
+                ),
+                "pool4 fetch_dripper_state",
+            ) if dripper_addr else _none(),
+            self._guard(
+                lambda: client.fetch_vault_state(vault_addr, network=network),
+                "pool4 fetch_vault_state",
+            ) if vault_addr else _none(),
+            self._guard(
+                lambda: client.fetch_distributor_state(
+                    distributor_addr, network=network
+                ),
+                "pool4 fetch_distributor_state",
+            ) if distributor_addr else _none(),
+        )
+
+        # The running counter total, folded before the payload is built so the
+        # control can be reconciled against it. Held in the cache rather than
+        # in the slot: it must advance on a sweep whose payload did not change,
+        # and it must stay out of that slot's content comparison entirely.
+        accumulator = self._pool4_accumulate(network, logs, from_block, to_block)
+
+        payload = self._pool4_payload(
+            discovery=discovery,
+            discovery_source=discovery_source,
+            network=network,
+            hook_addr=hook_addr,
+            token_addr=token_addr,
+            dripper_addr=dripper_addr,
+            vault_addr=vault_addr,
+            distributor_addr=distributor_addr,
+            path=path,
+            hook=hook,
+            dripper=dripper,
+            vault=vault,
+            distributor=distributor,
+            logs=logs,
+            accumulator=accumulator,
+        )
+
+        # Nothing is stored on a blank read, so the slot keeps its previous
+        # payload *and its previous timestamp*: the marker goes stale, which is
+        # the true statement, rather than a fresh time printed over dashes.
+        # ``_launchpad_payload``'s own rule, and the reason it exists.
+        if self._pool4_read_is_blank(hook, dripper, vault, logs, distributor):
+            self.cache.mark_failed(TIER_POOL4, now)
+            return {"ok": False, "network": network, "payload": None}
+
+        # The share-price baseline is seeded from a *successful* read only, and
+        # re-seeded when the network changes.
+        self._pool4_note_share_price(network, payload.get("share_price_wei"))
+
+        # The reserve history: the log window's own timestamped reserve events
+        # first (back-fill), then this sweep's reading at ``now``. Both are
+        # measured reserves; neither is a sentinel, and a failed read folds
+        # nothing at all rather than a zero.
+        _safe_call(
+            self.cache.fold_pool4_reserve_history,
+            P.reserve_series(logs),
+            network=network,
+        )
+        _safe_call(
+            self.cache.sample_pool4_reserve,
+            now,
+            _tokens(payload.get("tokens_in_pool_wei")),
+            network=network,
+        )
+
+        changed = self._pool4_content(payload) != self._pool4_content(prior)
+        if changed:
+            self.cache.store_last_good(SLOT_POOL4, payload, ts=now)
+        else:
+            # A successful sweep that read exactly what the last one read.
+            # The tier is satisfied — this is not a failure and must not take
+            # the failure backoff — but the ``as of`` marker stays where it
+            # was, because it names when these values were *first* seen and
+            # nothing about them is newer than that.
+            logger.debug("SURF pool4 sweep found nothing new; marker left alone")
+        self.cache.mark_fetched(TIER_POOL4, now)
+        return {"ok": True, "network": network, "payload": payload, "changed": changed}
+
+    async def _pool4_logs(
+        self, hook_addr: str, head_block: Any, network: str
+    ) -> tuple[Any, int | None, int | None]:
+        """The hook's logs over the trailing :data:`POOL4_LOG_WINDOW_BLOCKS`.
+
+        ``None`` — never ``[]`` — when the head block is unknown: a window
+        nobody could locate is a failed read, and ``[]`` is the affirmative
+        claim "swept, and genuinely quiet" that makes FLOW render an empty
+        table instead of an unavailable one.
+
+        Returns ``(logs, from_block, to_block)``. The bounds are not
+        decoration: the counter accumulator's **continuity** invariant is
+        checked against them, and a window whose bounds are unknown cannot be
+        folded into a running total at all.
+
+        ``to_block`` is the block the hook's own state round was pinned to,
+        which is what makes the accumulator's **alignment** invariant hold by
+        construction: the sums cover ``[genesis, to_block]`` and the counters
+        were read at that same block. Falling back to ``fetch_block_number``
+        breaks that on purpose -- the counters then came from a block this
+        method cannot name, so the control reports ``window-limited`` rather
+        than reconciling two different moments.
+        """
+        pinned = _opt_int(head_block)
+        head = pinned
+        if head is None:
+            head = _opt_int(
+                await self._guard(
+                    lambda: self.pool4_client.fetch_block_number(network=network),
+                    "pool4 fetch_block_number",
+                )
+            )
+        if head is None:
+            return None, None, None
+        start = max(0, head - POOL4_LOG_WINDOW_BLOCKS + 1)
+        logs = await self._guard(
+            lambda: self.pool4_client.fetch_flow_logs(
+                hook_addr, start, head, network=network
+            ),
+            "pool4 fetch_flow_logs",
+        )
+        # Only a window that ends where the state round was pinned may be
+        # accumulated; an unpinned one is returned with no bounds so
+        # ``accumulate_counters`` refuses it rather than silently mis-aligning.
+        if pinned is None:
+            return logs, None, None
+        return logs, start, head
+
+    async def _pool4_discovery(self, rows: Any, prior: dict[str, Any]) -> Any:
+        """Adjudicate mainnet from the announce channel, and **only** from it.
+
+        **This is the security boundary, and the one thing to understand about
+        it is that the fingerprint is FORGEABLE and provenance is not.**
+
+        The flag gate is arithmetic on an address, and an address with any
+        chosen low fourteen bits is mineable: the adversarial pass found a
+        CREATE2-shaped one ending ``0x2840`` in about 16,000 tries, which is
+        seconds of work. Of the five getter gates behind it, four
+        (``rewardShareBps``, ``BPS_DENOMINATOR``, ``burnSink``,
+        ``poolManager``) only check that *something answered* — any contract
+        passes them — and the fifth, ``token()``, returns whatever the
+        candidate's own code chooses to return. A hostile contract that
+        answers the real mainnet IMD to ``token()`` and four zero words to the
+        rest is adopted, and the pass proved it.
+
+        So the **self-post check is the only gate an attacker cannot satisfy**:
+        it requires a transaction signed by the announce wallet's key. Every
+        other gate narrows the field; this one is what makes the field
+        trustworthy. It follows that a candidate may only ever come from
+        ``candidate_addresses`` over this cycle's channel rows, and that is
+        now the only place this method gets one.
+
+        **The persisted slot nominates nothing.** It used to be tried first,
+        which made a cache file the one path into an adoption that never
+        passed provenance — anyone who could write ``~/.maxpane/surf_cache.json``
+        got a full adoption, including over a genuine hook named in a real
+        self-post, because the loop returned on the first adoption and nothing
+        compared the two. The fix is not to re-verify it harder: re-verifying
+        cannot help, because the fingerprint it would be re-verified against is
+        exactly the forgeable half. Its only remaining job is
+        :meth:`_pool4_lapsed_adoption`.
+
+        A **corroborate-then-prefer** variant was considered and rejected:
+        adopting the persisted address only when the channel *also* names it is
+        equally safe, but it changes nothing about safety (a corroborated
+        address is a channel address either way) while breaking a legitimate
+        migration — if the dev announces a *new* hook, preferring the stored
+        one pins the dashboard to the old contract for as long as the cache
+        survives. Channel order already answers this: ``feed_items`` is
+        newest-first, so the most recently announced hook is the first
+        candidate, which is the plan's own "first flag-equal candidate to be
+        adopted wins".
+
+        Everything before the getter round is pure arithmetic on strings this
+        cycle already has, so a self-post naming twenty decoys costs zero round
+        trips rather than twenty. Nothing here re-derives the mask, re-orders
+        the gates or second-guesses a rejection: WP3 owns the verdict.
+
+        Two outcomes are deliberately *not* verdicts:
+
+        * **"We could not look."** When every candidate's round failed this
+          returns ``state=None`` — discovery has not run — rather than the
+          ``rejected`` a null answer set would manufacture. Persisting a
+          rejection out of an outage would make a transient RPC failure look
+          like a settled fact about the protocol.
+        * **A rejection does not end the search.** Each candidate is
+          adjudicated on its own and the *first adopted* one wins; the first
+          rejection is only published when nothing was adopted. Returning on
+          the first non-adoption would let one decoy in a post hide the real
+          hook named beside it.
+        """
+        # Only the flag-passing candidates are asked about; everything before
+        # the network is arithmetic on strings this cycle already has, so a
+        # self-post naming twenty decoys costs zero round trips. Which of them
+        # gets adjudicated, and in what order, is ``ranked_discovery``'s call
+        # from the rows -- not this list's.
+        candidates = P.flagged_candidates(
+            P.triaged_candidates(P.candidate_addresses(rows, ANNOUNCE))
+        )
+        # The transaction each candidate was named in. ``Pool4Client.verify_hook``
+        # adjudicates one address and has no rows to look it up in, so it
+        # returns ``source_tx_hash=None`` and this is where the pointer is put
+        # back -- WP3's own ``discovery_verdict`` already does the same thing
+        # from its ``source_tx_by_addr`` parameter, which is why that parameter
+        # exists.
+        source_tx = self._pool4_source_tx_by_addr(rows)
+        lapsed = self._pool4_lapsed_adoption(prior, candidates)
+        if lapsed is not None:
+            logger.info(
+                "SURF pool4: the adopted hook %s is no longer named by any "
+                "self-post — falling back to the vendored testnet deployment",
+                lapsed,
+            )
+
+        # ---- adjudication, ranked by WP3 ------------------------------------
+        #
+        # The ranking is **not** re-derived here. ``ranked_discovery`` needs to
+        # know which candidates each source produced *before* anything is
+        # adjudicated -- a verdict has already discarded that -- so it takes the
+        # raw getter answers and this method's only job is to fetch them.
+        #
+        # Two calls rather than one, and the reason is a round trip rather than
+        # a rule: passing ``docs_text`` up front would fetch the docs page on
+        # every sweep, including the ones where the channel adopts and the page
+        # is never consulted. Phase one is channel-only; phase two happens only
+        # if phase one adopted nothing, and re-adjudicates the channel from the
+        # same answers (pure, same result) before docs gets its turn.
+        answers = await self._pool4_candidate_answers(candidates)
+        verdict, source = P.ranked_discovery(
+            rows, ANNOUNCE, IMD_TOKEN, answers, None, source_tx, docs_text=None
+        )
+        if _field(verdict, "state") == POOL4_ADOPTED:
+            return self._pool4_with_source_tx(verdict, source_tx), source
+
+        asked = list(candidates)
+        docs_text = await self._guard(
+            # Wrapped in a lambda like every other call here: ``self.client.name``
+            # is evaluated at the call site, so a client without the method
+            # raises OUTSIDE ``_guard``'s try and takes the whole sweep down.
+            lambda: self.pool4_client.fetch_docs_page(), "pool4 fetch_docs_page"
+        )
+        if docs_text:
+            # The operator's decision, and its cost stated once: the docs site
+            # becomes a trusted input. Anyone who can change that page can name
+            # a hook, and the fingerprint alone will not stop them -- a
+            # ``0x2840``-shaped address mines in about 20,000 tries, four of the
+            # five getters are pure liveness checks and ``token()`` is the
+            # candidate's own choice. **The mitigation is disclosure, not
+            # prevention**: an adoption from here carries ``docs`` as its
+            # source, so weaker provenance identifies itself instead of hiding
+            # behind the same word as a dev-signed post.
+            docs_candidates = P.flagged_candidates(
+                P.triaged_candidates(P.docs_candidate_addresses(docs_text))
+            )
+            asked += docs_candidates
+            docs_answers = await self._pool4_candidate_answers(docs_candidates)
+            answers = {**(answers or {}), **(docs_answers or {})}
+            verdict, source = P.ranked_discovery(
+                rows, ANNOUNCE, IMD_TOKEN, answers, None, source_tx,
+                docs_text=docs_text,
+            )
+            if _field(verdict, "state") == POOL4_ADOPTED:
+                return self._pool4_with_source_tx(verdict, source_tx), source
+
+        # ---- "we could not look" is still not a verdict ---------------------
+        #
+        # The one property the local ranking existed to protect, kept. A
+        # candidate that got no answers is adjudicated against an empty map and
+        # comes back ``rejected`` -- "token unread — the candidate answered
+        # nothing" -- which would turn a transient RPC failure into a settled
+        # fact about the protocol and drop the next genuine adoption.
+        #
+        # The test is deliberately the strict one: a non-adoption is only
+        # published as a verdict when **every** flag-passing candidate actually
+        # answered. A rejection is a claim about the whole candidate set, and a
+        # set that was partly unreadable cannot support it.
+        unread = [a for a in asked if a not in (answers or {})]
+        if unread:
+            verdict = Pool4Discovery(
+                network=None,
+                state=None,
+                detail=(
+                    f"{len(unread)} candidate(s) unverified — the chain did "
+                    "not answer"
+                ),
+            )
+
+        # Nothing in this cycle's window was adopted. If a previous adoption is
+        # no longer named there, this is where it is either re-established from
+        # the chain or allowed to lapse -- after the window has had its say, so
+        # a freshly announced hook always outranks a remembered one.
+        if lapsed is not None:
+            reestablished = await self._pool4_reestablish(prior, lapsed)
+            if reestablished is not None:
+                # A re-established adoption keeps the source it was adopted
+                # under: the transaction that proves it is a self-post, and
+                # calling it anything weaker would under-report provenance the
+                # chain just confirmed.
+                return reestablished, POOL4_SOURCE_SELF_POST
+
+        if lapsed is None:
+            return verdict, None
+        # The lapsed case is a fact only this module can know, and WP3's "no
+        # hook-shaped address" line would be true while hiding the thing the
+        # reader most needs to be told.
+        return Pool4Discovery(
+            network=None,
+            state=_field(verdict, "state"),
+            detail=(
+                f"the adopted hook {lapsed} is no longer named by any "
+                "self-post — reading the vendored testnet deployment"
+            ),
+        ), None
+
+    async def _pool4_candidate_answers(self, candidates: Any) -> dict | None:
+        """The raw getter round per candidate — **evidence, never a verdict**.
+
+        This is the whole of the manager's part in adjudication now. WP3 owns
+        the ranking and the fingerprint; WP6 owns the round trip and the flag
+        gate that runs before it; this fetches and hands over.
+
+        Nothing in the returned map is an adoption. Four of the five getters
+        are pure liveness checks any deployed contract passes and ``token()``
+        is a value the candidate's own contract chooses, so an entry means only
+        "this address answered". The authority behind an adoption is
+        provenance, upstream of here.
+
+        ``{}`` is "there was nothing worth asking"; ``None`` is "nothing could
+        be read". Both are passed through unchanged -- the caller needs to tell
+        them apart, because only one of them makes a rejection unsafe to
+        publish.
+        """
+        return await self._guard(
+            lambda: self.pool4_client.fetch_candidate_answers(
+                list(candidates or ()), network=POOL4_NETWORK_MAINNET
+            ),
+            "pool4 fetch_candidate_answers",
+        )
+
+    @staticmethod
+    def _pool4_with_source_tx(verdict: Any, source_tx: dict[str, str]) -> Any:
+        """Attach the self-post an adoption rests on, when there is one.
+
+        ``ranked_discovery`` fills ``source_tx_hash`` from the map it was given,
+        so this only covers the case where it could not -- and a docs adoption
+        deliberately has none: a page is not a transaction, and inventing a
+        pointer for one would be the disclosure undone.
+        """
+        if _field(verdict, "source_tx_hash") is not None:
+            return verdict
+        addr = _field(verdict, "hook_addr")
+        if not isinstance(addr, str):
+            return verdict
+        found = source_tx.get(addr.lower())
+        if found is None:
+            return verdict
+        return dataclasses.replace(verdict, source_tx_hash=found)
+
+    async def _pool4_reestablish(
+        self, prior: dict[str, Any], lapsed: str
+    ) -> Any:
+        """Re-prove a lapsed adoption from the chain, or let it go (S15).
+
+        The channel window keeps 25 rows against a channel running at ~2.55
+        days a post, so about **64 days** after a hook is announced its
+        self-post ages out and a genuine adoption lapses to Sepolia. Fetching
+        the remembered transaction is what lets provenance outlive the window.
+
+        **The trust boundary, and it is the whole of this method.** The cache
+        may supply **a transaction hash and nothing else**. Every question that
+        decides -- is this a self-post, does its calldata name this address --
+        is recomputed by WP3's predicate from the *fetched transaction*. The
+        stored address is passed as ``expected_addr``, which is the **claim
+        under test**, never a credential: nothing but the fetched object can
+        make that predicate return ``True``. A cache that supplied a hash *and*
+        an address, where the address was believed because the hash resolved,
+        would be A27's persisted-adoption bypass wearing a new hat.
+
+        **Could-not-read and answered-no are different, and only one lapses.**
+
+        * ``fetch_transaction`` -> ``None``: we could not look. A bad RPC
+          minute must not drop a good adoption, so the adoption is **held** and
+          the next cycle asks again. The client already collapses every
+          unreadable outcome -- an unknown hash, a pruned node, a wrong chain,
+          a hash-identity mismatch -- into that one ``None``, precisely so an
+          outage cannot be read as an attack.
+        * the predicate answers ``False``: that is a real finding about a real
+          transaction, and the adoption **lapses**.
+
+        Holding is not free and is deliberately bounded: it keeps serving
+        mainnet numbers on an adoption whose provenance could not be re-proved
+        *this cycle*. It is the correct trade against dropping a good adoption
+        on a transient failure, and it self-corrects on the first cycle that
+        gets an answer either way.
+
+        ``None`` is returned when there is nothing to try -- no remembered
+        hash, or one that is not a hash -- and the caller lapses.
+        """
+        source_tx = self._pool4_source_tx(prior.get("discovery_source_tx"))
+        hook_addr = prior.get("hook_addr")
+        if source_tx is None or not isinstance(hook_addr, str):
+            return None
+
+        tx = await self._guard(
+            lambda: self.pool4_client.fetch_transaction(
+                source_tx, network=POOL4_NETWORK_MAINNET
+            ),
+            "pool4 fetch_transaction",
+        )
+        if tx is None:
+            logger.info(
+                "SURF pool4: could not read the cited self-post %s — holding "
+                "the adoption of %s rather than dropping it on a failed read",
+                source_tx, lapsed,
+            )
+            return Pool4Discovery(
+                network=POOL4_NETWORK_MAINNET,
+                state=POOL4_ADOPTED,
+                detail=(
+                    "the cited self-post could not be read this cycle — the "
+                    "adoption is held, not re-proved"
+                ),
+                hook_addr=hook_addr,
+                token_addr=IMD_TOKEN,
+                source_tx_hash=source_tx,
+            )
+
+        proved, why = _safe_call(
+            P.reestablish_provenance,
+            tx, ANNOUNCE, hook_addr, source_tx,
+            default=(False, "the provenance check could not be run"),
+        )
+        if not proved:
+            logger.warning(
+                "SURF pool4: the cited self-post %s does not re-establish %s "
+                "(%s) — lapsing to the vendored testnet deployment",
+                source_tx, hook_addr, why,
+            )
+            return None
+        return Pool4Discovery(
+            network=POOL4_NETWORK_MAINNET,
+            state=POOL4_ADOPTED,
+            detail=why,
+            hook_addr=hook_addr,
+            token_addr=IMD_TOKEN,
+            source_tx_hash=source_tx,
+        )
+
+    @staticmethod
+    def _pool4_lapsed_adoption(prior: dict[str, Any], candidates: Any) -> str | None:
+        """The stored mainnet hook the channel no longer names, or ``None``.
+
+        The persisted slot's **only** remaining role. An adoption is not
+        permanent: ``feed_items`` holds the newest
+        :data:`FEED_ITEM_LIMIT` rows, so the self-post that named the hook can
+        age out of the window, and when it does there is no longer any
+        unforgeable evidence for the adoption. The honest outcome is to fall
+        back to the vendored testnet deployment and say so on every panel
+        title — not to keep serving mainnet numbers on the authority of a file.
+
+        The network check is what keeps this from crying wolf: a slot whose
+        network is ``SEPOLIA`` never adopted anything, and its ``hook_addr`` is
+        the vendored testnet hook, so reporting *that* as a lapsed adoption
+        would fabricate an alarm on every ordinary cycle.
+
+        The address is echoed into a rendered detail line, so it is passed
+        through ``checksum_address`` first and dropped for a generic phrase if
+        it is not an address at all. The widget escapes third-party text
+        anyway; not putting arbitrary cache-file bytes into a sentence in the
+        first place is the cheaper half of that defence.
+        """
+        addr = prior.get("hook_addr")
+        if prior.get("network") != POOL4_NETWORK_MAINNET:
+            return None
+        if not isinstance(addr, str):
+            return None
+        if addr.lower() in {str(c).lower() for c in (candidates or ())}:
+            return None
+        return P.checksum_address(addr) or "recorded in the cache"
+
+    def _pool4_note_share_price(self, network: str, share_price_wei: Any) -> None:
+        """Seed or re-seed the session's share-price baseline.
+
+        Called only from a successful sweep. A network change resets it to the
+        new reading and resets the count with it, so the first mainnet payload
+        publishes ``None`` rather than a percentage measured against a Sepolia
+        vault — a number that would look entirely ordinary and mean nothing.
+        """
+        price = _tokens(share_price_wei)
+        if price is None or price <= 0:
+            return
+        baseline = self._pool4_baseline
+        if baseline is None or baseline[0] != network:
+            self._pool4_baseline = (network, price)
+            self._pool4_price_reads = 1
+            return
+        self._pool4_price_reads += 1
+
+    def _pool4_share_price_delta_pct(
+        self, network: Any, price: float | None
+    ) -> float | None:
+        """The published delta, or ``None`` until a *second* reading exists.
+
+        ``0.0`` is a real answer — "we looked twice and it did not move" — and
+        must never stand in for "we have only looked once", which is what
+        seeding the baseline from the reading it is compared against would
+        produce on every cold start.
+        """
+        baseline = self._pool4_baseline
+        if baseline is None or price is None or self._pool4_price_reads < 2:
+            return None
+        if baseline[0] != network:
+            return None
+        return P.share_price_delta_pct(price, baseline[1])
+
+    @staticmethod
+    def _pool4_read_is_blank(
+        hook: Any, dripper: Any, vault: Any, logs: Any, distributor: Any = None
+    ) -> bool:
+        """True when a sweep produced no chain reading at all.
+
+        ``logs`` counts as a reading when it is a list, ``[]`` included: a
+        swept-and-quiet window is an answer about the world. Each state counts
+        when at least one of its fields answered — the clients return a model
+        with per-field ``None``s, so "not ``None``" alone would call a wholly
+        reverting contract a successful read.
+
+        The discovery verdict is deliberately *not* a reading here. It is real
+        information, but a slot written on discovery alone would refresh the
+        ``as of`` marker over a panel of dashes, which is the one outcome the
+        marker exists to prevent. With nothing to serve, ``p4`` degrades and
+        says so instead.
+        """
+        if isinstance(logs, list):
+            return False
+        for state in (hook, dripper, vault, distributor):
+            if state is None:
+                continue
+            if isinstance(state, dict):
+                # The Distributor has no WP0 model yet, so its client hands
+                # back a plain dict of decoded getters. ``block_number`` rides
+                # along on every round and is not a reading of the contract:
+                # counting it would make a wholly-reverting Distributor look
+                # like a successful read.
+                if any(
+                    value is not None
+                    for key, value in state.items()
+                    if key != "block_number"
+                ):
+                    return False
+                continue
+            fields = getattr(state, "__dataclass_fields__", None) or {}
+            if any(getattr(state, name, None) is not None for name in fields):
+                return False
+        return True
+
+    @staticmethod
+    def _pool4_content(payload: Any) -> dict[str, Any]:
+        """The part of a slot payload a change in ``as of`` would be about.
+
+        The head block is excluded because it moves every twelve seconds and
+        reaches no widget: comparing it would make every sweep "new", the
+        marker would advance on every tick, and the guard would be one of this
+        repo's tests-that-cannot-fail. Everything else *is* content — including
+        the discovery detail, which is a sentence a reader acts on.
+        """
+        if not isinstance(payload, dict):
+            return {}
+        return {
+            key: value
+            for key, value in payload.items()
+            if key not in POOL4_VOLATILE_SLOT_KEYS
+        }
+
+    @staticmethod
+    def _pool4_distributor_addr(path: Any) -> str | None:
+        """The Reward Distributor, read out of the walk. ``None`` on Sepolia.
+
+        **Derived from the chain's own answer, never from a hop count.** The
+        walk visits ``rewardsRecipient()`` first and stops at whichever node
+        answered ``vault()`` -- and ``vault()`` lives on the RewardDripper and
+        nowhere else. So the Distributor is exactly "the node the hook points
+        at, when that node is not itself the Dripper": on Sepolia those are the
+        same address and this is ``None``, on mainnet they differ and this is
+        the Distributor.
+
+        ``None`` when the walk found no dripper at all, which is the honest
+        answer -- with no end of the path identified, nothing can be said about
+        which node was the middle of it.
+        """
+        if not isinstance(path, dict):
+            return None
+        hops = path.get("path")
+        dripper = path.get("dripper")
+        if not isinstance(hops, list) or not hops or not isinstance(dripper, str):
+            return None
+        first = hops[0]
+        if not isinstance(first, str) or first.lower() == dripper.lower():
+            return None
+        return first
+
+    @staticmethod
+    def _pool4_cap_decay(raw: Any) -> float | None:
+        """Whole IMD per day, with the disabled case rendered as a real zero.
+
+        Three answers and all three are distinct, which is the whole reason
+        this is not a bare division:
+
+        * ``None`` -- unread. The getter is absent or the round failed.
+        * ``0.0`` -- **the ratchet is off.** Sepolia answers ``uint128`` max
+          here, which the mainnet record reads as *no decay*. Dividing it by
+          1e18 would put 340,282,366,920,938,463,463 IMD/day on the panel: a
+          decay that would zero a 472M IMD cap instantly, i.e. the exact
+          opposite of what the value means. A representable zero says "we
+          looked and it does not decay", which is true and is a different
+          claim from ``None``.
+        * a number -- the live rate, read and never assumed.
+
+        **The threshold is WP3's** (:func:`~surf_pool4.is_no_decay`), not a
+        magnitude compared here. Where the boundary sits is a fact about the
+        contract's vocabulary and belongs beside the selectors: notably
+        ``uint64`` max is deliberately *not* caught, because it is 18.4
+        IMD/day -- an entirely plausible rate that a greedier test would
+        silently turn into "no decay", which is the opposite error and the
+        harder one to notice.
+        """
+        value = _opt_int(raw)
+        disabled = P.is_no_decay(value)
+        if disabled is None:
+            return None
+        if disabled:
+            return 0.0
+        return _tokens(value)
+
+    @staticmethod
+    def _pool4_cap_headroom(
+        *, inventory_cap_wei: Any, reserve_wei: Any
+    ) -> float | None:
+        """``inventoryCap - tokensInPool``, whole IMD. **NOTE THE OPERAND ORDER.**
+
+        How much inventory can still arrive before the ceiling binds. On
+        mainnet the cap decays at 1,000 IMD/day, so this is a countdown as much
+        as a quantity: 94.68 IMD of headroom against that rate is a cap that
+        binds in about two hours. A reader looking at ``inventoryCap`` and
+        ``tokensInPool`` side by side on a compact formatter sees ``5.3K`` and
+        ``5.2K`` and cannot tell that from a pool with a week of slack.
+
+        **The sign trap, which is the whole reason this is a named function
+        with keyword-only parameters.** Its sibling one section down is
+        ``floor_distance = reserve - floor``. This one is ``cap - reserve``:
+        the operands are in the *opposite* order, so that both read **positive
+        when healthy** -- the floor is below the reserve, the ceiling is above
+        it. Writing the ceiling by analogy with the floor, which is the natural
+        thing to do when they sit next to each other, produces
+        ``reserve - cap`` and renders a **binding cap as slack of the same
+        magnitude**. That is precisely the reading this key exists to prevent.
+        The parameters are keyword-only so a positional swap is a ``TypeError``
+        rather than a sign error.
+
+        **Wei in, divided once at the end**, and that is load-bearing rather
+        than habit. The two operands are within one part in 10^8 of each other
+        on a live pool; at Sepolia's 472M IMD scale one float64 step is about
+        909,495 wei, so subtracting the two *published* floats annihilates any
+        headroom below a millionth of an IMD and returns a confident ``0.0``.
+        Subtracting in integer wei and dividing once keeps a 12-wei gap as
+        ``1.2e-17`` -- A20's rule that anything checked on these values belongs
+        in wei-space and not in floats.
+
+        A negative is **real and must render**: it means inventory sits above
+        the cap. Nothing here clamps, on ``floor_distance``'s A7 precedent,
+        where a reserve below its own floor is likewise a legitimate state.
+        ``None`` when either operand is unread -- a headroom computed against
+        a number nobody read is not a weaker answer, it is a wrong one.
+        """
+        cap = _opt_int(inventory_cap_wei)
+        reserve = _opt_int(reserve_wei)
+        if cap is None or reserve is None:
+            return None
+        return (cap - reserve) / WEI
+
+    @staticmethod
+    def _pool4_reward_path(hook: Any, path: Any) -> str | None:
+        """``direct`` / ``via-distributor`` / ``None`` — **the shape of the path**.
+
+        This is what the reward share *means*, and it exists because an address
+        cannot carry it. ``pool4_distributor_addr`` is ``None`` both when there
+        is no Distributor and when the getter that would have named one failed,
+        and those two are **three times apart on the headline percentage**: all
+        of ``totalRewarded()`` reaches stakers under ``direct``, and 30% of it
+        does under ``via-distributor``.
+
+        The hook's getters are batched per-field, so "the counters answered and
+        ``rewardsRecipient()`` did not" is a routine payload rather than a
+        corner. Reading absence-of-address as absence-of-Distributor would
+        label mainnet's 15% as the staker share in exactly that payload — which
+        is the defect this module shipped until the word existed, because it
+        branched on the address.
+
+        ``None`` is *unknown*, and it is returned for every case where the
+        chain did not actually settle the shape: the recipient unread, the walk
+        unread, or a walk that ran and never reached a vault. A word is only
+        published when an answer was read.
+        """
+        if _field(hook, "rewards_recipient") is None:
+            return None
+        if not isinstance(path, dict):
+            return None
+        hops = path.get("path")
+        dripper = path.get("dripper")
+        if not isinstance(hops, list) or not hops or not isinstance(dripper, str):
+            # The walk ran but never identified the end of the path, so which
+            # node was the middle of it is not established either.
+            return None
+        first = hops[0]
+        if not isinstance(first, str):
+            return None
+        return (
+            POOL4_PATH_DIRECT if first.lower() == dripper.lower()
+            else POOL4_PATH_VIA_DISTRIBUTOR
+        )
+
+    @staticmethod
+    def _pool4_bonding_bps(
+        staking_bps: Any, nodes_bps: Any, bps_denominator: Any
+    ) -> int | None:
+        """``BPS_DENOMINATOR - stakingBps - nftBps``. **Derived, never read.**
+
+        Bonding has no getter: it is the remainder, measured at 4000 today.
+        The number is published; a ``bonding_derived`` flag is not, because a
+        flag that can only ever be ``True`` is a constant dressed as data.
+
+        It goes ``None`` whenever **either** input does -- ``split_drift_bps``'
+        rule -- because a remainder computed from a number nobody read is not a
+        weaker answer, it is a wrong one. And nothing here falls back to 4000:
+        the split has already moved once (``rewardShareBps`` 1000 -> 1500 the
+        day mainnet shipped), so a hardcoded remainder is a number that goes
+        stale in silence.
+        """
+        parts = (_opt_int(staking_bps), _opt_int(nodes_bps), _opt_int(bps_denominator))
+        if any(p is None for p in parts):
+            return None
+        staking, nodes, denominator = parts
+        remainder = denominator - staking - nodes    # type: ignore[operator]
+        return remainder if remainder >= 0 else None
+
+    def _pool4_accumulate(
+        self, network: str, logs: Any, from_block: Any, to_block: Any
+    ) -> dict[str, Any] | None:
+        """Fold this window into ``network``'s running counter total (S17).
+
+        The identities are cumulative counters against a sum of **all** logs,
+        while the sweep reads a trailing window -- so from about a day after
+        deployment every check would be ``window-limited`` for ever and the
+        control would detect nothing. Carrying the sums forward is the fix, on
+        the ``LaunchpadState.cursor`` precedent: a total cannot be recovered
+        from its newest addend.
+
+        **Both invariants are WP3's and both are checkable.** This method
+        supplies the inputs they are checked against and stores the result; it
+        does not decide either:
+
+        * **Continuity** -- seeded at the genesis marker, and every window
+          thereafter satisfying ``from_block <= cursor + 1``. A gap
+          **discards** the accumulator rather than patching it, because a total
+          short by a missed sweep is indistinguishable from one short by a
+          decoder bug, and a total that says ``reconciled`` when it means
+          ``probably`` is worse than no total at all. Overlapping re-sweeps are
+          idempotent; a failed sweep advances nothing and loses nothing.
+        * **Alignment** -- ``cursor_block == at_block`` exactly, where
+          ``at_block`` is the block the hook's counters were read at. This
+          holds here **by construction** rather than by luck: ``_pool4_logs``
+          sweeps to the same block the state round was pinned to. A cursor
+          behind the counters makes the sums short and -- because continuity
+          certifies the evidence complete -- that reads as a **mismatch**, a
+          false alarm on every tick where a swap lands between the two reads.
+
+        Kept per network for the reserve series' reason: a total accumulated on
+        Sepolia reconciled against mainnet counters is not a weaker check, it
+        is a wrong one.
+
+        ``None`` is returned for an unrecognised network, and the control then
+        falls back to single-window behaviour -- honest ``window-limited``,
+        never a fabricated pass.
+        """
+        prior = self.cache.get_pool4_accumulator(network)
+        if prior is None and pool4_reserve_series_name(network) is None:
+            return None
+        folded = _safe_call(
+            P.accumulate_counters,
+            prior if prior is not None else P.empty_accumulator(),
+            logs,
+            from_block,
+            to_block,
+            default=None,
+        )
+        if not isinstance(folded, dict):
+            return prior
+        _safe_call(self.cache.set_pool4_accumulator, network, folded)
+        # An **unseeded** accumulator is not handed to the control: it is
+        # stored (so a discarded one is genuinely cleared) but the control
+        # falls back to single-window behaviour, which is what WP3's own
+        # "the caller falls back until a sweep containing genesis reseeds it"
+        # means. Passing one anyway is not merely pointless -- it is wrong
+        # twice over. Its zeroed sums read as "we counted nothing" rather than
+        # "we could not count", so a dead log read would report
+        # ``window-limited`` instead of ``unchecked``; and its window reason
+        # names the block the counters were read at, which moves every twelve
+        # seconds, so ``counter_detail`` would change on every tick and the
+        # ``as of`` marker would advance for ever.
+        if folded.get("genesis_block") is None:
+            return None
+        return folded
+
+    @staticmethod
+    def _pool4_counter_check(
+        logs: Any, hook: Any, accumulator: Any = None
+    ) -> tuple[str, str | None]:
+        """R1 control (c): does the hook agree with its own logs? ``(state, detail)``.
+
+        **This build's central risk made visible.** The hook interface was
+        recovered from bytecode selectors, the contract is unverified, and
+        three event signatures are still unresolved -- so a wrong operand order
+        in a decoder currently surfaces as a *confident wrong number* with no
+        signal anywhere. This is the only thing on the pool4 path that would
+        say so.
+
+        ``None`` is not one of the outcomes this returns. It is reserved for
+        "the control has never run", which is what an absent slot key leaves
+        behind, and it is the one convention that must not be reused here: a
+        control whose silence reads as *all clear* reports a clean bill of
+        health for a check that did not happen. Every outcome of actually
+        looking is a word.
+
+        **The arithmetic and the precedence are WP3's, deliberately.** This
+        method neither compares sums nor decides which outcome outranks which:
+        ``reconcile_counters`` runs the identities and ``counter_verdict``
+        folds them, so one module owns both the numbers and the judgement about
+        them. In particular **window-limitedness is not inferred here**. The
+        honest question is "do these sums cover the hook's whole life?", and
+        that module answers it positively, from the constructor's
+        ``OwnershipTransferred(0, owner)`` in the log set -- a birth
+        certificate -- rather than from arithmetic on
+        :data:`POOL4_LOG_WINDOW_BLOCKS` and a block number, which is what this
+        method did in its first draft and which would have gone wrong the first
+        time anyone changed the window. The consequence is worth stating
+        plainly: while the window still reaches the hook's first block this can
+        say ``reconciled``, and once the hook is older than the window it
+        settles at ``window-limited`` permanently. That is the true state of
+        the evidence, not a failure, and reaching ``reconciled`` in steady
+        state needs the sums accumulated forward from deployment (the
+        ``LaunchpadState.cursor`` precedent -- a total cannot be recovered from
+        its newest addend). It is not built here and it is not faked.
+
+        **What this module does own is *which* identities are published**, and
+        that is an A9 decision rather than an arithmetic one.
+        :data:`POOL4_COUNTER_IDENTITIES` is the filter, and the filtering is
+        load-bearing in both directions: the ETH identity must not be folded in
+        (the symmetric form a reader expects cries wolf on every owner
+        withdrawal), and ``totalBurned() == balanceOf(0xdEaD)`` must not be
+        either, because nothing on this path reads that balance -- and since
+        ``unchecked`` outranks ``reconciled``, folding one permanently unread
+        identity in would pin this control at ``unchecked`` forever, which is a
+        control that can never say anything at all.
+
+        An identity that has gone missing from the report is ``unchecked``, not
+        quietly dropped: two identities folded where three were meant is a
+        weaker control wearing the same word.
+        """
+        report = _safe_call(
+            P.reconcile_counters, logs, hook, accumulator=accumulator, default=None
+        )
+        if not isinstance(report, dict):
+            return POOL4_UNCHECKED, "the reconciliation could not be computed"
+
+        published = {
+            name: report[name]
+            for name in POOL4_COUNTER_IDENTITIES
+            if isinstance(report.get(name), dict)
+        }
+        if len(published) != len(POOL4_COUNTER_IDENTITIES):
+            missing = len(POOL4_COUNTER_IDENTITIES) - len(published)
+            return (
+                POOL4_UNCHECKED,
+                f"{missing} of {len(POOL4_COUNTER_IDENTITIES)} identities "
+                "were not reported",
+            )
+
+        verdict = _safe_call(P.counter_verdict, published, default=(None, None))
+        state, detail = (
+            verdict if isinstance(verdict, tuple) and len(verdict) == 2
+            else (None, None)
+        )
+        if state not in POOL4_COUNTER_STATES:
+            return POOL4_UNCHECKED, "the reconciliation returned no verdict"
+        return state, detail if isinstance(detail, str) else None
+
+    @staticmethod
+    def _pool4_source_tx_by_addr(rows: Any) -> dict[str, str]:
+        """``{address: the self-post transaction that named it}``.
+
+        The provenance pointer, and after A27 the **only** thing an adoption
+        actually rests on: every other artifact in the chain of trust is
+        forgeable, and what is not forgeable is that one transaction carried
+        the announce wallet's signature.
+
+        Built with :func:`~surf_pool4.candidate_addresses` one row at a time,
+        so the provenance rule is applied by the function that owns it rather
+        than approximated here -- a row that is not a self-post yields no
+        entry, whatever it carries. First spelling wins, matching the order
+        that function already promises.
+
+        The hash it records is a **pointer to a credential, not a credential**.
+        Nothing here, and nothing downstream, may treat a stored hash as
+        evidence: re-establishing an adoption from one means re-reading that
+        transaction from the chain and re-checking the signer, which this
+        build does not do.
+        """
+        out: dict[str, str] = {}
+        for row in rows or ():
+            if not isinstance(row, dict):
+                continue
+            tx_hash = row.get("tx_hash")
+            if not isinstance(tx_hash, str) or not _TX_HASH_RE.match(tx_hash):
+                continue
+            for addr in P.candidate_addresses([row], ANNOUNCE):
+                out.setdefault(addr.lower(), tx_hash)
+        return out
+
+    @staticmethod
+    def _pool4_source_tx(source_tx: Any) -> str | None:
+        """The self-post hash a verdict rests on, re-validated. ``None`` if not one.
+
+        **Its own key, not an appendix to the detail line**, and the slot has
+        always said why three lines above where it is stored: the detail is
+        WP3's sentence and this is a pointer to a credential, so a later reader
+        must be able to tell them apart. Appending it merged exactly the two
+        things that comment keeps separate, and made a rendered sentence the
+        only place an auditor could find the hash -- on a rail panel that
+        truncates.
+
+        Separating them is also what makes the pair *expressive*. The row that
+        matters is ``state == "adopted"`` with ``source_tx is None``: **an
+        adoption nothing can audit.** Merged into prose that state is a missing
+        suffix nobody can query; as two keys it is a condition a widget or a
+        test can name.
+
+        Re-checked on every publish rather than once on the way in. This value
+        comes back out of ``~/.maxpane/`` and is third-party by exactly the
+        argument that makes any cache file third-party -- a version that never
+        validated it, or a hand edit, must not get a free pass on render.
+        """
+        if isinstance(source_tx, str) and _TX_HASH_RE.match(source_tx):
+            return source_tx
+        return None
+
+    @staticmethod
+    def _pool4_unsettled_legs(logs: Any) -> tuple[float | None, float | None]:
+        """``(unsettled burn, unsettled stakers)`` — or ``(None, None)``.
+
+        WP3 sums accruals minus settlements across the window; over a
+        *complete* history that difference cannot be negative, because nothing
+        settles what was never accrued. Over a **trailing window** it can be:
+        an accrual just before the window opened, settled by a swap just
+        inside it, leaves the settlement with no accrual to pair against.
+
+        A negative therefore does not mean "less than nothing is outstanding",
+        it means this window cannot answer the question — so it is ``None``, a
+        dark row, rather than a negative IMD figure rendered as a fact. A real
+        ``0.0`` (settled up to date) is untouched and still renders as a number.
+        """
+        burn, stakers = P.unsettled_legs(logs)
+        if burn is None or stakers is None:
+            return None, None
+        if burn < 0 or stakers < 0:
+            logger.debug(
+                "SURF pool4 unsettled legs are negative (%s / %s) — the window "
+                "opened mid-settlement, so they are published as unread",
+                burn, stakers,
+            )
+            return None, None
+        return burn, stakers
+
+    @staticmethod
+    def _pool4_flow_rows(logs: Any) -> list[dict[str, Any]] | None:
+        """``SURF_ROW_KEYS["pool4_flow"]`` rows, newest first, capped.
+
+        ``None`` in, ``None`` out: "the log pool is down" and "nothing traded"
+        are opposite claims and the FLOW panel renders them differently.
+
+        ``burned_imd`` / ``stakers_imd`` are plain floats and are ``0.0`` on a
+        buy — a representable zero, never ``None``. ``age_s`` is filled in by
+        ``_cycle`` from ``ts``: this method is clock-free, which is the only
+        reason a committed capture replays forever.
+
+        The cap is :data:`POOL4_FLOW_LIMIT`, **imported from the contract**
+        rather than declared beside ``FEED_ITEM_LIMIT`` (amendment A4) —
+        ``SurfPool4Flow`` codes against the same constant, so one number.
+        """
+        if logs is None:
+            return None
+        events = P.decode_flow_events(logs)
+        rows: list[dict[str, Any]] = []
+        for event in events[:POOL4_FLOW_LIMIT]:
+            rows.append(
+                {
+                    "ts": _opt_float(_field(event, "ts")),
+                    "age_s": None,          # filled by ``_cycle``; the model is clock-free
+                    "side": _field(event, "side"),
+                    "size_imd": _tokens(_field(event, "size_wei")),
+                    "burned_imd": _tokens(_field(event, "burned_wei")) or 0.0,
+                    "stakers_imd": _tokens(_field(event, "stakers_wei")) or 0.0,
+                    "fee_imd": _tokens(_field(event, "fee_token_wei")),
+                    "fee_eth": _tokens(_field(event, "fee_eth_wei")),
+                    "settled": bool(_field(event, "settled")),
+                    "tx_hash": _field(event, "tx_hash"),
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _pool4_hatch_rows(
+        hook: Any, dripper: Any, vault: Any, dripper_addr: Any,
+        distributor: Any = None, distributor_addr: Any = None,
+    ) -> list[dict[str, Any]] | None:
+        """``SURF_ROW_KEYS["pool4_hatches"]`` — one row per owner-held lever.
+
+        ``None`` when nothing was read at all; otherwise the full list, with
+        an ``"unknown"`` state on every lever whose contract did not answer.
+        ``[]`` is never emitted: the BOND row always exists, because "the bond
+        the site advertises is not a contract we can see" is itself the answer
+        a reader came for.
+
+        ``addr_known`` is a :data:`KNOWN_LABELS` hit and nothing else — no
+        prefix match, no fallback. The burn sink ``0x…dEaD`` is deliberately
+        *not* in that allowlist, so it renders as an address rather than as a
+        name this repo never assigned it.
+        """
+        if hook is None and dripper is None and vault is None and distributor is None:
+            return None
+
+        def known(addr: Any) -> bool:
+            return isinstance(addr, str) and addr.lower() in KNOWN_LABELS
+
+        def ownership(owner: Any) -> str:
+            if owner is None:
+                return "unknown"
+            return (
+                "renounced"
+                if str(owner).lower() == ZERO_ADDRESS.lower()
+                else "live"
+            )
+
+        def flag(value: Any, on: str, off: str) -> str:
+            if value is None:
+                return "unknown"
+            return on if value else off
+
+        vault_owner = _field(vault, "owner")
+        hook_owner = _field(hook, "owner")
+        dripper_owner = _field(dripper, "owner")
+        burn_sink = _field(hook, "burn_sink")
+        vault_live = ownership(vault_owner) == "live"
+
+        rows: list[dict[str, Any]] = [
+            {
+                "scope": "vault", "label": "owner",
+                "state": ownership(vault_owner),
+                "detail": None,
+                "addr": vault_owner if vault_owner else None,
+                "addr_known": known(vault_owner),
+            },
+            {
+                "scope": "vault", "label": "paused",
+                "state": flag(_field(vault, "paused"), "paused", "open"),
+                "detail": "setPaused stops every entry point",
+                "addr": None, "addr_known": False,
+            },
+            {
+                "scope": "vault", "label": "rescue",
+                "state": (
+                    "unknown" if vault_owner is None
+                    else ("open" if vault_live else "closed")
+                ),
+                "detail": "rescueERC20 can move the staked IMD while the owner is live",
+                "addr": None, "addr_known": False,
+            },
+            {
+                "scope": "dripper", "label": "owner",
+                "state": ownership(dripper_owner),
+                "detail": None,
+                "addr": dripper_owner if dripper_owner else None,
+                "addr_known": known(dripper_owner),
+            },
+            {
+                "scope": "dripper", "label": "rewards",
+                "state": "live" if dripper_addr else "unknown",
+                "detail": None,
+                "addr": dripper_addr if dripper_addr else None,
+                "addr_known": known(dripper_addr),
+            },
+            {
+                # The Distributor sits between the hook and the Dripper on
+                # mainnet, and its owner holds ``setDripper`` and
+                # ``emergencyWithdraw`` -- it can re-point the entire rewards
+                # path, so it belongs on the trust surface beside the other
+                # three. On Sepolia there is no Distributor and this row says
+                # ``absent``, which is a fact about the deployment rather than
+                # a failed read.
+                "scope": "distributor", "label": "owner",
+                "state": (
+                    "absent" if not distributor_addr
+                    else ownership(_dget(distributor, "owner"))
+                ),
+                "detail": "setDripper can re-point the whole rewards path",
+                "addr": _dget(distributor, "owner") or None,
+                "addr_known": known(_dget(distributor, "owner")),
+            },
+            {
+                "scope": "distributor", "label": "rewards",
+                "state": "live" if distributor_addr else "absent",
+                "detail": None,
+                "addr": distributor_addr if distributor_addr else None,
+                "addr_known": known(distributor_addr),
+            },
+            {
+                "scope": "hook", "label": "owner",
+                "state": ownership(hook_owner),
+                "detail": None,
+                "addr": hook_owner if hook_owner else None,
+                "addr_known": known(hook_owner),
+            },
+            {
+                "scope": "hook", "label": "market",
+                "state": flag(_field(hook, "market_open"), "open", "closed"),
+                "detail": None, "addr": None, "addr_known": False,
+            },
+            {
+                "scope": "hook", "label": "rebalance",
+                "state": flag(_field(hook, "rebalance_enabled"), "open", "closed"),
+                "detail": "the backstop re-centre is permissionless while open",
+                "addr": None, "addr_known": False,
+            },
+            {
+                "scope": "hook", "label": "burn sink",
+                "state": "live" if burn_sink else "unknown",
+                "detail": None,
+                "addr": burn_sink if burn_sink else None,
+                "addr_known": known(burn_sink),
+            },
+            {
+                # The site advertises a bond; no deployed contract carries one,
+                # and this dashboard reads contracts. ``unknown`` rather than
+                # ``absent``: nothing here asked a bond contract anything, and
+                # "we did not look" is not "it is not there".
+                "scope": "bond", "label": "deployed",
+                "state": "unknown",
+                "detail": "no bond contract is named by the hook",
+                "addr": None, "addr_known": False,
+            },
+        ]
+        return rows
+
+    def _pool4_payload(
+        self,
+        *,
+        discovery: Any,
+        discovery_source: Any = None,
+        network: str,
+        hook_addr: Any,
+        token_addr: Any,
+        dripper_addr: Any,
+        vault_addr: Any,
+        hook: Any,
+        dripper: Any,
+        vault: Any,
+        logs: Any,
+        accumulator: Any = None,
+        distributor_addr: Any = None,
+        distributor: Any = None,
+        path: Any = None,
+    ) -> dict[str, Any]:
+        """The whole combined slot — discovery, three contracts, the flow window.
+
+        **Wei-native**, like ``_launchpad_payload``: ``_cycle`` divides exactly
+        once when it reads this back, and no ``_wei`` field exists in the flat
+        payload. The three exceptions are named and are not oversights:
+        ``unsettled_burn`` / ``unsettled_stakers`` (WP3's function already
+        returns whole IMD, and re-multiplying to store them would be inventing
+        precision) and the two row lists, which are the presentation shapes the
+        widgets take.
+
+        ``backstop_centred`` is derived **here**, not published raw: amendment
+        A19 keeps the tick bounds model-internal, because ``centred`` /
+        ``drifted`` / ``unknown`` is the decision-relevant fact and raw bounds
+        on a rail panel are noise. It is the reason ``POOL4_KEYS`` stays at 45.
+
+        ``share_price_wei`` is ``convertToAssets(10 ** decimals)`` and
+        ``total_shares_raw`` divides by ``10 ** decimals``, **never 1e18** —
+        the sIMD vault reports 24 decimals (asset 18 + Solady's offset 6).
+        ``decimals`` is stored beside them, read from the chain, so the
+        divisor travels with the numbers it applies to and no constant can
+        drift away from the vault it describes.
+        """
+        unsettled_burn, unsettled_stakers = self._pool4_unsettled_legs(logs)
+        counter_state, counter_detail = self._pool4_counter_check(
+            logs, hook, accumulator
+        )
+        return {
+            # ---- discovery ------------------------------------------------
+            "network": network,
+            "discovery_state": _field(discovery, "state"),
+            "discovery_detail": _field(discovery, "detail"),
+            # The self-post an adoption rests on. Kept beside the verdict and
+            # never merged into it: the detail is WP3's sentence, this is a
+            # pointer to a credential, and a later reader must be able to tell
+            # them apart. Persisting it makes re-establishment *possible*, not
+            # safe -- doing it would mean re-reading this transaction from the
+            # chain and re-checking the signer, which nothing here does.
+            "discovery_source_tx": _field(discovery, "source_tx_hash"),
+            # Which candidate source the adoption came from. Stored raw; the
+            # ``unattributed`` resolution happens at publish time so a slot
+            # written before this key existed still discloses correctly.
+            "discovery_source": discovery_source,
+            "hook_addr": hook_addr,
+            "token_addr": token_addr,
+            "vault_addr": vault_addr,
+            "dripper_addr": dripper_addr,
+            # ---- the hook (wei-native) ------------------------------------
+            "reward_share_bps": _opt_int(_field(hook, "reward_share_bps")),
+            "bps_denominator": _opt_int(_field(hook, "bps_denominator")),
+            "total_burned_wei": _opt_int(_field(hook, "total_burned_wei")),
+            "total_rewarded_wei": _opt_int(_field(hook, "total_rewarded_wei")),
+            "total_fee_token_wei": _opt_int(_field(hook, "total_fee_token_wei")),
+            "retained_eth_wei": _opt_int(_field(hook, "retained_eth_wei")),
+            "last_claim_block": _opt_int(_field(hook, "last_claim_block")),
+            "tokens_in_pool_wei": _opt_int(_field(hook, "tokens_in_pool_wei")),
+            "cap_floor_wei": _opt_int(_field(hook, "cap_floor_wei")),
+            # Present on BOTH chains -- the difference is the value, not the
+            # presence (the mainnet doc's own correction). A test written as
+            # "point it at Sepolia and watch these go None" would pass for the
+            # wrong reason; the absence case needs a getter made to revert.
+            "inventory_cap_wei": _opt_int(_field(hook, "inventory_cap_wei")),
+            "cap_decay_per_day_wei": _opt_int(
+                _field(hook, "cap_decay_tokens_per_day_wei")
+            ),
+            "eth_in_pool_wei": _opt_int(_field(hook, "eth_in_pool_wei")),
+            "total_supply_wei": _opt_int(_field(hook, "total_supply_wei")),
+            "position_liquidity": _opt_int(_field(hook, "position_liquidity")),
+            "current_tick": _opt_int(_field(hook, "current_tick")),
+            "ref_tick": _opt_int(_field(hook, "ref_tick")),
+            "backstop_centred": P.backstop_centred(
+                _field(hook, "backstop_tick_lower"),
+                _field(hook, "ref_tick"),
+                _field(hook, "tick_spacing"),
+            ),
+            # ---- the vault ------------------------------------------------
+            # ---- the Reward Distributor (mainnet only, today) --------------
+            #
+            # ``nft`` on the chain is ``nodes`` in the payload, and this is the
+            # single translation point. That is the module's stated naming
+            # discipline rather than a slip -- *model fields mirror the chain,
+            # flat-dict keys mirror the docs* -- the same split that makes
+            # ``identityAllowed()`` the key ``gate_open``. The project's
+            # documentation calls them nodes: the NFT-holding compute daemons.
+            # Both sides are pinned, so neither is a typo to "fix".
+            "distributor_addr": distributor_addr,
+            # The *shape* of the reward path. Stored beside the address and
+            # never derived from it downstream: absence-of-address is not
+            # absence-of-Distributor, and mistaking the two overstates the
+            # staker share by 3x.
+            "reward_path": self._pool4_reward_path(hook, path),
+            "distributor_staking_bps": _opt_int(_dget(distributor, "stakingBps")),
+            "distributor_nodes_bps": _opt_int(_dget(distributor, "nftBps")),
+            "distributor_staking_earned_wei": _opt_int(
+                _dget(distributor, "stakingEarned")
+            ),
+            "distributor_nodes_earned_wei": _opt_int(_dget(distributor, "nftEarned")),
+            "distributor_bonding_earned_wei": _opt_int(
+                _dget(distributor, "bondingEarned")
+            ),
+            "distributor_held_nodes_wei": _opt_int(_dget(distributor, "heldNft")),
+            "distributor_held_bonding_wei": _opt_int(
+                _dget(distributor, "heldBonding")
+            ),
+            "distributor_owner": _dget(distributor, "owner"),
+            "vault_decimals": _opt_int(_field(vault, "decimals")),
+            "share_price_wei": _opt_int(_field(vault, "share_price_wei")),
+            "total_assets_wei": _opt_int(_field(vault, "total_assets_wei")),
+            "total_shares_raw": _opt_int(_field(vault, "total_shares_raw")),
+            # ---- the dripper ----------------------------------------------
+            "drip_rate_per_second_wei": _opt_int(
+                _field(dripper, "drip_rate_per_second_wei")
+            ),
+            "drippable_wei": _opt_int(_field(dripper, "drippable_wei")),
+            "can_drip": self._opt_bool(_field(dripper, "can_drip")),
+            "backlog_wei": _opt_int(_field(dripper, "balance_wei")),
+            # ---- R1 control (c): the hook against its own logs ------------
+            "counter_state": counter_state,
+            "counter_detail": counter_detail,
+            # ---- the flow window ------------------------------------------
+            "flow": self._pool4_flow_rows(logs),
+            "unsettled_burn": unsettled_burn,
+            "unsettled_stakers": unsettled_stakers,
+            # ---- the levers -----------------------------------------------
+            "hatches": self._pool4_hatch_rows(
+                hook, dripper, vault, dripper_addr, distributor, distributor_addr
+            ),
+            # ---- bookkeeping (excluded from the content comparison) --------
+            "block_number": _opt_int(_field(hook, "block_number")),
+        }
+
+    def _pool4_keys(
+        self, slot: dict[str, Any], entry: Any, now: float
+    ) -> dict[str, Any]:
+        """The 45 ``POOL4_KEYS``, off one captured slot. The presentation boundary.
+
+        Every division by 1e18 on the pool4 path happens here and nowhere else,
+        and every derived number comes from WP3's pure functions rather than
+        from arithmetic written a second time in this module.
+
+        The two divisors that are **not** 1e18 are the dangerous ones and they
+        are the reason this method reads the way it does:
+
+        * ``pool4_vault_shares`` is ``total_shares_raw / 10 ** decimals`` via
+          ``surf_pool4.vault_shares``. On the live 24-decimal vault the
+          habitual ``/ 1e18`` gives 21,010,977,789 sIMD — a number that reads
+          as an emissions farm, on a dashboard whose whole pitch is that there
+          are no emissions.
+        * ``pool4_share_price`` divides ``convertToAssets(10 ** decimals)`` by
+          1e18 because its *result* is an IMD amount. Asking the vault for
+          ``convertToAssets(1e18)`` instead — a millionth of a share — answers
+          0.0000013 IMD/share, which reads as a dead vault.
+
+        Neither wrong form looks like an error on screen, so nothing downstream
+        would catch either. ``decimals`` is read from the chain and carried in
+        the slot; there is no constant here to hardcode it with.
+        """
+        share_price = _tokens(slot.get("share_price_wei"))
+        vault_assets = _tokens(slot.get("total_assets_wei"))
+        drip_rate = _tokens(slot.get("drip_rate_per_second_wei"))
+        drip_per_day = None if drip_rate is None else drip_rate * 86_400.0
+        backlog_imd = _tokens(slot.get("backlog_wei"))
+        network = slot.get("network")
+        burned_wei = slot.get("total_burned_wei")
+        rewarded_wei = slot.get("total_rewarded_wei")
+        fee_wei = slot.get("total_fee_token_wei")
+        reserve_wei = slot.get("tokens_in_pool_wei")
+        floor_wei = slot.get("cap_floor_wei")
+        # ``measured_split``'s third element is the WHOLE reward share, not the
+        # staker leg: ``totalRewarded()`` is everything handed to
+        # ``rewardsRecipient()``, and the hook's counters cannot see past it.
+        # On mainnet that recipient is the Distributor, which splits it three
+        # ways -- so publishing this number as the staker share overstates it
+        # by more than three times (15% rendered where 4.5% is true), and it
+        # would render as an entirely plausible figure.
+        inference_pct, burn_pct, reward_pct = P.measured_split(
+            fee_wei, burned_wei, rewarded_wei
+        )
+        staking_bps = slot.get("distributor_staking_bps")
+        nodes_bps = slot.get("distributor_nodes_bps")
+        bonding_bps = self._pool4_bonding_bps(
+            staking_bps, nodes_bps, slot.get("bps_denominator")
+        )
+        # **Branch on the path WORD, never on the address.**
+        # ``distributor_addr`` is ``None`` both when there is no Distributor and
+        # when the getter that would have named one failed, and those two are
+        # three times apart on this number. This module branched on the address
+        # until ``pool4_reward_path`` existed, which meant a routine payload --
+        # counters answered, ``rewardsRecipient()`` did not -- published
+        # mainnet's whole 15% reward share as the staker share.
+        reward_path = slot.get("reward_path")
+        if reward_path == POOL4_PATH_VIA_DISTRIBUTOR:
+            # The reward leg is subdivided; only its staking part belongs under
+            # a "stakers" label.
+            stakers_pct, _bonding_pct, _nodes_pct = P.reward_leg_split(
+                reward_pct, staking_bps, nodes_bps, slot.get("bps_denominator")
+            )
+        elif reward_path == POOL4_PATH_DIRECT:
+            # ``rewardsRecipient()`` is the Dripper itself, so the whole reward
+            # leg reaches the vault and the two ARE the same number. Publishing
+            # ``None`` here would blank a figure that is correct on every
+            # Sepolia read.
+            stakers_pct = reward_pct
+        else:
+            # Unknown path. Neither answer can be stood behind, and guessing
+            # the wrong one is a 3x error on the headline percentage.
+            stakers_pct = None
+        liquidity = slot.get("position_liquidity")
+
+        return {
+            "pool4_network": network if network in POOL4_NETWORKS else None,
+            "pool4_as_of_hhmm": (
+                entry.as_of_hhmm() if entry is not None else None
+            ),
+            "pool4_discovery_state": (
+                slot.get("discovery_state")
+                if slot.get("discovery_state") in POOL4_DISCOVERY_STATES
+                else None
+            ),
+            "pool4_discovery_detail": slot.get("discovery_detail"),
+            "pool4_discovery_source_tx": self._pool4_source_tx(
+                slot.get("discovery_source_tx")
+            ),
+            # ``None`` keeps its house meaning -- no adoption to attribute --
+            # on every non-adopted state. On an ADOPTED one it is not an answer
+            # at all: a renderer treating ``None`` as "nothing to say" would
+            # draw a docs-sourced adoption identically to a dev-signed one,
+            # undoing by omission the disclosure the operator's decision was
+            # conditioned on. WP3 owns that rule; this calls it rather than
+            # restating it, including for a slot persisted before the key
+            # existed, which resolves to ``unattributed`` and is visible.
+            "pool4_discovery_source": P.discovery_source_word(
+                slot.get("discovery_source"), slot.get("discovery_state")
+            ),
+            "pool4_hook_addr": slot.get("hook_addr"),
+            "pool4_token_addr": slot.get("token_addr"),
+            "pool4_vault_addr": slot.get("vault_addr"),
+            "pool4_dripper_addr": slot.get("dripper_addr"),
+            # ---- THE SPLIT ------------------------------------------------
+            "pool4_measured_inference_pct": inference_pct,
+            "pool4_measured_burn_pct": burn_pct,
+            "pool4_measured_stakers_pct": stakers_pct,
+            # ---- the Reward Distributor ------------------------------------
+            "pool4_reward_path": (
+                reward_path if reward_path in POOL4_REWARD_PATHS else None
+            ),
+            "pool4_distributor_addr": slot.get("distributor_addr"),
+            "pool4_distributor_staking_bps": _opt_int(staking_bps),
+            "pool4_distributor_nodes_bps": _opt_int(nodes_bps),
+            "pool4_distributor_bonding_bps": bonding_bps,
+            "pool4_distributor_staking_earned": _tokens(
+                slot.get("distributor_staking_earned_wei")
+            ),
+            "pool4_distributor_nodes_earned": _tokens(
+                slot.get("distributor_nodes_earned_wei")
+            ),
+            "pool4_distributor_bonding_earned": _tokens(
+                slot.get("distributor_bonding_earned_wei")
+            ),
+            "pool4_distributor_held_nodes": _tokens(
+                slot.get("distributor_held_nodes_wei")
+            ),
+            "pool4_distributor_held_bonding": _tokens(
+                slot.get("distributor_held_bonding_wei")
+            ),
+            "pool4_reward_share_bps": _opt_int(slot.get("reward_share_bps")),
+            "pool4_bps_denominator": _opt_int(slot.get("bps_denominator")),
+            "pool4_split_drift_bps": P.split_drift_bps(
+                burned_wei, rewarded_wei,
+                slot.get("reward_share_bps"), slot.get("bps_denominator"),
+            ),
+            "pool4_total_burned": _tokens(burned_wei),
+            "pool4_total_rewarded": _tokens(rewarded_wei),
+            "pool4_total_fee_token": _tokens(fee_wei),
+            "pool4_retained_eth": _tokens(slot.get("retained_eth_wei")),
+            "pool4_last_claim_block": _opt_int(slot.get("last_claim_block")),
+            "pool4_unsettled_burn": _opt_float(slot.get("unsettled_burn")),
+            "pool4_unsettled_stakers": _opt_float(slot.get("unsettled_stakers")),
+            # R1 control (c). ``None`` only when the slot has never held a
+            # sweep -- never as a way of saying the identities held.
+            "pool4_counter_state": (
+                slot.get("counter_state")
+                if slot.get("counter_state") in POOL4_COUNTER_STATES
+                else None
+            ),
+            "pool4_counter_detail": slot.get("counter_detail"),
+            # ---- THE RATCHET ----------------------------------------------
+            "pool4_tokens_in_pool": _tokens(reserve_wei),
+            "pool4_cap_floor": _tokens(floor_wei),
+            "pool4_inventory_cap": _tokens(slot.get("inventory_cap_wei")),
+            # cap - reserve. NOT reserve - cap: see the operand-order note on
+            # the helper. Passed by keyword so a swap cannot be silent.
+            "pool4_cap_headroom": self._pool4_cap_headroom(
+                inventory_cap_wei=slot.get("inventory_cap_wei"),
+                reserve_wei=reserve_wei,
+            ),
+            "pool4_cap_decay_per_day": self._pool4_cap_decay(
+                slot.get("cap_decay_per_day_wei")
+            ),
+            "pool4_floor_distance": P.floor_distance(reserve_wei, floor_wei),
+            "pool4_floor_distance_pct": P.floor_distance_pct(reserve_wei, floor_wei),
+            "pool4_burned_supply_pct": P.burned_supply_pct(
+                burned_wei, slot.get("total_supply_wei")
+            ),
+            "pool4_total_supply": _tokens(slot.get("total_supply_wei")),
+            "pool4_reserve_series": self.cache.get_pool4_reserve_series(network),
+            "pool4_eth_in_pool": _tokens(slot.get("eth_in_pool_wei")),
+            # Raw ``uint128`` L: not an amount of any token, so it is never
+            # divided — but the contract types it ``float``, and a widget that
+            # formats it as one must not be handed an int on one refresh and a
+            # float on the next.
+            "pool4_position_liquidity": (
+                None if liquidity is None else float(liquidity)
+            ),
+            "pool4_current_tick": _opt_int(slot.get("current_tick")),
+            "pool4_ref_tick": _opt_int(slot.get("ref_tick")),
+            "pool4_backstop_centred": self._opt_bool(slot.get("backstop_centred")),
+            # ---- sIMD VAULT -----------------------------------------------
+            "pool4_share_price": share_price,
+            "pool4_share_price_delta_pct": self._pool4_share_price_delta_pct(
+                network, share_price
+            ),
+            "pool4_vault_assets": vault_assets,
+            "pool4_vault_shares": P.vault_shares(
+                slot.get("total_shares_raw"), slot.get("vault_decimals")
+            ),
+            "pool4_drip_per_day": drip_per_day,
+            "pool4_drippable": _tokens(slot.get("drippable_wei")),
+            "pool4_can_drip": self._opt_bool(slot.get("can_drip")),
+            "pool4_backlog_imd": backlog_imd,
+            "pool4_backlog_days": P.backlog_days(backlog_imd, drip_per_day),
+            "pool4_implied_apr_pct": P.implied_apr_pct(drip_per_day, vault_assets),
+            # ---- the two row keys -----------------------------------------
+            "pool4_flow": self._pool4_aged_flow(slot.get("flow"), now),
+            "pool4_hatches": slot.get("hatches"),
+        }
+
+    @staticmethod
+    def _pool4_aged_flow(rows: Any, now: float) -> list[dict[str, Any]] | None:
+        """Fill each row's ``age_s`` from its ``ts`` at publish time.
+
+        ``None`` in, ``None`` out. The age is computed here rather than stored
+        because a cached row's age is a function of *now*, not of the sweep:
+        a slot served from last-good through an outage would otherwise report
+        the age it had when it landed and read as live for as long as the
+        outage lasted. The widget and the screen stay clock-free.
+        """
+        if rows is None:
+            return None
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            ts = _opt_float(row.get("ts"))
+            out.append(
+                dict(
+                    row,
+                    age_s=None if ts is None else max(0.0, float(now) - ts),
+                )
+            )
+        return out
+
     def _signal_keys(self, readings: dict[str, Any], now: float) -> dict[str, Any]:
         """Run ``build_signals`` and expand its result into the 18 ``sig_*`` keys."""
         baselines = self.cache.get_baselines()
@@ -2389,6 +4269,21 @@ class SurfManager:
         real_pool_id = launchpad_slot.get("pool_id")
         self._spawn_launchpad(tiers, now)
 
+        # The pool4 slot is captured here for ``launchpad_entry``'s reason and
+        # it is the same race: whatever ``_spawn_pool4`` schedules below can
+        # only update ``self.cache.last_good``, never this already-extracted
+        # value, so this payload publishes what the slot held going *into* this
+        # cycle no matter how the loop interleaves the sweep with the gather.
+        # The spawn itself has to wait until the channel rows exist — discovery
+        # reads them and must not cost a second request for the announce page —
+        # so the capture and the spawn are deliberately far apart.
+        pool4_entry = self.cache.get_last_good(SLOT_POOL4)
+        pool4_slot: dict[str, Any] = (
+            dict(pool4_entry.payload)
+            if pool4_entry is not None and isinstance(pool4_entry.payload, dict)
+            else {}
+        )
+
         market, logs, channel, nft, activity = await asyncio.gather(
             self._pool_market(tiers, now, real_pool_id),
             self._pool_logs(tiers, now),
@@ -2468,6 +4363,12 @@ class SurfManager:
         # would have the screen state that the dev has not posted.
         raw_items = channel_payload.get("items")
         feed_items = list(raw_items) if raw_items is not None else None
+
+        # Offered here, at the first point the channel rows exist, and never
+        # awaited: pool4 discovery reads the announce channel this cycle has
+        # already paid for. Spawning it earlier would mean either a second
+        # request for that page or a sweep that adjudicates against nothing.
+        self._spawn_pool4(tiers, now, feed_items)
 
         # This cycle's market view: fresh when we fetched, last-good otherwise —
         # the same resolution `channel_payload` gets above and `nft_payload` /
@@ -2636,6 +4537,12 @@ class SurfManager:
                 launchpad_entry.as_of_hhmm() if launchpad_entry is not None else None
             ),
         }
+
+        # ---- pool4 (detached sweep, its own slower "as of") ----------------
+        # One contiguous block off the slot captured above, never this cycle's
+        # own not-yet-landed sweep. ``_pool4_keys`` is the only place the pool4
+        # path divides by 1e18, and the only place it divides by 10**decimals.
+        data.update(self._pool4_keys(pool4_slot, pool4_entry, now))
 
         data.update(
             self._signal_keys(
@@ -2815,5 +4722,9 @@ __all__ = [
     "SOURCE_LOGS",
     "SOURCE_MARKET",
     "SOURCE_NFT",
+    "SOURCE_POOL4",
+    "POOL4_LOG_WINDOW_BLOCKS",
+    "POOL4_SEPOLIA_HOOK",
+    "POOL4_SEPOLIA_TOKEN",
     "SurfManager",
 ]

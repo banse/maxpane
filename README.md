@@ -11,7 +11,7 @@ kind, no wallet, no signing, no transactions.
 
 | Game | Chain | What you see |
 |------|-------|-------------|
-| **Surfboard** | Ethereum | surfsurf.eth announce feed (threaded replies), ten detectors, IMD market, v4 launchpad, IDMD NFT |
+| **Surfboard** | Ethereum | surfsurf.eth announce feed (threaded replies), ten detectors, IMD market, v4 launchpad, pool4 ratchet, IDMD NFT |
 | **THE LIST** | Ethereum | Zero-custody allowlist game: hourly doomsday clock, survival signals, fan-out patterns, linked-wallet analysis |
 | **FWA** | Ethereum | NFT gacha pool, inverse-weighted VRF draws, pull EV |
 | **Base Trading** | Base | Trending tokens, volume, ETH price, signals |
@@ -45,12 +45,12 @@ by sending **UTF-8 calldata to himself** — a channel that emits no logs at all
 event-driven watcher is structurally blind to it and a nonce poll sees a post within one refresh
 interval. That asymmetry is the whole point of the dashboard.
 
-Nine detectors answer one question continuously:
+Ten detectors answer one question continuously:
 
 > **Did something just happen in the surfsurf universe — and how early am I?**
 
-New post · LP migration · identity gate · new deploy · bridge staging · burn · decoy pool ·
-burn readiness · hot coin. Each renders `state · age · one-line detail`, and a detector only
+New post · new reply · LP migration · identity gate · new deploy · bridge staging · burn ·
+decoy pool · burn readiness · hot coin. Each renders `state · age · one-line detail`, and a detector only
 re-fires on a *new* event: baselines advance on the successful read that detected the last one,
 and never on a failed read — an outage cannot fire a burn or un-fire a migration.
 
@@ -89,6 +89,53 @@ what it has cost the people who did. The hero (LAUNCHPAD · FLOW · BURN · SUPP
 the whole time; `esc` backs out, one-way. The launchpad view is whole from **138 columns**,
 inside the 143 the widest dashboard already asks for, and from **31 rows** — below that it
 scrolls and says `‹ taller`.
+
+Press **`p`** for pool4 — the same trick a third time, a third body under the same hero. pool4
+makes IMD's pool a one-way ratchet: buys drain a reserve that a floor stops them draining past,
+sells burn most of what they sell, and a slice of every swap is retained to pay for the protocol's
+own inference. THE SPLIT, THE RATCHET and POOL4 FLOW take the left column — the reward split
+**measured from the live counters** rather than quoted from anyone's documentation, the reserve
+against its floor and how far it is from it, and under both a swap-by-swap log of what each trade
+burned, paid out, and left behind. HATCHES and sIMD VAULT share the rail: which powers over the
+contracts are still live and who holds them, and what a staker is actually being paid — which a
+drip rate sets, not pool volume, so the panel shows the backlog as days of runway rather than an
+APR derived from fee flow that would be wrong by orders of magnitude.
+
+**pool4 went live on Ethereum mainnet on 2026-09-02**, and the protocol that shipped is not the
+one the testnet launches described — which is exactly why nothing on this view is a constant. The
+reward split is **three-way** on mainnet, through a Reward Distributor that has no testnet
+counterpart: of every 100 IMD retired, 85 is burned and the remaining 15 is cut between stakers,
+bonding and the NFT-holding node daemons. Bonding is the *remainder* of that cut rather than a
+number the contract will tell you, so the view derives it and labels it as derived. The reward
+share went up by half and the reserve floor fell by five orders of magnitude between testnet and
+mainnet, and the view needed no change for either: it reads whichever it is pointed at. One more thing worth knowing before
+you read the burn figure: mainnet's burn sink is a **pass-through executor**, not the dead address,
+so what sits in it is what is *queued*, not what has been burned.
+
+**Every panel title on this view names its network** — `THE RATCHET · MAINNET`, `· SEPOLIA`, or
+`· —` when no read has landed yet. That is not decoration: the view still reads the live Sepolia
+deployment whenever it has not adopted a mainnet hook, and a testnet number on an unmarked panel
+would be a fiction presented as live.
+
+**How it finds the mainnet contracts is worth reading before you trust a number on this view.**
+The strong path is the dev's own announce channel: an address named in a post he sent to himself
+is signed by his key and cannot be forged. **He has not posted the mainnet hook**, so automatic
+discovery correctly refuses it, and the operator chose instead to accept the addresses published
+on `pool4.imd.fun/docs`. That is a real widening of what this dashboard trusts, and the chain
+fingerprint does not close it: an address shaped to carry the right Uniswap v4 permission bits can
+be mined in about twenty thousand tries, four of the five getters checked are only proof that
+*something* is there, and the token a candidate reports is the candidate's own claim. Prevention
+was not available; **disclosure was**, so HATCHES names which source an adoption came from and a
+docs-sourced one carries a warning marker where a dev-signed one does not. A self-post, if one
+ever lands, overrides the page.
+
+Bonding is live — it takes 40% of the reward share and its held and earned balances are readable —
+but it lives *inside* the Reward Distributor: no separate bond contract is named by any contract
+this dashboard reads, so the HATCHES row for it says `unknown`, which is "we did not look here"
+rather than "it is not there". Read-only and keyless as everywhere else: `drip()` and `rebalance()`
+are permissionless and pay a keeper reward, and maxpane reports that they are callable and by whom
+and never offers to call one. `esc` backs out, one-way. The view is whole from **106 columns and
+44 rows**.
 
 The NFT floor is shown as `n/a — no keyless source`, not estimated. There is no keyless floor
 feed for this collection, and a made-up number on a dashboard people trade against is worse than
@@ -321,8 +368,10 @@ Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap
 LIST's `l` view it switches the full-width raw and cleaned tables. **Surfboard binds `l`** to swap
 the whole dashboard body for the v4 launchpad's own five panels — LAUNCHPAD COINS over LAUNCHPAD
 ACTIVITY on the left, CURVE FLOW, BURN PIPELINE and BURNKEEPERS in a right-hand rail — with the
-hero (LAUNCHPAD · FLOW · BURN · SUPPLY) left on screen the whole time; `esc` backs out, one-way,
-and its status hint reads `l launchpad`. In Surfboard's announce feed, `enter` or `space` on a
+hero (LAUNCHPAD · FLOW · BURN · SUPPLY) left on screen the whole time; `esc` backs out, one-way.
+**It binds `p`** the same way for pool4 — THE SPLIT, THE RATCHET and POOL4 FLOW on the left,
+HATCHES and sIMD VAULT in the rail, the same hero left where it was — and its status hint names
+both: `l launchpad · p pool4`. In Surfboard's announce feed, `enter` or `space` on a
 `▸ n replies` line (or a click) opens and closes that thread. (THE LIST's `l` and Surfboard's `l` are two
 different dashboards' own bindings, not one shared key — see each dashboard's own row above for
 what it does there.) **THE LIST binds `y`** for your own standing — every send you
@@ -388,6 +437,25 @@ window of terminal widths. 2:1 hands the rail more columns than its widest line 
 the coin table — which does say `‹ widen` when it runs short — is what decides the width at every
 width. It also has a **height** requirement of its own — 31 rows — as THE LIST's two swapped
 bodies do.
+
+Surfboard's `p` pool4 view is a **third** layout with a third number: **106 columns**, on an
+even 1:1 split, and the narrowest full layout in the app. It is narrow because none of its five
+panels is a table — one fitted log and four label/value summaries — and it was swept on its own
+rather than inherited from the launchpad's 138, which it is deliberately not equal to. The even
+seam is neither laziness nor the cheapest option — a slightly uneven one collects the layout two
+columns sooner and was declined on purpose. Those two columns are margin for the rail, and the
+rail is where margin is worth buying: its binding panel advertises what it dropped by *appending*
+to its own title, and that marker is the first thing a title gives up when it runs out of room. A
+left column with no margin is harmless by comparison, because it marks inside its own body on the
+way down.
+
+Where this view asks for more than anything else is **height**: **44 rows**, against the launchpad
+view's 31, and below that the body scrolls and the title bar says `‹ taller`. Unlike the other two
+layouts that 44 is a **worst case over payloads, not a constant**. It was one, briefly, when the
+column that decides the height held only fixed-height panels — but mainnet gave THE SPLIT a third
+leg and a distributor to report, so two of the five panels now grow with the data and no way of
+cutting them into two columns keeps both out of the binder. The practical consequence is that this
+number has to be re-swept when a panel's line count changes, rather than assumed to have held.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why

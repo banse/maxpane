@@ -1,0 +1,92 @@
+{
+ "captured_at": "2026-09-02T10:55:34.021313Z",
+ "chain": "mainnet",
+ "chain_id": 1,
+ "block_number": 25889144,
+ "block_hash": "0x9d1a496b8bdd9c3e7067aa81e03a0044e8844730117ce1fe971737100c0171de",
+ "block_tag": "0x18b0978",
+ "endpoint": "https://ethereum-rpc.publicnode.com",
+ "addresses": {
+  "hook": "0xc6c965bd164c483e87d0b550671798e9a3602840",
+  "vault": "0x9efa934d9fad4ae28c998a40195646b965a97247",
+  "distributor": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+  "dripper": "0xe6D3De6daEAf327fCA42745f1998FcD989e00884",
+  "burn_executor": "0xe29386719C155B6847aD5a4E97C6674f10ffc750",
+  "token": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+  "pool_manager": "0x000000000004444c5dc75cb358380d2e3de08a90"
+ },
+ "note": "Mainnet IMD.  balanceOf(BurnExecutor) is the balance the burn counter must be reconciled against here, because burnSink() is the BurnExecutor.  balanceOf(0xdEaD) is captured for CONTRAST ONLY: the Sepolia identity totalBurned == balanceOf(0xdEaD) DOES NOT TRANSFER to mainnet and a control carrying it over would misreport.",
+ "contract": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+ "call_names": {
+  "1": "totalSupply",
+  "2": "decimals",
+  "3": "symbol",
+  "4": "name",
+  "5": "balanceOf_burnExecutor",
+  "6": "balanceOf_dead",
+  "7": "balanceOf_hook",
+  "8": "balanceOf_vault",
+  "9": "balanceOf_distributor",
+  "10": "balanceOf_dripper",
+  "11": "balanceOf_poolManager"
+ },
+ "fixture": "mainnet_token_state",
+ "synthetic": false,
+ "response": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "result": "0x0000000000000000000000000000000000000000000262a4632999d5f7206000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "result": "0x00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000003494d440000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000b4964656e746974792e6d64000000000000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "result": "0x0000000000000000000000000000000000000000000000012a2756e8d4da2926"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 8,
+   "result": "0x0000000000000000000000000000000000000000000017cb2e3f288aaa991be9"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 9,
+   "result": "0x0000000000000000000000000000000000000000000000009a9582ec58eed188"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 10,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 11,
+   "result": "0x000000000000000000000000000000000000000000003f476bf43ffdfcf2daa0"
+  }
+ ]
+}

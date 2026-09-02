@@ -1,0 +1,74 @@
+{
+ "captured_at": "2026-09-01T17:19:55.261037Z",
+ "chain": "sepolia",
+ "chain_id": 11155111,
+ "launch": "launch-3 (2026-09-01T02:03Z)",
+ "block_number": 11614022,
+ "block_hash": "0x76df425e02c7eefb688e57b57f3c634bc923e38058ac9d29129cd472c259cf55",
+ "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+ "addresses": {
+  "hook": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+  "vault": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+  "dripper": "0x4dBE172254033aAC3a3374Fb10b422605B0B449B",
+  "token": "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82",
+  "pool_manager": "0xE03A1074c86CFeDd5C142C4F04F1a1536e203543",
+  "burn_sink": "0x000000000000000000000000000000000000dEaD"
+ },
+ "note": "The launch-3 test IMD: supply, decimals, and the balances the burn and reward legs must reconcile against.",
+ "contract": "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82",
+ "call_names": {
+  "1": "totalSupply",
+  "2": "decimals",
+  "3": "symbol",
+  "4": "name",
+  "5": "balanceOf_dead",
+  "6": "balanceOf_dripper",
+  "7": "balanceOf_vault",
+  "8": "balanceOf_hook"
+ },
+ "block_tag": "0xb13746",
+ "fixture": "token_state",
+ "synthetic": false,
+ "response": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "result": "0x0000000000000000000000000000000000000000033b2e3c9fd0803ce8000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000474494d4400000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000f4964656e746974794d4420546573740000000000000000000000000000000000"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "result": "0x0000000000000000000000000000000000000000010d040b8f848f88edd53914"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "result": "0x0000000000000000000000000000000000000000001de31097751b30087ecd6c"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "result": "0x0000000000000000000000000000000000000000000005cc1c32626ffd240001"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 8,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+  }
+ ]
+}

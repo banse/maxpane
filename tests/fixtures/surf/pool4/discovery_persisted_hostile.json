@@ -1,0 +1,47 @@
+{
+ "synthetic": true,
+ "chain": "mainnet",
+ "announce": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+ "discovery_stages": {
+  "provenance": "candidate_addresses(rows): every address-shaped word in a SELF-POST (from_addr == to_addr == ANNOUNCE), EIP-55-normalised, deduplicated, order-preserving.  No flag arithmetic and no network round trip yet.",
+  "flag_filtered": "the provenance output narrowed by has_pool4_flags(), i.e. addr & 0x3fff == 0x2840.  These are the ONLY addresses that may reach an eth_call.",
+  "verdict": "fingerprint_verdict(addr, answers, expected_token) over the flag-filtered survivors: 'adopted' or 'rejected'."
+ },
+ "known_mainnet_imd": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+ "flag_reference": {
+  "hook_flag_mask": "0x3fff",
+  "pool4_flag_word": "0x2840",
+  "source": "hook_flags_reference.json (getHookPermissions on the live Sepolia hook) -- NOT the 0x840 in the docs"
+ },
+ "note": "A PERSISTED pool4 discovery payload, as it would sit in ~/.maxpane/, hand-edited to claim 'adopted'.  The claimed hook's low 14 bits are 0x0000 and its token() answer is a stranger's ERC-20, so it fails both the flag gate and the token gate.  Those are the fixture's contents; the test that reads it names what it demonstrates.\n\nAMENDMENT A27 (2026-09-01) -- WHAT THIS FIXTURE NO LONGER SHOWS.  An earlier version of this note said 'the manager must RE-VERIFY a persisted adoption on read'.  THAT DEFENCE HAS BEEN DELETED, not weakened.  WP7 removed the persisted address from the candidate set entirely and WP3 deleted reverify_persisted, so THE CACHE NOMINATES NOTHING AND A PERSISTED ADDRESS IS NEVER ADJUDICATED -- there is no verdict to re-verify, because there is no candidate.  The reason is that the fingerprint is FORGEABLE: a 0x2840-shaped address was mined in ~16,000 tries by the security pass and in 20,141 tries -- under a second -- by WP3, and fingerprint_verdict returns 'adopted' for such an address as soon as its own contract answers real mainnet IMD to token() and zero words to the rest, four of the five getters being pure liveness checks any contract passes.  The old promise held ONLY for this fixture's 0x0000 address; against an attacker who mines one it returned 'adopted'.  PROVENANCE -- a transaction signed by the announce wallet -- IS THE ONLY UNFORGEABLE GATE, and the persisted path was the one path that skipped it.  If the self-post naming the hook ever ages out of the channel window (~64 days, S15), the fix is to read more of the channel or to re-establish provenance from the chain, NEVER to re-nominate from storage.",
+ "persisted_payload": {
+  "pool4_network": "MAINNET",
+  "pool4_discovery_state": "adopted",
+  "pool4_discovery_detail": "adopted from announce post 0x0000",
+  "pool4_hook_addr": "0x5AfecAc4Ed000000000000000000000000000000",
+  "pool4_token_addr": "0x5AFe1DFa1DFa1dFA1dfa1dFA1dFa1dFA1DFA0000",
+  "pool4_vault_addr": "0x5afefaCea1700000000000000000000000000000",
+  "pool4_dripper_addr": "0x5afEfacED8190000000000000000000000000000",
+  "pool4_as_of_hhmm": "03:00"
+ },
+ "attacker_addresses": {
+  "claimed_hook": "0x5AfecAc4Ed000000000000000000000000000000",
+  "low_14_bits": "0x0000"
+ },
+ "eth_call_answers": {
+  "0x5afecac4ed000000000000000000000000000000": {
+   "token": "0x0000000000000000000000005afe1dfa1dfa1dfa1dfa1dfa1dfa1dfa1dfa0000",
+   "rewardShareBps": "0x00000000000000000000000000000000000000000000000000000000000003e8",
+   "BPS_DENOMINATOR": "0x0000000000000000000000000000000000000000000000000000000000002710",
+   "burnSink": "0x000000000000000000000000000000000000000000000000000000000000dead",
+   "poolManager": "0x000000000000000000000000000000000004444c5dc75cb358380d2e3de08a90"
+  }
+ },
+ "expected": {
+  "verdict_state": "rejected",
+  "verdict_detail_names": "flags",
+  "_amendment": "A27: the cache nominates nothing, so a persisted address is never adjudicated by the manager at all.  'verdict_state' is meaningful only because a TEST may hand this address to verify_hook directly, which is a thing a test can do and the discovery path cannot.  Two keys naming a re-verification step -- 'trusted_on_read' and 'discovery_state_after_reverify' -- were deleted here rather than left as vestigial reassurance.",
+  "persisted_address_is_a_discovery_candidate": false
+ },
+ "fixture": "discovery_persisted_hostile"
+}

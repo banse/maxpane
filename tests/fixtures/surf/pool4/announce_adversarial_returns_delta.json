@@ -1,0 +1,82 @@
+{
+ "synthetic": true,
+ "chain": "mainnet",
+ "announce": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+ "discovery_stages": {
+  "provenance": "candidate_addresses(rows): every address-shaped word in a SELF-POST (from_addr == to_addr == ANNOUNCE), EIP-55-normalised, deduplicated, order-preserving.  No flag arithmetic and no network round trip yet.",
+  "flag_filtered": "the provenance output narrowed by has_pool4_flags(), i.e. addr & 0x3fff == 0x2840.  These are the ONLY addresses that may reach an eth_call.",
+  "verdict": "fingerprint_verdict(addr, answers, expected_token) over the flag-filtered survivors: 'adopted' or 'rejected'."
+ },
+ "known_mainnet_imd": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+ "flag_reference": {
+  "hook_flag_mask": "0x3fff",
+  "pool4_flag_word": "0x2840",
+  "source": "hook_flags_reference.json (getHookPermissions on the live Sepolia hook) -- NOT the 0x840 in the docs"
+ },
+ "note": "SUBSET-vs-EQUALITY ATTACK.  A self-post naming an address that sets every flag the real hook sets PLUS AFTER_SWAP_RETURNS_DELTA (1<<2).  A subset test ('does it have the flags we need?') lets it through the FLAG gate, and because this corpus's answers satisfy the rest of the fingerprint it is then ADOPTED end to end; the equality test the plan mandates rejects it at the flag gate.  A hook that returns a swap delta is a materially different contract -- it can take value out of the swap itself -- so this is the case that decides whether the gate is written with & or ==.",
+ "attacker_addresses": {
+  "candidate": "0x5AFeDe17aa110000000000000000000000002844",
+  "low_14_bits": "0x2844"
+ },
+ "rows": [
+  {
+   "ts": 1788361200.0,
+   "kind": "post",
+   "from_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "to_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "from_label": null,
+   "text": "pool4 mainnet hook 0x5AFeDe17aa110000000000000000000000002844",
+   "tx_hash": "0xc1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+   "label": null,
+   "value_eth": 0.0
+  }
+ ],
+ "blockscout_items": [
+  {
+   "hash": "0xc1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+   "from": {
+    "hash": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+    "ens_domain_name": null,
+    "is_contract": false,
+    "name": null
+   },
+   "to": {
+    "hash": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+    "ens_domain_name": null,
+    "is_contract": false,
+    "name": null
+   },
+   "raw_input": "0x706f6f6c34206d61696e6e657420686f6f6b20307835414665446531376161313130303030303030303030303030303030303030303030303032383434",
+   "value": "0",
+   "method": null,
+   "decoded_input": null,
+   "status": "ok",
+   "result": "success",
+   "timestamp": "2026-09-02T15:00:00.000000Z",
+   "block_number": 25800000
+  }
+ ],
+ "eth_call_answers": {
+  "0x5afede17aa110000000000000000000000002844": {
+   "token": "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+   "rewardShareBps": "0x00000000000000000000000000000000000000000000000000000000000003e8",
+   "BPS_DENOMINATOR": "0x0000000000000000000000000000000000000000000000000000000000002710",
+   "burnSink": "0x000000000000000000000000000000000000000000000000000000000000dead",
+   "poolManager": "0x000000000000000000000000000000000004444c5dc75cb358380d2e3de08a90"
+  }
+ },
+ "expected": {
+  "candidates": [
+   "0x5AFeDe17aa110000000000000000000000002844"
+  ],
+  "verdict_state": "rejected",
+  "verdict_detail_names": "flags",
+  "discovery_state": "rejected",
+  "candidates_stage": "provenance",
+  "provenance_candidates": [
+   "0x5AFeDe17aa110000000000000000000000002844"
+  ],
+  "flag_filtered_candidates": []
+ },
+ "fixture": "announce_adversarial_returns_delta"
+}

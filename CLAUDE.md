@@ -111,7 +111,7 @@ imports it — `data/curator_clusters.py` — and that import is guarded (see th
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
-| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel (replies threaded behind an expand/collapse toggle, and NEW REPLY on the rail so a collapsed thread still announces itself), ten detectors, v3→v4 migration + launchpad (`l`) view |
+| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel (replies threaded behind an expand/collapse toggle, and NEW REPLY on the rail so a collapsed thread still announces itself), ten detectors, v3→v4 migration + launchpad (`l`) and pool4 (`p`) views |
 | 2 | `curator` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock, linked-wallet analysis |
 | 3 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
 | 4 | `base` | Base | trending tokens, volume, signals |
@@ -261,6 +261,115 @@ The three record-list hero cards have a five-line contract. Keep the order stabl
 3. The filter card shows `THE FILTER`, then the four shortcuts: `'1' - first 1000 wallets`,
    `'2' - joined hour 0`, `'3' - whale splash`, and `'f' - more filters`.
 
+### surf's POOL4 view — the `p` body (2026-09-01, live on mainnet 2026-09-02)
+
+Surf grew a **third body**, not a ninth dashboard, on curator's `y`/`f` and its own `l`
+precedent: `p` swaps `#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4 — THE SPLIT, THE
+RATCHET and POOL4 FLOW on the left, HATCHES over sIMD VAULT in the rail — with the hero left in
+place so LAUNCHPAD/FLOW/BURN/SUPPLY never goes dark, and `escape` backs out one-way. **There is
+no six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` are untouched and
+the table above still has eight rows. What makes something a mode here is the rule, not the
+count: a mode is a whole second body with its own panels, never two panels sharing one slot —
+that was `c`, and surf has no `c`. MODE_POOL4 is a third body on that rule, not a fourth key
+hiding half the screen. Surf's status hint is now `l launchpad · p pool4`, in one markup run
+rather than per-letter tags (adjacent differently-styled runs never share a composited line, and
+the acceptance test greps for the whole phrase), and it was read back off composited output
+against `StatusBar`'s left-label budget rather than counted: that label is the segment the bar
+cuts first and the new hint is nine columns longer than the one it replaced.
+
+**Every panel title carries the network word** — `THE RATCHET · MAINNET`, `· SEPOLIA`, or `· —`.
+The view was built against a live *Sepolia* deployment and still renders it whenever no mainnet
+hook has been adopted, which is why the word is not decoration in either direction. One helper
+produces it (`widgets/surf/_pool4.network_word`) and it is an **allowlist**, not a pass-through:
+anything outside `POOL4_NETWORKS` — including `None`, which means no sweep has ever completed and
+does *not* mean either chain — renders the em dash. Two packages wrote that helper twice with
+different behaviour on unknown input, which is how one body could have painted `THE SPLIT · —`
+beside `THE RATCHET · BASE`: five panels disagreeing about which chain the numbers above them
+came from. The widget restates the tuple rather than importing `data/`, and its test imports both
+and asserts they agree in both directions — `_GAME_CYCLE`'s redundancy-plus-agreement-test shape,
+and the reason a third network reddens the suite instead of silently blanking five titles.
+
+**Discovery is the security boundary of this view, the fingerprint does not hold it up, and the
+honest version of that is the one to keep.** The hook address is discovered from the dev's
+announce channel, which is attacker-writable by design — anyone can send it a UTF-8 calldata tx —
+so **provenance is the only unforgeable gate**: only a *self-post* (`from == to == announce`) is a
+candidate, because that transaction is signed by a key nobody else has. Everything else is a
+filter, not a gate. The chain fingerprint is real work and it transferred intact to mainnet — the
+low 14 bits must **equal** `BEFORE_INITIALIZE | BEFORE_ADD_LIQUIDITY | AFTER_SWAP` (equality, not
+a subset test, and not the address's visible tail: the hook ends `6840`, the `840` is a *mined
+vanity tail*, and `0x6840 & 0x3FFF` is `0x2840`; the plan, the PRD and the research doc all said
+`0x840`, and both failure modes are committed as attack fixtures under `tests/fixtures/surf/pool4/`
+— `== 0x840` rejects the real hook on every chain, `& 0x840` accepts one that does not gate pool
+initialisation) — **but it is forgeable, and two packages measured that rather than arguing it**:
+a `0x2840`-shaped address mines in ~20,000 tries in under a second, four of the five getters are
+pure liveness checks any contract passes, and `token()` is a value the candidate's own contract
+chooses. Two consequences, both load-bearing:
+
+* **The persisted-adoption defence was deleted, not documented** (A27). A cache file hand-edited
+  to `adopted` came back `rejected` only because the committed fixture's flag word was `0x0000`;
+  against anyone actually trying it, it returned *adopted*. A reassuring sentence attached to a
+  defence a live demo defeats in twenty seconds is worse than no sentence, because someone greps
+  for the cache-file protection and finds it. If a self-post ages out of the channel window, the
+  fix is to read more of the channel or to re-establish provenance from the chain — **never to
+  re-nominate from storage**, which trades a paging bug for the provenance bypass this closed.
+* **The announce channel has not named the mainnet hook**, so automatic discovery correctly
+  refuses it and the operator accepted `pool4.imd.fun/docs` as a *candidate* source instead. That
+  widens the trust surface: anyone who can change that page can name a hook, and by the paragraph
+  above the fingerprint will not stop them. Prevention was not available; **disclosure was**, and
+  HATCHES is where it is delivered — `pool4_discovery_source` is its own payload key, a
+  docs-sourced adoption renders `⚠ via docs` where a dev-signed one renders plainly, and
+  `unattributed` must read at least as weakly as `docs` because `None` is where a producer bug
+  comes to rest. A self-post overrides the page whenever one lands. The source words are restated
+  in the widget with an agreement test against `POOL4_DISCOVERY_SOURCES`, so a fourth source
+  reddens the suite instead of falling through to the unattributed branch and looking like one of
+  these three.
+
+Also true and worth keeping in front of anyone touching a gate here: **an `eth_call` to an
+address with no code returns `"0x"` and no error**, so "the call did not fail" is not "the getter
+answered". `surf_pool4.answered` is the one place that distinction lives.
+
+**Mainnet shipped a different protocol from the testnet one, and almost all of it self-adapted
+because of the read-it-live constraint at the top of this file.** The reward share went up by half
+and the reserve floor fell by five orders of magnitude, and nothing had to change for either,
+because neither was ever a constant. That constraint has now paid for itself on a live
+switchover rather than on a hypothetical. What did *not* self-adapt was the one difference that is **structure rather than
+a value**: mainnet inserted a Reward Distributor with no testnet counterpart, so the vault is
+three hops from the hook rather than two, and a hop count is not something a live read can absorb.
+The split is three-way there — 85 burned, then stakers / bonding / nodes out of the remaining 15 —
+and **bonding has no getter of its own**: it is the remainder, so it is derived and labelled as
+derived rather than hardcoded at the number the docs quote. Mainnet's `burnSink` is a
+**pass-through BurnExecutor** rather than `0x…dEaD`, which changes what its balance *means*: what
+sits in it is queued, not burned, and a panel that read it as burned would be confidently wrong.
+
+Two testing traps came out of the same comparison and both are the local shape of "prove a test
+bites". A test written as *"point it at Sepolia and watch these fields go `None`"* **passes for
+the wrong reason** — the getters exist on both chains and only their values differ, so the absence
+case has to be driven by a getter made to revert, which is what a differently-built future hook
+actually looks like. And `inventoryCap() == tokensInPool()` holds on Sepolia only because the
+decay rate there is the no-decay sentinel; on mainnet the cap decays and the two drift apart by
+whole tokens between events. An equality assertion would have been green on one chain for a reason
+that is not the claim and flaky on the other.
+
+**Its own tier, its own clock, detached like the launchpad's.** `TIER_POOL4` with `SLOT_POOL4`'s
+last-good, spawned and never awaited so first paint cannot sit behind it, and all five panels
+share one `pool4_as_of_hhmm` that runs on a slower clock than the title bar's. `SOURCE_POOL4`
+(`p4`) is the **eighth** degraded group, and that eighth name is what took the worst-case title
+row to exactly the width the layout is pinned at — see the terminal-layout skill, which now
+carries that as a live hazard rather than a margin.
+
+**What is not built, said plainly, and one sentence that stopped being true.** This file said the
+`bond` tab on `imd.fun/pool4/` had *no contract on either chain*. That was correct when written
+and is now wrong: **bonding is live**, taking 40% of the reward share inside the Reward
+Distributor, with readable held and earned balances. What remains true is narrower and is what the
+HATCHES row actually says: no *separate* bond contract is named by anything this dashboard reads,
+so that row is `unknown` — "we did not look here" — and deliberately not `absent`, which would
+claim a negative nobody checked. Still open: three of the hook's event signatures have no
+recovered pre-image, one of them a mainnet event that survived a 538,740-candidate sweep, so they
+keep operand-shaped names and the decoder keys off the topic0 constant (a naming gap, not a
+functional one — never invent a signature string for one, a wrong guess computes a topic0 that
+matches no log and the panel goes quiet rather than red). And some ceiling tests still have no
+mainnet fixture behind them.
+
 ## Build & run
 
 ```bash
@@ -294,8 +403,11 @@ curator); **`l` on surf** swaps the whole dashboard body for the v4
 launchpad's own five panels in two columns (LAUNCHPAD COINS over LAUNCHPAD
 ACTIVITY on the left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail —
 curator's `y`/`f` precedent), with the hero (LAUNCHPAD/FLOW/BURN/SUPPLY)
-left in place so nothing it tracks ever goes dark (`esc` backs out, one-way); surf's
-status hint reads `l launchpad`. Surf's own `l` and curator's own `l` (the
+left in place so nothing it tracks ever goes dark (`esc` backs out, one-way);
+**`p` on surf** swaps the same three rows for the POOL4 body (THE SPLIT /
+THE RATCHET / POOL4 FLOW on the left; HATCHES over sIMD VAULT in the rail),
+also keeping the hero, also one-way; surf's status hint reads
+`l launchpad · p pool4`. Surf's own `l` and curator's own `l` (the
 record view, described below) are unrelated bindings on two different
 screens, not one shared key. **`y` on curator** swaps the whole body for the reader's own
 standing — ladder, share, and what passing the rank above would cost — with the
@@ -336,7 +448,7 @@ memory when a bug report cites one.
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest                    # 5,630 tests, ~11 min — see below
+.venv/bin/python -m pytest                    # 7,007 tests, ~11 min — see below
 .venv/bin/python -m pytest tests/analytics/   # pure math
 .venv/bin/python -m pytest -x                 # stop on first failure
 .venv/bin/python -m pytest sybilkit            # the second distribution, 428 tests + 1 xfail
@@ -426,6 +538,25 @@ Two things do **not** help and must not be mistaken for the guarantee: `Text.no_
 `Text.overflow` are inert through Textual 8, and a *sized* cell is not a *fitted* one. Both are
 in the terminal-layout skill, with what to use instead.
 
+**A token's `decimals()` is a live read, never 18 by assumption.** pool4's sIMD vault is a Solady
+ERC4626, which reports *asset decimals + `_decimalsOffset()`* — 18 + 6 — so `decimals()` answers
+**24** and one whole share is `1e24`. What makes this worth a rule rather than a code comment is
+that **both wrong divisors render as plausible numbers**: `convertToAssets(1e18)/1e18` reads
+`0.0000013 IMD/share`, which looks like a dead vault, and `totalSupply/1e18` reads 21 *billion*
+shares, which looks like an emissions farm, against a true share price of `1.302986` and 21,010.98
+shares. Neither shows up as an error. A committed capture shipped asking `convertToAssets(1e18)`
+for exactly this reason, and the decoder **refuses** it rather than mapping a wrong-argument
+answer onto a right-looking field — the fix belongs in the capture. A test refuses a
+`POOL4_VAULT_DECIMALS`-shaped constant so the hardcode cannot come back wearing a name.
+
+That last guard was argued for on 2026-09-01 as *"the mainnet vault does not exist yet and nothing
+binds its offset to the testnet one's"* — and when mainnet landed the day after, its vault reported
+**24 as well**. The prediction was wrong and the rule is right anyway, which is the part worth
+keeping: a hardcoded 24 would have sailed through this switchover and been indistinguishable from a
+read one, so the next deployment would have inherited it unexamined. A constant that happens to
+agree with the chain today is not evidence for the constant; it is the reason nobody would have
+noticed.
+
 **Validate persisted series per point.** Use `data/series_points.coerce_points`. A single `null`
 in a cache file used to abort startup for *every* dashboard.
 
@@ -481,9 +612,25 @@ whether the template has drifted *ahead* of the widget, which also happens.
 batches, but **refuses archive `eth_getLogs`**), `gateway.tenderly.co/public/mainnet` and
 `eth.drpc.org` for logs. **State and logs need different endpoint pools.**
 
+**Sepolia does not inherit mainnet's endpoint story, and one keyless-looking URL is keyed.**
+`ethereum-sepolia-rpc.publicnode.com` batches `eth_call` **and** serves archive `eth_getLogs`,
+unlike its mainnet sibling, so the state/logs split above does not transfer — on Sepolia
+publicnode is the endpoint that works for both, and the pool4 plan's first draft banned it from
+the log pool on exactly that bad transfer. Measured and banned there: `sepolia.drpc.org` answers
+*every* method with `code 35 "chain is not available on free plan, please upgrade to paid plan"` —
+a **keyed endpoint wearing a keyless URL** — so ban it by hostname and never by `drpc.org`, since
+`eth.drpc.org` is a working mainnet log endpoint and a test pins that the broader spelling would
+have broken it; `rpc.sepolia.org` 404s; `omniatech` 521s; `1rpc.io` serves one 30-call batch then
+429s and caps logs at 50 blocks, so it is a state fallback only. Tenderly's Sepolia gateway
+answers a 3-call batch and rate-limits the 30-call round the client actually issues — **probe with
+the batch you ship**, or you will "correct" a pool the wrong way with a toy one.
+
 **Classify RPC errors on message text, not code.** Providers reuse `-32602` and `-32005` for
 unrelated meanings. One provider's "suggested retry range" decrements one block per round trip
-and livelocks anything that follows it verbatim.
+and livelocks anything that follows it verbatim. This has evidence behind it now rather than
+folklore: `tests/fixtures/surf/pool4/rpc_error_states.json` captures `-32602` meaning
+*"eth_getLogs is limited to 0 - 50 blocks"* on one provider and *"Invalid params"* on another, and
+`-32005` arriving cold as a rate limit on the first attempt.
 
 **The DOTA game API is NXDOMAIN** — that dashboard has no live backend. The Bakery season ended
 2026-06-12; its API still serves, but the season is finished.

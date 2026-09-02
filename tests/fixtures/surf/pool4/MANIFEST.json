@@ -1,0 +1,362 @@
+{
+ "generated_by": "scripts/capture_pool4.py --manifest",
+ "generated_at": "2026-09-02T11:04:52.206303Z",
+ "work_package": "WP1 of docs/surf_pool4_implementation_plan.md",
+ "acceptance": "python3 scripts/capture_pool4.py --dry-run",
+ "raw_captures_kept_verbatim": [
+  "captures/live/20260901T150505Z_sepolia-launch3-state.json",
+  "captures/live/20260901T150548Z_sepolia-launch3-hook-logs.json"
+ ],
+ "fixtures": [
+  {
+   "fixture": "hook_state_healthy.json",
+   "synthetic": false,
+   "request_sibling": "hook_state_healthy.request.json",
+   "chain": "sepolia",
+   "block_number": 11614022,
+   "captured_at": "2026-09-01T17:19:55.261037Z",
+   "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+   "note": "One batched eth_call round over the whole recovered hook getter set. Every member answered."
+  },
+  {
+   "fixture": "hook_state_partial.json",
+   "synthetic": false,
+   "request_sibling": "hook_state_partial.request.json",
+   "chain": "sepolia",
+   "block_number": 11614022,
+   "captured_at": "2026-09-01T17:19:55.261037Z",
+   "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+   "note": "The hook_state_healthy round plus bondTerms()/totalBonded()/bond() -- three selectors the launch-3 hook does not implement, picked because imd.fun/pool4 advertises a bond tab no deployed contract carries.  This is the 'the unverified contract answered some of it' case (plan R1), captured live rather than hand-edited: the reverts are the chain's own."
+  },
+  {
+   "fixture": "vault_state.json",
+   "synthetic": false,
+   "request_sibling": "vault_state.request.json",
+   "chain": "sepolia",
+   "block_number": 11614276,
+   "captured_at": "2026-09-01T18:12:19.030793Z",
+   "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+   "note": "StakedIMD (verified source) full getter round.  AMENDMENT A17 (2026-09-01): decimals() is READ FIRST, in its own call, and the share-price argument is built from it -- convertToAssets(10**decimals), which is 1e24 on this vault, NOT the 1e18 the first capture sent.  Solady's ERC4626 reports asset decimals + _decimalsOffset() and StakedIMD's offset is 6, so one whole sIMD is 1e24 units and 1e18 is a MILLIONTH of a share.  The first capture's answer was honest and the question was wrong: 1_302_985_528_554 renders as 0.0000013 IMD/share, a vault that looks dead while its share price is 1.302986.  The wrong-argument answer is KEPT here under convertToAssets_millionth_of_a_share because the pair is the evidence for the trap -- they differ by exactly 10**offset -- and it is unmistakable as a share price.  SELF-VALIDATING: totalAssets/1e18 divided by totalSupply/1e24 must equal convertToAssets(10**decimals)/1e18."
+  },
+  {
+   "fixture": "dripper_state.json",
+   "synthetic": false,
+   "request_sibling": "dripper_state.request.json",
+   "chain": "sepolia",
+   "block_number": 11614022,
+   "captured_at": "2026-09-01T17:19:55.261037Z",
+   "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+   "note": "RewardDripper (verified source) full getter round."
+  },
+  {
+   "fixture": "token_state.json",
+   "synthetic": false,
+   "request_sibling": "token_state.request.json",
+   "chain": "sepolia",
+   "block_number": 11614022,
+   "captured_at": "2026-09-01T17:19:55.261037Z",
+   "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+   "note": "The launch-3 test IMD: supply, decimals, and the balances the burn and reward legs must reconcile against."
+  },
+  {
+   "fixture": "flow_logs_mixed.json",
+   "synthetic": false,
+   "request_sibling": "flow_logs_mixed.request.json",
+   "chain": "sepolia",
+   "block_number": null,
+   "captured_at": "2026-09-01T17:22:32.181422Z",
+   "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+   "note": "A 60-block window carrying a BUY (0x841e5af58c -- FeeCollected in ETH plus the pool-reserve event), several SELLs, a standalone settlement (0x832f0efbe3 -- ClaimsSettled with no swap), and one genuinely unsettled accrual.  AMENDMENT A16 (2026-09-01): an earlier version of this note called the accrual in 0x028d1448a9 'the accrued-but-unsettled case' because no ClaimsSettled sits in that transaction.  THAT IS WRONG AND THIS CORPUS DISPROVES IT.  SETTLEMENT IS DECIDED BY LOG ORDER ACROSS THE WINDOW, NOT BY TRANSACTION BOUNDARY: 0x028d1448a9's accrual (7,573,500 / 841,500) is paid to the wei by ClaimsSettled in the LATER transaction 0x832f0efbe3, and inside 0x48090d111b the ClaimsSettled sits at logIndex 0x7b -- BEFORE that transaction's own accrual at 0x82 -- paying the PREVIOUS transaction's 891 / 99.  Settlement rides the next swap.  A same-transaction rule mislabels rows in BOTH directions.  The one genuinely outstanding accrual in this window is the LAST one, in 0x8005a2272e: sum(accrual) - sum(ClaimsSettled) leaves 267,299.999999999999994537 burn / 29,699.999999999999999393 stakers unpaid, and nothing after it settles them.  THOSE ARE THE EXACT WEI: they DISPLAY as a round 267,300 / 29,700 at two decimal places but are not round, so an equality test written against the round figure fails on real data."
+  },
+  {
+   "fixture": "flow_logs_full.json",
+   "synthetic": false,
+   "request_sibling": "flow_logs_full.request.json",
+   "chain": "sepolia",
+   "block_number": null,
+   "captured_at": "2026-09-01T17:22:32.181422Z",
+   "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+   "note": "The complete launch-3 hook log set as of capture: every FeeCollected, every ClaimsSettled, both FeesWithdrawn, the single Rebalanced / KeeperRewardPaid / backstop transaction.  This is the set the R1 cross-checks reconcile against the counters in hook_state_healthy.  'Complete' is MEASURED, not assumed: a 20,000-block query to head returns the same 90 logs as this 400-block window, so nothing precedes block 11609650 or follows 11609981.  That holds only as of the captured_at above -- the hook is live and a later sweep may find more, at which point the counters in hook_state_healthy will no longer reconcile against this file and BOTH must be re-captured together."
+  },
+  {
+   "fixture": "flow_logs_empty.json",
+   "synthetic": false,
+   "request_sibling": "flow_logs_empty.request.json",
+   "chain": "sepolia",
+   "block_number": null,
+   "captured_at": "2026-09-01T17:22:32.181422Z",
+   "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+   "note": "A window that closes before the hook was deployed: swept, and genuinely quiet.  The [] -- not None -- case."
+  },
+  {
+   "fixture": "pool_slot0.json",
+   "synthetic": false,
+   "request_sibling": "pool_slot0.request.json",
+   "chain": "sepolia",
+   "block_number": 11614023,
+   "captured_at": "2026-09-01T17:20:08.822194Z",
+   "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+   "note": "PoolManager.extsload(bytes32) for the launch-3 pool, slots derived by data/surf_v4.pool_state_slots -- this fixture re-uses the repo's derivation rather than re-implementing it. The expected block below is what data/surf_v4.decode_slot0 and decode_liquidity return for these words."
+  },
+  {
+   "fixture": "announce_undiscovered.json",
+   "synthetic": false,
+   "request_sibling": "announce_undiscovered.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-01T17:26:17.945612Z",
+   "endpoint": "https://eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions",
+   "note": "The announce channel exactly as it is today.  THE DAY-ONE PATH (plan R4): there is no mainnet pool4 post, so discovery must yield no candidate and pool4_discovery_state must read 'not-discovered'.  The scan below is the evidence for that claim, not a restatement of it: every 0x-prefixed 20-byte word in every decoded calldata post on this page is listed, with its provenance and its low-14-bit flag field.  Blockscout returned next_page_params: null, so this single page is the channel's COMPLETE history -- the claim is exhaustive, not a statement about a recent window.\n\nSUPERSEDED 2026-09-02 for the question it was capturing: pool4 IS now live on mainnet.  What is captured here remains true of these bytes and this instant, and the DAY-ONE BEHAVIOUR it pins is unchanged and still the behaviour that runs -- the channel has not named the live hook even now.  See announce_still_unnamed.json for the post-launch capture of the same channel."
+  },
+  {
+   "fixture": "mainnet_absent.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_absent.request.json",
+   "chain": "mainnet",
+   "block_number": 25883917,
+   "captured_at": "2026-09-01T17:26:18.238601Z",
+   "endpoint": "https://ethereum-rpc.publicnode.com",
+   "note": "NO CODE EXISTS AT ANY OF THE FIVE PROBED ADDRESSES ON MAINNET.  Each Sepolia address is probed on mainnet with eth_getCode and a token() call; mainnet IMD is probed the same way as a POSITIVE CONTROL, so an empty answer is evidence of absence rather than evidence the probe was broken.  AMENDMENT A27 (2026-09-01) -- SCOPE: an earlier version of this note said 'mainnet has no pool4 hook, vault or dripper'.  THIS FIXTURE CANNOT PROVE THAT and does not.  A mainnet hook would be CREATE2-mined to a DIFFERENT address than any of these, so probing the Sepolia addresses can never enumerate the chain.  What this fixture proves is the narrow thing it measured: the launch-1/2/3 hooks, the vault and the dripper were not redeployed at the same addresses on mainnet. The evidence for 'pool4 is not live on mainnet' is announce_undiscovered.json -- the complete announce history with no post naming a hook -- and these probes corroborate it; neither is sufficient alone.\n\nSUPERSEDED 2026-09-02 -- POOL4 IS NOW LIVE ON MAINNET, at addresses none of these probes could ever have found: hook 0xc6c965bd164c483e87d0b550671798e9a3602840, vault 0x9efa934d9fad4ae28c998a40195646b965a97247, distributor 0x9046739E1535B40EfBe6AB3f45d0024b690eCA30.  This fixture is now HISTORICAL and its measurement is still exactly true -- those five Sepolia addresses hold no code on mainnet, and never did.  What it never proved, and what the launch demonstrates, is the general claim: an address-probe cannot enumerate a chain.  For the live deployment see the mainnet_* fixtures; for the state of discovery see announce_still_unnamed.json, which records that the channel has STILL not named the live hook."
+  },
+  {
+   "fixture": "rpc_error_states.json",
+   "synthetic": false,
+   "request_sibling": "rpc_error_states.request.json",
+   "chain": "sepolia",
+   "block_number": null,
+   "captured_at": "2026-09-01T17:25:35.570504Z",
+   "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+   "note": "The 'dead' quadrant, captured from real providers rather than imagined.  Four failures with four different meanings.  Two things WP6 must read out of this: the error CODES collide across unrelated meanings, so classification goes on message text (CLAUDE.md); and an eth_call to an address with no code SUCCEEDS with '0x', so 'the call did not error' is not 'the getter answered' -- a fingerprint gate that conflates the two adopts an empty address."
+  },
+  {
+   "fixture": "mainnet_hook_state.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_hook_state.request.json",
+   "chain": "mainnet",
+   "block_number": 25889144,
+   "captured_at": "2026-09-02T10:55:34.021313Z",
+   "endpoint": "https://ethereum-rpc.publicnode.com",
+   "note": "The live mainnet market hook, one batched round over the whole recovered getter set PLUS the two getters recovered from bytecode for this deployment: capDecayTokensPerDay() (0x55e62941) and inventoryCap() (0xdb445ee8).  Both pre-images were CONFIRMED by keccak during this capture run rather than assumed.  What differs from Sepolia and is read live, never hardcoded: rewardShareBps is 1500 here against 1000 there, capFloor is 1,000 IMD against 250,000,000, and burnSink() is the BurnExecutor rather than 0x...dEaD."
+  },
+  {
+   "fixture": "mainnet_vault_state.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_vault_state.request.json",
+   "chain": "mainnet",
+   "block_number": 25889144,
+   "captured_at": "2026-09-02T10:55:34.021313Z",
+   "endpoint": "https://ethereum-rpc.publicnode.com",
+   "note": "The mainnet sIMD vault.  decimals() is read first and the share-price argument built from it (A17); it is 24 here as on Sepolia, but that was MEASURED, not carried over."
+  },
+  {
+   "fixture": "mainnet_distributor_state.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_distributor_state.request.json",
+   "chain": "mainnet",
+   "block_number": 25889144,
+   "captured_at": "2026-09-02T10:55:34.021313Z",
+   "endpoint": "https://ethereum-rpc.publicnode.com",
+   "note": "The Reward Distributor -- NEW on mainnet, no Sepolia counterpart, and the reason the vault is three hops away rather than two.  vault() IS INCLUDED AND IS EXPECTED TO REVERT: it is the call the old two-hop path made, and its revert is precisely what stops the walk.  A fixture that omitted it could not replay the failure it exists to document.  The three-way split is stakingBps 3000 and nftBps 3000 with bonding as the DERIVED remainder (10000 - 3000 - 3000 = 4000) -- bonding has no getter of its own, so any 4000 in code must be a derivation, never a literal."
+  },
+  {
+   "fixture": "mainnet_dripper_state.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_dripper_state.request.json",
+   "chain": "mainnet",
+   "block_number": 25889144,
+   "captured_at": "2026-09-02T10:55:34.021313Z",
+   "endpoint": "https://ethereum-rpc.publicnode.com",
+   "note": "The mainnet Reward Dripper, reached through the Distributor."
+  },
+  {
+   "fixture": "mainnet_token_state.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_token_state.request.json",
+   "chain": "mainnet",
+   "block_number": 25889144,
+   "captured_at": "2026-09-02T10:55:34.021313Z",
+   "endpoint": "https://ethereum-rpc.publicnode.com",
+   "note": "Mainnet IMD.  balanceOf(BurnExecutor) is the balance the burn counter must be reconciled against here, because burnSink() is the BurnExecutor.  balanceOf(0xdEaD) is captured for CONTRAST ONLY: the Sepolia identity totalBurned == balanceOf(0xdEaD) DOES NOT TRANSFER to mainnet and a control carrying it over would misreport."
+  },
+  {
+   "fixture": "mainnet_vault_path.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_vault_path.request.json",
+   "chain": "mainnet",
+   "block_number": 25889148,
+   "captured_at": "2026-09-02T10:56:17.193153Z",
+   "endpoint": "https://ethereum-rpc.publicnode.com",
+   "note": "THE THREE-HOP VAULT PATH, captured hop by hop so the walk can be replayed rather than transcribed.  hook.rewardsRecipient() -> Distributor -> distributor.dripper() -> Dripper -> dripper.vault() -> sIMD.  distributor.vault() is included AND REVERTS; that revert is what stops the old two-hop walk, and a fixture without it could not reproduce the mainnet failure.  Every hop is a node ANSWERING WHAT IT IS -- no step assumes a shape."
+  },
+  {
+   "fixture": "mainnet_pool_slot0.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_pool_slot0.request.json",
+   "chain": "mainnet",
+   "block_number": 25889173,
+   "captured_at": "2026-09-02T11:01:25.860895Z",
+   "endpoint": "https://ethereum-rpc.publicnode.com",
+   "note": "PoolManager.extsload for the live mainnet pool, pool id read off the hook rather than assumed.  Slots derived by data/surf_v4.pool_state_slots -- the same mapping slot 6 that holds on Sepolia, MEASURED here rather than carried over.  This is the corroboration that matters most on an unverified hook: the canonical, verified-source v4 singleton confirming the hook's own position getters.  Read it in the SAME sweep as the hook or a moving pool reports false drift."
+  },
+  {
+   "fixture": "mainnet_flow_logs.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_flow_logs.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-02T11:01:26.007515Z",
+   "endpoint": "https://gateway.tenderly.co/public/mainnet",
+   "note": "The mainnet hook's logs over the 20,000 blocks to head, through the tenderly/drpc pool because ethereum-rpc.publicnode.com refuses archive eth_getLogs (CLAUDE.md).  Whether this window reaches the deployment is recorded as window_reaches_deployment rather than assumed; if it does not, the sums here are a SUFFIX of history and must not be reconciled against the hook's cumulative counters."
+  },
+  {
+   "fixture": "sepolia_cap_getters.json",
+   "synthetic": false,
+   "request_sibling": "sepolia_cap_getters.request.json",
+   "chain": "sepolia",
+   "block_number": 11619128,
+   "captured_at": "2026-09-02T10:56:17.577884Z",
+   "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+   "note": "BOTH CAP GETTERS ANSWER ON SEPOLIA TOO.  An earlier claim that capDecayTokensPerDay() and inventoryCap() were mainnet-only was an assumption that was never measured, and it is wrong: the difference between the chains is the VALUE, not the presence.  Sepolia returns 2**128-1 for the decay rate -- the no-decay sentinel -- against 1,000 IMD/day on mainnet.  This fixture exists so the absence case is driven by a getter that genuinely reverts (vault_control, included here for exactly that) instead of by pointing the test at the other chain, which would pass for the wrong reason.  ADDITIVE: this file re-captures nothing -- every pre-existing Sepolia fixture is untouched at its own block."
+  },
+  {
+   "fixture": "docs_site_page.json",
+   "synthetic": false,
+   "request_sibling": "docs_site_page.request.json",
+   "chain": null,
+   "block_number": null,
+   "captured_at": "2026-09-02T10:57:11.189390Z",
+   "endpoint": "https://pool4.imd.fun/docs",
+   "note": "ONE OPERATOR'S MUTABLE HTML.  NOT CONSENSUS DATA.  This is a web page served by a host the protocol's operator controls; nothing about it is signed, replicated or verifiable after the fact, and it can differ between two readers or between two minutes.  It is captured because the operator has accepted it as a CANDIDATE address source -- the announce channel has still not named the mainnet hook, so under A27 the gate correctly refuses to adopt it and the view would show SEPOLIA while mainnet is live.\n\nWHAT THIS DOES AND DOES NOT BUY.  It supplies a candidate; the full chain fingerprint still runs on it.  But the fingerprint is forgeable (A27): a 0x2840-shaped address mines in ~20,000 tries, four of the five getters are pure liveness checks, and token() is the candidate's own choice.  So ANYONE WHO CAN CHANGE THIS PAGE CAN NAME A HOOK, and no downstream check will stop them.  Provenance -- a dev-signed self-post -- remains the only unforgeable gate, and the announce channel overrides this source when a self-post lands.  The mitigation is DISCLOSURE, not prevention: the panel must name which source an adoption came from, so weaker provenance identifies itself instead of hiding behind the same word as a dev-signed post.\n\nPARSING: the same raw-text ADDRESS_RE the channel uses, over the bytes as served.  S16 applies unchanged -- the regex sees raw text and normalisation belongs DOWNSTREAM of extraction, never upstream, or a control-character trick re-arms itself here exactly as it would on the channel."
+  },
+  {
+   "fixture": "announce_still_unnamed.json",
+   "synthetic": false,
+   "request_sibling": "announce_still_unnamed.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-02T11:03:52.062125Z",
+   "endpoint": "https://eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions",
+   "note": "POOL4 IS LIVE ON MAINNET AND THE ANNOUNCE CHANNEL HAS NOT NAMED IT.  This is the complete channel history, captured after the deployment; no self-post mentions the live hook (0xc6c965bd164c483e87d0b550671798e9a3602840) and no self-post carries any 0x2840-shaped address at all.  Under A27 the discovery gate therefore refuses -- correctly -- and the view would show SEPOLIA while mainnet trades.  That refusal is not a bug and must not be 'fixed' by weakening the gate; it is the cost of provenance being the only unforgeable check, and it is the whole reason the operator accepted docs_site_page as a candidate source.  ADDITIVE: announce_undiscovered.json is untouched at its own bytes; it answered the question 'is pool4 live anywhere', which is now historical."
+  },
+  {
+   "fixture": "hook_flags_reference.json",
+   "synthetic": false,
+   "request_sibling": null,
+   "chain": "sepolia",
+   "block_number": 11614022,
+   "captured_at": "2026-09-01T17:19:55.261037Z",
+   "endpoint": null,
+   "note": "THE FLAG WORD IS 0x2840, NOT 0x840.  The address's visible '840' suffix is a mined vanity tail; the v4 permission field is the LOW 14 BITS, and for all three Sepolia launch hooks that is 0x2840 = BEFORE_INITIALIZE (1<<13) | BEFORE_ADD_LIQUIDITY (1<<11) | AFTER_SWAP (1<<6).  The contract's own getHookPermissions() agrees bit for bit.  docs/imd_pool4_mechanics.md and the implementation plan both state 0x840 = (1<<11)|(1<<6); with the plan's mandated EQUALITY test that constant rejects the real hook."
+  },
+  {
+   "fixture": "counter_reconciliation.json",
+   "synthetic": false,
+   "request_sibling": null,
+   "chain": null,
+   "block_number": null,
+   "captured_at": null,
+   "endpoint": null,
+   "note": "R1's control (c), run over the committed corpus.  FOUR OF FIVE CROSS-CHECKS RECONCILE TO THE WEI.  SCOPE (A27): the five checks below settle SIX getters -- totalFeeToken, totalBurned, totalRewarded, retainedEth, rewardShareBps and BPS_DENOMINATOR -- against the log set and the token's dEaD balance, and that is ALL they settle.  A further SEVEN are settled by other fixtures and are listed under corroborated_by_other_fixtures; the strongest of those is currentTick / currentSqrtPriceX96 / positionLiquidity / lpFee, confirmed word for word by PoolManager.extsload -- the canonical, VERIFIED-SOURCE v4 singleton corroborating an unverified contract, which is a better class of evidence than any log sum.  (An earlier version of this note said the position getters had no cross-check.  Four of them do; it is just not a LOG cross-check.)  ELEVEN getters remain settled by nothing, listed under not_covered_by_any_cross_check, and the two that matter most are capFloor -- inferred, not proven (plan R2), and owner-settable -- and tokensInPool, the RATCHET headline, which nothing outside the hook states.  One plausible identity that does NOT hold is recorded under rejected_identities so a live control is not built on it.  THE FIFTH IS NOT A DEFECT AND MUST NOT BE PUBLISHED AS ONE: totalFeeToken() is CUMULATIVE and retainedEth() is a CURRENT BALANCE.  The owner withdrew 3,650,057.78 IMD and 0.0057 ETH across the two FeesWithdrawn events in this log set -- every token and every wei of fee ever collected -- and afterwards totalFeeToken() still reads the full 3,650,057.78 while retainedEth() reads 0.  A symmetric ETH cross-check would therefore report 'the recovered interface is wrong' on a perfectly healthy hook, every time the owner withdraws.  Compare Sum(FeeCollected eth) against Sum(FeesWithdrawn eth) + retainedEth() instead."
+  },
+  {
+   "fixture": "mainnet_flags_reference.json",
+   "synthetic": false,
+   "request_sibling": null,
+   "chain": "mainnet",
+   "block_number": 25889144,
+   "captured_at": "2026-09-02T10:55:34.021313Z",
+   "endpoint": null,
+   "note": "THE FLAG WORD IS 0x2840, NOT 0x840.  The address's visible '840' suffix is a mined vanity tail; the v4 permission field is the LOW 14 BITS, and for all three Sepolia launch hooks that is 0x2840 = BEFORE_INITIALIZE (1<<13) | BEFORE_ADD_LIQUIDITY (1<<11) | AFTER_SWAP (1<<6).  The contract's own getHookPermissions() agrees bit for bit.  docs/imd_pool4_mechanics.md and the implementation plan both state 0x840 = (1<<11)|(1<<6); with the plan's mandated EQUALITY test that constant rejects the real hook."
+  },
+  {
+   "fixture": "mainnet_counter_reconciliation.json",
+   "synthetic": false,
+   "request_sibling": null,
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": null,
+   "endpoint": null,
+   "note": "The mainnet analogue of counter_reconciliation.json.  The three log-vs-counter checks reconcile TO THE WEI and they are only legitimate because the log window reaches the deployment (log_window_reaches_deployment above) -- a window starting later would hold a SUFFIX of history and reconciling a suffix against a cumulative counter reports a defect that is not there.\n\nTHE SEPOLIA BURN IDENTITY DOES NOT TRANSFER, and not merely because the address changed.  burnSink() is the BurnExecutor here, and totalBurned (80.96 IMD) equals NEITHER balanceOf(BurnExecutor) (21.48) NOR balanceOf(0xdEaD) (0.00).  The BurnExecutor is a PASS-THROUGH that burns onward, so its balance is what is QUEUED, not what has been burned -- a structural difference from 0x...dEaD, which only ever accumulates.  Any control carrying 'totalBurned == balanceOf(burnSink)' from Sepolia to mainnet would misreport a healthy hook on every tick.\n\nTHE 85/15 SPLIT IS TAKEN FROM THE COUNTERS, never from a document, and rewardShareBps is 1500 here against 1000 on Sepolia -- the live-read discipline earning its keep.\n\nTHE DISTRIBUTOR'S THREE-WAY SPLIT reconciles from its own *Earned counters to 30/30/40, which is the self-validating check for a contract whose bonding share HAS NO GETTER: bonding is the DERIVED remainder 10000 - stakingBps - nftBps, and any literal 4000 in code is a bug waiting for the operator to change a bps."
+  },
+  {
+   "fixture": "announce_adversarial_reply_provenance.json",
+   "synthetic": true,
+   "request_sibling": null,
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": null,
+   "endpoint": null,
+   "note": "PROVENANCE ATTACK.  A community REPLY and an inbound stranger tx each carry a well-formed, correctly-flagged hook address.  Both must be rejected before any getter is called, because neither is a self-post: candidate_addresses scans only rows where from_addr == to_addr == ANNOUNCE.  The dev's own self-post in this corpus names no address, so the correct answer is NO CANDIDATE AT ALL."
+  },
+  {
+   "fixture": "announce_adversarial_flag_mismatch.json",
+   "synthetic": true,
+   "request_sibling": null,
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": null,
+   "endpoint": null,
+   "note": "FLAG ATTACK.  A genuine dev SELF-POST -- provenance passes -- naming an address whose low 14 bits are 0x0840, which is what docs/imd_pool4_mechanics.md and the implementation plan both claim the real hook carries.  The chain says the real value is 0x2840 (BEFORE_INITIALIZE is set as well).  This address is therefore a hook the PoolManager would never call beforeAddLiquidity+beforeInitialize on, and it must be REJECTED with a detail naming the flag gate.  A gate built from the documented 0x840 would ADOPT this address and reject the real hook -- exactly backwards."
+  },
+  {
+   "fixture": "announce_adversarial_returns_delta.json",
+   "synthetic": true,
+   "request_sibling": null,
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": null,
+   "endpoint": null,
+   "note": "SUBSET-vs-EQUALITY ATTACK.  A self-post naming an address that sets every flag the real hook sets PLUS AFTER_SWAP_RETURNS_DELTA (1<<2).  A subset test ('does it have the flags we need?') lets it through the FLAG gate, and because this corpus's answers satisfy the rest of the fingerprint it is then ADOPTED end to end; the equality test the plan mandates rejects it at the flag gate.  A hook that returns a swap delta is a materially different contract -- it can take value out of the swap itself -- so this is the case that decides whether the gate is written with & or ==."
+  },
+  {
+   "fixture": "announce_adversarial_wrong_token.json",
+   "synthetic": true,
+   "request_sibling": null,
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": null,
+   "endpoint": null,
+   "note": "TOKEN ATTACK.  A self-post naming an address with the CORRECT flag word (0x2840) whose five getters all answer, but whose token() is a stranger's ERC-20 rather than mainnet IMD (0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7).  This is the most dangerous case in the set, because everything except the token identity checks out and the panel would render an attacker's pool as the protocol's.  Must be REJECTED with a detail naming token.  AMENDMENT A27 (2026-09-01): an earlier version of this note said the five answering getters made this 'a real hook-shaped contract'.  THEY DO NOT.  Four of the five are pure liveness checks that any contract passes, and token() is a value the candidate's own contract chooses -- which is why the whole fingerprint is forgeable and why PROVENANCE, not the fingerprint, is the gate that actually holds.  What this corpus demonstrates is narrower than it used to claim: given a candidate that already cleared provenance, the token gate is what separates the protocol's hook from a look-alike."
+  },
+  {
+   "fixture": "announce_adversarial_dead_getters.json",
+   "synthetic": true,
+   "request_sibling": null,
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": null,
+   "endpoint": null,
+   "note": "SILENT-CONTRACT ATTACK.  A self-post naming an address with the correct flag word whose every getter REVERTS -- a deployed contract with no such function and no fallback.  Must be REJECTED, and must never be mistaken for 'we could not read it, try again': an unreadable candidate is not an adopted one.  AMENDMENT A27 (2026-09-01): an earlier version of this note listed 'an EOA' among the causes.  IT IS NOT ONE, AND THIS CORPUS'S OWN rpc_error_states.json DISPROVES IT: an eth_call to an address with no code SUCCEEDS and returns '0x'.  An EOA is therefore the OPPOSITE case -- it answers every getter without erroring -- and it is caught by requiring a decodable word, not by noticing a revert.  A gate that only watches for reverts adopts the EOA."
+  },
+  {
+   "fixture": "announce_adversarial_many_candidates.json",
+   "synthetic": true,
+   "request_sibling": null,
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": null,
+   "endpoint": null,
+   "note": "FLOODING ATTACK.  One self-post carrying TWENTY address-shaped words, exactly one of which carries the real flag word.  The nineteen decoys must never reach a getter call: the flag gate is pure arithmetic on the address and runs BEFORE any network round trip, so a post like this costs one eth_call round, not twenty. A discovery path that verifies first and filters second turns the announce channel into an RPC amplifier.  AMENDMENT A16 (2026-09-01): an earlier version of this note implied all nineteen decoys defeat a SUBSET test.  They do not.  TEN of the nineteen (0x2847, 0x284e, 0x2855, 0x285c, 0x2863, 0x286a, 0x2871, 0x2878, 0x287f, 0x28c5) are supersets of 0x2840 and are the ones a subset gate would wrongly adopt; the other NINE (0x2886, 0x288d, 0x2894, 0x289b, 0x28a2, 0x28a9, 0x28b0, 0x28b7, 0x28be) clear a bit the hook sets, so a subset gate rejects them anyway and they only exercise the flood.  All nineteen fail the EQUALITY gate, which is the one the plan mandates.  See expected.decoys_defeating_a_subset_test."
+  },
+  {
+   "fixture": "announce_adversarial_markup.json",
+   "synthetic": true,
+   "request_sibling": null,
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": null,
+   "endpoint": null,
+   "note": "MARKUP / CONTROL-CHARACTER ATTACK.  Four self-posts: a valid address wrapped in Textual markup and an ANSI escape; a literal '0x' followed by forty characters of markup, which is address-SHAPED in length but is not hex and must yield no candidate; an address wrapped in bidi overrides (U+202E/U+202C), which reorder the rendered text without changing the bytes; and a post whose text is None.  Nothing here may raise, and the only candidate is the first post's address -- extracted, not the surrounding markup.  AMENDMENT A27 (2026-09-01) -- WHY, precisely, because the earlier note was right for a reason it never gave: the bidi-wrapped post yields no candidate ONLY because U+202E sits BETWEEN the '0x' and the hex, so a scanner reading raw text sees '0x' and forty hex digits as two separate tokens and matches neither.  A scanner that STRIPS control characters first would extract 0xdeadbeef...dead2840, which masks to 0x2840 and would reach a getter call.  That is the distinction this row exists to draw; either behaviour is defensible PROVIDED the rendered string is escaped, and what must never happen is extracting the address while rendering the reordered text.  Every string in this corpus must survive widgets/markup_safety.safe_markup and reach a Static as a pre-built rich.text.Text, per CLAUDE.md's SurfFeed._row_text rule."
+  },
+  {
+   "fixture": "discovery_persisted_hostile.json",
+   "synthetic": true,
+   "request_sibling": null,
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": null,
+   "endpoint": null,
+   "note": "A PERSISTED pool4 discovery payload, as it would sit in ~/.maxpane/, hand-edited to claim 'adopted'.  The claimed hook's low 14 bits are 0x0000 and its token() answer is a stranger's ERC-20, so it fails both the flag gate and the token gate.  Those are the fixture's contents; the test that reads it names what it demonstrates.\n\nAMENDMENT A27 (2026-09-01) -- WHAT THIS FIXTURE NO LONGER SHOWS.  An earlier version of this note said 'the manager must RE-VERIFY a persisted adoption on read'.  THAT DEFENCE HAS BEEN DELETED, not weakened.  WP7 removed the persisted address from the candidate set entirely and WP3 deleted reverify_persisted, so THE CACHE NOMINATES NOTHING AND A PERSISTED ADDRESS IS NEVER ADJUDICATED -- there is no verdict to re-verify, because there is no candidate.  The reason is that the fingerprint is FORGEABLE: a 0x2840-shaped address was mined in ~16,000 tries by the security pass and in 20,141 tries -- under a second -- by WP3, and fingerprint_verdict returns 'adopted' for such an address as soon as its own contract answers real mainnet IMD to token() and zero words to the rest, four of the five getters being pure liveness checks any contract passes.  The old promise held ONLY for this fixture's 0x0000 address; against an attacker who mines one it returned 'adopted'.  PROVENANCE -- a transaction signed by the announce wallet -- IS THE ONLY UNFORGEABLE GATE, and the persisted path was the one path that skipped it.  If the self-post naming the hook ever ages out of the channel window (~64 days, S15), the fix is to read more of the channel or to re-establish provenance from the chain, NEVER to re-nominate from storage."
+  }
+ ]
+}

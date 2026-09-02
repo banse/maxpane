@@ -1,0 +1,99 @@
+{
+ "captured_at": "2026-09-02T10:55:34.021313Z",
+ "chain": "mainnet",
+ "chain_id": 1,
+ "block_number": 25889144,
+ "block_hash": "0x9d1a496b8bdd9c3e7067aa81e03a0044e8844730117ce1fe971737100c0171de",
+ "block_tag": "0x18b0978",
+ "endpoint": "https://ethereum-rpc.publicnode.com",
+ "addresses": {
+  "hook": "0xc6c965bd164c483e87d0b550671798e9a3602840",
+  "vault": "0x9efa934d9fad4ae28c998a40195646b965a97247",
+  "distributor": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+  "dripper": "0xe6D3De6daEAf327fCA42745f1998FcD989e00884",
+  "burn_executor": "0xe29386719C155B6847aD5a4E97C6674f10ffc750",
+  "token": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+  "pool_manager": "0x000000000004444c5dc75cb358380d2e3de08a90"
+ },
+ "note": "The Reward Distributor -- NEW on mainnet, no Sepolia counterpart, and the reason the vault is three hops away rather than two.  vault() IS INCLUDED AND IS EXPECTED TO REVERT: it is the call the old two-hop path made, and its revert is precisely what stops the walk.  A fixture that omitted it could not replay the failure it exists to document.  The three-way split is stakingBps 3000 and nftBps 3000 with bonding as the DERIVED remainder (10000 - 3000 - 3000 = 4000) -- bonding has no getter of its own, so any 4000 in code must be a derivation, never a literal.",
+ "contract": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+ "call_names": {
+  "1": "stakingBps",
+  "2": "nftBps",
+  "3": "dripper",
+  "4": "asset",
+  "5": "owner",
+  "6": "stakingEarned",
+  "7": "bondingEarned",
+  "8": "nftEarned",
+  "9": "heldBonding",
+  "10": "heldNft",
+  "11": "vault"
+ },
+ "reverting_getters": [
+  "vault"
+ ],
+ "fixture": "mainnet_distributor_state",
+ "synthetic": false,
+ "response": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000bb8"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "result": "0x0000000000000000000000000000000000000000000000000000000000000bb8"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "result": "0x000000000000000000000000e6d3de6daeaf327fca42745f1998fcd989e00884"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "result": "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "result": "0x000000000000000000000000047f606fd5b2baa5f5c6c4ab8958e45cb6b054b7"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "result": "0x0000000000000000000000000000000000000000000000002bb36baf30ad11cf"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "result": "0x0000000000000000000000000000000000000000000000003a448f9440e6c26a"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 8,
+   "result": "0x0000000000000000000000000000000000000000000000002bb36baf30ad11d3"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 9,
+   "result": "0x0000000000000000000000000000000000000000000000003a448f9440e6c26a"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 10,
+   "result": "0x0000000000000000000000000000000000000000000000002bb36baf30ad11d3"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 11,
+   "error": {
+    "code": 3,
+    "message": "execution reverted",
+    "data": "0x"
+   }
+  }
+ ]
+}

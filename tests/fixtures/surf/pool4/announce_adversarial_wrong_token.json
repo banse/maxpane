@@ -1,0 +1,85 @@
+{
+ "synthetic": true,
+ "chain": "mainnet",
+ "announce": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+ "discovery_stages": {
+  "provenance": "candidate_addresses(rows): every address-shaped word in a SELF-POST (from_addr == to_addr == ANNOUNCE), EIP-55-normalised, deduplicated, order-preserving.  No flag arithmetic and no network round trip yet.",
+  "flag_filtered": "the provenance output narrowed by has_pool4_flags(), i.e. addr & 0x3fff == 0x2840.  These are the ONLY addresses that may reach an eth_call.",
+  "verdict": "fingerprint_verdict(addr, answers, expected_token) over the flag-filtered survivors: 'adopted' or 'rejected'."
+ },
+ "known_mainnet_imd": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+ "flag_reference": {
+  "hook_flag_mask": "0x3fff",
+  "pool4_flag_word": "0x2840",
+  "source": "hook_flags_reference.json (getHookPermissions on the live Sepolia hook) -- NOT the 0x840 in the docs"
+ },
+ "note": "TOKEN ATTACK.  A self-post naming an address with the CORRECT flag word (0x2840) whose five getters all answer, but whose token() is a stranger's ERC-20 rather than mainnet IMD (0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7).  This is the most dangerous case in the set, because everything except the token identity checks out and the panel would render an attacker's pool as the protocol's.  Must be REJECTED with a detail naming token.  AMENDMENT A27 (2026-09-01): an earlier version of this note said the five answering getters made this 'a real hook-shaped contract'.  THEY DO NOT.  Four of the five are pure liveness checks that any contract passes, and token() is a value the candidate's own contract chooses -- which is why the whole fingerprint is forgeable and why PROVENANCE, not the fingerprint, is the gate that actually holds.  What this corpus demonstrates is narrower than it used to claim: given a candidate that already cleared provenance, the token gate is what separates the protocol's hook from a look-alike.",
+ "attacker_addresses": {
+  "candidate": "0x5aFeB050e0000000000000000000000000002840",
+  "token_returned": "0x5AFe1DFa1DFa1dFA1dfa1dFA1dFa1dFA1DFA0000"
+ },
+ "rows": [
+  {
+   "ts": 1788361200.0,
+   "kind": "post",
+   "from_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "to_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "from_label": null,
+   "text": "the new hook is live: 0x5aFeB050e0000000000000000000000000002840",
+   "tx_hash": "0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "label": null,
+   "value_eth": 0.0
+  }
+ ],
+ "blockscout_items": [
+  {
+   "hash": "0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+   "from": {
+    "hash": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+    "ens_domain_name": null,
+    "is_contract": false,
+    "name": null
+   },
+   "to": {
+    "hash": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+    "ens_domain_name": null,
+    "is_contract": false,
+    "name": null
+   },
+   "raw_input": "0x746865206e657720686f6f6b206973206c6976653a20307835614665423035306530303030303030303030303030303030303030303030303030303032383430",
+   "value": "0",
+   "method": null,
+   "decoded_input": null,
+   "status": "ok",
+   "result": "success",
+   "timestamp": "2026-09-02T15:00:00.000000Z",
+   "block_number": 25800000
+  }
+ ],
+ "eth_call_answers": {
+  "0x5afeb050e0000000000000000000000000002840": {
+   "token": "0x0000000000000000000000005afe1dfa1dfa1dfa1dfa1dfa1dfa1dfa1dfa0000",
+   "rewardShareBps": "0x00000000000000000000000000000000000000000000000000000000000003e8",
+   "BPS_DENOMINATOR": "0x0000000000000000000000000000000000000000000000000000000000002710",
+   "burnSink": "0x000000000000000000000000000000000000000000000000000000000000dead",
+   "poolManager": "0x000000000000000000000000000000000004444c5dc75cb358380d2e3de08a90"
+  }
+ },
+ "expected": {
+  "candidates": [
+   "0x5aFeB050e0000000000000000000000000002840"
+  ],
+  "verdict_state": "rejected",
+  "verdict_detail_names": "token",
+  "discovery_state": "rejected",
+  "candidates_stage": "provenance",
+  "provenance_candidates": [
+   "0x5aFeB050e0000000000000000000000000002840"
+  ],
+  "flag_filtered_candidates": [
+   "0x5aFeB050e0000000000000000000000000002840"
+  ],
+  "stage_note": "this candidate clears BOTH the provenance and the flag stage -- the two lists coincide here, and the token gate is what rejects it"
+ },
+ "fixture": "announce_adversarial_wrong_token"
+}

@@ -1,0 +1,118 @@
+{
+ "url": "https://ethereum-sepolia-rpc.publicnode.com",
+ "method": "POST",
+ "headers": {
+  "Content-Type": "application/json",
+  "User-Agent": "maxpane-capture/1.0 (+https://pypi.org/project/maxpane)"
+ },
+ "body": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82",
+     "data": "0x18160ddd"
+    },
+    "0xb13746"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82",
+     "data": "0x313ce567"
+    },
+    "0xb13746"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82",
+     "data": "0x95d89b41"
+    },
+    "0xb13746"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82",
+     "data": "0x06fdde03"
+    },
+    "0xb13746"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82",
+     "data": "0x70a08231000000000000000000000000000000000000000000000000000000000000dead"
+    },
+    "0xb13746"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82",
+     "data": "0x70a082310000000000000000000000004dbe172254033aac3a3374fb10b422605b0b449b"
+    },
+    "0xb13746"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82",
+     "data": "0x70a082310000000000000000000000001600e14c663679c98b35b61e239f20792bb317cc"
+    },
+    "0xb13746"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 8,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82",
+     "data": "0x70a08231000000000000000000000000a1b997a9861b2b8ac17b4c615089ccc2a5416840"
+    },
+    "0xb13746"
+   ]
+  }
+ ],
+ "call_names": {
+  "1": "totalSupply",
+  "2": "decimals",
+  "3": "symbol",
+  "4": "name",
+  "5": "balanceOf_dead",
+  "6": "balanceOf_dripper",
+  "7": "balanceOf_vault",
+  "8": "balanceOf_hook"
+ },
+ "fixture": "token_state",
+ "captured_at": "2026-09-01T17:19:55.261037Z"
+}

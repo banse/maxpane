@@ -1,0 +1,147 @@
+{
+ "captured_at": "2026-09-02T10:56:17.193153Z",
+ "chain": "mainnet",
+ "chain_id": 1,
+ "block_number": 25889148,
+ "block_hash": "0x36805f51c4bd0e5d9386eff92ac0fefcb098e8cde99f642fe0e819c8b324f449",
+ "block_tag": "0x18b097c",
+ "endpoint": "https://ethereum-rpc.publicnode.com",
+ "call_names": {
+  "1": "hook.rewardsRecipient",
+  "2": "distributor.vault",
+  "3": "distributor.dripper",
+  "4": "dripper.vault",
+  "5": "vault.asset",
+  "6": "distributor.asset",
+  "7": "hook.token"
+ },
+ "note": "THE THREE-HOP VAULT PATH, captured hop by hop so the walk can be replayed rather than transcribed.  hook.rewardsRecipient() -> Distributor -> distributor.dripper() -> Dripper -> dripper.vault() -> sIMD.  distributor.vault() is included AND REVERTS; that revert is what stops the old two-hop walk, and a fixture without it could not reproduce the mainnet failure.  Every hop is a node ANSWERING WHAT IT IS -- no step assumes a shape.",
+ "walk": [
+  {
+   "step": "hook.rewardsRecipient",
+   "to": "0xc6c965bd164c483e87d0b550671798e9a3602840",
+   "calldata": "0xff2a7d30",
+   "why": "hop 1 -- the hook names its reward recipient.  On Sepolia this answered the Dripper; here it answers the DISTRIBUTOR.",
+   "reverted": false,
+   "error": null,
+   "result": "0x0000000000000000000000009046739e1535b40efbe6ab3f45d0024b690eca30",
+   "answer_address": "0x9046739e1535b40efbe6ab3f45d0024b690eca30"
+  },
+  {
+   "step": "distributor.vault",
+   "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+   "calldata": "0xfbfa77cf",
+   "why": "THE WALK-STOPPER.  The old two-hop path called vault() on whatever rewardsRecipient named.  The Distributor has no such method and this REVERTS -- which is why vault and dripper reads fail outright on mainnet until the walk learns the third hop.  Its presence in this fixture is the point.",
+   "reverted": true,
+   "error": {
+    "code": 3,
+    "message": "execution reverted",
+    "data": "0x"
+   },
+   "result": null,
+   "answer_address": null
+  },
+  {
+   "step": "distributor.dripper",
+   "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+   "calldata": "0x603ea03b",
+   "why": "hop 2 -- the Distributor names the Dripper.  This is the hop that did not exist on Sepolia.",
+   "reverted": false,
+   "error": null,
+   "result": "0x000000000000000000000000e6d3de6daeaf327fca42745f1998fcd989e00884",
+   "answer_address": "0xe6d3de6daeaf327fca42745f1998fcd989e00884"
+  },
+  {
+   "step": "dripper.vault",
+   "to": "0xe6D3De6daEAf327fCA42745f1998FcD989e00884",
+   "calldata": "0xfbfa77cf",
+   "why": "hop 3 -- the Dripper names the sIMD vault.",
+   "reverted": false,
+   "error": null,
+   "result": "0x0000000000000000000000009efa934d9fad4ae28c998a40195646b965a97247",
+   "answer_address": "0x9efa934d9fad4ae28c998a40195646b965a97247"
+  },
+  {
+   "step": "vault.asset",
+   "to": "0x9efa934d9fad4ae28c998a40195646b965a97247",
+   "calldata": "0x38d52e0f",
+   "why": "the walk closes: the vault's asset must be the same IMD the pool trades, or the path led somewhere else.",
+   "reverted": false,
+   "error": null,
+   "result": "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+   "answer_address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7"
+  },
+  {
+   "step": "distributor.asset",
+   "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+   "calldata": "0x38d52e0f",
+   "why": "corroboration -- the Distributor holds the same asset.",
+   "reverted": false,
+   "error": null,
+   "result": "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+   "answer_address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7"
+  },
+  {
+   "step": "hook.token",
+   "to": "0xc6c965bd164c483e87d0b550671798e9a3602840",
+   "calldata": "0xfc0c546a",
+   "why": "the anchor the whole walk must agree with.",
+   "reverted": false,
+   "error": null,
+   "result": "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+   "answer_address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7"
+  }
+ ],
+ "expected": {
+  "hops": 3,
+  "distributor_vault_reverts": true,
+  "path": [
+   "hook.rewardsRecipient",
+   "distributor.dripper",
+   "dripper.vault"
+  ]
+ },
+ "fixture": "mainnet_vault_path",
+ "synthetic": false,
+ "response": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "result": "0x0000000000000000000000009046739e1535b40efbe6ab3f45d0024b690eca30"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "error": {
+    "code": 3,
+    "message": "execution reverted",
+    "data": "0x"
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "result": "0x000000000000000000000000e6d3de6daeaf327fca42745f1998fcd989e00884"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "result": "0x0000000000000000000000009efa934d9fad4ae28c998a40195646b965a97247"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "result": "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "result": "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "result": "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7"
+  }
+ ]
+}

@@ -1,0 +1,157 @@
+{
+ "synthetic": true,
+ "chain": "mainnet",
+ "announce": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+ "discovery_stages": {
+  "provenance": "candidate_addresses(rows): every address-shaped word in a SELF-POST (from_addr == to_addr == ANNOUNCE), EIP-55-normalised, deduplicated, order-preserving.  No flag arithmetic and no network round trip yet.",
+  "flag_filtered": "the provenance output narrowed by has_pool4_flags(), i.e. addr & 0x3fff == 0x2840.  These are the ONLY addresses that may reach an eth_call.",
+  "verdict": "fingerprint_verdict(addr, answers, expected_token) over the flag-filtered survivors: 'adopted' or 'rejected'."
+ },
+ "known_mainnet_imd": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+ "flag_reference": {
+  "hook_flag_mask": "0x3fff",
+  "pool4_flag_word": "0x2840",
+  "source": "hook_flags_reference.json (getHookPermissions on the live Sepolia hook) -- NOT the 0x840 in the docs"
+ },
+ "note": "MARKUP / CONTROL-CHARACTER ATTACK.  Four self-posts: a valid address wrapped in Textual markup and an ANSI escape; a literal '0x' followed by forty characters of markup, which is address-SHAPED in length but is not hex and must yield no candidate; an address wrapped in bidi overrides (U+202E/U+202C), which reorder the rendered text without changing the bytes; and a post whose text is None.  Nothing here may raise, and the only candidate is the first post's address -- extracted, not the surrounding markup.  AMENDMENT A27 (2026-09-01) -- WHY, precisely, because the earlier note was right for a reason it never gave: the bidi-wrapped post yields no candidate ONLY because U+202E sits BETWEEN the '0x' and the hex, so a scanner reading raw text sees '0x' and forty hex digits as two separate tokens and matches neither.  A scanner that STRIPS control characters first would extract 0xdeadbeef...dead2840, which masks to 0x2840 and would reach a getter call.  That is the distinction this row exists to draw; either behaviour is defensible PROVIDED the rendered string is escaped, and what must never happen is extracting the address while rendering the reordered text.  Every string in this corpus must survive widgets/markup_safety.safe_markup and reach a Static as a pre-built rich.text.Text, per CLAUDE.md's SurfFeed._row_text rule.",
+ "attacker_addresses": {
+  "valid": "0x5AfE00d00C000000000000000000000000002840",
+  "bidi_wrapped": "0xdeadbeefdeadbeefdeadbeefdeadbeefdead2840"
+ },
+ "rows": [
+  {
+   "ts": 1788361200.0,
+   "kind": "post",
+   "from_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "to_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "from_label": null,
+   "text": "[/x] hook at [$warning]0x5AfE00d00C000000000000000000000000002840[/] see \u0007\u001b[31m",
+   "tx_hash": "0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+   "label": null,
+   "value_eth": 0.0
+  },
+  {
+   "ts": 1788361260.0,
+   "kind": "post",
+   "from_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "to_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "from_label": null,
+   "text": "0x[/x][/x][/x][/x][/x][/x][/x][/x][/x][/x]  <- forty characters of markup, not an address",
+   "tx_hash": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b",
+   "label": null,
+   "value_eth": 0.0
+  },
+  {
+   "ts": 1788361320.0,
+   "kind": "post",
+   "from_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "to_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "from_label": null,
+   "text": "0x\u202edeadbeefdeadbeefdeadbeefdeadbeefdead2840\u202c",
+   "tx_hash": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c",
+   "label": null,
+   "value_eth": 0.0
+  },
+  {
+   "ts": 1788361380.0,
+   "kind": "post",
+   "from_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "to_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "from_label": null,
+   "text": null,
+   "tx_hash": "0x1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d",
+   "label": null,
+   "value_eth": 0.0
+  }
+ ],
+ "blockscout_items": [
+  {
+   "hash": "0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+   "from": {
+    "hash": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+    "ens_domain_name": null,
+    "is_contract": false,
+    "name": null
+   },
+   "to": {
+    "hash": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+    "ens_domain_name": null,
+    "is_contract": false,
+    "name": null
+   },
+   "raw_input": "0x5b2f785d20686f6f6b206174205b247761726e696e675d3078354166453030643030433030303030303030303030303030303030303030303030303030323834305b2f5d2073656520071b5b33316d",
+   "value": "0",
+   "method": null,
+   "decoded_input": null,
+   "status": "ok",
+   "result": "success",
+   "timestamp": "2026-09-02T15:00:00.000000Z",
+   "block_number": 25800000
+  },
+  {
+   "hash": "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b",
+   "from": {
+    "hash": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+    "ens_domain_name": null,
+    "is_contract": false,
+    "name": null
+   },
+   "to": {
+    "hash": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+    "ens_domain_name": null,
+    "is_contract": false,
+    "name": null
+   },
+   "raw_input": "0x30785b2f785d5b2f785d5b2f785d5b2f785d5b2f785d5b2f785d5b2f785d5b2f785d5b2f785d5b2f785d20203c2d20666f7274792063686172616374657273206f66206d61726b75702c206e6f7420616e2061646472657373",
+   "value": "0",
+   "method": null,
+   "decoded_input": null,
+   "status": "ok",
+   "result": "success",
+   "timestamp": "2026-09-02T15:01:00.000000Z",
+   "block_number": 25800000
+  },
+  {
+   "hash": "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c",
+   "from": {
+    "hash": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+    "ens_domain_name": null,
+    "is_contract": false,
+    "name": null
+   },
+   "to": {
+    "hash": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+    "ens_domain_name": null,
+    "is_contract": false,
+    "name": null
+   },
+   "raw_input": "0x3078e280ae64656164626565666465616462656566646561646265656664656164626565666465616432383430e280ac",
+   "value": "0",
+   "method": null,
+   "decoded_input": null,
+   "status": "ok",
+   "result": "success",
+   "timestamp": "2026-09-02T15:02:00.000000Z",
+   "block_number": 25800000
+  }
+ ],
+ "eth_call_answers": {
+  "0x5afe00d00c000000000000000000000000002840": {
+   "token": "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+   "rewardShareBps": "0x00000000000000000000000000000000000000000000000000000000000003e8",
+   "BPS_DENOMINATOR": "0x0000000000000000000000000000000000000000000000000000000000002710",
+   "burnSink": "0x000000000000000000000000000000000000000000000000000000000000dead",
+   "poolManager": "0x000000000000000000000000000000000004444c5dc75cb358380d2e3de08a90"
+  }
+ },
+ "expected": {
+  "candidates_must_include": [
+   "0x5AfE00d00C000000000000000000000000002840"
+  ],
+  "must_not_raise": true,
+  "markup_word_is_not_a_candidate": true,
+  "candidates_stage": "provenance",
+  "stage_note": "a lower bound, not an exact list: the point is that nothing raises and that the markup run is not mistaken for an address"
+ },
+ "fixture": "announce_adversarial_markup"
+}

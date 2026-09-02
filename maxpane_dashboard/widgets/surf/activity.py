@@ -87,11 +87,13 @@ rather than cut to fit.
 
 from __future__ import annotations
 
+from rich.cells import cell_len
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
     as_float,
@@ -129,8 +131,10 @@ TITLE = "DEV ACTIVITY"
 _STAMP_COLS = 11
 _STAMP_SHORT_COLS = 5
 
-#: The gap between two cells.
-_GAP = 2
+#: The gap between two cells.  Shared machinery: it lives in
+#: ``widgets/surf/_rowfit.py`` and is re-exported here under the name this
+#: module's own tests and docstrings have always used.
+_GAP = _rowfit.GAP
 
 #: ``wallet_label`` cell: the widest member of the producer's *whole*
 #: vocabulary, ``surf_client._DEV_WALLET_LABELS`` == ``{"dev", "ops"}``, and
@@ -257,18 +261,19 @@ def _tier_for(width: int) -> str:
     ``full``; :meth:`SurfDevActivity.on_resize` re-lays it out once it has a
     size.
     """
-    if width <= 0 or width >= FULL_WIDTH:
-        return "full"
-    if width >= COMPACT_WIDTH:
-        return "compact"
-    return "minimal"
+    return _rowfit.tier_for(
+        width,
+        (("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("minimal", 0)),
+    )
 
 
 def _row_cols(tier: str, stamp_cols: int, wallet_cols: int, who_cols: int,
               amount_cols: int) -> int:
     """Rendered width of a row made of exactly these cells.
 
-    **A cell of zero width is absent, and an absent cell takes its ``_GAP``
+    This panel's four cells, handed to the shared
+    :func:`~widgets.surf._rowfit.row_cols` -- which is where the rule lives:
+    **a cell of zero width is absent, and an absent cell takes its ``_GAP``
     with it.**  That is the arithmetic :func:`_budget` used to get wrong: it
     charged the row for both gaps unconditionally and never re-measured the
     result, so dropping the wallet cell neither freed the gap it had been
@@ -276,19 +281,17 @@ def _row_cols(tier: str, stamp_cols: int, wallet_cols: int, who_cols: int,
     what that cost on screen.
 
     The amount carries its own two leading spaces (see :func:`_row_fields`),
-    so it is added rather than joined.
+    so it is passed as ``trailing`` and added rather than joined.
     """
-    present = [
-        cols
-        for cols in (
+    return _rowfit.row_cols(
+        (
             stamp_cols,
             wallet_cols,
             _KIND_COLS if tier != "minimal" else 0,
             who_cols,
-        )
-        if cols
-    ]
-    return sum(present) + _GAP * (len(present) - 1) + amount_cols
+        ),
+        amount_cols,
+    )
 
 
 def _budget(tier: str, width: int, stamp_cols: int, who: str, known: bool,
@@ -296,7 +299,9 @@ def _budget(tier: str, width: int, stamp_cols: int, who: str, known: bool,
             keep_stamp: bool = True) -> tuple[bool, int, str]:
     """Fit one row to ``width``; returns ``(keep_stamp, wallet_cols, who)``.
 
-    Order of sacrifice, after the tier has already dropped whole columns:
+    This panel's cells, handed to the shared
+    :func:`~widgets.surf._rowfit.budget`.  Order of sacrifice, after the tier
+    has already dropped whole columns:
 
     1. a **known** label is cut with a visible ``…`` (down to
        ``_MIN_LABEL_COLS``) -- it is descriptive text;
@@ -319,22 +324,14 @@ def _budget(tier: str, width: int, stamp_cols: int, who: str, known: bool,
 
     ``width <= 0`` (not laid out yet) leaves everything at its natural size.
     """
-    if width <= 0:
-        return keep_stamp, wallet_cols, who
 
-    def needed(who_cols: int) -> int:
-        return _row_cols(tier, stamp_cols if keep_stamp else 0, wallet_cols,
+    def needed(who_cols: int, wallet: int, stamp: bool) -> int:
+        return _row_cols(tier, stamp_cols if stamp else 0, wallet,
                          who_cols, amount_cols)
 
-    over = needed(len(who)) - width
-    if over > 0 and known and len(who) > _MIN_LABEL_COLS:
-        room = max(len(who) - over, _MIN_LABEL_COLS)
-        who = who[: room - 1] + "…"
-    if needed(len(who)) > width:
-        wallet_cols = 0
-    if needed(len(who)) > width:
-        keep_stamp = False
-    return keep_stamp, wallet_cols, who
+    return _rowfit.budget(
+        width, who, known, needed, wallet_cols, keep_stamp, _MIN_LABEL_COLS,
+    )
 
 #: Mirrors ``surf_client._DUST_WEI = 10**9`` (1 gwei), converted to the ETH
 #: float unit this row's ``value_eth`` field carries -- ``value_eth`` is
@@ -431,12 +428,12 @@ def _row_markup(row, tier: str = "full", width: int = 0,
     try:
         stamp, label, kind, who, known, amount = fields
         keep_stamp, wallet_cols, who = _budget(
-            tier, width, len(stamp), who, known, len(amount),
+            tier, width, cell_len(stamp), who, known, cell_len(amount),
             wallet_cols, keep_stamp,
         )
         cols = _row_cols(
-            tier, len(stamp) if keep_stamp else 0, wallet_cols, len(who),
-            len(amount),
+            tier, cell_len(stamp) if keep_stamp else 0, wallet_cols,
+            cell_len(who), cell_len(amount),
         )
         if 0 < width < cols:
             # Every field that may be shed has been, and the row is still
@@ -450,11 +447,19 @@ def _row_markup(row, tier: str = "full", width: int = 0,
             cells.append(stamp)
         if wallet_cols:
             cells.append(
-                f"[bold]{safe_markup(f'{label[:wallet_cols]:<{wallet_cols}}')}[/]"
+                "[bold]"
+                + safe_markup(
+                    _rowfit.pad(_rowfit.clip(label, wallet_cols), wallet_cols)
+                )
+                + "[/]"
             )
         if tier != "minimal":
             cells.append(
-                f"[dim]{safe_markup(f'{kind[:_KIND_COLS]:<{_KIND_COLS}}')}[/]"
+                "[dim]"
+                + safe_markup(
+                    _rowfit.pad(_rowfit.clip(kind, _KIND_COLS), _KIND_COLS)
+                )
+                + "[/]"
             )
         colour = "cyan" if known else "dim"
         cells.append(f"[{colour}]{safe_markup(who)}[/]")
@@ -565,7 +570,9 @@ class SurfDevActivity(Vertical):
         placed = not hint
         if hint:
             for candidate in (hint, SHORT_HINT):
-                if not width or len(TITLE) + 2 + len(candidate) <= width:
+                if not width or (
+                    cell_len(TITLE) + 2 + cell_len(candidate) <= width
+                ):
                     text += f"  [yellow]{candidate}[/]"
                     placed = True
                     break
@@ -615,7 +622,8 @@ class SurfDevActivity(Vertical):
         # afford one, so the counterparty column moved between two adjacent
         # lines.  The most constrained row sets the layout for all of them.
         plans = [
-            _budget(tier, width, len(stamp), who, known, len(amount))
+            _budget(tier, width, cell_len(stamp), who, known,
+                    cell_len(amount))
             for stamp, _label, _kind, who, known, amount in showable
         ]
         keep_stamp = all(plan[0] for plan in plans)

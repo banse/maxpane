@@ -1,0 +1,157 @@
+{
+ "url": "https://ethereum-rpc.publicnode.com",
+ "method": "POST",
+ "headers": {
+  "Content-Type": "application/json",
+  "User-Agent": "maxpane-capture/1.0 (+https://pypi.org/project/maxpane)"
+ },
+ "body": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0xe16314b5"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0xde6bb276"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0x603ea03b"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0x38d52e0f"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0x8da5cb5b"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0x080348e4"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0x4985a39e"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 8,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0x4c110e71"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 9,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0x2915416e"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 10,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0x8d9f2fff"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 11,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0xfbfa77cf"
+    },
+    "0x18b0978"
+   ]
+  }
+ ],
+ "call_names": {
+  "1": "stakingBps",
+  "2": "nftBps",
+  "3": "dripper",
+  "4": "asset",
+  "5": "owner",
+  "6": "stakingEarned",
+  "7": "bondingEarned",
+  "8": "nftEarned",
+  "9": "heldBonding",
+  "10": "heldNft",
+  "11": "vault"
+ },
+ "fixture": "mainnet_distributor_state",
+ "captured_at": "2026-09-02T10:55:34.021313Z"
+}

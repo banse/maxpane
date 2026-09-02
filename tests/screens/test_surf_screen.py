@@ -21,7 +21,7 @@ import pytest
 from textual.app import App
 
 from maxpane_dashboard import __version__
-from maxpane_dashboard.data.surf_models import SURF_KEYS
+from maxpane_dashboard.data.surf_models import POOL4_KEYS, SURF_KEYS
 from maxpane_dashboard.screens.surf import (
     INITIAL_TITLE,
     LAUNCHPAD_BODY_ID,
@@ -29,8 +29,14 @@ from maxpane_dashboard.screens.surf import (
     LAUNCHPAD_RAIL_ID,
     MODE_DASHBOARD,
     MODE_LAUNCHPAD,
+    MODE_POOL4,
+    POOL4_BODY_ID,
+    POOL4_LEFT_ID,
+    POOL4_RAIL_ID,
     SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS,
     SURF_LAUNCHPAD_FULL_LAYOUT_ROWS,
+    SURF_POOL4_FULL_LAYOUT_COLUMNS,
+    SURF_POOL4_FULL_LAYOUT_ROWS,
     TALLER_HINT,
     SurfScreen,
 )
@@ -51,6 +57,11 @@ from maxpane_dashboard.widgets.surf import (
     SurfLaunchpadCoins,
     SurfMarket,
     SurfNft,
+    SurfPool4Flow,
+    SurfPool4Hatches,
+    SurfPool4Ratchet,
+    SurfPool4Split,
+    SurfPool4Vault,
     SurfSignals,
 )
 
@@ -84,6 +95,21 @@ _LAUNCHPAD_WIDGET_CLASSES = {
     "SurfBurnkeepers": SurfBurnkeepers,
 }
 
+#: The ``p`` POOL4 body's five widgets (2026-09-01).  A **third** role dict
+#: rather than five more entries in the launchpad one, for that dict's own
+#: reason: these two bodies are composed hidden alongside each other and only
+#: one of them can be showing, so "which body is this panel in" is a fact no
+#: introspection can recover and every geometry assertion below needs.
+#:
+#: In left-then-rail, top-to-bottom order, which is also the ``compose`` order.
+_POOL4_WIDGET_CLASSES = {
+    "SurfPool4Split": SurfPool4Split,
+    "SurfPool4Ratchet": SurfPool4Ratchet,
+    "SurfPool4Flow": SurfPool4Flow,
+    "SurfPool4Hatches": SurfPool4Hatches,
+    "SurfPool4Vault": SurfPool4Vault,
+}
+
 #: Both halves together -- **derived from the package**, not from the two
 #: dicts above.  The two dicts have to stay hand-typed: they encode a *role*
 #: ("always mounted and visible" vs "composed hidden until ``l``") that no
@@ -107,17 +133,27 @@ _ALL_WIDGET_CLASSES = _exported_widget_classes()
 
 
 def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
-    """Neither role dict may quietly stop naming a widget the package ships.
+    """No role dict may quietly stop naming a widget the package ships.
 
     The derivation above is what keeps the dispatch sweeps total; this is
-    what keeps the *roles* total. A widget in the package and in neither dict
+    what keeps the *roles* total. A widget in the package and in no dict
     is either an unrendered panel or an untested visibility rule, and both
     read as green today.
+
+    **Three dicts since 2026-09-01, and the pairwise-disjointness check is
+    written over the list rather than as one more ``&``.** Spelling it out per
+    pair was already the shape that would rot: a fourth body would add three
+    more comparisons and the one somebody forgot would be the hole.
     """
-    assert (_WIDGET_CLASSES.keys() | _LAUNCHPAD_WIDGET_CLASSES.keys()) == \
-        _ALL_WIDGET_CLASSES.keys()
-    assert not (_WIDGET_CLASSES.keys() & _LAUNCHPAD_WIDGET_CLASSES.keys())
-    assert len(_ALL_WIDGET_CLASSES) >= 9
+    roles = (_WIDGET_CLASSES, _LAUNCHPAD_WIDGET_CLASSES, _POOL4_WIDGET_CLASSES)
+    union: set[str] = set()
+    for dict_ in roles:
+        assert not (union & dict_.keys()), (
+            f"a widget is in two role dicts at once: {union & dict_.keys()}"
+        )
+        union |= dict_.keys()
+    assert union == _ALL_WIDGET_CLASSES.keys()
+    assert len(_ALL_WIDGET_CLASSES) >= 16
 
 #: The WP3<->WP5 dispatch contract: exactly the PRD §5 key groups.  Local copy
 #: until WP0 exports SURF_WIDGET_SIGNATURES beside SURF_KEYS (open issue) --
@@ -272,6 +308,158 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
     "SurfBurnkeepers": {
         "launchpad_burnkeepers": "launchpad_burnkeepers",
         "launchpad_as_of_hhmm": "as_of_hhmm",
+    },
+    # -- the p POOL4 body's five panels (2026-09-01) ----------------------
+    #
+    # EVERY kwarg is the contract key verbatim, ``pool4_as_of_hhmm``
+    # included, and that is a deliberate departure from the launchpad panels
+    # one block up rather than an inconsistency. Those five spell the shared
+    # clock ``as_of_hhmm`` and are excused by
+    # ``tests/widgets/test_surf_widget_contract._PREFIXED_KWARG_ALIASES``,
+    # which maps ONE kwarg name onto ONE contract key. A second body whose
+    # panels also took ``as_of_hhmm`` would make that one name stand for
+    # ``launchpad_as_of_hhmm`` on five widgets and ``pool4_as_of_hhmm`` on
+    # five others, at which point the alias proves nothing about either.
+    # ``test_no_pool4_widget_needs_a_kwarg_alias`` pins the decision.
+    #
+    # FOUR keys here reach more than one panel, and the two groups are
+    # there for opposite reasons.
+    #
+    # ``pool4_network`` and ``pool4_as_of_hhmm`` are on all FIVE: every
+    # title carries the network word (plan section 5 R4: a testnet number on
+    # an unmarked panel is fiction presented as live) and every panel
+    # carries the tier's own slower clock.
+    #
+    # ``pool4_reward_path`` and ``pool4_distributor_addr`` are on exactly
+    # TWO -- THE SPLIT and HATCHES -- and that count is pinned, not merely
+    # permitted, by ``test_the_reward_topology_reaches_exactly_two_panels``
+    # below and by WP0's contract-side
+    # ``test_each_scalar_key_has_exactly_one_renderer_apart_from_the_two_
+    # shared_ones``. One topology fact, on the two panels that would
+    # otherwise disagree about it: SPLIT has to know WHICH leg the measured
+    # stakers percentage is (mainnet's 15% reward share against the 4.5%
+    # staker share is a 3x error), and HATCHES renders the trust surface the
+    # extra Distributor hop adds. A third panel acquiring it would be a
+    # second place for the topology to be stated and so a second place for
+    # it to disagree with itself.
+    #
+    # This comment said the two shared keys were "the only two keys here
+    # that more than one panel renders" until 2026-09-02, which was true
+    # when it was written and stopped being true when mainnet's Distributor
+    # split the reward path. Recorded rather than silently corrected: WP4
+    # asked whether the topology's two panels collided with an assertion
+    # somewhere, and the answer was that no assertion said so -- only this
+    # comment did.
+    "SurfPool4Hatches": {
+        "pool4_hatches": "pool4_hatches",
+        "pool4_network": "pool4_network",
+        "pool4_discovery_state": "pool4_discovery_state",
+        "pool4_discovery_detail": "pool4_discovery_detail",
+        # S18: the citation is its own key, never merged into the detail.
+        # WP0's `POOL4_WIDGET_SIGNATURES` is the authority; this copy is the
+        # redundant one and the agreement test is what makes keeping both
+        # worth it -- deriving either would compare a constant with itself.
+        "pool4_discovery_source_tx": "pool4_discovery_source_tx",
+        # WHICH source the adoption came from -- a disclosure key: the docs
+        # site is a weaker provenance than a dev-signed announce post and
+        # must identify itself as such.
+        "pool4_discovery_source": "pool4_discovery_source",
+        # The topology, second of exactly two panels.
+        "pool4_reward_path": "pool4_reward_path",
+        "pool4_distributor_addr": "pool4_distributor_addr",
+        "pool4_hook_addr": "pool4_hook_addr",
+        "pool4_token_addr": "pool4_token_addr",
+        "pool4_vault_addr": "pool4_vault_addr",
+        "pool4_dripper_addr": "pool4_dripper_addr",
+        "pool4_as_of_hhmm": "pool4_as_of_hhmm",
+    },
+    "SurfPool4Flow": {
+        "pool4_flow": "pool4_flow",
+        "pool4_network": "pool4_network",
+        "pool4_as_of_hhmm": "pool4_as_of_hhmm",
+    },
+    "SurfPool4Split": {
+        "pool4_network": "pool4_network",
+        "pool4_measured_inference_pct": "pool4_measured_inference_pct",
+        "pool4_measured_burn_pct": "pool4_measured_burn_pct",
+        "pool4_measured_stakers_pct": "pool4_measured_stakers_pct",
+        "pool4_reward_share_bps": "pool4_reward_share_bps",
+        "pool4_bps_denominator": "pool4_bps_denominator",
+        "pool4_split_drift_bps": "pool4_split_drift_bps",
+        "pool4_total_burned": "pool4_total_burned",
+        "pool4_total_rewarded": "pool4_total_rewarded",
+        "pool4_total_fee_token": "pool4_total_fee_token",
+        "pool4_retained_eth": "pool4_retained_eth",
+        "pool4_last_claim_block": "pool4_last_claim_block",
+        "pool4_unsettled_burn": "pool4_unsettled_burn",
+        "pool4_unsettled_stakers": "pool4_unsettled_stakers",
+        # The counter reconciliation (W1, 2026-09-02). `None` on the state
+        # means the check has NEVER RUN, which is not the same claim as its
+        # own `"unchecked"` member -- so it is dispatched rather than
+        # defaulted, and this map is what pins that it reaches a widget at
+        # all. The contract-side copy lives in
+        # `tests/data/test_surf_pool4_models.POOL4_WIDGET_SIGNATURES`; the
+        # two are meant to stay redundant and hand-typed, because deriving
+        # either from the other would make the agreement test compare a
+        # constant against itself.
+        "pool4_counter_state": "pool4_counter_state",
+        "pool4_counter_detail": "pool4_counter_detail",
+        # The mainnet three-way reward split (2026-09-02). `pool4_reward_path`
+        # goes to exactly TWO panels -- this one and HATCHES -- and WP0's
+        # `POOL4_WIDGET_SIGNATURES` pins that count, so a third panel picking
+        # it up shows as a disagreement between the two copies rather than as
+        # nothing at all.
+        "pool4_reward_path": "pool4_reward_path",
+        "pool4_distributor_addr": "pool4_distributor_addr",
+        "pool4_distributor_staking_bps": "pool4_distributor_staking_bps",
+        "pool4_distributor_nodes_bps": "pool4_distributor_nodes_bps",
+        # The REMAINDER, not a getter: 10000 - staking - nodes. Named here
+        # because a fixture that hardcodes 4000 asserts a number the chain
+        # never returned.
+        "pool4_distributor_bonding_bps": "pool4_distributor_bonding_bps",
+        "pool4_distributor_staking_earned": "pool4_distributor_staking_earned",
+        "pool4_distributor_nodes_earned": "pool4_distributor_nodes_earned",
+        "pool4_distributor_bonding_earned": "pool4_distributor_bonding_earned",
+        "pool4_distributor_held_nodes": "pool4_distributor_held_nodes",
+        "pool4_distributor_held_bonding": "pool4_distributor_held_bonding",
+        "pool4_as_of_hhmm": "pool4_as_of_hhmm",
+    },
+    "SurfPool4Ratchet": {
+        "pool4_network": "pool4_network",
+        "pool4_tokens_in_pool": "pool4_tokens_in_pool",
+        "pool4_cap_floor": "pool4_cap_floor",
+        # The inventory ceiling. ⚠ `pool4_cap_headroom` is cap − reserve
+        # where `pool4_floor_distance` is reserve − floor: the operand order
+        # flips so both read positive when healthy, and reversing it renders
+        # a binding cap as slack.
+        "pool4_inventory_cap": "pool4_inventory_cap",
+        "pool4_cap_headroom": "pool4_cap_headroom",
+        "pool4_cap_decay_per_day": "pool4_cap_decay_per_day",
+        "pool4_floor_distance": "pool4_floor_distance",
+        "pool4_floor_distance_pct": "pool4_floor_distance_pct",
+        "pool4_burned_supply_pct": "pool4_burned_supply_pct",
+        "pool4_total_supply": "pool4_total_supply",
+        "pool4_reserve_series": "pool4_reserve_series",
+        "pool4_eth_in_pool": "pool4_eth_in_pool",
+        "pool4_position_liquidity": "pool4_position_liquidity",
+        "pool4_current_tick": "pool4_current_tick",
+        "pool4_ref_tick": "pool4_ref_tick",
+        "pool4_backstop_centred": "pool4_backstop_centred",
+        "pool4_as_of_hhmm": "pool4_as_of_hhmm",
+    },
+    "SurfPool4Vault": {
+        "pool4_network": "pool4_network",
+        "pool4_share_price": "pool4_share_price",
+        "pool4_share_price_delta_pct": "pool4_share_price_delta_pct",
+        "pool4_vault_assets": "pool4_vault_assets",
+        "pool4_vault_shares": "pool4_vault_shares",
+        "pool4_drip_per_day": "pool4_drip_per_day",
+        "pool4_drippable": "pool4_drippable",
+        "pool4_can_drip": "pool4_can_drip",
+        "pool4_backlog_imd": "pool4_backlog_imd",
+        "pool4_backlog_days": "pool4_backlog_days",
+        "pool4_implied_apr_pct": "pool4_implied_apr_pct",
+        "pool4_as_of_hhmm": "pool4_as_of_hhmm",
     },
 }
 
@@ -779,7 +967,276 @@ def _sample_data() -> dict:
             },
         ],
         "launchpad_as_of_hhmm": "01:14",
+        # -- pool4 (`p` view, its own detached tier and its own slower clock)
+        #
+        # The **undiscovered Sepolia** state, which plan section 5 R4 calls
+        # the primary path rather than the edge case: there is no pool4 hook
+        # on mainnet, so what actually executes on the day this ships is
+        # discovery finding nothing, `pool4_network == "SEPOLIA"`, and five
+        # panel titles saying so over testnet numbers. Every screen test in
+        # this file therefore measures that state by default, and the
+        # adopted-mainnet one is an override where a test needs it.
+        #
+        # Values are the Sepolia launch-3 deployment's own shapes (the hook,
+        # token, vault and dripper addresses are `surf_manager`'s vendored
+        # constants and the dripper's own read), at magnitudes the mechanics
+        # doc records. `pool4_split_drift_bps` is `0.0` -- the *healthy*
+        # value, and a representable zero rather than a dash, which is the
+        # single most likely thing for this panel to get wrong.
+        "pool4_network": "SEPOLIA",
+        "pool4_as_of_hhmm": "14:32",
+        "pool4_discovery_state": "not-discovered",
+        "pool4_discovery_detail":
+            "no self-post in the announce channel names a pool4 hook",
+        # Deliberately absent, and deliberately NOT filled to close the
+        # value-check blind spot the counter keys above were filled to close:
+        # on the undiscovered path there is no adoption, so there is no
+        # transaction to cite, and `None` is the honest state rather than a
+        # missing read. Inventing a hash here to make one more mutation bite
+        # would trade a true fixture for a test convenience. The key's own
+        # dispatch is covered on the adopted path instead, by
+        # `test_the_adopted_discovery_detail_does_not_move_the_pool4_pin`.
+        "pool4_discovery_source_tx": None,
+        "pool4_hook_addr": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+        "pool4_token_addr": "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82",
+        "pool4_vault_addr": "0x1600E1c4bE0aB0d1f4a0a2f0eFb1c0d2E3f417cc",
+        "pool4_dripper_addr": "0x4dBE1782b0aC0dE1f2a3B4c5D6e7F8a9B0c1449B",
+        "pool4_measured_inference_pct": 1.004,
+        "pool4_measured_burn_pct": 89.102,
+        "pool4_measured_stakers_pct": 9.894,
+        "pool4_reward_share_bps": 990,
+        "pool4_bps_denominator": 10_000,
+        "pool4_split_drift_bps": 0.0,
+        "pool4_total_burned": 102_030_338.5414,
+        "pool4_total_rewarded": 1_234_567.25,
+        "pool4_total_fee_token": 1_122_334.5,
+        # A real, measured zero: the owner has withdrawn everything ever
+        # collected, which amendment A9 records as correct behaviour rather
+        # than a mismatch. A dash here would report an outage.
+        "pool4_retained_eth": 0.0,
+        "pool4_last_claim_block": 8_123_456,
+        # The outstanding legs the corpus actually carries (amendment A20:
+        # round to two decimals, NOT round to the wei).
+        "pool4_unsettled_burn": 267_300.0,
+        "pool4_unsettled_stakers": 29_700.0,
+        "pool4_tokens_in_pool": 152_030_338.5414,
+        "pool4_cap_floor": 50_000_000.0,
+        "pool4_floor_distance": 102_030_338.5414,
+        "pool4_floor_distance_pct": 204.06,
+        "pool4_burned_supply_pct": 3.24,
+        "pool4_total_supply": 1_000_000_000.0,
+        "pool4_reserve_series": [
+            [float(i), 150_000_000.0 + i * 1000] for i in range(20)
+        ],
+        "pool4_eth_in_pool": 0.0057231,
+        "pool4_position_liquidity": 1.2345e19,
+        "pool4_current_tick": -34_567,
+        "pool4_ref_tick": -34_000,
+        "pool4_backstop_centred": True,
+        # A14: the vault reports 24 decimals, so the share price is
+        # `convertToAssets(10 ** decimals) / 1e18` and the share count is
+        # `raw / 10 ** decimals`. Both of the WRONG forms render as entirely
+        # plausible numbers (0.0000013 IMD/share; 21 billion sIMD), so the
+        # magnitudes here are the corrected ones and the cross-check holds:
+        # 27,377.00 / 21,010.98 = 1.302986.
+        "pool4_share_price": 1.302986,
+        "pool4_share_price_delta_pct": 0.1234,
+        "pool4_vault_assets": 27_377.0,
+        "pool4_vault_shares": 21_010.98,
+        "pool4_drip_per_day": 12_500.0,
+        "pool4_drippable": 1_200.0,
+        "pool4_can_drip": True,
+        "pool4_backlog_imd": 250_000.0,
+        "pool4_backlog_days": 20.0,
+        "pool4_implied_apr_pct": 4.15,
+        # W1's counter reconciliation. Set to the HEALTHY state, and set at
+        # all for two reasons.
+        #
+        # It is right on the merits: the check runs against the Sepolia
+        # counters whatever discovery is doing, so a fixture on the day-one
+        # undiscovered path still has a real answer here, and `None` would
+        # mean "the check has never run" -- a different and rarer state than
+        # the one this fixture is meant to be.
+        #
+        # And it closes a measured blind spot. `test_screen_dispatches_
+        # every_data_key` compares each kwarg's value against the payload's
+        # value for the key it answers for, which can only catch a mis-wire
+        # between two keys the fixture DISTINGUISHES. While both of these
+        # were `None`, swapping the dispatch to read
+        # `pool4_counter_state=data.get("pool4_counter_detail")` stayed
+        # green -- proven by mutation, not supposed.
+        #
+        # The wording is the producer's own (`surf_pool4.reconcile_counters`,
+        # pinned by `tests/data/test_surf_pool4.py`), not a paraphrase.
+        "pool4_counter_state": "reconciled",
+        "pool4_counter_detail": "all 5 identities hold to the wei",
+        # -- the mainnet topology and ceiling (2026-09-02) -----------------
+        #
+        # This fixture stays the SEPOLIA / undiscovered day-one state that
+        # plan section 5 R4 calls the primary path, so the reward path is the
+        # two-way one and the distributor fields are absent -- `None` here is
+        # "there is no Distributor on this deployment", which is the honest
+        # state rather than a failed read. `_mainnet_pool4_payload` below is
+        # the three-way counterpart, and the two are swept side by side.
+        "pool4_reward_path": "two-way",
+        "pool4_distributor_addr": None,
+        "pool4_distributor_staking_bps": None,
+        "pool4_distributor_nodes_bps": None,
+        "pool4_distributor_bonding_bps": None,
+        "pool4_distributor_staking_earned": None,
+        "pool4_distributor_nodes_earned": None,
+        "pool4_distributor_bonding_earned": None,
+        "pool4_distributor_held_nodes": None,
+        "pool4_distributor_held_bonding": None,
+        "pool4_discovery_source": None,
+        # The inventory ceiling. Sepolia's decay rate is the no-decay
+        # sentinel, so the cap sits exactly ON the inventory and the headroom
+        # is a real, representable **0.0** -- not a dash, and not a number to
+        # "fix" into something non-zero. `pool4_cap_decay_per_day` is `None`
+        # rather than 2**128-1: the producer resolves the sentinel, and a
+        # panel must never print ~3.4e20 IMD/day.
+        "pool4_inventory_cap": 472_569_750.774434,
+        "pool4_cap_headroom": 0.0,
+        "pool4_cap_decay_per_day": None,
+        # Newest first, capped by the manager at POOL4_FLOW_LIMIT. Three rows
+        # and three different meanings of a zero leg, which is the whole
+        # subject of this panel:
+        #   * the SELL settled and both legs are real numbers;
+        #   * the BUY has no burn leg and no staker leg, and those are
+        #     `0.0` -- a fact about the mechanism, never `None`;
+        #   * the accrued SELL's legs are `0.0` for a different reason
+        #     (`ClaimsSettled` has not fired), which is why it carries
+        #     `settled: False` and the panel flags it.
+        "pool4_flow": [
+            {
+                "ts": 1_756_000_000.0, "age_s": 120.0, "side": "sell",
+                "size_imd": 1234.5, "burned_imd": 111.42,
+                "stakers_imd": 12.38, "fee_imd": None, "fee_eth": 0.0057,
+                "settled": True, "tx_hash": "0x" + "ab" * 32,
+            },
+            {
+                "ts": 1_755_999_000.0, "age_s": 420.0, "side": "buy",
+                "size_imd": 987.65, "burned_imd": 0.0, "stakers_imd": 0.0,
+                "fee_imd": 12.38, "fee_eth": None,
+                "settled": True, "tx_hash": "0x" + "cd" * 32,
+            },
+            {
+                "ts": 1_755_998_000.0, "age_s": 840.0, "side": "sell",
+                "size_imd": 4500.0, "burned_imd": 0.0, "stakers_imd": 0.0,
+                "fee_imd": None, "fee_eth": 0.0031,
+                "settled": False, "tx_hash": "0x" + "ef" * 32,
+            },
+        ],
+        # The ten levers `surf_manager._pool4_hatch_rows` really emits, in its
+        # own order -- not a sample of them. The count is load-bearing for
+        # this body's height (`SURF_POOL4_FULL_LAYOUT_ROWS`), so a fixture
+        # carrying five would measure a panel eight rows shorter than the one
+        # a user sees.
+        "pool4_hatches": [
+            {"scope": "vault", "label": "owner", "state": "renounced",
+             "detail": None, "addr": None, "addr_known": False},
+            {"scope": "vault", "label": "paused", "state": "live",
+             "detail": None, "addr": None, "addr_known": False},
+            {"scope": "vault", "label": "rescue", "state": "open",
+             "detail": "owner may sweep stray tokens", "addr": None,
+             "addr_known": False},
+            {"scope": "dripper", "label": "owner", "state": "live",
+             "detail": None,
+             "addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+             "addr_known": True},
+            {"scope": "dripper", "label": "rewards", "state": "live",
+             "detail": None,
+             "addr": "0x4dBE1782b0aC0dE1f2a3B4c5D6e7F8a9B0c1449B",
+             "addr_known": True},
+            {"scope": "hook", "label": "owner", "state": "live",
+             "detail": None,
+             "addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+             "addr_known": True},
+            {"scope": "hook", "label": "market", "state": "open",
+             "detail": None, "addr": None, "addr_known": False},
+            {"scope": "hook", "label": "rebalance", "state": "open",
+             "detail": "backstop rebalance enabled", "addr": None,
+             "addr_known": False},
+            {"scope": "hook", "label": "burn sink", "state": "live",
+             "detail": None,
+             "addr": "0x000000000000000000000000000000000000dEaD",
+             "addr_known": True},
+            {"scope": "bond", "label": "deployed", "state": "unknown",
+             "detail": None, "addr": None, "addr_known": False},
+        ],
     }
+
+
+#: The MAINNET deployment, from ``docs/imd_pool4_mainnet.md`` -- every number
+#: a live read on the day pool4 went live, not a figure from the project's
+#: own docs page.
+#:
+#: It exists because four of this body's behaviours differ by deployment and
+#: three of them are invisible on Sepolia: the reward split is three-way
+#: rather than two-way, ``rewardShareBps`` is 1500 rather than 1000,
+#: ``capFloor`` is 1,000 IMD rather than 250M, and the inventory cap actually
+#: *decays* rather than tracking the inventory. A body swept only against
+#: Sepolia is a body measured against the state the data is no longer in.
+#:
+#: ⚠ ``pool4_cap_headroom`` IS ``cap − reserve``: 5,331.227804 − 5,236.544041
+#: = **+94.683763**. Its sibling ``pool4_floor_distance`` is ``reserve −
+#: floor``. The operand order flips so both read positive when healthy, and
+#: writing this one by analogy with the other gives −94.68 -- a binding cap
+#: rendered as slack. ``test_the_cap_headroom_keeps_its_operand_order`` pins
+#: the sign against the two operands rather than against a literal, so a
+#: fixture edit cannot quietly reverse it.
+def _mainnet_pool4_payload(**overrides) -> dict:
+    reserve = 5_236.544041
+    cap = 5_331.227804
+    floor = 1_000.0
+    payload = _frozen_payload(
+        pool4_network="MAINNET",
+        pool4_discovery_state="adopted",
+        pool4_discovery_detail=_ADOPTED_DISCOVERY_DETAIL,
+        pool4_discovery_source_tx=_ADOPTED_SOURCE_TX,
+        # The disclosure: this adoption came from the docs page, which is a
+        # weaker provenance than a dev-signed announce post.
+        pool4_discovery_source="docs",
+        pool4_hook_addr="0xc6c965bd164c483e87d0b550671798e9a3602840",
+        pool4_vault_addr="0x9efa934d9fad4ae28c998a40195646b965a97247",
+        pool4_dripper_addr="0xe6D3De6daEAf327fCA42745f1998FcD989e00884",
+        # -- the three-way split, inside the Distributor -------------------
+        pool4_reward_path="three-way",
+        pool4_distributor_addr="0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+        pool4_distributor_staking_bps=3000,
+        pool4_distributor_nodes_bps=3000,
+        # THE REMAINDER, and written as the derivation rather than as 4000 so
+        # this fixture cannot assert a number the chain never returned.
+        pool4_distributor_bonding_bps=10_000 - 3000 - 3000,
+        pool4_distributor_staking_earned=3.1490,
+        pool4_distributor_nodes_earned=3.1490,
+        pool4_distributor_bonding_earned=4.1986,
+        pool4_distributor_held_nodes=3.1490,
+        pool4_distributor_held_bonding=4.1986,
+        # -- the ceiling, which on mainnet genuinely binds -----------------
+        pool4_tokens_in_pool=reserve,
+        pool4_inventory_cap=cap,
+        pool4_cap_headroom=cap - reserve,          # +94.683763. NOT reserve - cap.
+        pool4_cap_decay_per_day=1_000.0,
+        pool4_cap_floor=floor,
+        pool4_floor_distance=reserve - floor,      # the sibling, other way round
+        # -- the rest of the live state ------------------------------------
+        pool4_reward_share_bps=1500,
+        pool4_eth_in_pool=3.7976,
+        pool4_total_burned=59.4807,
+        pool4_total_rewarded=10.4966,
+        pool4_total_fee_token=0.8437,
+        pool4_retained_eth=0.0479,
+        pool4_current_tick=72_761,
+        pool4_ref_tick=72_667,
+        pool4_share_price=7.902919,
+        pool4_vault_assets=1_293.31,
+        pool4_drip_per_day=86.4,
+        pool4_drippable=0.0,
+        pool4_can_drip=False,
+    )
+    payload.update(overrides)
+    return payload
 
 
 def _frozen_payload(**overrides) -> dict:
@@ -923,26 +1380,11 @@ def test_the_unrendered_keys_are_named_by_no_widget_signature():
     )
 
 
-def test_the_bindings_are_refresh_and_the_launchpad_toggle():
-    """``c`` is still gone; ``l``/``escape`` (2026-08-23) are not a return of it.
-
-    ``c`` existed only because the announce feed and the dev-activity panel
-    shared one slot. Both are permanently on screen since the three-row
-    restructure, so a swap key would toggle two panels that are both already
-    visible -- and the status bar would advertise a "view" that is not a
-    view. That reasoning still holds for ``c``, which is why this test used
-    to assert ``BINDINGS`` was ``{"r"}`` alone; it does not extend to ``l``,
-    which swaps the whole dashboard body for an unrelated second view
-    (curator's ``y``/``f`` precedent) rather than reviving a same-slot swap.
-    """
-    keys = {binding.key for binding in SurfScreen.BINDINGS}
-    assert keys == {"r", "l", "escape"}
-    assert not hasattr(SurfScreen, "action_toggle_view"), (
-        "the old c-swap action outlived its binding -- an action with no key "
-        "is a surface nobody can reach and nobody maintains"
-    )
-    assert hasattr(SurfScreen, "action_toggle_launchpad")
-    assert hasattr(SurfScreen, "action_show_dashboard")
+# The binding set is asserted in the POOL4 section at the end of this file
+# (``test_the_bindings_are_refresh_and_the_two_view_toggles``), which replaced
+# the launchpad-only version that lived here. Two tests pinning different
+# exact contents of one ``BINDINGS`` set cannot both pass, so it moved rather
+# than gaining a sibling.
 
 
 # -- the l LAUNCHPAD view (2026-08-23) ------------------------------------
@@ -2251,24 +2693,30 @@ def test_degraded_sources_ride_the_house_warning_glyph_not_the_word():
     """``⚠ activity`` -- the glyph ``⚠ feed unavailable`` already uses.
 
     The source names themselves are untouched: they are the manager's own
-    ``SOURCES`` vocabulary, and the seven are spelled out here against a
+    ``SOURCES`` vocabulary, and the eight are spelled out here against a
     ``sorted(SOURCES)`` derived from the manager so a rename reddens this
     rather than quietly re-wording the most prominent row on the screen.
 
-    ``"pad"`` (not ``"launchpad"``) is the seventh: Task 6 fix round 1
+    ``"pad"`` (not ``"launchpad"``) was the seventh: Task 6 fix round 1
     (controller finding 2) renders it terse because the worst-case title bar
     (see ``WORST_CASE_TITLE_COLUMNS`` below) is width-bound -- widening the
     layout to fit the long form was rejected in favour of shortening the
     label, this repo's standing rule.
+
+    ``"p4"`` (not ``"pool4"``) is the **eighth**, spelled short for exactly
+    that reason and measured rather than assumed: those four columns (``,
+    p4``) took the worst-case row from 139 to 143, which is
+    ``SURF_FULL_LAYOUT_COLUMNS`` to the column. The long form would have taken
+    it to 146 and the tail of this row does not clip, it *disappears*.
     """
     from maxpane_dashboard.data.surf_manager import SOURCES
 
     assert surf_mod._fmt_degraded(["activity"]) == " · ⚠ activity"
     assert surf_mod._fmt_degraded(sorted(SOURCES)) == (
-        " · ⚠ activity, chain, channel, logs, market, nft, pad"
+        " · ⚠ activity, chain, channel, logs, market, nft, p4, pad"
     )
     assert sorted(SOURCES) == [
-        "activity", "chain", "channel", "logs", "market", "nft", "pad"
+        "activity", "chain", "channel", "logs", "market", "nft", "p4", "pad"
     ], "a source group was renamed -- the title bar's vocabulary follows it"
     assert "degraded" not in surf_mod._fmt_degraded(sorted(SOURCES))
 
@@ -2372,7 +2820,9 @@ async def test_screen_dispatches_every_data_key():
         await pilot.pause()
         assert manager.calls >= 1
 
+        payload = _frozen_payload()
         dispatched: set[str] = set()
+        checked_values = 0
         for name, signature in SURF_WIDGET_SIGNATURES.items():
             assert calls[name], f"{name}.update_data was never called"
             kwargs = calls[name][-1]
@@ -2381,7 +2831,54 @@ async def test_screen_dispatches_every_data_key():
                 f"{name} got {sorted(set(kwargs) ^ expected_kwargs)} "
                 "off-contract"
             )
+            # ...and each kwarg carries the value of the key it answers for.
+            #
+            # THE NAME CHECK ABOVE IS NOT ENOUGH, and a mutation proved it:
+            # rewriting one dispatch line to
+            # `pool4_discovery_source_tx=data.get("pool4_discovery_detail")`
+            # -- the right kwarg, the wrong payload key -- left this test
+            # green. That is the copy-paste error a block of forty-seven
+            # near-identical `key=data.get("key")` lines actually invites,
+            # and it puts one key's value under another key's name on screen
+            # with nothing anywhere disagreeing.
+            for contract_key, kwarg in signature.items():
+                assert kwargs[kwarg] == payload[contract_key], (
+                    f"{name}.{kwarg} was handed "
+                    f"{kwargs[kwarg]!r}, which is not the payload's "
+                    f"{contract_key!r} ({payload[contract_key]!r}) -- the "
+                    "dispatch is reading the wrong key"
+                )
+                if payload[contract_key] is not None:
+                    checked_values += 1
             dispatched |= set(signature)   # SURF_KEYS names, not kwarg names
+
+        # The value check can only bite where the fixture distinguishes two
+        # keys, so a pair that are both `None` in `_sample_data` would swap
+        # invisibly. Counting the comparisons that had something to compare
+        # keeps that a known limit rather than a silent one, and stops the
+        # loop above going vacuous if the fixture ever thinned out.
+        #
+        # THE PAIRS THAT ARE CURRENTLY BLIND, found by mutation rather than
+        # by reading, so the limit is measured rather than asserted:
+        #
+        #   * `pool4_discovery_source` / `pool4_discovery_source_tx`
+        #   * `pool4_distributor_staking_bps` / `_nodes_bps`
+        #
+        # All four are `None` on the day-one Sepolia payload this test runs
+        # against, for the right reason -- there is no adoption to cite and
+        # no Distributor on that deployment -- so swapping either pair leaves
+        # this green. Filling them to close the gap would mean writing a
+        # Sepolia fixture that asserts a mainnet shape, which is the trade
+        # this file refuses everywhere else.
+        #
+        # The two `*_bps` keys stay blind even on mainnet: the chain really
+        # does return 3000 for both, so no honest fixture distinguishes them.
+        # That one is a property of the deployment, not of the test.
+        assert checked_values >= 92, (
+            f"only {checked_values} dispatched values were non-None -- the "
+            "fixture no longer distinguishes enough keys for the value "
+            "check to mean much"
+        )
 
         # Nothing in the contract goes unrendered by accident: it is either a
         # widget kwarg, a meta key the screen itself consumes, or one of the
@@ -3383,7 +3880,7 @@ async def test_a_cold_cache_still_says_as_of_rather_than_going_quiet():
 
 #: The narrowest terminal on which the **whole** worst-case title bar reaches
 #: a pixel: the board's name, every figure, the ``as of`` marker,
-#: ``‹ taller``, the LP warning and **all seven** degraded groups, all on the
+#: ``‹ taller``, the LP warning and **all eight** degraded groups, all on the
 #: one row of this screen that cannot ellipsise. Swept over the real screen rather than counted -- ``⚠``
 #: is not a one-column glyph on every width table, so the arithmetic is not
 #: the test.
@@ -3410,11 +3907,29 @@ async def test_a_cold_cache_still_says_as_of_rather_than_going_quiet():
 #: number moves with the vocabulary instead of behind it -- which is exactly
 #: the mutation that moved this constant this time.
 #:
-#: ``SURF_FULL_LAYOUT_COLUMNS`` (143) clears this by four columns: a title
-#: bar that needed 144 would already be losing its tail on surf's own full
-#: layout. 139 is the tight number on purpose -- see the companion test
-#: below, which fails one column either side of it.
-WORST_CASE_TITLE_COLUMNS = 139
+#: **139 -> 143 on 2026-09-01, and the margin is now zero.** ``SOURCE_POOL4``
+#: is the **eighth** degraded group (``surf_manager.SOURCES``), and this row
+#: prints every member verbatim, so ``, p4`` cost it exactly four columns --
+#: measured, not computed, by sweeping the real render 128..159 with the
+#: outage payload: ``pad``, the last name the row prints, first survives at
+#: **143** and is cut at 142.
+#:
+#: 143 is ``SURF_FULL_LAYOUT_COLUMNS`` exactly, which is the outcome the pool4
+#: plan's own risk register predicted to the column ("that is 143 exactly --
+#: zero margin"). The standing rule is to shorten the copy rather than widen
+#: the layout, and it does not fire here: the row *fits* the documented width,
+#: it merely no longer clears it. What zero margin actually means is worth
+#: stating, because it is a fact about the **next** change rather than this
+#: one: a ninth source group, or one more word anywhere on this line, puts the
+#: worst case past 143 and the tail is *gone* -- no ``…``, no scrollbar, no
+#: trace, on the one row of this screen that exists to say something is down.
+#: The assertion at the end of the companion test below is what turns that
+#: into a red suite instead of a silent loss, and it now has no slack left to
+#: absorb an edit. Shorten this row before adding to it.
+#:
+#: It read 139 with seven groups and 142 with six-plus-``pad``; the history is
+#: in the paragraphs above.
+WORST_CASE_TITLE_COLUMNS = 143
 
 
 async def test_the_worst_case_title_bar_keeps_its_whole_tail_from_here():
@@ -4149,9 +4664,20 @@ def _region_text(app, widget) -> str:
     """
     strips = app.screen._compositor.render_strips()
     region = widget.region
+    # Rows of the region that are actually ON the composited screen.
+    #
+    # A widget's region can extend past the last strip -- a body taller than
+    # its terminal, a panel a column has scrolled below the fold -- and this
+    # used to index ``strips[y]`` unguarded and raise ``IndexError``. That is
+    # the wrong failure for a helper whose whole job is "what does the user
+    # see here": the answer for an off-screen row is *nothing*, and a caller
+    # asking whether a line is clipped should get an empty answer rather than
+    # a traceback. Found by a height sweep at 34 rows, where the mainnet
+    # payload pushes the rail's lower panels off the end.
     return "\n".join(
         "".join(seg.text for seg in strips[y])[region.x : region.x + region.width]
-        for y in range(region.y, region.y + region.height)
+        for y in range(region.y, min(region.y + region.height, len(strips)))
+        if y >= 0
     )
 
 
@@ -5372,3 +5898,1636 @@ async def test_a_raising_refresh_lowers_the_guard_flag_and_the_next_tick_still_r
         await pilot.pause()
         assert screen._refresh_in_flight is False
         assert f"as of {_AS_OF_HHMM}" in _plain(screen.query_one("#title-bar"))
+
+
+# =========================================================================
+# The ``p`` POOL4 view (2026-09-01) -- the third body on this screen
+# =========================================================================
+#
+# The `l` body's tests two thousand lines up are the template and most of
+# this section is that template applied to a second swap. Three things are
+# genuinely new and are worth reading rather than skimming:
+#
+# 1.  A `…` at the end of a pool4 line is NOT necessarily a clip. Four of the
+#     five panels fit their own third-party strings to their own tier width,
+#     so HATCHES paints `no self-post in the announce chann…` at 47 cells
+#     inside a 99-cell panel and means it. `_clipped_pool4_lines` compares
+#     against the panel's own edge instead, and the launchpad's bare
+#     `endswith("…")` would have reported this whole body as permanently
+#     clipped at every width including 200.
+# 2.  The height pin is a CONSTANT under every payload, and that is a design
+#     property this section asserts directly rather than inferring from one
+#     sweep -- see `test_the_pool4_height_pin_does_not_move_with_the_hatch_
+#     count`.
+# 3.  `_SCROLL_COLUMNS` gaining a MODE_POOL4 entry is the 2026-08-25 defect's
+#     own regression lock, and it is guarded twice: once for the marker
+#     really lighting on this body, once for the mapping being total over
+#     every mode the screen has.
+
+
+def _pool4_app(payload: dict | None = None) -> App:
+    """The themed harness, so the real ``minimal.tcss`` pool4 block renders.
+
+    Load-bearing, not tidiness: an app stylesheet outranks ``DEFAULT_CSS``,
+    so a seam written into ``DEFAULT_CSS`` alone would leave whatever
+    ``minimal.tcss`` says in charge and every width number below would be
+    measuring the wrong file.
+    """
+    return _surf_app(payload)
+
+
+#: The two column widths the width pin is assembled from, measured in situ.
+#: Restated here as independent literals rather than imported from
+#: ``screens/surf.py``'s docstring prose (which is prose, and cannot be
+#: imported anyway), so ``test_the_pool4_pin_is_the_sum_of_the_needs_it_
+#: claims`` compares two things rather than one thing with itself.
+#:
+#: **Neither number may be quoted as a reason for the panel arrangement**, and
+#: :data:`POOL4_RAIL_NEED` especially not -- a warning that survived the
+#: mainnet rebalance by changing sides. It used to read "the rail needs 43
+#: *because* ``SurfPool4Hatches`` is in the other column". HATCHES is now in
+#: the rail, the rail needs 50 *because* it is, and quoting that 50 as
+#: evidence the swap was right is the identical circle mirrored. Rendered
+#: instead, in both directions: the pin is **106 either way**, with
+#: ``SurfPool4Flow`` binding at 105 either way under the pinned seam. The
+#: arrangement was chosen on rows, not columns --
+#: ``screens/surf.SURF_POOL4_FULL_LAYOUT_ROWS`` carries that measurement.
+#:
+#: Both were re-measured on 2026-09-02 against the layout the screen now
+#: builds, across all three payload magnitudes, and the rail's moved:
+#: left = max(FLOW 53, RATCHET 45, SPLIT 36); rail = max(HATCHES 50,
+#: VAULT 44).
+POOL4_LEFT_NEED = 53        # SurfPool4Flow's, plus the column's own gutter
+POOL4_RAIL_NEED = 50        # SurfPool4Hatches', plus the column's own gutter
+
+#: An independent literal for the same reason ``MEASURED_FULL_LAYOUT_COLUMNS``
+#: is one: a test that aliased the screen's constant would compare a number
+#: against itself and pin nothing.
+MEASURED_POOL4_COLUMNS = 106
+MEASURED_POOL4_ROWS = 44
+
+
+def _pool4_payload(**overrides) -> dict:
+    return _frozen_payload(**overrides)
+
+
+def _pool4_hatch_payload(rows: int) -> dict:
+    """The fixture's hatch list re-cut to *rows* levers.
+
+    The producer emits ten and the widget caps at twelve, so the interesting
+    magnitudes are 0, 10 and 12 -- and the height pin's whole claim is that
+    none of them moves it.
+    """
+    base = _sample_data()["pool4_hatches"]
+    labels = ("owner", "paused", "rescue", "market", "rebalance",
+              "burn sink", "rewards", "deployed")
+    return _frozen_payload(pool4_hatches=[
+        {**base[i % len(base)], "label": labels[i % len(labels)]}
+        for i in range(rows)
+    ])
+
+
+#: The pool4 flow in the state the data is normally in, on
+#: :func:`_ordinary_burn_payload`'s exact reasoning. ``_fmt.fmt_imd`` renders
+#: 100.00..999.99 at **six** columns and compacts everything above 1000, so
+#: the committed magnitudes (``1.2K``, ``4.5K``) are this panel's *narrow*
+#: case and a three-digit-and-two-decimals row is its widest. The ETH fee leg
+#: is four decimals, so ``0.9999 ETH`` is the widest that cell can be.
+#: A pin measured only against the compact numbers is a pin nobody has tested.
+def _ordinary_pool4_payload() -> dict:
+    rows = []
+    for index, side in enumerate(("sell", "buy", "sell")):
+        rows.append({
+            "ts": 1_756_000_000.0 - index,
+            "age_s": 120.0 + index * 86_400 * 40,   # forces the widest fmt_age
+            "side": side,
+            "size_imd": 987.65,
+            "burned_imd": 888.88 if side == "sell" else 0.0,
+            "stakers_imd": 999.99 if side == "sell" else 0.0,
+            "fee_imd": 999.99 if side == "buy" else None,
+            "fee_eth": None if side == "buy" else 0.9999,
+            "settled": index != 2,
+            "tx_hash": "0x" + "ab" * 32,
+        })
+    return _frozen_payload(
+        pool4_flow=rows * 8,
+        # The vault line that actually sets the rail's 42: `fmt_imd`'s
+        # six-column band on both halves of `queue … · … days of runway`.
+        pool4_backlog_imd=999.99,
+        pool4_backlog_days=999.9,
+    )
+
+
+def _clipped_pool4_lines(app, screen) -> list[str]:
+    """Every composited line in the ``p`` body that **CSS** truncated.
+
+    Asked of the five panels, never of their two containers, for
+    ``_clipped_launchpad_lines``' reason: a container's rectangle includes
+    the cell reserved by ``scrollbar-gutter: stable``, so on any row where
+    the scrollbar glyph is painted a genuinely clipped line no longer *ends*
+    in ``…`` and the check goes quiet exactly when the layout is under most
+    pressure.
+
+    **And it compares against the panel's own edge, which the launchpad's
+    version does not have to.** Four of this body's five panels fit their own
+    third-party strings to their own tier width with ``_fmt.fit_cell``, so a
+    trailing ``…`` is routinely the panel saying "this detail is longer than
+    the column I gave it" rather than CSS saying "this line is longer than
+    the panel". HATCHES paints exactly that at 47 cells inside a 99-cell
+    panel, and a bare ``endswith("…")`` reports this body as clipped at every
+    width including 200 -- a permanently red sweep that would have been
+    "fixed" by moving a pin. ``text-overflow: ellipsis`` can only cut at the
+    panel's content edge, so that is what the length is compared against.
+    """
+    out = []
+    for cls in _POOL4_WIDGET_CLASSES.values():
+        widget = screen.query_one(cls)
+        edge = widget.region.width - 1
+        for line in _region_text(app, widget).split("\n"):
+            body = line.rstrip()
+            if body.endswith("…") and len(body) >= edge:
+                out.append(body)
+    return out
+
+
+def _pool4_marked(app, screen) -> set[str]:
+    """Which pool4 panels have a ``‹`` marker lit, by class name.
+
+    ``‹`` rather than ``‹ widen``: this body's rail panels fall back to a bare
+    glyph when the title plus its network word plus the words no longer fit
+    (``widgets/surf/_pool4.GLYPH_HINT``), and a check written against the
+    long spelling alone would call a marked panel unmarked at exactly the
+    widths where it is under most pressure.
+    """
+    return {
+        name
+        for name, cls in _POOL4_WIDGET_CLASSES.items()
+        if "‹" in _region_text(app, screen.query_one(cls))
+    }
+
+
+# -- the swap itself ------------------------------------------------------
+
+
+def test_the_bindings_are_refresh_and_the_two_view_toggles():
+    """``c`` is still gone; ``l``, ``p`` and ``escape`` are not a return of it.
+
+    ``c`` existed only because the announce feed and the dev-activity panel
+    shared one slot, and a key that hides half a screen still has nothing to
+    offer this layout. ``l`` and ``p`` are a different shape of key: each
+    swaps the *whole* dashboard body for an unrelated second view (curator's
+    ``y``/``f`` precedent) and leaves the hero mounted above it.
+
+    This replaces ``test_the_bindings_are_refresh_and_the_launchpad_toggle``
+    rather than sitting beside it: two tests asserting different exact
+    contents of one ``BINDINGS`` set cannot both pass, and the older one's
+    ``keys == {"r", "l", "escape"}`` is the assertion this task changes.
+    """
+    keys = {binding.key for binding in SurfScreen.BINDINGS}
+    assert keys == {"r", "l", "p", "escape"}
+    assert not hasattr(SurfScreen, "action_toggle_view"), (
+        "the old c-swap action outlived its binding -- an action with no key "
+        "is a surface nobody can reach and nobody maintains"
+    )
+    for action in ("action_toggle_launchpad", "action_toggle_pool4",
+                   "action_show_dashboard"):
+        assert hasattr(SurfScreen, action), action
+
+
+async def test_p_swaps_the_body_and_keeps_the_hero() -> None:
+    async with _pool4_app().run_test() as pilot:
+        await pilot.press("p")
+        screen = pilot.app.screen
+        assert screen.query_one(f"#{POOL4_BODY_ID}").display is True
+        assert screen.query_one(SurfHero).display is True
+        assert screen.query_one("#middle-row").display is False
+        assert screen.query_one("#separator").display is False
+        assert screen.query_one("#bottom-row").display is False
+
+
+async def test_escape_backs_out_of_the_pool4_body_too() -> None:
+    async with _pool4_app().run_test() as pilot:
+        await pilot.press("p")
+        await pilot.press("escape")
+        assert pilot.app.screen.query_one("#middle-row").display is True
+        assert pilot.app.screen.query_one(f"#{POOL4_BODY_ID}").display is False
+
+
+async def test_p_is_idempotent_and_toggles_back() -> None:
+    async with _pool4_app().run_test() as pilot:
+        await pilot.press("p")
+        await pilot.press("p")
+        assert pilot.app.screen.query_one("#middle-row").display is True
+        assert pilot.app.screen.query_one(f"#{POOL4_BODY_ID}").display is False
+
+
+async def test_the_three_bodies_are_never_showing_at_once() -> None:
+    """Exactly one body at a time, through every transition between them.
+
+    This is the test for the edit ``_show_mode`` was most likely to receive:
+    keeping the old ``launchpad = self._mode == MODE_LAUNCHPAD`` boolean and
+    adding a second one beside it leaves the dashboard rows reading ``not
+    launchpad``, which is **true** in MODE_POOL4 -- so ``p`` would paint the
+    pool4 body on top of a dashboard body that never went away. Every
+    assertion below passes under that mutation except the ones about
+    ``#middle-row``, which is why the dashboard rows are checked on every
+    hop rather than only on the way home.
+    """
+    bodies = ("#middle-row", f"#{LAUNCHPAD_BODY_ID}", f"#{POOL4_BODY_ID}")
+    async with _pool4_app().run_test() as pilot:
+        screen = pilot.app.screen
+        for keys, expected in (
+            ((), "#middle-row"),
+            (("l",), f"#{LAUNCHPAD_BODY_ID}"),
+            (("p",), f"#{POOL4_BODY_ID}"),
+            (("l",), f"#{LAUNCHPAD_BODY_ID}"),
+            (("escape",), "#middle-row"),
+            (("p",), f"#{POOL4_BODY_ID}"),
+            (("escape",), "#middle-row"),
+        ):
+            for key in keys:
+                await pilot.press(key)
+            await pilot.pause()
+            showing = [b for b in bodies if screen.query_one(b).display]
+            assert showing == [expected], (keys, showing)
+            # ...and the hero is never part of any of it.
+            assert screen.query_one(SurfHero).display is True
+
+
+async def test_the_status_hint_names_both_views() -> None:
+    """The phrase reaches a pixel, and reaches it as ONE ``Segment``.
+
+    Two assertions, and the second one is the whole point. ``_screen_text``
+    joins a strip's segments with ``""``, which is the right instrument for
+    every other composited assertion in this file and is **blind to exactly
+    the defect this test exists to catch**: a per-letter ``[dim]`` tag splits
+    the hint into ``l`` / `` launchpad · `` / ``p`` / `` pool4`` and the
+    row-joined text is byte-identical either way.
+
+    Proven, not assumed. Mutating ``KEY_HINTS`` to
+    ``"[dim]l[/] launchpad · [dim]p[/] pool4"`` left the row-join version of
+    this test green; it is the segment check below that reddens.
+
+    Why the segment boundary is the subject at all: the app-level acceptance
+    grep in ``tests/test_surf_registration.py`` and the launchpad hint test
+    above both join **every segment with a newline**, which is the join
+    CLAUDE.md warns against for ordinary layout assertions precisely because
+    it splits a styled row into several apparent lines. Here that is the
+    measurement rather than the mistake -- the claim being made is "this
+    phrase is one styled run", and a split is what makes those greps fail
+    while the status bar looks perfectly correct on screen.
+    """
+    phrase = "l launchpad · p pool4"
+    async with _pool4_app().run_test() as pilot:
+        await pilot.pause()
+        strips = pilot.app.screen._compositor.render_strips()
+        text = _screen_text(pilot.app)
+        segments = [seg.text for strip in strips for seg in strip]
+
+    assert phrase in text, (
+        "the hint did not reach a pixel -- check the StatusBar had room for "
+        "it at this width"
+    )
+    assert any(phrase in segment for segment in segments), (
+        "the hint reaches the screen but is split across Segments: "
+        "KEY_HINTS must be ONE markup run, not per-letter tags, or the "
+        "app-level acceptance greps for the contiguous phrase fail while "
+        "the bar itself looks right"
+    )
+
+
+async def test_the_pool4_key_hint_fits_the_status_bar_at_the_full_layout() -> None:
+    """Measured against the bar's own budget, never counted.
+
+    This hint is nine columns longer than the one that shipped, and the
+    StatusBar's left label is the segment that loses characters when the bar
+    runs out. Asserted at ``SURF_FULL_LAYOUT_COLUMNS`` -- the width the whole
+    dashboard is documented to need -- and, one column at a time, over the
+    band below it, so the test says *where* it stops fitting rather than only
+    that it fits somewhere.
+
+    Both halves of the phrase are checked. ``l launchpad`` alone survives
+    several columns further than the whole hint does, so a test that only
+    looked for the new half would call the row healthy while the old half
+    had been cut off the other end.
+    """
+    async with _pool4_app().run_test(
+        size=(SURF_FULL_LAYOUT_COLUMNS, 46)
+    ) as pilot:
+        await pilot.pause()
+        text = _screen_text(pilot.app)
+    assert "l launchpad · p pool4" in text
+
+    # The band below it: find where the whole phrase stops reaching a pixel,
+    # and assert that width is under the documented layout rather than over.
+    lost_at = None
+    for width in range(SURF_FULL_LAYOUT_COLUMNS, 79, -1):
+        async with _pool4_app().run_test(size=(width, 46)) as pilot:
+            await pilot.pause()
+            if "l launchpad · p pool4" not in _screen_text(pilot.app):
+                lost_at = width
+                break
+    assert lost_at is None or lost_at < SURF_FULL_LAYOUT_COLUMNS, (
+        f"the key hint is already cut at {lost_at} columns, which is at or "
+        f"above the documented {SURF_FULL_LAYOUT_COLUMNS} -- shorten the hint"
+    )
+
+
+# -- the body's shape and its dispatch ------------------------------------
+
+
+async def test_the_pool4_body_holds_five_panels_in_two_columns() -> None:
+    """Asserted on each container's own children, never on a screen-wide
+    query: a panel mounted into the wrong column still answers ``query_one``
+    from the screen and would leave this green.
+
+    The order is the layout and both halves of it are deliberate. HATCHES
+    leads the RAIL: plan section 5 R4's day-one state is *undiscovered*, and
+    HATCHES is the panel that says so, so it sits at the top of its column
+    rather than under a summary of numbers the view has not earned yet. The
+    left column stacks THE SPLIT and THE RATCHET above the flow log, and the
+    two columns then carry 33 rows each at the worst payload, which is what
+    ``SURF_POOL4_FULL_LAYOUT_ROWS`` is measured from.
+
+    This docstring said "the rail stacks the three panels whose line count is
+    a constant, which is what makes the pin the same number under every
+    payload" until 2026-09-02. That property was real and is gone: mainnet's
+    three-way split made THE SPLIT payload-sized as well, and no two-column
+    cut of these five panels can keep both variable panels out of the binder.
+    """
+    async with _pool4_app().run_test(size=(150, 50)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("p")
+        await pilot.pause()
+        screen = pilot.app.screen
+        left = screen.query_one(f"#{POOL4_LEFT_ID}")
+        rail = screen.query_one(f"#{POOL4_RAIL_ID}")
+        assert [type(w) for w in left.children] == [
+            SurfPool4Split, SurfPool4Ratchet, SurfPool4Flow,
+        ]
+        assert [type(w) for w in rail.children] == [
+            SurfPool4Hatches, SurfPool4Vault,
+        ]
+        # ...and the two columns really are side by side, not stacked: the
+        # child lists above are identical either way.
+        assert left.region.right <= rail.region.x
+        assert left.region.y == rail.region.y
+
+
+#: How the two column ``#:`` blocks spell each panel, so the agreement test
+#: below can compare prose against ``compose``.
+#:
+#: Hand-typed rather than derived from the class names: deriving it would
+#: make the test reconstruct the very sentence it is checking, and it could
+#: never fail. The prose names are the ones a reader sees on screen, which is
+#: why the blocks use them.
+_POOL4_PANEL_PROSE = {
+    "THE SPLIT": SurfPool4Split,
+    "THE RATCHET": SurfPool4Ratchet,
+    "POOL4 FLOW": SurfPool4Flow,
+    "HATCHES": SurfPool4Hatches,
+    "sIMD VAULT": SurfPool4Vault,
+}
+
+
+def _pool4_column_block(constant: str) -> str:
+    """The ``#:`` block immediately above *constant* in ``screens/surf.py``,
+    as one whitespace-normalised string."""
+    import re
+
+    from maxpane_dashboard.screens import surf as surf_module
+
+    source = Path(surf_module.__file__).read_text()
+    lines = source.splitlines()
+    index = next(
+        i for i, line in enumerate(lines) if line.startswith(f"{constant} = ")
+    )
+    block: list[str] = []
+    i = index - 1
+    while i >= 0 and lines[i].startswith("#:"):
+        block.append(lines[i][2:].strip())
+        i -= 1
+    return re.sub(r"\s+", " ", " ".join(reversed(block)))
+
+
+@pytest.mark.parametrize(
+    "constant,container_id",
+    [("POOL4_LEFT_ID", POOL4_LEFT_ID), ("POOL4_RAIL_ID", POOL4_RAIL_ID)],
+    ids=["left", "rail"],
+)
+async def test_the_pool4_column_blocks_name_the_panels_compose_builds(
+    constant, container_id,
+) -> None:
+    """⚠ The recurring defect on this branch, turned into a red suite.
+
+    ``POOL4_LEFT_ID`` and ``POOL4_RAIL_ID`` do not carry labels, they carry
+    **reasoned blocks that argue why an arrangement is correct** -- and a
+    persuasive wrong explanation is what the next reader trusts. CLAUDE.md's
+    convention is that the ``#:`` block beside the code is the authority
+    *because* it sits beside the code and cannot drift the way a copy in
+    another file can. When the authority is the copy that drifted, a reader
+    has no way to tell which half of the file to believe, and this file has
+    a correct ``SURF_POOL4_FULL_LAYOUT_ROWS`` block three hundred lines away
+    that would then be saying something incompatible.
+
+    **It has drifted twice and been suspected a third time.** Once before the
+    W3 follow-up, once when the mainnet rebalance recut the body, and once
+    more as a false alarm from a reader working off a pre-edit copy -- which
+    cost a round trip to refute and is its own argument for a check that
+    answers in a second. Every one of those was a human noticing; none of
+    them was a test.
+
+    So the block's opening arrangement sentence is parsed and compared
+    against what ``compose`` actually builds, per column, in order. The
+    convention it pins is small and worth stating: **each column block leads
+    with a bold run naming its panels top to bottom, joined by "over"**. A
+    future rebalance that moves a panel and not the sentence fails here on
+    the same commit rather than in someone's reading months later.
+
+    What this does NOT check, said plainly so nobody mistakes its scope: the
+    blocks' claims about which child carries the ``1fr``. That is guarded one
+    layer down by
+    ``test_exactly_one_pool4_child_per_column_carries_the_fr``, which reads
+    ``minimal.tcss`` -- the copy that actually renders. Asserting the prose
+    version here as well was tried and dropped: every phrasing that survived
+    a paragraph reflow also passed for a sentence naming the wrong panel,
+    which is the tests-that-cannot-fail shape this repo keeps a taxonomy of.
+    """
+    import re
+
+    block = _pool4_column_block(constant)
+    bold = re.search(r"\*\*(.+?)\*\*", block)
+    assert bold, (
+        f"{constant}'s block has no bold arrangement sentence -- the "
+        "convention this test pins is that it leads with one"
+    )
+    named = [part.strip(" .`") for part in bold.group(1).split(" over ")]
+    unknown = [n for n in named if n not in _POOL4_PANEL_PROSE]
+    assert not unknown, (
+        f"{constant}'s block names {unknown}, which is not a panel on this "
+        f"body -- known names are {sorted(_POOL4_PANEL_PROSE)}"
+    )
+
+    async with _pool4_app().run_test(size=(150, 50)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("p")
+        await pilot.pause()
+        built = [
+            type(w) for w in pilot.app.screen.query_one(f"#{container_id}").children
+        ]
+
+    assert [_POOL4_PANEL_PROSE[n] for n in named] == built, (
+        f"{constant}'s block says the column is {named}, but compose builds "
+        f"{[c.__name__ for c in built]}. The block is not a label, it is the "
+        "argument for the layout -- correct it in the same change that moved "
+        "the panel, and record the drift rather than overwriting it"
+    )
+
+
+async def test_every_pool4_panel_is_dispatched_before_p_is_pressed() -> None:
+    """Composed-once-shown-by-``display``: the first ``p`` paints a complete
+    frame, not a blank one that fills in a beat later.
+
+    Checked on the widgets' own stored payloads while the body is still
+    hidden -- a hidden widget reaches no compositor row at all, so there is
+    nothing to read off the screen -- and then on composited output once
+    ``p`` has been pressed, because a panel that stored a payload and
+    rendered nothing would satisfy the first half alone.
+    """
+    async with _pool4_app().run_test(size=(150, 50)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        screen = pilot.app.screen
+        assert screen.query_one(f"#{POOL4_BODY_ID}").display is False
+        for name, cls in _POOL4_WIDGET_CLASSES.items():
+            assert screen.query_one(cls)._payload, (
+                f"{name} was not dispatched while the body was hidden -- the "
+                "first `p` will paint it blank"
+            )
+        await pilot.press("p")
+        await pilot.pause()
+        text = _screen_text(pilot.app)
+
+    for title in ("HATCHES", "POOL4 FLOW", "THE SPLIT", "THE RATCHET",
+                  "sIMD VAULT"):
+        assert title in text, title
+    # The payload, not just the titles -- a dispatched panel rendering its
+    # empty state would satisfy the five checks above.
+    assert "SELL" in text and "89.10%" in text and "1.302986" in text
+
+
+async def test_every_pool4_panel_titles_the_network_it_is_showing() -> None:
+    """Plan section 5 R4, and it is a hard failure rather than a cosmetic one.
+
+    There is no pool4 hook on mainnet, so what runs on day one is discovery
+    finding nothing and five panels rendering **Sepolia** numbers. A testnet
+    number on an unmarked panel is not merely stale, it is fiction presented
+    as live -- so the network word rides every panel's own title, not a
+    footnote and not a status-bar mention, and all five have to agree.
+
+    Asserted per panel region rather than on the whole screen: ``SEPOLIA``
+    appearing five times anywhere would pass a screen-wide count while four
+    panels went networkless.
+    """
+    async with _pool4_app().run_test(size=(150, 50)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("p")
+        await pilot.pause()
+        screen = pilot.app.screen
+        for name, cls in _POOL4_WIDGET_CLASSES.items():
+            region = _region_text(pilot.app, screen.query_one(cls))
+            assert "SEPOLIA" in region, (
+                f"{name} does not name the network its numbers came from"
+            )
+            assert "MAINNET" not in region, name
+
+
+async def test_a_dead_pool4_sweep_leaves_every_panel_explicit() -> None:
+    """No blank panel, no stale number presented as live.
+
+    The whole-payload outage: every pool4 key ``None``, which is what a tier
+    that has never landed looks like. Each panel must say so in its own
+    words, and the network word falls back to the em dash rather than
+    guessing a chain.
+    """
+    from maxpane_dashboard.widgets.surf.pool4_flow import (
+        UNAVAILABLE_LINE as FLOW_UNAVAILABLE,
+    )
+    from maxpane_dashboard.widgets.surf.pool4_hatches import (
+        UNAVAILABLE_LINE as HATCHES_UNAVAILABLE,
+    )
+    from maxpane_dashboard.widgets.surf.pool4_ratchet import (
+        UNAVAILABLE_LINE as RATCHET_UNAVAILABLE,
+    )
+    from maxpane_dashboard.widgets.surf.pool4_vault import (
+        UNAVAILABLE_LINE as VAULT_UNAVAILABLE,
+    )
+
+    payload = _frozen_payload(**{key: None for key in POOL4_KEYS})
+    async with _pool4_app(payload).run_test(size=(150, 50)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("p")
+        await pilot.pause()
+        text = _screen_text(pilot.app)
+    for line in (FLOW_UNAVAILABLE, HATCHES_UNAVAILABLE, RATCHET_UNAVAILABLE,
+                 VAULT_UNAVAILABLE):
+        assert line in text, line
+    # The network word is the em dash, not a guessed chain.
+    assert "SEPOLIA" not in text and "MAINNET" not in text
+
+
+async def test_a_quiet_pool4_sweep_is_not_a_dead_one() -> None:
+    """``[]`` and ``None`` must not composite to the same sentence.
+
+    This is CLAUDE.md's FARM/HOUR-SAVED rule at the screen level: a swept-
+    and-quiet window and a read that failed are different facts, and a panel
+    that renders them identically reads confident and green through an
+    outage. The widget's own tests pin the two strings; this pins that the
+    *screen* hands the widget the distinction rather than flattening it on
+    the way (``data.get`` returns ``None`` for a missing key and ``[]`` for
+    an empty one, and only one of those is an outage).
+    """
+    from maxpane_dashboard.widgets.surf.pool4_flow import (
+        EMPTY_LINE, UNAVAILABLE_LINE,
+    )
+
+    async with _pool4_app(_frozen_payload(pool4_flow=[])).run_test(
+        size=(150, 50)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("p")
+        await pilot.pause()
+        quiet = _screen_text(pilot.app)
+    async with _pool4_app(_frozen_payload(pool4_flow=None)).run_test(
+        size=(150, 50)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("p")
+        await pilot.pause()
+        dead = _screen_text(pilot.app)
+
+    assert EMPTY_LINE in quiet and UNAVAILABLE_LINE not in quiet
+    assert UNAVAILABLE_LINE in dead and EMPTY_LINE not in dead
+
+
+# -- the p body's own measured width (2026-09-01) -------------------------
+#
+# ``SURF_FULL_LAYOUT_COLUMNS`` (this screen, 143),
+# ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`` (the ``l`` body, 138) and
+# ``__main__.FULL_LAYOUT_COLUMNS`` (the app, 143) are all untouched by this
+# task -- the measurement, the binding panel, the per-seam table and why the
+# CLAUDE.md width record is not appended to are in
+# ``SURF_POOL4_FULL_LAYOUT_COLUMNS``' own docstring in ``screens/surf.py``.
+#
+# The sweep runs **96..152**: ten columns below the measured 106 and
+# forty-six above it, never starting at it, and crossing BOTH neighbouring
+# pins (138 and 143) so agreeing with either would have to show up as a sweep
+# result. The brief asked for 118..152; that is a subset of this range and
+# every width in it is above the pin, so on its own the below-the-pin branch
+# would have run zero times. The range was widened downward rather than the
+# pin pushed up to meet it.
+
+
+@pytest.mark.parametrize(
+    "payload", [None, "ordinary"],
+    ids=["committed-capture", "ordinary-magnitudes"],
+)
+@pytest.mark.parametrize("width", range(96, 153))
+async def test_the_pool4_body_is_whole_from_its_pinned_width(
+    width, payload
+) -> None:
+    """Start the sweep away from the pin: one that began at the constant
+    would agree with it by construction.
+
+    **Whole means the whole body, not merely the panels that can say so.**
+    Both halves are asserted at and above the pin -- no marker anywhere *and*
+    no CSS-clipped line anywhere -- because a seam whose binder went quiet
+    would satisfy the marker half alone. Below the pin the claim is the
+    marker's: something must be asking for the columns.
+
+    **Swept against two payload magnitudes**, on
+    ``_ordinary_burn_payload``'s reasoning next door. It does not move a
+    single number here, and *that* is the result worth having: this panel's
+    columns are floored at their own header labels, so the widest data cell
+    never exceeds them. A capture-only sweep could not have told the
+    difference between "the width does not move with the data" and "we only
+    ever measured one payload".
+
+    The dashboard body's own markers cannot contaminate this: ``#middle-row``
+    is hidden in MODE_POOL4, so nothing it composites reaches the screen.
+    """
+    pl = _ordinary_pool4_payload() if payload == "ordinary" else None
+    async with _pool4_app(pl).run_test(size=(width, 50)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        screen = pilot.app.screen
+        marked = _pool4_marked(pilot.app, screen)
+        clipped = _clipped_pool4_lines(pilot.app, screen)
+        if width >= SURF_POOL4_FULL_LAYOUT_COLUMNS:
+            assert not marked, (width, marked)
+            assert not clipped, (
+                f"at {width} the p body is clipping a line and nothing on "
+                f"screen says so: {clipped}"
+            )
+        else:
+            assert marked, width
+
+
+@pytest.mark.parametrize("width", range(80, SURF_POOL4_FULL_LAYOUT_COLUMNS))
+async def test_nothing_below_the_pool4_pin_clips_without_saying_so(
+    width,
+) -> None:
+    """Below the pin the only panel allowed to lose anything is one that
+    advertises the loss.
+
+    The sibling sweep above only checks that *something* is marked below the
+    pin, which stays green even if the marked panel and the clipping panel
+    are different widgets. This is the half that would catch that, and it is
+    also the half that would catch a future rail panel losing its marker: it
+    asks, per width, whether every CSS-clipped line has a marker somewhere on
+    the body to account for it.
+
+    **The range starts at 80, well under the pin's neighbourhood**, because
+    on the pinned seam nothing clips anywhere between 96 and 105 -- the whole
+    point of choosing it -- so a sweep confined to those widths would execute
+    its ``if`` body zero times and be a guard with no positive behind it.
+    """
+    async with _pool4_app().run_test(size=(width, 50)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        screen = pilot.app.screen
+        clipped = _clipped_pool4_lines(pilot.app, screen)
+        if clipped:
+            assert _pool4_marked(pilot.app, screen), (
+                f"at {width} the p body clips {clipped} and no panel on "
+                "screen advertises the loss"
+            )
+
+
+async def test_the_pool4_binding_panel_is_the_flow_log() -> None:
+    """Pinned by a test, not by a sentence.
+
+    ``SurfPool4Flow`` is this body's binder, and it is the binder **by
+    construction of the seam** rather than by luck: the left column needs 53
+    screen columns and the rail 43, and 1:1 hands the rail 53 at the pin, so
+    one column below the pin the flow log is the only panel with anything to
+    say and stays the only one under every payload this pipeline produces.
+
+    That is the property the seam was chosen for. ``3:2`` collects the very
+    same 106 with the *rail* binding, and ``5:4`` collects the arithmetic
+    floor of 96 with FLOW binding but zero margin on both halves -- so
+    neither the pin alone nor the binder alone identifies the layout, and
+    this test is what pins the half the constant cannot.
+    """
+    async with _pool4_app().run_test(
+        size=(SURF_POOL4_FULL_LAYOUT_COLUMNS - 1, 50)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        marked = _pool4_marked(pilot.app, pilot.app.screen)
+    assert marked == {"SurfPool4Flow"}, marked
+
+
+async def test_the_pool4_pin_is_the_sum_of_the_needs_it_claims() -> None:
+    """The pin's *derivation*, not just its threshold.
+
+    The sweep above can only see the resulting number, so it stays green if
+    the two column needs the docstring names swapped, drifted, or were never
+    true. Measured at the width where each column is exactly on its stated
+    need -- the pin itself, where 1:1 gives the left column 53 -- and the
+    rail's three columns of margin are asserted as margin rather than
+    assumed.
+
+    ``POOL4_LEFT_NEED``/``POOL4_RAIL_NEED`` are hand-typed literals here
+    rather than imported from the screen: deriving them from the constant
+    they explain would make this compare a number with itself.
+    """
+    async with _pool4_app().run_test(
+        size=(SURF_POOL4_FULL_LAYOUT_COLUMNS, 50)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        screen = pilot.app.screen
+        left = screen.query_one(f"#{POOL4_LEFT_ID}").region.width
+        rail = screen.query_one(f"#{POOL4_RAIL_ID}").region.width
+
+    assert left == POOL4_LEFT_NEED, (
+        f"the left column gets {left} columns at the pin, not the "
+        f"{POOL4_LEFT_NEED} the constant is built from -- re-derive it"
+    )
+    assert rail >= POOL4_RAIL_NEED
+    assert rail - POOL4_RAIL_NEED == 3, (
+        f"the rail's margin is {rail - POOL4_RAIL_NEED}, not the three "
+        "columns the seam was chosen to buy. It was ten before the mainnet "
+        "rebalance put HATCHES (50) in the rail in place of VAULT (44), and "
+        "the two-column-cheaper 20:19 seam was declined precisely because it "
+        "leaves one"
+    )
+    # ...and the pin really is what those two needs add up to under this
+    # seam, which is the arithmetic the docstring's per-seam table rests on.
+    assert left + rail == SURF_POOL4_FULL_LAYOUT_COLUMNS
+    assert MEASURED_POOL4_COLUMNS == SURF_POOL4_FULL_LAYOUT_COLUMNS
+
+
+def test_the_pool4_body_fits_inside_the_documented_app_width() -> None:
+    """The standing rule, asserted rather than assumed: a body measured wider
+    than ``__main__.FULL_LAYOUT_COLUMNS`` means shortening a value, never
+    raising the app's number.
+    """
+    from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
+
+    assert SURF_POOL4_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
+    assert SURF_POOL4_FULL_LAYOUT_COLUMNS <= SURF_FULL_LAYOUT_COLUMNS
+    # Three bodies, three independently measured pins. They are allowed to
+    # be equal -- but if two of them ever ARE equal it should be because
+    # somebody measured it, so the constants are kept separate and this is
+    # the note that says so rather than a test forbidding the coincidence.
+    assert SURF_POOL4_FULL_LAYOUT_COLUMNS != SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
+
+
+# -- the p body's own measured height (2026-09-01, re-swept 2026-09-02) ---
+#
+# The sweep runs 34..52 -- ten rows below the measured 44 and eight above,
+# never starting at it. It has been re-centred twice as the pin moved
+# (43 -> 46 -> 44); the rule is that the range straddles the pin generously
+# and never begins on it, not that the endpoints are fixed.
+
+
+#: The payloads the height sweep runs, and the last one is the pin's own.
+#:
+#: **The network dimension is not decoration.** Every Sepolia body here fits
+#: in 43 or less -- the twelve-lever one needs exactly 43 -- so a sweep of
+#: Sepolia payloads alone can say nothing about a pin of 44 from underneath,
+#: and the first version of this test after the mainnet re-sweep made its
+#: below-the-pin claim against ``_pool4_hatch_payload(12)`` for exactly that
+#: reason and passed at 43 with the pin one row above it. THE SPLIT is three
+#: rows taller on mainnet, so ``mainnet-capped`` is the body the pin actually
+#: describes and is the only payload the below-the-pin branch may assert on.
+_POOL4_HEIGHT_PAYLOADS = {
+    "ten-levers": lambda: None,
+    "no-levers": lambda: _pool4_hatch_payload(0),
+    "capped-levers": lambda: _pool4_hatch_payload(12),
+    "mainnet-capped": lambda: _mainnet_pool4_payload(
+        pool4_hatches=_pool4_hatch_payload(12)["pool4_hatches"]
+    ),
+}
+
+
+@pytest.mark.parametrize("payload_name", sorted(_POOL4_HEIGHT_PAYLOADS))
+@pytest.mark.parametrize("rows", range(34, 53))
+async def test_the_pool4_body_is_whole_from_its_pinned_height(
+    rows, payload_name
+) -> None:
+    """150 columns is comfortably past the width pin, so nothing here is
+    measuring a width.
+
+    **The two halves are not symmetric, and that asymmetry is the pin's
+    definition rather than a weakness in the test.** At and above the pin
+    EVERY payload must fit -- that is what "the body is whole from here"
+    claims, and it is checked for all three. Below the pin only the payload
+    the pin was measured against need overflow: a body with no levers at all
+    is fourteen rows shorter and legitimately fits at 42, so asserting the
+    marker lit below the pin for every payload would be asserting that a
+    small payload must pretend not to fit.
+
+    That is exactly what the first version of this test did after the
+    mainnet re-sweep, and it failed on six parametrisations for the right
+    reason -- the pin had become a worst case over payloads where it used to
+    be a constant, and the sweep had not been told.
+
+    So the below-the-pin claim is made against ``mainnet-capped``, which is
+    the worst case the widgets can render and therefore the payload the pin
+    actually describes. It was made against the *Sepolia* capped-lever list
+    until 2026-09-02, and that was a second version of the same mistake one
+    dimension over: a twelve-lever Sepolia body needs 43, so it fits one row
+    below a 44 pin and the "the pin is tight" half of this test was asserting
+    something false about the right layout.
+    """
+    payload = _POOL4_HEIGHT_PAYLOADS[payload_name]()
+    async with _pool4_app(payload).run_test(size=(150, rows)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        await pilot.pause()
+        text = _screen_text(pilot.app)
+
+    if rows >= SURF_POOL4_FULL_LAYOUT_ROWS:
+        assert TALLER_HINT not in text, (rows, payload_name)
+    elif payload_name == "mainnet-capped":
+        assert TALLER_HINT in text, (rows, payload_name)
+
+
+async def test_the_pool4_height_pin_is_measured_against_the_column_it_describes() -> None:
+    """The pin's *derivation*, not just its threshold.
+
+    **Measured below the pin, not at it.** Both columns' ``1fr`` children
+    grow on a terminal with rows to spare, so at the pin itself each column
+    reports the body's own height and the content the docstring derives is
+    nowhere on screen. At 34 rows both sit on their floors and each column's
+    ``virtual_size`` is its real content.
+
+    The binder now SWITCHES with the payload, which is the property this
+    body lost when mainnet made two panels payload-sized: the left column
+    (THE SPLIT + THE RATCHET + the flow log's floor) binds on mainnet and on
+    a short lever list, and the rail (HATCHES + sIMD VAULT) binds once the
+    hatch list is long. So the assertion is on the *worst case over
+    payloads*, which is what the pin actually is, rather than on one column
+    being permanently taller.
+    """
+    worst = 0
+    for label, payload in (
+        ("sepolia-12-levers", _pool4_hatch_payload(12)),
+        ("mainnet", _mainnet_pool4_payload()),
+    ):
+        async with _pool4_app(payload).run_test(size=(150, 34)) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.pause()
+            await pilot.press("p")
+            await pilot.pause()
+            await pilot.pause()
+            screen = pilot.app.screen
+            left = screen.query_one(f"#{POOL4_LEFT_ID}")
+            rail = screen.query_one(f"#{POOL4_RAIL_ID}")
+            assert left.size.height < left.virtual_size.height or \
+                rail.size.height < rail.virtual_size.height, (
+                    f"{label}: 34 rows no longer squeezes the body, so both "
+                    "columns report the terminal's height and this test is "
+                    "measuring nothing"
+                )
+            worst = max(worst, left.virtual_size.height,
+                        rail.virtual_size.height)
+            chrome = pilot.app.size.height - left.size.height
+
+    assert worst == 33, (
+        f"the body's worst-case content is {worst} rows, not the 33 the pin "
+        "is derived from -- re-sweep it"
+    )
+    assert worst + chrome == SURF_POOL4_FULL_LAYOUT_ROWS
+    assert MEASURED_POOL4_ROWS == SURF_POOL4_FULL_LAYOUT_ROWS
+
+
+async def test_the_pool4_height_pin_covers_every_payload_the_widgets_render() -> None:
+    """The property that REPLACED "the pin does not move with the payload".
+
+    That claim was true while every panel whose line count answered to the
+    data was kept out of the binding column. Mainnet ended it: THE SPLIT is
+    12 rows on Sepolia and 15 on mainnet, HATCHES is 13 to 24 rows depending
+    on the lever list, and any two-column arrangement of these five panels
+    puts one of them in the binder. Asserting the old property now would be
+    asserting something the layout cannot deliver, and quietly dropping it
+    would leave the pin covering whichever payload somebody happened to
+    sweep.
+
+    So the claim is the honest one: the pin covers the WORST case over every
+    payload the widgets can render -- including the twelve-lever list at
+    ``pool4_hatches.MAX_ROWS``, which is above what the producer emits today
+    and is exactly the case a pin measured against "the state the data is in"
+    would have missed.
+    """
+    from maxpane_dashboard.widgets.surf.pool4_hatches import MAX_ROWS
+
+    heights: dict[str, int] = {}
+    for label, payload in (
+        ("no-levers", _pool4_hatch_payload(0)),
+        ("ten-levers", _pool4_hatch_payload(10)),
+        ("capped-levers", _pool4_hatch_payload(MAX_ROWS)),
+        ("mainnet", _mainnet_pool4_payload()),
+        # The worst case, and the one the tightness probe below uses -- the
+        # two halves have to be about the same body or "fits at the pin, not
+        # one row under it" is a claim about two different layouts.
+        ("mainnet-capped", _mainnet_pool4_payload(
+            pool4_hatches=_pool4_hatch_payload(MAX_ROWS)["pool4_hatches"]
+        )),
+    ):
+        async with _pool4_app(payload).run_test(
+            size=(150, SURF_POOL4_FULL_LAYOUT_ROWS)
+        ) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.pause()
+            await pilot.press("p")
+            await pilot.pause()
+            await pilot.pause()
+            text = _screen_text(pilot.app)
+            assert TALLER_HINT not in text, (
+                f"{label}: the body does not fit at its own pinned height"
+            )
+            heights[label] = pilot.app.screen.query_one(
+                SurfPool4Hatches
+            ).region.height
+
+    # The premise: the hatch count really is changing the panel, or the four
+    # cases above are one case measured four times.
+    assert heights["no-levers"] < heights["ten-levers"] < \
+        heights["capped-levers"], heights
+    # ...and one row below the pin, the worst of them does NOT fit -- so the
+    # pin is tight rather than merely generous.
+    #
+    # THE WORST PAYLOAD IS MAINNET'S, not the capped Sepolia list this used
+    # to probe: THE SPLIT is 15 rows on mainnet against 12 on Sepolia, which
+    # is three of the four rows separating a Sepolia body that fits in 43
+    # from a mainnet one that needs 44. Probing the Sepolia list here asked
+    # whether a body the pin does not describe fits one row under it, and
+    # the honest answer was yes.
+    worst_payload = _mainnet_pool4_payload(
+        pool4_hatches=_pool4_hatch_payload(MAX_ROWS)["pool4_hatches"]
+    )
+    async with _pool4_app(worst_payload).run_test(
+        size=(150, SURF_POOL4_FULL_LAYOUT_ROWS - 1)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        await pilot.pause()
+        assert TALLER_HINT in _screen_text(pilot.app), (
+            "the body still fits one row below the pin -- the pin is loose"
+        )
+
+
+async def test_the_pool4_floors_never_thin_a_panel_below_its_content() -> None:
+    """``min-height`` on a ``1fr`` child is load-bearing, not decoration --
+    and the two columns pick their ``1fr`` child by different rules.
+
+    A ``1fr`` child cannot overflow a scroll container, it SHRINKS, so one
+    given fewer rows than its content loses them with no scrollbar, no
+    ``‹ widen`` and no other trace **unless it scrolls inside itself**. Only
+    ``SurfPool4Flow`` does. So:
+
+    * FLOW may be squeezed to its floor of 6 -- its rows go behind its own
+      ``RichLog`` scrollbar, which is a place the reader can still reach;
+    * ``sIMD VAULT`` carries the rail's ``1fr`` **because its line count is a
+      constant**, so ``min-height: 10`` is both floor and ceiling and it can
+      never be cut. Asserted against its content, not against the constant:
+      a panel that grew an eleventh line would fail here rather than lose it;
+    * HATCHES is ``auto`` and is therefore never shrunk at all, at any
+      height, under any lever count -- which is the assertion that would have
+      caught the arrangement this one replaced, where HATCHES carried the
+      rail's ``1fr`` and silently lost two rows of a twelve-lever payload in
+      the narrow window before the column began to scroll.
+
+    Asserted on laid-out heights and on the marker, never on composited
+    cells: a floored panel the column has scrolled past composites *zero*
+    rows, correctly, and ``‹ taller`` is what says so.
+    """
+    async with _pool4_app(_pool4_hatch_payload(12)).run_test(
+        size=(150, 24)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        screen = pilot.app.screen
+        flow = screen.query_one(SurfPool4Flow)
+        vault = screen.query_one(SurfPool4Vault)
+        hatches = screen.query_one(SurfPool4Hatches)
+
+        assert flow.region.height >= 6, flow.region.height
+        assert vault.region.height >= vault.virtual_size.height, (
+            f"sIMD VAULT is {vault.region.height} rows against "
+            f"{vault.virtual_size.height} of content -- the panel chosen for "
+            "the rail's 1fr because it cannot be cut is being cut"
+        )
+        assert hatches.region.height == hatches.virtual_size.height, (
+            f"HATCHES is {hatches.region.height} rows against "
+            f"{hatches.virtual_size.height} of content: it is being shrunk, "
+            "so it is no longer `height: auto` and its rows are being lost "
+            "with nothing on screen saying so"
+        )
+        # The floors are only honest if the overflow they create is visible.
+        # Without this the assertions above are green in a state where half
+        # the body reaches the screen as nothing at all.
+        assert TALLER_HINT in _screen_text(pilot.app).split("\n")[0]
+        assert (
+            screen.query_one(f"#{POOL4_LEFT_ID}").show_vertical_scrollbar
+            or screen.query_one(f"#{POOL4_RAIL_ID}").show_vertical_scrollbar
+        ), "neither column is scrolling, so the floors are not being tested"
+
+
+# -- the row marker on the third body, and the mapping that feeds it ------
+
+
+async def test_the_taller_marker_lights_on_the_pool4_body() -> None:
+    """The 2026-08-25 defect's regression lock, applied to the third body.
+
+    ``_rail_is_cut`` reads ``_SCROLL_COLUMNS[self._mode]`` and falls back to
+    ``()`` for a mode that is not in it. A ``MODE_POOL4`` body added without
+    its entry therefore reports "nothing is cut" at **every** terminal height
+    while both its columns visibly scroll -- which is exactly what
+    ``MODE_LAUNCHPAD`` did, for the whole of that view's existence, because
+    the method read one hardcoded container id.
+
+    Three heights, and the trio is what makes this bite rather than any one
+    of them:
+
+    * **50 rows** -- whole for the pool4 body (43) and whole for the
+      dashboard body (36). The marker must be dark in both, or the test
+      below cannot tell a wired marker from a stuck-on one.
+    * **40 rows** -- short for pool4, whole for the dashboard. This is the
+      half a missing ``_SCROLL_COLUMNS`` entry fails: the marker is dark
+      before ``p`` and must be **lit** after it.
+    * **28 rows** -- short for both. The marker must stay lit through the
+      swap, which is what stops the fix being "light it whenever the mode is
+      MODE_POOL4"; that mutation passes the 40-row half on its own.
+    """
+    for rows, before, after in ((50, False, False), (40, False, True),
+                                (28, True, True)):
+        async with _pool4_app().run_test(size=(150, rows)) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.pause()
+            assert (TALLER_HINT in _screen_text(pilot.app)) is before, (
+                f"{rows} rows: the DASHBOARD body's marker is not in the "
+                "state this test's premise needs"
+            )
+            await pilot.press("p")
+            await pilot.pause()
+            assert (TALLER_HINT in _screen_text(pilot.app)) is after, (
+                f"{rows} rows: the pool4 body's marker should be "
+                f"{'lit' if after else 'dark'}"
+            )
+
+
+def test_every_mode_names_its_scrolling_columns() -> None:
+    """``_SCROLL_COLUMNS`` must be **total** over the modes that exist.
+
+    The test above proves this body's marker works. This proves the *next*
+    body cannot be added without one, which is the half that would actually
+    have caught the 2026-08-25 defect before it shipped: a mode missing from
+    this mapping does not raise, it silently answers ``()``.
+
+    The mode list is discovered from the module rather than typed, so a
+    fourth ``MODE_*`` constant lands here the day it is written.
+    """
+    import maxpane_dashboard.screens.surf as surf
+
+    modes = {
+        getattr(surf, name)
+        for name in dir(surf)
+        if name.startswith("MODE_") and isinstance(getattr(surf, name), str)
+    }
+    assert modes == {MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4}, (
+        f"a mode was added or removed: {modes}"
+    )
+    assert set(SurfScreen._SCROLL_COLUMNS) == modes, (
+        "a body has no _SCROLL_COLUMNS entry -- `‹ taller` will be dark "
+        "across the whole of it at every terminal height: "
+        f"{modes - set(SurfScreen._SCROLL_COLUMNS)}"
+    )
+    for mode, selectors in SurfScreen._SCROLL_COLUMNS.items():
+        assert selectors, f"{mode} names no scrolling column"
+        assert all(s.startswith("#") for s in selectors), (mode, selectors)
+
+
+#: The two heights the pool4 gutter proof is measured at, and neither is
+#: arbitrary. On the committed capture the columns first overflow at 40 rows
+#: (measured, 2026-09-02: 41 shows no scrollbar, 40 does), so 50 is
+#: comfortably on the roomy side and 40 is the first row count where the
+#: scrollbar actually exists. A pair of heights both above the crossover
+#: cannot fail -- the ``l`` body's own version of this test shipped exactly
+#: that mistake once, and this one nearly repeated it: the crossover was 42
+#: until WP4 shortened HATCHES, and the stale 42 left the premise assertion
+#: failing rather than the comparison silently passing, which is the whole
+#: reason the premise is asserted.
+#:
+#: Note this is the CAPTURE's crossover, not the pin's. The pin (44) is the
+#: worst case over every payload; the committed capture is a Sepolia body
+#: that legitimately fits in 41. Two different questions, two different
+#: numbers.
+_POOL4_ROOMY_ROWS = 50
+_POOL4_OVERFLOWING_ROWS = 40
+
+
+async def _pool4_column_widths(height: int, width: int = 150) -> dict:
+    async with _pool4_app().run_test(size=(width, height)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        screen = pilot.app.screen
+        return {
+            "split": screen.query_one(SurfPool4Split).region.width,
+            "vault": screen.query_one(SurfPool4Vault).region.width,
+            "flow": screen.query_one(SurfPool4Flow).region.width,
+            "left_overflowing": screen.query_one(
+                f"#{POOL4_LEFT_ID}"
+            ).show_vertical_scrollbar,
+            "rail_overflowing": screen.query_one(
+                f"#{POOL4_RAIL_ID}"
+            ).show_vertical_scrollbar,
+        }
+
+
+async def test_the_pool4_columns_reserve_their_scrollbar_gutters() -> None:
+    """Without ``scrollbar-gutter: stable`` a column's scrollbar takes a
+    column away the moment it overflows, so this layout's WIDTH requirement
+    would move with its HEIGHT and the pin measured at 50 rows would be one
+    column short at 42. Curator shipped exactly that.
+
+    **The column belongs to the column's own children, not to the panels
+    beside them**, so the widths compared are the panels' -- and the premise
+    that the two heights straddle the overflow crossover is asserted first,
+    because without it the comparison is trivially true and tests nothing.
+
+    Checked against laid-out regions rather than ``styles.scrollbar_gutter``,
+    because a style read cannot see a one-copy CSS deletion (the app
+    stylesheet and ``DEFAULT_CSS`` cover for each other); that half is guarded
+    by the property-by-property agreement test below.
+    """
+    roomy = await _pool4_column_widths(_POOL4_ROOMY_ROWS)
+    cramped = await _pool4_column_widths(_POOL4_OVERFLOWING_ROWS)
+
+    assert not roomy["rail_overflowing"], (
+        f"the rail already overflows at {_POOL4_ROOMY_ROWS} rows -- both "
+        "sample heights are on the same side of the crossover"
+    )
+    assert cramped["rail_overflowing"], (
+        f"the rail does not overflow at {_POOL4_OVERFLOWING_ROWS} rows -- "
+        "the condition this test exists to measure never occurs"
+    )
+
+    for panel in ("split", "vault", "flow"):
+        assert roomy[panel] == cramped[panel], (
+            f"{panel} is {roomy[panel]} columns at {_POOL4_ROOMY_ROWS} rows "
+            f"and {cramped[panel]} at {_POOL4_OVERFLOWING_ROWS}: a scrollbar "
+            "took a column instead of using its reserved gutter, so this "
+            "layout's width requirement now moves with its height"
+        )
+
+    async with _pool4_app().run_test(size=(150, _POOL4_ROOMY_ROWS)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        for column in (POOL4_LEFT_ID, POOL4_RAIL_ID):
+            gutter = pilot.app.screen.query_one(f"#{column}").styles.scrollbar_gutter
+            assert "stable" in str(gutter), column
+
+
+async def test_the_hero_survives_the_pool4_body_swap() -> None:
+    """The hero is outside ``#surf-pool4-body``, so nothing it tracks goes
+    dark when ``p`` swaps the body underneath it.
+
+    Asserted against the hero's **own region**, not the whole screen: the
+    pool4 panels composite the words ``BURN``, ``FLOW`` and ``SUPPLY``
+    themselves, so a whole-screen substring check would pass with the hero
+    unmounted entirely.
+    """
+    async with _pool4_app().run_test(size=(150, 50)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        screen = pilot.app.screen
+        assert screen.query_one(f"#{POOL4_BODY_ID}").display is True
+        hero = _region_text(pilot.app, screen.query_one(SurfHero))
+        for title in ("LAUNCHPAD", "FLOW", "BURN", "IMD SUPPLY"):
+            assert title in hero, f"the hero lost its {title} box under `p`"
+        assert "2,376,732 IMD" in hero
+        assert "READY" in hero
+
+
+# -- the p body's CSS, in agreement ---------------------------------------
+
+_POOL4_CSS_SELECTORS = (
+    f"#{POOL4_BODY_ID}", f"#{POOL4_LEFT_ID}", f"#{POOL4_RAIL_ID}",
+    "SurfPool4Hatches", "SurfPool4Flow",
+    "SurfPool4Split", "SurfPool4Ratchet", "SurfPool4Vault",
+)
+
+
+def test_the_pool4_body_css_agrees_between_default_css_and_the_stylesheet() -> None:
+    """``SurfScreen.DEFAULT_CSS`` and the surf block in ``minimal.tcss`` must
+    describe the pool4 body's geometry identically -- edit both or neither.
+
+    The app stylesheet is what actually renders (it outranks
+    ``DEFAULT_CSS``); ``DEFAULT_CSS`` is what keeps the screen correctly
+    proportioned when it is reviewed or mounted without it. A property
+    declared in one copy and not the other is *invisible* rather than
+    conflicting: Textual falls back to ``DEFAULT_CSS`` for anything the app
+    stylesheet never mentions, so the layout is right under both copies today
+    and wrong under one of them the moment either value changes.
+
+    Reuses the ``l`` body's own comparator and property list, which already
+    covers ``overflow-y``, ``scrollbar-gutter`` and ``scrollbar-size`` -- all
+    three load-bearing here for the same reasons they are next door.
+    """
+    fallback = _css_rules(SurfScreen.DEFAULT_CSS)
+    block = _css_rules(_surf_stylesheet_block())
+
+    for selector in _POOL4_CSS_SELECTORS:
+        assert selector in fallback, (
+            f"{selector} is not styled in SurfScreen.DEFAULT_CSS"
+        )
+        assert selector in block, (
+            f"{selector} is not styled in the surf block of minimal.tcss"
+        )
+        for prop in _LAUNCHPAD_CSS_STRUCTURAL:
+            default = _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS.get(prop)
+            left = fallback[selector].get(prop, default)
+            right = block[selector].get(prop, default)
+            if left is None and right is None:
+                continue
+            assert left is not None and right is not None, (
+                f"{selector}: {prop} is declared in only one copy "
+                f"(DEFAULT_CSS={left!r}, minimal.tcss={right!r})"
+            )
+            if prop in _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS:
+                assert _expand_css_box(left) == _expand_css_box(right), (
+                    f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
+                    f"{right!r} in minimal.tcss"
+                )
+            else:
+                assert left == right, (
+                    f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
+                    f"{right!r} in minimal.tcss"
+                )
+
+
+def test_exactly_one_pool4_child_per_column_carries_the_fr() -> None:
+    """The rule the body is built on, read off the CSS rather than the code.
+
+    Two ``1fr`` children in one column split its slack and neither reaches
+    the floor the layout was measured with; none at all strands the column's
+    spare rows above the fold. Both are silent, and both are the kind of
+    thing an edit to the stylesheet makes without touching a line of Python
+    -- which is why this is asserted against ``minimal.tcss``, the copy that
+    actually renders, and not against ``compose``.
+    """
+    block = _css_rules(_surf_stylesheet_block())
+    columns = {
+        POOL4_LEFT_ID: ("SurfPool4Split", "SurfPool4Ratchet", "SurfPool4Flow"),
+        POOL4_RAIL_ID: ("SurfPool4Hatches", "SurfPool4Vault"),
+    }
+    for column, panels in columns.items():
+        growing = [p for p in panels if block[p].get("height") == "1fr"]
+        assert len(growing) == 1, (
+            f"#{column} has {len(growing)} children at `height: 1fr` "
+            f"({growing}); exactly one may grow"
+        )
+        assert block[growing[0]].get("min-height"), (
+            f"{growing[0]} carries a `1fr` with no `min-height`: a `1fr` "
+            "child cannot overflow a scroll container, it shrinks, so "
+            "without a floor it sheds a line per terminal row down to a bare "
+            "title with no scrollbar and no trace"
+        )
+        assert block[f"#{column}"].get("overflow-y") == "auto", column
+        assert block[f"#{column}"].get("scrollbar-gutter") == "stable", column
+
+
+#: The adopted-mainnet ``pool4_discovery_detail``: WP3's sentence, and
+#: **nothing else**.
+#:
+#: It carried ``· tx <66-char hash>`` glued on the end until S18, because
+#: ``surf_manager._pool4_cited_detail`` composed it that way. That function is
+#: deleted and the citation is its own contract key, so a fixture still
+#: merging them asserts a shape the producer cannot emit -- a test passing
+#: against a world that does not exist, which is worse than a failing one
+#: because nothing ever goes red to say so.
+#:
+#: Still the long case this test is named for: it renders on HATCHES, which
+#: is in the *binding* column, so it is the shape that could move the width
+#: pin.
+_ADOPTED_DISCOVERY_DETAIL = (
+    "adopted 0xa1B997A9861B2b8aC17B4c615089cCC2a5416840: flags, token and "
+    "five getters agree"
+)
+
+#: The citation, now its own key. Dispatched beside the detail and rendered
+#: on its own line, never merged into it.
+_ADOPTED_SOURCE_TX = "0x" + "3f" * 32
+
+
+async def test_the_adopted_discovery_detail_does_not_move_the_pool4_pin() -> None:
+    """D8: the day-one payload is the *short* discovery detail, so the pin
+    was first measured against the narrow case.
+
+    CLAUDE.md's rule is to measure a data-dependent width against the state
+    the data is normally in, and "normally" for this key changes the moment a
+    mainnet hook is adopted: the detail goes from one clause to a sentence
+    plus a 66-character transaction hash. On the binding column. That is the
+    shape that moves pins, so it is measured rather than assumed.
+
+    It does not move this one, and the second half of this test is what
+    explains why -- but the property it asserts **changed with S18 and the
+    old one was the defect**. It used to assert *constancy*: that the block
+    rendered identically at every width. That was true, and it was true
+    because ``_discovery_markup`` windowed the detail to its tier's own
+    width, a fixed 35 cells, leaving 115 spare columns unused beside an
+    ellipsis at 150. The correct property is **monotonicity** -- a wider
+    panel renders more and never less -- transcribed from WP4's own
+    ``test_the_discovery_block_is_fitted_to_the_panel_not_to_a_constant``.
+
+    A test asserting the old property would now fail *for the right reason*
+    and be "fixed" by reverting a real improvement, which is the second-worst
+    outcome available; asserting nothing at all would leave the pin half
+    green if the widget ever went back to a constant. So the property is
+    restated rather than dropped.
+    """
+    payload = _frozen_payload(
+        pool4_network="MAINNET",
+        pool4_discovery_state="adopted",
+        pool4_discovery_detail=_ADOPTED_DISCOVERY_DETAIL,
+        pool4_discovery_source_tx=_ADOPTED_SOURCE_TX,
+    )
+    assert len(_ADOPTED_DISCOVERY_DETAIL) > 80, (
+        "the fixture stopped being the long-detail case it is named for"
+    )
+    assert "· tx" not in _ADOPTED_DISCOVERY_DETAIL, (
+        "the fixture merged the citation back into the detail -- the "
+        "producer has not composed it that way since S18"
+    )
+
+    widths: dict[int, int] = {}
+    for width in (SURF_POOL4_FULL_LAYOUT_COLUMNS, 120, 152, 200):
+        async with _pool4_app(payload).run_test(size=(width, 60)) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.pause()
+            await pilot.press("p")
+            await pilot.pause()
+            screen = pilot.app.screen
+            hatches = screen.query_one(SurfPool4Hatches)
+            body = _region_text(pilot.app, hatches)
+            widths[width] = max(
+                (len(line.rstrip()) for line in body.split("\n")), default=0
+            )
+            if width == SURF_POOL4_FULL_LAYOUT_COLUMNS:
+                # THE PIN HALF, unchanged: at the pin nothing is marked and
+                # nothing is CSS-clipped, on the adopted path.
+                assert not _pool4_marked(pilot.app, screen), (
+                    "the adopted detail lights a marker at the pin -- the "
+                    "pin was measured against the short detail only"
+                )
+                assert not _clipped_pool4_lines(pilot.app, screen)
+
+    # THE MONOTONICITY HALF, replacing the constancy one.
+    ordered = [widths[w] for w in sorted(widths)]
+    assert ordered == sorted(ordered), (
+        f"HATCHES renders LESS on a wider panel: {widths}"
+    )
+    assert len(set(ordered)) > 1, (
+        f"HATCHES renders identically at every width: {widths} -- the "
+        "discovery block is being fitted to a constant again, so the spare "
+        "columns of a wide terminal are going unused beside an ellipsis"
+    )
+    # ...and the citation, which is the part a reader can actually rely on,
+    # survives in full at the pin rather than being the thing that got cut.
+    async with _pool4_app(payload).run_test(
+        size=(SURF_POOL4_FULL_LAYOUT_COLUMNS, 60)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        hatch_text = _region_text(
+            pilot.app, pilot.app.screen.query_one(SurfPool4Hatches)
+        )
+    assert _ADOPTED_SOURCE_TX[:10] in hatch_text, (
+        "the citation does not reach the screen at the pinned width"
+    )
+
+
+# =========================================================================
+# The mainnet deployment (2026-09-02): three-way split, inventory ceiling
+# =========================================================================
+
+
+def test_the_cap_headroom_keeps_its_operand_order() -> None:
+    """⚠ The sign trap, pinned against its OPERANDS rather than a literal.
+
+    ``pool4_floor_distance`` is ``reserve − floor``. ``pool4_cap_headroom``
+    is ``cap − reserve``. The operand order flips between the two so that
+    both read positive when healthy -- which is what makes them legible side
+    by side, and is also exactly why writing the ceiling half "by analogy"
+    with the floor half is such an easy mistake: ``reserve − cap`` gives
+    −94.68 on the live mainnet numbers and renders a **binding cap as
+    slack**, which is the one reading this key exists to prevent.
+
+    Asserted against the two operands, never against ``+94.683763``. A
+    literal would pass just as happily if the fixture and the constant were
+    reversed together, which is the shape a mistake here actually takes: the
+    author flips the subtraction and updates the expected number to match.
+    """
+    payload = _mainnet_pool4_payload()
+    reserve = payload["pool4_tokens_in_pool"]
+    cap = payload["pool4_inventory_cap"]
+    floor = payload["pool4_cap_floor"]
+
+    # The premise: on mainnet the cap really is above the reserve and really
+    # does bind. Without this the sign assertions below are about a fixture
+    # where either order happens to be positive.
+    assert cap > reserve > floor, (reserve, cap, floor)
+
+    assert payload["pool4_cap_headroom"] == cap - reserve, (
+        "pool4_cap_headroom is not cap − reserve -- if it was written as "
+        "reserve − cap it now reports a binding cap as slack"
+    )
+    assert payload["pool4_cap_headroom"] > 0
+    assert payload["pool4_floor_distance"] == reserve - floor, (
+        "pool4_floor_distance is not reserve − floor"
+    )
+    assert payload["pool4_floor_distance"] > 0
+    # ...and the two really are opposite orders, which is the whole claim.
+    assert payload["pool4_cap_headroom"] != reserve - cap
+
+
+def test_the_reward_topology_reaches_exactly_two_panels() -> None:
+    """WP0 pins the count; this pins that our copy agrees with it.
+
+    ``pool4_reward_path`` says whether a Distributor is in the path and the
+    staker leg is split again. It belongs on THE SPLIT (which renders the
+    legs) and on HATCHES (which renders the trust surface the extra hop
+    adds), and nowhere else -- a third panel acquiring it would be a second
+    place for the topology to be stated and therefore a second place for it
+    to disagree with itself.
+    """
+    from tests.data.test_surf_pool4_models import POOL4_WIDGET_SIGNATURES
+
+    mine = {n for n, sig in SURF_WIDGET_SIGNATURES.items()
+            if "pool4_reward_path" in sig}
+    theirs = {n for n, sig in POOL4_WIDGET_SIGNATURES.items()
+              if "pool4_reward_path" in sig}
+    assert mine == theirs == {"SurfPool4Split", "SurfPool4Hatches"}, (mine, theirs)
+    # The distributor address rides with it on both.
+    for panel in mine:
+        assert "pool4_distributor_addr" in SURF_WIDGET_SIGNATURES[panel], panel
+
+
+def test_every_contract_key_is_a_real_parameter_of_its_panel() -> None:
+    """A panel must DECLARE the keys the contract says it renders.
+
+    ``**_kwargs`` is mandatory on all five ``update_data`` methods so the
+    screen can splat the whole payload and a future key cannot raise. Its
+    cost is that a key the widget forgot to declare is swallowed in silence
+    -- the dispatch is correct, the kwarg-name check passes, the value
+    reaches nothing, and no test anywhere disagrees. Every guard that
+    predates this one stayed green through two live instances of exactly
+    that, because ``**_kwargs`` accepts everything and therefore cannot tell
+    **rendered** from **accepted and dropped** (follow-up S21).
+
+    So the contract is compared against the real signatures, with **no
+    exemptions**.
+
+    There was a ``_KEYS_THE_WIDGET_SWALLOWS`` mapping here while the two
+    known instances were open -- ``pool4_cap_headroom`` on
+    ``SurfPool4Ratchet`` and ``pool4_reward_path`` on ``SurfPool4Hatches``,
+    each verified twice (the word appeared nowhere in the widget's source,
+    and zeroing the key through the real screen produced no new composited
+    line where every other numeric key produced one). It was guarded so that
+    a THIRD entry or a FIX of either reddened this test, and the fix is what
+    happened: both landed in ``widgets/surf/`` and the handshake fired here.
+
+    The **whole mechanism is gone** rather than left as an empty dict, on
+    ``tests/widgets/test_surf_pool4_shared.py``'s ``_PENDING_MIGRATION``
+    precedent -- a self-clearing list that has cleared has done its job, and
+    an empty one is an invitation to add the next panel to it instead of
+    fixing that panel. What the list was protecting is kept as the rule it
+    always was: a dispatched key reaching no pixel is a defect, named here
+    on the day it is written.
+    """
+    import inspect
+
+    from tests.data.test_surf_pool4_models import POOL4_WIDGET_SIGNATURES
+
+    swallowed = {}
+    for panel, keys in POOL4_WIDGET_SIGNATURES.items():
+        cls = _ALL_WIDGET_CLASSES[panel]
+        declared = {
+            name
+            for name, param in inspect.signature(cls.update_data).parameters.items()
+            if param.kind is not param.VAR_KEYWORD and name != "self"
+        }
+        for key in keys:
+            if key not in declared:
+                swallowed[key] = panel
+
+    assert not swallowed, (
+        f"contract keys dispatched to a panel that does not declare them, so "
+        f"`**_kwargs` swallows them and they reach no pixel: {swallowed}. "
+        "Declare the parameter on that panel's `update_data` and render it "
+        "-- do not park it in an exemption list here."
+    )
+
+
+#: Payload/height pairs the row-marker property is swept over.
+#:
+#: The heights are a band, not a guess, and the PAYLOADS are the part that
+#: matters: the one-row boundary this test exists to catch moves with the
+#: body's content, so a sweep pinned to one payload catches it only where
+#: that payload happens to sit. Measured with the fix disabled, the
+#: disagreement appears on the **no-lever** body at 41 rows and nowhere else
+#: in 36..53 -- so a lock written against the mainnet payload alone (which
+#: is what the first version of this test did) passes with the fix removed
+#: and locks nothing. Four payloads, eighteen heights.
+_ROW_MARKER_SWEEP = [
+    (name, rows)
+    for name in ("no-levers", "ten-levers", "capped-levers", "mainnet")
+    for rows in range(36, 54)
+]
+
+
+@pytest.mark.parametrize(
+    "payload_name,rows", _ROW_MARKER_SWEEP,
+    ids=[f"{n}-{r}" for n, r in _ROW_MARKER_SWEEP],
+)
+async def test_the_row_marker_agrees_with_the_scrollbar_at_every_height(
+    payload_name, rows,
+) -> None:
+    """``‹ taller`` must be lit exactly when a column is actually scrolling.
+
+    The regression lock for a defect that shipped and was measured rather
+    than reasoned about (2026-09-02). ``_show_mode`` and ``on_resize`` defer
+    ``_render_title`` through ``call_after_refresh`` because the newly-shown
+    body has not been laid out when they return -- correct, and at the
+    **one-row** boundary still one pass short. A column whose content
+    exceeds its height by exactly one row acquires its scrollbar on a later
+    pass, so the title was composed while ``_rail_is_cut()`` still said
+    ``False`` and nothing recomposed it.
+
+    The result was the marker DARK on a body that was scrolling, at exactly
+    the height where a reader most needs it: one row from fitting. WP5 saw
+    this shape, could not separate it from its own dispatch injection, and
+    reported it as unverified rather than dressing it up -- which was the
+    right call, and it is real.
+
+    Note what this asserts and what it does not: it compares the marker
+    against the columns' **own** ``show_vertical_scrollbar``, not against a
+    height threshold. A literal would go stale the next time a panel gains a
+    line; the property cannot. ``_rail_is_cut`` was never wrong -- it
+    returned ``True`` throughout -- so a test of that method alone would
+    have stayed green. Only what reached a pixel was wrong, so that is what
+    is measured.
+    """
+    payload = {
+        "no-levers": lambda: _pool4_hatch_payload(0),
+        "ten-levers": lambda: _pool4_hatch_payload(10),
+        "capped-levers": lambda: _pool4_hatch_payload(12),
+        "mainnet": _mainnet_pool4_payload,
+    }[payload_name]()
+    async with _pool4_app(payload).run_test(size=(150, rows)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        await pilot.pause()
+        screen = pilot.app.screen
+        left = screen.query_one(f"#{POOL4_LEFT_ID}")
+        rail = screen.query_one(f"#{POOL4_RAIL_ID}")
+        scrolling = (
+            left.show_vertical_scrollbar or rail.show_vertical_scrollbar
+        )
+        lit = TALLER_HINT in _screen_text(pilot.app).split("\n")[0]
+
+    assert lit is scrolling, (
+        f"{payload_name} at {rows} rows: a column is "
+        f"{'scrolling' if scrolling else 'not scrolling'} but the marker is "
+        f"{'lit' if lit else 'dark'} -- the title was composed before the "
+        "layout settled and nothing recomposed it"
+    )

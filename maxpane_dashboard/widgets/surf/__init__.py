@@ -33,6 +33,33 @@ surface the screen and its tests use, exactly as ``widgets/ttt`` and
 ``widgets/talismans`` do it and as ``screens/fwa.py`` consumes
 ``maxpane_dashboard.widgets.fwa``.
 
+And five more again for the ``p`` POOL4 view (2026-09-01), wired by
+``screens/surf.py`` into a **third** body on the same composed-once-hidden
+contract the ``l`` body uses:
+
+=====================  ================================================
+Widget                 Data
+=====================  ================================================
+``SurfPool4Split``     where a pool4 fee went, measured vs claimed
+``SurfPool4Flow``      recent pool4 swaps and each one's three legs
+``SurfPool4Ratchet``   the reserve between its floor and its ceiling
+``SurfPool4Vault``     sIMD share price, drip rate and runway
+``SurfPool4Hatches``   discovery state, the five addresses, the levers
+=====================  ================================================
+
+Two of those rows moved when pool4 went live on mainnet (2026-09-02): THE
+RATCHET gained the inventory ceiling above the reserve (it used to have only
+a floor and the backstop), and HATCHES gained a fifth address because the
+reward path now runs through a Distributor before the Dripper.
+
+**Only the five classes are re-exported, and no pool4 module constant is.**
+That is the collision the paragraph below predicted arriving: ``pool4_flow``
+has its own ``TITLE``/``UNAVAILABLE_LINE``/``EMPTY_LINE`` and so do three of
+its siblings, so re-exporting any of them bare would silently rebind
+``SurfLaunchpadActivity``'s -- which the app-level acceptance tests assert
+against composited output. The pool4 tests import those constants from their
+own modules instead, which is where a per-panel string belongs anyway.
+
 ``DETECTOR_LABELS``, ``FEED_TITLE`` and ``FLOOR_UNAVAILABLE`` ride along:
 they are *rendered interface strings* asserted against composited output by
 the screen WP and by the app-level acceptance tests, so consumers import
@@ -64,6 +91,11 @@ from .launchpad_activity import (
 )
 from .market import SurfMarket
 from .nft import FLOOR_UNAVAILABLE, SurfNft
+from .pool4_flow import SurfPool4Flow
+from .pool4_hatches import SurfPool4Hatches
+from .pool4_ratchet import SurfPool4Ratchet
+from .pool4_split import SurfPool4Split
+from .pool4_vault import SurfPool4Vault
 from .signals import DETECTOR_LABELS, SurfSignals
 
 __all__ = [
@@ -82,6 +114,11 @@ __all__ = [
     "SurfLaunchpadCoins",
     "SurfMarket",
     "SurfNft",
+    "SurfPool4Flow",
+    "SurfPool4Hatches",
+    "SurfPool4Ratchet",
+    "SurfPool4Split",
+    "SurfPool4Vault",
     "SurfSignals",
     "TITLE",
     "UNAVAILABLE_LINE",

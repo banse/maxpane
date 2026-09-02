@@ -2245,6 +2245,133 @@ SurfBurnkeepers {
     padding: 0 1;
 }
 
+/* The `p` POOL4 body (2026-09-01): the THIRD body on this screen, and a copy
+ * of the `l` body's structure rather than a new idea. `_show_mode` swaps this
+ * container in for `#middle-row`/`#separator`/`#bottom-row`; the hero row is
+ * outside it and is never touched by either swap. `margin: 1 0 0 0` matches
+ * `#middle-row`'s and `#surf-launchpad-body`'s, so moving between any two of
+ * the three bodies never also moves the hero's breathing room.
+ *
+ * THE `1fr:1fr` SEAM IS MEASURED FOR THIS BODY, NOT INHERITED. It is
+ * deliberately not the `l` body's 2:1 and not the 7:6 the other two surf rows
+ * use. This body balances a fitted `RichLog` (POOL4 FLOW, 52 screen columns)
+ * against a rail whose widest need is sIMD VAULT's 42, where the `l` body's
+ * two halves are 92 and 43. The LEFT column has to be the binder: POOL4 FLOW
+ * writes `‹ widen` into its own log, where the rail's three append theirs to
+ * a title and drop it again once the title alone no longer fits. The
+ * arithmetic floor is 53 + 43 = 96 and seams near 53:43 collect it; 1:1 pins
+ * at 106 and hands the rail 53, ten columns more than its widest possible
+ * line, which is the margin those eight columns actually buy. The full
+ * per-seam table is in `screens/surf.SURF_POOL4_FULL_LAYOUT_COLUMNS`.
+ *
+ * This copy is the one that RENDERS -- an app stylesheet outranks a screen's
+ * DEFAULT_CSS -- and both `tests/test_surf_registration.py` and
+ * `tests/screens/test_surf_screen.py` pin the two copies together property by
+ * property. Edit both or neither. */
+SurfScreen #surf-pool4-body {
+    height: 1fr;
+    width: 100%;
+    padding: 0 0;
+    margin: 1 0 0 0;
+}
+
+/* Both columns SCROLL and both reserve their gutter, for
+ * `#surf-launchpad-left`/`#curator-right-rail`'s reason: a `Vertical` defaults
+ * to `overflow: hidden hidden`, so without `overflow-y: auto` a short terminal
+ * clips a panel straight out of the column with no scrollbar and no trace --
+ * and without `scrollbar-gutter: stable` the scrollbar takes its column out of
+ * the panel beside it only when the column overflows, which would make this
+ * layout's WIDTH pin a function of its HEIGHT. That reserved cell is counted
+ * in the 53 and the 50 `SURF_POOL4_FULL_LAYOUT_COLUMNS` measures (it was 53
+ * and 43 until the mainnet rebalance put HATCHES in the rail).
+ * `scrollbar-size: 1 1` matches every other scrollable container in this file;
+ * the Textual default is two cells. */
+SurfScreen #surf-pool4-left {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 0;
+    overflow-y: auto;
+    scrollbar-size: 1 1;
+    scrollbar-gutter: stable;
+}
+
+/* THE RAIL's top panel since the mainnet rebalance. `margin: 0 0 1 0` is the
+ * blank row between the rail's two panels -- the same one `SurfSignals` and
+ * `SurfCurveFlow` carry in the other two bodies, and for the same reason:
+ * flush, the two read as one block. `auto` and NOT the rail's `1fr`, because
+ * this is the panel whose height answers to the lever list (ten rows with
+ * none, twenty-two at `pool4_hatches.MAX_ROWS`) and a floored `1fr` `Static`
+ * loses the overflow with no scrollbar and no trace. It is also the rail's
+ * binding panel at 50 columns. */
+SurfPool4Hatches {
+    width: 1fr;
+    height: auto;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+/* The left column's `1fr`, under THE SPLIT and THE RATCHET -- exactly one
+ * child per column may carry it, and it must be the one with content to spend
+ * rows on. Floored, because a `1fr`
+ * child cannot overflow a scroll container, it SHRINKS: without `min-height`
+ * this log sheds a line per terminal row down to a bare title with no
+ * scrollbar and no trace, which is what the floor under `SurfDevActivity`
+ * exists to stop in the dashboard body. 6 == title, the legend note, and four
+ * rows. A `RichLog` scrolls inside itself, so shrinking it hides rows behind
+ * its own scrollbar rather than cutting them off the layout. */
+SurfPool4Flow {
+    width: 1fr;
+    height: 1fr;
+    min-height: 6;
+    padding: 0 1;
+}
+
+SurfScreen #surf-pool4-rail {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 0;
+    overflow-y: auto;
+    scrollbar-size: 1 1;
+    scrollbar-gutter: stable;
+}
+
+/* THE LEFT COLUMN's top two panels since the mainnet rebalance (they were in
+ * the rail before it), both `auto` with a trailing blank row. THE SPLIT is
+ * payload-sized now -- 12 rows on Sepolia, 15 on mainnet's three-way
+ * Distributor split -- which is why this body's height pin is a worst case
+ * over payloads rather than a constant. */
+SurfPool4Split {
+    width: 1fr;
+    height: auto;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+SurfPool4Ratchet {
+    width: 1fr;
+    height: auto;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+/* The rail's `1fr`, and it is the panel with the FIXED line count on purpose
+ * -- the opposite of the left column's rule, for a reason the other bodies
+ * have not had to face. A `1fr` child that is shrunk below its content loses
+ * those lines with no scrollbar and no trace unless it scrolls inside itself,
+ * and of this body's five panels only POOL4 FLOW does. HATCHES is the panel
+ * whose line count moves with the data (ten levers today, twelve at the
+ * widget's own cap), so it is `auto` above and takes exactly the rows it
+ * needs; sIMD VAULT's nine lines and blank are a constant, so `min-height:
+ * 10` is both its floor and its ceiling and it can never be cut. The rail's
+ * spare rows land in it as blank space, which is the price of never cutting
+ * a lever row in silence. */
+SurfPool4Vault {
+    width: 1fr;
+    height: 1fr;
+    min-height: 10;
+    padding: 0 1;
+}
+
 /* ── Curator screen (THE LIST) ────────────────────────────────────────── */
 
 /* Structure only, restating CuratorScreen.DEFAULT_CSS. An app stylesheet

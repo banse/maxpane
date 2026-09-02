@@ -1,0 +1,125 @@
+{
+ "fixture": "counter_reconciliation",
+ "synthetic": false,
+ "derived_from": [
+  "hook_state_healthy.json",
+  "token_state.json",
+  "flow_logs_full.json"
+ ],
+ "generated_at": "2026-09-01T21:46:07.948932Z",
+ "note": "R1's control (c), run over the committed corpus.  FOUR OF FIVE CROSS-CHECKS RECONCILE TO THE WEI.  SCOPE (A27): the five checks below settle SIX getters -- totalFeeToken, totalBurned, totalRewarded, retainedEth, rewardShareBps and BPS_DENOMINATOR -- against the log set and the token's dEaD balance, and that is ALL they settle.  A further SEVEN are settled by other fixtures and are listed under corroborated_by_other_fixtures; the strongest of those is currentTick / currentSqrtPriceX96 / positionLiquidity / lpFee, confirmed word for word by PoolManager.extsload -- the canonical, VERIFIED-SOURCE v4 singleton corroborating an unverified contract, which is a better class of evidence than any log sum.  (An earlier version of this note said the position getters had no cross-check.  Four of them do; it is just not a LOG cross-check.)  ELEVEN getters remain settled by nothing, listed under not_covered_by_any_cross_check, and the two that matter most are capFloor -- inferred, not proven (plan R2), and owner-settable -- and tokensInPool, the RATCHET headline, which nothing outside the hook states.  One plausible identity that does NOT hold is recorded under rejected_identities so a live control is not built on it.  THE FIFTH IS NOT A DEFECT AND MUST NOT BE PUBLISHED AS ONE: totalFeeToken() is CUMULATIVE and retainedEth() is a CURRENT BALANCE.  The owner withdrew 3,650,057.78 IMD and 0.0057 ETH across the two FeesWithdrawn events in this log set -- every token and every wei of fee ever collected -- and afterwards totalFeeToken() still reads the full 3,650,057.78 while retainedEth() reads 0.  A symmetric ETH cross-check would therefore report 'the recovered interface is wrong' on a perfectly healthy hook, every time the owner withdraws.  Compare Sum(FeeCollected eth) against Sum(FeesWithdrawn eth) + retainedEth() instead.",
+ "checks": {
+  "sum_FeeCollected_imd == totalFeeToken()": {
+   "from_logs": 3650057779999999999999983,
+   "from_counter": 3650057779999999999999983,
+   "agree": true,
+   "delta_wei": 0
+  },
+  "sum_ClaimsSettled_0 == totalBurned()": {
+   "from_logs": 325220148197999999999883540,
+   "from_counter": 325220148197999999999883540,
+   "agree": true,
+   "delta_wei": 0
+  },
+  "sum_ClaimsSettled_1 == totalRewarded()": {
+   "from_logs": 36135572021999999999987052,
+   "from_counter": 36135572021999999999987052,
+   "agree": true,
+   "delta_wei": 0
+  },
+  "totalBurned() == token.balanceOf(0xdEaD)": {
+   "from_logs": 325220148197999999999883540,
+   "from_counter": 325220148197999999999883540,
+   "agree": true,
+   "delta_wei": 0
+  },
+  "sum_FeeCollected_eth == retainedEth()": {
+   "from_logs": 5699999999999985,
+   "from_counter": 0,
+   "agree": false,
+   "delta_wei": 5699999999999985
+  }
+ },
+ "withdrawn": {
+  "imd_wei": 3650057779999999999999983,
+  "eth_wei": 5699999999999985,
+  "eth_identity_holds": true,
+  "imd_identity_note": "totalFeeToken() is unaffected by a withdrawal"
+ },
+ "measured_split_pct_from_counters": {
+  "inference": 1.0000000000000002,
+  "burn": 89.10000000000001,
+  "stakers": 9.9
+ },
+ "claimed_share": {
+  "rewardShareBps": 1000,
+  "BPS_DENOMINATOR": 10000,
+  "stakers_share_of_post_fee_pct": 10.0
+ },
+ "ratchet": {
+  "tokensInPool_wei": 472569750774433805430690446,
+  "capFloor_wei": 250000000000000000000000000,
+  "floor_distance_wei": 222569750774433805430690446,
+  "total_supply_wei": 1000000000000000000000000000,
+  "burned_supply_pct": 32.5220148198
+ },
+ "settled_eth_wei": 427326426943324583,
+ "corroborated_by_other_fixtures": [
+  {
+   "getters": [
+    "currentTick",
+    "currentSqrtPriceX96",
+    "positionLiquidity",
+    "lpFee"
+   ],
+   "source": "pool_slot0.json -- PoolManager.extsload, the canonical v4 singleton, VERIFIED SOURCE",
+   "agrees": true,
+   "note": "the strongest corroboration in the corpus: an unverified contract's four position getters, confirmed word for word by the verified contract that owns the state.  CAVEAT FOR A LIVE CONTROL: these two fixtures were captured one block apart and agree only because the pool was quiet.  A control must read the hook and the extsload words in THE SAME SWEEP, or a moving pool reports false drift."
+  },
+  {
+   "getters": [
+    "burnSink"
+   ],
+   "source": "token_state.json -- balanceOf(0xdEaD)",
+   "agrees": true,
+   "note": "the totalBurned check settles the SINK ADDRESS as well as the counter: the burned total lands at the address burnSink names."
+  },
+  {
+   "getters": [
+    "rewardsRecipient"
+   ],
+   "source": "dripper_state.json + vault_state.json -- the address chain",
+   "agrees": true,
+   "note": "hook.rewardsRecipient -> dripper.vault -> vault.asset closes on the same token the pool trades.  This is the chain a hostile setRewardsRecipient would break, and each link is a live read."
+  },
+  {
+   "getters": [
+    "vault.totalAssets"
+   ],
+   "source": "token_state.json -- balanceOf(vault)",
+   "agrees": true,
+   "note": "the vault holds exactly what it reports."
+  }
+ ],
+ "not_covered_by_any_cross_check": [
+  "capFloor -- meaning INFERRED, not proven (plan R2); the single most consequential number on the RATCHET panel and the one an owner can move with setCapFloor",
+  "tokensInPool -- the ratchet headline; no log and no PoolManager word states the hook's own reserve.  Could be corroborated by token.balanceOf(PoolManager) on a chain where this token trades in only one pool; that call is NOT in this corpus",
+  "ethInPool",
+  "lastClaimBlock",
+  "refTick",
+  "tickLower",
+  "tickUpper",
+  "keeperReward",
+  "marketOpen",
+  "rebalanceEnabled",
+  "backstop -- the second position; nothing outside the hook describes it"
+ ],
+ "rejected_identities": [
+  {
+   "identity": "totalRewarded() - token.balanceOf(dripper) == vault.totalAssets()",
+   "holds": false,
+   "measured": "rewarded - dripperBalance = 4,440 IMD dripped out, but vault.totalAssets() = 27,377 IMD",
+   "why": "StakedIMD is an ERC-4626 vault: totalAssets is staker DEPOSITS plus what the dripper has streamed in, not the stream alone.  The reward path is therefore NOT a closed conservation loop and a control asserting it would fire on every healthy vault that has any depositor.  Do not wire this one."
+  }
+ ]
+}

@@ -1,0 +1,39 @@
+{
+ "captured_at": "2026-09-02T11:01:25.860895Z",
+ "chain": "mainnet",
+ "chain_id": 1,
+ "block_number": 25889173,
+ "block_hash": "0xf276f1255a46c12f25489e4d74314a2eae3ad9db083786622adb58023383164e",
+ "block_tag": "0x18b0995",
+ "endpoint": "https://ethereum-rpc.publicnode.com",
+ "pool_manager": "0x000000000004444c5dc75cb358380d2e3de08a90",
+ "pool_id": "0x415829f72e9f54531c26eae76f107618540e898a45d6ae35959e143f5faca704",
+ "mapping_slot": 6,
+ "slot0_key": "0x044bad7a09122197f1010731a3c830fb77a21fd4e52a9ee1e0e8ecde1a34c722",
+ "liquidity_key": "0x044bad7a09122197f1010731a3c830fb77a21fd4e52a9ee1e0e8ecde1a34c725",
+ "call_names": {
+  "1": "slot0",
+  "2": "liquidity"
+ },
+ "note": "PoolManager.extsload for the live mainnet pool, pool id read off the hook rather than assumed.  Slots derived by data/surf_v4.pool_state_slots -- the same mapping slot 6 that holds on Sepolia, MEASURED here rather than carried over.  This is the corroboration that matters most on an unverified hook: the canonical, verified-source v4 singleton confirming the hook's own position getters.  Read it in the SAME sweep as the hook or a moving pool reports false drift.",
+ "expected": {
+  "sqrt_price_x96": 2887538468027315638562481375903,
+  "tick": 71920,
+  "lp_fee": 10000,
+  "liquidity": 143680081461716695703
+ },
+ "fixture": "mainnet_pool_slot0",
+ "synthetic": false,
+ "response": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "result": "0x0000000027100000000118f000000000000000247223d6b888b72c88002a0a9f"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "result": "0x000000000000000000000000000000000000000000000007c9f630d6f8cfba97"
+  }
+ ]
+}

@@ -736,6 +736,80 @@ def test_all_six_detectors_survive_the_real_stylesheet() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_all_five_pool4_panels_survive_the_real_stylesheet() -> None:
+    """Every ``p`` panel reaches the compositor through the REAL app.
+
+    ``test_all_six_detectors_survive_the_real_stylesheet`` above is the
+    precedent and the reason: a panel can be composed, dispatched and
+    correct in a bare harness and still reach no pixel once the shared
+    stylesheet has its say, because the app stylesheet outranks
+    ``SurfScreen.DEFAULT_CSS`` and this file is where the two meet. The
+    launchpad rail shipped a version of exactly that -- a body written into
+    ``DEFAULT_CSS`` alone with ``minimal.tcss`` still putting the panels
+    somewhere else -- and only an app-level test noticed.
+
+    So this goes through the splash and the game-select menu like a user
+    does, at the pinned layout size, and asks for each panel's own **title**
+    rather than for a value: a title is the one string a panel renders in
+    every state, so the assertion cannot be satisfied by a lucky number and
+    cannot fail merely because a payload changed.
+    """
+    key = next(k for k, game_id, *_ in GAMES if game_id == "surf")
+
+    async def _run() -> None:
+        from maxpane_dashboard.screens.surf import (
+            SURF_POOL4_FULL_LAYOUT_COLUMNS, SURF_POOL4_FULL_LAYOUT_ROWS,
+        )
+
+        app = _offline_app(DeadSourcesManager())
+        size = (SURF_POOL4_FULL_LAYOUT_COLUMNS, SURF_POOL4_FULL_LAYOUT_ROWS)
+        async with app.run_test(size=size) as pilot:
+            await pilot.pause()
+            await pilot.press("space")
+            await pilot.pause()
+            await pilot.press(key)
+            await pilot.pause()
+            before = _screen_text(app)
+            await pilot.press("p")
+            await pilot.pause()
+            text = _screen_text(app)
+
+        titles = ("HATCHES", "POOL4 FLOW", "THE SPLIT", "THE RATCHET",
+                  "sIMD VAULT")
+        for title in titles:
+            assert title in text, (
+                f"{title} reaches no pixel through the real stylesheet"
+            )
+        # The premise, and it has to be this one rather than `before !=
+        # text`. Mutating `_show_mode` so it never sets the pool4 body's
+        # `display` leaves the body visible from the moment it is composed
+        # -- so all five titles are on screen before `p` is pressed, the
+        # screen still changes when `p` hides the dashboard rows, and a
+        # "something changed" premise stays green through a body that was
+        # never hidden in the first place. Proven: that mutation left the
+        # earlier version of this test passing.
+        #
+        # The claim is that the body is composed HIDDEN and `p` is what
+        # shows it, so that is what is asserted -- absent before, present
+        # after, per title.
+        for title in titles:
+            assert title not in before, (
+                f"{title} is on screen before `p` was pressed -- the pool4 "
+                "body is not being composed hidden, so the swap this test "
+                "claims to exercise is not happening"
+            )
+        # ...and at the body's own pinned height nothing is scrolled off, so
+        # this is the whole body rather than as much of it as fits.
+        from maxpane_dashboard.screens.surf import TALLER_HINT
+
+        assert TALLER_HINT not in text, (
+            "the body does not fit at its own pinned height -- either the "
+            "pin is wrong or a panel grew"
+        )
+
+    asyncio.run(_run())
+
+
 def test_the_documented_width_covers_surf() -> None:
     """``--font-size`` help quotes this number; it must not become a lie."""
     from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
@@ -1179,6 +1253,67 @@ _NON_NUMERIC_KEYS = frozenset(
         # same reasoning as launchpad_coins/dev_activity above -- a list has
         # no numeric zero to confuse with a failed read.
         "launchpad_activity", "launchpad_burnkeepers",
+        # -- the p POOL4 body (2026-09-01) -------------------------------
+        #
+        # Thirteen of the forty-five pool4 keys, and every one of them for
+        # the reason this bucket exists rather than because it was easier
+        # than finding a needle: the other thirty-two ALL have real,
+        # screen-verified probes below, which is the first time this file's
+        # numeric bucket has taken a whole contract block with no exclusions
+        # at all.
+        #
+        # Four closed-vocabulary or free-text strings, four addresses:
+        "pool4_network", "pool4_as_of_hhmm",
+        "pool4_discovery_state", "pool4_discovery_detail",
+        # S18: the citation, split back out of the detail. A transaction hash
+        # is a string with no numeric zero to confuse with a failed read, so
+        # it belongs here for this bucket's ordinary reason -- and `None` on
+        # it means "no adoption to cite", which is the honest state on the
+        # day-one undiscovered path rather than a missing read.
+        "pool4_discovery_source_tx",
+        "pool4_hook_addr", "pool4_token_addr",
+        "pool4_vault_addr", "pool4_dripper_addr",
+        # Two tri-state bools. `False` is a real answer on both and renders
+        # as its own word -- `not yet` / `drifted` -- sharing no substring
+        # with either the confident yes or the unknown, which is the rule
+        # `SurfBurnPipeline._ready_word` set and both panels follow.
+        "pool4_backstop_centred", "pool4_can_drip",
+        # Three list payloads. `[]` and `None` are different facts on
+        # `pool4_flow` (swept-and-quiet vs the read failed) and the screen
+        # renders them as different sentences -- pinned by
+        # `tests/screens/test_surf_screen.py::
+        # test_a_quiet_pool4_sweep_is_not_a_dead_one` rather than here,
+        # because it is a claim about two renders and this file's sweep only
+        # looks at one.
+        "pool4_reserve_series", "pool4_flow", "pool4_hatches",
+        # The counter reconciliation (W1, 2026-09-02): a closed state word
+        # and a free-text detail, neither with a numeric zero to confuse with
+        # a failed read. They belong here for the same reason every other
+        # `*_state`/`*_detail` pair in this set does.
+        #
+        # Worth reading twice, because it is the one place this bucket's
+        # usual reasoning is not the whole story: `None` on
+        # `pool4_counter_state` means the check has **never run**, and
+        # `"unchecked"` is a separate member the producer can actually
+        # assert. So the two are different claims and must not collapse into
+        # each other -- which is the same shape as the zero-vs-`None` rule
+        # this file exists for, in a vocabulary rather than in a number. It
+        # is not observable *here* (this sweep renders one all-`None` frame,
+        # where both would have to read as "no answer" anyway); the widget's
+        # own tests are where the distinction is rendered and pinned.
+        "pool4_counter_state", "pool4_counter_detail",
+        # The mainnet topology (2026-09-02): two closed vocabulary words, an
+        # address, and the provenance word. Strings, so no numeric zero to
+        # confuse with a failed read.
+        #
+        # `pool4_reward_path` and `pool4_discovery_source` are the two that
+        # matter for this bucket's *reason* rather than its rule: both are
+        # DISCLOSURES. "three-way" says a Distributor is in the path and the
+        # staker leg is split again; "docs" says the adoption came from a page
+        # anyone who can edit it could have written, rather than from a
+        # dev-signed post. A `None` on either is "we do not know", which must
+        # never render as the safer of the two answers.
+        "pool4_reward_path", "pool4_distributor_addr", "pool4_discovery_source",
     }
 )
 
@@ -1207,6 +1342,39 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     # exactly that kind of reason. If a future widget renders it, move this
     # key back into `_NUMERIC_ZERO_PROBES` in the same change.
     "lp_liquidity": "dropped from the hero LP box; no widget renders it",
+    # -- the mainnet block, 2026-09-02 -------------------------------------
+    #
+    # The three `*_bps` keys render as a share OF A DENOMINATOR. Under the
+    # full outage this test sweeps, `pool4_bps_denominator` is `None`, so the
+    # panel prints `stakers --` however the numerator reads and a fabricated
+    # 0 cannot reach a pixel as a number. Structurally unobservable here, the
+    # same shape as the `sig_*_age_s` entries above -- verified by rendering
+    # each one zeroed, not assumed.
+    "pool4_distributor_staking_bps":
+        "renders as a share of pool4_bps_denominator, which is None under outage",
+    "pool4_distributor_nodes_bps":
+        "renders as a share of pool4_bps_denominator, which is None under outage",
+    "pool4_distributor_bonding_bps":
+        "renders as a share of pool4_bps_denominator, which is None under outage",
+    # ⚠ NOT a design decision -- A DEFECT IN ANOTHER PACKAGE, parked here with
+    # its evidence rather than hidden.
+    #
+    # `screens/surf.py` dispatches `pool4_cap_headroom` to `SurfPool4Ratchet`
+    # exactly as WP0's `POOL4_WIDGET_SIGNATURES` requires, but that widget's
+    # `update_data` does not declare the parameter, so `**_kwargs` swallows
+    # it and the value reaches no pixel at any width. Verified twice: the
+    # string `headroom` appears nowhere in `widgets/surf/pool4_ratchet.py`,
+    # and zeroing the key through the real screen produces no new line at
+    # all where every other numeric key produces one.
+    #
+    # It is the inventory ceiling's headroom -- the number that says how
+    # close the cap is to binding (94.68 IMD, ~2.3 hours, on mainnet) -- so
+    # this is a missing reading rather than a cosmetic gap. Filed against
+    # WP4; not worked around here, because a screen-side workaround would
+    # make the widget look correct.
+    "pool4_cap_headroom":
+        "DEFECT: SurfPool4Ratchet.update_data does not accept it; **_kwargs "
+        "swallows the dispatch and it renders nowhere. Filed against WP4.",
     # widgets/surf/signals.py `_head()` reads `age_s` only inside the
     # `state == "fired"` branch; every other state -- including the `None`
     # a full outage produces -- ignores it entirely, so `{state: None,
@@ -1507,6 +1675,108 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     # side-by-side check found no such needle for it.
 }
 
+#: The ``p`` POOL4 body's thirty-two numeric keys, every needle read off
+#: composited output rather than guessed.
+#:
+#: Method, and it is the one this file's own history insists on: render the
+#: **real** ``SurfScreen`` at (143, 60), press ``p``, set exactly one key to
+#: ``0``/``0.0`` with every other key ``None``, and diff the result against
+#: the all-``None`` baseline. The needle is a substring that appears only in
+#: the zeroed render. Four of ten needles went vacuous on the predecessor
+#: branch by being invented before the widget existed, and two more went
+#: vacuous later when the surface they named was retired -- absence-only
+#: assertions cannot tell "this never rendered" from "this correctly did not
+#: render".
+#:
+#: **So these thirty-two are not absence-only.**
+#: ``test_every_pool4_zero_needle_really_renders_when_its_key_is_zero``
+#: below asserts the other direction for every entry, one key at a time: the
+#: needle MUST appear when its key is zero. A needle that goes stale --
+#: because a label's padding changed, or a panel was re-worded -- fails there
+#: instead of quietly passing here forever. That positive control is the
+#: thing this file has been missing, and adding it for a whole block at once
+#: is cheaper than retrofitting it later.
+#:
+#: **No pool4 key is in ``_NUMERIC_KEYS_EXCLUDED``.** Every one of the
+#: thirty-two reaches a pixel in the ``p`` body, so none of them needs the
+#: "no observable render path" waiver -- and the waiver is the entry that
+#: rots, because it is a judgement ("and that is fine") wearing a fact's
+#: clothes.
+_POOL4_ZERO_PROBES: dict[str, str] = {
+    # THE SPLIT
+    #
+    # FOUR OF THESE WENT STALE ON 2026-09-02 and the positive control below
+    # is what said so. WP5 reworked this panel for the mainnet three-way
+    # split -- `burn`/`stakers` gained their `measured ` prefix and the
+    # claimed share became `claimed reward N/D bps` -- so four needles that
+    # had been asserting an ABSENCE went on passing while the strings they
+    # named could no longer render at all. That is precisely the vacuous
+    # half this file's history is full of, caught this time by the test that
+    # renders each needle rather than by somebody noticing.
+    "pool4_measured_inference_pct": "measured inference 0.00%",
+    "pool4_measured_burn_pct": "measured burn 0.00%",
+    "pool4_measured_stakers_pct": "measured stakers 0.00%",
+    "pool4_reward_share_bps": "claimed reward 0/-- bps",
+    "pool4_bps_denominator": "claimed reward --/0 bps",
+    # 0.0 is the HEALTHY value of the drift and renders as a number by
+    # design (the contract says so twice). The needle is still correct: the
+    # forbidden thing is a *failed read* rendering as that number, and under
+    # a full outage the key is None, so the sentence must be absent.
+    "pool4_split_drift_bps": "drift 0.00 bps",
+    "pool4_total_burned": "burned 0 IMD ·",
+    "pool4_total_rewarded": "rewarded 0 IMD",
+    "pool4_total_fee_token": "fees 0 IMD",
+    "pool4_retained_eth": "retained 0.0000 ETH",
+    "pool4_last_claim_block": "last claim block 0",
+    "pool4_unsettled_burn": "unsettled burn 0.00 IMD",
+    "pool4_unsettled_stakers": "unsettled stakers 0.00 IMD",
+    # THE RATCHET
+    "pool4_tokens_in_pool": "reserve  0 IMD",
+    "pool4_cap_floor": "floor    0 IMD",
+    "pool4_floor_distance": "vs floor 0 IMD",
+    "pool4_floor_distance_pct": "· +0.0%",
+    "pool4_burned_supply_pct": "burned   0.00%",
+    "pool4_total_supply": "of 0 IMD",
+    "pool4_eth_in_pool": "pool     0.000000 ETH",
+    "pool4_position_liquidity": "· L 0",
+    "pool4_current_tick": "tick     0 ·",
+    "pool4_ref_tick": "· ref 0",
+    # sIMD VAULT
+    "pool4_share_price": "share 0.000000 IMD/sIMD",
+    "pool4_share_price_delta_pct": "· +0.00%",
+    "pool4_vault_assets": "TVL   0 IMD",
+    "pool4_vault_shares": "· 0 sIMD",
+    "pool4_drip_per_day": "drip  0 IMD/day",
+    "pool4_drippable": "· 0 IMD drippable",
+    "pool4_backlog_imd": "queue 0 IMD",
+    "pool4_backlog_days": "· 0.0 days of runway",
+    "pool4_implied_apr_pct": "apr   0.00%",
+    # -- the mainnet distributor and the inventory ceiling (2026-09-02) ----
+    #
+    # Seven of the eleven new numeric keys. Every needle below was READ OFF
+    # composited output through the real ``SurfScreen`` with that one key
+    # zeroed and every other key ``None`` -- never guessed. The first draft
+    # of this block WAS guessed and four of its eleven needles were wrong,
+    # which the positive control caught immediately; the other four keys are
+    # in ``_NUMERIC_KEYS_EXCLUDED`` below because rendering showed they have
+    # no observable zero at all.
+    #
+    # The needles carry their neighbours' dashes on purpose. ``earned 0.00``
+    # alone would match whichever of the three legs was zeroed, so the leg's
+    # own label is part of the needle and a swap between two legs is visible
+    # rather than absorbed.
+    "pool4_distributor_staking_earned": "stakers -- · earned 0.00",
+    "pool4_distributor_nodes_earned": "nodes -- · earned 0.00",
+    "pool4_distributor_bonding_earned": "bonding -- derived · earned 0.00",
+    "pool4_distributor_held_nodes": "nodes -- · earned --  held 0.00",
+    "pool4_distributor_held_bonding": "bonding -- derived · earned --  held 0.00",
+    "pool4_inventory_cap": "cap      0 IMD",
+    # A rate of zero renders as the WORDS, not as a number -- and that is the
+    # zero rendering for this key, so it is what a failed read must not
+    # produce. ``None`` renders neither.
+    "pool4_cap_decay_per_day": "no decay",
+}
+
 #: **Emptied by Task 12** (2026-08-24), which wired the last three consumers.
 #: It held keys whose rendering consumer landed in a later task of this plan:
 #: numeric keys that WILL need real zero-catch probes, kept out of
@@ -1545,7 +1815,7 @@ def test_every_surf_key_is_triaged_for_the_zero_catch() -> None:
     """
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
-    checked = set(_NUMERIC_ZERO_PROBES)
+    checked = set(_NUMERIC_ZERO_PROBES) | set(_POOL4_ZERO_PROBES)
     excluded = set(_NUMERIC_KEYS_EXCLUDED)
     non_numeric = set(_NON_NUMERIC_KEYS)
     pending = set(_KEYS_PENDING_CONSUMERS)
@@ -1598,6 +1868,7 @@ def test_no_surf_key_is_still_waiting_for_a_consumer():
 
     triaged = (
         set(_NUMERIC_ZERO_PROBES)
+        | set(_POOL4_ZERO_PROBES)
         | set(_NUMERIC_KEYS_EXCLUDED)
         | set(_NON_NUMERIC_KEYS)
     )
@@ -1705,14 +1976,123 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 "pressing `l` did not reach the launchpad body -- the sweep "
                 "below would be measuring the dashboard twice"
             )
-            swept = dashboard_text + "\n" + launchpad_text
 
-            for probe_key, needle in _NUMERIC_ZERO_PROBES.items():
+            # ...and the THIRD body (2026-09-01). `p` swaps in the POOL4
+            # panels, and all thirty-two `_POOL4_ZERO_PROBES` needles only
+            # ever render in here. Sweeping two bodies would have left the
+            # whole pool4 block asserting the absence of strings from a body
+            # that never composited -- the identical hole the `l` view left
+            # open until the final fix wave's I3, repeated one body later.
+            # The guard against repeating it a third time is the
+            # `_body_reached` check below, which fails loudly rather than
+            # letting the sweep measure the same render twice.
+            await pilot.press("p")
+            await pilot.pause()
+            pool4_text = _screen_text(app)
+            from maxpane_dashboard.widgets.surf.pool4_hatches import (
+                UNAVAILABLE_LINE as HATCHES_UNAVAILABLE,
+            )
+
+            assert HATCHES_UNAVAILABLE in pool4_text, (
+                "pressing `p` did not reach the pool4 body -- the sweep "
+                "below would be measuring the launchpad twice"
+            )
+            # The pool4 body must also be explicit rather than blank: an
+            # outage that renders five empty panels is exactly as wrong as
+            # one that renders zeros, and neither the needle sweep below nor
+            # the title-bar check above would notice.
+            for title in ("HATCHES", "POOL4 FLOW", "THE SPLIT",
+                          "THE RATCHET", "sIMD VAULT"):
+                assert title in pool4_text, (
+                    f"{title} vanished under outage"
+                )
+            # The network word falls back to the em dash rather than naming
+            # a chain nothing has confirmed (plan section 5 R4: a testnet
+            # number on an unmarked panel is fiction presented as live, and
+            # a *guessed* network word on an unread one is the same defect
+            # arrived at from the other side).
+            assert "SEPOLIA" not in pool4_text, (
+                "a panel named a network under a full outage"
+            )
+            assert "MAINNET" not in pool4_text
+
+            swept = "\n".join((dashboard_text, launchpad_text, pool4_text))
+
+            probes = {**_NUMERIC_ZERO_PROBES, **_POOL4_ZERO_PROBES}
+            assert len(probes) == (
+                len(_NUMERIC_ZERO_PROBES) + len(_POOL4_ZERO_PROBES)
+            ), "a needle key is in both probe dicts -- one of them is dead"
+            for probe_key, needle in probes.items():
                 assert needle not in swept, (
                     f"{probe_key} rendered its zero-formatted string "
                     f"{needle!r} under a full outage -- a failed read must "
                     "never render as a real 0"
                 )
+
+    asyncio.run(_run())
+
+
+def test_every_pool4_zero_needle_really_renders_when_its_key_is_zero() -> None:
+    """The positive control the absence sweep above cannot give itself.
+
+    ``test_a_full_outage_renders_explicit_states_not_zeros`` asserts every
+    needle is **absent** from an all-``None`` render. An absence assertion
+    passes for two completely different reasons -- "the panel correctly
+    printed a dash" and "this string could never have rendered anywhere" --
+    and this file's own history is a list of needles that were quietly the
+    second kind: four went vacuous on the predecessor branch by being
+    invented before their widget existed, and two more went vacuous later
+    when the surface they named (the title bar's ``feed #N (age)`` segment)
+    was traded away one commit after a wave that was auditing exactly this.
+
+    So each needle is rendered here on purpose: one key set to ``0``, every
+    other contract key ``None``, the real ``SurfScreen`` at (143, 60) with
+    ``p`` pressed. The needle must appear. A label whose padding changed, a
+    formatter that gained a decimal, or a panel that was re-worded fails
+    **here**, loudly, instead of turning its sibling assertion into a
+    permanent no-op.
+
+    It also pins the pairing, not just the strings: the needle for
+    ``pool4_backlog_days`` must appear when *that* key is zeroed, so a needle
+    copied onto the wrong key -- which is how ``lp_imd`` ended up carrying
+    ``imd_supply``'s needle and could only ever have gone red on its
+    sibling's rendering -- fails here too.
+    """
+    import asyncio
+
+    from tests.screens.test_surf_screen import (
+        _all_none_payload, _screen_text as _surf_screen_text, _surf_app,
+    )
+
+    async def _needle_render(key: str, value) -> str:
+        payload = _all_none_payload()
+        payload[key] = value
+        async with _surf_app(payload).run_test(size=(143, 60)) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.pause()
+            await pilot.press("p")
+            await pilot.pause()
+            await pilot.pause()
+            return _surf_screen_text(pilot.app)
+
+    #: The five keys the contract types ``int``; everything else is a float,
+    #: and the difference is visible on screen (``0`` vs ``0.00``), so a
+    #: float zero fed to an int key would render a needle nobody wrote.
+    integer_keys = {
+        "pool4_reward_share_bps", "pool4_bps_denominator",
+        "pool4_last_claim_block", "pool4_current_tick", "pool4_ref_tick",
+    }
+
+    async def _run() -> None:
+        for key, needle in _POOL4_ZERO_PROBES.items():
+            zero = 0 if key in integer_keys else 0.0
+            text = await _needle_render(key, zero)
+            assert needle in text, (
+                f"{key}'s zero needle {needle!r} does not render when the "
+                f"key IS zero -- the absence assertion in the outage sweep "
+                "is therefore vacuous for this key. Re-read it off "
+                "composited output rather than editing it to taste."
+            )
 
     asyncio.run(_run())
 

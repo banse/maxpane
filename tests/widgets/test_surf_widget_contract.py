@@ -53,6 +53,11 @@ from maxpane_dashboard.widgets.surf import (
     SurfLaunchpadCoins,
     SurfMarket,
     SurfNft,
+    SurfPool4Flow,
+    SurfPool4Hatches,
+    SurfPool4Ratchet,
+    SurfPool4Split,
+    SurfPool4Vault,
     SurfSignals,
 )
 
@@ -169,8 +174,78 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # list's own docstring asks of a new widget. `SurfBurnkeepers` was
         # renamed `burnkeepers=` -> `launchpad_burnkeepers=` to earn it.
         SurfLaunchpadActivity, SurfBurnkeepers,
+        # The `p` POOL4 body's five panels (2026-09-01). All five are in the
+        # strict check and NONE of them is excused anything -- see
+        # `test_no_pool4_widget_needs_a_kwarg_alias` below for why that had
+        # to be a decision rather than an accident.
+        SurfPool4Hatches, SurfPool4Flow, SurfPool4Split, SurfPool4Ratchet,
+        SurfPool4Vault,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
+
+
+def _pool4_widgets() -> tuple[type, ...]:
+    """Every exported widget whose name marks it as a pool4 panel.
+
+    Derived from the package rather than typed, so a sixth pool4 panel is
+    covered by the test below the day it is written -- which is the exact
+    hole the three launchpad widgets fell through for the whole of their
+    existence.
+    """
+    return tuple(w for w in _ALL_WIDGETS if w.__name__.startswith("SurfPool4"))
+
+
+def test_no_pool4_widget_needs_a_kwarg_alias():
+    """The frozen contract's decision, pinned rather than left to habit.
+
+    Every pool4 panel spells **every** kwarg with its full ``pool4_`` prefix,
+    ``pool4_as_of_hhmm`` included, where the five launchpad panels elide that
+    one key to ``as_of_hhmm`` and are excused by
+    :data:`_PREFIXED_KWARG_ALIASES`.
+
+    That alias maps ONE kwarg name onto ONE contract key, and its value comes
+    entirely from that being true. A second body whose panels also took
+    ``as_of_hhmm`` would make the name stand for ``launchpad_as_of_hhmm`` on
+    five widgets and ``pool4_as_of_hhmm`` on five others; the alias would
+    then be excusing a kwarg that answers for two different keys, and
+    ``test_the_kwarg_alias_stands_for_a_real_contract_key`` above would go on
+    passing while proving nothing about either. The cheap-looking edit --
+    reusing the short name because the launchpad panels do -- is the one this
+    test exists to stop.
+
+    Three assertions, because each catches a different way of arriving there.
+    """
+    pool4 = _pool4_widgets()
+    assert len(pool4) == 5, (
+        f"expected five pool4 panels, found {[w.__name__ for w in pool4]} -- "
+        "a derived sweep over an empty tuple proves nothing"
+    )
+    for cls in pool4:
+        # 1. Not excused as a whole.
+        assert cls not in _SHORT_KWARG_WIDGETS, (
+            f"{cls.__name__} is on the short-kwarg exception list; no pool4 "
+            "panel may be"
+        )
+        kwargs = _kwargs_of(cls)
+        # 2. Every kwarg is a contract key in its own right, needing no alias
+        #    -- a stronger claim than the strict sweep above, which accepts
+        #    an aliased kwarg.
+        for name in kwargs:
+            assert name in SURF_KEYS, (
+                f"{cls.__name__} takes {name!r}, which is not a contract key"
+            )
+        # 3. And specifically the one that was going to be elided.
+        assert "as_of_hhmm" not in kwargs, (
+            f"{cls.__name__} spells the clock kwarg short -- that name "
+            "already stands for `launchpad_as_of_hhmm` in "
+            "_PREFIXED_KWARG_ALIASES and cannot stand for two keys"
+        )
+        assert "pool4_as_of_hhmm" in kwargs, cls.__name__
+
+    # ...and the alias list did not quietly grow to accommodate one.
+    assert set(_PREFIXED_KWARG_ALIASES) == {"as_of_hhmm"}, (
+        f"a new kwarg alias was added: {_PREFIXED_KWARG_ALIASES}"
+    )
 
 
 class _Harness(App):

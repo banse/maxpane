@@ -1,0 +1,105 @@
+{
+ "url": "https://ethereum-rpc.publicnode.com",
+ "method": "POST",
+ "headers": {
+  "Content-Type": "application/json",
+  "User-Agent": "maxpane-capture/1.0 (+https://pypi.org/project/maxpane)"
+ },
+ "body": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xc6c965bd164c483e87d0b550671798e9a3602840",
+     "data": "0xff2a7d30"
+    },
+    "0x18b097c"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0xfbfa77cf"
+    },
+    "0x18b097c"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0x603ea03b"
+    },
+    "0x18b097c"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xe6D3De6daEAf327fCA42745f1998FcD989e00884",
+     "data": "0xfbfa77cf"
+    },
+    "0x18b097c"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9efa934d9fad4ae28c998a40195646b965a97247",
+     "data": "0x38d52e0f"
+    },
+    "0x18b097c"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
+     "data": "0x38d52e0f"
+    },
+    "0x18b097c"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xc6c965bd164c483e87d0b550671798e9a3602840",
+     "data": "0xfc0c546a"
+    },
+    "0x18b097c"
+   ]
+  }
+ ],
+ "call_names": {
+  "1": "hook.rewardsRecipient",
+  "2": "distributor.vault",
+  "3": "distributor.dripper",
+  "4": "dripper.vault",
+  "5": "vault.asset",
+  "6": "distributor.asset",
+  "7": "hook.token"
+ },
+ "fixture": "mainnet_vault_path",
+ "captured_at": "2026-09-02T10:56:17.193153Z"
+}

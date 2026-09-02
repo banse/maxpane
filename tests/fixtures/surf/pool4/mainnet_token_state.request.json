@@ -1,0 +1,157 @@
+{
+ "url": "https://ethereum-rpc.publicnode.com",
+ "method": "POST",
+ "headers": {
+  "Content-Type": "application/json",
+  "User-Agent": "maxpane-capture/1.0 (+https://pypi.org/project/maxpane)"
+ },
+ "body": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+     "data": "0x18160ddd"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+     "data": "0x313ce567"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+     "data": "0x95d89b41"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+     "data": "0x06fdde03"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+     "data": "0x70a08231000000000000000000000000e29386719c155b6847ad5a4e97c6674f10ffc750"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+     "data": "0x70a08231000000000000000000000000000000000000000000000000000000000000dead"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+     "data": "0x70a08231000000000000000000000000c6c965bd164c483e87d0b550671798e9a3602840"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 8,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+     "data": "0x70a082310000000000000000000000009efa934d9fad4ae28c998a40195646b965a97247"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 9,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+     "data": "0x70a082310000000000000000000000009046739e1535b40efbe6ab3f45d0024b690eca30"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 10,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+     "data": "0x70a08231000000000000000000000000e6d3de6daeaf327fca42745f1998fcd989e00884"
+    },
+    "0x18b0978"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 11,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+     "data": "0x70a08231000000000000000000000000000000000004444c5dc75cb358380d2e3de08a90"
+    },
+    "0x18b0978"
+   ]
+  }
+ ],
+ "call_names": {
+  "1": "totalSupply",
+  "2": "decimals",
+  "3": "symbol",
+  "4": "name",
+  "5": "balanceOf_burnExecutor",
+  "6": "balanceOf_dead",
+  "7": "balanceOf_hook",
+  "8": "balanceOf_vault",
+  "9": "balanceOf_distributor",
+  "10": "balanceOf_dripper",
+  "11": "balanceOf_poolManager"
+ },
+ "fixture": "mainnet_token_state",
+ "captured_at": "2026-09-02T10:55:34.021313Z"
+}

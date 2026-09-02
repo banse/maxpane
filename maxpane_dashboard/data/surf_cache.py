@@ -21,6 +21,18 @@ Four refresh tiers, the first three sized from PRD §5:
                 clock than the title bar's for a detached factory/hook/executor
                 and log-aggregate sweep, so its panels carry their own
                 `as of HH:MM` and a slow sweep can never block first paint.
+``pool4``       600 s, the same shape one layer out: discovery plus three
+                getter rounds plus a log window over the pool4 hook, detached,
+                with its own ``as of HH:MM``.
+
+The pool4 reserve is **two series, one per network**, and that is the single
+least obvious thing in this module. ``pool4`` reads Sepolia until a mainnet
+hook is discovered and adopted, so one series would splice a testnet history
+onto a mainnet one at the switchover and draw a single sparkline across two
+different chains — a line whose left half is a different token on a different
+network from its right half, with nothing on screen saying so. The series a
+payload publishes is chosen by the network the numbers came from, and neither
+series is ever written by the other's readings.
 
 A failure never marks a tier fetched; it only spaces the retry
 (:data:`TIER_FAILURE_BACKOFF_SECONDS`), so a rate-limited host is not hammered
@@ -67,13 +79,29 @@ TIER_SLOW = "slow"
 #: sweep off this tier so it cannot block first paint.
 TIER_LAUNCHPAD = "launchpad"
 
-TIERS: tuple[str, ...] = (TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD)
+#: The pool4 sweep — discovery off the channel rows the manager already has,
+#: then the hook / dripper / vault getter rounds and one log window. Its own
+#: long tier for ``TIER_LAUNCHPAD``'s reason and no other: the panels behind it
+#: carry an ``as of HH:MM`` on a slower clock than the title bar's, on purpose,
+#: and the sweep behind it is detached so it can never block first paint.
+#:
+#: 600 s rather than curator's 1800: this is a handful of ``eth_call`` rounds
+#: and a ~24 h log window on one contract, the same order of work as the
+#: launchpad sweep and two orders below curator's 8.3 MB published-analysis
+#: read. The failure backoff is deliberately much shorter than the TTL — a
+#: rate-limited Sepolia endpoint must not cost the panel a full ten minutes.
+TIER_POOL4 = "pool4"
+
+TIERS: tuple[str, ...] = (
+    TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
+)
 
 TIER_TTL_SECONDS: dict[str, float] = {
     TIER_FAST: 0.0,       # every refresh — see the module docstring
     TIER_MEDIUM: 90.0,    # PRD §5 says 60-120 s
     TIER_SLOW: 420.0,     # PRD §5 says 5-10 min
     TIER_LAUNCHPAD: 600.0,
+    TIER_POOL4: 600.0,
 }
 
 TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
@@ -81,6 +109,7 @@ TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
     TIER_MEDIUM: 60.0,
     TIER_SLOW: 120.0,
     TIER_LAUNCHPAD: 180.0,
+    TIER_POOL4: 180.0,
 }
 
 
@@ -95,6 +124,7 @@ SLOT_LOGS = "logs"            # logs RPC pool (mints, identity writes, v4, Seapo
 SLOT_NFT = "nft"              # Blockscout token counters / holders
 SLOT_ACTIVITY = "activity"    # Blockscout dev tx pages
 SLOT_LAUNCHPAD = "launchpad"  # factory/hook/executor getters + log aggregates
+SLOT_POOL4 = "pool4"          # discovery + hook/vault/dripper getters + flow logs
 
 SLOTS: tuple[str, ...] = (
     SLOT_CHAIN,
@@ -104,6 +134,7 @@ SLOTS: tuple[str, ...] = (
     SLOT_NFT,
     SLOT_ACTIVITY,
     SLOT_LAUNCHPAD,
+    SLOT_POOL4,
 )
 
 
@@ -115,19 +146,61 @@ SERIES_IMD_SUPPLY = "imd_supply"
 SERIES_IMD_PRICE_USD = "imd_price_usd"
 SERIES_PARITY_PCT = "parity_pct"
 
+#: The pool4 reserve, **one series per network**. See the module docstring:
+#: a single series splices a Sepolia history onto a mainnet one the moment a
+#: mainnet hook is adopted, and draws one sparkline across two chains.
+SERIES_POOL4_RESERVE_SEPOLIA = "pool4_reserve_sepolia"
+SERIES_POOL4_RESERVE_MAINNET = "pool4_reserve_mainnet"
+
 SERIES_NAMES: tuple[str, ...] = (
     SERIES_IMD_SUPPLY,
     SERIES_IMD_PRICE_USD,
     SERIES_PARITY_PCT,
+    SERIES_POOL4_RESERVE_SEPOLIA,
+    SERIES_POOL4_RESERVE_MAINNET,
 )
 
 #: Parity is a *spread* (IMD vs FP) and is legitimately below zero — the live
 #: capture is -2.75%. Supply and price cannot be, and a negative one is corruption.
+#: The pool4 reserve is a token balance held by a pool: it cannot be negative
+#: either. (``pool4_floor_distance`` *can* be, and legitimately is on launch 1 —
+#: but that is a derived difference published per cycle, never a stored series.)
 SERIES_ALLOW_NEGATIVE: dict[str, bool] = {
     SERIES_IMD_SUPPLY: False,
     SERIES_IMD_PRICE_USD: False,
     SERIES_PARITY_PCT: True,
+    SERIES_POOL4_RESERVE_SEPOLIA: False,
+    SERIES_POOL4_RESERVE_MAINNET: False,
 }
+
+#: pool4 network word -> the reserve series it owns.
+#:
+#: The two words are **restated here rather than imported** from
+#: ``surf_models.POOL4_NETWORKS``, on this repo's redundancy-plus-an-agreement-
+#: test pattern (``_GAME_CYCLE``, the ``--game`` choices, the pool4 widgets'
+#: own ``NETWORK_WORDS`` — amendment A24). ``tests/data/test_surf_cache_pool4``
+#: imports the contract's tuple and asserts set-and-length equality with these
+#: keys; deriving them here would make that test compare a constant against
+#: itself and it could never fail again. It also keeps this module's standing
+#: promise that it imports nothing from the project but the ``series_points``
+#: leaf.
+POOL4_RESERVE_SERIES: dict[str, str] = {
+    "SEPOLIA": SERIES_POOL4_RESERVE_SEPOLIA,
+    "MAINNET": SERIES_POOL4_RESERVE_MAINNET,
+}
+
+
+def pool4_reserve_series_name(network: Any) -> str | None:
+    """The series ``network``'s reserve readings belong in, or ``None``.
+
+    ``None`` for ``None`` (no sweep has ever completed) *and* for a word
+    outside the closed vocabulary — a producer bug, not a new chain, and the
+    one thing that must never happen is a reading landing in the wrong
+    network's history because a spelling was accepted loosely.
+    """
+    if not isinstance(network, str):
+        return None
+    return POOL4_RESERVE_SERIES.get(network)
 
 
 def _hour_bucket(ts: float) -> float:
@@ -269,6 +342,9 @@ class SurfCache:
         # and the ordinary "first read only establishes the baseline" path
         # already handles that case without this flag.
         self._supply_block_unverified: bool = False
+        #: pool4's running counter totals, keyed by the same series name the
+        #: reserve history uses -- one per network, for the same reason.
+        self._pool4_accumulators: dict[str, dict[str, Any]] = {}
 
     # -- clock ---------------------------------------------------------------
 
@@ -443,6 +519,151 @@ class SurfCache:
         if not deq:
             return []
         return [[float(ts), float(v)] for (ts, v) in deq]
+
+    # -- pool4's two network-namespaced reserve series ------------------------
+
+    def sample_pool4_reserve(
+        self, now_ts: float, reserve_imd: float | None, *, network: Any
+    ) -> None:
+        """Bucket one reserve reading into ``network``'s own series.
+
+        ``None`` leaves **both** series untouched, and so does an unrecognised
+        network. Two separate refusals, one rule: a dead read must never write
+        a sentinel into a history (CLAUDE.md — the zero is persisted and
+        outlives the outage it came from), and a reading whose provenance is
+        not a known network has no history it belongs in. Falling back to
+        "whichever series we used last" is precisely the splice the two series
+        exist to prevent.
+        """
+        if reserve_imd is None:
+            return
+        name = pool4_reserve_series_name(network)
+        if name is None:
+            return
+        self._bucket_into(name, now_ts, reserve_imd)
+
+    def fold_pool4_reserve_history(
+        self, points: Any, *, network: Any
+    ) -> int:
+        """Merge log-derived ``[[ts, imd], …]`` points into ``network``'s series.
+
+        The pool's own reserve event carries a timestamp, so a first sweep can
+        back-fill hours the cache was not running for instead of drawing a
+        one-point sparkline. Every point is a real measured reserve at a real
+        block time; nothing here invents one, and ``_bucket_into``'s existing
+        out-of-order merge keeps the series ascending with no hour twice.
+
+        Returns the number of points actually folded, so a caller (and a test)
+        can tell "the window was quiet" from "the points were unusable".
+        ``None`` in — the read failed — folds nothing, like every other
+        sentinel guard in this class.
+        """
+        name = pool4_reserve_series_name(network)
+        if name is None or not points:
+            return 0
+        folded = 0
+        for point in points:
+            try:
+                ts, value = point[0], point[1]
+            except (TypeError, IndexError, KeyError):
+                continue
+            try:
+                ts = float(ts)
+                value = float(value)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(ts) or not math.isfinite(value) or ts <= 0:
+                continue
+            self._bucket_into(name, ts, value)
+            folded += 1
+        return folded
+
+    # -- pool4's counter accumulator, also network-namespaced ---------------
+
+    def get_pool4_accumulator(self, network: Any) -> dict[str, Any] | None:
+        """``network``'s running counter total, or ``None``.
+
+        ``None`` for an unrecognised network, for the same reason the reserve
+        series refuses one: a total accumulated on one chain reconciled against
+        another chain's counters is not a weaker check, it is a wrong one.
+        A network with no accumulator yet answers ``None`` too -- the caller
+        seeds it, because what an unseeded accumulator *is* belongs to the
+        module that owns the arithmetic, not to this one.
+        """
+        name = pool4_reserve_series_name(network)
+        if name is None:
+            return None
+        acc = self._pool4_accumulators.get(name)
+        return dict(acc) if isinstance(acc, dict) else None
+
+    def set_pool4_accumulator(self, network: Any, accumulator: Any) -> None:
+        """Replace ``network``'s running total. Unknown network: refused."""
+        name = pool4_reserve_series_name(network)
+        if name is None or not isinstance(accumulator, Mapping):
+            return
+        self._pool4_accumulators[name] = dict(accumulator)
+
+    @staticmethod
+    def _coerce_accumulator(raw: Any) -> dict[str, Any] | None:
+        """One persisted accumulator, structurally validated, or ``None``.
+
+        **This is cache-supplied evidence and the validation is why that is
+        tolerable.** A hand-edited accumulator could in principle silence the
+        counter control or fabricate an alarm, and nothing here can recompute
+        two months of sums to find out. Two things bound it, and neither is
+        this method:
+
+        * the **alignment** invariant. A forged total is only believed while
+          its ``cursor_block`` equals the block the counters were just read at,
+          which is a live chain read the forger cannot predict. A stale forgery
+          reads ``window-limited``, so a forgery has to be rewritten in lockstep
+          with the chain to keep working. It perishes on its own.
+        * a discarded accumulator is *safe*: it falls back to single-window
+          behaviour, which is the honest ``window-limited``.
+
+        What this does is refuse anything structurally wrong -- a missing or
+        non-integer block, a negative or non-integer sum, a stray key -- so a
+        malformed file costs the accumulator rather than the startup, on
+        ``coerce_points``' precedent.
+        """
+        if not isinstance(raw, Mapping):
+            return None
+        genesis = raw.get("genesis_block")
+        cursor = raw.get("cursor_block")
+        if not isinstance(genesis, int) or isinstance(genesis, bool):
+            return None
+        if not isinstance(cursor, int) or isinstance(cursor, bool):
+            return None
+        if genesis < 0 or cursor < genesis:
+            return None
+        sums = raw.get("sums")
+        if not isinstance(sums, Mapping):
+            return None
+        clean: dict[str, int] = {}
+        for key, value in sums.items():
+            if not isinstance(key, str):
+                return None
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                return None
+            clean[key] = value
+        return {
+            "genesis_block": genesis,
+            "cursor_block": cursor,
+            "sums": clean,
+        }
+
+    def get_pool4_reserve_series(self, network: Any) -> list[list[float]] | None:
+        """``network``'s reserve history, or ``None`` when there is no network.
+
+        ``None`` and ``[]`` are different claims and the RATCHET panel renders
+        them differently: ``None`` is "no sweep has ever completed, so we
+        cannot even say which chain this would be about", ``[]`` is "that
+        chain's history is empty so far".
+        """
+        name = pool4_reserve_series_name(network)
+        if name is None:
+            return None
+        return self.get_series(name)
 
     # -- observed burns --------------------------------------------------------
 
@@ -646,6 +867,12 @@ class SurfCache:
             "last_supply_block": (
                 None if self._last_supply_block is None else int(self._last_supply_block)
             ),
+            # Kept out of the pool4 last-good slot on purpose: it must advance
+            # on every successful sweep, including one whose payload did not
+            # change, and it must never enter that slot's content comparison --
+            # a cursor that moves every block would make every tick look like
+            # new data and the ``as of`` marker would advance for ever.
+            "pool4_accumulators": _jsonable(self._pool4_accumulators),
         }
         tmp = target + ".tmp"
         try:
@@ -780,6 +1007,18 @@ class SurfCache:
             self._last_supply_block is None and self.last_supply is not None
         )
 
+        try:
+            self._pool4_accumulators = {}
+            for name, raw in (payload.get("pool4_accumulators") or {}).items():
+                if str(name) not in SERIES_NAMES:
+                    continue
+                clean = self._coerce_accumulator(raw)
+                if clean is not None:
+                    self._pool4_accumulators[str(name)] = clean
+        except Exception as exc:                    # noqa: BLE001
+            logger.warning("SURF pool4 accumulator block bad: %s", exc)
+            self._pool4_accumulators = {}
+
         logger.info(
             "Loaded the SURF cache from %s: %d last-good slots, %d baselines",
             target,
@@ -794,11 +1033,14 @@ __all__ = [
     "BASELINE_LIST_CAP",
     "DEFAULT_CACHE_PATH",
     "LastGood",
+    "POOL4_RESERVE_SERIES",
     "SERIES_ALLOW_NEGATIVE",
     "SERIES_IMD_PRICE_USD",
     "SERIES_IMD_SUPPLY",
     "SERIES_NAMES",
     "SERIES_PARITY_PCT",
+    "SERIES_POOL4_RESERVE_MAINNET",
+    "SERIES_POOL4_RESERVE_SEPOLIA",
     "SLOTS",
     "SLOT_ACTIVITY",
     "SLOT_CHAIN",
@@ -807,12 +1049,15 @@ __all__ = [
     "SLOT_LOGS",
     "SLOT_MARKET",
     "SLOT_NFT",
+    "SLOT_POOL4",
     "SurfCache",
     "TIERS",
     "TIER_FAILURE_BACKOFF_SECONDS",
     "TIER_FAST",
     "TIER_LAUNCHPAD",
     "TIER_MEDIUM",
+    "TIER_POOL4",
     "TIER_SLOW",
     "TIER_TTL_SECONDS",
+    "pool4_reserve_series_name",
 ]

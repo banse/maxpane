@@ -16,6 +16,7 @@ from maxpane_dashboard.data.surf_cache import (
     TIER_FAILURE_BACKOFF_SECONDS,
     TIER_FAST,
     TIER_LAUNCHPAD,
+    TIER_POOL4,
     TIER_MEDIUM,
     TIER_SLOW,
     TIERS,
@@ -65,11 +66,19 @@ def _cache(tmp_path, clock=None) -> SurfCache:
 
 
 def test_tier_ttls_match_the_prd(tmp_path):
-    """fast is due every refresh; medium 90 s; slow 420 s; launchpad 600 s."""
+    """fast is due every refresh; medium 90 s; slow 420 s; launchpad/pool4 600 s.
+
+    ``TIER_POOL4`` joined the tuple with WP7 (the surf ``p`` body). The
+    literal below is hand-typed rather than derived on purpose — deriving it
+    from ``TIERS`` would compare a constant against itself — so a new tier
+    reddens here first, which is what happened when this one landed.
+    """
     clock = FakeClock()
     c = _cache(tmp_path, clock)
 
-    assert TIERS == (TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD)
+    assert TIERS == (
+        TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
+    )
     assert TIER_TTL_SECONDS[TIER_FAST] == 0.0
     assert 60.0 <= TIER_TTL_SECONDS[TIER_MEDIUM] <= 120.0
     assert 300.0 <= TIER_TTL_SECONDS[TIER_SLOW] <= 600.0
@@ -197,7 +206,8 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     clock.advance(120.0)
     c.store_last_good(SLOT_MARKET, {})
     assert c.newest_as_of() == clock.t
-    assert len(SLOTS) == 7
+    # Seven source groups plus pool4's own slot (WP7).
+    assert len(SLOTS) == 8
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):

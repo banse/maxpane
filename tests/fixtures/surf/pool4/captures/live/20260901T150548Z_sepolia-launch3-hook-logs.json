@@ -1,0 +1,4676 @@
+{
+ "captured_at": "2026-09-01T15:05:48.346738+00:00",
+ "chain": "sepolia",
+ "source": "blockscout /api/v2/addresses/{hook}/logs",
+ "hook": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+ "topic0_map": {
+  "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0": "FeeCollected(uint256,uint256)",
+  "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab": "ClaimsSettled(uint256,uint256,uint256)",
+  "0xdeb5099d7943aa2b4c1142e5d53d2f7636aa8f7bd130ec79816f151572bcdf45": "FeesWithdrawn(address,uint256,uint256)",
+  "0x0cbcc38bb40a7b0940c989eac5abd480ff9917c824c1fd6b2e38227d92c4c700": "KeeperRewardPaid(address,uint256)",
+  "0x5da4124c44e7ab5ea52a261f5f3cb8e7dc215e9eaf017eadcefff627b8247b12": "Rebalanced(int24)",
+  "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa": "UNRESOLVED accrual (uint128 liquidityRemoved, uint256 toBurn, uint256 toRewards, uint256 eth)",
+  "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6": "UNRESOLVED pool reserve (uint256 before, uint256 after)",
+  "0xe3966151f83ca37a8d733ac53f8f5122134c74fc747f8ea857c2ba5e49f68b73": "UNRESOLVED backstop (int24,int24,uint128,uint256)"
+ },
+ "log_count": 90,
+ "items": [
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xc9faa09d8fd56ba15d66a6f4188b6cc34629ebc26490a9ca444966bb375d1d3b",
+   "block_number": 11609981,
+   "block_timestamp": "2026-09-01T03:11:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000000005b0e58c1e25bf0bffffb00000000000000000000000000000000000000000000000000027ca57357bff9",
+   "decoded": {
+    "method_call": "FeesWithdrawn(address indexed owner, uint256 amount, uint256 timestamp)",
+    "method_id": "deb5099d",
+    "parameters": [
+     {
+      "indexed": true,
+      "name": "owner",
+      "type": "address",
+      "value": "0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7"
+     },
+     {
+      "indexed": false,
+      "name": "amount",
+      "type": "uint256",
+      "value": "429999999999999999999995"
+     },
+     {
+      "indexed": false,
+      "name": "timestamp",
+      "type": "uint256",
+      "value": "699999999999993"
+     }
+    ]
+   },
+   "index": 58,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xdeb5099d7943aa2b4c1142e5d53d2f7636aa8f7bd130ec79816f151572bcdf45",
+    "0x000000000000000000000000047f606fd5b2baa5f5c6c4ab8958e45cb6b054b7",
+    null,
+    null
+   ],
+   "transaction_hash": "0x3fe3ad7f071718308a9d47de9c54490270dc182b661c3cc81a04702f502148eb"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x73fdde97e9c36592ee34ca252b6304d05d0f61c610edd47407921c6f4f1db519",
+   "block_number": 11609971,
+   "block_timestamp": "2026-09-01T03:09:36.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000000000071afd498d0000",
+   "decoded": null,
+   "index": 164,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x0cbcc38bb40a7b0940c989eac5abd480ff9917c824c1fd6b2e38227d92c4c700",
+    "0x000000000000000000000000047f606fd5b2baa5f5c6c4ab8958e45cb6b054b7",
+    null,
+    null
+   ],
+   "transaction_hash": "0x5a737287812c6a971e8601304cefd2bfc6125313be37d8a85281bb39577e9fda"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x73fdde97e9c36592ee34ca252b6304d05d0f61c610edd47407921c6f4f1db519",
+   "block_number": 11609971,
+   "block_timestamp": "2026-09-01T03:09:36.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000000000000000000031d94",
+   "decoded": null,
+   "index": 163,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x5da4124c44e7ab5ea52a261f5f3cb8e7dc215e9eaf017eadcefff627b8247b12",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x5a737287812c6a971e8601304cefd2bfc6125313be37d8a85281bb39577e9fda"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x73fdde97e9c36592ee34ca252b6304d05d0f61c610edd47407921c6f4f1db519",
+   "block_number": 11609971,
+   "block_timestamp": "2026-09-01T03:09:36.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000000000000000000031d9400000000000000000000000000000000000000000000000000000000000d89b40000000000000000000000000000000000000000000002719858a2195617170800000000000000000000000000000000000000000000000005e71021bf8b01a7",
+   "decoded": null,
+   "index": 162,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xe3966151f83ca37a8d733ac53f8f5122134c74fc747f8ea857c2ba5e49f68b73",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x5a737287812c6a971e8601304cefd2bfc6125313be37d8a85281bb39577e9fda"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xd4170dc61b3791990d4f553a65039de30d7335001bddfc4873a03e8e98c916cd",
+   "block_number": 11609969,
+   "block_timestamp": "2026-09-01T03:09:12.000000Z",
+   "data": "0x0000000000000000000000000000000000000000018ce7d2340c81226a953df700000000000000000000000000000000000000000186e68985a3acb27358128e",
+   "decoded": null,
+   "index": 73,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x77c829cae4774508606cc73f511826898dcb9552bdcb9f40f191572833dc33b2"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xd4170dc61b3791990d4f553a65039de30d7335001bddfc4873a03e8e98c916cd",
+   "block_number": 11609969,
+   "block_timestamp": "2026-09-01T03:09:12.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005af3107a3fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "99999999999999"
+     }
+    ]
+   },
+   "index": 72,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x77c829cae4774508606cc73f511826898dcb9552bdcb9f40f191572833dc33b2"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xd4170dc61b3791990d4f553a65039de30d7335001bddfc4873a03e8e98c916cd",
+   "block_number": 11609969,
+   "block_timestamp": "2026-09-01T03:09:12.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000236079ecf6f09849fcec9000000000000000000000000000000000000000000003ee466fa9a8f479ffa88000000000000000000000000000000000000000000000000000e2bea51bb7ac6",
+   "decoded": null,
+   "index": 69,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x77c829cae4774508606cc73f511826898dcb9552bdcb9f40f191572833dc33b2"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xa563387ef9319e44e276123b178c9ae2f035cc2a3f07b02f22e6d74ab1660ec1",
+   "block_number": 11609968,
+   "block_timestamp": "2026-09-01T03:09:00.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000005e6858a141c954ff90000000000000000000000000000000000000000000236079ecf6f09849fcec9000000000000000000000000000000000000000000003ee466fa9a8f479ffa88000000000000000000000000000000000000000000000000000e2bea51bb7ac6",
+   "decoded": null,
+   "index": 101,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xb0cc2261471a0c911450e427f9002791f9a41a6f69e0ef5e5c4e97fb2bc2b612"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xa563387ef9319e44e276123b178c9ae2f035cc2a3f07b02f22e6d74ab1660ec1",
+   "block_number": 11609968,
+   "block_timestamp": "2026-09-01T03:09:00.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000065a4da25d3016bfffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "29999999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 97,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xb0cc2261471a0c911450e427f9002791f9a41a6f69e0ef5e5c4e97fb2bc2b612"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xa563387ef9319e44e276123b178c9ae2f035cc2a3f07b02f22e6d74ab1660ec1",
+   "block_number": 11609968,
+   "block_timestamp": "2026-09-01T03:09:00.000000Z",
+   "data": "0x000000000000000000000000000000000000000000075ec4115e1cca64c0296e00000000000000000000000000000000000000000000d1a401ee0332eec0049a000000000000000000000000000000000000000000000000002fd33814f257bf",
+   "decoded": null,
+   "index": 94,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xb0cc2261471a0c911450e427f9002791f9a41a6f69e0ef5e5c4e97fb2bc2b612"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xed8b80719647453623e3b7a27c3c8b268b2622347c6b9a236d881bd14af20015",
+   "block_number": 11609967,
+   "block_timestamp": "2026-09-01T03:08:48.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000013ca3cdae058ab15a9000000000000000000000000000000000000000000075ec4115e1cca64c0296e00000000000000000000000000000000000000000000d1a401ee0332eec0049a000000000000000000000000000000000000000000000000002fd33814f257bf",
+   "decoded": null,
+   "index": 143,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x76c6beede3ab6585219c4f432f6ac1b94423a327895177fd90a2a2a89bda1167"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xed8b80719647453623e3b7a27c3c8b268b2622347c6b9a236d881bd14af20015",
+   "block_number": 11609967,
+   "block_timestamp": "2026-09-01T03:08:48.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000152d02c7e14af67fffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "99999999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 139,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x76c6beede3ab6585219c4f432f6ac1b94423a327895177fd90a2a2a89bda1167"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xed8b80719647453623e3b7a27c3c8b268b2622347c6b9a236d881bd14af20015",
+   "block_number": 11609967,
+   "block_timestamp": "2026-09-01T03:08:48.000000Z",
+   "data": "0x000000000000000000000000000000000000000000075ec4115e1cca64c01c6800000000000000000000000000000000000000000000d1a401ee0332eec003280000000000000000000000000000000000000000000000000031d1a4afa9582b",
+   "decoded": null,
+   "index": 136,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x76c6beede3ab6585219c4f432f6ac1b94423a327895177fd90a2a2a89bda1167"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x8b4b69faf0aa0e28ac25f837797bbffc286aeb2542807e912aa95579c67a5aa4",
+   "block_number": 11609964,
+   "block_timestamp": "2026-09-01T03:08:12.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000001432c41a4034ee6cef000000000000000000000000000000000000000000075ec4115e1cca64c01c6800000000000000000000000000000000000000000000d1a401ee0332eec003280000000000000000000000000000000000000000000000000031d1a4afa9582b",
+   "decoded": null,
+   "index": 83,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x9e23a0bd8f6dd42795267f6097c9fafac052acb96e4de8e769acbccc3ec7575f"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x8b4b69faf0aa0e28ac25f837797bbffc286aeb2542807e912aa95579c67a5aa4",
+   "block_number": 11609964,
+   "block_timestamp": "2026-09-01T03:08:12.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000152d02c7e14af67fffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "99999999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 79,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x9e23a0bd8f6dd42795267f6097c9fafac052acb96e4de8e769acbccc3ec7575f"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x8b4b69faf0aa0e28ac25f837797bbffc286aeb2542807e912aa95579c67a5aa4",
+   "block_number": 11609964,
+   "block_timestamp": "2026-09-01T03:08:12.000000Z",
+   "data": "0x000000000000000000000000000000000000000000075ec4115e1cca64bfcdd200000000000000000000000000000000000000000000d1a401ee0332eebffa6c0000000000000000000000000000000000000000000000000033e558e9760faf",
+   "decoded": null,
+   "index": 76,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x9e23a0bd8f6dd42795267f6097c9fafac052acb96e4de8e769acbccc3ec7575f"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x3580d632a47a4e275da88c8335872e6b5f881bdbd6bf84de18a7068d65a70177",
+   "block_number": 11609963,
+   "block_timestamp": "2026-09-01T03:08:00.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000000149d7374b220b07947000000000000000000000000000000000000000000075ec4115e1cca64bfcdd200000000000000000000000000000000000000000000d1a401ee0332eebffa6c0000000000000000000000000000000000000000000000000033e558e9760faf",
+   "decoded": null,
+   "index": 159,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x8a82d1f249830ca6207b61c604e754960166011abe42a42d67eb0c28a068f778"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x3580d632a47a4e275da88c8335872e6b5f881bdbd6bf84de18a7068d65a70177",
+   "block_number": 11609963,
+   "block_timestamp": "2026-09-01T03:08:00.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000152d02c7e14af67fffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "99999999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 155,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x8a82d1f249830ca6207b61c604e754960166011abe42a42d67eb0c28a068f778"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x3580d632a47a4e275da88c8335872e6b5f881bdbd6bf84de18a7068d65a70177",
+   "block_number": 11609963,
+   "block_timestamp": "2026-09-01T03:08:00.000000Z",
+   "data": "0x000000000000000000000000000000000000000000075ec4115e1cca64bfe87b00000000000000000000000000000000000000000000d1a401ee0332eebffd6200000000000000000000000000000000000000000000000000360f37df5a5955",
+   "decoded": null,
+   "index": 152,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x8a82d1f249830ca6207b61c604e754960166011abe42a42d67eb0c28a068f778"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xe520cf422e7061aa03443efa779903572025633ffb7e9e2362e6bc043a5960eb",
+   "block_number": 11609962,
+   "block_timestamp": "2026-09-01T03:07:48.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000000150a564e5dc80a3760000000000000000000000000000000000000000000075ec4115e1cca64bfe87b00000000000000000000000000000000000000000000d1a401ee0332eebffd6200000000000000000000000000000000000000000000000000360f37df5a5955",
+   "decoded": null,
+   "index": 67,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x1b1f3443e6c37a0d60892d82f86ba571f962db0ea93e5a231fd8ae994a54e467"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xe520cf422e7061aa03443efa779903572025633ffb7e9e2362e6bc043a5960eb",
+   "block_number": 11609962,
+   "block_timestamp": "2026-09-01T03:07:48.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000152d02c7e14af67fffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "99999999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 63,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x1b1f3443e6c37a0d60892d82f86ba571f962db0ea93e5a231fd8ae994a54e467"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xc233a4de06b8d155e19928f29d8c47cffd3274fa2492f87fcabb2c0e4ffee26e",
+   "block_number": 11609961,
+   "block_timestamp": "2026-09-01T03:07:36.000000Z",
+   "data": "0x0000000000000000000000000000000000000000019216477ee310897f1fe7ae0000000000000000000000000000000000000000018ce7d2340c81226a953df7",
+   "decoded": null,
+   "index": 70,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xfd1ccbe990bf8021df56a6b3fe16c5f671c74868488b8643b6d539d5767defbd"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xc233a4de06b8d155e19928f29d8c47cffd3274fa2492f87fcabb2c0e4ffee26e",
+   "block_number": 11609961,
+   "block_timestamp": "2026-09-01T03:07:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005af3107a3fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "99999999999999"
+     }
+    ]
+   },
+   "index": 69,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xfd1ccbe990bf8021df56a6b3fe16c5f671c74868488b8643b6d539d5767defbd"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xd8eac5dfe209ce0f6b391db2115d2cfa9c663dc7e9f35f2c747731a79e0377a3",
+   "block_number": 11609960,
+   "block_timestamp": "2026-09-01T03:07:24.000000Z",
+   "data": "0x0000000000000000000000000000000000000000019767d41b8e1e2ed5250a6d0000000000000000000000000000000000000000019216477ee310897f1fe7ae",
+   "decoded": null,
+   "index": 153,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xb58f35652dd57f6ea3b7ce49c794e08a32fec5f95557fb38715ec168b7781d27"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xd8eac5dfe209ce0f6b391db2115d2cfa9c663dc7e9f35f2c747731a79e0377a3",
+   "block_number": 11609960,
+   "block_timestamp": "2026-09-01T03:07:24.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005af3107a3fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "99999999999999"
+     }
+    ]
+   },
+   "index": 152,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xb58f35652dd57f6ea3b7ce49c794e08a32fec5f95557fb38715ec168b7781d27"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xbe924d2ba12ac80db090436434d6b237bf4d0157b0dabf88cfbc52b7327923e1",
+   "block_number": 11609944,
+   "block_timestamp": "2026-09-01T03:04:00.000000Z",
+   "data": "0x0000000000000000000000000000000000000000019cdde14b6f4ce072bde9c20000000000000000000000000000000000000000019767d41b8e1e2ed5250a6d",
+   "decoded": null,
+   "index": 174,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x161d23887ef7b84b097602c05301621f38e5da466282db465ae80bb047d6f32d"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xbe924d2ba12ac80db090436434d6b237bf4d0157b0dabf88cfbc52b7327923e1",
+   "block_number": 11609944,
+   "block_timestamp": "2026-09-01T03:04:00.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005af3107a3fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "99999999999999"
+     }
+    ]
+   },
+   "index": 173,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x161d23887ef7b84b097602c05301621f38e5da466282db465ae80bb047d6f32d"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x0306abb0fbe81d228106ed868d658840bee1db8ea8ad9bfd4462dddd5b1c0ea9",
+   "block_number": 11609900,
+   "block_timestamp": "2026-09-01T02:54:48.000000Z",
+   "data": "0x000000000000000000000000000000000000000001a279ebf202e6841d0514970000000000000000000000000000000000000000019cdde14b6f4ce072bde9c2",
+   "decoded": null,
+   "index": 285,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x3784d064c4eab25ac6d502eb73c2114e716033082e7b3788626bd0d683da3745"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x0306abb0fbe81d228106ed868d658840bee1db8ea8ad9bfd4462dddd5b1c0ea9",
+   "block_number": 11609900,
+   "block_timestamp": "2026-09-01T02:54:48.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005af3107a3fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "99999999999999"
+     }
+    ]
+   },
+   "index": 284,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x3784d064c4eab25ac6d502eb73c2114e716033082e7b3788626bd0d683da3745"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xc9cea1b2a9291e12314c2cb040633f8bff9a4b31b1a71a7d88fd285fd829775e",
+   "block_number": 11609898,
+   "block_timestamp": "2026-09-01T02:54:24.000000Z",
+   "data": "0x000000000000000000000000000000000000000001a83d85ef05550f13b5ded6000000000000000000000000000000000000000001a279ebf202e6841d051497",
+   "decoded": null,
+   "index": 115,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xd7912a819c2d746caf5d6bc0c51dd5731d168d3495e7d61096b1f9c10e93a54b"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xc9cea1b2a9291e12314c2cb040633f8bff9a4b31b1a71a7d88fd285fd829775e",
+   "block_number": 11609898,
+   "block_timestamp": "2026-09-01T02:54:24.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005af3107a3fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "99999999999999"
+     }
+    ]
+   },
+   "index": 114,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xd7912a819c2d746caf5d6bc0c51dd5731d168d3495e7d61096b1f9c10e93a54b"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x02309831c4d3bd175528674ef4f863b3ced7443fdac8da261a938422ff459ca2",
+   "block_number": 11609892,
+   "block_timestamp": "2026-09-01T02:53:12.000000Z",
+   "data": "0x000000000000000000000000000000000000000001ae2a57959a3abaf11e6eb5000000000000000000000000000000000000000001a83d85ef05550f13b5ded6",
+   "decoded": null,
+   "index": 39,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xf20959ebbec0f96dcb0951287f9a287486bb6a8b4a808b1964239d6d2885cb2a"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x02309831c4d3bd175528674ef4f863b3ced7443fdac8da261a938422ff459ca2",
+   "block_number": 11609892,
+   "block_timestamp": "2026-09-01T02:53:12.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005af3107a3fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "99999999999999"
+     }
+    ]
+   },
+   "index": 38,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xf20959ebbec0f96dcb0951287f9a287486bb6a8b4a808b1964239d6d2885cb2a"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xe7d4322346af263d2f264275feceb45fc7bfc4217f74026932321bd47387384f",
+   "block_number": 11609890,
+   "block_timestamp": "2026-09-01T02:52:48.000000Z",
+   "data": "0x00000000000000000000000000000000000000000005480e72a40e2e1de7cd9400000000000000000000000000000000000000000000963a7e84019358a7fa6500000000000000000000000000000000000000000000000000225ae3cef3c57d",
+   "decoded": null,
+   "index": 84,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xfae6dff34bf3b322c1efffe7673b2db4e65345fe5368f07be1006784f102bb7e"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xe1f40fe3317a28be35c621ac5ff6b9a99837f58fb639895b181cbb27030bd49a",
+   "block_number": 11609889,
+   "block_timestamp": "2026-09-01T02:52:36.000000Z",
+   "data": "0x00000000000000000000000000000000000000000002a9dfae9988b28691fff40000000000000000000000000000000000000000000000000011c37937e07ff8",
+   "decoded": {
+    "method_call": "FeesWithdrawn(address indexed owner, uint256 amount, uint256 timestamp)",
+    "method_id": "deb5099d",
+    "parameters": [
+     {
+      "indexed": true,
+      "name": "owner",
+      "type": "address",
+      "value": "0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7"
+     },
+     {
+      "indexed": false,
+      "name": "amount",
+      "type": "uint256",
+      "value": "3220057779999999999999988"
+     },
+     {
+      "indexed": false,
+      "name": "timestamp",
+      "type": "uint256",
+      "value": "4999999999999992"
+     }
+    ]
+   },
+   "index": 62,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xdeb5099d7943aa2b4c1142e5d53d2f7636aa8f7bd130ec79816f151572bcdf45",
+    "0x000000000000000000000000047f606fd5b2baa5f5c6c4ab8958e45cb6b054b7",
+    null,
+    null
+   ],
+   "transaction_hash": "0x656df7ae71de4be0e5a68a5aaee47be208e105b8181aa5a72e3c2dd84167256f"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x92b15cb621a93e4e754908993ed736e1e51252548fa4c95bdd704751d2554bb5",
+   "block_number": 11609886,
+   "block_timestamp": "2026-09-01T02:52:00.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000000e32e405fe1e22451900000000000000000000000000000000000000000005480e72a40e2e1de7cd9400000000000000000000000000000000000000000000963a7e84019358a7fa6500000000000000000000000000000000000000000000000000225ae3cef3c57d",
+   "decoded": null,
+   "index": 110,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xc45df7fc6924f214f7beafa72ff09e5a68a040cf604f8ac07a9abed1489fdcca"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x92b15cb621a93e4e754908993ed736e1e51252548fa4c95bdd704751d2554bb5",
+   "block_number": 11609886,
+   "block_timestamp": "2026-09-01T02:52:00.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000f2cb246390c4c2fffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "71659999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 106,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xc45df7fc6924f214f7beafa72ff09e5a68a040cf604f8ac07a9abed1489fdcca"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x452c8bdf74349a521206bc55e46969ee22ebbf0db71a700e3c1374f946cd1ede",
+   "block_number": 11609885,
+   "block_timestamp": "2026-09-01T02:51:48.000000Z",
+   "data": "0x000000000000000000000000000000000000000001b417da78e0155e63b4719b000000000000000000000000000000000000000001ae2a57959a3abaf11e6eb5",
+   "decoded": null,
+   "index": 67,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xc2de80b964efc91e375ec5a0d5b78ad6a51933f88ee8e038a0475d244b7f45e0"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x452c8bdf74349a521206bc55e46969ee22ebbf0db71a700e3c1374f946cd1ede",
+   "block_number": 11609885,
+   "block_timestamp": "2026-09-01T02:51:48.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005af3107a3fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "99999999999999"
+     }
+    ]
+   },
+   "index": 66,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xc2de80b964efc91e375ec5a0d5b78ad6a51933f88ee8e038a0475d244b7f45e0"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x6f7ef68ffa5be090f45af395c5b40044ab5a078b01c0dc39b071f17c2caf7858",
+   "block_number": 11609855,
+   "block_timestamp": "2026-09-01T02:45:36.000000Z",
+   "data": "0x00000000000000000000000000000000000000000003af6208af0e65325ffee20000000000000000000000000000000000000000000068d200f70199775fffe00000000000000000000000000000000000000000000000000017f6dde2462b5d",
+   "decoded": null,
+   "index": 58,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x3848592250d717ccea04fd4aae20b4283b8dc8db2867398393f953cebab02358"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x5d1dccdaf1cd0c5f0f67f0f8a5bd069e80b1e4f83f0fc9d6a53192f68f327c2d",
+   "block_number": 11609850,
+   "block_timestamp": "2026-09-01T02:44:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000009e7dc3ba3b34aa84c00000000000000000000000000000000000000000003af6208af0e65325ffee20000000000000000000000000000000000000000000068d200f70199775fffe00000000000000000000000000000000000000000000000000017f6dde2462b5d",
+   "decoded": null,
+   "index": 118,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xc6073296eb8e5d56c3d9a6bee531f6e49adf89540659dfefe3143c557e96e325"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x5d1dccdaf1cd0c5f0f67f0f8a5bd069e80b1e4f83f0fc9d6a53192f68f327c2d",
+   "block_number": 11609850,
+   "block_timestamp": "2026-09-01T02:44:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000a968163f0a57b3fffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "49999999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 114,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xc6073296eb8e5d56c3d9a6bee531f6e49adf89540659dfefe3143c557e96e325"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x5d1dccdaf1cd0c5f0f67f0f8a5bd069e80b1e4f83f0fc9d6a53192f68f327c2d",
+   "block_number": 11609850,
+   "block_timestamp": "2026-09-01T02:44:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000001d3b91caa8c5ff51ee0daa0000000000000000000000000000000000000000001b417da78e0155e63b4719b",
+   "decoded": null,
+   "index": 39,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x44d8082c50458efd379f5afaf77468c1a86434a83b04008ff5ebc8743c19ee3e"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x5d1dccdaf1cd0c5f0f67f0f8a5bd069e80b1e4f83f0fc9d6a53192f68f327c2d",
+   "block_number": 11609850,
+   "block_timestamp": "2026-09-01T02:44:36.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001c6bf52633fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "499999999999999"
+     }
+    ]
+   },
+   "index": 38,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x44d8082c50458efd379f5afaf77468c1a86434a83b04008ff5ebc8743c19ee3e"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x8c162bf2c4b91f693d99596e8f0d317218d6f7a2f6701c614eb5edb1450fdbe1",
+   "block_number": 11609848,
+   "block_timestamp": "2026-09-01T02:44:12.000000Z",
+   "data": "0x000000000000000000000000000000000000000001e1b2ba4a3a33caa425ffb3000000000000000000000000000000000000000001d3b91caa8c5ff51ee0daa0",
+   "decoded": null,
+   "index": 88,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xec76b247d7ed544e226335dc2250848253090467b004a522df52cd88f1afa8bf"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x8c162bf2c4b91f693d99596e8f0d317218d6f7a2f6701c614eb5edb1450fdbe1",
+   "block_number": 11609848,
+   "block_timestamp": "2026-09-01T02:44:12.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b5e620f47fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "199999999999999"
+     }
+    ]
+   },
+   "index": 87,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xec76b247d7ed544e226335dc2250848253090467b004a522df52cd88f1afa8bf"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xb2fed4452cc76604e0a9980bf3d91262aee45de520d8e056da035afc192a17c1",
+   "block_number": 11609847,
+   "block_timestamp": "2026-09-01T02:44:00.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000bcad34efcfadd6dfea5a0000000000000000000000000000000000000000000014f6ccfe338517dffd980000000000000000000000000000000000000000000000000004009d9f4b40ef",
+   "decoded": null,
+   "index": 58,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xda0952fcf8c7cd132bef93c98db4b8cd10825d0367d817aed4395c0293b340d2"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x2f531b4ecbef62927cd3e339bafe23bb50ae4be07037b79130a933b823ebd2cd",
+   "block_number": 11609844,
+   "block_timestamp": "2026-09-01T02:43:24.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000001cf77664e5cbd6bf300000000000000000000000000000000000000000000bcad34efcfadd6dfea5a0000000000000000000000000000000000000000000014f6ccfe338517dffd980000000000000000000000000000000000000000000000000004009d9f4b40ef",
+   "decoded": null,
+   "index": 83,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x0d4fc15342e16e1d417981fa1bdc7c39209e17fbf26fb2ba61c83cc1cff9bbbe"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x2f531b4ecbef62927cd3e339bafe23bb50ae4be07037b79130a933b823ebd2cd",
+   "block_number": 11609844,
+   "block_timestamp": "2026-09-01T02:43:24.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000021e19e0c9bab23fffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "9999999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 79,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x0d4fc15342e16e1d417981fa1bdc7c39209e17fbf26fb2ba61c83cc1cff9bbbe"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x2f531b4ecbef62927cd3e339bafe23bb50ae4be07037b79130a933b823ebd2cd",
+   "block_number": 11609844,
+   "block_timestamp": "2026-09-01T02:43:24.000000Z",
+   "data": "0x00000000000000000000000000000000000000000067650fb285439daffff7c30000000000000000000000000000000000000000000b7d01be8095bc2fffff15000000000000000000000000000000000000000000000000023366701a4ff483",
+   "decoded": null,
+   "index": 76,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x0d4fc15342e16e1d417981fa1bdc7c39209e17fbf26fb2ba61c83cc1cff9bbbe"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x608ec63b8adf1196f174add41715b4410abe22e31fe210a76dfbfdfdb0ef6fd6",
+   "block_number": 11609838,
+   "block_timestamp": "2026-09-01T02:42:12.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000000fe694f542f3bce730800000000000000000000000000000000000000000067650fb285439daffff7c30000000000000000000000000000000000000000000b7d01be8095bc2fffff15000000000000000000000000000000000000000000000000023366701a4ff483",
+   "decoded": null,
+   "index": 327,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xbace6c0a026e6f341c48e66a6db03e33202c717e5ec2fca6dbc63c9ad458746b"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x608ec63b8adf1196f174add41715b4410abe22e31fe210a76dfbfdfdb0ef6fd6",
+   "block_number": 11609838,
+   "block_timestamp": "2026-09-01T02:42:12.000000Z",
+   "data": "0x00000000000000000000000000000000000000000001291246f5b7349fffffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "1402879999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 323,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xbace6c0a026e6f341c48e66a6db03e33202c717e5ec2fca6dbc63c9ad458746b"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xd5269a2b56cf7c2d99168e42262ffe20a654e894cd079c8fbfce7c60c4d4b207",
+   "block_number": 11609822,
+   "block_timestamp": "2026-09-01T02:39:00.000000Z",
+   "data": "0x00000000000000000000000000000000000000000255bd455c753c1bb5c71eef000000000000000000000000000000000000000001e1b2ba4a3a33caa425ffb3",
+   "decoded": null,
+   "index": 80,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x4deb0bbd902410cfe73cc97f078b877c9fd6804b84bcff45dafbadef52bc4b28"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xd5269a2b56cf7c2d99168e42262ffe20a654e894cd079c8fbfce7c60c4d4b207",
+   "block_number": 11609822,
+   "block_timestamp": "2026-09-01T02:39:00.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000071afd498cffff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "1999999999999999"
+     }
+    ]
+   },
+   "index": 79,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x4deb0bbd902410cfe73cc97f078b877c9fd6804b84bcff45dafbadef52bc4b28"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xd5269a2b56cf7c2d99168e42262ffe20a654e894cd079c8fbfce7c60c4d4b207",
+   "block_number": 11609822,
+   "block_timestamp": "2026-09-01T02:39:00.000000Z",
+   "data": "0x00000000000000000000000000000000000000000039f78b3dcd3276071eab650000000000000000000000000000000000000000000670d69516ccb7c7e6f699000000000000000000000000000000000000000000000000013aa3f05f3e02fa",
+   "decoded": null,
+   "index": 76,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x4deb0bbd902410cfe73cc97f078b877c9fd6804b84bcff45dafbadef52bc4b28"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x1270d2417a588daa6801d6780468d71b66b0a3c245ac904c74bbc336daa6bdfd",
+   "block_number": 11609799,
+   "block_timestamp": "2026-09-01T02:34:12.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000008e5b2d7a105543fedf00000000000000000000000000000000000000000039f78b3dcd3276071eab650000000000000000000000000000000000000000000670d69516ccb7c7e6f699000000000000000000000000000000000000000000000000013aa3f05f3e02fa",
+   "decoded": null,
+   "index": 168,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xcedd20f722fd029a03ff2e4d6697d62f5c09f8aa9370b83fea7a650c3f66a6de"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x1270d2417a588daa6801d6780468d71b66b0a3c245ac904c74bbc336daa6bdfd",
+   "block_number": 11609799,
+   "block_timestamp": "2026-09-01T02:34:12.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000a68c9fde19d9acc1ffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "786506899999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 164,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xcedd20f722fd029a03ff2e4d6697d62f5c09f8aa9370b83fea7a650c3f66a6de"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xffb75d49aa0ebe316c3708347ef980b09e1f2e59932bb87341b13f5532b59f9c",
+   "block_number": 11609796,
+   "block_timestamp": "2026-09-01T02:33:36.000000Z",
+   "data": "0x00000000000000000000000000000000000000000296cc33d0b6cf12aa59312500000000000000000000000000000000000000000255bd455c753c1bb5c71eef",
+   "decoded": null,
+   "index": 116,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x8d921bed7fbdf455027ad64fc6517ebf3330830177c03fca594af3b2b876504e"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xffb75d49aa0ebe316c3708347ef980b09e1f2e59932bb87341b13f5532b59f9c",
+   "block_number": 11609796,
+   "block_timestamp": "2026-09-01T02:33:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000038d7ea4c67fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "999999999999999"
+     }
+    ]
+   },
+   "index": 115,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x8d921bed7fbdf455027ad64fc6517ebf3330830177c03fca594af3b2b876504e"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xffb75d49aa0ebe316c3708347ef980b09e1f2e59932bb87341b13f5532b59f9c",
+   "block_number": 11609796,
+   "block_timestamp": "2026-09-01T02:33:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000000030592f2a406af242fa7f60000000000000000000000000000000000000000000055f3e21239a1aeaff63700000000000000000000000000000000000000000000000000105ea9c2d0557e",
+   "decoded": null,
+   "index": 112,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x8d921bed7fbdf455027ad64fc6517ebf3330830177c03fca594af3b2b876504e"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x30e97a1b169ab344a845567fd8dffe8cdf5c73c82624489dff3d71ca7da26b9c",
+   "block_number": 11609788,
+   "block_timestamp": "2026-09-01T02:32:00.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000000769e3dcb2206f9e55000000000000000000000000000000000000000000030592f2a406af242fa7f60000000000000000000000000000000000000000000055f3e21239a1aeaff63700000000000000000000000000000000000000000000000000105ea9c2d0557e",
+   "decoded": null,
+   "index": 73,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x27e441e46cea848ed2c633cb2b6a353f69b901cac7edec08151999ac6fcd5631"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x30e97a1b169ab344a845567fd8dffe8cdf5c73c82624489dff3d71ca7da26b9c",
+   "block_number": 11609788,
+   "block_timestamp": "2026-09-01T02:32:00.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000008ae9d4cd4b0a79fffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "40999999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 69,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x27e441e46cea848ed2c633cb2b6a353f69b901cac7edec08151999ac6fcd5631"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x879a0f258af3499ca8567d30adfd7101bc2a2807a40d9dcaae9366959823b0e9",
+   "block_number": 11609786,
+   "block_timestamp": "2026-09-01T02:31:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000000316154dac35a7f3c9ff37d000000000000000000000000000000000000000000057c97a6877bd53f9ffe9c000000000000000000000000000000000000000000000000010e392355801dbe",
+   "decoded": null,
+   "index": 138,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x92a714d9e48886180b9b6317b9408f08381c9ed79de8c8cd4a3453a896a1d611"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x0cab0725493531482497fd7ff76afcc5f1afa6d0dea6c06757f13eef12fcd1b7",
+   "block_number": 11609774,
+   "block_timestamp": "2026-09-01T02:29:00.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000079c36901a392d97578000000000000000000000000000000000000000000316154dac35a7f3c9ff37d000000000000000000000000000000000000000000057c97a6877bd53f9ffe9c000000000000000000000000000000000000000000000000010e392355801dbe",
+   "decoded": null,
+   "index": 108,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xb3c83ddb1ee206ae5beeb1c029eb17a4af8bf8173db20d17c78bf31f871c2255"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x0cab0725493531482497fd7ff76afcc5f1afa6d0dea6c06757f13eef12fcd1b7",
+   "block_number": 11609774,
+   "block_timestamp": "2026-09-01T02:29:00.000000Z",
+   "data": "0x000000000000000000000000000000000000000000008de0c5d4cbdca6bfffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "669999999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 104,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xb3c83ddb1ee206ae5beeb1c029eb17a4af8bf8173db20d17c78bf31f871c2255"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xa54f2b96e362a3077870fff86e5d7e6254008bb4296a554c359cd71dfd739e79",
+   "block_number": 11609772,
+   "block_timestamp": "2026-09-01T02:28:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000002d9dfbac5f2a754ac824fb000000000000000000000000000000000000000000296cc33d0b6cf12aa593125",
+   "decoded": null,
+   "index": 69,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xd1f8fd66aa3785e37a002eb94b0d5e252d54443eef1408e998e4faa9a16057fd"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xa54f2b96e362a3077870fff86e5d7e6254008bb4296a554c359cd71dfd739e79",
+   "block_number": 11609772,
+   "block_timestamp": "2026-09-01T02:28:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000038d7ea4c67fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "999999999999999"
+     }
+    ]
+   },
+   "index": 68,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xd1f8fd66aa3785e37a002eb94b0d5e252d54443eef1408e998e4faa9a16057fd"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xa54f2b96e362a3077870fff86e5d7e6254008bb4296a554c359cd71dfd739e79",
+   "block_number": 11609772,
+   "block_timestamp": "2026-09-01T02:28:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000000075ec4115e1cca64bffb7100000000000000000000000000000000000000000000d1a401ee0332eebfff7e0000000000000000000000000000000000000000000000000026fe66f614de8a",
+   "decoded": null,
+   "index": 65,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xd1f8fd66aa3785e37a002eb94b0d5e252d54443eef1408e998e4faa9a16057fd"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xf5a3b3c219e1caa00012bc4fd2afb510a0abdf1eb65101ceab791a7b6f2a774b",
+   "block_number": 11609764,
+   "block_timestamp": "2026-09-01T02:27:00.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000011de9f6c67e81c71db000000000000000000000000000000000000000000075ec4115e1cca64bffb7100000000000000000000000000000000000000000000d1a401ee0332eebfff7e0000000000000000000000000000000000000000000000000026fe66f614de8a",
+   "decoded": null,
+   "index": 77,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xe82ce5e2a2717ae52a1d162e99396cca660389f3843e34405726929556348b16"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xf5a3b3c219e1caa00012bc4fd2afb510a0abdf1eb65101ceab791a7b6f2a774b",
+   "block_number": 11609764,
+   "block_timestamp": "2026-09-01T02:27:00.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000152d02c7e14af67fffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "99999999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 73,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xe82ce5e2a2717ae52a1d162e99396cca660389f3843e34405726929556348b16"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xf5a3b3c219e1caa00012bc4fd2afb510a0abdf1eb65101ceab791a7b6f2a774b",
+   "block_number": 11609764,
+   "block_timestamp": "2026-09-01T02:27:00.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000389a5cae57e75a0feaa900000000000000000000000000000000000000000000064a0a4c42a7ed8ffda10000000000000000000000000000000000000000000000000001323ad6a9f163",
+   "decoded": null,
+   "index": 70,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xe82ce5e2a2717ae52a1d162e99396cca660389f3843e34405726929556348b16"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xb8e7d1abfac4f2cbbb063da7f25b095c5278fa92247e6d904dfbb1126c17dab5",
+   "block_number": 11609749,
+   "block_timestamp": "2026-09-01T02:24:00.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000000008ac74a9a6d534a3e00000000000000000000000000000000000000000000389a5cae57e75a0feaa900000000000000000000000000000000000000000000064a0a4c42a7ed8ffda10000000000000000000000000000000000000000000000000001323ad6a9f163",
+   "decoded": null,
+   "index": 91,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x8005a2272e011f78ab8e3b83cedf7ed81b02984ede7f3ba9f4e7a9ab36c54196"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xb8e7d1abfac4f2cbbb063da7f25b095c5278fa92247e6d904dfbb1126c17dab5",
+   "block_number": 11609749,
+   "block_timestamp": "2026-09-01T02:24:00.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000000a2a15d09519bdfffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "2999999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 87,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x8005a2272e011f78ab8e3b83cedf7ed81b02984ede7f3ba9f4e7a9ab36c54196"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xb8e7d1abfac4f2cbbb063da7f25b095c5278fa92247e6d904dfbb1126c17dab5",
+   "block_number": 11609749,
+   "block_timestamp": "2026-09-01T02:24:00.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000000440212c939cd3dd6200000000000000000000000000000000000000000000000078e73dd78333fc270000000000000000000000000000000000000000000000000000001702e4b8a1",
+   "decoded": null,
+   "index": 84,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x8005a2272e011f78ab8e3b83cedf7ed81b02984ede7f3ba9f4e7a9ab36c54196"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x0576c0730e404bfd2b955e4f8dc241f8e3d734237e8ae55ac6718401670e2560",
+   "block_number": 11609748,
+   "block_timestamp": "2026-09-01T02:23:48.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000a6cc2bf2022c500000000000000000000000000000000000000000000000440212c939cd3dd6200000000000000000000000000000000000000000000000078e73dd78333fc270000000000000000000000000000000000000000000000000000001702e4b8a1",
+   "decoded": null,
+   "index": 130,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x48090d111be000bbc203e9fa66c140f883fb857a06ae72a311fc87424d8e6bd3"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x0576c0730e404bfd2b955e4f8dc241f8e3d734237e8ae55ac6718401670e2560",
+   "block_number": 11609748,
+   "block_timestamp": "2026-09-01T02:23:48.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000000000c3663566a57ffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "879999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 126,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x48090d111be000bbc203e9fa66c140f883fb857a06ae72a311fc87424d8e6bd3"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x0576c0730e404bfd2b955e4f8dc241f8e3d734237e8ae55ac6718401670e2560",
+   "block_number": 11609748,
+   "block_timestamp": "2026-09-01T02:23:48.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000000304d1be347990bdcf20000000000000000000000000000000000000000000000055de6a779bbabfc1a000000000000000000000000000000000000000000000000000001057dfbf17c",
+   "decoded": null,
+   "index": 123,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x48090d111be000bbc203e9fa66c140f883fb857a06ae72a311fc87424d8e6bd3"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xc5a4d5e5e6f0c2782c7e886b405f367dc21cb99f93773ea3031c6d31a2b1b8da",
+   "block_number": 11609744,
+   "block_timestamp": "2026-09-01T02:23:00.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000007676d457639caa0000000000000000000000000000000000000000000000304d1be347990bdcf20000000000000000000000000000000000000000000000055de6a779bbabfc1a000000000000000000000000000000000000000000000000000001057dfbf17c",
+   "decoded": null,
+   "index": 136,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xd161357a2bce8c5a2feb5eadedad3ae9ec4c6e00800f40bf3015b6dd4ac9f703"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xc5a4d5e5e6f0c2782c7e886b405f367dc21cb99f93773ea3031c6d31a2b1b8da",
+   "block_number": 11609744,
+   "block_timestamp": "2026-09-01T02:23:00.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000000008ac7230489e7ffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "9999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 132,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xd161357a2bce8c5a2feb5eadedad3ae9ec4c6e00800f40bf3015b6dd4ac9f703"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x30583be8141266d891b51e9db7f8caedff8df8d23d41484cfb96e5fe7f18c5f3",
+   "block_number": 11609732,
+   "block_timestamp": "2026-09-01T02:20:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000002e12a24a335920fbf953f0f000000000000000000000000000000000000000002d9dfbac5f2a754ac824fb0",
+   "decoded": null,
+   "index": 97,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xcfd5ea7268cf4dd6310e0d9a6cbda76bf5eb0f829f124edd1b648c12c9b2bbec"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x30583be8141266d891b51e9db7f8caedff8df8d23d41484cfb96e5fe7f18c5f3",
+   "block_number": 11609732,
+   "block_timestamp": "2026-09-01T02:20:36.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005af3107a3fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "99999999999999"
+     }
+    ]
+   },
+   "index": 96,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xcfd5ea7268cf4dd6310e0d9a6cbda76bf5eb0f829f124edd1b648c12c9b2bbec"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xa0263c87407eba41d503c170be909c31c3b174cb0c04dd37645d605f7ea8bd2f",
+   "block_number": 11609715,
+   "block_timestamp": "2026-09-01T02:17:00.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000643c041f66545a26fd84f00000000000000000000000000000000000000000000b231ce70b5eb4aeffb9600000000000000000000000000000000000000000000000000213f7bf9ed5767",
+   "decoded": null,
+   "index": 48,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x10ea71883ef0e28b7b04d488d5ffc5952921ddb354e9b56f9331956a80fc9bab",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x832f0efbe3917942420b86d9ac7017901310edfbb13a918dc199a6105ea6fd5c"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xfe7febac492d1a7b5d6a6cfe8ccbdc3e17bf8b8ea98e07d5042ab1cc167ccf39",
+   "block_number": 11609710,
+   "block_timestamp": "2026-09-01T02:16:00.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000000f367bc5f702095bd30000000000000000000000000000000000000000000643c041f66545a26fd84f00000000000000000000000000000000000000000000b231ce70b5eb4aeffb9600000000000000000000000000000000000000000000000000213f7bf9ed5767",
+   "decoded": null,
+   "index": 97,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x32afb9555b0493ac0021ef7f6b122197e9e58510e694383410f667ec76e4f0fa",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x028d1448a97328f27399517e11b841c20a83b42f402b8fbbc74ec84c14b65c9b"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xfe7febac492d1a7b5d6a6cfe8ccbdc3e17bf8b8ea98e07d5042ab1cc167ccf39",
+   "block_number": 11609710,
+   "block_timestamp": "2026-09-01T02:16:00.000000Z",
+   "data": "0x0000000000000000000000000000000000000000000011ffdbf6b2b2eb1fffff0000000000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "84999999999999999999999"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "0"
+     }
+    ]
+   },
+   "index": 93,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x028d1448a97328f27399517e11b841c20a83b42f402b8fbbc74ec84c14b65c9b"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xc3ff421b5744828dce8c446a870b5ac0734d822a4c5e7914cf389149e0028af6",
+   "block_number": 11609705,
+   "block_timestamp": "2026-09-01T02:15:00.000000Z",
+   "data": "0x000000000000000000000000000000000000000002e87669c30874bfb41a8e82000000000000000000000000000000000000000002e12a24a335920fbf953f0f",
+   "decoded": null,
+   "index": 89,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa66e3643af3b5a570ea09b8d485f206950ff1ee042471a211388199518f539a6",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x841e5af58c5c1f528b24579d692972dc6a01471960fd986484c32380b1bbec03"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xc3ff421b5744828dce8c446a870b5ac0734d822a4c5e7914cf389149e0028af6",
+   "block_number": 11609705,
+   "block_timestamp": "2026-09-01T02:15:00.000000Z",
+   "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005af3107a3fff",
+   "decoded": {
+    "method_call": "FeeCollected(uint256 token0Amt, uint256 token1Amt)",
+    "method_id": "af7c505e",
+    "parameters": [
+     {
+      "indexed": false,
+      "name": "token0Amt",
+      "type": "uint256",
+      "value": "0"
+     },
+     {
+      "indexed": false,
+      "name": "token1Amt",
+      "type": "uint256",
+      "value": "99999999999999"
+     }
+    ]
+   },
+   "index": 88,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x374283De53d7596387f86eA8DA25e92C11f5BC4b",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": true,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xaf7c505ee772ec188af7067e1f73db08ab028e3d564273442b907742b9c41fa0",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x841e5af58c5c1f528b24579d692972dc6a01471960fd986484c32380b1bbec03"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x5736abd6f26c3abe4c87caafaafb7ec83d5615218029c7bfe737fc411611c9aa",
+   "block_number": 11609662,
+   "block_timestamp": "2026-09-01T02:06:24.000000Z",
+   "data": "0x",
+   "decoded": null,
+   "index": 374,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0xa11f9f03282d5dbbf87eea2b08a2b19f333224fddc17402b016b8ae3021f8e9a",
+    "0x000000000000000000000000000000000000000000000000000000000000beef",
+    "0x0000000000000000000000004dbe172254033aac3a3374fb10b422605b0b449b",
+    null
+   ],
+   "transaction_hash": "0x2f23c889c6a5a4b7560c3f90790d501193a13fbdf4d09246b4120a896bf3150b"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x82329601a4171b0c4090337566afbd3665be74583dabe2653f14be3056da1cef",
+   "block_number": 11609654,
+   "block_timestamp": "2026-09-01T02:04:48.000000Z",
+   "data": "0x00000000000000000000000000000000000000000000065a4da25d3019aa6dba0000000000000000000000000000000000000000000000000de0b6b3a7640000000000000000000000000000000000000000000002e87669c30874bfb41a8e82",
+   "decoded": null,
+   "index": 495,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x4a16fcf994dd2b8d8fbfc45545d642ddf26debffd047664077e7d32726013e8d",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0x9c867f5798c450c016cef0275fa15d68ef78554150680b1434473154a6eb5dbd"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0x7ce3b84cd55b38a9d07659d72bdc9a503b4889143ccb551083fef824bd5683ba",
+   "block_number": 11609651,
+   "block_timestamp": "2026-09-01T02:04:12.000000Z",
+   "data": "0x0000000000000000000000000000000000007530000000000000000000000000000000000000000000000000000000000000000000000000000000000003256d",
+   "decoded": null,
+   "index": 272,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x5f94feb4624474fb875ef3acdf106e9f8e1b7ad0881a6a86f1e67f67ccd4e5b4",
+    null,
+    null,
+    null
+   ],
+   "transaction_hash": "0xba0fed58ca62ad55c3f922b68eb8033b7d5362bff414ed686b5bf5838f103c30"
+  },
+  {
+   "address": {
+    "ens_domain_name": null,
+    "hash": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "block_hash": "0xc513412dec1bc08631353dc8e453a6ea354cce2321c084648b6d526f25b2808d",
+   "block_number": 11609650,
+   "block_timestamp": "2026-09-01T02:04:00.000000Z",
+   "data": "0x",
+   "decoded": {
+    "method_call": "OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
+    "method_id": "8be0079c",
+    "parameters": [
+     {
+      "indexed": true,
+      "name": "previousOwner",
+      "type": "address",
+      "value": "0x0000000000000000000000000000000000000000"
+     },
+     {
+      "indexed": true,
+      "name": "newOwner",
+      "type": "address",
+      "value": "0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7"
+     }
+    ]
+   },
+   "index": 100,
+   "smart_contract": {
+    "ens_domain_name": null,
+    "hash": "0x24bB15691f4e77004D0C72bDC90eaA4279e6Ced6",
+    "implementations": [],
+    "is_contract": true,
+    "is_scam": false,
+    "is_verified": false,
+    "metadata": null,
+    "name": null,
+    "private_tags": [],
+    "proxy_type": null,
+    "public_tags": [],
+    "reputation": "ok",
+    "watchlist_names": []
+   },
+   "topics": [
+    "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0",
+    "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "0x000000000000000000000000047f606fd5b2baa5f5c6c4ab8958e45cb6b054b7",
+    null
+   ],
+   "transaction_hash": "0x957c497c4364f14be649e662b20f5a857ab536c3da814a61e725ccb62923b27e"
+  }
+ ]
+}

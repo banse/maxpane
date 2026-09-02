@@ -39,6 +39,7 @@ from maxpane_dashboard.data.surf_manager import (
     SOURCE_LOGS,
     SOURCE_MARKET,
     SOURCE_NFT,
+    SOURCE_POOL4,
     SurfManager,
 )
 from maxpane_dashboard.data.surf_models import (
@@ -866,13 +867,66 @@ class FakeSurfClient:
         self.closed = True
 
 
-def _manager(tmp_path, *, client=None, clock=None, **kwargs) -> SurfManager:
+class DeadPool4Client:
+    """A ``Pool4Client``-shaped double that answers ``None`` to everything.
+
+    WP7 gave :class:`SurfManager` a **second** client (pool4 reads two chains
+    from four endpoint pools of its own), and like ``client`` it defaults to
+    the real one. Every manager built here therefore has to inject a double or
+    the detached pool4 sweep opens a real socket — which CLAUDE.md forbids
+    structurally, not merely by convention.
+
+    Answering ``None`` to every read is the honest shape for this file: these
+    tests are about the other seven groups, so pool4 has nothing to serve and
+    ``p4`` names itself in ``degraded``, exactly as ``pad`` does on a cold
+    cycle. ``tests/data/test_surf_manager_pool4.py`` owns the double that
+    actually answers.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.closed = False
+
+    async def verify_hook(self, addr, *, network, expected_token):
+        self.calls.append("verify_hook")
+        return None
+
+    async def fetch_block_number(self, *, network):
+        self.calls.append("fetch_block_number")
+        return None
+
+    async def fetch_hook_state(self, addr, *, network, token_addr=None):
+        self.calls.append("fetch_hook_state")
+        return None
+
+    async def fetch_dripper_state(self, addr, *, network, token_addr=None):
+        self.calls.append("fetch_dripper_state")
+        return None
+
+    async def fetch_vault_state(self, addr, *, network):
+        self.calls.append("fetch_vault_state")
+        return None
+
+    async def fetch_flow_logs(self, addr, from_block, to_block, *, network):
+        self.calls.append("fetch_flow_logs")
+        return None
+
+    async def close(self):
+        self.closed = True
+
+
+def _manager(
+    tmp_path, *, client=None, clock=None, pool4_client=None, **kwargs
+) -> SurfManager:
     clock = clock or FakeClock()
     manager = SurfManager(
         poll_interval=30,
         clock=clock,
         cache_path=str(tmp_path / "surf_cache.json"),
         client=client if client is not None else FakeSurfClient(),
+        pool4_client=(
+            pool4_client if pool4_client is not None else DeadPool4Client()
+        ),
         cache=SurfCache(path=str(tmp_path / "surf_cache.json"), clock=clock),
         **kwargs,
     )
@@ -926,6 +980,7 @@ async def test_every_source_group_is_named(manager):
     assert SOURCES == (
         SOURCE_CHAIN, SOURCE_CHANNEL, SOURCE_MARKET,
         SOURCE_LOGS, SOURCE_NFT, SOURCE_ACTIVITY, SOURCE_LAUNCHPAD,
+        SOURCE_POOL4,
     )
 
 
@@ -2074,7 +2129,7 @@ async def test_a_healthy_cycle_reports_nothing_degraded(manager):
     # cycle: its sweep is detached (Task 6) and cannot land inside the cycle
     # that spawned it, so a brand-new cache always shows it here alongside
     # whatever else genuinely failed -- nothing failed here, so it is alone.
-    assert data["degraded"] == [SOURCE_LAUNCHPAD]
+    assert data["degraded"] == [SOURCE_POOL4, SOURCE_LAUNCHPAD]
     assert data["as_of"] == pytest.approx(NOW)
     # This cycle's sample is already in the sparkline, not one refresh behind.
     assert data["supply_series"] == [[1_786_190_400.0, pytest.approx(IMD_SUPPLY)]]
@@ -2089,7 +2144,7 @@ async def test_a_chain_outage_degrades_only_the_chain_group(tmp_path):
     """
     client = FakeSurfClient(fetch_nonces=None, fetch_chain_state=None)
     data = await _manager(tmp_path, client=client).fetch_and_compute()
-    assert data["degraded"] == [SOURCE_CHAIN, SOURCE_LAUNCHPAD]
+    assert data["degraded"] == [SOURCE_CHAIN, SOURCE_POOL4, SOURCE_LAUNCHPAD]
     assert data["imd_price_usd"] == pytest.approx(IMD_PRICE_USD)
     assert data["nft_holders"] == NFT_HOLDERS
     assert data["imd_supply"] is None
@@ -3023,7 +3078,7 @@ async def test_a_client_flagged_partial_failure_names_only_that_group(tmp_path):
     # `launchpad` rides along on cold start: the detached sweep this cycle
     # offers cannot land inside the cycle that spawned it (Task 6), so a
     # brand-new cache always shows it alongside whatever else is down.
-    assert data["degraded"] == [SOURCE_ACTIVITY, SOURCE_LAUNCHPAD]
+    assert data["degraded"] == [SOURCE_ACTIVITY, SOURCE_POOL4, SOURCE_LAUNCHPAD]
 
 
 # ---------------------------------------------------------------------------
@@ -3394,7 +3449,7 @@ async def test_a_launchpad_outage_degrades_only_the_launchpad_group(
 ) -> None:
     client = FakeSurfClient(fetch_pool_v4=None, fetch_launchpad=None)
     data = await _manager(tmp_path, client=client).fetch_and_compute()
-    assert data["degraded"] == [SOURCE_LAUNCHPAD]
+    assert data["degraded"] == [SOURCE_POOL4, SOURCE_LAUNCHPAD]
     assert data["imd_supply"] is not None                # the rest is untouched
 
 

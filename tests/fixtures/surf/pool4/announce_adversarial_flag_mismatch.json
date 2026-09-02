@@ -1,0 +1,82 @@
+{
+ "synthetic": true,
+ "chain": "mainnet",
+ "announce": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+ "discovery_stages": {
+  "provenance": "candidate_addresses(rows): every address-shaped word in a SELF-POST (from_addr == to_addr == ANNOUNCE), EIP-55-normalised, deduplicated, order-preserving.  No flag arithmetic and no network round trip yet.",
+  "flag_filtered": "the provenance output narrowed by has_pool4_flags(), i.e. addr & 0x3fff == 0x2840.  These are the ONLY addresses that may reach an eth_call.",
+  "verdict": "fingerprint_verdict(addr, answers, expected_token) over the flag-filtered survivors: 'adopted' or 'rejected'."
+ },
+ "known_mainnet_imd": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+ "flag_reference": {
+  "hook_flag_mask": "0x3fff",
+  "pool4_flag_word": "0x2840",
+  "source": "hook_flags_reference.json (getHookPermissions on the live Sepolia hook) -- NOT the 0x840 in the docs"
+ },
+ "note": "FLAG ATTACK.  A genuine dev SELF-POST -- provenance passes -- naming an address whose low 14 bits are 0x0840, which is what docs/imd_pool4_mechanics.md and the implementation plan both claim the real hook carries.  The chain says the real value is 0x2840 (BEFORE_INITIALIZE is set as well).  This address is therefore a hook the PoolManager would never call beforeAddLiquidity+beforeInitialize on, and it must be REJECTED with a detail naming the flag gate.  A gate built from the documented 0x840 would ADOPT this address and reject the real hook -- exactly backwards.",
+ "attacker_addresses": {
+  "candidate": "0x5aFeBadF1a650000000000000000000000000840",
+  "low_14_bits": "0x0840"
+ },
+ "rows": [
+  {
+   "ts": 1788361200.0,
+   "kind": "post",
+   "from_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "to_addr": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+   "from_label": null,
+   "text": "new pool4 hook: 0x5aFeBadF1a650000000000000000000000000840 -- enjoy",
+   "tx_hash": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+   "label": null,
+   "value_eth": 0.0
+  }
+ ],
+ "blockscout_items": [
+  {
+   "hash": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+   "from": {
+    "hash": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+    "ens_domain_name": null,
+    "is_contract": false,
+    "name": null
+   },
+   "to": {
+    "hash": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+    "ens_domain_name": null,
+    "is_contract": false,
+    "name": null
+   },
+   "raw_input": "0x6e657720706f6f6c3420686f6f6b3a20307835614665426164463161363530303030303030303030303030303030303030303030303030383430202d2d20656e6a6f79",
+   "value": "0",
+   "method": null,
+   "decoded_input": null,
+   "status": "ok",
+   "result": "success",
+   "timestamp": "2026-09-02T15:00:00.000000Z",
+   "block_number": 25800000
+  }
+ ],
+ "eth_call_answers": {
+  "0x5afebadf1a650000000000000000000000000840": {
+   "token": "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+   "rewardShareBps": "0x00000000000000000000000000000000000000000000000000000000000003e8",
+   "BPS_DENOMINATOR": "0x0000000000000000000000000000000000000000000000000000000000002710",
+   "burnSink": "0x000000000000000000000000000000000000000000000000000000000000dead",
+   "poolManager": "0x000000000000000000000000000000000004444c5dc75cb358380d2e3de08a90"
+  }
+ },
+ "expected": {
+  "candidates": [
+   "0x5aFeBadF1a650000000000000000000000000840"
+  ],
+  "verdict_state": "rejected",
+  "verdict_detail_names": "flags",
+  "discovery_state": "rejected",
+  "candidates_stage": "provenance",
+  "provenance_candidates": [
+   "0x5aFeBadF1a650000000000000000000000000840"
+  ],
+  "flag_filtered_candidates": []
+ },
+ "fixture": "announce_adversarial_flag_mismatch"
+}

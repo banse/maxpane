@@ -1,0 +1,39 @@
+{
+ "captured_at": "2026-09-01T17:20:08.822194Z",
+ "chain": "sepolia",
+ "chain_id": 11155111,
+ "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+ "block_number": 11614023,
+ "block_hash": "0x6cae7a49af98d1322b13eed9ecddac67087dde85b93233c6b1e51112600815bc",
+ "block_tag": "0xb13747",
+ "pool_manager": "0xE03A1074c86CFeDd5C142C4F04F1a1536e203543",
+ "pool_id": "0x6ec9cb73ed7cd8bb0ee08bcc69c86411d3f594dc716f302d8219b789dff37d37",
+ "mapping_slot": 6,
+ "slot0_key": "0x2b4fbd1b62204cbaf88b7e92922120e96003adb75202fa9a8e9c6ee393d38f23",
+ "liquidity_key": "0x2b4fbd1b62204cbaf88b7e92922120e96003adb75202fa9a8e9c6ee393d38f26",
+ "call_names": {
+  "1": "slot0",
+  "2": "liquidity"
+ },
+ "note": "PoolManager.extsload(bytes32) for the launch-3 pool, slots derived by data/surf_v4.pool_state_slots -- this fixture re-uses the repo's derivation rather than re-implementing it. The expected block below is what data/surf_v4.decode_slot0 and decode_liquidity return for these words.",
+ "expected": {
+  "sqrt_price_x96": 2129160584117596564564750167623611,
+  "tick": 203988,
+  "lp_fee": 10000,
+  "liquidity": 17584785897771591676955
+ },
+ "fixture": "pool_slot0",
+ "synthetic": false,
+ "response": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "result": "0x000000002710000000031cd400000000000068f9c8e431b430adbf9d2662c7bb"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "result": "0x0000000000000000000000000000000000000000000003b945ed65d5a63e341b"
+  }
+ ]
+}

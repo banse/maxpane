@@ -17,6 +17,7 @@ it. This file is the method; the constants are the record.
 | app-wide | 143 | `__main__.FULL_LAYOUT_COLUMNS` |
 | surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
 | surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `p` pool4 | 106 cols · 44 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
 
@@ -29,8 +30,13 @@ about 169 columns on a laptop — so 143 is reachable without `--font-size` /
 **The app-wide record, appended never rewritten: 198 → 172 → 143 → 176 → 152 →
 143.** FWA set the first three and the last; surf the two in between. It tracks
 *that* number only — a dashboard measuring under 143 does not append to it,
-which is why nothing has been added since 2026-08-12 despite three new bodies
-since.
+which is why nothing has been added since 2026-08-12 despite four new bodies
+since. surf's `p` pool4 body is the newest of them and the narrowest thing in
+the table at 106; it does not touch the record. Its **row** requirement of 44
+is the largest pinned here, which is the one number about it worth carrying in
+your head — and unlike the other two it is a **worst case over payloads**
+rather than a constant, so it is re-swept when a panel's line count changes,
+not merely re-checked.
 
 ## The rules
 
@@ -61,6 +67,19 @@ since.
 * **Give a `1fr` child a `min-height`.** A `1fr` child cannot overflow a scroll
   container — it *shrinks* — so without a floor it sheds a line per terminal row
   down to a bare title, with no scrollbar and no trace.
+* **Put the column's `1fr` on the child that scrolls inside itself**, and make
+  the one whose height answers to a payload `auto`. Shrinking a `RichLog` moves
+  rows behind its own scrollbar; shrinking a `Vertical` holding a `Static` loses
+  them. The pool4 rail is the worked example and it inverts the other bodies'
+  habit deliberately: floor the variable-height hatch list and it silently cuts
+  two rows off a twelve-lever payload in the narrow window where the rail does
+  not yet scroll, so the fixed-height panel takes the `1fr` instead. The price is
+  blank space on a tall terminal; what it buys is a panel that cannot be cut at
+  any height. It does **not** buy a constant row pin, and an earlier version of
+  this bullet claimed it did: that held only while one column's panels were all
+  fixed-height. Once mainnet made a second panel payload-sized, no two-column
+  cut kept both variable panels out of the binder and the pin became a worst
+  case over payloads. Rule stands; the bonus it was credited with does not.
 * **A `Vertical` defaults to `overflow: hidden`.** A column that holds a growing
   panel needs `overflow-y: auto` *and* the gutter, or it clips with no scrollbar.
 
@@ -129,10 +148,36 @@ silenced by raising the constant
 `test_the_documented_width_is_not_promised_to_clear_every_post`, which pins this
 paragraph).
 
+## The 143 has no margin left on surf's title row
+
+New on 2026-09-01, and it is a fact about the **next** change rather than this
+one. `tests/screens/test_surf_screen.WORST_CASE_TITLE_COLUMNS` is a swept
+measurement of the one row on the surf screen that cannot ellipsise: the board's
+name, every figure, the `as of` marker, `‹ taller`, the LP warning and **every**
+degraded group, which is exactly what a full outage prints. pool4 added an
+eighth group (`SOURCE_POOL4`, rendered `p4`) and the row prints every member
+verbatim, so it cost four columns and took the measurement 139 → **143** — level
+with `SURF_FULL_LAYOUT_COLUMNS`, to the column.
+
+The standing "shorten the value, do not raise the pin" rule does not fire here:
+the row still *fits* the documented width, it merely no longer clears it. What
+zero margin means is that a ninth source group, or one more word anywhere on
+that line, puts the worst case past 143, where the tail is **gone** — no `…`, no
+scrollbar, no trace, on the one row of that screen whose job is to say something
+is down. The companion test's
+`WORST_CASE_TITLE_COLUMNS <= SURF_FULL_LAYOUT_COLUMNS` assertion is what turns
+that into a red suite instead of a silent loss, and it has no slack left to
+absorb an edit. Shorten that row before adding to it, and re-sweep rather than
+adjusting the constant to match.
+
 ## Body swaps
 
 `c` swaps a shared slot on FWA, TTT, Talismans and curator so three panels that
 cannot share a row do not have to. Surf does not: its 2026-08-10 restructure put
-all six panels on screen at once, which is why its `l` and curator's `y`/`f`
-swap whole *bodies* instead. A swapped-in body is composed once and hidden, so
+all six panels on screen at once, which is why its `l` and `p` and curator's
+`y`/`f` swap whole *bodies* instead. Each swapped body gets its **own** pin,
+swept in situ against its own panels — surf's `p` is not derived from and does
+not equal its `l`, and its sweep deliberately straddles both neighbouring pins
+so agreeing with one would show up as a measurement rather than as an
+assumption. A swapped-in body is composed once and hidden, so
 the first keypress paints a complete frame rather than a blank one.

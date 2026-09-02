@@ -1,0 +1,96 @@
+{
+ "fixture": "mainnet_counter_reconciliation",
+ "synthetic": false,
+ "chain": "mainnet",
+ "derived_from": [
+  "mainnet_hook_state.json",
+  "mainnet_token_state.json",
+  "mainnet_distributor_state.json",
+  "mainnet_flow_logs.json",
+  "mainnet_pool_slot0.json"
+ ],
+ "generated_at": "2026-09-02T11:02:14.956817Z",
+ "log_window_reaches_deployment": true,
+ "note": "The mainnet analogue of counter_reconciliation.json.  The three log-vs-counter checks reconcile TO THE WEI and they are only legitimate because the log window reaches the deployment (log_window_reaches_deployment above) -- a window starting later would hold a SUFFIX of history and reconciling a suffix against a cumulative counter reports a defect that is not there.\n\nTHE SEPOLIA BURN IDENTITY DOES NOT TRANSFER, and not merely because the address changed.  burnSink() is the BurnExecutor here, and totalBurned (80.96 IMD) equals NEITHER balanceOf(BurnExecutor) (21.48) NOR balanceOf(0xdEaD) (0.00).  The BurnExecutor is a PASS-THROUGH that burns onward, so its balance is what is QUEUED, not what has been burned -- a structural difference from 0x...dEaD, which only ever accumulates.  Any control carrying 'totalBurned == balanceOf(burnSink)' from Sepolia to mainnet would misreport a healthy hook on every tick.\n\nTHE 85/15 SPLIT IS TAKEN FROM THE COUNTERS, never from a document, and rewardShareBps is 1500 here against 1000 on Sepolia -- the live-read discipline earning its keep.\n\nTHE DISTRIBUTOR'S THREE-WAY SPLIT reconciles from its own *Earned counters to 30/30/40, which is the self-validating check for a contract whose bonding share HAS NO GETTER: bonding is the DERIVED remainder 10000 - stakingBps - nftBps, and any literal 4000 in code is a bug waiting for the operator to change a bps.",
+ "checks": {
+  "sum_FeeCollected_imd == totalFeeToken()": {
+   "from_logs": 1941137493300201635,
+   "from_counter": 1941137493300201635,
+   "agree": true,
+   "delta_wei": 0
+  },
+  "sum_ClaimsSettled_0 == totalBurned()": {
+   "from_logs": 80964948961230631673,
+   "from_counter": 80964948961230631673,
+   "agree": true,
+   "delta_wei": 0
+  },
+  "sum_ClaimsSettled_1 == totalRewarded()": {
+   "from_logs": 14287932169628934999,
+   "from_counter": 14287932169628934999,
+   "agree": true,
+   "delta_wei": 0
+  }
+ },
+ "split_from_counters_pct": {
+  "burn": 85.00000000000001,
+  "stakers": 15.0
+ },
+ "claimed_share": {
+  "rewardShareBps": 1500,
+  "BPS_DENOMINATOR": 10000,
+  "sepolia_rewardShareBps_for_contrast": 1000
+ },
+ "distributor_split": {
+  "stakingBps": 3000,
+  "nftBps": 3000,
+  "bondingBps_derived": 4000,
+  "bonding_has_its_own_getter": false,
+  "from_earned_counters_pct": {
+   "staking": 30.0,
+   "nft": 30.0,
+   "bonding": 40.0
+  },
+  "held_equals_earned": {
+   "nft": true,
+   "bonding": true
+  },
+  "stakingEarned_minus_nftEarned_wei": -4,
+  "note": "stakingBps == nftBps, but the two Earned counters differ by a few wei from integer division.  An exact-equality test between them fails; they are equal to the bps, not to the wei."
+ },
+ "burn_sink": {
+  "burnSink": "0xe29386719c155b6847ad5a4e97c6674f10ffc750",
+  "is_dead_address": false,
+  "totalBurned_wei": 80964948961230631673,
+  "balanceOf_burnSink_wei": 21484236105397709094,
+  "balanceOf_dead_wei": 0,
+  "sepolia_identity_transfers": false
+ },
+ "inventory_cap": {
+  "inventoryCap_wei": 5339838914855218569652,
+  "tokensInPool_wei": 5236544041208951543035,
+  "difference_wei": 103294873646267026617,
+  "equal": false,
+  "capDecayTokensPerDay_wei": 1000000000000000000000,
+  "note": "MEASURED, and it contradicts the claim that inventoryCap == tokensInPool on both chains.  It holds on Sepolia (see sepolia_cap_getters.json, where the decay rate is the 2**128-1 no-decay sentinel so the cap never moves) and it is FALSE on mainnet, where the cap decays at 1,000 IMD/day and the two drift apart between events.  An equality test would be flaky on mainnet and green on Sepolia for the wrong reason."
+ },
+ "position_getters_vs_poolmanager": {
+  "source": "mainnet_pool_slot0.json -- PoolManager.extsload, canonical verified-source v4 singleton",
+  "currentTick": {
+   "hook": 71920,
+   "poolmanager": 71920,
+   "agree": true
+  },
+  "lpFee": {
+   "hook": 10000,
+   "poolmanager": 10000,
+   "agree": true
+  },
+  "positionLiquidity": {
+   "hook": 143680081461716695703,
+   "poolmanager": 143680081461716695703,
+   "agree": true
+  },
+  "caveat": "the hook and the extsload words were captured in separate rounds; on a moving mainnet pool they can legitimately disagree, so a LIVE control must read both in one sweep before treating a mismatch as a defect."
+ }
+}

@@ -1,0 +1,156 @@
+{
+ "url": "https://ethereum-sepolia-rpc.publicnode.com",
+ "method": "POST",
+ "headers": {
+  "Content-Type": "application/json",
+  "User-Agent": "maxpane-capture/1.0 (+https://pypi.org/project/maxpane)"
+ },
+ "decimals_probe": {
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "eth_call",
+  "params": [
+   {
+    "to": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+    "data": "0x313ce567"
+   },
+   "0xb13844"
+  ]
+ },
+ "body": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+     "data": "0x38d52e0f"
+    },
+    "0xb13844"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+     "data": "0x8da5cb5b"
+    },
+    "0xb13844"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+     "data": "0x5c975abb"
+    },
+    "0xb13844"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+     "data": "0x01e1d114"
+    },
+    "0xb13844"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+     "data": "0x18160ddd"
+    },
+    "0xb13844"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+     "data": "0x06fdde03"
+    },
+    "0xb13844"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 7,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+     "data": "0x95d89b41"
+    },
+    "0xb13844"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 8,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+     "data": "0x313ce567"
+    },
+    "0xb13844"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 9,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+     "data": "0x07a2d13a00000000000000000000000000000000000000000000d3c21bcecceda1000000"
+    },
+    "0xb13844"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 10,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0x1600E14C663679c98B35B61e239F20792BB317cc",
+     "data": "0x07a2d13a0000000000000000000000000000000000000000000000000de0b6b3a7640000"
+    },
+    "0xb13844"
+   ]
+  }
+ ],
+ "call_names": {
+  "1": "asset",
+  "2": "owner",
+  "3": "paused",
+  "4": "totalAssets",
+  "5": "totalSupply",
+  "6": "name",
+  "7": "symbol",
+  "8": "decimals",
+  "9": "convertToAssets",
+  "10": "convertToAssets_millionth_of_a_share"
+ },
+ "fixture": "vault_state",
+ "captured_at": "2026-09-01T18:12:19.030793Z"
+}

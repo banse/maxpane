@@ -174,13 +174,37 @@ def test_no_flat_dict_key_masquerades_as_a_model_field() -> None:
 
 def test_no_model_field_defaults_to_zero() -> None:
     """The house rule, stated structurally: a default of 0 is a sentinel that
-    would outlive the outage that produced it."""
+    would outlive the outage that produced it.
+
+    **The identity checks are load-bearing, and this test was blind without
+    them.** It read ``assert field.default in (None, False, ())`` from the day
+    it was written until 2026-09-01. ``in`` compares with ``==``, ``0 ==
+    False`` is ``True`` in Python, and so a field defaulting to ``0`` sailed
+    through the one guard named after it -- across all twelve models it
+    covers. Found by mutation while transcribing it for the pool4 models:
+    giving ``Pool4FlowEvent.burned_wei`` an ``int = 0`` default left the
+    ``in``-spelled version fully green.
+
+    ``is`` never conflates the two -- ``0 is False`` is ``False`` -- so the
+    identity spelling below is the whole fix, and it catches ``0.0`` as well,
+    which the old one also swallowed.
+
+    One assertion does the work on purpose. A belt-and-braces ``assert
+    type(default) is not int`` beside it reads like extra rigour and is
+    actually dead: nothing reaching it can fail it, because ``allowed`` already
+    admits only ``None``/``False``/``()``. An assertion that cannot fail is
+    worse than no assertion, because it looks like coverage.
+    """
     for model in ALL_MODELS:
         for field in dataclasses.fields(model):
-            if field.default is not dataclasses.MISSING:
-                assert field.default in (None, False, ()), (
-                    f"{model.__name__}.{field.name} defaults to {field.default!r}"
-                )
+            if field.default is dataclasses.MISSING:
+                continue
+            default = field.default
+            allowed = default is None or default is False or default == ()
+            assert allowed, (
+                f"{model.__name__}.{field.name} defaults to {default!r} -- "
+                "a persisted zero outlives the outage that produced it"
+            )
 
 
 def test_wei_fields_are_named_wei() -> None:
@@ -365,14 +389,104 @@ EXPECTED_KEYS = {
     "sig_hot_state",
     "sig_hot_detail",
     "sig_hot_age_s",
+    # ---- pool4 (docs/surf_pool4_contract.md §0.2/§0.3) ----------------------
+    # 45 keys: 43 scalars plus the two list payloads. ``pool4_flow`` and
+    # ``pool4_hatches`` are members here for the same reason ``feed_items`` and
+    # ``launchpad_coins`` are -- ``SURF_ROW_KEYS`` describes the shape of a row,
+    # it does not excuse the key from the payload contract.
+    #
+    # **These are hand-typed and must stay hand-typed.** ``SURF_KEYS`` unpacks
+    # ``*POOL4_KEYS``, so spelling this half as ``EXPECTED_KEYS |
+    # set(POOL4_KEYS)`` would compare that tuple against itself and the pool4
+    # half of this test could never fail again -- the exact shape CLAUDE.md
+    # bans for ``_GAME_CYCLE`` and the ``--game`` choices, and the reason those
+    # three stay literals rather than imports of ``GAMES``. The whole point of
+    # ``EXPECTED_KEYS`` is that it is the *redundant second copy* of the
+    # contract; a derived half is not a copy, it is a mirror.
+    # network, discovery and addresses
+    "pool4_network",
+    "pool4_as_of_hhmm",
+    "pool4_discovery_state",
+    "pool4_discovery_detail",
+    "pool4_discovery_source_tx",
+    "pool4_discovery_source",
+    "pool4_hook_addr",
+    "pool4_token_addr",
+    "pool4_vault_addr",
+    "pool4_distributor_addr",
+    "pool4_reward_path",
+    "pool4_dripper_addr",
+    # THE SPLIT
+    "pool4_measured_inference_pct",
+    "pool4_measured_burn_pct",
+    "pool4_measured_stakers_pct",
+    "pool4_reward_share_bps",
+    "pool4_bps_denominator",
+    "pool4_split_drift_bps",
+    "pool4_total_burned",
+    "pool4_total_rewarded",
+    "pool4_total_fee_token",
+    "pool4_retained_eth",
+    "pool4_last_claim_block",
+    "pool4_unsettled_burn",
+    "pool4_unsettled_stakers",
+    "pool4_counter_state",
+    "pool4_counter_detail",
+    # the Reward Distributor's three-way split (mainnet only)
+    "pool4_distributor_staking_bps",
+    "pool4_distributor_nodes_bps",
+    "pool4_distributor_bonding_bps",
+    "pool4_distributor_staking_earned",
+    "pool4_distributor_nodes_earned",
+    "pool4_distributor_bonding_earned",
+    "pool4_distributor_held_nodes",
+    "pool4_distributor_held_bonding",
+    # THE RATCHET
+    "pool4_tokens_in_pool",
+    "pool4_cap_floor",
+    "pool4_inventory_cap",
+    "pool4_cap_headroom",
+    "pool4_cap_decay_per_day",
+    "pool4_floor_distance",
+    "pool4_floor_distance_pct",
+    "pool4_burned_supply_pct",
+    "pool4_total_supply",
+    "pool4_reserve_series",
+    "pool4_eth_in_pool",
+    "pool4_position_liquidity",
+    "pool4_current_tick",
+    "pool4_ref_tick",
+    "pool4_backstop_centred",
+    # sIMD VAULT
+    "pool4_share_price",
+    "pool4_share_price_delta_pct",
+    "pool4_vault_assets",
+    "pool4_vault_shares",
+    "pool4_drip_per_day",
+    "pool4_drippable",
+    "pool4_can_drip",
+    "pool4_backlog_imd",
+    "pool4_backlog_days",
+    "pool4_implied_apr_pct",
+    # the two row payloads
+    "pool4_flow",
+    "pool4_hatches",
 }
 
 
 def test_surf_keys_is_exactly_the_prd_contract() -> None:
+    """The contract, stated once in prose above and once in code.
+
+    144 = the 82 that shipped through v0.8.3 plus pool4's 62. The count is
+    asserted beside the set membership on purpose: the set catches a rename,
+    the count catches a key added to both sides at once by someone editing
+    ``EXPECTED_KEYS`` to make a red test green instead of asking why it was
+    red.
+    """
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 82
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 144
 
 
 def test_every_signal_has_all_three_facets() -> None:

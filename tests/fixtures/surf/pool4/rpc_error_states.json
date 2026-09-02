@@ -1,0 +1,148 @@
+{
+ "captured_at": "2026-09-01T17:25:35.570504Z",
+ "chain": "sepolia",
+ "chain_id": 11155111,
+ "endpoint": "https://ethereum-sepolia-rpc.publicnode.com",
+ "note": "The 'dead' quadrant, captured from real providers rather than imagined.  Four failures with four different meanings.  Two things WP6 must read out of this: the error CODES collide across unrelated meanings, so classification goes on message text (CLAUDE.md); and an eth_call to an address with no code SUCCEEDS with '0x', so 'the call did not error' is not 'the getter answered' -- a fingerprint gate that conflates the two adopts an empty address.",
+ "probes": [
+  {
+   "label": "range_capped_getLogs",
+   "url": "https://1rpc.io/sepolia",
+   "request": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_getLogs",
+    "params": [
+     {
+      "address": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+      "fromBlock": "0xb12600",
+      "toBlock": "0xb12790"
+     }
+    ]
+   },
+   "why": "A provider that serves eth_getLogs but caps the span. Its message names the cap; its CODE is the same -32602 another provider uses for a malformed param.",
+   "response": {
+    "jsonrpc": "2.0",
+    "error": {
+     "code": -32602,
+     "message": "eth_getLogs is limited to 0 - 50 blocks range"
+    },
+    "id": 1
+   },
+   "error_code": -32602,
+   "error_message": "eth_getLogs is limited to 0 - 50 blocks range"
+  },
+  {
+   "label": "unknown_selector_revert",
+   "url": "https://ethereum-sepolia-rpc.publicnode.com",
+   "request": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_call",
+    "params": [
+     {
+      "to": "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840",
+      "data": "0x64c9ec6f"
+     },
+     "latest"
+    ]
+   },
+   "why": "A getter the contract does not implement. This is what a mainnet hook built differently looks like, field by field.",
+   "response": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "error": {
+     "code": 3,
+     "message": "execution reverted"
+    }
+   },
+   "error_code": 3,
+   "error_message": "execution reverted"
+  },
+  {
+   "label": "call_to_an_empty_address",
+   "url": "https://ethereum-sepolia-rpc.publicnode.com",
+   "request": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_call",
+    "params": [
+     {
+      "to": "0x00000000000000000000000000000000deadbeef",
+      "data": "0xfc0c546a"
+     },
+     "latest"
+    ]
+   },
+   "why": "An eth_call to an address with no code. Note it does NOT error: it returns 0x. A discovery gate that treats a successful response as an answered getter adopts an empty address.",
+   "response": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x"
+   },
+   "result": "0x"
+  },
+  {
+   "label": "malformed_params",
+   "url": "https://ethereum-sepolia-rpc.publicnode.com",
+   "request": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_call",
+    "params": [
+     {
+      "to": "not-an-address",
+      "data": "0x"
+     },
+     "latest"
+    ]
+   },
+   "why": "A genuinely malformed request, for contrast with the range cap above: same family of code, entirely different meaning.",
+   "response": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "error": {
+     "code": -32602,
+     "message": "Invalid params",
+     "data": "invalid string length at line 1 column 23"
+    }
+   },
+   "error_code": -32602,
+   "error_message": "Invalid params"
+  }
+ ],
+ "fixture": "rpc_error_states",
+ "synthetic": false,
+ "response": [
+  {
+   "jsonrpc": "2.0",
+   "error": {
+    "code": -32602,
+    "message": "eth_getLogs is limited to 0 - 50 blocks range"
+   },
+   "id": 1
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "error": {
+    "code": 3,
+    "message": "execution reverted"
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "result": "0x"
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "error": {
+    "code": -32602,
+    "message": "Invalid params",
+    "data": "invalid string length at line 1 column 23"
+   }
+  }
+ ]
+}

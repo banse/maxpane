@@ -99,6 +99,7 @@ from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_age
 
 __all__ = [
@@ -166,7 +167,11 @@ _ADDR_COLS = 11       # the coin table's own `_short_addr` window
 #: the left, as ``0.`` where the value was ``0.0120 ETH``. A cut *number* is
 #: a wrong number, not a missing one.
 _AMOUNT_COLS = 12
-_GAP = 2
+
+#: The gap between two cells.  Shared machinery: it lives in
+#: ``widgets/surf/_rowfit.py`` and is re-exported here under the name this
+#: module's own docstrings have always used.
+_GAP = _rowfit.GAP
 
 #: The widest row layout's requirement **for an amount of :data:`_AMOUNT_COLS`**
 #: -- what the panel advertises and what a screen sweep pins, exactly as
@@ -215,65 +220,36 @@ def _strip_tags(value: object) -> str:
     return " ".join(stripped.split())
 
 
-def _clip(value: str, width: int) -> str:
-    """Truncate already-flattened, already-stripped text to ``width``
-    **terminal cells**, marked with ``…`` when it was cut. Must run before
-    :func:`~widgets.markup_safety.safe_markup` -- escaping first and
-    truncating after can cut a ``\\[`` escape pair in half.
-
-    Measured on :func:`rich.cells.cell_len`, never ``len()``. CLAUDE.md's own
-    wording: *a sized cell is not a fitted one -- ``len()`` counts characters
-    where the terminal counts cells*. ``ticker`` here is attacker-chosen
-    (``LaunchpadFactory.launch(string,string)`` is permissionless and costs
-    only gas), so ``海豚海豚海豚海豚`` is eight characters and sixteen
-    columns: a ``len()``-sized ticker cell was eight columns wider than the
-    budget it was checked against, and pushed the *amount* off the end of the
-    row -- ``0.`` where the value was ``0.0120 ETH``.
-
-    A wide glyph that straddles the cut is dropped rather than half-drawn, so
-    the result can come back one cell *under* ``width``; the caller pads
-    (:func:`_pad`).
-    """
-    if width <= 0:
-        return ""
-    if cell_len(value) <= width:
-        return value
-    if width == 1:
-        return "…"
-    out: list[str] = []
-    used = 0
-    for char in value:
-        size = cell_len(char)
-        if used + size > width - 1:
-            break
-        out.append(char)
-        used += size
-    return "".join(out) + "…"
-
-
-def _pad(value: str, width: int) -> str:
-    """Left-align ``value`` in ``width`` **cells**.
-
-    ``f"{value:<{width}}"`` pads to a *character* count, so it under-pads a
-    wide-glyph cell and over-pads nothing -- the mirror image of
-    :func:`_clip`'s bug and the reason both live here rather than in a format
-    string. Pad raw, escape after: padding an escaped string misaligns it.
-    """
-    return value + " " * max(width - cell_len(value), 0)
+#: Truncate to ``width`` **terminal cells**, marking a cut with ``…``, and
+#: left-align in ``width`` cells. Both moved to ``widgets/surf/_rowfit.py``
+#: on 2026-09-01 -- they were about to be copied a third time -- and are
+#: aliased here under the names this module's own docstrings use.
+#:
+#: The defect they carry the memory of is this panel's: ``ticker`` is
+#: attacker-chosen (``LaunchpadFactory.launch(string,string)`` is
+#: permissionless and costs only gas), so ``海豚海豚海豚海豚`` is eight
+#: characters and sixteen columns. A ``len()``-sized ticker cell was eight
+#: columns wider than the budget it was checked against, and pushed the
+#: *amount* off the end of the row -- ``0.`` where the value was
+#: ``0.0120 ETH``.
+_clip = _rowfit.clip
+_pad = _rowfit.pad
 
 
 def _row_cols(tier: str, amount_cols: int) -> int:
     """Rendered width of a row at ``tier`` carrying an ``amount_cols``-wide
-    amount -- ``activity.py``'s own ``_row_cols``, one variable cell instead
-    of four.
+    amount -- this panel's cells, handed to the shared
+    :func:`~widgets.surf._rowfit.row_cols`.
 
-    An absent cell takes its :data:`_GAP` with it; the amount carries its own
-    two leading spaces (:func:`_row_fields`) and is added rather than joined.
+    An absent cell takes its :data:`_GAP` with it (the shared function's own
+    rule); the amount carries its own two leading spaces
+    (:func:`_row_fields`) and is passed as ``trailing``, added rather than
+    joined.
     """
     present = [_AGE_COLS, _KIND_COLS, _TICKER_COLS]
     if tier != "minimal":
         present.append(_ADDR_COLS)
-    return sum(present) + _GAP * (len(present) - 1) + amount_cols
+    return _rowfit.row_cols(present, amount_cols)
 
 
 def _tier_for(width: int, amount_cols: int = _AMOUNT_COLS) -> str:
@@ -293,11 +269,14 @@ def _tier_for(width: int, amount_cols: int = _AMOUNT_COLS) -> str:
     ``full``; :meth:`SurfLaunchpadActivity.on_resize` re-lays it out once it
     has a size.
     """
-    if width <= 0 or width >= _row_cols("full", amount_cols):
-        return "full"
-    if width >= COMPACT_WIDTH:
-        return "compact"
-    return "minimal"
+    return _rowfit.tier_for(
+        width,
+        (
+            ("full", _row_cols("full", amount_cols)),
+            ("compact", COMPACT_WIDTH),
+            ("minimal", 0),
+        ),
+    )
 
 
 def _tier_cols(tier: str, amount_cols: int = _AMOUNT_COLS) -> int:
@@ -511,7 +490,9 @@ class SurfLaunchpadActivity(Vertical):
         placed = not hint
         if hint:
             for candidate in (hint, SHORT_HINT):
-                if not width or len(TITLE) + 2 + len(candidate) <= width:
+                if not width or (
+                    cell_len(TITLE) + 2 + cell_len(candidate) <= width
+                ):
                     text += f"  [yellow]{candidate}[/]"
                     placed = True
                     break

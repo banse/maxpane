@@ -1,0 +1,40 @@
+{
+ "url": "https://ethereum-sepolia-rpc.publicnode.com",
+ "method": "POST",
+ "headers": {
+  "Content-Type": "application/json",
+  "User-Agent": "maxpane-capture/1.0 (+https://pypi.org/project/maxpane)"
+ },
+ "body": [
+  {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xE03A1074c86CFeDd5C142C4F04F1a1536e203543",
+     "data": "0x1e2eaeaf2b4fbd1b62204cbaf88b7e92922120e96003adb75202fa9a8e9c6ee393d38f23"
+    },
+    "0xb13747"
+   ]
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "method": "eth_call",
+   "params": [
+    {
+     "to": "0xE03A1074c86CFeDd5C142C4F04F1a1536e203543",
+     "data": "0x1e2eaeaf2b4fbd1b62204cbaf88b7e92922120e96003adb75202fa9a8e9c6ee393d38f26"
+    },
+    "0xb13747"
+   ]
+  }
+ ],
+ "call_names": {
+  "1": "slot0",
+  "2": "liquidity"
+ },
+ "fixture": "pool_slot0",
+ "captured_at": "2026-09-01T17:20:08.822194Z"
+}
