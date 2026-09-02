@@ -1685,3 +1685,130 @@ layer down against `minimal.tcss`, the copy that renders.
 
 Full suite after the addition: **7,009 passed, 0 failed** — 7,007 plus exactly the two new
 parametrised cases.
+
+## A35 — a DELETED test does not fail, and only a which-test-reddened battery notices
+
+**The most dangerous verification shape found on this branch, because it produces a green suite
+with less coverage and no signal at all.** Found by WP4, in its own edit.
+
+A span replacement ran from the test it meant to change to the next banner and **swallowed five
+tests in between** — four reward-path tests and the twelve-lever guard. The suite stayed **green**,
+because deleted tests do not fail. No count was being watched, so nothing said otherwise.
+
+**What caught it:** three mutations reported `MISS` with `actual=[]` — *the signature of an expected
+test that no longer exists*, as distinct from one that failed to bite. WP4's own summary is the rule
+worth keeping:
+
+> A battery that only counted failures would have reported those three as **passing mutations**.
+
+This is the cannot-fail family one level out. Every earlier instance was a test that *existed and
+asserted nothing useful*; this is a test that **stopped existing** while its guard-shaped absence
+looked identical to success.
+
+**Two rules follow:**
+
+1. **A mutation harness must assert its expected test exists before mutating.** `actual == []` and
+   "the guard did not fire" are different outcomes and must be reported differently. Only a battery
+   that names the expected test can tell them apart.
+2. **The collected test count is a gate, not trivia.** `pytest --collect-only -q` is a one-second
+   check that a refactor did not eat coverage. Verified at this point: **7,010 collected** against
+   the 7,009 green at commit `4563fda`, so no net deletion survives.
+
+WP4 also found a second, smaller instance the same round: a test passed on words *borrowed from
+neighbouring lines* — `delivery` and `drip rate` appear in two adjacent constants, so restoring the
+retired claim it was written to forbid left it green. It now scans the whole panel for the forbidden
+claim. Same lesson as A29's "pin the claim, never a token that appears in it", reached from a third
+direction.
+
+## A36 — pytest exits 4 for a NONEXISTENT test, and a harness reading "non-zero = failed" scores it as BITES
+
+A35's mechanism, found in the wild by WP7 the moment it added A35's guard. Verified independently:
+
+```
+pytest …::test_this_does_not_exist   ->  exit 4   (usage error)
+pytest …::a_real_passing_test        ->  exit 0
+```
+
+A battery that treats any non-zero exit as "the guard fired" therefore reports **proven coverage
+for a test that does not exist**. WP7's guard caught two on its first run — `F5/M27` and `S15/M29`,
+both pointing at tests renamed or superseded **rounds earlier**.
+
+**This retroactively corrects reported evidence.** WP7's `65/65`, `60/60` and `56/56` each included
+two mutations that executed nothing. WP7 raised this itself rather than quietly re-running, which is
+the only reason it is knowable.
+
+Its own framing is the durable lesson, and it now has three instances behind it:
+
+> All three of my battery failures have been *the harness lying about coverage it never had* — a
+> reused `.pyc` (A31), an unapplied mutation (A29), and now a nonexistent test — and **none of them
+> was a failing test**. A battery's own instrumentation needs more distrust than the code it
+> measures.
+
+**Required of every harness:** collect the test files up front, **refuse to run a mutation whose
+expected node is not in the collected set**, and never infer a bite from an exit code alone. WP7
+also now compares the collected count across the whole run (204 before, 204 after) — A35's gate
+applied per-battery rather than only at the suite level.
+
+## A37 — reading a harness's output through `grep` is a kill, and kills it past its own cleanup
+
+Found by WP5. A25 established that *the restore must survive a kill*; this is a kill nobody
+classified as one.
+
+Piping a mutation harness into `grep` **SIGPIPEs the harness** the moment `grep` has seen enough —
+after its own last write but **before its cleanup**. Two `.bak` files survived a run that way. WP5
+verified the tree by sha256 against those pristine copies before touching anything (both identical,
+no residue), then added a `SIGPIPE` handler and confirmed cleanup.
+
+The operational form: **`harness.py | grep BITES` is not a read-only operation.** It is the same
+class as A25's 120-second timeout, reached through a shell idiom that looks inert. Handle `SIGPIPE`
+alongside `SIGTERM`/`SIGINT`, or write to a file and grep the file.
+
+Worth noting where this sits: this is the **fourth** distinct way a harness on this branch has
+produced a result about something it did not validly run — after a reused `.pyc` (A31), an
+unapplied mutation (A29), and a nonexistent test (A36). Every one was invisible to the file-level
+checks, and every one was found by a package auditing its own instrumentation.
+
+## A38 — a probe loop that asserts inside itself hides every failure after the first
+
+Found by WP5, sweeping past a red test rather than accepting it as the whole story.
+
+`test_every_pool4_zero_needle_really_renders_when_its_key_is_zero` asserts **inside** its loop, so
+it stops at the first bad needle. One failure was visible. Sweeping all 39 by hand:
+
+```
+6 of 39 zero needles do NOT render
+```
+
+So "the only two red in a 7,021-pass suite" was **an artefact of loop ordering**, not a measurement.
+Five of the six were stale needle *text* — D19's liveness word changed the leg heads
+(`nodes -- · earned 0.00` became `nodes -- reserve · earned 0.00`) — and the rendering itself is
+correct: zeros stay distinguishable from missing reads in every combination.
+
+**The compounding part:** the five were reachable only *after* the sixth was fixed. A loop that stops
+first hides the rest, so each fix reveals one more and the suite looks nearly-green throughout. This
+file's own docstring is a history of vacuous needles — the guard exists precisely because these go
+stale — and its shape was concealing exactly what it was written to expose.
+
+**Fix:** `pytest.mark.parametrize` over the probe table so each key fails independently. A probe
+table is a collection of independent claims and must fail as one.
+
+## A39 — I misattributed a defect twice in one round, both times by forwarding
+
+Recorded because it is now a pattern rather than a slip, and A34 already named it once.
+
+1. I forwarded WP10's report that two docstrings were stale. They had **already been fixed**; WP10
+   had read a pre-edit copy.
+2. I forwarded WP8b's description of the vault change as *"WP5's in-flight edit"* and dispatched the
+   fix to WP5. `pool4_vault.py` is **WP4's** file — verified: `DELIVERY_NOT_APR_NOTE` has **0**
+   occurrences at commit `4563fda`, the file carries an uncommitted 69-insertion diff, and
+   `pool4_implied_apr_pct` is in `SurfPool4Vault`'s signature and not `SurfPool4Split`'s. **I had
+   dispatched that very change to WP4 myself**, one round earlier.
+
+Both times the finding was real and only the owner was wrong. Both times I verified the *substance*
+and took the *attribution* on trust — and an attribution is a claim about the repository exactly as
+much as a line number is.
+
+**The rule:** when a report names another package's file, confirm ownership from `git` before
+routing. `git show <commit>:<path>` and `git diff --stat <path>` answer it in one call. Forwarding
+an attribution unverified costs a round trip and asks the wrong package to change a file it does not
+own — which the standing one-owner-per-file rule exists to prevent.

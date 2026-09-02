@@ -2370,6 +2370,35 @@ async def test_the_cache_supplies_a_hash_and_the_chain_supplies_the_verdict(
     assert other not in (payload["pool4_hook_addr"], payload["pool4_token_addr"])
 
 
+async def test_a_stored_hash_never_re_nominates_the_stored_address(
+    tmp_path,
+) -> None:
+    """**A27's line, restated for the pointer.** The cache may say *where to
+    look*; it may not put an address back into the candidate set.
+
+    The stub adopts whatever it is asked about, so if the stored address ever
+    reached adjudication it would be adopted. The cited transaction is a real
+    self-post that names no address, so re-establishment correctly fails and
+    the view must fall back -- not quietly adopt the thing the cache named.
+
+    (This test exists because the mutation for this property was pointed at a
+    test that had been replaced two rounds earlier. ``pytest`` exits non-zero
+    on a node it cannot collect, which a battery reads as "the test failed",
+    so it reported the guard as proven while running nothing at all.)
+    """
+    client = FakePool4Client(
+        fetch_candidate_answers=_adopts,
+        fetch_transaction=_self_post_tx(REAL_TX, "gm, nothing here today"),
+    )
+    manager = await _lapsed_manager(tmp_path, client)
+    payload = await _sweep(manager)
+
+    assert client.fetched == [REAL_TX]        # the pointer WAS followed ...
+    assert client.verified == []              # ... and the address never asked
+    assert payload["pool4_network"] == SEPOLIA
+    assert payload["pool4_discovery_state"] != ADOPTED
+
+
 async def test_a_stored_hash_that_is_not_a_hash_is_never_fetched(
     tmp_path,
 ) -> None:
@@ -3279,12 +3308,80 @@ async def test_the_distributor_is_on_the_trust_surface(tmp_path) -> None:
 
 
 async def test_the_bond_row_always_exists(tmp_path) -> None:
-    """``[]`` is never emitted: "the bond the site advertises is not a contract
-    we can see" is itself the answer a reader came for."""
+    """``[]`` is never emitted: the bond row is an answer a reader came for."""
     payload = await _sweep(_manager(tmp_path))
     bond = [r for r in payload["pool4_hatches"] if r["scope"] == "bond"]
     assert len(bond) == 1
-    assert bond[0]["state"] == "unknown"
+
+
+async def test_a_bond_reserve_is_not_rendered_as_an_open_market(
+    tmp_path,
+) -> None:
+    """**Three facts, and only the middle one used to reach the screen.**
+
+    The bonding *share* is live (the remainder of the reward split); the
+    bonding *reserve* is live and readable as ``heldBonding``; the bond
+    *market* is **not** -- it opens at $4 per IMD.
+
+    This row used to say ``no bond contract is named by the hook``. That was
+    true of the hook, and was the right sentence when no deployed contract
+    carried a bond. After the launch it reads as "bonding does not exist"
+    while 6% of every retired batch accrues to a reserve we already read.
+
+    So the row must say the market is shut **without** saying the programme is
+    absent, and it must name both halves: the reserve, and the gate that opens
+    it.
+    """
+    payload = await _sweep(_manager(tmp_path, pool4_client=_mainnet_client()))
+    bond, = [r for r in payload["pool4_hatches"] if r["scope"] == "bond"]
+
+    assert bond["state"] == "closed"
+    # Not the word the vault's and hook's owner rows carry: a reserve accruing
+    # into a market nobody can enter is not a live product.
+    assert bond["state"] != "live"
+    # ... and not absence either, which is the other half of the same error.
+    assert bond["state"] != "absent"
+    assert bond["detail"] == "reserve, opens $4"
+
+    # The reserve it is talking about is one we actually read.
+    assert payload["pool4_distributor_held_bonding"] is not None
+
+
+def test_the_bond_detail_fits_the_cell_it_is_given() -> None:
+    """**Seventeen cells**, because that is what the hatch grid's last column
+    gives a row with no address.
+
+    ``reserve accruing · market opens at $4`` truncates to
+    ``reserve accruing…`` and the market's closure -- the whole point of the
+    sentence -- never reaches the screen. Widening the cell was measured and
+    rejected: the rail's need goes past 49 and the body's width pin past 106.
+    Shorten the value, not the pin.
+
+    Measured with ``cell_len``, never ``len``: the two agree on ASCII and the
+    habit is what keeps them agreeing when a word is not.
+    """
+    from rich.cells import cell_len
+
+    assert cell_len("reserve, opens $4") == 17
+    assert cell_len("no bonding leg") <= 17
+    # The line this replaced, for the record: more than double the budget.
+    assert cell_len("no bond contract is named by the hook") > 17
+
+
+async def test_a_deployment_with_no_bonding_leg_does_not_claim_a_reserve(
+    tmp_path,
+) -> None:
+    """Sepolia has no Distributor, so there is no bonding leg and no reserve.
+
+    Claiming ``reserve, opens $4`` there would be the same class of error one
+    chain over -- describing a reserve nobody is accruing into.
+    """
+    payload = await _sweep(_manager(tmp_path))
+    bond, = [r for r in payload["pool4_hatches"] if r["scope"] == "bond"]
+
+    assert payload["pool4_distributor_addr"] is None
+    assert bond["state"] == "absent"
+    assert "reserve" not in bond["detail"]
 
 
 async def test_addr_known_is_an_allowlist_hit_and_nothing_else(tmp_path) -> None:

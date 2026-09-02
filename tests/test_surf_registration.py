@@ -1750,7 +1750,13 @@ _POOL4_ZERO_PROBES: dict[str, str] = {
     "pool4_drippable": "· 0 IMD drippable",
     "pool4_backlog_imd": "queue 0 IMD",
     "pool4_backlog_days": "· 0.0 days of runway",
-    "pool4_implied_apr_pct": "apr   0.00%",
+    # ``deliv``, not ``apr``: WP4 retired the APR label because the protocol
+    # publishes a differently computed APR under that word, and moved the
+    # disclaimer onto the number's own line
+    # (``deliv 0.00% · drip rate ÷ TVL, not APR``). Only the figure is the
+    # needle -- taking the disclaimer with it would couple this probe to the
+    # wording of a note rather than to the zero it exists to prove.
+    "pool4_implied_apr_pct": "deliv 0.00%",
     # -- the mainnet distributor and the inventory ceiling (2026-09-02) ----
     #
     # Seven of the eleven new numeric keys. Every needle below was READ OFF
@@ -1765,11 +1771,22 @@ _POOL4_ZERO_PROBES: dict[str, str] = {
     # alone would match whichever of the three legs was zeroed, so the leg's
     # own label is part of the needle and a swap between two legs is visible
     # rather than absorbed.
-    "pool4_distributor_staking_earned": "stakers -- · earned 0.00",
-    "pool4_distributor_nodes_earned": "nodes -- · earned 0.00",
-    "pool4_distributor_bonding_earned": "bonding -- derived · earned 0.00",
-    "pool4_distributor_held_nodes": "nodes -- · earned --  held 0.00",
-    "pool4_distributor_held_bonding": "bonding -- derived · earned --  held 0.00",
+    #
+    # ⚠ ALL FIVE WERE RE-READ ON 2026-09-02. They were never wrong about the
+    # rendering -- the rendering changed under them: WP5's D19 gave each leg
+    # head a liveness word (``live`` / ``reserve`` / ``derived, reserve``),
+    # so ``stakers --`` became ``stakers -- live``. The needles went on
+    # asserting an ABSENCE that no longer had anything to be absent, which is
+    # the vacuous half again, and five of the six were reachable only after
+    # the sixth was fixed -- see the parametrised probe below, which is why
+    # they are visible as five failures rather than as one.
+    "pool4_distributor_staking_earned": "stakers -- live · earned 0.00",
+    "pool4_distributor_nodes_earned": "nodes -- reserve · earned 0.00  held --",
+    "pool4_distributor_bonding_earned":
+        "bonding -- derived, reserve · earned 0.00  held --",
+    "pool4_distributor_held_nodes": "nodes -- reserve · earned --  held 0.00",
+    "pool4_distributor_held_bonding":
+        "bonding -- derived, reserve · earned --  held 0.00",
     "pool4_inventory_cap": "cap      0 IMD",
     # A rate of zero renders as the WORDS, not as a number -- and that is the
     # zero rendering for this key, so it is what a failed read must not
@@ -2032,7 +2049,26 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
     asyncio.run(_run())
 
 
-def test_every_pool4_zero_needle_really_renders_when_its_key_is_zero() -> None:
+#: The five keys the contract types ``int``; everything else is a float, and
+#: the difference is visible on screen (``0`` vs ``0.00``), so a float zero
+#: fed to an int key would render a needle nobody wrote.
+#:
+#: Hoisted out of the test body when the probe became parametrised -- a
+#: per-case function cannot keep a local it needs on every case.
+_POOL4_INTEGER_KEYS = frozenset({
+    "pool4_reward_share_bps", "pool4_bps_denominator",
+    "pool4_last_claim_block", "pool4_current_tick", "pool4_ref_tick",
+})
+
+
+@pytest.mark.parametrize(
+    "key,needle",
+    sorted(_POOL4_ZERO_PROBES.items()),
+    ids=sorted(_POOL4_ZERO_PROBES),
+)
+def test_every_pool4_zero_needle_really_renders_when_its_key_is_zero(
+    key: str, needle: str,
+) -> None:
     """The positive control the absence sweep above cannot give itself.
 
     ``test_a_full_outage_renders_explicit_states_not_zeros`` asserts every
@@ -2057,6 +2093,16 @@ def test_every_pool4_zero_needle_really_renders_when_its_key_is_zero() -> None:
     copied onto the wrong key -- which is how ``lp_imd`` ended up carrying
     ``imd_supply``'s needle and could only ever have gone red on its
     sibling's rendering -- fails here too.
+
+    **PARAMETRISED PER KEY, AND THE SHAPE IS THE POINT (A38).** This was one
+    test with the assertion inside a loop, so it stopped at the first bad
+    needle and reported *one* failure. There were **six**, and five of them
+    were reachable only after the one before it was fixed -- so the suite
+    looked one edit from green through the whole sequence, six times over.
+    A probe table is a collection of independent claims and has to fail like
+    one: the loop's shape was concealing exactly what this test exists to
+    expose, on a file whose own docstring is a history of vacuous needles.
+    Each key now fails on its own and one run names every stale needle.
     """
     import asyncio
 
@@ -2064,9 +2110,9 @@ def test_every_pool4_zero_needle_really_renders_when_its_key_is_zero() -> None:
         _all_none_payload, _screen_text as _surf_screen_text, _surf_app,
     )
 
-    async def _needle_render(key: str, value) -> str:
+    async def _needle_render() -> str:
         payload = _all_none_payload()
-        payload[key] = value
+        payload[key] = 0 if key in _POOL4_INTEGER_KEYS else 0.0
         async with _surf_app(payload).run_test(size=(143, 60)) as pilot:
             await pilot.app.screen._do_refresh()
             await pilot.pause()
@@ -2075,26 +2121,13 @@ def test_every_pool4_zero_needle_really_renders_when_its_key_is_zero() -> None:
             await pilot.pause()
             return _surf_screen_text(pilot.app)
 
-    #: The five keys the contract types ``int``; everything else is a float,
-    #: and the difference is visible on screen (``0`` vs ``0.00``), so a
-    #: float zero fed to an int key would render a needle nobody wrote.
-    integer_keys = {
-        "pool4_reward_share_bps", "pool4_bps_denominator",
-        "pool4_last_claim_block", "pool4_current_tick", "pool4_ref_tick",
-    }
-
-    async def _run() -> None:
-        for key, needle in _POOL4_ZERO_PROBES.items():
-            zero = 0 if key in integer_keys else 0.0
-            text = await _needle_render(key, zero)
-            assert needle in text, (
-                f"{key}'s zero needle {needle!r} does not render when the "
-                f"key IS zero -- the absence assertion in the outage sweep "
-                "is therefore vacuous for this key. Re-read it off "
-                "composited output rather than editing it to taste."
-            )
-
-    asyncio.run(_run())
+    text = asyncio.run(_needle_render())
+    assert needle in text, (
+        f"{key}'s zero needle {needle!r} does not render when the key IS "
+        "zero -- the absence assertion in the outage sweep is therefore "
+        "vacuous for this key. Re-read it off composited output rather than "
+        "editing it to taste."
+    )
 
 
 # ---------------------------------------------------------------------------

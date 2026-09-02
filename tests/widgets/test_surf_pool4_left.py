@@ -59,6 +59,8 @@ from maxpane_dashboard.widgets.surf.pool4_flow import (
 )
 from maxpane_dashboard.widgets.surf.pool4_split import (
     DERIVED,
+    LEG_LIVE,
+    LEG_RESERVE,
     DISTRIBUTOR_UNREAD,
     PATH_VIA_DISTRIBUTOR,
     REWARD_PATHS,
@@ -129,6 +131,22 @@ DISTRIBUTOR_KW = {
     "pool4_distributor_bonding_earned": 4.1986,
     "pool4_distributor_held_nodes": 3.1490,
     "pool4_distributor_held_bonding": 4.1986,
+}
+
+#: Which legs the protocol's own documentation says are live, restated here
+#: as an **independent** claim so the agreement test below compares two things
+#: rather than one thing with itself:
+#:
+#:   "Bonding and node allocations are tracked on-chain while those programs
+#:    are being built -- reserves, not live products" (docs §05)
+#:   "The node program isn't live." (§08)
+#:
+#: Staking is the leg the docs describe as delivering: the share streams
+#: through the Dripper into the vault and stakers can withdraw it.
+DOCUMENTED_LIVENESS = {
+    "stakers": LEG_LIVE,
+    "nodes": LEG_RESERVE,
+    "bonding": LEG_RESERVE,
 }
 
 SPLIT_KW = {
@@ -1274,7 +1292,10 @@ async def test_every_leg_line_fits_the_rail_the_panel_is_rendered_in() -> None:
     for leg in ("stakers 30", "nodes 30", "bonding 40"):
         row = lines[_index_of(lines, leg)]
         assert cell_len(row) <= 50, (leg, cell_len(row))
-        assert "earned" in row, leg          # the clause did not reflow away
+        # The clause did not reflow away: its liveness word is still on the
+        # same line as the figures it qualifies, which is the whole point of
+        # putting it there rather than in a footnote.
+        assert LEG_LIVE in row or LEG_RESERVE in row, leg
 
 
 @pytest.mark.asyncio
@@ -1368,3 +1389,154 @@ async def test_the_path_word_decides_the_annotation_and_the_legs_do_not() -> Non
     _l, text = await _split(pool4_reward_path=PATH_VIA_DISTRIBUTOR)
     assert f"({LEG_WORD_STAKING})" in text
     assert DISTRIBUTOR_UNREAD in text          # legs unread, path known
+
+
+# ---------------------------------------------------------------------------
+# SPLIT -- finding D19: two of the three legs are reserves, not live products
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_reserve_legs_never_read_as_delivered() -> None:
+    """The defect D19 names, and it is a wrong statement rather than a missing
+    one.
+
+    The protocol's docs are explicit: *"Bonding and node allocations are
+    tracked on-chain while those programs are being built -- reserves, not
+    live products"* (§05), and *"The node program isn't live"* (§08).
+    Rendered without a word, ``nodes 30.00% · earned 3.15  held 3.15`` is
+    three live-looking numbers and a reader concludes 4.5% of every retired
+    batch is reaching node operators today. It is not.
+
+    The word sits on the leg's own line, beside the figures it qualifies --
+    the same discipline as ``(staking leg)``/``(reward leg)``: annotate the
+    line whose meaning changes, not a parent somewhere above it.
+    """
+    lines, _text = await _mainnet()
+    assert LEG_RESERVE in lines[_index_of(lines, "nodes 30")]
+    assert LEG_RESERVE in lines[_index_of(lines, "bonding 40")]
+    # ...and staking is the one leg for which "delivered" is true.
+    assert LEG_LIVE in lines[_index_of(lines, "stakers 30")]
+    assert LEG_RESERVE not in lines[_index_of(lines, "stakers 30")]
+
+
+@pytest.mark.asyncio
+async def test_no_leg_is_rendered_without_a_liveness_word() -> None:
+    """The guard that survives a fourth leg being added.
+
+    A leg whose liveness nobody stated is a leg a reader assumes is live, so
+    the requirement is on *every* leg rather than on the two that happen to be
+    reserves today. Driven from the producer's own leg table so a new entry
+    cannot slip past by not being named here.
+    """
+    assert set(DOCUMENTED_LIVENESS) == {
+        leg[0] for leg in split_mod.DISTRIBUTOR_LEGS
+    }
+
+    lines, _text = await _mainnet()
+    # Searched below the parent line only: ``stakers`` also appears on the
+    # ``measured stakers`` line above, and matching that one would test the
+    # wrong row while looking like it passed.
+    legs = lines[_index_of(lines, "claimed reward") + 1:]
+    for label, _bps, _earned, _held, liveness in split_mod.DISTRIBUTOR_LEGS:
+        expected = DOCUMENTED_LIVENESS[label]
+        # Against the docs' claim, NOT against the module's own table. The
+        # first version of this test took ``liveness`` from the table and
+        # asserted it appeared in the row -- which is a constant compared with
+        # itself: relabelling ``nodes`` as live changed both sides at once and
+        # the test stayed green. It caught a *missing* word and could never
+        # catch a *wrong* one, which is the half that matters here.
+        assert liveness == expected, label
+        row = legs[_index_of(legs, f"{label} ")]
+        assert expected in row, label
+
+
+def test_the_live_and_reserve_words_share_no_substring() -> None:
+    """The hazard family this panel keeps running into: two words that decide
+    how a number is read must not contain one another, or a reader (or a
+    check) matching the shorter finds the longer.
+    """
+    assert LEG_LIVE not in LEG_RESERVE
+    assert LEG_RESERVE not in LEG_LIVE
+
+
+@pytest.mark.asyncio
+async def test_the_liveness_word_leads_the_figures_it_qualifies() -> None:
+    """It governs every number after it, so it comes first -- and it lives in
+    the leg's **head**, beside the name and the share, rather than in the
+    clause that carries the figures.
+
+    That placement is not cosmetic. A long enough figure reflows the clause
+    onto a continuation line, and a caveat inside the clause would go with it
+    -- leaving ``bonding 40.00% derived`` alone on the row a reader scans,
+    with nothing saying the programme has not shipped, exactly when the
+    numbers are biggest. In the head it cannot be separated from the leg it
+    qualifies.
+    """
+    lines, _text = await _mainnet()
+    row = lines[_index_of(lines, "nodes 30")]
+    assert row.index(LEG_RESERVE) < row.index("3.15")
+
+    # ...and it survives a figure wide enough to reflow the clause away.
+    lines, _t = await _mainnet(pool4_distributor_held_bonding=1.2345e12,
+                              pool4_distributor_bonding_earned=9.8765e11,
+                              size=(50, 40))
+    head = lines[_index_of(lines, "bonding 40")]
+    assert LEG_RESERVE in head, head
+
+
+@pytest.mark.asyncio
+async def test_a_reserve_at_rest_shows_one_figure_and_a_moved_one_shows_two() -> None:
+    """A programme that has not shipped has distributed nothing, so its
+    cumulative and undistributed figures are the same number -- true of both
+    reserve legs on mainnet today. Printing it twice under two labels invites
+    a reader to hunt for a difference that cannot exist, and costs columns
+    this panel does not have.
+
+    When they *do* diverge something left the reserve, and then the difference
+    is the story and both are labelled.
+    """
+    lines, _t = await _mainnet()
+    at_rest = lines[_index_of(lines, "nodes 30")]
+    assert at_rest.count("3.15") == 1
+    assert "earned" not in at_rest
+
+    lines, _t = await _mainnet(pool4_distributor_held_nodes=2.0)
+    moved = lines[_index_of(lines, "nodes 30")]
+    assert "earned 3.15" in moved and "held 2.00" in moved
+
+
+@pytest.mark.asyncio
+async def test_the_live_leg_is_not_relabelled_as_a_reserve() -> None:
+    """The mirror of the main test, and what stops "mark everything reserve"
+    from passing it: the staking leg *is* delivered -- the share streams
+    through the Dripper into the vault -- and saying otherwise would be the
+    same class of wrong statement pointed the other way.
+    """
+    lines, _text = await _mainnet()
+    row = lines[_index_of(lines, "stakers 30")]
+    assert LEG_LIVE in row
+    assert "earned 3.15" in row          # cumulative, and it has gone somewhere
+
+
+@pytest.mark.asyncio
+async def test_a_reward_path_outside_the_vocabulary_annotates_nothing() -> None:
+    """``None`` is not the only unknown: a path *word* the panel does not
+    recognise is one too, and it is a reachable input rather than a
+    hypothetical.
+
+    ``tests/screens/test_surf_screen.py``'s pool4 fixture ships
+    ``pool4_reward_path = "two-way"``, which is not a member of
+    ``POOL4_REWARD_PATHS`` -- so this exact case is what the screen suite
+    renders today. The panel must treat it as unknown and say neither word,
+    because guessing either is a 3x error on the headline percentage; the
+    fixture itself is filed as a defect against the file that owns it.
+    """
+    assert "two-way" not in POOL4_REWARD_PATHS      # the premise, stated
+
+    _l, text = await _split(pool4_reward_path="two-way",
+                           pool4_measured_stakers_pct=15.0)
+    assert f"({LEG_WORD_WHOLE})" not in text
+    assert f"({LEG_WORD_STAKING})" not in text
+    assert DISTRIBUTOR_UNREAD not in text
+    assert "15.00%" in text

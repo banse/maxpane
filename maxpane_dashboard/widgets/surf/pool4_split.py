@@ -489,18 +489,43 @@ REWARD_PATHS = (PATH_DIRECT, PATH_VIA_DISTRIBUTOR)
 #: getter behind it must never be rendered as though the chain stated it.
 DERIVED = "derived"
 
-#: The legs, in render order, as ``(label, bps key, earned key, held key)``.
+#: What the staking leg is: the programme exists and the money moves -- the
+#: share streams through the Dripper into the vault and stakers can withdraw
+#: it.  The only leg of the three for which that is true.
+LEG_LIVE = "live"
+
+#: What the bonding and node legs are, and the protocol's **own** word for
+#: them: *"Bonding and node allocations are tracked on-chain while those
+#: programs are being built -- reserves, not live products"* (docs §05), and
+#: *"The node program isn't live.  Its IMD is tracked on-chain as heldNft and
+#: kept"* (§08).
+#:
+#: Without it, ``nodes 30.00% · earned 3.15  held 3.15`` is three live-looking
+#: numbers and a reader takes exactly the reading §08 exists to prevent: that
+#: 4.5% of every retired batch is reaching node operators today.  It is not.
+#: It is accruing to a reserve for a programme that has not shipped.
+#:
+#: **The same word HATCHES uses** (``reserve, opens $4`` on the BOND row), on
+#: purpose: one vocabulary across the body beats two spellings of one fact.
+#: The *gate* -- bonding opens at $4/IMD -- stays on HATCHES, which has the
+#: columns for it; what belongs here is the liveness of the programme, beside
+#: the figures a reader would otherwise act on.
+LEG_RESERVE = "reserve"
+
+#: The legs, in render order, as
+#: ``(label, bps key, earned key, held key, liveness)``.
 #: ``held`` is ``None`` for stakers **by contract**: that leg is forwarded
 #: rather than held, so there is no ``held_staking`` to read and the line
 #: carries no clause -- inventing one for symmetry would print a zero
 #: indistinguishable from a real "distributed up to date".
 #: Bonding is rendered last because it is the derived remainder.
 DISTRIBUTOR_LEGS = (
-    ("stakers", "distributor_staking_bps", "distributor_staking_earned", None),
+    ("stakers", "distributor_staking_bps", "distributor_staking_earned",
+     None, LEG_LIVE),
     ("nodes", "distributor_nodes_bps", "distributor_nodes_earned",
-     "distributor_held_nodes"),
+     "distributor_held_nodes", LEG_RESERVE),
     ("bonding", "distributor_bonding_bps", "distributor_bonding_earned",
-     "distributor_held_bonding"),
+     "distributor_held_bonding", LEG_RESERVE),
 )
 
 
@@ -543,7 +568,7 @@ def _distributor_lines(payload: dict, width: int) -> tuple[list[tuple], bool]:
     denominator = payload.get("bps_denominator")
     rows: list[tuple] = []
     present = False
-    for label, bps_key, earned_key, held_key in DISTRIBUTOR_LEGS:
+    for label, bps_key, earned_key, held_key, liveness in DISTRIBUTOR_LEGS:
         bps = payload.get(bps_key)
         earned = payload.get(earned_key)
         held = payload.get(held_key) if held_key else None
@@ -553,15 +578,29 @@ def _distributor_lines(payload: dict, width: int) -> tuple[list[tuple], bool]:
         head = f"{LEG_INDENT}{label} {_leg_share(bps, denominator)}"
         if label == "bonding":
             head = f"{head} {DERIVED}"
-        clauses = [f"earned {fmt_imd(earned)}"]
-        if held_key is not None:
-            # ``0.00`` here means distributed up to date -- a fact, not a gap.
-            clauses.append(f"held {fmt_imd(held)}")
-        # Two spaces between the clauses rather than the panel's ``·``: the
-        # bonding line is the longest of the three (it carries ``derived``) and
-        # at the rail's 48 the separator was the one column that pushed it onto
-        # a second row. Two rows for one leg would be three rows for the block,
-        # on the column that binds the body's height pin.
+        # The liveness word goes in the HEAD, not the clause. Both qualify the
+        # whole line, but only the head is guaranteed to stay on the row that
+        # carries the leg's name: a long enough figure reflows the clause onto
+        # a continuation line, and a caveat that can leave the line it
+        # qualifies is a caveat that is missing exactly when the numbers are
+        # biggest. ``derived`` earned its place beside the percentage for the
+        # same reason.
+        head = f"{head}, {liveness}" if label == "bonding" else f"{head} {liveness}"
+        earned_str, held_str = fmt_imd(earned), fmt_imd(held)
+        if liveness is LEG_LIVE:
+            clauses = [f"earned {earned_str}"]
+        elif earned_str == held_str:
+            # A programme that is not live has distributed nothing, so its
+            # cumulative and its undistributed figure are the same number --
+            # true of both reserve legs on mainnet today. Printing it twice
+            # under two labels invites a reader to look for the difference
+            # between them, and the columns it costs are columns this panel
+            # does not have. One number, named as the reserve it is.
+            clauses = [f"{held_str} held"]
+        else:
+            # They diverge, so something moved out of the reserve and the
+            # difference is the story. Both, labelled.
+            clauses = [f"earned {earned_str}", f"held {held_str}"]
         rows += _fit_block(head, "  ".join(clauses), width, "dim", LEG_INDENT)
     return (rows, True) if present else ([], False)
 

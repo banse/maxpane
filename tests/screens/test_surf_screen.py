@@ -21,7 +21,19 @@ import pytest
 from textual.app import App
 
 from maxpane_dashboard import __version__
-from maxpane_dashboard.data.surf_models import POOL4_KEYS, SURF_KEYS
+from maxpane_dashboard.data.surf_models import (
+    POOL4_KEYS,
+    POOL4_COUNTER_STATES,
+    POOL4_DISCOVERY_SOURCES,
+    POOL4_DISCOVERY_STATES,
+    POOL4_FLOW_SIDES,
+    POOL4_HATCH_LABELS,
+    POOL4_HATCH_SCOPES,
+    POOL4_HATCH_STATES,
+    POOL4_NETWORKS,
+    POOL4_REWARD_PATHS,
+    SURF_KEYS,
+)
 from maxpane_dashboard.screens.surf import (
     INITIAL_TITLE,
     LAUNCHPAD_BODY_ID,
@@ -1073,12 +1085,24 @@ def _sample_data() -> dict:
         # -- the mainnet topology and ceiling (2026-09-02) -----------------
         #
         # This fixture stays the SEPOLIA / undiscovered day-one state that
-        # plan section 5 R4 calls the primary path, so the reward path is the
-        # two-way one and the distributor fields are absent -- `None` here is
-        # "there is no Distributor on this deployment", which is the honest
-        # state rather than a failed read. `_mainnet_pool4_payload` below is
-        # the three-way counterpart, and the two are swept side by side.
-        "pool4_reward_path": "two-way",
+        # plan section 5 R4 calls the primary path, so `rewardsRecipient()`
+        # reaches the Dripper with nothing in between -- `direct` -- and the
+        # distributor fields are absent. `None` on those is "there is no
+        # Distributor on this deployment", which is the honest state rather
+        # than a failed read. `_mainnet_pool4_payload` below is the
+        # `via-distributor` counterpart, and the two are swept side by side.
+        #
+        # ⚠ THIS SAID `"two-way"` UNTIL 2026-09-02, and `POOL4_REWARD_PATHS`
+        # has no such member. The word describes the SPLIT's shape, not the
+        # TOPOLOGY the key carries, and the comment above it said "the reward
+        # path is the two-way one" -- which is exactly how the slip happened
+        # and why it read as correct on every re-read. Cost: `SurfPool4Split`
+        # treats an unrecognised path as unknown and annotates nothing, by
+        # design, because guessing either way is the 3x error. So the fixture
+        # silently exercised the unknown branch while claiming to be the
+        # Sepolia one. Pinned now by
+        # `test_every_closed_vocabulary_fixture_value_is_a_member`.
+        "pool4_reward_path": "direct",
         "pool4_distributor_addr": None,
         "pool4_distributor_staking_bps": None,
         "pool4_distributor_nodes_bps": None,
@@ -1201,7 +1225,12 @@ def _mainnet_pool4_payload(**overrides) -> dict:
         pool4_vault_addr="0x9efa934d9fad4ae28c998a40195646b965a97247",
         pool4_dripper_addr="0xe6D3De6daEAf327fCA42745f1998FcD989e00884",
         # -- the three-way split, inside the Distributor -------------------
-        pool4_reward_path="three-way",
+        #
+        # `via-distributor`, NOT "three-way": the key carries the TOPOLOGY
+        # (is there a Distributor between the hook and the Dripper), not the
+        # number of legs the split has. Both fixtures named the split shape
+        # here until 2026-09-02 -- see the note in `_frozen_payload` above.
+        pool4_reward_path="via-distributor",
         pool4_distributor_addr="0x9046739E1535B40EfBe6AB3f45d0024b690eCA30",
         pool4_distributor_staking_bps=3000,
         pool4_distributor_nodes_bps=3000,
@@ -6382,6 +6411,124 @@ async def test_the_pool4_column_blocks_name_the_panels_compose_builds(
         "argument for the layout -- correct it in the same change that moved "
         "the panel, and record the drift rather than overwriting it"
     )
+
+
+#: Every pool4 payload key whose contract is a CLOSED vocabulary, mapped to
+#: the tuple it must draw from -- scalars first, then the fields on row
+#: payloads.
+#:
+#: Hand-typed, on this file's standing rule: deriving the map from the
+#: contract would make the sweep below compare the vocabulary against itself.
+#: The names are imported, so a RENAMED vocabulary fails at import; only the
+#: key-to-vocabulary pairing is restated.
+_POOL4_CLOSED_VOCABULARIES = {
+    "pool4_network": POOL4_NETWORKS,
+    "pool4_discovery_state": POOL4_DISCOVERY_STATES,
+    "pool4_discovery_source": POOL4_DISCOVERY_SOURCES,
+    "pool4_counter_state": POOL4_COUNTER_STATES,
+    "pool4_reward_path": POOL4_REWARD_PATHS,
+}
+_POOL4_ROW_VOCABULARIES = {
+    "pool4_flow": {"side": POOL4_FLOW_SIDES},
+    "pool4_hatches": {
+        "scope": POOL4_HATCH_SCOPES,
+        "label": POOL4_HATCH_LABELS,
+        "state": POOL4_HATCH_STATES,
+    },
+}
+
+
+def _all_pool4_fixtures() -> dict[str, dict]:
+    """Every pool4 payload this module hands to a real screen."""
+    return {
+        "_pool4_payload": _pool4_payload(),
+        "_mainnet_pool4_payload": _mainnet_pool4_payload(),
+        "_ordinary_pool4_payload": _ordinary_pool4_payload(),
+        "_pool4_hatch_payload(0)": _pool4_hatch_payload(0),
+        "_pool4_hatch_payload(10)": _pool4_hatch_payload(10),
+        "_pool4_hatch_payload(12)": _pool4_hatch_payload(12),
+        **{
+            f"_POOL4_HEIGHT_PAYLOADS[{name!r}]": build()
+            for name, build in _POOL4_HEIGHT_PAYLOADS.items()
+            if build() is not None
+        },
+    }
+
+
+def test_every_closed_vocabulary_fixture_value_is_a_member() -> None:
+    """⚠ A fixture may not invent a word, and nothing checked that until now.
+
+    WP0's agreement tests pin that each closed vocabulary and its renderers
+    agree. **Neither direction looks at a fixture**, so a payload built here
+    with a word that is in no vocabulary satisfied every existing guard: the
+    key is present, correctly named, dispatched, and declared by its panel,
+    so the kwarg sweep, the renderer-count sweep and the swallow check are
+    all green. Only a vocabulary check or a rendered-output diff can see that
+    the value means nothing.
+
+    That is S21's lesson reaching a new layer. S21 was a key that reached no
+    *renderer*; this is a key that reaches its renderer carrying a word the
+    renderer cannot interpret, which is worse, because the panel then
+    exercises its own unknown branch while the fixture's name says otherwise.
+
+    **It had two live instances, and this test was written because of them.**
+    ``_pool4_payload`` carried ``"two-way"`` and ``_mainnet_pool4_payload``
+    carried ``"three-way"``; ``POOL4_REWARD_PATHS`` is
+    ``("direct", "via-distributor")``. Both words describe the SPLIT's shape
+    rather than the TOPOLOGY the key carries, and the comment beside the
+    first one said "the reward path is the two-way one", which is why it read
+    as correct on every re-read. ``SurfPool4Split`` treats an unrecognised
+    path as unknown and annotates nothing -- deliberately, because guessing
+    either way is the 3x error between the 4.5% staker leg and the 15% reward
+    share -- so the mainnet fixture rendered
+    ``measured stakers 9.89%`` where it should have rendered
+    ``measured stakers 9.89% (staking leg)``, on the one line whose whole job
+    is to say which leg the reader is looking at.
+
+    ``None`` is skipped rather than rejected: it is the honest "not read" or
+    "no such thing" on several of these keys, and the vocabularies
+    deliberately exclude it.
+    """
+    offenders: list[str] = []
+    for name, payload in _all_pool4_fixtures().items():
+        for key, vocabulary in _POOL4_CLOSED_VOCABULARIES.items():
+            value = payload.get(key)
+            if value is not None and value not in vocabulary:
+                offenders.append(
+                    f"{name}[{key!r}] = {value!r}, not one of {vocabulary}"
+                )
+        for key, fields in _POOL4_ROW_VOCABULARIES.items():
+            for index, row in enumerate(payload.get(key) or ()):
+                for field, vocabulary in fields.items():
+                    value = row.get(field)
+                    if value is not None and value not in vocabulary:
+                        offenders.append(
+                            f"{name}[{key!r}][{index}][{field!r}] = {value!r}, "
+                            f"not one of {vocabulary}"
+                        )
+
+    assert not offenders, (
+        "fixture values outside their closed vocabulary -- the panel will "
+        "render its unknown branch while this fixture's name claims "
+        "otherwise:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_the_two_pool4_fixtures_disagree_about_the_reward_path() -> None:
+    """The premise the sweep above cannot supply, and without it the fix is
+    only half checked.
+
+    Both fixtures could be corrected to the *same* member and stay green
+    there -- but the Sepolia fixture exists to be the ``direct`` deployment
+    and the mainnet one to be the ``via-distributor`` deployment, which is
+    the whole reason the pair is swept side by side. A fix that collapsed
+    them onto one word would lose the case the key exists for.
+    """
+    assert _pool4_payload()["pool4_reward_path"] == "direct"
+    assert _mainnet_pool4_payload()["pool4_reward_path"] == "via-distributor"
+    # ...and the topology really is the thing that differs, not just a string:
+    assert _pool4_payload()["pool4_distributor_addr"] is None
+    assert _mainnet_pool4_payload()["pool4_distributor_addr"] is not None
 
 
 async def test_every_pool4_panel_is_dispatched_before_p_is_pressed() -> None:

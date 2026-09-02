@@ -1,27 +1,53 @@
 """POOL4 rail: sIMD VAULT -- the staking vault and the dripper that feeds it.
 
-The thing this panel exists to make legible is that **the vault's yield is
-rate-limited, not flow-limited**. Fees do not reach stakers as they arrive:
-they pile up in the ``RewardDripper``'s own IMD balance (the *queue*) and are
-released at ``dripRatePerSecond()``, a fixed rate. A big week of fees does not
-raise today's yield; it lengthens the *runway*. Three renderings carry that,
-and none of them may be dropped for width alone:
+**What this panel's percentage is, and what it is not.** The protocol's own
+docs (§06) are explicit about which number is the yield:
+
+    "The APR on the stake page is trailing and real: the IMD the market *set
+    aside for stakers* over the last seven days ... annualised against total
+    staked. **The dripper's rate is only a cap on how fast that reaches the
+    vault.**"
+
+So the entitlement is the **flow** -- 4.5% of every retired batch -- and the
+drip is a **delivery cap** on how fast that flow arrives. This panel computes
+``drip_per_day x 365 / TVL``, which is neither: it is the delivery cap
+annualised. Against a deep backlog it *understates* what stakers have already
+earned (Sepolia's was a year deep); against an empty one it *overstates*,
+because nothing can be dripped that has not arrived.
+
+It is therefore **never called APR** -- :data:`DELIVERY_LABEL` and
+:data:`DELIVERY_NOTE` name it for what it is, and
+:data:`DELIVERY_NOT_APR_NOTE` says on screen that it is not the staker APR.
+Publishing our number under the same word as a site that computes a different
+one is the whole defect: the label was honest ("drip rate / TVL") while the
+heading it sat under was not.
+
+An earlier version of this docstring opened by asserting the vault's yield is
+"rate-limited, not flow-limited". That was a reasonable reading of the
+mechanism and it is not what the protocol says the number means -- the flow is
+the entitlement and the rate is the cap on its delivery. The sentence is
+recorded here rather than quietly deleted because the panel was built around
+it, and a reader comparing this file to its history should find the correction
+rather than a silent reversal.
+
+What survives that correction, because it is about *delivery* rather than
+about yield, and none of it may be dropped for width alone:
 
 * ``drip`` always carries its unit as a **rate** -- ``IMD/day``, never a bare
   balance;
 * ``queue`` always names ``pool4_backlog_days`` as **days of runway**, not as
   a number beside a balance;
-* at the full tier a plain-language line says it outright
+* at the full tier a plain-language line says what the rate governs
   (:data:`RATE_LIMITED_NOTE`).
 
 A raw balance alone would be a review failure, so the compact tier splits the
 queue onto two lines rather than shedding the runway phrase.
 
-``pool4_implied_apr_pct`` is derived from the drip rate and TVL only -- never
-from fee flow -- and the contract makes it ``None`` when TVL is zero or
-unread. ``None`` renders :data:`APR_SUPPRESSED`, **never** ``∞`` and never
-``0%``: a zero would be a claim that stakers earn nothing, and an infinity
-would be a claim about a division nobody performed.
+``pool4_implied_apr_pct`` keeps its contract spelling -- the key is WP0's and
+this panel does not get to rename it -- but nothing rendered from it says
+"APR". ``None`` (TVL zero or unread) renders :data:`DELIVERY_SUPPRESSED`,
+**never** ``0%`` and never ``INF``: a zero would claim stakers earn nothing and
+an infinity would claim a division nobody performed.
 
 ``pool4_can_drip`` is a tri-state and renders three distinct words -- see
 :func:`_drip_word`.
@@ -53,8 +79,10 @@ from maxpane_dashboard.widgets.surf._pool4 import (
 )
 
 __all__ = [
-    "APR_NOTE",
-    "APR_SUPPRESSED",
+    "DELIVERY_LABEL",
+    "DELIVERY_NOTE",
+    "DELIVERY_NOT_APR_NOTE",
+    "DELIVERY_SUPPRESSED",
     "COMPACT_WIDTH",
     "FULL_WIDTH",
     "GLYPH_HINT",
@@ -78,16 +106,49 @@ RUNWAY_WORD = "days of runway"
 #: The full-tier plain-language statement of the mechanism. Shed only at the
 #: compact tier, and only because ``IMD/day`` and :data:`RUNWAY_WORD` still
 #: carry it there.
-RATE_LIMITED_NOTE = "capped by the drip rate, not fee flow"
+#: 37 cells, and that ceiling is load-bearing: this panel shares the rail with
+#: ``SurfPool4Hatches`` (49 including its column's gutter) and its own
+#: :data:`FULL_WIDTH` is 38, so a note of 47 would have taken the rail's need
+#: to 51 and the body's width pin past 106. Shorten the value, never the pin.
+RATE_LIMITED_NOTE = "drip rate caps delivery, not earnings"
 
 #: What the APR line says when ``pool4_implied_apr_pct is None`` -- i.e. TVL
 #: is zero or unread. Not ``0%`` (a claim stakers earn nothing) and not ``∞``
 #: (a claim about a division nobody performed).
-APR_SUPPRESSED = "not computable"
+DELIVERY_SUPPRESSED = "not computable"
+
+#: The row label. **Not** ``apr``: the protocol publishes a differently
+#: computed APR under that word (trailing seven-day flow annualised against
+#: total staked), and two different numbers sharing one heading is how a
+#: reader concludes one of the two sites is lying.
+DELIVERY_LABEL = "deliv"
+
+#: Said on screen at the full tier, so the distinction survives without the
+#: reader having to know the mechanism.
+#:
+#: **It rides on the number's own line rather than taking one of its own**, and
+#: that is a correctness fix, not a saving. As a standalone line it made this
+#: panel eleven rows against the rail's ``min-height: 10`` -- and VAULT carries
+#: the rail's ``1fr`` precisely *because* its line count was a constant ten, so
+#: that floor is also its ceiling. A ``1fr`` child cannot overflow; it shrinks.
+#: The eleventh line was dropped with no scrollbar, no ``‹ taller`` and no
+#: trace, while the rail's ``virtual_size`` went on reporting ten.
+#:
+#: That is CLAUDE.md's ``1fr`` rule biting in the direction it does not spell
+#: out: the rule warns about a ``1fr`` child with *no* floor shedding down to a
+#: bare title. Here the floor existed and was one row too low, so exactly one
+#: line vanished and everything else looked right.
+#:
+#: Short on purpose. ``"delivery cap, not the staker APR"`` on the same line
+#: makes it 49 cells against this panel's :data:`FULL_WIDTH` of 38, which would
+#: take the rail's need past ``SurfPool4Hatches``' 49 and the body's width pin
+#: past 106. Shorten the value, not the pin -- and the label ``deliv`` plus
+#: :data:`DELIVERY_NOTE` already carry the positive half of the statement.
+DELIVERY_NOT_APR_NOTE = "not APR"
 
 #: Where the APR comes from, said on the line itself so it is never mistaken
 #: for a realised or fee-derived yield.
-APR_NOTE = "drip rate ÷ TVL"
+DELIVERY_NOTE = "drip rate ÷ TVL"
 
 #: ``pool4_share_price_delta_pct is None`` means *no second reading yet*, not
 #: *the read failed* and certainly not *zero change*. It gets its own words
@@ -295,13 +356,21 @@ class SurfPool4Vault(Vertical):
             _row("drip", f"{_fmt_amount(p.get('drip_per_day'))} IMD/day")
         )
 
-        apr = as_float(p.get("implied_apr_pct"))
-        if apr is None:
-            markup.append(_row("apr", f"[dim]{APR_SUPPRESSED}[/]"))
+        # `implied_apr_pct` is the contract's spelling of the key; nothing
+        # rendered from it says "APR". See the module docstring.
+        rate = as_float(p.get("implied_apr_pct"))
+        if rate is None:
+            markup.append(_row(DELIVERY_LABEL, f"[dim]{DELIVERY_SUPPRESSED}[/]"))
         elif full:
-            markup.append(_row("apr", f"{apr:,.2f}% [dim]· {APR_NOTE}[/]"))
+            markup.append(
+                _row(
+                    DELIVERY_LABEL,
+                    f"{rate:,.2f}% [dim]· {DELIVERY_NOTE}, "
+                    f"{DELIVERY_NOT_APR_NOTE}[/]",
+                )
+            )
         else:
-            markup.append(_row("apr", f"{apr:,.2f}%"))
+            markup.append(_row(DELIVERY_LABEL, f"{rate:,.2f}%"))
 
         queue = f"{_fmt_amount(p.get('backlog_imd'))} IMD"
         runway = f"{_fmt_days(p.get('backlog_days'))} {RUNWAY_WORD}"
@@ -365,6 +434,12 @@ class SurfPool4Vault(Vertical):
         else:
             self._widen = False
 
+        # No blank row under the title, matching RATCHET and HATCHES. It was
+        # `SurfBurnPipeline`'s heading-room idiom, which earns its row for a
+        # panel whose body is prose; this body is a dim-labelled label/value
+        # grid that already separates itself from a dim title. Removing it
+        # leaves this panel at nine rows against the rail's `min-height: 10`,
+        # so the next line added here fails a test instead of vanishing.
         body.update(
-            join_lines([Text(self._title_text(), style="dim"), Text(""), *content])
+            join_lines([Text(self._title_text(), style="dim"), *content])
         )

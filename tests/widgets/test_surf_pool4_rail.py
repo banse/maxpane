@@ -150,13 +150,31 @@ HATCHES_HEALTHY = dict(
         {"scope": "distributor", "label": "dripper", "state": "live",
          "detail": "setDripper re-points rewards", "addr": None,
          "addr_known": False},
-        # **Bonding is live.** This row said `deployed/unknown` with the
-        # detail "no contract on either chain" until 2026-09-02, which was
-        # true when it was written and is now false: bonding takes 40% of the
-        # reward share -- the remainder after stakingBps and nftBps, derived
-        # rather than read -- and `heldBonding` / `bondingEarned` answer.
-        {"scope": "bond", "label": "deployed", "state": "live",
-         "detail": "40% of rewards · held 4.1986 IMD", "addr": None,
+        # **Bonding is a RESERVE, not a live product** (D1, and the docs say
+        # it three times: "reserves, not live products" §05, "the reserve is
+        # live; the bond market isn't" §07).
+        #
+        # This row has now been wrong in both directions. It said
+        # `deployed/unknown · "no contract on either chain"`, which a reader
+        # arriving after the launch takes as "bonding does not exist" while 6%
+        # of every retired batch accrues to a live reserve inside
+        # RewardDistributor. Then it said `live · "40% of rewards"`, which
+        # reads as the bond market being open. It is not; it opens at $4.
+        #
+        # The honest statement is three-part -- the SHARE is live, the RESERVE
+        # is live and readable as `heldBonding`, the MARKET is not -- and only
+        # the third belongs in a `state` word. `closed` is the vocabulary
+        # member that says a market is not open without claiming the thing
+        # behind it is absent.
+        # 17 cells exactly. The hatch grid's last cell is sized to
+        # ``_fmt.long_addr``'s form, and a row with no address gets the same
+        # 17 columns for its detail -- so the honest wording has to fit there
+        # or it is truncated to "reserve accruing…" and the market's closure
+        # never reaches the screen. Reported to WP7 as a constraint on the
+        # producer's string rather than worked around by widening the cell,
+        # which would take the rail's need past the body's width pin.
+        {"scope": "bond", "label": "deployed", "state": "closed",
+         "detail": "reserve, opens $4", "addr": None,
          "addr_known": False},
     ],
     pool4_as_of_hhmm="12:34",
@@ -243,6 +261,28 @@ async def _render(cls, payload=None, size=(100, 40)):
         strips = pilot.app.screen._compositor.render_strips()
         lines = ["".join(seg.text for seg in strip).rstrip() for strip in strips]
         return widget, lines
+
+
+async def _rendered_height(cls, payload, size=(100, 60)) -> int:
+    """The panel's real rendered height, measured **while it is mounted**.
+
+    :func:`_render` returns after its app context has closed, so a height read
+    from the widget it hands back is stale -- which is why the first version of
+    the ``1fr`` floor test never bit. Measured here inside the context, and
+    from ``size.height`` rather than from a count of non-blank composited rows,
+    because blank rows are exactly what a painted-only count hides and exactly
+    what made eleven rendered rows look like ten.
+    """
+
+    class _A(App):
+        def compose(self):
+            yield cls()
+
+    async with _A().run_test(size=size) as pilot:
+        widget = pilot.app.query_one(cls)
+        widget.update_data(**payload)
+        await pilot.pause()
+        return widget.size.height
 
 
 def _painted(lines):
@@ -594,11 +634,58 @@ async def test_the_vault_names_the_backlog_as_days_of_runway_at_every_tier():
 
 
 @pytest.mark.asyncio
-async def test_the_vault_says_the_yield_is_rate_limited_not_flow_limited():
+async def test_the_vault_says_what_the_drip_rate_actually_governs():
+    """D2. The drip rate caps **delivery**, not what stakers earn.
+
+    An earlier version of this test asserted the opposite -- that the yield
+    itself is rate-limited -- which was a reasonable reading of the mechanism
+    and is not what the protocol says the number means (§06: the entitlement
+    is the trailing flow set aside for stakers; "the dripper's rate is only a
+    cap on how fast that reaches the vault").
+    """
     _w, lines = await _render(SurfPool4Vault, VAULT_HEALTHY)
     body = _body(lines)
     assert V.RATE_LIMITED_NOTE in body
-    assert "drip rate" in body
+
+    # The forbidden claim, scanned over the whole panel. An earlier version
+    # asserted that the words "delivery" and "drip rate" appear -- which they
+    # do, on OTHER lines (`DELIVERY_NOT_APR_NOTE` and `DELIVERY_NOTE`), so
+    # restoring the old "yield is rate-limited, not flow-limited" sentence
+    # left this test green. Proven by mutation. What must hold is that the
+    # panel never makes the claim at all.
+    lowered = body.lower()
+    assert "rate-limited" not in lowered, body
+    assert "flow-limited" not in lowered, body
+
+
+@pytest.mark.asyncio
+async def test_our_number_is_never_published_under_the_word_apr():
+    """D2's actual defect, and it was a heading rather than a formula.
+
+    ``drip_per_day x 365 / TVL`` is the **delivery cap** annualised. The
+    protocol publishes a differently computed APR under that word -- trailing
+    seven-day flow against total staked -- and against a deep backlog ours
+    understates by a lot (Sepolia's was a year deep) while against an empty one
+    it overstates, because nothing can be dripped that has not arrived.
+
+    Two numbers sharing one heading is how a reader concludes one of the two
+    sites is lying, so the only place ``APR`` may appear on this panel is in
+    the sentence that disclaims it.
+    """
+    _w, lines = await _render(SurfPool4Vault, VAULT_HEALTHY)
+    body = _body(lines)
+    assert V.DELIVERY_LABEL in body
+    assert V.DELIVERY_NOT_APR_NOTE in body
+
+    # **The heading position specifically.** An earlier version asserted only
+    # that every line mentioning "apr" also carried the disclaimer -- which
+    # became self-defeating the moment the disclaimer moved onto the number's
+    # own line: relabelling the row `apr` produced `apr 4.15% ... not APR`,
+    # a line containing both, and the test stayed green. Proven by mutation.
+    # What must hold is that no row is *headed* with the word.
+    assert V.DELIVERY_LABEL != "apr"
+    for line in _painted(lines):
+        assert not line.strip().lower().startswith("apr"), line
 
 
 @pytest.mark.asyncio
@@ -611,12 +698,64 @@ async def test_a_suppressed_apr_shows_no_number_and_never_zero_or_infinity():
         SurfPool4Vault,
         dict(VAULT_HEALTHY, pool4_vault_assets=0.0, pool4_implied_apr_pct=None),
     )
-    apr = _line_starting(lines, "apr")
-    assert V.APR_SUPPRESSED in apr
+    apr = _line_starting(lines, V.DELIVERY_LABEL)
+    assert V.DELIVERY_SUPPRESSED in apr
     assert not any(ch.isdigit() for ch in apr)
     assert "%" not in apr
     assert "∞" not in apr
     assert "inf" not in _body(lines).lower()
+
+
+@pytest.mark.asyncio
+async def test_a_zero_delivery_rate_is_a_number_and_not_a_missing_read():
+    """The zero-needle catch, re-pointed at the row that replaced ``apr``.
+
+    ``pool4_implied_apr_pct == 0.0`` is a real state -- the drip rate is zero,
+    so nothing is being delivered -- and it is a different statement from
+    "TVL is zero or unread, so this cannot be computed". Retiring the ``apr``
+    row took ``tests/test_surf_registration.py``'s ``apr 0.00%`` needle with
+    it; the zero is still renderable and the needle text is what went stale.
+
+    Asserted here as well as there, because a zero that cannot be told from a
+    missing read is the defect the needle exists for, and this panel should
+    not depend on another package's probe table to notice it.
+    """
+    _w, zero = await _render(
+        SurfPool4Vault, dict(VAULT_HEALTHY, pool4_implied_apr_pct=0.0)
+    )
+    _w, unread = await _render(
+        SurfPool4Vault, dict(VAULT_HEALTHY, pool4_implied_apr_pct=None)
+    )
+    zero_row = _line_starting(zero, V.DELIVERY_LABEL)
+    unread_row = _line_starting(unread, V.DELIVERY_LABEL)
+
+    assert "0.00%" in zero_row, zero_row
+    assert V.DELIVERY_SUPPRESSED not in zero_row
+    assert V.DELIVERY_SUPPRESSED in unread_row
+    assert "0.00%" not in unread_row
+    assert zero_row != unread_row
+
+
+@pytest.mark.asyncio
+async def test_the_vault_stays_inside_the_rails_one_fr_floor():
+    """VAULT carries the rail's ``1fr`` **because** its line count is a
+    constant, so ``min-height: 10`` is a ceiling as much as a floor: a ``1fr``
+    child cannot overflow, it shrinks, and an eleventh line is dropped with no
+    scrollbar, no ``‹ taller`` and no trace while ``virtual_size`` goes on
+    reporting ten.
+
+    Nine leaves one row of slack, so the next line added here fails this
+    instead of vanishing. Counted over composited output, including the blank
+    rows a painted-only count would hide -- which is how eleven looked like
+    ten in the first place.
+    """
+    _VAULT_1FR_MIN_HEIGHT = 10        # screens/surf.py, restated deliberately
+    for payload in (VAULT_HEALTHY, {}, dict(VAULT_HEALTHY, pool4_can_drip=None)):
+        rendered = await _rendered_height(SurfPool4Vault, payload)
+        assert rendered <= _VAULT_1FR_MIN_HEIGHT, (
+            f"sIMD VAULT renders {rendered} rows against a 1fr floor of "
+            f"{_VAULT_1FR_MIN_HEIGHT}; the overflow is shed in silence"
+        )
 
 
 @pytest.mark.asyncio
@@ -1152,23 +1291,35 @@ async def test_provenance_is_stated_only_where_there_is_an_adoption():
 
 
 @pytest.mark.asyncio
-async def test_the_bond_row_no_longer_says_there_is_no_contract():
-    """Bonding went live on 2026-09-02 and takes 40% of the reward share --
-    the remainder after ``stakingBps`` and ``nftBps``, derived rather than
-    read. The panel renders whatever the producer hands it, so what this pins
-    is that the fixture stopped encoding the world where bonding did not
-    exist: a sentence that was honest two days ago is now false.
-    """
-    bond = [
-        row for row in HATCHES_HEALTHY["pool4_hatches"]
-        if isinstance(row, dict) and row.get("scope") == "bond"
-    ]
-    assert bond and bond[0]["state"] == "live", bond
-    assert "no contract" not in (bond[0].get("detail") or "")
+async def test_a_bond_reserve_never_renders_as_an_open_market():
+    """D1, and this panel has now been wrong in both directions.
 
+    "No bond contract is named by the hook" is literally true of the *hook*
+    and reads as "bonding does not exist" -- while 6% of every retired batch
+    accrues to a live reserve inside ``RewardDistributor``. Its replacement,
+    "live at 40% of the reward share", reads as *the bond market is open*. It
+    is not: it opens at $4 per IMD, and until then nothing is sold and the
+    reserve only grows.
+
+    Three states a single word flattens -- the same discipline the four-state
+    citation work applies one panel over. What this pins is the half the
+    widget owns: given the honest row, the panel must render the reserve and
+    the market's closure distinguishably, and must not paint the bond row with
+    the word it paints a live owner key with.
+    """
     _w, lines = await _render(SurfPool4Hatches, HATCHES_HEALTHY, size=(120, 60))
-    assert "no contract" not in _body(lines)
-    assert "bond" in _body(lines)
+    bond = next(
+        line.strip() for line in _painted(lines) if line.strip().startswith("bond")
+    )
+    assert "closed" in bond, bond
+    assert "reserve" in bond, bond
+    assert "opens" in bond, bond
+    # The reserve is not the market: the row must not carry the liveness word
+    # that the vault's and hook's owner rows carry.
+    assert "live" not in bond, bond
+    # And it must not read as absence either -- the other half of D1.
+    assert "no bond" not in bond
+    assert "absent" not in bond
 
 
 @pytest.mark.asyncio
@@ -1197,7 +1348,6 @@ async def test_the_reward_path_disambiguates_the_distributors_dash():
     assert "direct" in seen["direct"]
     assert "via-distributor" in seen["via"]
     assert H.UNKNOWN_PATH_WORD in seen["unread"]
-    # All three carry the same dash; only the word tells them apart.
     assert all("--" in line for line in seen.values()), seen
 
 
@@ -1226,9 +1376,8 @@ def test_the_reward_path_vocabulary_agrees_with_the_contract():
 
 @pytest.mark.asyncio
 async def test_the_reward_path_reaches_the_compositor_at_all():
-    """Verified by rendering, not by reading the signature -- see
-    ``test_the_headroom_reaches_the_compositor_at_all`` for why a swallowed
-    keyword is invisible to every other guard on this branch.
+    """Verified by rendering, not by reading the signature -- a keyword
+    swallowed by ``**_kwargs`` is invisible to every signature-shaped guard.
     """
     _w, a = await _render(
         SurfPool4Hatches, dict(HATCHES_HEALTHY, pool4_reward_path="direct")
@@ -1246,14 +1395,12 @@ async def test_every_lever_the_producer_emits_survives_the_row_cap():
     The producer emits exactly twelve, and the two a cap of ten would have
     dropped are the two that changed most recently: the hook's burn sink
     (mainnet moved it from ``0x…dEaD`` to the BurnExecutor) and bonding's
-    deployed row (live since 2026-09-02, taking 40% of the reward share).
-    Hiding a trust surface to save a row inverts what this panel is for.
+    deployed row. Hiding a trust surface to save a row inverts what this panel
+    is for.
     """
     assert H.MAX_ROWS >= 12
     rows = HATCHES_HEALTHY["pool4_hatches"]
-    _w, lines = await _render(
-        SurfPool4Hatches, HATCHES_HEALTHY, size=(120, 60)
-    )
+    _w, lines = await _render(SurfPool4Hatches, HATCHES_HEALTHY, size=(120, 60))
     body = _body(lines)
     for row in rows:
         assert row["label"] in body, row

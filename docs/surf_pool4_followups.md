@@ -460,3 +460,83 @@ the screen and diffed the output.
 The durable fix is a render-and-diff sweep over **every** key rather than the two known instances:
 zero the key through the real screen, expect a composited line to change. That is CLAUDE.md's
 "assert against composited output" rule reaching a case it was not written for.
+
+---
+
+# Review against the official docs (pool4.imd.fun/docs, 2026-09-02)
+
+The protocol's own documentation was read in full and compared against what this view implements
+and claims. **What we derived from the chain is correct** — 85/15, the 30/40/30 subdivision giving
+4.5 / 6.0 / 4.5, `capFloor` 1,000, `capDecay` 1,000/day, drip 86.4/day with 1h catch-up, 1-block
+unstake hold, the 1% swap fee, and every address. The findings below are about **framing and
+completeness**, and two of them put a wrong statement on screen.
+
+## D1 — HIGH. Bonding and nodes are RESERVES, not live products, and we imply otherwise
+
+The docs are explicit, three times over:
+
+> "Bonding and node allocations are tracked on-chain while those programs are being built —
+> **reserves, not live products**." (§05)
+> "The reserve is live; **the bond market isn't**." (§07)
+> "**The node program isn't live.** Its IMD is tracked on-chain as `heldNft`." (§08)
+
+Bonding opens at **$4 per IMD**; until then nothing is sold and the reserve only grows.
+
+What we say now is wrong in both directions. `surf_manager.py:3800` renders
+`no bond contract is named by the hook` — literally true of the *hook*, but a reader after the
+launch reads it as "bonding does not exist", when 6% of every retired batch is accruing to a live
+reserve inside `RewardDistributor`. And the README was updated this session to say bonding is
+"live at 40% of the reward share", which reads as *the bond market is open*. It is not.
+
+The honest statement is three-part and we have all of it: the **share** is live (40% of rewards),
+the **reserve** is live and readable (`heldBonding`), and the **market** is not — it opens at $4.
+
+## D2 — HIGH. Our APR is the delivery rate, and the protocol's is the flow
+
+`implied_apr_pct` is `drip_per_day × 365 / TVL`, and `pool4_vault.py` opens by asserting the yield
+is *"rate-limited, not flow-limited"*. The docs say the opposite about which number is the yield:
+
+> "The APR on the stake page is trailing and real: the IMD the market **set aside for stakers** over
+> the last seven days … annualised against total staked. **The dripper's rate is only a cap on how
+> fast that reaches the vault.**" (§06)
+
+So the entitlement is the **flow** (4.5% of retired batches); the drip is a **delivery cap**. Ours is
+neither: with a deep backlog it badly *understates* what stakers have earned (Sepolia's backlog was
+a year deep), and with an empty one it *overstates*, because you cannot drip what has not arrived.
+
+The line already says `drip rate ÷ TVL`, which is honest labelling — the defect is calling it
+**APR** beside a site that publishes a differently-computed APR under the same word, and the module
+docstring asserting the yield *is* rate-limited. The cheapest correct fix is to stop calling ours
+APR. The better one is the trailing-flow figure the docs describe, which we have the inputs for.
+
+## D3 — MEDIUM. `rewardShareBps` has an owner-tunable ceiling we do not surface
+
+Parameters (§11): **"Burn / rewards 85% / 15% · rewards ≤ 30%"**. So the reward share is
+owner-tunable up to **3000 bps**, double today's 1500. That is a trust surface — the burn could be
+halved by policy — and HATCHES exists to show exactly this class of power. We show the *current*
+value and not the bound.
+
+## D4 — MEDIUM. Buy-wall mechanics are documented and we model only the position
+
+We read `backstop()` and `refTick()` and render *centred / drifted*. The docs give the mechanism:
+the wall's floor **drops to a new low immediately, then crawls up ~4%/day** (400 ticks) against a
+**block-lagged reference** stepping 200 ticks ≈ 2%/block — deliberately, so "a one-block yank can't
+drag the protocol's ETH with it". Rebalance threshold **0.1 ETH**, tip **≤ 0.002 ETH and ≤ 1%**.
+Our tri-state is not wrong; it just answers less than the chain will tell us.
+
+## D5 — LOW, but it is the headline the RATCHET panel is missing
+
+> "**Expected annual burn is about 75% of outstanding supply**" (§06)
+
+That is the single number that makes the ratchet legible, and it is the protocol's own estimate.
+
+## Confirmed by the docs, worth recording as agreement
+
+* `BurnExecutor` bridges to Base where `BaseBurnReceiver` destroys the tokens — **the burn is not on
+  mainnet**, which is why WP1's finding that its balance is *queued* rather than *burned* was right,
+  and why the Sepolia `balanceOf(0xdEaD)` identity does not transfer.
+* The trim **removes liquidity instead of swapping**, so it does not move the price — matching what
+  we decoded from the `ModifyLiquidity` calls before any of this was published.
+* `closeMarket` "withdraws the entire position at any moment … holders are trusting the owner not
+  to use it otherwise. The owner should be a multisig or a timelock." Our HATCHES shows the power;
+  the docs supply the sentence explaining why it matters.

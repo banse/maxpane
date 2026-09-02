@@ -3698,6 +3698,13 @@ class SurfManager:
                 return "unknown"
             return on if value else off
 
+        # Is a bonding reserve actually readable on this deployment? Read, not
+        # assumed: the Distributor is mainnet-only today, so on Sepolia there
+        # is no bonding leg at all and no reserve to describe.
+        bonding_reserve = (
+            distributor_addr is not None
+            and _dget(distributor, "heldBonding") is not None
+        )
         vault_owner = _field(vault, "owner")
         hook_owner = _field(hook, "owner")
         dripper_owner = _field(dripper, "owner")
@@ -3791,13 +3798,34 @@ class SurfManager:
                 "addr_known": known(burn_sink),
             },
             {
-                # The site advertises a bond; no deployed contract carries one,
-                # and this dashboard reads contracts. ``unknown`` rather than
-                # ``absent``: nothing here asked a bond contract anything, and
-                # "we did not look" is not "it is not there".
+                # **Three facts, and only the middle one used to reach the
+                # screen.** The bonding SHARE is live (the remainder of the
+                # reward split); the bonding RESERVE is live and readable
+                # (``heldBonding`` on the Distributor); the bond MARKET is not
+                # -- it opens at $4 per IMD.
+                #
+                # This row said ``no bond contract is named by the hook``,
+                # which was true of the hook and was the right sentence when
+                # no deployed contract carried a bond. After the launch it
+                # reads as "bonding does not exist" while 6% of every retired
+                # batch accrues to a reserve we already read.
+                #
+                # ``closed`` is the state word that says the market is shut
+                # without saying the programme is absent, and the detail is
+                # SEVENTEEN CELLS because that is what the hatch grid's last
+                # column gives a row with no address. "reserve accruing ·
+                # market opens at $4" truncates to "reserve accruing…" and the
+                # market's closure -- the whole point -- never reaches the
+                # screen. Shorten the value, not the pin.
                 "scope": "bond", "label": "deployed",
-                "state": "unknown",
-                "detail": "no bond contract is named by the hook",
+                "state": "closed" if bonding_reserve else "absent",
+                "detail": (
+                    "reserve, opens $4" if bonding_reserve
+                    # No Distributor on this deployment, so there is no bonding
+                    # leg to have a reserve. Claiming one would be the same
+                    # class of error one chain over.
+                    else "no bonding leg"
+                ),
                 "addr": None, "addr_known": False,
             },
         ]

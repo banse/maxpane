@@ -963,6 +963,31 @@ SURF_POOL4_FULL_LAYOUT_COLUMNS = 106
 #: it -- but that is a fact about today's line counts, not a reason to stop
 #: measuring the cap.
 #:
+#: **THIS PIN ASSUMES sIMD VAULT'S CONTENT NEVER EXCEEDS ITS FLOOR, and that
+#: is a coupling rather than a detail.** VAULT carries the rail's ``1fr``
+#: *because* its line count is fixed and small, so ``min-height: 10`` is
+#: effectively its ceiling too and the panel is never cut. A ``1fr`` child
+#: cannot overflow -- it shrinks -- so a VAULT that grows past ten lines
+#: does not push the column taller and does not raise this pin: it **loses
+#: the line**, with no scrollbar and no marker, while the rail's
+#: ``virtual_size`` goes on reporting the floored ten. The pin would still
+#: measure 44 while the body silently dropped a row.
+#:
+#: **That is not hypothetical -- it happened on 2026-09-02.** A rewording of
+#: the delivery row took VAULT to eleven lines, and the pin went on
+#: measuring 44 with the eleventh row being cut. Measured at the time:
+#: **an eleven-line VAULT needs a pin of 45.** It was fixed at source
+#: instead, by dropping the panel's post-title blank, which is the standing
+#: rule working -- shorten the value, do not raise the pin. VAULT now sits
+#: under its floor with a row of slack, so the next line added there fails a
+#: test rather than vanishing.
+#:
+#: The guard is not this constant, it is
+#: ``test_the_pool4_floors_never_thin_a_panel_below_its_content``, which
+#: compares VAULT's laid-out height against its own content. Keep it: the
+#: pin cannot detect this failure, because the failure is precisely a body
+#: that stops asking for the rows it needs.
+#:
 #: **44 is the tallest pinned requirement in this repo and nobody has
 #: measured whether a common laptop clears it.** The *columns* side of that
 #: question is answered in the terminal-layout skill (launch forces 17 pt,
