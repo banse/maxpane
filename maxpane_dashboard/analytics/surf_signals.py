@@ -98,6 +98,7 @@ READING_KEYS: tuple[str, ...] = (
     "channel_tx_count",     # Blockscout tx count for ANNOUNCE (posts AND replies)
     "announce_last_text",   # decoded body of the newest self-post
     "announce_last_ts",     # unix ts of the newest self-post
+    "announce_last_tx_hash",  # exact tx id of the newest self-post
     # NEW REPLY's stream: the channel rows that are somebody answering or
     # being answered -- ``kind in {reply, answer}`` -- newest last. An event
     # stream rather than a counter because the row has to quote the message,
@@ -597,22 +598,39 @@ class _Det(NamedTuple):
     state: str | None
     detail: str
     fired_ts: float | None = None
+    tx_hash: str | None = None
 
 
 def _ok(detail: str) -> _Det:
-    return _Det(STATE_OK, detail, None)
+    return _Det(STATE_OK, detail, None, None)
 
 
 def _watch(detail: str) -> _Det:
-    return _Det(STATE_WATCH, detail, None)
+    return _Det(STATE_WATCH, detail, None, None)
 
 
-def _fired(detail: str, ts: float | None) -> _Det:
-    return _Det(STATE_FIRED, detail, ts)
+def _fired(detail: str, ts: float | None, tx_hash: Any = None) -> _Det:
+    return _Det(STATE_FIRED, detail, ts, _tx_hash(tx_hash))
 
 
 def _dead(detail: str) -> _Det:
-    return _Det(None, detail, None)
+    return _Det(None, detail, None, None)
+
+
+_HEX_CHARS = frozenset("0123456789abcdefABCDEF")
+
+
+def _tx_hash(value: Any) -> str | None:
+    """A canonical Ethereum transaction hash, or ``None``.
+
+    Feed focus is an exact identity link, so a short display hash, arbitrary
+    string or attacker-controlled cache value must never become a target.
+    """
+    if not isinstance(value, str) or len(value) != 66 or not value.startswith("0x"):
+        return None
+    if any(ch not in _HEX_CHARS for ch in value[2:]):
+        return None
+    return value.lower()
 
 
 def _rows(events: Any) -> list[dict]:
@@ -792,7 +810,9 @@ def _detect_post(base: dict, read: dict, now: float) -> _Det:
     if last_ts is not None and base_last_ts is not None and last_ts > base_last_ts:
         text = read.get("announce_last_text")
         body = f' "{_truncate(text)}"' if isinstance(text, str) and text.strip() else ""
-        return _fired(f"#{nonce}{body}", last_ts)
+        return _fired(
+            f"#{nonce}{body}", last_ts, read.get("announce_last_tx_hash")
+        )
 
     tx_count = _as_int(read.get("channel_tx_count"))
     base_txs = _as_int(base.get("channel_tx_count"))
@@ -842,7 +862,9 @@ def _detect_thread(base: dict, read: dict, now: float) -> _Det:
         kind = "answer" if str(fresh.get("kind") or "") == "answer" else "reply"
         text = fresh.get("text")
         body = f' "{_truncate(text)}"' if isinstance(text, str) and text.strip() else ""
-        return _fired(f"{kind}{body}", _as_float(fresh.get("ts")))
+        return _fired(
+            f"{kind}{body}", _as_float(fresh.get("ts")), fresh.get("tx_hash")
+        )
 
     tx_count = _as_int(read.get("channel_tx_count"))
     base_txs = _as_int(base.get("channel_tx_count"))
@@ -1352,7 +1374,7 @@ SIGNAL_OUTPUT_KEYS: tuple[str, ...] = tuple(
 
 
 def _fired_store(baselines: dict) -> dict[str, dict]:
-    """The persisted ``{signal: {ts, detail}}`` map, defensively parsed."""
+    """The persisted ``{signal: {ts, detail, tx_hash?}}`` map, parsed."""
     raw = baselines.get("fired")
     store: dict[str, dict] = {}
     if not isinstance(raw, dict):
@@ -1363,7 +1385,11 @@ def _fired_store(baselines: dict) -> dict[str, dict]:
         ts = _as_float(entry.get("ts"))
         if ts is None:
             continue
-        store[name] = {"ts": ts, "detail": str(entry.get("detail") or "")}
+        parsed = {"ts": ts, "detail": str(entry.get("detail") or "")}
+        tx_hash = _tx_hash(entry.get("tx_hash"))
+        if tx_hash is not None:
+            parsed["tx_hash"] = tx_hash
+        store[name] = parsed
     return store
 
 
@@ -1479,7 +1505,10 @@ def build_signals(
         det = detect(base, read, now)
         if det.fired_ts is not None or det.state == STATE_FIRED:
             event_ts = det.fired_ts if det.fired_ts is not None else now
-            fired[name] = {"ts": min(float(event_ts), now), "detail": det.detail}
+            entry = {"ts": min(float(event_ts), now), "detail": det.detail}
+            if det.tx_hash is not None:
+                entry["tx_hash"] = det.tx_hash
+            fired[name] = entry
 
         entry = fired.get(name)
         if entry is not None and now - entry["ts"] < FIRED_TTL_S:

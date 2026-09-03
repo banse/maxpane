@@ -62,7 +62,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
-__all__ = ["build_threads"]
+__all__ = ["build_threads", "select_feed_window"]
 
 
 def _coerce_ts(value: Any) -> float | None:
@@ -181,3 +181,60 @@ def build_threads(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
 
     roots.reverse()
     return roots
+
+
+def _tx_key(value: Any) -> str:
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
+def select_feed_window(
+    items: Sequence[Mapping[str, Any]],
+    target_tx_hashes: Sequence[str] = (),
+    limit: int = 25,
+) -> list[Mapping[str, Any]]:
+    """Return a bounded newest-first window that keeps active conversations.
+
+    The ordinary window is the first ``limit`` rows.  If an active message is
+    older, or its root fell just outside that window, the target, root, and
+    immediate parent replace the oldest ordinary rows.  Ordering is preserved,
+    so :func:`build_threads` reconstructs the same conversation afterward.
+    """
+    rows = [item for item in items or () if isinstance(item, dict)]
+    try:
+        cap = max(int(limit), 0)
+    except (TypeError, ValueError):
+        cap = 0
+    if cap == 0 or not rows:
+        return []
+
+    targets = {
+        key
+        for value in (target_tx_hashes or ())
+        if (key := _tx_key(value))
+    }
+    if not targets or len(rows) <= cap:
+        return rows[:cap]
+
+    required = set(targets)
+    for root in build_threads(rows):
+        root_key = _tx_key(root.get("item", {}).get("tx_hash"))
+        for row in (root, *(root.get("replies") or ())):
+            item = row.get("item") or {}
+            if _tx_key(item.get("tx_hash")) not in targets:
+                continue
+            required.add(root_key)
+            required.add(_tx_key(row.get("parent_tx_hash")))
+    required.discard("")
+
+    required_indices = {
+        index
+        for index, item in enumerate(rows)
+        if _tx_key(item.get("tx_hash")) in required
+    }
+    chosen = set(range(min(cap, len(rows)))) | required_indices
+    for index in sorted(chosen, reverse=True):
+        if len(chosen) <= cap:
+            break
+        if index not in required_indices:
+            chosen.remove(index)
+    return [row for index, row in enumerate(rows) if index in chosen]
