@@ -113,3 +113,71 @@ def depth_rows(
             }
         )
     return rows
+
+
+def _as_float(value) -> float | None:
+    """``float(value)`` or ``None``; never raises.
+
+    ``widgets/surf/_fmt.as_float`` is the same three lines one layer out, and
+    it is deliberately **not** imported: ``analytics/`` sits under the widgets
+    in the import order, not over them, and reaching up into
+    ``maxpane_dashboard.widgets`` from here would put a Textual-importing
+    package behind a module the purity walk is meant to certify as stdlib-only.
+    Three lines is the cheaper end of that trade.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def band_distance_pct(tick_now, band_lower_tick) -> float | None:
+    """How far under spot the backstop band opens, in percent of IMD's price.
+
+    **The one definition of this conversion.** ``widgets/surf/pool4u_hero.py``
+    derived it in-widget during WP5 because ``pool4_backstop_distance_pct`` was
+    never frozen into ``SURF_KEYS`` -- and ``test_surf_widget_contract.py``
+    refuses any ``update_data`` kwarg that is not a contract key, so the key
+    could not simply be added. The correct cure is one source rather than the
+    key: this module already owns every other tick conversion on this view, so
+    it owns this one too, and both the hero card and the SIGNALS row import it
+    from here. Two copies of a conversion is how two panels on one screen come
+    to disagree about the same number.
+
+    **Orientation, and it is the half that is easy to get backwards.** ETH is
+    currency0 and the pool prices IMD per ETH, so *tick up means IMD is
+    cheaper*. The band sits **above** spot in tick terms precisely because it
+    sits **below** spot in price terms. IMD's price at the band's edge divided
+    by its price at spot is ``1.0001 ** (tick_now - band_lower_tick)``, and
+    what this returns is one minus that, as a percentage.
+
+    Checked against numbers that came from outside this function rather than
+    from itself:
+
+    * the plan's own WP1 ladder inputs -- spot 68196, band opening 68280, 84
+      ticks apart -- return **0.84%**, the figure the WP5 hero snippet passed
+      as a payload key that does not exist;
+    * the committed oracle capture (``tests/fixtures/surf/pool4/
+      oracle_25955365.json``) -- spot 68181, band opening 68340, 159 ticks --
+      returns **1.58%**.
+
+    (A tick is one basis point by construction, so over a short span the tick
+    delta and the percentage read almost alike; they diverge with distance and
+    nothing here approximates one with the other.)
+
+    ``0.0`` -- a representable zero, never ``None`` -- when the band opens at
+    or below spot in tick terms: the band is *at* the money, which is a real
+    reading. ``None`` is reserved for a tick that could not be read.
+    """
+    now = _as_float(tick_now)
+    lower = _as_float(band_lower_tick)
+    if now is None or lower is None:
+        return None
+    if lower <= now:
+        return 0.0
+    try:
+        return (1.0 - 1.0001 ** (now - lower)) * 100.0
+    except (OverflowError, ValueError):  # pragma: no cover - guarded by the clamp
+        return None

@@ -171,14 +171,19 @@ def staker_cells(row: object) -> tuple[str, str, str, str] | None:
     A single malformed row must never take the panel down, so every failure
     here is a dropped row rather than an exception.
 
-    **Two spellings of the address are accepted and that is a reported defect,
-    not a convenience.** ``surf_models.POOL4_STAKERS_KEYS`` documents the row
-    shape as ``rank/addr/imd/pct`` while the plan's own producer
-    (``surf_pool4_market.staker_rows``) emits ``address``; unlike
-    ``pool4_flow`` and ``pool4_hatches``, ``pool4_stakers`` has no
-    ``SURF_ROW_KEYS`` entry to settle it. Reading one spelling would paint a
-    column of dashes if the other landed. Filed for WP0/WP4 to resolve; when
-    it is, drop the fallback.
+    **``address``, one spelling.** The shape was specified two ways while this
+    panel was being written -- ``POOL4_STAKERS_KEYS``'s comment said
+    ``rank/addr/imd/pct`` and the producer (``surf_pool4_market.staker_rows``)
+    emitted ``address`` -- and this function carried an ``addr`` fallback so
+    that whichever landed, the column could not go blank. It was filed as
+    carry-over C2 rather than chosen.
+
+    ``SURF_ROW_KEYS["pool4_stakers"]`` now declares ``address`` and the
+    producer agrees, so the fallback is dead code and is gone. Keeping it would
+    be worse than dead: a row arriving with ``addr`` is now a *producer bug*,
+    and a renderer that quietly accepts it hides the bug behind a correct-
+    looking column -- which is how a shape divergence survives to the next
+    reader instead of reddening in CI.
     """
     if not isinstance(row, dict):
         return None
@@ -186,8 +191,6 @@ def staker_cells(row: object) -> tuple[str, str, str, str] | None:
         rank = row.get("rank")
         rank_text = f"{int(rank)}" if rank is not None else DASH
         addr = row.get("address")
-        if addr is None:
-            addr = row.get("addr")
         pct = as_float(row.get("pct"))
         pct_text = f"{pct:.1f}%" if pct is not None else DASH
         return rank_text, long_addr(addr), _fmt_imd_cell(row.get("imd")), pct_text

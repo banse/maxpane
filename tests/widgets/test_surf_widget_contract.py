@@ -318,7 +318,19 @@ def test_every_widget_accepts_the_whole_flat_dict(cls):
 #: green while ``analytics/surf_feed`` imported ``analytics/surf_signals``,
 #: which reaches ``data`` in one further hop -- so the allowance really did
 #: open a path to the data layer, and the recursion is what closes it.
-_PURE_ANALYTICS_ALLOWED = frozenset({"maxpane_dashboard.analytics.surf_feed"})
+#: ``analytics/surf_pool4_depth`` is the `4` body's tick arithmetic: the depth
+#: ladder (``depth_rows``) and the backstop distance (``band_distance_pct``).
+#: Stdlib only -- ``import math`` and nothing else -- and it is on this list
+#: because the alternative is worse in two directions. The ladder cannot travel
+#: as a payload key (``pool4_depth_rows`` was never frozen into ``SURF_KEYS``,
+#: and the kwarg check below refuses anything that is not a contract key), and
+#: the distance was being derived a second time inside ``pool4u_hero`` while
+#: ``pool4u_signals`` needed the same number -- two copies of one conversion,
+#: which is how two panels on one screen come to disagree (carry-over C1).
+_PURE_ANALYTICS_ALLOWED = frozenset({
+    "maxpane_dashboard.analytics.surf_feed",
+    "maxpane_dashboard.analytics.surf_pool4_depth",
+})
 
 
 def _imported_names(module) -> list[str]:

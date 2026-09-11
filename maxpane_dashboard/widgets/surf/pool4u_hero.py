@@ -36,9 +36,14 @@ where amendment A13 put that claim.
 
 Purity
 ------
-Stdlib, ``rich``, ``textual`` and this package's own primitives. No ``data/``,
-no ``analytics/``, no clock, no I/O -- ``tests/widgets/test_surf_widget_
-contract.py`` walks this file's AST and proves it.
+Stdlib, ``rich``, ``textual``, this package's own primitives, and exactly one
+``analytics/`` module -- ``analytics/surf_pool4_depth``, which is stdlib-only
+and is named on ``test_surf_widget_contract._PURE_ANALYTICS_ALLOWED``. No
+``data/``, no clock, no I/O. That allowance is not a name check: the contract
+test AST-walks the allowed module's *own* imports, and every
+``maxpane_dashboard.analytics.*`` it finds from there, to a fixed point -- a
+depth-1 version of that walk was once green while an analytics module reached
+``data`` one hop further on.
 
 The ``$`` trap
 --------------
@@ -50,18 +55,22 @@ It took the app down once during the ``p`` build. Rich colour names only
 rather than written out here, because the test that enforces this reads this
 file's own source.
 
-Two contract gaps found while building this, filed rather than fixed
---------------------------------------------------------------------
+The contract gap behind the imported ``band_distance_pct``
+---------------------------------------------------------
 The plan's own WP5 snippet renders ``pool4_backstop_distance_pct``. **There is
 no such key**: WP0 froze nine fast-tier names and that is not one of them, and
 ``tests/widgets/test_surf_widget_contract.py::
 test_update_data_kwargs_are_frozen_contract_keys`` refuses any kwarg that is
-not in ``SURF_KEYS``. The distance is therefore *derived here* from two keys
-that are frozen -- ``pool4_current_tick`` and ``pool4_backstop_lower_tick`` --
-by :func:`band_distance_pct`, which is three lines of stdlib arithmetic and
-reproduces the plan's own figure (68196 -> 68280 is 0.84% under) from the
-ticks its WP1 fixture uses. See that function for why it is not imported from
-``analytics/surf_pool4_depth``.
+not in ``SURF_KEYS``. The distance is therefore *derived* from two keys that
+are frozen -- ``pool4_current_tick`` and ``pool4_backstop_lower_tick``.
+
+It was derived **here**, in this module, for as long as this file was the only
+consumer. It is now imported from
+:func:`~maxpane_dashboard.analytics.surf_pool4_depth.band_distance_pct` (carry-
+over C1), because SIGNALS states the same distance one panel down and two
+copies of one conversion is how two panels on one screen come to disagree about
+the same number. ``analytics/surf_pool4_depth`` already owned every other tick
+conversion on this view; it owns this one too, and this module holds none.
 """
 
 from __future__ import annotations
@@ -71,6 +80,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
 
+from maxpane_dashboard.analytics.surf_pool4_depth import band_distance_pct
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_compact
 from maxpane_dashboard.widgets.surf._pool4 import (
@@ -182,45 +192,6 @@ def fmt_price_usd(value) -> str:
     if abs(v) >= 1000:
         return f"${v:,.2f}"
     return f"${v:,.3f}"
-
-
-def band_distance_pct(tick_now, band_lower_tick) -> float | None:
-    """How far under spot the backstop band starts, in percent of IMD's price.
-
-    **ETH is currency0 and the pool prices IMD per ETH, so tick up means IMD is
-    cheaper.** The band sits *above* spot in tick terms precisely because it
-    sits *below* spot in price terms; IMD's price ratio between the band's edge
-    and spot is ``1.0001 ** (tick_now - band_lower_tick)``, and what this
-    returns is one minus that, as a percentage.
-
-    Checked against the plan's own numbers rather than against itself: 68196
-    spot with the band opening at 68280 is 84 ticks, and this returns 0.8365 --
-    the ``0.84`` the WP5 hero snippet passed as a payload key that does not
-    exist. (Ticks are 1 basis point apart by construction, which is why the
-    tick delta and the percentage read almost the same; they diverge with
-    distance and this does not approximate them together.)
-
-    **Why it is not imported.** ``analytics/surf_pool4_depth`` (WP1) carries
-    tick arithmetic, but it carries no distance helper -- this is a different
-    function, not a second copy of one of its -- and it is not on
-    ``test_surf_widget_contract._PURE_ANALYTICS_ALLOWED``, which WP9 extends.
-    Importing it today reddens the purity sweep for every surf widget. If WP9's
-    allowlist lands and that module grows this function, delete this one.
-
-    ``0.0`` -- a representable zero, not ``None`` -- when the band opens at or
-    below spot: the band is *at* the money, which is a real reading. ``None``
-    is reserved for a tick we could not read.
-    """
-    now = as_float(tick_now)
-    lower = as_float(band_lower_tick)
-    if now is None or lower is None:
-        return None
-    if lower <= now:
-        return 0.0
-    try:
-        return (1.0 - 1.0001 ** (now - lower)) * 100.0
-    except (OverflowError, ValueError):  # pragma: no cover - guarded by the clamp
-        return None
 
 
 def _dim(text: str) -> str:

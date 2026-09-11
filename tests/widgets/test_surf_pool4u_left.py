@@ -29,19 +29,20 @@ Three things this file exists to pin above the rest:
 
 from __future__ import annotations
 
-import ast
-import pathlib
 
 import pytest
 from rich.cells import cell_len
 from textual.app import App
 
-from maxpane_dashboard.data.surf_models import POOL4_FLOW_LIMIT, SURF_KEYS
+from maxpane_dashboard.data.surf_models import (
+    POOL4_FLOW_LIMIT,
+    SURF_KEYS,
+    SURF_ROW_KEYS,
+)
 from maxpane_dashboard.widgets import sparkline_common
 from maxpane_dashboard.widgets.surf import _pool4
 from maxpane_dashboard.widgets.surf import pool4u_burn as burn_mod
 from maxpane_dashboard.widgets.surf import pool4u_hero as hero_mod
-from maxpane_dashboard.widgets.surf import pool4u_stakers as stakers_mod
 from maxpane_dashboard.widgets.surf._fmt import long_addr
 from maxpane_dashboard.widgets.surf.pool4u_burn import (
     COMPACT_WIDTH as BURN_COMPACT_WIDTH,
@@ -360,20 +361,28 @@ def test_an_unread_holding_is_a_dash_and_never_a_zero() -> None:
     assert cells[3] == "--"
 
 
-def test_both_row_address_spellings_are_read() -> None:
-    """Filed as a defect, accommodated here so the column cannot go blank.
+def test_the_row_address_is_read_under_the_declared_name_only() -> None:
+    """Carry-over C2 closed: one spelling, and the other is now a defect.
 
-    ``surf_models.POOL4_STAKERS_KEYS`` documents ``rank/addr/imd/pct`` while
-    the plan's producer emits ``address``, and ``pool4_stakers`` has no
-    ``SURF_ROW_KEYS`` entry to settle it. When it does, this fallback goes.
+    The row shape was specified two ways while this panel was written, so
+    ``staker_cells`` read ``address`` with an ``addr`` fallback and the
+    divergence was filed. ``SURF_ROW_KEYS["pool4_stakers"]`` now declares
+    ``address`` and the producer emits it, so the fallback is gone -- and this
+    test is its mirror image rather than its deletion: a row arriving with
+    ``addr`` is a producer bug, and it must render the dash that says so
+    instead of a correct-looking column that hides it.
+
+    Read off ``SURF_ROW_KEYS`` rather than from a literal, so the day the
+    contract renames the field this fails instead of pinning the old name.
     """
+    name = SURF_ROW_KEYS["pool4_stakers"][1]
+    assert name == "address"
     addr = "0x" + "ab" * 20
-    assert staker_cells({"rank": 1, "address": addr, "imd": 1.0, "pct": 1.0})[1] == (
+    assert staker_cells({"rank": 1, name: addr, "imd": 1.0, "pct": 1.0})[1] == (
         long_addr(addr)
     )
-    assert staker_cells({"rank": 1, "addr": addr, "imd": 1.0, "pct": 1.0})[1] == (
-        long_addr(addr)
-    )
+    stale = staker_cells({"rank": 1, "addr": addr, "imd": 1.0, "pct": 1.0})
+    assert stale[1] == long_addr(None), stale
 
 
 def test_the_row_cap_is_below_the_producers_own_limit() -> None:
@@ -510,19 +519,24 @@ def test_the_window_needs_two_distinct_timestamps() -> None:
 # Reuse, not re-implementation -- the rules the parent package made hard
 # ===========================================================================
 
-_WIDGET_DIR = pathlib.Path(stakers_mod.__file__).parent
-_POOL4U_SOURCES = sorted(_WIDGET_DIR.glob("pool4u_*.py"))
-
-
-def test_the_pool4u_module_glob_is_not_vacuous() -> None:
-    """A glob that matched nothing would make every check below pass over an
-    empty list. Three modules, named, so a deletion reddens this rather than
-    quietly emptying the sweep.
-    """
-    assert {path.name for path in _POOL4U_SOURCES} == {
-        "pool4u_hero.py", "pool4u_stakers.py", "pool4u_burn.py"
-    }
-
+#: The three local sweeps that used to sit here -- "no ``pool4u_`` module
+#: restates a shared primitive", "...imports the data layer", "...puts a theme
+#: token inside its own markup" -- **are gone, and the glob that made them
+#: necessary is what was actually wrong** (carry-over C3).
+#:
+#: ``tests/widgets/test_surf_pool4_shared.py`` ran all three by discovery over
+#: ``pool4_*.py``, and that glob does not match ``pool4u_*.py``: the `4` body's
+#: widgets were outside every one of them for the whole of their existence. WP5
+#: wrote local copies here to cover the gap and said so. The glob is now
+#: ``pool4*.py``, the shared file discovers all ten widget modules, and keeping
+#: the copies would be the divergence this repo keeps paying for -- three
+#: sweeps over three modules beside three sweeps over ten, and a fix landing in
+#: one of them.
+#:
+#: What is kept below is the one check the shared file cannot make: an
+#: **identity** assertion that this panel's sparkline helpers are the shared
+#: module's objects and not same-named locals. The shared sweep proves no pool4
+#: module *defines* them; only this can prove which ones this module *calls*.
 
 def test_the_burn_panel_uses_the_shared_sparkline_helper_itself() -> None:
     """Identity, not a name match: three dashboards once carried byte-identical
@@ -533,69 +547,6 @@ def test_the_burn_panel_uses_the_shared_sparkline_helper_itself() -> None:
         is sparkline_common.build_sparkline_from_points
     )
     assert burn_mod.coerce_points is sparkline_common.coerce_points
-
-
-@pytest.mark.parametrize("path", _POOL4U_SOURCES, ids=lambda p: p.name)
-def test_no_pool4u_module_restates_a_shared_primitive(path) -> None:
-    """The title, the network word, the widen marker and the sparkline chars
-    are defined in exactly one place each and imported from there.
-
-    This is the rule ``_pool4.py`` exists for: two packages once wrote
-    ``network_word`` twice with different behaviour on unknown input, and one
-    body painted ``THE SPLIT · —`` beside ``THE RATCHET · BASE`` -- five panels
-    disagreeing about which chain the numbers above them came from.
-    """
-    tree = ast.parse(path.read_text())
-    defined: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            defined.add(node.name)
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    defined.add(target.id)
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            defined.add(node.target.id)
-
-    for hoisted in (
-        "network_word", "panel_title", "title_text", "NETWORK_WORDS",
-        "NETWORK_UNKNOWN", "TITLE_SEP", "WIDEN_HINT", "GLYPH_HINT",
-        "SPARK_CHARS", "build_sparkline", "build_sparkline_from_points",
-        "coerce_points", "safe_markup",
-    ):
-        assert hoisted not in defined, (
-            f"{path.name} defines its own {hoisted}; import it instead"
-        )
-
-
-@pytest.mark.parametrize("path", _POOL4U_SOURCES, ids=lambda p: p.name)
-def test_no_pool4u_module_imports_the_data_layer(path) -> None:
-    """Widgets may import pure ``analytics/`` modules; they may not import
-    ``data/``. ``test_surf_widget_contract.py`` proves this for the whole
-    package, which means it also proves it for these three -- its module walk
-    globs ``*.py``. Restated here so this file fails on its own terms if these
-    modules are ever moved out from under that walk.
-    """
-    source = path.read_text()
-    for banned in ("maxpane_dashboard.data", "httpx", "aiohttp", "surf_client"):
-        assert banned not in source.replace("``", ""), (path.name, banned)
-
-
-@pytest.mark.parametrize("path", _POOL4U_SOURCES, ids=lambda p: p.name)
-def test_no_pool4u_module_puts_a_theme_token_inside_its_own_markup(path) -> None:
-    """Rich cannot resolve Textual's ``$``-prefixed theme variables.
-    ``[bold $success]`` parses cleanly and then raises ``MissingStyle`` at
-    *render* time, inside ``Static.update`` -- outside the widget's own
-    ``try``. It took the app down once during the ``p`` build.
-
-    ``tests/widgets/test_surf_pool4_shared.py`` runs this check over
-    ``pool4_*.py`` and its glob does not reach ``pool4u_*.py``; that coverage
-    gap is filed, and this is the local cover until it closes.
-    """
-    import re
-
-    for markup in re.findall(r"\[[^\[\]\n]*\]", path.read_text()):
-        assert "$" not in markup, (path.name, markup)
 
 
 def test_every_update_data_kwarg_on_this_column_is_a_frozen_contract_key() -> None:

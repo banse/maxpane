@@ -1,6 +1,12 @@
-"""``widgets/surf/_pool4.py`` -- the primitives all five POOL4 panels share,
-and the guards that discover **every** pool4 widget module rather than naming
-the three this package happens to own.
+"""``widgets/surf/_pool4.py`` -- the primitives every POOL4 panel shares, and
+the guards that discover **every** pool4 widget module rather than naming the
+ones whichever package wrote this file happened to own.
+
+Both bodies are in scope: the ``p`` auditor's five panels and the ``4``
+market view's five. They were not always -- the glob below read ``pool4_*.py``
+until carry-over C3, which matches neither ``pool4u_hero.py`` nor any of its
+siblings, so every check here reached exactly none of the `4` body for as long
+as it existed. See :data:`POOL4_MODULES`.
 
 Three things are pinned here:
 
@@ -31,13 +37,23 @@ import pytest
 
 from maxpane_dashboard.data.surf_models import POOL4_NETWORKS
 from maxpane_dashboard.widgets.surf import _pool4 as P
+from tests.widgets.test_surf_widget_contract import _PURE_ANALYTICS_ALLOWED
 
 _WIDGET_DIR = pathlib.Path(P.__file__).parent
 
 #: Every pool4 widget module, discovered -- not a hand-typed list of three.
 #: ``sorted`` so a failure names the same module every run.
+#:
+#: **The glob is ``pool4*.py`` and the missing underscore was a real coverage
+#: hole** (carry-over C3). ``pool4_*.py`` does not match ``pool4u_*.py``, so
+#: every check in this file -- the theme-token guard, the one-implementation
+#: guard and the purity walk -- reached exactly none of the `4` body's five
+#: widgets for as long as they existed. They are pool4 widgets by every
+#: property these checks are about, and the only thing that excused them was a
+#: character. WP5 wrote local copies of three of these checks in its own test
+#: file to cover the gap; the widened glob is what let those be deleted.
 POOL4_MODULES = sorted(
-    [_WIDGET_DIR / "_pool4.py", *_WIDGET_DIR.glob("pool4_*.py")],
+    [_WIDGET_DIR / "_pool4.py", *_WIDGET_DIR.glob("pool4*.py")],
     key=lambda p: p.name,
 )
 
@@ -56,13 +72,29 @@ _SOURCES = {path.name: path.read_text() for path in POOL4_MODULES}
 _HOISTED = ("network_word", "panel_title")
 
 
-def test_at_least_the_five_panels_and_the_shared_module_were_discovered():
+def test_every_pool4_module_on_disk_was_discovered():
     """A glob that matched nothing would make every check below vacuous --
     the "test that cannot fail" shape this repo keeps a taxonomy of.
+
+    Compared against the **directory listing** rather than against a count,
+    which is the half a count could not do: ``pool4_*.py`` matched six files
+    and cleared a ``>= 6`` floor for the whole of the `4` body's existence
+    while silently skipping every one of its widgets. A listing comparison
+    fails the moment a pool4 module exists that the glob does not reach, and
+    covers the next one on the day it lands rather than the day someone
+    remembers this file.
     """
+    on_disk = {
+        path.name
+        for path in _WIDGET_DIR.glob("*.py")
+        if path.name == "_pool4.py" or path.name.startswith("pool4")
+    }
     names = {path.name for path in POOL4_MODULES}
+    assert names == on_disk
     assert "_pool4.py" in names
-    assert len(names) >= 6, names
+    # Both bodies are in: the ``p`` auditor panels and the ``4`` market ones.
+    assert any(n.startswith("pool4u_") for n in names), names
+    assert len(names) >= 9, names
 
 
 # ---------------------------------------------------------------------------
@@ -309,10 +341,23 @@ def test_a_pool4_widget_module_stays_pure(name):
     banned name (CLAUDE.md: "state it that way and prove it").
 
     An AST walk, so a lazy import inside a function is caught too. ``data/``
-    and ``analytics/`` are out because they are the layers that reach the
-    network; ``httpx``/``aiohttp`` are out directly; a clock is out because
-    every age reaching a pool4 widget is precomputed by the manager, which is
-    the only reason a committed capture replays forever.
+    is out because it is the layer that reaches the network;
+    ``httpx``/``aiohttp`` are out directly; a clock is out because every age
+    reaching a pool4 widget is precomputed by the manager, which is the only
+    reason a committed capture replays forever.
+
+    ``analytics/`` is **allowed by name from one list**, not banned outright.
+    CLAUDE.md's rule is that widgets may import pure ``analytics/`` modules and
+    may not import ``data/``, and the blanket ban this line used to carry was
+    the "ban a name rather than prove the property" shape that file argues
+    against. The list is ``test_surf_widget_contract._PURE_ANALYTICS_ALLOWED``
+    -- *imported*, not restated, because it is a list of exceptions rather than
+    a vocabulary two sides should be able to disagree about, and a second copy
+    would let a module be allowed here and refused there. That file's
+    ``test_the_allowed_analytics_modules_are_themselves_pure`` is what makes
+    the allowance safe: it AST-walks each allowed module's own imports, and
+    every ``maxpane_dashboard.analytics.*`` it reaches from there, to a fixed
+    point.
     """
     tree = ast.parse(_SOURCES[name])
     modules: list[str] = []
@@ -324,7 +369,8 @@ def test_a_pool4_widget_module_stays_pure(name):
     for module in modules:
         top = module.split(".")
         assert "data" not in top, f"{name} imports {module}"
-        assert "analytics" not in top, f"{name} imports {module}"
+        if "analytics" in top:
+            assert module in _PURE_ANALYTICS_ALLOWED, f"{name} imports {module}"
         assert top[0] not in ("httpx", "aiohttp", "time", "datetime"), (
             f"{name} imports {module}"
         )
@@ -338,3 +384,14 @@ def test_a_pool4_widget_module_never_copies_the_sparkline_helpers(name):
     source = _SOURCES[name]
     assert "▁▂▃" not in source
     assert "SPARK_CHARS =" not in source
+    # And the functions, not just the ramp: a module that imported
+    # ``sparkline_common`` and then shadowed one of its helpers with a local
+    # definition would pass the two checks above while every call site saw the
+    # copy. These three came from ``test_surf_pool4u_left.py``'s local sweep,
+    # which the widened glob above made redundant; they are kept because the
+    # names they guard are wider than the ramp literal.
+    for hoisted in ("build_sparkline", "build_sparkline_from_points",
+                    "coerce_points", "safe_markup"):
+        assert not _defines(source, hoisted), (
+            f"{name} defines its own {hoisted}; import it instead"
+        )
