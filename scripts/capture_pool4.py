@@ -1754,6 +1754,328 @@ def capture_rpc_errors(opener=_open) -> None:
 
 
 # --------------------------------------------------------------------------
+# WP3/WP4 of docs/superpowers/plans/2026-09-11-surf-pool4-market-view.md --
+# the two corpora the `4` market body folds: what the dripper actually
+# delivered, and who holds the vault.
+# --------------------------------------------------------------------------
+
+#: ERC-20 ``Transfer(address,address,uint256)``.  Spelled out rather than
+#: imported so this script stays runnable with the package uninstalled.
+TRANSFER_TOPIC0 = (
+    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+)
+
+#: The RewardDripper's one event, and it has **no recovered pre-image**.
+#:
+#: Named for what its operands provably are, never for what it might be
+#: called -- the same rule the three unresolved hook topics follow in
+#: ``data/surf_pool4.py``.  A guessed signature string would hash to a topic0
+#: that matches no log, and the fold would go quiet rather than red.
+#:
+#: What the operands are is MEASURED, not assumed, and the capture below
+#: records the measurement: in every sampled transaction the first data word
+#: equals the IMD ``Transfer`` from the dripper **to the vault**, to the wei,
+#: and the second equals the ``Transfer`` to the indexed address, which is the
+#: keeper being paid ``keeperReward()``.
+DRIP_TOPIC0 = (
+    "0x5fb8477ff22eb8f519d892e5b053a5fb5c2bd4f4e9ae598ae94fa281ecb79be7"
+)
+DRIP_OPERANDS = "(address indexed keeper, uint256 toVault, uint256 keeperReward)"
+
+#: Seven days at 12 s blocks.  The *window* is what this many blocks spans in
+#: real chain time, which the capture reads off the two boundary blocks rather
+#: than assuming -- a chain that ran slow would otherwise be annualised as
+#: though it had not.
+_SEVEN_DAY_BLOCKS = 7 * 24 * 3600 // 12
+
+#: The partial corpus's window: the tail two days only.  Deliberately short.
+_PARTIAL_DAY_BLOCKS = 2 * 24 * 3600 // 12
+
+
+def _block_ts(url: str, block: int, *, opener=_open) -> int:
+    blk = post_json(url, {"jsonrpc": "2.0", "id": 1,
+                          "method": "eth_getBlockByNumber",
+                          "params": [hex(block), False]}, opener=opener)["result"]
+    return int(blk["timestamp"], 16)
+
+
+def _data_words(data: str) -> list[int]:
+    body = data[2:]
+    return [int(body[i:i + 64], 16) for i in range(0, len(body), 64)]
+
+
+def capture_dripped_logs(opener=_open) -> None:
+    """Seven days of the mainnet dripper's delivery event.  WP3.
+
+    This is the corpus behind ``pool4_trailing_return_pct`` -- what actually
+    reached the vault, which is a different number from
+    ``pool4_implied_apr_pct``, the dripper's *rate* annualised.  A cap is not a
+    yield, and the two must never be folded from the same source.
+    """
+    print("capture: dripped")
+    head, head_hash = _head(MAINNET_STATE_URL, opener=opener)
+    from_block = head - _SEVEN_DAY_BLOCKS
+    from_ts = _block_ts(MAINNET_STATE_URL, from_block, opener=opener)
+    to_ts = _block_ts(MAINNET_STATE_URL, head, opener=opener)
+
+    params = {"address": MAINNET_DRIPPER, "topics": [DRIP_TOPIC0],
+              "fromBlock": hex(from_block), "toBlock": hex(head)}
+    log_url = MAINNET_LOG_RPCS[0]
+    body, resp = _getlogs(log_url, params, opener=opener)
+    logs = resp.get("result") or []
+
+    to_vault = sum(_data_words(lg["data"])[0] for lg in logs)
+    to_keepers = sum(_data_words(lg["data"])[1] for lg in logs)
+
+    # The operand proof.  Three transactions, each reconciled against the IMD
+    # token's own Transfer logs in the same receipt: this is what turns an
+    # unresolved topic0 into a corpus whose meaning is established rather than
+    # asserted.
+    proof = []
+    for lg in logs[-3:]:
+        receipt = post_json(
+            MAINNET_STATE_URL,
+            {"jsonrpc": "2.0", "id": 1, "method": "eth_getTransactionReceipt",
+             "params": [lg["transactionHash"]]}, opener=opener)["result"]
+        words = _data_words(lg["data"])
+        keeper = "0x" + lg["topics"][1][-40:]
+        moved = {}
+        for entry in receipt["logs"]:
+            if (entry["topics"][0].lower() != TRANSFER_TOPIC0
+                    or entry["address"].lower() != MAINNET_IMD.lower()):
+                continue
+            frm = "0x" + entry["topics"][1][-40:]
+            dst = "0x" + entry["topics"][2][-40:]
+            if frm.lower() != MAINNET_DRIPPER.lower():
+                continue
+            moved[dst.lower()] = int(entry["data"], 16)
+        proof.append({
+            "tx": lg["transactionHash"],
+            "keeper": keeper,
+            "word0_to_vault": words[0],
+            "word1_keeper_reward": words[1],
+            "imd_transfer_to_vault": moved.get(MAINNET_VAULT.lower()),
+            "imd_transfer_to_keeper": moved.get(keeper.lower()),
+            "word0_equals_transfer_to_vault":
+                moved.get(MAINNET_VAULT.lower()) == words[0],
+            "word1_equals_transfer_to_keeper":
+                moved.get(keeper.lower()) == words[1],
+        })
+
+    assets_call = {"to": MAINNET_VAULT, "data": VAULT_GETTERS["totalAssets"]}
+    assets_raw = post_json(
+        MAINNET_STATE_URL,
+        {"jsonrpc": "2.0", "id": 1, "method": "eth_call",
+         "params": [assets_call, hex(head)]}, opener=opener)["result"]
+
+    write_pair(
+        "dripped_logs_7d",
+        meta={
+            "captured_at": _now_iso(),
+            "chain": "mainnet",
+            "chain_id": MAINNET_CHAIN_ID,
+            "endpoint": log_url,
+            "head_block": head,
+            "head_block_hash": head_hash,
+            "from_block": from_block,
+            "to_block": head,
+            "from_block_timestamp": from_ts,
+            "to_block_timestamp": to_ts,
+            "window_seconds": to_ts - from_ts,
+            "dripper": MAINNET_DRIPPER,
+            "vault": MAINNET_VAULT,
+            "token": MAINNET_IMD,
+            "topic0": DRIP_TOPIC0,
+            "topic0_preimage": None,
+            "topic0_operands": DRIP_OPERANDS,
+            "log_count": len(logs),
+            "dripped_total_wei": to_vault,
+            "keeper_rewards_total_wei": to_keepers,
+            "operand_proof": proof,
+            "vault_total_assets_wei": int(assets_raw, 16),
+            "vault_total_assets_block": head,
+            "side_reads": [
+                {"url": MAINNET_STATE_URL, "method": "eth_call",
+                 "params": [assets_call, hex(head)],
+                 "why": "the TVL the window is annualised against"},
+            ],
+            "note": (
+                "Seven days of the mainnet RewardDripper's delivery event, the "
+                "corpus behind pool4_trailing_return_pct.  THE TOPIC0 HAS NO "
+                "RECOVERED PRE-IMAGE and is recorded as a literal named for its "
+                "operands, the same way data/surf_pool4.py records the three "
+                "unresolved hook events -- a guessed signature hashes to a "
+                "topic0 that matches no log.  The operands are MEASURED: "
+                "operand_proof reconciles each sampled log's first data word "
+                "against the IMD Transfer from the dripper TO THE VAULT in the "
+                "same receipt, to the wei, and its second word against the "
+                "Transfer to the indexed keeper.  window_seconds is read off "
+                "the two boundary blocks rather than assumed from a block "
+                "count: annualising a short window as though it were seven "
+                "days overstates the return.  THIS IS NOT THE DELIVERY CAP.  "
+                "dripRatePerSecond is a ceiling on how fast rewards can reach "
+                "the vault and is already annualised into "
+                "pool4_implied_apr_pct; this file is what actually arrived, "
+                "and it is lumpy by construction -- a quiet window is a real "
+                "0.0%, never an unavailable."
+            ),
+        },
+        request={"url": log_url, "method": "POST",
+                 "headers": {"Content-Type": "application/json",
+                             "User-Agent": USER_AGENT},
+                 "body": body},
+        response=resp,
+    )
+    print(f"  dripped_logs_7d {len(logs)} logs, {to_vault / 1e18:,.4f} IMD to "
+          f"the vault over {(to_ts - from_ts) / 86400:.2f} days")
+
+
+def capture_simd_transfers(opener=_open) -> None:
+    """The sIMD share token's Transfer history, complete and truncated.  WP4.
+
+    Two corpora on purpose.  ``simd_transfers_full`` is every ``Transfer`` the
+    vault's share token has ever emitted, and 'complete' is **measured**: a
+    query spanning more than twice the deployment's age returns the same set,
+    so nothing precedes the first block below.  ``simd_transfers_partial`` is a
+    real capture of the tail only -- it exists SOLELY to drive the ``None``
+    concentration guard, because a partial fold ranked as though it were the
+    whole vault understates concentration, which is the direction that makes a
+    risk look smaller than it is.
+    """
+    print("capture: transfers")
+    head, head_hash = _head(MAINNET_STATE_URL, opener=opener)
+    log_url = MAINNET_LOG_RPCS[0]
+    common_note_addresses = {
+        "vault": MAINNET_VAULT, "token": MAINNET_IMD,
+        "dripper": MAINNET_DRIPPER,
+    }
+
+    # 'Complete' is measured, not assumed: two spans, one twice the other.
+    wide = head - 2 * _SEVEN_DAY_BLOCKS * 4
+    params_wide = {"address": MAINNET_VAULT, "topics": [TRANSFER_TOPIC0],
+                   "fromBlock": hex(max(wide, 0)), "toBlock": hex(head)}
+    body, resp = _getlogs(log_url, params_wide, opener=opener)
+    logs = resp.get("result") or []
+    first_block = int(logs[0]["blockNumber"], 16) if logs else head
+    wider = max(first_block - 4 * _SEVEN_DAY_BLOCKS, 0)
+    _b2, resp2 = _getlogs(
+        log_url,
+        {"address": MAINNET_VAULT, "topics": [TRANSFER_TOPIC0],
+         "fromBlock": hex(wider), "toBlock": hex(head)},
+        opener=opener,
+    )
+    same = len(resp2.get("result") or []) == len(logs)
+
+    decimals_raw = post_json(
+        MAINNET_STATE_URL,
+        {"jsonrpc": "2.0", "id": 1, "method": "eth_call",
+         "params": [{"to": MAINNET_VAULT, "data": VAULT_GETTERS["decimals"]},
+                    hex(head)]}, opener=opener)["result"]
+    decimals = int(decimals_raw, 16)
+    share_call = {"to": MAINNET_VAULT, "data": _convert_to_assets(10 ** decimals)}
+    share_raw = post_json(
+        MAINNET_STATE_URL,
+        {"jsonrpc": "2.0", "id": 1, "method": "eth_call",
+         "params": [share_call, hex(head)]}, opener=opener)["result"]
+    supply_raw = post_json(
+        MAINNET_STATE_URL,
+        {"jsonrpc": "2.0", "id": 1, "method": "eth_call",
+         "params": [{"to": MAINNET_VAULT, "data": VAULT_GETTERS["totalSupply"]},
+                    hex(head)]}, opener=opener)["result"]
+
+    write_pair(
+        "simd_transfers_full",
+        meta={
+            "captured_at": _now_iso(),
+            "chain": "mainnet",
+            "chain_id": MAINNET_CHAIN_ID,
+            "endpoint": log_url,
+            "head_block": head,
+            "head_block_hash": head_hash,
+            "from_block": max(wide, 0),
+            "to_block": head,
+            "first_log_block": first_block,
+            "complete": True,
+            "completeness_measured": {
+                "wider_from_block": wider,
+                "same_log_count": same,
+                "how": ("a query starting four weeks before the first log "
+                        "returns the same set, so nothing precedes it"),
+            },
+            "topic0": TRANSFER_TOPIC0,
+            "log_count": len(logs),
+            "addresses": common_note_addresses,
+            "share_decimals": decimals,
+            "share_price_wei_per_whole_share": int(share_raw, 16),
+            "total_supply_shares_wei": int(supply_raw, 16),
+            "side_reads": [
+                {"url": MAINNET_STATE_URL, "method": "eth_call",
+                 "params": [share_call, hex(head)],
+                 "why": ("convertToAssets(10 ** decimals()) -- ONE WHOLE "
+                         "SHARE.  decimals() is read, never assumed: Solady's "
+                         "ERC4626 reports asset decimals + offset, so this "
+                         "vault answers 24 and 1e18 would be a millionth of a "
+                         "share")},
+            ],
+            "note": (
+                "Every Transfer the sIMD share token has emitted, the corpus "
+                "the staker concentration fold sweeps.  Mints arrive from the "
+                "zero address and burns go to it; neither is a holder.  "
+                "COMPLETE IS MEASURED, not assumed -- see "
+                "completeness_measured.  The share price beside it is read "
+                "with the vault's OWN decimals: a hardcoded 1e18 divisor here "
+                "renders 21 billion shares against 21,010 real ones and looks "
+                "like an emissions farm rather than like an error."
+            ),
+        },
+        request={"url": log_url, "method": "POST",
+                 "headers": {"Content-Type": "application/json",
+                             "User-Agent": USER_AGENT},
+                 "body": body},
+        response=resp,
+    )
+
+    part_from = head - _PARTIAL_DAY_BLOCKS
+    params_part = {"address": MAINNET_VAULT, "topics": [TRANSFER_TOPIC0],
+                   "fromBlock": hex(part_from), "toBlock": hex(head)}
+    body_p, resp_p = _getlogs(log_url, params_part, opener=opener)
+    logs_p = resp_p.get("result") or []
+    write_pair(
+        "simd_transfers_partial",
+        meta={
+            "captured_at": _now_iso(),
+            "chain": "mainnet",
+            "chain_id": MAINNET_CHAIN_ID,
+            "endpoint": log_url,
+            "head_block": head,
+            "from_block": part_from,
+            "to_block": head,
+            "complete": False,
+            "topic0": TRANSFER_TOPIC0,
+            "log_count": len(logs_p),
+            "addresses": common_note_addresses,
+            "note": (
+                "DELIBERATELY TRUNCATED, AND THAT IS THE WHOLE POINT OF THE "
+                "FILE.  A real capture of the last two days only, so it misses "
+                "the history before from_block and its fold is NOT the vault.  "
+                "It exists solely to drive the None concentration guard: "
+                "ranking a subset understates how much the top three hold, "
+                "which is the direction that makes a risk look smaller than it "
+                "is.  Never 'refresh' this to the full range -- a fixture that "
+                "stops being incomplete stops testing anything."
+            ),
+        },
+        request={"url": log_url, "method": "POST",
+                 "headers": {"Content-Type": "application/json",
+                             "User-Agent": USER_AGENT},
+                 "body": body_p},
+        response=resp_p,
+    )
+    print(f"  simd_transfers_full {len(logs)} logs from block {first_block} "
+          f"(complete measured: {same}); partial {len(logs_p)} logs")
+
+
+# --------------------------------------------------------------------------
 # The adversarial corpora.  SYNTHETIC, and every one says so.
 # --------------------------------------------------------------------------
 
@@ -2537,6 +2859,8 @@ _REQUIRED_REAL = [
     "mainnet_dripper_state", "mainnet_token_state", "mainnet_vault_path",
     "mainnet_pool_slot0", "mainnet_flow_logs",
     "sepolia_cap_getters", "docs_site_page", "announce_still_unnamed",
+    # the `4` market view's corpora
+    "dripped_logs_7d",
 ]
 _REQUIRED_DERIVED = ["hook_flags_reference", "counter_reconciliation",
                      "mainnet_flags_reference",
@@ -3255,6 +3579,11 @@ _CAPTURES = {
     "docs-site": capture_docs_site,
     "mainnet-pool": capture_mainnet_pool,
     "announce-still-unnamed": capture_announce_still_unnamed,
+    # WP3/WP4 of the `4` market view. `--capture dripped` and
+    # `--capture transfers` are the plan's `--dripped` / `--transfers` modes,
+    # spelled the way every other mode in this file is spelled.
+    "dripped": capture_dripped_logs,
+    "transfers": capture_simd_transfers,
 }
 
 

@@ -79,3 +79,52 @@ def cheaper_venue(
     if abs(gap_pct) <= threshold:
         return None
     return "reference" if gap_pct > 0 else "here"
+
+
+# ---------------------------------------------------------------------------
+# The realised trailing return — WP3
+# ---------------------------------------------------------------------------
+
+#: Seconds in a year, for annualising a window.  365 days, not 365.25: the
+#: protocol's own docs annualise on 365 and a panel that disagrees with the
+#: protocol's stake page by 0.07% invites a bug report that is not a bug.
+_YEAR_SECONDS = 365 * 24 * 3600
+
+
+def trailing_return_pct(
+    *,
+    dripped_imd: float | None,
+    window_seconds: float | None,
+    vault_assets: float | None,
+) -> float | None:
+    """Realised staking return over a window, annualised.  PRD 8.1.
+
+    **This is not ``pool4_implied_apr_pct``.**  That key is the dripper's rate
+    annualised -- a *ceiling* on how fast rewards can reach the vault, which
+    the vault panel deliberately refuses to call APR.  This is what actually
+    arrived: the dripper's delivery events summed over the window, annualised
+    against TVL.  The protocol's own docs say the rate "is only a cap on how
+    fast that reaches the vault", so the two numbers answer different
+    questions and a window under the cap must produce the smaller one.
+
+    **It is lumpy by construction** -- zero through a quiet stretch, spiking
+    after a sell-off, because trims only happen when sells exceed headroom.
+    That is why the caller renders it with its window in the label
+    (``4.0% trailing 7d``) and never as a bare rate.
+
+    ``window_seconds`` is the *measured* span of the window, read off the two
+    boundary blocks.  Passing a nominal seven days for a window that fell short
+    of one annualises a smaller number as though it had spanned longer, which
+    overstates the return in the flattering direction.
+
+    Zero is a real answer and returns ``0.0``.  ``None`` is reserved for "we
+    could not compute it": an unread drip total, an unread or empty vault, or
+    a zero-length window.  The two are separate branches on purpose and have a
+    test each, because a quiet week rendered as ``--`` hides a fact that was
+    read, and a dead read rendered as ``0.0%`` claims one that was not.
+    """
+    if dripped_imd is None or vault_assets is None or window_seconds is None:
+        return None
+    if vault_assets <= 0.0 or window_seconds <= 0.0:
+        return None
+    return (dripped_imd / vault_assets) * (_YEAR_SECONDS / window_seconds) * 100.0
