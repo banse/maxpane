@@ -540,3 +540,211 @@ That is the single number that makes the ratchet legible, and it is the protocol
 * `closeMarket` "withdraws the entire position at any moment … holders are trusting the owner not
   to use it otherwise. The owner should be a multisig or a timelock." Our HATCHES shows the power;
   the docs supply the sentence explaining why it matters.
+
+---
+
+## D6 — MEDIUM, and it belongs to the **FWA** dashboard, not surf
+
+Found 2026-09-11 while researching the `4` market view with the `pool4hook-research` skill.
+
+The `CappedBurnHook` is **not IMD-only**. A permissionless `CappedBurnLauncher` at
+`0x80587937a883743e67bB11dab356F60e4656C40d` lets anyone open a capped-burn market for any token, and
+it has opened **three**, two of them for **FWA** — MaxPane's own dashboard #3:
+
+| # | token | hook | ETH in position | burned to date |
+|---|---|---|---|---|
+| 0 | P4F | `0xd0ef…a840` | closed | 0 |
+| 1 | FWA | `0x40f9…e840` | 0.080 ETH | 2,697.79 |
+| 2 | FWA | `0x087a…a840` | 7.521 ETH ($19,586) | **316,182.22** |
+
+Neither the FWA research (`docs/fwa_game_mechanics.md`) nor the FWA dashboard knows this exists. A
+capped-burn market retiring 316k FWA against a live position is material to an FWA reader, and none
+of it is on screen anywhere in this repo.
+
+**Deliberately out of scope for the surf `4` view** (`docs/surf_pool4_market_PRD.md` §2): surf is
+surfsurf.eth's tracker and IMD is its subject. Making the pool4 body market-agnostic would also buy
+the reference-pool *discovery* cost the skill warns about — several hundred `eth_getLogs` calls over
+public nodes unless the pool is pinned per market.
+
+**Recommended next step:** scope it as FWA dashboard work, not surf work. Note the hook addresses
+share the mined `…840` vanity tail and the same `0x2840` low-14-bit flag word, so the fingerprint and
+provenance reasoning in `docs/imd_pool4_mainnet.md` transfers — including the part where the
+fingerprint is *forgeable* and provenance is the only unforgeable gate.
+
+---
+
+## D7 — RESOLVED. The venue gap was never a tool inconsistency; it is volatile
+
+Closes the open item at `docs/surf_pool4_market_PRD.md` §10.1 / §8.3.
+
+The `pool4hook-research` skill appeared to contradict itself on how much dearer IMD is on the hook
+pool than on the hookless reference pool: `state` said **+1.5%**, `share` said **+0.2%** twenty-eight
+blocks later, and `depth` implied **~1.45%** from 145 ticks. That looked like three derivations of one
+number and was filed as unresolved.
+
+**It was not.** A third capture, at block 25955365, put the hook at tick **68181** and the reference at
+**68180** — one tick apart, a gap of **−0.01%**. The reference pool had moved 161 ticks while the hook
+moved 15. The gap is real, it is time-varying, and it traverses its whole observed range within an
+hour:
+
+| observation | hook tick | reference tick | gap |
+|---|---|---|---|
+| `state`, first capture | 68196 | 68341 | +1.46% |
+| `share`, +28 blocks | — | — | +0.2% |
+| block 25955365 | 68181 | 68180 | **−0.01%** |
+
+**Two consequences, both already designed for:**
+
+1. **Reading both ticks at the same block is not pedantry, it is the whole method.** At this volatility
+   a one-block skew invents over a percent of gap from nothing. `venue_gap_pct` takes both ticks and
+   the client batches both `getSlot0` calls into one round — PRD 8.3.
+2. **The `cheaper pool` signal would have stayed silent at every one of these observations**, because
+   both pools charge 1% and nothing observed cleared the 2% combined-fee threshold. That is the
+   designed behaviour and it is now empirically supported rather than merely argued: a reader told to
+   switch venues over any of these gaps would have paid more in spread than the gap was worth.
+
+**A claim to retract.** "Buying on the hook pool costs you +1.5%" was reported as a headline user-facing
+finding while scoping this view. It was never actionable — the gap sat inside the no-arbitrage band at
+every measurement taken.
+
+## D8 — The depth ladder math agrees with the independent implementation exactly
+
+`analytics/surf_pool4_depth.py`'s constant-liquidity math, run at the oracle fixture's inputs,
+reproduces the skill's entire sell-side ladder to the penny (0.28 / 1.01 / 2.24 / 4.82 / 7.57 / 13.73
+ETH at −2/−5/−10/−20/−30/−50%), and `eth_between(band_liquidity, band_lower, MAX_TICK)` returns
+**24.509 ETH**, matching the chain's own `backstopPrincipal()` exactly. Only −1% differs, 0.12 against
+0.11 — second-decimal rounding.
+
+Recorded because the agreement is the *evidence*, not the test: two independent implementations, one
+in TypeScript by the protocol's author, arriving at the same numbers from the same chain state. This
+is the check that would have caught the `0x840` / `0x2840` flag error on day one.
+
+---
+
+## F6 — the `4` body loses a ladder rung at 32 rows with `‹ taller` dark
+
+**Found by:** WP10, while sweeping the market body's height. **Severity:** surf-local, one
+terminal height. **Not fixed here** — the market body's CSS belongs to WP7, and a package that
+fixes what it finds reviews its own work by the end of the pass.
+
+At **32** rows — one under the measured pin `SURF_POOL4_USER_FULL_LAYOUT_ROWS = 33` — the
+`IF IMD FALLS` panel paints eight of its nine lines. The line it loses is the **`-50%` rung**, the
+deepest quote the panel makes, and the screen-wide `‹ taller` marker is **dark** while it happens.
+Measured, not reasoned:
+
+| rows | `SurfPool4UDepth` height | painted lines | `-50%` on screen | `‹ taller` |
+|---|---|---|---|---|
+| 31 | 20 | 2 (the body scrolls) | no | **lit** |
+| 32 | 8 | 8 | **no** | dark |
+| 33 | 9 | 9 | yes | dark |
+
+**Why the marker cannot see it.** `SurfScreen._rail_is_cut` asks the containers named in
+`_SCROLL_COLUMNS` for `show_vertical_scrollbar`, and `MODE_POOL4_USER` names
+`#surf-pool4-user-body` and `#surf-pool4-user-rail`. Neither is the thing that overflowed: the
+`DataTable` *inside* `SurfPool4UDepth` scrolls, painting its own two-cell nub, and a table
+scrolling inside a panel is invisible to both containers. This is the 2026-08-25
+missing-`_SCROLL_COLUMNS`-entry defect's cousin, arriving by a route that adding an entry cannot
+close.
+
+**Why it is not simply "the DataTable scrolls, like FLOW's RichLog does".** That allowance is
+real and this panel is not in it. FLOW's log and the STAKERS leaderboard are **unbounded by
+design** — a log has no last row and `pool4u_stakers.MAX_ROWS` caps a page, not a population — so
+their content can never set a height pin. The ladder is **five fixed rungs** from
+`analytics/surf_pool4_depth.DEPTH_MOVES`. A panel whose line count is a constant and whose floor
+is under it is the "`min-height` is floor and ceiling both" case, and here the floor is two rows
+short of the ceiling.
+
+**Consequence if left.** None at the pin: the constant is measured against the body's *content*
+rather than against the marker, precisely so the published number does not promise a body that
+loses a row. What is left is a one-row window in which a reader sees a four-rung ladder and
+nothing on screen says a rung is missing.
+
+**The fix, when it is scheduled.** `SurfPool4UDepth`'s `min-height` is `7` against nine painted
+lines, in **both** copies of the rule (`SurfScreen.DEFAULT_CSS` and `themes/minimal.tcss` — edit
+both or neither). Raising it to `9` and re-sweeping is the obvious shape, and it will move
+`SURF_POOL4_USER_FULL_LAYOUT_ROWS`; the standing rule says re-sweep rather than adjust the
+constant to match. `tests/screens/test_surf_pool4_market_layout.py::
+test_the_taller_marker_is_dark_in_the_one_row_window_below_the_pin` pins the **current**
+behaviour and therefore reddens the moment this is fixed, which is deliberate: the fix has to
+come with the constant's `#:` block, that module's docstring and this note updated in the same
+diff.
+
+---
+
+## F7 — `widgets/surf/hero.py:431` hands a markup **string** to `Static.update`
+
+**Found by:** the pool4 market wave (carry-over C6). **Severity:** surf-local, crash-class.
+**Pre-existing and outside this branch's scope — deliberately not fixed here.**
+
+```python
+self.update("\n".join(lines))
+```
+
+CLAUDE.md's rule is explicit and this is the shape it forbids: *a widget that renders third-party
+text through `Static` hands it a pre-built `rich.text.Text`, never a markup string.* Textual does
+not parse at call time — it defers `Content.from_markup` into the message pump — so a malformed
+third-party string raises **outside** the screen's `try/except` and takes the app down rather than
+degrading to a skipped row. `SurfFeed._row_text` is the worked example of the correct shape:
+parse it yourself, synchronously, inside your own `try`.
+
+**Why it is not fixed on this branch.** It is pre-existing, it is in a file no package in this
+wave owns, and a fix landing here would ride into the branch unreviewed — the one thing a
+carry-over is not allowed to do. It needs its own change and its own test, with an attacker-shaped
+string (a token symbol of `[/x]` is deployable by anyone) driven through the hero's real update
+path and asserted against composited output rather than against the content string.
+
+**Reachability, stated honestly rather than assumed.** Nobody on this wave traced every value that
+reaches those `lines` to a third-party source, so this is filed as a rule violation with a known
+failure mode, not as a demonstrated crash. That distinction is the work the fix has to do first:
+if every value is repo-controlled today, the fix is still correct, because the next value added
+there will not be.
+
+---
+
+## F8 — `query_one` does **not** raise on multiple matches in this Textual version
+
+**Found by:** WP7, and recorded because it cost a debugging session rather than because it is a
+defect in this repo.
+
+`textual.dom.DOMNode.query_one(SomeWidget)` returns the **first** match. It does not raise on a
+second one. Two mounted `SurfPool4Flow` instances — one in the `p` body, one in the `4` body, the
+same class reused on purpose per the PRD's §6.4 — therefore reddened **nothing**, and every test
+written as `screen.query_one(SurfPool4Flow)` was silently asserting about whichever instance the
+DOM walked into first. In a body-swap screen that is routinely the instance that is not on screen.
+
+**What to do instead**, and what `tests/screens/test_surf_pool4_market_layout._market_widgets`
+does: resolve a panel **through its own body container** (`body.query(cls)`) and assert the match
+count is one. `SurfScreen._do_refresh` is already written this way for the same reason — it
+dispatches RECENT FLOW with `self.query(SurfPool4Flow)` rather than `query_one`, so one statement
+feeds both instances and they cannot diverge.
+
+This is a note, not a scheduled fix: nothing in the repo is currently wrong because of it. It is
+here so the next person who reuses a widget class across two bodies does not re-learn it.
+
+---
+
+## WP10 mutation record — both pins, both directions, and which test bit
+
+Not a finding. Recorded because S22 says a both-directions width test is the most
+collision-prone mutation shape in this repo and A36 says "non-zero exit" is not "it bit"
+(`pytest ::nonexistent_test` exits **4**). Every run below used a **unique**
+`PYTHONPYCACHEPREFIX` directory, per A31 — one shared prefix reproduces the bug where two
+same-size mutations in the same second run the first's bytecode — and `-p no:cacheprovider`.
+Each was restored from a copy taken before the edit; nothing was `git checkout --`'d.
+
+| mutation | exit | which tests reddened |
+|---|---|---|
+| `..._COLUMNS = 105` → **104** | 1 | `..._is_whole_from_its_pinned_width[capture-104]`, `[ordinary-104]`, `..._column_pin_is_the_need_it_claims_doubled`, `..._column_pin_does_not_move_with_the_payload` (9/9), `..._binding_panel_is_the_flow_log[ordinary]` — **13 failed, 42 passed** |
+| `..._COLUMNS = 105` → **106** | 1 | `..._is_whole_from_its_pinned_width[capture-105]`, `[ordinary-105]`, `..._binding_panel_is_the_flow_log` (9/9), `..._column_pin_does_not_move_with_the_payload` (9/9), `..._column_pin_is_the_need_it_claims_doubled` — **21 failed, 34 passed** |
+| `..._ROWS = 33` → **32** | 1 | `..._is_whole_from_its_pinned_height[capture-32]`, `[mainnet-32]`, `[widest-32]`, `..._height_pin_is_the_ladders_ninth_line`, `..._taller_marker_is_dark_in_the_one_row_window_below_the_pin` — **5 failed, 36 passed** |
+| `..._ROWS = 33` → **34** | 1 | `..._is_whole_from_its_pinned_height[capture-33]`, `[mainnet-33]`, `[widest-33]`, `..._height_pin_is_the_ladders_ninth_line`, `..._taller_marker_is_dark_in_the_one_row_window_below_the_pin` — **5 failed, 36 passed** |
+
+The first attempt at the harness exited **4** on a quoting bug (the whole `pytest` argument
+string arrived as one path), which is exactly the false positive A36 describes: a harness reading
+non-zero as "the test bit" would have scored it as a bite and stopped. The exit code is printed
+beside every run above for that reason.
+
+**C5's hoist was proven the same way.** Mutating the join in
+`tests/widgets/surf_compositing.composite_lines` from `""` to `"|"` reddened 6 tests across the
+files that now import it, and dropping the last strip reddened 2 more — the helper is live in all
+five call sites rather than merely imported.
