@@ -1982,6 +1982,11 @@ def capture_simd_transfers(opener=_open) -> None:
         {"jsonrpc": "2.0", "id": 1, "method": "eth_call",
          "params": [{"to": MAINNET_VAULT, "data": VAULT_GETTERS["totalSupply"]},
                     hex(head)]}, opener=opener)["result"]
+    assets_raw = post_json(
+        MAINNET_STATE_URL,
+        {"jsonrpc": "2.0", "id": 1, "method": "eth_call",
+         "params": [{"to": MAINNET_VAULT, "data": VAULT_GETTERS["totalAssets"]},
+                    hex(head)]}, opener=opener)["result"]
 
     write_pair(
         "simd_transfers_full",
@@ -2008,6 +2013,7 @@ def capture_simd_transfers(opener=_open) -> None:
             "share_decimals": decimals,
             "share_price_wei_per_whole_share": int(share_raw, 16),
             "total_supply_shares_wei": int(supply_raw, 16),
+            "total_assets_imd_wei": int(assets_raw, 16),
             "side_reads": [
                 {"url": MAINNET_STATE_URL, "method": "eth_call",
                  "params": [share_call, hex(head)],
@@ -2860,7 +2866,7 @@ _REQUIRED_REAL = [
     "mainnet_pool_slot0", "mainnet_flow_logs",
     "sepolia_cap_getters", "docs_site_page", "announce_still_unnamed",
     # the `4` market view's corpora
-    "dripped_logs_7d",
+    "dripped_logs_7d", "simd_transfers_full", "simd_transfers_partial",
 ]
 _REQUIRED_DERIVED = ["hook_flags_reference", "counter_reconciliation",
                      "mainnet_flags_reference",

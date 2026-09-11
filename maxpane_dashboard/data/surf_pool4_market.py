@@ -128,3 +128,98 @@ def trailing_return_pct(
     if vault_assets <= 0.0 or window_seconds <= 0.0:
         return None
     return (dripped_imd / vault_assets) * (_YEAR_SECONDS / window_seconds) * 100.0
+
+
+# ---------------------------------------------------------------------------
+# The staker sweep and the concentration it answers — WP4
+# ---------------------------------------------------------------------------
+
+#: ERC-20 mints arrive from here and burns go here.  It is not a holder.
+ZERO_ADDRESS = "0x" + "00" * 20
+
+
+class ShareBalances(dict):
+    """Folded sIMD balances, carrying whether the sweep actually finished.
+
+    A plain dict would let an incomplete fold be ranked as though it were the
+    whole vault, which understates concentration -- the direction that makes a
+    risk look smaller than it is.  The flag rides with the data, so a caller
+    cannot hold the balances and forget the caveat: they are one object.
+    """
+
+    complete: bool = False
+
+
+def fold_share_transfers(logs, *, complete: bool) -> ShareBalances:
+    """Fold sIMD ``Transfer`` logs into per-holder balances.
+
+    Mints arrive from the zero address and burns go to it; both are ordinary
+    transfers in ERC-20 and neither is a holder.  A holder whose balance
+    reaches zero is dropped rather than kept, so nothing ranks an address that
+    holds nothing.
+
+    *logs* are ``{"from", "to", "value"}`` rows **in chain order**.  Order is
+    the caller's responsibility and it matters: a debit applied before its
+    credit takes an intermediate balance negative, and the drop-at-zero rule
+    would then delete a holder who never left.
+    """
+    out = ShareBalances()
+    out.complete = complete
+    for log in logs:
+        frm, to, value = log["from"], log["to"], int(log["value"])
+        if frm != ZERO_ADDRESS:
+            out[frm] = out.get(frm, 0) - value
+            if out[frm] <= 0:
+                out.pop(frm, None)
+        if to != ZERO_ADDRESS:
+            out[to] = out.get(to, 0) + value
+    return out
+
+
+def staker_rows(balances, *, share_price: float | None, limit: int = 20):
+    """Ranked rows in IMD, or ``None`` if shares cannot be converted.
+
+    ``share_price`` is IMD **per balance unit** -- the unit *balances* are
+    folded in, not per whole share -- and it is a LIVE read: the vault is a
+    Solady ERC-4626 reporting ``decimals()`` of 24, so one whole share is
+    ``1e24`` units and a caller holding raw log amounts must divide the
+    whole-share price by ``10 ** decimals()`` before passing it here.  Getting
+    that wrong does not raise: it scales every row by 1e24 and renders as a
+    plausible, enormous number.  CLAUDE.md's decimals rule, and
+    ``test_the_share_price_the_rows_take_is_per_balance_unit_not_per_whole_share``
+    pins it against the vault's own ``totalAssets()``.
+
+    ``limit`` caps the **rows**, never the denominator.  ``pct`` is a share of
+    the whole vault, so a capped leaderboard does not add to 100% -- and must
+    not be made to, because the gap between the page and the vault is the
+    dispersion the panel exists to show.
+    """
+    if share_price is None or not balances:
+        return None
+    total = sum(balances.values())
+    if total <= 0:
+        return None
+    ranked = sorted(balances.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+    return [
+        {
+            "rank": i + 1,
+            "address": addr,
+            "imd": shares * share_price,
+            "pct": shares / total * 100.0,
+        }
+        for i, (addr, shares) in enumerate(ranked)
+    ]
+
+
+def top_n_pct(rows, n: int = 3, *, complete: bool) -> float | None:
+    """Share of the vault the top ``n`` hold, or ``None`` on a partial fold.
+
+    ``complete`` is not advisory.  Concentration computed from part of the
+    holder set is smaller than the truth, so a partial sweep would report a
+    reassuring number for a vault nobody measured -- ``clean_routed_eth``'s
+    guard, and the reason the flag travels on :class:`ShareBalances` rather
+    than beside it.
+    """
+    if not complete or not rows:
+        return None
+    return sum(r["pct"] for r in rows[:n])

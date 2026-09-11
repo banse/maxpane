@@ -1344,7 +1344,7 @@ POOL4_KEYS: tuple[str, ...] = (
     "pool4_ref_tick",           # int | None
     "pool4_backstop_centred",   # bool | None — tri-state; None is neither answer
     # ---- sIMD VAULT (SurfPool4Vault) ----------------------------------------
-    "pool4_share_price",           # float | None — convertToAssets(1e18) / 1e18
+    "pool4_share_price",           # float | None — convertToAssets(10 ** decimals())/1e18; 24 dp
     "pool4_share_price_delta_pct", # float | None — None until a second reading exists
     "pool4_vault_assets",          # float | None — TVL, whole IMD
     "pool4_vault_shares",          # float | None — whole sIMD
