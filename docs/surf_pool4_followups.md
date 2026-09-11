@@ -748,3 +748,56 @@ beside every run above for that reason.
 `tests/widgets/surf_compositing.composite_lines` from `""` to `"|"` reddened 6 tests across the
 files that now import it, and dropping the last strip reddened 2 more — the helper is live in all
 five call sites rather than merely imported.
+
+---
+
+## F9 — `MarketPool4Client`'s `setdefault` cannot beat an inherited `None`: three red tests
+
+**Found by:** WP10's merge-gate suite run. **Severity:** three failing tests, no shipped defect.
+**Not fixed here** — `tests/data/test_surf_manager_pool4_market.py` and the double it extends
+belong to WP6/WP2, and WP10 owns neither.
+
+Three tests fail on the branch head, deterministically, alone as well as in the full suite:
+
+```
+FAILED tests/data/test_surf_manager_pool4_market.py::test_the_gap_is_derived_from_the_batch_pair_not_from_current_tick
+FAILED tests/data/test_surf_manager_pool4_market.py::test_the_reference_tick_is_not_the_hooks_own_lagged_tick
+FAILED tests/data/test_surf_manager_pool4_market.py::test_the_cheaper_venue_stays_silent_below_the_two_fees
+```
+
+All three with the same shape — `pool4_reference_pool_tick` is `None` where the oracle's 68180 is
+expected, and `pool4_venue_gap_pct` with it.
+
+**Root cause, traced rather than guessed.** The manager is innocent: it builds the venue round,
+`_pool4_reference` is reached, the double records the call in `reference_calls` with the right
+pool id and PoolManager, and `_guard` swallows nothing. The double answers `None`.
+
+`FakePool4Client.__init__` seeds `self._returns["fetch_reference_slot0"] = None` — deliberately,
+with a comment saying no Sepolia reference capture is committed and `None` is the client's own
+word for "could not read". `MarketPool4Client.__init__` then does
+
+```python
+self._returns.setdefault("fetch_reference_slot0", _reference_answer())
+```
+
+which is a **no-op**: the key already exists, and its value being `None` is not the same as its
+being absent. Every market test therefore sweeps a venue read that reports an outage.
+
+**It is the trap the same file already documents one method down.** `MarketPool4Client.
+fetch_flow_logs` uses `if key in self._returns:` rather than `.get() is not None`, with a comment
+explaining that `None` is the client's own contract for a failed read so a double that treated it
+as "no override set" could not express the failure case at all. The reference override did not
+get that treatment.
+
+**The fix, when it is scheduled** (one line, and it has to preserve the override path — a test
+that passes `fetch_reference_slot0=None` to force the outage case must still get it):
+
+```python
+if "fetch_reference_slot0" not in overrides:
+    self._returns["fetch_reference_slot0"] = _reference_answer()
+```
+
+**Independent of this branch's own work.** WP10 touched `screens/surf.py` (two constants),
+`CLAUDE.md`, `README.md`, the terminal-layout skill and five test files under `tests/` —
+`git diff --name-only 1ab11da..HEAD` names nothing under `maxpane_dashboard/data/` and not the
+failing test module. Recorded here so the merge gate's result is not read as green.

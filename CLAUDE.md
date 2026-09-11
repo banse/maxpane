@@ -511,25 +511,25 @@ memory when a bug report cites one.
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest                    # 7,580 tests, ~13 min — see below
+.venv/bin/python -m pytest                    # 7,580 tests, ~30 min — see below
 .venv/bin/python -m pytest tests/analytics/   # pure math
 .venv/bin/python -m pytest -x                 # stop on first failure
 .venv/bin/python -m pytest sybilkit            # the second distribution, 428 tests + 1 xfail
 cargo test                                    # the Rust intro crate, from maxpane/ (443)
 ```
 
-**The full suite takes ~11 minutes. Run it when it is actually necessary, not after every
-task.** Necessary means: before a merge or a push that follows real code changes, at the end of
+**The full suite takes ~30 minutes — measured 29:46 on 2026-09-11, not the ~11 this line
+claimed for four months. Run it when it is actually necessary, not after every task.** Necessary means: before a merge or a push that follows real code changes, at the end of
 a multi-task branch, or when a change could plausibly reach code no targeted run covers. After a
 single task — and always after a docs-only, comment-only or constant-rename edit — ask what
 could have broken and run *that*: the widget's own test file, plus the screen test that
 composites it; a data module's file, plus the manager test that consumes it. A docs edit usually
 needs nothing, or the one test that pins the doc's content. Citing the last real green run is
-better than spending eleven minutes to re-learn it.
+better than spending half an hour to re-learn it.
 
 Parallel agents run **only their own test files, never the suite** — a neighbour mid-edit
-reddens it for a reason that is not yours, and eleven minutes per agent per task is the largest
-avoidable cost in a multi-agent branch.
+reddens it for a reason that is not yours, and half an hour per agent per task is the largest
+avoidable cost in a multi-agent branch — by a wider margin than this file used to admit.
 
 Use `.venv/bin/python -m pytest` — the system `python3` lacks the deps and produces alarming
 collection errors that mean nothing. That applies to `sybilkit/` too, and there it is not
