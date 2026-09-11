@@ -247,6 +247,21 @@ _MAX_VAULT_HOPS = 4
 #: amplifier built out of the very filter that was supposed to prevent one.
 _MAX_CANDIDATE_ROUNDS = 8
 
+#: The hookless ETH/IMD v4 pool, pinned rather than discovered. PRD 2: the
+#: research skill warns that discovering a token's reference pool costs several
+#: hundred ``eth_getLogs`` calls over public nodes. Pinning is one ``getSlot0``.
+#: If IMD's deepest pool ever moves, this constant is wrong and the venue gap
+#: silently compares against a shallow pool — which is why WP8's oracle test
+#: cross-checks it against the skill's own ``pools`` output
+#: (``test_our_pinned_reference_pool_is_the_one_the_oracle_calls_deepest``).
+#:
+#: Mainnet only. There is no Sepolia counterpart and there must not be a guess
+#: at one: a pool id from the wrong chain derives a storage slot that reads as
+#: an empty pool, which decodes to tick ``None`` rather than to an error.
+POOL4_REFERENCE_POOL_ID = (
+    "0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3"
+)
+
 #: The docs page, and it is NOT one of the four RPC pools — see
 #: :meth:`Pool4Client.fetch_docs_page`.
 DOCS_URL = "https://pool4.imd.fun/docs"
@@ -1250,6 +1265,111 @@ class Pool4Client(OwnedHttpClient):
             liquidity=liquidity,
             pool_id_source="hook",
         )
+
+    async def fetch_reference_slot0(
+        self,
+        pool_id: str,
+        reference_pool_id: str = POOL4_REFERENCE_POOL_ID,
+        *,
+        network: str,
+        pool_manager: str,
+    ) -> dict | None:
+        """Both venues' ``slot0``, from **one** batch, so from one block.
+
+        ``{"hook": PoolV4State | None, "reference": PoolV4State | None,
+        "block_number": int | None}``.
+
+        **The single batch is the whole point of the method** (PRD 8.3). The
+        cross-venue gap is a difference of two ticks, and the research skill
+        reported it three ways that did not agree — +1.5%, +0.2% twenty-eight
+        blocks later, ~1.45% from a third command. Two ticks read a block apart
+        in a thin pool manufacture a disagreement out of nothing, so both
+        ``extsload`` pairs and ``eth_blockNumber`` ride the same batch array,
+        which is :meth:`_getter_round`'s existing shape and
+        ``surf_client.fetch_nonces``'s reasoning.  ``block_number`` comes back
+        so the caller can say *which* block the gap describes rather than
+        implying it is now.
+
+        This does not replace :meth:`fetch_pool_slot0` and does not change it.
+        That method answers "what is the hook pool doing"; this one answers
+        "what do the two venues say **at the same instant**", which is a
+        different question with a different failure mode.
+
+        Degradation is per venue, never all-or-nothing:
+
+        * A malformed *hook* pool id returns ``None`` before any socket is
+          opened — there is nothing to report and no round worth sending.
+        * A malformed *reference* pool id leaves ``reference`` ``None`` and
+          still returns the hook read. A wrong constant must cost one number,
+          not blind the view; the venue gap then folds to ``None`` on its own.
+        * A getter that did not answer is ``None``, never ``0``. Tick ``0`` is
+          a real price (one IMD per ETH), so a zero-filled failure would put
+          the gap at hundreds of percent and name a venue on nothing.
+
+        The reference leg's ``pool_id_source`` is ``"pinned"`` — a third word,
+        true only of this leg, and it must never be routed to the
+        ``pool_id_source`` payload key, which belongs to the launchpad market
+        panel and means ``"hook"`` vs ``"fallback"`` about a *different* pool.
+        """
+        try:
+            hook_calls = P.pool_state_calls(pool_id)
+        except (ValueError, TypeError) as exc:
+            logger.warning("fetch_reference_slot0: %s", exc)
+            return None
+        reference_calls: tuple[str, str] | None
+        try:
+            reference_calls = P.pool_state_calls(reference_pool_id)
+        except (ValueError, TypeError) as exc:
+            # A wrong or unset constant costs the reference leg and nothing
+            # else — the hook read below still runs.
+            logger.warning("fetch_reference_slot0: reference pool: %s", exc)
+            reference_calls = None
+
+        calls = [
+            ("hook_slot0", pool_manager, hook_calls[0]),
+            ("hook_liquidity", pool_manager, hook_calls[1]),
+        ]
+        if reference_calls is not None:
+            calls += [
+                ("reference_slot0", pool_manager, reference_calls[0]),
+                ("reference_liquidity", pool_manager, reference_calls[1]),
+            ]
+        try:
+            round_ = await self._getter_round(network, calls)
+        except (RuntimeError, ValueError) as exc:
+            logger.warning("fetch_reference_slot0: %s", exc)
+            return None
+        if round_ is None:
+            return None
+        answers, block_number = round_
+
+        def _state(prefix: str, pid: str) -> PoolV4State:
+            sqrt_price = tick = lp_fee = None
+            slot0_raw = answers.get(f"{prefix}_slot0")
+            if P.answered(slot0_raw):
+                sqrt_price, tick, lp_fee = surf_v4.decode_slot0(slot0_raw)
+            liquidity_raw = answers.get(f"{prefix}_liquidity")
+            liquidity = (
+                surf_v4.decode_liquidity(liquidity_raw)
+                if P.answered(liquidity_raw) else None
+            )
+            return PoolV4State(
+                pool_id=pid,
+                sqrt_price_x96=sqrt_price,
+                tick=tick,
+                lp_fee=lp_fee,
+                liquidity=liquidity,
+                pool_id_source="hook" if prefix == "hook" else "pinned",
+            )
+
+        return {
+            "hook": _state("hook", pool_id),
+            "reference": (
+                _state("reference", reference_pool_id)
+                if reference_calls is not None else None
+            ),
+            "block_number": block_number,
+        }
 
     async def fetch_docs_page(self, url: str = DOCS_URL) -> str | None:
         """The docs page, RAW.  A **candidate** source and nothing more.
