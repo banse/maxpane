@@ -79,6 +79,8 @@ from maxpane_dashboard.widgets.surf.pool4_split import (
 )
 from maxpane_dashboard.widgets.surf.pool4_split import TITLE as SPLIT_TITLE
 
+from tests.widgets.surf_compositing import composite_lines
+
 # ---------------------------------------------------------------------------
 # payloads -- shaped by the frozen contract, never by a live read
 # ---------------------------------------------------------------------------
@@ -173,23 +175,7 @@ SPLIT_KW = {
 }
 
 
-async def _lines(widget_cls, size, **kwargs) -> list[str]:
-    """Composited output, **one string per painted terminal row**.
-
-    Segments are joined per strip first. Joining them all with ``"\\n"``
-    instead would break one styled row into several apparent lines, and every
-    "which line is this on?" assertion below would be measuring a fiction.
-    """
-    class _A(App):
-        def compose(self):
-            yield widget_cls()
-
-    async with _A().run_test(size=size) as pilot:
-        widget = pilot.app.query_one(widget_cls)
-        widget.update_data(**kwargs)
-        await pilot.pause()
-        strips = pilot.app.screen._compositor.render_strips()
-        return ["".join(seg.text for seg in strip).rstrip() for strip in strips]
+_lines = composite_lines
 
 
 async def _flow(rows=None, size=(70, 24), **kwargs) -> tuple[list[str], str]:

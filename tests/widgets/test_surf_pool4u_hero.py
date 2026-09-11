@@ -8,16 +8,13 @@ and this row carries three boxes side by side, each with a dim label, a bold
 value and a dim subtitle, so a per-segment join would turn one hero row into a
 dozen fictional lines and every assertion below would be measuring the fiction.
 
-No shared compositing helper exists in ``tests/widgets/``
----------------------------------------------------------
-The plan's WP5 snippet imports ``composite`` from ``tests.widgets.
-surf_compositing`` and calls it "existing helper". **There is no such module.**
-What exists is a per-file ``_lines`` in ``tests/widgets/test_surf_pool4_left.py``
-(and its siblings), each private to its own file. :func:`_lines` below is that
-same helper, restated here rather than hoisted: a third package (WP9) is writing
-its own pool4u test files in this tree right now, and two agents creating one
-shared module is a collision, not convergence. Filed as a follow-up -- the hoist
-is worth doing once the wave has landed.
+The compositing helper is shared, not restated
+----------------------------------------------
+:func:`_lines` delegates to ``tests.widgets.surf_compositing.composite_lines``,
+which is the one copy. It was written by hand in five sibling files while the
+`4` body was being built -- the right call while two packages were writing in
+this tree, and the wrong end state -- and hoisted as carry-over C5 once the
+wave landed. Five copies of one helper means a fix reaches one of them.
 
 What this file exists to pin above everything else
 --------------------------------------------------
@@ -56,6 +53,8 @@ from maxpane_dashboard.widgets.surf.pool4u_hero import (
     fmt_price_usd,
 )
 
+from tests.widgets.surf_compositing import composite_lines
+
 # ---------------------------------------------------------------------------
 # Compositing
 # ---------------------------------------------------------------------------
@@ -64,20 +63,11 @@ from maxpane_dashboard.widgets.surf.pool4u_hero import (
 async def _lines(payload: dict, size=(120, 10)) -> list[str]:
     """Composited output, **one string per painted terminal row**.
 
-    Segments are joined per strip first -- see the module docstring for what
-    the other join would measure instead.
+    The join is ``surf_compositing.composite_lines``' -- segments per
+    strip, then rows by newline in :func:`_text`. See that module for
+    what the other join would measure instead.
     """
-
-    class _A(App):
-        def compose(self):
-            yield SurfPool4UserHero()
-
-    async with _A().run_test(size=size) as pilot:
-        widget = pilot.app.query_one(SurfPool4UserHero)
-        widget.update_data(**payload)
-        await pilot.pause()
-        strips = pilot.app.screen._compositor.render_strips()
-        return ["".join(seg.text for seg in strip).rstrip() for strip in strips]
+    return await composite_lines(SurfPool4UserHero, size, **payload)
 
 
 async def _text(payload: dict, size=(120, 10)) -> str:

@@ -8,10 +8,10 @@ apparent lines and every assertion below would be measuring the fiction -- and
 in particular the forbidden-word check, whose whole point is to read what the
 reader reads.
 
-There is no shared compositing helper in ``tests/widgets/``: the plan's
-``tests.widgets.surf_compositing`` does not exist, and every sibling file
-carries its own private ``_lines``. :func:`_lines` is that same helper,
-restated rather than hoisted while two packages are writing in this tree.
+:func:`_lines` delegates to ``tests.widgets.surf_compositing.
+composite_lines``, the one shared copy. It was written by hand in five sibling
+files while this body was being built and hoisted as carry-over C5 once the
+wave landed.
 
 What this file exists to pin above everything else
 --------------------------------------------------
@@ -66,6 +66,8 @@ from maxpane_dashboard.widgets.surf.pool4u_depth import (
     ladder_cells,
 )
 
+from tests.widgets.surf_compositing import composite_lines
+
 #: PRD §8.2's forbidden list. ``floor`` is on it in the *protective* sense and
 #: is refused outright rather than contextually: this panel has no line that
 #: needs the word, THE RATCHET one body over owns the hook's actual deployment
@@ -78,18 +80,13 @@ FORBIDDEN = ("guaranteed", "protected", "protection", "safe", "floor")
 
 
 async def _lines(payload: dict, size=(120, 16)) -> list[str]:
-    """Composited output, **one string per painted terminal row**."""
+    """Composited output, **one string per painted terminal row**.
 
-    class _A(App):
-        def compose(self):
-            yield SurfPool4UDepth()
-
-    async with _A().run_test(size=size) as pilot:
-        widget = pilot.app.query_one(SurfPool4UDepth)
-        widget.update_data(**payload)
-        await pilot.pause()
-        strips = pilot.app.screen._compositor.render_strips()
-        return ["".join(seg.text for seg in strip).rstrip() for strip in strips]
+    The join is ``surf_compositing.composite_lines``' -- segments per
+    strip, then rows by newline in :func:`_text`. See that module for
+    what the other join would measure instead.
+    """
+    return await composite_lines(SurfPool4UDepth, size, **payload)
 
 
 async def _text(payload: dict, size=(120, 16)) -> str:

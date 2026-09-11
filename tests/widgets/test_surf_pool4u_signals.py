@@ -8,11 +8,10 @@ and every row on this panel carries two (a dim label and a coloured value), so
 a per-segment join would double the panel's apparent height and every
 assertion below would be measuring the fiction.
 
-There is no shared compositing helper in ``tests/widgets/``: the plan's
-``tests.widgets.surf_compositing`` does not exist, and every sibling file
-carries its own private ``_lines``. :func:`_lines` is that same helper,
-restated rather than hoisted while two packages are writing in this tree --
-hoisting it is a filed follow-up, not this package's job.
+:func:`_lines` delegates to ``tests.widgets.surf_compositing.
+composite_lines``, the one shared copy. It was written by hand in five sibling
+files while this body was being built and hoisted as carry-over C5 once the
+wave landed.
 
 What this file exists to pin above everything else
 --------------------------------------------------
@@ -73,6 +72,8 @@ from maxpane_dashboard.widgets.surf.pool4u_signals import (
     venue_cell,
 )
 
+from tests.widgets.surf_compositing import composite_lines
+
 # ---------------------------------------------------------------------------
 # Compositing
 # ---------------------------------------------------------------------------
@@ -81,20 +82,11 @@ from maxpane_dashboard.widgets.surf.pool4u_signals import (
 async def _lines(payload: dict, size=(120, 14)) -> list[str]:
     """Composited output, **one string per painted terminal row**.
 
-    Segments are joined per strip first -- see the module docstring for what
-    the other join would measure instead.
+    The join is ``surf_compositing.composite_lines``' -- segments per
+    strip, then rows by newline in :func:`_text`. See that module for
+    what the other join would measure instead.
     """
-
-    class _A(App):
-        def compose(self):
-            yield SurfPool4USignals()
-
-    async with _A().run_test(size=size) as pilot:
-        widget = pilot.app.query_one(SurfPool4USignals)
-        widget.update_data(**payload)
-        await pilot.pause()
-        strips = pilot.app.screen._compositor.render_strips()
-        return ["".join(seg.text for seg in strip).rstrip() for strip in strips]
+    return await composite_lines(SurfPool4USignals, size, **payload)
 
 
 async def _text(payload: dict, size=(120, 14)) -> str:

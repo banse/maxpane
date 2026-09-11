@@ -6,11 +6,10 @@ then rows by newline: joining every segment with a newline splits one painted
 row into several apparent lines the moment a row carries two styles, and a test
 written that way passes while the user sees something else.
 
-There is no shared compositing helper in ``tests/widgets/`` -- the plan's
-``tests.widgets.surf_compositing`` does not exist and every sibling file
-(``test_surf_pool4_left.py`` and friends) carries its own private ``_lines``.
-:func:`_lines` below is that same helper. See ``test_surf_pool4u_hero.py``'s
-module docstring for why it is restated rather than hoisted mid-wave.
+``_lines`` **is** ``tests.widgets.surf_compositing.composite_lines``, the one
+shared copy. It was written by hand in five sibling files while this body was
+being built -- the right call while two packages were writing in this tree --
+and hoisted as carry-over C5 once the wave landed.
 
 Three things this file exists to pin above the rest:
 
@@ -72,24 +71,14 @@ from maxpane_dashboard.widgets.surf.pool4u_stakers import (
 )
 from maxpane_dashboard.widgets.surf.pool4u_stakers import TITLE as STAKERS_TITLE
 
+from tests.widgets.surf_compositing import composite_lines
+
 # ---------------------------------------------------------------------------
 # Compositing
 # ---------------------------------------------------------------------------
 
 
-async def _lines(widget_cls, size, **kwargs) -> list[str]:
-    """Composited output, **one string per painted terminal row**."""
-
-    class _A(App):
-        def compose(self):
-            yield widget_cls()
-
-    async with _A().run_test(size=size) as pilot:
-        widget = pilot.app.query_one(widget_cls)
-        widget.update_data(**kwargs)
-        await pilot.pause()
-        strips = pilot.app.screen._compositor.render_strips()
-        return ["".join(seg.text for seg in strip).rstrip() for strip in strips]
+_lines = composite_lines
 
 
 async def _stakers(size=(60, 20), **kwargs) -> tuple[list[str], str]:
