@@ -118,6 +118,7 @@ import re
 import time
 from typing import Any
 
+from maxpane_dashboard.analytics import surf_pool4_depth as pool4_depth
 from maxpane_dashboard.analytics.surf_feed import select_feed_window
 from maxpane_dashboard.analytics.surf_signals import (
     READING_KEYS,
@@ -129,6 +130,7 @@ from maxpane_dashboard.analytics.surf_signals import (
 )
 from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 from maxpane_dashboard.data import surf_pool4 as P
+from maxpane_dashboard.data import surf_pool4_market as mk
 from maxpane_dashboard.data.surf_addresses import (
     ANNOUNCE,
     BURN_EXECUTOR_V1,
@@ -142,6 +144,7 @@ from maxpane_dashboard.data.surf_addresses import (
     POOL_V3,
     RELAY_DEPOSITORY,
     SEAPORT,
+    TOPIC_TRANSFER,
     UNIVERSAL_ROUTER,
     WETH,
     ZERO_ADDRESS,
@@ -156,6 +159,7 @@ from maxpane_dashboard.data.surf_cache import (
     SLOT_MARKET,
     SLOT_NFT,
     SLOT_POOL4,
+    SLOT_POOL4_STAKERS,
     SERIES_IMD_PRICE_USD,
     pool4_reserve_series_name,
     SERIES_IMD_SUPPLY,
@@ -163,17 +167,20 @@ from maxpane_dashboard.data.surf_cache import (
     TIER_LAUNCHPAD,
     TIER_MEDIUM,
     TIER_POOL4,
+    TIER_POOL4_STAKERS,
     TIER_SLOW,
     SurfCache,
 )
 from maxpane_dashboard.data.surf_client import SurfClient
 from maxpane_dashboard.data.surf_models import (
+    POOL4_BACKSTOP_STATES,
     POOL4_COUNTER_STATES,
     POOL4_DISCOVERY_SOURCES,
     POOL4_DISCOVERY_STATES,
     POOL4_FLOW_LIMIT,
     POOL4_NETWORKS,
     POOL4_REWARD_PATHS,
+    POOL4_VENUE_WORDS,
     SURF_KEYS,
     Pool4Discovery,
 )
@@ -289,6 +296,64 @@ POOL4_SEPOLIA_TOKEN = "0xB37d54bC1F1d9271fc57D7E03192976baA39Cc82"
 #: window; see ``_pool4_unsettled_legs`` for what happens when they are not.
 POOL4_LOG_WINDOW_BLOCKS = 7_200
 
+#: Blocks the realised-return window asks for — seven days at mainnet's
+#: cadence — and **nominal**, which is the whole point of the name.
+#: ``mk.trailing_return_pct`` annualises against *measured* seconds, never
+#: against this number: a window that fell short of seven days and was
+#: annualised as though it had not overstates the return in the flattering
+#: direction (PRD 8.1, and WP3's own docstring says so at the argument).
+POOL4_DRIP_WINDOW_BLOCKS = 50_400
+
+#: The dripper's delivery event, as a **literal topic0 with no recovered
+#: pre-image** — the treatment ``data/surf_pool4.py`` already gives the three
+#: unresolved hook events, and for its reason: a guessed signature string
+#: hashes to a topic0 that matches no log, so the panel goes quiet rather than
+#: red and nobody finds out. Nothing here invents one.
+#:
+#: Its operands ``(address indexed keeper, uint256 toVault, uint256
+#: keeperReward)`` are **measured, not assumed**:
+#: ``tests/fixtures/surf/pool4/dripped_logs_7d.json`` carries an
+#: ``operand_proof`` that reconciles each sampled log's first data word against
+#: the IMD ``Transfer`` from the dripper *to the vault* in the same receipt, to
+#: the wei, and its second word against the transfer to the indexed keeper.
+#: Only the first word is summed here — the keeper's cut never reaches the
+#: vault and counting it would overstate what stakers actually received.
+POOL4_TOPIC_DRIPPED = (
+    "0x5fb8477ff22eb8f519d892e5b053a5fb5c2bd4f4e9ae598ae94fa281ecb79be7"
+)
+
+#: The narrowest dated block span this module will measure a block time from.
+#: Two ``Dripped`` logs a handful of blocks apart give an estimate dominated by
+#: the jitter between two individual block timestamps; over a thousand blocks
+#: that jitter is noise on a real average. Below this the estimate is refused
+#: and the previous sweep's is reused, which is the honest "we could not
+#: measure it this time" rather than a number carrying a hidden error bar.
+POOL4_BLOCK_TIME_MIN_SPAN = 1_000
+
+#: How far back the sIMD ``Transfer`` sweep opens its window — eight weeks.
+#: It is a **window, not a deploy block**: nothing here trusts a hardcoded
+#: birth block, and completeness is *derived* from where the first log actually
+#: lands inside it (:meth:`SurfManager._pool4_sweep_is_complete`) rather than
+#: assumed from the span. The committed capture is the evidence this span is
+#: wide enough today — its earliest ``Transfer`` sits 334,749 blocks inside a
+#: window of this size — and the derivation is what makes a span that stops
+#: being wide enough report ``complete=False`` instead of a confident wrong
+#: concentration.
+POOL4_STAKERS_WINDOW_BLOCKS = 403_200
+
+#: Rows the STAKERS leaderboard carries. It caps the **rows, never the
+#: denominator**: ``pool4_staker_top3_pct`` is a share of the whole vault, so a
+#: capped page does not add to 100% and must not be made to — the gap between
+#: the page and the vault is the dispersion the panel exists to show.
+POOL4_STAKERS_LIMIT = 20
+
+#: Unpacked from the contract, never retyped (A5). Two words and a ``None``,
+#: and the ``None`` is the third state rather than the absence of a state:
+#: ``deployed`` renders the band, ``none`` means we looked and there is no
+#: band, ``None`` means the read failed. Collapsing the middle into either of
+#: the others is the curator rail bug verbatim.
+POOL4_BACKSTOP_DEPLOYED, POOL4_BACKSTOP_NONE = POOL4_BACKSTOP_STATES
+
 #: Unpacked from the contract, never retyped (A5).  Four words, none a
 #: substring of another, and ``None`` is **not** one of them: ``None`` means
 #: the control has never run, and every outcome of actually looking is a word.
@@ -331,7 +396,16 @@ _TX_HASH_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
 #: reaches no widget, so leaving it in would make every sweep look like new
 #: data and the marker would advance on every tick — a guard that cannot fail,
 #: which is worse than no guard at all.
-POOL4_VOLATILE_SLOT_KEYS: frozenset[str] = frozenset({"block_number"})
+#:
+#: The market body's three block bookkeeping fields join it for exactly that
+#: reason. ``venue_block_number`` names the block the two ticks were read at
+#: and is published nowhere; ``drip_from_block``/``drip_to_block`` are the ends
+#: of a window that slides forward on every sweep. All three would differ on a
+#: sweep that read identical values, and a marker that advances whenever the
+#: chain's head moves is a fresh time printed over unchanged numbers.
+POOL4_VOLATILE_SLOT_KEYS: frozenset[str] = frozenset(
+    {"block_number", "venue_block_number", "drip_from_block", "drip_to_block"}
+)
 
 #: Rows handed to the widgets. The feed renders fewer at narrow tiers; the
 #: surplus costs nothing and lets a screen change its mind without a manager change.
@@ -767,6 +841,9 @@ class SurfManager:
         self._launchpad_task: Any = None
         #: The in-flight detached pool4 sweep, or ``None``. Same contract.
         self._pool4_task: Any = None
+        #: The in-flight detached sIMD ``Transfer`` sweep, or ``None``. Same
+        #: contract again, on its own much longer tier.
+        self._pool4_stakers_task: Any = None
         #: ``(network, share price)`` this session's ``pool4_share_price_delta_pct``
         #: is measured against, and the count of successful share-price reads
         #: since it was seeded.
@@ -808,6 +885,7 @@ class SurfManager:
         """
         await self._cancel_launchpad()
         await self._cancel_pool4()
+        await self._cancel_pool4_stakers()
         self.save_cache()
         try:
             await self.client.close()
@@ -2709,12 +2787,19 @@ class SurfManager:
         # answer, and this method reads the addresses out of its result.
         recipient = _field(hook, "rewards_recipient")
         head_block = _field(hook, "block_number")
-        path, log_read = await asyncio.gather(
+        # The cross-venue read rides here rather than in the hook round above
+        # because it needs the hook's own ``poolId()`` and ``poolManager()``,
+        # which that round is what answers. It is ONE batch internally and that
+        # is the whole point (PRD 8.3): both ticks come back from one block, so
+        # the gap is a difference rather than a disagreement manufactured by
+        # reading a thin pool twice a block apart.
+        path, log_read, reference = await asyncio.gather(
             self._guard(
                 lambda: client.resolve_vault_path(recipient, network=network),
                 "pool4 resolve_vault_path",
             ) if recipient else _none(),
             self._pool4_logs(hook_addr, head_block, network),
+            self._pool4_reference(hook, network),
         )
         logs, from_block, to_block = log_read
 
@@ -2723,8 +2808,10 @@ class SurfManager:
         distributor_addr = self._pool4_distributor_addr(path)
 
         # Three independent contracts, three independent reads: a dead
-        # Distributor costs the nine distributor keys and nothing else.
-        dripper, vault, distributor = await asyncio.gather(
+        # Distributor costs the nine distributor keys and nothing else. The
+        # delivery window rides along as a fourth: it is the dripper's own log
+        # history and needs the same address the dripper round does.
+        dripper, vault, distributor, drip = await asyncio.gather(
             self._guard(
                 lambda: client.fetch_dripper_state(
                     dripper_addr, network=network, token_addr=token_addr
@@ -2741,6 +2828,7 @@ class SurfManager:
                 ),
                 "pool4 fetch_distributor_state",
             ) if distributor_addr else _none(),
+            self._pool4_drip_read(dripper_addr, head_block, network, prior),
         )
 
         # The running counter total, folded before the payload is built so the
@@ -2765,6 +2853,8 @@ class SurfManager:
             distributor=distributor,
             logs=logs,
             accumulator=accumulator,
+            reference=reference,
+            drip=drip,
         )
 
         # Nothing is stored on a blank read, so the slot keeps its previous
@@ -2855,6 +2945,158 @@ class SurfManager:
         if pinned is None:
             return logs, None, None
         return logs, start, head
+
+    # -- the `4` market body: the two reads the auditor body never needed -----
+
+    async def _pool4_reference(self, hook: Any, network: str) -> Any:
+        """Both venues' ``slot0`` from one batch, or ``None``.
+
+        **One method call, and it must stay one.** The client batches the hook
+        pool's and the reference pool's ``extsload`` pairs into a single
+        JSON-RPC array so both ticks answer from one block; issuing two calls
+        here would hand the fold two ticks a block apart and manufacture the
+        very disagreement PRD 8.3 exists to settle — the research skill
+        reported this gap as +1.5%, +0.2% and ~1.45% from three commands and we
+        do not inherit any of them.
+
+        Skipped entirely when the hook round did not name its pool: without a
+        pool id and a PoolManager there is nothing to ask and no round worth
+        sending. ``None`` then costs the four venue keys and nothing else.
+        """
+        pool_id = _field(hook, "pool_id")
+        pool_manager = _field(hook, "pool_manager")
+        if not pool_id or not pool_manager:
+            return None
+        return await self._guard(
+            lambda: self.pool4_client.fetch_reference_slot0(
+                pool_id, network=network, pool_manager=pool_manager
+            ),
+            "pool4 fetch_reference_slot0",
+        )
+
+    async def _pool4_drip_read(
+        self, dripper_addr: Any, head_block: Any, network: str, prior: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """The dripper's delivery window — what actually reached the vault.
+
+        ``None`` when there is no dripper to read or the window could not be
+        located, which costs ``pool4_trailing_return_pct`` and nothing else.
+
+        **This is not the delivery cap.** ``pool4_implied_apr_pct`` is
+        ``dripRatePerSecond`` annualised — a ceiling on how fast rewards *can*
+        reach the vault, which the vault panel already refuses to call APR.
+        This is the dripper's own ``Dripped`` events summed over a measured
+        span. The two answer different questions and the protocol's docs say so
+        (PRD 8.1); a window under the cap must produce the smaller number.
+
+        ``prior`` is read for one thing only: the block time a previous sweep
+        measured. See :meth:`_pool4_drip_window` for why a quiet window needs
+        it and why it is not a hardcoded twelve.
+        """
+        if not dripper_addr:
+            return None
+        head = _opt_int(head_block)
+        if head is None:
+            head = _opt_int(
+                await self._guard(
+                    lambda: self.pool4_client.fetch_block_number(network=network),
+                    "pool4 drip fetch_block_number",
+                )
+            )
+        if head is None:
+            return None
+        start = max(0, head - POOL4_DRIP_WINDOW_BLOCKS + 1)
+        logs = await self._guard(
+            lambda: self.pool4_client.fetch_flow_logs(
+                dripper_addr, start, head, network=network
+            ),
+            "pool4 drip fetch_flow_logs",
+        )
+        if logs is None:
+            return None
+        return self._pool4_drip_window(
+            logs, start, head, prior.get("drip_seconds_per_block")
+        )
+
+    @staticmethod
+    def _pool4_drip_window(
+        logs: Any, from_block: int, to_block: int, prior_seconds_per_block: Any = None
+    ) -> dict[str, Any]:
+        """Fold a delivery window into ``(IMD delivered, seconds it spanned)``.
+
+        **Only the first data word is summed.** The event's second word is the
+        keeper's reward, which never reaches the vault; adding it would
+        overstate what stakers received, and the committed fixture's
+        ``operand_proof`` is what settles which word is which — reconciled
+        against the receipt's own IMD ``Transfer`` to the vault, to the wei.
+
+        **A swept, quiet window is ``0.0``, never ``None``.** The return is
+        lumpy by construction — trims only happen when sells exceed headroom —
+        so a quiet week is a real zero and rendering it as a dash would hide a
+        fact that was read. ``None`` here means the *read* failed, and that
+        case never reaches this method.
+
+        **The span is measured across the whole window, not between the first
+        and last delivery.** Those are different numbers and the difference has
+        a direction: deliveries cluster, so first-to-last is shorter than the
+        window, and a shorter denominator annualises to a *larger* return. That
+        is the flattering direction, which is the one to refuse.
+
+        Measuring it costs a block time, and there is no block-header read on
+        this client to get one from. So it is **measured from the logs
+        themselves** — their own ``blockTimestamp``s against their own block
+        numbers — and never assumed to be twelve seconds: a constant that
+        happens to agree with the chain today is not evidence for the constant,
+        and this one would silently skew every return on a chain with a
+        different cadence. The estimate is refused below
+        :data:`POOL4_BLOCK_TIME_MIN_SPAN` blocks of separation, where it is
+        dominated by the jitter between two individual timestamps.
+
+        A window too quiet to measure its own block time reuses the previous
+        sweep's measurement, which is what lets a genuinely quiet week still
+        publish ``0.0%`` instead of a dash. With no previous measurement either
+        — a cold cache on a silent dripper — the span is ``None`` and the panel
+        says so, because annualising over a duration nobody read is arithmetic
+        on an assumption.
+
+        The span is rounded to whole seconds on purpose: an unrounded estimate
+        jitters on every sweep, and a slot field that always differs would
+        advance ``pool4_as_of_hhmm`` on sweeps that read nothing new.
+        """
+        delivered = 0.0
+        dated: list[tuple[int, float]] = []
+        for log in logs or ():
+            if not isinstance(log, dict):
+                continue
+            topics = log.get("topics") or []
+            if not topics or topics[0] != POOL4_TOPIC_DRIPPED:
+                continue
+            words = _data_words(log.get("data"))
+            if words:
+                delivered += int(words[0], 16) / 1e18
+            block = _hex_int(log.get("blockNumber"))
+            stamp = _hex_int(log.get("blockTimestamp") or log.get("timestamp"))
+            if block is not None and stamp:
+                dated.append((block, float(stamp)))
+
+        seconds_per_block = _opt_float(prior_seconds_per_block)
+        if len(dated) >= 2:
+            dated.sort()
+            span_blocks = dated[-1][0] - dated[0][0]
+            span_seconds = dated[-1][1] - dated[0][1]
+            if span_blocks >= POOL4_BLOCK_TIME_MIN_SPAN and span_seconds > 0.0:
+                seconds_per_block = span_seconds / span_blocks
+
+        window_seconds = None
+        if seconds_per_block is not None and seconds_per_block > 0.0:
+            window_seconds = round(seconds_per_block * (to_block - from_block))
+        return {
+            "dripped_imd": delivered,
+            "window_seconds": window_seconds,
+            "seconds_per_block": seconds_per_block,
+            "from_block": from_block,
+            "to_block": to_block,
+        }
 
     async def _pool4_discovery(self, rows: Any, prior: dict[str, Any]) -> Any:
         """Adjudicate mainnet from the announce channel, and **only** from it.
@@ -3936,6 +4178,8 @@ class SurfManager:
         distributor_addr: Any = None,
         distributor: Any = None,
         path: Any = None,
+        reference: Any = None,
+        drip: Any = None,
     ) -> dict[str, Any]:
         """The whole combined slot — discovery, three contracts, the flow window.
 
@@ -3947,10 +4191,16 @@ class SurfManager:
         precision) and the two row lists, which are the presentation shapes the
         widgets take.
 
-        ``backstop_centred`` is derived **here**, not published raw: amendment
-        A19 keeps the tick bounds model-internal, because ``centred`` /
-        ``drifted`` / ``unknown`` is the decision-relevant fact and raw bounds
-        on a rail panel are noise. It is the reason ``POOL4_KEYS`` stays at 45.
+        ``backstop_centred`` is derived **here** and the band's own bounds are
+        stored beside it. Amendment A19 kept those bounds model-internal, on
+        the grounds that ``centred`` / ``drifted`` / ``unknown`` is the
+        decision-relevant fact and raw bounds on a rail panel are noise — true
+        of the rail, and it is why that verdict still exists. The ``4`` market
+        body asks a different question (*what does this band bid, and how far
+        under spot does it open*), which no verdict word can carry, so
+        ``backstop_tick_lower`` and ``backstop_liquidity`` are published as
+        well rather than re-derived somewhere downstream from a word that does
+        not contain them.
 
         ``share_price_wei`` is ``convertToAssets(10 ** decimals)`` and
         ``total_shares_raw`` divides by ``10 ** decimals``, **never 1e18** —
@@ -3963,6 +4213,16 @@ class SurfManager:
         counter_state, counter_detail = self._pool4_counter_check(
             logs, hook, accumulator
         )
+        # The cross-venue read, unpacked here so the slot holds two ticks and
+        # one block rather than a nested model. Both legs come from ONE batch;
+        # storing them apart from that fact would let a later reader pair the
+        # reference tick with the hook's ``current_tick`` below, which is a
+        # *different* round at a *different* block — the exact substitution
+        # that manufactured the disagreement PRD 8.3 records.
+        venue = reference if isinstance(reference, dict) else {}
+        venue_hook = venue.get("hook")
+        venue_reference = venue.get("reference")
+        window = drip if isinstance(drip, dict) else {}
         return {
             # ---- discovery ------------------------------------------------
             "network": network,
@@ -4011,6 +4271,35 @@ class SurfManager:
                 _field(hook, "ref_tick"),
                 _field(hook, "tick_spacing"),
             ),
+            # The backstop band's own two words, stored raw beside the derived
+            # verdict above. A19 kept them model-internal because ``centred`` /
+            # ``drifted`` / ``unknown`` was the decision-relevant fact for a
+            # rail panel; the market body's depth ladder needs the band itself,
+            # which is a different question and is why these are published now
+            # rather than re-derived from a word that cannot carry them.
+            #
+            # ``backstop_liquidity`` is raw ``uint128`` L and is never divided
+            # — it is not an amount of any token, ``position_liquidity``'s rule.
+            "backstop_tick_lower": _opt_int(_field(hook, "backstop_tick_lower")),
+            "backstop_liquidity": _opt_int(_field(hook, "backstop_liquidity")),
+            # The hook's own configured LP fee, read from the hook rather than
+            # from its pool's ``slot0``: a hook pool may carry the dynamic-fee
+            # flag, in which case ``slot0``'s word is an override and not the
+            # pool's fee. The reference pool has no hook to ask, so its fee
+            # comes off its ``slot0`` — the asymmetry is which source can
+            # answer, not a preference.
+            "hook_lp_fee": _opt_int(_field(hook, "lp_fee")),
+            # ---- the cross-venue read (one batch, one block) ---------------
+            "venue_hook_tick": _opt_int(_field(venue_hook, "tick")),
+            "venue_reference_tick": _opt_int(_field(venue_reference, "tick")),
+            "venue_reference_fee": _opt_int(_field(venue_reference, "lp_fee")),
+            "venue_block_number": _opt_int(venue.get("block_number")),
+            # ---- the realised delivery window ------------------------------
+            "dripped_imd": _opt_float(window.get("dripped_imd")),
+            "drip_window_seconds": _opt_float(window.get("window_seconds")),
+            "drip_seconds_per_block": _opt_float(window.get("seconds_per_block")),
+            "drip_from_block": _opt_int(window.get("from_block")),
+            "drip_to_block": _opt_int(window.get("to_block")),
             # ---- the vault ------------------------------------------------
             # ---- the Reward Distributor (mainnet only, today) --------------
             #
@@ -4068,9 +4357,24 @@ class SurfManager:
         }
 
     def _pool4_keys(
-        self, slot: dict[str, Any], entry: Any, now: float
+        self, slot: dict[str, Any], entry: Any, now: float, eth_usd: Any = None
     ) -> dict[str, Any]:
-        """The 45 ``POOL4_KEYS``, off one captured slot. The presentation boundary.
+        """Every ``POOL4_KEYS`` name, off one captured slot. The presentation
+        boundary.
+
+        (This line used to claim a count. It named 45 while the tuple held 62,
+        because the `p` body grew the contract and the sentence did not; a
+        count restated in prose drifts from the tuple that owns it, so the
+        tuple is now the only place it is stated.)
+
+        ``eth_usd`` is the **one** value here that does not come off the slot,
+        and it is deliberately a parameter rather than a new read: the market
+        tier already fetched it this cycle, and a second ETH/USD source on the
+        pool4 path would be a second number the two panels could disagree
+        about. It rides a faster clock than the tick it multiplies, which is
+        the same compromise ``_with_mcap_usd`` already makes for the launchpad
+        coins and is disclosed the same way — the panel carries
+        ``pool4_as_of_hhmm``, the slower of the two.
 
         Every division by 1e18 on the pool4 path happens here and nowhere else,
         and every derived number comes from WP3's pure functions rather than
@@ -4144,6 +4448,73 @@ class SurfManager:
             # the wrong one is a 3x error on the headline percentage.
             stakers_pct = None
         liquidity = slot.get("position_liquidity")
+
+        # ---- the `4` market body's nine ---------------------------------
+        #
+        # **Both ticks out of the same batch, never one of each.**
+        # ``current_tick`` above came from the hook's getter round; these two
+        # came from one ``extsload`` batch at one block. Pairing the reference
+        # tick with ``current_tick`` would reintroduce exactly the cross-block
+        # comparison PRD 8.3 exists to settle.
+        venue_gap_pct = mk.venue_gap_pct(
+            hook_tick=_opt_int(slot.get("venue_hook_tick")),
+            reference_tick=_opt_int(slot.get("venue_reference_tick")),
+        )
+        cheaper_venue = mk.cheaper_venue(
+            gap_pct=venue_gap_pct,
+            hook_fee_bps=_opt_int(slot.get("hook_lp_fee")),
+            reference_fee_bps=_opt_int(slot.get("venue_reference_fee")),
+        )
+
+        # **Three states, never two** (PRD 5.2). ``None`` is "the read failed",
+        # ``"none"`` is "we looked and there is no band", and only ``deployed``
+        # publishes numbers. Collapsing the middle into either of the others is
+        # the curator rail defect verbatim: a real negative with no
+        # representable value reads confident and green through an outage.
+        #
+        # On ``"none"`` the three numbers go to ``None`` rather than to zero,
+        # and that is not the "failed read is None" rule inverted. A band that
+        # does not exist has no lower tick — the getter answers ``0``, which is
+        # a *real tick* near one IMD per ETH — so publishing it would draw a
+        # band at a price nobody deployed one at. ``None`` is also what
+        # ``analytics.surf_pool4_depth.depth_rows`` reads as "no band", and it
+        # still returns a real ladder there, because the full-range position
+        # goes on bidding.
+        band_lower = _opt_int(slot.get("backstop_tick_lower"))
+        band_liquidity = _opt_int(slot.get("backstop_liquidity"))
+        if band_lower is None or band_liquidity is None:
+            backstop_state = None
+            backstop_lower = backstop_liquidity = backstop_eth = None
+        elif band_liquidity == 0:
+            backstop_state = POOL4_BACKSTOP_NONE
+            backstop_lower = backstop_liquidity = backstop_eth = None
+        else:
+            backstop_state = POOL4_BACKSTOP_DEPLOYED
+            backstop_lower = band_lower
+            backstop_liquidity = band_liquidity
+            # The band is single-sided ETH from its lower tick to the top of
+            # the range, which is what ``MAX_TICK`` is doing here rather than
+            # the band's upper tick: WP1's module owns this conversion and is
+            # cross-checked against an independent implementation of it
+            # (``tests/fixtures/surf/pool4/oracle_25955365.json``). It is not
+            # re-derived here — two copies of this math is how two panels on
+            # one screen come to disagree about the same band.
+            backstop_eth = pool4_depth.eth_between(
+                float(band_liquidity), band_lower, pool4_depth.MAX_TICK
+            )
+
+        # USD per IMD. The pool prices IMD per ETH and ``sqrt_ratio`` is the
+        # one place that orientation is written down, so it is called rather
+        # than restated — getting it upside down produces a plausible number,
+        # not an error. ``current_tick`` and not the venue batch's tick, so
+        # this price and ``pool4_current_tick`` below can never disagree.
+        current_tick = _opt_int(slot.get("current_tick"))
+        eth_usd_value = _opt_float(eth_usd)
+        price_usd = None
+        if current_tick is not None and eth_usd_value is not None:
+            imd_per_eth = pool4_depth.sqrt_ratio(current_tick) ** 2
+            if imd_per_eth > 0.0:
+                price_usd = eth_usd_value / imd_per_eth
 
         return {
             "pool4_network": network if network in POOL4_NETWORKS else None,
@@ -4268,6 +4639,35 @@ class SurfManager:
             "pool4_backlog_imd": backlog_imd,
             "pool4_backlog_days": P.backlog_days(backlog_imd, drip_per_day),
             "pool4_implied_apr_pct": P.implied_apr_pct(drip_per_day, vault_assets),
+            # ---- the `4` market body: cross-venue price --------------------
+            # NOT ``pool4_ref_tick`` above, which is the hook's own block-lagged
+            # anti-manipulation tick. Different number, different job; two
+            # things called "ref tick" in one payload is how a wrong number
+            # renders confidently (PRD 7.1).
+            "pool4_reference_pool_tick": _opt_int(slot.get("venue_reference_tick")),
+            "pool4_venue_gap_pct": venue_gap_pct,
+            # ``None`` is the EXPECTED answer and the common one: a gap under
+            # the two pools' fees summed is not arbitrageable, and naming a
+            # venue over it tells a reader to lose the spread (PRD 8.3).
+            "pool4_cheaper_venue": (
+                cheaper_venue if cheaper_venue in POOL4_VENUE_WORDS else None
+            ),
+            "pool4_price_usd": price_usd,
+            # ---- the backstop band, broken out ----------------------------
+            "pool4_backstop_lower_tick": backstop_lower,
+            "pool4_backstop_liquidity": backstop_liquidity,
+            "pool4_backstop_eth": backstop_eth,
+            "pool4_backstop_state": backstop_state,
+            # ---- what the vault actually received -------------------------
+            # The measured one. ``pool4_implied_apr_pct`` two lines up is the
+            # DELIVERY CAP and stays: the dripper's rate is a ceiling on how
+            # fast rewards can reach the vault, and this is what arrived. A
+            # window under the cap must produce the smaller number.
+            "pool4_trailing_return_pct": mk.trailing_return_pct(
+                dripped_imd=_opt_float(slot.get("dripped_imd")),
+                window_seconds=_opt_float(slot.get("drip_window_seconds")),
+                vault_assets=vault_assets,
+            ),
             # ---- the two row keys -----------------------------------------
             "pool4_flow": self._pool4_aged_flow(slot.get("flow"), now),
             "pool4_hatches": slot.get("hatches"),
@@ -4297,6 +4697,317 @@ class SurfManager:
                 )
             )
         return out
+
+    # -- the staker sweep: its own tier, its own clock, its own slot ---------
+
+    def _spawn_pool4_stakers(self, tiers: set[str], now: float) -> Any:
+        """Start the sIMD ``Transfer`` fold **detached**; never wait for it.
+
+        :meth:`_spawn_pool4`'s shape exactly, one tier further out. This walk
+        is :data:`POOL4_STAKERS_WINDOW_BLOCKS` of log history paged in the
+        client's own chunks — minutes of round trips, not seconds — so first
+        paint may not sit behind it under any circumstance, and the tripwire
+        for that fails by *timing out* rather than by assertion, because there
+        is no assertion that can observe "did not block" after the fact.
+
+        One at a time, for :meth:`_spawn_pool4`'s reason: the tier stays due
+        while a sweep is in flight (only a completed one marks it fetched or
+        failed), so every cycle offers again and this guard is what keeps a
+        multi-minute walk from stacking behind a 30 s poll.
+        """
+        if TIER_POOL4_STAKERS not in tiers:
+            return None
+        running = self._pool4_stakers_task
+        if running is not None and not running.done():
+            logger.debug("SURF staker sweep still in flight; not starting another")
+            return running
+        self._pool4_stakers_task = asyncio.ensure_future(
+            self._pool4_stakers_detached(tiers, now)
+        )
+        return self._pool4_stakers_task
+
+    async def _pool4_stakers_detached(self, tiers: set[str], now: float) -> None:
+        """:meth:`_pool_pool4_stakers` with nobody to raise at.
+
+        A detached task's exception surfaces as an "exception was never
+        retrieved" line at garbage-collection time and never as a degradation,
+        so it is caught here. ``CancelledError`` is re-raised: that one is
+        :meth:`close` doing its job.
+        """
+        try:
+            await self._pool_pool4_stakers(tiers, now)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:            # noqa: BLE001 — nobody awaits this task
+            self._error_count += 1
+            logger.warning("SURF staker sweep failed: %s", exc)
+
+    async def _cancel_pool4_stakers(self) -> None:
+        """Stop an in-flight staker sweep and wait for it to actually be gone."""
+        task = self._pool4_stakers_task
+        self._pool4_stakers_task = None
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception) as exc:  # noqa: BLE001
+            logger.debug("SURF staker sweep stopped on close: %s", exc)
+
+    async def _pool_pool4_stakers(self, tiers: set[str], now: float) -> Any:
+        """One sIMD ``Transfer`` fold — who holds the vault, and how narrowly.
+
+        **It reads the pool4 slot rather than the chain for its own address.**
+        The vault is only ever reached by following the chain from the hook
+        (A3), and :meth:`_pool_pool4` has already done that walk; repeating it
+        here would be a second adjudication, a second getter round, and a
+        second chance for the two sweeps to disagree about which vault they are
+        describing. With no vault named yet there is nothing to sweep: that
+        takes the *failure* backoff (300 s), not the full 1800 s TTL, because
+        the pool4 sweep may name one at any moment.
+
+        **The marker advances only when a new fold lands.** A sweep that read
+        exactly what the last one read marks the tier fetched and leaves the
+        slot — and therefore ``pool4_stakers_as_of_hhmm`` — alone. Curator's
+        analysis rule and :meth:`_pool_pool4`'s own: a fresh time printed
+        beside unchanged numbers is a stale number presented as live.
+        """
+        if TIER_POOL4_STAKERS not in tiers:
+            return None
+        pool4_slot = dict(
+            getattr(self.cache.get_last_good(SLOT_POOL4), "payload", None) or {}
+        )
+        vault_addr = pool4_slot.get("vault_addr")
+        network = pool4_slot.get("network")
+        if not vault_addr or network not in POOL4_NETWORKS:
+            # **Not a failure, and the distinction is load-bearing.** The pool4
+            # sweep has not named a vault yet — a cold cache, or a first cycle
+            # — so there was nothing to read and nothing failed. Setting the
+            # failure flag here would fold ``p4`` into ``degraded`` on every
+            # cold start, which would report seven healthy panels as down
+            # because an eighth had not started yet.
+            #
+            # The tier still takes the short backoff rather than the full
+            # 1800 s TTL: the pool4 sweep may name a vault at any moment and
+            # this should be ready to walk it when it does.
+            logger.debug("SURF staker sweep: no vault named yet; nothing to sweep")
+            self.cache.mark_failed(TIER_POOL4_STAKERS, now)
+            return None
+
+        client = self.pool4_client
+        head = _opt_int(
+            await self._guard(
+                lambda: client.fetch_block_number(network=network),
+                "pool4 stakers fetch_block_number",
+            )
+        )
+        if head is None:
+            self.cache.mark_failed(TIER_POOL4_STAKERS, now)
+            return None
+        start = max(0, head - POOL4_STAKERS_WINDOW_BLOCKS + 1)
+        logs = await self._guard(
+            lambda: client.fetch_flow_logs(vault_addr, start, head, network=network),
+            "pool4 stakers fetch_flow_logs",
+        )
+        if logs is None:
+            # ``None`` is the client's contract for a failed **or partial**
+            # sweep, and a partial one matters more here than almost anywhere:
+            # a fold missing part of its history ranks a subset and understates
+            # concentration, which is the direction that makes a risk look
+            # smaller than it is.
+            self.cache.mark_failed(TIER_POOL4_STAKERS, now)
+            return None
+
+        rows_in = self._pool4_share_transfers(logs)
+        complete = self._pool4_sweep_is_complete(rows_in, logs, start)
+        balances = mk.fold_share_transfers(rows_in, complete=complete)
+        rows = mk.staker_rows(
+            balances,
+            share_price=self._pool4_share_price_per_unit(
+                pool4_slot.get("share_price_wei"), pool4_slot.get("vault_decimals")
+            ),
+            limit=POOL4_STAKERS_LIMIT,
+        )
+        payload = {
+            "network": network,
+            "stakers": rows,
+            # A representable zero: the window was swept and holds no holders.
+            # It is not the unavailable state — that path returned above.
+            "staker_count": len(balances),
+            "top3_pct": mk.top_n_pct(rows, 3, complete=complete),
+            "complete": complete,
+        }
+        prior = getattr(self.cache.get_last_good(SLOT_POOL4_STAKERS), "payload", None)
+        changed = payload != prior
+        if changed:
+            self.cache.store_last_good(SLOT_POOL4_STAKERS, payload, ts=now)
+        else:
+            logger.debug("SURF staker sweep found nothing new; marker left alone")
+        self.cache.mark_fetched(TIER_POOL4_STAKERS, now)
+        return payload
+
+    @staticmethod
+    def _pool4_share_transfers(logs: Any) -> list[dict[str, Any]]:
+        """ERC-20 ``Transfer`` logs -> ``{"from", "to", "value"}`` in chain order.
+
+        **Order is not cosmetic and it is this method's whole job beyond
+        decoding.** The fold drops a holder the moment their balance reaches
+        zero, so a debit applied before its matching credit takes an
+        intermediate balance negative and deletes a holder who never left. The
+        sort is ``(block, log index)`` — the chain's own total order — and not
+        ``blockTimestamp``, which several keyless endpoints omit entirely and
+        which two logs in one block share anyway.
+
+        Non-``Transfer`` logs are skipped rather than refused: the sweep asks
+        for an address, not a topic, so the vault's ``Deposit`` and ``Withdraw``
+        events arrive in the same set and are simply not this event.
+
+        Addresses are normalised to lower-case ``0x`` + 40 hex so the zero
+        address compares equal to :data:`surf_pool4_market.ZERO_ADDRESS`. A
+        checksummed or short-padded spelling that failed that comparison would
+        make every mint look like a holder called "the zero address", and it
+        would be the *largest* holder on the board.
+        """
+        rows: list[tuple[int, int, dict[str, Any]]] = []
+        for log in logs or ():
+            if not isinstance(log, dict):
+                continue
+            topics = log.get("topics") or []
+            if len(topics) < 3 or topics[0] != TOPIC_TRANSFER:
+                continue
+            words = _data_words(log.get("data"))
+            if not words:
+                continue
+            try:
+                value = int(words[0], 16)
+            except ValueError:
+                continue
+            position = _log_position(log)
+            rows.append((
+                position["block"] if position["block"] is not None else 0,
+                position["log_index"] if position["log_index"] is not None else 0,
+                {
+                    "from": "0x" + str(topics[1])[-40:].lower(),
+                    "to": "0x" + str(topics[2])[-40:].lower(),
+                    "value": value,
+                },
+            ))
+        rows.sort(key=lambda row: (row[0], row[1]))
+        return [row[2] for row in rows]
+
+    @staticmethod
+    def _pool4_sweep_is_complete(
+        rows: list[dict[str, Any]], logs: Any, from_block: int
+    ) -> bool:
+        """Whether this window covers the share token's whole life.
+
+        **Measured from the rows themselves, never assumed from the span.**
+        Nothing here trusts a hardcoded deploy block or a "surely eight weeks
+        is enough": both conditions below are properties of what actually came
+        back.
+
+        The load-bearing one is the second. **If any holder sent out more than
+        it was seen receiving, the window is missing history** — those shares
+        had to come from somewhere, and the only somewhere left is before
+        ``from_block``. That is a *proof* of incompleteness rather than a hint,
+        and it is what separates the two committed captures: the full sweep has
+        zero such holders and the deliberately truncated one has eleven. A
+        window-width heuristic does not separate them at all — the truncated
+        capture's first log also sits a few blocks inside its own window, which
+        is exactly the trap this method was first written into.
+
+        The first condition is cheap and orthogonal: a window whose earliest
+        log sits *on* its opening block was almost certainly cut there.
+        ``from_block == 0`` satisfies it by construction; there is no history
+        before genesis.
+
+        Neither condition proves completeness on its own and the pair does not
+        either — a window could miss only mints whose shares never moved again
+        — so this answers "nothing here contradicts it", and that is precisely
+        the weight ``top_n_pct`` gives it: ``False`` costs the concentration
+        figure a dash, which is the cheap direction. Ranking a subset
+        understates how much the top three hold, and that is the direction that
+        makes a risk look smaller than it is.
+
+        An **empty** window is never complete. Zero logs over a bounded range
+        says nothing at all about the range before it.
+        """
+        blocks = [
+            block
+            for block in (
+                _hex_int(log.get("blockNumber"))
+                for log in (logs or ())
+                if isinstance(log, dict)
+            )
+            if block is not None
+        ]
+        if not blocks:
+            return False
+        if from_block > 0 and min(blocks) <= from_block:
+            return False
+
+        # Net movement per address. Aggregate rather than running, on purpose:
+        # the question is "did this address have a balance before the window",
+        # which is a property of the whole window and not of any ordering
+        # within it -- so this is not a second copy of the fold's arithmetic,
+        # it is a different claim that happens to add the same numbers.
+        net: dict[str, int] = {}
+        for row in rows:
+            frm, to, value = row["from"], row["to"], row["value"]
+            if frm != mk.ZERO_ADDRESS:
+                net[frm] = net.get(frm, 0) - value
+            if to != mk.ZERO_ADDRESS:
+                net[to] = net.get(to, 0) + value
+        return all(balance >= 0 for balance in net.values())
+
+    @staticmethod
+    def _pool4_share_price_per_unit(
+        share_price_wei: Any, decimals: Any
+    ) -> float | None:
+        """IMD per **balance unit**, which is not IMD per whole share.
+
+        ``staker_rows`` multiplies raw folded log amounts by this, and those
+        are in the token's smallest unit. The vault is a Solady ERC-4626
+        reporting ``decimals()`` of 24 (asset 18 + a 6 offset), so one whole
+        share is ``1e24`` units and the two prices are 10^24 apart. Handing it
+        the whole-share price does not raise: it scales every row by 1e24 and
+        renders as a plausible, enormous number, which is CLAUDE.md's decimals
+        rule in its exact failure mode.
+
+        ``decimals`` is read from the chain and carried in the slot beside the
+        price it applies to. There is no constant in this module to hardcode it
+        with, and ``test_no_module_constant_hardcodes_the_vaults_decimals``
+        greps this file for one by name -- so not even a sentence refusing the
+        hardcode may spell it out, which is why this paragraph does not.
+        """
+        price = _tokens(share_price_wei)     # IMD per WHOLE share
+        places = _opt_int(decimals)
+        if price is None or places is None or places < 0:
+            return None
+        return price / (10.0 ** places)
+
+    @staticmethod
+    def _pool4_stakers_keys(slot: dict[str, Any], entry: Any) -> dict[str, Any]:
+        """The four :data:`POOL4_STAKERS_KEYS`, off the staker slot.
+
+        A separate method off a separate slot, deliberately: these four run on
+        a different clock from the rest of the pool4 payload, and folding them
+        into :meth:`_pool4_keys` would put them behind ``pool4_as_of_hhmm`` — a
+        marker that is right about the 600 s sweep and wrong about this one.
+
+        ``pool4_staker_top3_pct`` arrives already ``None`` on an incomplete
+        fold (``mk.top_n_pct``'s guard, ``clean_routed_eth``'s rule) and is not
+        re-guarded here; re-deriving it would be a second place for that rule
+        to be got wrong.
+        """
+        return {
+            "pool4_stakers": slot.get("stakers"),
+            "pool4_staker_count": _opt_int(slot.get("staker_count")),
+            "pool4_staker_top3_pct": _opt_float(slot.get("top3_pct")),
+            "pool4_stakers_as_of_hhmm": (
+                entry.as_of_hhmm() if entry is not None else None
+            ),
+        }
 
     def _signal_keys(self, readings: dict[str, Any], now: float) -> dict[str, Any]:
         """Run the detectors and publish their rows plus exact feed targets."""
@@ -4414,6 +5125,21 @@ class SurfManager:
             if pool4_entry is not None and isinstance(pool4_entry.payload, dict)
             else {}
         )
+        # The staker slot is captured here for the same reason and against the
+        # same race, and it is a *separate* capture rather than a field of the
+        # one above because it is written by a different sweep on a different
+        # tier. It carries its own ``as of`` marker, which is the whole point.
+        stakers_entry = self.cache.get_last_good(SLOT_POOL4_STAKERS)
+        stakers_slot: dict[str, Any] = (
+            dict(stakers_entry.payload)
+            if stakers_entry is not None and isinstance(stakers_entry.payload, dict)
+            else {}
+        )
+        # Offered here rather than beside ``_spawn_pool4`` below: unlike the
+        # pool4 sweep this one reads nothing from the announce channel, so it
+        # has no reason to wait for the channel rows and every reason to start
+        # earlier — it is the longest walk this manager makes.
+        self._spawn_pool4_stakers(tiers, now)
 
         market, logs, channel, nft, activity = await asyncio.gather(
             self._pool_market(tiers, now, real_pool_id),
@@ -4678,7 +5404,10 @@ class SurfManager:
         # One contiguous block off the slot captured above, never this cycle's
         # own not-yet-landed sweep. ``_pool4_keys`` is the only place the pool4
         # path divides by 1e18, and the only place it divides by 10**decimals.
-        data.update(self._pool4_keys(pool4_slot, pool4_entry, now))
+        data.update(self._pool4_keys(pool4_slot, pool4_entry, now, eth_usd=eth_usd))
+        # The staker leaderboard's own four, off its own slot and behind its
+        # own, slower marker. PRD 7.2.
+        data.update(self._pool4_stakers_keys(stakers_slot, stakers_entry))
 
         signal_data = self._signal_keys(
             self._readings(
@@ -4802,6 +5531,31 @@ class SurfManager:
         for group, slot in GROUP_SLOT.items():
             if self.cache.get_last_good(slot) is None:
                 out.add(group)
+        # **The staker sweep contributes no name here, and that is decided
+        # rather than overlooked.** PRD 7.3 says it gets no group of its own —
+        # ``p4`` is the eighth and CLAUDE.md records that the eighth is what
+        # took the worst-case title row to exactly the pinned width — and adds
+        # that it "folds into ``p4`` only when it has nothing at all to serve".
+        # That second clause was implemented here and taken straight back out,
+        # because it is a restriction that has no case left once it is applied
+        # honestly:
+        #
+        # * With a last-good on hand, a failed sweep is not a degradation at
+        #   all. The stale ``pool4_stakers_as_of_hhmm`` is the signal, which is
+        #   curator's rule for its analysis and ``SOURCE_LAUNCHPAD``'s here.
+        # * With nothing to serve, the panel is dark — and the widget can
+        #   *tell*: ``pool4_stakers`` is ``None``, which is its own explicit
+        #   unavailable state rather than a representable zero. That is the
+        #   curator-rail rule satisfied at the widget, where it belongs.
+        # * And this sweep reads its vault address out of ``SLOT_POOL4``, so
+        #   the only way it can have nothing to serve on a cold cache is that
+        #   ``p4`` has nothing either — which the loop above already names.
+        #
+        # What is left is the case that made the clause wrong: ``p4`` healthy,
+        # seven panels live and dated, and one log endpoint refusing the share
+        # token. Naming ``p4`` there tells the reader those seven panels are
+        # down. A false degradation is not the safe direction of an honest
+        # one; it is the same defect pointing the other way.
         out |= self._client_degradation()
         return sorted(out)
 
@@ -4866,6 +5620,10 @@ __all__ = [
     "SOURCE_NFT",
     "SOURCE_POOL4",
     "POOL4_LOG_WINDOW_BLOCKS",
+    "POOL4_DRIP_WINDOW_BLOCKS",
+    "POOL4_STAKERS_LIMIT",
+    "POOL4_STAKERS_WINDOW_BLOCKS",
+    "POOL4_TOPIC_DRIPPED",
     "POOL4_SEPOLIA_HOOK",
     "POOL4_SEPOLIA_TOKEN",
     "SurfManager",

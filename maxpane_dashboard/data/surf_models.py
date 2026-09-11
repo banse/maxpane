@@ -1391,7 +1391,7 @@ POOL4_KEYS: tuple[str, ...] = (
 #: would put them behind ``pool4_as_of_hhmm``, a marker running on the wrong
 #: clock for this data.  They carry their own.
 POOL4_STAKERS_KEYS: tuple[str, ...] = (
-    "pool4_stakers",            # list[dict] | None — rank/addr/imd/pct
+    "pool4_stakers",            # list[dict] | None — SURF_ROW_KEYS["pool4_stakers"]
     "pool4_staker_count",       # int | None
     "pool4_staker_top3_pct",    # float | None — None on an INCOMPLETE fold
     "pool4_stakers_as_of_hhmm", # str | None — its own, slower clock
@@ -1636,5 +1636,23 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "detail",      # str | None -- third-party derived; escaped at render
         "addr",        # str | None -- rendered through _fmt.long_addr
         "addr_known",  # bool -- KNOWN_LABELS allowlist only
+    ),
+    # ``address``, not ``addr``. This row shape was specified two ways -- the
+    # comment on ``POOL4_STAKERS_KEYS`` above said ``rank/addr/imd/pct`` while
+    # ``surf_pool4_market.staker_rows`` emitted ``address`` -- and the producer
+    # wins, because it is what actually reaches the widget. The widget read
+    # ``address`` with an ``addr`` fallback while this entry did not exist;
+    # with the shape declared here the fallback is dead code and goes.
+    #
+    # ``pct`` is a share of the WHOLE vault, so a capped page of rows does not
+    # add to 100% and must not be made to: the gap between the page and the
+    # vault is the dispersion the panel exists to show. ``imd`` is IMD, not
+    # shares -- the conversion is a live ``decimals()`` read, and both wrong
+    # divisors render as plausible numbers rather than as errors.
+    "pool4_stakers": (
+        "rank",        # int   -- 1-based, in descending balance order
+        "address",     # str   -- holder; third-party, escaped at render
+        "imd",         # float -- shares converted at the vault's share price
+        "pct",         # float -- share of the whole vault, never of the page
     ),
 }
