@@ -1,0 +1,665 @@
+"""WP5 -- the `4` body's left column: ``SurfPool4UStakers`` and ``SurfPool4UBurn``.
+
+Every layout assertion here goes against **composited output**
+(``screen._compositor.render_strips()``), joining segments per *row* first and
+then rows by newline: joining every segment with a newline splits one painted
+row into several apparent lines the moment a row carries two styles, and a test
+written that way passes while the user sees something else.
+
+There is no shared compositing helper in ``tests/widgets/`` -- the plan's
+``tests.widgets.surf_compositing`` does not exist and every sibling file
+(``test_surf_pool4_left.py`` and friends) carries its own private ``_lines``.
+:func:`_lines` below is that same helper. See ``test_surf_pool4u_hero.py``'s
+module docstring for why it is restated rather than hoisted mid-wave.
+
+Three things this file exists to pin above the rest:
+
+1. **``top 3 = --`` is a real state and is never computed around.** A partial
+   sweep ranked as though it were the whole vault understates concentration --
+   the one direction that makes a risk look smaller than it is -- and this is
+   ``clean_routed_eth``'s guard verbatim (PRD §7.4).
+2. **Unread and empty are two different sentences on both panels.** ``None``
+   rows and ``[]`` rows, ``None`` flow and ``[]`` flow: four states, four
+   words. Collapsing either pair is the curator rail bug, where a dead group's
+   ``-- unknown`` and a genuine ``none yet`` both read confident and green.
+3. **A ``None`` burn sample is a gap, never a zero.** A zero written into a
+   burn series reads as *burning stopped*, which is a different and wrong
+   claim from *we did not read that leg*.
+"""
+
+from __future__ import annotations
+
+import ast
+import pathlib
+
+import pytest
+from rich.cells import cell_len
+from textual.app import App
+
+from maxpane_dashboard.data.surf_models import POOL4_FLOW_LIMIT, SURF_KEYS
+from maxpane_dashboard.widgets import sparkline_common
+from maxpane_dashboard.widgets.surf import _pool4
+from maxpane_dashboard.widgets.surf import pool4u_burn as burn_mod
+from maxpane_dashboard.widgets.surf import pool4u_hero as hero_mod
+from maxpane_dashboard.widgets.surf import pool4u_stakers as stakers_mod
+from maxpane_dashboard.widgets.surf._fmt import long_addr
+from maxpane_dashboard.widgets.surf.pool4u_burn import (
+    COMPACT_WIDTH as BURN_COMPACT_WIDTH,
+    EMPTY_LINE as BURN_EMPTY_LINE,
+    FULL_WIDTH as BURN_FULL_WIDTH,
+    MIN_PACE_WINDOW_S,
+    PACE_UNAVAILABLE,
+    SPARK_COLS,
+    UNAVAILABLE_LINE as BURN_UNAVAILABLE_LINE,
+    SurfPool4UBurn,
+    burn_points,
+    burn_window,
+    pace_per_day,
+)
+from maxpane_dashboard.widgets.surf.pool4u_burn import TITLE as BURN_TITLE
+from maxpane_dashboard.widgets.surf.pool4u_stakers import (
+    COMPACT_WIDTH as STAKERS_COMPACT_WIDTH,
+    EMPTY_LINE as STAKERS_EMPTY_LINE,
+    FULL_WIDTH as STAKERS_FULL_WIDTH,
+    MAX_ROWS,
+    TABLE_ID,
+    TOP_N,
+    UNAVAILABLE_LINE as STAKERS_UNAVAILABLE_LINE,
+    SurfPool4UStakers,
+    footer_line,
+    staker_cells,
+)
+from maxpane_dashboard.widgets.surf.pool4u_stakers import TITLE as STAKERS_TITLE
+
+# ---------------------------------------------------------------------------
+# Compositing
+# ---------------------------------------------------------------------------
+
+
+async def _lines(widget_cls, size, **kwargs) -> list[str]:
+    """Composited output, **one string per painted terminal row**."""
+
+    class _A(App):
+        def compose(self):
+            yield widget_cls()
+
+    async with _A().run_test(size=size) as pilot:
+        widget = pilot.app.query_one(widget_cls)
+        widget.update_data(**kwargs)
+        await pilot.pause()
+        strips = pilot.app.screen._compositor.render_strips()
+        return ["".join(seg.text for seg in strip).rstrip() for strip in strips]
+
+
+async def _stakers(size=(60, 20), **kwargs) -> tuple[list[str], str]:
+    kwargs.setdefault("pool4_network", "MAINNET")
+    lines = await _lines(SurfPool4UStakers, size, **kwargs)
+    return lines, "\n".join(lines)
+
+
+async def _burn(size=(60, 12), **kwargs) -> tuple[list[str], str]:
+    kwargs.setdefault("pool4_network", "MAINNET")
+    lines = await _lines(SurfPool4UBurn, size, **kwargs)
+    return lines, "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Payloads -- shaped by the frozen contract, never by a live read
+# ---------------------------------------------------------------------------
+
+#: Three holders whose shares sum to the ``top3_pct`` the producer would have
+#: reported, so a test that *computed* the footer from the rows would pass and
+#: a test that reads the key would too. The incomplete-fold test below is what
+#: tells them apart.
+STAKER_ROWS = [
+    {"rank": 1, "address": "0x" + "f5" * 20, "imd": 184_200.0, "pct": 18.4},
+    {"rank": 2, "address": "0x" + "a9" * 20, "imd": 151_800.0, "pct": 9.2},
+    {"rank": 3, "address": "0x" + "4c" * 20, "imd": 97_400.0, "pct": 4.8},
+]
+
+STAKERS_KW = {
+    "pool4_stakers": STAKER_ROWS,
+    "pool4_staker_count": 66,
+    "pool4_staker_top3_pct": 32.4,
+    "pool4_stakers_as_of_hhmm": "14:32",
+}
+
+
+def _flow(count: int, *, step_s: float = 3600.0, burned=None) -> list[dict]:
+    """``pool4_flow``-shaped rows, ``count`` of them, ``step_s`` apart."""
+    return [
+        {
+            "ts": 1_756_000_000.0 + i * step_s,
+            "age_s": 0.0,
+            "side": "sell",
+            "size_imd": 1000.0,
+            "burned_imd": (i * 37.5) if burned is None else burned[i],
+            "stakers_imd": 0.0,
+            "settled": True,
+        }
+        for i in range(count)
+    ]
+
+
+BURN_KW = {
+    "pool4_flow": _flow(12),
+    "pool4_total_burned": 26_289.0,
+    "pool4_burned_supply_pct": 0.1234,
+    "pool4_total_supply": 2_376_732.0,
+    "pool4_as_of_hhmm": "14:32",
+}
+
+
+# ===========================================================================
+# STAKERS
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_the_footer_shows_the_dash_on_an_incomplete_fold() -> None:
+    """PRD 7.4. ``pool4_staker_top3_pct is None`` means the sweep did not
+    finish, and the footer must NOT fall back to summing the rows it has.
+
+    The rows handed in here sum to 32.4 -- exactly the number the complete
+    case reports -- so a widget that computed the footer instead of reading
+    the key would be indistinguishable in the first assertion and caught only
+    by the second.
+    """
+    _, complete = await _stakers(**STAKERS_KW)
+    assert f"top {TOP_N} = 32% of vault" in complete
+
+    _, partial = await _stakers(**dict(STAKERS_KW, pool4_staker_top3_pct=None))
+    assert f"top {TOP_N} = -- of vault" in partial
+    assert "32%" not in partial
+
+
+@pytest.mark.asyncio
+async def test_unread_stakers_and_an_empty_vault_are_different_sentences() -> None:
+    """``None`` is "we could not look"; ``[]`` is "we looked and nobody holds".
+
+    The curator rail bug is these two rendering identically, which reads
+    confident and green straight through an outage.
+    """
+    _, unread = await _stakers(**dict(STAKERS_KW, pool4_stakers=None))
+    assert STAKERS_UNAVAILABLE_LINE in unread
+    assert STAKERS_EMPTY_LINE not in unread
+
+    _, empty = await _stakers(**dict(STAKERS_KW, pool4_stakers=[]))
+    assert STAKERS_EMPTY_LINE in empty
+    assert STAKERS_UNAVAILABLE_LINE not in empty
+
+
+@pytest.mark.asyncio
+async def test_an_unread_sweep_paints_no_rows_at_all() -> None:
+    """The unavailable line is not enough on its own: a table still holding
+    the previous poll's rows under an "unavailable" footer is a stale number
+    presented as live.
+    """
+
+    class _A(App):
+        def compose(self):
+            yield SurfPool4UStakers()
+
+    async with _A().run_test(size=(60, 20)) as pilot:
+        widget = pilot.app.query_one(SurfPool4UStakers)
+        widget.update_data(**STAKERS_KW, pool4_network="MAINNET")
+        await pilot.pause()
+        table = pilot.app.query_one(f"#{TABLE_ID}")
+        assert table.row_count == 3
+
+        widget.update_data(**dict(STAKERS_KW, pool4_stakers=None),
+                           pool4_network="MAINNET")
+        await pilot.pause()
+        assert table.row_count == 0
+
+
+@pytest.mark.asyncio
+async def test_addresses_use_the_anti_poisoning_window() -> None:
+    """``_fmt.long_addr``, not the leaderboard template's ``_short_addr``.
+
+    Live spoofs of surf's own fee recipients collide with the real addresses on
+    first-6/last-4 -- what ``0xABCD..1234`` shows -- and do not collide on this
+    window. A panel whose whole subject is *which* wallets hold the vault is
+    the last place to use the colliding form. PRD §4.
+    """
+    _, out = await _stakers(**STAKERS_KW)
+    shown = long_addr(STAKER_ROWS[0]["address"])
+    assert shown in out
+    assert "…" in shown and len(shown) == 17
+    # The colliding form must not be what is painted.
+    assert f"{STAKER_ROWS[0]['address'][:6]}..{STAKER_ROWS[0]['address'][-4:]}" not in out
+
+
+@pytest.mark.asyncio
+async def test_a_hostile_address_is_escaped_rather_than_parsed() -> None:
+    """Chain-sourced strings reach a ``DataTable``, which defers
+    ``Text.from_markup`` into its idle handler -- so an unescaped ``[/x]``
+    raises outside the screen's ``try/except`` and takes the app down.
+
+    Rendering at all is most of the assertion; the rest is that the row did not
+    silently vanish and take a real holder's rank with it.
+    """
+    hostile = dict(STAKER_ROWS[0], address="0x[/x]" + "ab" * 18)
+    lines, out = await _stakers(
+        **dict(STAKERS_KW, pool4_stakers=[hostile, *STAKER_ROWS[1:]])
+    )
+    assert f"top {TOP_N} = 32% of vault" in out
+    assert sum(1 for line in lines if long_addr(STAKER_ROWS[1]["address"]) in line) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_row_costs_its_own_row_and_not_the_panel() -> None:
+    _, out = await _stakers(
+        **dict(STAKERS_KW, pool4_stakers=["not a row", None, *STAKER_ROWS])
+    )
+    assert long_addr(STAKER_ROWS[0]["address"]) in out
+    assert f"top {TOP_N} = 32% of vault" in out
+
+
+@pytest.mark.asyncio
+async def test_the_panel_carries_its_own_slower_clock() -> None:
+    """PRD 7.2. ``pool4_stakers_as_of_hhmm`` rides a 1800 s tier; the body's
+    ``pool4_as_of_hhmm`` rides the 600 s one. Printing the faster marker beside
+    this data would be a stale number presented as live.
+    """
+    _, out = await _stakers(
+        **dict(STAKERS_KW, pool4_stakers_as_of_hhmm="14:32"),
+        pool4_as_of_hhmm="19:58",
+    )
+    assert "as of 14:32" in out
+    assert "19:58" not in out
+
+
+@pytest.mark.asyncio
+async def test_the_title_carries_the_network_word_from_the_shared_helper() -> None:
+    """Imported from ``_pool4``, never restated: two packages once wrote
+    ``network_word`` twice with different behaviour on unknown input, and one
+    body painted ``THE SPLIT · —`` beside ``THE RATCHET · BASE``.
+    """
+    _, mainnet = await _stakers(**STAKERS_KW, pool4_network="MAINNET")
+    assert _pool4.panel_title(STAKERS_TITLE, "MAINNET") in mainnet
+
+    _, unknown = await _stakers(**STAKERS_KW, pool4_network="BASE")
+    assert f"{STAKERS_TITLE}{_pool4.TITLE_SEP}{_pool4.NETWORK_UNKNOWN}" in unknown
+    assert "BASE" not in unknown
+
+
+@pytest.mark.asyncio
+async def test_the_narrow_tier_removes_the_share_column_rather_than_blanking_it() -> None:
+    """Writing empty cells into a fixed-width column frees nothing.
+
+    A "compact" tier that did that would light the widen marker and still
+    overflow by exactly the width it claimed to have shed -- so the column is
+    removed, and the header word goes with it.
+    """
+    _, wide = await _stakers(size=(60, 20), **STAKERS_KW)
+    assert "share" in wide
+    assert "18.4%" in wide
+
+    _, narrow = await _stakers(size=(38, 20), **STAKERS_KW)
+    assert "share" not in narrow
+    assert "18.4%" not in narrow
+    assert long_addr(STAKER_ROWS[0]["address"]) in narrow
+    assert _pool4.WIDEN_HINT in narrow or _pool4.GLYPH_HINT in narrow
+
+
+@pytest.mark.asyncio
+async def test_the_stakers_width_pins_are_what_the_table_actually_reserves() -> None:
+    """``==``, so each pin reddens whether it is set too low or too high.
+
+    Asserted against ``DataTable.virtual_size``, which is the width the layout
+    engine actually reserves, rather than against a composited row: a painted
+    row has its trailing spaces stripped, so its width moves with how long the last cell's
+    *value* happens to be and an ``==`` on it would be pinning today's data.
+    The composited half of the claim is the second assertion -- no row this
+    panel paints is ever wider than the pin that governs it.
+
+    ``DataTable`` pads every column including the last, which is why these two
+    numbers are not ``_rowfit.row_cols``'s arithmetic: that charges a gap
+    *between* cells and is a ``RichLog`` row's formula. Borrowing the wrong one
+    would put the marker a column or two off the width it is marking.
+    """
+    for size, pin in (((80, 20), STAKERS_FULL_WIDTH), ((38, 20), STAKERS_COMPACT_WIDTH)):
+
+        class _A(App):
+            def compose(self):
+                yield SurfPool4UStakers()
+
+        async with _A().run_test(size=size) as pilot:
+            widget = pilot.app.query_one(SurfPool4UStakers)
+            widget.update_data(**STAKERS_KW, pool4_network="MAINNET")
+            await pilot.pause()
+            table = pilot.app.query_one(f"#{TABLE_ID}")
+            assert table.virtual_size.width == pin, (size, table.virtual_size)
+            painted = max(
+                (
+                    cell_len("".join(seg.text for seg in strip).strip())
+                    for strip in pilot.app.screen._compositor.render_strips()
+                    if "…" in "".join(seg.text for seg in strip)
+                ),
+                default=0,
+            )
+            assert 0 < painted <= pin, (size, painted, pin)
+
+
+def test_the_footer_drops_the_count_rather_than_dashing_it() -> None:
+    """The concentration half is the half a reader acts on; it must not be
+    pushed along by a dash standing in for an unread address count."""
+    assert footer_line(66, 32.4) == f"66 addresses · top {TOP_N} = 32% of vault"
+    assert footer_line(None, 32.4) == f"top {TOP_N} = 32% of vault"
+    assert footer_line(66, None) == f"66 addresses · top {TOP_N} = -- of vault"
+
+
+def test_an_unread_holding_is_a_dash_and_never_a_zero() -> None:
+    """A zero would rank a wallet as holding nothing when we simply could not
+    convert its shares -- a confident wrong answer about a named address."""
+    cells = staker_cells({"rank": 1, "address": "0x" + "ab" * 20, "imd": None,
+                          "pct": None})
+    assert cells is not None
+    assert cells[2] == "--"
+    assert cells[3] == "--"
+
+
+def test_both_row_address_spellings_are_read() -> None:
+    """Filed as a defect, accommodated here so the column cannot go blank.
+
+    ``surf_models.POOL4_STAKERS_KEYS`` documents ``rank/addr/imd/pct`` while
+    the plan's producer emits ``address``, and ``pool4_stakers`` has no
+    ``SURF_ROW_KEYS`` entry to settle it. When it does, this fallback goes.
+    """
+    addr = "0x" + "ab" * 20
+    assert staker_cells({"rank": 1, "address": addr, "imd": 1.0, "pct": 1.0})[1] == (
+        long_addr(addr)
+    )
+    assert staker_cells({"rank": 1, "addr": addr, "imd": 1.0, "pct": 1.0})[1] == (
+        long_addr(addr)
+    )
+
+
+def test_the_row_cap_is_below_the_producers_own_limit() -> None:
+    """The renderer's guard exists so a longer list cannot push the footer --
+    the panel's actual subject -- off a short panel."""
+    assert MAX_ROWS >= 3
+    assert MAX_ROWS <= 20
+
+
+# ===========================================================================
+# BURN & SUPPLY
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_the_burn_panel_draws_its_sparkline_and_names_its_window() -> None:
+    """The pace carries the window it was measured over, the way the hero's
+    trailing return carries ``7d``: ``pool4_flow`` is capped at
+    ``POOL4_FLOW_LIMIT`` events, so this is recent burn and the label says so.
+    """
+    _, out = await _burn(**BURN_KW)
+    assert any(ch in out for ch in sparkline_common.SPARK_CHARS[1:])
+    assert "/day over 11h" in out
+    assert "26.3K retired" in out
+    assert "0.12% of supply" in out
+    assert POOL4_FLOW_LIMIT == 25
+
+
+@pytest.mark.asyncio
+async def test_unread_flow_and_a_quiet_window_are_different_sentences() -> None:
+    """An empty series draws a flat baseline, which is the picture of a hook
+    that has stopped burning. That must not be what an unread flow looks like.
+    """
+    _, unread = await _burn(**dict(BURN_KW, pool4_flow=None))
+    assert BURN_UNAVAILABLE_LINE in unread
+    assert BURN_EMPTY_LINE not in unread
+    # The totals were read and are still shown: one dead key must not black out
+    # the whole panel.
+    assert "26.3K retired" in unread
+
+    _, quiet = await _burn(**dict(BURN_KW, pool4_flow=[]))
+    assert BURN_EMPTY_LINE in quiet
+    assert BURN_UNAVAILABLE_LINE not in quiet
+
+
+@pytest.mark.asyncio
+async def test_a_wholly_unread_panel_says_so_once() -> None:
+    _, out = await _burn(
+        pool4_flow=None, pool4_total_burned=None,
+        pool4_burned_supply_pct=None, pool4_total_supply=None,
+    )
+    assert BURN_UNAVAILABLE_LINE in out
+    assert out.count("retired") == 0
+
+
+@pytest.mark.asyncio
+async def test_the_burn_title_carries_the_network_word_from_the_shared_helper() -> None:
+    _, out = await _burn(**BURN_KW, pool4_network="SEPOLIA")
+    assert _pool4.panel_title(BURN_TITLE, "SEPOLIA") in out
+
+    _, unknown = await _burn(**BURN_KW, pool4_network=None)
+    assert f"{BURN_TITLE}{_pool4.TITLE_SEP}{_pool4.NETWORK_UNKNOWN}" in unknown
+
+
+@pytest.mark.asyncio
+async def test_the_narrow_tier_keeps_the_window_by_moving_it() -> None:
+    """The window is the clause that stops the pace reading as a measured
+    daily rate, so it is the last thing shed -- it moves to the totals line
+    rather than disappearing when the pace line runs out of room.
+    """
+    _, wide = await _burn(size=(60, 12), **BURN_KW)
+    assert "/day over 11h" in wide
+
+    _, narrow = await _burn(size=(30, 12), **BURN_KW)
+    assert "/day over" not in narrow
+    assert "/day 11h" in narrow
+    assert _pool4.WIDEN_HINT in narrow or _pool4.GLYPH_HINT in narrow
+    # And nothing on the narrow panel was handed to CSS to clip in silence:
+    # `text-overflow: ellipsis` eating a line is exactly what the marker is
+    # supposed to make unnecessary.
+    assert "…" not in narrow
+
+
+def test_a_none_burn_leg_is_a_gap_and_never_a_zero() -> None:
+    """A zero written into a burn series reads as *burning stopped*, which is a
+    different and wrong claim from *we did not read that leg*. The sample is
+    dropped; a genuine ``0.0`` on a BUY row stays.
+    """
+    rows = _flow(3, burned=[100.0, None, 300.0])
+    pts = burn_points(rows)
+    assert [value for _, value in pts] == [100.0, 300.0]
+
+    rows = _flow(3, burned=[100.0, 0.0, 300.0])
+    assert [value for _, value in burn_points(rows)] == [100.0, 0.0, 300.0]
+
+
+def test_unread_flow_gives_none_and_an_empty_window_gives_an_empty_list() -> None:
+    assert burn_points(None) is None
+    assert burn_points([]) == []
+
+
+def test_the_pace_refuses_to_annualise_a_window_too_short_to_mean_anything() -> None:
+    """A five-minute window multiplied by 288 turns one trim into a headline
+    burn rate. ``None``, and the panel says ``--/day``."""
+    short = burn_points(_flow(4, step_s=60.0))
+    assert burn_window(short) == pytest.approx(180.0)
+    assert burn_window(short) < MIN_PACE_WINDOW_S
+    assert pace_per_day(short) is None
+    assert PACE_UNAVAILABLE == "--/day"
+
+
+def test_a_usable_window_with_no_burns_paces_zero_rather_than_unavailable() -> None:
+    """``0.0`` is a real answer: the window was long enough and nothing burned
+    in it. Only an unusable window is ``None``."""
+    points = burn_points(_flow(4, step_s=7200.0, burned=[0.0] * 4))
+    assert burn_window(points) >= MIN_PACE_WINDOW_S
+    assert pace_per_day(points) == 0.0
+
+
+def test_the_pace_is_the_window_total_annualised_and_not_the_last_sample() -> None:
+    """Derived outside the implementation: four samples six hours apart span
+    eighteen hours and carry 400 IMD, which is ``400 / 18 * 24`` per day.
+    """
+    points = burn_points(_flow(4, step_s=6 * 3600.0, burned=[100.0] * 4))
+    assert pace_per_day(points) == pytest.approx(400.0 / 18.0 * 24.0, rel=1e-9)
+
+
+def test_the_window_needs_two_distinct_timestamps() -> None:
+    assert burn_window(burn_points(_flow(1))) is None
+    assert burn_window(burn_points(_flow(2, step_s=0.0))) is None
+
+
+# ===========================================================================
+# Reuse, not re-implementation -- the rules the parent package made hard
+# ===========================================================================
+
+_WIDGET_DIR = pathlib.Path(stakers_mod.__file__).parent
+_POOL4U_SOURCES = sorted(_WIDGET_DIR.glob("pool4u_*.py"))
+
+
+def test_the_pool4u_module_glob_is_not_vacuous() -> None:
+    """A glob that matched nothing would make every check below pass over an
+    empty list. Three modules, named, so a deletion reddens this rather than
+    quietly emptying the sweep.
+    """
+    assert {path.name for path in _POOL4U_SOURCES} == {
+        "pool4u_hero.py", "pool4u_stakers.py", "pool4u_burn.py"
+    }
+
+
+def test_the_burn_panel_uses_the_shared_sparkline_helper_itself() -> None:
+    """Identity, not a name match: three dashboards once carried byte-identical
+    copies of these helpers and a fix reached none of the others (MEDI-36).
+    """
+    assert (
+        burn_mod.build_sparkline_from_points
+        is sparkline_common.build_sparkline_from_points
+    )
+    assert burn_mod.coerce_points is sparkline_common.coerce_points
+
+
+@pytest.mark.parametrize("path", _POOL4U_SOURCES, ids=lambda p: p.name)
+def test_no_pool4u_module_restates_a_shared_primitive(path) -> None:
+    """The title, the network word, the widen marker and the sparkline chars
+    are defined in exactly one place each and imported from there.
+
+    This is the rule ``_pool4.py`` exists for: two packages once wrote
+    ``network_word`` twice with different behaviour on unknown input, and one
+    body painted ``THE SPLIT · —`` beside ``THE RATCHET · BASE`` -- five panels
+    disagreeing about which chain the numbers above them came from.
+    """
+    tree = ast.parse(path.read_text())
+    defined: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            defined.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    defined.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            defined.add(node.target.id)
+
+    for hoisted in (
+        "network_word", "panel_title", "title_text", "NETWORK_WORDS",
+        "NETWORK_UNKNOWN", "TITLE_SEP", "WIDEN_HINT", "GLYPH_HINT",
+        "SPARK_CHARS", "build_sparkline", "build_sparkline_from_points",
+        "coerce_points", "safe_markup",
+    ):
+        assert hoisted not in defined, (
+            f"{path.name} defines its own {hoisted}; import it instead"
+        )
+
+
+@pytest.mark.parametrize("path", _POOL4U_SOURCES, ids=lambda p: p.name)
+def test_no_pool4u_module_imports_the_data_layer(path) -> None:
+    """Widgets may import pure ``analytics/`` modules; they may not import
+    ``data/``. ``test_surf_widget_contract.py`` proves this for the whole
+    package, which means it also proves it for these three -- its module walk
+    globs ``*.py``. Restated here so this file fails on its own terms if these
+    modules are ever moved out from under that walk.
+    """
+    source = path.read_text()
+    for banned in ("maxpane_dashboard.data", "httpx", "aiohttp", "surf_client"):
+        assert banned not in source.replace("``", ""), (path.name, banned)
+
+
+@pytest.mark.parametrize("path", _POOL4U_SOURCES, ids=lambda p: p.name)
+def test_no_pool4u_module_puts_a_theme_token_inside_its_own_markup(path) -> None:
+    """Rich cannot resolve Textual's ``$``-prefixed theme variables.
+    ``[bold $success]`` parses cleanly and then raises ``MissingStyle`` at
+    *render* time, inside ``Static.update`` -- outside the widget's own
+    ``try``. It took the app down once during the ``p`` build.
+
+    ``tests/widgets/test_surf_pool4_shared.py`` runs this check over
+    ``pool4_*.py`` and its glob does not reach ``pool4u_*.py``; that coverage
+    gap is filed, and this is the local cover until it closes.
+    """
+    import re
+
+    for markup in re.findall(r"\[[^\[\]\n]*\]", path.read_text()):
+        assert "$" not in markup, (path.name, markup)
+
+
+def test_every_update_data_kwarg_on_this_column_is_a_frozen_contract_key() -> None:
+    """The screen splats the manager's flat dict, so a kwarg that is not a key
+    is a silent no-op. ``test_surf_widget_contract.py`` enforces this for
+    exported widgets; these three are not exported yet (WP7's job), so it is
+    enforced here until they are.
+    """
+    import inspect
+
+    for cls in (SurfPool4UStakers, SurfPool4UBurn, hero_mod.SurfPool4UserHero):
+        names = [
+            name
+            for name, param in inspect.signature(cls.update_data).parameters.items()
+            if param.kind is not param.VAR_KEYWORD and name != "self"
+        ]
+        assert names, cls.__name__
+        assert all(name in SURF_KEYS for name in names), (
+            cls.__name__, [n for n in names if n not in SURF_KEYS]
+        )
+        # And the `pool4_` prefix is never elided: `as_of_hhmm` already stands
+        # for `launchpad_as_of_hhmm` and cannot answer for two contract keys.
+        assert "as_of_hhmm" not in names, cls.__name__
+
+
+@pytest.mark.parametrize(
+    "cls", [SurfPool4UStakers, SurfPool4UBurn], ids=lambda c: c.__name__
+)
+@pytest.mark.asyncio
+async def test_no_args_and_all_none_render_without_raising(cls) -> None:
+    """A widget that raises inside Textual's message pump takes the app down.
+
+    The same sweep ``test_surf_widget_contract.py`` runs over every exported
+    widget, run here because these are not exported yet.
+    """
+    import inspect
+
+    class _A(App):
+        def compose(self):
+            yield cls()
+
+    async with _A().run_test(size=(120, 20)) as pilot:
+        widget = pilot.app.query_one(cls)
+        widget.update_data()
+        widget.update_data(
+            **{
+                name: None
+                for name, param in inspect.signature(
+                    widget.update_data
+                ).parameters.items()
+                if param.kind is not param.VAR_KEYWORD and name != "self"
+            }
+        )
+        await pilot.pause()
+        strips = pilot.app.screen._compositor.render_strips()
+        assert strips is not None
+
+
+def test_the_burn_width_pins_are_ordered_and_distinct() -> None:
+    """A compact tier that is not narrower than the full one sheds nothing and
+    lights a marker for no reason."""
+    assert BURN_COMPACT_WIDTH < BURN_FULL_WIDTH
+    assert STAKERS_COMPACT_WIDTH < STAKERS_FULL_WIDTH
+    # The sparkline is itself a tier. A compact tier that shed only words would
+    # light the marker and still overflow by whatever the fixed-width line is
+    # over budget -- which is what the first draft of this panel did.
+    assert SPARK_COLS["compact"] < SPARK_COLS["full"] <= sparkline_common.SPARK_WIDTH
