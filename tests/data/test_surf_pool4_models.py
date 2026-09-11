@@ -1516,6 +1516,10 @@ POOL4_USER_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfPool4UDepth": (
         "pool4_current_tick", "pool4_position_liquidity",
         "pool4_backstop_lower_tick", "pool4_backstop_liquidity",
+        # WP11: the ladder branches on the STATE, never on the amount --
+        # deriving "is there a band" from the amount folds an unread band into
+        # an undeployed one and paints `band used 0.0%` through an outage.
+        "pool4_backstop_state",
         "pool4_network", "pool4_as_of_hhmm",
     ),
 }

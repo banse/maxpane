@@ -28,6 +28,13 @@ What this file exists to pin above everything else
    answer at all.
 3. **No band deployed is not an unreadable position.** The full-range position
    still bids, so the ladder is real and ``band used`` is a true ``0.0%``.
+4. **An UNREAD band is not an absent one** (WP11, PRD 6.5 AMENDED 2026-09-11).
+   The panel answers *how much is bidding under me*, and it used to answer
+   ``0.0%`` both when there was no band and when nobody could read one --
+   measured, with the two renders byte-identical. The distinction is asserted
+   on the **painted column** and not on ``depth_rows``'s row dicts: the dicts
+   agreeing was never the claim, and a fix that stopped at the analytics layer
+   would leave the same defect one layer out.
 """
 
 from __future__ import annotations
@@ -44,6 +51,7 @@ from maxpane_dashboard.analytics import surf_pool4_depth
 from maxpane_dashboard.analytics.surf_pool4_depth import DEPTH_MOVES
 from maxpane_dashboard.data.surf_models import SURF_KEYS
 from maxpane_dashboard.widgets.surf import _pool4
+from maxpane_dashboard.widgets.surf._fmt import DASH as DASH_TEXT
 from maxpane_dashboard.widgets.surf import pool4u_depth as depth_mod
 from maxpane_dashboard.widgets.surf.pool4u_depth import (
     CAPTION,
@@ -53,6 +61,7 @@ from maxpane_dashboard.widgets.surf.pool4u_depth import (
     TABLE_ID,
     TITLE,
     UNAVAILABLE_LINE,
+    UNREAD_BAND,
     SurfPool4UDepth,
     ladder_cells,
 )
@@ -96,8 +105,34 @@ ORACLE = {
     "pool4_position_liquidity": 690471276437502400000,
     "pool4_backstop_lower_tick": 68340,
     "pool4_backstop_liquidity": 746855403398064100000,
+    # WP11: the band's STATE, not a number, and the ladder branches on it. The
+    # capture is of a block at which the band was deployed, so this is the
+    # capture's own state and not a convenience -- with it unset every
+    # ``band used`` cell below would read ``unknown``, which is the whole point
+    # of the key.
+    "pool4_backstop_state": "deployed",
     "pool4_network": "MAINNET",
     "pool4_as_of_hhmm": "14:07",
+}
+
+#: The same position with **no band deployed** -- the state the manager
+#: publishes when it looked and found none (``backstop_liquidity == 0`` on
+#: chain): the state word, and the three band numbers ``None`` rather than zero,
+#: because a band that does not exist has no lower tick.
+NO_BAND = {
+    **ORACLE,
+    "pool4_backstop_state": "none",
+    "pool4_backstop_lower_tick": None,
+    "pool4_backstop_liquidity": None,
+}
+
+#: The same position with the band **unread** -- every backstop field ``None``,
+#: including the state word. This is what an outage on that leg looks like.
+UNREAD = {
+    **ORACLE,
+    "pool4_backstop_state": None,
+    "pool4_backstop_lower_tick": None,
+    "pool4_backstop_liquidity": None,
 }
 
 
@@ -124,13 +159,13 @@ async def test_the_ladder_never_promises_protection() -> None:
     "payload",
     [
         ORACLE,
-        {**ORACLE, "pool4_backstop_lower_tick": None,
-         "pool4_backstop_liquidity": None},
+        NO_BAND,
+        UNREAD,
         {**ORACLE, "pool4_network": "SEPOLIA"},
         {"pool4_current_tick": None},
         {},
     ],
-    ids=["oracle", "no-band", "sepolia", "unreadable", "empty"],
+    ids=["oracle", "no-band", "unread-band", "sepolia", "unreadable", "empty"],
 )
 async def test_no_reachable_state_of_this_panel_promises_protection(payload) -> None:
     """The forbidden words are forbidden in **every** state, not one.
@@ -165,12 +200,11 @@ async def test_no_band_deployed_is_not_an_unreadable_position() -> None:
     ``band used`` is then a true ``0.0%`` and not a dash: we looked, and the
     band consumed is none of a band that does not exist.
     """
-    out = await _text(
-        {**ORACLE, "pool4_backstop_lower_tick": None, "pool4_backstop_liquidity": None}
-    )
+    out = await _text(NO_BAND)
     assert UNAVAILABLE_LINE not in out
     assert CAPTION in out
     assert "0.0%" in out
+    assert UNREAD_BAND not in out
 
 
 # ===========================================================================
@@ -258,7 +292,7 @@ def test_a_malformed_rung_costs_its_own_row_and_not_the_panel() -> None:
     """One bad row is a dropped row, never an exception in the render path."""
     assert ladder_cells(None) is None
     assert ladder_cells("nope") is None
-    assert ladder_cells({}) == ("--", "--", "--")
+    assert ladder_cells({}) == ("--", "--", UNREAD_BAND)
     assert ladder_cells(
         {"move_pct": 5, "eth_paid": None, "band_used_pct": 2.0}
     ) == ("-5%", "--", "2.0%")
@@ -270,6 +304,113 @@ def test_an_unread_eth_leg_is_a_dash_and_never_a_zero() -> None:
     """
     assert ladder_cells({"move_pct": 1, "eth_paid": 0.0, "band_used_pct": 0.0})[1] == "0.00"
     assert ladder_cells({"move_pct": 1, "eth_paid": None, "band_used_pct": 0.0})[1] == "--"
+
+
+# ===========================================================================
+# WP11 -- an unread band is not an absent one, ON THE PAINTED COLUMN
+# ===========================================================================
+
+
+def _rung_lines(lines: list[str]) -> list[str]:
+    """The five ladder rows, stripped, in paint order.
+
+    Selected by the rung label rather than by index: the table sits under a
+    title and a header row whose count is not this test's business.
+    """
+    return [ln.strip() for ln in lines if ln.strip().startswith("-")]
+
+
+@pytest.mark.asyncio
+async def test_an_unread_band_paints_a_different_column_from_an_absent_one() -> None:
+    """**The defect WP11 exists for, read off the pixels.**
+
+    The row dicts agreeing is not evidence the painted column differs -- that
+    is precisely how this shipped: ``depth_rows`` folded ``band_liquidity is
+    None`` into ``has_band = False`` and produced the same ``0.0`` for both, and
+    the rendered ``band used`` column was byte-identical through the real screen
+    at (143, 60). So the comparison here is between two lists of **composited**
+    rows.
+
+    The ETH column is asserted *equal* in the same breath, which is what makes
+    the inequality specific: the position bids exactly the same either way, and
+    the only thing that changed is the one cell that is a claim about the band.
+    """
+    unread = _rung_lines(await _lines(UNREAD, size=(160, 16)))
+    absent = _rung_lines(await _lines(NO_BAND, size=(160, 16)))
+
+    assert len(unread) == len(absent) == len(DEPTH_MOVES), (unread, absent)
+    assert unread != absent
+
+    for line in unread:
+        assert UNREAD_BAND in line, line
+    for line in absent:
+        assert line.endswith("0.0%"), line
+
+    # ...and the ETH leg is identical, so the difference above is the band cell
+    # and nothing else. The full-range position is readable in both states.
+    assert [ln.split()[1] for ln in unread] == [ln.split()[1] for ln in absent]
+    assert all(float(ln.split()[1].replace(",", "")) > 0.0 for ln in unread)
+
+
+@pytest.mark.asyncio
+async def test_the_unread_band_cell_cannot_be_read_as_a_quantity() -> None:
+    """Not a dash, and not anything with a digit in it.
+
+    PRD 6.5 asks for a *visibly different* third state rather than one that
+    could read as zero. ``--`` would not have qualified: it is what ``_fmt_eth``
+    paints one column to the left for an unreadable number, so the same mark
+    would mean two things on one row -- and a reader skimming a column of
+    percentages reads a short mark as a small value.
+    """
+    assert not any(ch.isdigit() for ch in UNREAD_BAND)
+    assert "%" not in UNREAD_BAND
+    assert UNREAD_BAND != DASH_TEXT
+
+    lines = _rung_lines(await _lines(UNREAD, size=(160, 16)))
+    assert lines
+    for line in lines:
+        assert "0.0%" not in line, line
+        assert "%" not in line.split()[-1], line
+
+
+@pytest.mark.asyncio
+async def test_a_deployed_band_with_an_unreadable_amount_says_unknown_too() -> None:
+    """The state word is not a licence to compute.
+
+    ``deployed`` with the liquidity missing is still an unread band, and this is
+    the pairing the registration probe for ``pool4_backstop_liquidity`` rests
+    on: that key at ``0`` must paint a share, and at ``None`` must not.
+    """
+    zero = _rung_lines(
+        await _lines({**ORACLE, "pool4_backstop_liquidity": 0}, size=(160, 16))
+    )
+    missing = _rung_lines(
+        await _lines({**ORACLE, "pool4_backstop_liquidity": None}, size=(160, 16))
+    )
+    assert zero and missing and zero != missing
+    for line in zero:
+        assert line.endswith("0.0%"), line
+    for line in missing:
+        assert UNREAD_BAND in line, line
+
+
+def test_the_panel_declares_the_state_key_it_branches_on() -> None:
+    """``pool4_backstop_state`` is an input to the ladder, not an inference.
+
+    A panel that derives "is there a band" from the band's own numbers cannot
+    tell an outage from an empty answer, which is the whole of WP11. Declared
+    here rather than only in the screen's dispatch map, because ``**_kwargs``
+    swallows an undeclared key in total silence.
+    """
+    declared = {
+        name
+        for name, param in inspect.signature(
+            SurfPool4UDepth.update_data
+        ).parameters.items()
+        if param.kind is not param.VAR_KEYWORD and name != "self"
+    }
+    assert "pool4_backstop_state" in declared
+    assert "pool4_backstop_state" in SURF_KEYS
 
 
 # ===========================================================================

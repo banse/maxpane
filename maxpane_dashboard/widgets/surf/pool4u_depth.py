@@ -19,9 +19,9 @@ something else, which is the known-fake shape in this repo's taxonomy.
 The ladder is computed here, and why that is not a layering mistake
 ------------------------------------------------------------------
 ``analytics/surf_pool4_depth.depth_rows`` is a pure stdlib function and this
-panel calls it directly on four frozen payload keys -- ``pool4_current_tick``,
-``pool4_position_liquidity``, ``pool4_backstop_lower_tick`` and
-``pool4_backstop_liquidity``.
+panel calls it directly on five frozen payload keys -- ``pool4_current_tick``,
+``pool4_position_liquidity``, ``pool4_backstop_lower_tick``,
+``pool4_backstop_liquidity`` and ``pool4_backstop_state``.
 
 The plan specified a ``pool4_depth_rows`` payload key instead. **There is no
 such key**: WP0 froze the contract without it, and
@@ -42,7 +42,26 @@ fixed point.
 **never** a ladder of zeros: a zero ladder paints "this pool bids nothing",
 which is a confident wrong answer to a question we could not answer at all. No
 band deployed is *not* that case -- the full-range position still bids, so the
-ladder is real and ``band used`` is a true ``0%``.
+ladder is real and ``band used`` is a true ``0.0%``.
+
+``band used`` has THREE states, and the third one is why this panel was
+re-opened (PRD 6.5, AMENDED 2026-09-11)
+---------------------------------------------------------------------------
+The panel exists to answer *how much is bidding under me*, so ``band used``
+carries the whole weight of that question -- and until 2026-09-11 it answered
+``0.0%`` both when there was no band and when nobody could read one. Measured
+through the real ``SurfScreen`` at (143, 60): with ``pool4_backstop_liquidity``
+set to ``0`` and then to ``None``, this column was **byte-identical**. That is
+CLAUDE.md's curator-rail defect one layer out -- ``band used 0.0%`` through an
+outage tells a reader, with confidence, that the backstop is not helping them,
+when the truth is that nobody looked.
+
+``pool4_backstop_state`` is the fifth ladder input for exactly that reason, and
+the unread state paints :data:`UNREAD_BAND` -- the **word** ``unknown``, not a
+dash. A dash is this panel's "unreadable number" glyph and already means
+something in the ``ETH paid`` column beside it; a reader scanning a column of
+percentages reads ``--`` as a small one far more readily than as an absent one.
+A word with no digits in it cannot be misread as a quantity at all.
 
 Shape, shared primitives and the ``$`` trap
 -------------------------------------------
@@ -94,6 +113,7 @@ __all__ = [
     "TABLE_ID",
     "TITLE",
     "UNAVAILABLE_LINE",
+    "UNREAD_BAND",
     "SurfPool4UDepth",
     "ladder_cells",
 ]
@@ -119,6 +139,18 @@ CAPTION = "quoted from the position as it stands now"
 #: table: an empty table under a live title bar is what a hook bidding nothing
 #: looks like.
 UNAVAILABLE_LINE = "ladder unavailable"
+
+#: ``band used`` when the band itself was not read -- ``pool4_backstop_state``
+#: is ``None``, or it says ``deployed`` and the band's numbers are missing.
+#:
+#: A word rather than a dash, and the difference is the point of WP11. ``--`` is
+#: what ``_fmt_eth`` already paints for an unreadable ETH leg one column over,
+#: so re-using it here would make "the band is unknown" and "this number is
+#: small/unavailable" the same mark in two adjacent columns. ``unknown``
+#: contains no digit and no percent sign, so it cannot be read as ``0.0%`` by a
+#: reader skimming the column -- which is the exact misreading this panel
+#: shipped with. Seven cells, inside :data:`_USED_COLS`.
+UNREAD_BAND = "unknown"
 
 TABLE_ID = "surf-pool4u-depth-table"
 _TITLE_ID = "surf-pool4u-depth-title"
@@ -181,6 +213,10 @@ def _fmt_eth(value) -> str:
 def ladder_cells(row: object) -> tuple[str, str, str] | None:
     """Decompose one ladder rung into its three raw cells; ``None`` drops it.
 
+    ``band_used_pct`` of ``None`` becomes :data:`UNREAD_BAND` and never the
+    dash: an unread band is a *different* statement from an unreadable number,
+    and this is the only cell on the panel that can make it.
+
     A single malformed rung must never take the panel down, so every failure
     here is a dropped row rather than an exception. The rows come from this
     repo's own pure function rather than from a chain read, so a malformed one
@@ -193,7 +229,7 @@ def ladder_cells(row: object) -> tuple[str, str, str] | None:
         move = as_float(row.get("move_pct"))
         move_text = f"-{int(move)}%" if move is not None else DASH
         used = as_float(row.get("band_used_pct"))
-        used_text = f"{used:.1f}%" if used is not None else DASH
+        used_text = f"{used:.1f}%" if used is not None else UNREAD_BAND
         return move_text, _fmt_eth(row.get("eth_paid")), used_text
     except Exception:
         return None
@@ -270,15 +306,17 @@ class SurfPool4UDepth(Vertical):
         pool4_position_liquidity=None,
         pool4_backstop_lower_tick=None,
         pool4_backstop_liquidity=None,
+        pool4_backstop_state=None,
         pool4_network=None,
         pool4_as_of_hhmm=None,
         **_kwargs,
     ) -> None:
         """Refresh the panel from the manager's flat dict.
 
-        The four inputs are the ladder's arguments, not its output -- see the
+        The five inputs are the ladder's arguments, not its output -- see the
         module docstring for why there is no ``pool4_depth_rows`` key to take
-        instead. Every kwarg carries its full ``pool4_`` contract prefix and is
+        instead, and for why ``pool4_backstop_state`` is one of them rather
+        than something this panel infers from the other four. Every kwarg carries its full ``pool4_`` contract prefix and is
         a member of ``SURF_KEYS``.
 
         ``**_kwargs`` is mandatory: the screen splats the whole payload, so a
@@ -289,6 +327,7 @@ class SurfPool4UDepth(Vertical):
             "position_liquidity": pool4_position_liquidity,
             "band_lower_tick": pool4_backstop_lower_tick,
             "band_liquidity": pool4_backstop_liquidity,
+            "band_state": pool4_backstop_state,
             "network": pool4_network,
             "as_of": pool4_as_of_hhmm,
             "seen": True,
@@ -314,6 +353,7 @@ class SurfPool4UDepth(Vertical):
                 position_liquidity=payload.get("position_liquidity"),
                 band_lower_tick=payload.get("band_lower_tick"),
                 band_liquidity=payload.get("band_liquidity"),
+                band_state=payload.get("band_state"),
             )
         except Exception:
             return None

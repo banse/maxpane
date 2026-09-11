@@ -40,6 +40,24 @@ _LOG_BASE = math.log(1.0001)
 #: own ladder runs to -90, which is past the point a reader learns anything.
 DEPTH_MOVES: tuple[int, ...] = (1, 5, 10, 20, 50)
 
+#: ``data/surf_models.POOL4_BACKSTOP_STATES`` **restated**, not imported: this
+#: module is certified stdlib-only by ``test_surf_widget_contract``'s recursive
+#: purity walk, and reaching into ``data/`` from here would put an
+#: httpx-importing package behind the module that walk is meant to clear.
+#:
+#: Restatement plus an agreement test is this repo's pattern for exactly this
+#: seam -- ``widgets/surf/_pool4.network_word`` is the worked example, and the
+#: reason it is a pattern rather than a duplication is that a third state word
+#: must redden a test instead of falling through a branch and being silently
+#: treated as one of these two.
+#: ``tests/analytics/test_surf_pool4_depth.py`` imports both tuples and asserts
+#: they agree in both directions.
+BAND_STATES: tuple[str, ...] = ("deployed", "none")
+
+#: ``"deployed"``: a band exists and its numbers are published.
+#: ``"none"``: we looked and there is no band.
+BAND_DEPLOYED, BAND_NONE = BAND_STATES
+
 
 def sqrt_ratio(tick: float) -> float:
     """sqrt(price) at ``tick``, where price is IMD per ETH."""
@@ -75,6 +93,7 @@ def depth_rows(
     position_liquidity: float | None,
     band_lower_tick: int | None,
     band_liquidity: float | None,
+    band_state: str | None = None,
 ) -> list[dict] | None:
     """The cumulative ladder, or ``None`` if the position could not be read.
 
@@ -86,15 +105,62 @@ def depth_rows(
     renders as "this pool bids nothing", which is a confident wrong answer to
     a question we could not answer at all.
 
-    No band deployed is *not* that case: the full-range position still bids,
-    so the ladder is real and ``band_used_pct`` is a true 0.0.
+    ``band_state`` and the three answers it buys (PRD 6.5, AMENDED 2026-09-11)
+    ---------------------------------------------------------------------
+    Until this argument existed the ladder derived the band's existence from
+    its numbers -- ``band_lower_tick is not None and band_liquidity is not
+    None`` -- and that fold is wrong in exactly the way CLAUDE.md names: a real
+    negative with no representable value renders identically for "we looked and
+    there was nothing" and "we could not look". **Measured**, not reasoned
+    about: ``depth_rows(tick=68181, position_liquidity=6.9047e20,
+    band_lower_tick=68340, band_liquidity=0)`` and the same call with
+    ``band_liquidity=None`` returned **equal lists**, and the painted column was
+    byte-identical through the real screen.
+
+    ``pool4_backstop_state`` is the key that already carries the distinction, so
+    the ladder consults it instead of inferring:
+
+    * ``None`` (or any word outside :data:`BAND_STATES`) -- the band was **not
+      read**. ``band_used_pct`` is ``None``. The full-range leg is untouched and
+      ``eth_paid`` is still a real number: the position is readable even when
+      the band is not, and "the position bids this much, the band is unknown"
+      serves a reader better than either silence or a confident zero.
+    * ``"none"`` -- we looked and there is no band. ``band_used_pct`` is a true
+      ``0.0``: none of a band that does not exist has been consumed, and the
+      full-range position goes on bidding, so the ladder is real.
+    * ``"deployed"`` -- the share of the band the move consumes, as before. If
+      the band's own numbers are missing under this word the answer is ``None``
+      again rather than ``0.0``: "deployed, amount unreadable" is an unread
+      band whatever the state word says.
+
+    An **allowlist**, not a pass-through, on ``_pool4.network_word``'s
+    precedent: a fourth state word must land in the unknown branch and redden a
+    test, never fall through to ``deployed`` and paint a share nobody computed.
+
+    The default is ``None`` and it is the fail-safe end of the argument: a
+    caller that forgets this keyword gets "unknown", never a confident zero.
+
+    ``eth_paid`` is deliberately **not** gated on ``band_state``. It is a sum of
+    quantities that were read, and it adds the band's leg whenever the band's
+    numbers are there; ``band_used_pct`` is a claim about a *share of the band*
+    and a share needs to know the band is there at all.
     """
     if tick is None or position_liquidity is None:
         return None
 
-    has_band = band_lower_tick is not None and band_liquidity is not None
+    readable = band_lower_tick is not None and band_liquidity is not None
+    if band_state == BAND_NONE:
+        unread = False
+        share_known = False
+    elif band_state == BAND_DEPLOYED and readable:
+        unread = False
+        share_known = True
+    else:
+        unread = True
+        share_known = False
+
     band_total = (
-        eth_between(band_liquidity, band_lower_tick, MAX_TICK) if has_band else 0.0
+        eth_between(band_liquidity, band_lower_tick, MAX_TICK) if readable else 0.0
     )
 
     rows: list[dict] = []
@@ -102,14 +168,20 @@ def depth_rows(
         target = tick_for_price_drop(tick, float(move))
         full = eth_between(position_liquidity, tick, target)
         band = 0.0
-        if has_band and target > band_lower_tick:
+        if readable and target > band_lower_tick:
             band = eth_between(band_liquidity, max(tick, band_lower_tick), target)
-        used = (band / band_total * 100.0) if band_total > 0.0 else 0.0
+        used: float | None
+        if unread:
+            used = None
+        elif share_known and band_total > 0.0:
+            used = min(band / band_total * 100.0, 100.0)
+        else:
+            used = 0.0
         rows.append(
             {
                 "move_pct": move,
                 "eth_paid": full + band,
-                "band_used_pct": min(used, 100.0),
+                "band_used_pct": used,
             }
         )
     return rows

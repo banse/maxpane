@@ -2956,6 +2956,16 @@ class SurfScreen(RefreshGuard, Screen):
                 pool4_position_liquidity=data.get("pool4_position_liquidity"),
                 pool4_backstop_lower_tick=data.get("pool4_backstop_lower_tick"),
                 pool4_backstop_liquidity=data.get("pool4_backstop_liquidity"),
+                # WP11, 2026-09-11. The ladder's fifth input, and the only one
+                # that is not a number: `analytics/surf_pool4_depth.depth_rows`
+                # used to derive the band's existence from its own numbers, so
+                # an UNREAD band and an UNDEPLOYED one both painted
+                # `band used 0.0%`. `pool4_backstop_state` is the key that
+                # carries the distinction and it has to be dispatched for the
+                # panel to be able to make it. It already reaches
+                # `SurfPool4USignals` and `SurfPool4UserHero`; this is the
+                # third and last panel on this body that branches on it.
+                pool4_backstop_state=data.get("pool4_backstop_state"),
                 pool4_network=data.get("pool4_network"),
                 pool4_as_of_hhmm=data.get("pool4_as_of_hhmm"),
             )

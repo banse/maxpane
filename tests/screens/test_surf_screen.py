@@ -512,6 +512,9 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "pool4_position_liquidity": "pool4_position_liquidity",
         "pool4_backstop_lower_tick": "pool4_backstop_lower_tick",
         "pool4_backstop_liquidity": "pool4_backstop_liquidity",
+        # WP11, 2026-09-11: the ladder tells an UNREAD band from an ABSENT one
+        # by branching on the state word, so the state has to be dispatched.
+        "pool4_backstop_state": "pool4_backstop_state",
         "pool4_network": "pool4_network",
         "pool4_as_of_hhmm": "pool4_as_of_hhmm",
     },

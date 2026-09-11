@@ -1579,32 +1579,16 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     "sig_hot_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     # -- the `4` POOL4 MARKET body (2026-09-11) --------------------------
     #
-    # ONE exclusion out of nine numeric keys, and it is not this bucket's
-    # usual reason. The usual reason is "a zero here could never mislead a
-    # reader". This one can: it is here because **a zero and a failed read
-    # render identically today**, so a needle would pin the defect rather
-    # than the contract, and the honest thing is to name the defect where
-    # somebody will find it rather than to write a probe that passes.
+    # NO exclusion: all nine of this body's numeric keys carry a needle.
     #
-    # Measured, not reasoned about: rendered through the real ``SurfScreen``
-    # at (143, 60) on the ``4`` body with ``pool4_backstop_state``,
-    # ``pool4_current_tick``, ``pool4_backstop_lower_tick`` and
-    # ``pool4_position_liquidity`` set and this key ``0`` and then ``None``,
-    # the IF IMD FALLS column reads ``band used 0.0%`` in BOTH renders.
-    # ``analytics/surf_pool4_depth.depth_rows`` folds an unread band
-    # liquidity into ``has_band = False`` -- its docstring argues that case
-    # for "no band deployed", which is right, but ``pool4_backstop_state``
-    # is the key that distinguishes ``none`` from unread and the ladder
-    # never consults it. Filed against that module (WP1/WP9); NOT fixed
-    # here, and this entry goes away when it is.
-    "pool4_backstop_liquidity": (
-        "a zero band and an UNREAD band both render `band used 0.0%` -- "
-        "`analytics/surf_pool4_depth.depth_rows` treats `band_liquidity is "
-        "None` as `has_band = False` without consulting "
-        "`pool4_backstop_state`, so this key has no rendering that "
-        "distinguishes its zero from its failed read; a needle here would "
-        "pin that defect rather than the contract. Filed, not fixed"
-    ),
+    # `pool4_backstop_liquidity` was parked here when WP7 measured it, with
+    # its evidence rather than hidden -- a zero band and an UNREAD band both
+    # rendered `band used 0.0%`, so a needle would have pinned a defect
+    # rather than the contract. WP11 fixed the defect
+    # (`analytics/surf_pool4_depth.depth_rows` now branches on
+    # `pool4_backstop_state`), the key moved to `_POOL4_USER_ZERO_PROBES`
+    # with a needle read off the same (143, 60) render that condemned it,
+    # and the entry went away exactly as it said it would.
 }
 
 #: The ``4`` POOL4 MARKET body's zero probes: ``key -> (needle, enablers)``.
@@ -1687,6 +1671,32 @@ _POOL4_USER_ZERO_PROBES: dict[str, tuple[str, dict]] = {
     # and a quiet week genuinely returned nothing -- so the window word is
     # part of the needle: it is what stops this reading as an APR.
     "pool4_trailing_return_pct": ("0.0% trailing 7d", {}),
+    # IF IMD FALLS' `band used` column, and the entry this dict was WAITING
+    # for: this key spent WP7 in `_NUMERIC_KEYS_EXCLUDED` because its zero
+    # and its failed read painted the same five cells.
+    #
+    # The needle is the WHOLE ROW and not a bare `0.0%`, which would have
+    # been true and weak -- it is a share, and the one thing a share must
+    # not be confused with is another panel's share. `0.12` is the -1% rung's
+    # ETH leg off the enabling position, so the needle can only come from
+    # this ladder. Read off composited output through the real `SurfScreen`
+    # at (143, 60) with `4` pressed, both directions, on 2026-09-11:
+    #
+    #     key 0.0  ->  `-1%   0.12      0.0%`
+    #     key None ->  `-1%   0.12      unknown`
+    #
+    # The enablers are the ladder's other four inputs. The STATE is among
+    # them and is the reason the pair separates at all: `deployed` says a
+    # band exists, this key says how much is in it, and only the two
+    # together can distinguish "the band holds nothing" from "nobody read
+    # the band".
+    "pool4_backstop_liquidity": (
+        "-1%   0.12      0.0%",
+        {"pool4_backstop_state": "deployed",
+         "pool4_current_tick": 68_181,
+         "pool4_position_liquidity": 690471276437502400000,
+         "pool4_backstop_lower_tick": 68_340},
+    ),
 }
 
 #: The ``4`` body's integer keys, for the same reason

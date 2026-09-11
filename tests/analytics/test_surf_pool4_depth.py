@@ -73,18 +73,21 @@ def test_more_liquidity_pays_more_and_less_pays_less():
         position_liquidity=6.948e20,
         band_lower_tick=68280,
         band_liquidity=8.0e20,
+        band_state=d.BAND_DEPLOYED,
     )
     richer = d.depth_rows(
         tick=68196,
         position_liquidity=2 * 6.948e20,
         band_lower_tick=68280,
         band_liquidity=8.0e20,
+        band_state=d.BAND_DEPLOYED,
     )
     poorer = d.depth_rows(
         tick=68196,
         position_liquidity=0.5 * 6.948e20,
         band_lower_tick=68280,
         band_liquidity=8.0e20,
+        band_state=d.BAND_DEPLOYED,
     )
     for b, r, p in zip(base, richer, poorer):
         assert r["eth_paid"] > b["eth_paid"] > p["eth_paid"]
@@ -96,6 +99,7 @@ def test_the_ladder_is_cumulative_and_band_use_never_exceeds_one():
         position_liquidity=6.948e20,
         band_lower_tick=68280,
         band_liquidity=8.0e20,
+        band_state=d.BAND_DEPLOYED,
     )
     assert [r["move_pct"] for r in rows] == list(d.DEPTH_MOVES)
     assert all(
@@ -113,6 +117,7 @@ def test_band_use_rises_strictly_with_the_move():
         position_liquidity=6.948e20,
         band_lower_tick=68280,
         band_liquidity=8.0e20,
+        band_state=d.BAND_DEPLOYED,
     )
     used = [r["band_used_pct"] for r in rows]
     assert all(used[i] < used[i + 1] for i in range(len(used) - 1)), used
@@ -133,12 +138,14 @@ def test_a_band_the_move_never_reaches_contributes_nothing():
         position_liquidity=6.948e20,
         band_lower_tick=70000,
         band_liquidity=8.0e20,
+        band_state=d.BAND_DEPLOYED,
     )
     none_at_all = d.depth_rows(
         tick=68196,
         position_liquidity=6.948e20,
         band_lower_tick=None,
         band_liquidity=None,
+        band_state=d.BAND_NONE,
     )
     assert [r["band_used_pct"] for r in far[:3]] == [0.0, 0.0, 0.0]
     assert all(r["band_used_pct"] > 0.0 for r in far[3:])
@@ -156,6 +163,7 @@ def test_a_missing_input_returns_none_and_never_a_zero_ladder():
             position_liquidity=6.9e20,
             band_lower_tick=68280,
             band_liquidity=8.0e20,
+            band_state=d.BAND_DEPLOYED,
         )
         is None
     )
@@ -165,6 +173,7 @@ def test_a_missing_input_returns_none_and_never_a_zero_ladder():
             position_liquidity=None,
             band_lower_tick=68280,
             band_liquidity=8.0e20,
+            band_state=d.BAND_DEPLOYED,
         )
         is None
     )
@@ -172,16 +181,143 @@ def test_a_missing_input_returns_none_and_never_a_zero_ladder():
 
 def test_no_band_still_gives_a_ladder_from_the_full_range_position():
     """No backstop deployed is a real state, not a failure: the full-range
-    position still bids. band_used_pct is 0.0, not None."""
+    position still bids. band_used_pct is 0.0, not None.
+
+    ``band_state="none"`` is what makes this claim, and since WP11 it is the
+    *only* thing that can: the same call with the state unread returns ``None``
+    on every rung, which is the test below.
+    """
     rows = d.depth_rows(
         tick=68196,
         position_liquidity=6.948e20,
         band_lower_tick=None,
         band_liquidity=None,
+        band_state=d.BAND_NONE,
     )
     assert rows is not None
     assert all(r["band_used_pct"] == 0.0 for r in rows)
     assert all(r["eth_paid"] > 0.0 for r in rows)
+
+
+# ===========================================================================
+# WP11 -- an unread band is not an absent one (PRD 6.5, AMENDED 2026-09-11)
+# ===========================================================================
+
+
+def test_an_unread_band_does_not_render_as_an_unused_one():
+    """The defect this task exists for. Measured before the fix: these two
+    returned equal lists and the rendered column was byte-identical."""
+    common = dict(tick=68181, position_liquidity=6.9047e20, band_lower_tick=68340)
+    unread = d.depth_rows(**common, band_liquidity=None, band_state=None)
+    absent = d.depth_rows(**common, band_liquidity=0, band_state="none")
+
+    assert [r["band_used_pct"] for r in unread] == [None] * len(unread)
+    assert [r["band_used_pct"] for r in absent] == [0.0] * len(absent)
+    assert unread != absent
+
+    # the full-range leg survives an unread band -- the position is still readable
+    assert all(r["eth_paid"] > 0.0 for r in unread)
+
+
+def test_a_deployed_band_whose_amount_is_unreadable_is_also_unread():
+    """The state word alone is not enough, and this is the half a reading of
+    the spec could miss.
+
+    ``pool4_backstop_state == "deployed"`` says a band exists; it does not say
+    the band's liquidity came back. If the amount is missing under that word we
+    are in the same position as with no word at all -- we cannot compute a share
+    of the band -- so the honest answer is ``None`` and not the ``0.0`` the old
+    ``has_band`` fold produced. Without this branch the WP11 registration probe
+    for ``pool4_backstop_liquidity`` could not pair: its zero and its failed read
+    would render alike again, one state word further in.
+    """
+    rows = d.depth_rows(
+        tick=68181,
+        position_liquidity=6.9047e20,
+        band_lower_tick=68340,
+        band_liquidity=None,
+        band_state=d.BAND_DEPLOYED,
+    )
+    assert [r["band_used_pct"] for r in rows] == [None] * len(rows)
+    assert all(r["eth_paid"] > 0.0 for r in rows)
+
+
+def test_a_deployed_band_of_exactly_zero_is_a_representable_zero():
+    """The other side of the pair above, and the one the probe needs.
+
+    A band the chain reports as holding nothing has a true ``0.0`` consumed --
+    we looked, and none of it went anywhere. It must not borrow the unread
+    answer any more than the unread case may borrow this one.
+    """
+    rows = d.depth_rows(
+        tick=68181,
+        position_liquidity=6.9047e20,
+        band_lower_tick=68340,
+        band_liquidity=0,
+        band_state=d.BAND_DEPLOYED,
+    )
+    assert [r["band_used_pct"] for r in rows] == [0.0] * len(rows)
+
+
+def test_an_unrecognised_state_word_reads_as_unknown_and_never_as_deployed():
+    """An allowlist, not a pass-through -- ``_pool4.network_word``'s rule.
+
+    A fourth state word is a build that has learned something this module has
+    not, and the failure mode to refuse is the quiet one: falling through to the
+    ``deployed`` arithmetic and painting a share of a band whose state nobody
+    here understands.
+    """
+    rows = d.depth_rows(
+        tick=68196,
+        position_liquidity=6.948e20,
+        band_lower_tick=68280,
+        band_liquidity=8.0e20,
+        band_state="retired",
+    )
+    assert [r["band_used_pct"] for r in rows] == [None] * len(rows)
+
+
+def test_the_state_default_is_the_fail_safe_end_and_not_a_confident_zero():
+    """A caller that forgets the keyword gets ``unknown``, never ``0.0%``.
+
+    The argument has a default at all because ``tests/data/
+    test_surf_pool4_oracle.py`` -- a file this task does not own -- calls
+    ``depth_rows`` for its ``eth_paid`` cross-check and has no state to pass. A
+    default of ``"deployed"`` would have kept that green too, and would have
+    restored the exact defect for every future caller who forgets.
+    """
+    forgot = d.depth_rows(
+        tick=68196,
+        position_liquidity=6.948e20,
+        band_lower_tick=68280,
+        band_liquidity=8.0e20,
+    )
+    assert [r["band_used_pct"] for r in forgot] == [None] * len(forgot)
+    # ...and the ETH leg is untouched by the default, which is what keeps the
+    # oracle cross-check measuring the arithmetic rather than this branch.
+    deployed = d.depth_rows(
+        tick=68196,
+        position_liquidity=6.948e20,
+        band_lower_tick=68280,
+        band_liquidity=8.0e20,
+        band_state=d.BAND_DEPLOYED,
+    )
+    assert [r["eth_paid"] for r in forgot] == [r["eth_paid"] for r in deployed]
+
+
+def test_the_state_vocabulary_agrees_with_the_contract_in_both_directions():
+    """Restated, not imported -- so the two copies have to be made to agree.
+
+    ``analytics/`` is certified stdlib-only by the widget-contract purity walk
+    and may not import ``data/``. ``_GAME_CYCLE``'s redundancy-plus-agreement
+    shape applies: a third backstop state reddens this instead of silently
+    landing in the unknown branch on one side and the deployed branch on the
+    other.
+    """
+    from maxpane_dashboard.data.surf_models import POOL4_BACKSTOP_STATES
+
+    assert d.BAND_STATES == POOL4_BACKSTOP_STATES
+    assert (d.BAND_DEPLOYED, d.BAND_NONE) == POOL4_BACKSTOP_STATES
 
 
 def test_depth_rows_refuses_positional_arguments():
